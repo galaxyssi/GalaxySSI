@@ -2311,24 +2311,30 @@ final class MessageCoordinator: ObservableObject {
     return currentTeamObserverRecovery(binding)?.owner.accepts(AgentTeamReplyObservation(payload: item)) == true
   }
 
-  private func handleDesktopCollaborationRecall(_ payload: [String: Any], link: ServerLink) async {
+  private func handleDesktopCollaborationExchange(_ payload: [String: Any], link: ServerLink) async {
     let route = AgentDesktopCollaborationArchiveRecall.self
+    let publication = AgentDesktopCollaborationPublicationWire.self
+    let publishing = payload.string("type") == publication.requestType
+    let contract = publishing ? publication.contract : route.contract
+    let phase = payload.string("phase")
     let now = AgentControlPlaneClock.nowMillis()
     let requestId = payload.string("request_id")
     let source = payload.string("source_message_id")
     let contact = payload.string("contact_id")
     guard link.paired, payload.string("client_route_id") == link.routes.clientRouteId,
           !GalaxySSITransportPrivacyPolicy.isLocalOnly(payload),
-          payload.string("agent_id") == "codex", payload.string("contract") == route.contract,
-          payload.string("phase") == "read", payload["delivery"] == nil,
+          payload.string("agent_id") == "codex", payload.string("contract") == contract,
+          publishing || phase == "read", payload["delivery"] == nil,
           (1...128).contains(requestId.utf8.count),
           let expiry = AgentTeamReplyObservation.integer(payload["expires_at"]),
           expiry > now, expiry - now <= 60_000,
           let generation = AgentTeamReplyObservation(payload: payload).generation,
           AgentRemoteOutcomePolicy.validGeneration(generation),
           let arguments = payload["arguments"] as? [String: Any],
-          let bytes = try? JSONSerialization.data(withJSONObject: arguments), bytes.count <= 4_096,
+          let bytes = try? JSONSerialization.data(withJSONObject: arguments, options: [.withoutEscapingSlashes]),
+          bytes.count <= (publishing ? 131_072 : 4_096),
           let input = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: bytes),
+          !publishing || publication.accepts(phase: phase, input: input),
           let identity = taskIdentityStore.identity(contactId: contact, sourceMessageId: source),
           identity.taskId == source, taskIdentityStore.matchesRegistered(payload: payload),
           let pairedContact = store.contact(id: contact), pairedContact.trustState == .verified,
@@ -2340,6 +2346,7 @@ final class MessageCoordinator: ObservableObject {
             conversation: identity.conversationId, turn: identity.turnId, contact: contact, requireResearchAccess: true),
           context.owner.permitsRecall(generation: generation),
           context.owner.deliveryMode == .observe || context.owner.deliveryMode == .respond,
+          !publishing || publication.permits(phase: phase, observer: context.owner.deliveryMode == .observe),
           context.member.dispatchCheckpoint == .dispatching || context.member.dispatchCheckpoint == .accepted,
           context.team.state == .running, !context.member.status.isTerminal,
           let session = store.agentSession(id: identity.conversationId), session.id == identity.conversationId,
@@ -2362,7 +2369,7 @@ final class MessageCoordinator: ObservableObject {
       "route": .string(identity.clientRouteId), "contact": .string(contact), "run": .string(scope.runId),
       "group": .string(scope.conversationId), "turn": .string(scope.turnId), "member": .string(scope.memberId),
       "source": .string(scope.sourceId), "generation": .int(generation), "expires_at": .int(expiry),
-      "contract": .string(route.contract), "phase": .string("read"), "arguments": .object(input)
+      "contract": .string(contract), "phase": .string(phase), "arguments": .object(input)
     ])
     let cached: AgentMcpJSONObject?
     switch desktopCollaborationResponseReplay.lookup(key: key, fingerprint: fingerprint, now: now) {
@@ -2373,6 +2380,12 @@ final class MessageCoordinator: ObservableObject {
     var result: AgentMcpJSONObject = ["success": .bool(false), "status": .string("unavailable")]
     if let cached {
       result = cached
+    } else if publishing {
+      do {
+        result = try history.publishCollaborationMilestone(input, scope: scope)
+      } catch AgentTeamHistoryDatabase.Failure.corrupt {
+        result["status"] = .string("invalid_artifact")
+      } catch {}
     } else if let query = route.goalSelector(input, scope: scope, generation: generation),
        var page = try? history.recallCollaborationOriginal(query, scope: scope) {
       let next = page.removeValue(forKey: "next_offset")?.intValue
@@ -2411,10 +2424,10 @@ final class MessageCoordinator: ObservableObject {
       "task_id": .string(identity.taskId), "turn_id": .string(identity.turnId),
       "contact_id": .string(contact), "source_message_id": .string(source), "agent_id": .string("codex")
     ]
-    response["type"] = .string(route.responseType)
-    response["contract"] = .string(route.contract)
+    response["type"] = .string(publishing ? publication.responseType : route.responseType)
+    response["contract"] = .string(contract)
     response["request_id"] = .string(requestId)
-    response["phase"] = .string("read")
+    response["phase"] = .string(phase)
     response["execution_generation"] = .int(generation)
     response["result"] = .object(result)
     guard AgentControlPlaneClock.nowMillis() < expiry,
@@ -11621,10 +11634,11 @@ final class MessageCoordinator: ObservableObject {
       }
       return
     }
-    if appPayload.string("type") == AgentDesktopCollaborationArchiveRecall.requestType {
+    if [AgentDesktopCollaborationArchiveRecall.requestType, AgentDesktopCollaborationPublicationWire.requestType]
+      .contains(appPayload.string("type")) {
       if object.string("scheme") == "signal", let link {
         Task { @MainActor [weak self] in
-          await self?.handleDesktopCollaborationRecall(appPayload, link: link)
+          await self?.handleDesktopCollaborationExchange(appPayload, link: link)
         }
       }
       return

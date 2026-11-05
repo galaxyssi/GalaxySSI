@@ -234,6 +234,11 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       if collaborationRecallScope != nil {
         prepared.installCollaborationRecall(originalsOnly: collaborationEvidence == nil)
       }
+      if collaborationRecallScope != nil {
+        prepared.installCollaborationPublication(assessmentOnly: collaborationEvidence == nil)
+      }
+      let publishName = CloudModelStreamMutableConversation.collaborationPublishName
+      var publishedMilestones = Set<String>()
       var evidenceResults: [(String, String)] = []
       let evidencePromptLedger = CloudEvidencePromptLedger(query: turns.last?.content ?? "")
       let progress = CloudWebToolLoopProgress()
@@ -574,6 +579,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         var freshKeys = Set<String>()
         let preparedCalls = parsedCalls.compactMap { item -> AssembledToolCall? in
           let (call, arguments) = item
+          if call.name == publishName { return call }
           guard progress.cached(toolName: call.name, arguments: arguments) == nil else { return nil }
           let key = progress.semanticKey(toolName: call.name, arguments: arguments)
           return freshKeys.insert(key).inserted ? call : nil
@@ -604,12 +610,28 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                 return try? AgentTeamExecutionHistoryStore.shared.recallCollaborationOriginal(arguments, scope: scope)
               }
             }
+          },
+          collaborationPublish: collaborationRecallScope.map { scope in
+            { arguments in
+              await MainActor.run {
+                guard collaborationEvidence != nil || arguments["mode"] == .string("validate_assessment") else {
+                  return nil
+                }
+                guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
+                      let roster = session.collaborationRoster,
+                      let member = scope.memberId.split(separator: ":").first,
+                      let memberId = UUID(uuidString: String(member)), roster.members.contains(where: { $0.id == memberId }),
+                      session.mergedIntoConversationId.isBlank, !session.privateMode, !session.trackingPaused else { return nil }
+                return try? AgentTeamExecutionHistoryStore.shared.publishCollaborationMilestone(arguments, scope: scope)
+              }
+            }
           }
         )
         if let scope = collaborationEvidence {
           for index in outcomes.indices {
             let outcome = outcomes[index]
-            if outcome.call.name == CloudModelStreamMutableConversation.collaborationRecallName { continue }
+            if outcome.call.name == CloudModelStreamMutableConversation.collaborationRecallName ||
+                outcome.call.name == publishName { continue }
             let evidence = AgentCollaborationCloudToolEvidence(scope: scope, round: round,
               call: outcome.call, output: outcome.output ?? outcome.errorMessage ?? "",
               succeeded: outcome.output != nil, startedAtMillis: outcome.startedAtMillis,
@@ -642,9 +664,21 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         }
 
         var madeProgress = false
+        var publicationResults: [String: String] = [:]
         for outcome in outcomes {
           guard let output = outcome.output,
                 let arguments = try? CloudModelStreamJSON.mcpObject(from: outcome.call.argumentsJson) else {
+            continue
+          }
+          if outcome.call.name == publishName {
+            publicationResults[outcome.call.callId] = output
+            if let receipt = try? CloudModelStreamJSON.mcpObject(from: output), receipt["status"] == .string("published"),
+               publishedMilestones.insert(receipt.string("milestone_id")).inserted { madeProgress = true }
+            if arguments["mode"] == .string("publish"),
+               let receipt = try? CloudModelStreamJSON.mcpObject(from: output), receipt["rejected_draft_preserved"] == .bool(true),
+               progress.requestRepair("collaboration_milestone_publication") { madeProgress = true }
+            if arguments["mode"] == .string("validate_assessment"),
+               progress.requestRepair("collaboration_assessment_preflight") { madeProgress = true }
             continue
           }
           if progress.record(toolName: outcome.call.name, arguments: arguments, output: output) {
@@ -657,6 +691,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         }
         let results = parsedCalls.compactMap { item -> (AssembledToolCall, String)? in
           let (call, arguments) = item
+          if call.name == publishName, let output = publicationResults[call.callId] { return (call, output) }
           guard let output = progress.cached(toolName: call.name, arguments: arguments) else { return nil }
           CloudImageAnnotationSession.selectResult(output, requestId: requestId)
           return (call, output)
@@ -669,6 +704,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           projectionByOriginal[original] = projection
         }
         let promptResults = results.map { call, output in
+          if call.name == publishName { return (call, output) }
           if let arguments = try? CloudModelStreamJSON.mcpObject(from: call.argumentsJson),
              CloudWebToolLoopProgress.isRuleRecall(toolName: call.name, arguments: arguments) {
             return (call, output)
@@ -788,7 +824,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
   private func executeToolCalls(
     _ calls: [AssembledToolCall],
     context: CloudConversationToolExecutionContext,
-    collaborationRecall: ((AgentMcpJSONObject) async -> AgentMcpJSONObject?)? = nil
+    collaborationRecall: ((AgentMcpJSONObject) async -> AgentMcpJSONObject?)? = nil,
+    collaborationPublish: ((AgentMcpJSONObject) async -> AgentMcpJSONObject?)? = nil
   ) async -> [ToolExecutionOutcome] {
     guard !calls.isEmpty else { return [] }
 
@@ -806,6 +843,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                 let args = try CloudModelStreamJSON.mcpObject(from: call.argumentsJson)
                 let recalled = await collaborationRecall?(args)
                 output = AgentMcpJSONCodec.stringify(recalled ?? ["status": .string("unavailable")])
+              } else if call.name == CloudModelStreamMutableConversation.collaborationPublishName {
+                let args = try CloudModelStreamJSON.mcpObject(from: call.argumentsJson)
+                let receipt = await collaborationPublish?(args)
+                output = AgentMcpJSONCodec.stringify(receipt ?? ["success": .bool(false), "status": .string("unavailable")])
               } else {
                 output = try toolExecutor.executeTool(call: call, context: context)
               }

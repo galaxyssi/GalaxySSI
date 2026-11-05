@@ -439,6 +439,27 @@ final class AgentTeamHistoryDatabase {
     }
   }
 
+  func milestoneKeys(conversationId: String, prefix: String, after: String) throws -> [String] {
+    guard prefix.hasSuffix(":") else { throw Failure.corrupt }
+    let statement = try prepare("""
+      SELECT record_key FROM collaboration_research_records
+      WHERE namespace=? AND group_key=? AND record_key>? AND record_key<? AND revision=0
+      ORDER BY record_key LIMIT 33
+      """)
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    bind(Self.digest(conversationId), at: 2, to: statement)
+    bind(after.isEmpty ? prefix : after, at: 3, to: statement)
+    bind(String(prefix.dropLast()) + ";", at: 4, to: statement)
+    var keys: [String] = []
+    while true {
+      let status = sqlite3_step(statement)
+      if status == SQLITE_DONE { return keys }
+      guard status == SQLITE_ROW, let key = sqlite3_column_text(statement, 0) else { throw Failure.corrupt }
+      keys.append(String(cString: key))
+    }
+  }
+
   func modelCallAdmissionKeys(conversationId: String, after: String, limit: Int) throws -> [String] {
     let statement = try prepare("""
       SELECT record_key FROM collaboration_research_records

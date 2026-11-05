@@ -369,6 +369,110 @@ extension GalaxySSIStoreTests {
     }
   }
 
+  func testDesktopMilestonePhaseCannotSwitchReadIntoPublication() {
+    let wire = AgentDesktopCollaborationPublicationWire.self
+    XCTAssertTrue(wire.accepts(phase: "publish", input: ["mode": .string("publish")]))
+    XCTAssertTrue(wire.accepts(phase: "receipt", input: ["mode": .string("receipt")]))
+    XCTAssertFalse(wire.accepts(phase: "receipt", input: ["mode": .string("publish")]))
+    XCTAssertFalse(wire.accepts(phase: "read", input: ["mode": .string("read")]))
+    XCTAssertTrue(wire.accepts(phase: "validate_assessment", input: ["mode": .string("validate_assessment")]))
+    for phase in ["publish", "status", "receipt", "list"] {
+      XCTAssertTrue(wire.permits(phase: phase, observer: true))
+      XCTAssertFalse(wire.permits(phase: phase, observer: false))
+    }
+    XCTAssertTrue(wire.permits(phase: "validate_assessment", observer: false))
+  }
+
+  func testAssessmentPreflightIdentifiesFieldAndDoesNotClaimAcceptance() {
+    let raw = """
+    {"format":"galaxyssi.goal-assessment.v1","summary":"Draft","decision":"continue","work":[],"blockers":[],
+      "criteria":[{"id":"one","requirement":"Check source","verification":"documentary","status":"open","evidence":[],
+      "required_observations":[{"origin":"invented","tool":"search"}]}]}
+    """
+    let invalid = AgentCollaborationGoalAssessmentPolicy.preflight(raw, establishedContract: false)
+    XCTAssertEqual(invalid["field_path"], .string("$.criteria[0].required_observations[0].origin"))
+    XCTAssertEqual(invalid["json_valid"], .bool(true))
+    XCTAssertEqual(invalid["acceptance_contract_state"], .string("not_established"))
+    let valid = AgentCollaborationGoalAssessmentPolicy.preflight(
+      raw.replacingOccurrences(of: "invented", with: "ios_cloud_tool"), establishedContract: true)
+    XCTAssertEqual(valid["status"], .string("valid_structure"))
+    XCTAssertEqual(valid["validation_scope"], .string("structure_only_not_admission_or_acceptance"))
+    XCTAssertEqual(valid["acceptance_contract_state"], .string("established"))
+  }
+
+  func testInterimPublicationReopensWithSameReceiptWithoutCompletingAssignment() throws {
+    let suite = "milestone-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    var team = durableTeamSnapshot("run")
+    team.members[1].dispatchCheckpoint = .dispatching
+    XCTAssertTrue(history.upsert(team))
+    let scope = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: team.conversationId,
+      turnId: team.taskId, memberId: "review", sourceId: "source-review")
+    let artifact = """
+    {"format":"galaxyssi.research-artifact.v1","summary":"Interim",
+     "workspace":[{"id":"note","base_revision":0,"kind":"artifact","title":"Note","body":{"content":"Original"},"parents":[]}]}
+    """
+    let input: AgentMcpJSONObject = ["mode": .string("publish"), "milestone_id": .string("first"),
+      "artifact": .string(artifact)]
+    let receipt = try history.publishCollaborationMilestone(input, scope: scope)
+    XCTAssertEqual(receipt["success"], .bool(true))
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertEqual(try reopened.publishCollaborationMilestone(input, scope: scope), receipt)
+    let lookup: AgentMcpJSONObject = ["mode": .string("receipt"), "milestone_id": .string("first"),
+      "artifact_sha256": try XCTUnwrap(receipt["artifact_sha256"])]
+    XCTAssertEqual(try reopened.publishCollaborationMilestone(lookup, scope: scope)["references"], receipt["references"])
+    for index in 2...33 {
+      let id = "milestone-\(index)"
+      _ = try reopened.publishCollaborationMilestone(["mode": .string("publish"), "milestone_id": .string(id),
+        "artifact": .string(artifact.replacingOccurrences(of: #""id":"note""#, with: "\"id\":\"\(id)\""))], scope: scope)
+    }
+    let directory = try reopened.publishCollaborationMilestone(["mode": .string("list")], scope: scope)
+    XCTAssertEqual(directory["milestones"]?.arrayValue?.count, 32)
+    let cursor = try XCTUnwrap(directory["next_cursor"]?.strictStringValue)
+    let tail = try reopened.publishCollaborationMilestone(["mode": .string("list"), "cursor": .string(cursor)], scope: scope)
+    XCTAssertEqual(tail["milestones"]?.arrayValue?.count, 1)
+    XCTAssertEqual(tail["next_cursor"], .null)
+    let entries = (directory["milestones"]?.arrayValue ?? []) + (tail["milestones"]?.arrayValue ?? [])
+    XCTAssertEqual(entries.compactMap { $0.objectValue }.first { $0.string("milestone_id") == "first" }?["raw_sha256"],
+      receipt["artifact_sha256"])
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(["mode": .string("list"),
+      "cursor": .string("foreign:" + cursor)], scope: scope))
+    XCTAssertEqual(reopened.snapshot(supervisorRunId: "run")?.members[1].status, team.members[1].status)
+    var changed = input
+    changed["artifact"] = .string(artifact + " ")
+    let stale = try reopened.publishCollaborationMilestone(changed, scope: scope)
+    XCTAssertEqual(stale["status"], .string("stale_binding_or_revision"))
+    var malformed = input
+    malformed["milestone_id"] = .string("invalid")
+    malformed["artifact"] = .string("not JSON")
+    let rejected = try reopened.publishCollaborationMilestone(malformed, scope: scope)
+    XCTAssertEqual(rejected["status"], .string("invalid_artifact"))
+    let rejectionLookup: AgentMcpJSONObject = ["mode": .string("receipt"), "milestone_id": .string("invalid"),
+      "artifact_sha256": try XCTUnwrap(rejected["artifact_sha256"])]
+    XCTAssertEqual(try history.publishCollaborationMilestone(rejectionLookup, scope: scope), rejected)
+    XCTAssertEqual(try history.publishCollaborationMilestone(lookup, scope: scope)["references"], receipt["references"])
+    var foreign = scope
+    foreign.sourceId = "foreign"
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(input, scope: foreign))
+    team.members[1].status = .succeeded
+    let final = #"{"format":"galaxyssi.research-artifact.v1","summary":"Final","milestones":["first"]}"#
+    team.members[1].replyContent = final
+    team.updatedAtMillis += 1
+    XCTAssertTrue(reopened.upsert(team))
+    XCTAssertNil(try reopened.committedResearchRevisions(scope: scope))
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(input, scope: scope))
+    try reopened.publishSavedResearchReply(final, scope: scope)
+    let linked = try XCTUnwrap(reopened.committedResearchRevisions(scope: scope))
+    XCTAssertEqual(linked.map { $0.draft.id }, ["note"])
+  }
+
   func testDirectedRequestsKeepLongQuestionsAndSeparateCandidateIdentities() throws {
     var team = durableTeamSnapshot("run")
     team.members[1].researchStage = "EXPLORE"

@@ -868,6 +868,7 @@ struct AgentCollaborationResearchEnvelope: Decodable {
   static let wireFormat = "galaxyssi.research-artifact.v1"
   var format: String
   var workspace: [AgentCollaborationResearchDraft]?
+  var milestones: [String]?
 
   static func publication(in raw: String) throws -> [AgentCollaborationResearchDraft]? {
     guard raw.utf8.count <= 256_000, raw.contains(wireFormat) else { return nil }
@@ -910,9 +911,16 @@ struct AgentCollaborationFrozenCloudRead: Codable {
   var totalCharacters: Int64
 }
 
+struct AgentCollaborationMilestoneRejection: Codable {
+  var artifact: Data
+  var reason: String
+}
+
 struct AgentCollaborationResearchPublication: Codable {
   var requestHash: String
   var references: [AgentCollaborationResearchReference]
+  var milestoneId: String? = nil
+  var recordedAtMillis: Int64? = nil
 }
 
 struct AgentCollaborationPublicationRejection: Codable, Equatable {

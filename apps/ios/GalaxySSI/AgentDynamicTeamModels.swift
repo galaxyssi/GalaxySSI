@@ -455,12 +455,13 @@ enum AgentCollaborationGoalAssessmentPolicy {
   }
 
   struct RequiredObservation: Codable, Hashable {
+    static let allowedOrigins = ["ios_cloud_tool", "ios_native_tool", "desktop_codex_tool",
+      "android_cloud_tool", "android_native_tool"]
     var origin: String
     var tool: String
 
     var isValid: Bool {
-      ["ios_cloud_tool", "ios_native_tool", "desktop_codex_tool",
-       "android_cloud_tool", "android_native_tool"].contains(origin) && !tool.isBlank
+      Self.allowedOrigins.contains(origin) && !tool.isBlank
     }
   }
 
@@ -508,6 +509,60 @@ enum AgentCollaborationGoalAssessmentPolicy {
     case schedule([String])
     case waiting([String])
     case achieved
+  }
+
+  static func preflight(_ raw: String, establishedContract: Bool) -> AgentMcpJSONObject {
+    var response: AgentMcpJSONObject = [
+      "success": .bool(false), "status": .string("invalid_assessment"),
+      "json_valid": .bool(false),
+      "acceptance_contract_state": .string(establishedContract ? "established" : "not_established"),
+      "validation_scope": .string("structure_only_not_admission_or_acceptance")
+    ]
+    func fail(_ path: String, _ reason: String, allowed: [String] = []) -> AgentMcpJSONObject {
+      response["field_path"] = .string(path)
+      response["reason"] = .string(reason)
+      if !allowed.isEmpty { response["allowed_values"] = .array(allowed.map(AgentMcpJSONValue.string)) }
+      return response
+    }
+    let data = Data(raw.utf8)
+    guard data.count <= 131_072, (try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data)) != nil else {
+      return fail("$", "expected_bounded_json_object")
+    }
+    response["json_valid"] = .bool(true)
+    func path(_ keys: [CodingKey]) -> String {
+      keys.reduce("$") { value, key in
+        if let index = key.intValue { return value + "[\(index)]" }
+        return value + "." + key.stringValue
+      }
+    }
+    let draft: Assessment
+    do { draft = try JSONDecoder().decode(Assessment.self, from: data) }
+    catch let DecodingError.keyNotFound(key, context) { return fail(path(context.codingPath + [key]), "required_field") }
+    catch let DecodingError.typeMismatch(_, context) { return fail(path(context.codingPath), "wrong_type") }
+    catch let DecodingError.valueNotFound(_, context) { return fail(path(context.codingPath), "required_value") }
+    catch let DecodingError.dataCorrupted(context) { return fail(path(context.codingPath), "invalid_value") }
+    catch { return fail("$", "invalid_assessment") }
+    guard draft.format == "galaxyssi.goal-assessment.v1" else {
+      return fail("$.format", "unexpected_format", allowed: ["galaxyssi.goal-assessment.v1"])
+    }
+    guard !draft.summary.isBlank else { return fail("$.summary", "expected_nonblank_text") }
+    guard !draft.criteria.isEmpty else { return fail("$.criteria", "expected_nonempty_criteria") }
+    var ids = Set<String>()
+    for (index, criterion) in draft.criteria.enumerated() {
+      let root = "$.criteria[\(index)]"
+      guard !criterion.id.isBlank, ids.insert(criterion.id).inserted else { return fail(root + ".id", "expected_unique_id") }
+      guard !criterion.requirement.isBlank else { return fail(root + ".requirement", "expected_nonblank_text") }
+      for (sourceIndex, source) in (criterion.required_observations ?? []).enumerated() {
+        let sourcePath = root + ".required_observations[\(sourceIndex)]"
+        guard RequiredObservation.allowedOrigins.contains(source.origin) else {
+          return fail(sourcePath + ".origin", "unsupported_origin", allowed: RequiredObservation.allowedOrigins)
+        }
+        guard !source.tool.isBlank else { return fail(sourcePath + ".tool", "expected_nonblank_text") }
+      }
+    }
+    response["success"] = .bool(true)
+    response["status"] = .string("valid_structure")
+    return response
   }
 
   static func evaluate(_ raw: String, preserving contract: [Criterion],
