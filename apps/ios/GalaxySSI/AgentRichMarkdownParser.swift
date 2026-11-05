@@ -323,8 +323,7 @@ extension AgentRichContentCodec {
     } else {
       document = ["version": version, "blocks": [object]]
     }
-    guard let encoded = try? JSONSerialization.data(withJSONObject: document) else { return [] }
-    return decode(String(decoding: encoded, as: UTF8.self))
+    return (try? AgentVisualOutputPolicy.declaredBlocks(document)) ?? []
   }
 
   private static func markdownImageBlocks(_ text: String) -> [AgentRichBlock] {

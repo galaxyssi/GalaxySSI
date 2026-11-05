@@ -2,6 +2,38 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentRichContentMermaidTests: XCTestCase {
+  func testVisualReplyPreservesLongProgramDuringFormatOnlyRepair() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let materializer = AgentRichContentMaterializer(directoryURL: directory)
+    let program = "<html><body><script>\n" + String(repeating: "window.frame += 1;\n", count: 700)
+      + "</script></body></html>"
+    let answer = "Animation ready.\n\n```html\n\(program)\n```"
+    let envelope = String(decoding: try JSONSerialization.data(withJSONObject: [
+      "disposition": "respond", "final_response": answer, "presentation": "inline_html"
+    ]), as: UTF8.self)
+    let preserved = try XCTUnwrap(AgentModelDirectResponseCodec.parse(envelope, envelopeOnly: true))
+    let reply = try XCTUnwrap(materializer.prepareVisualReply(preserved))
+    XCTAssertEqual(reply.content, "Animation ready.")
+    XCTAssertFalse(reply.richOutput.contains("window.frame"))
+    let block = try XCTUnwrap(AgentRichContentCodec.decode(reply.richOutput).first(where: { $0.type == .html }))
+    XCTAssertEqual(materializer.loadDeclaredHTML(block), program)
+    XCTAssertNil(try materializer.prepareVisualReply(answer))
+  }
+
+  func testVisualReplyDoesNotAcceptMissingVideoOrIncompleteDeclaredHTML() throws {
+    let materializer = AgentRichContentMaterializer(directoryURL: FileManager.default.temporaryDirectory)
+    let video = #"{"disposition":"respond","presentation":"video","final_response":"finished.mp4"}"#
+    XCTAssertThrowsError(try materializer.prepareVisualReply(video)) {
+      XCTAssertEqual($0 as? AgentVisualOutputPolicy.DeliveryError, .unverifiedVideo)
+    }
+    XCTAssertThrowsError(try materializer.prepareVisualReply("```galaxyssi-html\n<html><script>unfinished\n```")) {
+      XCTAssertEqual($0 as? AgentVisualOutputPolicy.DeliveryError, .incompleteHTML)
+    }
+    let malformed = #"{"disposition":"respond","rich_output":"not a document","final_response":"Done"}"#
+    XCTAssertThrowsError(try materializer.prepareVisualReply(malformed))
+  }
+
   func testDeclaredHTMLRequiresClosingFenceAndPreservesCompleteProgram() throws {
     let program = "<!doctype html>\n<html><body><script>\n" +
       String(repeating: "window.frame = 1;\n", count: 720) + "</script></body></html>"

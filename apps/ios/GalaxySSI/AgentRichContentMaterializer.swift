@@ -5,6 +5,45 @@ enum AgentVisualOutputPolicy {
   static let maximumHTMLCharacters = 32_000
   static let maximumHTMLBytes = 128_000
   static let localHTMLPrefix = "galaxyssi-artifact://local-html/"
+  static let prompt = "For a playable animation, use a galaxyssi-html fence with complete self-contained HTML, CSS, and JS (up to 32000 characters). No external assets, network, forms, or device APIs. Use ordinary html fences for requested source code. Video requires a real exported MP4 and verified playback; HTML and filenames are not video evidence."
+
+  struct Reply {
+    var content: String
+    var richOutput: String
+  }
+
+  enum DeliveryError: Error {
+    case invalidPresentation, incompleteHTML, unavailableHTML, unverifiedVideo
+  }
+
+  static func envelope(_ raw: String) -> [String: Any]? {
+    var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    if value.lowercased().hasPrefix("```json"), value.hasSuffix("```") {
+      value = String(value.dropFirst(7).dropLast(3)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    guard value.first == "{", value.utf8.count <= AgentRichContentCodec.maximumSerializedSize,
+          let json = try? JSONSerialization.jsonObject(with: Data(value.utf8)),
+          let root = json as? [String: Any],
+          (root["disposition"] as? String)?.lowercased() == "respond" else { return nil }
+    return root
+  }
+
+  static func declaredBlocks(_ raw: Any) throws -> [AgentRichBlock] {
+    guard let document = raw as? [String: Any], let input = document["blocks"] as? [[String: Any]],
+          !input.isEmpty, input.count <= AgentRichContentCodec.maximumBlocks,
+          (document["version"] as? Int ?? 1) == AgentRichContentCodec.version else {
+      throw DeliveryError.invalidPresentation
+    }
+    for block in input where (block["type"] as? String)?.lowercased() == "html" {
+      guard let source = block["text"] as? String, isCompleteHTML(source) else { throw DeliveryError.incompleteHTML }
+    }
+    let encoded = try JSONSerialization.data(withJSONObject: [
+      "version": AgentRichContentCodec.version, "blocks": input
+    ])
+    let blocks = AgentRichContentCodec.decode(String(decoding: encoded, as: UTF8.self))
+    guard !blocks.isEmpty else { throw DeliveryError.invalidPresentation }
+    return blocks
+  }
 
   static func isCompleteHTML(_ html: String) -> Bool {
     guard !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -76,6 +115,74 @@ final class AgentRichContentMaterializer {
 
   func storeDeclaredHTML(_ block: AgentRichBlock) -> AgentRichBlock? {
     locked { materializeHTMLBlock(block) }
+  }
+
+  func prepareVisualReply(_ raw: String) throws -> AgentVisualOutputPolicy.Reply? {
+    let envelope = AgentVisualOutputPolicy.envelope(raw)
+    let content = envelope?["final_response"] as? String ?? raw
+    let declared = envelope?["presentation"]
+    let presentation = declared as? String ?? ""
+    let rich = envelope?["rich_output"]
+    if let requirements = envelope?["completion_requirements"] {
+      guard let scope = requirements as? [String: Any],
+            scope["publication"] == nil || (scope["publication"] as? String) == "none",
+            scope["phone_linux"] == nil || (scope["phone_linux"] as? Bool) == false else {
+        throw AgentVisualOutputPolicy.DeliveryError.invalidPresentation
+      }
+      if scope["artifacts"] != nil {
+        throw AgentVisualOutputPolicy.DeliveryError.unverifiedVideo
+      }
+    }
+    guard declared == nil || ["inline_html", "source", "video"].contains(presentation) else {
+      throw AgentVisualOutputPolicy.DeliveryError.invalidPresentation
+    }
+    if presentation == "video" { throw AgentVisualOutputPolicy.DeliveryError.unverifiedVideo }
+    let declaresRichFence = content.range(of: "(?im)^[ \\t]*`{3}galaxyssi-rich[ \\t]*$", options: .regularExpression) != nil
+    let declaresHTMLFence = content.range(of: "(?im)^[ \\t]*`{3}galaxyssi-html[ \\t]*$", options: .regularExpression) != nil
+    guard envelope != nil || declaresHTMLFence || declaresRichFence else { return nil }
+    let textBlocks = AgentRichContentCodec.fromText(content)
+    if textBlocks.contains(where: { $0.type == .code && $0.language == "galaxyssi-html" }) {
+      throw AgentVisualOutputPolicy.DeliveryError.incompleteHTML
+    }
+    if textBlocks.contains(where: { $0.type == .code && $0.language == "galaxyssi-rich" }) {
+      throw AgentVisualOutputPolicy.DeliveryError.invalidPresentation
+    }
+    var blocks = textBlocks
+    if let rich { blocks.append(contentsOf: try AgentVisualOutputPolicy.declaredBlocks(rich)) }
+    if presentation == "inline_html", !blocks.contains(where: { $0.type == .html }) {
+      let source = blocks.indices.filter {
+        blocks[$0].type == .code && blocks[$0].language == "html" &&
+          AgentVisualOutputPolicy.isDocumentSource(blocks[$0].text)
+      }
+      guard source.count == 1, let index = source.first,
+            AgentVisualOutputPolicy.isCompleteHTML(blocks[index].text) else {
+        throw AgentVisualOutputPolicy.DeliveryError.incompleteHTML
+      }
+      blocks[index].type = .html
+      blocks[index].mimeType = "text/html"
+    }
+    if presentation == "source" && blocks.contains(where: { $0.type == .html }) {
+      throw AgentVisualOutputPolicy.DeliveryError.invalidPresentation
+    }
+    if rich == nil, presentation.isEmpty, !declaresRichFence, !blocks.contains(where: { $0.type == .html }) {
+      guard let envelope else { return nil }
+      guard envelope["final_response"] is String, !content.isBlank else {
+        throw AgentVisualOutputPolicy.DeliveryError.invalidPresentation
+      }
+      return AgentVisualOutputPolicy.Reply(content: content, richOutput: "")
+    }
+    for index in blocks.indices where blocks[index].type == .html {
+      guard !blocks[index].text.isEmpty, let saved = storeDeclaredHTML(blocks[index]) else {
+        throw AgentVisualOutputPolicy.DeliveryError.unavailableHTML
+      }
+      blocks[index] = saved
+    }
+    let encoded = AgentRichContentCodec.encode(blocks)
+    guard !encoded.isEmpty, AgentRichContentCodec.decode(encoded).count == blocks.count else {
+      throw AgentVisualOutputPolicy.DeliveryError.invalidPresentation
+    }
+    let prose = blocks.filter { [.text, .heading, .quote].contains($0.type) }.map(\.text).joined(separator: "\n\n")
+    return AgentVisualOutputPolicy.Reply(content: prose, richOutput: encoded)
   }
 
   func loadDeclaredHTML(_ block: AgentRichBlock) -> String? {

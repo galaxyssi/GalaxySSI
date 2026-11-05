@@ -7920,6 +7920,25 @@ final class MessageCoordinator: ObservableObject {
   ) -> Bool {
     let normalized = response.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalized.isEmpty else { return false }
+    let visual: AgentVisualOutputPolicy.Reply?
+    do {
+      visual = try richContentMaterializer.prepareVisualReply(normalized)
+    } catch {
+      let message = visualDeliveryFailure(error)
+      task.pendingPlanning = nil
+      task.pendingAction = nil
+      task.pendingActions = []
+      task.phase = .failed
+      task.result = message
+      task.verification = message
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
+      store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId, stage: "visual_delivery_failed",
+                                detail: message, status: .failed)
+      store.appendSystem(message, to: outgoing.contactId, conversationId: outgoing.conversationId)
+      return true
+    }
+    let result = visual?.content ?? normalized
     task.planContext = nil
     task.activePlan = nil
     task.pendingPlanning = nil
@@ -7928,7 +7947,7 @@ final class MessageCoordinator: ObservableObject {
     task.pendingActions = []
     task.nativeActionResults = []
     task.phase = .completed
-    task.result = normalized
+    task.result = result.ifBlank(localizedReply("rich_output_visual_saved", fallback: "Visual reply saved"))
     task.verification = "Model completed the initial turn without a phone action"
     task.executionLog.append("Model direct response completed without entering the native tool loop")
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
@@ -7941,14 +7960,15 @@ final class MessageCoordinator: ObservableObject {
       status: .delivered
     )
     _ = store.appendIncoming(
-      normalized,
+      result,
       from: outgoing.contactId,
       remoteMessageId: outgoing.turnId,
       status: .delivered,
       traceStage: "local_agent_direct_response_received",
       detail: task.targetTitle,
       conversationId: outgoing.conversationId,
-      turnId: outgoing.turnId
+      turnId: outgoing.turnId,
+      richOutputJson: visual?.richOutput ?? ""
     )
     return true
   }
@@ -9639,6 +9659,15 @@ final class MessageCoordinator: ObservableObject {
         guard !clean.isEmpty, let current = incoming else {
           throw GalaxySSIError.unsupportedResponse
         }
+        let visual: AgentVisualOutputPolicy.Reply?
+        do {
+          visual = try richContentMaterializer.prepareVisualReply(clean)
+        } catch {
+          let message = visualDeliveryFailure(error)
+          _ = store.updateMessageContent(current.id, contactId: destinationId, content: message, status: .failed,
+                                         traceStage: "visual_delivery_failed", detail: message)
+          throw GalaxySSIError.invalidPayload(message)
+        }
         completed = true
         store.appendDeliveryTrace(
           outgoing.id,
@@ -9650,10 +9679,11 @@ final class MessageCoordinator: ObservableObject {
         let final = store.updateMessageContent(
           current.id,
           contactId: destinationId,
-          content: clean,
+          content: visual?.content ?? clean,
           status: .delivered,
           traceStage: "cloud_reply_received",
-          detail: modelDetail
+          detail: modelDetail,
+          richOutputJson: visual?.richOutput
         ) ?? current
         onIncomingMessage?(final)
 
@@ -9674,6 +9704,13 @@ final class MessageCoordinator: ObservableObject {
     guard completed else {
       throw GalaxySSIError.unsupportedResponse
     }
+  }
+
+  private func visualDeliveryFailure(_ error: Error) -> String {
+    if (error as? AgentVisualOutputPolicy.DeliveryError) == .unverifiedVideo {
+      return localizedReply("rich_output_video_unverified", fallback: "The requested video was not delivered as a verified MP4 file.")
+    }
+    return localizedReply("rich_output_visual_invalid", fallback: "The visual reply was incomplete or could not be saved.")
   }
 
   func pair(using qrText: String) async throws {

@@ -94,6 +94,7 @@ enum AgentModelPlanningPrompt {
     if request.allowsDirectResponse {
       append(&prompt, "Initial response option: if no phone action is needed, return this JSON schema:\n")
       append(&prompt, "{\"disposition\":\"respond\",\"final_response\":\"user answer\"}\n")
+      append(&prompt, AgentVisualOutputPolicy.prompt + " Put any animation fence inside final_response, or provide presentation=inline_html with a versioned rich_output object.\n")
       append(&prompt, "Use the user's language and omit runtime, workspace, permission, and tool availability.\n\n")
     }
     append(&prompt, "ActionPlan JSON schema:\n")

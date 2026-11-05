@@ -5691,6 +5691,10 @@
 "rich_output_play" = "播放";
 "rich_output_stop" = "停止播放";
 "rich_output_html_unavailable" = "已保存的动画不可用。";
+"rich_output_visual_saved" = "已保存视觉回复";
+"rich_output_video_unverified" = "没有交付可验证的 MP4 视频文件。";
+"rich_output_visual_invalid" = "视觉回复不完整或无法保存。";
+"delivery_trace_visual_delivery_failed" = "视觉回复交付失败";
 
 "agent_no_reply.network_unavailable.title" = "网络不可用";
 "agent_no_reply.network_unavailable.message" = "手机当前没有可用网络，请恢复网络后重试。";
