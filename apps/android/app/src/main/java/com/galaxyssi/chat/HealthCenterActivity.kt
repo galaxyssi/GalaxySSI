@@ -333,8 +333,7 @@ class HealthCenterActivity : Activity() {
                 ui.add(this, ui.text(source(record), 14f, muted = true), 14)
                 if (record.platformOrigin.isNotBlank()) ui.add(this, ui.text(
                     if (record.source == "bluetooth") getString(R.string.health_ble_device_name, record.platformOrigin)
-                    else if (record.platformOrigin == "health_connect.aggregate") getString(R.string.health_connect_platform_aggregate)
-                    else getString(R.string.health_connect_platform_origin, record.platformOrigin), 13f, muted = true), 4)
+                    else healthConnectTrendLabel(record.platformOrigin, record.draft.metric), 13f, muted = true), 4)
                 record.deviceReceivedAt?.let {
                     ui.add(this, ui.text(getString(R.string.health_ble_received_time, date(it)), 13f, muted = true), 4)
                     ui.add(this, ui.text(if (record.deviceClock.isBlank()) getString(R.string.health_ble_no_clock)

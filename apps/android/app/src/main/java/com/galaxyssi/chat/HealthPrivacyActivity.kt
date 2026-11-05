@@ -125,7 +125,13 @@ class HealthPrivacyActivity : Activity() {
             HealthAccessPurpose.DELETE_PROFILE -> getString(R.string.health_privacy_scope_delete, scope.basicCount, count, scope.drafts)
             else -> getString(R.string.health_privacy_scope_entries, count)
         }) }
-        if (scope.source != HealthAccessSource.ALL) add(getString(if (scope.source == HealthAccessSource.MANUAL) R.string.health_privacy_scope_manual else R.string.health_privacy_scope_original))
+        when (scope.source) {
+            HealthAccessSource.MANUAL -> add(getString(R.string.health_privacy_scope_manual))
+            HealthAccessSource.ORIGINAL -> add(getString(R.string.health_privacy_scope_original))
+            HealthAccessSource.BLUETOOTH -> add(getString(R.string.health_trend_choose_bluetooth))
+            HealthAccessSource.HEALTH_CONNECT -> add(getString(R.string.health_trend_choose_platform))
+            HealthAccessSource.ALL -> Unit
+        }
         scope.format?.takeUnless { it == HealthAccessFormat.ORIGINAL }?.let { add(it.name) }
         if (scope.annotations) add(getString(R.string.health_privacy_scope_notes))
         if (scope.reportRecords) add(getString(R.string.health_weekly_raw))

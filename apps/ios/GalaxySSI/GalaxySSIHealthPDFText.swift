@@ -217,6 +217,7 @@ struct GalaxySSIHealthPDFTextView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
   let store: GalaxySSIHealthOriginalStore
+  var transientReport: GalaxySSIHealthTransientReport?
   @State private var files: [GalaxySSIHealthOriginalStore.Original] = []
   @State private var selected: GalaxySSIHealthOriginalStore.Original?
   @State private var page = 0
@@ -231,14 +232,15 @@ struct GalaxySSIHealthPDFTextView: View {
   @State private var password: String?
   @State private var unlocking = false
   @State private var requestedOCR = false
+  var reviewRecords: GalaxySSIHealthRecords?
 
   private enum Status { case idle, working, unavailable, locked, incorrectPassword, extractionRestricted }
 
   var body: some View {
     List {
       if scene == .active {
-        if let selected {
-          Section(selected.name) {
+        if let name = transientReport?.name ?? selected?.name {
+          Section(name) {
             HStack {
               Button { page -= 1; recognize() } label: {
                 Image(systemName: "chevron.left").frame(minWidth: 44, minHeight: 44)
@@ -257,7 +259,9 @@ struct GalaxySSIHealthPDFTextView: View {
               .accessibilityLabel(Text(t("next", "Next page")))
             }
             .buttonStyle(.borderless)
-            Button(t("back", "Choose another PDF")) { clearPassword(); cancel(); self.selected = nil }
+            if transientReport == nil {
+              Button(t("back", "Choose another PDF")) { clearPassword(); cancel(); self.selected = nil }
+            }
           }
           if let result {
             Section(t("source", "Original page")) {
@@ -289,6 +293,24 @@ struct GalaxySSIHealthPDFTextView: View {
               if result.method == .native {
                 Button(t("force_ocr", "Read again with on-device OCR")) { recognize(forceOCR: true) }
               }
+              if let reviewRecords, let selected,
+                 let region = result.regions.first(where: { $0.id == selectedRegion }) {
+                NavigationLink {
+                  GalaxySSIHealthReportItemEditor(records: reviewRecords,
+                    source: .init(original: selected.id, sha256: selected.sha256, page: page,
+                                  region: region.id, fromOCR: result.method == .ocr),
+                    excerpt: String(region.text.prefix(500)))
+                } label: {
+                  Text(GalaxySSIHealthReportReview.text("item", "Review measurement", language: language))
+                }
+              }
+            }
+          }
+          if let reviewRecords, let selected {
+            NavigationLink {
+              GalaxySSIHealthReportBatchView(records: reviewRecords, store: store, original: selected)
+            } label: {
+              Text(GalaxySSIHealthReportReview.text("batch", "Reviewed measurements", language: language))
             }
           }
         } else {
@@ -305,7 +327,7 @@ struct GalaxySSIHealthPDFTextView: View {
         case .working: ProgressView(t("working", "Reading page"))
         case .unavailable:
           Text(t("failed", "The PDF page could not be read."))
-          if selected != nil { Button(t("retry", "Retry this page")) { recognize() } }
+          if selected != nil || transientReport != nil { Button(t("retry", "Retry this page")) { recognize() } }
         case .locked, .incorrectPassword, .extractionRestricted:
           Text(passwordStatus)
           Button(t("unlock", "Enter PDF password")) { unlocking = true }
@@ -316,7 +338,7 @@ struct GalaxySSIHealthPDFTextView: View {
     .navigationBarTitleDisplayMode(.inline)
     .onAppear(perform: reload)
     .onDisappear(perform: clearPassword)
-    .onDisappear { cancel(); selected = nil; files = [] }
+    .onDisappear { if status == .working { cancel() } }
     .onChange(of: scene) { phase in
       if phase == .active { reload() }
       else { clearPassword(); cancel(); selected = nil; files = [] }
@@ -354,6 +376,7 @@ struct GalaxySSIHealthPDFTextView: View {
 
   private func reload() {
     guard scene == .active else { return }
+    if transientReport != nil { recognize(); return }
     do {
       files = try store.list().originals.filter { $0.kind == .pdf }
       status = .idle
@@ -362,10 +385,14 @@ struct GalaxySSIHealthPDFTextView: View {
 
   private func recognize(forceOCR: Bool = false) {
     cancel()
-    guard scene == .active, let selected else { return }
+    guard scene == .active else { return }
     showLimit = 50
     let data: Data
-    do { data = try store.read(selected) }
+    do {
+      if let transientReport { data = transientReport.pdf }
+      else if let selected { data = try store.read(selected) }
+      else { return }
+    }
     catch { status = .unavailable; return }
     requestedOCR = forceOCR
     let token = UUID(), index = page, credential = password
