@@ -8,6 +8,24 @@ enum GalaxySSIHealthReportReview {
     let page: Int
     let region: Int
     let fromOCR: Bool
+    var evidenceKey: String?
+
+    var regionIdentity: String { evidenceKey ?? "legacy:\(region)" }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+      guard lhs.original == rhs.original, lhs.sha256 == rhs.sha256, lhs.page == rhs.page,
+            lhs.fromOCR == rhs.fromOCR else { return false }
+      if lhs.evidenceKey != nil || rhs.evidenceKey != nil { return lhs.evidenceKey == rhs.evidenceKey }
+      return lhs.region == rhs.region
+    }
+
+    func hash(into hasher: inout Hasher) {
+      hasher.combine(original)
+      hasher.combine(sha256)
+      hasher.combine(page)
+      hasher.combine(fromOCR)
+      hasher.combine(regionIdentity)
+    }
   }
 
   struct Item: Codable, Identifiable {
@@ -51,7 +69,7 @@ enum GalaxySSIHealthReportReview {
     let reading: GalaxySSIHealthReading
     let source: Source
     let secondary: Bool
-    var id: String { "\(reading.id):\(reading.revision):\(source.page):\(source.region):\(source.fromOCR):\(secondary)" }
+    var id: String { "\(reading.id):\(reading.revision):\(source.page):\(source.regionIdentity):\(source.fromOCR):\(secondary)" }
   }
 
   static func linked(original: GalaxySSIHealthOriginalStore.Original, revisions: [GalaxySSIHealthReading],
