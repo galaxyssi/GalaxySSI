@@ -6079,3 +6079,5 @@
 "composer_attachment_free" = "自由";
 "composer_attachment_preview_unavailable" = "无法预览此附件";
 "composer_attachment_save_failed" = "无法保存裁剪结果";
+"galaxyssi.agent.reply_speech.now_playing" = "Agent 回复朗读";
+"galaxyssi.agent.reply_speech.return" = "返回回复";

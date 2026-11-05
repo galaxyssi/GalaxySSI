@@ -1,7 +1,10 @@
 import SwiftUI
 
 struct GalaxySSIMainTabView: View {
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
   @EnvironmentObject private var store: GalaxySSIStore
+  @ObservedObject private var completedSpeech = AgentCompletedReplyPlayback.shared
+  @SceneStorage("galaxyssi.agent.activeConversationID") private var sceneConversationID = ""
   @State private var selectedTab: GalaxySSIMainTab
   @State private var pendingContactId = ""
 
@@ -11,6 +14,32 @@ struct GalaxySSIMainTabView: View {
 
   var body: some View {
     selectedContent
+      .safeAreaInset(edge: .bottom, spacing: 0) {
+        if let selection = completedSpeech.selection,
+           selectedTab != .agent || store.activeAgentConversationId != selection.conversationID {
+          HStack {
+            Button {
+              if store.switchAgentSession(selection.conversationID) {
+                sceneConversationID = store.activeAgentConversationId
+                selectedTab = .agent
+              }
+            } label: {
+              Label(GalaxySSILocalization.string("galaxyssi.agent.reply_speech.return",
+                fallback: "Return to reply", language: language), systemImage: "waveform")
+                .frame(minHeight: 44)
+            }
+            Spacer()
+            Button { completedSpeech.stop() } label: {
+              Image(systemName: "stop.fill").frame(width: 44, height: 44)
+            }
+            .accessibilityLabel(Text(GalaxySSILocalization.string("galaxyssi.common.stop",
+              fallback: "Stop", language: language)))
+          }
+          .font(.subheadline)
+          .padding(.horizontal, 12)
+          .background(Color.galaxySSIBarBackground)
+        }
+      }
       .onAppear(perform: consumePendingContact)
       .onReceive(NotificationCenter.default.publisher(for: .galaxySSIOpenContact)) { notification in
         let contactId = ((notification.userInfo?["contactId"] as? String) ?? "")

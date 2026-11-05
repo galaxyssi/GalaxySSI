@@ -76,6 +76,7 @@ final class IOSPcmRecorder: PcmRecorder {
   }
 
   private func configureAudioSession(_ config: PcmCaptureConfig) throws {
+    NotificationCenter.default.post(name: .galaxySSIVoiceRecordingWillStart, object: nil)
     try audioSession.setCategory(.record, mode: .measurement, options: [.duckOthers])
     try audioSession.setPreferredSampleRate(Double(config.sampleRateHz))
     try audioSession.setPreferredIOBufferDuration(Double(config.frameDurationMs) / 1_000.0)

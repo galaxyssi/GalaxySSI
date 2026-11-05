@@ -88,6 +88,7 @@ final class VoicePassiveReplyCapture: ObservableObject {
     guard session.recordPermission == .granted else { return false }
     let engine = AVAudioEngine()
     do {
+      NotificationCenter.default.post(name: .galaxySSIVoiceRecordingWillStart, object: nil)
       try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
       try session.setActive(true)
       guard session.isInputAvailable else { throw CaptureFailure.unprotected }

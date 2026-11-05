@@ -6,6 +6,8 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
   var waitingMessageIDs: Set<UUID>
   var retryingMessageIDs: Set<UUID>
   @ObservedObject var replySpeech: AgentReplySpeechRuntime
+  @ObservedObject var completedSpeech: AgentCompletedReplyPlayback
+  var playCompletedReply: (ChatMessage, AgentReplyParagraphSpeechSelection?) -> Bool
   var voiceSettings: VoiceSettings
   var languagePolicy: LanguagePolicySettings
   var t: (String, String) -> String
@@ -45,6 +47,9 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
       replySpeech.stopPlaybackIfActive()
     }
     .onDisappear {
+      replySpeech.stop()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
       replySpeech.stop()
     }
   }
@@ -95,10 +100,14 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
         }
       }
       if let target = AgentReplySpeechPresentationPolicy.target(message),
-         latestSpeechTarget?.responseId == target.responseId || replySpeech.isActive(target) {
+         latestSpeechTarget?.responseId == target.responseId || replySpeech.isActive(target) ||
+           completedSpeech.selection?.messageID == message.id {
         HStack {
           Spacer()
-          GalaxySSIAgentReplySpeechButton(enabled: replySpeech.isEnabled(target)) {
+          GalaxySSIAgentReplySpeechButton(enabled: replySpeech.isEnabled(target) ||
+            completedSpeech.selection?.messageID == message.id) {
+            if playCompletedReply(message, nil) { return }
+            completedSpeech.stop()
             replySpeech.toggle(
               target,
               settings: voiceSettings,
@@ -113,6 +122,12 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
             .foregroundColor(.red)
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
+      }
+      if completedSpeech.failedMessageID == message.id, !completedSpeech.lastErrorDescription.isEmpty {
+        Text(completedSpeech.lastErrorDescription)
+          .font(.caption2)
+          .foregroundColor(.red)
+          .frame(maxWidth: .infinity, alignment: .trailing)
       }
     }
     .id(message.id)
@@ -228,6 +243,8 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
   ) -> ((AgentReplyParagraphSpeechSelection) -> Void)? {
     guard let target = AgentReplySpeechPresentationPolicy.target(message) else { return nil }
     return { selection in
+      if playCompletedReply(message, selection) { return }
+      completedSpeech.stop()
       replySpeech.readFromParagraph(
         selection,
         target: target,
