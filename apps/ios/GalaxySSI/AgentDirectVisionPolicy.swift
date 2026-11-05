@@ -13,8 +13,17 @@ enum AgentDirectVisionPolicy {
   static func instructionForMimeTypes(_ mimeTypes: [String]) -> String {
     guard containsImage(mimeTypes) else { return "" }
     return """
-    Use each attached image as native visual model input. Do not replace it with locally extracted text or use a text-extraction pipeline to identify the object. Before answering, inspect the image twice: first determine the overall object and scene; then verify every category, brand, model, or product claim against the visible shape, logos, and readable text. Do not infer a product from packaging color or isolated words. Treat unrelated prior images and memories as non-evidence. If visible evidence conflicts or is insufficient, give only the supported broader identification and clearly state the uncertainty.
+    Use each attached image as native visual model input. Do not replace it with locally extracted text.
+    Before answering, inspect the image twice. First identify the relevant content and its reading orientation. If the image is sideways or upside down, consider which orientation makes the visible marks, labels, and layout coherent before interpreting them.
+    Then verify the answer against connected handwriting, equations, table rows and columns, diagram relationships, or the visible shape, logos, and readable text, as appropriate. Preserve the order and relationships of marks; do not invent characters, operators, or missing entries. Do not infer a product from packaging color or isolated words.
+    Treat unrelated prior images and memories as non-evidence. If multiple interpretations remain plausible, state the uncertainty rather than asserting an unsupported result.
     """
+  }
+
+  static func appendingInstruction(to prompt: String, mimeTypes: [String]) -> String {
+    let guidance = instructionForMimeTypes(mimeTypes)
+    guard !guidance.isEmpty, !prompt.contains(guidance) else { return prompt }
+    return prompt.isEmpty ? guidance : prompt + "\n\n" + guidance
   }
 
   static func invocation(
