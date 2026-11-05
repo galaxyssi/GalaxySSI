@@ -97,7 +97,10 @@ enum CloudVisionPayloadEncoder {
     }()
     var message = conversation[index]
     var content = contentParts(message["content"], textType: "text")
-    for image in currentImages {
+    let reference = images.count == 1 ? CloudVisionOrientationSheet.make(for: currentImages) : nil
+    let payloads = currentImages + (reference.map { [$0] } ?? [])
+    for (offset, image) in payloads.enumerated() {
+      if offset == currentImages.count { content.append(["type": "text", "text": CloudVisionOrientationSheet.guidance]) }
       content.append([
         "type": "image_url",
         "image_url": [
@@ -127,7 +130,10 @@ enum CloudVisionPayloadEncoder {
     }()
     var message = conversation[index]
     var content = contentParts(message["content"], textType: "text")
-    for image in currentImages {
+    let reference = images.count == 1 ? CloudVisionOrientationSheet.make(for: currentImages) : nil
+    let payloads = currentImages + (reference.map { [$0] } ?? [])
+    for (offset, image) in payloads.enumerated() {
+      if offset == currentImages.count { content.append(["type": "text", "text": CloudVisionOrientationSheet.guidance]) }
       content.append([
         "type": "image",
         "source": [
@@ -158,7 +164,10 @@ enum CloudVisionPayloadEncoder {
     }()
     var message = conversation[index]
     var parts = message["parts"] as? [[String: Any]] ?? []
-    for image in currentImages {
+    let reference = images.count == 1 ? CloudVisionOrientationSheet.make(for: currentImages) : nil
+    let payloads = currentImages + (reference.map { [$0] } ?? [])
+    for (offset, image) in payloads.enumerated() {
+      if offset == currentImages.count { parts.append(["text": CloudVisionOrientationSheet.guidance]) }
       parts.append([
         "inline_data": [
           "mime_type": image.mimeType,
