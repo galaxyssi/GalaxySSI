@@ -54,7 +54,9 @@ class HealthCaptureActivity : Activity() {
     private var querying = false
     private var dirty = false
     private var pendingCamera = ""
-    private var exportId = ""
+    private var pendingOriginalSave: HealthOriginalSaveScope? = null
+    private var originalSaveDialog: AlertDialog? = null
+    private var savingOriginal = false
     private var preview: android.app.Dialog? = null
     private var sourceView: HealthReviewSourceView? = null
     private var sourceBitmap: Bitmap? = null
@@ -109,7 +111,9 @@ class HealthCaptureActivity : Activity() {
         pickOnStart = state == null && intent.getBooleanExtra("health_pick_files", false)
         if (state == null) firstEntry = HealthCaptureEntry.entries.firstOrNull { it.name == intent.getStringExtra("health_capture_entry") }
         pendingCamera = state?.getString("camera") ?: getSharedPreferences("health_capture_pending", MODE_PRIVATE).getString("token", "").orEmpty()
-        exportId = state?.getString("export").orEmpty()
+        pendingOriginalSave = state?.getStringArrayList("original_save")
+            ?.takeIf { it.size == 2 && it.all(HealthProfilePolicy::uuid) }
+            ?.let { HealthOriginalSaveScope(it[0], it[1]) }
         fun restore(key: String) = state?.getStringArrayList(key).orEmpty().mapNotNull { value ->
             val parts = value.split('|'); val time = parts.firstOrNull()?.toLongOrNull()
             if (parts.size == 2 && time != null && runCatching { UUID.fromString(parts[1]) }.isSuccess) time to parts[1] else null
@@ -147,6 +151,7 @@ class HealthCaptureActivity : Activity() {
     override fun onPause() {
         originalRemovalRequest++
         originalRemovalDialog?.dismiss(); originalRemovalDialog = null
+        originalSaveDialog?.dismiss(); originalSaveDialog = null
         super.onPause()
     }
     override fun onStop() {
@@ -168,7 +173,8 @@ class HealthCaptureActivity : Activity() {
         out.putBoolean("original_only", originalOnly)
         retentionOverride?.let { out.putBoolean("retention_override", it) }
         pendingPickRetention?.let { out.putBoolean("pick_retention", it) }
-        out.putString("camera", pendingCamera); out.putString("export", exportId)
+        out.putString("camera", pendingCamera)
+        pendingOriginalSave?.let { out.putStringArrayList("original_save", arrayListOf(it.originalId, it.streamId)) }
         out.putStringArrayList("job_pages", ArrayList(jobPages.map { "${it.first}|${it.second}" }))
         out.putStringArrayList("record_pages", ArrayList(recordPages.map { "${it.measuredAt}|${it.id}" }))
         out.putStringArrayList("stack", ArrayList(stack.map { "${it.first}|${it.second}|${it.third}" }))
@@ -355,7 +361,9 @@ class HealthCaptureActivity : Activity() {
             original.source.takeIf { it.startsWith("crop:") }?.substringAfter("crop:")?.let { parent ->
                 ui.add(content, ui.row(getString(R.string.health_view_uncropped)) { open("original", parent) })
             }
-            ui.add(content, ui.row(getString(R.string.health_save_original)) { export(original) })
+            ui.add(content, ui.row(getString(if (savingOriginal) R.string.health_export_saving else R.string.health_save_original)) {
+                export(original)
+            }.apply { tag = "health-original-save"; isEnabled = !savingOriginal })
             ui.add(content, ui.row(getString(R.string.health_recognize_again)) {
                 importSource(HealthOriginalContentProvider.uri(this, original.id), originalOnly = false)
             })
@@ -760,18 +768,34 @@ class HealthCaptureActivity : Activity() {
                     ?: listOfNotNull(data?.data)
                 uris.distinct().forEach { importSource(it, retained = retention) }
             }
-        } else if (requestCode == EXPORT && resultCode == RESULT_OK) {
-            val uri = data?.data ?: return
-            val id = exportId
+        } else if (requestCode == EXPORT) {
+            val scope = pendingOriginalSave ?: return
+            pendingOriginalSave = null
+            val uri = data?.data?.takeIf { it.scheme == "content" }
+            if (resultCode != RESULT_OK) return
+            if (uri == null) { showFailure("save_failed"); return }
+            savingOriginal = true
+            refresh()
             worker.execute {
                 val result = runCatching {
-                    val original = originals.original(id) ?: throw HealthImportFailure("original_missing")
-                    HealthPrivacyStore.track(applicationContext, HealthAccessScope.originals(1)) {
-                        contentResolver.openOutputStream(uri, "wt")?.use { originals.copyVerified(original, it) }
-                            ?: throw HealthImportFailure("save_failed")
+                    HealthPrivacyStore.track(applicationContext, HealthAccessScope.originals(1), names.privacy) {
+                        HealthOriginalSave.saveVerified(originals, scope,
+                            { contentResolver.openOutputStream(uri, "wt") ?: throw HealthImportFailure("save_failed") },
+                            { contentResolver.openInputStream(uri) ?: throw HealthImportFailure("save_failed") },
+                            { android.provider.DocumentsContract.deleteDocument(contentResolver, uri) })
                     }
                 }
-                main.post { if (active) result.fold({ Toast.makeText(this, R.string.health_original_saved, Toast.LENGTH_LONG).show() }, { showFailure("save_failed") }) }
+                main.post {
+                    savingOriginal = false
+                    if (active) {
+                        result.fold({ Toast.makeText(this, R.string.health_original_saved, Toast.LENGTH_LONG).show() }, {
+                            if (it is HealthOriginalSaveChanged)
+                                Toast.makeText(this, R.string.health_original_save_changed, Toast.LENGTH_LONG).show()
+                            else showFailure("save_failed")
+                        })
+                        refresh()
+                    }
+                }
             }
         } else if (requestCode == CROP && resultCode == RESULT_OK) {
             val job = data?.getStringExtra(HEALTH_CROP_RESULT)?.takeIf(HealthProfilePolicy::uuid) ?: return
@@ -820,9 +844,26 @@ class HealthCaptureActivity : Activity() {
         startActivity(Intent(this, HealthCenterActivity::class.java).putExtra("health_manual", true))
     }
     private fun export(original: HealthOriginal) {
-        exportId = original.id
-        startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
-            .setType(original.mime.ifBlank { "application/octet-stream" }).putExtra(Intent.EXTRA_TITLE, original.name), EXPORT)
+        if (!active || original.reviewOnly || savingOriginal || pendingOriginalSave != null ||
+            originalSaveDialog?.isShowing == true || route != "original" || selectedId != original.id) return
+        val mime = original.mime.ifBlank { "application/octet-stream" }
+        val size = android.text.format.Formatter.formatShortFileSize(this, original.size)
+        originalSaveDialog = AlertDialog.Builder(this).setTitle(R.string.health_save_original)
+            .setMessage(getString(R.string.health_original_save_preview, original.name, mime, size))
+            .setNegativeButton(R.string.common_cancel, null)
+            .setPositiveButton(R.string.health_original_choose_destination) { _, _ ->
+                pendingOriginalSave = HealthOriginalSaveScope(original.id, original.streamId)
+                try {
+                    startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                        .setType(mime).putExtra(Intent.EXTRA_TITLE, original.name), EXPORT)
+                } catch (_: android.content.ActivityNotFoundException) {
+                    pendingOriginalSave = null
+                    showFailure("save_failed")
+                } catch (_: SecurityException) {
+                    pendingOriginalSave = null
+                    showFailure("save_failed")
+                }
+            }.show()
     }
     private fun crop(original: HealthOriginal) = withRetention { keepOriginal ->
         val item = ComposerAttachmentItem(original.id, HealthOriginalContentProvider.uri(this, original.id, names.fixture).toString(), original.name, original.mime, original.size, sendOriginal = true)

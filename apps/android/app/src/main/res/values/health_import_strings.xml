@@ -26,6 +26,9 @@
     <string name="health_original_missing">The original file is unavailable. Associated measurements remain separate.</string>
     <string name="health_open_original">Open original</string>
     <string name="health_save_original">Save original</string>
+    <string name="health_original_save_preview">%1$s\n%2$s · %3$s\n\nOnly this original will be saved, in its original format. No separate measurement records will be exported. The saved copy is not protected by app encryption. Choose a private destination.</string>
+    <string name="health_original_choose_destination">Choose destination</string>
+    <string name="health_original_save_changed">The selected original changed or is no longer available. Reopen it before saving.</string>
     <string name="health_recognize_again">Recognize this original</string>
     <string name="health_remove_original">Remove original file</string>
     <string name="health_remove_original_preview">%1$s · %2$s\n%3$d linked measurements will be kept.\n\nOnly this app’s original file will be removed. Recognition drafts and source information are retained. Existing backups and exports are unchanged.</string>
