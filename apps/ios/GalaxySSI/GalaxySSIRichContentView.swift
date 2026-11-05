@@ -814,7 +814,6 @@ private struct GalaxySSIRichBlockView: View {
                 block: block,
                 onLoaded: { loadedData in
                   inlineImageSize = GalaxySSIImageResourceDecoder.galleryThumbnailSize(from: loadedData)
-                  if loadedData.count <= GalaxySSIImageClipboard.maximumBytes { loadedClipboardImageData = loadedData }
                 }
               ) {
                 GalaxySSIRichImageFailureView()
@@ -844,19 +843,31 @@ private struct GalaxySSIRichBlockView: View {
         .onTapGesture {
           guard transferProgress == nil else { return }
           guard let item = makeImageViewerItem(
-            data: data ?? (usesPeerThumbnailCache ? localImageData : nil),
-            url: url,
+            data: usesPeerThumbnailCache ? GalaxySSIPeerImageThumbnailRepository.shared.originalData(for: block) : data,
+            url: usesPeerThumbnailCache ? nil : url,
             id: "\(block.id)-image",
             title: block.title
           ) else { return }
           imageViewerItem = item
         }
         .contextMenu {
-          if let bytes = data ?? loadedClipboardImageData ?? (usesPeerThumbnailCache ? localImageData : nil) {
+          if usesPeerThumbnailCache && transferProgress == nil {
+            Button {
+              if let bytes = GalaxySSIPeerImageThumbnailRepository.shared.originalData(for: block) {
+                _ = GalaxySSIImageClipboard.copy(bytes)
+              }
+            } label: {
+              Label(t("clipboard_image_copy", "Copy image"), systemImage: "doc.on.doc")
+            }
+          } else if let bytes = data ?? loadedClipboardImageData {
             Button { _ = GalaxySSIImageClipboard.copy(bytes) } label: {
               Label(t("clipboard_image_copy", "Copy image"), systemImage: "doc.on.doc")
             }
           }
+        }
+        .onChange(of: usesPeerThumbnailCache ? GalaxySSIPeerImageThumbnailPolicy.cacheIdentity(block) : "") { _ in
+          inlineImageSize = nil
+          loadedClipboardImageData = nil
         }
         .onDisappear { loadedClipboardImageData = nil }
         .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
@@ -919,11 +930,7 @@ private struct GalaxySSIRichBlockView: View {
   }
 
   private var usesEncryptedPeerThumbnailCache: Bool {
-    block.type == .image &&
-      block.dataB64.isBlank &&
-      block.metadata["source"] == "peer_message" &&
-      block.metadata["storage"] == "attachment_aes_256_gcm" &&
-      !(block.metadata["encryption_purpose"] ?? "").isBlank
+    GalaxySSIPeerImageThumbnailPolicy.isPrivatePeerImage(block)
   }
 
   @ViewBuilder
