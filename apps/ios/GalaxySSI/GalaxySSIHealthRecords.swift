@@ -151,6 +151,7 @@ struct GalaxySSIHealthRecords {
     var healthKitSelection: Set<String>?
     var healthKitReadAt: [String: Date]?
     var healthKitErasureLog: [GalaxySSIHealthKitCopies.Erasure]?
+    var metricErasureLog: [GalaxySSIHealthMetricHistory.Erasure]?
     var sleepReminders: GalaxySSIHealthSleepReminder.Ledger?
     var healthKitIncidents: [String: GalaxySSIHealthKitSync.Incident]?
     var derivesOverview: Bool?
@@ -306,6 +307,45 @@ struct GalaxySSIHealthRecords {
 
   func previewHealthKitErase(_ scope: GalaxySSIHealthKitImport.Scope) throws -> GalaxySSIHealthKitCopies.Plan {
     try makeHealthKitErasePlan(scope, archive: load())
+  }
+
+  func previewMetricErase(_ metric: GalaxySSIHealthMetric) throws -> GalaxySSIHealthMetricHistory.Plan {
+    try makeMetricErasePlan(metric, archive: load())
+  }
+
+  func eraseMetricHistory(_ expected: GalaxySSIHealthMetricHistory.Plan) throws -> Int {
+    var archive = try load()
+    let plan = try makeMetricErasePlan(expected.metric, archive: archive)
+    guard plan == expected else { throw Failure.stale }
+    let ids = Set(plan.versions.map(\.id))
+    archive.revisions.removeAll { ids.contains($0.id) }
+    if plan.draft != nil { archive.draft = nil }
+    archive.tableEvidence?.removeAll { ids.contains($0.target.record) }
+    archive.reportEvidence?.removeAll { ids.contains($0.target.record) }
+    var history = archive.metricErasureLog ?? []
+    history.append(.init(at: Date(), metric: plan.metric, records: plan.count))
+    archive.metricErasureLog = Array(history.suffix(50))
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+    return plan.count
+  }
+
+  private func makeMetricErasePlan(_ metric: GalaxySSIHealthMetric, archive: Archive) throws
+    -> GalaxySSIHealthMetricHistory.Plan {
+    let versions = archive.revisions.filter { $0.metric == metric }
+    let ids = Set(versions.map(\.id))
+    guard !ids.isEmpty, archive.revisions.allSatisfy({ !ids.contains($0.id) || $0.metric == metric }),
+          let start = versions.map(\.measuredAt).min(), let end = versions.map(\.measuredAt).max()
+    else { throw Failure.stale }
+    var seen = Set<UUID>()
+    let latest = versions.reversed().filter { seen.insert($0.id).inserted }
+    let counts = Dictionary(grouping: latest, by: GalaxySSIHealthMetricHistory.Source.init).mapValues(\.count)
+    return .init(metric: metric, start: start, end: end, counts: counts, versions: versions,
+      draft: archive.draft.flatMap { draft in
+        draft.existing.map { ids.contains($0.id) } == true ? draft : nil
+      },
+      tableLinks: (archive.tableEvidence ?? []).filter { ids.contains($0.target.record) },
+      reportLinks: (archive.reportEvidence ?? []).filter { ids.contains($0.target.record) })
   }
 
   func eraseHealthKitCopies(_ expected: GalaxySSIHealthKitCopies.Plan) throws -> Int {

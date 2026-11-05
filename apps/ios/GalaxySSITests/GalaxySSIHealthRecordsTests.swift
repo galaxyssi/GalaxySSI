@@ -5,6 +5,36 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  @MainActor
+  func testMetricErasureReviewsEverySourceAndKeepsOtherMetricsAndSync() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let manual = GalaxySSIHealthReading(metric: .bloodPressure, measuredAt: now, value: 122, diastolic: 82)
+    let imported = GalaxySSIHealthReading(metric: .bloodPressure, measuredAt: now, value: 120, diastolic: 80,
+      healthKitSource: .init(key: String(repeating: "a", count: 64), origin: "fixture", name: nil))
+    let packet = try XCTUnwrap(GalaxySSIHealthBluetoothPacket.decode(Data([0, 121, 0, 81, 0, 90, 0])))
+    let bluetooth = GalaxySSIHealthBluetoothReceipt(device: UUID(), receivedAt: now, packet: packet)
+    let weight = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 65)
+    try records.write(manual)
+    try records.write(weight)
+    try records.write(bluetooth.reading(conditions: ""))
+    _ = try records.importHealthKit([imported])
+    let checkpoint = try records.beginHealthKitSync(.bloodPressure, floor: now, reset: false)
+    let old = try records.previewMetricErase(.bloodPressure)
+    XCTAssertEqual(old.counts, [.manual: 1, .appleHealth: 1, .bluetooth: 1])
+    let current = try XCTUnwrap(records.load().current.first { $0.id == manual.id })
+    try records.storeDraft(.init(existing: current))
+    XCTAssertThrowsError(try records.eraseMetricHistory(old))
+    XCTAssertEqual(try records.eraseMetricHistory(records.previewMetricErase(.bloodPressure)), 3)
+    let archive = try records.load()
+    XCTAssertEqual(archive.revisions.map(\.id), [weight.id])
+    XCTAssertNil(archive.draft)
+    XCTAssertEqual(archive.healthKitSync?["bloodPressure"], checkpoint)
+    XCTAssertEqual(archive.metricErasureLog?.last?.metric, .bloodPressure)
+  }
+
   func testSleepReminderCoverageNormalizationAndRevocation() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))

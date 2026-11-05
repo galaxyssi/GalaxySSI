@@ -219,6 +219,25 @@ struct GalaxySSIHealthCenterView: View {
               } catch { privacySaveFailed = true }
             }))
         }
+        Section {
+          NavigationLink {
+            GalaxySSIHealthMetricHistoryView(records: records)
+          } label: {
+            Label(t("metric_erase.title", "Erase Measurement History"), systemImage: "trash")
+          }
+        }
+        if let events = archive.metricErasureLog, !events.isEmpty {
+          Section(t("metric_erase.history", "Measurement history erasures")) {
+            ForEach(events.reversed().prefix(privacyLimit)) { event in
+              VStack(alignment: .leading, spacing: 4) {
+                Text(title(event.metric))
+                Text(String(format: t("metric_erase.erased", "%lld measurements erased"), Int64(event.records)))
+                Text(event.at, style: .date).foregroundColor(.secondary)
+              }
+            }
+            if events.count > privacyLimit { Button(t("more", "Show more")) { privacyLimit += 20 } }
+          }
+        }
         Section(t("privacy.history", "Permission history")) {
           let events = archive.privacyEvents ?? []
           if events.isEmpty { Text(t("privacy.empty", "No permission changes")).foregroundColor(.secondary) }
