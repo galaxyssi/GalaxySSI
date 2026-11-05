@@ -489,6 +489,15 @@
 "galaxyssi.health.trend.refresh" = "刷新";
 "galaxyssi.health.trend.permission" = "请在健康隐私中开启本机测量摘要后查看趋势。";
 "galaxyssi.health.trend.metric" = "测量项目";
+"galaxyssi.health.trend.source_healthkit" = "Apple 健康";
+"galaxyssi.health.trend.source_report" = "来源：报告审核";
+"galaxyssi.health.trend.health_origin" = "Apple 健康来源";
+"galaxyssi.health.trend.health_origin_all" = "所有 Apple 健康来源";
+"galaxyssi.health.trend.health_origin_steps" = "Apple 健康每日步数汇总";
+"galaxyssi.health.trend.health_origin_unknown" = "未识别的 Apple 健康来源";
+"galaxyssi.health.trend.health_origin_unavailable" = "所选来源不可用";
+"galaxyssi.health.trend.health_origin_previous" = "上一页来源";
+"galaxyssi.health.trend.health_origin_next" = "下一页来源";
 "galaxyssi.health.trend.component" = "测量分项";
 "galaxyssi.health.trend.systolic" = "收缩压";
 "galaxyssi.health.trend.diastolic" = "舒张压";
