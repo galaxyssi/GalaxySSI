@@ -6,6 +6,71 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testUndoRebindsReportEvidenceAndCannotRecoverPermanentlyErasedHistory() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let original = GalaxySSIHealthOriginalStore.Original(id: UUID(), name: "fixture.pdf", kind: .pdf,
+      fileExtension: "pdf", importedAt: now, bytes: 1, sha256: String(repeating: "a", count: 64))
+    let reading = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 65)
+    try records.write(reading)
+    let source = GalaxySSIHealthReportReview.Source(original: original.id, sha256: original.sha256,
+      page: 0, region: 0, fromOCR: true)
+    var extracted = reading
+    extracted.reportSource = source
+    let item = GalaxySSIHealthReportReview.Item(version: UUID(), source: source, excerpt: "fixture", reading: extracted)
+    try records.stageReportItem(item, replacing: nil)
+    try records.linkReportDuplicates([item.version: .init(record: reading.id, revision: 1)], original: original)
+    var removed = try XCTUnwrap(records.load().current.first)
+    removed.deleted = true
+    try records.write(removed, rememberDeletion: true)
+    let token = try XCTUnwrap(records.load().lastMeasurementDeletion)
+    var restored = try records.undoMeasurementDeletion(token)
+    XCTAssertEqual(try records.load().reportEvidence?.map(\.target.revision), [1, 3])
+    restored.deleted = true
+    try records.write(restored, rememberDeletion: true)
+    let permanent = try XCTUnwrap(records.load().lastMeasurementDeletion)
+    XCTAssertEqual(try records.eraseMetricHistory(records.previewMetricErase(.weight)), 1)
+    XCTAssertNil(try records.load().lastMeasurementDeletion)
+    XCTAssertThrowsError(try records.undoMeasurementDeletion(permanent))
+  }
+
+  @MainActor
+  func testUndoMeasurementRestoresExactSourceAndRejectsConflictsAndStaleVersions() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let data = Data("value,time\n60,2025-01-01T12:00:00Z\n".utf8)
+    let mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true)
+    XCTAssertEqual(try records.importTable(data, name: "weight.csv", json: false, mapping: mapping,
+                                           expected: [.ready]), 1)
+    let original = try XCTUnwrap(records.load().current.first)
+    var tombstone = original
+    tombstone.deleted = true
+    try records.write(tombstone, rememberDeletion: true)
+    let reopened = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let deletion = try XCTUnwrap(reopened.load().lastMeasurementDeletion)
+    XCTAssertEqual(deletion.revision, 2)
+    XCTAssertTrue(try reopened.load().current.isEmpty)
+    XCTAssertThrowsError(try reopened.undoMeasurementDeletion(.init(id: UUID(), revision: 2)))
+    let conflict = GalaxySSIHealthReading(metric: .weight, measuredAt: original.measuredAt, value: 60)
+    try reopened.write(conflict)
+    XCTAssertThrowsError(try reopened.undoMeasurementDeletion(deletion))
+    XCTAssertEqual(try reopened.load().lastMeasurementDeletion, deletion)
+    var removeConflict = try XCTUnwrap(reopened.load().current.first)
+    removeConflict.deleted = true
+    try reopened.write(removeConflict)
+    let restored = try reopened.undoMeasurementDeletion(deletion)
+    XCTAssertEqual(restored.id, original.id)
+    XCTAssertEqual(restored.revision, 3)
+    XCTAssertEqual(restored.tableSource, original.tableSource)
+    XCTAssertNil(try reopened.load().lastMeasurementDeletion)
+    XCTAssertThrowsError(try reopened.undoMeasurementDeletion(deletion))
+  }
+
+  @MainActor
   func testReviewOnlyPhotoConvertsToPDFWithoutAnOriginalStore() throws {
     let image = UIGraphicsImageRenderer(size: CGSize(width: 16, height: 12)).jpegData(withCompressionQuality: 0.9) {
       UIColor.red.setFill()

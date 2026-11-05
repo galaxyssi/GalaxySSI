@@ -137,6 +137,11 @@ struct GalaxySSIHealthRecords {
     var backgroundCount: Int?
   }
 
+  struct MeasurementDeletion: Codable, Equatable {
+    let id: UUID
+    let revision: Int
+  }
+
   struct Archive: Codable {
     var reportReview: [GalaxySSIHealthReportReview.Item]?
     var reportEvidence: [GalaxySSIHealthReportReview.Evidence]?
@@ -150,6 +155,7 @@ struct GalaxySSIHealthRecords {
     var recordingReminders: GalaxySSIHealthRecordingReminders.Ledger?
     var restoreReceipts: Set<UUID>?
     var revisions: [GalaxySSIHealthReading] = []
+    var lastMeasurementDeletion: MeasurementDeletion?
     var draft: GalaxySSIHealthDraft?
     var healthKitSync: [String: GalaxySSIHealthKitSync.Checkpoint]?
     var healthKitSelection: Set<String>?
@@ -323,6 +329,7 @@ struct GalaxySSIHealthRecords {
     guard plan == expected else { throw Failure.stale }
     let ids = Set(plan.versions.map(\.id))
     archive.revisions.removeAll { ids.contains($0.id) }
+    if let deletion = archive.lastMeasurementDeletion, ids.contains(deletion.id) { archive.lastMeasurementDeletion = nil }
     if plan.draft != nil { archive.draft = nil }
     archive.tableEvidence?.removeAll { ids.contains($0.target.record) }
     archive.reportEvidence?.removeAll { ids.contains($0.target.record) }
@@ -358,6 +365,7 @@ struct GalaxySSIHealthRecords {
     guard current == expected else { throw Failure.stale }
     let ids = Set(current.versions.map(\.id))
     archive.revisions.removeAll { ids.contains($0.id) }
+    if let deletion = archive.lastMeasurementDeletion, ids.contains(deletion.id) { archive.lastMeasurementDeletion = nil }
     if let existing = archive.draft?.existing, ids.contains(existing.id) { archive.draft = nil }
     archive.tableEvidence?.removeAll { ids.contains($0.target.record) }
     archive.reportEvidence?.removeAll { ids.contains($0.target.record) }
@@ -393,6 +401,7 @@ struct GalaxySSIHealthRecords {
     guard current == expected else { throw Failure.stale }
     let ids = Set(current.versions.map(\.id))
     archive.revisions.removeAll { ids.contains($0.id) }
+    if let deletion = archive.lastMeasurementDeletion, ids.contains(deletion.id) { archive.lastMeasurementDeletion = nil }
     if let existing = archive.draft?.existing, ids.contains(existing.id) { archive.draft = nil }
     archive.tableEvidence?.removeAll { ids.contains($0.target.record) }
     archive.reportEvidence?.removeAll { ids.contains($0.target.record) }
@@ -493,11 +502,12 @@ struct GalaxySSIHealthRecords {
     try persist(archive)
   }
 
-  func write(_ input: GalaxySSIHealthReading, allowDuplicate: Bool = false, draftId: UUID? = nil) throws {
+  func write(_ input: GalaxySSIHealthReading, allowDuplicate: Bool = false, draftId: UUID? = nil,
+             rememberDeletion: Bool = false) throws {
     guard input.isValid else { throw Failure.invalid }
     var archive = try load()
     let latest = archive.revisions.last { $0.id == input.id }
-    guard (latest?.revision ?? 0) == input.revision, latest?.deleted != true,
+    guard (latest?.revision ?? 0) == input.revision, input.revision < Int.max, latest?.deleted != true,
           !input.deleted || latest != nil else { throw Failure.stale }
     if let latest {
       guard latest.bluetoothReceipt == input.bluetoothReceipt, latest.tableSource == input.tableSource,
@@ -516,6 +526,10 @@ struct GalaxySSIHealthRecords {
     var revision = input
     revision.revision += 1
     archive.revisions.append(revision)
+    if rememberDeletion && revision.deleted {
+      archive.lastMeasurementDeletion = .init(id: revision.id, revision: revision.revision)
+      if archive.draft?.existing?.id == revision.id { archive.draft = nil }
+    }
     if let draftId, archive.draft?.id == draftId { archive.draft = nil }
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
@@ -705,6 +719,64 @@ struct GalaxySSIHealthRecords {
     archive.reportReview = pending.filter { selected[$0.version] == nil }
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+  }
+
+  func undoMeasurementDeletion(_ deletion: MeasurementDeletion) throws -> GalaxySSIHealthReading {
+    var archive = try load()
+    guard (2..<Int.max).contains(deletion.revision),
+          let tombstone = archive.revisions.last(where: { $0.id == deletion.id }),
+          tombstone.deleted, tombstone.revision == deletion.revision,
+          let previous = archive.revisions.last(where: {
+            $0.id == deletion.id && $0.revision == deletion.revision - 1 && !$0.deleted
+          }) else { throw Failure.stale }
+    var restored = tombstone
+    restored.deleted = false
+    restored.revision = previous.revision
+    guard restored == previous, restored.isValid,
+          archive.draft?.existing?.id != deletion.id,
+          !((archive.tableBatches ?? []).contains {
+            $0.id == restored.tableSource?.batch && $0.undone != nil
+          }) else { throw Failure.stale }
+    let current = archive.current
+    guard !current.contains(where: { current in
+      if current.sameMeasurement(as: restored) { return true }
+      if let key = restored.healthKitSource?.key, current.healthKitSource?.key == key { return true }
+      if let receipt = restored.bluetoothReceipt, let other = current.bluetoothReceipt,
+         receipt.isReplay(of: other) { return true }
+      if let source = restored.tableSource, let other = current.tableSource,
+         source.batch == other.batch && source.row == other.row { return true }
+      return false
+    }) else { throw Failure.duplicate }
+    let reports = (archive.reportEvidence ?? []).filter {
+      $0.target.record == deletion.id && $0.target.revision == previous.revision
+    }
+    let tables = (archive.tableEvidence ?? []).filter {
+      $0.target.record == deletion.id && $0.target.revision == previous.revision
+    }
+    let reportSources = reports.map(\.source) + (restored.reportSource.map { [$0] } ?? []) +
+      (restored.secondarySources?.reports ?? [])
+    let liveIDs = Set(current.map(\.id))
+    guard !current.contains(where: { reading in
+      reportSources.contains { reading.reportSource == $0 || reading.secondarySources?.reports.contains($0) == true }
+    }), !(archive.reportEvidence ?? []).contains(where: {
+      liveIDs.contains($0.target.record) && reportSources.contains($0.source)
+    }) else { throw Failure.duplicate }
+    restored.revision = deletion.revision + 1
+    if !reports.isEmpty {
+      archive.reportEvidence = (archive.reportEvidence ?? []) + reports.map {
+        .init(target: .init(record: restored.id, revision: restored.revision), source: $0.source, excerpt: $0.excerpt)
+      }
+    }
+    if !tables.isEmpty {
+      archive.tableEvidence = (archive.tableEvidence ?? []) + tables.map {
+        .init(target: .init(record: restored.id, revision: restored.revision), source: $0.source)
+      }
+    }
+    archive.revisions.append(restored)
+    if archive.lastMeasurementDeletion == deletion { archive.lastMeasurementDeletion = nil }
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+    return restored
   }
 
   func importTable(_ data: Data, name: String, json: Bool, mapping: GalaxySSIHealthTableImport.Mapping,

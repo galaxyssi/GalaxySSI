@@ -5924,3 +5924,7 @@
 "galaxyssi.collaboration.no_results" = "暂无成员结果。";
 "galaxyssi.collaboration.results_unavailable" = "无法读取成员结果。";
 "galaxyssi.collaboration.older_results" = "更早的结果";
+"galaxyssi.health.resume_removal" = "查看最近删除的测量";
+"galaxyssi.health.measurement_removed" = "测量已删除";
+"galaxyssi.health.undo_removal" = "撤销删除";
+"galaxyssi.health.undo_conflict" = "另一条测量与此记录冲突，无法撤销删除。";
