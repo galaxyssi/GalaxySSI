@@ -738,6 +738,7 @@ struct ConversationView: View {
             purpose: "chat_message",
             isPersonContact: isPhonePersonContact
           ),
+          attachmentScope: contact.id + ":" + (visibleAgentConversationId ?? ""),
           onNewSession: createAgentConversationFromChat,
           onOpenSessions: openAgentSessionsFromChat,
           onScan: openContactScannerFromChat,

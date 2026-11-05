@@ -152,6 +152,7 @@ struct GalaxySSIAgentExecutionStatusCard: View {
   var duration: String = ""
   var liveDurationStartMillis: Int64 = 0
   var liveDurationFormatter: ((Int64) -> String)?
+  var inactiveTitle = ""
   var detailsTitle: String = ""
   var details: [String] = []
   var canResume: Bool
@@ -176,7 +177,7 @@ struct GalaxySSIAgentExecutionStatusCard: View {
             .foregroundColor(.galaxySSITextPrimary)
             .lineLimit(1)
         }
-      } else if !duration.isEmpty {
+      } else if !duration.isEmpty || !inactiveTitle.isEmpty {
         Text(processingSummary(duration))
           .font(.system(size: 13))
           .foregroundColor(.galaxySSITextPrimary)
@@ -232,7 +233,8 @@ struct GalaxySSIAgentExecutionStatusCard: View {
   }
 
   private func processingSummary(_ duration: String) -> String {
-    AgentTranscriptPresentationPolicy.processedSummary(
+    if !inactiveTitle.isEmpty { return duration.isEmpty ? inactiveTitle : inactiveTitle + " \u{00B7} " + duration }
+    return AgentTranscriptPresentationPolicy.processedSummary(
       completed: completed,
       duration: duration,
       processingFormat: t("galaxyssi.agent.trace.processing", "Working for %@"),

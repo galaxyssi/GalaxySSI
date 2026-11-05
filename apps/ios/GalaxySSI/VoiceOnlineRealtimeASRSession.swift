@@ -1,10 +1,25 @@
 import Foundation
 
+struct VoiceRealtimeInputIntegrity {
+  private(set) var nextSequence: Int64 = 0
+  private(set) var incomplete = false
+
+  func expects(_ sequence: Int64) -> Bool { nextSequence == sequence }
+  mutating func observe(_ sequence: Int64) {
+    if !expects(sequence) { incomplete = true }
+    nextSequence = sequence &+ 1
+  }
+  mutating func markLoss() { incomplete = true }
+  mutating func finish(expectedFrameCount: Int64?) {
+    if let expectedFrameCount, expectedFrameCount != nextSequence { markLoss() }
+  }
+}
+
 actor VoiceOnlineRealtimeASRSession {
   typealias EventHandler = (VoiceOnlineRealtimeASREvent) -> Void
 
   private struct QueuedBatch {
-    let data: Data
+    var data: Data
     let sampleCount: Int
   }
 
@@ -35,7 +50,7 @@ actor VoiceOnlineRealtimeASRSession {
   private var sentAudioSamples: Int64 = 0
   private var audioSent = false
   private var highestRevision = -1
-  private var lastInputFrameSequence: Int64?
+  private var inputIntegrity = VoiceRealtimeInputIntegrity()
   private var pendingSamples: [Int16] = []
   private var pendingFirstSequence: Int64 = 0
   private var pendingLastSequence: Int64 = 0
@@ -113,12 +128,11 @@ actor VoiceOnlineRealtimeASRSession {
     }
     let converted = Self.resampleTo16k(frame.samples, sourceRateHz: sourceSampleRateHz)
     guard !converted.isEmpty else { return }
-    if let previous = lastInputFrameSequence,
-       frame.sequence != previous + 1,
-       !pendingSamples.isEmpty {
+    let contiguous = inputIntegrity.expects(frame.sequence)
+    inputIntegrity.observe(frame.sequence)
+    if !contiguous, !pendingSamples.isEmpty {
       await flushPending()
     }
-    lastInputFrameSequence = frame.sequence
     if pendingSamples.isEmpty {
       pendingFirstSequence = frame.sequence
       pendingFirstCaptureNanos = frame.captureTimeNanos
@@ -141,17 +155,16 @@ actor VoiceOnlineRealtimeASRSession {
     }
   }
 
-  func finishInput() async {
+  func finishInput(expectedFrameCount: Int64? = nil) async {
     guard !closed else { return }
     guard !finishRequested else { return }
     finishRequested = true
+    inputIntegrity.finish(expectedFrameCount: expectedFrameCount)
+    guard !inputIntegrity.incomplete else { rejectIncompleteInput(); return }
     await flushPending()
+    guard !inputIntegrity.incomplete else { rejectIncompleteInput(); return }
     guard outboundQueue.count < Self.maximumQueuedBatches else {
-      fail(
-        code: "send_queue_overflow",
-        message: "Realtime ASR send queue reached its capacity before input could finish.",
-        retryable: false
-      )
+      rejectIncompleteInput()
       return
     }
     outboundQueue.append(.finish)
@@ -194,19 +207,15 @@ actor VoiceOnlineRealtimeASRSession {
       lastCaptureTimeNanos: lastCaptureNanos,
       samples: samples
     )
-    let queued = QueuedBatch(
+    var queued = QueuedBatch(
       data: VoiceOnlineRealtimeASRProtocol.encodeAudio(batch),
       sampleCount: batch.samples.count
     )
     batch.samples = Array(repeating: 0, count: batch.samples.count)
     guard outboundQueue.count < Self.maximumQueuedBatches else {
       droppedAudioBatches += 1
-      emitFailure(
-        code: "send_queue_overflow",
-        message: "Realtime ASR audio queue reached its capacity.",
-        retryable: false,
-        fatal: false
-      )
+      inputIntegrity.markLoss()
+      queued.data.resetBytes(in: 0..<queued.data.count)
       return
     }
     outboundQueue.append(.audio(queued))
@@ -314,6 +323,7 @@ actor VoiceOnlineRealtimeASRSession {
             guard acceptRevision(hypothesis.revision, allowSame: stable) else { continue }
           case .final(let hypothesis):
             guard hypothesis.transcriptId == config.transcriptID, !finalSeen else { continue }
+            guard !inputIntegrity.incomplete else { rejectIncompleteInput(); return }
             finalSeen = true
             highestRevision = max(highestRevision, hypothesis.revision)
             eventHandler(event)
@@ -459,6 +469,10 @@ actor VoiceOnlineRealtimeASRSession {
     )))
   }
 
+  private func rejectIncompleteInput() {
+    fail(code: "online_input_incomplete", message: "Realtime ASR audio was incomplete.", retryable: false)
+  }
+
   private func close(reasonCode: String, emitClosed: Bool = true) {
     guard !closed else { return }
     let providerID = credential?.providerID ?? "galaxyssi_realtime"
@@ -476,7 +490,9 @@ actor VoiceOnlineRealtimeASRSession {
     credential = nil
     pendingSamples = Array(repeating: 0, count: pendingSamples.count)
     pendingSamples.removeAll(keepingCapacity: false)
-    outboundQueue.removeAll(keepingCapacity: false)
+    while let queued = outboundQueue.popLast() {
+      if case .audio(var batch) = queued { batch.data.resetBytes(in: 0..<batch.data.count) }
+    }
     if emitClosed, !terminalEventSent {
       terminalEventSent = true
       eventHandler(.closed(

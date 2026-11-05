@@ -38,7 +38,7 @@ internal object HealthOverviewRepository {
             HealthOverviewMetric(metric, observation, HealthOverviewPolicy.freshness(metric, observation?.draft?.measuredAt, now, zone))
         }
         val hasRecords = metrics.any { it.record != null } || records.overviewLatestSelf(null, now) != null
-        val reviews = runCatching { review(context, records, names) }
+        val reviews = runCatching { pendingReviews(context, records, names, limit = 2, onePerKind = true) }
         val derived = runCatching { derive(context, records, names, now, zone, versions.getValue(HealthMetric.SLEEP_DURATION),
             metrics.any { it.metric == HealthMetric.SLEEP_DURATION && it.record != null }) }.getOrElse {
             if (it is HealthAccessBlocked) HealthOverviewDerived(permitted = false) else HealthOverviewDerived(unavailable = true)
@@ -48,21 +48,29 @@ internal object HealthOverviewRepository {
             listOfNotNull(derived.alert?.let { HealthOverviewAttention.Change(it) }) + reviews.getOrDefault(emptyList()), reviews.isFailure)
     }
 
-    private fun review(context: Context, records: HealthRecordStore, names: HealthOverviewDatabases): List<HealthOverviewAttention.Review> {
-        if (!context.getDatabasePath(names.originals).exists()) return emptyList()
+    fun pendingReviews(context: Context, records: HealthRecordStore, names: HealthOverviewDatabases, limit: Int,
+                       onePerKind: Boolean = false): List<HealthOverviewAttention.Review> {
+        if (!context.getDatabasePath(names.originals).exists() &&
+            (names.fixture != null || !context.getDatabasePath(names.records).exists())) return emptyList()
         return HealthOriginalStore(context, names.originals, names.originalRoot(context)).use { originals ->
             val candidates = originals.overviewReviewJobs()
             if (candidates.isEmpty()) return@use emptyList()
-            HealthTableStore(context, names.records).use { tables -> candidates.mapNotNull { job ->
-                val kind = when (job.state) {
-                    HealthImportState.TABLE_REVIEW -> tables.batch(job.id)?.takeIf { it.originalId == job.originalId && it.state in setOf(
-                        HealthTableState.SHEET_SELECTION, HealthTableState.MAPPING, HealthTableState.READY) }?.let { HealthOverviewReviewKind.TABLE }
-                    HealthImportState.REVIEW -> if (job.nextPage > 0 && job.originalId.isNotBlank() &&
-                        (records.overviewHasOcrDraft(job.id) || !records.overviewHasOriginalHistory(job.originalId))) HealthOverviewReviewKind.OCR else null
-                    else -> null
+            HealthTableStore(context, names.records).use { tables ->
+                val eligible = candidates.asSequence().mapNotNull { job ->
+                    val kind = when (job.state) {
+                        HealthImportState.TABLE_REVIEW -> tables.batch(job.id)?.takeIf { it.originalId == job.originalId && it.state in setOf(
+                            HealthTableState.SHEET_SELECTION, HealthTableState.MAPPING, HealthTableState.READY) }?.let { HealthOverviewReviewKind.TABLE }
+                        HealthImportState.REVIEW -> if (job.nextPage > 0 && job.originalId.isNotBlank() &&
+                            (records.overviewHasOcrDraft(job.id) || !records.overviewHasOriginalHistory(job.originalId))) HealthOverviewReviewKind.OCR else null
+                        else -> null
+                    }
+                    kind?.let { job to it }
                 }
-                kind?.let { HealthOverviewAttention.Review(job.id, it, job.createdAt) }
-            }.distinctBy { it.kind }.take(2) }
+                (if (onePerKind) eligible.distinctBy { it.second } else eligible).take(limit).map { (job, kind) ->
+                    val name = originals.originalForJob(job.id)?.takeIf { it.id == job.originalId }?.name.orEmpty()
+                    HealthOverviewAttention.Review(job.id, kind, job.createdAt, name)
+                }.toList()
+            }
         }
     }
 

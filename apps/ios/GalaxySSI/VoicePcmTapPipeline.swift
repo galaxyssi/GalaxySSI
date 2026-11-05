@@ -21,6 +21,8 @@ final class VoicePcmTapPipeline {
     locked { (vad as? VoiceNeuralSpeechVad)?.usingNeural == true && !confirmedSpeech }
   }
 
+  var capturedFrameCount: Int64 { locked { sequence } }
+
   init(
     config: VoiceAudioSessionConfig,
     vad: VoiceActivityDetector = AdaptiveSpeechVad(),

@@ -30,6 +30,48 @@ final class VoiceAdaptiveDetectionTests: XCTestCase {
     state.phase = .listening
     XCTAssertEqual(VoiceInputCaptionPolicy.text(state, capturing: false, submittedSession: ""), "")
   }
+  func testContinuousEndpointUsesSpokenSpanRatherThanGrowingSilence() {
+    for (spokenFrames, silenceFrames) in [(55, 50), (245, 60), (250, 70)] {
+      let detector = AdaptiveEndpointDetector(sampleRateHz: 16_000, config: .continuous)
+      let samples = [Int16](repeating: 0, count: 320)
+      for sequence in 0..<spokenFrames {
+        XCTAssertNil(detector.accept(frame(sequence: Int64(sequence), samples: samples), vad: speechDecision()).endpointReason)
+      }
+      var pause = silenceDecision()
+      pause.speechEndedCandidate = true
+      for sequence in 0..<(silenceFrames - 1) {
+        let update = detector.accept(frame(sequence: Int64(spokenFrames + sequence), samples: samples), vad: pause)
+        XCTAssertNil(update.endpointReason)
+        XCTAssertFalse(update.speechEndedCandidate)
+      }
+      let final = detector.accept(frame(sequence: Int64(spokenFrames + silenceFrames - 1), samples: samples), vad: pause)
+      XCTAssertEqual(final.endpointReason, .trailingSilence)
+      XCTAssertTrue(final.speechEndedCandidate)
+    }
+  }
+
+  func testRealtimeInputIntegrityRejectsGapsQueueLossAndMissingTail() {
+    var input = VoiceRealtimeInputIntegrity()
+    input.observe(0)
+    input.observe(1)
+    input.finish(expectedFrameCount: 2)
+    XCTAssertFalse(input.incomplete)
+    input.observe(3)
+    input.observe(4)
+    XCTAssertTrue(input.incomplete)
+
+    var tail = VoiceRealtimeInputIntegrity()
+    tail.observe(0)
+    tail.finish(expectedFrameCount: 2)
+    XCTAssertTrue(tail.incomplete)
+
+    var overflow = VoiceRealtimeInputIntegrity()
+    overflow.markLoss()
+    overflow.observe(0)
+    overflow.finish(expectedFrameCount: 1)
+    XCTAssertTrue(overflow.incomplete)
+  }
+
   func testNeuralVadResamplesAcrossTapsAndAppliesAttackAndReleaseHysteresis() {
     var scores: [Float] = [0.7, 0.7, 0.4, 0.1, 0.1, 0.1, 0.1]
     var resets = 0

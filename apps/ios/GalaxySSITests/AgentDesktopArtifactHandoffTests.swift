@@ -216,6 +216,33 @@ final class AgentDesktopArtifactHandoffTests: XCTestCase {
     XCTAssertNotEqual(try Data(contentsOf: encrypted), bytes)
   }
 
+  func testInlineHTMLRequiresStoredMatchingArtifactAndPreservesBytes() throws {
+    let cipher = GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let root = temporaryDirectory("inline-html")
+    let store = AgentDesktopArtifactStore(rootURL: root, cipher: cipher)
+    let html = "<canvas></canvas><script>requestAnimationFrame(() => {});</script>"
+    let bytes = Data(html.utf8)
+    let digest = sha256(bytes)
+    let uri = "galaxyssi-artifact://task/outputs/animation.html"
+    let artifactID = sha256(Data("\(uri)\u{0}\(digest)".utf8))
+    var chunk = payload(artifactId: artifactID, artifactURI: uri, fullDigest: digest,
+      fullSize: bytes.count, index: 0, count: 1, chunk: bytes, originalSize: bytes.count)
+    chunk["name"] = "animation.html"
+    chunk["mime_type"] = "text/html"
+    XCTAssertTrue(try store.ingest(chunk).completed)
+    let block = AgentRichBlock(id: "animation", type: .file, title: "animation.html", uri: uri,
+      mimeType: "text/html", metadata: ["sha256": digest])
+    XCTAssertTrue(store.hasStoredArtifact(block))
+    XCTAssertEqual(try store.inlineHTML(for: block), html)
+    var mismatched = block
+    mismatched.metadata["sha256"] = String(repeating: "0", count: 64)
+    XCTAssertNil(try store.inlineHTML(for: mismatched))
+    var external = block
+    external.uri = "https://example.com/animation.html"
+    XCTAssertNil(try store.inlineHTML(for: external))
+    XCTAssertEqual(try Data(contentsOf: XCTUnwrap(store.localFile(for: block))), bytes)
+  }
+
   func testCompressedArtifactAcceptsCompleteOriginalIdentityAndRejectsMixedVersions() throws {
     let cipher = GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())
     let root = temporaryDirectory("compressed-artifact")
