@@ -12,6 +12,7 @@ struct GalaxySSIHealthTableImportView: View {
   @State private var rows: [GalaxySSIHealthTableImport.Row]?
   @State private var batches: [GalaxySSIHealthTableImport.Batch] = []
   @State private var owned = false
+  @State private var linkedRows: Set<Int> = []
   @State private var limit = 30
   @State private var undo: GalaxySSIHealthTableImport.Batch?
   @State private var message: String?
@@ -56,6 +57,9 @@ struct GalaxySSIHealthTableImportView: View {
                 Text(batch.name)
                 Text(batch.at, style: .date).foregroundColor(.secondary)
                 Text(String(format: t("saved", "%lld measurements saved"), Int64(batch.inserted)))
+                if let linked = batch.linked {
+                  Text(String(format: t("linked", "%lld source links"), Int64(linked))).foregroundColor(.secondary)
+                }
                 Button(t("open_source", "View table original")) { original = OriginalSelection(id: batch.id) }
                 if let count = batch.undone {
                   Text(String(format: t("undone", "%lld measurements removed"), Int64(count)))
@@ -78,7 +82,7 @@ struct GalaxySSIHealthTableImportView: View {
       else if phase == .background { clear(); batches = []; undo = nil; original = nil; message = nil }
     }
     .onDisappear { clear(); batches = []; undo = nil; message = nil }
-    .onChange(of: mapping) { _ in rows = nil; owned = false }
+    .onChange(of: mapping) { _ in rows = nil; owned = false; linkedRows = [] }
     .fileImporter(isPresented: $choosing, allowedContentTypes: [.commaSeparatedText, .json,
       UTType(filenameExtension: "xlsx") ?? .spreadsheet]) { result in
       guard scene != .background else { return }
@@ -205,11 +209,18 @@ struct GalaxySSIHealthTableImportView: View {
             Text(row.rawValue).lineLimit(2).foregroundColor(.secondary)
           }
           Text(t("source_time", "Source time") + ": " + row.rawDate).lineLimit(2).foregroundColor(.secondary)
+          if row.duplicateTarget != nil {
+            Toggle(t("link_duplicate", "Link this row to the existing measurement"), isOn: Binding(
+              get: { linkedRows.contains(row.id) }, set: {
+                owned = false
+                if $0 { linkedRows.insert(row.id) } else { linkedRows.remove(row.id) }
+              }))
+          }
         }
       }
       if rows.count > limit { Button(t("more", "Show more")) { limit += 30 } }
       Toggle(t("owned", "These measurements are mine and I checked values, units and times"), isOn: $owned)
-      Button(t("save", "Save valid rows"), action: save).disabled(!owned || ready == 0)
+      Button(t("save", "Save valid rows"), action: save).disabled(!owned || (ready == 0 && linkedRows.isEmpty))
     }
   }
 
@@ -283,6 +294,7 @@ struct GalaxySSIHealthTableImportView: View {
   private func prepare() {
     guard scene == .active, let input else { return }
     rows = nil
+    linkedRows = []
     owned = false
     message = nil
     limit = 30
@@ -293,11 +305,18 @@ struct GalaxySSIHealthTableImportView: View {
   private func save() {
     guard scene == .active, owned, let input, let rows else { return }
     do {
+      let targets = Dictionary(rows.compactMap { row in
+        linkedRows.contains(row.id) ? row.duplicateTarget.map { (row.id, $0) } : nil
+      }, uniquingKeysWith: { first, _ in first })
       let count = try records.importTable(input.data, name: input.name, json: input.json,
-                                          mapping: mapping, expected: rows.map(\.status), worksheet: input.worksheet)
+                                          mapping: mapping, expected: rows.map(\.status), worksheet: input.worksheet,
+                                          linkDuplicates: targets)
       clear()
       reload()
       message = String(format: t("saved", "%lld measurements saved"), Int64(count))
+      if !targets.isEmpty {
+        message = (message ?? "") + " · " + String(format: t("linked", "%lld source links"), Int64(targets.count))
+      }
     } catch {
       prepare()
       message = t("save_failed", "Could not save this batch. Review the rows again.")
@@ -324,6 +343,7 @@ struct GalaxySSIHealthTableImportView: View {
   private func clear() {
     input = nil; rows = nil; owned = false; mapping = .init()
     workbook = nil; sheetID = ""; header = 0; headerChoices = []
+    linkedRows = []
   }
   private func statusTitle(_ status: GalaxySSIHealthTableImport.Status) -> String {
     switch status {

@@ -57,6 +57,9 @@ struct GalaxySSIHealthTableSourceView: View {
   @State private var document: TableOriginalDocument?
   @State private var workbook: GalaxySSIHealthXLSX?
   @State private var sheetID = ""
+  @State private var linked: [GalaxySSIHealthTableImport.LinkedReading] = []
+  @State private var linkedLimit = 30
+  @State private var confirmingLinked = false
 
   var body: some View {
     List {
@@ -95,6 +98,22 @@ struct GalaxySSIHealthTableSourceView: View {
             }
           }
         }
+        if !linked.isEmpty {
+          Section(t("linked_records", "Linked measurements")) {
+            ForEach(linked.prefix(linkedLimit)) { item in
+              VStack(alignment: .leading, spacing: 4) {
+                Text(item.reading.metric.title(language: language))
+                Text(String(format: t("row", "Source row %lld"), Int64(item.source.row)) + " · " +
+                  String(format: t("link_revision", "Revision %lld"), Int64(item.reading.revision)))
+                  .foregroundColor(.secondary)
+                Text(item.secondary ? t("secondary_link", "Additional source") : t("primary_link", "Primary source"))
+                  .foregroundColor(.secondary)
+              }
+            }
+            if linked.count > linkedLimit { Button(t("links_more", "Show more links")) { linkedLimit += 30 } }
+            Button(t("export_linked", "Export linked measurements and original")) { confirmingLinked = true }
+          }
+        }
         if error {
           Text(t("unavailable", "The original or its preview is unavailable.")).foregroundColor(.secondary)
           Button(t("reload", "Reload original"), action: reload)
@@ -112,12 +131,21 @@ struct GalaxySSIHealthTableSourceView: View {
         workbook = nil
         sheetID = ""
         confirming = false
+        confirmingLinked = false
+        linked = []
         if !exporting { document = nil }
       }
     }
     .confirmationDialog(t("unencrypted", "Save the unencrypted original?"), isPresented: $confirming,
                         titleVisibility: .visible) {
       Button(t("save", "Save original file"), action: save)
+    }
+    .confirmationDialog(t("unencrypted_linked", "Save an unencrypted ZIP with measurements and the original?"),
+                        isPresented: $confirmingLinked, titleVisibility: .visible) {
+      Button(t("export_linked", "Export linked measurements and original"), action: saveLinked)
+    }
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.trendInputsChanged)) {
+      if $0.object as? String == records.owner { confirmingLinked = false; reload() }
     }
     .fileExporter(isPresented: $exporting, document: document,
                   contentType: document?.type ?? .data, defaultFilename: document?.name) { result in
@@ -145,9 +173,11 @@ struct GalaxySSIHealthTableSourceView: View {
     sample = nil
     workbook = nil
     sheetID = ""
+    linked = []
     error = false
     do {
       let batch = try batch()
+      linked = try linkedReadings(batch)
       name = batch.name
       let ext = URL(fileURLWithPath: batch.name).pathExtension.lowercased()
       if ext == "xlsx" {
@@ -157,6 +187,24 @@ struct GalaxySSIHealthTableSourceView: View {
       } else {
         sample = GalaxySSIHealthTableSourceSample(try GalaxySSIHealthTableImport.parse(batch.data, json: ext == "json"))
       }
+    } catch { error = true }
+  }
+
+  private func linkedReadings(_ batch: GalaxySSIHealthTableImport.Batch) throws -> [GalaxySSIHealthTableImport.LinkedReading] {
+    let archive = try records.load()
+    return GalaxySSIHealthTableImport.linkedReadings(batch: batch, revisions: archive.revisions,
+      current: archive.current, evidence: archive.tableEvidence ?? [])
+  }
+
+  private func saveLinked() {
+    guard scene == .active else { return }
+    do {
+      let batch = try batch()
+      let fresh = try linkedReadings(batch)
+      guard !fresh.isEmpty, fresh == linked else { throw GalaxySSIHealthTableImport.Failure.stale }
+      let data = try GalaxySSIHealthTableImport.exportLinkedReadings(fresh, batch: batch)
+      document = TableOriginalDocument(data: data, type: .zip, name: "GalaxySSI-Health-Table.zip")
+      exporting = true
     } catch { error = true }
   }
 
@@ -193,7 +241,7 @@ struct GalaxySSIHealthTableSourceView: View {
 
 private struct TableOriginalDocument: FileDocument {
   static let workbookType = UTType(filenameExtension: "xlsx") ?? .spreadsheet
-  static var readableContentTypes: [UTType] { [.commaSeparatedText, .json, workbookType] }
+  static var readableContentTypes: [UTType] { [.commaSeparatedText, .json, workbookType, .zip] }
   let data: Data
   let type: UTType
   let name: String
