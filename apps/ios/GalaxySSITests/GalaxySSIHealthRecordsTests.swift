@@ -5,6 +5,36 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testReportReviewBatchIsAtomicAndVersionPinned() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let original = GalaxySSIHealthOriginalStore.Original(id: UUID(), name: "report.pdf", kind: .pdf,
+      fileExtension: "pdf", importedAt: Date(), bytes: 1, sha256: String(repeating: "a", count: 64))
+    let date = Date()
+    func item(_ page: Int, value: Decimal) -> GalaxySSIHealthReportReview.Item {
+      let source = GalaxySSIHealthReportReview.Source(original: original.id, sha256: original.sha256,
+        page: page, region: 0, fromOCR: true)
+      return .init(version: UUID(), source: source, excerpt: "Fixture",
+        reading: .init(metric: .weight, measuredAt: date, value: value, reportSource: source))
+    }
+    let first = item(0, value: 61)
+    let second = item(1, value: 62)
+    try records.stageReportItem(first, replacing: nil)
+    try records.stageReportItem(second, replacing: nil)
+    let updated = item(1, value: 63)
+    try records.stageReportItem(updated, replacing: second.version)
+    XCTAssertThrowsError(try records.confirmReportItems([first.version, second.version], original: original))
+    try records.write(.init(metric: .weight, measuredAt: date, value: 63))
+    XCTAssertThrowsError(try records.confirmReportItems([first.version, updated.version], original: original))
+    XCTAssertEqual(try records.load().current.count, 1)
+    XCTAssertEqual(try records.load().reportReview?.count, 2)
+    try records.confirmReportItems([first.version], original: original)
+    XCTAssertEqual(try records.load().current.count, 2)
+    XCTAssertEqual(try records.load().reportReview?.map(\.version), [updated.version])
+  }
+
+  @MainActor
   func testHealthBackupAuthenticatesOriginalsAndLeavesLocalRecordsUntouched() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
