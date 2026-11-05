@@ -626,6 +626,7 @@
     A10000000000000000000582 /* VoiceSpeechCaptureCoordinatorBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000582 /* VoiceSpeechCaptureCoordinatorBridge.swift */; };
     A10000000000000000000584 /* VoiceTranscriptRoutePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000584 /* VoiceTranscriptRoutePolicy.swift */; };
     A10000000000000000000586 /* VoiceReplyPlaybackPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000586 /* VoiceReplyPlaybackPolicy.swift */; };
+    A100000000000000000009F0 /* VoiceReminderSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009F0 /* VoiceReminderSnapshot.swift */; };
     A10000000000000000000587 /* VoiceReplySpeechService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000587 /* VoiceReplySpeechService.swift */; };
     A10000000000000000000589 /* VoiceLatencyTracer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000589 /* VoiceLatencyTracer.swift */; };
     A10000000000000000000617 /* VoiceLatencyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000617 /* VoiceLatencyModels.swift */; };
@@ -1932,6 +1933,7 @@
     A20000000000000000000582 /* VoiceSpeechCaptureCoordinatorBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSpeechCaptureCoordinatorBridge.swift; sourceTree = "<group>"; };
     A20000000000000000000584 /* VoiceTranscriptRoutePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTranscriptRoutePolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000586 /* VoiceReplyPlaybackPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceReplyPlaybackPolicy.swift; sourceTree = "<group>"; };
+    A200000000000000000009F0 /* VoiceReminderSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceReminderSnapshot.swift; sourceTree = "<group>"; };
     A20000000000000000000587 /* VoiceReplySpeechService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceReplySpeechService.swift; sourceTree = "<group>"; };
     A20000000000000000000589 /* VoiceLatencyTracer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLatencyTracer.swift; sourceTree = "<group>"; };
     A20000000000000000000617 /* VoiceLatencyModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLatencyModels.swift; sourceTree = "<group>"; };
@@ -2675,6 +2677,7 @@
         A20000000000000000000582 /* VoiceSpeechCaptureCoordinatorBridge.swift */,
         A20000000000000000000584 /* VoiceTranscriptRoutePolicy.swift */,
         A20000000000000000000586 /* VoiceReplyPlaybackPolicy.swift */,
+        A200000000000000000009F0 /* VoiceReminderSnapshot.swift */,
         A20000000000000000000587 /* VoiceReplySpeechService.swift */,
         A20000000000000000000761 /* VoiceTTSRequestRegistry.swift */,
         A20000000000000000000765 /* VoiceAdaptiveWhisperPartialPolicy.swift */,
@@ -3877,6 +3880,7 @@
         A10000000000000000000582 /* VoiceSpeechCaptureCoordinatorBridge.swift in Sources */,
         A10000000000000000000584 /* VoiceTranscriptRoutePolicy.swift in Sources */,
         A10000000000000000000586 /* VoiceReplyPlaybackPolicy.swift in Sources */,
+        A100000000000000000009F0 /* VoiceReminderSnapshot.swift in Sources */,
         A10000000000000000000587 /* VoiceReplySpeechService.swift in Sources */,
         F12680000000000000000001 /* AgentDirectVisionPolicy.swift in Sources */,
         F12678000000000000000001 /* AgentReplySpeechController.swift in Sources */,

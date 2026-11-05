@@ -4573,6 +4573,12 @@
 "galaxyssi.voice.risk_high" = "高";
 "galaxyssi.voice.risk_critical" = "严重";
 "galaxyssi.voice.live_transcript" = "实时转写";
+"voice_reminders_title" = "提醒";
+"voice_reminders_untitled_event" = "日历日程";
+"voice_reminders_calendar_unavailable" = "无法读取日历";
+"voice_reminders_unread_news" = "未读动态：%lld";
+"voice_reminders_news_unavailable" = "无法读取发现";
+"voice_reminders_empty" = "暂无提醒";
 "galaxyssi.voice.activity" = "语音动态";
 "galaxyssi.voice.transcript" = "你说";
 "galaxyssi.voice.reply" = "回复";

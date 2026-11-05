@@ -48,6 +48,8 @@ struct GalaxySSIVoiceTabView: View {
   @State private var wakeWelcomeTimeoutTask: Task<Void, Never>?
   @State private var pendingRiskConfirmation: GalaxySSIVoiceRiskConfirmation?
   @State private var viewVisible = false
+  @State private var reminderSnapshot: VoiceReminderSnapshot?
+  @State private var reminderPrivacyLocked = false
 
   private var settings: VoiceSettings { store.voiceSettings }
   private static let acknowledgementLog = Logger(subsystem: "com.galaxyssi.ios", category: "voice-acknowledgement")
@@ -91,7 +93,11 @@ struct GalaxySSIVoiceTabView: View {
               !wakeListener.failureDescription.isEmpty {
             statusStrip
           }
-          liveTranscriptSection
+          if showsVoiceReminders {
+            reminderSection
+          } else {
+            liveTranscriptSection
+          }
           voiceReplySection
           quickControlsSection
           liveHealthSection
@@ -102,6 +108,11 @@ struct GalaxySSIVoiceTabView: View {
       }
       .background(Color.galaxySSIPageBackground.ignoresSafeArea())
       .navigationBarHidden(true)
+      .task(id: showsVoiceReminders) {
+        reminderSnapshot = nil
+        guard showsVoiceReminders else { return }
+        await loadVoiceReminders()
+      }
       .onAppear {
         viewVisible = true
         replySpeech.setEchoReference(passiveCapture.echoReference)
@@ -153,6 +164,7 @@ struct GalaxySSIVoiceTabView: View {
       }
       .onDisappear {
         viewVisible = false
+        reminderSnapshot = nil
         cancelRiskConfirmation(pendingRiskConfirmation, reportStatus: false)
         pendingRiskConfirmation = nil
         stopObserving()
@@ -160,6 +172,8 @@ struct GalaxySSIVoiceTabView: View {
       .onReceive(
         NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)
       ) { _ in
+        reminderPrivacyLocked = true
+        reminderSnapshot = nil
         holdToTalk.clearRuntimePlaintext()
         stopInputAcknowledgement()
         wakeListener.deactivate()
@@ -174,6 +188,7 @@ struct GalaxySSIVoiceTabView: View {
       .onReceive(
         NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextDidRestore)
       ) { _ in
+        reminderPrivacyLocked = false
         guard viewVisible else { return }
         wakeListener.activate(
           settings: settings,
@@ -506,6 +521,92 @@ struct GalaxySSIVoiceTabView: View {
       return t("galaxyssi.voice.processing_agent_detail", "The selected Agent is working on the request.")
     default:
       return t("galaxyssi.voice.processing_detail", "Voice input is being prepared.")
+    }
+  }
+
+  private var showsVoiceReminders: Bool {
+    viewVisible && scenePhase == .active && !reminderPrivacyLocked &&
+      !isVoiceProcessing && !holdToTalk.isPending && !holdToTalk.isRecording &&
+      !wakeListener.isCommandCapturing && !passiveCapture.isListening &&
+      lastVoiceTranscript.isEmpty && visibleTranscript.isEmpty
+  }
+
+  @MainActor
+  private func loadVoiceReminders() async {
+    let calendarRead = Task.detached(priority: .utility) { VoiceReminderSnapshot.calendarRows() }
+    let calendar = await calendarRead.value
+    guard !Task.isCancelled, showsVoiceReminders else { return }
+    let archive = PublicNewsArchive()
+    archive.load()
+    reminderSnapshot = VoiceReminderSnapshot(
+      tasks: VoiceReminderSnapshot.taskRows(store.mergedAgentTaskRecords()),
+      calendar: calendar,
+      unreadNewsCount: archive.reminderUnreadCount
+    )
+  }
+
+  private var reminderSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      GalaxySSISecuritySectionTitle(title: t("voice_reminders_title", "Reminders"))
+      if let snapshot = reminderSnapshot {
+        ForEach(snapshot.tasks) { task in
+          GalaxySSISecurityStatusRow(
+            title: task.title,
+            subtitle: reminderTaskPhase(task.phase),
+            systemImage: "list.bullet.rectangle",
+            tint: .orange,
+            badge: ""
+          )
+        }
+        if let events = snapshot.calendar {
+          ForEach(events) { event in
+            GalaxySSISecurityStatusRow(
+              title: event.title.ifBlank(t("voice_reminders_untitled_event", "Calendar event")),
+              subtitle: event.start.formatted(date: .abbreviated, time: .shortened),
+              systemImage: "calendar",
+              tint: .blue,
+              badge: ""
+            )
+          }
+        } else {
+          Text(t("voice_reminders_calendar_unavailable", "Calendar unavailable"))
+            .font(.footnote)
+            .foregroundColor(.secondary)
+        }
+        if let count = snapshot.unreadNewsCount {
+          if count > 0 {
+            NavigationLink(destination: GalaxySSIPublicNewsView()) {
+              GalaxySSISecurityStatusRow(
+                title: t("public_news_title", "Discoveries"),
+                subtitle: String(format: t("voice_reminders_unread_news", "Unread updates: %lld"), Int64(count)),
+                systemImage: "newspaper",
+                tint: .blue,
+                badge: ""
+              )
+            }
+            .buttonStyle(.plain)
+          }
+        } else {
+          Text(t("voice_reminders_news_unavailable", "Discoveries unavailable"))
+            .font(.footnote)
+            .foregroundColor(.secondary)
+        }
+        if snapshot.tasks.isEmpty, snapshot.calendar?.isEmpty != false, snapshot.unreadNewsCount ?? 0 == 0 {
+          Text(t("voice_reminders_empty", "No reminders"))
+            .font(.footnote)
+            .foregroundColor(.secondary)
+        }
+      } else {
+        ProgressView()
+      }
+    }
+  }
+
+  private func reminderTaskPhase(_ phase: String) -> String {
+    switch phase {
+    case AgentPhase.waitingConfirmation.rawValue: return t("agent_status_waiting_confirmation", "Awaiting confirmation")
+    case AgentPhase.paused.rawValue: return t("agent_status_paused", "Paused")
+    default: return t("agent_status_blocked", "Blocked")
     }
   }
 

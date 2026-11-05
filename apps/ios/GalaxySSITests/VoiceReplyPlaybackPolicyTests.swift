@@ -2,6 +2,20 @@ import XCTest
 @testable import GalaxySSI
 
 final class VoiceReplyPlaybackPolicyTests: XCTestCase {
+  func testReminderTaskLimitAppliesAfterFilteringAndKeepsOriginalIDs() {
+    func record(_ id: String, _ phase: AgentPhase, goal: String = "Review") -> AgentTaskRecord {
+      AgentTaskRecord(taskId: id, sessionId: "thread-\(id)", goal: goal, phase: phase,
+                      routeKind: .localSystem, targetTitle: "", risk: .medium, blocked: phase == .blocked)
+    }
+    let rows = VoiceReminderSnapshot.taskRows([
+      record("done", .completed), record("private", .paused, goal: "Sensitive goal withheld"),
+      record("task-42", .waitingConfirmation), record("other", .blocked)
+    ], limit: 1)
+    XCTAssertEqual(rows.map(\.id), ["task-42"])
+    XCTAssertEqual(rows.first?.conversationID, "thread-task-42")
+    XCTAssertEqual(rows.first?.phase, AgentPhase.waitingConfirmation.rawValue)
+  }
+
   func testVoiceAcknowledgementHasSeparateUtteranceAndHonorsMute() {
     let language = LanguagePolicySettings(ttsLanguage: "en-US")
     let request = VoiceReplyPlaybackPolicy.inputAcknowledgementRequest(
