@@ -248,6 +248,7 @@
         <activity android:name=".HealthPrivacyActivity" android:exported="false" />
         <activity android:name=".HealthSourcesActivity" android:exported="false" />
         <activity android:name=".HealthConnectActivity" android:exported="false" />
+        <activity android:name=".HealthMeasurementHistoryActivity" android:exported="false" />
         <activity android:name=".HealthBluetoothActivity" android:exported="false" />
         <activity android:name=".HealthSyncActivity" android:exported="false" />
         <activity android:name=".HealthAssistantActivity" android:exported="false" />

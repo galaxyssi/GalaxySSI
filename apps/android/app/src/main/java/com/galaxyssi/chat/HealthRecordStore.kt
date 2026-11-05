@@ -146,7 +146,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         fun compare(value: HealthObservation): HealthRestoreMatch {
             val equivalent = value.profileId == candidate.profileId && value.source == candidate.source &&
                 value.platformOrigin == candidate.platformOrigin && value.deviceReceivedAt == candidate.deviceReceivedAt &&
-                value.deviceClock == candidate.deviceClock && value.draft == candidate.draft
+                value.deviceClock == candidate.deviceClock && value.bluetoothGroup == candidate.bluetoothGroup && value.draft == candidate.draft
             return HealthRestoreMatch(if (equivalent) HealthRestoreKind.DUPLICATE else HealthRestoreKind.CONFLICT, value)
         }
         db.rawQuery("SELECT id,revision,payload,metric,measured_at,deleted FROM observations WHERE id=?",
@@ -164,6 +164,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
                 .use { rows ->
                     while (rows.moveToNext()) {
                         val existing = decode(rows)
+                        if (existing.source != candidate.source || existing.bluetoothGroup != candidate.bluetoothGroup) continue
                         if (HealthObservationPolicy.duplicateKey(existing) == HealthObservationPolicy.duplicateKey(candidate))
                             return compare(existing)
                     }
@@ -268,6 +269,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
                 put("measured_at", record.draft.measuredAt); put("payload", bytes); put("dedupe", external ?: dedupe(record))
                 put("deleted", 0); put("original_id", record.draft.evidence?.originalId)
                 put("evidence_key", evidenceKey(record.draft)); put("external_key", external)
+                put("bluetooth_group", record.bluetoothGroup.takeIf(String::isNotEmpty))
             })
             db.insertOrThrow("revisions", null, ContentValues().apply {
                 put("id", record.id); put("revision", record.revision); put("payload", bytes)
@@ -327,17 +329,24 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         return HealthRecordPage(visible, if (records.size > limit) visible.last().let { HealthPageCursor(it.draft.measuredAt, it.id) } else null)
     }
 
-    fun trendChunk(spec: HealthTrendSpec, after: HealthPageCursor? = null, signal: android.os.CancellationSignal? = null): HealthRecordPage {
+    fun trendChunk(spec: HealthTrendSpec, after: HealthPageCursor? = null, signal: android.os.CancellationSignal? = null): HealthRecordPage =
+        trendChunk(spec, after, signal, platformCandidates = spec.source.platformOrigin.isNotEmpty())
+
+    private fun trendChunk(spec: HealthTrendSpec, after: HealthPageCursor?, signal: android.os.CancellationSignal?,
+                           platformCandidates: Boolean): HealthRecordPage {
         val conditions = arrayListOf("deleted=0", "metric=?", "measured_at>=?", "measured_at<?")
         val args = arrayListOf(spec.metric.name, spec.from.toString(), spec.until.toString())
         if (spec.source.originalId.isNotBlank()) { conditions += "original_id=?"; args += spec.source.originalId }
         if (spec.source.manualOnly) conditions += "original_id IS NULL AND external_key IS NULL"
+        if (spec.source.bluetoothGroup.isNotEmpty()) { conditions += "bluetooth_group=?"; args += spec.source.bluetoothGroup }
+        if (platformCandidates) conditions += "external_key IS NOT NULL AND bluetooth_group IS NULL"
         if (after != null) { conditions += "(measured_at<? OR (measured_at=? AND id<?))"; args += listOf(after.measuredAt.toString(), after.measuredAt.toString(), after.id) }
         val rows = helper.readableDatabase.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations WHERE ${conditions.joinToString(" AND ")} " +
             "ORDER BY measured_at DESC,id DESC LIMIT ${PAGE_SIZE + 1}", args.toTypedArray(), signal).use { cursor -> buildList {
                 while (cursor.moveToNext()) add(decode(cursor).also { record ->
                     check(record.draft.metric == spec.metric && record.draft.measuredAt >= spec.from && record.draft.measuredAt < spec.until)
                     if (spec.source.originalId.isNotBlank()) check(record.draft.evidence?.originalId == spec.source.originalId) { "Health trend original mismatch" }
+                    if (spec.source.bluetoothGroup.isNotEmpty()) check(spec.source.accepts(record)) { "Health trend device mismatch" }
                 })
             } }
         val visible = rows.take(PAGE_SIZE)
@@ -503,6 +512,164 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         "SELECT DISTINCT original_id FROM observations WHERE deleted=0 AND metric=? AND measured_at>=? AND measured_at<? " +
             "AND original_id IS NOT NULL AND original_id>? ORDER BY original_id LIMIT 31", arrayOf(spec.metric.name, spec.from.toString(), spec.until.toString(), after), signal
     ).use { cursor -> buildList { while (cursor.moveToNext()) add(cursor.getString(0)) } }
+
+    fun trendBluetoothGroups(spec: HealthTrendSpec, after: String = "", signal: android.os.CancellationSignal? = null): List<String> =
+        helper.readableDatabase.rawQuery(
+            "SELECT DISTINCT bluetooth_group FROM observations WHERE metric=? AND deleted=0 AND bluetooth_group>? " +
+                "AND measured_at>=? AND measured_at<? ORDER BY bluetooth_group LIMIT ${PAGE_SIZE + 1}",
+            arrayOf(spec.metric.name, after, spec.from.toString(), spec.until.toString()), signal
+        ).use { cursor -> buildList { while (cursor.moveToNext()) add(cursor.getString(0).also { check(isHealthBluetoothGroup(it)) }) } }
+
+    fun trendBluetoothLabel(spec: HealthTrendSpec, group: String, signal: android.os.CancellationSignal? = null): String? =
+        latestBluetoothRecord(spec, group, signal)?.platformOrigin
+
+    fun latestBluetoothRecord(spec: HealthTrendSpec, group: String, signal: android.os.CancellationSignal? = null): HealthObservation? {
+        require(isHealthBluetoothGroup(group))
+        return helper.readableDatabase.rawQuery(
+            "SELECT id,revision,payload,metric,measured_at FROM observations WHERE metric=? AND deleted=0 AND bluetooth_group=? " +
+                "AND measured_at>=? AND measured_at<? ORDER BY measured_at DESC,id DESC LIMIT 1",
+            arrayOf(spec.metric.name, group, spec.from.toString(), spec.until.toString()), signal
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) null else decode(cursor).let {
+                check(it.source == "bluetooth" && it.bluetoothGroup == group)
+                it
+            }
+        }
+    }
+
+    fun bluetoothHistoryPreview(group: String): HealthBluetoothHistoryPreview {
+        require(isHealthBluetoothGroup(group))
+        val db = helper.readableDatabase
+        db.beginTransactionNonExclusive()
+        return try {
+            bluetoothHistoryPreview(db, group).also { db.setTransactionSuccessful() }
+        } finally { db.endTransaction() }
+    }
+
+    private fun bluetoothHistoryPreview(db: SQLiteDatabase, group: String): HealthBluetoothHistoryPreview =
+        db.rawQuery("SELECT COUNT(*),MIN(measured_at),MAX(measured_at) FROM observations WHERE $BLUETOOTH_HISTORY_FILTER",
+            arrayOf(HealthMetric.BLOOD_PRESSURE.name, group)).use {
+            check(it.moveToFirst())
+            HealthBluetoothHistoryPreview(group, metricVersion(HealthMetric.BLOOD_PRESSURE), it.getLong(0), it.getLong(1), it.getLong(2))
+        }
+
+    @Synchronized fun eraseBluetoothHistory(preview: HealthBluetoothHistoryPreview, ensureActive: () -> Unit = {}): Long {
+        require(isHealthBluetoothGroup(preview.group) && preview.count > 0)
+        val db = helper.writableDatabase
+        val args = arrayOf(HealthMetric.BLOOD_PRESSURE.name, preview.group)
+        db.beginTransaction()
+        return try {
+            if (bluetoothHistoryPreview(db, preview.group) != preview) throw HealthBluetoothHistoryChanged()
+            var removed = 0L
+            while (removed < preview.count) {
+                ensureActive()
+                val batch = db.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations " +
+                    "WHERE $BLUETOOTH_HISTORY_FILTER LIMIT $PAGE_SIZE", args).use { rows ->
+                    buildList {
+                        while (rows.moveToNext()) {
+                            val value = decode(rows)
+                            check(value.profileId == "self" && value.source == "bluetooth" && value.bluetoothGroup == preview.group)
+                            add(value.id)
+                        }
+                    }
+                }
+                check(batch.isNotEmpty())
+                for (id in batch) eraseStoredMeasurement(db, id)
+                removed += batch.size
+            }
+            ensureActive()
+            check(removed == preview.count)
+            changed(HealthMetric.BLOOD_PRESSURE)
+            db.setTransactionSuccessful()
+            removed
+        } finally { db.endTransaction(); publishCommittedChanges() }
+    }
+
+    private fun eraseStoredMeasurement(db: SQLiteDatabase, id: String) {
+        val key = arrayOf(id)
+        db.delete("drafts", "draft_key=?", arrayOf("edit:$id"))
+        db.delete("health_source_links", "record_id=?", key)
+        db.delete("revisions", "id=?", key)
+        check(db.delete("observations", "id=?", key) == 1)
+    }
+
+    fun measurementHistoryPreview(scope: HealthMeasurementHistoryScope, ensureActive: () -> Unit = {}): HealthMeasurementHistoryPreview {
+        val version = metricVersion(scope.metric)
+        val preview = scanMeasurementHistory(helper.readableDatabase, scope, version, ensureActive)
+        if (metricVersion(scope.metric) != version) throw HealthMeasurementHistoryChanged()
+        return preview
+    }
+
+    @Synchronized fun eraseMeasurementHistory(preview: HealthMeasurementHistoryPreview, ensureActive: () -> Unit = {}): Long {
+        require(preview.count > 0)
+        val metric = preview.scope.metric
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        return try {
+            if (metricVersion(metric) != preview.version) throw HealthMeasurementHistoryChanged()
+            val erased = scanMeasurementHistory(db, preview.scope, preview.version, ensureActive) {
+                eraseStoredMeasurement(db, it.id)
+            }
+            if (erased != preview) throw HealthMeasurementHistoryChanged()
+            changed(metric)
+            db.setTransactionSuccessful()
+            erased.count
+        } finally { db.endTransaction(); publishCommittedChanges() }
+    }
+
+    private fun scanMeasurementHistory(db: SQLiteDatabase, scope: HealthMeasurementHistoryScope, version: String,
+        ensureActive: () -> Unit, consume: (HealthObservation) -> Unit = {}): HealthMeasurementHistoryPreview {
+        // Legacy Bluetooth observations can also have external keys without a group. Authenticate before filtering.
+        val filter = if (scope.healthConnectOnly) " AND external_key IS NOT NULL AND bluetooth_group IS NULL" else ""
+        val counts = mutableMapOf<HealthMeasurementSource, Long>()
+        var first = Long.MAX_VALUE
+        var last = 0L
+        for (deleted in 0..1) {
+            var after: HealthPageCursor? = null
+            do {
+                ensureActive()
+                val args = arrayListOf(scope.metric.name, deleted.toString())
+                val cursorFilter = after?.let {
+                    args += listOf(it.measuredAt.toString(), it.measuredAt.toString(), it.id)
+                    " AND (measured_at<? OR (measured_at=? AND id<?))"
+                }.orEmpty()
+                val page = db.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations WHERE metric=? AND deleted=? " +
+                    "$filter$cursorFilter ORDER BY measured_at DESC,id DESC LIMIT $PAGE_SIZE",
+                    args.toTypedArray()).use { rows -> buildList {
+                        while (rows.moveToNext()) { ensureActive(); add(decode(rows)) }
+                    } }
+                after = page.lastOrNull()?.let { HealthPageCursor(it.draft.measuredAt, it.id) }
+                for (row in page) {
+                    if (row.profileId != "self" || scope.healthConnectOnly && row.source != "health_connect") continue
+                    val source = HealthMeasurementSource.from(row.source)
+                    counts[source] = (counts[source] ?: 0L) + 1
+                    first = minOf(first, row.draft.measuredAt)
+                    last = maxOf(last, row.draft.measuredAt)
+                    consume(row)
+                }
+            } while (page.size == PAGE_SIZE)
+        }
+        ensureActive()
+        return HealthMeasurementHistoryPreview(scope, version, counts.toMap(), if (counts.isEmpty()) 0L else first, last)
+    }
+
+    fun trendPlatformOrigins(spec: HealthTrendSpec, after: String = "", signal: android.os.CancellationSignal? = null): List<String> {
+        val scope = spec.copy(source = HealthTrendSource())
+        val origins = java.util.TreeSet<String>()
+        var cursor: HealthPageCursor? = null
+        do {
+            signal?.throwIfCanceled()
+            val page = trendChunk(scope, cursor, signal, platformCandidates = true)
+            for (record in page.records) {
+                if (record.source != "health_connect" || record.platformOrigin <= after ||
+                    !validHealthTrendPlatformOrigin(record.platformOrigin)) continue
+                origins.add(record.platformOrigin)
+                if (origins.size > PAGE_SIZE + 1) origins.pollLast()
+            }
+            cursor = page.next
+        } while (cursor != null)
+        return origins.toList()
+    }
 
     @Synchronized fun save(draft: HealthDraft): HealthSaveResult {
         val database = helper.writableDatabase
@@ -735,7 +902,8 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             val previous = db.rawQuery("SELECT id FROM observations WHERE external_key=?", arrayOf(key))
                 .use { if (it.moveToFirst()) it.getString(0) else null }
             val result = if (previous != null) HealthSaveResult.Duplicate(previous)
-                else saveWithinTransaction(receipt.draft(condition), key, HealthLinkedSource("bluetooth", receipt.label, receipt.receivedAt, receipt.clockText))
+                else saveWithinTransaction(receipt.draft(condition), key, HealthLinkedSource("bluetooth", receipt.label, receipt.receivedAt,
+                    receipt.clockText, AgentMemoryIndexKey.token("health-bluetooth-trend-v1|${receipt.deviceToken}")))
             if (result is HealthSaveResult.Saved && receipt.receivedAt > lastBluetoothReceipt())
                 writeHealthSync("bluetooth", JSONObject().put("received", receipt.receivedAt))
             active()
@@ -744,7 +912,8 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         } finally { db.endTransaction(); publishCommittedChanges() }
     }
 
-    private data class HealthLinkedSource(val source: String, val origin: String, val receivedAt: Long? = null, val clock: String = "")
+    private data class HealthLinkedSource(val source: String, val origin: String, val receivedAt: Long? = null,
+        val clock: String = "", val bluetoothGroup: String = "")
 
     private fun saveWithinTransaction(draft: HealthDraft, externalKey: String? = null, source: HealthLinkedSource? = null): HealthSaveResult {
         val database = helper.writableDatabase
@@ -757,9 +926,10 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         val record = if (sourceKey != null) {
             if (existingPlatform != null && (draft.metric != existingPlatform.first.draft.metric || draft.evidence != null))
                 return HealthSaveResult.Conflict
-            val linked = existingPlatform?.first?.let { HealthLinkedSource(it.source, it.platformOrigin, it.deviceReceivedAt, it.deviceClock) }
+            val linked = existingPlatform?.first?.let { HealthLinkedSource(it.source, it.platformOrigin, it.deviceReceivedAt, it.deviceClock, it.bluetoothGroup) }
                 ?: requireNotNull(source)
-            normalized.copy(source = linked.source, platformOrigin = linked.origin, deviceReceivedAt = linked.receivedAt, deviceClock = linked.clock)
+            normalized.copy(source = linked.source, platformOrigin = linked.origin, deviceReceivedAt = linked.receivedAt, deviceClock = linked.clock,
+                bluetoothGroup = linked.bluetoothGroup)
         } else normalized
         val encrypted = encode(record)
         val duplicateKey = sourceKey ?: dedupe(record)
@@ -780,6 +950,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
                 put("original_id", draft.evidence?.originalId)
                 put("evidence_key", evidenceKey(draft))
                 put("external_key", sourceKey)
+                put("bluetooth_group", record.bluetoothGroup.takeIf(String::isNotEmpty))
             }
             if (existing == 0) database.insertOrThrow("observations", null, values)
             else check(database.update("observations", values, "id=? AND revision=? AND deleted=0", arrayOf(record.id, existing.toString())) == 1)
@@ -817,6 +988,50 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         } finally { database.endTransaction(); publishCommittedChanges() }
     }
 
+    fun canUndoDelete(id: String, revision: Int): Boolean = revision in 2 until Int.MAX_VALUE &&
+        helper.readableDatabase.rawQuery("SELECT 1 FROM observations WHERE id=? AND revision=? AND deleted=1",
+            arrayOf(id, revision.toString())).use { it.moveToFirst() }
+
+    @Synchronized fun undoDelete(id: String, deletionRevision: Int): Boolean {
+        if (deletionRevision !in 2 until Int.MAX_VALUE) return false
+        val database = helper.writableDatabase
+        database.beginTransaction()
+        return try {
+            val removed = database.rawQuery("SELECT id,revision,payload,metric,measured_at,dedupe FROM observations " +
+                "WHERE id=? AND revision=? AND deleted=1", arrayOf(id, deletionRevision.toString())).use { rows ->
+                if (rows.moveToFirst()) decode(rows) to rows.getString(5) else null
+            } ?: return false
+            val (tombstone, key) = removed
+            val previous = revision(id, deletionRevision - 1) ?: return false
+            if (tombstone.profileId != "self" || previous != tombstone.copy(revision = previous.revision, receivedAt = previous.receivedAt))
+                return false
+            if (database.rawQuery("SELECT 1 FROM observations WHERE dedupe=? AND deleted=0 LIMIT 1",
+                    arrayOf(key)).use { it.moveToFirst() } ||
+                recordForEvidence(tombstone.draft) != null || recordForOcrLink(tombstone.draft) != null) return false
+            val restored = tombstone.copy(revision = deletionRevision + 1, receivedAt = System.currentTimeMillis())
+            val encrypted = encode(restored)
+            try {
+                check(database.update("observations", ContentValues().apply {
+                    put("deleted", 0); put("revision", restored.revision); put("payload", encrypted)
+                }, "id=? AND revision=? AND deleted=1", arrayOf(id, deletionRevision.toString())) == 1)
+                database.insertOrThrow("revisions", null, ContentValues().apply {
+                    put("id", id); put("revision", restored.revision); put("payload", encrypted)
+                    put("changed_at", restored.receivedAt); put("deleted", 0)
+                })
+                // Links are authenticated against their revision and must be re-encrypted for the restored one.
+                for (evidence in backupSourceLinks(previous, android.os.CancellationSignal())) {
+                    val ocr = evidence.kind == "ocr"
+                    if (ocr && (recordForEvidenceKey(evidenceKey(evidence, restored.draft.metric)) != null ||
+                            linkedOcrRecord(evidence) != null)) return false
+                    check(insertSourceLink(restored, evidence, if (ocr) ocrLinkKey(evidence) else ""))
+                }
+                changed(restored.draft.metric)
+                database.setTransactionSuccessful()
+                true
+            } finally { encrypted.fill(0) }
+        } finally { database.endTransaction(); publishCommittedChanges() }
+    }
+
     fun history(id: String, beforeRevision: Int = Int.MAX_VALUE): List<HealthObservation> = helper.readableDatabase.rawQuery(
         "SELECT id,revision,payload FROM revisions WHERE id=? AND revision<? ORDER BY revision DESC LIMIT 50", arrayOf(id, beforeRevision.toString())
     ).use { buildList { while (it.moveToNext()) add(decode(it)) } }
@@ -826,9 +1041,15 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         if (!draft.hasInput()) { clearDraft(key); return }
         val bytes = draft.json().toString().toByteArray(Charsets.UTF_8)
         val encrypted = try { AgentStorageCipher.encryptBinary(bytes, aad(key, 1)) } finally { bytes.fill(0) }
-        try { check(helper.writableDatabase.insertWithOnConflict("drafts", null, ContentValues().apply {
-            put("draft_key", key); put("payload", encrypted)
-        }, SQLiteDatabase.CONFLICT_REPLACE) != -1L) { "Health draft was not saved" } }
+        try {
+            val db = helper.writableDatabase
+            if (draft.recordId.isNotBlank()) {
+                db.execSQL("INSERT OR REPLACE INTO drafts(draft_key,payload) SELECT ?,? " +
+                    "WHERE EXISTS(SELECT 1 FROM observations WHERE id=? AND deleted=0)", arrayOf(key, encrypted, draft.recordId))
+            } else check(db.insertWithOnConflict("drafts", null, ContentValues().apply {
+                put("draft_key", key); put("payload", encrypted)
+            }, SQLiteDatabase.CONFLICT_REPLACE) != -1L) { "Health draft was not saved" }
+        }
         finally { encrypted.fill(0) }
     }
     fun draft(key: String): HealthDraft? = helper.readableDatabase.rawQuery("SELECT payload FROM drafts WHERE draft_key=?", arrayOf(key)).use {
@@ -853,7 +1074,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         override fun onConfigure(db: SQLiteDatabase) { db.setForeignKeyConstraintsEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE observations(id TEXT PRIMARY KEY,revision INTEGER NOT NULL,metric TEXT NOT NULL," +
-                "measured_at INTEGER NOT NULL,payload BLOB NOT NULL,dedupe TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0,original_id TEXT,evidence_key TEXT,external_key TEXT)")
+                "measured_at INTEGER NOT NULL,payload BLOB NOT NULL,dedupe TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0,original_id TEXT,evidence_key TEXT,external_key TEXT,bluetooth_group TEXT)")
             db.execSQL("CREATE UNIQUE INDEX observation_dedupe ON observations(dedupe) WHERE deleted=0")
             db.execSQL("CREATE INDEX observation_page ON observations(deleted,measured_at DESC,id DESC)")
             db.execSQL("CREATE INDEX observation_metric_page ON observations(metric,deleted,measured_at DESC,id DESC)")
@@ -865,6 +1086,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             HealthTableStore.createSchema(db)
             createClocks(db)
             indexPlatformRecords(db)
+            indexBluetoothGroups(db)
             createSyncCheckpoints(db)
             HealthOriginalStore.createSharedSchema(db)
             HealthRestoreReceipts.createSchema(db)
@@ -887,6 +1109,13 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             if (oldVersion < 6) createSyncCheckpoints(db)
             if (oldVersion < 7) HealthOriginalStore.createSharedSchema(db)
             if (oldVersion < 8) HealthRestoreReceipts.createSchema(db)
+            if (oldVersion < 13) {
+                val present = db.rawQuery("PRAGMA table_info(observations)", null).use { rows ->
+                    generateSequence { if (rows.moveToNext()) rows.getString(1) else null }.any { it == "bluetooth_group" }
+                }
+                if (!present) db.execSQL("ALTER TABLE observations ADD COLUMN bluetooth_group TEXT")
+                indexBluetoothGroups(db)
+            }
             if (oldVersion >= 7 && oldVersion < 9) HealthOriginalLibraryStore.createHistoryIndex(db)
             createSourceLinks(db)
             if (oldVersion == 10) {
@@ -895,6 +1124,8 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
                 db.execSQL("DROP TABLE health_table_source_links")
             }
         }
+        private fun indexBluetoothGroups(db: SQLiteDatabase) = db.execSQL(
+            "CREATE INDEX IF NOT EXISTS observation_bluetooth_page ON observations(metric,deleted,bluetooth_group,measured_at DESC,id DESC) WHERE bluetooth_group IS NOT NULL")
         private fun createSourceLinks(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE IF NOT EXISTS health_source_links(original_id TEXT NOT NULL,record_id TEXT NOT NULL REFERENCES observations(id)," +
                 "revision INTEGER NOT NULL,job_id TEXT NOT NULL,measured_at INTEGER NOT NULL,payload BLOB NOT NULL," +
@@ -911,8 +1142,9 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         private fun createClocks(db: SQLiteDatabase) { db.execSQL("CREATE TABLE IF NOT EXISTS health_metric_clocks(metric TEXT PRIMARY KEY,token TEXT NOT NULL)") }
     }
     companion object {
+        private const val BLUETOOTH_HISTORY_FILTER = "metric=? AND bluetooth_group=? AND deleted IN (0,1)"
         const val DEFAULT_DB = "health_records_v1.db"
-        const val SCHEMA_VERSION = 12
+        const val SCHEMA_VERSION = 13
         const val PAGE_SIZE = 30
         fun changes(context: Context, name: String = "health_records_v1.db") = android.net.Uri.parse("content://${context.packageName}.health-originals/changes/observations/" + android.net.Uri.encode(name))
         fun syncIncidentChanges(context: Context, name: String) = android.net.Uri.parse(

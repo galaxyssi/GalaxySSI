@@ -64,7 +64,10 @@
     <string name="health_latest_revisions">Latest revisions</string>
     <string name="health_older_revisions">Older revisions</string>
     <string name="health_delete_title">Delete measurement?</string>
-    <string name="health_delete_description">Remove this measurement from current records. The local revision history remains for auditing.</string>
+    <string name="health_delete_description">Remove this measurement from current records. The local revision history remains. You can undo this here before leaving the record.</string>
+    <string name="health_record_deleted">This measurement was removed from current records.</string>
+    <string name="health_undo_record_delete">Undo deletion</string>
+    <string name="health_undo_record_unavailable">Could not restore this measurement. A matching record may already exist, or this measurement is no longer available.</string>
     <string name="health_duplicate">The same measurement, time, and source already exist. No duplicate was saved.</string>
     <string name="health_view_existing">View existing record</string>
     <string name="health_conflict">This record changed or was deleted. Reopen it before saving.</string>
