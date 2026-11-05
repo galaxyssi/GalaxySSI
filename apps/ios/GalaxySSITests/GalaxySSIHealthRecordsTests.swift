@@ -6,6 +6,18 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testReviewOnlyPhotoConvertsToPDFWithoutAnOriginalStore() throws {
+    let image = UIGraphicsImageRenderer(size: CGSize(width: 16, height: 12)).jpegData(withCompressionQuality: 0.9) {
+      UIColor.red.setFill()
+      $0.fill(CGRect(x: 0, y: 0, width: 16, height: 12))
+    }
+    let report = try GalaxySSIHealthTransientReport(name: "capture.jpg", data: image)
+    XCTAssertEqual(report.name, "capture.jpg")
+    XCTAssertTrue(report.pdf.starts(with: Data("%PDF-".utf8)))
+    XCTAssertThrowsError(try GalaxySSIHealthTransientReport(name: "invalid.jpg", data: Data([0])))
+  }
+
+  @MainActor
   func testOriginalIndexMigratesLegacyCiphertextOnceWithoutRewritingIt() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

@@ -644,6 +644,9 @@
 "galaxyssi.health.import.read_pdf" = "报告 PDF 文本";
 "galaxyssi.health.import.saved" = "原件已存入健康原件库";
 "galaxyssi.health.import.retain" = "保留原始文件";
+"galaxyssi.health.import.photo_review" = "拍照并仅在本次审阅";
+"galaxyssi.health.import.capture" = "拍摄";
+"galaxyssi.health.import.fill_light" = "补光";
 "galaxyssi.health.import.retention_default" = "使用健康隐私的默认设置";
 "galaxyssi.health.import.retention_override" = "仅覆盖下一次导入";
 "galaxyssi.health.import.original_only" = "仅保存原件";

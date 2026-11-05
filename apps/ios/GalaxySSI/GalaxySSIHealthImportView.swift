@@ -20,6 +20,9 @@ struct GalaxySSIHealthImportView: View {
   @State private var tableRetention = true
   @State private var openingTable = false
   @State private var openingPhotoDraft = false
+  @State private var reviewingPhoto = false
+  @State private var chooseFileAfterCamera = false
+  @State private var pendingPhotoReview: GalaxySSIHealthTransientReport?
   @State private var transientReport: GalaxySSIHealthTransientReport?
   @State private var pendingScanReview: GalaxySSIHealthTransientReport?
 
@@ -38,12 +41,16 @@ struct GalaxySSIHealthImportView: View {
             .font(.footnote).foregroundColor(.secondary)
         }
         Button {
-          guard (retentionOverride ?? defaultRetention) == true, beginImport() == true else { return }
-          openingPhotoDraft = true
+          guard let retain = beginImport() else { return }
+          notice = nil
+          if retain { openingPhotoDraft = true }
+          else { reviewingPhoto = true }
         } label: {
-          Label(t("photo_draft", "Ordered photo draft"), systemImage: "camera")
+          Label((retentionOverride ?? defaultRetention) == false
+                ? t("photo_review", "Take photo for this review")
+                : t("photo_draft", "Ordered photo draft"), systemImage: "camera")
         }
-        .disabled((retentionOverride ?? defaultRetention) != true)
+        .disabled(defaultRetention == nil)
         NavigationLink(destination: GalaxySSIHealthPhotoDraftView(records: records, store: store),
                        isActive: $openingPhotoDraft) {
           EmptyView()
@@ -122,6 +129,7 @@ struct GalaxySSIHealthImportView: View {
       if $0 == .background {
         notice = nil; scanning = false; transientReport = nil; pendingScanReview = nil
         fileRetention = nil; scanRetention = nil
+        reviewingPhoto = false; pendingPhotoReview = nil; chooseFileAfterCamera = false
       }
     }
     .fileImporter(isPresented: $picking, allowedContentTypes: [.pdf, .image]) { result in
@@ -168,6 +176,31 @@ struct GalaxySSIHealthImportView: View {
           } }
       }
       .navigationViewStyle(.stack)
+    }
+    .fullScreenCover(isPresented: $reviewingPhoto, onDismiss: {
+      defer { pendingPhotoReview = nil; chooseFileAfterCamera = false }
+      guard scene == .active else { return }
+      if chooseFileAfterCamera {
+        fileRetention = false
+        picking = true
+      } else {
+        transientReport = pendingPhotoReview
+      }
+    }) {
+      GalaxySSIHealthPhotoCamera(mode: .report, shutterTitle: t("capture", "Capture"),
+        torchTitle: t("fill_light", "Fill light"), closeTitle: t("close_review", "Close review"),
+        galleryTitle: t("files", "Choose PDF or image"), onGallery: {
+          chooseFileAfterCamera = true
+          reviewingPhoto = false
+        }, onClose: { reviewingPhoto = false }) { result in
+          guard scene != .background else { reviewingPhoto = false; return }
+          do {
+            let name = "Health-Photo-" + String(UUID().uuidString.prefix(8)) + ".jpg"
+            pendingPhotoReview = try GalaxySSIHealthTransientReport(name: name, data: result.get())
+          } catch { notice = .failed }
+          reviewingPhoto = false
+        }
+      .ignoresSafeArea()
     }
   }
 
