@@ -5,6 +5,38 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testHealthKitSyncCommitsPageAndCursorTogetherAndResumesWithoutDeleting() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let floor = now.addingTimeInterval(-86_400)
+    let first = try records.beginHealthKitSync(.weight, floor: floor, reset: false)
+    let item = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 65,
+      healthKitSource: .init(key: String(repeating: "a", count: 64), origin: "fixture", name: nil))
+    let broken = GalaxySSIHealthKitSync.Page(rows: [item, .init(metric: .weight, value: 66)], anchor: Data([1]),
+      providerCount: 2, more: true)
+    XCTAssertThrowsError(try records.commitHealthKitPage(scope: .weight, expected: first, page: broken, at: now))
+    XCTAssertTrue(try records.load().current.isEmpty)
+    XCTAssertNil(try records.load().healthKitSync?["weight"]?.anchor)
+    let page = GalaxySSIHealthKitSync.Page(rows: [item], anchor: Data([2]), providerCount: 1, more: true)
+    let saved = try records.commitHealthKitPage(scope: .weight, expected: first, page: page, at: now)
+    XCTAssertEqual(saved.anchor, Data([2]))
+    XCTAssertEqual(try records.load().current.map(\.id), [item.id])
+    XCTAssertThrowsError(try records.commitHealthKitPage(scope: .weight, expected: first, page: page, at: now))
+    try records.finishHealthKitSync(.weight, run: saved.run, status: .interrupted)
+    let resumed = try records.beginHealthKitSync(.weight, floor: now, reset: false)
+    XCTAssertEqual(resumed.floor, floor)
+    XCTAssertEqual(resumed.anchor, saved.anchor)
+    let deletionOnly = GalaxySSIHealthKitSync.Page(rows: [], anchor: Data([3]), providerCount: 1, more: false)
+    XCTAssertEqual(try records.commitHealthKitPage(scope: .weight, expected: resumed, page: deletionOnly, at: now).status, .empty)
+    XCTAssertEqual(try records.load().current.map(\.id), [item.id])
+    let reset = try records.beginHealthKitSync(.weight, floor: now, reset: true)
+    XCTAssertTrue(reset.previousCoverageUnverified)
+    XCTAssertNil(reset.anchor)
+  }
+
+  @MainActor
   func testHealthKitImportKeepsOriginsEditsAndTombstones() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }

@@ -130,6 +130,7 @@ struct GalaxySSIHealthRecords {
     var version = 1
     var revisions: [GalaxySSIHealthReading] = []
     var draft: GalaxySSIHealthDraft?
+    var healthKitSync: [String: GalaxySSIHealthKitSync.Checkpoint]?
     var derivesOverview: Bool?
     var weeklyReportAllowed: Bool?
     var weeklyExportRequests: [GalaxySSIWeeklyHealthReport.ExportRequest]?
@@ -326,8 +327,16 @@ struct GalaxySSIHealthRecords {
   }
 
   func importHealthKit(_ readings: [GalaxySSIHealthReading]) throws -> Int {
-    guard readings.count <= GalaxySSIHealthKitImport.limit else { throw Failure.invalid }
     var archive = try load()
+    let count = try appendHealthKit(readings, to: &archive)
+    guard count > 0 else { return 0 }
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+    return count
+  }
+
+  private func appendHealthKit(_ readings: [GalaxySSIHealthReading], to archive: inout Archive) throws -> Int {
+    guard readings.count <= GalaxySSIHealthKitImport.limit else { throw Failure.invalid }
     var seen = Set(archive.revisions.compactMap { $0.healthKitSource?.key })
     var additions: [GalaxySSIHealthReading] = []
     for var reading in readings {
@@ -337,11 +346,55 @@ struct GalaxySSIHealthRecords {
       reading.revision = 1
       additions.append(reading)
     }
-    guard !additions.isEmpty else { return 0 }
     archive.revisions.append(contentsOf: additions)
-    try persist(archive)
-    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
     return additions.count
+  }
+
+  func beginHealthKitSync(_ scope: GalaxySSIHealthKitImport.Scope, floor: Date, reset: Bool) throws
+    -> GalaxySSIHealthKitSync.Checkpoint {
+    var archive = try load()
+    var checkpoints = archive.healthKitSync ?? [:]
+    var checkpoint = checkpoints[scope.rawValue] ?? .init(floor: floor)
+    if reset { checkpoint = .init(floor: floor, previousCoverageUnverified: true) }
+    checkpoint.run = UUID()
+    checkpoint.status = .running
+    checkpoint.insertedThisRun = 0
+    checkpoint.readThisRun = 0
+    checkpoints[scope.rawValue] = checkpoint
+    archive.healthKitSync = checkpoints
+    try persist(archive)
+    return checkpoint
+  }
+
+  func commitHealthKitPage(scope: GalaxySSIHealthKitImport.Scope, expected: GalaxySSIHealthKitSync.Checkpoint,
+                           page: GalaxySSIHealthKitSync.Page, at now: Date) throws -> GalaxySSIHealthKitSync.Checkpoint {
+    var archive = try load()
+    guard var checkpoint = archive.healthKitSync?[scope.rawValue], checkpoint == expected,
+          checkpoint.status == .running, page.anchor.count <= 16_384,
+          (0...GalaxySSIHealthKitSync.pageSize * 2).contains(page.providerCount),
+          page.rows.count <= page.providerCount, page.rows.allSatisfy({ $0.metric == scope.metric })
+    else { throw Failure.stale }
+    let count = try appendHealthKit(page.rows, to: &archive)
+    checkpoint.anchor = page.anchor
+    checkpoint.insertedThisRun += count
+    checkpoint.readThisRun += page.rows.count
+    if !page.more {
+      checkpoint.status = checkpoint.readThisRun == 0 ? .empty : .success
+      checkpoint.finishedAt = now
+    }
+    archive.healthKitSync?[scope.rawValue] = checkpoint
+    try persist(archive)
+    if count > 0 { NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner) }
+    return checkpoint
+  }
+
+  func finishHealthKitSync(_ scope: GalaxySSIHealthKitImport.Scope, run: UUID,
+                           status: GalaxySSIHealthKitSync.Status) throws {
+    var archive = try load()
+    guard archive.healthKitSync?[scope.rawValue]?.run == run,
+          archive.healthKitSync?[scope.rawValue]?.status == .running else { return }
+    archive.healthKitSync?[scope.rawValue]?.status = status
+    try persist(archive)
   }
 
   func undoTableBatch(_ id: UUID) throws -> Int {
