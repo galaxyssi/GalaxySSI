@@ -46,7 +46,8 @@ enum AgentReplyWaitingIndicatorPolicy {
   static func state(
     messages: [ChatMessage],
     pendingTurnIds: Set<String>,
-    stoppedTurnIds: Set<String> = []
+    stoppedTurnIds: Set<String> = [],
+    committedRunningTurnIds: Set<String> = []
   ) -> AgentReplyWaitingIndicatorState {
     let visiblePendingTurnIds = pendingTurnIds.subtracting(stoppedTurnIds)
     guard !visiblePendingTurnIds.isEmpty else {
@@ -56,7 +57,7 @@ enum AgentReplyWaitingIndicatorPolicy {
       messages
         .filter { !$0.isMine && !$0.isSystem }
         .map { turnKey(for: $0) }
-    )
+    ).subtracting(committedRunningTurnIds)
     let userTurnIds = Set(
       messages
         .filter { $0.isMine && !$0.isSystem }
@@ -84,24 +85,28 @@ enum AgentReplyWaitingIndicatorPolicy {
   static func waitingMessageIDs(
     messages: [ChatMessage],
     pendingTurnIds: Set<String>,
-    stoppedTurnIds: Set<String> = []
+    stoppedTurnIds: Set<String> = [],
+    committedRunningTurnIds: Set<String> = []
   ) -> Set<UUID> {
     state(
       messages: messages,
       pendingTurnIds: pendingTurnIds,
-      stoppedTurnIds: stoppedTurnIds
+      stoppedTurnIds: stoppedTurnIds,
+      committedRunningTurnIds: committedRunningTurnIds
     ).messageIDs
   }
 
   static func unboundTurnIDs(
     messages: [ChatMessage],
     pendingTurnIds: Set<String>,
-    stoppedTurnIds: Set<String> = []
+    stoppedTurnIds: Set<String> = [],
+    committedRunningTurnIds: Set<String> = []
   ) -> [String] {
     state(
       messages: messages,
       pendingTurnIds: pendingTurnIds,
-      stoppedTurnIds: stoppedTurnIds
+      stoppedTurnIds: stoppedTurnIds,
+      committedRunningTurnIds: committedRunningTurnIds
     ).unboundTurnIDs
   }
 }

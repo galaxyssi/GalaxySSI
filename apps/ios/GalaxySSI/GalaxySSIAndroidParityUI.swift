@@ -100,6 +100,7 @@ struct AgentHomeView: View {
   @Environment(\.galaxySSIInterfaceLanguage) var interfaceLanguage
   @Environment(\.scenePhase) var scenePhase
   @State private var homeVisible = false
+  @State var committedTurnProgress = AgentCommittedTurnProgress()
   @State private var homeWindowFocused = false
   @State private var screenAssistantCapture = GalaxySSIScreenAssistantCapture.noWindow
   @State var agentUnreadCount = 0
@@ -336,6 +337,7 @@ struct AgentHomeView: View {
           _ = store.switchAgentSession(sceneConversationID)
         }
         ensureActiveAgentSession()
+        refreshCommittedTurnProgress()
         sceneConversationID = store.activeAgentConversationId
         presentPendingPhonePublicPageExport()
         voiceAgentRunRecovery.start()
@@ -367,9 +369,15 @@ struct AgentHomeView: View {
         refreshAgentRouteState()
         retryPendingScannedAgentSelection()
         coordinator.refreshAgentHomeState()
+        refreshCommittedTurnProgress()
         refreshVisibleAgentReplyReadState()
       }
       .onChange(of: homeWindowFocused) { _ in refreshVisibleAgentReplyReadState() }
+      .onReceive(NotificationCenter.default.publisher(for: .galaxySSIWorkspaceDidPersist)
+        .debounce(for: .milliseconds(75), scheduler: RunLoop.main)) { _ in
+        guard homeVisible, scenePhase == .active else { return }
+        refreshCommittedTurnProgress()
+      }
       .onReceive(NotificationCenter.default.publisher(for: .galaxySSIReplyUnreadDidChange)) { _ in
         replyUnreadRevision &+= 1
         refreshVisibleAgentReplyReadState()
@@ -385,6 +393,7 @@ struct AgentHomeView: View {
       .onChange(of: store.activeAgentConversationId) { _ in
         sceneConversationID = store.activeAgentConversationId
         resetAgentSessionPresentation()
+        refreshCommittedTurnProgress()
         refreshAgentRouteState()
         refreshVisibleAgentReplyReadState()
       }
@@ -620,7 +629,10 @@ struct AgentHomeView: View {
   func agentTask(for message: ChatMessage) -> AgentTaskRecord? {
     let turnID = message.turnId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !turnID.isEmpty else { return nil }
-    return store.agentTask(id: turnID)
+    let conversation = message.conversationId.ifBlank(store.activeAgentConversationId)
+    return store.agentTask(id: turnID).flatMap {
+      $0.sessionId == conversation ? $0 : nil
+    }
   }
 
   func retryBlockedAgentTask(_ task: AgentTaskRecord) {

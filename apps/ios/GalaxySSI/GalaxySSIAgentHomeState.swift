@@ -124,7 +124,8 @@ extension AgentHomeView {
     AgentReplyWaitingIndicatorPolicy.waitingMessageIDs(
       messages: transcriptMessages,
       pendingTurnIds: activeSessionPendingTurnIds,
-      stoppedTurnIds: stoppedAgentReplyTurnIds
+      stoppedTurnIds: stoppedAgentReplyTurnIds,
+      committedRunningTurnIds: committedRunningTurnIDs
     )
   }
 
@@ -132,12 +133,13 @@ extension AgentHomeView {
     AgentReplyWaitingIndicatorPolicy.unboundTurnIDs(
       messages: transcriptMessages,
       pendingTurnIds: activeSessionPendingTurnIds,
-      stoppedTurnIds: stoppedAgentReplyTurnIds
+      stoppedTurnIds: stoppedAgentReplyTurnIds,
+      committedRunningTurnIds: committedRunningTurnIDs
     )
   }
 
   private var activeSessionPendingTurnIds: Set<String> {
-    let pending = coordinator.pendingAgentReplyTurnIds
+    let pending = coordinator.pendingAgentReplyTurnIds.union(committedRunningTurnIDs)
     guard !pending.isEmpty else { return [] }
     let sessionID = store.activeAgentConversationId
       .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -157,12 +159,35 @@ extension AgentHomeView {
   }
 
   var stoppedAgentReplyTurnIds: Set<String> {
-    Set(
+    let stoppedByRuntime = Set(
       activeSessionTasks
-        .filter { AgentReplyWaitingIndicatorPolicy.stopsFor($0.phase) }
+        .filter { taskBelongsToActiveSession($0) && AgentReplyWaitingIndicatorPolicy.stopsFor($0.phase) }
         .map { $0.taskId.trimmingCharacters(in: .whitespacesAndNewlines) }
         .filter { !$0.isEmpty }
     )
+    return stoppedByRuntime.subtracting(committedRunningTurnIDs).union(
+      scopedCommittedTurns.filter { !$0.value.isRunning }.keys
+    )
+  }
+
+  private var scopedCommittedTurns: [String: AgentCommittedTurnProgress.Turn] {
+    committedTurnProgress.conversationID == store.activeAgentConversationId ? committedTurnProgress.turns : [:]
+  }
+
+  private var committedRunningTurnIDs: Set<String> {
+    Set(scopedCommittedTurns.filter { $0.value.isRunning }.keys)
+  }
+
+  func committedProgress(for message: ChatMessage) -> AgentCommittedTurnProgress.Turn? {
+    committedTurnProgress.turn(AgentReplyWaitingIndicatorPolicy.turnKey(for: message),
+      conversationID: message.conversationId.ifBlank(store.activeAgentConversationId))
+  }
+
+  func refreshCommittedTurnProgress() {
+    guard scenePhase == .active else { return }
+    var snapshot = committedTurnProgress
+    snapshot.merge(conversationID: store.activeAgentConversationId, workspaces: store.agentWorkspaceStore.list())
+    if snapshot != committedTurnProgress { committedTurnProgress = snapshot }
   }
 
   var waitingIndicatorCount: Int {
@@ -211,6 +236,7 @@ extension AgentHomeView {
   var activeAgentTasks: [AgentTaskRecord] {
     activeSessionTasks.filter { task in
       guard taskBelongsToActiveSession(task) else { return false }
+      if let committed = scopedCommittedTurns[task.taskId], committed.status.isTerminal { return false }
       switch task.phase {
       case .observing, .planning, .waitingConfirmation, .executing, .verifying, .waitingResponse, .paused:
         return true
@@ -298,6 +324,7 @@ extension AgentHomeView {
     return coordinator.remoteAgentTaskStatuses.values
       .filter {
         $0.conversationId == session.id &&
+          scopedCommittedTurns[$0.turnId.ifBlank($0.taskId)]?.status.isTerminal != true &&
           !AgentRemoteTaskStatusPolicy.isTerminal($0.status)
       }
       .max { $0.updatedAtMillis < $1.updatedAtMillis }
