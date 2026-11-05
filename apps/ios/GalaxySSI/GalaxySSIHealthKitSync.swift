@@ -136,6 +136,9 @@ extension GalaxySSIHealthRecords.Archive {
       incident.lastSuccess = lastSuccess ?? existing.lastSuccess
     } else {
       incident = .init(scope: scope, status: status, failedAt: now, lastSuccess: lastSuccess)
+      if healthKitSyncSelection?.contains(scope) == true, healthKitSyncDelivery?.enabled == true {
+        healthKitSyncDelivery?.receipts[scope] = .init(incident: incident.id)
+      }
     }
     setSyncIncident(incident)
   }
@@ -261,7 +264,7 @@ struct GalaxySSIHealthKitSyncView: View {
           Section(t("scopes", "Apple Health scopes")) {
             ForEach(scopes) { scope in
               Toggle(isOn: Binding(get: { selected.contains(scope) }, set: {
-                if $0 { selected.insert(scope) } else { selected.remove(scope) }
+                setSelected(scope, enabled: $0)
               })) {
                 VStack(alignment: .leading) {
                   Text(scope.metric.title(language: language))
@@ -335,6 +338,8 @@ struct GalaxySSIHealthKitSyncView: View {
     let now = Date()
     guard let floor = local.date(byAdding: .day, value: -30, to: local.startOfDay(for: now)) else { return }
     let selection = selected
+    do { try records.updateHealthKitSyncSelection(selection, enabled: true) }
+    catch { failure = .failed; return }
     let request = UUID()
     token = request
     failure = nil
@@ -379,11 +384,20 @@ struct GalaxySSIHealthKitSyncView: View {
     guard scene == .active else { return }
     do {
       let archive = try records.load()
+      if focusedScope == nil { selected = archive.healthKitSyncSelection ?? [] }
       checkpoints = archive.healthKitSync ?? [:]
       incidents = Dictionary(uniqueKeysWithValues: archive.syncIncidents.map { ($0.scope, $0) })
       lastBluetoothReceipt = archive.current.compactMap { $0.bluetoothReceipt?.receivedAt }.max()
     }
     catch { failure = .failed }
+  }
+
+  private func setSelected(_ scope: GalaxySSIHealthKitImport.Scope, enabled: Bool) {
+    guard scene == .active, task == nil else { return }
+    do {
+      try records.updateHealthKitSyncSelection([scope], enabled: enabled)
+      if enabled { selected.insert(scope) } else { selected.remove(scope) }
+    } catch { failure = .failed }
   }
 
   private func statusText(_ status: GalaxySSIHealthKitSync.Status, running: Bool) -> String {

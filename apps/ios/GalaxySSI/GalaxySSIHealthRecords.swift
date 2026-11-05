@@ -157,6 +157,8 @@ struct GalaxySSIHealthRecords {
     var sleepReminders: GalaxySSIHealthSleepReminder.Ledger?
     var healthKitSync: [String: GalaxySSIHealthKitSync.Checkpoint]?
     var healthKitIncidents: [String: GalaxySSIHealthKitSync.Incident]?
+    var healthKitSyncSelection: Set<GalaxySSIHealthKitImport.Scope>?
+    var healthKitSyncDelivery: GalaxySSIHealthSyncDelivery.State?
     var derivesOverview: Bool?
     var weeklyReportAllowed: Bool?
     var weeklyExportRequests: [GalaxySSIWeeklyHealthReport.ExportRequest]?
@@ -779,6 +781,61 @@ struct GalaxySSIHealthRecords {
   }
 
   static let syncIncidentsChanged = Notification.Name("galaxyssi.health.syncIncidentsChanged")
+
+  func updateHealthKitSyncSelection(_ scopes: Set<GalaxySSIHealthKitImport.Scope>, enabled: Bool) throws {
+    guard !scopes.contains(.steps) else { throw Failure.invalid }
+    var archive = try load()
+    let old = archive.healthKitSyncSelection ?? []
+    let selected = enabled ? old.union(scopes) : old.subtracting(scopes)
+    guard selected != old else { return }
+    archive.healthKitSyncSelection = selected
+    if !enabled {
+      for scope in scopes { archive.healthKitSyncDelivery?.receipts.removeValue(forKey: scope) }
+    }
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.syncIncidentsChanged, object: owner)
+  }
+
+  func setSyncNotificationsEnabled(_ enabled: Bool) throws {
+    var archive = try load()
+    var state = archive.healthKitSyncDelivery ?? .init()
+    guard state.enabled != enabled else { return }
+    state.enabled = enabled
+    if !enabled { state.receipts.removeAll() }
+    archive.healthKitSyncDelivery = state
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.syncIncidentsChanged, object: owner)
+  }
+
+  func reconcileSyncDelivery(now: Date, calendar: Calendar, permitted: Bool, scheduled: Set<UUID>,
+                             delivered: Set<UUID>) throws -> GalaxySSIHealthSyncDelivery.Plan {
+    var archive = try load()
+    guard var state = archive.healthKitSyncDelivery else { return .init() }
+    let plan = GalaxySSIHealthSyncDelivery.plan(state: state, selected: archive.healthKitSyncSelection ?? [],
+      incidents: archive.syncIncidents, settings: archive.recordingReminders?.settings ?? .init(),
+      now: now, calendar: calendar, permitted: permitted, scheduled: scheduled, delivered: delivered)
+    if state.receipts != plan.receipts {
+      state.receipts = plan.receipts
+      archive.healthKitSyncDelivery = state
+      try persist(archive)
+    }
+    return plan
+  }
+
+  func markSyncDeliverySubmitted(_ receipt: GalaxySSIHealthSyncDelivery.Receipt, calendar: Calendar) throws {
+    var archive = try load()
+    guard var state = archive.healthKitSyncDelivery, state.enabled,
+          let entry = state.receipts.first(where: {
+            $0.value.token == receipt.token && $0.value.incident == receipt.incident && $0.value.due == receipt.due
+          }), let due = receipt.due, archive.healthKitSyncSelection?.contains(entry.key) == true,
+          let incident = archive.syncIncident(entry.key), incident.id == receipt.incident, !incident.handled,
+          GalaxySSIHealthSyncDelivery.dueAfter(due, settings: archive.recordingReminders?.settings ?? .init(),
+                                               calendar: calendar) == due else { throw Failure.stale }
+    guard !entry.value.submitted else { return }
+    state.receipts[entry.key]?.submitted = true
+    archive.healthKitSyncDelivery = state
+    try persist(archive)
+  }
 
   func undoTableBatch(_ id: UUID) throws -> Int {
     var archive = try load()

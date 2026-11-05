@@ -370,6 +370,11 @@
 "galaxyssi.health.recording_reminder.save" = "保存偏好";
 "galaxyssi.health.recording_reminder.history" = "记录提醒";
 "galaxyssi.health.recording_reminder.connections" = "数据连接";
+"galaxyssi.health.recording_reminder.sync_notifications" = "同步故障系统通知";
+"galaxyssi.health.recording_reminder.sync_notification_permission" = "允许系统通知";
+"galaxyssi.health.sync_notice.title" = "GalaxySSI 提醒";
+"galaxyssi.health.sync_notice.body" = "打开 GalaxySSI 查看。";
+"galaxyssi.health.sync_notice.close" = "关闭";
 "galaxyssi.health.recording_reminder.incidents_empty" = "没有同步故障";
 "galaxyssi.health.recording_reminder.incident_confirm" = "确认已知晓此同步故障？";
 "galaxyssi.health.recording_reminder.incident_acknowledge" = "确认已知晓";
