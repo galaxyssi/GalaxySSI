@@ -282,6 +282,13 @@ struct GalaxySSIImageLightboxView: View {
           .frame(minHeight: 44)
         }
         .disabled(exporting || (originalType == nil && item.onSave == nil))
+        if let data = originalData, originalType != nil {
+          Button {
+            guard scene == .active else { return }
+            _ = GalaxySSIImageClipboard.copy(data)
+          } label: { Label(t("clipboard_image_copy", "Copy image"), systemImage: "doc.on.doc") }
+          .frame(minHeight: 44)
+        }
       }
       .padding(.horizontal, 12).padding(.bottom, 8)
     }

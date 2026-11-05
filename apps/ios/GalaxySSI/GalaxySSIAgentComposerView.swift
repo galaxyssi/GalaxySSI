@@ -23,6 +23,7 @@ struct GalaxySSIAgentComposerView: View {
   var voiceSettings: VoiceSettings
   var focusRequest: Int = 0
   var onRemoveAttachment: (GalaxySSIDraftAttachment) -> Void
+  var onImageAttachment: ((GalaxySSIDraftAttachment) -> Void)? = nil
   var onNewSession: () -> Void
   var onOpenSessions: () -> Void
   var onScan: () -> Void
@@ -306,7 +307,9 @@ struct GalaxySSIAgentComposerView: View {
       placeholder: t("galaxyssi.agent.goal_hint", "Enter message or hold to talk..."),
       focus: $inputFocused,
       accessibilityIdentifier: "ios.agent.agent-goal-input",
-      onTap: { actionTrayPresented = false }
+      onTap: { actionTrayPresented = false },
+      attachmentScope: "agent:" + store.activeAgentConversationId,
+      onImageAttachment: onImageAttachment
     )
     .contentShape(Rectangle())
     .simultaneousGesture(holdToTalkGesture)

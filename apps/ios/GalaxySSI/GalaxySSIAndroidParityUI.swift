@@ -765,6 +765,7 @@ struct AgentHomeView: View {
       onRemoveAttachment: { attachment in
         attachments.removeAndWipe(id: attachment.id)
       },
+      onImageAttachment: appendAttachment,
       onNewSession: createAgentConversation,
       onOpenSessions: {
         actionTrayPresented = false
