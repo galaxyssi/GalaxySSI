@@ -5,6 +5,27 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testAppleHealthPressureErasePreservesSameValueBluetoothPressure() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let packet = try XCTUnwrap(GalaxySSIHealthBluetoothPacket.decode(Data([0, 120, 0, 80, 0, 90, 0])))
+    let receipt = GalaxySSIHealthBluetoothReceipt(device: UUID(), receivedAt: now, packet: packet)
+    let bluetooth = receipt.reading(conditions: "")
+    let imported = GalaxySSIHealthReading(metric: .bloodPressure, measuredAt: now, value: 120, diastolic: 80,
+      healthKitSource: .init(key: String(repeating: "a", count: 64), origin: "fixture", name: nil))
+    try records.write(bluetooth)
+    XCTAssertEqual(try records.importHealthKit([imported]), 1)
+    let preview = try records.previewHealthKitErase(.bloodPressure)
+    XCTAssertEqual(preview.count, 1)
+    XCTAssertEqual(try records.eraseHealthKitCopies(preview), 1)
+    let archive = try records.load()
+    XCTAssertEqual(archive.revisions.map(\.id), [bluetooth.id])
+    XCTAssertEqual(archive.current.first?.bluetoothReceipt, receipt)
+  }
+
+  @MainActor
   func testHealthKitCopyEraseWorksWithoutDerivedPermissionAndKeepsOtherData() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }
