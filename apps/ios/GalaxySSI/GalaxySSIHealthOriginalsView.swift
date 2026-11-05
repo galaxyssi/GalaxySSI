@@ -27,7 +27,7 @@ struct GalaxySSIHealthOriginalsView: View {
   @State private var receiptFailed = false
   @State private var preparedForShare = false
   @State private var pending: [GalaxySSIHealthOriginalStore.Original] = []
-  @State private var removal: GalaxySSIHealthOriginalStore.Original?
+  @State private var removal: GalaxySSIHealthOriginalStore.Removal?
   @State private var error = false
 
   private struct Preview: Identifiable {
@@ -144,7 +144,10 @@ struct GalaxySSIHealthOriginalsView: View {
       Text(String(format: t("selected_count", "%lld selected originals"), Int64(pending.count)))
     }
     .alert(item: $removal) { item in
-      Alert(title: Text(t("remove_confirm", "Remove this original?")), message: Text(item.name),
+      Alert(title: Text(t("remove_confirm", "Remove this original?")),
+            message: Text(item.original.name + "\n" + ByteCountFormatter.string(fromByteCount: Int64(item.original.bytes),
+              countStyle: .file) + "\n" + String(format: t("remove_links",
+                "%lld linked measurements will be kept"), Int64(item.count))),
             primaryButton: .destructive(Text(t("remove", "Remove"))) {
               guard scene == .active else { return }
               do { try store.remove(item); reload() } catch { error = true }
@@ -216,7 +219,9 @@ struct GalaxySSIHealthOriginalsView: View {
       }
     }
     .contextMenu {
-      Button(role: .destructive) { removal = item } label: { Label(t("remove", "Remove"), systemImage: "trash") }
+      Button(role: .destructive) {
+        do { removal = try store.previewRemoval(item) } catch { error = true }
+      } label: { Label(t("remove", "Remove"), systemImage: "trash") }
     }
   }
 

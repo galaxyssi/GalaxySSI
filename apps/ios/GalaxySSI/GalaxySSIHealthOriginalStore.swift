@@ -31,14 +31,32 @@ struct GalaxySSIHealthOriginalStore {
     var originals: [Original] = []
     var unreadableLegacy: Set<UUID> = []
     var pendingRemovals: Set<UUID> = []
+    var removedOriginals: [Original]?
 
     mutating func include(_ new: [Original]) {
       for item in new {
         originals.removeAll { $0.id == item.id }
+        removedOriginals?.removeAll { $0.id == item.id }
         unreadableLegacy.remove(item.id)
         originals.append(item)
       }
     }
+  }
+
+  struct Removal: Identifiable, Equatable {
+    let original: Original
+    let linked: [GalaxySSIHealthReportReview.Linked]
+    let current: [GalaxySSIHealthReading]
+    var id: UUID { original.id }
+    var count: Int { Set(linked.map { $0.reading.id }).count }
+  }
+
+  struct RemovalEvent: Codable, Identifiable {
+    var id = UUID()
+    let at: Date
+    let kind: Kind
+    let bytes: Int
+    let linkedMeasurements: Int
   }
 
   struct ExportAttempt: Codable, Identifiable, Sendable {
@@ -227,7 +245,10 @@ struct GalaxySSIHealthOriginalStore {
     if var index = archive.originalIndex, !index.pendingRemovals.isEmpty {
       let previous = index
       for id in index.pendingRemovals {
-        for path in [try url(id), try cropURL(id)] where fm.fileExists(atPath: path.path) {
+        let retainsMetadata = index.removedOriginals?.contains { $0.id == id } == true
+        var paths = [try url(id)]
+        if !retainsMetadata { paths.append(try cropURL(id)) }
+        for path in paths where fm.fileExists(atPath: path.path) {
           try fm.removeItem(at: path)
         }
       }
@@ -303,24 +324,28 @@ struct GalaxySSIHealthOriginalStore {
   }
 
   func remove(_ original: Original) throws {
+    try remove(previewRemoval(original))
+  }
+
+  func previewRemoval(_ original: Original) throws -> Removal {
     try withRestoreLease { lease in
       try reconcileRestores(lease: lease)
-      try remove(original, lease: lease)
+      let index = try ensureIndex()
+      guard index.originals.contains(original) else { throw Failure.stale }
+      return try indexRecords.previewOriginalRemoval(original)
     }
   }
 
-  private func remove(_ original: Original, lease: RestoreLease) throws {
-    try check(lease)
-    let previous = try ensureIndex()
-    guard previous.originals.contains(original) else { throw Failure.stale }
-    let key = try key(create: false)
-    guard try withFile(original.id, { try readHeader($0, id: original.id, key: key) }) == original
-    else { throw Failure.stale }
-    var updated = previous
-    updated.originals.removeAll { $0.id == original.id }
-    updated.pendingRemovals.insert(original.id)
-    try indexRecords.setOriginalIndex(updated, expected: previous)
-    try? reconcileRestores(lease: lease)
+  func remove(_ expected: Removal) throws {
+    try withRestoreLease { lease in
+      try reconcileRestores(lease: lease)
+      let original = expected.original
+      let key = try key(create: false)
+      guard try withFile(original.id, { try readHeader($0, id: original.id, key: key) }) == original
+      else { throw Failure.stale }
+      try indexRecords.commitOriginalRemoval(expected)
+      try? reconcileRestores(lease: lease)
+    }
   }
 
   func makeZIP(_ originals: [Original]) throws -> Data {

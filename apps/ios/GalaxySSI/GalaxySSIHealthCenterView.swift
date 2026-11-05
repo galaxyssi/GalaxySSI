@@ -226,6 +226,18 @@ struct GalaxySSIHealthCenterView: View {
             Label(t("metric_erase.title", "Erase Measurement History"), systemImage: "trash")
           }
         }
+        if let events = archive.originalRemovalLog, !events.isEmpty {
+          Section(t("originals.removal_history", "Original file removal history")) {
+            ForEach(events.reversed().prefix(privacyLimit)) { event in
+              VStack(alignment: .leading, spacing: 4) {
+                Text(String(format: t("originals.remove_links", "%lld linked measurements will be kept"),
+                            Int64(event.linkedMeasurements)))
+                Text(event.at, style: .date).foregroundColor(.secondary)
+              }
+            }
+            if events.count > privacyLimit { Button(t("more", "Show more")) { privacyLimit += 20 } }
+          }
+        }
         if let events = archive.metricErasureLog, !events.isEmpty {
           Section(t("metric_erase.history", "Measurement history erasures")) {
             ForEach(events.reversed().prefix(privacyLimit)) { event in

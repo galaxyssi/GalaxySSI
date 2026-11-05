@@ -42,10 +42,21 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     try originalCiphertext.write(to: root.appendingPathComponent(UUID().uuidString))
     XCTAssertEqual(try store.list().unavailable, 0)
     XCTAssertEqual(try store.read(original), pdf)
-    try store.remove(original)
-    XCTAssertTrue(try records.load().originalIndex?.originals.isEmpty == true)
+    let stale = try store.previewRemoval(original)
+    let reading = GalaxySSIHealthReading(metric: .weight, value: 66,
+      reportSource: .init(original: original.id, sha256: original.sha256, page: 0, region: 0, fromOCR: true))
+    try records.write(reading)
+    XCTAssertThrowsError(try store.remove(stale))
+    let reviewed = try store.previewRemoval(original)
+    XCTAssertEqual(reviewed.count, 1)
+    try store.remove(reviewed)
+    let removed = try records.load()
+    XCTAssertTrue(removed.originalIndex?.originals.isEmpty == true)
+    XCTAssertEqual(removed.originalIndex?.removedOriginals, [original])
+    XCTAssertEqual(removed.originalRemovalLog?.last?.linkedMeasurements, 1)
+    XCTAssertEqual(removed.current.first(where: { $0.id == reading.id })?.reportSource, reading.reportSource)
     XCTAssertFalse(FileManager.default.fileExists(atPath: path.path))
-    XCTAssertEqual(try records.load().current.map(\.value), [65])
+    XCTAssertEqual(removed.current.count, 2)
   }
 
   @MainActor

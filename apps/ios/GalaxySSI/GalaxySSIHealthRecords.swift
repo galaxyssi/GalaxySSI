@@ -145,6 +145,7 @@ struct GalaxySSIHealthRecords {
     var recognitionJobs: [GalaxySSIHealthRecognitionJobs.Job]?
     var photoDraft: GalaxySSIHealthPhotoDraft?
     var originalIndex: GalaxySSIHealthOriginalStore.Index?
+    var originalRemovalLog: [GalaxySSIHealthOriginalStore.RemovalEvent]?
     var version = 1
     var recordingReminders: GalaxySSIHealthRecordingReminders.Ledger?
     var restoreReceipts: Set<UUID>?
@@ -1075,6 +1076,35 @@ struct GalaxySSIHealthRecords {
     receipts.insert(receipt)
     updated.restoreReceipts = receipts
     try persist(updated)
+  }
+
+  func previewOriginalRemoval(_ original: GalaxySSIHealthOriginalStore.Original) throws
+    -> GalaxySSIHealthOriginalStore.Removal {
+    try originalRemoval(original, archive: load())
+  }
+
+  func commitOriginalRemoval(_ expected: GalaxySSIHealthOriginalStore.Removal) throws {
+    var archive = try load()
+    guard try originalRemoval(expected.original, archive: archive) == expected,
+          var index = archive.originalIndex else { throw Failure.stale }
+    index.originals.removeAll { $0.id == expected.id }
+    index.removedOriginals = (index.removedOriginals ?? []) + [expected.original]
+    index.pendingRemovals.insert(expected.id)
+    archive.originalIndex = index
+    let event = GalaxySSIHealthOriginalStore.RemovalEvent(at: Date(), kind: expected.original.kind,
+      bytes: expected.original.bytes, linkedMeasurements: expected.count)
+    archive.originalRemovalLog = Array(((archive.originalRemovalLog ?? []) + [event]).suffix(50))
+    try persist(archive)
+  }
+
+  private func originalRemoval(_ original: GalaxySSIHealthOriginalStore.Original, archive: Archive) throws
+    -> GalaxySSIHealthOriginalStore.Removal {
+    guard archive.originalIndex?.originals.contains(original) == true else { throw Failure.stale }
+    let current = archive.current
+    let linked = GalaxySSIHealthReportReview.linked(original: original, revisions: archive.revisions,
+      current: current, evidence: archive.reportEvidence ?? [])
+    let ids = Set(linked.map { $0.reading.id })
+    return .init(original: original, linked: linked, current: current.filter { ids.contains($0.id) })
   }
 
   func setOriginalIndex(_ index: GalaxySSIHealthOriginalStore.Index,
