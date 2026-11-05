@@ -4,6 +4,36 @@ struct GalaxySSIHealthProfile: Codable {
   enum ReferenceSex: String, Codable, CaseIterable { case unspecified, female, male, other }
   enum HeightUnit: String, Codable, CaseIterable { case cm, inches }
   enum BackgroundKind: String, Codable, CaseIterable { case history, medication, allergy }
+  enum AnalysisField: String, Codable, CaseIterable, Identifiable {
+    case birthDate, referenceSex, height, context
+    var id: String { rawValue }
+  }
+
+  enum AnalysisValue: Equatable {
+    case date(Date), sex(ReferenceSex), height(Decimal, HeightUnit), context(String)
+  }
+
+  struct AnalysisContext {
+    let permission: UUID
+    let values: [AnalysisField: AnalysisValue]
+    let fields: Set<AnalysisField>
+    let versions: [AnalysisField: UUID]
+
+    init(profile: GalaxySSIHealthProfile, permission: UUID, fields: Set<AnalysisField>) {
+      self.permission = permission
+      self.fields = fields
+      values = Dictionary(uniqueKeysWithValues: fields.compactMap { field in
+        profile.analysisValue(field).map { (field, $0) }
+      })
+      versions = Dictionary(uniqueKeysWithValues: fields.compactMap { field in
+        profile.analysisVersion(field).map { (field, $0) }
+      })
+    }
+
+    func isCurrent(profile: GalaxySSIHealthProfile, permission: UUID?) -> Bool {
+      self.permission == permission && fields.allSatisfy { versions[$0] == profile.analysisVersion($0) }
+    }
+  }
 
   struct Background: Codable, Identifiable {
     var id = UUID()
@@ -13,6 +43,7 @@ struct GalaxySSIHealthProfile: Codable {
   }
 
   var revision: UUID?
+  var analysisVersions: [AnalysisField: UUID]?
   var name = ""
   var birthDate: Date?
   var referenceSex = ReferenceSex.unspecified
@@ -20,6 +51,20 @@ struct GalaxySSIHealthProfile: Codable {
   var heightUnit = HeightUnit.cm
   var context = ""
   var background: [Background] = []
+
+  func analysisValue(_ field: AnalysisField) -> AnalysisValue? {
+    switch field {
+    case .birthDate: return birthDate.map(AnalysisValue.date)
+    case .referenceSex: return referenceSex == .unspecified ? nil : .sex(referenceSex)
+    case .height: return height.map { .height($0, heightUnit) }
+    case .context: return context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : .context(context)
+    }
+  }
+
+  func analysisVersion(_ field: AnalysisField) -> UUID? {
+    if let analysisVersions { return analysisVersions[field] }
+    return analysisValue(field) == nil ? nil : revision
+  }
 
   var isValid: Bool {
     guard name.utf8.count <= 256, context.utf8.count <= 2048,

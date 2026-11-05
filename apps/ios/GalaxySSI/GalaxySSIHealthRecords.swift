@@ -109,6 +109,7 @@ struct GalaxySSIHealthOverview {
 @MainActor
 struct GalaxySSIHealthRecords {
   static let trendInputsChanged = Notification.Name("galaxyssi.health.trendInputsChanged")
+  static let profileInputsChanged = Notification.Name("galaxyssi.health.profileInputsChanged")
 
   enum Failure: Error {
     case invalid, stale, duplicate, unavailable, permission
@@ -125,6 +126,11 @@ struct GalaxySSIHealthRecords {
     var enabled: Bool
   }
 
+  struct ProfileAnalysisAudit: Codable {
+    let at: Date
+    let fields: Set<GalaxySSIHealthProfile.AnalysisField>
+  }
+
   struct Archive: Codable {
     var version = 1
     var revisions: [GalaxySSIHealthReading] = []
@@ -135,6 +141,8 @@ struct GalaxySSIHealthRecords {
     var privacyEvents: [PrivacyEvent]?
     var tableBatches: [GalaxySSIHealthTableImport.Batch]?
     var healthOnlinePermission: UUID?
+    var profileAnalysisPermission: UUID?
+    var profileAnalysisAudit: [ProfileAnalysisAudit]?
 
     var current: [GalaxySSIHealthReading] {
       var seen = Set<UUID>()
@@ -187,14 +195,43 @@ struct GalaxySSIHealthRecords {
 
   func writeProfile(_ input: GalaxySSIHealthProfile) throws {
     guard input.isValid else { throw Failure.invalid }
-    guard try loadProfile().revision == input.revision else { throw Failure.stale }
+    let previous = try loadProfile()
+    guard previous.revision == input.revision else { throw Failure.stale }
     var updated = input
     updated.revision = UUID()
+    var versions: [GalaxySSIHealthProfile.AnalysisField: UUID] = [:]
+    for field in GalaxySSIHealthProfile.AnalysisField.allCases {
+      versions[field] = previous.analysisValue(field) == updated.analysisValue(field)
+        ? previous.analysisVersion(field) : UUID()
+    }
+    updated.analysisVersions = versions
     let payload = try JSONEncoder().encode(updated)
     guard let sealed = try AES.GCM.seal(payload, using: key(create: true, account: profileAccount),
                                         authenticating: profileContext).combined else { throw Failure.unavailable }
     try sealed.write(to: storageFile(context: profileContext, fixtureExtension: "profile"),
                      options: [.atomic, .completeFileProtection])
+    NotificationCenter.default.post(name: Self.profileInputsChanged, object: owner)
+  }
+
+  func setProfileAnalysisAllowed(_ allowed: Bool) throws {
+    var archive = try load()
+    guard (archive.profileAnalysisPermission != nil) != allowed else { return }
+    archive.profileAnalysisPermission = allowed ? UUID() : nil
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.profileInputsChanged, object: owner)
+  }
+
+  func captureProfileAnalysis(_ fields: Set<GalaxySSIHealthProfile.AnalysisField>) throws
+    -> GalaxySSIHealthProfile.AnalysisContext? {
+    guard !fields.isEmpty else { return nil }
+    var archive = try load()
+    guard let permission = archive.profileAnalysisPermission, archive.derivesOverview == true else { throw Failure.permission }
+    let snapshot = GalaxySSIHealthProfile.AnalysisContext(profile: try loadProfile(), permission: permission, fields: fields)
+    var audit = archive.profileAnalysisAudit ?? []
+    audit.append(.init(at: Date(), fields: fields))
+    archive.profileAnalysisAudit = Array(audit.suffix(50))
+    try persist(archive)
+    return snapshot
   }
 
   func load() throws -> Archive {
