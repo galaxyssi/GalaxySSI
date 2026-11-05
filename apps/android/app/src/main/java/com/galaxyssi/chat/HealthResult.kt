@@ -15,8 +15,8 @@ internal data class HealthResult(val kind: HealthResultKind, val raw: String, va
         const val MAX_LENGTH = 128
         private const val DECIMAL = "(?:[0-9]+(?:[.,][0-9]+)?|[.,][0-9]+)"
         private val exact = Regex("^$DECIMAL$")
-        private val comparison = Regex("^(<=|>=|<|>|\u2264|\u2265)\\s*($DECIMAL)$")
-        private val range = Regex("^($DECIMAL)\\s*(?:-|\u2013|\u2014|~|\u301c|\\bto\\b)\\s*($DECIMAL)$", RegexOption.IGNORE_CASE)
+        private val comparison = Regex("^(<=|>=|<|>|\u2264|\u2265|\uff1c|\uff1e)\\s*($DECIMAL)$")
+        private val range = Regex("^($DECIMAL)\\s*(?:-|\u2013|\u2014|~|\u301c|\uff5e|\u81f3|\\bto\\b)\\s*($DECIMAL)$", RegexOption.IGNORE_CASE)
         private val labels = setOf("negative", "positive", "trace", "indeterminate", "inconclusive", "reactive", "nonreactive", "non-reactive", "detected", "not detected",
             "\u9634\u6027", "\u9633\u6027", "\u5f31\u9633\u6027", "\u53ef\u7591", "\u672a\u68c0\u51fa", "\u68c0\u51fa")
         private val grade = Regex("(?:[1-4]\\+|[+]{1,4}|[+-]|\u00b1)")
@@ -41,7 +41,10 @@ internal data class HealthResult(val kind: HealthResultKind, val raw: String, va
             if (form != HealthResultForm.LABORATORY) return null
             comparison.matchEntire(raw)?.let { match ->
                 val value = numeric(match.groupValues[2], true) ?: return null
-                val op = when (match.groupValues[1]) { "\u2264" -> "<="; "\u2265" -> ">="; else -> match.groupValues[1] }
+                val op = when (match.groupValues[1]) {
+                    "\u2264" -> "<="; "\u2265" -> ">="; "\uff1c" -> "<"; "\uff1e" -> ">"
+                    else -> match.groupValues[1]
+                }
                 return HealthResult(HealthResultKind.COMPARISON, raw, "$op$value", value, op)
             }
             range.matchEntire(raw)?.let { match ->
