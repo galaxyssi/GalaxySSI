@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import NaturalLanguage
 
@@ -49,9 +48,22 @@ actor PublicNewsBodyStore {
   }
 
   func load(_ articleID: String) -> PublicNewsBodyCheckpoint? {
-    guard let file = file(for: articleID), let data = try? Data(contentsOf: file), data.count <= 1_500_000,
+    guard let file = file(for: articleID), let saved = loadValidated(file), saved.articleID == articleID else { return nil }
+    return saved
+  }
+
+  func speechDocument(for item: PublicNewsSpeechBookmark.Item) -> PublicNewsSpeechDocument? {
+    guard PublicNewsSpeechBookmark.isKey(item.articleKey),
+          let root, let saved = loadValidated(root.appendingPathComponent(item.articleKey).appendingPathExtension("json")),
+          PublicNewsSpeechBookmark.key(for: saved.articleID) == item.articleKey,
+          let url = URL(string: saved.articleID), PublicNewsArticleBody.supports(url) else { return nil }
+    return PublicNewsSpeechDocument(checkpoint: saved, edition: item.edition)
+  }
+
+  private func loadValidated(_ file: URL) -> PublicNewsBodyCheckpoint? {
+    guard let data = try? Data(contentsOf: file), data.count <= 1_500_000,
           let saved = try? JSONDecoder().decode(PublicNewsBodyCheckpoint.self, from: data),
-          saved.articleID == articleID, saved.fingerprint == saved.source.fingerprint,
+          saved.fingerprint == saved.source.fingerprint,
           saved.segments == PublicNewsTranslation.segments(saved.source),
           saved.translated.count == saved.segments.count else { return nil }
     return saved
@@ -125,7 +137,7 @@ actor PublicNewsBodyStore {
   }
 
   private func file(for articleID: String) -> URL? {
-    let key = SHA256.hash(data: Data(articleID.utf8)).map { String(format: "%02x", $0) }.joined()
+    let key = PublicNewsSpeechBookmark.key(for: articleID)
     return root?.appendingPathComponent(key).appendingPathExtension("json")
   }
 }
