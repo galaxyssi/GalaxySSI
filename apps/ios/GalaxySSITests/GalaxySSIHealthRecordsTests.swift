@@ -1983,6 +1983,77 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(trend.points.last?.readings.map(\.id), [standard.id])
   }
 
+  func testHealthOCRLabRowsKeepTypedNotationAndOnlyAcceptExplicitReference() throws {
+    let comparison = try XCTUnwrap(GalaxySSIHealthOCRLabRow.parse("12. ALT: \u{2264} 40 U/L H; Reference: 0\u{2013}40"))
+    XCTAssertEqual(comparison.metric, .alt)
+    XCTAssertEqual(comparison.notation, "\u{2264} 40")
+    XCTAssertEqual(comparison.unit, "U/L")
+    XCTAssertEqual(comparison.reference, "0\u{2013}40")
+    let range = try XCTUnwrap(GalaxySSIHealthOCRLabRow.parse("WBC 4.0\u{FF5E}10.0 \u{00D7}10\u{2079}/L"))
+    XCTAssertEqual(range.unit, "10^9/L")
+    XCTAssertEqual(GalaxySSIHealthReportedResult.parse(range.notation, metric: range.metric)?.kind, .range)
+    let translated = try XCTUnwrap(GalaxySSIHealthOCRLabRow.parse("\u{808C}\u{9150} (\u{03BC}mol/L): 55\u{81F3}85"))
+    XCTAssertEqual(translated.metric, .creatinine)
+    XCTAssertEqual(translated.unit, "umol/L")
+    let urine = try XCTUnwrap(GalaxySSIHealthOCRLabRow.parse("\u{5C3F}\u{86CB}\u{767D}\u{FF1A}\u{9634}\u{6027}"))
+    XCTAssertEqual(urine.metric, .urineProtein)
+    XCTAssertEqual(urine.unit, "")
+    XCTAssertEqual(GalaxySSIHealthOCRLabRow.parse("Urine protein: 1+")?.notation, "1+")
+    let competing = try XCTUnwrap(GalaxySSIHealthOCRLabRow.parse("Glucose <5.6 mmol/L (<101 mg/dL)"))
+    XCTAssertEqual(competing.notation, "<5.6")
+    XCTAssertNil(competing.unit)
+    let missing = try XCTUnwrap(GalaxySSIHealthOCRLabRow.parse("Glucose \u{FF1C} 5,60"))
+    XCTAssertNil(missing.unit)
+    XCTAssertEqual(GalaxySSIHealthReportedResult.parse(missing.notation, metric: missing.metric)?.canonical, "<5.6")
+    for rejected in ["Patient name: Glucose 5.6 mmol/L", "Glucose 5.6 mmol/L 3.9-6.1",
+                     "Glucose 5.6 mmol/L; Note: verify", "Glucose 2026-11-03", "ALT 40 mg/dL",
+                     "Glucose negative", "Urine protein arbitrary text", "Urine protein 20 mg/dL", "PRO 1+", "UA 10 mg/dL"] {
+      XCTAssertNil(GalaxySSIHealthOCRLabRow.parse(rejected), rejected)
+    }
+  }
+
+  @MainActor
+  func testHealthOCRLabBatchRetainsUnresolvedUnitAndOnlyExactNumbersEnterTrend() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let original = GalaxySSIHealthOriginalStore.Original(id: UUID(), name: "fixture.pdf", kind: .pdf,
+      fileExtension: "pdf", importedAt: Date(), bytes: 1, sha256: String(repeating: "b", count: 64))
+    let date = Date()
+    func item(_ raw: String, region: Int) throws -> GalaxySSIHealthReportReview.Item {
+      let row = try XCTUnwrap(GalaxySSIHealthOCRLabRow.parse(raw))
+      let source = GalaxySSIHealthReportReview.Source(original: original.id, sha256: original.sha256,
+        page: 1, region: region, fromOCR: true)
+      let result = GalaxySSIHealthReportedResult.parse(row.notation, metric: row.metric)
+      let value = result == nil ? GalaxySSIHealthReportedResult.number(row.notation) : nil
+      return .init(version: UUID(), source: source, excerpt: raw,
+        reading: .init(metric: row.metric, measuredAt: date, value: value, reported: result,
+          reportedNotation: row.notation, unitOverride: row.unit ?? "", referenceInterval: row.reference, reportSource: source))
+    }
+    let items = try [
+      item("Glucose <= 2.50 mmol/L; Reference: 3.9-6.1", region: 0),
+      item("Glucose 4.0-5.0 mmol/L", region: 1), item("Urine protein: trace", region: 2),
+      item("Glucose 6.0 mmol/L", region: 3), item("Glucose > 7.2", region: 4)
+    ]
+    for item in items { try records.stageReportItem(item, replacing: nil) }
+    let unresolved = try XCTUnwrap(items.last)
+    XCTAssertTrue(unresolved.requiresUnitReview)
+    XCTAssertNil(GalaxySSIHealthReportReview.exactTarget(for: unresolved, current: []))
+    XCTAssertThrowsError(try records.confirmReportItems(Set(items.map(\.version)), original: original))
+    XCTAssertTrue(try records.load().current.isEmpty)
+    try records.confirmReportItems(Set(items.dropLast().map(\.version)), original: original)
+    let archive = try records.load()
+    XCTAssertEqual(archive.reportReview?.map(\.version), [unresolved.version])
+    let comparison = try XCTUnwrap(archive.current.first { $0.reportSource == items[0].source })
+    XCTAssertEqual(comparison.reported?.raw, "<= 2.50")
+    XCTAssertEqual(comparison.referenceInterval, "3.9-6.1")
+    XCTAssertEqual(Set(archive.current.compactMap { $0.reported?.kind.rawValue }), ["comparison", "range", "qualitative"])
+    let trend = GalaxySSIHealthTrend(current: archive.current, metric: .glucose, component: .value,
+      now: date, dayCount: 7, calendar: .current)
+    XCTAssertEqual(trend.mean, 6)
+    XCTAssertEqual(trend.points.last?.readings.map(\.id), [items[3].reading.id])
+  }
+
   @MainActor
   func testStructuredImportKeepsExactSourceAndUndoPreservesEdits() throws {
     let data = Data("value,time,note\r\n60,2025-01-01T12:00:00Z,\"line\r\nnext\"\r\n61,2025-01-02T12:00:00Z,\r\n60,2025-01-01T12:00:00Z,\r\n".utf8)

@@ -515,7 +515,7 @@ struct GalaxySSIHealthRecords {
     var pending = archive.reportReview ?? []
     let index = pending.firstIndex { $0.source == input.source }
     guard index.map({ pending[$0].version }) == expected, expected != input.version else { throw Failure.stale }
-    guard input.reading.isValid, input.reading.reportSource == input.source,
+    guard input.validDraftValue, input.reading.reportSource == input.source,
           input.reading.revision == 0, !input.reading.deleted,
           !input.excerpt.isEmpty, input.excerpt.count <= 500 else { throw Failure.invalid }
     var reviewed = input
