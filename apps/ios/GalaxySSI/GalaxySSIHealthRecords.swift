@@ -510,7 +510,8 @@ struct GalaxySSIHealthRecords {
     guard (latest?.revision ?? 0) == input.revision, input.revision < Int.max, latest?.deleted != true,
           !input.deleted || latest != nil else { throw Failure.stale }
     if let latest {
-      guard latest.bluetoothReceipt == input.bluetoothReceipt, latest.tableSource == input.tableSource,
+      guard latest.metric == input.metric,
+            latest.bluetoothReceipt == input.bluetoothReceipt, latest.tableSource == input.tableSource,
             latest.healthKitSource == input.healthKitSource,
             latest.reportSource == input.reportSource, latest.secondarySources == input.secondarySources
       else { throw Failure.invalid }

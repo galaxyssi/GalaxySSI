@@ -6,6 +6,22 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testMeasurementTypeCannotChangeAcrossRevisions() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    try records.write(.init(metric: .weight, value: 65))
+    var edit = try XCTUnwrap(records.load().current.first)
+    edit.metric = .heartRate
+    XCTAssertThrowsError(try records.write(edit)) {
+      guard case GalaxySSIHealthRecords.Failure.invalid = $0 else { return XCTFail("Expected immutable type") }
+    }
+    XCTAssertEqual(try records.load().revisions.map(\.metric), [.weight])
+    XCTAssertEqual(try records.eraseMetricHistory(records.previewMetricErase(.weight)), 1)
+    XCTAssertTrue(try records.load().revisions.isEmpty)
+  }
+
+  @MainActor
   func testUndoRebindsReportEvidenceAndCannotRecoverPermanentlyErasedHistory() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }
