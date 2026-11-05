@@ -1,0 +1,200 @@
+import CryptoKit
+import SwiftUI
+
+enum GalaxySSIHealthMetricDeletion {
+  enum Source: String, Codable, CaseIterable {
+    case manual, report, table, bluetooth, appleHealth
+
+    init(_ reading: GalaxySSIHealthReading) {
+      if reading.healthKitSource != nil { self = .appleHealth }
+      else if reading.bluetoothReceipt != nil { self = .bluetooth }
+      else if reading.tableSource != nil { self = .table }
+      else if reading.reportSource != nil { self = .report }
+      else { self = .manual }
+    }
+
+    func title(language: String) -> String {
+      let fallback: String
+      switch self {
+      case .manual: fallback = "Manual"
+      case .report: fallback = "Report review"
+      case .table: fallback = "Table import"
+      case .bluetooth: fallback = "Bluetooth"
+      case .appleHealth: fallback = "Apple Health"
+      }
+      return GalaxySSIHealthMetricDeletion.text(rawValue, fallback, language: language)
+    }
+  }
+
+  struct Scope: Codable, Equatable {
+    let metric: GalaxySSIHealthMetric
+    let sources: [Source: Int]
+    let earliest: Date?
+    let latest: Date?
+    let drafts: Int
+
+    var count: Int { sources.values.reduce(0, +) }
+    var isEmpty: Bool { count == 0 && drafts == 0 }
+  }
+
+  struct Audit: Codable, Identifiable {
+    var id = UUID()
+    let at: Date
+    let scope: Scope
+  }
+
+  struct Preview: Equatable {
+    let scope: Scope
+    let ids: Set<UUID>
+    let fingerprint: SHA256.Digest
+  }
+
+  @MainActor
+  static func preview(_ metric: GalaxySSIHealthMetric, in archive: GalaxySSIHealthRecords.Archive) throws -> Preview {
+    let ids = Set(archive.revisions.lazy.filter { $0.metric == metric }.map(\.id))
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    var hasher = SHA256()
+    func append<T: Encodable>(_ value: T) throws {
+      hasher.update(data: try encoder.encode(value))
+      hasher.update(data: Data([0]))
+    }
+    var newest: [UUID: GalaxySSIHealthReading] = [:]
+    for reading in archive.revisions where ids.contains(reading.id) {
+      // An inconsistent history must not remove a different measurement type.
+      guard reading.metric == metric else { throw GalaxySSIHealthRecords.Failure.invalid }
+      try append(reading)
+      newest[reading.id] = reading
+    }
+    var drafts = 0
+    if let draft = archive.draft, draft.metric == metric || draft.existing.map({ ids.contains($0.id) }) == true {
+      try append(draft)
+      drafts += 1
+    }
+    for item in archive.reportReview ?? [] where item.reading.metric == metric {
+      try append(item)
+      drafts += 1
+    }
+    for evidence in archive.tableEvidence ?? [] where ids.contains(evidence.target.record) {
+      try append(evidence)
+    }
+    var counts: [Source: Int] = [:]
+    for reading in newest.values { counts[Source(reading), default: 0] += 1 }
+    let dates = newest.values.lazy.map(\.measuredAt)
+    return Preview(scope: .init(metric: metric, sources: counts, earliest: dates.min(), latest: dates.max(),
+                                drafts: drafts), ids: ids, fingerprint: hasher.finalize())
+  }
+
+  static func text(_ key: String, _ fallback: String, language: String) -> String {
+    GalaxySSILocalization.string("galaxyssi.health.metric_deletion." + key, fallback: fallback, language: language)
+  }
+}
+
+@MainActor
+struct GalaxySSIHealthMetricDeletionView: View {
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @Environment(\.scenePhase) private var scene
+  let records: GalaxySSIHealthRecords
+  @State private var review: GalaxySSIHealthMetricDeletion.Preview?
+  @State private var history: [GalaxySSIHealthMetricDeletion.Audit] = []
+  @State private var confirming = false
+  @State private var notice: String?
+  @State private var historyLimit = 20
+
+  var body: some View {
+    List {
+      if scene == .active {
+        if let notice { Text(notice).foregroundColor(.secondary) }
+        if let review {
+          Section(t("review", "Review local deletion")) {
+            scopeRows(review.scope)
+            Text(t("boundary", "Only GalaxySSI's local copies are removed. Original files, Apple Health, exports and backups are unchanged."))
+              .foregroundColor(.secondary)
+            Button(t("delete", "Delete local records"), role: .destructive) { confirming = true }
+            Button(t("choose_another", "Choose another measurement")) { self.review = nil }
+          }
+        } else {
+          Section(t("choose", "Choose a measurement type")) {
+            ForEach(GalaxySSIHealthMetric.allCases) { metric in
+              Button(metric.title(language: language)) { prepare(metric) }
+            }
+          }
+          if !history.isEmpty {
+            Section(t("history", "Local deletion history")) {
+              ForEach(history.reversed().prefix(historyLimit)) { entry in
+                VStack(alignment: .leading, spacing: 4) {
+                  scopeRows(entry.scope)
+                  Text(entry.at, format: .dateTime).foregroundColor(.secondary)
+                }
+              }
+              if history.count > historyLimit { Button(t("more", "Show more")) { historyLimit += 20 } }
+            }
+          }
+        }
+      }
+    }
+    .navigationTitle(t("title", "Delete by Measurement Type"))
+    .navigationBarTitleDisplayMode(.inline)
+    .onAppear(perform: reload)
+    .onChange(of: scene) {
+      if $0 == .active { reload() }
+      else { review = nil; confirming = false; history = []; notice = nil; historyLimit = 20 }
+    }
+    .alert(t("confirm", "Permanently delete these local records?"), isPresented: $confirming) {
+      Button(t("delete", "Delete local records"), role: .destructive, action: erase)
+      Button(t("cancel", "Cancel"), role: .cancel) {}
+    }
+  }
+
+  @ViewBuilder
+  private func scopeRows(_ scope: GalaxySSIHealthMetricDeletion.Scope) -> some View {
+    Text(scope.metric.title(language: language)).font(.headline)
+    Text(String(format: t("record_count", "Local records: %lld"), Int64(scope.count)))
+    if let earliest = scope.earliest, let latest = scope.latest {
+      Text(String(format: t("date_range", "%@ to %@"), earliest.formatted(date: .abbreviated, time: .omitted),
+                  latest.formatted(date: .abbreviated, time: .omitted))).foregroundColor(.secondary)
+    }
+    ForEach(GalaxySSIHealthMetricDeletion.Source.allCases, id: \.rawValue) { source in
+      if let count = scope.sources[source] {
+        Text(String(format: t("source_count", "%@: %lld"), source.title(language: language), Int64(count)))
+      }
+    }
+    if scope.drafts > 0 {
+      Text(String(format: t("drafts", "Drafts: %lld"), Int64(scope.drafts)))
+    }
+  }
+
+  private func prepare(_ metric: GalaxySSIHealthMetric) {
+    guard scene == .active else { return }
+    notice = nil
+    do {
+      let preview = try records.previewMetricDeletion(metric)
+      if preview.scope.isEmpty { notice = t("empty", "No local history for this measurement type.") }
+      else { review = preview }
+    } catch { notice = t("failed", "Could not access local measurement history.") }
+  }
+
+  private func erase() {
+    guard scene == .active, let review else { return }
+    self.review = nil
+    do {
+      try records.deleteMetricHistory(review)
+      reload()
+      notice = t("deleted", "The reviewed local history was deleted.")
+    } catch GalaxySSIHealthRecords.Failure.stale {
+      notice = t("changed", "The local history changed. Review it again before deleting.")
+    } catch {
+      notice = t("delete_failed", "Deletion could not be completed.")
+    }
+  }
+
+  private func reload() {
+    guard scene == .active else { return }
+    do { history = try records.load().metricDeletionHistory ?? [] }
+    catch { history = []; notice = t("failed", "Could not access local measurement history.") }
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    GalaxySSIHealthMetricDeletion.text(key, fallback, language: language)
+  }
+}

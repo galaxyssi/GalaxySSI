@@ -141,6 +141,7 @@ struct GalaxySSIHealthRecords {
     var restoreReceipts: Set<UUID>?
     var revisions: [GalaxySSIHealthReading] = []
     var lastMeasurementDeletion: MeasurementDeletion?
+    var metricDeletionHistory: [GalaxySSIHealthMetricDeletion.Audit]?
     var draft: GalaxySSIHealthDraft?
     var sleepReminders: GalaxySSIHealthSleepReminder.Ledger?
     var derivesOverview: Bool?
@@ -336,7 +337,8 @@ struct GalaxySSIHealthRecords {
     guard (latest?.revision ?? 0) == input.revision, input.revision < Int.max, latest?.deleted != true,
           !input.deleted || latest != nil else { throw Failure.stale }
     if let latest {
-      guard latest.bluetoothReceipt == input.bluetoothReceipt, latest.tableSource == input.tableSource,
+      guard latest.metric == input.metric,
+            latest.bluetoothReceipt == input.bluetoothReceipt, latest.tableSource == input.tableSource,
             latest.healthKitSource == input.healthKitSource,
             latest.reportSource == input.reportSource
       else { throw Failure.invalid }
@@ -391,6 +393,31 @@ struct GalaxySSIHealthRecords {
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
     return restored
+  }
+
+  func previewMetricDeletion(_ metric: GalaxySSIHealthMetric) throws -> GalaxySSIHealthMetricDeletion.Preview {
+    try GalaxySSIHealthMetricDeletion.preview(metric, in: load())
+  }
+
+  func deleteMetricHistory(_ reviewed: GalaxySSIHealthMetricDeletion.Preview) throws {
+    var archive = try load()
+    let metric = reviewed.scope.metric
+    let current = try GalaxySSIHealthMetricDeletion.preview(metric, in: archive)
+    guard current == reviewed, !current.scope.isEmpty else { throw Failure.stale }
+    let ids = current.ids
+    archive.revisions.removeAll { ids.contains($0.id) }
+    archive.tableEvidence?.removeAll { ids.contains($0.target.record) }
+    archive.reportReview?.removeAll { $0.reading.metric == metric }
+    if let draft = archive.draft, draft.metric == metric || draft.existing.map({ ids.contains($0.id) }) == true {
+      archive.draft = nil
+    }
+    if let last = archive.lastMeasurementDeletion, ids.contains(last.id) { archive.lastMeasurementDeletion = nil }
+    if metric == .sleepDuration { archive.sleepReminders?.episodes = [] }
+    var history = archive.metricDeletionHistory ?? []
+    history.append(.init(at: Date(), scope: current.scope))
+    archive.metricDeletionHistory = Array(history.suffix(100))
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
   }
 
   func stageReportItem(_ input: GalaxySSIHealthReportReview.Item, replacing expected: UUID?) throws {

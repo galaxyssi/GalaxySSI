@@ -175,6 +175,96 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testMetricDeletionIncludesSoftDeletedHistoryAndKeepsOtherMetricsAndOriginals() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: root.appendingPathComponent("records"))
+    let originals = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: root)
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData { $0.beginPage() }
+    try originals.store(pdf, name: "fixture.pdf")
+    let original = try XCTUnwrap(originals.list().originals.first)
+    let date = try XCTUnwrap(ISO8601DateFormatter().date(from: "2025-01-01T12:00:00Z"))
+    let manual = GalaxySSIHealthReading(metric: .weight, measuredAt: date, value: 60)
+    try records.write(manual)
+    let table = Data("value,time\n60,2025-01-01T12:00:00Z\n".utf8)
+    let mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true)
+    let parsed = try GalaxySSIHealthTableImport.parse(table, json: false)
+    let rows = try GalaxySSIHealthTableImport.preview(parsed, mapping: mapping, current: records.load().current)
+    let row = try XCTUnwrap(rows.first)
+    let target = try XCTUnwrap(row.duplicateTarget)
+    XCTAssertEqual(try records.importTable(table, name: "fixture.csv", json: false, mapping: mapping,
+                                           expected: [.duplicate], linkDuplicates: [row.id: target]), 0)
+    var tombstone = try XCTUnwrap(records.load().current.first)
+    tombstone.deleted = true
+    try records.write(tombstone, rememberDeletion: true)
+    let apple = GalaxySSIHealthReading(metric: .weight, measuredAt: date.addingTimeInterval(100), value: 61,
+      healthKitSource: .init(key: String(repeating: "a", count: 64), origin: "fixture", name: nil))
+    XCTAssertEqual(try records.importHealthKit([apple]), 1)
+    func report(_ metric: GalaxySSIHealthMetric, region: Int) -> GalaxySSIHealthReportReview.Item {
+      let source = GalaxySSIHealthReportReview.Source(original: original.id, sha256: original.sha256,
+        page: 0, region: region, fromOCR: true)
+      return .init(version: UUID(), source: source, excerpt: "Fixture",
+        reading: .init(metric: metric, measuredAt: date, value: 65, reportSource: source))
+    }
+    let reviewed = report(.weight, region: 0)
+    let staged = report(.weight, region: 1)
+    let otherStaged = report(.heartRate, region: 2)
+    try records.stageReportItem(reviewed, replacing: nil)
+    try records.confirmReportItems([reviewed.version], original: original)
+    try records.stageReportItem(staged, replacing: nil)
+    try records.stageReportItem(otherStaged, replacing: nil)
+    try records.storeDraft(.init(metric: .weight))
+    try records.setHealthOnlinePermission(true)
+    let other = GalaxySSIHealthReading(metric: .heartRate, measuredAt: date, value: 70)
+    try records.write(other)
+
+    let preview = try records.previewMetricDeletion(.weight)
+    XCTAssertEqual(preview.scope.sources, [.manual: 1, .appleHealth: 1, .report: 1])
+    XCTAssertEqual(preview.scope.earliest, date)
+    XCTAssertEqual(preview.scope.latest, apple.measuredAt)
+    XCTAssertEqual(preview.scope.drafts, 2)
+    try records.deleteMetricHistory(preview)
+
+    let archive = try records.load()
+    XCTAssertEqual(archive.current.map(\.id), [other.id])
+    XCTAssertEqual(archive.revisions.map(\.id), [other.id])
+    XCTAssertNil(archive.draft)
+    XCTAssertNil(archive.lastMeasurementDeletion)
+    XCTAssertEqual(archive.reportReview?.map(\.version), [otherStaged.version])
+    XCTAssertEqual(archive.tableEvidence?.count, 0)
+    XCTAssertEqual(archive.tableBatches?.first?.data, table)
+    XCTAssertEqual(try originals.read(original), pdf)
+    XCTAssertNotNil(archive.healthOnlinePermission)
+    XCTAssertEqual(archive.metricDeletionHistory?.first?.scope, preview.scope)
+    XCTAssertEqual(try records.importHealthKit([apple]), 1)
+  }
+
+  @MainActor
+  func testMetricDeletionRejectsChangedRevisionWithSamePreviewCounts() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    try records.write(.init(metric: .weight, value: 60))
+    let before = try records.previewMetricDeletion(.weight)
+    var updated = try XCTUnwrap(records.load().current.first)
+    updated.value = 61
+    try records.write(updated)
+    let after = try records.previewMetricDeletion(.weight)
+    XCTAssertEqual(before.scope, after.scope)
+    XCTAssertThrowsError(try records.deleteMetricHistory(before)) { error in
+      guard case GalaxySSIHealthRecords.Failure.stale = error else { return XCTFail("Expected stale preview") }
+    }
+    XCTAssertEqual(try records.load().current.first?.value, 61)
+    XCTAssertNil(try records.load().metricDeletionHistory)
+    try records.storeDraft(.init(metric: .heartRate))
+    try records.deleteMetricHistory(after)
+    XCTAssertEqual(try records.load().draft?.metric, .heartRate)
+    XCTAssertTrue(try records.previewMetricDeletion(.weight).scope.isEmpty)
+  }
+
+  @MainActor
   func testHealthBackupHistoryKeepsVerifiedSaveAfterInterruptionAndPruning() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
