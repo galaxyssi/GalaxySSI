@@ -7,7 +7,7 @@ enum GalaxySSIHealthTableImport {
   private static let maximumColumns = 64
 
   enum Failure: Error { case malformed, limit, mapping, stale }
-  enum DateStyle: String, CaseIterable { case iso, localTime, day, excel }
+  enum DateStyle: String, CaseIterable, Codable { case iso, localTime, day, excel }
   enum Status: String { case ready, duplicate, missing, invalid }
 
   struct Source: Codable, Equatable {
@@ -94,7 +94,7 @@ enum GalaxySSIHealthTableImport {
     var isoDates: [Set<Int>]?
   }
 
-  struct Mapping: Equatable {
+  struct Mapping: Equatable, Codable {
     var metric = GalaxySSIHealthMetric.bloodPressure
     var value = -1
     var date = -1

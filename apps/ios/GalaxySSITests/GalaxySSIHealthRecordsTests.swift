@@ -162,6 +162,99 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertNil(coverage.lastReadableAt)
   }
 
+  func testSyncIncidentDeliveryKeepsTokenAndCancelsWhenDeselected() throws {
+    let now = Date()
+    let incident = UUID()
+    let job = GalaxySSIHealthReviewReminders.Job(target: incident, kind: .incident,
+      versions: [UUID()], at: now, scope: "weight")
+    var state = GalaxySSIHealthReviewReminders.State()
+    state.notificationPreferences = .init(quietStart: 0, quietEnd: 0, incidentEnabled: true)
+    let (tickets, desired) = GalaxySSIHealthReviewDelivery.plan(jobs: [job], state: state, now: now,
+      calendar: .current, permitted: true, scheduled: [], delivered: [])
+    let first = try XCTUnwrap(desired.first)
+    XCTAssertFalse(first.identifier.contains(incident.uuidString))
+    state.deliveries = tickets
+    let retry = GalaxySSIHealthReviewReminders.Job(target: incident, kind: .incident,
+      versions: [UUID()], at: now, scope: "weight")
+    let (adopted, next) = GalaxySSIHealthReviewDelivery.plan(jobs: [retry], state: state, now: now,
+      calendar: .current, permitted: true, scheduled: [], delivered: [first.token])
+    XCTAssertEqual(next.first?.token, first.token)
+    XCTAssertEqual(next.first?.submitted, true)
+    state.deliveries = adopted
+    state.notificationPreferences?.incidentScopes = []
+    let (retained, cancelled) = GalaxySSIHealthReviewDelivery.plan(jobs: [retry], state: state, now: now,
+      calendar: .current, permitted: true, scheduled: [], delivered: [first.token])
+    XCTAssertEqual(retained[retry.key]?.token, first.token)
+    XCTAssertTrue(cancelled.isEmpty)
+    let (resolved, _) = GalaxySSIHealthReviewDelivery.plan(jobs: [], state: state, now: now,
+      calendar: .current, permitted: true, scheduled: [], delivered: [first.token])
+    XCTAssertTrue(resolved.isEmpty)
+  }
+
+  func testReviewNotificationPlanDefersAndDoesNotReplayDelivery() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+    let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 11, day: 5, hour: 23)))
+    let job = GalaxySSIHealthReviewReminders.Job(target: UUID(), kind: .report, versions: [], at: now)
+    var state = GalaxySSIHealthReviewReminders.State()
+    state.enabled = true
+    state.notificationPreferences = .init(enabled: true)
+    let (tickets, desired) = GalaxySSIHealthReviewDelivery.plan(jobs: [job], state: state, now: now,
+      calendar: calendar, permitted: true, scheduled: [], delivered: [])
+    var ticket = try XCTUnwrap(desired.first)
+    XCTAssertEqual(calendar.component(.hour, from: ticket.due), 8)
+    XCTAssertFalse(ticket.identifier.contains(job.target.uuidString))
+    ticket.submitted = true
+    state.deliveries = tickets.merging([job.key: ticket]) { _, new in new }
+    let later = ticket.due.addingTimeInterval(5)
+    let (_, afterRestart) = GalaxySSIHealthReviewDelivery.plan(jobs: [job], state: state, now: later,
+      calendar: calendar, permitted: true, scheduled: [], delivered: [])
+    XCTAssertEqual(afterRestart, [ticket])
+    let snooze = later.addingTimeInterval(3_600)
+    state.actions[job.key] = .snoozed(snooze)
+    let (_, delayed) = GalaxySSIHealthReviewDelivery.plan(jobs: [job], state: state, now: later,
+      calendar: calendar, permitted: true, scheduled: [], delivered: [])
+    XCTAssertEqual(delayed.first?.due, snooze)
+    XCTAssertNotEqual(delayed.first?.token, ticket.token)
+    let (_, denied) = GalaxySSIHealthReviewDelivery.plan(jobs: [job], state: state, now: later,
+      calendar: calendar, permitted: false, scheduled: [], delivered: [])
+    XCTAssertTrue(denied.isEmpty)
+  }
+
+  @MainActor
+  func testHealthSyncIncidentKeepsIdentityAndResolvesOnEmptySuccess() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let floor = now.addingTimeInterval(-86_400)
+    let interrupted = try records.beginHealthKitSync(.weight, floor: floor, reset: false)
+    try records.finishHealthKitSync(.weight, run: interrupted.run, status: .interrupted)
+    XCTAssertNil(try records.load().healthKitIncidents?["weight"])
+    let failed = try records.beginHealthKitSync(.weight, floor: floor, reset: false)
+    try records.finishHealthKitSync(.weight, run: failed.run, status: .failed)
+    let first = try XCTUnwrap(records.load().healthKitIncidents?["weight"])
+    try records.acknowledgeHealthKitIncident(first)
+    XCTAssertTrue(try XCTUnwrap(records.load().healthKitIncidents?["weight"]).acknowledged)
+    let retry = try records.beginHealthKitSync(.weight, floor: floor, reset: false)
+    try records.finishHealthKitSync(.weight, run: retry.run, status: .permission)
+    let repeated = try XCTUnwrap(records.load().healthKitIncidents?["weight"])
+    XCTAssertEqual(repeated.id, first.id)
+    XCTAssertEqual(repeated.attempts, 2)
+    XCTAssertFalse(repeated.acknowledged)
+    XCTAssertThrowsError(try records.acknowledgeHealthKitIncident(first))
+    try records.setHealthKitSelection([.weight])
+    XCTAssertEqual(GalaxySSIHealthReviewReminders.deliveryJobs(in: try records.load()).map(\.target), [repeated.id])
+    try records.setHealthKitSelection([])
+    XCTAssertTrue(GalaxySSIHealthReviewReminders.deliveryJobs(in: try records.load()).isEmpty)
+    XCTAssertEqual(try records.load().healthKitIncidents?["weight"], repeated)
+    let success = try records.beginHealthKitSync(.weight, floor: floor, reset: false)
+    let page = GalaxySSIHealthKitSync.Page(rows: [], anchor: Data([1]), providerCount: 0, more: false)
+    XCTAssertEqual(try records.commitHealthKitPage(scope: .weight, expected: success, page: page, at: now).status, .empty)
+    XCTAssertNil(try records.load().healthKitIncidents?["weight"])
+    XCTAssertTrue(try records.load().current.isEmpty)
+  }
+
   @MainActor
   func testHealthKitSyncCommitsPageAndCursorTogetherAndResumesWithoutDeleting() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -364,6 +457,34 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(links.first?.reading.revision, target.revision)
     XCTAssertTrue(links.first?.secondary == true)
     XCTAssertEqual(archive.current.count, 1)
+  }
+
+  @MainActor
+  func testReviewReminderActionsDoNotConfirmAndTableCommitClearsDraft() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let data = Data("value,time\n60,2025-01-01T12:00:00Z\n".utf8)
+    let mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true)
+    let draft = GalaxySSIHealthReviewReminders.TableDraft(id: UUID(), name: "fixture.csv", at: now,
+      data: data, mapping: mapping, worksheet: nil)
+    try records.saveTableReview(draft, replacing: nil)
+    try records.setReviewRemindersEnabled(true)
+    var archive = try records.load()
+    let job = try XCTUnwrap(GalaxySSIHealthReviewReminders.jobs(in: archive).first)
+    try records.updateReviewReminder(job, action: .snoozed(now.addingTimeInterval(60)))
+    archive = try records.load()
+    let state = try XCTUnwrap(archive.reviewReminderState)
+    XCTAssertTrue(GalaxySSIHealthReviewReminders.visible([job], state: state, now: now).isEmpty)
+    XCTAssertEqual(GalaxySSIHealthReviewReminders.visible([job], state: state, now: now.addingTimeInterval(61)), [job])
+    try records.updateReviewReminder(job, action: .handled)
+    XCTAssertTrue(try records.load().current.isEmpty)
+    XCTAssertEqual(try records.load().tableReview?.id, draft.id)
+    XCTAssertEqual(try records.importTable(data, name: draft.name, json: false, mapping: mapping,
+                                           expected: [.ready], reviewID: draft.id), 1)
+    XCTAssertTrue(GalaxySSIHealthReviewReminders.jobs(in: try records.load()).isEmpty)
+    XCTAssertThrowsError(try records.updateReviewReminder(job, action: .handled))
   }
 
   @MainActor

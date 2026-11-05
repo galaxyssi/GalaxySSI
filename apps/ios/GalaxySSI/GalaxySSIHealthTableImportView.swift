@@ -6,6 +6,9 @@ struct GalaxySSIHealthTableImportView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
   let records: GalaxySSIHealthRecords
+  var resumeReviewID: UUID?
+  @State private var pendingReview: GalaxySSIHealthReviewReminders.TableDraft?
+  @State private var openedReviewID: UUID?
   @State private var choosing = false
   @State private var input: Input?
   @State private var mapping = GalaxySSIHealthTableImport.Mapping()
@@ -48,6 +51,16 @@ struct GalaxySSIHealthTableImportView: View {
         if let input {
           mappingSection(input)
           if let rows { review(rows) }
+          if rows != nil {
+            Button(t("save_review_draft", "Save encrypted review draft")) { saveReviewDraft(input) }
+              .disabled(pendingReview != nil && openedReviewID != pendingReview?.id)
+          }
+        } else if let pendingReview {
+          Button(t("resume_review_draft", "Resume saved table review")) { resume(pendingReview) }
+          Button(t("discard_review_draft", "Discard saved table review"), role: .destructive) {
+            do { try records.discardTableReview(pendingReview.id); reload() }
+            catch { message = t("save_failed", "Could not save this batch. Review the rows again.") }
+          }
         }
         if let message { Text(message).foregroundColor(.secondary) }
         if !batches.isEmpty {
@@ -249,15 +262,47 @@ struct GalaxySSIHealthTableImportView: View {
     let file = try FileHandle(forReadingFrom: url)
     defer { try? file.close() }
     let data = try file.read(upToCount: GalaxySSIHealthTableImport.maximumBytes + 1) ?? Data()
-    if url.pathExtension.lowercased() == "xlsx" {
+    try openData(data, name: url.lastPathComponent)
+  }
+
+  private func openData(_ data: Data, name: String) throws {
+    let ext = URL(fileURLWithPath: name).pathExtension.lowercased()
+    if ext == "xlsx" {
       let contents = try GalaxySSIHealthXLSX(data)
-      workbook = WorkbookInput(name: url.lastPathComponent, data: data, contents: contents)
+      workbook = WorkbookInput(name: name, data: data, contents: contents)
       if let first = contents.sheets.first { selectSheet(first.id) }
       return
     }
-    let json = url.pathExtension.lowercased() == "json"
-    input = Input(name: url.lastPathComponent, data: data, json: json,
+    let json = ext == "json"
+    input = Input(name: name, data: data, json: json,
                   table: try GalaxySSIHealthTableImport.parse(data, json: json))
+  }
+
+  private func saveReviewDraft(_ input: Input) {
+    guard scene == .active, rows != nil else { return }
+    do {
+      let draft = GalaxySSIHealthReviewReminders.TableDraft(id: openedReviewID ?? UUID(),
+        name: String(input.name.prefix(180)), at: pendingReview?.at ?? Date(), data: input.data,
+        mapping: mapping, worksheet: input.worksheet)
+      try records.saveTableReview(draft, replacing: openedReviewID)
+      openedReviewID = draft.id
+      pendingReview = draft
+      message = t("review_draft_saved", "Encrypted review draft saved")
+    } catch { message = t("save_failed", "Could not save this batch. Review the rows again.") }
+  }
+
+  private func resume(_ draft: GalaxySSIHealthReviewReminders.TableDraft) {
+    clear()
+    do {
+      try openData(draft.data, name: draft.name)
+      if let worksheet = draft.worksheet {
+        selectSheet(worksheet.sheet)
+        selectHeader(worksheet.header)
+      }
+      guard input != nil else { throw GalaxySSIHealthTableImport.Failure.mapping }
+      mapping = draft.mapping
+      openedReviewID = draft.id
+    } catch { message = t("workbook_failed", "Could not open this measurement table.") }
   }
 
   private func selectSheet(_ id: String) {
@@ -310,7 +355,8 @@ struct GalaxySSIHealthTableImportView: View {
       }, uniquingKeysWith: { first, _ in first })
       let count = try records.importTable(input.data, name: input.name, json: input.json,
                                           mapping: mapping, expected: rows.map(\.status), worksheet: input.worksheet,
-                                          linkDuplicates: targets)
+                                          linkDuplicates: targets,
+                                          reviewID: openedReviewID)
       clear()
       reload()
       message = String(format: t("saved", "%lld measurements saved"), Int64(count))
@@ -336,7 +382,14 @@ struct GalaxySSIHealthTableImportView: View {
 
   private func reload() {
     guard scene == .active else { return }
-    do { batches = try records.load().tableBatches ?? [] }
+    do {
+      let archive = try records.load()
+      batches = archive.tableBatches ?? []
+      pendingReview = archive.tableReview
+      if input == nil && workbook == nil, let pendingReview, pendingReview.id == resumeReviewID {
+        resume(pendingReview)
+      }
+    }
     catch { batches = []; message = t("read_failed", "Could not open this CSV or JSON table.") }
   }
 
@@ -344,6 +397,7 @@ struct GalaxySSIHealthTableImportView: View {
     input = nil; rows = nil; owned = false; mapping = .init()
     workbook = nil; sheetID = ""; header = 0; headerChoices = []
     linkedRows = []
+    openedReviewID = nil
   }
   private func statusTitle(_ status: GalaxySSIHealthTableImport.Status) -> String {
     switch status {
