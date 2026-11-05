@@ -3,11 +3,16 @@ import SwiftUI
 
 enum GalaxySSIHealthMetricDeletion {
   enum Filter: String, Codable, Equatable {
-    case appleHealth
+    case appleHealth, bluetooth
 
-    func includes(_ reading: GalaxySSIHealthReading) -> Bool {
-      reading.healthKitSource != nil && reading.bluetoothReceipt == nil &&
-        reading.tableSource == nil && reading.reportSource == nil
+    func includes(_ reading: GalaxySSIHealthReading, device: UUID?) -> Bool {
+      guard reading.tableSource == nil, reading.reportSource == nil else { return false }
+      switch self {
+      case .appleHealth: return reading.healthKitSource != nil && reading.bluetoothReceipt == nil
+      case .bluetooth:
+        guard let device else { return false }
+        return reading.healthKitSource == nil && reading.bluetoothReceipt?.device == device
+      }
     }
   }
 
@@ -57,13 +62,20 @@ enum GalaxySSIHealthMetricDeletion {
     let scope: Scope
     let ids: Set<UUID>
     let fingerprint: SHA256.Digest
+    let bluetoothDevice: UUID?
   }
 
   @MainActor
-  static func preview(_ metric: GalaxySSIHealthMetric, filter: Filter? = nil,
+  static func preview(_ metric: GalaxySSIHealthMetric, filter: Filter? = nil, bluetoothDevice: UUID? = nil,
                       in archive: GalaxySSIHealthRecords.Archive) throws -> Preview {
+    if filter == .bluetooth {
+      guard metric == .bloodPressure, bluetoothDevice != nil else { throw GalaxySSIHealthRecords.Failure.invalid }
+      guard archive.derivesOverview == true else { throw GalaxySSIHealthRecords.Failure.permission }
+    } else if bluetoothDevice != nil {
+      throw GalaxySSIHealthRecords.Failure.invalid
+    }
     func matches(_ reading: GalaxySSIHealthReading) -> Bool {
-      reading.metric == metric && (filter?.includes(reading) ?? true)
+      reading.metric == metric && (filter?.includes(reading, device: bluetoothDevice) ?? true)
     }
     let ids = Set(archive.revisions.lazy.filter(matches).map(\.id))
     let encoder = JSONEncoder()
@@ -72,6 +84,9 @@ enum GalaxySSIHealthMetricDeletion {
     func append<T: Encodable>(_ value: T) throws {
       hasher.update(data: try encoder.encode(value))
       hasher.update(data: Data([0]))
+    }
+    if filter == .bluetooth {
+      try append(archive.privacyEvents?.last(where: { $0.scope == .overview })?.id)
     }
     var newest: [UUID: GalaxySSIHealthReading] = [:]
     var earliest: Date?
@@ -99,7 +114,8 @@ enum GalaxySSIHealthMetricDeletion {
     var counts: [Source: Int] = [:]
     for reading in newest.values { counts[Source(reading), default: 0] += 1 }
     return Preview(scope: .init(metric: metric, sources: counts, earliest: earliest, latest: latest,
-                                drafts: drafts, filter: filter), ids: ids, fingerprint: hasher.finalize())
+                                drafts: drafts, filter: filter), ids: ids, fingerprint: hasher.finalize(),
+                   bluetoothDevice: bluetoothDevice)
   }
 
   static func includes(_ draft: GalaxySSIHealthDraft, metric: GalaxySSIHealthMetric, filter: Filter?,
@@ -177,6 +193,8 @@ struct GalaxySSIHealthMetricDeletionView: View {
     Text(scope.metric.title(language: language)).font(.headline)
     if scope.filter == .appleHealth {
       Text(t("apple_health_only", "Apple Health copies only")).foregroundColor(.secondary)
+    } else if scope.filter == .bluetooth {
+      Text(t("bluetooth_only", "One Bluetooth device only")).foregroundColor(.secondary)
     }
     Text(String(format: t("record_count", "Local records: %lld"), Int64(scope.count)))
     if let earliest = scope.earliest, let latest = scope.latest {

@@ -563,6 +563,68 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testBluetoothErasurePinsDeviceHistoryAndAccessWithoutLoggingIdentity() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let packet = try XCTUnwrap(GalaxySSIHealthBluetoothPacket.decode(Data([0, 120, 0, 80, 0, 90, 0])))
+    let now = Date(timeIntervalSince1970: 1_750_000_000)
+    let device = UUID(), sameNameDevice = UUID()
+    func reading(_ id: UUID, _ seconds: TimeInterval) -> GalaxySSIHealthReading {
+      GalaxySSIHealthBluetoothReceipt(device: id, receivedAt: now.addingTimeInterval(seconds),
+                                      packet: packet, deviceName: "Private monitor").reading(conditions: "")
+    }
+    let first = reading(device, 0), second = reading(device, -120), other = reading(sameNameDevice, 0)
+    let manual = GalaxySSIHealthReading(metric: .bloodPressure, measuredAt: now, value: 120, diastolic: 80)
+    let apple = GalaxySSIHealthReading(metric: .bloodPressure, measuredAt: now, value: 120, diastolic: 80,
+      healthKitSource: .init(key: String(repeating: "a", count: 64), origin: "fixture", name: nil))
+    try records.write(first)
+    try records.write(second)
+    try records.write(other)
+    try records.write(manual, allowDuplicate: true)
+    XCTAssertEqual(try records.importHealthKit([apple]), 1)
+    XCTAssertThrowsError(try records.previewBluetoothHistoryDeletion(device: device))
+    try records.setOverviewPermission(true)
+    var removed = try XCTUnwrap(records.load().current.first { $0.id == second.id })
+    removed.deleted = true
+    try records.write(removed, rememberDeletion: true)
+    let active = try XCTUnwrap(records.load().current.first { $0.id == first.id })
+    let draft = GalaxySSIHealthDraft(existing: active, metric: .bloodPressure)
+    try records.storeDraft(draft)
+    let before = try records.previewBluetoothHistoryDeletion(device: device)
+    XCTAssertEqual(before.scope.count, 2)
+    XCTAssertEqual(before.scope.earliest, second.measuredAt)
+    XCTAssertEqual(before.scope.drafts, 1)
+    try records.setOverviewPermission(false)
+    XCTAssertThrowsError(try records.deleteMetricHistory(before))
+    try records.setOverviewPermission(true)
+    XCTAssertThrowsError(try records.deleteMetricHistory(before))
+    let refreshed = try records.previewBluetoothHistoryDeletion(device: device)
+    let later = reading(device, 120)
+    try records.write(later)
+    XCTAssertThrowsError(try records.deleteMetricHistory(refreshed))
+    XCTAssertNil(try records.load().metricDeletionHistory)
+    XCTAssertEqual(try records.load().draft?.id, draft.id)
+
+    let confirmed = try records.previewBluetoothHistoryDeletion(device: device)
+    XCTAssertEqual(confirmed.scope.count, 3)
+    try records.deleteMetricHistory(confirmed)
+    let archive = try records.load()
+    XCTAssertEqual(Set(archive.current.map(\.id)), Set([other.id, manual.id, apple.id]))
+    XCTAssertFalse(archive.revisions.contains { $0.bluetoothReceipt?.device == device })
+    XCTAssertNil(archive.draft)
+    XCTAssertNil(archive.lastMeasurementDeletion)
+    XCTAssertThrowsError(try records.storeDraft(draft))
+    let audit = try XCTUnwrap(archive.metricDeletionHistory?.first)
+    XCTAssertEqual(audit.scope.filter, .bluetooth)
+    XCTAssertEqual(audit.scope.count, 3)
+    let encoded = String(decoding: try JSONEncoder().encode(audit), as: UTF8.self)
+    XCTAssertFalse(encoded.contains(device.uuidString))
+    XCTAssertFalse(encoded.contains("Private monitor"))
+    try records.write(reading(device, 240))
+  }
+
+  @MainActor
   func testHealthBackupAuthenticatesOriginalsAndLeavesLocalRecordsUntouched() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

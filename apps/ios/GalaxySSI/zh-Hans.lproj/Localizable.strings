@@ -448,6 +448,16 @@
 "galaxyssi.health.bluetooth_history.measured" = "测量时间";
 "galaxyssi.health.bluetooth_history.received" = "接收时间";
 "galaxyssi.health.bluetooth_history.revision" = "修订版本 %lld";
+"galaxyssi.health.bluetooth_history.erase_review" = "核对本地历史删除范围";
+"galaxyssi.health.bluetooth_history.erase_confirm" = "永久删除此设备的本地历史？";
+"galaxyssi.health.bluetooth_history.erase_count" = "已存测量：%lld 条";
+"galaxyssi.health.bluetooth_history.erase_dates" = "%@ 至 %@";
+"galaxyssi.health.bluetooth_history.erase_boundary" = "仅删除此设备的本地测量和关联草稿。其他设备、配对、原始文件、导出和备份均不受影响。";
+"galaxyssi.health.bluetooth_history.erase" = "删除本地历史";
+"galaxyssi.health.bluetooth_history.cancel" = "取消";
+"galaxyssi.health.bluetooth_history.erase_done" = "已删除此设备的本地历史。";
+"galaxyssi.health.bluetooth_history.erase_changed" = "此设备的历史或访问权限已变化，请重新核对。";
+"galaxyssi.health.bluetooth_history.erase_failed" = "无法删除此设备的本地历史。";
 "galaxyssi.health.trend.unavailable" = "趋势不可用";
 "galaxyssi.health.trend.refresh" = "刷新";
 "galaxyssi.health.trend.permission" = "请在健康隐私中开启本机测量摘要后查看趋势。";
@@ -789,6 +799,7 @@
 "galaxyssi.health.metric_deletion.title" = "按测量类型删除";
 "galaxyssi.health.metric_deletion.apple_health_title" = "Apple 健康本地副本";
 "galaxyssi.health.metric_deletion.apple_health_only" = "仅 Apple 健康副本";
+"galaxyssi.health.metric_deletion.bluetooth_only" = "仅一个蓝牙设备";
 "galaxyssi.health.metric_deletion.apple_health_boundary" = "仅删除 GalaxySSI 中来自 Apple 健康的副本。其他来源、Apple 健康数据与权限、导出和备份均不受影响。";
 "galaxyssi.health.metric_deletion.choose" = "选择测量类型";
 "galaxyssi.health.metric_deletion.review" = "核对本地删除范围";

@@ -61,6 +61,9 @@ struct GalaxySSIHealthBluetoothHistorySection: View {
   @State private var selection: Selection?
   @State private var readingLimit = 30
   @State private var selectedReadings: [GalaxySSIHealthReading] = []
+  @State private var deletion: GalaxySSIHealthMetricDeletion.Preview?
+  @State private var confirmingDeletion = false
+  @State private var deletionNotice: String?
 
   private struct Selection: Identifiable { let id: UUID }
 
@@ -71,11 +74,13 @@ struct GalaxySSIHealthBluetoothHistorySection: View {
           Text(t("failed", "Saved Bluetooth history is unavailable."))
           Button(t("retry", "Reload"), action: reload)
         } else if let history {
+          if selection == nil, let deletionNotice { Text(deletionNotice).foregroundColor(.secondary) }
           if history.devices.isEmpty { Text(t("empty", "No saved Bluetooth measurements.")) }
           let start = min(max(0, page), max(0, (history.devices.count - 1) / 30)) * 30
           ForEach(history.devices.dropFirst(start).prefix(30)) { device in
             Button {
               readingLimit = 30
+              deletionNotice = nil
               selectedReadings = history.readings(for: device.id)
               selection = Selection(id: device.id)
             } label: {
@@ -107,10 +112,11 @@ struct GalaxySSIHealthBluetoothHistorySection: View {
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) {
       if $0.object as? String == records.owner { reload() }
     }
-    .sheet(item: $selection, onDismiss: { selectedReadings = [] }) { selected in
+    .sheet(item: $selection, onDismiss: clearDetail) { selected in
       NavigationView {
         if scene == .active, let device = history?.devices.first(where: { $0.id == selected.id }) {
           List {
+            deletionControls(device)
             ForEach(selectedReadings.prefix(readingLimit)) { reading in
               summary(reading)
             }
@@ -120,6 +126,11 @@ struct GalaxySSIHealthBluetoothHistorySection: View {
           }
           .navigationTitle(title(device))
           .navigationBarTitleDisplayMode(.inline)
+          .alert(t("erase_confirm", "Permanently delete this device's local history?"),
+                 isPresented: $confirmingDeletion) {
+            Button(t("erase", "Delete local history"), role: .destructive) { erase(device.id) }
+            Button(t("cancel", "Cancel"), role: .cancel) { deletion = nil }
+          }
           .toolbar { ToolbarItem(placement: .cancellationAction) {
             Button(t("close", "Close")) { selection = nil }
           } }
@@ -129,6 +140,50 @@ struct GalaxySSIHealthBluetoothHistorySection: View {
     }
   }
 
+  @ViewBuilder
+  private func deletionControls(_ device: GalaxySSIHealthBluetoothHistory.Device) -> some View {
+    if let deletionNotice { Text(deletionNotice).foregroundColor(.secondary) }
+    if let deletion, deletion.bluetoothDevice == device.id {
+      Section(t("erase_review", "Review local history deletion")) {
+        Text(title(device)).font(.headline)
+        Text(String(format: t("erase_count", "Stored measurements: %lld"), Int64(deletion.scope.count)))
+        if let earliest = deletion.scope.earliest, let latest = deletion.scope.latest {
+          Text(String(format: t("erase_dates", "%@ to %@"), earliest.formatted(date: .abbreviated, time: .omitted),
+                      latest.formatted(date: .abbreviated, time: .omitted)))
+        }
+        Text(t("erase_boundary", "Only this device's local measurements and linked drafts are removed. Other devices, pairing, original files, exports and backups are unchanged."))
+          .foregroundColor(.secondary)
+        Button(t("erase", "Delete local history"), role: .destructive) { confirmingDeletion = true }
+        Button(t("cancel", "Cancel")) { self.deletion = nil }
+      }
+    } else {
+      Button(t("erase_review", "Review local history deletion"), role: .destructive) { prepareDeletion(device.id) }
+    }
+  }
+
+  private func prepareDeletion(_ device: UUID) {
+    guard scene == .active, selection?.id == device else { return }
+    deletionNotice = nil
+    do {
+      let preview = try records.previewBluetoothHistoryDeletion(device: device)
+      if preview.scope.isEmpty { deletionNotice = t("empty", "No saved Bluetooth measurements.") }
+      else { deletion = preview }
+    } catch GalaxySSIHealthRecords.Failure.permission { clear() }
+    catch { deletionNotice = t("erase_failed", "Could not delete this device's local history.") }
+  }
+
+  private func erase(_ device: UUID) {
+    guard scene == .active, selection?.id == device, let deletion, deletion.bluetoothDevice == device else { return }
+    self.deletion = nil
+    do {
+      try records.deleteMetricHistory(deletion)
+      deletionNotice = t("erase_done", "This device's local history was deleted.")
+    } catch GalaxySSIHealthRecords.Failure.permission { clear() }
+    catch GalaxySSIHealthRecords.Failure.stale {
+      deletionNotice = t("erase_changed", "This device's history or access changed. Review it again.")
+    } catch { deletionNotice = t("erase_failed", "Could not delete this device's local history.") }
+  }
+
   private func reload() {
     guard visible, expanded, scene == .active else { clear(); return }
     do {
@@ -136,14 +191,19 @@ struct GalaxySSIHealthBluetoothHistorySection: View {
       history = current
       if let selection {
         selectedReadings = current.readings(for: selection.id)
-        if selectedReadings.isEmpty { self.selection = nil }
+        if selectedReadings.isEmpty { self.selection = nil; clearDetail() }
       }
       failed = false
     } catch { clear(); failed = true }
   }
 
   private func clear() {
-    history = nil; selection = nil; selectedReadings = []; readingLimit = 30; failed = false
+    history = nil; selection = nil; failed = false; deletionNotice = nil
+    clearDetail()
+  }
+
+  private func clearDetail() {
+    selectedReadings = []; readingLimit = 30; deletion = nil; confirmingDeletion = false
   }
 
   private func title(_ device: GalaxySSIHealthBluetoothHistory.Device) -> String {
