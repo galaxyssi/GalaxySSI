@@ -805,6 +805,51 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testProfileAnalysisBindsOnlySelectedFieldsAndPermission() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer {
+      try? FileManager.default.removeItem(at: file)
+      try? FileManager.default.removeItem(at: file.appendingPathExtension("profile"))
+    }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    var profile = try records.loadProfile()
+    profile.height = 170
+    profile.context = "private fixture"
+    try records.writeProfile(profile)
+    try records.setOverviewPermission(true)
+    XCTAssertThrowsError(try records.captureProfileAnalysis([.height]))
+    try records.setProfileAnalysisAllowed(true)
+    XCTAssertNil(try records.captureProfileAnalysis([]))
+    XCTAssertNil(try records.load().profileAnalysisAudit)
+    let snapshot = try XCTUnwrap(records.captureProfileAnalysis([.height, .birthDate]))
+    XCTAssertEqual(snapshot.values[.height], .height(170, .cm))
+    XCTAssertNil(snapshot.values[.context])
+    XCTAssertNil(snapshot.values[.birthDate])
+    profile = try records.loadProfile()
+    profile.context = "unrelated update"
+    try records.writeProfile(profile)
+    XCTAssertTrue(try snapshot.isCurrent(profile: records.loadProfile(), permission: records.load().profileAnalysisPermission))
+    profile = try records.loadProfile()
+    profile.height = 171
+    try records.writeProfile(profile)
+    XCTAssertFalse(try snapshot.isCurrent(profile: records.loadProfile(), permission: records.load().profileAnalysisPermission))
+    profile = try records.loadProfile()
+    profile.height = 170
+    try records.writeProfile(profile)
+    XCTAssertFalse(try snapshot.isCurrent(profile: records.loadProfile(), permission: records.load().profileAnalysisPermission))
+    let latest = try XCTUnwrap(records.captureProfileAnalysis([.height]))
+    try records.setProfileAnalysisAllowed(false)
+    try records.setProfileAnalysisAllowed(true)
+    XCTAssertFalse(try latest.isCurrent(profile: records.loadProfile(), permission: records.load().profileAnalysisPermission))
+    XCTAssertEqual(try records.load().profileAnalysisAudit?.first?.fields, [.height, .birthDate])
+    let audit = try XCTUnwrap(records.load().profileAnalysisAudit)
+    let serialized = String(decoding: try JSONEncoder().encode(audit), as: UTF8.self)
+    XCTAssertFalse(serialized.contains("private fixture"))
+    XCTAssertFalse(serialized.contains("unrelated update"))
+    XCTAssertEqual(try records.load().privacyEvents?.filter { $0.scope == .profileAnalysis }.map(\.enabled), [true, false, true])
+  }
+
+  @MainActor
   func testHealthBackupAuthenticatesOriginalsAndLeavesLocalRecordsUntouched() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
