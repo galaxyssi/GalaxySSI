@@ -352,6 +352,11 @@ struct GalaxySSIHealthCenterView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink {
+            GalaxySSIHealthMetricDeletionView(records: records, filter: .appleHealth)
+          } label: {
+            Label(t("metric_deletion.apple_health_title", "Local Apple Health Copies"), systemImage: "tray.full")
+          }
           sourceStatus(t("bluetooth_devices", "Bluetooth devices"), detail: bluetoothAuthorization)
           NavigationLink {
             GalaxySSIHealthBluetoothView(records: records)

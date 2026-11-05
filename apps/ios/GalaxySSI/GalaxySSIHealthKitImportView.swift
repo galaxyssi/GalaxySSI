@@ -33,6 +33,12 @@ struct GalaxySSIHealthKitImportView: View {
   var body: some View {
     Form {
       if scene == .active {
+        NavigationLink {
+          GalaxySSIHealthMetricDeletionView(records: records, filter: .appleHealth)
+        } label: {
+          Label(GalaxySSIHealthMetricDeletion.text("apple_health_title", "Local Apple Health Copies", language: language),
+                systemImage: "tray.full")
+        }
         if GalaxySSIHealthKitImport.available {
           if let recoveryScope {
             Section(t("recovery_title", "Source recovery")) {

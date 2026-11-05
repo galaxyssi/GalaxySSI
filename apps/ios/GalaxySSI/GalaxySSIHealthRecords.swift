@@ -395,24 +395,36 @@ struct GalaxySSIHealthRecords {
     return restored
   }
 
-  func previewMetricDeletion(_ metric: GalaxySSIHealthMetric) throws -> GalaxySSIHealthMetricDeletion.Preview {
-    try GalaxySSIHealthMetricDeletion.preview(metric, in: load())
+  func previewMetricDeletion(_ metric: GalaxySSIHealthMetric, filter: GalaxySSIHealthMetricDeletion.Filter? = nil)
+    throws -> GalaxySSIHealthMetricDeletion.Preview {
+    try GalaxySSIHealthMetricDeletion.preview(metric, filter: filter, in: load())
   }
 
   func deleteMetricHistory(_ reviewed: GalaxySSIHealthMetricDeletion.Preview) throws {
     var archive = try load()
     let metric = reviewed.scope.metric
-    let current = try GalaxySSIHealthMetricDeletion.preview(metric, in: archive)
+    let filter = reviewed.scope.filter
+    let current = try GalaxySSIHealthMetricDeletion.preview(metric, filter: filter, in: archive)
     guard current == reviewed, !current.scope.isEmpty else { throw Failure.stale }
     let ids = current.ids
     archive.revisions.removeAll { ids.contains($0.id) }
     archive.tableEvidence?.removeAll { ids.contains($0.target.record) }
-    archive.reportReview?.removeAll { $0.reading.metric == metric }
-    if let draft = archive.draft, draft.metric == metric || draft.existing.map({ ids.contains($0.id) }) == true {
+    if filter == nil { archive.reportReview?.removeAll { $0.reading.metric == metric } }
+    if let draft = archive.draft, GalaxySSIHealthMetricDeletion.includes(draft, metric: metric, filter: filter, ids: ids) {
       archive.draft = nil
     }
     if let last = archive.lastMeasurementDeletion, ids.contains(last.id) { archive.lastMeasurementDeletion = nil }
-    if metric == .sleepDuration { archive.sleepReminders?.episodes = [] }
+    if metric == .sleepDuration {
+      if filter == nil { archive.sleepReminders?.episodes = [] }
+      else {
+        archive.sleepReminders?.episodes.removeAll { episode in
+          (episode.first.revisions + episode.latest.revisions).contains { reference in
+            guard let id = UUID(uuidString: String(reference.prefix(while: { $0 != ":" }))) else { return false }
+            return ids.contains(id)
+          }
+        }
+      }
+    }
     var history = archive.metricDeletionHistory ?? []
     history.append(.init(at: Date(), scope: current.scope))
     archive.metricDeletionHistory = Array(history.suffix(100))

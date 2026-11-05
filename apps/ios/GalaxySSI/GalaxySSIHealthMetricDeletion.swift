@@ -2,6 +2,15 @@ import CryptoKit
 import SwiftUI
 
 enum GalaxySSIHealthMetricDeletion {
+  enum Filter: String, Codable, Equatable {
+    case appleHealth
+
+    func includes(_ reading: GalaxySSIHealthReading) -> Bool {
+      reading.healthKitSource != nil && reading.bluetoothReceipt == nil &&
+        reading.tableSource == nil && reading.reportSource == nil
+    }
+  }
+
   enum Source: String, Codable, CaseIterable {
     case manual, report, table, bluetooth, appleHealth
 
@@ -32,6 +41,7 @@ enum GalaxySSIHealthMetricDeletion {
     let earliest: Date?
     let latest: Date?
     let drafts: Int
+    var filter: Filter?
 
     var count: Int { sources.values.reduce(0, +) }
     var isEmpty: Bool { count == 0 && drafts == 0 }
@@ -50,8 +60,12 @@ enum GalaxySSIHealthMetricDeletion {
   }
 
   @MainActor
-  static func preview(_ metric: GalaxySSIHealthMetric, in archive: GalaxySSIHealthRecords.Archive) throws -> Preview {
-    let ids = Set(archive.revisions.lazy.filter { $0.metric == metric }.map(\.id))
+  static func preview(_ metric: GalaxySSIHealthMetric, filter: Filter? = nil,
+                      in archive: GalaxySSIHealthRecords.Archive) throws -> Preview {
+    func matches(_ reading: GalaxySSIHealthReading) -> Bool {
+      reading.metric == metric && (filter?.includes(reading) ?? true)
+    }
+    let ids = Set(archive.revisions.lazy.filter(matches).map(\.id))
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     var hasher = SHA256()
@@ -60,18 +74,22 @@ enum GalaxySSIHealthMetricDeletion {
       hasher.update(data: Data([0]))
     }
     var newest: [UUID: GalaxySSIHealthReading] = [:]
+    var earliest: Date?
+    var latest: Date?
     for reading in archive.revisions where ids.contains(reading.id) {
-      // An inconsistent history must not remove a different measurement type.
-      guard reading.metric == metric else { throw GalaxySSIHealthRecords.Failure.invalid }
+      // Refuse a history that crosses the requested metric or source.
+      guard matches(reading) else { throw GalaxySSIHealthRecords.Failure.invalid }
       try append(reading)
       newest[reading.id] = reading
+      earliest = min(earliest ?? reading.measuredAt, reading.measuredAt)
+      latest = max(latest ?? reading.measuredAt, reading.measuredAt)
     }
     var drafts = 0
-    if let draft = archive.draft, draft.metric == metric || draft.existing.map({ ids.contains($0.id) }) == true {
+    if let draft = archive.draft, includes(draft, metric: metric, filter: filter, ids: ids) {
       try append(draft)
       drafts += 1
     }
-    for item in archive.reportReview ?? [] where item.reading.metric == metric {
+    for item in archive.reportReview ?? [] where filter == nil && item.reading.metric == metric {
       try append(item)
       drafts += 1
     }
@@ -80,9 +98,13 @@ enum GalaxySSIHealthMetricDeletion {
     }
     var counts: [Source: Int] = [:]
     for reading in newest.values { counts[Source(reading), default: 0] += 1 }
-    let dates = newest.values.lazy.map(\.measuredAt)
-    return Preview(scope: .init(metric: metric, sources: counts, earliest: dates.min(), latest: dates.max(),
-                                drafts: drafts), ids: ids, fingerprint: hasher.finalize())
+    return Preview(scope: .init(metric: metric, sources: counts, earliest: earliest, latest: latest,
+                                drafts: drafts, filter: filter), ids: ids, fingerprint: hasher.finalize())
+  }
+
+  static func includes(_ draft: GalaxySSIHealthDraft, metric: GalaxySSIHealthMetric, filter: Filter?,
+                       ids: Set<UUID>) -> Bool {
+    (filter == nil && draft.metric == metric) || draft.existing.map { ids.contains($0.id) } == true
   }
 
   static func text(_ key: String, _ fallback: String, language: String) -> String {
@@ -95,6 +117,7 @@ struct GalaxySSIHealthMetricDeletionView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
   let records: GalaxySSIHealthRecords
+  var filter: GalaxySSIHealthMetricDeletion.Filter?
   @State private var review: GalaxySSIHealthMetricDeletion.Preview?
   @State private var history: [GalaxySSIHealthMetricDeletion.Audit] = []
   @State private var confirming = false
@@ -108,14 +131,16 @@ struct GalaxySSIHealthMetricDeletionView: View {
         if let review {
           Section(t("review", "Review local deletion")) {
             scopeRows(review.scope)
-            Text(t("boundary", "Only GalaxySSI's local copies are removed. Original files, Apple Health, exports and backups are unchanged."))
+            Text(filter == .appleHealth
+              ? t("apple_health_boundary", "Only GalaxySSI's copies from Apple Health are removed. Other sources, Apple Health data and permissions, exports and backups are unchanged.")
+              : t("boundary", "Only GalaxySSI's local copies are removed. Original files, Apple Health, exports and backups are unchanged."))
               .foregroundColor(.secondary)
             Button(t("delete", "Delete local records"), role: .destructive) { confirming = true }
             Button(t("choose_another", "Choose another measurement")) { self.review = nil }
           }
         } else {
           Section(t("choose", "Choose a measurement type")) {
-            ForEach(GalaxySSIHealthMetric.allCases) { metric in
+            ForEach(metrics) { metric in
               Button(metric.title(language: language)) { prepare(metric) }
             }
           }
@@ -133,7 +158,8 @@ struct GalaxySSIHealthMetricDeletionView: View {
         }
       }
     }
-    .navigationTitle(t("title", "Delete by Measurement Type"))
+    .navigationTitle(filter == .appleHealth ? t("apple_health_title", "Local Apple Health Copies")
+                                          : t("title", "Delete by Measurement Type"))
     .navigationBarTitleDisplayMode(.inline)
     .onAppear(perform: reload)
     .onChange(of: scene) {
@@ -149,6 +175,9 @@ struct GalaxySSIHealthMetricDeletionView: View {
   @ViewBuilder
   private func scopeRows(_ scope: GalaxySSIHealthMetricDeletion.Scope) -> some View {
     Text(scope.metric.title(language: language)).font(.headline)
+    if scope.filter == .appleHealth {
+      Text(t("apple_health_only", "Apple Health copies only")).foregroundColor(.secondary)
+    }
     Text(String(format: t("record_count", "Local records: %lld"), Int64(scope.count)))
     if let earliest = scope.earliest, let latest = scope.latest {
       Text(String(format: t("date_range", "%@ to %@"), earliest.formatted(date: .abbreviated, time: .omitted),
@@ -168,7 +197,7 @@ struct GalaxySSIHealthMetricDeletionView: View {
     guard scene == .active else { return }
     notice = nil
     do {
-      let preview = try records.previewMetricDeletion(metric)
+      let preview = try records.previewMetricDeletion(metric, filter: filter)
       if preview.scope.isEmpty { notice = t("empty", "No local history for this measurement type.") }
       else { review = preview }
     } catch { notice = t("failed", "Could not access local measurement history.") }
@@ -190,8 +219,14 @@ struct GalaxySSIHealthMetricDeletionView: View {
 
   private func reload() {
     guard scene == .active else { return }
-    do { history = try records.load().metricDeletionHistory ?? [] }
+    do {
+      history = (try records.load().metricDeletionHistory ?? []).filter { filter == nil || $0.scope.filter == filter }
+    }
     catch { history = []; notice = t("failed", "Could not access local measurement history.") }
+  }
+
+  private var metrics: [GalaxySSIHealthMetric] {
+    filter == .appleHealth ? GalaxySSIHealthKitImport.Scope.allCases.map(\.metric) : GalaxySSIHealthMetric.allCases
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
