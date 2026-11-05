@@ -9655,18 +9655,25 @@ final class MessageCoordinator: ObservableObject {
         }
 
       case .completed:
-        let clean = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
+        var clean = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let current = incoming {
+          do {
+            if let visual = try richContentMaterializer.prepareVisualReply(clean) {
+              guard store.updateMessageContent(current.id, contactId: destinationId, content: visual.content,
+                                               richOutputJson: visual.richOutput) != nil else {
+                throw AgentVisualOutputPolicy.DeliveryError.unavailableHTML
+              }
+              clean = visual.content.ifBlank(localizedReply("rich_output_visual_saved", fallback: "Visual reply saved"))
+            }
+          } catch {
+            let message = visualDeliveryFailure(error)
+            _ = store.updateMessageContent(current.id, contactId: destinationId, content: message, status: .failed,
+                                           traceStage: "visual_delivery_failed", detail: message)
+            throw GalaxySSIError.invalidPayload(message)
+          }
+        }
         guard !clean.isEmpty, let current = incoming else {
           throw GalaxySSIError.unsupportedResponse
-        }
-        let visual: AgentVisualOutputPolicy.Reply?
-        do {
-          visual = try richContentMaterializer.prepareVisualReply(clean)
-        } catch {
-          let message = visualDeliveryFailure(error)
-          _ = store.updateMessageContent(current.id, contactId: destinationId, content: message, status: .failed,
-                                         traceStage: "visual_delivery_failed", detail: message)
-          throw GalaxySSIError.invalidPayload(message)
         }
         completed = true
         store.appendDeliveryTrace(
@@ -9679,11 +9686,10 @@ final class MessageCoordinator: ObservableObject {
         let final = store.updateMessageContent(
           current.id,
           contactId: destinationId,
-          content: visual?.content ?? clean,
+          content: clean,
           status: .delivered,
           traceStage: "cloud_reply_received",
-          detail: modelDetail,
-          richOutputJson: visual?.richOutput
+          detail: modelDetail
         ) ?? current
         onIncomingMessage?(final)
 
