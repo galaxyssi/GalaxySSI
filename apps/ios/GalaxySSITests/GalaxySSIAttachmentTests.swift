@@ -752,6 +752,26 @@ final class GalaxySSIAttachmentTests: XCTestCase {
     XCTAssertTrue(store.pending().isEmpty)
   }
 
+  func testHistoricalImageManifestRetainsSourceTurnWhenReopened() throws {
+    let root = temporaryOutboundTransferRoot()
+    defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+    let scope = try AgentAttachmentTransferScope(contactId: "contact", desktopId: "desktop",
+      clientRouteId: GalaxySSILinkProtocol.newRouteId(), conversationId: "conversation",
+      taskId: "task", turnId: "current")
+    let attachment = GalaxySSIDraftAttachment(id: "image", displayName: "old.png", mimeType: "image/png",
+      data: Data([1, 2, 3]), historicalSourceTurnId: "earlier")
+    let cipher = GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let store = AgentOutboundAttachmentTransferStore(rootURL: root, cipher: cipher)
+    let prepared = try XCTUnwrap(store.prepare(scope: scope, attachments: [attachment],
+      mediaProfile: AgentMediaNetworkPolicy.profile(for: .normal), preserveOriginalBytes: true).first)
+    let reopened = AgentOutboundAttachmentTransferStore(rootURL: root, cipher: cipher)
+    let recovered = try XCTUnwrap(reopened.find(prepared.transferId))
+    XCTAssertEqual(recovered.descriptor()["historical_source_turn_id"] as? String, "earlier")
+    XCTAssertEqual(recovered.manifestPayload(resume: true)["historical_source_turn_id"] as? String, "earlier")
+    XCTAssertEqual(recovered.manifestPayload(resume: true)["turn_id"] as? String, "current")
+    XCTAssertEqual(try recovered.plaintextChunk(index: 0), attachment.data)
+  }
+
   func testPeerAttachmentTransferPreservesOriginalImageBytes() throws {
     let root = temporaryOutboundTransferRoot()
     defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }

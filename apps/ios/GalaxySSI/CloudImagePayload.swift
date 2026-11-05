@@ -9,8 +9,10 @@ struct CloudImagePayload: Equatable {
   var mimeType: String
   var data: Data
   var originalData: Data?
+  var historicalSourceTurnId: String?
 
-  init(displayName: String, mimeType: String, data: Data, originalData: Data? = nil) throws {
+  init(displayName: String, mimeType: String, data: Data, originalData: Data? = nil,
+       historicalSourceTurnId: String? = nil) throws {
     let normalizedMimeType = mimeType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     guard !data.isEmpty,
           data.count <= Self.maximumBytes,
@@ -21,6 +23,7 @@ struct CloudImagePayload: Equatable {
     self.mimeType = normalizedMimeType
     self.data = data
     self.originalData = originalData
+    self.historicalSourceTurnId = historicalSourceTurnId
   }
 
   var base64: String {
@@ -70,7 +73,8 @@ enum CloudImagePayloadFactory {
       displayName: encoded.transportName(originalName: attachment.displayName),
       mimeType: encoded.mimeType,
       data: encoded.data,
-      originalData: attachment.data
+      originalData: attachment.data,
+      historicalSourceTurnId: attachment.historicalSourceTurnId
     )
   }
 }
@@ -80,7 +84,13 @@ enum CloudVisionPayloadEncoder {
     to conversation: inout [[String: Any]],
     images: [CloudImagePayload]
   ) {
-    guard !images.isEmpty else { return }
+    let currentImages = insertHistoricalReferences(into: &conversation, images: images) { label, image in
+      ["role": "user", "content": [
+        ["type": "text", "text": label],
+        ["type": "image_url", "image_url": ["url": "data:\(image.mimeType);base64,\(image.base64)", "detail": "auto"]]
+      ]]
+    }
+    guard !currentImages.isEmpty else { return }
     let index = latestUserIndex(in: conversation) ?? {
       conversation.append(["role": "user", "content": ""])
       return conversation.count - 1
@@ -88,9 +98,9 @@ enum CloudVisionPayloadEncoder {
     var message = conversation[index]
     var content = contentParts(message["content"], textType: "text")
     let reference = CloudVisionOrientationSheet.make(for: images)
-    let payloads = images + (reference.map { [$0] } ?? [])
-    for (offset, image) in payloads.enumerated() {
-      if offset == images.count { content.append(["type": "text", "text": CloudVisionOrientationSheet.guidance]) }
+    let payloads = currentImages.map { (Optional($0.offset), $0.element) } + (reference.map { [(nil, $0)] } ?? [])
+    for (sourceIndex, image) in payloads {
+      if sourceIndex == nil { content.append(["type": "text", "text": CloudVisionOrientationSheet.guidance]) }
       content.append([
         "type": "image_url",
         "image_url": [
@@ -98,7 +108,7 @@ enum CloudVisionPayloadEncoder {
           "detail": "auto"
         ]
       ])
-      if offset < images.count { content.append(["type": "text", "text": sourceLabel(offset)]) }
+      if let sourceIndex { content.append(["type": "text", "text": sourceLabel(sourceIndex)]) }
     }
     message["content"] = content
     conversation[index] = message
@@ -108,7 +118,13 @@ enum CloudVisionPayloadEncoder {
     to conversation: inout [[String: Any]],
     images: [CloudImagePayload]
   ) {
-    guard !images.isEmpty else { return }
+    let currentImages = insertHistoricalReferences(into: &conversation, images: images) { label, image in
+      ["role": "user", "content": [
+        ["type": "text", "text": label],
+        ["type": "image", "source": ["type": "base64", "media_type": image.mimeType, "data": image.base64]]
+      ]]
+    }
+    guard !currentImages.isEmpty else { return }
     let index = latestUserIndex(in: conversation) ?? {
       conversation.append(["role": "user", "content": ""])
       return conversation.count - 1
@@ -116,9 +132,9 @@ enum CloudVisionPayloadEncoder {
     var message = conversation[index]
     var content = contentParts(message["content"], textType: "text")
     let reference = CloudVisionOrientationSheet.make(for: images)
-    let payloads = images + (reference.map { [$0] } ?? [])
-    for (offset, image) in payloads.enumerated() {
-      if offset == images.count { content.append(["type": "text", "text": CloudVisionOrientationSheet.guidance]) }
+    let payloads = currentImages.map { (Optional($0.offset), $0.element) } + (reference.map { [(nil, $0)] } ?? [])
+    for (sourceIndex, image) in payloads {
+      if sourceIndex == nil { content.append(["type": "text", "text": CloudVisionOrientationSheet.guidance]) }
       content.append([
         "type": "image",
         "source": [
@@ -127,7 +143,7 @@ enum CloudVisionPayloadEncoder {
           "data": image.base64
         ]
       ])
-      if offset < images.count { content.append(["type": "text", "text": sourceLabel(offset)]) }
+      if let sourceIndex { content.append(["type": "text", "text": sourceLabel(sourceIndex)]) }
     }
     message["content"] = content
     conversation[index] = message
@@ -137,7 +153,14 @@ enum CloudVisionPayloadEncoder {
     to conversation: inout [[String: Any]],
     images: [CloudImagePayload]
   ) {
-    guard !images.isEmpty else { return }
+    let currentImages = insertHistoricalReferences(into: &conversation, images: images,
+      emptyUser: ["role": "user", "parts": [[String: Any]]()]) { label, image in
+      ["role": "user", "parts": [
+        ["text": label],
+        ["inline_data": ["mime_type": image.mimeType, "data": image.base64]]
+      ]]
+    }
+    guard !currentImages.isEmpty else { return }
     let index = latestUserIndex(in: conversation) ?? {
       conversation.append(["role": "user", "parts": [[String: Any]]()])
       return conversation.count - 1
@@ -145,19 +168,42 @@ enum CloudVisionPayloadEncoder {
     var message = conversation[index]
     var parts = message["parts"] as? [[String: Any]] ?? []
     let reference = CloudVisionOrientationSheet.make(for: images)
-    let payloads = images + (reference.map { [$0] } ?? [])
-    for (offset, image) in payloads.enumerated() {
-      if offset == images.count { parts.append(["text": CloudVisionOrientationSheet.guidance]) }
+    let payloads = currentImages.map { (Optional($0.offset), $0.element) } + (reference.map { [(nil, $0)] } ?? [])
+    for (sourceIndex, image) in payloads {
+      if sourceIndex == nil { parts.append(["text": CloudVisionOrientationSheet.guidance]) }
       parts.append([
         "inline_data": [
           "mime_type": image.mimeType,
           "data": image.base64
         ]
       ])
-      if offset < images.count { parts.append(["text": sourceLabel(offset)]) }
+      if let sourceIndex { parts.append(["text": sourceLabel(sourceIndex)]) }
     }
     message["parts"] = parts
     conversation[index] = message
+  }
+
+  private static func insertHistoricalReferences(
+    into conversation: inout [[String: Any]], images: [CloudImagePayload],
+    emptyUser: [String: Any] = ["role": "user", "content": ""],
+    message: (String, CloudImagePayload) -> [String: Any]
+  ) -> [(offset: Int, element: CloudImagePayload)] {
+    var references: [[String: Any]] = []
+    var current: [(offset: Int, element: CloudImagePayload)] = []
+    for (index, image) in images.enumerated() {
+      guard let turn = image.historicalSourceTurnId else { current.append((index, image)); continue }
+      let safeTurn = String(turn.unicodeScalars.filter {
+        CharacterSet.alphanumerics.contains($0) || "-_.:".unicodeScalars.contains($0)
+      }.prefix(128).map(String.init).joined())
+      let label = "Historical image reference (source turn: \(safeTurn), image index: \(index)). " +
+        "This is not a new upload. Use it only if relevant to the latest request; do not restart the earlier task."
+      references.append(message(label, image))
+    }
+    if !references.isEmpty {
+      if !current.isEmpty && latestUserIndex(in: conversation) == nil { conversation.append(emptyUser) }
+      conversation.insert(contentsOf: references, at: latestUserIndex(in: conversation) ?? conversation.endIndex)
+    }
+    return current
   }
 
   private static func sourceLabel(_ index: Int) -> String {

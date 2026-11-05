@@ -4,6 +4,28 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentImagePipelineTests: XCTestCase {
+  func testHistoricalImageStaysSeparateFromLatestUserMessageAcrossProviders() throws {
+    let image = try CloudImagePayload(displayName: "old.png", mimeType: "image/png", data: Data([1, 2, 3]),
+      historicalSourceTurnId: "earlier-turn")
+    var openAI: [[String: Any]] = [["role": "user", "content": "Translate this word"]]
+    var anthropic = openAI
+    var gemini: [[String: Any]] = [["role": "user", "parts": [["text": "Translate this word"]]]]
+    CloudVisionPayloadEncoder.attachOpenAI(to: &openAI, images: [image])
+    CloudVisionPayloadEncoder.attachAnthropic(to: &anthropic, images: [image])
+    CloudVisionPayloadEncoder.attachGemini(to: &gemini, images: [image])
+    for (messages, key) in [(openAI, "content"), (anthropic, "content"), (gemini, "parts")] {
+      XCTAssertEqual(messages.count, 2)
+      let parts = try XCTUnwrap(messages.first?[key] as? [[String: Any]])
+      let label = try XCTUnwrap(parts.first?["text"] as? String)
+      XCTAssertTrue(label.contains("source turn: earlier-turn"))
+      XCTAssertTrue(label.contains("not a new upload"))
+      XCTAssertEqual(parts.count, 2)
+    }
+    XCTAssertEqual(openAI.last?["content"] as? String, "Translate this word")
+    XCTAssertEqual(anthropic.last?["content"] as? String, "Translate this word")
+    XCTAssertEqual((gemini.last?["parts"] as? [[String: String]])?.first?["text"], "Translate this word")
+  }
+
   func testSourceImageIndicesMatchOriginalOrderInEveryCloudFormat() throws {
     let images = try [1, 2].map { value in
       try CloudImagePayload(displayName: "fixture.png", mimeType: "image/png", data: Data([UInt8(value)]))
@@ -22,6 +44,22 @@ final class AgentImagePipelineTests: XCTestCase {
     }
     XCTAssertTrue(CloudImageAnnotationPlan.instruction(imageCount: 2).contains("cannot be annotated"))
     XCTAssertTrue(CloudImageAnnotationPlan.instruction(imageCount: 0).isEmpty)
+  }
+
+  func testMixedGeminiImagesKeepOriginalIndicesAndSeparateMessages() throws {
+    let history = try CloudImagePayload(displayName: "history.png", mimeType: "image/png", data: Data([1]),
+      historicalSourceTurnId: "prior-turn")
+    let current = try CloudImagePayload(displayName: "new.png", mimeType: "image/png", data: Data([2]))
+    var messages: [[String: Any]] = []
+    CloudVisionPayloadEncoder.attachGemini(to: &messages, images: [history, current])
+
+    XCTAssertEqual(messages.count, 2)
+    let historicalParts = try XCTUnwrap(messages.first?["parts"] as? [[String: Any]])
+    let currentParts = try XCTUnwrap(messages.last?["parts"] as? [[String: Any]])
+    XCTAssertEqual(historicalParts.count, 2)
+    XCTAssertTrue((historicalParts.first?["text"] as? String)?.contains("prior-turn") == true)
+    XCTAssertEqual(currentParts.count, 2)
+    XCTAssertEqual(currentParts.last?["text"] as? String, "Source image index: 1.")
   }
 
   func testOrientationSheetRotatesAsymmetricPixelsInClockwiseOrder() throws {

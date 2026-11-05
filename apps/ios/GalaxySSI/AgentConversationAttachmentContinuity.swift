@@ -22,7 +22,9 @@ enum AgentConversationAttachmentContinuity {
     request: String,
     messages: [ChatMessage]
   ) -> AgentAttachmentContinuityReuse {
-    guard let prior = select(messages: messages, currentTurnId: currentTurnId, request: request) else {
+    let scoped = messages.filter { $0.conversationId == conversationId }
+    guard !conversationId.isEmpty,
+          let prior = select(messages: scoped, currentTurnId: currentTurnId, request: request) else {
       return AgentAttachmentContinuityReuse(attachments: [], stagedAttachments: [])
     }
     let restored = AgentAttachmentWorkspaceStager.restore(
@@ -31,7 +33,11 @@ enum AgentConversationAttachmentContinuity {
       blocks: prior.blocks
     )
     return AgentAttachmentContinuityReuse(
-      attachments: restored.map(\.attachment),
+      attachments: restored.map {
+        var attachment = $0.attachment
+        if attachment.isImage { attachment.historicalSourceTurnId = prior.turnId }
+        return attachment
+      },
       stagedAttachments: restored.map(\.staged)
     )
   }

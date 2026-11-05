@@ -138,7 +138,7 @@ struct CloudConversationNonStreamingToolEngine {
   }
 
   private func complete(_ request: ModelStreamRequest) async throws -> ParsedResponse {
-    let body = try compatibilityBody(request.bodyJson, provider: request.provider)
+    let body = try Self.compatibilityBody(request.bodyJson, provider: request.provider)
     guard let url = compatibilityURL(request.endpoint, provider: request.provider) else {
       throw GalaxySSIError.invalidPayload("Cloud endpoint is not a URL.")
     }
@@ -151,7 +151,7 @@ struct CloudConversationNonStreamingToolEngine {
     return parse(object, provider: request.provider)
   }
 
-  private func compatibilityBody(_ encoded: String, provider: ModelStreamProvider) throws -> String {
+  static func compatibilityBody(_ encoded: String, provider: ModelStreamProvider) throws -> String {
     var body = try CloudModelStreamJSON.object(from: encoded)
     if provider != .gemini { body["stream"] = false }
     return try CloudModelStreamJSON.string(body)

@@ -78,6 +78,7 @@ struct AgentPreparedOutboundAttachment: Equatable {
   var transportProfile: String
   var requiresValidatedNetwork: Bool
   var scope: AgentAttachmentTransferScope
+  var historicalSourceTurnId: String?
   fileprivate var chunkDirectoryURL: URL
   fileprivate var cipher: any GalaxySSILocalAttachmentStoring
 
@@ -95,7 +96,7 @@ struct AgentPreparedOutboundAttachment: Equatable {
   }
 
   func descriptor() -> [String: Any] {
-    [
+    var payload: [String: Any] = [
       "id": attachmentId,
       "transfer_id": transferId,
       "name": name,
@@ -110,6 +111,8 @@ struct AgentPreparedOutboundAttachment: Equatable {
       "transport_profile": transportProfile,
       "transport_status": "chunked"
     ]
+    if let historicalSourceTurnId { payload["historical_source_turn_id"] = historicalSourceTurnId }
+    return payload
   }
 
   func manifestPayload(
@@ -118,6 +121,7 @@ struct AgentPreparedOutboundAttachment: Equatable {
     nowMillis: Int64 = AgentOutboundAttachmentTransferStore.nowMillis()
   ) -> [String: Any] {
     var payload = commonPayload(type: "input_attachment_manifest", nowMillis: nowMillis)
+    if let historicalSourceTurnId { payload["historical_source_turn_id"] = historicalSourceTurnId }
     payload["resume"] = resume
     payload["eager_chunks"] = eagerChunks
     return payload
@@ -551,6 +555,7 @@ final class AgentOutboundAttachmentTransferStore {
         mediaProfile.deferMediaUpload &&
         attachment.isTransportMedia,
       scope: scope,
+      historicalSourceTurnId: attachment.historicalSourceTurnId,
       createdAt: Self.nowMillis(now())
     )
     try writeManifest(manifest, directory: destination)
@@ -637,6 +642,7 @@ final class AgentOutboundAttachmentTransferStore {
         transportProfile: manifest.transportProfile,
         requiresValidatedNetwork: manifest.requiresValidatedNetwork,
         scope: manifest.scope,
+        historicalSourceTurnId: manifest.historicalSourceTurnId,
         chunkDirectoryURL: chunkDirectory,
         cipher: cipher
       )
@@ -742,10 +748,12 @@ final class AgentOutboundAttachmentTransferStore {
     var transportProfile: String
     var requiresValidatedNetwork: Bool
     var scope: AgentAttachmentTransferScope
+    var historicalSourceTurnId: String?
     var createdAt: Int64
 
     enum CodingKeys: String, CodingKey {
       case transferId = "transfer_id"
+      case historicalSourceTurnId = "historical_source_turn_id"
       case attachmentId = "attachment_id"
       case attachmentOrdinal = "attachment_ordinal"
       case name
