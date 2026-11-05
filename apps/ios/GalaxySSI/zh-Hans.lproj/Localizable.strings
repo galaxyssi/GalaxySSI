@@ -5290,6 +5290,9 @@
 "public_news_close" = "关闭文章";
 "public_news_open_source" = "打开原文";
 "public_news_load_body" = "加载原文正文";
+"public_news_load_more_body" = "加载更多正文";
+"public_news_enlarge_image" = "放大文章图片";
+"public_news_image_unavailable" = "暂时无法加载原图";
 "public_news_backlog_title" = "文章处理";
 "public_news_backlog_ready" = "中文正文已就绪";
 "public_news_backlog_waiting" = "等待处理";

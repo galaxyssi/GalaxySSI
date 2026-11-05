@@ -89,7 +89,7 @@ final class PublicNewsBacklogWorker: ObservableObject {
               switch prepared[claim.articleID] ?? .failed {
               case .cached(let saved): checkpoint = saved
               case .html(let html):
-                let body = try await PublicNewsArticleBody.extract(html)
+                let body = try await PublicNewsArticleBody.extract(html, articleURL: byID[claim.articleID]?.url)
                 checkpoint = try await PublicNewsBodyStore.shared.install(
                   body, articleID: claim.articleID, retaining: Set(archive.articles.map(\.id))
                 )

@@ -118,6 +118,12 @@ final class PublicNewsArchive: ObservableObject {
     update(id) { $0.saved.toggle() }
   }
 
+  func rememberCover(_ cover: URL, articleID: String) {
+    update(articleID) { article in
+      if article.coverURL == nil && PublicNewsImagePolicy.accepts(cover, for: article.url) { article.coverURL = cover }
+    }
+  }
+
   @discardableResult
   func storeHeadline(_ text: String, for id: String, source: String,
                      provider: PublicNewsHeadlineTranslation.Provider) -> Bool {
@@ -266,6 +272,7 @@ final class PublicNewsArchive: ObservableObject {
         article.saved = previous.saved
         article.discoveredAt = previous.discoveredAt
         article.publishedAt = article.publishedAt ?? previous.publishedAt
+        article.coverURL = article.coverURL ?? previous.coverURL
         if previous.title == article.title {
           article.headlineTranslation = previous.headlineTranslation
         }
