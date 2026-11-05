@@ -3,6 +3,37 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentImagePipelineTests: XCTestCase {
+  func testOrientationReferencePreservesOriginalInAllCloudFormats() throws {
+    let source = try XCTUnwrap(testImage().jpegData(compressionQuality: 0.8))
+    let image = try CloudImagePayload(displayName: "fixture.jpg", mimeType: "image/jpeg", data: source)
+    let sheet = try XCTUnwrap(CloudVisionOrientationSheet.make(for: [image]))
+    XCTAssertLessThanOrEqual(sheet.data.count, CloudImagePayload.maximumBytes)
+    XCTAssertNotEqual(sheet.data, source)
+    let decoded = try XCTUnwrap(UIImage(data: sheet.data))
+    XCTAssertEqual(decoded.size.width, decoded.size.height)
+    XCTAssertNil(CloudVisionOrientationSheet.make(for: []))
+    XCTAssertNil(CloudVisionOrientationSheet.make(for: [image, image]))
+    let invalid = try CloudImagePayload(displayName: "invalid.jpg", mimeType: "image/jpeg", data: Data([1]))
+    XCTAssertNil(CloudVisionOrientationSheet.make(for: [invalid]))
+
+    var openAI: [[String: Any]] = [["role": "user", "content": "Read"]]
+    var anthropic = openAI
+    var gemini: [[String: Any]] = [["role": "user", "parts": [["text": "Read"]]]]
+    CloudVisionPayloadEncoder.attachOpenAI(to: &openAI, images: [image])
+    CloudVisionPayloadEncoder.attachAnthropic(to: &anthropic, images: [image])
+    CloudVisionPayloadEncoder.attachGemini(to: &gemini, images: [image])
+    let openAIParts = try XCTUnwrap(openAI.first?["content"] as? [[String: Any]])
+    let anthropicParts = try XCTUnwrap(anthropic.first?["content"] as? [[String: Any]])
+    let geminiParts = try XCTUnwrap(gemini.first?["parts"] as? [[String: Any]])
+    for parts in [openAIParts, anthropicParts, geminiParts] {
+      XCTAssertEqual(parts.count, 4)
+      XCTAssertEqual(parts[2]["text"] as? String, CloudVisionOrientationSheet.guidance)
+    }
+    XCTAssertEqual((openAIParts[1]["image_url"] as? [String: String])?["url"], "data:image/jpeg;base64," + image.base64)
+    XCTAssertEqual((anthropicParts[1]["source"] as? [String: String])?["data"], image.base64)
+    XCTAssertEqual((geminiParts[1]["inline_data"] as? [String: String])?["data"], image.base64)
+  }
+
   func testSmallImageKeepsOriginalBytesAndRecordsProbe() throws {
     let data = try XCTUnwrap(testImage().pngData())
     let attachment = GalaxySSIDraftAttachment(
