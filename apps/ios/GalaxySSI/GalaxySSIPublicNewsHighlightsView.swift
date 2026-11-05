@@ -5,6 +5,7 @@ struct GalaxySSIPublicNewsHighlightsView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @ObservedObject var archive: PublicNewsArchive
   @AppStorage("publicNews.highlightInterests") private var interestMask = PublicNewsInterest.allMask
+  @AppStorage("publicNews.publisherDiscovery") private var publisherDiscovery = false
   @State private var selected: PublicNewsArticle?
   @State private var articleIDs: [String] = []
   @State private var loading = true
@@ -77,7 +78,7 @@ struct GalaxySSIPublicNewsHighlightsView: View {
         }
         .padding(.horizontal, 12)
       }
-      .refreshable { await archive.refresh(force: true) }
+      .refreshable { await archive.refresh(force: true, learnPublishers: publisherDiscovery) }
     }
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
