@@ -6181,47 +6181,32 @@ final class MessageCoordinator: ObservableObject {
 
   private func agentCallableSearchReply(query: String) -> String {
     let clean = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    let normalized = clean.lowercased()
     let targets = AgentCallableTargetCatalog.build(
       contacts: store.visibleContacts,
       apiKey: { store.apiKey(for: $0) }
     )
-    let tools = AgentPhoneNativeToolCatalog.descriptors()
+    let tools = localNativeToolRuntime?.registry.descriptors() ?? AgentPhoneNativeToolCatalog.descriptors()
     let targetMatches = targets
       .filter { target in
-        [
+        AgentResearchCapabilityDiscovery.matches(clean, metadata: [
           target.id,
           target.title,
           target.kind.rawValue,
           target.status.rawValue,
           target.capabilities.map(\.wireValue).joined(separator: " ")
-        ]
-          .joined(separator: " ")
-          .lowercased()
-          .contains(normalized)
+        ])
       }
       .prefix(6)
       .map { "\($0.title):\($0.kind.rawValue.lowercased()):\($0.status.rawValue.lowercased())" }
     let toolMatches = tools
-      .filter { tool in
-        [
-          tool.id,
-          tool.title,
-          tool.description,
-          tool.risk.rawValue,
-          tool.capabilities.joined(separator: " ")
-        ]
-          .joined(separator: " ")
-          .lowercased()
-          .contains(normalized)
-      }
+      .filter { AgentResearchCapabilityDiscovery.matches(clean, tool: $0) }
       .prefix(8)
       .map { "\($0.title):\($0.location.rawValue.lowercased()):\($0.risk.rawValue.lowercased())" }
     let matches = Array(targetMatches) + Array(toolMatches)
     guard !matches.isEmpty else {
       return localizedReply(
         "galaxyssi.agent.inventory.no_matches",
-        fallback: "No callable inventory hits for \"%@\"",
+        fallback: "No catalog entries matched \"%@\". This does not mean the capability is unavailable.",
         clean
       )
     }

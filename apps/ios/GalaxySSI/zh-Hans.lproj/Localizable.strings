@@ -5760,7 +5760,7 @@
 "galaxyssi.state.enabled" = "已开启";
 "galaxyssi.state.disabled" = "已关闭";
 "galaxyssi.agent.high_risk_guard_state" = "Agent 高风险保护%@";
-"galaxyssi.agent.inventory.no_matches" = "没有匹配“%@”的可调用能力。";
+"galaxyssi.agent.inventory.no_matches" = "目录中没有匹配“%@”的条目，但这不代表该能力不可用。";
 "galaxyssi.agent.permissions.summary" = "Agent 权限：%d/%d 已就绪";
 "galaxyssi.state.ready" = "已就绪";
 "galaxyssi.state.missing" = "缺失";

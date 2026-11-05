@@ -208,11 +208,13 @@ struct GuardedModelAgentPlanner {
   ) -> [AgentNativeToolDescriptor] {
     let allowsPhoneRuntimeTools = request.allowsPhoneRuntimeTools &&
       AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: request.planRequest.goal)
+    let isResearch = AgentResearchCapabilityDiscovery.isResearchRequest(request)
     return request.planRequest.nativeTools
       .filter { descriptor in
         descriptor.availability.status == .available &&
         descriptor.risk == .low &&
-        descriptor.requiredConsents.allSatisfy { !$0.required } &&
+        (descriptor.requiredConsents.allSatisfy { !$0.required } ||
+          (isResearch && AgentResearchCapabilityDiscovery.hasOnlyResearchConsent(descriptor))) &&
           (allowsPhoneRuntimeTools || !AgentPhoneRuntimePolicy.isPhoneRuntimeTool(descriptor.id))
       }
       .sorted { $0.id < $1.id }

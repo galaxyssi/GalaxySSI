@@ -900,6 +900,7 @@
     A10000000000000000002110 /* AgentPhoneDevelopmentManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002110 /* AgentPhoneDevelopmentManifest.swift */; };
     A10000000000000000000185 /* AgentPhoneRuntimePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000185 /* AgentPhoneRuntimePolicy.swift */; };
     A10000000000000000000160 /* AgentModelPlanningPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000160 /* AgentModelPlanningPrompt.swift */; };
+    A100000000000000000F3607 /* AgentResearchCapabilityDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000F3607 /* AgentResearchCapabilityDiscovery.swift */; };
     A10000000000000000000161 /* GuardedModelAgentPlannerModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000161 /* GuardedModelAgentPlannerModels.swift */; };
     A10000000000000000000162 /* GuardedModelAgentPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000162 /* GuardedModelAgentPlanner.swift */; };
     A10000000000000000000163 /* CloudModelAgentPlanningProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000163 /* CloudModelAgentPlanningProvider.swift */; };
@@ -2047,6 +2048,7 @@
     A20000000000000000002110 /* AgentPhoneDevelopmentManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneDevelopmentManifest.swift; sourceTree = "<group>"; };
     A20000000000000000000185 /* AgentPhoneRuntimePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneRuntimePolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000160 /* AgentModelPlanningPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelPlanningPrompt.swift; sourceTree = "<group>"; };
+    A200000000000000000F3607 /* AgentResearchCapabilityDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentResearchCapabilityDiscovery.swift; sourceTree = "<group>"; };
     A20000000000000000000161 /* GuardedModelAgentPlannerModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuardedModelAgentPlannerModels.swift; sourceTree = "<group>"; };
     A20000000000000000000162 /* GuardedModelAgentPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuardedModelAgentPlanner.swift; sourceTree = "<group>"; };
     A20000000000000000000163 /* CloudModelAgentPlanningProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelAgentPlanningProvider.swift; sourceTree = "<group>"; };
@@ -2790,6 +2792,7 @@
         A20000000000000000002110 /* AgentPhoneDevelopmentManifest.swift */,
         A20000000000000000000185 /* AgentPhoneRuntimePolicy.swift */,
         A20000000000000000000160 /* AgentModelPlanningPrompt.swift */,
+        A200000000000000000F3607 /* AgentResearchCapabilityDiscovery.swift */,
         A20000000000000000000161 /* GuardedModelAgentPlannerModels.swift */,
         A20000000000000000000162 /* GuardedModelAgentPlanner.swift */,
         A20000000000000000000163 /* CloudModelAgentPlanningProvider.swift */,
@@ -4031,6 +4034,7 @@
         A10000000000000000002110 /* AgentPhoneDevelopmentManifest.swift in Sources */,
         A10000000000000000000185 /* AgentPhoneRuntimePolicy.swift in Sources */,
         A10000000000000000000160 /* AgentModelPlanningPrompt.swift in Sources */,
+        A100000000000000000F3607 /* AgentResearchCapabilityDiscovery.swift in Sources */,
         A10000000000000000000161 /* GuardedModelAgentPlannerModels.swift in Sources */,
         A10000000000000000000162 /* GuardedModelAgentPlanner.swift in Sources */,
         A10000000000000000000163 /* CloudModelAgentPlanningProvider.swift in Sources */,
