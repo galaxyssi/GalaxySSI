@@ -18,6 +18,11 @@ struct GalaxySSIHealthImportView: View {
   var body: some View {
     List {
       Section(t("report", "Report originals")) {
+        NavigationLink {
+          GalaxySSIHealthPhotoDraftView(records: records, store: store)
+        } label: {
+          Label(t("photo_draft", "Ordered photo draft"), systemImage: "camera")
+        }
         Button {
           notice = nil
           picking = true

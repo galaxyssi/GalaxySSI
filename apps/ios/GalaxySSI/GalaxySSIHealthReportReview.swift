@@ -8,10 +8,12 @@ enum GalaxySSIHealthReportReview {
     let region: Int
     let fromOCR: Bool
     var evidenceKey: String?
+    var documentOrder: Int?
+    var cropRevision: UUID?
 
     static func == (lhs: Self, rhs: Self) -> Bool {
       guard lhs.original == rhs.original, lhs.sha256 == rhs.sha256, lhs.page == rhs.page,
-            lhs.fromOCR == rhs.fromOCR else { return false }
+            lhs.fromOCR == rhs.fromOCR, lhs.cropRevision == rhs.cropRevision else { return false }
       if lhs.evidenceKey != nil || rhs.evidenceKey != nil { return lhs.evidenceKey == rhs.evidenceKey }
       return lhs.region == rhs.region
     }

@@ -129,6 +129,7 @@ struct GalaxySSIHealthRecords {
   struct Archive: Codable {
     var reportReview: [GalaxySSIHealthReportReview.Item]?
     var recognitionJobs: [GalaxySSIHealthRecognitionJobs.Job]?
+    var photoDraft: GalaxySSIHealthPhotoDraft?
     var version = 1
     var revisions: [GalaxySSIHealthReading] = []
     var draft: GalaxySSIHealthDraft?
@@ -293,6 +294,45 @@ struct GalaxySSIHealthRecords {
     if let draftId, archive.draft?.id == draftId { archive.draft = nil }
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+  }
+
+  func savePhotoDraft(_ input: GalaxySSIHealthPhotoDraft) throws -> GalaxySSIHealthPhotoDraft {
+    var archive = try load()
+    guard archive.photoDraft?.version == input.version,
+          input.pages.count <= GalaxySSIHealthPhotoDraft.maximumPages,
+          Set(input.pages.map(\.id)).count == input.pages.count,
+          input.pages.allSatisfy({ $0.original.kind == .image }) else { throw Failure.stale }
+    var next = input
+    next.version = UUID()
+    archive.photoDraft = next
+    try persist(archive)
+    return next
+  }
+
+  func submitPhotoDraft(_ expected: GalaxySSIHealthPhotoDraft, store: GalaxySSIHealthOriginalStore) throws {
+    var archive = try load()
+    guard let draft = archive.photoDraft, draft == expected, !draft.pages.isEmpty, store.owner == owner else {
+      throw Failure.stale
+    }
+    var jobs = archive.recognitionJobs ?? []
+    guard jobs.count + draft.pages.count <= GalaxySSIHealthRecognitionJobs.maximumJobs else { throw Failure.invalid }
+    var batch: [GalaxySSIHealthRecognitionJobs.Job] = []
+    for (index, page) in draft.pages.enumerated() {
+      _ = try store.read(page.original)
+      var job = GalaxySSIHealthRecognitionJobs.Job(original: page.original, addedAt: Date(), pageCount: 1)
+      job.photoBatch = draft.version
+      job.documentOrder = index
+      if page.useCrop {
+        guard let crop = try store.readCrop(for: page.original), crop.metadata.revision == page.cropRevision
+        else { throw Failure.stale }
+        job.cropRevision = crop.metadata.revision
+      }
+      batch.append(job)
+    }
+    jobs.insert(contentsOf: batch, at: 0)
+    archive.recognitionJobs = jobs
+    archive.photoDraft = nil
+    try persist(archive)
   }
 
   func enqueueRecognition(original: GalaxySSIHealthOriginalStore.Original, pageCount: Int) throws {

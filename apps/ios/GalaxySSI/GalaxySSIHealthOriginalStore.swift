@@ -54,7 +54,8 @@ struct GalaxySSIHealthOriginalStore {
     try store(data, name: url.lastPathComponent)
   }
 
-  func store(_ data: Data, name: String) throws {
+  @discardableResult
+  func store(_ data: Data, name: String) throws -> Original {
     guard !data.isEmpty, data.count <= Self.maximumFileBytes else { throw Failure.limit }
     let kind: Kind
     let fileExtension: String
@@ -72,7 +73,10 @@ struct GalaxySSIHealthOriginalStore {
     } else { throw Failure.invalid }
     let listing = try list()
     let digest = Self.digest(data)
-    if listing.originals.contains(where: { $0.sha256 == digest }) { return }
+    if let existing = listing.originals.first(where: { $0.sha256 == digest }) {
+      _ = try read(existing)
+      return existing
+    }
     guard listing.originals.count + listing.unavailable < 500,
           listing.originals.reduce(data.count, { $0 + $1.bytes }) <= 512 * 1024 * 1024
     else { throw Failure.limit }
@@ -89,6 +93,7 @@ struct GalaxySSIHealthOriginalStore {
     file.append(header)
     file.append(payload)
     try file.write(to: url(item.id), options: [.atomic, .completeFileProtection])
+    return item
   }
 
   func list() throws -> Listing {
