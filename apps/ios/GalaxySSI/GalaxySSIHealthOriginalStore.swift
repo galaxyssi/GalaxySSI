@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 @MainActor
 struct GalaxySSIHealthOriginalStore {
   enum Kind: String, Codable, CaseIterable, Sendable { case image, pdf }
+  enum Acquisition: String, Codable, Sendable { case camera, uploaded }
   struct Original: Codable, Equatable, Identifiable, Sendable {
     let id: UUID
     let name: String
@@ -16,6 +17,7 @@ struct GalaxySSIHealthOriginalStore {
     let importedAt: Date
     let bytes: Int
     let sha256: String
+    var acquisition: Acquisition?
 
     var entryPath: String { "originals/" + id.uuidString.lowercased() + "." + fileExtension }
   }
@@ -54,7 +56,7 @@ struct GalaxySSIHealthOriginalStore {
     try store(data, name: url.lastPathComponent)
   }
 
-  func store(_ data: Data, name: String) throws {
+  func store(_ data: Data, name: String, acquisition: Acquisition = .uploaded) throws {
     guard !data.isEmpty, data.count <= Self.maximumFileBytes else { throw Failure.limit }
     let kind: Kind
     let fileExtension: String
@@ -77,7 +79,7 @@ struct GalaxySSIHealthOriginalStore {
           listing.originals.reduce(data.count, { $0 + $1.bytes }) <= 512 * 1024 * 1024
     else { throw Failure.limit }
     let item = Original(id: UUID(), name: String(name.prefix(180)), kind: kind, fileExtension: fileExtension,
-                        importedAt: Date(), bytes: data.count, sha256: digest)
+                        importedAt: Date(), bytes: data.count, sha256: digest, acquisition: acquisition)
     let key = try key(create: true)
     guard let header = try AES.GCM.seal(JSONEncoder().encode(item), using: key,
                                        authenticating: binding(item.id, "header")).combined,
@@ -89,6 +91,10 @@ struct GalaxySSIHealthOriginalStore {
     file.append(header)
     file.append(payload)
     try file.write(to: url(item.id), options: [.atomic, .completeFileProtection])
+  }
+
+  func containsOriginalFile(_ id: UUID) throws -> Bool {
+    FileManager.default.fileExists(atPath: try url(id).path)
   }
 
   func list() throws -> Listing {
