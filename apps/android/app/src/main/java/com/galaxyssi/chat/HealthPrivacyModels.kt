@@ -4,10 +4,10 @@ import java.time.ZoneId
 import org.json.JSONArray
 import org.json.JSONObject
 
-internal enum class HealthPrivacyOption { CONFIRMED_METRICS, PROFILE_CONTEXT, ONLINE_ANALYSIS, ORIGINAL_IMAGES }
+internal enum class HealthPrivacyOption { CONFIRMED_METRICS, PROFILE_CONTEXT, ONLINE_ANALYSIS, ORIGINAL_IMAGES, RETAIN_IMPORT_ORIGINALS }
 internal data class HealthPrivacyPolicy(
     val metrics: Boolean = true, val profile: Boolean = true, val online: Boolean = false,
-    val images: Boolean = false, val version: String = ""
+    val images: Boolean = false, val version: String = "", val retainImportOriginals: Boolean = true
 ) {
     init { require(!images || online) }
     fun enabled(option: HealthPrivacyOption) = when (option) {
@@ -15,16 +15,21 @@ internal data class HealthPrivacyPolicy(
         HealthPrivacyOption.PROFILE_CONTEXT -> profile
         HealthPrivacyOption.ONLINE_ANALYSIS -> online
         HealthPrivacyOption.ORIGINAL_IMAGES -> images
+        HealthPrivacyOption.RETAIN_IMPORT_ORIGINALS -> retainImportOriginals
     }
     fun change(option: HealthPrivacyOption, value: Boolean) = when (option) {
         HealthPrivacyOption.CONFIRMED_METRICS -> copy(metrics = value)
         HealthPrivacyOption.PROFILE_CONTEXT -> copy(profile = value)
         HealthPrivacyOption.ONLINE_ANALYSIS -> copy(online = value, images = value && images)
         HealthPrivacyOption.ORIGINAL_IMAGES -> copy(images = value)
+        HealthPrivacyOption.RETAIN_IMPORT_ORIGINALS -> copy(retainImportOriginals = value)
     }
-    fun json() = JSONObject().put("metrics", metrics).put("profile", profile).put("online", online).put("images", images).put("version", version)
+    fun json() = JSONObject().put("metrics", metrics).put("profile", profile).put("online", online).put("images", images)
+        .put("version", version).put("retain_import_originals", retainImportOriginals)
     companion object {
-        fun from(j: JSONObject) = HealthPrivacyPolicy(j.getBoolean("metrics"), j.getBoolean("profile"), j.getBoolean("online"), j.getBoolean("images"), j.getString("version"))
+        fun from(j: JSONObject) = HealthPrivacyPolicy(j.getBoolean("metrics"), j.getBoolean("profile"), j.getBoolean("online"),
+            j.getBoolean("images"), j.getString("version"),
+            if (j.has("retain_import_originals")) j.getBoolean("retain_import_originals") else true)
     }
 }
 

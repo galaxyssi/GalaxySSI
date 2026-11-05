@@ -33,7 +33,7 @@ class HealthCaptureActivity : Activity() {
     private val main = Handler(Looper.getMainLooper())
     private val names by lazy {
         val fixture = intent.getStringExtra("health_review_test_id").orEmpty().takeIf { BuildConfig.DEBUG && HealthProfilePolicy.uuid(it) }
-        HealthOverviewDatabases(fixture)
+        if (fixture != null) HealthOverviewDatabases(fixture) else intent.healthNavigationDatabases()
     }
     private val originals by lazy { HealthOriginalStore(applicationContext, names.originals, names.originalRoot(applicationContext)) }
     private val pdfPasswords by lazy { HealthPdfPasswordUi(this) }
@@ -45,7 +45,9 @@ class HealthCaptureActivity : Activity() {
     private var candidateOffset = 0
     private var mode = "report"
     private var originalOnly = false; private var pickOnStart = false
-    private val keepOriginal get() = intent.getBooleanExtra(HEALTH_KEEP_ORIGINAL, true)
+    private var retentionRequest: Any? = null
+    private var retentionOverride: Boolean? = null
+    private var pendingPickRetention: Boolean? = null
     private var firstEntry: HealthCaptureEntry? = null
     private var active = false
     private var generation = 0
@@ -97,6 +99,10 @@ class HealthCaptureActivity : Activity() {
             ?.mapNotNull(HealthOcrReviewSelection::decode)?.forEach { reviewSelection[it.key] = it }
         mode = state?.getString("mode") ?: "report"
         originalOnly = state?.getBoolean("original_only") ?: intent.getBooleanExtra("health_original_only", false)
+        retentionOverride = if (state == null) intent.getBooleanExtra(HEALTH_KEEP_ORIGINAL, false)
+            .takeIf { intent.hasExtra(HEALTH_KEEP_ORIGINAL) }
+        else state.takeIf { it.containsKey("retention_override") }?.getBoolean("retention_override")
+        pendingPickRetention = state?.takeIf { it.containsKey("pick_retention") }?.getBoolean("pick_retention")
         pickOnStart = state == null && intent.getBooleanExtra("health_pick_files", false)
         if (state == null) firstEntry = HealthCaptureEntry.entries.firstOrNull { it.name == intent.getStringExtra("health_capture_entry") }
         pendingCamera = state?.getString("camera") ?: getSharedPreferences("health_capture_pending", MODE_PRIVATE).getString("token", "").orEmpty()
@@ -137,6 +143,7 @@ class HealthCaptureActivity : Activity() {
     }
     override fun onStop() {
         active = false; generation++; contentResolver.unregisterContentObserver(observer)
+        retentionRequest = null
         pdfPasswords.cancel()
         preview?.dismiss(); preview = null; rawDialog?.dismiss(); rawDialog = null; actionDialog?.dismiss(); actionDialog = null
         clearReviewSource()
@@ -151,6 +158,8 @@ class HealthCaptureActivity : Activity() {
         out.putString("review_selection_job", reviewSelectionJob)
         out.putStringArrayList("review_selection", ArrayList(reviewSelection.values.map { it.encode() }))
         out.putBoolean("original_only", originalOnly)
+        retentionOverride?.let { out.putBoolean("retention_override", it) }
+        pendingPickRetention?.let { out.putBoolean("pick_retention", it) }
         out.putString("camera", pendingCamera); out.putString("export", exportId)
         out.putStringArrayList("job_pages", ArrayList(jobPages.map { "${it.first}|${it.second}" }))
         out.putStringArrayList("record_pages", ArrayList(recordPages.map { "${it.measuredAt}|${it.id}" }))
@@ -639,18 +648,40 @@ class HealthCaptureActivity : Activity() {
             }, { showFailure("storage") }) }
         }
     }
-    private fun choose(images: Boolean, types: Array<String>? = null) {
+    private fun resolveRetention(choice: Boolean? = null): Boolean =
+        choice ?: HealthPrivacyStore(applicationContext, names.privacy).use { it.policy().retainImportOriginals }
+
+    private fun withRetention(originalOnly: Boolean = false, ready: (Boolean) -> Unit) {
+        if (retentionRequest != null) return
+        val request = Any().also { retentionRequest = it }
+        val token = generation
+        val choice = retentionOverride
+        worker.execute {
+            val result = runCatching { originalOnly || resolveRetention(choice) }
+            main.post {
+                if (retentionRequest !== request) return@post
+                retentionRequest = null
+                if (active && generation == token && !isFinishing) result.fold({ keep ->
+                    if (!originalOnly) retentionOverride = null
+                    ready(keep)
+                }, { showFailure("storage") })
+            }
+        }
+    }
+
+    private fun choose(images: Boolean, types: Array<String>? = null) = withRetention(originalOnly && !images) { keepOriginal ->
         if (images) {
             startActivityForResult(Intent(this, HealthCameraActivity::class.java).putExtra("capture_mode", mode)
                 .putExtra("capture_camera", false).putExtra("capture_pick_images", true).putExtra(HEALTH_KEEP_ORIGINAL, keepOriginal), NATIVE_CAMERA)
-            return
+        } else {
+            pendingPickRetention = keepOriginal
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("*/*").putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true).apply {
+                    if (types != null) putExtra(Intent.EXTRA_MIME_TYPES, types)
+                }, PICK)
         }
-        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
-            .setType("*/*").putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true).apply {
-                if (types != null) putExtra(Intent.EXTRA_MIME_TYPES, types)
-            }, PICK)
     }
-    private fun camera() {
+    private fun camera() = withRetention { keepOriginal ->
         startActivityForResult(Intent(this, HealthCameraActivity::class.java).putExtra("capture_mode", mode)
             .putExtra(HEALTH_KEEP_ORIGINAL, keepOriginal), NATIVE_CAMERA)
     }
@@ -674,10 +705,14 @@ class HealthCaptureActivity : Activity() {
                 worker.execute { file.delete(); getSharedPreferences("health_capture_pending", MODE_PRIVATE).edit().remove("token").apply() }
                 pendingCamera = ""
             }
-        } else if (requestCode == PICK && resultCode == RESULT_OK) {
-            val uris = data?.clipData?.let { clip -> (0 until clip.itemCount).map { clip.getItemAt(it).uri } }
-                ?: listOfNotNull(data?.data)
-            uris.distinct().forEach { importSource(it) }
+        } else if (requestCode == PICK) {
+            val retention = pendingPickRetention
+            pendingPickRetention = null
+            if (resultCode == RESULT_OK) {
+                val uris = data?.clipData?.let { clip -> (0 until clip.itemCount).map { clip.getItemAt(it).uri } }
+                    ?: listOfNotNull(data?.data)
+                uris.distinct().forEach { importSource(it, retained = retention) }
+            }
         } else if (requestCode == EXPORT && resultCode == RESULT_OK) {
             val uri = data?.data ?: return
             val id = exportId
@@ -697,15 +732,15 @@ class HealthCaptureActivity : Activity() {
             jobPages.clear(); route = "capture"; generation++; refresh()
         }
     }
-    private fun importSource(uri: Uri, cameraToken: String = "", originalOnly: Boolean = this.originalOnly) {
+    private fun importSource(uri: Uri, cameraToken: String = "", originalOnly: Boolean = this.originalOnly, retained: Boolean? = null) {
         val selectedMode = mode
         worker.execute {
             runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
             val id = cameraToken.ifBlank { UUID.randomUUID().toString() }
             val result = runCatching {
                 if (originals.job(id) == null) originals.createJob(HealthImportJob(id, uri.toString(), System.currentTimeMillis(), selectedMode, cameraToken,
-                    originalOnly = originalOnly, keepOriginal = keepOriginal || originalOnly))
-                HealthImportScheduler.enqueue(applicationContext, id)
+                    originalOnly = originalOnly, keepOriginal = originalOnly || (retained ?: resolveRetention())))
+                if (names.fixture == null) HealthImportScheduler.enqueue(applicationContext, id)
                 if (cameraToken.isNotBlank()) getSharedPreferences("health_capture_pending", MODE_PRIVATE).edit().remove("token").apply()
             }
             main.post { if (active) result.fold({
@@ -742,7 +777,7 @@ class HealthCaptureActivity : Activity() {
         startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
             .setType(original.mime.ifBlank { "application/octet-stream" }).putExtra(Intent.EXTRA_TITLE, original.name), EXPORT)
     }
-    private fun crop(original: HealthOriginal) {
+    private fun crop(original: HealthOriginal) = withRetention { keepOriginal ->
         val item = ComposerAttachmentItem(original.id, HealthOriginalContentProvider.uri(this, original.id, names.fixture).toString(), original.name, original.mime, original.size, sendOriginal = true)
         startActivityForResult(Intent(this, ComposerAttachmentEditorActivity::class.java)
             .putExtra(ComposerAttachmentEditorActivity.ITEMS, ComposerAttachmentItem.encode(listOf(item)))
