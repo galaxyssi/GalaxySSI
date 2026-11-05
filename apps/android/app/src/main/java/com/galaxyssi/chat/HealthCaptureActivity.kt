@@ -249,7 +249,7 @@ class HealthCaptureActivity : Activity() {
     }
     private fun render(screen: String, data: CaptureSnapshot) {
         if (screen == "review" && data.job?.state == HealthImportState.TABLE_REVIEW) {
-            startActivity(Intent(this, HealthTableActivity::class.java).putExtra("health_table", data.job.id)); back(); return
+            startActivity(Intent(this, HealthTableActivity::class.java).putExtra("health_table", data.job.id).putHealthNavigationFixture(names)); back(); return
         }
         val key = when (screen) {
             "capture" -> "capture|$mode|${data.pendingPhoto}|${data.jobs.joinToString { it.id }}"
@@ -315,7 +315,7 @@ class HealthCaptureActivity : Activity() {
             val view = HealthImportTaskView(this, ui,
                 { value -> worker.execute { HealthImportScheduler.cancel(applicationContext, value.id) } }, ::retry,
                 { value -> if (value.state == HealthImportState.TABLE_REVIEW) {
-                    startActivity(Intent(this, HealthTableActivity::class.java).putExtra("health_table", value.id))
+                    startActivity(Intent(this, HealthTableActivity::class.java).putExtra("health_table", value.id).putHealthNavigationFixture(names))
                 } else open("review", value.id) }, { open("original", it.originalId) }, { value ->
                     startActivity(Intent(this, HealthCameraActivity::class.java).putExtra("capture_batch", value.captureBatch))
                 }, ::manualEntry)

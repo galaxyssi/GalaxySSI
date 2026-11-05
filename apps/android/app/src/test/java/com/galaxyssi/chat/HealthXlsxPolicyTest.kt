@@ -58,7 +58,9 @@ class HealthXlsxPolicyTest {
     @Test fun wholeDaySerialRequiresAUserChosenTimeAndKeepsThatDecisionInEvidence() {
         val source = row().copy(cells = row().cells + ("time" to "46266"), excelDates = mapOf("time" to "2026-09-01T00:00"))
         val b = batch().let { it.copy(mapping = it.mapping.copy(date = HealthTableDate.EXCEL)) }
-        assertEquals("time", HealthTablePolicy.evaluate(b, source).issue)
+        val unresolved = HealthTablePolicy.evaluate(b, source)
+        assertEquals(HealthTableRowState.MISSING, unresolved.state)
+        assertEquals("date_only_time", unresolved.issue)
         val draft = HealthTablePolicy.evaluate(b.copy(mapping = b.mapping.copy(dateOnlyTime = "08:15")), source).draft!!
         assertEquals(Instant.parse("2026-09-01T08:15:00Z").toEpochMilli(), draft.measuredAt)
         assertTrue(draft.evidence!!.rawText.contains("Confirmed date-only time: 08:15"))
@@ -75,9 +77,13 @@ class HealthXlsxPolicyTest {
         assertEquals(Instant.parse("2026-08-31T16:00:00Z").toEpochMilli(), HealthTablePolicy.evaluate(b, source).draft!!.measuredAt)
     }
     @Test fun date1904ProvenanceSurvivesSerialization() {
-        val b = batch().copy(date1904 = true, headerRow = 5, mappingRevision = 7)
+        val b = batch().let { it.copy(date1904 = true, headerRow = 5, mappingRevision = 7,
+            mapping = it.mapping.copy(date = HealthTableDate.EXCEL)) }
         assertEquals(b, HealthTableBatch.from(b.json()))
-        val record = HealthTablePolicy.evaluate(b, row()).draft!!
+        val day = java.time.temporal.ChronoUnit.DAYS.between(java.time.LocalDate.of(1904, 1, 1), java.time.LocalDate.of(2026, 9, 1))
+        val source = row().let { it.copy(cells = it.cells + ("time" to "$day.5"), excelDates = mapOf("time" to "2026-09-01T12:00")) }
+        val record = HealthTablePolicy.evaluate(b, source).draft!!
+        assertEquals(Instant.parse("2026-09-01T12:00:00Z").toEpochMilli(), record.measuredAt)
         assertTrue(record.evidence!!.rawText.contains("Excel epoch: 1904"))
     }
     @Test fun sourceCellMetadataRoundTripsIndependentlyFromNormalizedValues() {
