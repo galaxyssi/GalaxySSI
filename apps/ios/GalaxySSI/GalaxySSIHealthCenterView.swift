@@ -184,6 +184,18 @@ struct GalaxySSIHealthCenterView: View {
             Text(t("privacy.failed", "The permission change was not saved.")).foregroundColor(.secondary)
           }
         }
+        Section(t("import.title", "Import Health Data")) {
+          Toggle(t("privacy.retain_imports", "Keep originals for new imports"), isOn: Binding(
+            get: { archive.retainsNewImportOriginals },
+            set: { enabled in
+              guard scenePhase == .active else { return }
+              do {
+                try records.setRetainNewImportOriginals(enabled)
+                privacySaveFailed = false
+                reload()
+              } catch { privacySaveFailed = true }
+            }))
+        }
         Section(t("privacy.history", "Permission history")) {
           let events = archive.privacyEvents ?? []
           if events.isEmpty { Text(t("privacy.empty", "No permission changes")).foregroundColor(.secondary) }

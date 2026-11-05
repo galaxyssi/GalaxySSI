@@ -133,6 +133,8 @@ struct GalaxySSIHealthRecords {
     var weeklyReportAllowed: Bool?
     var weeklyExportRequests: [GalaxySSIWeeklyHealthReport.ExportRequest]?
     var privacyEvents: [PrivacyEvent]?
+    var retainNewImportOriginals: Bool?
+    var retainsNewImportOriginals: Bool { retainNewImportOriginals ?? true }
     var tableBatches: [GalaxySSIHealthTableImport.Batch]?
 
     var current: [GalaxySSIHealthReading] {
@@ -235,6 +237,13 @@ struct GalaxySSIHealthRecords {
 
   func setOverviewPermission(_ enabled: Bool) throws {
     try setPrivacy(.overview, enabled: enabled)
+  }
+
+  func setRetainNewImportOriginals(_ enabled: Bool) throws {
+    var archive = try load()
+    guard archive.retainsNewImportOriginals != enabled else { return }
+    archive.retainNewImportOriginals = enabled
+    try persist(archive)
   }
 
   func setPrivacy(_ scope: PrivacyScope, enabled: Bool) throws {

@@ -6,7 +6,10 @@ struct GalaxySSIHealthTableImportView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
   let records: GalaxySSIHealthRecords
-  var retainOriginal = true
+  var initialRetention: Bool? = nil
+  @State private var usedInitialRetention = false
+  @State private var pickerRetention: Bool?
+  @State private var retainedForReview: Bool?
   @State private var choosing = false
   @State private var input: Input?
   @State private var mapping = GalaxySSIHealthTableImport.Mapping()
@@ -41,7 +44,7 @@ struct GalaxySSIHealthTableImportView: View {
   var body: some View {
     List {
       if scene == .active {
-        Button { choosing = true } label: {
+        Button(action: chooseTable) {
           Label(t("choose_formats", "Choose CSV, JSON or XLSX"), systemImage: "folder")
         }
         if let workbook { workbookSection(workbook) }
@@ -82,8 +85,9 @@ struct GalaxySSIHealthTableImportView: View {
     .onChange(of: mapping) { _ in rows = nil; owned = false }
     .fileImporter(isPresented: $choosing, allowedContentTypes: [.commaSeparatedText, .json,
       UTType(filenameExtension: "xlsx") ?? .spreadsheet]) { result in
-      guard scene != .background else { return }
-      do { try open(result.get()) }
+      defer { pickerRetention = nil }
+      guard scene != .background, let choice = pickerRetention else { return }
+      do { try open(result.get()); retainedForReview = choice }
       catch { clear(); message = t("workbook_failed", "Could not open this measurement table.") }
     }
     .alert(item: $undo) { batch in
@@ -103,6 +107,18 @@ struct GalaxySSIHealthTableImportView: View {
       }
       .navigationViewStyle(.stack)
     }
+  }
+
+  private func chooseTable() {
+    do {
+      if !usedInitialRetention, let initialRetention {
+        pickerRetention = initialRetention
+      } else {
+        pickerRetention = try records.load().retainsNewImportOriginals
+      }
+      usedInitialRetention = true
+      choosing = true
+    } catch { message = t("workbook_failed", "Could not open this measurement table.") }
   }
 
   private func workbookSection(_ workbook: WorkbookInput) -> some View {
@@ -292,7 +308,7 @@ struct GalaxySSIHealthTableImportView: View {
   }
 
   private func save() {
-    guard scene == .active, owned, let input, let rows else { return }
+    guard scene == .active, owned, let input, let rows, let retainOriginal = retainedForReview else { return }
     do {
       let count = try records.importTable(input.data, name: input.name, json: input.json,
                                           mapping: mapping, expected: rows.map(\.status), worksheet: input.worksheet,
@@ -324,6 +340,7 @@ struct GalaxySSIHealthTableImportView: View {
   }
 
   private func clear() {
+    retainedForReview = nil
     input = nil; rows = nil; owned = false; mapping = .init()
     workbook = nil; sheetID = ""; header = 0; headerChoices = []
   }

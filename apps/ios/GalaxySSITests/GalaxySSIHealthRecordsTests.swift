@@ -414,9 +414,16 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let originals = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: root)
     let data = Data("value,time\n60,2025-01-01T12:00:00Z\n".utf8)
     let mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true)
+    XCTAssertTrue(try records.load().retainsNewImportOriginals)
+    try records.setRetainNewImportOriginals(false)
+    let launchedRetention = try records.load().retainsNewImportOriginals
+    XCTAssertFalse(launchedRetention)
+    try records.setRetainNewImportOriginals(true)
     XCTAssertEqual(try records.importTable(data, name: "review.csv", json: false, mapping: mapping,
-                                           expected: [.ready], retainOriginal: false), 1)
+                                           expected: [.ready], retainOriginal: launchedRetention), 1)
     let archive = try records.load()
+    XCTAssertTrue(archive.retainsNewImportOriginals)
+    XCTAssertNil(archive.derivesOverview)
     let batch = try XCTUnwrap(archive.tableBatches?.first)
     let source = try XCTUnwrap(archive.current.first?.tableSource)
     XCTAssertTrue(batch.data.isEmpty)

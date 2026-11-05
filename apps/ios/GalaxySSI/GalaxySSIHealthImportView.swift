@@ -13,7 +13,12 @@ struct GalaxySSIHealthImportView: View {
   @State private var picking = false
   @State private var scanning = false
   @State private var notice: Notice?
-  @State private var retainOriginal = true
+  @State private var defaultRetention: Bool?
+  @State private var retentionOverride: Bool?
+  @State private var fileRetention: Bool?
+  @State private var scanRetention: Bool?
+  @State private var tableRetention = true
+  @State private var openingTable = false
   @State private var transientReport: GalaxySSIHealthTransientReport?
   @State private var pendingScanReview: GalaxySSIHealthTransientReport?
 
@@ -22,8 +27,18 @@ struct GalaxySSIHealthImportView: View {
   var body: some View {
     List {
       Section(t("report", "Report originals")) {
-        Toggle(t("retain", "Keep original files"), isOn: $retainOriginal)
+        if let defaultRetention {
+          Toggle(t("retain", "Keep original files"), isOn: Binding(
+            get: { retentionOverride ?? defaultRetention },
+            set: { retentionOverride = $0 == defaultRetention ? nil : $0 }))
+          Text(retentionOverride == nil
+               ? t("retention_default", "Using the Health Privacy default")
+               : t("retention_override", "Override for the next import only"))
+            .font(.footnote).foregroundColor(.secondary)
+        }
         Button {
+          guard let choice = beginImport() else { return }
+          fileRetention = choice
           notice = nil
           picking = true
         } label: {
@@ -31,6 +46,8 @@ struct GalaxySSIHealthImportView: View {
         }
         if VNDocumentCameraViewController.isSupported {
           Button {
+            guard let choice = beginImport() else { return }
+            scanRetention = choice
             notice = nil
             scanning = true
           } label: {
@@ -39,13 +56,25 @@ struct GalaxySSIHealthImportView: View {
         }
       }
       Section(t("tables", "Measurement tables")) {
-        NavigationLink {
-          GalaxySSIHealthTableImportView(records: records, retainOriginal: retainOriginal)
+        Button {
+          guard let choice = beginImport() else { return }
+          tableRetention = choice
+          openingTable = true
         } label: {
           Label(t("choose_table", "Choose CSV, JSON or XLSX"), systemImage: "tablecells")
         }
+        NavigationLink(destination: GalaxySSIHealthTableImportView(records: records, initialRetention: tableRetention),
+                       isActive: $openingTable) { EmptyView() }
+        .hidden()
       }
       Section {
+        Button {
+          fileRetention = true
+          notice = nil
+          picking = true
+        } label: {
+          Label(t("original_only", "Save original only"), systemImage: "doc.badge.plus")
+        }
         NavigationLink {
           GalaxySSIHealthOriginalsView(store: store)
         } label: {
@@ -69,11 +98,17 @@ struct GalaxySSIHealthImportView: View {
     }
     .navigationTitle(t("title", "Import Health Data"))
     .navigationBarTitleDisplayMode(.inline)
+    .onAppear(perform: loadRetention)
     .onChange(of: scene) {
-      if $0 == .background { notice = nil; scanning = false; transientReport = nil; pendingScanReview = nil }
+      if $0 == .active { loadRetention() }
+      if $0 == .background {
+        notice = nil; scanning = false; transientReport = nil; pendingScanReview = nil
+        fileRetention = nil; scanRetention = nil
+      }
     }
     .fileImporter(isPresented: $picking, allowedContentTypes: [.pdf, .image]) { result in
-      guard scene != .background else { return }
+      defer { fileRetention = nil }
+      guard scene != .background, let retainOriginal = fileRetention else { return }
       do {
         let url = try result.get()
         if retainOriginal { try store.importFile(url); notice = .saved }
@@ -91,10 +126,11 @@ struct GalaxySSIHealthImportView: View {
     .sheet(isPresented: $scanning, onDismiss: {
       if scene == .active { transientReport = pendingScanReview }
       pendingScanReview = nil
+      scanRetention = nil
     }) {
       GalaxySSIHealthDocumentScanner { result in
         scanning = false
-        guard scene != .background, let result else { return }
+        guard scene != .background, let result, let retainOriginal = scanRetention else { return }
         do {
           let pdf = try result.get()
           let name = "Health-Report-" + String(UUID().uuidString.prefix(8)) + ".pdf"
@@ -115,6 +151,18 @@ struct GalaxySSIHealthImportView: View {
       }
       .navigationViewStyle(.stack)
     }
+  }
+
+  private func loadRetention() {
+    do { defaultRetention = try records.load().retainsNewImportOriginals }
+    catch { defaultRetention = nil; notice = .failed }
+  }
+
+  private func beginImport() -> Bool? {
+    loadRetention()
+    guard let defaultRetention else { return nil }
+    defer { retentionOverride = nil }
+    return retentionOverride ?? defaultRetention
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
