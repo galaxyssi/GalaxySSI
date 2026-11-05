@@ -227,7 +227,8 @@ class HealthCaptureActivity : Activity() {
                         val visible = suggestions.drop(offset).take(HEALTH_OCR_REVIEW_PAGE_SIZE)
                         val review = HealthRecordStore(applicationContext, names.records).use { it.prepareOcrReviewPage(visible) }
                         CaptureSnapshot(job = job, original = original, available = original?.let(originals::present) == true,
-                            page = scanned, review = review, hasMore = suggestions.size > offset + visible.size)
+                            page = scanned, review = review, hasMore = suggestions.size > offset + visible.size,
+                            sourceContext = scanned?.let { HealthOcrSourceContext.inspect(it, java.time.ZoneId.systemDefault()) })
                     }
                     else -> {
                         val jobs = originals.jobs(taskCursor)
@@ -252,7 +253,7 @@ class HealthCaptureActivity : Activity() {
         }
         val key = when (screen) {
             "capture" -> "capture|$mode|${data.pendingPhoto}|${data.jobs.joinToString { it.id }}"
-            "review" -> "review|$selectedId|$page|$candidateOffset|${data.page?.page}|${data.available}|" +
+            "review" -> "review|$selectedId|$page|$candidateOffset|${data.page?.page}|${data.available}|${data.sourceContext.hashCode()}|" +
                 data.review.joinToString { row -> row.saved?.let { "${it.id}:${it.revision}:${row.linked}" } ?:
                     "${row.version}:${row.link?.id}:${row.link?.revision}" }
             else -> ""
@@ -437,6 +438,7 @@ class HealthCaptureActivity : Activity() {
         val updateFooter: () -> Unit = if (rows.any { it.saved == null } || reviewSelection.isNotEmpty())
             reviewFooter(job, original) else ({})
         content.addView(ui.text(getString(scanned.recognition.label(), displayedPage), 14f, muted = true))
+        ui.add(content, ui.sourceContext(this, data.sourceContext ?: HealthOcrSourceContext()), 8)
         val selected = rows.mapNotNull { it.draft.evidence }.let { candidates ->
             candidates.firstOrNull { it.candidateId == selectedCandidate } ?: candidates.firstOrNull()
         }
@@ -461,7 +463,8 @@ class HealthCaptureActivity : Activity() {
                     addView(reviewField(R.string.health_unit, draft.unit.ifBlank { getString(R.string.health_review_unit_unknown) }),
                         LinearLayout.LayoutParams(0, -2, 1f))
                 }, 8)
-                if (draft.measuredAt > 0) ui.add(this, ui.text(getString(R.string.health_review_recorded_time, formatTime(draft.measuredAt)), 13f, muted = true), 6)
+                ui.add(this, ui.text(if (draft.measuredAt > 0) getString(R.string.health_review_recorded_time, formatTime(draft.measuredAt))
+                    else getString(R.string.health_ocr_sample_needs_review), 13f, muted = true), 6)
                 ui.add(this, ui.text(evidence.rawText, 14f, muted = true), 8)
                 if (source != null) ui.add(this, ui.row(getString(if (located) R.string.health_review_focus else R.string.health_view_original),
                     if (located) "" else getString(R.string.health_review_location_unknown)) {
@@ -477,7 +480,7 @@ class HealthCaptureActivity : Activity() {
                 })) {
                     if (previous != null) startActivity(Intent(this@HealthCaptureActivity, HealthCenterActivity::class.java).putExtra("health_record", previous.id))
                     else editSuggestion(draft, stage = true)
-                }, 8)
+                }.apply { tag = "health-review-edit-${evidence.candidateId}" }, 8)
                 row.link?.let { target ->
                     ui.add(this, ui.row(getString(R.string.health_review_view_duplicate)) {
                         startActivity(Intent(this@HealthCaptureActivity, HealthCenterActivity::class.java).putExtra("health_record", target.id))
@@ -698,8 +701,8 @@ class HealthCaptureActivity : Activity() {
                 if (store.draft(key) == null) store.saveDraft(draft)
             } }
             main.post { if (active) result.fold({
-                startActivity(Intent(this, HealthCenterActivity::class.java).putExtra("review_draft", key)
-                    .putExtra("health_stage_ocr_review", stage).putExtra("health_overview_test_id", names.fixture))
+                startActivityForResult(Intent(this, HealthCenterActivity::class.java).putExtra("review_draft", key)
+                    .putExtra("health_stage_ocr_review", stage).putHealthNavigationFixture(names), OCR_EDITOR)
             }, { showFailure("storage") }) }
         }
     }
@@ -749,7 +752,9 @@ class HealthCaptureActivity : Activity() {
     @Deprecated("Native document and camera result callback")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == NATIVE_CAMERA) {
+        if (requestCode == OCR_EDITOR) {
+            refresh()
+        } else if (requestCode == NATIVE_CAMERA) {
             if (intent.getBooleanExtra("health_capture_return_to_record_center", false)) { finish(); return }
             if (resultCode == RESULT_OK) { jobPages.clear(); route = "capture"; generation++; refresh() }
         } else if (requestCode == CAMERA) {
@@ -923,6 +928,7 @@ class HealthCaptureActivity : Activity() {
     private data class CaptureSnapshot(val jobs: List<HealthImportJob> = emptyList(),
         val job: HealthImportJob? = null, val original: HealthOriginal? = null, val page: HealthOcrPage? = null, val saved: List<HealthObservation> = emptyList(),
         val review: List<HealthOcrReviewRow> = emptyList(), val hasMore: Boolean = false, val available: Boolean = true, val pendingPhoto: Boolean = false,
-        val recordsNext: HealthPageCursor? = null, val tableJobs: Map<String, HealthTableBatch> = emptyMap())
-    companion object { private const val PICK = 81; private const val CAMERA = 82; private const val EXPORT = 83; private const val CROP = 84; private const val CAMERA_PERMISSION = 85; private const val NATIVE_CAMERA = 86 }
+        val recordsNext: HealthPageCursor? = null, val tableJobs: Map<String, HealthTableBatch> = emptyMap(),
+        val sourceContext: HealthOcrSourceContext? = null)
+    companion object { private const val PICK = 81; private const val CAMERA = 82; private const val EXPORT = 83; private const val CROP = 84; private const val CAMERA_PERMISSION = 85; private const val NATIVE_CAMERA = 86; private const val OCR_EDITOR = 87 }
 }

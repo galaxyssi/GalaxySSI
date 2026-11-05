@@ -8,4 +8,12 @@
     <string name="health_review_full_page">Show full page</string>
     <string name="health_review_location_unknown">No source coordinates for this item</string>
     <string name="health_review_source_not_ready">The original preview is not available yet.</string>
+    <string name="health_ocr_context_title">Source details to verify</string>
+    <string name="health_ocr_owner_detected">Name on the source: %1$s</string>
+    <string name="health_ocr_owner_unknown">No labeled name found. Verify that this source belongs to you.</string>
+    <string name="health_ocr_sample_detected">Collection or measurement time on the source: %1$s</string>
+    <string name="health_ocr_sample_unknown">No labeled collection or measurement time found.</string>
+    <string name="health_ocr_sample_needs_review">Measurement time needs review</string>
+    <string name="health_ocr_use_sample_time">Use source time (%1$s)</string>
+    <string name="health_ocr_context_more">More values appear on this page. Check the original.</string>
 </resources>
