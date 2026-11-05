@@ -4,6 +4,29 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  func testSleepReminderCoverageNormalizationAndRevocation() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+    let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 10)))
+    let readings = try (1...21).filter { $0 != 2 && $0 != 8 }.map { offset in
+      let date = try XCTUnwrap(calendar.date(byAdding: .day, value: -offset, to: now))
+      return GalaxySSIHealthReading(revision: 1, metric: .sleepDuration, measuredAt: date,
+        value: offset <= 7 ? 435 : 8, unitOverride: offset <= 7 ? "min" : "h")
+    }
+    var ledger = GalaxySSIHealthSleepReminder.Ledger()
+    ledger.preferences.enabled = true
+    ledger.reconcile(current: readings, allowed: true, now: now, calendar: calendar)
+    let episode = try XCTUnwrap(ledger.episodes.first)
+    XCTAssertEqual(episode.latest.decrease, 45)
+    XCTAssertEqual(episode.latest.days.filter { $0.minutes == nil }.count, 2)
+    ledger.reconcile(current: readings, allowed: true, now: now.addingTimeInterval(60), calendar: calendar)
+    XCTAssertEqual(ledger.episodes, [episode])
+    ledger.reconcile(current: Array(readings.dropFirst(2)), allowed: true, now: now, calendar: calendar)
+    XCTAssertEqual(ledger.episodes.first?.closed, true)
+    ledger.reconcile(current: readings, allowed: false, now: now, calendar: calendar)
+    XCTAssertFalse(ledger.episodes.contains { !$0.closed })
+  }
+
   @MainActor
   func testReportReviewBatchIsAtomicAndVersionPinned() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
