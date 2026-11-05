@@ -4,8 +4,12 @@ import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.database.ContentObserver
 import android.net.Uri
 import android.os.Bundle
+import android.os.CancellationSignal
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
@@ -14,6 +18,7 @@ import android.widget.ScrollView
 import android.widget.Toast
 import androidx.health.connect.client.HealthConnectClient
 import java.text.DateFormat
+import java.time.ZoneId
 import java.util.Date
 import java.util.UUID
 import java.util.concurrent.Executors
@@ -28,6 +33,14 @@ class HealthSourcesActivity : Activity() {
     private var work: Future<*>? = null
     private var generation = 0
     private var scrollY = 0
+    private var inventory: LinearLayout? = null
+    private var inventoryOpen = false
+    private var deviceAfter = ""
+    private val devicePrevious = arrayListOf<String>()
+    private var inventorySignal: CancellationSignal? = null
+    private val inventoryPrivacy = object : ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) { showInventory() }
+    }
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -38,6 +51,10 @@ class HealthSourcesActivity : Activity() {
             ?.takeIf { runCatching { UUID.fromString(it).toString() == it }.getOrDefault(false) } else null
         names = HealthOverviewDatabases(fixture)
         scrollY = state?.getInt("scroll") ?: 0
+        inventoryOpen = state?.getBoolean("inventory_open") ?: false
+        deviceAfter = state?.getString("inventory_after").orEmpty().takeIf(::isHealthBluetoothGroup).orEmpty()
+        devicePrevious += state?.getStringArrayList("inventory_previous").orEmpty()
+            .filter { it.isEmpty() || isHealthBluetoothGroup(it) }
         body = ui.column().apply { setPadding(ui.dp(16), ui.dp(12), ui.dp(16), ui.dp(24)) }
         scroll = ScrollView(this).apply { addView(body) }
         setContentView(ui.column().apply {
@@ -59,6 +76,7 @@ class HealthSourcesActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        contentResolver.registerContentObserver(HealthPrivacyStore.changes(this, names.privacy), false, inventoryPrivacy)
         val request = ++generation
         body.addView(ui.text(getString(R.string.health_sources_checking), 14f, muted = true))
         work = worker.submit {
@@ -76,12 +94,18 @@ class HealthSourcesActivity : Activity() {
         if (body.findViewWithTag<View>("health-sources-ready") != null) scrollY = scroll.scrollY
         generation++
         work?.cancel(true); work = null
+        contentResolver.unregisterContentObserver(inventoryPrivacy)
+        inventorySignal?.cancel(); inventorySignal = null
+        inventory = null
         body.removeAllViews()
         super.onPause()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putInt("scroll", if (body.childCount > 1) scroll.scrollY else scrollY)
+        outState.putBoolean("inventory_open", inventoryOpen)
+        outState.putString("inventory_after", deviceAfter)
+        outState.putStringArrayList("inventory_previous", ArrayList(devicePrevious))
         super.onSaveInstanceState(outState)
     }
 
@@ -182,6 +206,8 @@ class HealthSourcesActivity : Activity() {
             }
             ui.add(this, ui.text(lastReceipt, 13f, muted = true).apply { tag = "health-sources-ble-receipt" }, 4)
         }, 8)
+        ui.add(body, ui.column().also { inventory = it }, 8)
+        showInventory()
         ui.add(body, ui.text(getString(R.string.health_sources_local), 18f, bold = true), 20)
         val local = snapshot.local
         ui.add(body, ui.card().apply {
@@ -201,6 +227,79 @@ class HealthSourcesActivity : Activity() {
             addView(sourceRow(R.drawable.ic_health_heart, getString(R.string.health_manual), manual) {
                 openLocal(Intent(this@HealthSourcesActivity, HealthCenterActivity::class.java).putExtra("health_manual", true))
             }.apply { tag = "health-sources-manual" })
+        }, 8)
+    }
+
+    private fun showInventory(revealStart: Boolean = false) {
+        val section = inventory ?: return
+        inventorySignal?.cancel(); inventorySignal = null
+        section.removeAllViews()
+        val toggle = ui.line().apply {
+            tag = "health-sources-inventory-toggle"
+            minimumHeight = ui.dp(48)
+            isFocusable = true
+            val state = getString(if (inventoryOpen) R.string.health_sources_devices_expanded else R.string.health_sources_devices_collapsed)
+            if (android.os.Build.VERSION.SDK_INT >= 30) stateDescription = state
+            addView(ui.text(getString(R.string.health_sources_saved_devices), bold = true), LinearLayout.LayoutParams(0, -2, 1f))
+            addView(ImageView(this@HealthSourcesActivity).apply {
+                setImageResource(R.drawable.ic_chevron_down)
+                imageTintList = ColorStateList.valueOf(getColor(R.color.text_primary))
+                rotation = if (inventoryOpen) 180f else 0f
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }, LinearLayout.LayoutParams(ui.dp(20), ui.dp(20)))
+            setOnClickListener {
+                inventoryOpen = !inventoryOpen
+                showInventory()
+            }
+        }
+        section.addView(toggle)
+        if (!inventoryOpen) return
+        val output = ui.column()
+        ui.add(section, output, 6)
+        output.addView(ui.text(getString(R.string.health_loading), 13f, muted = true))
+        val after = deviceAfter
+        val signal = CancellationSignal().also { inventorySignal = it }
+        worker.execute {
+            val result = runCatching { HealthBluetoothInventory.page(applicationContext, names,
+                System.currentTimeMillis(), ZoneId.systemDefault(), after, signal) }
+            runOnUiThread {
+                if (inventorySignal !== signal || inventory !== section) return@runOnUiThread
+                inventorySignal = null
+                output.removeAllViews()
+                result.fold({ renderInventory(output, it) }, { failure ->
+                    val message = if (failure is HealthAccessBlocked) R.string.health_privacy_trend_blocked else R.string.health_storage_error
+                    output.addView(ui.text(getString(message), 14f, muted = true).apply { tag = "health-sources-inventory-status" })
+                    if (failure !is HealthAccessBlocked) ui.add(output, ui.command(R.string.common_retry) { showInventory() }, 8)
+                })
+                if (revealStart) scroll.post {
+                    if (inventory === section && output.isAttachedToWindow) scroll.smoothScrollTo(0, section.top)
+                }
+            }
+        }
+    }
+
+    private fun renderInventory(output: LinearLayout, page: HealthBluetoothInventoryPage) {
+        if (page.devices.isEmpty()) output.addView(ui.text(getString(R.string.health_sources_no_saved_devices), 14f, muted = true)
+            .apply { tag = "health-sources-inventory-empty" })
+        for (device in page.devices) {
+            val measurement = getString(R.string.health_sources_device_measurement, date(device.measuredAt))
+            val receipt = device.receivedAt?.let { getString(R.string.health_sources_device_receipt, date(it)) }
+            val detail = listOfNotNull(getString(HealthMetric.BLOOD_PRESSURE.titleResource()), measurement, receipt).joinToString("\n")
+            ui.add(output, ui.profileRow(healthBluetoothTrendLabel(device.group, device.name), detail) {
+                startActivity(Intent(this, HealthTrendRecordsActivity::class.java).putHealthTrend(page.history(device))
+                    .putHealthNavigationFixture(names))
+            }.apply { tag = "health-sources-device-${device.group}" }, 4)
+        }
+        if (devicePrevious.isNotEmpty() || page.next != null) ui.add(output, ui.line().apply {
+            if (devicePrevious.isNotEmpty()) addView(ui.command(R.string.health_previous_page) {
+                deviceAfter = devicePrevious.removeAt(devicePrevious.lastIndex)
+                showInventory(revealStart = true)
+            }.apply { tag = "health-sources-devices-previous" }, LinearLayout.LayoutParams(0, -2, 1f))
+            page.next?.let { next -> addView(ui.command(R.string.health_next_page) {
+                devicePrevious += deviceAfter
+                deviceAfter = next
+                showInventory(revealStart = true)
+            }.apply { tag = "health-sources-devices-next" }, LinearLayout.LayoutParams(0, -2, 1f)) }
         }, 8)
     }
 

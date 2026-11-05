@@ -520,7 +520,10 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             arrayOf(spec.metric.name, after, spec.from.toString(), spec.until.toString()), signal
         ).use { cursor -> buildList { while (cursor.moveToNext()) add(cursor.getString(0).also { check(isHealthBluetoothGroup(it)) }) } }
 
-    fun trendBluetoothLabel(spec: HealthTrendSpec, group: String, signal: android.os.CancellationSignal? = null): String? {
+    fun trendBluetoothLabel(spec: HealthTrendSpec, group: String, signal: android.os.CancellationSignal? = null): String? =
+        latestBluetoothRecord(spec, group, signal)?.platformOrigin
+
+    fun latestBluetoothRecord(spec: HealthTrendSpec, group: String, signal: android.os.CancellationSignal? = null): HealthObservation? {
         require(isHealthBluetoothGroup(group))
         return helper.readableDatabase.rawQuery(
             "SELECT id,revision,payload,metric,measured_at FROM observations WHERE metric=? AND deleted=0 AND bluetooth_group=? " +
@@ -529,7 +532,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         ).use { cursor ->
             if (!cursor.moveToFirst()) null else decode(cursor).let {
                 check(it.source == "bluetooth" && it.bluetoothGroup == group)
-                it.platformOrigin
+                it
             }
         }
     }

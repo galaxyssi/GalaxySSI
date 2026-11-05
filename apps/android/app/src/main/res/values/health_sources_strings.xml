@@ -19,6 +19,12 @@
     <string name="health_sources_system_settings">Open System Settings</string>
     <string name="health_sources_open_store">View on Google Play</string>
     <string name="health_sources_devices">My Devices</string>
+    <string name="health_sources_saved_devices">Devices with saved records</string>
+    <string name="health_sources_devices_expanded">Expanded</string>
+    <string name="health_sources_devices_collapsed">Collapsed</string>
+    <string name="health_sources_no_saved_devices">No identifiable devices with saved records</string>
+    <string name="health_sources_device_measurement">Latest measurement: %1$s</string>
+    <string name="health_sources_device_receipt">Received: %1$s</string>
     <string name="health_sources_bluetooth">Bluetooth Devices</string>
     <string name="health_sources_ble_supported">Add a compatible Bluetooth blood pressure monitor</string>
     <string name="health_sources_ble_unavailable">This device does not support Bluetooth LE.</string>
