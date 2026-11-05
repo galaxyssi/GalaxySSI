@@ -1,6 +1,22 @@
 import SwiftUI
 
 struct GalaxySSIHealthBluetoothHistory {
+  struct Erasure: Codable, Identifiable {
+    var id = UUID()
+    let at: Date
+    let records: Int
+  }
+
+  struct ErasePlan: Equatable {
+    let device: UUID
+    let count: Int
+    let start: Date
+    let end: Date
+    let versions: [GalaxySSIHealthReading]
+    let draft: GalaxySSIHealthDraft?
+    let links: [GalaxySSIHealthTableImport.Evidence]
+    let permissionVersion: UUID?
+  }
   struct Device: Identifiable {
     let id: UUID
     let name: String?
@@ -43,12 +59,19 @@ struct GalaxySSIHealthBluetoothHistoryView: View {
   @State private var failed = false
   @State private var selection: Selection?
   @State private var readingLimit = 30
+  @State private var erasePlan: GalaxySSIHealthBluetoothHistory.ErasePlan?
+  @State private var confirmingErase = false
+  @State private var erasedCount: Int?
+  @State private var eraseFailed = false
 
   private struct Selection: Identifiable { let id: UUID }
 
   var body: some View {
     List {
       if scene == .active {
+        if let erasedCount {
+          Text(String(format: t("erased", "%lld saved measurements erased"), Int64(erasedCount)))
+        }
         if failed {
           Text(t("failed", "Saved Bluetooth history is unavailable."))
           Button(t("retry", "Reload"), action: reload)
@@ -97,12 +120,26 @@ struct GalaxySSIHealthBluetoothHistoryView: View {
             if device.readings.count > readingLimit {
               Button(t("more", "Show more records")) { readingLimit += 30 }
             }
+            if eraseFailed { Text(t("erase_failed", "History changed. Review it again before erasing.")) }
+            Button(t("erase", "Erase saved history"), role: .destructive) { prepareErase(device.id) }
           }
           .navigationTitle(title(device))
           .navigationBarTitleDisplayMode(.inline)
           .toolbar { ToolbarItem(placement: .cancellationAction) {
             Button(t("close", "Close")) { selection = nil }
           } }
+          .confirmationDialog(t("erase_confirm", "Permanently erase this device's local history?"),
+                              isPresented: $confirmingErase, titleVisibility: .visible) {
+            Button(t("erase", "Erase saved history"), role: .destructive, action: erase)
+            Button(t("erase_cancel", "Cancel"), role: .cancel) { erasePlan = nil }
+          } message: {
+            if let plan = erasePlan {
+              Text(title(device) + "\n" +
+                String(format: t("erase_count", "%lld saved measurements"), Int64(plan.count)) + "\n" +
+                plan.start.formatted(date: .abbreviated, time: .omitted) + " – " +
+                plan.end.formatted(date: .abbreviated, time: .omitted))
+            }
+          }
         }
       }
       .navigationViewStyle(.stack)
@@ -124,6 +161,23 @@ struct GalaxySSIHealthBluetoothHistoryView: View {
 
   private func clear() {
     history = nil; selection = nil; page = 0; readingLimit = 30; failed = false
+    erasePlan = nil; confirmingErase = false; eraseFailed = false; erasedCount = nil
+  }
+
+  private func prepareErase(_ device: UUID) {
+    guard scene == .active else { return }
+    do { erasePlan = try records.previewBluetoothErase(device); eraseFailed = false; confirmingErase = true }
+    catch { eraseFailed = true }
+  }
+
+  private func erase() {
+    guard scene == .active, let erasePlan, selection?.id == erasePlan.device else { return }
+    self.erasePlan = nil
+    do {
+      erasedCount = try records.eraseBluetoothHistory(erasePlan)
+      selection = nil
+      reload()
+    } catch { reload(); eraseFailed = true }
   }
 
   private func title(_ device: GalaxySSIHealthBluetoothHistory.Device) -> String {

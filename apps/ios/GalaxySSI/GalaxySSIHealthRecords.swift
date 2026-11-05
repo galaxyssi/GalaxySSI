@@ -59,7 +59,7 @@ struct GalaxySSIHealthReading: Codable, Identifiable, Equatable {
   }
 }
 
-struct GalaxySSIHealthDraft: Codable, Identifiable {
+struct GalaxySSIHealthDraft: Codable, Identifiable, Equatable {
   var id = UUID()
   var existing: GalaxySSIHealthReading?
   var metric: GalaxySSIHealthMetric = .bloodPressure
@@ -137,6 +137,7 @@ struct GalaxySSIHealthRecords {
     var privacyEvents: [PrivacyEvent]?
     var tableBatches: [GalaxySSIHealthTableImport.Batch]?
     var tableEvidence: [GalaxySSIHealthTableImport.Evidence]?
+    var bluetoothErasureLog: [GalaxySSIHealthBluetoothHistory.Erasure]?
 
     var current: [GalaxySSIHealthReading] {
       var seen = Set<UUID>()
@@ -215,8 +216,52 @@ struct GalaxySSIHealthRecords {
   func storeDraft(_ draft: GalaxySSIHealthDraft) throws {
     guard draft.fitsStorageLimits else { throw Failure.invalid }
     var archive = try load()
+    if let existing = draft.existing {
+      guard let latest = archive.revisions.last(where: { $0.id == existing.id }),
+            !latest.deleted, latest.revision == existing.revision else { throw Failure.stale }
+    }
     archive.draft = draft
     try persist(archive)
+  }
+
+  func previewBluetoothErase(_ device: UUID) throws -> GalaxySSIHealthBluetoothHistory.ErasePlan {
+    try makeBluetoothErasePlan(device, archive: load())
+  }
+
+  @discardableResult
+  func eraseBluetoothHistory(_ expected: GalaxySSIHealthBluetoothHistory.ErasePlan) throws -> Int {
+    var archive = try load()
+    let current = try makeBluetoothErasePlan(expected.device, archive: archive)
+    guard current == expected else { throw Failure.stale }
+    let ids = Set(current.versions.map(\.id))
+    archive.revisions.removeAll { ids.contains($0.id) }
+    if let existing = archive.draft?.existing, ids.contains(existing.id) { archive.draft = nil }
+    archive.tableEvidence?.removeAll { ids.contains($0.target.record) }
+    var audit = archive.bluetoothErasureLog ?? []
+    audit.append(.init(at: Date(), records: current.count))
+    archive.bluetoothErasureLog = Array(audit.suffix(50))
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+    return current.count
+  }
+
+  private func makeBluetoothErasePlan(_ device: UUID, archive: Archive) throws -> GalaxySSIHealthBluetoothHistory.ErasePlan {
+    guard archive.derivesOverview == true else { throw Failure.permission }
+    let versions = archive.revisions.filter { $0.bluetoothReceipt?.device == device && $0.metric == .bloodPressure }
+    let ids = Set(versions.map(\.id))
+    guard !ids.isEmpty,
+          archive.revisions.allSatisfy({ !ids.contains($0.id) ||
+            ($0.bluetoothReceipt?.device == device && $0.metric == .bloodPressure) })
+    else { throw Failure.stale }
+    var seen = Set<UUID>()
+    let dates = versions.reversed().filter { seen.insert($0.id).inserted }.map(\.measuredAt)
+    guard let start = dates.min(), let end = dates.max() else { throw Failure.stale }
+    let draft = archive.draft.flatMap { draft in
+      draft.existing.map { ids.contains($0.id) } == true ? draft : nil
+    }
+    return .init(device: device, count: ids.count, start: start, end: end, versions: versions,
+      draft: draft, links: (archive.tableEvidence ?? []).filter { ids.contains($0.target.record) },
+      permissionVersion: archive.privacyEvents?.last(where: { $0.scope == .overview })?.id)
   }
 
   func setWeeklyReportAllowed(_ enabled: Bool) throws {

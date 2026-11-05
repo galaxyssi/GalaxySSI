@@ -4,6 +4,39 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  @MainActor
+  func testBluetoothEraseRejectsStalePreviewAndKeepsSameNameDevice() throws {
+    let packet = try XCTUnwrap(GalaxySSIHealthBluetoothPacket.decode(Data([0, 120, 0, 80, 0, 90, 0])))
+    let now = Date()
+    let a = GalaxySSIHealthBluetoothReceipt(device: UUID(), receivedAt: now, packet: packet, deviceName: "Same monitor")
+    let b = GalaxySSIHealthBluetoothReceipt(device: UUID(), receivedAt: now, packet: packet, deviceName: "Same monitor")
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    try records.write(a.reading(conditions: ""))
+    try records.write(b.reading(conditions: ""))
+    XCTAssertThrowsError(try records.previewBluetoothErase(a.device))
+    try records.setOverviewPermission(true)
+    let old = try records.previewBluetoothErase(a.device)
+    var reading = try XCTUnwrap(records.load().current.first { $0.bluetoothReceipt?.device == a.device })
+    reading.notes = "update after preview"
+    try records.write(reading)
+    XCTAssertThrowsError(try records.eraseBluetoothHistory(old))
+    let latest = try XCTUnwrap(records.load().current.first { $0.id == reading.id })
+    let draft = GalaxySSIHealthDraft(existing: latest)
+    try records.storeDraft(draft)
+    let plan = try records.previewBluetoothErase(a.device)
+    XCTAssertEqual(plan.count, 1)
+    XCTAssertEqual(plan.versions.count, 2)
+    XCTAssertEqual(try records.eraseBluetoothHistory(plan), 1)
+    let archive = try records.load()
+    XCTAssertEqual(archive.revisions.compactMap { $0.bluetoothReceipt?.device }, [b.device])
+    XCTAssertNil(archive.draft)
+    XCTAssertEqual(archive.bluetoothErasureLog?.last?.records, 1)
+    XCTAssertThrowsError(try records.storeDraft(draft))
+    XCTAssertThrowsError(try records.write(latest))
+  }
+
   func testSavedBluetoothHistoryKeepsExactDeviceAndBothDates() throws {
     let packet = try XCTUnwrap(GalaxySSIHealthBluetoothPacket.decode(Data([0, 120, 0, 80, 0, 90, 0])))
     let now = Date()

@@ -298,6 +298,13 @@
 "galaxyssi.health.bluetooth_history.measured" = "测量时间";
 "galaxyssi.health.bluetooth_history.received" = "接收时间";
 "galaxyssi.health.bluetooth_history.revision" = "修订版本 %lld";
+"galaxyssi.health.bluetooth_history.erase" = "删除已保存的历史";
+"galaxyssi.health.bluetooth_history.erase_confirm" = "永久删除此设备的本机历史？";
+"galaxyssi.health.bluetooth_history.erase_cancel" = "取消";
+"galaxyssi.health.bluetooth_history.erase_count" = "%lld 条已保存测量";
+"galaxyssi.health.bluetooth_history.erase_failed" = "历史已变更，请重新核对后再删除。";
+"galaxyssi.health.bluetooth_history.erased" = "已删除 %lld 条已保存测量";
+"galaxyssi.health.privacy.bluetooth_erasure" = "蓝牙历史删除记录";
 "galaxyssi.health.trend.unavailable" = "趋势不可用";
 "galaxyssi.health.trend.refresh" = "刷新";
 "galaxyssi.health.trend.permission" = "请在健康隐私中开启本机测量摘要后查看趋势。";

@@ -213,6 +213,17 @@ struct GalaxySSIHealthCenterView: View {
           }
           if requests.count > privacyLimit { Button(t("more", "Show more")) { privacyLimit += 20 } }
         }
+        if let events = archive.bluetoothErasureLog, !events.isEmpty {
+          Section(t("privacy.bluetooth_erasure", "Bluetooth history erasures")) {
+            ForEach(events.reversed().prefix(privacyLimit)) { event in
+              VStack(alignment: .leading, spacing: 4) {
+                Text(String(format: t("bluetooth_history.erased", "%lld saved measurements erased"), Int64(event.records)))
+                Text(event.at, style: .date).foregroundColor(.secondary)
+              }
+            }
+            if events.count > privacyLimit { Button(t("more", "Show more")) { privacyLimit += 20 } }
+          }
+        }
       } else if scenePhase == .active {
         Text(t("unavailable", "Health records could not be accessed."))
         Button(t("retry", "Reload records"), action: reload)
