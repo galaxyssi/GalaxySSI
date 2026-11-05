@@ -595,6 +595,7 @@
     A10000000000000000000627 /* VoiceAudioHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000627 /* VoiceAudioHub.swift */; };
     A10000000000000000000628 /* VoicePcmTapPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000628 /* VoicePcmTapPipeline.swift */; };
     A10000000000000000000634 /* IOSPcmRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000634 /* IOSPcmRecorder.swift */; };
+    E36390000000000000000001 /* VoicePassiveReplyCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36390000000000000000002 /* VoicePassiveReplyCapture.swift */; };
     A10000000000000000000635 /* VoiceWhisperModelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000635 /* VoiceWhisperModelCatalog.swift */; };
     A10000000000000000000636 /* VoiceWhisperAudioDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000636 /* VoiceWhisperAudioDecoder.swift */; };
     A10000000000000000000637 /* VoiceLocalWhisperRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000637 /* VoiceLocalWhisperRuntime.swift */; };
@@ -1838,6 +1839,7 @@
     A20000000000000000000627 /* VoiceAudioHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAudioHub.swift; sourceTree = "<group>"; };
     A20000000000000000000628 /* VoicePcmTapPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePcmTapPipeline.swift; sourceTree = "<group>"; };
     A20000000000000000000634 /* IOSPcmRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSPcmRecorder.swift; sourceTree = "<group>"; };
+    E36390000000000000000002 /* VoicePassiveReplyCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePassiveReplyCapture.swift; sourceTree = "<group>"; };
     A20000000000000000000635 /* VoiceWhisperModelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelCatalog.swift; sourceTree = "<group>"; };
     A20000000000000000000636 /* VoiceWhisperAudioDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperAudioDecoder.swift; sourceTree = "<group>"; };
     A20000000000000000000637 /* VoiceLocalWhisperRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLocalWhisperRuntime.swift; sourceTree = "<group>"; };
@@ -2576,6 +2578,7 @@
         A20000000000000000000627 /* VoiceAudioHub.swift */,
         A20000000000000000000628 /* VoicePcmTapPipeline.swift */,
         A20000000000000000000634 /* IOSPcmRecorder.swift */,
+        E36390000000000000000002 /* VoicePassiveReplyCapture.swift */,
         A20000000000000000000635 /* VoiceWhisperModelCatalog.swift */,
         A20000000000000000000636 /* VoiceWhisperAudioDecoder.swift */,
         A20000000000000000000637 /* VoiceLocalWhisperRuntime.swift */,
@@ -3750,6 +3753,7 @@
         A10000000000000000000627 /* VoiceAudioHub.swift in Sources */,
         A10000000000000000000628 /* VoicePcmTapPipeline.swift in Sources */,
         A10000000000000000000634 /* IOSPcmRecorder.swift in Sources */,
+        E36390000000000000000001 /* VoicePassiveReplyCapture.swift in Sources */,
         A10000000000000000000635 /* VoiceWhisperModelCatalog.swift in Sources */,
         A10000000000000000000636 /* VoiceWhisperAudioDecoder.swift in Sources */,
         A10000000000000000000637 /* VoiceLocalWhisperRuntime.swift in Sources */,
