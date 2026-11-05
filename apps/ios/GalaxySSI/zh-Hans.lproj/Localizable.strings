@@ -865,6 +865,16 @@
 "galaxyssi.health.backup.restore_consent" = "我已核对这些变更";
 "galaxyssi.health.backup.restore" = "恢复到此设备";
 "galaxyssi.health.backup.restored" = "健康备份已恢复";
+"galaxyssi.health.backup.restore_owner_review" = "恢复到当前档案。除非选择替换，否则保留本机版本。";
+"galaxyssi.health.backup.restore_local" = "本机版本";
+"galaxyssi.health.backup.restore_backup_version" = "备份版本";
+"galaxyssi.health.backup.restore_deleted" = "本机已删除";
+"galaxyssi.health.backup.restore_use_backup" = "采用备份版本";
+"galaxyssi.health.backup.restore_replace_count" = "已选择追加 %lld 条修订";
+"galaxyssi.health.backup.restore_source_mismatch" = "来源不同或无法核实";
+"galaxyssi.health.backup.restore_pending_edit" = "有未完成的本机编辑";
+"galaxyssi.health.backup.restore_ambiguous" = "另有一条本机测量与此版本匹配";
+"galaxyssi.health.backup.restore_revision_limit" = "此记录无法再追加版本";
 "galaxyssi.health.backup.password" = "备份密码";
 "galaxyssi.health.backup.repeat" = "确认密码";
 "galaxyssi.health.backup.generate" = "生成加密备份";
