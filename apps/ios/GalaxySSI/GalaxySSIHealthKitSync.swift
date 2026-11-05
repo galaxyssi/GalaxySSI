@@ -7,6 +7,27 @@ enum GalaxySSIHealthKitSync {
 
   enum Status: String, Codable {
     case running, empty, success, interrupted, permission, unavailable, locked, failed
+
+    var raisesIncident: Bool { self == .permission || self == .unavailable || self == .failed }
+  }
+
+  struct Incident: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var version = UUID()
+    let scope: GalaxySSIHealthKitImport.Scope
+    var status: Status
+    var failedAt: Date?
+    var lastSuccess: Date?
+    var acknowledgedAt: Date?
+    var resolvedAt: Date?
+
+    var handled: Bool { acknowledgedAt != nil || resolvedAt != nil }
+
+    static func legacy(scope: GalaxySSIHealthKitImport.Scope, checkpoint: Checkpoint?) -> Self? {
+      guard let checkpoint, checkpoint.status.raisesIncident else { return nil }
+      return .init(id: checkpoint.run, version: checkpoint.run, scope: scope, status: checkpoint.status,
+                   failedAt: checkpoint.lastAttemptAt, lastSuccess: checkpoint.finishedAt)
+    }
   }
 
   struct Checkpoint: Codable, Equatable {
@@ -18,6 +39,7 @@ enum GalaxySSIHealthKitSync {
     var insertedThisRun = 0
     var readThisRun = 0
     var finishedAt: Date?
+    var lastAttemptAt: Date?
   }
 
   struct Page {
@@ -80,6 +102,42 @@ enum GalaxySSIHealthKitSync {
       try? records.finishHealthKitSync(scope, run: checkpoint.run, status: classification(error))
       throw error
     }
+  }
+}
+
+extension GalaxySSIHealthRecords.Archive {
+  var syncIncidents: [GalaxySSIHealthKitSync.Incident] {
+    GalaxySSIHealthKitImport.Scope.allCases.compactMap { syncIncident($0) }.sorted {
+      let left = $0.failedAt ?? .distantPast, right = $1.failedAt ?? .distantPast
+      return left == right ? $0.scope.rawValue < $1.scope.rawValue : left > right
+    }
+  }
+
+  func syncIncident(_ scope: GalaxySSIHealthKitImport.Scope) -> GalaxySSIHealthKitSync.Incident? {
+    guard scope != .steps else { return nil }
+    return healthKitIncidents?[scope.rawValue] ?? .legacy(scope: scope, checkpoint: healthKitSync?[scope.rawValue])
+  }
+
+  mutating func setSyncIncident(_ incident: GalaxySSIHealthKitSync.Incident) {
+    var incidents = healthKitIncidents ?? [:]
+    incidents[incident.scope.rawValue] = incident
+    healthKitIncidents = incidents
+  }
+
+  mutating func recordSyncFailure(_ scope: GalaxySSIHealthKitImport.Scope,
+                                  status: GalaxySSIHealthKitSync.Status, at now: Date) {
+    let lastSuccess = healthKitSync?[scope.rawValue]?.finishedAt
+    var incident: GalaxySSIHealthKitSync.Incident
+    if let existing = syncIncident(scope), existing.resolvedAt == nil {
+      incident = existing
+      incident.version = UUID()
+      incident.status = status
+      incident.failedAt = now
+      incident.lastSuccess = lastSuccess ?? existing.lastSuccess
+    } else {
+      incident = .init(scope: scope, status: status, failedAt: now, lastSuccess: lastSuccess)
+    }
+    setSyncIncident(incident)
   }
 }
 
@@ -164,8 +222,10 @@ struct GalaxySSIHealthKitSyncView: View {
   @Environment(\.timeZone) private var timeZone
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   let records: GalaxySSIHealthRecords
-  @State private var selected: Set<GalaxySSIHealthKitImport.Scope> = []
+  let focusedScope: GalaxySSIHealthKitImport.Scope?
+  @State private var selected: Set<GalaxySSIHealthKitImport.Scope>
   @State private var checkpoints: [String: GalaxySSIHealthKitSync.Checkpoint] = [:]
+  @State private var incidents: [GalaxySSIHealthKitImport.Scope: GalaxySSIHealthKitSync.Incident] = [:]
   @State private var task: Task<Void, Never>?
   @State private var token = UUID()
   @State private var current: GalaxySSIHealthKitImport.Scope?
@@ -173,11 +233,30 @@ struct GalaxySSIHealthKitSyncView: View {
   @State private var confirmingReset = false
   @State private var lastBluetoothReceipt: Date?
 
-  private var scopes: [GalaxySSIHealthKitImport.Scope] { GalaxySSIHealthKitImport.Scope.allCases.filter { $0 != .steps } }
+  init(records: GalaxySSIHealthRecords, focusedScope: GalaxySSIHealthKitImport.Scope? = nil) {
+    let scope = focusedScope == .steps ? nil : focusedScope
+    self.records = records
+    self.focusedScope = scope
+    _selected = State(initialValue: Set(scope.map { [$0] } ?? []))
+  }
+
+  private var scopes: [GalaxySSIHealthKitImport.Scope] {
+    let available = GalaxySSIHealthKitImport.Scope.allCases.filter { $0 != .steps }
+    guard let focusedScope else { return available }
+    return [focusedScope] + available.filter { $0 != focusedScope }
+  }
 
   var body: some View {
     List {
       if scene == .active {
+        if let focusedScope {
+          Section(t("recovery", "Sync recovery")) {
+            Text(focusedScope.metric.title(language: language)).font(.headline)
+            if let incident = incidents[focusedScope], incident.resolvedAt == nil {
+              Text(statusText(incident.status, running: false)).foregroundColor(.secondary)
+            }
+          }
+        }
         if GalaxySSIHealthKitImport.available {
           Section(t("scopes", "Apple Health scopes")) {
             ForEach(scopes) { scope in
@@ -239,7 +318,9 @@ struct GalaxySSIHealthKitSyncView: View {
     .onDisappear(perform: stop)
     .onChange(of: scene) {
       if $0 == .active { reload() }
-      else if $0 == .background || current != nil { stop(); checkpoints = [:]; lastBluetoothReceipt = nil }
+      else if $0 == .background || current != nil {
+        stop(); checkpoints = [:]; incidents = [:]; lastBluetoothReceipt = nil
+      }
     }
     .confirmationDialog(t("reset_confirm", "Restart the selected scans? Local records will be kept."),
                         isPresented: $confirmingReset, titleVisibility: .visible) {
@@ -262,7 +343,14 @@ struct GalaxySSIHealthKitSyncView: View {
         if token == request { task = nil; current = nil; reload() }
       }
       do { try await GalaxySSIHealthKitImport().authorize(selection) }
-      catch { if token == request { failure = GalaxySSIHealthKitSync.classification(error) }; return }
+      catch {
+        if token == request, scene == .active, !Task.isCancelled {
+          let status = GalaxySSIHealthKitSync.classification(error)
+          failure = status
+          try? records.recordHealthKitAuthorizationFailure(selection, status: status)
+        }
+        return
+      }
       let provider = GalaxySSIHealthKitSyncProvider()
       for scope in scopes where selection.contains(scope) {
         guard !Task.isCancelled, token == request, scene == .active else { return }
@@ -292,6 +380,7 @@ struct GalaxySSIHealthKitSyncView: View {
     do {
       let archive = try records.load()
       checkpoints = archive.healthKitSync ?? [:]
+      incidents = Dictionary(uniqueKeysWithValues: archive.syncIncidents.map { ($0.scope, $0) })
       lastBluetoothReceipt = archive.current.compactMap { $0.bluetoothReceipt?.receivedAt }.max()
     }
     catch { failure = .failed }
