@@ -218,6 +218,10 @@ struct GalaxySSIHealthRecords {
   func storeDraft(_ draft: GalaxySSIHealthDraft) throws {
     guard draft.fitsStorageLimits else { throw Failure.invalid }
     var archive = try load()
+    if let existing = draft.existing {
+      guard let latest = archive.revisions.last(where: { $0.id == existing.id }),
+            !latest.deleted, latest.revision == existing.revision else { throw Failure.stale }
+    }
     archive.draft = draft
     try persist(archive)
   }

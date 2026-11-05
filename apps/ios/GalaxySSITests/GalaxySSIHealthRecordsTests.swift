@@ -15,6 +15,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(try records.importTable(data, name: "weight.csv", json: false, mapping: mapping,
                                            expected: [.ready]), 1)
     let original = try XCTUnwrap(records.load().current.first)
+    let oldEditor = GalaxySSIHealthDraft(existing: original)
+    try records.storeDraft(oldEditor)
     var tombstone = original
     tombstone.deleted = true
     try records.write(tombstone, rememberDeletion: true)
@@ -22,6 +24,10 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let deletion = try XCTUnwrap(reopened.load().lastMeasurementDeletion)
     XCTAssertEqual(deletion.revision, 2)
     XCTAssertTrue(try reopened.load().current.isEmpty)
+    XCTAssertNil(try reopened.load().draft)
+    XCTAssertThrowsError(try reopened.storeDraft(oldEditor)) {
+      guard case GalaxySSIHealthRecords.Failure.stale = $0 else { return XCTFail("Expected stale editor") }
+    }
     XCTAssertThrowsError(try reopened.undoMeasurementDeletion(.init(id: UUID(), revision: 2)))
     let conflict = GalaxySSIHealthReading(metric: .weight, measuredAt: original.measuredAt, value: 60)
     try reopened.write(conflict)
@@ -34,6 +40,9 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(restored.id, original.id)
     XCTAssertEqual(restored.revision, 3)
     XCTAssertEqual(restored.tableSource, original.tableSource)
+    XCTAssertThrowsError(try reopened.storeDraft(oldEditor))
+    try reopened.storeDraft(.init(existing: restored))
+    XCTAssertEqual(try reopened.load().draft?.existing?.revision, 3)
     XCTAssertNil(try reopened.load().lastMeasurementDeletion)
     XCTAssertThrowsError(try reopened.undoMeasurementDeletion(deletion))
   }
