@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import OSLog
 import SwiftUI
 
 private struct GalaxySSIVoiceRiskConfirmation: Identifiable {
@@ -22,6 +23,9 @@ struct GalaxySSIVoiceTabView: View {
   @StateObject private var holdToTalk = GalaxySSIAgentHoldToTalkController()
   @StateObject private var wakeListener = GalaxySSIVoiceWakeController()
   @StateObject private var replySpeech = VoiceProgressiveReplySpeechService()
+  @StateObject private var acknowledgementSpeech = VoiceReplySpeechService(latencyTracer: nil, tracksRuntimeHealth: false)
+  @State private var acknowledgementSessionId = ""
+  @State private var acknowledgementText = ""
   @StateObject private var passiveCapture = VoicePassiveReplyCapture()
   @State private var passiveIdleTask: Task<Void, Never>?
   @State private var passiveBlockedSessionId = ""
@@ -46,6 +50,7 @@ struct GalaxySSIVoiceTabView: View {
   @State private var viewVisible = false
 
   private var settings: VoiceSettings { store.voiceSettings }
+  private static let acknowledgementLog = Logger(subsystem: "com.galaxyssi.ios", category: "voice-acknowledgement")
 
   private var voiceAuthorizationRequirement: VoiceASRAuthorizationRequirement {
     VoiceASRProviderRoutingPolicy.currentAuthorizationRequirement(settings: settings)
@@ -99,6 +104,8 @@ struct GalaxySSIVoiceTabView: View {
       .navigationBarHidden(true)
       .onAppear {
         viewVisible = true
+        replySpeech.setEchoReference(passiveCapture.echoReference)
+        acknowledgementSpeech.echoReference = passiveCapture.echoReference
         startObserving()
         startReplyObserving()
         wakeListener.activate(
@@ -108,6 +115,9 @@ struct GalaxySSIVoiceTabView: View {
         )
       }
       .onChange(of: settings) { value in
+        if !value.speakReplies || !value.textToSpeechEnabled || !value.speechRecognitionEnabled {
+          stopInputAcknowledgement()
+        }
         if !value.wakeListeningEnabled || !value.speechRecognitionEnabled { stopPassiveListening(resumeWake: false) }
         wakeListener.update(settings: value)
         syncPassiveListening()
@@ -118,18 +128,25 @@ struct GalaxySSIVoiceTabView: View {
       .onChange(of: holdToTalk.isRecording) { _ in syncPassiveListening() }
       .onChange(of: scenePhase) { phase in
         if phase != .active {
+          stopInputAcknowledgement()
           passiveBlockedSessionId = activeVoiceReplySessionId
           stopPassiveListening(resumeWake: false)
         }
       }
       .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { notification in
         if notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt == AVAudioSession.InterruptionType.began.rawValue {
+          stopInputAcknowledgement()
           passiveBlockedSessionId = activeVoiceReplySessionId
           stopPassiveListening(resumeWake: false)
         }
       }
       .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)) { notification in
-        if notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue {
+        let reason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+        if reason == AVAudioSession.RouteChangeReason.newDeviceAvailable.rawValue {
+          passiveCapture.echoReference.clear()
+        }
+        if reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue {
+          stopInputAcknowledgement()
           passiveBlockedSessionId = activeVoiceReplySessionId
           stopPassiveListening(resumeWake: true)
         }
@@ -144,6 +161,7 @@ struct GalaxySSIVoiceTabView: View {
         NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)
       ) { _ in
         holdToTalk.clearRuntimePlaintext()
+        stopInputAcknowledgement()
         wakeListener.deactivate()
         _ = replySpeech.stop()
         stopPassiveListening(resumeWake: false)
@@ -235,7 +253,7 @@ struct GalaxySSIVoiceTabView: View {
         )
       }
       .buttonStyle(.plain)
-      .disabled(!replySpeech.isSpeaking || wakeListener.isCommandCapturing)
+      .disabled(!(replySpeech.isSpeaking || acknowledgementSpeech.isSpeaking) || wakeListener.isCommandCapturing)
       .accessibilityLabel(Text(t("galaxyssi.voice.barge_in_action", "Interrupt reply and speak")))
 
       VStack(spacing: 7) {
@@ -424,6 +442,7 @@ struct GalaxySSIVoiceTabView: View {
   }
 
   private var wakeSurfaceSubtitle: String {
+    if !acknowledgementText.isEmpty { return acknowledgementText }
     if passiveCapture.isListening { return "" }
     if wakeListener.isCommandCapturing {
       return t("galaxyssi.voice.listening_command_detail", "Speak naturally. Recording stops after a short pause.")
@@ -650,7 +669,7 @@ struct GalaxySSIVoiceTabView: View {
   }
 
   private func handleWakeOrbTap() {
-    guard replySpeech.isSpeaking, !wakeListener.isCommandCapturing else { return }
+    guard replySpeech.isSpeaking || acknowledgementSpeech.isSpeaking, !wakeListener.isCommandCapturing else { return }
     if wakeWelcomeSessionId.isEmpty {
       interruptActiveVoiceReply()
     } else {
@@ -683,8 +702,9 @@ struct GalaxySSIVoiceTabView: View {
   private func stopPassiveListening(resumeWake: Bool) {
     passiveIdleTask?.cancel()
     passiveIdleTask = nil
+    passiveCapture.echoReference.clear()
     guard passiveCapture.isArmed else { return }
-    passiveCapture.stop(deactivateSession: !replySpeech.isSpeaking)
+    passiveCapture.stop(deactivateSession: !replySpeech.isSpeaking && !acknowledgementSpeech.isSpeaking)
     if resumeWake { wakeListener.resumeAfterManualCapture() }
   }
 
@@ -920,6 +940,7 @@ struct GalaxySSIVoiceTabView: View {
       format: t("Sending voice transcript to %@", "Sending voice transcript to %@"),
       contact.displayName
     )
+    acknowledgeVoiceInput(cleanText, sessionId: session.sessionId)
     if session.decision.kind == .remoteAgent {
       _ = VoiceAgentRunBridgeRegistry.shared.createRun(
         VoiceAgentRunRequest(
@@ -946,12 +967,47 @@ struct GalaxySSIVoiceTabView: View {
         voiceSessionId: session.decision.kind == .remoteAgent ? session.sessionId : ""
       )
       await MainActor.run {
+        guard activeVoiceReplySessionId == session.sessionId else { return }
         submitStatus = sent
           ? t("galaxyssi.voice.sent", "Voice transcript sent")
           : coordinator.lastError.ifBlank(t("galaxyssi.voice.send_failed", "Voice transcript could not be sent"))
-        finishVoiceSendIfNoReplyPlaybackStarted(session)
+        if sent {
+          finishVoiceSendIfNoReplyPlaybackStarted(session)
+        } else {
+          _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+            .cancelled(sessionId: session.sessionId, reasonCode: "voice_send_failed")
+          )
+          clearActiveVoiceReplySession(session.sessionId)
+        }
       }
     }
+  }
+
+  private func acknowledgeVoiceInput(_ input: String, sessionId: String) {
+    stopInputAcknowledgement()
+    guard scenePhase == .active, viewVisible, !sessionId.isEmpty,
+          activeVoiceReplySessionId == sessionId else { return }
+    acknowledgementSessionId = sessionId
+    acknowledgementText = String(
+      format: t("galaxyssi.voice.input_acknowledgement", "Processing \"%@\""),
+      String(input.prefix(VoiceReplyPlaybackPolicy.maximumSpokenCharacters))
+    )
+    guard let request = VoiceReplyPlaybackPolicy.inputAcknowledgementRequest(
+      text: acknowledgementText, settings: settings, languagePolicy: store.languagePolicy, sessionId: sessionId
+    ) else { return }
+    acknowledgementSpeech.speak(request) { started in
+      guard acknowledgementSessionId == started.sessionId else { return }
+      Self.acknowledgementLog.info("Voice input acknowledgement started")
+    } onDone: { done, success, _ in
+      guard acknowledgementSessionId == done.sessionId else { return }
+      Self.acknowledgementLog.info("Voice input acknowledgement finished; success=\(success)")
+    }
+  }
+
+  private func stopInputAcknowledgement() {
+    acknowledgementSessionId = ""
+    acknowledgementText.removeAll(keepingCapacity: false)
+    _ = acknowledgementSpeech.stop()
   }
 
   private func voiceRiskLabel(_ risk: VoiceCommandRisk) -> String {
@@ -1043,6 +1099,8 @@ struct GalaxySSIVoiceTabView: View {
   }
 
   private func handleIncomingVoiceReply(_ message: ChatMessage) {
+    guard isCurrentVoiceReply(message) else { return }
+    stopInputAcknowledgement()
     guard let request = VoiceReplyPlaybackPolicy.request(
       message: message,
       settings: settings,
@@ -1069,7 +1127,7 @@ struct GalaxySSIVoiceTabView: View {
   }
 
   private func handleIncomingVoiceReplyDelta(_ message: ChatMessage) {
-    guard activeVoiceReplyRouteKind == .cloudModel,
+    guard isCurrentVoiceReply(message), activeVoiceReplyRouteKind == .cloudModel,
           let request = VoiceReplyPlaybackPolicy.request(
             message: message,
             settings: settings,
@@ -1079,6 +1137,7 @@ struct GalaxySSIVoiceTabView: View {
           ) else {
       return
     }
+    stopInputAcknowledgement()
     _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
       .modelDelta(sessionId: request.sessionId, text: request.text)
     )
@@ -1095,6 +1154,11 @@ struct GalaxySSIVoiceTabView: View {
       }
     }
     appendProgressiveVoiceReply(request: request, content: request.text, isFinal: false)
+  }
+
+  private func isCurrentVoiceReply(_ message: ChatMessage) -> Bool {
+    !activeVoiceReplySessionId.isEmpty && message.contactId == activeVoiceReplyContactId &&
+      !message.isMine && !message.isSystem && message.createdAt >= lastVoiceSubmissionAt
   }
 
   private func updateVoiceReplyRoute(for request: VoiceReplyPlaybackRequest, message: ChatMessage) {
@@ -1155,7 +1219,9 @@ struct GalaxySSIVoiceTabView: View {
         .cancelled(sessionId: update.snapshot.sessionId, reasonCode: "remote_cancelled")
       )
       clearActiveVoiceReplySession(update.snapshot.sessionId)
-    case .created, .accepted, .queued, .starting, .running, .waitingInput, .waitingApproval, .cancelling, .completed:
+    case .completed:
+      stopInputAcknowledgement()
+    case .created, .accepted, .queued, .starting, .running, .waitingInput, .waitingApproval, .cancelling:
       break
     }
   }
@@ -1229,6 +1295,7 @@ struct GalaxySSIVoiceTabView: View {
   }
 
   private func clearActiveVoiceReplySession(_ sessionId: String) {
+    if acknowledgementSessionId == sessionId { stopInputAcknowledgement() }
     if activeVoiceReplySessionId == sessionId {
       activeVoiceReplySessionId = ""
       activeVoiceReplyContactId = ""
@@ -1262,6 +1329,7 @@ struct GalaxySSIVoiceTabView: View {
   }
 
   private func stopObserving() {
+    stopInputAcknowledgement()
     wakeListener.deactivate()
     holdToTalk.cancelFromView()
     cancelWakeWelcomePlayback()

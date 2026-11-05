@@ -4289,6 +4289,7 @@
 "galaxyssi.voice.turn_off_wake" = "关闭语音唤醒";
 "galaxyssi.voice.turn_on_wake" = "开启低功耗监听";
 "galaxyssi.voice.sent" = "语音转写已发送";
+"galaxyssi.voice.input_acknowledgement" = "正在处理“%@”";
 "galaxyssi.voice.duplicate_ignored" = "已忽略重复的语音请求";
 "galaxyssi.voice.risk_confirmation_title" = "确认语音命令";
 "galaxyssi.voice.risk_confirmation_message" = "执行前请确认这条%@风险命令：\n\n%@";

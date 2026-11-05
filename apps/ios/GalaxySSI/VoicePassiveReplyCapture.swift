@@ -53,6 +53,7 @@ final class VoicePassiveReplyCapture: ObservableObject {
   private var engine: AVAudioEngine?
   private var lease = VoicePassiveCaptureLease()
   private var maintenance: Task<Void, Never>?
+  let echoReference = VoicePlaybackEchoReference()
   private let logger = Logger(subsystem: "com.galaxyssi.ios", category: "passive-voice-capture")
   var isArmed: Bool { lease.owner != nil }
 
@@ -97,9 +98,18 @@ final class VoicePassiveReplyCapture: ObservableObject {
       let format = input.outputFormat(forBus: 0)
       guard format.sampleRate > 0, format.channelCount > 0 else { throw CaptureFailure.unprotected }
       let detector = VoicePassiveSpeechDetector(startedAt: ProcessInfo.processInfo.systemUptime)
-      input.installTap(onBus: 0, bufferSize: AVAudioFrameCount(format.sampleRate / 50), format: format) { [weak self] buffer, _ in
-        guard detector.accept(VoicePcmTapPipeline.int16Samples(from: buffer),
-                              now: ProcessInfo.processInfo.systemUptime) else { return }
+      let reference = echoReference
+      let logger = self.logger
+      input.installTap(onBus: 0, bufferSize: AVAudioFrameCount(format.sampleRate / 50), format: format) { [weak self] buffer, timestamp in
+        let samples = VoicePcmTapPipeline.int16Samples(from: buffer)
+        let now = ProcessInfo.processInfo.systemUptime
+        detector.observeCapturePosition(timestamp.isSampleTimeValid ? timestamp.sampleTime : nil, length: buffer.frameLength)
+        if reference.matches(samples, rate: buffer.format.sampleRate, endingAt: now) {
+          detector.rejectEcho()
+          logger.debug("Passive voice capture rejected playback echo")
+          return
+        }
+        guard detector.accept(samples, now: now) else { return }
         Task { @MainActor [weak self] in
           guard let self, self.lease.accepts(owner: owner, capture: captureID),
                 self.isListening, self.engine?.isRunning == true else { return }
@@ -145,8 +155,16 @@ final class VoicePassiveSpeechDetector {
   private let armAt: TimeInterval
   private var delivered = false
   private var sequence: Int64 = 0
+  private var nextCapturePosition: Int64?
 
   init(startedAt: TimeInterval) { armAt = startedAt + 0.35 }
+
+  func rejectEcho() { vad.resetAttack() }
+
+  func observeCapturePosition(_ position: Int64?, length: UInt32) {
+    if let expected = nextCapturePosition, expected != position { vad.resetAttack() }
+    nextCapturePosition = position.map { $0 + Int64(length) }
+  }
 
   func accept(_ samples: [Int16], now: TimeInterval) -> Bool {
     guard !delivered, now >= armAt else { return false }
