@@ -202,6 +202,10 @@ extension AgentHomeView {
                 .padding(.top, 2)
                 .transition(.opacity)
             }
+          }
+        }
+      }
+  }
 
   private func playCompletedAgentReply(_ message: ChatMessage, _ paragraph: AgentReplyParagraphSpeechSelection?) -> Bool {
     guard let selection = AgentCompletedReplyPlaybackSelection(message: message, paragraph: paragraph),
@@ -221,9 +225,4 @@ extension AgentHomeView {
       })
     return true
   }
-          }
-        }
-      }
-  }
-
 }
