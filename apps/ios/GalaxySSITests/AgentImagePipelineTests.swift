@@ -3,6 +3,40 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentImagePipelineTests: XCTestCase {
+  func testOrientationSheetRotatesAsymmetricPixelsInClockwiseOrder() throws {
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    format.opaque = true
+    let fixture = UIGraphicsImageRenderer(size: CGSize(width: 96, height: 96), format: format).pngData { context in
+      UIColor.red.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 96, height: 48))
+      UIColor.blue.setFill()
+      context.fill(CGRect(x: 0, y: 48, width: 96, height: 48))
+    }
+    let source = try CloudImagePayload(displayName: "split.png", mimeType: "image/png", data: fixture)
+    let sheet = try XCTUnwrap(CloudVisionOrientationSheet.make(for: [source]))
+    let image = try XCTUnwrap(UIImage(data: sheet.data)?.cgImage)
+    let cell = image.width / 2
+    func redDominates(cellX: Int, cellY: Int, x: Int, y: Int) throws -> Bool {
+      let point = CGRect(x: cellX * cell + x, y: cellY * cell + y, width: 1, height: 1)
+      let pixel = try XCTUnwrap(image.cropping(to: point))
+      var rgba = [UInt8](repeating: 0, count: 4)
+      return try rgba.withUnsafeMutableBytes { buffer in
+        let context = try XCTUnwrap(CGContext(data: buffer.baseAddress, width: 1, height: 1,
+          bitsPerComponent: 8, bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(pixel, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        return buffer[0] > buffer[2]
+      }
+    }
+    let quarter = cell / 4, middle = cell / 2, far = cell * 3 / 4
+    XCTAssertTrue(try redDominates(cellX: 0, cellY: 0, x: middle, y: quarter))
+    XCTAssertTrue(try redDominates(cellX: 1, cellY: 0, x: far, y: middle))
+    XCTAssertTrue(try redDominates(cellX: 0, cellY: 1, x: middle, y: far))
+    XCTAssertTrue(try redDominates(cellX: 1, cellY: 1, x: quarter, y: middle))
+    XCTAssertFalse(try redDominates(cellX: 1, cellY: 0, x: quarter, y: middle))
+  }
+
   func testOrientationReferencePreservesOriginalInAllCloudFormats() throws {
     let source = try XCTUnwrap(testImage().jpegData(compressionQuality: 0.8))
     let image = try CloudImagePayload(displayName: "fixture.jpg", mimeType: "image/jpeg", data: source)
