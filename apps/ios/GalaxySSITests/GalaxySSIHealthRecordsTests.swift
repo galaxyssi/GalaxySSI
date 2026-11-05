@@ -5,6 +5,37 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testOriginalIndexMigratesLegacyCiphertextOnceWithoutRewritingIt() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: root.appendingPathComponent("records"))
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: root,
+      restoreRecordsFile: records.isolatedFile)
+    try records.write(.init(metric: .weight, value: 65))
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData { $0.beginPage() }
+    try store.store(pdf, name: "fixture.pdf")
+    let original = try XCTUnwrap(store.list().originals.first)
+    let path = root.appendingPathComponent(original.id.uuidString)
+    let originalCiphertext = try Data(contentsOf: path)
+    var legacy = try records.load()
+    legacy.originalIndex = nil
+    try records.commitRestore(legacy, receipt: UUID())
+    XCTAssertEqual(try store.list().originals, [original])
+    XCTAssertEqual(try records.load().originalIndex?.originals, [original])
+    XCTAssertEqual(try records.load().current.map(\.value), [65])
+    XCTAssertEqual(try Data(contentsOf: path), originalCiphertext)
+    try originalCiphertext.write(to: root.appendingPathComponent(UUID().uuidString))
+    XCTAssertEqual(try store.list().unavailable, 0)
+    XCTAssertEqual(try store.read(original), pdf)
+    try store.remove(original)
+    XCTAssertTrue(try records.load().originalIndex?.originals.isEmpty == true)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: path.path))
+    XCTAssertEqual(try records.load().current.map(\.value), [65])
+  }
+
+  @MainActor
   func testHealthBackupAuthenticatesOriginalsAndLeavesLocalRecordsUntouched() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -86,7 +117,9 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let pendingReceipt = UUID()
     try files.withRestoreLease { lease in
       try files.stageRestore([(manifest, pdf)], receipt: pendingReceipt, lease: lease)
-      try destination.commitRestore(destination.load(), receipt: pendingReceipt)
+      var pending = try destination.load()
+      pending.originalIndex?.include([manifest])
+      try destination.commitRestore(pending, receipt: pendingReceipt)
       XCTAssertThrowsError(try files.list())
     }
     XCTAssertEqual(try files.list().originals, [manifest])

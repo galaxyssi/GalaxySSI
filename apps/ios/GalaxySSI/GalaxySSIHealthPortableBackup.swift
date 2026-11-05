@@ -193,8 +193,12 @@ extension GalaxySSIHealthPortableBackup {
                       originals: GalaxySSIHealthOriginalStore) throws {
     try originals.withRestoreLease { lease in
       try originals.reconcileRestores(lease: lease)
-      let (fresh, archive, files) = try restoreWork(input, records: records, originals: originals, lease: lease)
+      let (fresh, proposed, files) = try restoreWork(input, records: records, originals: originals, lease: lease)
       guard fresh == expected, fresh.hasChanges else { throw Failure.stale }
+      var archive = proposed
+      guard var index = archive.originalIndex else { throw Failure.stale }
+      index.include(files.map(\.0))
+      archive.originalIndex = index
       let receipt = UUID()
       do {
         try originals.stageRestore(files, receipt: receipt, lease: lease)
@@ -217,11 +221,11 @@ extension GalaxySSIHealthPortableBackup {
     let payload = try JSONDecoder().decode(Payload.self, from: input.plaintext)
     guard payload.owner == records.owner, originals.owner == records.owner,
           originals.restoreRecordsFile == records.isolatedFile else { throw Failure.owner }
+    let listing = try originals.list(lease: lease)
     var archive = try records.load()
     let local = archive.current
     var latest: [UUID: GalaxySSIHealthReading] = [:]
     for reading in archive.revisions { latest[reading.id] = reading }
-    let listing = try originals.list(lease: lease)
     let tables = archive.tableBatches ?? []
     let localTableHashes = Dictionary(tables.map { ($0.id, digest($0.data)) }, uniquingKeysWith: { first, _ in first })
     var snapshot = latest.values.map { "r:\($0.id):\($0.revision):\($0.deleted)" }

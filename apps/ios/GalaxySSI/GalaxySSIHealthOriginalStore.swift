@@ -25,6 +25,20 @@ struct GalaxySSIHealthOriginalStore {
     let unavailable: Int
   }
 
+  struct Index: Codable, Equatable {
+    var originals: [Original] = []
+    var unreadableLegacy: Set<UUID> = []
+    var pendingRemovals: Set<UUID> = []
+
+    mutating func include(_ new: [Original]) {
+      for item in new {
+        originals.removeAll { $0.id == item.id }
+        unreadableLegacy.remove(item.id)
+        originals.append(item)
+      }
+    }
+  }
+
   struct ExportAttempt: Codable, Identifiable, Sendable {
     enum Outcome: String, Codable, Sendable { case prepared, verified, unverified }
     let id: UUID
@@ -51,6 +65,11 @@ struct GalaxySSIHealthOriginalStore {
   let secrets: GalaxySSISecretStore
   var fixtureDirectory: URL? = nil
   var restoreRecordsFile: URL? = nil
+
+  private var indexRecords: GalaxySSIHealthRecords {
+    GalaxySSIHealthRecords(owner: owner, secrets: secrets, isolatedFile: restoreRecordsFile ??
+      fixtureDirectory?.appendingPathComponent("original-record-index"))
+  }
 
   func importFile(_ url: URL) throws {
     let scoped = url.startAccessingSecurityScopedResource()
@@ -80,7 +99,20 @@ struct GalaxySSIHealthOriginalStore {
     else { throw Failure.limit }
     let item = Original(id: UUID(), name: String(name.prefix(180)), kind: kind, fileExtension: fileExtension,
                         importedAt: Date(), bytes: data.count, sha256: digest)
-    try writeOriginal(item, data: data, to: url(item.id))
+    let records = indexRecords
+    var archive = try records.load()
+    guard var index = archive.originalIndex else { throw Failure.stale }
+    index.include([item])
+    archive.originalIndex = index
+    let receipt = UUID()
+    do {
+      try stageRestore([(item, data)], receipt: receipt, lease: lease)
+      try records.commitRestore(archive, receipt: receipt)
+    } catch {
+      try? reconcileRestores(lease: lease)
+      throw error
+    }
+    try? reconcileRestores(lease: lease)
   }
 
   private static func format(of data: Data) throws -> (Kind, String) {
@@ -162,11 +194,10 @@ struct GalaxySSIHealthOriginalStore {
     try check(lease)
     let fm = FileManager.default
     let root = try restoreRoot()
-    guard fm.fileExists(atPath: root.path) else { return }
-    let folders = try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
-    guard !folders.isEmpty else { return }
-    let records = GalaxySSIHealthRecords(owner: owner, secrets: secrets, isolatedFile: restoreRecordsFile)
-    let receipts = try records.load().restoreReceipts ?? []
+    let folders = fm.fileExists(atPath: root.path) ? try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) : []
+    let records = indexRecords
+    let archive = try records.load()
+    let receipts = archive.restoreReceipts ?? []
     for folder in folders {
       guard let receipt = UUID(uuidString: folder.lastPathComponent) else { continue }
       if receipts.contains(receipt) {
@@ -176,6 +207,7 @@ struct GalaxySSIHealthOriginalStore {
           defer { try? handle.close() }
           let key = try key(create: false)
           let item = try readHeader(handle, id: id, key: key)
+          if let index = archive.originalIndex, !index.originals.contains(item) { continue }
           _ = try verifiedPayload(handle, original: item, key: key)
           try handle.seek(toOffset: 0)
           guard let data = try handle.read(upToCount: Self.maximumFileBytes + maximumHeaderBytes + 33),
@@ -184,6 +216,16 @@ struct GalaxySSIHealthOriginalStore {
         }
       }
       try fm.removeItem(at: folder)
+    }
+    if var index = archive.originalIndex, !index.pendingRemovals.isEmpty {
+      let previous = index
+      for id in index.pendingRemovals {
+        for path in [try url(id), try cropURL(id)] where fm.fileExists(atPath: path.path) {
+          try fm.removeItem(at: path)
+        }
+      }
+      index.pendingRemovals = []
+      try records.setOriginalIndex(index, expected: previous)
     }
   }
 
@@ -196,15 +238,31 @@ struct GalaxySSIHealthOriginalStore {
 
   func list(lease: RestoreLease) throws -> Listing {
     try check(lease)
-    let files = try FileManager.default.contentsOfDirectory(at: directory(), includingPropertiesForKeys: nil)
-    let ids = files.compactMap { UUID(uuidString: $0.lastPathComponent) }
-    guard !ids.isEmpty else { return Listing(originals: [], unavailable: 0) }
+    let index = try ensureIndex()
+    guard !index.originals.isEmpty else { return Listing(originals: [], unavailable: index.unreadableLegacy.count) }
     let key = try key(create: false)
-    let items: [Original] = ids.compactMap { id in
-      try? withFile(id) { try readHeader($0, id: id, key: key) }
+    let items = index.originals.filter { item in
+      (try? withFile(item.id) { try readHeader($0, id: item.id, key: key) }) == item
     }
     return Listing(originals: items.sorted { ($0.importedAt, $0.id.uuidString) > ($1.importedAt, $1.id.uuidString) },
-                   unavailable: ids.count - items.count)
+                   unavailable: index.unreadableLegacy.count + index.originals.count - items.count)
+  }
+
+  private func ensureIndex() throws -> Index {
+    let records = indexRecords
+    if let index = try records.load().originalIndex { return index }
+    let files = try FileManager.default.contentsOfDirectory(at: directory(), includingPropertiesForKeys: nil)
+    let ids = files.compactMap { UUID(uuidString: $0.lastPathComponent) }
+    var index = Index()
+    if !ids.isEmpty {
+      let key = try key(create: false)
+      for id in ids {
+        if let item = try? withFile(id, { try readHeader($0, id: id, key: key) }) { index.originals.append(item) }
+        else { index.unreadableLegacy.insert(id) }
+      }
+    }
+    try records.setOriginalIndex(index, expected: nil)
+    return index
   }
 
   func read(_ original: Original) throws -> Data {
@@ -216,6 +274,7 @@ struct GalaxySSIHealthOriginalStore {
 
   func read(_ original: Original, lease: RestoreLease) throws -> Data {
     try check(lease)
+    guard try ensureIndex().originals.contains(original) else { throw Failure.stale }
     let key = try key(create: false)
     return try withFile(original.id) { file in
       guard try readHeader(file, id: original.id, key: key) == original else { throw Failure.stale }
@@ -241,12 +300,16 @@ struct GalaxySSIHealthOriginalStore {
 
   private func remove(_ original: Original, lease: RestoreLease) throws {
     try check(lease)
+    let previous = try ensureIndex()
+    guard previous.originals.contains(original) else { throw Failure.stale }
     let key = try key(create: false)
     guard try withFile(original.id, { try readHeader($0, id: original.id, key: key) }) == original
     else { throw Failure.stale }
-    try FileManager.default.removeItem(at: url(original.id))
-    let crop = try cropURL(original.id)
-    if FileManager.default.fileExists(atPath: crop.path) { try FileManager.default.removeItem(at: crop) }
+    var updated = previous
+    updated.originals.removeAll { $0.id == original.id }
+    updated.pendingRemovals.insert(original.id)
+    try indexRecords.setOriginalIndex(updated, expected: previous)
+    try? reconcileRestores(lease: lease)
   }
 
   func makeZIP(_ originals: [Original]) throws -> Data {
