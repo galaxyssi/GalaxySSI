@@ -3,6 +3,8 @@ import SwiftUI
 @MainActor
 struct GalaxySSIPublicNewsView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @Environment(\.scenePhase) private var scenePhase
+  @AppStorage("publicNews.liveEnabled") private var liveNewsEnabled = false
   @StateObject private var archive = PublicNewsArchive()
   @State private var filter = Filter.all
   @State private var refreshRequest = 0
@@ -24,11 +26,16 @@ struct GalaxySSIPublicNewsView: View {
         title: t("public_news_title", "Discoveries"),
         leading: { GalaxySSIBackButton() },
         trailing: {
-          Button { refreshRequest += 1 } label: {
-            Image(systemName: "arrow.clockwise").frame(width: 40, height: 44)
+          Menu {
+            Button { refreshRequest += 1 } label: {
+              Label(t("public_news_refresh", "Refresh news"), systemImage: "arrow.clockwise")
+            }
+            .disabled(archive.refreshing)
+            Toggle(t("public_news_live", "Live Hacker News"), isOn: $liveNewsEnabled)
+          } label: {
+            Image(systemName: "ellipsis").frame(width: 40, height: 44)
           }
-          .disabled(archive.refreshing)
-          .accessibilityLabel(t("public_news_refresh", "Refresh news"))
+          .accessibilityLabel(t("public_news_actions", "News actions"))
         }
       )
       Picker(t("public_news_filter", "News filter"), selection: $filter) {
@@ -85,6 +92,9 @@ struct GalaxySSIPublicNewsView: View {
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
     .task(id: refreshRequest) { await archive.refresh(force: refreshRequest != 0) }
+    .task(id: liveNewsEnabled && scenePhase == .active) {
+      if liveNewsEnabled && scenePhase == .active { await archive.collectLive() }
+    }
     .sheet(item: $selected) { article in reader(article) }
   }
 
