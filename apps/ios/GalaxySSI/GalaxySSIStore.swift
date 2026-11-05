@@ -1414,6 +1414,16 @@ final class GalaxySSIStore: ObservableObject {
     return count
   }
 
+  func bindManualCloudRequest(_ binding: AgentManualCloudBinding, to outgoing: ChatMessage) -> Bool {
+    guard var messages = messagesByContact[outgoing.contactId],
+          let index = messages.firstIndex(where: { $0.id == outgoing.id && $0.isMine &&
+            $0.conversationId == outgoing.conversationId && $0.turnId == outgoing.turnId }) else { return false }
+    if let existing = messages[index].manualCloudBinding, existing != binding { return false }
+    messages[index].manualCloudBinding = binding
+    messagesByContact[outgoing.contactId] = messages
+    return persistedMessage(id: outgoing.id, contactId: outgoing.contactId)?.manualCloudBinding == binding
+  }
+
   private func persistRecoveredCloudMessage(_ message: ChatMessage) -> Bool {
     guard chatHistoryDatabase.upsert(message) else { return false }
     if !runtimePlaintextCleared, var cached = messagesByContact[message.contactId],

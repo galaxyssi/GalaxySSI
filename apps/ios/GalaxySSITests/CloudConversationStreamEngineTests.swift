@@ -2,6 +2,20 @@ import XCTest
 @testable import GalaxySSI
 
 final class CloudConversationStreamEngineTests: XCTestCase {
+  func testFormatRepairBudgetDoesNotLimitToolProgressOrCitationRepair() {
+    let progress = CloudWebToolLoopProgress()
+    XCTAssertTrue(progress.requestFormatRepair("protocol"))
+    XCTAssertFalse(progress.requestFormatRepair("protocol"))
+    XCTAssertTrue(progress.requestFormatRepair("arguments:first"))
+    XCTAssertTrue(progress.requestFormatRepair("arguments:second"))
+    XCTAssertFalse(progress.requestFormatRepair("arguments:third"))
+    XCTAssertTrue(progress.requestRepair("citations"))
+    for index in 0..<12 {
+      XCTAssertTrue(progress.record(toolName: "web_search", arguments: ["query": .string("source \(index)")],
+                                    output: "new evidence"))
+    }
+  }
+
   @MainActor
   func testCloudColdBootSettlesOnlyExactOrphanAndPreservesCommittedReply() throws {
     let suite = "cloud-dispatch-\(UUID())"

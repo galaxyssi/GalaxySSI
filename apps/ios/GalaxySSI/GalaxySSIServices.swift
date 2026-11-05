@@ -3300,6 +3300,11 @@ final class MessageCoordinator: ObservableObject {
   ) async -> Bool {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty || !attachments.isEmpty else { return false }
+    if let source = researchRetrySource,
+       source.manualCloudBinding != nil ||
+        store.persistedMessage(id: source.id, contactId: source.contactId)?.manualCloudBinding != nil {
+      return await retryBoundCloudReply(source: source, displayContact: contact, onOutgoing: onOutgoing)
+    }
     func retryPrompt(_ goal: String, conversation: String) -> String {
       guard let source = researchRetrySource, source.conversationId == conversation else { return goal }
       return goal + store.researchRetryHandoff(for: source)
@@ -3909,7 +3914,9 @@ final class MessageCoordinator: ObservableObject {
           images: cloudImages,
           outgoing: outgoing,
           modelDetail: modelDetail,
-          requestDetail: requestDetail
+          requestDetail: requestDetail,
+          preserveRoute: manualSelection(for: contact, conversationId: outgoing.conversationId)?.targetId == selectedCloudContact.id,
+          hadAttachments: !effectiveAttachments.isEmpty
         )
         finishPendingAgentReply(for: outgoing)
         return true
@@ -4048,7 +4055,9 @@ final class MessageCoordinator: ObservableObject {
           images: cloudImages,
           outgoing: outgoing,
           modelDetail: modelDetail,
-          requestDetail: requestDetail
+          requestDetail: requestDetail,
+          preserveRoute: true,
+          hadAttachments: !effectiveAttachments.isEmpty
         )
         finishPendingAgentReply(for: outgoing)
         return true
@@ -4721,7 +4730,9 @@ final class MessageCoordinator: ObservableObject {
           task.phase == .failed,
           let failedAction = task.pendingAction ?? task.pendingActions.first,
           failedAction.status == .failed,
-          let outgoing = localOutgoingMessage(for: task) else {
+          let outgoing = localOutgoingMessage(for: task),
+          AgentSupervisorRecoveryPolicy.stopReason(action: failedAction, result: task.lastNativeActionResult,
+            history: supervisorHistory(task: task, outgoing: outgoing)) == nil else {
       return false
     }
     var retryAction = failedAction
@@ -8489,7 +8500,9 @@ final class MessageCoordinator: ObservableObject {
     task.pendingActions.removeAll { $0.id == action.id }
     task.pendingAction = task.pendingActions.first
     let handled = executeLocalNativeAction(action: action, outgoing: outgoing, task: &task)
-    if task.phase == .failed {
+    if task.phase == .failed, AgentSupervisorRecoveryPolicy.stopReason(
+      action: action, result: task.lastNativeActionResult, history: supervisorHistory(task: task, outgoing: outgoing)
+    ) == nil {
       var retryableAction = action
       retryableAction.status = .failed
       retryableAction.result = task.result
@@ -8515,7 +8528,9 @@ final class MessageCoordinator: ObservableObject {
       .checkpointBefore(action: action, screen: screen, planRevision: 1)
       .rollbackAction
 
-    var executionAction = action
+    let history = supervisorHistory(task: task, outgoing: outgoing)
+    let boundAction = AgentSupervisorRecoveryPolicy.restoreBinding(action, history: history)
+    var executionAction = boundAction
     executionAction.parameters["_galaxyssi_task_id"] = task.taskId
     executionAction.parameters["_galaxyssi_session_id"] = task.sessionId
     executionAction.parameters["_galaxyssi_conversation_id"] = outgoing.conversationId
@@ -8534,6 +8549,7 @@ final class MessageCoordinator: ObservableObject {
     )
     if !result.success,
        action.kind == .callConnector,
+       AgentSupervisorRecoveryPolicy.stopReason(action: executionAction, result: result, history: history) == nil,
        let fallbackAction = connectorFallbackAction(
         action: executionAction,
         failedResult: result,
@@ -8569,7 +8585,7 @@ final class MessageCoordinator: ObservableObject {
     let reply = recordLocalNativeActionResult(stepReply, task: &task)
     let hasRemainingActions = !task.pendingActions.isEmpty
     task.lastNativeActionResult = result
-    updateActiveNativePlan(action: action, result: result, task: &task)
+    updateActiveNativePlan(action: boundAction, result: result, task: &task)
     let rollingBatchBoundary = !hasRemainingActions && AgentRollingPlanPolicy.shouldRequestNextBatch(
       plan: task.activePlan,
       result: result
@@ -8887,6 +8903,13 @@ final class MessageCoordinator: ObservableObject {
       conversationId: outgoing.conversationId,
       turnId: outgoing.turnId
     )
+  }
+
+  private func supervisorHistory(task: AgentTaskRecord, outgoing: ChatMessage) -> [AgentAction] {
+    guard let plan = task.activePlan, let scope = AgentPlanContinuationScope.resolve(plan: plan,
+      activeConversationId: outgoing.conversationId, activeTurnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+      sessionId: task.sessionId) else { return [] }
+    return (plan.actionHistory + plan.actions).filter(scope.owns)
   }
 
   private func connectorFallbackAction(
@@ -9521,10 +9544,61 @@ final class MessageCoordinator: ObservableObject {
     return true
   }
 
+  private func retryBoundCloudReply(
+    source: ChatMessage, displayContact: GalaxySSIContact, onOutgoing: ((ChatMessage) -> Void)?
+  ) async -> Bool {
+    guard source.isMine, source.contactId == displayContact.id,
+          source.conversationId == store.activeConversationId(for: displayContact.id),
+          let current = store.messages(for: source.contactId).first(where: { $0.id == source.id })
+            ?? store.persistedMessage(id: source.id, contactId: source.contactId),
+          current.turnId == source.turnId, current.conversationId == source.conversationId,
+          current.deliveryStatus == .failed, let binding = current.manualCloudBinding else { return false }
+    if binding.hadAttachments {
+      let detail = localizedReply("galaxyssi.agent.cloud_retry_reattach",
+        fallback: "This request included attachments. Reattach the originals before sending it again.")
+      lastError = detail
+      store.appendSystem(detail, to: source.contactId, conversationId: source.conversationId)
+      return false
+    }
+    guard let selected = binding.resolve(contact: store.contact(id: binding.contactId), apiKey: { store.apiKey(for: $0) }) else {
+      let detail = localizedReply("galaxyssi.agent.cloud_retry_binding_unavailable",
+        fallback: "The original cloud model is no longer available. The request was not sent to a different model.")
+      lastError = detail
+      store.appendSystem(detail, to: source.contactId, conversationId: source.conversationId)
+      return false
+    }
+    let outgoing = store.appendOutgoing(current.content, to: displayContact.id,
+      requestKind: current.requestKind, readOnlyAnalysis: current.readOnlyAnalysis)
+    onOutgoing?(outgoing)
+    beginPendingAgentReply(for: outgoing)
+    defer { finishPendingAgentReply(for: outgoing) }
+    let prompt = current.content + store.researchRetryHandoff(for: current)
+    let turns = store.messages(for: outgoing.contactId).filter { $0.conversationId == outgoing.conversationId }.map {
+      message -> ChatMessage in
+      guard message.id == outgoing.id else { return message }
+      var request = message
+      request.content = prompt
+      return request
+    }
+    do {
+      try await dispatchCloudReply(contact: selected, turns: turns, images: [], outgoing: outgoing,
+        modelDetail: binding.modelId, requestDetail: binding.modelId, preserveRoute: true, hadAttachments: false)
+      return true
+    } catch {
+      lastError = error.localizedDescription
+      store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId, stage: "cloud_error",
+                                detail: error.localizedDescription, status: .failed)
+      store.reconcileCloudDispatches(sourceId: outgoing.id)
+      store.appendSystem(error.localizedDescription, to: outgoing.contactId, conversationId: outgoing.conversationId)
+      return false
+    }
+  }
+
   private func dispatchCloudReply(
     contact: GalaxySSIContact, turns: [ChatMessage], images: [CloudImagePayload],
-    outgoing: ChatMessage, modelDetail: String, requestDetail: String
+    outgoing: ChatMessage, modelDetail: String, requestDetail: String, preserveRoute: Bool, hadAttachments: Bool
   ) async throws {
+    try Task.checkCancellation()
     let receipt = AgentCloudDispatchReceipt(sourceId: outgoing.id, contactId: outgoing.contactId,
       conversationId: outgoing.conversationId, turnId: outgoing.turnId, providerId: contact.id,
       modelId: contact.selectedCloudModel?.modelId ?? "")
@@ -9533,6 +9607,13 @@ final class MessageCoordinator: ObservableObject {
     defer { registry.release(receipt.identity, lease: lease) }
     let session = store.agentSession(id: outgoing.conversationId)
     let recoverable = session?.privateMode != true && session?.trackingPaused != true
+    if preserveRoute && recoverable {
+      guard let binding = AgentManualCloudBinding(contact: contact, hadAttachments: hadAttachments),
+            store.bindManualCloudRequest(binding, to: outgoing) else {
+        throw GalaxySSIError.invalidPayload(localizedReply("galaxyssi.agent.cloud_dispatch_not_saved",
+          fallback: "The cloud request was not sent because its recovery record could not be saved."))
+      }
+    }
     if recoverable && !store.chatHistoryDatabase.registerCloudDispatch(receipt) {
       throw GalaxySSIError.invalidPayload(localizedReply("galaxyssi.agent.cloud_dispatch_not_saved",
         fallback: "The cloud request was not sent because its recovery record could not be saved."))

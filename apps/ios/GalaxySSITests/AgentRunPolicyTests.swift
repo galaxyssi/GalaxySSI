@@ -658,6 +658,45 @@ extension GalaxySSIStoreTests {
     ))
   }
 
+  func testSupervisedRecoveryPreservesOriginalBindingAndBoundsOnlyFailures() {
+    func step(_ id: String, status: AgentActionStatus, locked: Bool = false) -> AgentAction {
+      var action = AgentAction(id: id, kind: .callConnector, target: locked ? "original" : "auto",
+        risk: .low, status: status, description: "Supervisor", requiresConfirmation: false)
+      action.parameters = ["connector_task_mode": "phone_supervised_project_plan_v1"]
+      if locked {
+        action.parameters["manual_target_locked"] = "true"
+        action.parameters["connector_id"] = "cloud:original"
+        action.parameters["manual_model_id"] = "original-model"
+        action.parameters["agent_reasoning_effort"] = "high"
+      } else {
+        action.parameters["routing_fallback_ids"] = "cloud:other"
+        action.parameters["model_id"] = "other-model"
+      }
+      return action
+    }
+    let first = step("first", status: .failed, locked: true)
+    let current = step("current", status: .failed)
+    let restored = AgentSupervisorRecoveryPolicy.restoreBinding(current, history: [first])
+    XCTAssertEqual(restored.target, "original")
+    XCTAssertEqual(restored.parameters["manual_model_id"], "original-model")
+    XCTAssertEqual(restored.parameters["agent_reasoning_effort"], "high")
+    XCTAssertNil(restored.parameters["model_id"])
+    XCTAssertEqual(restored.parameters["routing_fallback_ids"], "")
+
+    var failure = AgentActionResult(actionId: current.id, success: false, message: "failure")
+    XCTAssertNil(AgentSupervisorRecoveryPolicy.stopReason(action: current, result: failure, history: [current]))
+    XCTAssertEqual(AgentSupervisorRecoveryPolicy.stopReason(action: current, result: failure, history: [first, current]),
+                   "supervisor_consecutive_failures")
+    let success = step("success", status: .completed)
+    XCTAssertNil(AgentSupervisorRecoveryPolicy.stopReason(action: current, result: failure, history: [first, success]))
+    failure.metadata = ["non_retriable": "true"]
+    XCTAssertEqual(AgentSupervisorRecoveryPolicy.stopReason(action: current, result: failure, history: []),
+                   "supervisor_failure_non_retriable")
+    failure.metadata = ["failure_kind": "invalid_supervised_project_plan", "structured_repair_attempts": "3"]
+    XCTAssertEqual(AgentSupervisorRecoveryPolicy.stopReason(action: current, result: failure, history: []),
+                   "supervisor_format_repair_exhausted")
+  }
+
   func testAgentRollingPlanPolicyPreservesTerminalAndSupervisedCompletionPaths() {
     let result = AgentActionResult(actionId: "action", success: true, message: "observed")
     var ruleBased = rollingPlan(action: rollingAction(status: .completed))
