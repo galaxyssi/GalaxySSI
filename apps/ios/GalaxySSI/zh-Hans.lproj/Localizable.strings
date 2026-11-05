@@ -408,6 +408,16 @@
 "galaxyssi.health.sleep_reminder.error" = "无法更新提醒。";
 "galaxyssi.health.sleep_reminder.first" = "首次触发依据";
 "galaxyssi.health.sleep_reminder.latest" = "最新触发依据";
+"galaxyssi.health.sleep_reminder.snapshot" = "证据版本";
+"galaxyssi.health.sleep_reminder.recent_records" = "近期关联记录";
+"galaxyssi.health.sleep_reminder.baseline_records" = "基线关联记录";
+"galaxyssi.health.sleep_reminder.sleep_report" = "打开仅含睡眠的周报";
+"galaxyssi.health.sleep_reminder.close" = "关闭";
+"galaxyssi.health.sleep_reminder.coverage" = "基线覆盖 %lld / 14 天；近期覆盖 %lld / 7 天";
+"galaxyssi.health.sleep_reminder.rule" = "规则 %lld；阈值 %lld 分钟";
+"galaxyssi.health.sleep_reminder.revision" = "修订版本 %lld";
+"galaxyssi.health.sleep_reminder.more_records" = "显示更多记录";
+"galaxyssi.health.sleep_reminder.evidence_stale" = "保存的证据不可用或已与关联记录不一致。";
 "galaxyssi.health.sleep_reminder.complete" = "完成";
 "galaxyssi.health.sleep_reminder.snooze" = "推迟 24 小时";
 "galaxyssi.health.sleep_reminder.evidence" = "睡眠变化依据";
@@ -723,6 +733,10 @@
 "galaxyssi.health.weekly.assistant_revision" = "修订版本 %lld";
 "galaxyssi.health.weekly.assistant_close" = "关闭";
 "galaxyssi.health.weekly.assistant_more" = "显示更多";
+"galaxyssi.health.weekly.linked_fixed_stale" = "保存的睡眠证据已与关联记录不一致。";
+"galaxyssi.health.weekly.sleep_baseline_coverage" = "基线（%@）：覆盖 %lld / 14 天";
+"galaxyssi.health.weekly.sleep_baseline" = "基线日均：%@ 分钟";
+"galaxyssi.health.weekly.sleep_recent" = "近期日均：%@ 分钟";
 "galaxyssi.health.weekly.plain_pdf" = "导出未加密的 PDF？";
 "galaxyssi.health.weekly.coverage" = "%@：%lld 条已确认";
 "galaxyssi.health.profile.title" = "健康档案";
