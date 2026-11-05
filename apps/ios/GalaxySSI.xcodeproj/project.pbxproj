@@ -624,6 +624,7 @@
     A10000000000000000000661 /* VoiceWhisperLegacyMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000661 /* VoiceWhisperLegacyMigration.swift */; };
     A10000000000000000000651 /* VoiceMicrosoftEdgeTTSTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000651 /* VoiceMicrosoftEdgeTTSTypes.swift */; };
     A10000000000000000000652 /* VoiceMicrosoftEdgeTTSWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000652 /* VoiceMicrosoftEdgeTTSWire.swift */; };
+    E36300000000000000000001 /* VoiceMicrosoftEdgeTTSChecksum.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36300000000000000000002 /* VoiceMicrosoftEdgeTTSChecksum.swift */; };
     A10000000000000000000653 /* URLSessionVoiceMicrosoftEdgeTTSSynthesizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000653 /* URLSessionVoiceMicrosoftEdgeTTSSynthesizer.swift */; };
     A10000000000000000000654 /* VoiceMicrosoftEdgeTTS.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000654 /* VoiceMicrosoftEdgeTTS.swift */; };
     A10000000000000000000629 /* VoicePcmRingBufferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000629 /* VoicePcmRingBufferTests.swift */; };
@@ -1874,6 +1875,7 @@
     A20000000000000000000661 /* VoiceWhisperLegacyMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperLegacyMigration.swift; sourceTree = "<group>"; };
     A20000000000000000000651 /* VoiceMicrosoftEdgeTTSTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMicrosoftEdgeTTSTypes.swift; sourceTree = "<group>"; };
     A20000000000000000000652 /* VoiceMicrosoftEdgeTTSWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMicrosoftEdgeTTSWire.swift; sourceTree = "<group>"; };
+    E36300000000000000000002 /* VoiceMicrosoftEdgeTTSChecksum.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMicrosoftEdgeTTSChecksum.swift; sourceTree = "<group>"; };
     A20000000000000000000653 /* URLSessionVoiceMicrosoftEdgeTTSSynthesizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLSessionVoiceMicrosoftEdgeTTSSynthesizer.swift; sourceTree = "<group>"; };
     A20000000000000000000654 /* VoiceMicrosoftEdgeTTS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMicrosoftEdgeTTS.swift; sourceTree = "<group>"; };
     A20000000000000000000125 /* AgentMemoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMemoryModels.swift; sourceTree = "<group>"; };
@@ -2613,6 +2615,7 @@
         A20000000000000000000661 /* VoiceWhisperLegacyMigration.swift */,
         A20000000000000000000651 /* VoiceMicrosoftEdgeTTSTypes.swift */,
         A20000000000000000000652 /* VoiceMicrosoftEdgeTTSWire.swift */,
+        E36300000000000000000002 /* VoiceMicrosoftEdgeTTSChecksum.swift */,
         A20000000000000000000653 /* URLSessionVoiceMicrosoftEdgeTTSSynthesizer.swift */,
         A20000000000000000000654 /* VoiceMicrosoftEdgeTTS.swift */,
         A20000000000000000000134 /* AgentControlPlaneModels.swift */,
@@ -3793,6 +3796,7 @@
         A10000000000000000000661 /* VoiceWhisperLegacyMigration.swift in Sources */,
         A10000000000000000000651 /* VoiceMicrosoftEdgeTTSTypes.swift in Sources */,
         A10000000000000000000652 /* VoiceMicrosoftEdgeTTSWire.swift in Sources */,
+        E36300000000000000000001 /* VoiceMicrosoftEdgeTTSChecksum.swift in Sources */,
         A10000000000000000000653 /* URLSessionVoiceMicrosoftEdgeTTSSynthesizer.swift in Sources */,
         A10000000000000000000654 /* VoiceMicrosoftEdgeTTS.swift in Sources */,
         A10000000000000000000134 /* AgentControlPlaneModels.swift in Sources */,
