@@ -17,6 +17,7 @@ private struct AgentDesktopReplyRecoveryState: Codable {
   var records: [String: AgentDesktopReplyRecoveryRecord]
   var discovery = AgentDesktopReplyDiscoveryProgress()
   var retiredDuringDiscovery: Set<String>? = nil
+  var supersededCodexBindings: [AgentDesktopReplyBinding]? = nil
 }
 
 enum AgentDesktopReplyDiscoveryPolicy {
@@ -168,7 +169,11 @@ struct AgentDesktopReplyBinding: Codable, Equatable {
   var identity: AgentTaskIdentity
   var managedSource: AgentManagedDesktopReplySource? = nil
   var teamSource: AgentTeamDesktopReplySource? = nil
-  var sourceIdentity: String { teamSource?.sourceMessageId ?? managedSource.map { String($0.sourceMessageId) } ?? sourceId.uuidString }
+  var attemptSourceId: UUID? = nil
+  var sourceIdentity: String {
+    teamSource?.sourceMessageId ?? managedSource.map { String($0.sourceMessageId) } ??
+      attemptSourceId?.uuidString ?? sourceId.uuidString
+  }
 
   var fields: [String: String] {
     ["client_route_id": identity.clientRouteId, "conversation_id": identity.conversationId,
@@ -177,7 +182,9 @@ struct AgentDesktopReplyBinding: Codable, Equatable {
   }
 
   var isValid: Bool {
-    identity.isComplete && !(managedSource != nil && teamSource != nil) && (teamSource.map {
+    identity.isComplete && !(managedSource != nil && teamSource != nil) &&
+      (attemptSourceId == nil || (managedSource == nil && teamSource == nil && attemptSourceId != sourceId)) &&
+      (teamSource.map {
       !$0.supervisorRunId.isBlank && $0.supervisorRunId.count <= 200 && !$0.memberId.isBlank &&
         $0.memberId.count <= 200 && UUID(uuidString: $0.sourceMessageId) != nil
     } ?? true) && (managedSource.map {
@@ -191,6 +198,7 @@ struct AgentDesktopReplyBinding: Codable, Equatable {
     var values = [desktopId, displayContactId] + fields.keys.sorted().map { fields[$0]! }
     if let managedSource { values += [managedSource.ownerRunId, String(managedSource.executionGeneration)] }
     if let teamSource { values += ["team-observer", teamSource.supervisorRunId, teamSource.memberId] }
+    if attemptSourceId != nil { values += ["codex-replay", sourceId.uuidString] }
     let data = (try? JSONEncoder().encode(values)) ?? Data()
     return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
@@ -247,6 +255,8 @@ struct AgentDesktopReplyRecoveryRecord: Codable, Equatable {
   var status = ""
   var resultManifest: AgentDesktopResultManifest? = nil
   var codexProgress: AgentDesktopCodexProgress? = nil
+  var codexReplay: AgentCodexReplaySeed? = nil
+  var codexDispatchPending: Bool? = nil
 
   func isCodexSilent(now: Int64) -> Bool {
     terminalObservedAt == 0 && AgentCodexSilenceRecoveryPolicy.isSilent(
@@ -307,6 +317,7 @@ final class AgentDesktopReplyRecovery {
   private var queries: [String: Query] = [:]
   private var healthy = true
   private var retiredDuringDiscovery: Set<String> = []
+  private var supersededCodexBindings: [AgentDesktopReplyBinding] = []
   private(set) var discoveryProgress = AgentDesktopReplyDiscoveryProgress()
 
   init(defaults: UserDefaults, secrets: GalaxySSISecretStore, journal: AgentDesktopReplyRecoveryPersisting) {
@@ -317,6 +328,7 @@ final class AgentDesktopReplyRecovery {
         records = decoded.records
         discoveryProgress = decoded.discovery
         retiredDuringDiscovery = decoded.retiredDuringDiscovery ?? []
+        supersededCodexBindings = decoded.supersededCodexBindings ?? []
         // SQLite is authoritative after migration, including when the last pending request was retired.
         GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: Self.storageKey, secrets: secrets)
       } else if let legacy = GalaxySSIEncryptedUserDefaultsStore.load(defaults: defaults, key: Self.storageKey, secrets: secrets) {
@@ -325,6 +337,7 @@ final class AgentDesktopReplyRecovery {
         records = decoded.records
         discoveryProgress = decoded.discovery
         retiredDuringDiscovery = decoded.retiredDuringDiscovery ?? []
+        supersededCodexBindings = decoded.supersededCodexBindings ?? []
         GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: Self.storageKey, secrets: secrets)
       } else if defaults.data(forKey: Self.storageKey + ".encrypted.v1") != nil { healthy = false }
     } catch { healthy = false }
@@ -346,6 +359,39 @@ final class AgentDesktopReplyRecovery {
   }
 
   func record(for binding: AgentDesktopReplyBinding) -> AgentDesktopReplyRecoveryRecord? { records[binding.key] }
+
+  func isSupersededCodexPayload(_ payload: [String: Any], desktopId: String) -> Bool {
+    supersededCodexBindings.contains { $0.desktopId == desktopId && $0.matches(payload) }
+  }
+
+  func scheduleCodexReplay(from old: AgentDesktopReplyRecoveryRecord, to next: AgentDesktopReplyBinding,
+                           replay: AgentCodexReplaySeed, now: Int64) -> Bool {
+    guard now > 0, records[old.binding.key] == old, old.codexReplay != nil,
+          next.isValid, next.sourceId == old.binding.sourceId,
+          next.identity.conversationId == old.binding.identity.conversationId,
+          next.identity.turnId == old.binding.identity.turnId,
+          next.displayContactId == old.binding.displayContactId,
+          next.desktopId == old.binding.desktopId,
+          next.attemptSourceId != nil, next.sourceIdentity != old.binding.sourceIdentity,
+          next.contactId == replay.budget.expectedTarget, records[next.key] == nil else { return false }
+    var updated = records
+    updated.removeValue(forKey: old.binding.key)
+    updated[next.key] = AgentDesktopReplyRecoveryRecord(binding: next, createdAt: now,
+      codexReplay: replay, codexDispatchPending: true)
+    let superseded = Array((supersededCodexBindings + [old.binding]).suffix(512))
+    guard save(updated, superseded: superseded) else { return false }
+    queries = queries.filter { $0.value.binding != old.binding }
+    return true
+  }
+
+  func markCodexReplayDispatched(_ binding: AgentDesktopReplyBinding) -> Bool {
+    guard var record = records[binding.key] else { return true }
+    guard record.codexDispatchPending == true else { return true }
+    record.codexDispatchPending = false
+    var updated = records
+    updated[binding.key] = record
+    return save(updated)
+  }
 
   @discardableResult
   func observeCodexProgress(_ updates: [AgentConnectorPublicProgress], binding: AgentDesktopReplyBinding, now: Int64) -> Bool {
@@ -387,11 +433,12 @@ final class AgentDesktopReplyRecovery {
   }
 
   @discardableResult
-  func track(_ binding: AgentDesktopReplyBinding, now: Int64) -> Bool {
+  func track(_ binding: AgentDesktopReplyBinding, now: Int64, codexReplay: AgentCodexReplaySeed? = nil) -> Bool {
     guard healthy, binding.isValid, now > 0 else { return false }
-    if records[binding.key] != nil || retiredDuringDiscovery.contains(binding.key) { return true }
+    if records[binding.key] != nil || retiredDuringDiscovery.contains(binding.key) ||
+       supersededCodexBindings.contains(binding) { return true }
     var next = records
-    next[binding.key] = AgentDesktopReplyRecoveryRecord(binding: binding, createdAt: now)
+    next[binding.key] = AgentDesktopReplyRecoveryRecord(binding: binding, createdAt: now, codexReplay: codexReplay)
     return save(next)
   }
 
@@ -467,15 +514,19 @@ final class AgentDesktopReplyRecovery {
   }
 
   private func save(_ next: [String: AgentDesktopReplyRecoveryRecord],
-                    discovery: AgentDesktopReplyDiscoveryProgress? = nil, retired: Set<String>? = nil) -> Bool {
+                    discovery: AgentDesktopReplyDiscoveryProgress? = nil, retired: Set<String>? = nil,
+                    superseded: [AgentDesktopReplyBinding]? = nil) -> Bool {
     let progress = discovery ?? discoveryProgress
     let retiredKeys = progress.completed ? [] : (retired ?? retiredDuringDiscovery)
-    let state = AgentDesktopReplyRecoveryState(records: next, discovery: progress, retiredDuringDiscovery: retiredKeys)
+    let tombstones = superseded ?? supersededCodexBindings
+    let state = AgentDesktopReplyRecoveryState(records: next, discovery: progress, retiredDuringDiscovery: retiredKeys,
+      supersededCodexBindings: tombstones.isEmpty ? nil : tombstones)
     guard healthy, let data = try? JSONEncoder().encode(state),
           journal.writeDesktopReplyRecoveryState(data) else { return false }
     records = next
     discoveryProgress = state.discovery
     retiredDuringDiscovery = retiredKeys
+    supersededCodexBindings = tombstones
     return true
   }
 
@@ -487,7 +538,9 @@ final class AgentDesktopReplyRecovery {
       decoded = AgentDesktopReplyRecoveryState(records:
         try JSONDecoder().decode([String: AgentDesktopReplyRecoveryRecord].self, from: data))
     }
-    guard decoded.version == 2, decoded.records.allSatisfy({ $0.key == $0.value.binding.key && $0.value.binding.isValid &&
+    guard decoded.version == 2, (decoded.supersededCodexBindings?.count ?? 0) <= 512,
+      decoded.supersededCodexBindings?.allSatisfy(\.isValid) != false,
+      decoded.records.allSatisfy({ $0.key == $0.value.binding.key && $0.value.binding.isValid &&
       $0.value.createdAt > 0 && ($0.value.resultManifest?.isValid ?? true) }) else {
       throw GalaxySSIError.invalidPayload("Invalid Desktop recovery journal")
     }

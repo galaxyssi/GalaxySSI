@@ -5,6 +5,49 @@ import CryptoKit
 
 extension GalaxySSIStoreTests {
   @MainActor
+  func testCodexRetryClaimSurvivesRelaunchAndRetiresOnlyExactOldIdentity() throws {
+    let name = "codex-retry-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let journal = DesktopReplyRecoveryTestJournal()
+    let secrets = InMemorySecretStore()
+    let ledger = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    let source = ChatMessage(contactId: "hermes", content: "Outline a migration plan", isMine: true,
+      conversationId: "conversation", turnId: "turn")
+    let original = AgentDesktopReplyBinding(desktopId: "desktop", displayContactId: "hermes",
+      sourceId: source.id, contactId: "codex-contact", agentId: "codex",
+      identity: AgentTaskIdentity(clientRouteId: "route", conversationId: "conversation",
+                                  taskId: source.id.uuidString, turnId: "turn"))
+    var seed = try XCTUnwrap(AgentCodexReplaySeed(source: source, text: source.content, targetId: original.contactId,
+      executionMode: .planOnly, hasAttachments: false, voiceSessionId: "", lockedToOrigin: true,
+      invocation: ["model_id": "original-model", "reasoning_effort": "high"], transportContext: "original context"))
+    XCTAssertTrue(ledger.track(original, now: 1_000, codexReplay: seed))
+    let old = try XCTUnwrap(ledger.record(for: original))
+    XCTAssertEqual(seed.budget.next(failed: original.contactId, attemptId: original.sourceIdentity,
+      confirmedTimeout: true, alternatives: []), original.contactId)
+    let wire = UUID()
+    var next = original
+    next.identity.taskId = wire.uuidString
+    next.attemptSourceId = wire
+    XCTAssertTrue(ledger.scheduleCodexReplay(from: old, to: next, replay: seed, now: 181_000))
+    XCTAssertFalse(ledger.scheduleCodexReplay(from: old, to: next, replay: seed, now: 181_001))
+
+    let reopened = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    XCTAssertEqual(reopened.pending.map(\.binding), [next])
+    XCTAssertEqual(reopened.pending.first?.codexDispatchPending, true)
+    XCTAssertEqual(reopened.pending.first?.codexReplay?.invocation?["model_id"], "original-model")
+    XCTAssertEqual(reopened.pending.first?.binding.sourceId, source.id)
+    XCTAssertTrue(reopened.isSupersededCodexPayload(original.fields, desktopId: "desktop"))
+    XCTAssertFalse(reopened.isSupersededCodexPayload(original.fields, desktopId: "other"))
+    XCTAssertFalse(reopened.isSupersededCodexPayload(next.fields, desktopId: "desktop"))
+    XCTAssertTrue(reopened.markCodexReplayDispatched(next))
+    XCTAssertEqual(reopened.record(for: next)?.codexDispatchPending, false)
+    XCTAssertNil(AgentCodexReplaySeed(source: source, text: source.content, targetId: original.contactId,
+      executionMode: .autoComplete, hasAttachments: false, voiceSessionId: "", lockedToOrigin: false,
+      invocation: nil, transportContext: ""))
+  }
+
+  @MainActor
   func testResearchCheckpointsRecoverTerminalPacketsWithScopedRevisionAndDeletion() throws {
     let name = "research-checkpoint-\(UUID())"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: name))

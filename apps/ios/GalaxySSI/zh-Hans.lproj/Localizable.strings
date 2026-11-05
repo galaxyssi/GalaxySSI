@@ -5989,8 +5989,14 @@
 "galaxyssi.agent.desktop_status_unavailable" = "无法确认电脑端任务状态，请检查连接后再考虑重试。";
 "galaxyssi.agent.codex_silence_checking" = "Codex 已三分钟没有实质进展，正在查询原任务。";
 "galaxyssi.agent.codex_silence_confirmed" = "电脑端已确认 Codex 因长时间无进展而停止。";
+"galaxyssi.agent.codex_recovery_exhausted" = "Codex 已用尽恢复次数，未再次发送任务。";
+"galaxyssi.agent.codex_recovery_unavailable" = "无法发送下一次 Codex 恢复请求。";
+"galaxyssi.agent.codex_recovery_dispatched" = "已将一次有限恢复尝试加入配对电脑的队列。";
 "delivery_trace_codex_silence_checking" = "正在查询 Codex 任务";
 "delivery_trace_codex_silence_confirmed" = "Codex 静默超时";
+"delivery_trace_codex_recovery_exhausted" = "Codex 恢复次数已用尽";
+"delivery_trace_codex_recovery_unavailable" = "无法发送 Codex 恢复请求";
+"delivery_trace_codex_recovery_dispatched" = "已安排 Codex 恢复尝试";
 "galaxyssi.screen_assistant.enable" = "悬浮屏幕助手";
 "galaxyssi.screen_assistant.enabled_ios" = "已开启，悬浮图标在 GalaxySSI 应用内显示。";
 "galaxyssi.screen_assistant.disabled" = "已关闭";

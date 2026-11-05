@@ -36,6 +36,35 @@ struct AgentRemoteTaskStatusSnapshot: Equatable, Identifiable {
   }
 }
 
+struct AgentCodexReplaySeed: Codable, Equatable {
+  let sourceContentSha256: String
+  let lockedToOrigin: Bool
+  let invocation: [String: String]?
+  let transportContext: String
+  var budget: AgentCodexSilenceRecoveryPolicy.Budget
+
+  init?(source: ChatMessage, text: String, targetId: String, executionMode: AgentTaskExecutionMode,
+        hasAttachments: Bool, voiceSessionId: String, lockedToOrigin: Bool, invocation: [String: String]?,
+        transportContext: String) {
+    guard source.isMine, !source.isSystem, source.requestKind == .conversation, !source.readOnlyAnalysis,
+          !source.conversationId.isBlank, source.content == text, source.richOutputJson.isBlank,
+          !text.isBlank, text.utf8.count <= 12_000, !targetId.isBlank,
+          executionMode == .planOnly, !hasAttachments, voiceSessionId.isBlank, transportContext.utf8.count <= 32_768,
+          (invocation ?? [:]).allSatisfy({ ["model_id", "reasoning_effort"].contains($0.key) && $0.value.count <= 256 })
+    else { return nil }
+    sourceContentSha256 = AgentModelLoopRecoveryIdentity.sha256(text)
+    self.lockedToOrigin = lockedToOrigin
+    self.invocation = invocation
+    self.transportContext = transportContext
+    budget = AgentCodexSilenceRecoveryPolicy.Budget(origin: targetId)
+  }
+
+  func matches(_ source: ChatMessage) -> Bool {
+    source.isMine && !source.isSystem && source.requestKind == .conversation && !source.readOnlyAnalysis &&
+      source.richOutputJson.isBlank && AgentModelLoopRecoveryIdentity.sha256(source.content) == sourceContentSha256
+  }
+}
+
 enum AgentCodexSilenceRecoveryPolicy {
   static let silenceMillis: Int64 = 180_000
 
