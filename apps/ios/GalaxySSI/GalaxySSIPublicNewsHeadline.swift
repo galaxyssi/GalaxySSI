@@ -57,7 +57,7 @@ struct GalaxySSIPublicNewsHeadline<Title: View, Detail: View>: View {
   }
 
   private var actions: some View {
-    let displayedTitle = article.title
+    let displayedTitle = article.displayTitle
     return Group {
       Button { UIPasteboard.general.string = displayedTitle } label: {
         Label(t("common_copy", "Copy"), systemImage: "doc.on.doc")

@@ -56,7 +56,8 @@ enum PublicNewsSearch {
       var rank = 0
       var matched = 0
       for term in terms {
-        let inTitle = first(term, in: article.title) != nil
+        let inTitle = first(term, in: article.title) != nil ||
+          (article.displayTitle != article.title && first(term, in: article.displayTitle) != nil)
         let inPublisher = first(term, in: article.publisher) != nil
         if inTitle || inPublisher || first(term, in: article.summary) != nil {
           matched += 1
