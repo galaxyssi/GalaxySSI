@@ -311,13 +311,13 @@ struct GalaxySSIHealthPDFTextView: View {
               if result.method == .native {
                 Button(t("force_ocr", "Read again with on-device OCR")) { recognize(forceOCR: true) }
               }
-              if let reviewRecords, let selected,
+              if let reviewRecords,
                  let region = result.regions.first(where: { $0.id == selectedRegion }) {
                 NavigationLink {
                   GalaxySSIHealthReportItemEditor(records: reviewRecords,
-                    source: .init(original: selected.id, sha256: selected.sha256, page: page,
+                    source: selected.map { .init(original: $0.id, sha256: $0.sha256, page: page,
                                   region: region.id, fromOCR: result.method == .ocr,
-                                  evidenceKey: GalaxySSIHealthRecognitionJobs.line(region).id),
+                                  evidenceKey: GalaxySSIHealthRecognitionJobs.line(region).id) },
                     excerpt: String(region.text.prefix(500)))
                 } label: {
                   Text(GalaxySSIHealthReportReview.text("item", "Review measurement", language: language))

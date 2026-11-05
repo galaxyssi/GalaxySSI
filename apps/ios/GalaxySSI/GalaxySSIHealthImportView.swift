@@ -170,7 +170,7 @@ struct GalaxySSIHealthImportView: View {
     }
     .sheet(item: $transientReport) { report in
       NavigationView {
-        GalaxySSIHealthPDFTextView(store: store, transientReport: report)
+        GalaxySSIHealthPDFTextView(store: store, transientReport: report, reviewRecords: records)
           .toolbar { ToolbarItem(placement: .cancellationAction) {
             Button(t("close_review", "Close review")) { transientReport = nil }
           } }

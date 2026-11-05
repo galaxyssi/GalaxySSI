@@ -190,7 +190,7 @@ struct GalaxySSIHealthReportItemEditor: View {
   @Environment(\.scenePhase) private var scene
   @Environment(\.locale) private var locale
   let records: GalaxySSIHealthRecords
-  let source: GalaxySSIHealthReportReview.Source
+  let source: GalaxySSIHealthReportReview.Source?
   let excerpt: String
   @State private var existing: GalaxySSIHealthReportReview.Item?
   @State private var metric: GalaxySSIHealthMetric?
@@ -225,7 +225,8 @@ struct GalaxySSIHealthReportItemEditor: View {
         DatePicker(t("time", "Measurement time"), selection: $date, in: ...Date())
         Toggle(t("time_confirm", "I verified the measurement time"), isOn: $dateConfirmed)
         Toggle(t("owner", "This measurement belongs to me"), isOn: $ownership)
-        Button(t("stage", "Save reviewed item to draft"), action: stage)
+        Button(source == nil ? t("save_without_original", "Save measurement only")
+                             : t("stage", "Save reviewed item to draft"), action: stage)
           .disabled(!dateConfirmed || !ownership || metric == nil || unit.isEmpty || value.isEmpty)
         if failed { Text(t("error", "Could not save. Check values or reopen the review.")).foregroundColor(.secondary) }
       }
@@ -237,6 +238,7 @@ struct GalaxySSIHealthReportItemEditor: View {
   }
 
   private func load() {
+    guard let source else { return }
     do {
       existing = try records.load().reportReview?.first { $0.source == source }
       if let reading = existing?.reading {
@@ -256,8 +258,12 @@ struct GalaxySSIHealthReportItemEditor: View {
       value: parsed, diastolic: metric == .bloodPressure ? decimal(lower) : nil,
       unitOverride: unit, reportSource: source)
     do {
-      try records.stageReportItem(.init(version: UUID(), source: source, excerpt: excerpt, reading: reading),
-                                  replacing: existing?.version)
+      if let source {
+        try records.stageReportItem(.init(version: UUID(), source: source, excerpt: excerpt, reading: reading),
+                                    replacing: existing?.version)
+      } else {
+        try records.write(reading)
+      }
       dismiss()
     } catch { failed = true }
   }

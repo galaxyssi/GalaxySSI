@@ -645,6 +645,7 @@
 "galaxyssi.health.import.saved" = "原件已存入健康原件库";
 "galaxyssi.health.import.retain" = "保留原始文件";
 "galaxyssi.health.import.photo_review" = "拍照并仅在本次审阅";
+"galaxyssi.health.report_review.save_without_original" = "仅保存测量";
 "galaxyssi.health.import.capture" = "拍摄";
 "galaxyssi.health.import.fill_light" = "补光";
 "galaxyssi.health.import.retention_default" = "使用健康隐私的默认设置";
