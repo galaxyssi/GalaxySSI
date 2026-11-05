@@ -11791,6 +11791,7 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     if object.string("scheme") == "signal", handleTeamObserverReply(appPayload, link: link, messageId: messageId) { return }
+    var recordedAuthenticatedProgress = false
     if object.string("scheme") == "signal", appPayload.string("type") == "agent_task_event",
        let link, link.paired, appPayload.string("client_route_id") == link.routes.clientRouteId,
        taskIdentityStore.matchesRegistered(payload: appPayload),
@@ -11818,6 +11819,12 @@ final class MessageCoordinator: ObservableObject {
           lastError = localizedReply("galaxyssi.agent.progress.save_failed", fallback: "Agent progress could not be saved.")
           return
         }
+      }
+      let status = AgentRemoteTaskStatusPolicy.normalize(appPayload.string("task_status").ifBlank(appPayload.string("status")))
+      if !status.isEmpty {
+        recordRemoteAgentTaskStatus(payload: appPayload, status: status, contactId: contact.id,
+          turnId: appPayload.string("turn_id"), authenticated: true)
+        recordedAuthenticatedProgress = true
       }
     }
     if let streamUpdate = AgentConnectorStreamUpdate(payload: appPayload) {
@@ -12011,16 +12018,13 @@ final class MessageCoordinator: ObservableObject {
       )
     }
     richOutputJson = richContentMaterializer.materialize(richOutputJson)
-    if !remoteTaskStatus.isEmpty {
+    if !remoteTaskStatus.isEmpty && !recordedAuthenticatedProgress {
       recordRemoteAgentTaskStatus(
         payload: appPayload,
         status: remoteTaskStatus,
         contactId: contactId,
         turnId: responseTurnId,
-        target: appPayload.string("agent_name")
-          .ifBlank(appPayload.string("provider"))
-          .ifBlank(appPayload.string("agent_id"))
-          .ifBlank("Agent")
+        authenticated: false
       )
     }
     let streamKey = AgentConnectorStreamUpdate.streamKey(
@@ -12241,7 +12245,7 @@ final class MessageCoordinator: ObservableObject {
     status: String,
     contactId: String,
     turnId: String,
-    target: String
+    authenticated: Bool
   ) {
     guard payload.string("type") == "agent_task_event" else { return }
     let taskId = payload.string("task_id")
@@ -12258,13 +12262,18 @@ final class MessageCoordinator: ObservableObject {
         .ifBlank(String(payload.int("time")))
     ) ?? Int64(Date().timeIntervalSince1970 * 1_000)
     let executionView = payload.dictionary("execution_view")
+    let target = payload.string("agent_name").ifBlank(payload.string("provider"))
+      .ifBlank(payload.string("agent_id")).ifBlank("Agent")
     let resolvedTarget = (executionView?.string("executor_label") ?? "")
       .ifBlank(executionView?.string("executor_id") ?? "")
       .ifBlank(target)
     let location = (executionView?.string("location_name") ?? "")
       .ifBlank(payload.string("desktop_name"))
       .ifBlank("Desktop")
-    let currentStep = payload.string("current_step")
+    let checkingOtherSources = authenticated && AgentConnectorResearchProgress.checkingSources(payload)
+    let currentStep = checkingOtherSources
+      ? localizedReply("galaxyssi.agent.progress.research.checking", fallback: "Checking other sources")
+      : payload.string("current_step")
     let advertisedCancellable: Bool
     if let value = executionView?["cancellable"] as? Bool {
       advertisedCancellable = value
@@ -12280,6 +12289,10 @@ final class MessageCoordinator: ObservableObject {
       .ifBlank(payload.string("content"))
       .ifBlank(payload.string("text"))
     let snapshotKey = "\(conversationId):\(taskId.ifBlank(turnId))"
+    let progressVersion = authenticated ? AgentConnectorResearchProgress.Version(payload) : nil
+    if let previous = remoteAgentTaskStatuses[snapshotKey]?.progressVersion {
+      guard let progressVersion, progressVersion >= previous else { return }
+    }
     let event = AgentRemoteTaskStatusEvent(
       status: status,
       currentStep: currentStep,
@@ -12307,7 +12320,9 @@ final class MessageCoordinator: ObservableObject {
       advertisedCancellable: advertisedCancellable,
       detail: detail,
       updatedAtMillis: updatedAtMillis,
-      history: history
+      history: history,
+      progressVersion: progressVersion,
+      checkingOtherSources: checkingOtherSources
     )
     if AgentRemoteTaskStatusPolicy.isTerminal(snapshot.status) {
       remoteAgentTaskStatuses.removeValue(forKey: snapshot.id)

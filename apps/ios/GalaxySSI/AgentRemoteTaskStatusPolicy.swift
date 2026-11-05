@@ -26,6 +26,8 @@ struct AgentRemoteTaskStatusSnapshot: Equatable, Identifiable {
   let detail: String
   let updatedAtMillis: Int64
   let history: [AgentRemoteTaskStatusEvent]
+  var progressVersion: AgentConnectorResearchProgress.Version? = nil
+  var checkingOtherSources = false
 
   var id: String {
     "\(conversationId):\(taskId.ifBlank(turnId))"

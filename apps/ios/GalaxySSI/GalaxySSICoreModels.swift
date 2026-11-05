@@ -649,6 +649,7 @@ struct DeliveryTraceEvent: Codable, Equatable, Identifiable {
   var id: UUID
   var stage: String
   var detail: String
+  var compactDetail: String? = nil
   var createdAt: Date
 
   init(id: UUID = UUID(), stage: String, detail: String = "", createdAt: Date = Date()) {
