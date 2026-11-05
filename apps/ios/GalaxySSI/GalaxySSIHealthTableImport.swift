@@ -81,6 +81,14 @@ enum GalaxySSIHealthTableImport {
     let inserted: Int
     var undone: Int?
     var linked: Int?
+    var sourceDigest: String?
+
+    static func original(for id: UUID, in batches: [Self]) -> Self? {
+      guard let entry = batches.first(where: { $0.id == id }) else { return nil }
+      if !entry.data.isEmpty { return entry }
+      guard let digest = entry.sourceDigest else { return nil }
+      return batches.first { !$0.data.isEmpty && GalaxySSIHealthTableImport.digest($0.data) == digest }
+    }
   }
 
   struct Table {

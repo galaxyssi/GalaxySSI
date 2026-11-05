@@ -39,10 +39,10 @@ internal enum class HealthAccessPurpose(val permission: HealthPrivacyOption? = n
     SAVE_WEEKLY_REPORT(HealthPrivacyOption.CONFIRMED_METRICS),
     HEALTH_ANALYSIS(HealthPrivacyOption.CONFIRMED_METRICS),
     HEALTH_ANALYSIS_ONLINE(HealthPrivacyOption.ONLINE_ANALYSIS),
-    SAVE_RECORDS, SAVE_ORIGINALS, GENERATE_BACKUP, DELETE_PROFILE
+    SAVE_RECORDS, SAVE_ORIGINALS, GENERATE_BACKUP, DELETE_PROFILE, DELETE_BLUETOOTH_HISTORY
 }
 internal enum class HealthAccessOutcome { STARTED, COMPLETE, FAILED, CANCELLED, BLOCKED }
-internal enum class HealthAccessSource { ALL, MANUAL, ORIGINAL }
+internal enum class HealthAccessSource { ALL, MANUAL, ORIGINAL, BLUETOOTH, HEALTH_CONNECT }
 internal enum class HealthAccessFormat { CSV, JSON, XLSX, ZIP, ORIGINAL, PDF, GHBACKUP }
 internal data class HealthAccessScope(
     val purpose: HealthAccessPurpose, val metrics: Set<HealthMetric> = emptySet(),
@@ -73,6 +73,8 @@ internal data class HealthAccessScope(
             HealthAccessPurpose.SAVE_ORIGINALS -> require(count != null && format in listOf(HealthAccessFormat.ZIP, HealthAccessFormat.ORIGINAL))
             HealthAccessPurpose.GENERATE_BACKUP -> require(count != null && format == HealthAccessFormat.GHBACKUP && fields.isEmpty())
             HealthAccessPurpose.DELETE_PROFILE -> require(count != null && drafts != null && basicCount != null && format == null)
+            HealthAccessPurpose.DELETE_BLUETOOTH_HISTORY -> require(metrics == setOf(HealthMetric.BLOOD_PRESSURE) &&
+                source == HealthAccessSource.BLUETOOTH && count != null && count > 0 && format == null)
         }
     }
     fun json() = JSONObject().put("purpose", purpose.name).put("metrics", JSONArray(metrics.map { it.name })).put("from", from)
@@ -92,7 +94,13 @@ internal data class HealthAccessScope(
                 j.optBoolean("reportRecords"), j.takeUnless { it.isNull("baselineFrom") }?.getLong("baselineFrom"), j.optString("destination"))
         }
         fun trend(purpose: HealthAccessPurpose, spec: HealthTrendSpec) = HealthAccessScope(purpose, setOf(spec.metric), spec.from, spec.until, spec.zone.id,
-            source = when { spec.source.manualOnly -> HealthAccessSource.MANUAL; spec.source.originalId.isNotEmpty() -> HealthAccessSource.ORIGINAL; else -> HealthAccessSource.ALL })
+            source = when {
+                spec.source.manualOnly -> HealthAccessSource.MANUAL
+                spec.source.originalId.isNotEmpty() -> HealthAccessSource.ORIGINAL
+                spec.source.bluetoothGroup.isNotEmpty() -> HealthAccessSource.BLUETOOTH
+                spec.source.platformOrigin.isNotEmpty() -> HealthAccessSource.HEALTH_CONNECT
+                else -> HealthAccessSource.ALL
+            })
         fun records(session: HealthRecordExportSession) = with(session.scope) {
             HealthAccessScope(HealthAccessPurpose.SAVE_RECORDS, metrics, from, until, zone, count = session.count,
                 source = if (originalId.isEmpty()) HealthAccessSource.ALL else HealthAccessSource.ORIGINAL,
