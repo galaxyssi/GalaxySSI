@@ -277,9 +277,15 @@ struct GalaxySSIHealthRecords {
   func prepareWeeklyExport(_ preview: GalaxySSIWeeklyHealthReport, includeRows: Bool) throws {
     var archive = try load()
     guard archive.weeklyReportAllowed == true else { throw Failure.permission }
-    let current = GalaxySSIWeeklyHealthReport(current: archive.current, interval: preview.interval,
-                                              metrics: preview.metrics, through: Date())
-    guard current.readings == preview.readings, !preview.readings.isEmpty else { throw Failure.stale }
+    let current: GalaxySSIWeeklyHealthReport?
+    if let evidence = preview.sleepEvidence {
+      guard archive.derivesOverview == true else { throw Failure.permission }
+      current = GalaxySSIWeeklyHealthReport(current: archive.current, sleepEvidence: evidence)
+    } else {
+      current = GalaxySSIWeeklyHealthReport(current: archive.current, interval: preview.interval,
+                                            metrics: preview.metrics, through: Date())
+    }
+    guard current?.readings == preview.readings, !preview.readings.isEmpty else { throw Failure.stale }
     var requests = archive.weeklyExportRequests ?? []
     requests.append(.init(at: Date(), interval: preview.interval, metrics: preview.metrics,
                           includeRows: includeRows, revisionCount: preview.readings.count))

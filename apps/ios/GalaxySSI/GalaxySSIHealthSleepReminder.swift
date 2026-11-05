@@ -38,6 +38,25 @@ enum GalaxySSIHealthSleepReminder {
 
     var decrease: Decimal { baselineMean - currentMean }
 
+    var windows: (baseline: DateInterval, recent: DateInterval, calendar: Calendar)? {
+      guard days.count == 21, let zone = TimeZone(identifier: self.zone) else { return nil }
+      var calendar = Calendar(identifier: .gregorian)
+      calendar.timeZone = zone
+      guard calendar.startOfDay(for: day) == day,
+            days.enumerated().allSatisfy({ index, saved in
+              calendar.date(byAdding: .day, value: index - 21, to: day) == saved.date
+            }) else { return nil }
+      return (.init(start: days[0].date, end: days[14].date), .init(start: days[14].date, end: day), calendar)
+    }
+
+    func contributors(_ current: [GalaxySSIHealthReading], baseline: Bool) -> [GalaxySSIHealthReading]? {
+      guard let windows, rule == GalaxySSIHealthSleepReminder.ruleVersion,
+            let verified = GalaxySSIHealthSleepReminder.evidence(current, at: day, calendar: windows.calendar,
+                                                                threshold: threshold),
+            matches(verified), baselineMean == verified.baselineMean, currentMean == verified.currentMean else { return nil }
+      return GalaxySSIHealthSleepReminder.sleepReadings(current, in: baseline ? windows.baseline : windows.recent)
+    }
+
     func matches(_ other: Self) -> Bool {
       day == other.day && zone == other.zone && rule == other.rule && threshold == other.threshold &&
         revisions == other.revisions && days == other.days
@@ -95,10 +114,7 @@ enum GalaxySSIHealthSleepReminder {
     let today = calendar.startOfDay(for: now)
     let dates = (1...21).reversed().compactMap { calendar.date(byAdding: .day, value: -$0, to: today) }
     guard dates.count == 21, let start = dates.first else { return nil }
-    let usable = current.filter {
-      !$0.deleted && $0.metric == .sleepDuration && $0.measuredAt >= start && $0.measuredAt < today &&
-        ($0.unit == "h" || $0.unit == "min") && $0.isValid
-    }
+    let usable = sleepReadings(current, in: DateInterval(start: start, end: today))
     let grouped = Dictionary(grouping: usable) { calendar.startOfDay(for: $0.measuredAt) }
     let days = dates.map { date in
       let values = (grouped[date] ?? []).compactMap { reading in
@@ -112,6 +128,13 @@ enum GalaxySSIHealthSleepReminder {
     return Evidence(day: today, calculatedAt: now, zone: calendar.timeZone.identifier, rule: ruleVersion,
       threshold: threshold, revisions: usable.map { "\($0.id):\($0.revision)" }.sorted(), days: days,
       baselineMean: before, currentMean: after)
+  }
+
+  private static func sleepReadings(_ current: [GalaxySSIHealthReading], in interval: DateInterval) -> [GalaxySSIHealthReading] {
+    current.filter {
+      !$0.deleted && $0.metric == .sleepDuration && $0.measuredAt >= interval.start &&
+        $0.measuredAt < interval.end && ($0.unit == "h" || $0.unit == "min") && $0.isValid
+    }
   }
 
   private static func mean(_ values: [Decimal]) -> Decimal? {
