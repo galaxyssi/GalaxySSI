@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum GalaxySSIHealthMeasurementExport {
-  enum Format: String, CaseIterable, Identifiable {
+  enum Format: String, CaseIterable, Identifiable, Codable {
     case csv, json, xlsx
     var id: String { rawValue }
     var contentType: UTType {
@@ -12,6 +12,16 @@ enum GalaxySSIHealthMeasurementExport {
       case .xlsx: return UTType(filenameExtension: "xlsx") ?? .spreadsheet
       }
     }
+  }
+
+  struct Receipt: Codable, Identifiable {
+    enum Status: String, Codable { case prepared, verified, unverified }
+    let id: UUID
+    let at: Date
+    let format: Format
+    let rows: Int
+    let includesOriginals: Bool
+    var status: Status
   }
 
   struct Scope: Equatable {
@@ -90,6 +100,7 @@ struct GalaxySSIHealthMeasurementExportView: View {
   @State private var failure = false
   @State private var originals = GalaxySSIHealthLinkedExport.Choices()
   @State private var pendingExport: GalaxySSIHealthOriginalStore.ScopedExport?
+  @State private var pendingReceipt: UUID?
   @State private var verifying = false
   @State private var saved = false
   @State private var manifestLimit = 30
@@ -159,6 +170,8 @@ struct GalaxySSIHealthMeasurementExportView: View {
       document = nil
       guard let proof = pendingExport else { return }
       pendingExport = nil
+      let receipt = pendingReceipt
+      pendingReceipt = nil
       proof.discard()
       if case .success(let url) = result {
         verifying = true
@@ -166,11 +179,15 @@ struct GalaxySSIHealthMeasurementExportView: View {
           let match = await Task.detached(priority: .utility) {
             (try? GalaxySSIHealthOriginalStore.verifyDestination(url, bytes: proof.bytes, sha256: proof.sha256)) == true
           }.value
+          let recorded = completeReceipt(receipt, verified: match)
           verifying = false
           saved = match
-          failure = !match
+          failure = !match || !recorded
         }
-      } else { failure = true }
+      } else {
+        _ = completeReceipt(receipt, verified: false)
+        failure = true
+      }
     }
     .onChange(of: exporting) { if !$0 { document = nil } }
     .onDisappear { if !exporting { discardPendingExport() } }
@@ -227,6 +244,13 @@ struct GalaxySSIHealthMeasurementExportView: View {
         type = .zip
       } else { data = recordsData; type = snapshot.format.contentType }
       let artifact = try originalStore.stageScopedExport(data)
+      do {
+        pendingReceipt = try records.beginMeasurementExport(format: snapshot.format, rows: live.count,
+                                                           includesOriginals: snapshot.originals.enabled)
+      } catch {
+        artifact.discard()
+        throw error
+      }
       pendingExport = artifact
       document = HealthMeasurementDocument(artifact: artifact, type: type)
       exporting = true
@@ -250,6 +274,14 @@ struct GalaxySSIHealthMeasurementExportView: View {
   private func discardPendingExport() {
     pendingExport?.discard()
     pendingExport = nil
+    _ = completeReceipt(pendingReceipt, verified: false)
+    pendingReceipt = nil
+  }
+
+  private func completeReceipt(_ id: UUID?, verified: Bool) -> Bool {
+    guard let id else { return true }
+    do { try records.finishMeasurementExport(id, verified: verified); return true }
+    catch { return false }
   }
 
   private func confirmationText(_ snapshot: Snapshot) -> String {

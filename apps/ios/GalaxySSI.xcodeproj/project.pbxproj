@@ -150,6 +150,8 @@
     A10000000000000000001434 /* GalaxySSISettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001434 /* GalaxySSISettingsView.swift */; };
     A10000000000000000009801 /* GalaxySSIHealthRecords.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009801 /* GalaxySSIHealthRecords.swift */; };
     A10000000000000000009802 /* GalaxySSIHealthCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009802 /* GalaxySSIHealthCenterView.swift */; };
+    A10000000000000000009890 /* GalaxySSIHealthDataFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009890 /* GalaxySSIHealthDataFiles.swift */; };
+    A10000000000000000009891 /* GalaxySSIHealthDataFilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009891 /* GalaxySSIHealthDataFilesView.swift */; };
     E38680000000000000000001 /* GalaxySSIHealthMetricDeletion.swift in Sources */ = {isa = PBXBuildFile; fileRef = E38680000000000000000002 /* GalaxySSIHealthMetricDeletion.swift */; };
     E38900000000000000000001 /* GalaxySSIHealthRecordCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E38900000000000000000002 /* GalaxySSIHealthRecordCenterView.swift */; };
     A10000000000000000009831 /* GalaxySSIHealthKitImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009831 /* GalaxySSIHealthKitImport.swift */; };
@@ -1309,6 +1311,8 @@
     A20000000000000000001434 /* GalaxySSISettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSISettingsView.swift; sourceTree = "<group>"; };
     A20000000000000000009801 /* GalaxySSIHealthRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthRecords.swift; sourceTree = "<group>"; };
     A20000000000000000009802 /* GalaxySSIHealthCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCenterView.swift; sourceTree = "<group>"; };
+    A20000000000000000009890 /* GalaxySSIHealthDataFiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthDataFiles.swift; sourceTree = "<group>"; };
+    A20000000000000000009891 /* GalaxySSIHealthDataFilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthDataFilesView.swift; sourceTree = "<group>"; };
     E38680000000000000000002 /* GalaxySSIHealthMetricDeletion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMetricDeletion.swift; sourceTree = "<group>"; };
     E38900000000000000000002 /* GalaxySSIHealthRecordCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthRecordCenterView.swift; sourceTree = "<group>"; };
     A20000000000000000009831 /* GalaxySSIHealthKitImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthKitImport.swift; sourceTree = "<group>"; };
@@ -3041,6 +3045,8 @@
         A20000000000000000001434 /* GalaxySSISettingsView.swift */,
         A20000000000000000009801 /* GalaxySSIHealthRecords.swift */,
         A20000000000000000009802 /* GalaxySSIHealthCenterView.swift */,
+        A20000000000000000009890 /* GalaxySSIHealthDataFiles.swift */,
+        A20000000000000000009891 /* GalaxySSIHealthDataFilesView.swift */,
         E38680000000000000000002 /* GalaxySSIHealthMetricDeletion.swift */,
         E38900000000000000000002 /* GalaxySSIHealthRecordCenterView.swift */,
         A20000000000000000009831 /* GalaxySSIHealthKitImport.swift */,
@@ -4339,6 +4345,8 @@
         A10000000000000000001434 /* GalaxySSISettingsView.swift in Sources */,
         A10000000000000000009801 /* GalaxySSIHealthRecords.swift in Sources */,
         A10000000000000000009802 /* GalaxySSIHealthCenterView.swift in Sources */,
+        A10000000000000000009890 /* GalaxySSIHealthDataFiles.swift in Sources */,
+        A10000000000000000009891 /* GalaxySSIHealthDataFilesView.swift in Sources */,
         E38680000000000000000001 /* GalaxySSIHealthMetricDeletion.swift in Sources */,
         E38900000000000000000001 /* GalaxySSIHealthRecordCenterView.swift in Sources */,
         A10000000000000000009831 /* GalaxySSIHealthKitImport.swift in Sources */,
