@@ -50,6 +50,11 @@
 "galaxyssi.health.originals.error" = "无法完成操作。请检查文件或减少选中的原件。";
 "galaxyssi.health.originals.retry" = "重新加载原件";
 "galaxyssi.health.originals.plain_zip" = "将所选原件保存为未加密的 ZIP？";
+"galaxyssi.health.originals.plain_original" = "保存此原件的未加密副本？";
+"galaxyssi.health.originals.save_original" = "保存原件";
+"galaxyssi.health.originals.verifying_destination" = "正在校验保存的文件";
+"galaxyssi.health.originals.file_save_history" = "文件保存历史";
+"galaxyssi.health.originals.single_save_history" = "单个原件保存记录";
 "galaxyssi.health.originals.save" = "选择保存位置";
 "galaxyssi.health.originals.selected_count" = "已选择 %lld 份原件";
 "galaxyssi.health.originals.remove_confirm" = "移除此原件？";

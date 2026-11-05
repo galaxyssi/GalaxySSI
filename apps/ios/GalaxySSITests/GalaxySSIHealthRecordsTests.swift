@@ -642,6 +642,47 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testSingleOriginalSaveChecksExactBytesAndRejectsReimportedSource() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: HealthFixtureSecrets(), fixtureDirectory: root)
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData { $0.beginPage() }
+    try store.store(pdf, name: "private.pdf")
+    let source = try XCTUnwrap(store.list().originals.first)
+    let output = root.appendingPathComponent("destination.pdf")
+    let bytes = try store.read(source)
+    XCTAssertEqual(bytes, pdf)
+    XCTAssertTrue(try store.singleSaveHistory().isEmpty)
+    try bytes.write(to: output)
+    let matched = try GalaxySSIHealthOriginalStore.verifyDestination(output, bytes: source.bytes, sha256: source.sha256)
+    XCTAssertTrue(matched)
+    XCTAssertTrue(try store.finishSingleSave(source, destinationVerified: matched))
+
+    var tampered = bytes
+    tampered[tampered.count - 1] ^= 1
+    try tampered.write(to: output)
+    let corrupted = try GalaxySSIHealthOriginalStore.verifyDestination(output, bytes: source.bytes, sha256: source.sha256)
+    XCTAssertFalse(corrupted)
+    XCTAssertFalse(try store.finishSingleSave(source, destinationVerified: corrupted))
+
+    try store.remove(source)
+    try store.store(pdf, name: source.name)
+    XCTAssertThrowsError(try store.read(source))
+    XCTAssertFalse(try store.finishSingleSave(source, destinationVerified: matched))
+    let history = try store.singleSaveHistory()
+    XCTAssertEqual(history.map(\.verified), [false, false, true])
+    let receipt = try XCTUnwrap(history.first)
+    let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(receipt)) as? [String: Any])
+    XCTAssertEqual(Set(fields.keys), Set(["at", "kind", "bytes", "verified"]))
+    let audit = root.appendingPathComponent("single-save-v1")
+    var sealed = try Data(contentsOf: audit)
+    sealed[sealed.count - 1] ^= 1
+    try sealed.write(to: audit)
+    XCTAssertThrowsError(try store.singleSaveHistory())
+  }
+
+  @MainActor
   func testHealthReportPDFReadsNativePageAndKeepsPageBounds() throws {
     let data = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 240, height: 200)).pdfData { context in
       context.beginPage()
