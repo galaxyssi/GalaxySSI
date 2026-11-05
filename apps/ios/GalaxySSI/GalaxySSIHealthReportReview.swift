@@ -16,6 +16,16 @@ enum GalaxySSIHealthReportReview {
     let source: Source
     let excerpt: String
     let reading: GalaxySSIHealthReading
+    var stagedAt: Date?
+
+    var requiresUnitReview: Bool { reading.metric.form == .laboratory && reading.unitOverride == "" }
+
+    var validDraftValue: Bool {
+      guard requiresUnitReview else { return reading.isValid }
+      var draft = reading
+      draft.unitOverride = draft.metric.unit
+      return draft.isValid
+    }
   }
 
   struct Target: Codable, Hashable {
@@ -30,6 +40,7 @@ enum GalaxySSIHealthReportReview {
   }
 
   static func exactTarget(for item: Item, current: [GalaxySSIHealthReading]) -> Target? {
+    guard !item.requiresUnitReview, item.reading.isValid else { return nil }
     let matches = current.filter { !$0.deleted && $0.revision > 0 &&
       $0.measuredAt == item.reading.measuredAt && $0.sameMeasurement(as: item.reading) }
     guard matches.count == 1, let match = matches.first else { return nil }
@@ -194,6 +205,7 @@ struct GalaxySSIHealthReportItemEditor: View {
   @State private var unit = ""
   @State private var value = ""
   @State private var lower = ""
+  @State private var reference = ""
   @State private var date = Date()
   @State private var dateConfirmed = false
   @State private var ownership = false
@@ -204,18 +216,32 @@ struct GalaxySSIHealthReportItemEditor: View {
       if scene == .active {
         Text(excerpt)
         GalaxySSIHealthOCRSourceContextRows(context: sourceContext, apply: applySourceTime)
-        Picker(t("metric", "Measurement"), selection: $metric) {
+        Picker(t("metric", "Measurement"), selection: Binding(get: { metric }, set: { selected in
+          guard metric != selected else { return }
+          metric = selected
+          unit = ""; value = ""; lower = ""; reference = ""
+        })) {
           Text(t("choose", "Choose")).tag(nil as GalaxySSIHealthMetric?)
           ForEach(GalaxySSIHealthMetric.allCases.filter { !$0.units.isEmpty }) { item in
             Text(item.title(language: language)).tag(Optional(item))
           }
         }
         if let metric {
-          Picker(t("unit", "Unit"), selection: $unit) {
-            Text(t("choose", "Choose")).tag("")
-            ForEach(metric.units, id: \.self) { Text($0).tag($0) }
+          if metric.form != .qualitative {
+            Picker(t("unit", "Unit"), selection: $unit) {
+              Text(t("choose", "Choose")).tag("")
+              ForEach(metric.units, id: \.self) { Text($0).tag($0) }
+            }
           }
-          TextField(t("value", "Verified value"), text: $value).keyboardType(.numbersAndPunctuation)
+          TextField(t("value", "Verified value"), text: $value)
+            .keyboardType(metric.laboratory ? .default : .numbersAndPunctuation)
+          if metric.laboratory {
+            TextField(t("reference", "Reference interval (optional)"), text: $reference)
+            if metric.form == .laboratory && unit.isEmpty {
+              Text(t("unit_required", "Choose a verified unit before confirming this measurement."))
+                .foregroundColor(.secondary)
+            }
+          }
           if metric == .bloodPressure {
             TextField(t("diastolic", "Verified diastolic value"), text: $lower).keyboardType(.decimalPad)
           }
@@ -224,7 +250,8 @@ struct GalaxySSIHealthReportItemEditor: View {
         Toggle(t("time_confirm", "I verified the measurement time"), isOn: $dateConfirmed)
         Toggle(t("owner", "This measurement belongs to me"), isOn: $ownership)
         Button(t("stage", "Save reviewed item to draft"), action: stage)
-          .disabled(!dateConfirmed || !ownership || metric == nil || unit.isEmpty || value.isEmpty)
+          .disabled(!dateConfirmed || !ownership || metric == nil || value.isEmpty ||
+                    (metric?.laboratory != true && unit.isEmpty))
         if failed { Text(t("error", "Could not save. Check values or reopen the review.")).foregroundColor(.secondary) }
       }
     }
@@ -247,19 +274,33 @@ struct GalaxySSIHealthReportItemEditor: View {
       if let reading = existing?.reading {
         metric = reading.metric
         unit = reading.unit
-        value = reading.value?.formatted(.number.locale(locale).grouping(.never)) ?? ""
+        value = reading.reported?.raw ?? reading.reportedNotation ??
+          reading.value?.formatted(.number.locale(locale).grouping(.never)) ?? ""
         lower = reading.diastolic?.formatted(.number.locale(locale).grouping(.never)) ?? ""
+        reference = reading.referenceInterval ?? ""
         date = reading.measuredAt
+      } else if let row = GalaxySSIHealthOCRLabRow.parse(excerpt) {
+        metric = row.metric
+        unit = row.unit ?? ""
+        value = row.notation
+        reference = row.reference ?? ""
       }
     } catch { failed = true }
   }
 
   private func stage() {
-    guard scene == .active, dateConfirmed, ownership, let metric, metric.units.contains(unit),
-          let parsed = decimal(value), date <= Date() else { failed = true; return }
+    guard scene == .active, dateConfirmed, ownership, let metric, date <= Date(),
+          metric.units.contains(unit) || (metric.form == .laboratory && unit.isEmpty) else { failed = true; return }
+    let raw = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    let typed = metric.laboratory ? GalaxySSIHealthReportedResult.parse(raw, metric: metric) : nil
+    if let typed, (typed.kind == .qualitative) != (metric.form == .qualitative) { failed = true; return }
+    let parsed = typed == nil ? (metric.laboratory ? GalaxySSIHealthReportedResult.number(raw) : decimal(raw)) : nil
+    guard typed != nil || parsed != nil else { failed = true; return }
+    let interval = reference.trimmingCharacters(in: .whitespacesAndNewlines)
     let reading = GalaxySSIHealthReading(id: existing?.reading.id ?? UUID(), metric: metric, measuredAt: date,
       value: parsed, diastolic: metric == .bloodPressure ? decimal(lower) : nil,
-      unitOverride: unit, reportSource: source)
+      reported: typed, reportedNotation: metric.laboratory ? raw : nil, unitOverride: unit,
+      referenceInterval: metric.laboratory && !interval.isEmpty ? interval : nil, reportSource: source)
     do {
       try records.stageReportItem(.init(version: UUID(), source: source, excerpt: excerpt, reading: reading),
                                   replacing: existing?.version)
@@ -303,19 +344,24 @@ struct GalaxySSIHealthReportBatchView: View {
         if items.isEmpty { Text(t("empty", "No reviewed measurements to save.")) }
         ForEach(items) { item in
           let duplicate = duplicateTargets[item.version] != nil
-          Toggle(isOn: Binding(get: { duplicate ? linkedSelection.contains(item.version) : selected.contains(item.version) }, set: { enabled in
-            if duplicate {
-              if enabled { linkedSelection.insert(item.version) } else { linkedSelection.remove(item.version) }
+          Group {
+            if item.requiresUnitReview {
+              NavigationLink {
+                GalaxySSIHealthReportItemEditor(records: records, source: item.source, excerpt: item.excerpt,
+                                               sourceContext: .init())
+              } label: {
+                itemSummary(item, duplicate: false)
+              }
             } else {
-              if enabled { selected.insert(item.version) } else { selected.remove(item.version) }
-            }
-          })) {
-            VStack(alignment: .leading, spacing: 4) {
-              Text(item.reading.metric.title(language: language))
-              Text((item.reading.value?.formatted() ?? "") + " " + item.reading.unit)
-              Text(item.reading.measuredAt, format: .dateTime).foregroundColor(.secondary)
-              Text(item.excerpt).lineLimit(2).foregroundColor(.secondary)
-              if duplicate { Text(t("duplicate_link", "Link to existing measurement")).foregroundColor(.secondary) }
+              Toggle(isOn: Binding(
+                get: { duplicate ? linkedSelection.contains(item.version) : selected.contains(item.version) },
+                set: { enabled in
+                  if duplicate {
+                    if enabled { linkedSelection.insert(item.version) } else { linkedSelection.remove(item.version) }
+                  } else {
+                    if enabled { selected.insert(item.version) } else { selected.remove(item.version) }
+                  }
+                })) { itemSummary(item, duplicate: duplicate) }
             }
           }
           .swipeActions {
@@ -343,6 +389,9 @@ struct GalaxySSIHealthReportBatchView: View {
     .navigationTitle(t("batch", "Reviewed measurements"))
     .navigationBarTitleDisplayMode(.inline)
     .onAppear(perform: reload)
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.reviewInputsChanged)) {
+      if $0.object as? String == records.owner { reload() }
+    }
     .onChange(of: scene) {
       if $0 == .active { reload() }
       else {
@@ -361,6 +410,23 @@ struct GalaxySSIHealthReportBatchView: View {
     }
   }
 
+  private func itemSummary(_ item: GalaxySSIHealthReportReview.Item, duplicate: Bool) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      let reading = item.reading
+      Text(reading.metric.title(language: language))
+      let notation = reading.reported?.raw ?? reading.reportedNotation ?? reading.value?.formatted() ?? ""
+      Text(reading.unit.isEmpty ? notation : notation + " " + reading.unit)
+      if let reference = reading.referenceInterval, !reference.isEmpty {
+        Text(t("reference_label", "Reference interval") + ": " + reference).foregroundColor(.secondary)
+      }
+      Text(reading.measuredAt, format: .dateTime).foregroundColor(.secondary)
+      Text(item.excerpt).lineLimit(2).foregroundColor(.secondary)
+      if item.requiresUnitReview { Text(t("unit_required", "Choose a verified unit before confirming this measurement."))
+        .foregroundColor(.secondary) }
+      if duplicate { Text(t("duplicate_link", "Link to existing measurement")).foregroundColor(.secondary) }
+    }
+  }
+
   private func reload() {
     guard scene == .active else { return }
     do {
@@ -374,7 +440,7 @@ struct GalaxySSIHealthReportBatchView: View {
       })
       linkedSelection = linkedSelection.filter { fresh[$0] != nil && fresh[$0] == duplicateTargets[$0] }
       duplicateTargets = fresh
-      selected.formIntersection(items.map(\.version).filter { fresh[$0] == nil })
+      selected.formIntersection(items.filter { !$0.requiresUnitReview && fresh[$0.version] == nil }.map(\.version))
     } catch { items = []; selected = []; duplicateTargets = [:]; linkedSelection = []; failed = true }
   }
 

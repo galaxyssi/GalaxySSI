@@ -118,7 +118,7 @@ struct GalaxySSIHealthReportedResult: Codable, Equatable {
   var upper: Decimal?
   var comparator: String?
 
-  static func parse(_ input: String, metric: GalaxySSIHealthMetric) -> Self? {
+  static func parse(_ input: String, metric: GalaxySSIHealthMetric, allowFreeformQualitative: Bool = true) -> Self? {
     let raw = input.trimmingCharacters(in: .whitespacesAndNewlines)
     guard metric.laboratory, !raw.isEmpty, raw.utf8.count <= 128,
           !raw.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { return nil }
@@ -129,12 +129,13 @@ struct GalaxySSIHealthReportedResult: Codable, Equatable {
                    "\u{9634}\u{6027}", "\u{9633}\u{6027}", "\u{5F31}\u{9633}\u{6027}", "\u{53EF}\u{7591}",
                    "\u{672A}\u{68C0}\u{51FA}", "\u{68C0}\u{51FA}"]
     if grade || allowed.contains(normalized) ||
-        (metric.form == .qualitative && raw.contains(where: \.isLetter) &&
+        (allowFreeformQualitative && metric.form == .qualitative && raw.contains(where: \.isLetter) &&
           !raw.hasPrefix("=") && !raw.contains("<") && !raw.contains(">")) {
       return Self(kind: .qualitative, raw: raw, canonical: "label:" + normalized)
     }
     guard metric.form == .laboratory else { return nil }
-    for (prefix, op) in [("<=", "<="), (">=", ">="), ("\u{2264}", "<="), ("\u{2265}", ">="), ("<", "<"), (">", ">")]
+    for (prefix, op) in [("<=", "<="), (">=", ">="), ("\u{2264}", "<="), ("\u{2265}", ">="),
+                         ("\u{FF1C}", "<"), ("\u{FF1E}", ">"), ("<", "<"), (">", ">")]
       where raw.hasPrefix(prefix) {
       guard let value = number(String(raw.dropFirst(prefix.count))) else { return nil }
       return Self(kind: .comparison, raw: raw, canonical: op + exact(value), lower: value, comparator: op)
@@ -142,6 +143,7 @@ struct GalaxySSIHealthReportedResult: Codable, Equatable {
     let range = raw.replacingOccurrences(of: " to ", with: "-", options: .caseInsensitive)
       .replacingOccurrences(of: "\u{2013}", with: "-").replacingOccurrences(of: "\u{2014}", with: "-")
       .replacingOccurrences(of: "~", with: "-").replacingOccurrences(of: "\u{301C}", with: "-")
+      .replacingOccurrences(of: "\u{FF5E}", with: "-").replacingOccurrences(of: "\u{81F3}", with: "-")
     let parts = range.split(separator: "-", omittingEmptySubsequences: false)
     guard parts.count == 2, let low = number(String(parts[0])), let high = number(String(parts[1])), low <= high
     else { return nil }

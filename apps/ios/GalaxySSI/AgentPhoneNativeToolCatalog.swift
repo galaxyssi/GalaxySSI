@@ -169,7 +169,8 @@ enum AgentPhoneNativeToolCatalog {
     mcpProvider: AgentIOSMcpNativeToolProviding = AgentIOSUnavailableMcpNativeToolProvider(),
     mcpPackageRootURL: URL? = nil,
     mcpAuditStore: AgentMcpAuditStore = InMemoryAgentMcpAuditStore(),
-    onDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProviding = AgentIOSUnavailableOnDeviceRuntimeToolProvider()
+    onDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProviding = AgentIOSUnavailableOnDeviceRuntimeToolProvider(),
+    voiceReminderTool: AgentNativeToolExecutableDefinition? = nil
   ) throws -> AgentNativeToolRegistry {
     let registry = try AgentNativeToolRegistry(
       replayStore: replayStore,
@@ -224,7 +225,8 @@ enum AgentPhoneNativeToolCatalog {
       onDeviceRuntimeExecutableDefinitions(provider: resolvedOnDeviceRuntimeProvider) +
       projectRepositoryReadExecutableDefinitions(runtimeProvider: resolvedOnDeviceRuntimeProvider) +
       projectRepositoryMutationExecutableDefinitions(runtimeProvider: resolvedOnDeviceRuntimeProvider) +
-      AgentSystemEvidenceNativeToolCatalog.executableDefinitions(nowMillis: nowMillis)
+      AgentSystemEvidenceNativeToolCatalog.executableDefinitions(nowMillis: nowMillis) +
+      (voiceReminderTool.map { [$0] } ?? [])
     return try registry.registerExecutables(executables)
   }
 

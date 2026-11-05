@@ -43,7 +43,8 @@ extension AgentPhoneNativeToolCatalog {
     selfEvolutionProvider: AgentIOSSelfEvolutionToolProviding = AgentIOSUnavailableSelfEvolutionToolProvider(),
     desktopRemoteProvider: AgentIOSDesktopRemoteToolProviding = AgentIOSUnavailableDesktopRemoteToolProvider(),
     mcpProvider: AgentIOSMcpNativeToolProviding = AgentIOSUnavailableMcpNativeToolProvider(),
-    onDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProviding = AgentIOSUnavailableOnDeviceRuntimeToolProvider()
+    onDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProviding = AgentIOSUnavailableOnDeviceRuntimeToolProvider(),
+    voiceReminderTool: AgentNativeToolExecutableDefinition? = nil
   ) throws -> AgentPhoneNativeToolRuntime {
     let registry = try defaultRegistry(
       workspaceStore: workspaceStore,
@@ -63,7 +64,8 @@ extension AgentPhoneNativeToolCatalog {
       selfEvolutionProvider: selfEvolutionProvider,
       desktopRemoteProvider: desktopRemoteProvider,
       mcpProvider: mcpProvider,
-      onDeviceRuntimeProvider: onDeviceRuntimeProvider
+      onDeviceRuntimeProvider: onDeviceRuntimeProvider,
+      voiceReminderTool: voiceReminderTool
     )
     let nativeActionExecutor = AgentNativeToolActionExecutor(
       registry: registry,
@@ -118,7 +120,8 @@ extension AgentPhoneNativeToolCatalog {
     selfEvolutionProvider: AgentIOSSelfEvolutionToolProviding = AgentIOSUnavailableSelfEvolutionToolProvider(),
     desktopRemoteProvider: AgentIOSDesktopRemoteToolProviding = AgentIOSUnavailableDesktopRemoteToolProvider(),
     mcpProvider: AgentIOSMcpNativeToolProviding = AgentIOSUnavailableMcpNativeToolProvider(),
-    onDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProviding = AgentIOSUnavailableOnDeviceRuntimeToolProvider()
+    onDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProviding = AgentIOSUnavailableOnDeviceRuntimeToolProvider(),
+    voiceReminderTool: AgentNativeToolExecutableDefinition? = nil
   ) throws -> AgentNativeToolRegistry {
     let stores = AgentNativeToolDefaultStores.makePersistentStores(
       rootURL: storageRootURL,
@@ -167,7 +170,8 @@ extension AgentPhoneNativeToolCatalog {
         fileURL: AgentIOSMcpClientNativeProvider.defaultAuditFileURL(storageRootURL: storageRootURL),
         fileManager: fileManager
       ),
-      onDeviceRuntimeProvider: resolvedOnDeviceRuntimeProvider
+      onDeviceRuntimeProvider: resolvedOnDeviceRuntimeProvider,
+      voiceReminderTool: voiceReminderTool
     )
   }
 

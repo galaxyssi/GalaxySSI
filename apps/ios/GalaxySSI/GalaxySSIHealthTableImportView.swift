@@ -10,6 +10,11 @@ struct GalaxySSIHealthTableImportView: View {
   @State private var localRetentionChoice = GalaxySSIHealthImportRetentionChoice.useDefault
   @State private var retentionDefault: Bool?
   @State private var fileRetention: Bool?
+  var resumeReviewID: UUID?
+  var resumeReviewVersion: UUID?
+  @State private var pendingReviews: [GalaxySSIHealthReviewReminders.TableDraft] = []
+  @State private var openedReview: GalaxySSIHealthReviewReminders.TableDraft?
+  @State private var initialRouteOpened = false
   @State private var choosing = false
   @State private var input: Input?
   @State private var mapping = GalaxySSIHealthTableImport.Mapping()
@@ -59,6 +64,22 @@ struct GalaxySSIHealthTableImportView: View {
         if let input {
           mappingSection(input)
           if let rows { review(rows) }
+          if rows != nil {
+            Button(t("save_review_draft", "Save encrypted review draft")) { saveReviewDraft(input) }
+              .disabled(openedReview == nil && pendingReviews.count >= GalaxySSIHealthReviewReminders.maximumTableDrafts)
+          }
+        } else if !pendingReviews.isEmpty {
+          Section(t("resume_review_draft", "Saved table reviews")) {
+            ForEach(pendingReviews) { draft in
+              Button { resume(draft) } label: { Label(draft.name, systemImage: "tablecells") }
+                .swipeActions(allowsFullSwipe: false) {
+                  Button(t("discard_review_draft", "Discard saved table review"), role: .destructive) {
+                    do { try records.discardTableReview(draft); reload() }
+                    catch { message = t("save_failed", "Could not save this batch. Review the rows again.") }
+                  }
+                }
+            }
+          }
         }
         if let message { Text(message).foregroundColor(.secondary) }
         if !batches.isEmpty {
@@ -92,10 +113,10 @@ struct GalaxySSIHealthTableImportView: View {
       if phase == .active { reload() }
       else if phase == .background {
         choosing = false; fileRetention = nil
-        clear(); batches = []; undo = nil; original = nil; message = nil
+        clear(); batches = []; pendingReviews = []; undo = nil; original = nil; message = nil
       }
     }
-    .onDisappear { clear(); batches = []; undo = nil; message = nil }
+    .onDisappear { clear(); batches = []; pendingReviews = []; undo = nil; message = nil }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { notification in
       if scene == .active, notification.object as? String == records.owner {
         retentionDefault = (try? records.load())?.keepsNewImportOriginals
@@ -282,15 +303,50 @@ struct GalaxySSIHealthTableImportView: View {
     let file = try FileHandle(forReadingFrom: url)
     defer { try? file.close() }
     let data = try file.read(upToCount: GalaxySSIHealthTableImport.maximumBytes + 1) ?? Data()
-    if url.pathExtension.lowercased() == "xlsx" {
+    try openData(data, name: url.lastPathComponent, retainOriginal: retainOriginal)
+  }
+
+  private func openData(_ data: Data, name: String, retainOriginal: Bool) throws {
+    let ext = URL(fileURLWithPath: name).pathExtension.lowercased()
+    if ext == "xlsx" {
       let contents = try GalaxySSIHealthXLSX(data)
-      workbook = WorkbookInput(name: url.lastPathComponent, data: data, contents: contents, retainOriginal: retainOriginal)
+      workbook = WorkbookInput(name: name, data: data, contents: contents, retainOriginal: retainOriginal)
       if let first = contents.sheets.first { selectSheet(first.id) }
       return
     }
-    let json = url.pathExtension.lowercased() == "json"
-    input = Input(name: url.lastPathComponent, data: data, json: json,
+    let json = ext == "json"
+    input = Input(name: name, data: data, json: json,
                   table: try GalaxySSIHealthTableImport.parse(data, json: json), retainOriginal: retainOriginal)
+  }
+
+  private func saveReviewDraft(_ input: Input) {
+    guard scene == .active, rows != nil else { return }
+    do {
+      let draft = GalaxySSIHealthReviewReminders.TableDraft(id: openedReview?.id ?? UUID(),
+        name: String(input.name.prefix(180)), at: Date(), data: input.data,
+        mapping: mapping, worksheet: input.worksheet, retainOriginal: input.retainOriginal)
+      try records.saveTableReview(draft, replacing: openedReview?.version)
+      openedReview = draft
+      reload()
+      message = t("review_draft_saved", "Encrypted review draft saved")
+    } catch { message = t("save_failed", "Could not save this batch. Review the rows again.") }
+  }
+
+  private func resume(_ draft: GalaxySSIHealthReviewReminders.TableDraft) {
+    clear()
+    do {
+      guard let fresh = try records.load().tableReviews?.first(where: { $0.id == draft.id && $0.version == draft.version })
+      else { throw GalaxySSIHealthRecords.Failure.stale }
+      try openData(fresh.data, name: fresh.name, retainOriginal: fresh.retainOriginal)
+      if let worksheet = draft.worksheet {
+        selectSheet(worksheet.sheet)
+        selectHeader(worksheet.header)
+      }
+      guard let input, input.worksheet == draft.worksheet else { throw GalaxySSIHealthTableImport.Failure.mapping }
+      mapping = draft.mapping
+      openedReview = draft
+      prepare()
+    } catch { message = t("workbook_failed", "Could not open this measurement table.") }
   }
 
   private func selectSheet(_ id: String) {
@@ -345,7 +401,7 @@ struct GalaxySSIHealthTableImportView: View {
       let count = try records.importTable(input.data, name: input.name, json: input.json,
                                           mapping: mapping, expected: rows.map(\.status), worksheet: input.worksheet,
                                           retainOriginal: input.retainOriginal,
-                                          linkDuplicates: targets)
+                                          linkDuplicates: targets, reviewVersion: openedReview?.version)
       clear()
       reload()
       message = String(format: t("saved", "%lld measurements saved"), Int64(count))
@@ -375,8 +431,17 @@ struct GalaxySSIHealthTableImportView: View {
       let archive = try records.load()
       batches = archive.tableBatches ?? []
       retentionDefault = archive.keepsNewImportOriginals
+      pendingReviews = (archive.tableReviews ?? []).sorted { ($0.at, $0.id.uuidString) > ($1.at, $1.id.uuidString) }
+      if !initialRouteOpened, let resumeReviewID {
+        initialRouteOpened = true
+        if let draft = pendingReviews.first(where: { $0.id == resumeReviewID && $0.version == resumeReviewVersion }) {
+          resume(draft)
+        }
+        else { message = t("save_failed", "Could not save this batch. Review the rows again.") }
+      }
     } catch {
       batches = []
+      pendingReviews = []
       retentionDefault = nil
       message = t("read_failed", "Could not open this CSV or JSON table.")
     }
@@ -386,6 +451,7 @@ struct GalaxySSIHealthTableImportView: View {
     input = nil; rows = nil; owned = false; mapping = .init()
     workbook = nil; sheetID = ""; header = 0; headerChoices = []
     linkedRows = []
+    openedReview = nil
   }
   private func statusTitle(_ status: GalaxySSIHealthTableImport.Status) -> String {
     switch status {

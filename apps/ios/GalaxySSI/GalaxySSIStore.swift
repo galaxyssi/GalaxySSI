@@ -339,6 +339,7 @@ final class GalaxySSIStore: ObservableObject {
   private let phoneContactCardsKey = "galaxyssi.phone_contact_cards"
   private let homeAssistantAccessTokenAccount = "home_assistant.access_token"
   private var runtimePlaintextCleared = false
+  var canReadVoiceReminderSnapshot: Bool { !runtimePlaintextCleared }
   private var suppressMessageDatabaseSync = false
 
   init(defaults: UserDefaults = .standard, secrets: GalaxySSISecretStore = KeychainSecretStore.shared) {
@@ -922,6 +923,9 @@ final class GalaxySSIStore: ObservableObject {
   func deleteMessage(_ messageId: UUID, contactId: String? = nil) -> Bool {
     // Commit the scoped deletion and replay marker before changing the UI or removing files.
     guard let removed = chatHistoryDatabase.deleteMessage(id: messageId, contactId: contactId) else { return false }
+    if AgentCompletedReplyPlayback.shared.selection?.messageID == messageId {
+      AgentCompletedReplyPlayback.shared.stop()
+    }
     if removed.isMine {
       researchCheckpointStore.remove(conversation: removed.conversationId,
         turn: removed.turnId.ifBlank(removed.id.uuidString), source: removed.id)
@@ -2895,6 +2899,7 @@ final class GalaxySSIStore: ObservableObject {
   }
 
   private func resetToFreshState() {
+    AgentCompletedReplyPlayback.shared.stop()
     agentTaskHistoryPersistence.clear()
     UserDefaultsAgentGlobalRunSlotStore.destroy(defaults: defaults, secrets: secrets)
     UserDefaultsAgentWorkflowStore.shared.clear()

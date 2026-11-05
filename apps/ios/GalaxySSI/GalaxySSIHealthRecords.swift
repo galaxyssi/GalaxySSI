@@ -143,8 +143,12 @@ struct GalaxySSIHealthRecords {
   }
 
   struct Archive: Codable {
+    var originalIndex: GalaxySSIHealthOriginalStore.Index?
+    var measurementExports: [GalaxySSIHealthMeasurementExport.Receipt]?
     var reportReview: [GalaxySSIHealthReportReview.Item]?
     var reportEvidence: [GalaxySSIHealthReportReview.Evidence]?
+    var tableReviews: [GalaxySSIHealthReviewReminders.TableDraft]?
+    var reviewReminderState: GalaxySSIHealthReviewReminders.State?
     var version = 1
     var recordingReminders: GalaxySSIHealthRecordingReminders.Ledger?
     var restoreReceipts: Set<UUID>?
@@ -153,6 +157,10 @@ struct GalaxySSIHealthRecords {
     var metricDeletionHistory: [GalaxySSIHealthMetricDeletion.Audit]?
     var draft: GalaxySSIHealthDraft?
     var sleepReminders: GalaxySSIHealthSleepReminder.Ledger?
+    var healthKitSync: [String: GalaxySSIHealthKitSync.Checkpoint]?
+    var healthKitIncidents: [String: GalaxySSIHealthKitSync.Incident]?
+    var healthKitSyncSelection: Set<GalaxySSIHealthKitImport.Scope>?
+    var healthKitSyncDelivery: GalaxySSIHealthSyncDelivery.State?
     var derivesOverview: Bool?
     var weeklyReportAllowed: Bool?
     var weeklyExportRequests: [GalaxySSIWeeklyHealthReport.ExportRequest]?
@@ -305,6 +313,29 @@ struct GalaxySSIHealthRecords {
       from: AES.GCM.open(box, using: key(create: false), authenticating: context))
     guard archive.version == 1 else { throw Failure.unavailable }
     return archive
+  }
+
+  func dataFilesReader() throws -> GalaxySSIHealthDataFiles.Reader {
+    let url = try file
+    return .init(file: url, context: context, key: try? key(create: false))
+  }
+
+  func beginMeasurementExport(format: GalaxySSIHealthMeasurementExport.Format, rows: Int,
+                              includesOriginals: Bool) throws -> UUID {
+    var archive = try load()
+    let receipt = GalaxySSIHealthMeasurementExport.Receipt(id: UUID(), at: Date(), format: format,
+      rows: rows, includesOriginals: includesOriginals, status: .prepared)
+    archive.measurementExports = Array(((archive.measurementExports ?? []) + [receipt]).suffix(50))
+    try persist(archive, notify: false)
+    return receipt.id
+  }
+
+  func finishMeasurementExport(_ id: UUID, verified: Bool) throws {
+    var archive = try load()
+    guard let index = archive.measurementExports?.firstIndex(where: { $0.id == id }),
+          archive.measurementExports?[index].status == .prepared else { return }
+    archive.measurementExports?[index].status = verified ? .verified : .unverified
+    try persist(archive, notify: false)
   }
 
   func storeDraft(_ draft: GalaxySSIHealthDraft) throws {
@@ -478,7 +509,10 @@ struct GalaxySSIHealthRecords {
     archive.revisions.removeAll { ids.contains($0.id) }
     archive.tableEvidence?.removeAll { ids.contains($0.target.record) }
     archive.reportEvidence?.removeAll { ids.contains($0.target.record) }
-    if filter == nil { archive.reportReview?.removeAll { $0.reading.metric == metric } }
+    if filter == nil {
+      archive.reportReview?.removeAll { $0.reading.metric == metric }
+      pruneReviewActions(&archive)
+    }
     if let draft = archive.draft, GalaxySSIHealthMetricDeletion.includes(draft, metric: metric, filter: filter, ids: ids) {
       archive.draft = nil
     }
@@ -498,6 +532,7 @@ struct GalaxySSIHealthRecords {
     history.append(.init(at: Date(), scope: current.scope))
     archive.metricDeletionHistory = Array(history.suffix(100))
     try persist(archive)
+    if filter == nil { NotificationCenter.default.post(name: Self.reviewInputsChanged, object: owner) }
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
   }
 
@@ -506,17 +541,21 @@ struct GalaxySSIHealthRecords {
     guard archive.reportEvidence?.contains(where: { $0.source == input.source }) != true else { throw Failure.duplicate }
     var pending = archive.reportReview ?? []
     let index = pending.firstIndex { $0.source == input.source }
-    guard index.map({ pending[$0].version }) == expected else { throw Failure.stale }
-    guard input.reading.isValid, input.reading.reportSource == input.source,
+    guard index.map({ pending[$0].version }) == expected, expected != input.version else { throw Failure.stale }
+    guard input.validDraftValue, input.reading.reportSource == input.source,
           input.reading.revision == 0, !input.reading.deleted,
           !input.excerpt.isEmpty, input.excerpt.count <= 500 else { throw Failure.invalid }
-    if let index { pending[index] = input }
+    var reviewed = input
+    reviewed.stagedAt = Date()
+    if let index { pending[index] = reviewed }
     else {
       guard pending.count < 300 else { throw Failure.invalid }
-      pending.append(input)
+      pending.append(reviewed)
     }
     archive.reportReview = pending
+    pruneReviewActions(&archive)
     try persist(archive)
+    NotificationCenter.default.post(name: Self.reviewInputsChanged, object: owner)
   }
 
   func discardReportItem(source: GalaxySSIHealthReportReview.Source, version: UUID) throws {
@@ -524,7 +563,9 @@ struct GalaxySSIHealthRecords {
     guard let index = archive.reportReview?.firstIndex(where: { $0.source == source && $0.version == version })
     else { throw Failure.stale }
     archive.reportReview?.remove(at: index)
+    pruneReviewActions(&archive)
     try persist(archive)
+    NotificationCenter.default.post(name: Self.reviewInputsChanged, object: owner)
   }
 
   func confirmReportItems(_ versions: Set<UUID>, original: GalaxySSIHealthOriginalStore.Original) throws {
@@ -547,7 +588,9 @@ struct GalaxySSIHealthRecords {
     }
     archive.revisions.append(contentsOf: appended)
     archive.reportReview = pending.filter { !versions.contains($0.version) }
+    pruneReviewActions(&archive)
     try persist(archive)
+    NotificationCenter.default.post(name: Self.reviewInputsChanged, object: owner)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
   }
 
@@ -578,15 +621,24 @@ struct GalaxySSIHealthRecords {
     }
     archive.reportEvidence = evidence
     archive.reportReview = pending.filter { selected[$0.version] == nil }
+    pruneReviewActions(&archive)
     try persist(archive)
+    NotificationCenter.default.post(name: Self.reviewInputsChanged, object: owner)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
   }
 
   func importTable(_ data: Data, name: String, json: Bool, mapping: GalaxySSIHealthTableImport.Mapping,
                    expected: [GalaxySSIHealthTableImport.Status],
                    worksheet: GalaxySSIHealthXLSX.Selection? = nil, retainOriginal: Bool = true,
-                   linkDuplicates: [Int: GalaxySSIHealthTableImport.EvidenceTarget] = [:]) throws -> Int {
+                   linkDuplicates: [Int: GalaxySSIHealthTableImport.EvidenceTarget] = [:],
+                   reviewVersion: UUID? = nil) throws -> Int {
     var archive = try load()
+    if let reviewVersion {
+      guard archive.tableReviews?.contains(where: {
+        $0.version == reviewVersion && $0.data == data && $0.retainOriginal == retainOriginal
+      }) == true
+      else { throw Failure.stale }
+    }
     let table: GalaxySSIHealthTableImport.Table
     if let worksheet { table = try GalaxySSIHealthXLSX(data).table(worksheet) }
     else { table = try GalaxySSIHealthTableImport.parse(data, json: json) }
@@ -619,14 +671,29 @@ struct GalaxySSIHealthRecords {
     archive.tableBatches = batches
     if !links.isEmpty { archive.tableEvidence = (archive.tableEvidence ?? []) + links }
     archive.revisions.append(contentsOf: readings)
+    if let reviewVersion {
+      if let draft = archive.tableReviews?.first(where: { $0.version == reviewVersion }) {
+        archive.reviewReminderState?.actions.removeValue(forKey: "table:" + draft.id.uuidString)
+      }
+      archive.tableReviews?.removeAll { $0.version == reviewVersion }
+    }
     try persist(archive)
+    if reviewVersion != nil { NotificationCenter.default.post(name: Self.reviewInputsChanged, object: owner) }
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
     return readings.count
   }
 
   func importHealthKit(_ readings: [GalaxySSIHealthReading], at now: Date = Date()) throws -> Int {
-    guard readings.count <= GalaxySSIHealthKitImport.limit else { throw Failure.invalid }
     var archive = try load()
+    let count = try appendHealthKit(readings, to: &archive, at: now)
+    guard count > 0 else { return 0 }
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+    return count
+  }
+
+  private func appendHealthKit(_ readings: [GalaxySSIHealthReading], to archive: inout Archive, at now: Date) throws -> Int {
+    guard readings.count <= GalaxySSIHealthKitImport.limit else { throw Failure.invalid }
     var seen = Set(archive.revisions.compactMap { $0.healthKitSource?.key })
     var additions: [GalaxySSIHealthReading] = []
     for var reading in readings {
@@ -636,7 +703,6 @@ struct GalaxySSIHealthRecords {
       reading.revision = 1
       additions.append(reading)
     }
-    guard !additions.isEmpty else { return 0 }
     archive.revisions.append(contentsOf: additions)
     let metrics = Set(additions.map(\.metric))
     var importedAt = archive.healthKitImportedAt ?? [:]
@@ -644,9 +710,156 @@ struct GalaxySSIHealthRecords {
       importedAt[scope] = now
     }
     archive.healthKitImportedAt = importedAt
-    try persist(archive)
-    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
     return additions.count
+  }
+
+  func beginHealthKitSync(_ scope: GalaxySSIHealthKitImport.Scope, floor: Date, reset: Bool, at now: Date = Date()) throws
+    -> GalaxySSIHealthKitSync.Checkpoint {
+    guard scope != .steps, floor.timeIntervalSinceReferenceDate.isFinite else { throw Failure.invalid }
+    var archive = try load()
+    if archive.healthKitIncidents?[scope.rawValue] == nil, let previous = archive.syncIncident(scope) {
+      archive.setSyncIncident(previous)
+    }
+    var checkpoints = archive.healthKitSync ?? [:]
+    var checkpoint = checkpoints[scope.rawValue] ?? .init(floor: floor)
+    if reset {
+      checkpoint = .init(floor: floor, previousCoverageUnverified: checkpoints[scope.rawValue] != nil,
+                         finishedAt: checkpoint.finishedAt)
+    }
+    if checkpoint.status == .success || checkpoint.status == .empty {
+      checkpoint.insertedThisRun = 0
+      checkpoint.readThisRun = 0
+    }
+    checkpoint.run = UUID()
+    checkpoint.lastAttemptAt = now
+    checkpoint.status = .running
+    checkpoints[scope.rawValue] = checkpoint
+    archive.healthKitSync = checkpoints
+    try persist(archive)
+    return checkpoint
+  }
+
+  func commitHealthKitPage(scope: GalaxySSIHealthKitImport.Scope, expected: GalaxySSIHealthKitSync.Checkpoint,
+                           page: GalaxySSIHealthKitSync.Page, at now: Date) throws -> GalaxySSIHealthKitSync.Checkpoint {
+    var archive = try load()
+    guard var checkpoint = archive.healthKitSync?[scope.rawValue], checkpoint == expected,
+          checkpoint.status == .running,
+          page.anchor.map({ (1...16_384).contains($0.count) }) ??
+            (checkpoint.anchor == nil && page.providerCount == 0 && !page.more),
+          !page.more || (page.providerCount > 0 && page.anchor != checkpoint.anchor),
+          (0...GalaxySSIHealthKitSync.pageSize * 2).contains(page.providerCount),
+          page.rows.count <= page.providerCount, page.rows.allSatisfy({ $0.metric == scope.metric })
+    else { throw Failure.stale }
+    let count = try appendHealthKit(page.rows, to: &archive, at: now)
+    checkpoint.anchor = page.anchor
+    checkpoint.insertedThisRun += count
+    checkpoint.readThisRun += page.rows.count
+    var resolvedIncident = false
+    if !page.more {
+      checkpoint.status = checkpoint.readThisRun == 0 ? .empty : .success
+      checkpoint.finishedAt = now
+      if var incident = archive.syncIncident(scope), incident.resolvedAt == nil {
+        incident.resolvedAt = now
+        incident.version = UUID()
+        archive.setSyncIncident(incident)
+        resolvedIncident = true
+      }
+    }
+    archive.healthKitSync?[scope.rawValue] = checkpoint
+    try persist(archive)
+    if resolvedIncident { NotificationCenter.default.post(name: Self.syncIncidentsChanged, object: owner) }
+    if count > 0 { NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner) }
+    return checkpoint
+  }
+
+  func finishHealthKitSync(_ scope: GalaxySSIHealthKitImport.Scope, run: UUID,
+                           status: GalaxySSIHealthKitSync.Status, at now: Date = Date()) throws {
+    var archive = try load()
+    guard archive.healthKitSync?[scope.rawValue]?.run == run,
+          archive.healthKitSync?[scope.rawValue]?.status == .running else { return }
+    if status.raisesIncident { archive.recordSyncFailure(scope, status: status, at: now) }
+    archive.healthKitSync?[scope.rawValue]?.status = status
+    try persist(archive)
+    if status.raisesIncident { NotificationCenter.default.post(name: Self.syncIncidentsChanged, object: owner) }
+  }
+
+  func recordHealthKitAuthorizationFailure(_ scopes: Set<GalaxySSIHealthKitImport.Scope>,
+                                          status: GalaxySSIHealthKitSync.Status, at now: Date = Date()) throws {
+    guard status.raisesIncident, scopes.contains(where: { $0 != .steps }) else { return }
+    var archive = try load()
+    for scope in scopes where scope != .steps {
+      archive.recordSyncFailure(scope, status: status, at: now)
+    }
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.syncIncidentsChanged, object: owner)
+  }
+
+  func acknowledgeHealthKitIncident(_ expected: GalaxySSIHealthKitSync.Incident, at now: Date = Date()) throws {
+    var archive = try load()
+    guard var incident = archive.syncIncident(expected.scope), incident == expected, !incident.handled
+    else { throw Failure.stale }
+    incident.acknowledgedAt = now
+    incident.version = UUID()
+    archive.setSyncIncident(incident)
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.syncIncidentsChanged, object: owner)
+  }
+
+  static let syncIncidentsChanged = Notification.Name("galaxyssi.health.syncIncidentsChanged")
+
+  func updateHealthKitSyncSelection(_ scopes: Set<GalaxySSIHealthKitImport.Scope>, enabled: Bool) throws {
+    guard !scopes.contains(.steps) else { throw Failure.invalid }
+    var archive = try load()
+    let old = archive.healthKitSyncSelection ?? []
+    let selected = enabled ? old.union(scopes) : old.subtracting(scopes)
+    guard selected != old else { return }
+    archive.healthKitSyncSelection = selected
+    if !enabled {
+      for scope in scopes { archive.healthKitSyncDelivery?.receipts.removeValue(forKey: scope) }
+    }
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.syncIncidentsChanged, object: owner)
+  }
+
+  func setSyncNotificationsEnabled(_ enabled: Bool) throws {
+    var archive = try load()
+    var state = archive.healthKitSyncDelivery ?? .init()
+    guard state.enabled != enabled else { return }
+    state.enabled = enabled
+    if !enabled { state.receipts.removeAll() }
+    archive.healthKitSyncDelivery = state
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.syncIncidentsChanged, object: owner)
+  }
+
+  func reconcileSyncDelivery(now: Date, calendar: Calendar, permitted: Bool, scheduled: Set<UUID>,
+                             delivered: Set<UUID>) throws -> GalaxySSIHealthSyncDelivery.Plan {
+    var archive = try load()
+    guard var state = archive.healthKitSyncDelivery else { return .init() }
+    let plan = GalaxySSIHealthSyncDelivery.plan(state: state, selected: archive.healthKitSyncSelection ?? [],
+      incidents: archive.syncIncidents, settings: archive.recordingReminders?.settings ?? .init(),
+      now: now, calendar: calendar, permitted: permitted, scheduled: scheduled, delivered: delivered)
+    if state.receipts != plan.receipts {
+      state.receipts = plan.receipts
+      archive.healthKitSyncDelivery = state
+      try persist(archive)
+    }
+    return plan
+  }
+
+  func markSyncDeliverySubmitted(_ receipt: GalaxySSIHealthSyncDelivery.Receipt, calendar: Calendar) throws {
+    var archive = try load()
+    guard var state = archive.healthKitSyncDelivery, state.enabled,
+          let entry = state.receipts.first(where: {
+            $0.value.token == receipt.token && $0.value.incident == receipt.incident && $0.value.due == receipt.due
+          }), let due = receipt.due, archive.healthKitSyncSelection?.contains(entry.key) == true,
+          let incident = archive.syncIncident(entry.key), incident.id == receipt.incident, !incident.handled,
+          GalaxySSIHealthSyncDelivery.dueAfter(due, settings: archive.recordingReminders?.settings ?? .init(),
+                                               calendar: calendar) == due else { throw Failure.stale }
+    guard !entry.value.submitted else { return }
+    state.receipts[entry.key]?.submitted = true
+    archive.healthKitSyncDelivery = state
+    try persist(archive)
   }
 
   func undoTableBatch(_ id: UUID) throws -> Int {
@@ -752,12 +965,145 @@ struct GalaxySSIHealthRecords {
     try persist(archive)
   }
 
-  func commitRestore(_ archive: Archive, receipt: UUID, notify: Bool = true) throws {
+  func commitRestore(_ archive: Archive, receipt: UUID, originals: [GalaxySSIHealthOriginalStore.Original] = [],
+                     notify: Bool = true) throws {
     var updated = archive
+    if !originals.isEmpty {
+      guard var index = updated.originalIndex, try load().originalIndex == index else { throw Failure.stale }
+      for original in originals { try index.include(original) }
+      updated.originalIndex = index
+    }
     var receipts = updated.restoreReceipts ?? []
     receipts.insert(receipt)
     updated.restoreReceipts = receipts
     try persist(updated, notify: notify)
+  }
+
+  func setOriginalIndex(_ index: GalaxySSIHealthOriginalStore.Index,
+                        expected: GalaxySSIHealthOriginalStore.Index?) throws {
+    var archive = try load()
+    guard archive.originalIndex == expected else { throw Failure.stale }
+    archive.originalIndex = index
+    try persist(archive, notify: false)
+  }
+
+  static let reviewInputsChanged = Notification.Name("galaxyssi.health.reviewInputsChanged")
+
+  private func pruneReviewActions(_ archive: inout Archive) {
+    guard let actions = archive.reviewReminderState?.actions, !actions.isEmpty else { return }
+    let active = Dictionary(uniqueKeysWithValues: GalaxySSIHealthReviewReminders.jobs(in: archive).map {
+      ($0.key, $0.versions)
+    })
+    archive.reviewReminderState?.actions = actions.filter { active[$0.key] == $0.value.versions }
+  }
+
+  func saveTableReview(_ draft: GalaxySSIHealthReviewReminders.TableDraft, replacing expected: UUID?) throws {
+    guard !draft.data.isEmpty, draft.data.count <= GalaxySSIHealthTableImport.maximumBytes,
+          !draft.name.isEmpty, draft.name.count <= 180 else { throw Failure.invalid }
+    var archive = try load()
+    var drafts = archive.tableReviews ?? []
+    if let expected {
+      guard let index = drafts.firstIndex(where: { $0.id == draft.id && $0.version == expected }),
+            expected != draft.version else { throw Failure.stale }
+      drafts[index] = draft
+    } else {
+      guard drafts.count < GalaxySSIHealthReviewReminders.maximumTableDrafts else { throw Failure.invalid }
+      guard !drafts.contains(where: { $0.id == draft.id }) else { throw Failure.stale }
+      drafts.append(draft)
+    }
+    archive.tableReviews = drafts
+    archive.reviewReminderState?.actions.removeValue(forKey: "table:" + draft.id.uuidString)
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.reviewInputsChanged, object: owner)
+  }
+
+  func discardTableReview(_ draft: GalaxySSIHealthReviewReminders.TableDraft) throws {
+    var archive = try load()
+    guard let index = archive.tableReviews?.firstIndex(where: { $0.id == draft.id && $0.version == draft.version })
+    else { throw Failure.stale }
+    archive.tableReviews?.remove(at: index)
+    archive.reviewReminderState?.actions.removeValue(forKey: "table:" + draft.id.uuidString)
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.reviewInputsChanged, object: owner)
+  }
+
+  func setReviewRemindersEnabled(_ enabled: Bool) throws {
+    var archive = try load()
+    var state = archive.reviewReminderState ?? .init()
+    if state.enabled != enabled {
+      if enabled && state.notificationPreferences?.enabled == true {
+        GalaxySSIHealthReviewDelivery.suppressExisting(GalaxySSIHealthReviewReminders.jobs(in: archive), in: &state, at: Date())
+      } else { state.deliveries = nil }
+    }
+    state.enabled = enabled
+    archive.reviewReminderState = state
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.reviewInputsChanged, object: owner)
+  }
+
+  func updateReviewReminder(_ job: GalaxySSIHealthReviewReminders.Job, action: GalaxySSIHealthReviewReminders.Action) throws {
+    var archive = try load()
+    let jobs = GalaxySSIHealthReviewReminders.jobs(in: archive)
+    guard jobs.contains(job) else { throw Failure.stale }
+    var state = archive.reviewReminderState ?? .init()
+    guard state.enabled else { throw Failure.stale }
+    let active = Dictionary(uniqueKeysWithValues: jobs.map { ($0.key, $0.versions) })
+    state.actions = state.actions.filter { active[$0.key] == $0.value.versions }
+    state.actions[job.key] = .init(versions: job.versions, action: action)
+    archive.reviewReminderState = state
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.reviewInputsChanged, object: owner)
+  }
+
+  func setReviewNotificationPreferences(_ preferences: GalaxySSIHealthReviewDelivery.Preferences) throws {
+    guard (0..<24).contains(preferences.quietStart), (0..<24).contains(preferences.quietEnd) else { throw Failure.invalid }
+    var archive = try load()
+    var state = archive.reviewReminderState ?? .init()
+    if (state.notificationPreferences?.enabled == true) != preferences.enabled {
+      if preferences.enabled && state.enabled {
+        GalaxySSIHealthReviewDelivery.suppressExisting(GalaxySSIHealthReviewReminders.jobs(in: archive), in: &state, at: Date())
+      } else { state.deliveries = nil }
+    }
+    state.notificationPreferences = preferences
+    archive.reviewReminderState = state
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.reviewInputsChanged, object: owner)
+  }
+
+  func reconcileReviewDelivery(now: Date, calendar: Calendar, permitted: Bool, scheduled: Set<UUID>,
+                               delivered: Set<UUID>, availableOriginals: Set<UUID>) throws -> GalaxySSIHealthReviewDelivery.Plan {
+    var archive = try load()
+    guard var state = archive.reviewReminderState else { return .init() }
+    let before = state.deliveries ?? [:]
+    let jobs = GalaxySSIHealthReviewReminders.jobs(in: archive).filter {
+      $0.kind == .table || availableOriginals.contains($0.target)
+    }
+    let plan = GalaxySSIHealthReviewDelivery.plan(
+      jobs: jobs, state: state, now: now,
+      calendar: calendar, permitted: permitted, scheduled: scheduled, delivered: delivered)
+    if plan.tickets != before {
+      state.deliveries = plan.tickets
+      archive.reviewReminderState = state
+      try persist(archive)
+    }
+    return plan
+  }
+
+  func markReviewDeliverySubmitted(_ ticket: GalaxySSIHealthReviewDelivery.Ticket, calendar: Calendar) throws {
+    var archive = try load()
+    guard var state = archive.reviewReminderState, let key = state.deliveries?.first(where: {
+      $0.value.token == ticket.token && $0.value.due == ticket.due && !$0.value.suppressed
+    })?.key,
+    let job = GalaxySSIHealthReviewReminders.jobs(in: archive).first(where: { $0.key == key && $0.versions == ticket.versions }),
+    state.enabled, state.notificationPreferences?.enabled == true,
+    GalaxySSIHealthReviewDelivery.action(for: job, state: state) != .handled,
+    GalaxySSIHealthReviewDelivery.cycle(for: job, state: state) == ticket.cycle,
+    state.notificationPreferences?.nextAllowed(ticket.due, calendar: calendar) == ticket.due
+    else { throw Failure.stale }
+    if state.deliveries?[key]?.submitted == true { return }
+    state.deliveries?[key]?.submitted = true
+    archive.reviewReminderState = state
+    try persist(archive)
   }
 
   private func persist(_ archive: Archive, notify: Bool = true) throws {

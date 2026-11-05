@@ -5,6 +5,7 @@ extension GalaxySSIStore {
     var next = voiceSettings
     mutate(&next)
     voiceSettings = next.normalized
+    if !voiceSettings.textToSpeechEnabled { AgentCompletedReplyPlayback.shared.stop() }
   }
 
   func updateLanguagePolicy(_ mutate: (inout LanguagePolicySettings) -> Void) {

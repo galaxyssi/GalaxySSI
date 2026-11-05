@@ -136,7 +136,12 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     willPresent notification: UNNotification,
     withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
   ) {
-    if notification.request.identifier.hasPrefix(GalaxySSIHealthRecordingReminders.prefix) {
+    if notification.request.identifier.hasPrefix(GalaxySSIHealthRecordingReminders.prefix) ||
+      GalaxySSIHealthReviewDelivery.token(notification.request.identifier) != nil {
+      completionHandler([.banner, .list])
+      return
+    }
+    if GalaxySSIHealthSyncDelivery.token(notification.request.identifier) != nil {
       completionHandler([.banner, .list])
       return
     }
@@ -155,6 +160,16 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     didReceive response: UNNotificationResponse,
     withCompletionHandler completionHandler: @escaping () -> Void
   ) {
+    if let token = GalaxySSIHealthReviewDelivery.token(response.notification.request.identifier) {
+      if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+        UserDefaults.standard.set(token.uuidString, forKey: GalaxySSIHealthReviewDelivery.pendingKey)
+        DispatchQueue.main.async {
+          NotificationCenter.default.post(name: GalaxySSIHealthReviewDelivery.openNotification, object: nil)
+        }
+      }
+      completionHandler()
+      return
+    }
     let contactId = (response.notification.request.content.userInfo[
       GalaxySSIContactNotificationPresentationPolicy.contactIdKey
     ] as? String)?
@@ -167,6 +182,13 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
           object: nil,
           userInfo: ["contactId": contactId]
         )
+      }
+    }
+    if response.actionIdentifier == UNNotificationDefaultActionIdentifier,
+       let token = GalaxySSIHealthSyncDelivery.token(response.notification.request.identifier) {
+      UserDefaults.standard.set(token.uuidString, forKey: GalaxySSIHealthSyncDelivery.pendingKey)
+      DispatchQueue.main.async {
+        NotificationCenter.default.post(name: GalaxySSIHealthSyncDelivery.openNotification, object: nil)
       }
     }
     completionHandler()
@@ -309,8 +331,10 @@ private struct GalaxySSIRuntimeRoot: View {
       .environmentObject(runtime.agentStartupRecovery)
       .environmentObject(runtime.voiceAgentRunRecovery)
       .modifier(GalaxySSIHealthSleepReminderLifecycle(store: runtime.store))
+      .modifier(GalaxySSIHealthReviewNotificationLifecycle(store: runtime.store))
       .galaxySSITextScale(runtime.store.displaySettings)
       .modifier(GalaxySSIHealthRecordingNotificationLifecycle(store: runtime.store))
+      .modifier(GalaxySSIHealthSyncNotificationLifecycle(store: runtime.store))
       .onAppear {
         galaxySSIStartupLogger.notice("RootView appeared")
         runtime.agentStartupRecovery.start(
@@ -519,7 +543,7 @@ struct ConversationView: View {
   @State private var attachmentMenuPresented = false
   @State private var fileImporterPresented = false
   @State private var cameraPickerPresented = false
-  @State private var cameraTargetContactId = ""
+  @State private var cameraAttachmentOwner: String?
   @State private var attachmentError = ""
   @State private var composerTextModeActive = false
   @State private var retryingMessageIDs: Set<UUID> = []
@@ -738,7 +762,12 @@ struct ConversationView: View {
             purpose: "chat_message",
             isPersonContact: isPhonePersonContact
           ),
-          attachmentScope: contact.id + ":" + (visibleAgentConversationId ?? ""),
+          attachmentScope: composerAttachmentScope,
+          attachmentPreviewBlocked: cameraPickerPresented || fileImporterPresented,
+          onReplaceAttachment: { scope, expected, edited in
+            guard scope == composerAttachmentScope else { return false }
+            return attachments.replaceComposerAttachment(expected, with: edited)
+          },
           onNewSession: createAgentConversationFromChat,
           onOpenSessions: openAgentSessionsFromChat,
           onScan: openContactScannerFromChat,
@@ -790,10 +819,10 @@ struct ConversationView: View {
       CameraAttachmentPickerView(
         onAttachment: { attachment in
           defer {
-            cameraTargetContactId = ""
+            cameraAttachmentOwner = nil
             cameraPickerPresented = false
           }
-          guard cameraTargetContactId == contact.id else {
+          guard cameraAttachmentOwner == composerAttachmentScope else {
             var discarded = attachment
             discarded.wipeSensitive()
             return
@@ -801,7 +830,7 @@ struct ConversationView: View {
           appendAttachment(attachment)
         },
         onCancel: {
-          cameraTargetContactId = ""
+          cameraAttachmentOwner = nil
           cameraPickerPresented = false
         }
       )
@@ -1392,6 +1421,10 @@ struct ConversationView: View {
     }
   }
 
+  private var composerAttachmentScope: String {
+    contact.id + ":" + (visibleAgentConversationId ?? "")
+  }
+
   private func openCameraAttachmentPicker() {
     guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
       attachmentError = t("agent_attachment_camera_unavailable", "Camera is unavailable")
@@ -1401,10 +1434,10 @@ struct ConversationView: View {
     case .denied, .restricted:
       attachmentError = t("galaxyssi.scanner.camera_access_required", "Camera access is required to scan GalaxySSI QR codes.")
     case .authorized, .notDetermined:
-      cameraTargetContactId = contact.id
+      cameraAttachmentOwner = composerAttachmentScope
       cameraPickerPresented = true
     @unknown default:
-      cameraTargetContactId = contact.id
+      cameraAttachmentOwner = composerAttachmentScope
       cameraPickerPresented = true
     }
   }

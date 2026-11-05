@@ -74,6 +74,7 @@ struct GalaxySSIHealthRecordingNotificationLifecycle: ViewModifier {
 struct GalaxySSIHealthRecordingReminderView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
+  @Environment(\.openURL) private var openURL
   let records: GalaxySSIHealthRecords
   let record: (GalaxySSIHealthMetric) -> Void
   @State private var ledger = GalaxySSIHealthRecordingReminders.Ledger()
@@ -81,6 +82,11 @@ struct GalaxySSIHealthRecordingReminderView: View {
   @State private var filter = Filter.pending
   @State private var limit = 30
   @State private var failed = false
+  @State private var incidents: [GalaxySSIHealthKitSync.Incident] = []
+  @State private var confirmingIncident = false
+  @State private var incidentToAcknowledge: GalaxySSIHealthKitSync.Incident?
+  @State private var syncNotifications = false
+  @State private var syncAuthorization: UNAuthorizationStatus?
 
   private enum Filter: String, CaseIterable { case pending, handled, all }
 
@@ -97,22 +103,26 @@ struct GalaxySSIHealthRecordingReminderView: View {
             }
             DatePicker(t("time", "Daily time"), selection: timeBinding, displayedComponents: .hourAndMinute)
             Toggle(t("notifications", "System notifications"), isOn: $draft.notifications)
-            if draft.notifications {
-              hourPicker(t("quiet_start", "Quiet hours begin"), value: $draft.quietStart)
-              hourPicker(t("quiet_end", "Quiet hours end"), value: $draft.quietEnd)
-            }
+          }
+          if (draft.enabled && draft.notifications) || syncNotifications {
+            hourPicker(t("quiet_start", "Quiet hours begin"), value: $draft.quietStart)
+            hourPicker(t("quiet_end", "Quiet hours end"), value: $draft.quietEnd)
+          }
+          if draft.enabled || syncNotifications {
             Toggle(t("pause", "Pause for 24 hours"), isOn: Binding(
               get: { (draft.pausedUntil ?? .distantPast) > Date() },
               set: { draft.pausedUntil = $0 ? Date().addingTimeInterval(86_400) : nil }))
           }
           Button(t("save", "Save preferences"), action: save)
         }
-        Section(t("history", "Recording reminders")) {
+        Section {
           Picker(t("filter", "Filter"), selection: $filter) {
             Text(t("pending", "Pending")).tag(Filter.pending)
             Text(t("handled", "Handled")).tag(Filter.handled)
             Text(t("all", "All")).tag(Filter.all)
           }.pickerStyle(.segmented)
+        }
+        Section(t("history", "Recording reminders")) {
           let items = ledger.history.filter {
             let handled = $0.completedAt != nil || $0.disabled || expired($0)
             return filter == .all || (filter == .handled ? handled : !handled)
@@ -131,17 +141,127 @@ struct GalaxySSIHealthRecordingReminderView: View {
           }
           if items.count > limit { Button(t("more", "Show more")) { limit += 30 } }
         }
+        connections
         if failed { Text(t("failed", "The reminder changed or could not be saved.")).foregroundColor(.secondary) }
       }
     }
     .navigationTitle(t("title", "Health Recording Reminders"))
     .navigationBarTitleDisplayMode(.inline)
-    .onAppear { reload(resetDraft: true) }
+    .onAppear { reload(resetDraft: true); reloadIncidents() }
     .onChange(of: scene) {
-      if $0 == .active { reload(resetDraft: true) } else { ledger = .init(); draft = .init() }
+      if $0 == .active { reload(resetDraft: true); reloadIncidents() }
+      else {
+        ledger = .init(); draft = .init(); incidents = []
+        confirmingIncident = false; incidentToAcknowledge = nil
+      }
     }
     .onChange(of: filter) { _ in limit = 30 }
+    .task(id: scene) { if scene == .active { await refreshSyncAuthorization() } }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in reload() }
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.syncIncidentsChanged)) {
+      if $0.object as? String == records.owner { reloadIncidents() }
+    }
+    .confirmationDialog(t("incident_confirm", "Acknowledge this sync failure?"),
+                        isPresented: $confirmingIncident, titleVisibility: .visible, presenting: incidentToAcknowledge) { incident in
+      Button(t("incident_acknowledge", "Acknowledge")) { acknowledge(incident) }
+    }
+  }
+
+  private var connections: some View {
+    Section(t("connections", "Data Connections")) {
+      Toggle(t("sync_notifications", "System sync failure notifications"), isOn: Binding(
+        get: { syncNotifications }, set: setSyncNotifications))
+      if syncNotifications, let syncAuthorization, !GalaxySSIHealthSyncDelivery.permitted(syncAuthorization) {
+        Button(t("sync_notification_permission", "Allow system notifications")) {
+          if syncAuthorization == .notDetermined { Task { await refreshSyncAuthorization(request: true) } }
+          else if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+        }
+      }
+      let visible = incidents.filter { filter == .all || (filter == .handled ? $0.handled : !$0.handled) }
+      if visible.isEmpty { Text(t("incidents_empty", "No sync incidents")).foregroundColor(.secondary) }
+      ForEach(visible) { incident in
+        NavigationLink {
+          GalaxySSIHealthKitSyncView(records: records, focusedScope: incident.scope)
+        } label: {
+          VStack(alignment: .leading, spacing: 4) {
+            Text(incident.scope.metric.title(language: language))
+            Text(incidentReason(incident.status)).foregroundColor(.secondary)
+            if let failedAt = incident.failedAt {
+              incidentDate(t("incident_failed_at", "Last failure"), at: failedAt)
+            }
+            if let lastSuccess = incident.lastSuccess {
+              incidentDate(t("incident_last_success", "Last successful sync before failure"), at: lastSuccess)
+            }
+            if let resolvedAt = incident.resolvedAt {
+              incidentDate(t("incident_resolved", "Resolved"), at: resolvedAt)
+            } else if let acknowledgedAt = incident.acknowledgedAt {
+              incidentDate(t("incident_acknowledged", "Acknowledged"), at: acknowledgedAt)
+            }
+          }
+        }
+        if !incident.handled {
+          Button {
+            incidentToAcknowledge = incident
+            confirmingIncident = true
+          } label: {
+            Label(t("incident_acknowledge", "Acknowledge"), systemImage: "checkmark.circle")
+          }
+        }
+      }
+    }
+  }
+
+  private func incidentDate(_ title: String, at date: Date) -> some View {
+    Text(title + ": " + date.formatted(date: .abbreviated, time: .shortened)).foregroundColor(.secondary)
+  }
+
+  private func incidentReason(_ status: GalaxySSIHealthKitSync.Status) -> String {
+    let fallback: String
+    switch status {
+    case .permission: fallback = "System access required"
+    case .unavailable: fallback = "Apple Health is unavailable"
+    default: fallback = "Sync failed; local copies were kept"
+    }
+    return GalaxySSILocalization.string("galaxyssi.health.healthkit_sync." + status.rawValue,
+                                        fallback: fallback, language: language)
+  }
+
+  private func reloadIncidents() {
+    guard scene == .active else { return }
+    do {
+      let archive = try records.load()
+      incidents = archive.syncIncidents
+      syncNotifications = archive.healthKitSyncDelivery?.enabled == true
+    }
+    catch { incidents = []; failed = true }
+  }
+
+  private func setSyncNotifications(_ enabled: Bool) {
+    guard scene == .active else { return }
+    do {
+      try records.setSyncNotificationsEnabled(enabled)
+      syncNotifications = enabled
+      if enabled { Task { await refreshSyncAuthorization(request: true) } }
+    } catch { failed = true }
+  }
+
+  private func refreshSyncAuthorization(request: Bool = false) async {
+    let center = UNUserNotificationCenter.current()
+    let status = await center.notificationSettings().authorizationStatus
+    if request, status == .notDetermined {
+      do { _ = try await center.requestAuthorization(options: [.alert]) }
+      catch { failed = true }
+    }
+    guard !Task.isCancelled else { return }
+    syncAuthorization = await center.notificationSettings().authorizationStatus
+    if request { NotificationCenter.default.post(name: GalaxySSIHealthRecords.syncIncidentsChanged, object: records.owner) }
+  }
+
+  private func acknowledge(_ incident: GalaxySSIHealthKitSync.Incident) {
+    guard scene == .active else { return }
+    do { try records.acknowledgeHealthKitIncident(incident); reloadIncidents() }
+    catch { reloadIncidents(); failed = true }
+    incidentToAcknowledge = nil
   }
 
   private var timeBinding: Binding<Date> {

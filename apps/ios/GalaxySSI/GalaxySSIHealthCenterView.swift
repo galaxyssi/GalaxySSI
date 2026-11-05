@@ -30,14 +30,14 @@ struct GalaxySSIHealthCenterView: View {
   var body: some View {
     List {
       NavigationLink {
-        GalaxySSIHealthRecordCenterView(records: records, devices: { sourceOverview }, addManual: { metric in
-          reload()
-          if let draft = archive?.draft { editor = draft }
-          else if let metric { editor = GalaxySSIHealthDraft(metric: metric) }
-          else { editor = GalaxySSIHealthDraft() }
-        }, edit: { reading in reload(); edit(reading) })
+        recordCenter
       } label: {
         Label(t("record_center.title", "Health Record Center"), systemImage: "square.and.pencil")
+      }
+      NavigationLink {
+        GalaxySSIHealthDataFilesView(records: records, metrics: { metricCatalog }, review: { recordCenter })
+      } label: {
+        Label(t("data_files.title", "Data and Files"), systemImage: "folder")
       }
       Section {
         if scenePhase == .active, let archive {
@@ -65,6 +65,11 @@ struct GalaxySSIHealthCenterView: View {
                                     records: records)
         } label: {
           Label(t("import.title", "Import Health Data"), systemImage: "square.and.arrow.down")
+        }
+        NavigationLink {
+          GalaxySSIHealthReviewReminderView(records: records)
+        } label: {
+          Label(t("review_reminder.title", "Health Review Reminders"), systemImage: "bell")
         }
       }
       NavigationLink {
@@ -184,10 +189,7 @@ struct GalaxySSIHealthCenterView: View {
         Label(t("trend.title", "Measurement Trends"), systemImage: "chart.xyaxis.line")
       }
       NavigationLink {
-        GalaxySSIHealthMetricCatalogView(records: records, add: { metric in
-          if let draft = archive?.draft { editor = draft }
-          else { editor = GalaxySSIHealthDraft(metric: metric) }
-        }, edit: edit)
+        metricCatalog
       } label: {
         Label(t("catalog.title", "Measurement Catalog"), systemImage: "list.bullet.rectangle")
       }
@@ -365,6 +367,11 @@ struct GalaxySSIHealthCenterView: View {
     List {
       if scenePhase == .active {
         Section(t("device_sources", "Device sources")) {
+          NavigationLink {
+            GalaxySSIHealthKitSyncView(records: records)
+          } label: {
+            Label(t("healthkit_sync.title", "Sync and Data Coverage"), systemImage: "arrow.triangle.2.circlepath")
+          }
           NavigationLink {
             GalaxySSIHealthKitImportView(records: records)
           } label: {
@@ -755,6 +762,22 @@ struct GalaxySSIHealthCenterView: View {
 
   private func title(_ metric: GalaxySSIHealthMetric) -> String {
     metric.title(language: language)
+  }
+
+  private var recordCenter: some View {
+    GalaxySSIHealthRecordCenterView(records: records, devices: { sourceOverview }, addManual: { metric in
+      reload()
+      if let draft = archive?.draft { editor = draft }
+      else if let metric { editor = GalaxySSIHealthDraft(metric: metric) }
+      else { editor = GalaxySSIHealthDraft() }
+    }, edit: { reading in reload(); edit(reading) })
+  }
+
+  private var metricCatalog: some View {
+    GalaxySSIHealthMetricCatalogView(records: records, add: { metric in
+      if let draft = archive?.draft { editor = draft }
+      else { editor = GalaxySSIHealthDraft(metric: metric) }
+    }, edit: edit)
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

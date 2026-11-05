@@ -31,6 +31,13 @@ final class PublicNewsArchive: ObservableObject {
 
   var eligibleArticles: [PublicNewsArticle] { articles.filter { !notRelevantIDs.contains($0.id) } }
 
+  var reminderUnreadCount: Int? {
+    guard loaded, !storageFailed else { return nil }
+    return articles.reduce(into: 0) { count, article in
+      if !article.read, !notRelevantIDs.contains(article.id) { count += 1 }
+    }
+  }
+
   init(fileURL: URL? = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
     .first?.appendingPathComponent("public-news.json")) {
     self.fileURL = fileURL

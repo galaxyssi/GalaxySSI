@@ -11,7 +11,9 @@ final class PublicNewsFeedTests: XCTestCase {
       summary: "Summary", publisher: "Fixture", discoveredAt: Date(), saved: true)
     try JSONEncoder().encode(Fixture(articles: [article])).write(to: file)
     let archive = PublicNewsArchive(fileURL: file)
+    XCTAssertNil(archive.reminderUnreadCount)
     archive.load()
+    XCTAssertEqual(archive.reminderUnreadCount, 1)
     XCTAssertFalse(archive.markNotRelevant("missing"))
     XCTAssertTrue(archive.markNotRelevant(article.id))
     XCTAssertTrue(archive.eligibleArticles.isEmpty)
@@ -20,6 +22,7 @@ final class PublicNewsFeedTests: XCTestCase {
     XCTAssertEqual(reopened.notRelevantIDs, [article.id])
     XCTAssertEqual(reopened.articles, [article])
     XCTAssertTrue(reopened.eligibleArticles.isEmpty)
+    XCTAssertEqual(reopened.reminderUnreadCount, 0)
   }
 
   private let now = Date(timeIntervalSince1970: 1_800_000_000)
