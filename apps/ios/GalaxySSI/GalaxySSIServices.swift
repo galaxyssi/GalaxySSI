@@ -2782,11 +2782,37 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func persistRecoveredManagedDesktopResult(_ payload: [String: Any], record: AgentDesktopReplyRecoveryRecord) {
-    guard currentManagedDesktopReply(record.binding) != nil,
+    guard let registered = currentManagedDesktopReply(record.binding),
           let response = AgentConnectorResponse.fromPayload(payload),
-          let receipt = desktopResultRecovery.receipt(record), connectorResponseBus.publish(response),
+          let receipt = desktopResultRecovery.receipt(record) else { return }
+    let committed = registered.ownerRunId.hasPrefix(AgentPairedPhonePlannerRoute.ownerPrefix)
+      ? persistPairedPhonePlannerResponse(response, record: registered)
+      : connectorResponseBus.publish(response)
+    guard committed,
           managedDesktopResultIsCommitted(response), desktopResultRecovery.receipts.insert(receipt) else { return }
     if desktopReplyRecovery.retire(record.binding) { desktopReplyRecoverySweepRequested = true }
+  }
+
+  private func persistPairedPhonePlannerResponse(
+    _ response: AgentConnectorResponse, record: AgentManagedResponseRecord
+  ) -> Bool {
+    guard response.sourceMessageId == record.sourceMessageId, response.contactId == record.contactId,
+          response.conversationId == record.conversationId, response.turnId == record.turnId,
+          response.taskId == record.taskId, response.executionGeneration == record.executionGeneration,
+          let normalized = AgentConnectorResponseNormalizer.normalized(response, nowMillis: AgentControlPlaneClock.nowMillis())
+    else { return false }
+    return managedDesktopReplyLedger.complete(normalized)?.ownerRunId == record.ownerRunId
+  }
+
+  private func isPairedPhonePlannerProgress(_ payload: [String: Any]) -> Bool {
+    guard let source = Int64(payload.string("source_message_id").ifBlank(payload.string("client_message_id"))),
+          source > 0 else { return false }
+    let probe = AgentConnectorResponse(sourceMessageId: source,
+      contactId: payload.string("contact_id"), conversationId: payload.string("conversation_id"),
+      turnId: payload.string("turn_id"), taskId: payload.string("task_id"),
+      executionGeneration: Int64(payload.int("execution_generation")))
+    guard let record = try? managedDesktopReplyLedger.recoveryRecord(matching: probe) else { return false }
+    return record.ownerRunId.hasPrefix(AgentPairedPhonePlannerRoute.ownerPrefix)
   }
 
   private func managedDesktopResultIsCommitted(_ response: AgentConnectorResponse) -> Bool {
@@ -4161,7 +4187,8 @@ final class MessageCoordinator: ObservableObject {
           profile: localProfile,
           requestText: requestText,
           attachments: effectiveAttachments,
-          outgoing: outgoing
+          outgoing: outgoing,
+          useSelectedProvider: true
         )
         finishPendingAgentReply(for: outgoing)
         return true
@@ -4184,6 +4211,23 @@ final class MessageCoordinator: ObservableObject {
           contactId: cloudContact.id,
           runtimeTarget: cloudModelLabel.ifBlank(cloudContact.displayName)
         )
+        if !readOnlyAnalysis, effectiveAttachments.isEmpty {
+          guard let snapshot = AgentModelPlannerContactResolver(store: store).capturePhoneTurnSnapshot(
+            settings: store.modelPlannerSettings,
+            selectedContact: cloudContact
+          ) else {
+            throw AgentModelLoopRecoveryError(code: "selected_cloud_planner_unavailable")
+          }
+          try await receivePhoneOwnedProviderReply(
+            snapshot: snapshot,
+            targetTitle: cloudModelLabel.ifBlank(cloudContact.displayName),
+            requestText: requestText,
+            outgoing: outgoing,
+            executionMode: taskExecutionMode
+          )
+          finishPendingAgentReply(for: outgoing)
+          return true
+        }
         let cloudImages = try CloudImagePayloadFactory.prepare(
           effectiveAttachments,
           taskId: outgoing.id.uuidString
@@ -4214,6 +4258,18 @@ final class MessageCoordinator: ObservableObject {
         conversationId: outgoing.conversationId,
         goal: requestText
       ) {
+        if !readOnlyAnalysis, effectiveAttachments.isEmpty, agentContact.connectorAgentId == "codex" {
+          let snapshot = try capturePairedPhonePlannerSnapshot(contact: agentContact, outgoing: outgoing)
+          try await receivePhoneOwnedProviderReply(
+            snapshot: snapshot,
+            targetTitle: agentContact.displayName,
+            requestText: requestText,
+            outgoing: outgoing,
+            executionMode: taskExecutionMode
+          )
+          finishPendingAgentReply(for: outgoing)
+          return true
+        }
         updateAgentExecutionTarget(
           conversationId: outgoing.conversationId,
           contactId: agentContact.id,
@@ -4874,12 +4930,15 @@ final class MessageCoordinator: ObservableObject {
     let modelOutcome: GuardedModelAgentPlanningResult?
     if let previousPlan, let continuationScope {
       let priorPhase = task.phase
-      let conversation = initialPlanningConversation(requestText: task.goal, outgoing: outgoing)
       let plannerSnapshot = task.plannerSnapshot
         ?? capturePlannerSnapshot(conversationId: outgoing.conversationId)
+      let conversation = initialPlanningConversation(
+        requestText: task.goal, outgoing: outgoing,
+        selectedProviderOnly: plannerSnapshot?.selectedForPhoneTurn == true
+      )
       if let plannerSnapshot {
         do {
-          _ = try AgentModelPlannerContactResolver(store: store).makePlanner(snapshot: plannerSnapshot)
+          _ = try planner(for: plannerSnapshot)
         } catch {
           task.phase = .paused
           task.blocked = true
@@ -5285,6 +5344,99 @@ final class MessageCoordinator: ObservableObject {
     )
   }
 
+  private func receivePhoneOwnedProviderReply(
+    snapshot: AgentPlannerModelSnapshot,
+    targetTitle: String,
+    requestText: String,
+    outgoing: ChatMessage,
+    executionMode: AgentTaskExecutionMode
+  ) async throws {
+    try Task.checkCancellation()
+    let turnId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    let createdAt = Int64(Date().timeIntervalSince1970 * 1_000)
+    var task = AgentTaskRecord(
+      taskId: turnId,
+      sessionId: outgoing.conversationId,
+      goal: requestText,
+      phase: .planning,
+      routeKind: snapshot.pairedPhonePlanner == nil ? .cloudModel : .desktopAgent,
+      targetTitle: targetTitle,
+      risk: .low,
+      blocked: false,
+      executionLocationKind: .phone,
+      executionRuntimeKind: snapshot.pairedPhonePlanner == nil ? .phoneCloudAPI : .phoneNative,
+      executionLocationId: "ios",
+      executionLocationName: "GalaxySSI iPhone",
+      executionRuntimeId: snapshot.pairedPhonePlanner?.modelId ?? snapshot.route?.modelId ?? "",
+      executionLocationTrusted: true,
+      plannerSnapshot: snapshot,
+      createdAtMillis: createdAt,
+      updatedAtMillis: createdAt
+    )
+    let conversation = initialPlanningConversation(
+      requestText: requestText, outgoing: outgoing, selectedProviderOnly: true
+    )
+    let input = AgentInitialPlanningInput(
+      goal: requestText,
+      conversation: conversation,
+      turnId: turnId,
+      executionMode: executionMode,
+      hasAttachments: false,
+      allowsDirectResponse: executionMode != .planOnly,
+      completionRequirements: nil,
+      plannerConfigurationSha256: snapshot.configurationSha256,
+      plannerSnapshot: snapshot
+    )
+    do {
+      let outcome = try await localInitialPlanningJournal.begin(sessionId: task.sessionId, input: input) { reference in
+        task.pendingPlanning = reference
+        task.executionLog.append("Selected provider planning committed; phone execution retained")
+        store.upsertAgentTask(task)
+        return await modelPlannedLocalNativeActions(
+          requestText: requestText,
+          attachments: [],
+          outgoing: outgoing,
+          executionMode: executionMode,
+          allowsDirectResponse: input.allowsDirectResponse,
+          conversationOverride: conversation,
+          plannerSnapshotOverride: snapshot
+        )
+      }
+      guard let persisted = store.agentTask(id: turnId), persisted.phase == .planning,
+            persisted.pendingPlanning == task.pendingPlanning else { return }
+      task = persisted
+      try Task.checkCancellation()
+      guard let outcome else {
+        throw AgentModelLoopRecoveryError(code: "phone_owned_planning_result_unavailable")
+      }
+      task.phase = .executing
+      task.pendingPlanning = nil
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
+      switch outcome {
+      case let .directResponse(response):
+        _ = await completeModelDirectResponse(response, outgoing: outgoing, task: &task)
+      case let .plan(plan):
+        if executionMode == .planOnly {
+          _ = completePlanOnlyTask(plan: plan, outgoing: outgoing, task: &task)
+        } else {
+          _ = applyLocalNativeActions(actions: plan.actions, outgoing: outgoing, task: &task, plan: plan)
+        }
+      }
+    } catch {
+      if let persisted = store.agentTask(id: turnId) {
+        guard persisted.phase == .planning, persisted.pendingPlanning == task.pendingPlanning else { return }
+        task = persisted
+      }
+      task.phase = .failed
+      task.pendingPlanning = nil
+      task.verification = error.localizedDescription
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
+      throw error
+    }
+  }
+
   private func receiveLocalModelReply(
     profile: LocalModelRuntimeProfile,
     requestText: String,
@@ -5292,7 +5444,8 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     initialPlan: AgentPlan? = nil,
     collaborationRecallScope: AgentCollaborationToolEvidenceScope? = nil,
-    hasTruncatedCollaborationDependencies: Bool = false
+    hasTruncatedCollaborationDependencies: Bool = false,
+    useSelectedProvider: Bool = false
   ) async throws {
     try Task.checkCancellation()
     let taskId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
@@ -5458,11 +5611,17 @@ final class MessageCoordinator: ObservableObject {
           return
         }
       }
+      let selectedLocal = useSelectedProvider && attachments.isEmpty && !outgoing.readOnlyAnalysis
       let planningConversation = initialPlanningConversation(
         requestText: requestText,
-        outgoing: outgoing
+        outgoing: outgoing,
+        selectedProviderOnly: selectedLocal
       )
-      let plannerSnapshot = capturePlannerSnapshot(conversationId: outgoing.conversationId)
+      let plannerSnapshot = selectedLocal
+        ? AgentModelPlannerContactResolver(store: store).capturePhoneTurnSnapshot(
+          settings: store.modelPlannerSettings, localProfile: profile
+        )
+        : capturePlannerSnapshot(conversationId: outgoing.conversationId)
       let planningInput = AgentInitialPlanningInput(
         goal: requestText,
         conversation: planningConversation,
@@ -5522,6 +5681,9 @@ final class MessageCoordinator: ObservableObject {
           }
           return
         }
+      }
+      if selectedLocal {
+        throw AgentModelLoopRecoveryError(code: "selected_local_planning_result_unavailable")
       }
       guard let localNativeToolRuntime else {
         throw AgentIOSLocalModelWebToolError.unavailable
@@ -7931,18 +8093,20 @@ final class MessageCoordinator: ObservableObject {
 
   private func initialPlanningConversation(
     requestText: String,
-    outgoing: ChatMessage
+    outgoing: ChatMessage,
+    selectedProviderOnly: Bool = false
   ) -> AgentConversationContext {
     let session = store.agentSession(id: outgoing.conversationId)
     return AgentConversationContext(
       conversationId: outgoing.conversationId,
       summary: recentLocalConversationContext(
         contactId: outgoing.contactId,
-        excluding: outgoing.id
+        excluding: outgoing.id,
+        conversationId: selectedProviderOnly ? outgoing.conversationId : nil
       ),
       turns: [],
       privateMode: session?.privateMode ?? true,
-      globalContext: GalaxySSIGlobalAgentRuntimeBridge.compiledConversationContext(
+      globalContext: selectedProviderOnly ? "" : GalaxySSIGlobalAgentRuntimeBridge.compiledConversationContext(
         store: store,
         query: requestText,
         conversationId: outgoing.conversationId,
@@ -7960,6 +8124,121 @@ final class MessageCoordinator: ObservableObject {
       "selection_target": selection.targetId,
       "selection_model": selection.modelId
     ])
+  }
+
+  private func pairedPhonePlannerLink(_ route: AgentPairedPhonePlannerRoute) -> ServerLink? {
+    guard GalaxySSISignalEngine.isAvailable, signalEngine.hasSession(remoteName: route.desktopId),
+          let contact = store.contact(id: route.contactId) else { return nil }
+    return store.serverLinks.first { route.accepts(contact: contact, link: $0) }
+  }
+
+  private func capturePairedPhonePlannerSnapshot(
+    contact: GalaxySSIContact, outgoing: ChatMessage
+  ) throws -> AgentPlannerModelSnapshot {
+    let selection = AgentModelSelectionSettings.selection(for: outgoing.conversationId)
+    let profile = contact.connectorInvocationProfile
+    let manual = selection.mode == .manual
+    let modelId = manual && !selection.modelId.isBlank
+      ? selection.modelId : profile.normalizedModelId("")
+    let effort = manual ? selection.reasoningEffort : .automatic
+    guard effort == .automatic || profile.reasoningEfforts.contains(effort),
+          let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == contact.desktopId }) else {
+      throw AgentModelLoopRecoveryError(code: "paired_phone_planner_route_unavailable")
+    }
+    let route = AgentPairedPhonePlannerRoute(contactId: contact.id, desktopId: link.desktopId,
+      clientRouteId: link.routes.clientRouteId, modelId: modelId, reasoningEffort: effort)
+    guard pairedPhonePlannerLink(route) != nil else {
+      throw AgentModelLoopRecoveryError(code: "paired_phone_planner_route_unavailable")
+    }
+    var settings = store.modelPlannerSettings.normalized
+    settings.enabled = true
+    return AgentPlannerModelSnapshot(settings: settings, route: nil,
+      localProfileId: nil, selectedForPhoneTurn: true, pairedPhonePlanner: route)
+  }
+
+  private func planner(for snapshot: AgentPlannerModelSnapshot) throws -> GuardedModelAgentPlanner {
+    guard let route = snapshot.pairedPhonePlanner else {
+      return try AgentModelPlannerContactResolver(store: store).makePlanner(snapshot: snapshot)
+    }
+    guard pairedPhonePlannerLink(route) != nil else {
+      throw AgentModelLoopRecoveryError(code: "paired_phone_planner_route_unavailable")
+    }
+    return GuardedModelAgentPlanner(provider: AgentPairedPhonePlanningProvider { [weak self] invocation in
+      guard let self else { throw AgentModelLoopRecoveryError(code: "paired_phone_planner_closed") }
+      return try await self.requestPairedPhonePlan(route: route, invocation: invocation)
+    }, modelProfile: route.modelId)
+  }
+
+  private func requestPairedPhonePlan(
+    route: AgentPairedPhonePlannerRoute, invocation: AgentModelPlanningInvocation
+  ) async throws -> String {
+    try Task.checkCancellation()
+    let dispatch = route.dispatchIdentity(ownerId: store.profile.galaxySSIId, invocation: invocation)
+    let identity = dispatch.task
+    guard invocation.request.phoneOwnsExecution, identity.isComplete,
+          let link = pairedPhonePlannerLink(route),
+          store.agentTask(id: identity.turnId)?.phase == .planning else {
+      throw AgentModelLoopRecoveryError(code: "paired_phone_planner_unavailable")
+    }
+    let source = String(dispatch.source)
+    let now = AgentControlPlaneClock.nowMillis()
+    let record = AgentManagedResponseRecord(ownerRunId: dispatch.owner, supervisorRunId: identity.turnId,
+      agentId: "codex", deliveryMode: .observe, sourceMessageId: dispatch.source, contactId: route.contactId,
+      conversationId: identity.conversationId, turnId: identity.turnId, taskId: identity.taskId, createdAtMillis: now)
+    try managedDesktopReplyLedger.register(record)
+    guard taskIdentityStore.register(contactId: route.contactId, sourceMessageId: source, identity: identity),
+          let binding = AgentDesktopReplyBinding.managed(record: record, desktopId: route.desktopId,
+            agentId: "codex", identity: identity) else {
+      throw AgentModelLoopRecoveryError(code: "paired_phone_planner_identity_unavailable")
+    }
+    if try managedDesktopReplyLedger.recoveryRecord(owner: dispatch.owner)?.state == .pending,
+       !desktopReplyRecovery.pending.contains(where: { $0.binding == binding }) {
+      let prompt = invocation.systemPrompt + "\n\n" + invocation.prompt
+      guard let payload = route.requestPayload(identity: identity, source: source,
+        sender: store.profile.galaxySSIId, prompt: prompt,
+        responseLanguage: LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage), now: now)
+      else { throw AgentModelLoopRecoveryError(code: "paired_phone_planner_invalid_payload") }
+      let ticket = AgentDataDisclosureLedger.beginDesktopRequest(
+        store: disclosureStore, contactId: route.contactId, desktopId: route.desktopId,
+        providerId: "codex", title: "Codex", text: prompt, attachments: [],
+        conversationId: identity.conversationId, taskId: identity.taskId, turnId: identity.turnId
+      )
+      guard ticket.allowed else { throw AgentDataDisclosureBlockedError(destination: "Codex") }
+      do {
+        _ = try enqueueLinkPayload(payload, link: link, topic: link.routes.upTopic,
+          clientSourceMessageId: source, contactId: route.contactId)
+        guard desktopReplyRecovery.track(binding, now: now) else {
+          throw AgentModelLoopRecoveryError(code: "paired_phone_planner_tracking_unavailable")
+        }
+        AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .queued)
+        scheduleOutboxFlushFromStore()
+      } catch {
+        AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .failed,
+          failureReason: error.localizedDescription)
+        throw error
+      }
+    }
+
+    let deadline = AgentControlPlaneClock.nowMillis() + 120_000
+    repeat {
+      try Task.checkCancellation()
+      guard store.agentTask(id: identity.turnId)?.phase == .planning,
+            pairedPhonePlannerLink(route) != nil else {
+        throw AgentModelLoopRecoveryError(code: "paired_phone_planner_scope_changed")
+      }
+      if let reply = try managedDesktopReplyLedger.recoveryRecord(owner: dispatch.owner)?.response {
+        guard reply.success, reply.taskStatus == "completed", reply.sourceMessageId == dispatch.source,
+              reply.contactId == route.contactId, reply.conversationId == identity.conversationId,
+              reply.turnId == identity.turnId, reply.taskId == identity.taskId,
+              !reply.content.isBlank else {
+          throw AgentModelLoopRecoveryError(code: "paired_phone_planner_invalid_result")
+        }
+        managedDesktopReplyLedger.markApplied(ownerRunId: dispatch.owner)
+        return reply.content
+      }
+      try await Task.sleep(nanoseconds: 500_000_000)
+    } while AgentControlPlaneClock.nowMillis() < deadline
+    throw AgentModelLoopRecoveryError(code: "paired_phone_planner_result_timeout")
   }
 
   private func capturePlannerSnapshot(conversationId: String) -> AgentPlannerModelSnapshot? {
@@ -7985,7 +8264,7 @@ final class MessageCoordinator: ObservableObject {
       guard input.plannerConfigurationSha256 == snapshot.configurationSha256 else {
         throw AgentModelLoopRecoveryError(code: "task_planner_snapshot_hash_changed")
       }
-      _ = try AgentModelPlannerContactResolver(store: store).makePlanner(snapshot: snapshot)
+      _ = try planner(for: snapshot)
       return
     }
     guard expected == nil,
@@ -8015,6 +8294,13 @@ final class MessageCoordinator: ObservableObject {
       return nil
     }
     let requirements = AgentTaskRequirementAnalyzer.analyze(requestText)
+    let turnId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    let timerCheckpoint = AgentIOSTimerCheckpointStore.shared.current(conversationId: outgoing.conversationId)
+      .flatMap { checkpoint -> [String: String]? in
+        guard checkpoint.sourceTurnId == turnId, !outgoing.readOnlyAnalysis else { return nil }
+        return checkpoint.evidence(now: Int64(Date().timeIntervalSince1970 * 1_000))
+          .filter { ["operation_id", "timer_state", "remaining_seconds", "completion_verified"].contains($0.key) }
+      }
     let nativeIntentCapabilities: Set<AgentCapability> = [
       .toolUse,
       .deviceControl,
@@ -8027,13 +8313,15 @@ final class MessageCoordinator: ObservableObject {
       .code,
       .taskExecution
     ]
-    guard !requirements.capabilities.isDisjoint(with: nativeIntentCapabilities) else {
+    let selectedForPhoneTurn = plannerSnapshotOverride?.selectedForPhoneTurn == true
+    guard selectedForPhoneTurn || timerCheckpoint != nil ||
+      !requirements.capabilities.isDisjoint(with: nativeIntentCapabilities) else {
       return nil
     }
     let resolver = AgentModelPlannerContactResolver(store: store)
     let planner: GuardedModelAgentPlanner
     if let plannerSnapshotOverride {
-      guard let restored = try? resolver.makePlanner(snapshot: plannerSnapshotOverride) else { return nil }
+      guard let restored = try? self.planner(for: plannerSnapshotOverride) else { return nil }
       planner = restored
     } else {
       let modelSelection = AgentModelSelectionSettings.selection(for: outgoing.conversationId)
@@ -8048,7 +8336,9 @@ final class MessageCoordinator: ObservableObject {
     }
     let planRequest = AgentPlanRequest(
       goal: requestText,
-      screen: currentAgentScreenContext,
+      screen: selectedForPhoneTurn && !plannerSettings.shareScreenText
+        ? AgentScreenContext(foregroundApp: "GalaxySSI", pageTitle: "Agent")
+        : currentAgentScreenContext,
       nativeTools: runtime.registry.descriptors().filter {
         !outgoing.readOnlyAnalysis || AgentScreenAnalysisToolPolicy.allows($0)
       },
@@ -8056,10 +8346,13 @@ final class MessageCoordinator: ObservableObject {
       executionMode: executionMode,
       completionRequirements: completionRequirements
     )
-    let conversation = conversationOverride ?? initialPlanningConversation(
+    var conversation = conversationOverride ?? initialPlanningConversation(
       requestText: requestText,
       outgoing: outgoing
     )
+    if selectedForPhoneTurn {
+      conversation.globalContext = ""
+    }
     let hasAttachments = hasAttachmentsOverride ?? !attachments.isEmpty
     var planningRequest = AgentModelPlanningPromptRequest(
       planRequest: planRequest,
@@ -8068,14 +8361,14 @@ final class MessageCoordinator: ObservableObject {
         maximumActionsOverride: AgentPlanExecutionBatchPolicy.maximumModelBatchActions
       ),
       conversationContext: conversation,
-      executionTurnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+      executionTurnId: turnId,
       executionHistory: executionHistory.filter {
         AgentPlanContinuationScope(
           conversationId: outgoing.conversationId,
           turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
         ).owns($0)
       },
-      globalRealtimeContext: conversationOverride?.globalContext ??
+      globalRealtimeContext: selectedForPhoneTurn ? "" : conversationOverride?.globalContext ??
         globalRealtimeContextProvider.buildNonBlocking(
           query: requestText,
           currentConversationId: outgoing.conversationId,
@@ -8086,7 +8379,9 @@ final class MessageCoordinator: ObservableObject {
           )
         ),
       hasAttachments: hasAttachments,
-      allowsDirectResponse: allowsDirectResponse && !hasAttachments && executionMode != .planOnly
+      allowsDirectResponse: allowsDirectResponse && !hasAttachments && executionMode != .planOnly,
+      phoneOwnsExecution: true,
+      timerCheckpoint: timerCheckpoint
     )
     let scopedHistory = planningRequest.executionHistory
     let answerOnly = AgentCompletionEvidencePolicy.isAnswerOnly(history: scopedHistory) {
@@ -8094,7 +8389,8 @@ final class MessageCoordinator: ObservableObject {
     }
     let existingEvidence = AgentCompletionEvidencePolicy.missingEvidence(
       requirements: completionRequirements, history: scopedHistory, answerOnly: answerOnly)
-    planningRequest.allowsDirectResponse = planningRequest.allowsDirectResponse && answerOnly && existingEvidence.isEmpty &&
+    planningRequest.allowsDirectResponse = planningRequest.allowsDirectResponse && timerCheckpoint == nil &&
+      answerOnly && existingEvidence.isEmpty &&
       !AgentRollingPlanPolicy.isBatchBoundaryReason(replanReason)
     let fallbackPlan = AgentPlanFactory.actions(request: planRequest, [])
     for repairAttempt in 0...1 {
@@ -8103,7 +8399,7 @@ final class MessageCoordinator: ObservableObject {
       ) {
         await planner.planOrRespond(
           request: planningRequest,
-          settings: store.modelPlannerSettings,
+          settings: plannerSettings,
           safetySettings: store.agentSafetySettings,
           fallbackPlan: fallbackPlan
         )
@@ -8991,12 +9287,15 @@ final class MessageCoordinator: ObservableObject {
     }
     let reason = AgentRollingPlanPolicy.reason(plan: previousPlan, result: previousResult)
     let plannerHistory = previousPlan.historyForReplan().filter(continuationScope.owns)
-    let conversation = initialPlanningConversation(requestText: task.goal, outgoing: outgoing)
     let plannerSnapshot = task.plannerSnapshot
       ?? capturePlannerSnapshot(conversationId: outgoing.conversationId)
+    let conversation = initialPlanningConversation(
+      requestText: task.goal, outgoing: outgoing,
+      selectedProviderOnly: plannerSnapshot?.selectedForPhoneTurn == true
+    )
     if let plannerSnapshot {
       do {
-        _ = try AgentModelPlannerContactResolver(store: store).makePlanner(snapshot: plannerSnapshot)
+        _ = try planner(for: plannerSnapshot)
       } catch {
         task.phase = .paused
         task.blocked = true
@@ -9740,11 +10039,18 @@ final class MessageCoordinator: ObservableObject {
 
   private func recentLocalConversationContext(
     contactId: String,
-    excluding messageId: UUID
+    excluding messageId: UUID,
+    conversationId: String? = nil
   ) -> String {
-    let messages = store.messages(for: contactId)
-      .filter { $0.id != messageId }
-      .suffix(12)
+    let messages: ArraySlice<ChatMessage>
+    if let conversationId {
+      let scoped = store.agentSessionMessages(conversationId)
+      // A recovered turn must not incorporate messages sent after the original request.
+      guard let index = scoped.firstIndex(where: { $0.id == messageId }) else { return "" }
+      messages = scoped[..<index].suffix(12)
+    } else {
+      messages = store.messages(for: contactId).filter { $0.id != messageId }.suffix(12)
+    }
     var lines: [String] = []
     var characterCount = 0
     for message in messages {
@@ -12402,7 +12708,13 @@ final class MessageCoordinator: ObservableObject {
         }
       }
     }
-    if let streamUpdate = AgentConnectorStreamUpdate(payload: appPayload) {
+    let streamUpdate = AgentConnectorStreamUpdate(payload: appPayload)
+    if (streamUpdate != nil || appPayload.string("type") == "agent_task_event"),
+       isPairedPhonePlannerProgress(appPayload) {
+      if !messageId.isEmpty { deliveryStore.completeIncoming(messageId: messageId) }
+      return
+    }
+    if let streamUpdate {
       applyAgentConnectorStreamUpdate(streamUpdate)
       if !messageId.isEmpty {
         deliveryStore.completeIncoming(messageId: messageId)
@@ -12495,6 +12807,23 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     if let response = AgentConnectorResponse.fromPayload(appPayload) {
+      if let pending = try? managedDesktopReplyLedger.recoveryRecord(matching: response),
+         pending.ownerRunId.hasPrefix(AgentPairedPhonePlannerRoute.ownerPrefix) {
+        guard object.string("scheme") == "signal", let link, link.paired,
+              let contact = store.contact(id: pending.contactId), contact.trustState == .verified,
+              link.desktopId == contact.desktopId, link.desktopId == appPayload.string("desktop_id"),
+              appPayload.string("type") == "text", appPayload.string("agent_id") == "codex",
+              appPayload.string("client_route_id") == link.routes.clientRouteId,
+              response.contactId == pending.contactId, response.taskId == pending.taskId,
+              taskIdentityStore.matchesRegistered(payload: appPayload) else {
+          if !messageId.isEmpty { deliveryStore.completeIncoming(messageId: messageId) }
+          return
+        }
+        guard persistPairedPhonePlannerResponse(response, record: pending) else { return }
+        acknowledgeManagedDesktopResult(appPayload, response: response, link: link)
+        if !messageId.isEmpty { deliveryStore.completeIncoming(messageId: messageId) }
+        return
+      }
       if connectorResponseBus.isTerminal(response) {
         connectorResponseBus.remove(response)
         if !messageId.isEmpty {

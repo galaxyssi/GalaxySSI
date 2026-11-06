@@ -38,6 +38,11 @@ enum AgentModelPlanningPrompt {
       ? "Research contract: search independent public sources, read relevant originals, and cite evidence. Search candidates and zero catalog hits are not verified conclusions. Rephrase a query or try another source only when it adds evidence."
       : executionProfile.contract)
     append(&prompt, "\n\n")
+    if request.phoneOwnsExecution {
+      append(&prompt, "For an ActionPlan, add the root field execution_location=phone. ")
+      append(&prompt, "The model reasons; iOS owns execution. Never use a Desktop app, host shell, web timer, or cloud scheduler as a substitute for a phone operation. Decide from meaning and context, not exact command phrases. Use only listed CALL_NATIVE_TOOL actions and wait for their receipts. A one-time countdown is not a recurring alarm. For a new countdown use galaxyssi.agent_action.set.alarm with timer_operation=start and timer_seconds; omit operation_id. For inspection or cancellation reuse only a scoped operation_id from phone evidence. Never guess IDs or repeat an unsettled operation.\n\n")
+      append(&prompt, "For side effects, declare completion_requirements.outcomes once the subject identity is known. Each outcome has id, tool_id, subject, checks and after_tool_id. subject and checks are JSON objects mapping actual receipt JSON pointers to observed string identities and expected typed scalar values respectively. after_tool_id identifies the mutation, or is empty for a pure read. For a running timer, use /metadata/operation_id with the observed ID, /metadata/timer_state=running and /metadata/completion_verified=true (string). Dispatch acceptance is not proof. A newer failed observation overrides earlier success. Fix malformed receipt checks without rerunning the tool.\n\n")
+    }
     appendSchema(to: &prompt, request: request)
     appendActionRules(to: &prompt, request: request, settings: normalizedSettings)
     appendResponseLanguageRule(to: &prompt, request: request)
@@ -50,6 +55,10 @@ enum AgentModelPlanningPrompt {
     }
     let researchTools = compactResearch ? appendResearchTools(to: &prompt, request: request) : []
     appendReplanContext(to: &prompt, request: request)
+    if request.phoneOwnsExecution, let checkpoint = request.timerCheckpoint {
+      let encoded = AgentMcpJSONCodec.stringify(checkpoint.mapValues { AgentMcpJSONValue.string($0) })
+      append(&prompt, "Phone timer checkpoint for this turn (not a new dispatch): \(encoded)\n")
+    }
     AgentPlanningTiming.measure("progress") {
       appendExecutionHistory(to: &prompt, request: request, settings: normalizedSettings, compact: compact)
     }
@@ -117,19 +126,25 @@ enum AgentModelPlanningPrompt {
     let maxBatchActions = request.allowsPhoneRuntimeTools
       ? AgentPlanExecutionBatchPolicy.maximumModelBatchActions
       : min(max(settings.maxActions, 1), AgentModelPlannerSettings.maximumActions)
-    let allowed = AgentModelPlanParser.allowedKinds
+    let allowedKinds: Set<AgentActionKind> = request.phoneOwnsExecution
+      ? [.callNativeTool, .draftPlan] : AgentModelPlanParser.allowedKinds
+    let allowed = allowedKinds
       .map(\.rawValue)
       .sorted()
       .joined(separator: ", ")
     append(&prompt, "Allowed kinds: \(allowed).\n")
     append(&prompt, "DRAFT_PLAN is valid only during replanning, as the sole action with target task-complete after the goal is already complete; never append it after an executable action. ")
-    append(&prompt, "TAP/LONG_PRESS require an exact element_query from the current inventory; prefer the id when labels repeat. ")
-    append(&prompt, "TYPE_TEXT requires an exact field_query and text. ")
-    append(&prompt, "DELETE_TEXT/PASTE_TEXT require field_query. SWIPE requires direction up/down/left/right. ")
-    append(&prompt, "OPEN_APP requires an exact package from inventory. OPEN_URL requires an http/https URL. ")
+    if !request.phoneOwnsExecution {
+      append(&prompt, "TAP/LONG_PRESS require an exact element_query from the current inventory; prefer the id when labels repeat. ")
+      append(&prompt, "TYPE_TEXT requires an exact field_query and text. ")
+      append(&prompt, "DELETE_TEXT/PASTE_TEXT require field_query. SWIPE requires direction up/down/left/right. ")
+      append(&prompt, "OPEN_APP requires an exact package from inventory. OPEN_URL requires an http/https URL. ")
+    }
     append(&prompt, "CALL_NATIVE_TOOL requires an exact tool_id from the phone-native inventory and arguments matching its input schema. ")
     append(&prompt, "For galaxyssi.runtime.execute phone-development manifests, include language=python and put the complete manifest under phone_development_manifest; the manifest must name an entry_file present in files. ")
-    append(&prompt, "CALL_CONNECTOR/CONTROL_DEVICE require an exact connector_id from inventory. ")
+    if !request.phoneOwnsExecution {
+      append(&prompt, "CALL_CONNECTOR/CONTROL_DEVICE require an exact connector_id from inventory. ")
+    }
     append(&prompt, "Plan only the next bounded execution batch, never the entire long-running goal. ")
     append(&prompt, "Declare root completion_requirements by interpreting the user's actual requested outcome, including exclusions. There is no default publication requirement. publication is none, commit, push, or pull_request; phone_linux is true only when successful execution in the phone Linux guest is part of the requested outcome. These fields are completion obligations, not permissions. Preserve an existing declaration unless correcting it, and explain every outcome-changing correction in reason. ")
     let workspace = AgentWorkspaceScope.id(conversationId: request.conversationContext.conversationId)
@@ -392,6 +407,7 @@ enum AgentModelPlanningPrompt {
     request: AgentModelPlanningPromptRequest,
     limit: Int
   ) {
+    guard !request.phoneOwnsExecution else { return }
     append(&prompt, "Callable connectors:\n")
     for target in request.planRequest.targets.filter({ $0.status == .available }).prefix(limit) {
       let capabilities = target.capabilities.map(\.rawValue).sorted().joined(separator: ",")
@@ -443,6 +459,11 @@ enum AgentModelPlanningPrompt {
           (allowsPhoneRuntimeTools || !AgentPhoneRuntimePolicy.isPhoneRuntimeTool($0.id))
       }
       .sorted {
+        if request.phoneOwnsExecution {
+          let firstDirect = AgentPhoneRuntimePolicy.directPhoneActionTools.contains($0.id)
+          let secondDirect = AgentPhoneRuntimePolicy.directPhoneActionTools.contains($1.id)
+          if firstDirect != secondDirect { return firstDirect }
+        }
         let firstPriority = priority[$0.id] ?? Int.max
         let secondPriority = priority[$1.id] ?? Int.max
         if firstPriority != secondPriority {
