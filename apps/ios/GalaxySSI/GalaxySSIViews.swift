@@ -555,6 +555,8 @@ struct ConversationView: View {
   @State private var attachments: [GalaxySSIDraftAttachment] = []
   @State private var attachmentMenuPresented = false
   @State private var fileImporterPresented = false
+  @State private var fileAttachmentOwner: String?
+  @State private var fileAttachmentRequest: UUID?
   @State private var cameraPickerPresented = false
   @State private var cameraAttachmentOwner: String?
   @State private var attachmentError = ""
@@ -854,6 +856,8 @@ struct ConversationView: View {
           textModeActive: $composerTextModeActive,
           deviceInputPolicy: deviceInputPolicy,
           voiceSettings: store.voiceSettings,
+          attachmentImageLimit: contact.isDesktopDeviceContact || isPhonePersonContact
+            ? ComposerImageQuality.contactCompressedBytes : AgentImagePipeline.targetTransportBytes,
           dedicatedPeerVoiceCapture: GalaxySSIPeerVoiceMessageAudio.shouldUseDedicatedCapture(
             purpose: "chat_message",
             isPersonContact: isPhonePersonContact
@@ -870,7 +874,7 @@ struct ConversationView: View {
           onOpenSessions: openAgentSessionsFromChat,
           onScan: openContactScannerFromChat,
           onTakePhoto: openCameraAttachmentPicker,
-          onAddFile: { fileImporterPresented = true },
+          onAddFile: openComposerFilePicker,
           onSend: sendCurrentMessage,
           onVoiceTranscript: sendVoiceTranscript,
           t: t
@@ -926,10 +930,23 @@ struct ConversationView: View {
     ) { result in
       switch result {
       case .success(let urls):
-        urls.forEach(addAttachment)
+        receiveComposerFiles(urls)
       case .failure(let error):
-        attachmentError = error.localizedDescription
+        if fileAttachmentOwner == composerAttachmentScope { attachmentError = error.localizedDescription }
+        fileAttachmentOwner = nil
+        fileAttachmentRequest = nil
       }
+    }
+    .onChange(of: composerAttachmentScope) { _ in
+      fileAttachmentOwner = nil
+      fileAttachmentRequest = nil
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
+      fileAttachmentOwner = nil
+      fileAttachmentRequest = nil
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+      cameraAttachmentOwner = nil
     }
     .fullScreenCover(isPresented: $cameraPickerPresented) {
       CameraAttachmentPickerView(
@@ -938,7 +955,7 @@ struct ConversationView: View {
             cameraAttachmentOwner = nil
             cameraPickerPresented = false
           }
-          guard cameraAttachmentOwner == composerAttachmentScope else {
+          guard cameraAttachmentOwner == composerAttachmentScope, scenePhase == .active else {
             var discarded = attachment
             discarded.wipeSensitive()
             return
@@ -1406,6 +1423,10 @@ struct ConversationView: View {
   }
 
   private func sendCurrentMessage() {
+    guard !attachments.contains(where: \.requiresInitialComposerImageReview) else {
+      attachmentError = t("composer_attachment_review_required", "Review the selected images before sending.")
+      return
+    }
     let cleanDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
     let outgoingAttachments = attachments
     let target = contact
@@ -1673,12 +1694,24 @@ struct ConversationView: View {
     }
   }
 
-  private func addAttachment(url: URL) {
-    do {
-      let attachment = try GalaxySSIAttachmentPayloadBuilder.makeAttachment(from: url)
-      appendAttachment(attachment)
-    } catch {
-      attachmentError = error.localizedDescription
+  private func openComposerFilePicker() {
+    fileAttachmentOwner = composerAttachmentScope
+    fileAttachmentRequest = UUID()
+    fileImporterPresented = true
+  }
+
+  private func receiveComposerFiles(_ urls: [URL]) {
+    guard let owner = fileAttachmentOwner, let request = fileAttachmentRequest, owner == composerAttachmentScope else { return }
+    fileAttachmentOwner = nil
+    let target = contact
+    Task { @MainActor in
+      defer { if fileAttachmentRequest == request { fileAttachmentRequest = nil } }
+      let isCurrent = { fileAttachmentRequest == request && owner == composerAttachmentScope && scenePhase == .active }
+      await ComposerFileSelection.deliver(urls, isCurrent: isCurrent, onImage: appendAttachment, onDocument: { attachment in
+        if !(await coordinator.send("", to: target, attachments: [attachment])), isCurrent() {
+          attachmentError = coordinator.lastError.ifBlank(t("composer_attachment_send_failed", "Could not send the file."))
+        }
+      }, onFailure: { attachmentError = $0.localizedDescription })
     }
   }
 

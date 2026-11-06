@@ -17,6 +17,10 @@ extension AgentHomeView {
       composerAttachments: attachments,
       attachmentSnapshot: voiceAttachmentSnapshot
     )
+    guard !outgoingAttachments.contains(where: \.requiresInitialComposerImageReview) else {
+      attachmentError = t("composer_attachment_review_required", "Review the selected images before sending.")
+      return
+    }
     let text = cleanDraft.ifBlank(attachmentLabel(for: outgoingAttachments))
     let isVoiceSubmission = voiceAttachmentSnapshot != nil
     let agentGoal = cleanDraft.isEmpty && !outgoingAttachments.isEmpty

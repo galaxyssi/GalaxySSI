@@ -6122,6 +6122,12 @@
 "clipboard_image_reset" = "重置裁剪";
 "composer_attachment_crop" = "裁剪";
 "composer_attachment_original" = "原图";
+"composer_attachment_quality" = "图片质量";
+"composer_attachment_compressed" = "压缩";
+"composer_attachment_quality_unavailable" = "无法按所选画质发送此图片。";
+"composer_attachment_review_required" = "请先确认所选图片。";
+"composer_attachment_send_failed" = "文件发送失败。";
+"composer_attachment_use" = "使用";
 "composer_attachment_retake" = "重拍";
 "composer_attachment_rotate" = "旋转";
 "composer_attachment_fine_rotate" = "微调旋转";

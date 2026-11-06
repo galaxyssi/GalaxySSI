@@ -127,7 +127,10 @@ struct AgentHomeView: View {
   @State var timelineActionTaskIDsInFlight: Set<String> = []
   @State var pendingPrimaryActionTaskID: String?
   @State var fileImporterPresented = false
+  @State var fileAttachmentOwner: String?
+  @State var fileAttachmentRequest: UUID?
   @State var photoPickerPresented = false
+  @State var photoAttachmentOwner: String?
   @State var screenshotPickerPresented = false
   @State var screenCaptureSourcePresented = false
   @State var screenPagePickerPresented = false
@@ -405,6 +408,12 @@ struct AgentHomeView: View {
         refreshAgentRouteState()
         refreshVisibleAgentReplyReadState()
       }
+      .onChange(of: photoPickerPresented) { presented in
+        if presented { photoAttachmentOwner = store.activeAgentConversationId }
+      }
+      .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+        cameraAttachmentOwner = nil
+      }
       .onReceive(
         NotificationCenter.default.publisher(for: .galaxySSIDesktopPairingDidComplete)
       ) { notification in
@@ -495,11 +504,16 @@ struct AgentHomeView: View {
           _ = coordinator.requestCapabilityManifestRefresh(force: true)
           focusScannedAgents(agentIDs)
         },
-        onAddAttachment: addAttachment,
+        onAddAttachments: receiveComposerFiles,
         onAppendAttachment: { attachment in
+          guard scenePhase == .active else { return }
           if attachment.sourceDescription == "camera" {
             let owner = cameraAttachmentOwner
             cameraAttachmentOwner = nil
+            guard owner == store.activeAgentConversationId else { return }
+          } else if attachment.sourceDescription == "photo-library" {
+            let owner = photoAttachmentOwner
+            photoAttachmentOwner = nil
             guard owner == store.activeAgentConversationId else { return }
           }
           appendAttachment(attachment)
@@ -833,6 +847,8 @@ struct AgentHomeView: View {
       },
       onTakePhoto: openCameraAttachmentPicker,
       onAddFile: {
+        fileAttachmentOwner = store.activeAgentConversationId
+        fileAttachmentRequest = UUID()
         fileImporterPresented = true
       },
       onAnalyzeScreenshot: presentScreenCaptureSources,

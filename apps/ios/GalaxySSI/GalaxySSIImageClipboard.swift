@@ -164,7 +164,8 @@ struct GalaxySSIClipboardImageReview: View {
       }.value
       if let bytes, let type = GalaxySSIImageClipboard.validated(bytes) {
         onAdd(GalaxySSIDraftAttachment(displayName: "clipboard." + (type.preferredFilenameExtension ?? "png"),
-          mimeType: type.preferredMIMEType ?? "image/png", data: bytes, sourceDescription: "clipboard"))
+          mimeType: type.preferredMIMEType ?? "image/png", data: bytes, sourceDescription: "clipboard",
+          composerImageQuality: original ? .original : .compressed))
       }
       dismiss()
     }
