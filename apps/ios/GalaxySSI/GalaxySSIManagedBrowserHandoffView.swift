@@ -38,7 +38,16 @@ struct GalaxySSIManagedBrowserHandoffView: View {
       browser.authorize = { [weak coordinator] in
         coordinator?.managedBrowserPresentationIsCurrent(request) == true
       }
-      browser.load(request.handoff.address)
+      browser.persistCookies = { [weak coordinator] cookies in
+        guard let coordinator else { throw AgentManagedBrowserContinuationStore.Failure.staleTicket }
+        try coordinator.saveManagedBrowserCookies(cookies, for: request)
+      }
+      Task { @MainActor in
+        do {
+          let cookies = try coordinator.managedBrowserCookies(request)
+          await browser.load(request.handoff.address, restoring: cookies)
+        } catch { failed = true }
+      }
     }
     .onReceive(NotificationCenter.default.publisher(for: AgentManagedBrowserContinuationStore.changed)) { _ in
       if !coordinator.managedBrowserPresentationIsCurrent(request) { browser.close(); presentation.wrappedValue.dismiss() }
@@ -56,6 +65,7 @@ struct GalaxySSIManagedBrowserHandoffView: View {
     Task { @MainActor in
       do {
         let observation = try await browser.observation()
+        try await browser.flushCookies()
         try coordinator.returnManagedBrowserControl(request, observation: observation)
         presentation.wrappedValue.dismiss()
       } catch { failed = true }
@@ -76,11 +86,14 @@ private struct ManagedBrowserWebView: UIViewRepresentable {
 }
 
 @MainActor
-private final class ManagedBrowserViewSession: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate {
+private final class ManagedBrowserViewSession: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate,
+  WKHTTPCookieStoreObserver {
   @Published private(set) var currentAddress: URL?
   @Published private(set) var canReturn = false
   var authorize: () -> Bool = { false }
+  var persistCookies: ([HTTPCookie]) throws -> Void = { _ in }
   private var loaded = false
+  private var cookieObserverInstalled = false
   private lazy var webView: WKWebView = {
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = .nonPersistent()
@@ -94,15 +107,29 @@ private final class ManagedBrowserViewSession: NSObject, ObservableObject, WKNav
 
   var view: WKWebView { webView }
 
-  func load(_ address: String) {
+  func load(_ address: String, restoring cookies: [HTTPCookie]) async {
     guard !loaded, authorize(), let url = AgentManagedBrowserHandoff.url(address) else { return }
     loaded = true
+    let jar = webView.configuration.websiteDataStore.httpCookieStore
+    for cookie in cookies {
+      guard authorize() else { return }
+      await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+        jar.setCookie(cookie) { continuation.resume() }
+      }
+    }
+    guard authorize() else { return }
+    jar.add(self)
+    cookieObserverInstalled = true
     webView.load(URLRequest(url: url))
   }
 
   func close() {
     authorize = { false }
     canReturn = false
+    if cookieObserverInstalled {
+      webView.configuration.websiteDataStore.httpCookieStore.remove(self)
+      cookieObserverInstalled = false
+    }
     if loaded { webView.stopLoading() }
   }
 
@@ -133,6 +160,20 @@ private final class ManagedBrowserViewSession: NSObject, ObservableObject, WKNav
   }
 
   func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { canReturn = false }
+
+  func cookiesDidChange(in cookieStore: WKHTTPCookieStore) {
+    Task { @MainActor [weak self] in try? await self?.flushCookies() }
+  }
+
+  func flushCookies() async throws {
+    guard authorize(), cookieObserverInstalled else { throw AgentManagedBrowserContinuationStore.Failure.staleTicket }
+    let jar = webView.configuration.websiteDataStore.httpCookieStore
+    let cookies: [HTTPCookie] = await withCheckedContinuation { continuation in
+      jar.getAllCookies { continuation.resume(returning: $0) }
+    }
+    guard authorize() else { throw AgentManagedBrowserContinuationStore.Failure.staleTicket }
+    try persistCookies(cookies)
+  }
 
   func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? { nil }

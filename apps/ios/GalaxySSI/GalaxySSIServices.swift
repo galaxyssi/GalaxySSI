@@ -21,6 +21,8 @@ final class MessageCoordinator: ObservableObject {
   private lazy var managedBrowserContinuations = AgentManagedBrowserContinuationStore(secrets: store.secrets)
   private var liveManagedBrowserMembers: Set<String> = []
   private var managedBrowserRecoveryInFlight: Set<String> = []
+  private var liveManagedBrowserTeams: Set<String> = []
+  private var managedBrowserTeamRecoveryInFlight: Set<String> = []
   private var runningAutomationCycle = false
   @Published private(set) var lastRevokedContactIds: Set<String> = []
   @Published private(set) var pairingRevocationRevision = 0
@@ -308,6 +310,7 @@ final class MessageCoordinator: ObservableObject {
   private let peerSessionRecoveryGate = GalaxySSIPeerSessionRecoveryGate()
   private var approvedPhoneDecisionReplayScheduled = false
   private var foregroundRecoveryObserver: NSObjectProtocol?
+  private var managedBrowserTeamRecoveryObserver: NSObjectProtocol?
   private let transportEpoch = "v11-opaque-link-v2"
   static let maximumOutboxDeliveryAttempts = 6
   static let maximumAttachmentOutboxDeliveryAttempts = 9
@@ -856,6 +859,12 @@ final class MessageCoordinator: ObservableObject {
         self.pendingReplyRecoveryWake.request(isConnected: self.mqttClient.relationshipSubscriptionsReady)
       }
     }
+    managedBrowserTeamRecoveryObserver = NotificationCenter.default.addObserver(
+      forName: .galaxySSIAgentTeamExecutionHistoryDidUpdate, object: nil, queue: .main
+    ) { [weak self] notification in
+      guard let runID = notification.object as? String else { return }
+      Task { @MainActor in self?.recoverManagedBrowserTeams(runID: runID) }
+    }
   }
 
   private func resumePendingIncomingAttachmentDownloads(
@@ -891,6 +900,9 @@ final class MessageCoordinator: ObservableObject {
     transportReceiptDrainTask?.cancel()
     if let foregroundRecoveryObserver {
       NotificationCenter.default.removeObserver(foregroundRecoveryObserver)
+    }
+    if let managedBrowserTeamRecoveryObserver {
+      NotificationCenter.default.removeObserver(managedBrowserTeamRecoveryObserver)
     }
     GlobalProactiveDeliveryBus.removeListener(globalProactiveDeliveryListener)
     if let token = globalResearchResponseToken {
@@ -4236,7 +4248,8 @@ final class MessageCoordinator: ObservableObject {
       do {
         guard try await publishRequestedAgentTeam(plan: collaborationPlan, requestedMembers: [],
           requestText: requestText, outgoing: outgoing, attachments: effectiveAttachments,
-          voiceSessionId: voiceSessionId, executionMode: taskExecutionMode, targets: callableTargets) == true
+          voiceSessionId: voiceSessionId, executionMode: taskExecutionMode, targets: callableTargets,
+          stagedAttachments: stagedAttachments) == true
         else { throw GalaxySSIError.invalidPayload("The collaboration team could not be dispatched") }
         return true
       } catch {
@@ -7773,7 +7786,9 @@ final class MessageCoordinator: ObservableObject {
     attachments: [GalaxySSIDraftAttachment],
     voiceSessionId: String,
     executionMode: AgentTaskExecutionMode,
-    targets: [AgentCallableTarget]
+    targets: [AgentCallableTarget],
+    stagedAttachments: [AgentStagedAttachment] = [],
+    recovery: AgentManagedBrowserTeamDispatch? = nil
   ) async throws -> Bool? {
     guard let action = plan.actions.first else { return nil }
     let isCollaboration = action.parameters["agent_selection_source"] == "collaboration_roster"
@@ -7793,6 +7808,13 @@ final class MessageCoordinator: ObservableObject {
     guard let spec = AgentTeamDispatchSpecCodec.decode(action.parameters[agentTeamSpecParameter] ?? "") else {
       return nil
     }
+    if isCollaboration, !liveManagedBrowserTeams.insert(spec.supervisorRunId).inserted {
+      throw AgentManagedBrowserContinuationStore.Failure.busy
+    }
+    defer {
+      if isCollaboration { liveManagedBrowserTeams.remove(spec.supervisorRunId) }
+    }
+    var frozenDispatch = recovery
 
     let ordered: [AgentTeamMember]
     if isCollaboration {
@@ -7833,8 +7855,14 @@ final class MessageCoordinator: ObservableObject {
     let saveTeamHistory = store.agentSession(id: outgoing.conversationId).map {
       !$0.privateMode && !$0.trackingPaused
     } ?? false
-    guard (!isCollaboration || saveTeamHistory),
-          !saveTeamHistory || AgentTeamExecutionHistoryStore.shared.upsert(savedTeam) else {
+    if let recovery {
+      guard isCollaboration, recovery.runID == spec.supervisorRunId, recovery.plan == plan, saveTeamHistory else {
+        throw AgentManagedBrowserContinuationStore.Failure.scopeChanged
+      }
+      savedTeam = try AgentTeamExecutionHistoryStore.shared.reopenManagedBrowserTeam(recovery, outgoing: outgoing,
+        profileID: store.profile.identityFingerprint, now: AgentControlPlaneClock.nowMillis())
+    } else if (isCollaboration && !saveTeamHistory) ||
+        (saveTeamHistory && !AgentTeamExecutionHistoryStore.shared.upsert(savedTeam)) {
       throw GalaxySSIError.invalidPayload("The original Agent team identity could not be saved")
     }
     agentHomeDisplayContactIdsByTurnId[homeTurnId] = outgoing.contactId
@@ -7847,6 +7875,34 @@ final class MessageCoordinator: ObservableObject {
       if isCollaboration {
         try Task.checkCancellation()
         guard store.profile.identityFingerprint == profileIdentity else { throw CancellationError() }
+      }
+      if recovery != nil {
+        let history = AgentTeamExecutionHistoryStore.shared
+        guard let saved = history.snapshot(supervisorRunId: spec.supervisorRunId),
+              let current = saved.members.first(where: { $0.memberId == member.memberId && $0.agentId == member.agentId }),
+              current.deliveryMode == member.deliveryMode,
+              current.sourceMessageId == AgentControlPlaneActionExecutor.stableRunId(
+                conversationId: outgoing.conversationId, turnId: homeTurnId, actionId: action.id, agentId: member.memberId)
+        else { throw AgentManagedBrowserContinuationStore.Failure.scopeChanged }
+        switch AgentManagedBrowserTeamDispatch.MemberRecovery(current) {
+        case .dispatch: break
+        case .reuse(let result):
+          if member.deliveryMode == .respond { primaryPublished = true }
+          else { observations.append((member.memberId, result)) }
+          continue
+        case .awaitOriginal:
+          if member.deliveryMode == .respond && current.dispatchCheckpoint == .accepted && member.agentId != "local-llm" {
+            primaryPublished = true
+            continue
+          }
+          let result = try? await waitForCollaborationObserver(runId: spec.supervisorRunId,
+            memberId: member.memberId, sourceMessageId: current.sourceMessageId)
+          guard let result else { throw AgentManagedBrowserContinuationStore.Failure.notReady }
+          if member.deliveryMode == .respond { primaryPublished = true }
+          else { observations.append((member.memberId, result)) }
+          continue
+        case .stop: throw AgentManagedBrowserContinuationStore.Failure.notReady
+        }
       }
       guard let target = targetsById[member.agentId], target.status == .available else {
         persistTeamMemberFailure("The selected Agent is unavailable", member: member, spec: spec, outgoing: outgoing)
@@ -7958,6 +8014,20 @@ final class MessageCoordinator: ObservableObject {
             memberId: member.memberId, sourceId: sourceMessageId) : nil
           let memberPrompt = try promptForDispatch()
           if let recallScope, executionMode != .planOnly, !outgoing.readOnlyAnalysis {
+            if frozenDispatch == nil {
+              guard attachments.count == stagedAttachments.count else {
+                throw AgentManagedBrowserContinuationStore.Failure.unavailable
+              }
+              let references = zip(attachments, stagedAttachments).map {
+                AgentManagedBrowserTeamDispatch.Attachment(id: $0.0.id, staged: $0.1)
+              }
+              let dispatch = AgentManagedBrowserTeamDispatch(profileID: profileIdentity, runID: spec.supervisorRunId,
+                teamID: savedTeam.teamId, generation: savedTeam.createdAtMillis, conversationID: outgoing.conversationId,
+                turnID: homeTurnId, outgoingID: outgoing.id, contactID: outgoing.contactId, plan: plan,
+                executionMode: executionMode, goal: requestText, attachments: references)
+              try managedBrowserContinuations.prepareTeamDispatch(dispatch)
+              frozenDispatch = dispatch
+            }
             let result = try await runManagedBrowserMember(profile: profile, owner: recallScope,
               requestText: memberPrompt, outgoing: outgoing, attachments: attachments)
             if member.deliveryMode == .respond { primaryPublished = true }
@@ -8126,6 +8196,7 @@ final class MessageCoordinator: ObservableObject {
       id: outgoing.conversationId,
       label: "\(spec.definition.members.count) Agents"
     )
+    if let frozenDispatch { try managedBrowserContinuations.finishTeamDispatch(frozenDispatch) }
     return primaryPublished
   }
 
@@ -8547,6 +8618,16 @@ final class MessageCoordinator: ObservableObject {
     recoverManagedBrowserMembers()
   }
 
+  func managedBrowserCookies(_ request: AgentManagedBrowserPresentation) throws -> [HTTPCookie] {
+    guard managedBrowserPresentationIsCurrent(request) else { throw AgentManagedBrowserContinuationStore.Failure.scopeChanged }
+    return try managedBrowserContinuations.cookies(request.handoff.ticket, binding: request.binding)
+  }
+
+  func saveManagedBrowserCookies(_ cookies: [HTTPCookie], for request: AgentManagedBrowserPresentation) throws {
+    guard managedBrowserPresentationIsCurrent(request) else { throw AgentManagedBrowserContinuationStore.Failure.scopeChanged }
+    try managedBrowserContinuations.saveCookies(cookies, ticket: request.handoff.ticket, binding: request.binding)
+  }
+
   private func runManagedBrowserMember(profile: LocalModelRuntimeProfile, owner: AgentCollaborationToolEvidenceScope,
                                       requestText: String, outgoing: ChatMessage,
                                       attachments: [GalaxySSIDraftAttachment]) async throws -> String {
@@ -8622,7 +8703,9 @@ final class MessageCoordinator: ObservableObject {
                 managedBrowserControl(binding) == .run else { throw AgentManagedBrowserContinuationStore.Failure.unavailable }
           let profile = LocalModelRuntimeCatalog.find(binding.modelID)
           guard profile.id == binding.modelID, LocalModelRuntimeSettings.isProfileEnabled(profile),
-                LocalModelInferenceRuntime.shared.ready(profile: profile) else {
+                LocalModelInferenceRuntime.shared.ready(profile: profile),
+                let target = AgentCallableTargetCatalog.build(contacts: store.visibleContacts,
+                  apiKey: { store.apiKey(for: $0) }).first(where: { $0.id == binding.agentID }) else {
             throw AgentManagedBrowserContinuationStore.Failure.unavailable
           }
           _ = try AgentTeamExecutionHistoryStore.shared.reopenManagedBrowserMember(
@@ -8639,14 +8722,16 @@ final class MessageCoordinator: ObservableObject {
           }
           let completion: AgentIOSLocalModelWebToolCompletion
           do {
-            completion = try await AgentIOSLocalModelWebToolRunner.run(prompt: input.prompt, profile: profile,
-              hasAttachments: input.hasAttachments, sessionID: owner.conversationId, conversationID: owner.conversationId,
-              turnID: owner.turnId, taskID: owner.sourceId, baseSystemPrompt: input.systemPrompt, registry: runtime.registry,
-              collaborationRecallScope: owner, collaborationOwner: owner,
-              collaborationConversationDatabase: store.agentConversationDatabase,
-              managedBrowser: execution, managedInput: input,
-              managedJournal: EncryptedAgentModelLoopJournal(secrets: store.secrets,
-                storageKey: "galaxyssi.agent.managed-browser-loop." + binding.key))
+            completion = try await withTransientAgentSlot(target: target, sourceMessageId: owner.sourceId) {
+              try await AgentIOSLocalModelWebToolRunner.run(prompt: input.prompt, profile: profile,
+                hasAttachments: input.hasAttachments, sessionID: owner.conversationId, conversationID: owner.conversationId,
+                turnID: owner.turnId, taskID: owner.sourceId, baseSystemPrompt: input.systemPrompt, registry: runtime.registry,
+                collaborationRecallScope: owner, collaborationOwner: owner,
+                collaborationConversationDatabase: store.agentConversationDatabase,
+                managedBrowser: execution, managedInput: input,
+                managedJournal: EncryptedAgentModelLoopJournal(secrets: store.secrets,
+                  storageKey: "galaxyssi.agent.managed-browser-loop." + binding.key))
+            }
           } catch AgentIOSLocalModelWebToolError.waitingForBrowserControl {
             NotificationCenter.default.post(name: AgentManagedBrowserContinuationStore.changed, object: owner.runId)
             return nil
@@ -8661,6 +8746,15 @@ final class MessageCoordinator: ObservableObject {
               try AgentTeamExecutionHistoryStore.shared.commitManagedBrowserReceipt(
                 receipt, binding: binding, now: AgentControlPlaneClock.nowMillis()) else {
           throw AgentManagedBrowserContinuationStore.Failure.notReady
+        }
+        if receipt.state == .completed, binding.deliveryMode == .respond {
+          guard let dispatch = managedBrowserContinuations.pendingTeamDispatches(profileID: binding.profileID)
+            .first(where: { $0.runID == owner.runId }) else {
+            throw AgentManagedBrowserContinuationStore.Failure.notReady
+          }
+          let alreadyPublished = store.persistedMessage(id: receipt.id, contactId: dispatch.contactID) != nil
+          let message = try store.persistManagedBrowserPrimary(receipt, binding: binding, dispatch: dispatch)
+          if !alreadyPublished { onIncomingMessage?(message) }
         }
         try managedBrowserContinuations.acknowledge(receipt, lease: lease, binding: binding)
         if binding.deliveryMode == .observe {
@@ -8683,6 +8777,58 @@ final class MessageCoordinator: ObservableObject {
         guard let self else { return }
         defer { self.managedBrowserRecoveryInFlight.remove(binding.key) }
         _ = try? await self.driveManagedBrowserMember(binding, mode: .recovery)
+        self.recoverManagedBrowserTeams(runID: binding.owner.runId)
+      }
+    }
+    recoverManagedBrowserTeams()
+  }
+
+  private func recoverManagedBrowserTeams(runID: String? = nil) {
+    let profile = store.profile.identityFingerprint
+    for input in managedBrowserContinuations.pendingTeamDispatches(profileID: profile)
+      where (runID == nil || runID == input.runID) && !liveManagedBrowserTeams.contains(input.runID) &&
+        !managedBrowserTeamRecoveryInFlight.contains(input.runID) {
+      guard let session = store.agentSession(id: input.conversationID), !session.privateMode, !session.trackingPaused,
+            session.mergedIntoConversationId.isBlank, let roster = session.collaborationRoster,
+            let outgoing = store.persistedMessage(id: input.outgoingID, contactId: input.contactID),
+            let team = AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: input.runID),
+            input.matches(team, outgoing: outgoing, profileID: profile),
+            team.members.allSatisfy({ member in
+              if member.deliveryMode == .ignore { return true }
+              guard let id = UUID(uuidString: AgentTeamProgressPolicy.stableCollaborationMemberId(member.memberId)) else {
+                return false
+              }
+              return roster.members.contains { $0.id == id }
+            }) else { continue }
+      if team.state.deliverable {
+        if managedBrowserContinuations.pendingBindings(profileID: profile, runID: input.runID).isEmpty {
+          try? managedBrowserContinuations.finishTeamDispatch(input)
+        }
+        continue
+      }
+      guard team.state == .running || team.state == .interrupted else { continue }
+      if team.state == .interrupted && team.members.contains(where: {
+        $0.status == .interrupted && $0.dispatchCheckpoint != .notStarted
+      }) { continue }
+      let phase = store.agentTask(id: input.turnID)?.phase
+      if phase == .paused || phase == .blocked || phase == .cancelled || phase == .failed { continue }
+      let pending = managedBrowserContinuations.pendingBindings(profileID: profile, runID: input.runID)
+      guard !pending.contains(where: { binding in
+        team.members.contains { $0.memberId == binding.owner.memberId &&
+          AgentManagedBrowserTeamDispatch.MemberRecovery($0) == .awaitOriginal }
+      }) else { continue }
+      managedBrowserTeamRecoveryInFlight.insert(input.runID)
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        defer { self.managedBrowserTeamRecoveryInFlight.remove(input.runID) }
+        let attachments = await Task.detached(priority: .utility) { try? input.restoreAttachments() }.value
+        guard let attachments, self.store.profile.identityFingerprint == profile,
+              let current = self.store.agentSession(id: input.conversationID), !current.privateMode,
+              !current.trackingPaused, current.mergedIntoConversationId.isBlank else { return }
+        let targets = AgentCallableTargetCatalog.build(contacts: self.store.visibleContacts, apiKey: { self.store.apiKey(for: $0) })
+        _ = try? await self.publishRequestedAgentTeam(plan: input.plan, requestedMembers: [], requestText: input.goal,
+          outgoing: outgoing, attachments: attachments, voiceSessionId: "", executionMode: input.executionMode,
+          targets: targets, stagedAttachments: input.attachments.map(\.staged), recovery: input)
       }
     }
   }

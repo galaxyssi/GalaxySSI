@@ -299,6 +299,17 @@ final class AgentModelToolLoop {
     _ state: LoopState,
     calls: [AgentModelToolCall]
   ) async -> ProcessResult {
+    if calls.count > 1 && calls.contains(where: { $0.toolId == AgentManagedBrowserToolExecution.toolID }) {
+      for call in calls {
+        if let terminal = terminalGuard(state) { return .terminal(terminal) }
+        guard consumeToolCallAttempt(state) else {
+          return .terminal(budgetExceeded(state, code: "max_tool_calls", message: "The phone tool-call budget was exhausted"))
+        }
+        appendSyntheticToolResult(state, call, code: "browser_handoff_requires_single_call",
+          message: "Request browser control in a turn with no other tool calls.")
+      }
+      return .continue
+    }
     var parallelCalls: [PreparedCall] = []
     var parallelPlans: [AgentNativeResourceLockPlan] = []
     var parallelWorkload: AgentConcurrencyWorkload?

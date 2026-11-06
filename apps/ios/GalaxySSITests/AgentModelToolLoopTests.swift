@@ -925,6 +925,13 @@ final class AgentModelToolLoopTests: XCTestCase {
       XCTAssertFalse(outcome.isTerminal)
       XCTAssertEqual(initialAdapter.requests.count, 1)
       let ticket = try XCTUnwrap(dispatch.awaitingHandoff(binding: binding)?.ticket)
+      let cookie = try XCTUnwrap(HTTPCookie(properties: [.name: "session", .value: "private", .domain: "example.test",
+        .path: "/", .secure: "TRUE"]))
+      let foreign = try XCTUnwrap(HTTPCookie(properties: [.name: "foreign", .value: "private", .domain: "elsewhere.test",
+        .path: "/", .secure: "TRUE"]))
+      try dispatch.saveCookies([cookie, foreign], ticket: ticket, binding: binding)
+      let cookieReload = AgentManagedBrowserContinuationStore(defaults: defaults, secrets: secrets, namespace: domain)
+      XCTAssertEqual(try cookieReload.cookies(ticket, binding: binding).map(\.name), ["session"])
       let observation = AgentManagedBrowserHandoff.Observation(address: "https://example.test/returned",
         title: "Returned page", text: "User-reviewed observation")
       let stale = AgentManagedBrowserHandoff.Ticket(dispatchKey: ticket.dispatchKey, callID: ticket.callID, generation: UUID())
@@ -957,6 +964,7 @@ final class AgentModelToolLoopTests: XCTestCase {
       XCTAssertEqual(resumedAdapter.requests.map(\.round), [2])
       XCTAssertEqual(resumedAdapter.requests.first?.messages.last?.toolResult?.output["business_success_verified"], .bool(false))
       XCTAssertEqual(resumedAdapter.requests.first?.messages.last?.toolResult?.output["state"], .string("returned"))
+      XCTAssertNil(resumedAdapter.requests.first?.messages.last?.toolResult?.output["cookies"])
       return try reopened.commit(.completed, text: outcome.assistantText, lease: lease, binding: binding)
     }
     try await dispatch.withLease(binding: binding, mode: .recovery, control: .run) { lease, work in

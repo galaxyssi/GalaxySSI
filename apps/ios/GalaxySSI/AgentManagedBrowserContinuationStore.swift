@@ -30,6 +30,7 @@ final class AgentManagedBrowserContinuationStore {
     var receipt: AgentManagedBrowserMemberReceipt?
     var delivered = false
     var deliveredReceiptID: UUID?
+    var browserCookies: [String: [AgentManagedBrowserCookie]]? = nil
   }
 
   private static let lock = NSLock()
@@ -129,16 +130,92 @@ final class AgentManagedBrowserContinuationStore {
     }
   }
 
+  func cookies(_ ticket: AgentManagedBrowserHandoff.Ticket, binding: AgentManagedBrowserDispatchBinding) throws -> [HTTPCookie] {
+    try locked {
+      let record = try owned(binding)
+      let host = try activeBrowserHost(ticket, record: record)
+      return (record.browserCookies?[host] ?? []).compactMap { $0.restore(host: host) }
+    }
+  }
+
+  func saveCookies(_ cookies: [HTTPCookie], ticket: AgentManagedBrowserHandoff.Ticket,
+                   binding: AgentManagedBrowserDispatchBinding) throws {
+    try locked {
+      var record = try owned(binding)
+      let host = try activeBrowserHost(ticket, record: record)
+      var table = record.browserCookies ?? [:]
+      guard table[host] != nil || table.count < 4 else { return }
+      let selected = cookies.compactMap { AgentManagedBrowserCookie($0, host: host) }.prefix(32)
+      let incoming = Array(selected)
+      guard table[host] != incoming else { return }
+      table[host] = incoming
+      record.browserCookies = table
+      try save(record)
+    }
+  }
+
+  private func activeBrowserHost(_ ticket: AgentManagedBrowserHandoff.Ticket, record: Record) throws -> String {
+    let handoff = try exact(ticket, in: record)
+    guard record.receipt == nil, record.activeCallID == ticket.callID, handoff.state == .awaitingUser,
+          let host = AgentManagedBrowserHandoff.url(handoff.address)?.host?.lowercased() else { throw Failure.staleTicket }
+    return host
+  }
+
   func pendingBindings(profileID: String, runID: String? = nil) -> [AgentManagedBrowserDispatchBinding] {
     locked {
       let prefix = namespace + "."
       return GalaxySSIEncryptedUserDefaultsStore.storedKeys(defaults: defaults, prefix: prefix).sorted().compactMap {
         let key = String($0.dropFirst(prefix.count))
+        guard key.count == 64 else { return nil }
         guard let record = try? read(key), !record.delivered, record.binding.profileID == profileID,
               runID == nil || record.binding.owner.runId == runID else { return nil }
         return record.binding
       }
     }
+  }
+
+  func prepareTeamDispatch(_ input: AgentManagedBrowserTeamDispatch) throws {
+    try locked {
+      let key = teamStorageKey(input.key)
+      if let existing = try readTeamDispatch(key) {
+        guard existing == input else { throw Failure.scopeChanged }
+        return
+      }
+      let data = try JSONEncoder().encode(input)
+      guard data.count <= 512 * 1_024,
+            GalaxySSIEncryptedUserDefaultsStore.write(data, defaults: defaults, key: key,
+              keyMaterialKey: namespace, secrets: secrets) else { throw Failure.unavailable }
+    }
+  }
+
+  func pendingTeamDispatches(profileID: String) -> [AgentManagedBrowserTeamDispatch] {
+    locked {
+      GalaxySSIEncryptedUserDefaultsStore.storedKeys(defaults: defaults, prefix: teamStorageKey("")).sorted()
+        .compactMap { key in
+          guard let input = try? readTeamDispatch(key), input.profileID == profileID else { return nil }
+          return input
+        }
+    }
+  }
+
+  func finishTeamDispatch(_ input: AgentManagedBrowserTeamDispatch) throws {
+    try locked {
+      let key = teamStorageKey(input.key)
+      guard let stored = try readTeamDispatch(key) else { return }
+      guard stored == input else { throw Failure.scopeChanged }
+      GalaxySSIEncryptedUserDefaultsStore.remove(defaults: defaults, key: key)
+    }
+  }
+
+  private func teamStorageKey(_ key: String) -> String { namespace + ".team." + key }
+
+  private func readTeamDispatch(_ key: String) throws -> AgentManagedBrowserTeamDispatch? {
+    guard GalaxySSIEncryptedUserDefaultsStore.contains(defaults: defaults, key: key) else { return nil }
+    guard let data = GalaxySSIEncryptedUserDefaultsStore.load(defaults: defaults, key: key,
+      keyMaterialKey: namespace, secrets: secrets),
+      let input = try? JSONDecoder().decode(AgentManagedBrowserTeamDispatch.self, from: data),
+      teamStorageKey(input.key) == key else { throw Failure.unavailable }
+    return input
   }
 
   func returnControl(_ ticket: AgentManagedBrowserHandoff.Ticket, binding: AgentManagedBrowserDispatchBinding,
@@ -166,6 +243,7 @@ final class AgentManagedBrowserContinuationStore {
       handoff.state = .stopped
       handoff.observation = nil
       record.handoffs[ticket.callID] = handoff
+      record.browserCookies = nil
       try save(record)
     }
   }
@@ -205,6 +283,7 @@ final class AgentManagedBrowserContinuationStore {
       record.input = nil
       record.handoffs.removeAll()
       record.activeCallID = nil
+      record.browserCookies = nil
       try save(record)
     }
   }

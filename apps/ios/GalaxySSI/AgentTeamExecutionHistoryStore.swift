@@ -322,6 +322,33 @@ final class AgentTeamExecutionHistoryStore {
     return true
   }
 
+  func reopenManagedBrowserTeam(_ input: AgentManagedBrowserTeamDispatch, outgoing: ChatMessage,
+                               profileID: String, now: Int64) throws -> AgentTeamExecutionSnapshot {
+    let team = try access { database -> AgentTeamExecutionSnapshot in
+      guard var team = try database.snapshots(runId: input.runID).first,
+            input.matches(team, outgoing: outgoing, profileID: profileID),
+            team.state == .running || team.state == .interrupted else {
+        throw AgentTeamHistoryDatabase.Failure.stale
+      }
+      var changed = false
+      if team.state == .interrupted {
+        team.state = .running
+        changed = true
+      }
+      for index in team.members.indices where team.members[index].dispatchCheckpoint == .notStarted &&
+        team.members[index].status == .interrupted {
+        team.members[index].status = .pending
+        changed = true
+      }
+      if changed {
+        team.updatedAtMillis = max(now, team.updatedAtMillis)
+        try database.put(team)
+      }
+      return team
+    }
+    return team
+  }
+
   func consumeOwnedReply(source: String, conversation: String, turn: String, task: String,
                          contact: String, content: String, richOutputJson: String,
                          terminal: Bool, success: Bool, now: Int64,

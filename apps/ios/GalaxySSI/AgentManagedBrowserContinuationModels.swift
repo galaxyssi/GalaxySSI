@@ -137,3 +137,137 @@ struct AgentManagedBrowserPresentation: Identifiable {
 
   var id: UUID { handoff.id }
 }
+
+struct AgentManagedBrowserCookie: Codable, Equatable {
+  let name: String
+  let value: String
+  let domain: String
+  let path: String
+  let expires: Date?
+  let secure: Bool
+  let httpOnly: Bool
+  let sameSite: String?
+
+  init?(_ cookie: HTTPCookie, host: String, now: Date = Date()) {
+    name = cookie.name
+    value = cookie.value
+    domain = cookie.domain
+    path = cookie.path
+    expires = cookie.expiresDate
+    secure = cookie.isSecure
+    httpOnly = cookie.isHTTPOnly
+    sameSite = (cookie.properties?[HTTPCookiePropertyKey(rawValue: "SameSite")] as? String).flatMap {
+      ["lax", "strict", "none"].contains($0.lowercased()) ? $0 : nil
+    }
+    guard matches(host: host, now: now) else { return nil }
+  }
+
+  func matches(host: String, now: Date) -> Bool {
+    let cookieDomain = domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+    let host = host.lowercased()
+    let delimiter = CharacterSet.controlCharacters.union(CharacterSet(charactersIn: ";"))
+    return !name.isEmpty && name.utf8.count <= 256 && value.utf8.count <= 4_096 &&
+      [name, value, path, domain].allSatisfy { $0.rangeOfCharacter(from: delimiter) == nil } &&
+      path.hasPrefix("/") && path.utf8.count <= 512 && cookieDomain.contains(".") && cookieDomain.utf8.count <= 253 &&
+      (host == cookieDomain || host.hasSuffix("." + cookieDomain)) &&
+      (expires.map { $0 > now } ?? true)
+  }
+
+  func restore(host: String, now: Date = Date()) -> HTTPCookie? {
+    guard matches(host: host, now: now) else { return nil }
+    var fields: [HTTPCookiePropertyKey: Any] = [.name: name, .value: value, .domain: domain, .path: path]
+    if secure { fields[.secure] = "TRUE" }
+    if httpOnly { fields[HTTPCookiePropertyKey(rawValue: "HttpOnly")] = "TRUE" }
+    if let sameSite { fields[HTTPCookiePropertyKey(rawValue: "SameSite")] = sameSite }
+    if let expires { fields[.expires] = expires }
+    else { fields[.discard] = "TRUE" }
+    if let cookie = HTTPCookie(properties: fields), cookie.isHTTPOnly == httpOnly, cookie.isSecure == secure {
+      return cookie
+    }
+    // Some Foundation versions do not honor HttpOnly in the properties initializer.
+    guard let origin = URL(string: "https://" + host + "/") else { return nil }
+    var header = "\(name)=\(value); Domain=\(domain); Path=\(path)"
+    if secure { header += "; Secure" }
+    if httpOnly { header += "; HttpOnly" }
+    if let sameSite { header += "; SameSite=\(sameSite)" }
+    if let expires {
+      let format = DateFormatter()
+      format.locale = Locale(identifier: "en_US_POSIX")
+      format.timeZone = TimeZone(secondsFromGMT: 0)
+      format.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+      header += "; Expires=" + format.string(from: expires)
+    }
+    return HTTPCookie.cookies(withResponseHeaderFields: ["Set-Cookie": header], for: origin).first {
+      $0.name == name && $0.value == value && $0.path == path && $0.isHTTPOnly == httpOnly && $0.isSecure == secure
+    }
+  }
+}
+
+struct AgentManagedBrowserTeamDispatch: Codable, Equatable {
+  enum MemberRecovery: Equatable {
+    case dispatch, reuse(String), awaitOriginal, stop
+
+    init(_ member: AgentTeamMemberSnapshot) {
+      if member.status == .succeeded, let result = member.replyContent ?? member.output.nilIfEmpty {
+        self = .reuse(result)
+      } else if [.failed, .cancelled, .skipped, .succeeded].contains(member.status) {
+        self = .stop
+      } else if member.dispatchCheckpoint == .notStarted &&
+                  [.pending, .queued, .interrupted].contains(member.status) {
+        self = .dispatch
+      } else if member.dispatchCheckpoint == .dispatching || member.dispatchCheckpoint == .accepted {
+        self = .awaitOriginal
+      } else {
+        self = .stop
+      }
+    }
+  }
+
+  struct Attachment: Codable, Equatable {
+    let id: String
+    let staged: AgentStagedAttachment
+  }
+
+  let profileID: String
+  let runID: String
+  let teamID: String
+  let generation: Int64
+  let conversationID: String
+  let turnID: String
+  let outgoingID: UUID
+  let contactID: String
+  let plan: AgentPlan
+  let executionMode: AgentTaskExecutionMode
+  let goal: String
+  let attachments: [Attachment]
+
+  var key: String {
+    AgentMcpJSONCodec.sha256(["profile": .string(profileID), "run": .string(runID)])
+  }
+
+  func matches(_ team: AgentTeamExecutionSnapshot, outgoing: ChatMessage, profileID: String) -> Bool {
+    self.profileID == profileID && runID == team.supervisorRunId && teamID == team.teamId &&
+      generation == team.createdAtMillis && conversationID == team.conversationId && turnID == team.taskId &&
+      team.goal == goal && outgoing.id == outgoingID && outgoing.isMine && outgoing.contactId == contactID &&
+      outgoing.conversationId == conversationID && outgoing.turnId.ifBlank(outgoing.id.uuidString) == turnID
+  }
+
+  func restoreAttachments() throws -> [GalaxySSIDraftAttachment] {
+    try attachments.map { reference in
+      let components = reference.staged.relativePath.split(separator: "/")
+      guard components.count == 3, components[0] == "inputs" else {
+        throw AgentManagedBrowserContinuationStore.Failure.scopeChanged
+      }
+      let mime = reference.staged.mimeType.lowercased()
+      let type: AgentRichBlockType = mime.hasPrefix("image/") ? .image : mime.hasPrefix("audio/") ? .audio : .file
+      let block = AgentRichBlock(id: reference.id, type: type, title: reference.staged.name,
+        mimeType: reference.staged.mimeType, metadata: ["source": "user_attachment"])
+      let restored = AgentAttachmentWorkspaceStager.restore(conversationId: conversationID, turnId: String(components[1]),
+        blocks: [block], matchExactIDs: true)
+      guard let entry = restored.first, entry.staged == reference.staged, entry.attachment.id == reference.id else {
+        throw AgentManagedBrowserContinuationStore.Failure.unavailable
+      }
+      return entry.attachment
+    }
+  }
+}

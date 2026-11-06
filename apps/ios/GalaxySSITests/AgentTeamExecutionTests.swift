@@ -1444,6 +1444,22 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(unchanged.owner.observedSequence, 3)
   }
 
+  func testManagedBrowserTeamRecoveryClassifiesSavedMembersWithoutRedispatchingAcceptedWork() {
+    var member = AgentTeamMemberSnapshot(agentId: "local-llm", status: .pending, instanceId: "member",
+      sourceMessageId: "original", dispatchCheckpoint: .notStarted)
+    XCTAssertEqual(AgentManagedBrowserTeamDispatch.MemberRecovery(member), .dispatch)
+    member.dispatchCheckpoint = .dispatching
+    XCTAssertEqual(AgentManagedBrowserTeamDispatch.MemberRecovery(member), .awaitOriginal)
+    member.dispatchCheckpoint = .accepted
+    member.status = .interrupted
+    XCTAssertEqual(AgentManagedBrowserTeamDispatch.MemberRecovery(member), .awaitOriginal)
+    member.status = .succeeded
+    member.replyContent = "Original output"
+    XCTAssertEqual(AgentManagedBrowserTeamDispatch.MemberRecovery(member), .reuse("Original output"))
+    member.status = .cancelled
+    XCTAssertEqual(AgentManagedBrowserTeamDispatch.MemberRecovery(member), .stop)
+  }
+
   func testManagedBrowserReceiptUpdatesOnlyOriginalSavedMemberAndIsIdempotent() throws {
     let suite = "managed-browser-receipt-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
