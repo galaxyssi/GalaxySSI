@@ -257,19 +257,25 @@ struct AgentModelMessage: Codable, Equatable, Identifiable {
   var text: String
   var toolCalls: [AgentModelToolCall]
   var toolResult: AgentModelToolResultContent?
+  var contextHandoff: AgentModelContextHandoff?
+  var providerRoute: String?
 
   init(
     id: String = UUID().uuidString,
     role: AgentModelMessageRole,
     text: String = "",
     toolCalls: [AgentModelToolCall] = [],
-    toolResult: AgentModelToolResultContent? = nil
+    toolResult: AgentModelToolResultContent? = nil,
+    contextHandoff: AgentModelContextHandoff? = nil,
+    providerRoute: String? = nil
   ) {
     self.id = String(id.trimmingCharacters(in: .whitespacesAndNewlines).prefix(AgentSkillLimits.maxIdCharacters)).ifBlank(UUID().uuidString)
     self.role = role
     self.text = String(text.prefix(AgentSkillLimits.maxInstructionsCharacters))
     self.toolCalls = Array(toolCalls.prefix(AgentSkillLimits.maxToolCalls))
     self.toolResult = toolResult
+    self.contextHandoff = contextHandoff
+    self.providerRoute = providerRoute
   }
 
   static func system(_ text: String) -> AgentModelMessage {
@@ -294,6 +300,8 @@ struct AgentModelMessage: Codable, Equatable, Identifiable {
     case text
     case toolCalls = "tool_calls"
     case toolResult = "tool_result"
+    case contextHandoff = "context_handoff"
+    case providerRoute = "provider_route"
   }
 
   init(from decoder: Decoder) throws {
@@ -303,7 +311,9 @@ struct AgentModelMessage: Codable, Equatable, Identifiable {
       role: try container.decodeIfPresent(AgentModelMessageRole.self, forKey: .role) ?? .user,
       text: try container.decodeIfPresent(String.self, forKey: .text) ?? "",
       toolCalls: try container.decodeIfPresent([AgentModelToolCall].self, forKey: .toolCalls) ?? [],
-      toolResult: try container.decodeIfPresent(AgentModelToolResultContent.self, forKey: .toolResult)
+      toolResult: try container.decodeIfPresent(AgentModelToolResultContent.self, forKey: .toolResult),
+      contextHandoff: try container.decodeIfPresent(AgentModelContextHandoff.self, forKey: .contextHandoff),
+      providerRoute: try container.decodeIfPresent(String.self, forKey: .providerRoute)
     )
   }
 }

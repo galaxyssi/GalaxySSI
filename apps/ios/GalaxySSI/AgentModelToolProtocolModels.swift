@@ -117,18 +117,24 @@ struct AgentModelResponse: Codable, Equatable {
   var toolCalls: [AgentModelToolCall]
   var usage: AgentModelUsage
   var providerMetadata: AgentMcpJSONObject
+  var contextHandoff: AgentModelContextHandoff?
+  var providerRoute: String?
 
   init(
     assistantText: String = "",
     toolCalls: [AgentModelToolCall] = [],
     usage: AgentModelUsage = AgentModelUsage(),
-    providerMetadata: AgentMcpJSONObject = [:]
+    providerMetadata: AgentMcpJSONObject = [:],
+    contextHandoff: AgentModelContextHandoff? = nil,
+    providerRoute: String? = nil
   ) {
     precondition(!assistantText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !toolCalls.isEmpty)
     self.assistantText = assistantText.trimmingCharacters(in: .whitespacesAndNewlines)
     self.toolCalls = toolCalls
     self.usage = usage
     self.providerMetadata = providerMetadata
+    self.contextHandoff = contextHandoff
+    self.providerRoute = providerRoute
   }
 
   enum CodingKeys: String, CodingKey {
@@ -136,6 +142,8 @@ struct AgentModelResponse: Codable, Equatable {
     case toolCalls = "tool_calls"
     case usage
     case providerMetadata = "provider_metadata"
+    case contextHandoff = "context_handoff"
+    case providerRoute = "provider_route"
   }
 
   init(from decoder: Decoder) throws {
@@ -144,7 +152,9 @@ struct AgentModelResponse: Codable, Equatable {
       assistantText: try container.decodeIfPresent(String.self, forKey: .assistantText) ?? "",
       toolCalls: try container.decodeIfPresent([AgentModelToolCall].self, forKey: .toolCalls) ?? [],
       usage: try container.decodeIfPresent(AgentModelUsage.self, forKey: .usage) ?? AgentModelUsage(),
-      providerMetadata: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .providerMetadata) ?? [:]
+      providerMetadata: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .providerMetadata) ?? [:],
+      contextHandoff: try container.decodeIfPresent(AgentModelContextHandoff.self, forKey: .contextHandoff),
+      providerRoute: try container.decodeIfPresent(String.self, forKey: .providerRoute)
     )
   }
 }

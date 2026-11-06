@@ -86,16 +86,36 @@ extension CloudModelClient: CloudModelNativeToolSending {
     }
 
     let adapter = AgentModelToolProtocolAdapters.adapter(for: model.apiStyle.toolProvider)
+    let route = AgentModelLoopRecoveryIdentity.sha256([
+      "contact": contact.id, "provider": contact.cloudProvider, "style": model.apiStyle.rawValue,
+      "model": model.modelId, "endpoint": model.endpoint, "credential": apiKey
+    ])
+    let contextWindow = CloudModelConversationContext.contextWindowTokens(model: model, apiKey: apiKey)
+    let outputReserve = min(contextWindow / 2, max(512, Int(
+      CloudModelNativeToolJSON.outputTokenLimit(modelRequest.remainingTokens))))
+    let projection = try AgentModelContextHandoffProjection.prepare(
+      modelRequest.messages, budget: ConversationContextBudget(
+        contextWindowTokens: contextWindow, reservedOutputTokens: outputReserve),
+      route: route
+    ) { messages in
+      let wire = try adapter.encodeConversation(messages)
+      return ConversationContextCompactor.estimateTokens(AgentMcpJSONCodec.stringify(wire))
+    }
+    var projectedRequest = modelRequest
+    projectedRequest.messages = projection.messages
     let request = try nativeToolRequest(
       model: model,
       apiKey: apiKey,
-      modelRequest: modelRequest,
+      modelRequest: projectedRequest,
       catalog: catalog,
       adapter: adapter
     )
     let object = try await responseObject(for: request)
     let json = try CloudModelNativeToolJSON.responseString(object)
-    return try adapter.decodeResponse(json, catalog: catalog)
+    var response = try adapter.decodeResponse(json, catalog: catalog)
+    response.providerRoute = route
+    response.contextHandoff = projection.newHandoff
+    return response
   }
 
   private func nativeToolRequest(
