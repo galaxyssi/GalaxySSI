@@ -182,10 +182,7 @@ final class AgentRunRecoveryCoordinator {
   func recover() async throws -> [AgentRunRecoveryResult] {
     var results: [AgentRunRecoveryResult] = []
     for snapshot in runStore.recoverableRuns() {
-      if snapshot.lastEvent.payload["recovery_mode"]?.stringValue == "observation_only" ||
-          snapshot.lastEvent.payload["observation_only"]?.boolValue == true {
-        continue
-      }
+      guard !AgentRunRecoveryPolicy.isObservationOnly(snapshot.lastEvent) else { continue }
       results.append(try await recover(snapshot))
     }
     return results
@@ -196,6 +193,7 @@ final class AgentRunRecoveryCoordinator {
     var inspected: [AgentRecoverableRun] = []
     for snapshot in runStore.recoverableRuns() {
       try Task.checkCancellation()
+      guard !AgentRunRecoveryPolicy.isObservationOnly(snapshot.lastEvent) else { continue }
       let run = recordedRun(snapshot.runId)
       let decision = AgentRunRecoveryPolicy.decide(
         snapshot: snapshot,
