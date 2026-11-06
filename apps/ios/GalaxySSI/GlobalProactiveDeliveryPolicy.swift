@@ -186,6 +186,14 @@ enum GlobalAgentLearningPolicy {
 }
 
 enum GlobalProactiveDeliveryPolicy {
+  static func allowsInboxDelivery(_ message: GlobalProactiveMessage, settings: GlobalAgentSettings) -> Bool {
+    message.id.hasPrefix("attention-feed:") || (settings.enabled && settings.proactiveInsightsEnabled)
+  }
+
+  static func allowsNotification(_ message: GlobalProactiveMessage, settings: GlobalAgentSettings) -> Bool {
+    settings.notificationsEnabled && allowsInboxDelivery(message, settings: settings)
+  }
+
   static func isRecoverable(_ message: GlobalProactiveMessage, nowMillis: Int64) -> Bool {
     switch message.status {
     case .pending, .notified:

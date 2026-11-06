@@ -259,8 +259,8 @@ struct GalaxySSIGlobalAgentControlView: View {
   private var autonomySection: some View {
     section(t("cc_global_section_autonomy", "Autonomy")) {
       toggleRow(
-        title: t("cc_global_master_title", "Global understanding"),
-        subtitle: t("cc_global_master_subtitle", "Observe authorized conversations and maintain the personal world model"),
+        title: t("cc_global_master_title", "Background learning"),
+        subtitle: t("cc_global_master_subtitle", "Maintain the personal world model from authorized conversations"),
         systemImage: "power",
         tint: .galaxySSIAccent,
         keyPath: \.enabled,
@@ -351,8 +351,7 @@ struct GalaxySSIGlobalAgentControlView: View {
         subtitle: t("cc_global_notifications_subtitle", "Notify only for high-value results within the daily budget"),
         systemImage: "bell.badge",
         tint: .orange,
-        keyPath: \.notificationsEnabled,
-        enabled: store.globalAgentSettings.enabled
+        keyPath: \.notificationsEnabled
       )
     }
   }

@@ -1,4 +1,5 @@
 import BackgroundTasks
+import Combine
 import Foundation
 import os
 
@@ -9,6 +10,7 @@ private let agentIOSCognitionLogger = Logger(
 
 enum AgentIOSCognitionWorkMode: Equatable {
   case event
+  case foreground
   case scheduled
   case explicit
   case projection
@@ -22,9 +24,23 @@ struct AgentIOSCognitionWorkPlan: Equatable {
 }
 
 enum AgentIOSCognitionSchedulePolicy {
+  static func allows(_ mode: AgentIOSCognitionWorkMode, learningEnabled: Bool) -> Bool {
+    learningEnabled || mode == .projection
+  }
+
+  static func allowsTransport(_ item: PendingLinkMessage, learningEnabled: Bool,
+                              legacySources: Set<String> = []) -> Bool {
+    learningEnabled || !isLearningTransport(item, legacySources: legacySources)
+  }
+
+  static func isLearningTransport(_ item: PendingLinkMessage, legacySources: Set<String>) -> Bool {
+    item.backgroundLearning ?? legacySources.contains(item.clientSourceMessageId)
+  }
+
   static func workPlan(_ mode: AgentIOSCognitionWorkMode) -> AgentIOSCognitionWorkPlan {
     switch mode {
     case .event: return .init(eventLimit: 12, runBatchCognition: false, cycleCount: 0, projectKnowledge: false)
+    case .foreground: return .init(eventLimit: 12, runBatchCognition: true, cycleCount: 1, projectKnowledge: false)
     case .scheduled: return .init(eventLimit: 48, runBatchCognition: true, cycleCount: 1, projectKnowledge: true)
     case .explicit: return .init(eventLimit: 200, runBatchCognition: true, cycleCount: 2, projectKnowledge: true)
     case .projection: return .init(eventLimit: 0, runBatchCognition: false, cycleCount: 0, projectKnowledge: true)
@@ -53,10 +69,27 @@ final class AgentIOSBackgroundCognitionScheduler {
   private unowned let store: GalaxySSIStore
   private weak var coordinator: MessageCoordinator?
   private var registered = false
+  private var settingsObservation: AnyCancellable?
+  private var learningWork: (id: UUID, task: Task<Bool, Never>)?
 
   init(store: GalaxySSIStore, coordinator: MessageCoordinator) {
     self.store = store
     self.coordinator = coordinator
+    settingsObservation = store.$globalAgentSettings.map(\.enabled).removeDuplicates().dropFirst().sink { [weak self] enabled in
+      guard let self else { return }
+      if enabled {
+        // Published settings emit before the new value is committed to the store.
+        Task { @MainActor [weak self] in
+          guard let self, self.store.globalAgentSettings.enabled else { return }
+          self.coordinator?.scheduleOutboxFlushFromStore()
+          self.scheduleDynamic()
+        }
+      } else {
+        self.cancelLearning()
+        self.coordinator?.pausedLegacyLearningSourceIDs = nil
+        Task { @MainActor [weak self] in self?.coordinator?.scheduleOutboxFlushFromStore() }
+      }
+    }
   }
 
   func start() {
@@ -65,7 +98,8 @@ final class AgentIOSBackgroundCognitionScheduler {
   }
 
   func scheduleDynamic() {
-    guard registered, store.globalAgentSettings.enabled else {
+    guard registered else { return }
+    guard store.globalAgentSettings.enabled else {
       BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.taskIdentifier)
       return
     }
@@ -87,11 +121,44 @@ final class AgentIOSBackgroundCognitionScheduler {
     try? BGTaskScheduler.shared.submit(request)
   }
 
+  func requestForegroundCycle() {
+    guard store.globalAgentSettings.enabled else { return }
+    _ = startLearning(.foreground)
+  }
+
   func run(_ mode: AgentIOSCognitionWorkMode) async -> Bool {
+    guard !Task.isCancelled, AgentIOSCognitionSchedulePolicy.allows(mode, learningEnabled: store.globalAgentSettings.enabled)
+    else { return false }
+    if mode == .projection { return await perform(mode) }
+    guard let task = startLearning(mode) else { return false }
+    return await withTaskCancellationHandler(operation: { await task.value }, onCancel: { task.cancel() })
+  }
+
+  private func startLearning(_ mode: AgentIOSCognitionWorkMode) -> Task<Bool, Never>? {
+    guard learningWork == nil, store.globalAgentSettings.enabled else { return nil }
+    let id = UUID()
+    let task = Task { @MainActor [weak self] in
+      guard let self else { return false }
+      defer { if self.learningWork?.id == id { self.learningWork = nil } }
+      return await self.perform(mode)
+    }
+    learningWork = (id, task)
+    return task
+  }
+
+  private func cancelLearning() {
+    learningWork?.task.cancel()
+    if registered { BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.taskIdentifier) }
+  }
+
+  private func mayContinue(_ mode: AgentIOSCognitionWorkMode) -> Bool {
+    !Task.isCancelled && AgentIOSCognitionSchedulePolicy.allows(mode, learningEnabled: store.globalAgentSettings.enabled)
+  }
+
+  private func perform(_ mode: AgentIOSCognitionWorkMode) async -> Bool {
     let startedAt = ProcessInfo.processInfo.systemUptime
     let modeName = String(describing: mode)
-    guard mode == .projection || store.globalAgentSettings.enabled,
-          let coordinator else {
+    guard mayContinue(mode), let coordinator else {
       agentIOSCognitionLogger.info(
         "run_skipped mode=\(modeName, privacy: .public) reason=disabled_or_unavailable elapsed_ms=\(self.elapsedMillis(since: startedAt))"
       )
@@ -106,25 +173,29 @@ final class AgentIOSBackgroundCognitionScheduler {
         force: mode == .explicit
       )
       for _ in 0..<plan.cycleCount {
-        guard !Task.isCancelled else {
+        guard mayContinue(mode) else {
           agentIOSCognitionLogger.info(
             "run_cancelled mode=\(modeName, privacy: .public) elapsed_ms=\(self.elapsedMillis(since: startedAt))"
           )
           return false
         }
         _ = await coordinator.runGlobalCognitionCycle()
-        _ = coordinator.runGlobalAutonomousCycle()
+        guard mayContinue(mode) else { return false }
+        _ = await coordinator.runGlobalAutonomousCycle()
+        guard mayContinue(mode) else { return false }
         _ = await coordinator.runGlobalResearchCycle()
       }
+      guard mayContinue(mode) else { return false }
       _ = store.deliverPendingGlobalProactiveMessages()
     }
+    guard mayContinue(mode) else { return false }
     if plan.projectKnowledge {
       projection = AgentIOSObsidianBridge.projectIncrementally(
         appStore: store,
         maximumWrites: mode == .projection ? 32 : 12
       )
     }
-    scheduleDynamic()
+    if mode != .projection { scheduleDynamic() }
     let completed = !Task.isCancelled
     agentIOSCognitionLogger.info(
       "run_complete mode=\(modeName, privacy: .public) elapsed_ms=\(self.elapsedMillis(since: startedAt)) projection_configured=\(projection.configured) projection_written=\(projection.writtenCount) projection_unchanged=\(projection.unchangedCount) projection_candidates=\(projection.candidateCount) projection_remaining=\(projection.remainingCount) cancelled=\(!completed)"
@@ -147,6 +218,10 @@ final class AgentIOSBackgroundCognitionScheduler {
       let work = Task { @MainActor [weak self] in
         guard let self else {
           refresh.setTaskCompleted(success: false)
+          return
+        }
+        guard self.store.globalAgentSettings.enabled else {
+          refresh.setTaskCompleted(success: true)
           return
         }
         let success = await self.run(.scheduled)

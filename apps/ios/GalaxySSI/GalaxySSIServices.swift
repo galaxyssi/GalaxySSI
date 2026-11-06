@@ -122,6 +122,7 @@ final class MessageCoordinator: ObservableObject {
   let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
   private let downloadCompletionCoordinator: AgentIOSDownloadCompletionCoordinator
   private let globalProactiveDeliveryListener: GlobalProactiveDeliveryListener
+  var pausedLegacyLearningSourceIDs: Set<String>?
   let signalEngine: GalaxySSISignalEngine
   private var globalResearchResponseToken: UUID?
   private var globalCognitionResponseToken: UUID?
@@ -512,9 +513,10 @@ final class MessageCoordinator: ObservableObject {
       return settings.enabled && settings.autonomousResearchEnabled
     }
     AgentIOSEvalReliabilityHarness.shared.start()
-    handleInterruptedDeliveries(deliveryStore.recoverInterruptedPublishing())
+    let outboxEligibility = learningOutboxEligibility()
+    handleInterruptedDeliveries(deliveryStore.recoverInterruptedPublishing(eligible: outboxEligibility))
     _ = deliveryStore.ensureTransportEpoch(transportEpoch)
-    deliveryStore.makePendingImmediatelyRetryable()
+    deliveryStore.makePendingImmediatelyRetryable(eligible: outboxEligibility)
     mqttClient.connect(
       clientId: mqttClientId,
       serverLinks: store.serverLinks,
@@ -948,16 +950,9 @@ final class MessageCoordinator: ObservableObject {
     _ = requestCapabilityManifestRefresh()
     _ = reconcileStaleAgentConnectorReplies()
     downloadCompletionCoordinator.deliverPendingCompletions()
-    guard GalaxySSIGlobalAgentBackgroundPolicy.allowsAutomaticCycles else { return }
     _ = store.deliverPendingGlobalProactiveMessages()
-    _ = GalaxySSIGlobalAgentRuntimeBridge.processLongHorizonCycle(store: store)
-    _ = GalaxySSIGlobalAgentRuntimeBridge.processProactiveDiscoveryCycle(store: store)
-    _ = runGlobalAutonomousCycle()
-    Task { @MainActor [weak self] in
-      _ = await self?.runGlobalResearchCycle()
-      _ = await self?.runGlobalCognitionCycle()
-      self?.backgroundCognitionScheduler.scheduleDynamic()
-    }
+    guard GalaxySSIGlobalAgentBackgroundPolicy.allowsAutomaticCycles, store.globalAgentSettings.enabled else { return }
+    backgroundCognitionScheduler.requestForegroundCycle()
   }
 
   @discardableResult
@@ -968,8 +963,9 @@ final class MessageCoordinator: ObservableObject {
   @discardableResult
   func runGlobalAutonomousCycle(
     nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
-  ) -> Bool {
-    guard let result = GalaxySSIGlobalAgentRuntimeBridge.processAutonomousCycle(
+  ) async -> Bool {
+    guard !Task.isCancelled, store.globalAgentSettings.enabled,
+          let result = GalaxySSIGlobalAgentRuntimeBridge.processAutonomousCycle(
       store: store,
       toolRegistry: localNativeToolRuntime?.registry,
       nowMillis: nowMillis
@@ -977,33 +973,30 @@ final class MessageCoordinator: ObservableObject {
       return false
     }
     guard let request = result.dispatchRequest else { return true }
-    Task { @MainActor [weak self] in
-      guard let self else { return }
-      guard await self.dispatchGlobalAutonomousRequest(request) else {
-        _ = GalaxySSIGlobalAgentRuntimeBridge.consumeAutonomousResponse(
-          AgentConnectorResponse(
-            sourceMessageId: request.sourceMessageId,
-            contactId: request.contactId,
-            content: "Global autonomous request could not be dispatched",
-            conversationId: request.conversationId,
-            turnId: request.turnId,
-            taskId: request.runId,
-            success: false,
-            receivedAtMillis: nowMillis
-          ),
-          settings: self.store.globalAgentSettings,
-          nowMillis: nowMillis
-        )
-        self.refreshAgentHomeState()
-        return
-      }
-    }
-    return true
+    if await dispatchGlobalAutonomousRequest(request) { return true }
+    // A paused or expired worker leaves its durable lease for ordinary recovery.
+    guard !Task.isCancelled, store.globalAgentSettings.enabled else { return false }
+    _ = GalaxySSIGlobalAgentRuntimeBridge.consumeAutonomousResponse(
+      AgentConnectorResponse(
+        sourceMessageId: request.sourceMessageId,
+        contactId: request.contactId,
+        content: "Global autonomous request could not be dispatched",
+        conversationId: request.conversationId,
+        turnId: request.turnId,
+        taskId: request.runId,
+        success: false,
+        receivedAtMillis: nowMillis
+      ),
+      settings: store.globalAgentSettings,
+      nowMillis: nowMillis
+    )
+    return false
   }
 
   private func dispatchGlobalAutonomousRequest(
     _ request: GalaxySSIGlobalAutonomousDispatchRequest
   ) async -> Bool {
+    guard !Task.isCancelled, store.globalAgentSettings.enabled else { return false }
     let nowMillis = GlobalRealtimeClock.nowMillis()
     switch request.transport {
     case .onDeviceModel:
@@ -1053,7 +1046,8 @@ final class MessageCoordinator: ObservableObject {
           topic: link.routes.upTopic,
           clientSourceMessageId: String(request.sourceMessageId),
           contactId: contact.id,
-          trustedBackgroundCognitionAuthorized: store.globalAgentSettings.allowPairedAgentCognition
+          trustedBackgroundCognitionAuthorized: store.globalAgentSettings.allowPairedAgentCognition,
+          backgroundLearning: true
         )
         scheduleOutboxFlushFromStore()
         return true
@@ -1081,6 +1075,7 @@ final class MessageCoordinator: ObservableObject {
           images: [],
           requestId: "global-autonomous-\(request.sourceMessageId)"
         ) {
+          guard !Task.isCancelled, store.globalAgentSettings.enabled else { return false }
           switch event {
           case .textDelta(let delta): accumulated += delta.text
           case .failed(let failure):
@@ -1123,13 +1118,16 @@ final class MessageCoordinator: ObservableObject {
   func runGlobalResearchCycle(
     nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
   ) async -> Int {
+    guard !Task.isCancelled, store.globalAgentSettings.enabled else { return 0 }
     let cycle = GalaxySSIGlobalAgentRuntimeBridge.processResearchCycle(
       store: store,
       nowMillis: nowMillis
     )
     var dispatched = 0
     for request in cycle.dispatchRequests {
+      guard !Task.isCancelled, store.globalAgentSettings.enabled else { break }
       guard await dispatchGlobalResearchRequest(request) else {
+        guard !Task.isCancelled, store.globalAgentSettings.enabled else { break }
         let failure = AgentConnectorResponse(
           sourceMessageId: request.sourceMessageId,
           contactId: request.contactId,
@@ -1163,6 +1161,7 @@ final class MessageCoordinator: ObservableObject {
   private func dispatchGlobalResearchRequest(
     _ request: GlobalResearchDispatchRequest
   ) async -> Bool {
+    guard !Task.isCancelled, store.globalAgentSettings.enabled else { return false }
     let nowMillis = GlobalRealtimeClock.nowMillis()
     switch request.transport {
     case .onDeviceModel:
@@ -1212,7 +1211,8 @@ final class MessageCoordinator: ObservableObject {
           topic: link.routes.upTopic,
           clientSourceMessageId: String(request.sourceMessageId),
           contactId: contact.id,
-          trustedBackgroundCognitionAuthorized: store.globalAgentSettings.allowPairedAgentCognition
+          trustedBackgroundCognitionAuthorized: store.globalAgentSettings.allowPairedAgentCognition,
+          backgroundLearning: true
         )
         scheduleOutboxFlushFromStore()
         return true
@@ -1242,6 +1242,7 @@ final class MessageCoordinator: ObservableObject {
           images: [],
           requestId: "global-research-\(request.sourceMessageId)"
         ) {
+          guard !Task.isCancelled, store.globalAgentSettings.enabled else { return false }
           switch event {
           case .textDelta(let delta):
             accumulated += delta.text
@@ -1285,8 +1286,11 @@ final class MessageCoordinator: ObservableObject {
   func runGlobalCognitionCycle(
     nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
   ) async -> Bool {
-    guard let request = GalaxySSIGlobalAgentRuntimeBridge.processCognitionCycle(store: store, nowMillis: nowMillis) else { return false }
+    guard !Task.isCancelled, store.globalAgentSettings.enabled,
+          let request = GalaxySSIGlobalAgentRuntimeBridge.processCognitionCycle(store: store, nowMillis: nowMillis)
+    else { return false }
     guard await dispatchGlobalCognitionRequest(request) else {
+      guard !Task.isCancelled, store.globalAgentSettings.enabled else { return false }
       _ = GalaxySSIGlobalAgentRuntimeBridge.consumeCognitionResponse(
         AgentConnectorResponse(sourceMessageId: request.sourceMessageId, contactId: request.contactId, content: "Global cognition request could not be dispatched", conversationId: request.conversationId, turnId: request.turnId, taskId: request.taskId, success: false, receivedAtMillis: nowMillis),
         nowMillis: nowMillis
@@ -1299,6 +1303,7 @@ final class MessageCoordinator: ObservableObject {
   private func dispatchGlobalCognitionRequest(
     _ request: GalaxySSIGlobalCognitionDispatchRequest
   ) async -> Bool {
+    guard !Task.isCancelled, store.globalAgentSettings.enabled else { return false }
     let nowMillis = GlobalRealtimeClock.nowMillis()
     switch request.transport {
     case .onDeviceModel:
@@ -1348,7 +1353,8 @@ final class MessageCoordinator: ObservableObject {
           topic: link.routes.upTopic,
           clientSourceMessageId: String(request.sourceMessageId),
           contactId: contact.id,
-          trustedBackgroundCognitionAuthorized: store.globalAgentSettings.allowPairedAgentCognition
+          trustedBackgroundCognitionAuthorized: store.globalAgentSettings.allowPairedAgentCognition,
+          backgroundLearning: true
         )
         scheduleOutboxFlushFromStore()
         return true
@@ -1363,6 +1369,7 @@ final class MessageCoordinator: ObservableObject {
       var accumulated = ""
       do {
         for try await event in cloudStreamEngine.streamConversation(contact: contact, store: store, turns: [turn], images: [], requestId: "global-cognition-\(request.sourceMessageId)") {
+          guard !Task.isCancelled, store.globalAgentSettings.enabled else { return false }
           switch event {
           case .textDelta(let delta): accumulated += delta.text
           case .failed(let failure):
@@ -1392,6 +1399,7 @@ final class MessageCoordinator: ObservableObject {
     prompt: String,
     nowMillis: Int64
   ) async -> Bool {
+    guard !Task.isCancelled, store.globalAgentSettings.enabled else { return false }
     let runtime = LocalModelCooperativeRuntime.shared
     guard runtime.readyForBackground() else { return false }
     do {
@@ -1418,6 +1426,7 @@ final class MessageCoordinator: ObservableObject {
       ))
       return true
     } catch {
+      guard !Task.isCancelled, store.globalAgentSettings.enabled else { return false }
       _ = connectorResponseBus.publish(AgentConnectorResponse(
         sourceMessageId: sourceMessageId,
         contactId: resourceId,
@@ -12299,7 +12308,8 @@ final class MessageCoordinator: ObservableObject {
     blockedByAttachmentTransferIds: [String] = [],
     clientSourceMessageId: String = "",
     contactId: String = "",
-    trustedBackgroundCognitionAuthorized: Bool = false
+    trustedBackgroundCognitionAuthorized: Bool = false,
+    backgroundLearning: Bool = false
   ) throws -> String {
     let wire = try linkWirePayload(
       payload,
@@ -12313,7 +12323,8 @@ final class MessageCoordinator: ObservableObject {
       requiresValidatedNetwork: requiresValidatedNetwork ?? (payload["defer_media_upload"] as? Bool ?? false),
       blockedByAttachmentTransferIds: blockedByAttachmentTransferIds,
       clientSourceMessageId: clientSourceMessageId,
-      contactId: contactId
+      contactId: contactId,
+      backgroundLearning: backgroundLearning
     )
     return wire.messageId
   }

@@ -659,6 +659,9 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
     store: GalaxySSIStore,
     nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
   ) -> GlobalLongHorizonCycleResult {
+    guard store.globalAgentSettings.enabled else {
+      return GlobalLongHorizonCycleResult(reconciledGoalCount: 0, queuedCheckpointCount: 0, nextWakeAtMillis: 0)
+    }
     let runtimeStore = GalaxySSIGlobalLongHorizonRuntimeStore(
       settings: store.globalAgentSettings,
       world: worldModel(from: store.agentMemorySnapshot(), nowMillis: nowMillis),
@@ -675,6 +678,9 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
     store: GalaxySSIStore,
     nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
   ) -> GalaxySSIGlobalResearchCycleResult {
+    guard store.globalAgentSettings.enabled, store.globalAgentSettings.autonomousResearchEnabled else {
+      return GalaxySSIGlobalResearchCycleResult()
+    }
     let stateStore = GalaxySSIGlobalResearchRuntimeStore()
     var state = stateStore.state()
     seedResearchTasks(from: GlobalAgentDeliberationStore().cognitionTasks(), into: &state, nowMillis: nowMillis)
@@ -713,13 +719,14 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
     response: AgentConnectorResponse,
     nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
   ) -> Bool {
+    guard response.sourceMessageId > 0 else { return false }
     let stateStore = GalaxySSIGlobalResearchRuntimeStore()
     let state = stateStore.state()
-    let task = state.tasks.first {
+    guard let task = state.tasks.first(where: {
       $0.sourceMessageId == response.sourceMessageId ||
         $0.researchPlan.synthesisSourceMessageId == response.sourceMessageId ||
         $0.researchPlan.units.contains { $0.sourceMessageId == response.sourceMessageId }
-    }
+    }) else { return false }
     let step = GlobalResearchExecutorPolicy.consumeConnectorResponse(
       response,
       state: state,

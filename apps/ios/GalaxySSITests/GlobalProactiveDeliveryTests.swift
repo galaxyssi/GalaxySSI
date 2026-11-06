@@ -2,6 +2,51 @@ import XCTest
 @testable import GalaxySSI
 
 final class GlobalProactiveDeliveryTests: XCTestCase {
+  func testNewsEligibilityDoesNotEnableOrUnpauseLearning() {
+    let news = message(id: "attention-feed:news-1")
+    let insight = message(id: "world-model:insight")
+    var settings = GlobalAgentSettings(enabled: false, proactiveInsightsEnabled: false)
+    XCTAssertTrue(GlobalProactiveDeliveryPolicy.allowsInboxDelivery(news, settings: settings))
+    XCTAssertTrue(GlobalProactiveDeliveryPolicy.allowsNotification(news, settings: settings))
+    XCTAssertFalse(GlobalProactiveDeliveryPolicy.allowsInboxDelivery(insight, settings: settings))
+    XCTAssertFalse(GlobalProactiveDeliveryPolicy.allowsNotification(insight, settings: settings))
+    settings.notificationsEnabled = false
+    XCTAssertTrue(GlobalProactiveDeliveryPolicy.allowsInboxDelivery(news, settings: settings))
+    XCTAssertFalse(GlobalProactiveDeliveryPolicy.allowsNotification(news, settings: settings))
+    XCTAssertFalse(settings.enabled)
+  }
+
+  @MainActor
+  func testPausedStoreRetainsInsightsAndDeliversOnlyNewsAcrossReload() throws {
+    let suite = "paused-learning-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = InMemorySecretStore()
+    let store = GalaxySSIStore(defaults: defaults, secrets: secrets)
+    let conversation = store.createAgentSession(title: "News and insights")
+    var news = message(id: "attention-feed:news-1")
+    var insight = message(id: "world-model:insight")
+    news.sourceConversationId = conversation.id
+    insight.sourceConversationId = conversation.id
+    news.urgent = true
+    insight.urgent = true
+    store.updateGlobalAgentSettings { $0.enabled = false }
+    store.appendGlobalProactiveMessage(news)
+    store.appendGlobalProactiveMessage(insight)
+    XCTAssertTrue(store.save())
+
+    let reopened = GalaxySSIStore(defaults: defaults, secrets: secrets)
+    XCTAssertFalse(reopened.globalAgentSettings.enabled)
+    XCTAssertNotNil(reopened.agentSession(id: conversation.id))
+    XCTAssertEqual(reopened.deliverPendingGlobalProactiveMessages().map(\.id), [news.id])
+    XCTAssertEqual(reopened.globalProactiveMessages.first { $0.id == insight.id }?.status, .pending)
+    XCTAssertEqual(reopened.globalProactiveMessages.first { $0.id == news.id }?.status, .delivered)
+    XCTAssertTrue(reopened.deliverPendingGlobalProactiveMessages().isEmpty)
+    XCTAssertTrue(GalaxySSIGlobalAgentRuntimeBridge.processResearchCycle(store: reopened).dispatchRequests.isEmpty)
+    XCTAssertEqual(GalaxySSIGlobalAgentRuntimeBridge.processLongHorizonCycle(store: reopened).reconciledGoalCount, 0)
+    XCTAssertFalse(reopened.globalAgentSettings.enabled)
+  }
+
   func testForegroundDeliverySignalCanBeSubscribedAndRemoved() {
     var calls = 0
     let listener = GlobalProactiveDeliveryListener {

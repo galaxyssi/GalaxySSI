@@ -3,6 +3,35 @@ import XCTest
 
 @MainActor
 final class GalaxySSILinkReliabilityTests: XCTestCase {
+  func testPausingLearningKeepsOutboxEntriesWithoutBlockingOrdinaryMessages() throws {
+    let fixture = try ChunkFixture()
+    let suite = "learning-outbox-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let journal = GalaxySSIChatHistoryDatabase(fileURL: fixture.url, secrets: fixture.secrets)
+    let store = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    let now = Date(timeIntervalSince1970: 100)
+    let learning = UUID().uuidString, chat = UUID().uuidString
+    store.enqueue(messageId: learning, topic: "topic/up", wirePayload: "learning", clientSourceMessageId: "123",
+      backgroundLearning: true, now: now)
+    store.enqueue(messageId: chat, topic: "topic/up", wirePayload: "chat", clientSourceMessageId: "123", now: now)
+    store.markAttempt(messageId: learning, now: now)
+    let reopened = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    let eligible: (PendingLinkMessage) -> Bool = {
+      AgentIOSCognitionSchedulePolicy.allowsTransport($0, learningEnabled: false, legacySources: ["123"])
+    }
+    let later = now.addingTimeInterval(60)
+    XCTAssertTrue(reopened.recoverInterruptedPublishing(eligible: eligible).isEmpty)
+    XCTAssertTrue(reopened.discardExhausted(maxAttempts: 1, now: later, eligible: eligible).isEmpty)
+    XCTAssertEqual(reopened.pending(now: later, eligible: eligible).map(\.messageId), [chat])
+    reopened.acknowledge(messageId: chat)
+    XCTAssertNil(reopened.nextRetryDelay(now: later, eligible: eligible))
+    XCTAssertTrue(reopened.containsOutboxMessage(learning))
+    let restored = try XCTUnwrap(reopened.pending(now: later).first)
+    XCTAssertEqual(restored.backgroundLearning, true)
+    XCTAssertEqual(restored.messageId, learning)
+  }
+
   func testContactReminderOutboxPersistsCiphertextAndRejectsIdentifierReuse() throws {
     let fixture = try ChunkFixture()
     let suite = "contact-reminder-outbox-" + UUID().uuidString
