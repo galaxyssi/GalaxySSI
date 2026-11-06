@@ -584,6 +584,26 @@ enum AgentModelPlanParser {
         "Use an exact available tool ID from this request's inventory. Do not invent a replacement or change JSON syntax.")
     }
     let arguments = input.object("arguments") ?? [:]
+    if toolId == AgentNativeToolAgentActionAdapter.defaultToolId(.openApp) {
+      let package = (arguments["parameters"]?.objectValue ?? arguments).string("package")
+      guard AgentIOSNativeActionExecutor.supportsAppHandoff(package),
+            !AgentDeviceMutationShortcutCoverage.unresolvedStandaloneAppLaunch(request.goal) else {
+        throw AgentModelPlanRejection(field + ".arguments", "unavailable_app_handoff",
+          "Use a supported, exact iOS bundle identifier for the requested app. Do not guess a package or open a different app.")
+      }
+    }
+    if toolId == AgentIOSVisibleCaptureNativeToolCatalog.microphoneRecord {
+      guard case .int(let seconds) = arguments["max_duration_seconds"],
+            (1...Int64(AgentIOSVisibleCaptureNativeToolCatalog.maxAudioDurationSeconds)).contains(seconds) else {
+        throw AgentModelPlanRejection(field + ".arguments.max_duration_seconds", "invalid_audio_duration",
+          "Use an explicit whole duration from 1 to 30 seconds. Do not invent or shorten a duration.")
+      }
+    }
+    if toolId == AgentIOSVisibleCaptureNativeToolCatalog.cameraCapture,
+       AgentDeviceMutationShortcutCoverage.prohibitsCameraCapture(request.goal) {
+      throw AgentModelPlanRejection(field + ".tool_id", "photo_not_requested",
+        "Opening the Camera app does not authorize taking a photo. Do not substitute capture for an app launch.")
+    }
     let inputJson = AgentMcpJSONCodec.stringify(arguments)
     guard inputJson.count <= maximumNativeToolArgumentCharacters else {
       throw AgentModelPlanRejection(field + ".arguments", "arguments_too_large",

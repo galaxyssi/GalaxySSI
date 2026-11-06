@@ -1012,6 +1012,10 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
     }
   }
 
+  static func supportsAppHandoff(_ bundleId: String) -> Bool {
+    appSchemes[bundleId.lowercased()] != nil
+  }
+
   private static let appSchemes: [String: String] = [
     "com.apple.maps": "maps://",
     "com.apple.mobilecal": "calshow://",

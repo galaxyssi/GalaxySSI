@@ -4123,8 +4123,9 @@ final class MessageCoordinator: ObservableObject {
     }
     var disclosureTicket: AgentDisclosureTicket?
     let compositePhoneStatus = contact.id == "hermes" && !readOnlyAnalysis &&
-      AgentDeviceStatusShortcutCoverage.requiresPhoneReasoning(requestText)
-    let compositeDesktopStatus = AgentDeviceStatusShortcutCoverage.requiresReasoning(requestText) &&
+      AgentPhoneShortcutRouting.requiresPhoneReasoning(requestText)
+    let compositeDesktopStatus = (AgentDeviceStatusShortcutCoverage.requiresReasoning(requestText) ||
+      AgentDeviceMutationShortcutCoverage.requiresReasoning(requestText)) &&
       AgentDeviceStatusShortcutCoverage.hasExplicitDesktopTarget(requestText)
     do {
       if contact.id == "hermes",
@@ -5666,7 +5667,7 @@ final class MessageCoordinator: ObservableObject {
       executionMode: executionMode,
       hasAttachments: false,
       allowsDirectResponse: executionMode != .planOnly &&
-        !AgentDeviceStatusShortcutCoverage.requiresPhoneReasoning(requestText),
+        !AgentPhoneShortcutRouting.requiresPhoneReasoning(requestText),
       completionRequirements: nil,
       plannerConfigurationSha256: snapshot.configurationSha256,
       plannerSnapshot: snapshot
@@ -5691,7 +5692,7 @@ final class MessageCoordinator: ObservableObject {
       task = persisted
       try Task.checkCancellation()
       guard let outcome else {
-        if AgentDeviceStatusShortcutCoverage.requiresPhoneReasoning(requestText) {
+        if AgentPhoneShortcutRouting.requiresPhoneReasoning(requestText) {
           throw compositePhoneStatusPlannerUnavailable()
         }
         throw AgentModelLoopRecoveryError(code: "phone_owned_planning_result_unavailable")
@@ -5797,7 +5798,7 @@ final class MessageCoordinator: ObservableObject {
       )
       guard store.agentTask(id: task.taskId)?.phase == .executing else { return }
       let compositePhoneStatus = !outgoing.readOnlyAnalysis &&
-        AgentDeviceStatusShortcutCoverage.requiresPhoneReasoning(requestText)
+        AgentPhoneShortcutRouting.requiresPhoneReasoning(requestText)
       if !compositePhoneStatus, !outgoing.readOnlyAnalysis, executionMode != .planOnly {
         if handleDirectAgentScreenOverview(
           requestText: requestText,
@@ -8638,7 +8639,7 @@ final class MessageCoordinator: ObservableObject {
       ? ownedPriorPhoneOperation(request: requestText, outgoing: outgoing) : nil
     let selectedForPhoneTurn = plannerSnapshotOverride?.selectedForPhoneTurn == true
     let compositePhoneStatus = !outgoing.readOnlyAnalysis &&
-      AgentDeviceStatusShortcutCoverage.requiresPhoneReasoning(requestText)
+      AgentPhoneShortcutRouting.requiresPhoneReasoning(requestText)
     guard selectedForPhoneTurn || compositePhoneStatus || timerCheckpoint != nil || ownedOperation != nil ||
       !requirements.capabilities.isDisjoint(with: nativeIntentCapabilities) else {
       return nil
@@ -8754,8 +8755,10 @@ final class MessageCoordinator: ObservableObject {
       requirements: completionRequirements, history: scopedHistory, answerOnly: answerOnly,
       observationHistory: observationHistory)
     let phoneIntent = AgentTaskIntentClassifier.classify(goal: requestText).intent == .phoneControl
+    let prohibitsMutation = AgentDeviceMutationShortcutCoverage.prohibitsMutation(requestText)
     let requiresRequestedResults = compositePhoneStatus || timerCheckpoint != nil ||
-      (phoneIntent && (requirements.capabilities.contains(.deviceControl) || requirements.capabilities.contains(.liveData))) ||
+      (!prohibitsMutation && phoneIntent &&
+        (requirements.capabilities.contains(.deviceControl) || requirements.capabilities.contains(.liveData))) ||
       AgentGoalResultEvidence.requiresDeclaration(for: observationHistory) ||
       !(completionRequirements?.results ?? []).isEmpty
     planningRequest.allowsDirectResponse = planningRequest.allowsDirectResponse && timerCheckpoint == nil &&
@@ -8773,6 +8776,15 @@ final class MessageCoordinator: ObservableObject {
       planningRequest.allowsDirectResponse = false
     }
     func admission(_ plan: AgentPlan) -> AgentModelPlanRejection? {
+      if prohibitsMutation,
+         plan.actions.contains(where: { action in
+           guard action.kind == .callNativeTool else { return false }
+           let toolId = action.parameters["tool_id"] ?? action.target
+           return runtime.registry.lookup(toolId)?.descriptor.requiresEffectClaim != false
+         }) {
+        return .init("actions", "device_mutation_not_requested",
+          "The user asked a question or prohibited the effect. Do not mutate device state or start a capture.")
+      }
       if let recoveryTask,
          plan.actions.contains(where: AgentRollingPlanPolicy.closesFromVerifiedEvidence) ||
           !permitsEffectRecoveryActions(plan.actions, task: recoveryTask, outgoing: outgoing) {
