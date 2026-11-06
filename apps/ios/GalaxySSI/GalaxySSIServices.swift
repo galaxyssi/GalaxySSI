@@ -4953,7 +4953,7 @@ final class MessageCoordinator: ObservableObject {
       responseLanguage: store.languagePolicy.responseLanguage,
       completionRequirements: previousPlan?.completionRequirements
     )
-    let fallbackPlan = AgentDirectNativeToolPlanner.plan(request: planRequest)
+    let fallbackPlan = AgentDirectNativeToolPlanner.shortcutPlan(request: planRequest)
     let taskExecutionMode = AgentTaskExecutionModePolicy.resolve(
       request: task.goal,
       configuredMode: store.agentSafetySettings.taskExecutionMode
