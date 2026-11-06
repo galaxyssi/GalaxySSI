@@ -1,11 +1,36 @@
 import Foundation
 
+enum AgentScheduleFollowupPolicy {
+  static let receiptStage = "local_workflow_schedule_receipt"
+
+  static func receiptId(turnId: String) -> String { "schedule-command:" + turnId }
+
+  static func target(before outgoing: ChatMessage, messages: [ChatMessage], liveTaskIds: Set<String>) -> String? {
+    guard let prior = AgentOwnedOperationContext.previousRequest(before: outgoing, in: messages),
+          let index = messages.firstIndex(where: { $0.id == outgoing.id }),
+          let sourceIndex = messages[..<index].firstIndex(where: { $0.id == prior.id }) else { return nil }
+    let turn = prior.turnId.ifBlank(prior.id.uuidString)
+    let ids = Set(messages[(sourceIndex + 1)..<index].compactMap { reply -> String? in
+      guard !reply.isMine, !reply.isSystem, reply.conversationId == prior.conversationId,
+            reply.contactId == prior.contactId, reply.sourceConversationId.isBlank, reply.turnId == turn,
+            [.delivered, .read].contains(reply.deliveryStatus),
+            reply.remoteMessageId == receiptId(turnId: turn),
+            let receipt = reply.deliveryTrace.first, receipt.stage == receiptStage,
+            prior.deliveryTrace.contains(where: { $0.stage == receiptStage && $0.detail == receipt.detail }),
+            liveTaskIds.contains(receipt.detail) else { return nil }
+      return receipt.detail
+    })
+    return ids.count == 1 ? ids.first : nil
+  }
+}
+
 @MainActor
 enum AgentWorkflowRunScheduleCommandRouter {
   struct Result {
     let text: String
     let actionId: String
     let workflowToRun: AgentWorkflow?
+    var scheduleTaskId: String? = nil
   }
 
   private enum ScheduleKind {
@@ -21,7 +46,8 @@ enum AgentWorkflowRunScheduleCommandRouter {
   static func handle(
     _ input: String,
     store: GalaxySSIStore,
-    workflowStore: AgentWorkflowStore = UserDefaultsAgentWorkflowStore.shared
+    workflowStore: AgentWorkflowStore = UserDefaultsAgentWorkflowStore.shared,
+    scopedTaskId: () -> String? = { nil }
   ) -> Result? {
     let command = input.trimmingCharacters(in: .whitespacesAndNewlines)
     let normalized = command.lowercased()
@@ -48,6 +74,25 @@ enum AgentWorkflowRunScheduleCommandRouter {
       prefixes: ["cancel schedule ", "delete schedule ", "remove schedule "]
     ) {
       return cancelSchedule(reference, store: store, workflowStore: workflowStore)
+    }
+    let explicitPause = prefixedValue(command, prefixes: ["pause schedule ", "stop schedule "])
+    let explicitResume = prefixedValue(command, prefixes: ["resume schedule "])
+    if let reference = explicitPause ?? explicitResume {
+      guard let task = namedSchedule(reference, store: store, workflowStore: workflowStore) else {
+        return result("Name a single workflow schedule to update.", actionId: "workflow_schedule_control")
+      }
+      return setEnabled(explicitResume != nil, task: task, store: store)
+    }
+    let control = normalized.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+    let pause = ["stop", "pause", "cancel", "pause schedule", "stop schedule",
+      "\u{505c}\u{6b62}", "\u{6682}\u{505c}", "\u{53d6}\u{6d88}"].contains(control)
+    let resume = ["resume", "continue", "resume schedule", "\u{7ee7}\u{7eed}", "\u{6062}\u{590d}"].contains(control)
+    let change = prefixedValue(command, prefixes: ["change to ", "update it to ", "change schedule to ", "\u{6539}\u{6210}", "\u{6539}\u{4e3a}"])
+    if pause || resume || change != nil {
+      guard let id = scopedTaskId(), let task = store.automationTask(id: id),
+            task.action.kind == .workflow, isSchedule(task) else { return nil }
+      if let change { return update(change, task: task, store: store) }
+      return setEnabled(resume, task: task, store: store)
     }
     if isManagementCommand(normalized) {
       return result(
@@ -153,7 +198,7 @@ enum AgentWorkflowRunScheduleCommandRouter {
       let saved = try store.saveAutomationTask(task)
       return result(
         "Scheduled \(workflow.name): \(label); next=\(timestamp(saved.nextRunAtMillis))",
-        actionId: "workflow_schedule"
+        actionId: "workflow_schedule", scheduleTaskId: saved.taskId
       )
     } catch {
       return result("Workflow could not be scheduled: \(error.localizedDescription)", actionId: "workflow_schedule")
@@ -181,19 +226,71 @@ enum AgentWorkflowRunScheduleCommandRouter {
     store: GalaxySSIStore,
     workflowStore: AgentWorkflowStore
   ) -> Result {
-    let workflow = workflowStore.find(reference)
-    let task = store.automationTasks().first { task in
-      task.action.kind == .workflow && isSchedule(task) && (
-        workflow.map { task.action.targetId == $0.id } ?? task.name.localizedCaseInsensitiveContains(reference)
-      )
-    }
-    guard let task else {
+    guard let task = namedSchedule(reference, store: store, workflowStore: workflowStore) else {
       return result("Schedule '\(reference)' was not found", actionId: "workflow_schedule_cancel")
     }
     guard store.deleteAutomationTask(id: task.taskId) else {
       return result("Schedule '\(reference)' was not found", actionId: "workflow_schedule_cancel")
     }
     return result("Cancelled schedule for \(reference)", actionId: "workflow_schedule_cancel")
+  }
+
+  private static func namedSchedule(
+    _ reference: String, store: GalaxySSIStore, workflowStore: AgentWorkflowStore
+  ) -> AgentProactiveTask? {
+    let workflow = workflowStore.find(reference)
+    let candidates = store.automationTasks().filter { task in
+      guard task.action.kind == .workflow, isSchedule(task) else { return false }
+      let name = task.name.replacingOccurrences(of: "Workflow schedule: ", with: "")
+      return task.taskId == reference || workflow?.id == task.action.targetId ||
+        name.caseInsensitiveCompare(reference) == .orderedSame
+    }
+    return candidates.count == 1 ? candidates.first : nil
+  }
+
+  private static func setEnabled(_ enabled: Bool, task: AgentProactiveTask, store: GalaxySSIStore) -> Result {
+    let stage = "workflow_schedule_control"
+    do {
+      guard try store.setAutomationTaskEnabled(id: task.taskId, enabled: enabled) else {
+        return result("The workflow schedule no longer exists.", actionId: stage)
+      }
+      return result(enabled ? "Resumed \(task.name)" : "Paused \(task.name)",
+        actionId: stage, scheduleTaskId: task.taskId)
+    } catch {
+      return result("Workflow schedule could not be updated: \(error.localizedDescription)", actionId: stage)
+    }
+  }
+
+  private static func update(_ change: String, task: AgentProactiveTask, store: GalaxySSIStore) -> Result {
+    let stage = "workflow_schedule_update"
+    var edited = task
+    do {
+      let lower = change.lowercased()
+      if lower.hasPrefix("at ") || lower.hasPrefix("every ") {
+        guard let request = parseSchedule("schedule workflow current " + change) else {
+          return result("Use a valid time or recurring interval.", actionId: stage)
+        }
+        switch request.kind {
+        case .daily(let hour, let minute):
+          edited.trigger = try AgentProactiveTrigger(kind: .cron, cron: "\(minute) \(hour) * * *", timeZone: task.trigger.timeZone)
+        case .interval(let minutes):
+          guard (15...7 * 24 * 60).contains(minutes) else {
+            return result("Workflow interval must be between 15 minutes and 7 days", actionId: stage)
+          }
+          edited.trigger = try AgentProactiveTrigger(kind: .interval, timeZone: task.trigger.timeZone,
+            intervalSeconds: Int64(minutes) * 60)
+        }
+      } else {
+        guard change.count <= 65_536 else {
+          return result("Workflow prompt is too long.", actionId: stage)
+        }
+        edited.action.prompt = change
+      }
+      let saved = try store.saveAutomationTask(edited)
+      return result("Updated \(saved.name)", actionId: stage, scheduleTaskId: saved.taskId)
+    } catch {
+      return result("Workflow schedule could not be updated: \(error.localizedDescription)", actionId: stage)
+    }
   }
 
   private static func isSchedule(_ task: AgentProactiveTask) -> Bool {
@@ -231,8 +328,8 @@ enum AgentWorkflowRunScheduleCommandRouter {
     return value.isEmpty ? nil : value
   }
 
-  private static func result(_ text: String, actionId: String) -> Result {
-    Result(text: text, actionId: actionId, workflowToRun: nil)
+  private static func result(_ text: String, actionId: String, scheduleTaskId: String? = nil) -> Result {
+    Result(text: text, actionId: actionId, workflowToRun: nil, scheduleTaskId: scheduleTaskId)
   }
 
   private static func timestamp(_ millis: Int64) -> String {

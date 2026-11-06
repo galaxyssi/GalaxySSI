@@ -58,6 +58,65 @@ final class AgentOwnedOperationContextTests: XCTestCase {
     XCTAssertFalse(AgentOwnedOperationContext.wantsContext(request: "Stop", priorGoal: "Inspect report"))
   }
 
+  func testBareFollowupsCanReachOnlyTheNearestExecutableRootWithoutARecordedOperation() {
+    var project = message(turn: "project")
+    project.content = "Create outputs/report.txt on this phone and verify it"
+    var followup = message(turn: "bare")
+    followup.content = "Continue!"
+    let current = message(turn: "current")
+    func selected(_ messages: [ChatMessage], hasTask: (ChatMessage) -> Bool = { _ in false }) -> ChatMessage? {
+      AgentOwnedOperationContext.continuationSource(before: current, in: messages, hasTask: hasTask)
+    }
+    XCTAssertEqual(selected([project, followup, current]), project)
+    XCTAssertEqual(AgentOwnedOperationContext.transcriptGoal(project)?.string("status"), "goal_only")
+    XCTAssertEqual(selected([project, followup, current], hasTask: { $0.id == followup.id }), followup)
+    var boundary = message(turn: "boundary")
+    for text in ["What is a CSV file?", "Do not write files; only explain the result", "Stop", "New task: explain this word"] {
+      boundary.content = text
+      XCTAssertEqual(selected([project, boundary, followup, current]), boundary)
+      XCTAssertNil(AgentOwnedOperationContext.transcriptGoal(boundary))
+    }
+    XCTAssertTrue(AgentOwnedOperationContext.wantsContext(request: "Start", priorGoal: project.content))
+    XCTAssertFalse(AgentOwnedOperationContext.wantsContext(request: "Create another file on this phone", priorGoal: project.content))
+    XCTAssertFalse(AgentActiveTurnPolicy.hasExplicitContinuationLead("continuously monitor"))
+  }
+
+  func testScheduleFollowupUsesOnlyALocalReceiptOwnedByTheNearestTurn() {
+    var prior = message(turn: "schedule")
+    prior.deliveryTrace = [DeliveryTraceEvent(stage: AgentScheduleFollowupPolicy.receiptStage, detail: "schedule-a")]
+    let current = message(turn: "change")
+    var receipt = message(turn: "schedule", mine: false)
+    receipt.deliveryStatus = .delivered
+    receipt.remoteMessageId = AgentScheduleFollowupPolicy.receiptId(turnId: "schedule")
+    receipt.deliveryTrace = [DeliveryTraceEvent(stage: AgentScheduleFollowupPolicy.receiptStage, detail: "schedule-a")]
+    let ids: Set<String> = ["schedule-a", "schedule-b"]
+    func target(_ messages: [ChatMessage], live: Set<String> = ["schedule-a", "schedule-b"]) -> String? {
+      AgentScheduleFollowupPolicy.target(before: current, messages: messages, liveTaskIds: live)
+    }
+    XCTAssertEqual(target([prior, receipt, current], live: ids), "schedule-a")
+    XCTAssertNil(target([prior, receipt, current], live: ["schedule-b"]))
+    let later = message(turn: "file-task")
+    XCTAssertNil(target([prior, later, receipt, current]))
+    XCTAssertNil(target([receipt, current]))
+    XCTAssertNil(target([prior, current, receipt]))
+    var noHostMarker = prior
+    noHostMarker.deliveryTrace = []
+    XCTAssertNil(target([noHostMarker, receipt, current]))
+    var forged = receipt
+    forged.deliveryTrace = [DeliveryTraceEvent(stage: "desktop_result_received", detail: "schedule-a")]
+    XCTAssertNil(target([prior, forged, current]))
+    var forwarded = receipt
+    forwarded.sourceConversationId = "other"
+    XCTAssertNil(target([prior, forwarded, current]))
+    var background = receipt
+    background.turnId = "background-run"
+    background.deliveryTrace = [DeliveryTraceEvent(stage: AgentScheduleFollowupPolicy.receiptStage, detail: "schedule-b")]
+    XCTAssertEqual(target([prior, receipt, background, current]), "schedule-a")
+    background.turnId = "schedule"
+    prior.deliveryTrace.append(DeliveryTraceEvent(stage: AgentScheduleFollowupPolicy.receiptStage, detail: "schedule-b"))
+    XCTAssertNil(target([prior, receipt, background, current]))
+  }
+
   func testRuntimeSummaryIsUsedOnlyByThePhoneOwnedPlanner() throws {
     let (task, run) = fixture()
     var request = AgentModelPlanningPromptRequest(planRequest: AgentPlanRequest(
