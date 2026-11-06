@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct GalaxySSIAgentTranscriptMessagesView: View {
+  @EnvironmentObject private var store: GalaxySSIStore
   @State private var expandedProgress = Set<UUID>()
   var messages: [ChatMessage]
   var turnStartMillis: [String: Int64]
@@ -213,6 +214,22 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
       .frame(maxWidth: UIScreen.main.bounds.width * 0.75, alignment: .trailing)
       .frame(maxWidth: .infinity, alignment: .trailing)
       .padding(.vertical, 3)
+    } else if message.deliveryTrace.first?.stage == AgentConversationSchedule.receiptStage,
+              message.remoteMessageId == AgentScheduleFollowupPolicy.receiptId(turnId: message.turnId),
+              message.sourceConversationId.isBlank {
+      NavigationLink(destination: GalaxySSIConversationSchedulesView(conversationId: message.conversationId)) {
+        HStack(alignment: .top, spacing: 10) {
+          Image(systemName: "clock").foregroundColor(.galaxySSIAccent).accessibilityHidden(true)
+          Text(message.content).frame(maxWidth: .infinity, alignment: .leading)
+          Image(systemName: "chevron.right").foregroundColor(.secondary).accessibilityHidden(true)
+        }
+        .font(.subheadline)
+        .foregroundColor(.galaxySSITextPrimary)
+        .padding(10)
+        .background(Color.galaxySSISentBubble)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+      }
+      .buttonStyle(.plain)
     } else {
       richContent(message)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -270,7 +287,26 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
   }
 
   private var visibleMessages: [ChatMessage] {
-    messages.filter { !CloudSupervisedResearch.isTranscriptControlReply($0) }
+    let runs = Dictionary(store.proactiveRuns.map { ($0.runId, $0) }, uniquingKeysWith: { first, _ in first })
+    return messages.compactMap { message in
+      guard !CloudSupervisedResearch.isTranscriptControlReply(message),
+            !message.deliveryTrace.contains(where: { $0.stage == AgentConversationSchedule.occurrenceStage })
+      else { return nil }
+      if !message.isMine, !message.isSystem, let run = runs[message.turnId],
+         let task = store.automationTask(id: run.taskId), task.action.isConversationSchedule,
+         task.action.conversationId == message.conversationId {
+        if run.status == .unverified && run.errorCode == "phone_observation_unverified" { return nil }
+        if run.status.terminal,
+           let previous = store.automationRuns(taskId: run.taskId).first(where: {
+             $0.scheduledForMillis < run.scheduledForMillis && [.completed, .failed, .unverified].contains($0.status)
+           }),
+           previous.status == run.status, previous.resultSummary == run.resultSummary,
+           message.richOutputJson.isBlank { return nil }
+        return AgentConversationSchedule.remotePresentation(message)
+      }
+      let task = AgentConversationSchedule.receiptTaskID(message).flatMap { store.automationTask(id: $0) }
+      return AgentConversationSchedule.presentation(message, task: task, language: languagePolicy.interfaceLanguage)
+    }
   }
 
   private func observeLatestReply(_ target: AgentReplySpeechTarget?) {

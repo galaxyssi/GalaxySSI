@@ -1,6 +1,102 @@
 import Foundation
 
 extension GalaxySSIStore {
+  func conversationSchedules(_ conversationId: String? = nil) -> [AgentProactiveTask] {
+    automationTasks().filter {
+      $0.action.isConversationSchedule && (conversationId == nil || $0.action.conversationId == conversationId)
+    }
+  }
+
+  @discardableResult
+  func saveConversationSchedule(conversationId: String, id: String?, prompt: String,
+                                trigger: AgentProactiveTrigger?, frequency: String,
+                                nowMillis: Int64? = nil) throws -> AgentProactiveTask {
+    let now = nowMillis ?? Self.nowMillis()
+    let old = id.flatMap { automationTask(id: $0) }
+    let goal = prompt.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(old?.action.prompt ?? "")
+    guard let session = agentSession(id: conversationId), session.status == .active, !session.privateMode, !session.trackingPaused,
+          session.collaborationRoster == nil, conversationId.count <= 256,
+          id == nil || (old?.action.isConversationSchedule == true && old?.action.conversationId == conversationId),
+          let trigger = trigger ?? old?.trigger, [.cron, .interval].contains(trigger.kind),
+          !goal.isBlank, goal.count <= 4_096, now > 0,
+          old != nil || proactiveTasks.count < 200 else {
+      throw AgentProactiveTaskError.invalid("This conversation cannot save the schedule")
+    }
+    let policy = try AgentProactivePolicy(misfire: .fireOnce, catchUpLimit: 1, maxAttempts: 1,
+                                          maxConcurrency: 1, maxConsecutiveFailures: 100)
+    let action = try AgentProactiveAction(kind: .agent, targetId: "conversation", prompt: goal,
+      deliveryMode: "notify", contactId: "hermes", conversationId: conversationId,
+      scheduleText: frequency.ifBlank(old?.action.scheduleText ?? ""))
+    let saved = try AgentProactiveTask(taskId: old?.taskId ?? UUID().uuidString, name: String(goal.prefix(120)),
+      trigger: trigger, action: action, policy: policy, nextRunAtMillis: now,
+      lastRunAtMillis: old?.lastRunAtMillis ?? 0, runCount: old?.runCount ?? 0,
+      revision: (old?.revision ?? 0) + 1, createdAtMillis: old?.createdAtMillis ?? now, updatedAtMillis: now)
+    try commitScheduleUpdate(saved, now: now)
+    return saved
+  }
+
+  @discardableResult
+  func setConversationScheduleEnabled(id: String, conversationId: String, enabled: Bool) throws -> Bool {
+    guard var task = automationTask(id: id), task.action.isConversationSchedule,
+          task.action.conversationId == conversationId else { return false }
+    guard task.enabled != enabled else { return true }
+    if enabled {
+      guard let session = agentSession(id: conversationId), session.status == .active,
+            !session.privateMode, !session.trackingPaused, session.collaborationRoster == nil else { return false }
+    }
+    let now = Self.nowMillis()
+    task.revision += 1
+    task.enabled = enabled
+    task.updatedAtMillis = now
+    task.nextRunAtMillis = enabled ? try AgentProactiveTaskScheduler.initialNextRun(task: task,
+      nowMillis: task.trigger.kind == .cron ? now + AgentProactiveTaskScheduler.windowMillis : now) : 0
+    task.lastStatus = enabled ? .queued : .cancelled
+    task.consecutiveFailures = 0
+    try commitScheduleUpdate(task, now: now)
+    return true
+  }
+
+  private func commitScheduleUpdate(_ task: AgentProactiveTask, now: Int64) throws {
+    let runs = proactiveRuns.map { old -> AgentProactiveRun in
+      guard old.taskId == task.taskId, old.status == .queued else { return old }
+      var cancelled = old
+      cancelled.status = .cancelled
+      cancelled.completedAtMillis = now
+      cancelled.errorCode = "schedule_revision_changed"
+      return cancelled
+    }
+    let tasks = Self.sortedAutomationTasks(proactiveTasks.filter { $0.taskId != task.taskId } + [task])
+    guard commitConversationScheduleState(tasks: tasks, runs: runs) else {
+      throw AgentProactiveTaskError.invalid("Unable to persist the schedule")
+    }
+  }
+
+  private func claimConversationSchedule(_ task: AgentProactiveTask, now: Int64) -> Int {
+    guard let due = try? AgentProactiveTaskScheduler.dueOccurrences(task: task, nowMillis: now),
+          let occurrence = due.occurrences.last else { return 0 }
+    var updated = task
+    updated.nextRunAtMillis = due.nextRunAtMillis
+    updated.updatedAtMillis = now
+    var runs = proactiveRuns
+    let occupied = runs.contains { $0.taskId == task.taskId && !$0.status.terminal }
+    // Preserve an edit's immediate occurrence until any previous revision settles.
+    if occupied && task.nextRunAtMillis == task.updatedAtMillis { return 0 }
+    let id = AgentConversationSchedule.runID(task: task, scheduled: task.nextRunAtMillis)
+    let enqueue = !occupied && !runs.contains { $0.runId == id }
+    if enqueue {
+      if runs.count >= 500 {
+        guard let oldestTerminal = runs.firstIndex(where: { $0.status.terminal }) else { return 0 }
+        runs.remove(at: oldestTerminal)
+      }
+      guard let run = try? AgentProactiveRun(runId: id, taskId: task.taskId,
+        scheduledForMillis: occurrence.scheduledForMillis, status: .queued,
+        causeJson: "{\"schedule_revision\":\(task.revision)}", resultSummary: "Scheduled conversation occurrence queued.") else { return 0 }
+      runs.append(run)
+    }
+    let tasks = Self.sortedAutomationTasks(proactiveTasks.filter { $0.taskId != task.taskId } + [updated])
+    return commitConversationScheduleState(tasks: tasks, runs: runs) && enqueue ? 1 : 0
+  }
+
   func automationTasks() -> [AgentProactiveTask] {
     Self.sortedAutomationTasks(proactiveTasks)
   }
@@ -44,6 +140,10 @@ extension GalaxySSIStore {
       guard task.enabled,
             task.nextRunAtMillis > 0,
             task.nextRunAtMillis <= now else {
+        continue
+      }
+      if task.action.isConversationSchedule {
+        claimed += claimConversationSchedule(task, now: now)
         continue
       }
       if AgentProactiveTaskScheduler.shouldDisable(task: task, nowMillis: now) {
@@ -129,6 +229,9 @@ extension GalaxySSIStore {
     let active = proactiveRuns.filter {
       $0.taskId == task.taskId && [.running, .waiting, .retrying].contains($0.status)
     }.count
+    if task.action.isConversationSchedule {
+      guard task.enabled, AgentConversationSchedule.revision(proactiveRuns[index]) == task.revision else { return nil }
+    }
     guard active < task.policy.maxConcurrency else { return nil }
     let now = max(nowMillis ?? Self.nowMillis(), 0)
     guard let running = try? AgentProactiveRun(
@@ -143,7 +246,11 @@ extension GalaxySSIStore {
     ) else {
       return nil
     }
-    proactiveRuns[index] = running
+    if task.action.isConversationSchedule {
+      var runs = proactiveRuns
+      runs[index] = running
+      guard commitConversationScheduleState(tasks: proactiveTasks, runs: runs) else { return nil }
+    } else { proactiveRuns[index] = running }
     return running
   }
 
@@ -180,6 +287,16 @@ extension GalaxySSIStore {
       completedAtMillis: now
     ) else {
       return false
+    }
+    if task.action.isConversationSchedule {
+      var runs = proactiveRuns
+      runs[index] = finished
+      var tasks = proactiveTasks
+      if AgentConversationSchedule.revision(finished) == task.revision,
+         let taskIndex = tasks.firstIndex(where: { $0.taskId == task.taskId }) {
+        tasks[taskIndex] = updatedTask
+      }
+      return commitConversationScheduleState(tasks: tasks, runs: runs)
     }
     proactiveRuns[index] = finished
     replaceAutomationTask(updatedTask)
@@ -290,6 +407,9 @@ extension GalaxySSIStore {
   @discardableResult
   func setAutomationTaskEnabled(id taskId: String, enabled: Bool) throws -> Bool {
     guard var task = automationTask(id: taskId) else { return false }
+    if task.action.isConversationSchedule {
+      return try setConversationScheduleEnabled(id: taskId, conversationId: task.action.conversationId, enabled: enabled)
+    }
     task = try AgentProactiveTask(
       taskId: task.taskId,
       name: task.name,
@@ -315,6 +435,10 @@ extension GalaxySSIStore {
   func deleteAutomationTask(id taskId: String) -> Bool {
     let clean = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !clean.isEmpty else { return false }
+    if automationTask(id: clean)?.action.isConversationSchedule == true {
+      return commitConversationScheduleState(tasks: proactiveTasks.filter { $0.taskId != clean },
+        runs: proactiveRuns.filter { $0.taskId != clean })
+    }
     let before = proactiveTasks.count
     proactiveTasks.removeAll { $0.taskId == clean }
     proactiveRuns.removeAll { $0.taskId == clean }

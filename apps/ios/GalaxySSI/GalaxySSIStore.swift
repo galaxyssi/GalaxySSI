@@ -139,10 +139,25 @@ final class GalaxySSIStore: ObservableObject {
     didSet { save() }
   }
   @Published internal(set) var proactiveTasks: [AgentProactiveTask] {
-    didSet { save() }
+    didSet { if !committingScheduleState { save() } }
   }
   @Published internal(set) var proactiveRuns: [AgentProactiveRun] {
-    didSet { save() }
+    didSet { if !committingScheduleState { save() } }
+  }
+  private var committingScheduleState = false
+
+  func commitConversationScheduleState(tasks: [AgentProactiveTask], runs: [AgentProactiveRun]) -> Bool {
+    let oldTasks = proactiveTasks, oldRuns = proactiveRuns
+    committingScheduleState = true
+    defer { committingScheduleState = false }
+    proactiveTasks = tasks
+    proactiveRuns = runs
+    guard save() else {
+      proactiveTasks = oldTasks
+      proactiveRuns = oldRuns
+      return false
+    }
+    return true
   }
   @Published internal(set) var globalProactiveMessages: [GlobalProactiveMessage] {
     didSet { save() }
@@ -1105,9 +1120,11 @@ final class GalaxySSIStore: ObservableObject {
     richOutputJson: String = "",
     messageId: UUID = UUID(),
     requestKind: AgentRequestKind = .conversation,
-    readOnlyAnalysis: Bool = false
+    readOnlyAnalysis: Bool = false,
+    conversationOverride: String? = nil,
+    sourceTrace: String? = nil
   ) -> ChatMessage {
-    let conversationId = activeConversationId(for: contactId)
+    let conversationId = conversationOverride ?? activeConversationId(for: contactId)
     let createdAt = Date()
     let message = ChatMessage(
       id: messageId,
@@ -1116,7 +1133,7 @@ final class GalaxySSIStore: ObservableObject {
       isMine: true,
       createdAt: createdAt,
       deliveryStatus: status,
-      deliveryTrace: [DeliveryTraceEvent(stage: status.rawValue)],
+      deliveryTrace: [DeliveryTraceEvent(stage: sourceTrace ?? status.rawValue)],
       conversationId: conversationId,
       turnId: turnId.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(messageId.uuidString),
       richOutputJson: richOutputJson,
@@ -1130,12 +1147,9 @@ final class GalaxySSIStore: ObservableObject {
       content: AgentSessionTitlePolicy.titleSource(content),
       at: createdAt
     )
-    captureExplicitAgentCoreMemory(
-      content,
-      conversationId: conversationId,
-      contactId: contactId,
-      eventId: message.id.uuidString
-    )
+    if sourceTrace != AgentConversationSchedule.occurrenceStage {
+      captureExplicitAgentCoreMemory(content, conversationId: conversationId, contactId: contactId, eventId: message.id.uuidString)
+    }
     save()
     return message
   }

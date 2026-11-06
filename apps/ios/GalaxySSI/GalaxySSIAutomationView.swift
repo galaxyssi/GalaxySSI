@@ -9,7 +9,7 @@ struct GalaxySSIAutomationView: View {
   @State private var errorMessage = ""
 
   private var tasks: [AgentProactiveTask] {
-    store.automationTasks()
+    store.automationTasks().filter { !$0.action.isConversationSchedule }
   }
 
   private var recentExecutions: [AgentWorkflowExecutionRecord] {
@@ -387,6 +387,7 @@ struct GalaxySSIAutomationView: View {
     case .waitingResponse: return t("galaxyssi.automation.status_waiting_response", "Waiting response")
     case .completed: return t("galaxyssi.automation.status_completed", "Completed")
     case .skipped: return t("galaxyssi.automation.status_skipped", "Skipped")
+    case .unverified: return t("galaxyssi.schedule.unverified", "Unverified")
     case .failed: return t("galaxyssi.automation.status_failed", "Failed")
     case .cancelled: return t("galaxyssi.automation.status_cancelled", "Cancelled")
     case .blocked: return t("galaxyssi.automation.status_blocked", "Blocked")
@@ -398,6 +399,7 @@ struct GalaxySSIAutomationView: View {
     case .completed: return .green
     case .failed, .blocked: return .red
     case .cancelled, .skipped: return .galaxySSITextSecondary
+    case .unverified: return .orange
     case .running, .waitingConfirmation, .waitingResponse: return .galaxySSIAccent
     }
   }

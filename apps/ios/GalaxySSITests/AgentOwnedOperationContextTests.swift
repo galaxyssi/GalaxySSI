@@ -94,6 +94,9 @@ final class AgentOwnedOperationContextTests: XCTestCase {
       AgentScheduleFollowupPolicy.target(before: current, messages: messages, liveTaskIds: live)
     }
     XCTAssertEqual(target([prior, receipt, current], live: ids), "schedule-a")
+    var scheduledOccurrence = message(turn: "automatic")
+    scheduledOccurrence.deliveryTrace = [DeliveryTraceEvent(stage: AgentConversationSchedule.occurrenceStage)]
+    XCTAssertEqual(target([prior, receipt, scheduledOccurrence, current]), "schedule-a")
     XCTAssertNil(target([prior, receipt, current], live: ["schedule-b"]))
     let later = message(turn: "file-task")
     XCTAssertNil(target([prior, later, receipt, current]))
@@ -115,6 +118,45 @@ final class AgentOwnedOperationContextTests: XCTestCase {
     background.turnId = "schedule"
     prior.deliveryTrace.append(DeliveryTraceEvent(stage: AgentScheduleFollowupPolicy.receiptStage, detail: "schedule-b"))
     XCTAssertNil(target([prior, receipt, background, current]))
+  }
+
+  func testConversationScheduleParsesOnlyExplicitBoundedRecurrence() throws {
+    let zone = "Asia/Shanghai"
+    guard case let .save(prompt, trigger, frequency, new)? =
+      AgentConversationSchedule.parse("new every 15 minutes, summarize the news", zone: zone) else {
+      return XCTFail("Expected an interval")
+    }
+    XCTAssertEqual(prompt, "summarize the news")
+    XCTAssertEqual(frequency.trimmingCharacters(in: .whitespaces), "every 15 minutes")
+    XCTAssertEqual(trigger?.intervalSeconds, 900)
+    XCTAssertEqual(trigger?.timeZone, zone)
+    XCTAssertTrue(new)
+    let weekday = "\u{5de5}\u{4f5c}\u{65e5}\u{4e0b}\u{5348}\u{4e09}\u{70b9}\u{534a}\u{67e5}\u{5929}\u{6c14}"
+    guard case let .save(goal, clock, _, _)? = AgentConversationSchedule.parse(weekday, zone: zone) else {
+      return XCTFail("Expected a weekday clock")
+    }
+    XCTAssertEqual(goal, "\u{67e5}\u{5929}\u{6c14}")
+    XCTAssertEqual(clock?.cron, "30 15 * * 1-5")
+    XCTAssertEqual(AgentConversationSchedule.frequency("weekly on Monday at 09:30", zone: zone)?.trigger.cron,
+      "30 9 * * 1")
+    XCTAssertEqual(AgentConversationSchedule.parse("change to daily at 09:30", zone: zone),
+      .save(prompt: "", trigger: try .init(kind: .cron, cron: "30 9 * * *", timeZone: zone),
+            frequency: "daily at 09:30", new: false))
+    for text in ["daily at 28:00 check the news", "every 0 minutes open Maps", "every 15 minutes?",
+                 "what happens every 15 minutes", "change to daily at 99:99"] {
+      XCTAssertNil(AgentConversationSchedule.parse(text, zone: zone), text)
+    }
+  }
+
+  func testConversationScheduleDoesNotTreatDispatchOrModelTextAsVerified() {
+    XCTAssertTrue(AgentConversationSchedule.targetsDesktop("Open Maps on the desktop"))
+    XCTAssertFalse(AgentConversationSchedule.expectsPhone("Set a timer on Windows"))
+    XCTAssertEqual(AgentConversationSchedule.remoteOutcome("Done!", desktop: true).status, .unverified)
+    let raw = #"{"protocol":"galaxyssi.schedule-outcome.v1","outcome":"completed","summary":"Inspected the file","execution_device":"none","evidence":"read receipt"}"#
+    XCTAssertEqual(AgentConversationSchedule.remoteOutcome(raw, desktop: true).status, .unverified)
+    XCTAssertEqual(AgentConversationSchedule.remoteOutcome(raw, desktop: false).status, .completed)
+    XCTAssertEqual(AgentConversationSchedule.remoteOutcome(raw.replacingOccurrences(of: "read receipt", with: ""),
+      desktop: false).status, .unverified)
   }
 
   func testRuntimeSummaryIsUsedOnlyByThePhoneOwnedPlanner() throws {

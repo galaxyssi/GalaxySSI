@@ -1,5 +1,172 @@
 import SwiftUI
 
+struct GalaxySSIConversationSchedulesView: View {
+  @EnvironmentObject private var store: GalaxySSIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @State private var draft: Draft?
+  @State private var deleting: AgentProactiveTask?
+  @State private var error = ""
+  var conversationId: String? = nil
+
+  private struct Draft: Identifiable {
+    let id: String
+    var prompt: String
+    var frequency: String
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      GalaxySSITopBar(title: t("galaxyssi.schedule.title", "Scheduled Tasks"),
+        leading: { GalaxySSIBackButton() }, trailing: { EmptyView() })
+      List {
+        let tasks = store.conversationSchedules(conversationId)
+        if tasks.isEmpty {
+          Text(t("galaxyssi.schedule.empty", "No scheduled tasks")).foregroundColor(.secondary)
+        }
+        ForEach(tasks) { task in
+          VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top) {
+              Image(systemName: "clock").foregroundColor(.galaxySSIAccent).accessibilityHidden(true)
+              VStack(alignment: .leading, spacing: 4) {
+                Text(task.name).font(.body.weight(.semibold))
+                Text(task.action.scheduleText).font(.subheadline).foregroundColor(.secondary)
+                Text(AgentConversationSchedule.state(task, language: language)).font(.caption).foregroundColor(.secondary)
+                if conversationId == nil, let session = store.agentSession(id: task.action.conversationId) {
+                  Text(session.title).font(.caption).foregroundColor(.secondary)
+                }
+              }
+              Spacer(minLength: 4)
+              Menu {
+                Button {
+                  draft = Draft(id: task.taskId, prompt: task.action.prompt, frequency: task.action.scheduleText)
+                } label: { Label(t("galaxyssi.schedule.edit", "Edit"), systemImage: "pencil") }
+                Button {
+                  do {
+                    guard try coordinator.setConversationScheduleEnabled(task, enabled: !task.enabled) else {
+                      self.error = t("galaxyssi.schedule.save_failed", "The schedule could not be updated.")
+                      return
+                    }
+                  }
+                  catch { self.error = t("galaxyssi.schedule.save_failed", "The schedule could not be updated.") }
+                } label: {
+                  Label(task.enabled ? t("galaxyssi.schedule.pause", "Pause") : t("galaxyssi.schedule.resume", "Resume"),
+                    systemImage: task.enabled ? "pause" : "play")
+                }
+                Button(role: .destructive) { deleting = task } label: {
+                  Label(t("galaxyssi.common.delete", "Delete"), systemImage: "trash")
+                }
+              } label: {
+                Image(systemName: "ellipsis").frame(width: 44, height: 44)
+              }
+              .accessibilityLabel(t("galaxyssi.schedule.options", "Schedule options"))
+            }
+            if task.enabled && task.nextRunAtMillis > 0 {
+              Text(GalaxySSIAutomationLabels.time(task.nextRunAtMillis, language: language))
+                .font(.caption).foregroundColor(.secondary)
+            }
+            DisclosureGroup(t("galaxyssi.schedule.history", "Run history")) {
+              let runs = store.automationRuns(taskId: task.taskId, limit: 15)
+              if runs.isEmpty { Text(t("galaxyssi.schedule.no_runs", "No runs yet")).font(.caption) }
+              ForEach(runs) { run in
+                VStack(alignment: .leading, spacing: 3) {
+                  Text(GalaxySSIAutomationLabels.status(run.status, language: language)).font(.caption.weight(.semibold))
+                  Text(GalaxySSIAutomationLabels.time(run.scheduledForMillis, language: language)).font(.caption)
+                  if !run.resultSummary.isBlank {
+                    Text(run.resultSummary).font(.caption).textSelection(.enabled)
+                  }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 5)
+              }
+            }.font(.subheadline)
+          }
+          .padding(.vertical, 6)
+        }
+        if !error.isEmpty { Text(error).foregroundColor(.red) }
+      }
+      .listStyle(.insetGrouped)
+    }
+    .navigationBarHidden(true)
+    .sheet(item: $draft) { item in
+      GalaxySSIConversationScheduleEditor(prompt: item.prompt, frequency: item.frequency) { prompt, frequency in
+        guard let task = store.automationTask(id: item.id), task.action.isConversationSchedule else {
+          throw AgentProactiveTaskError.invalid("Schedule not found")
+        }
+        let value = frequency.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let parsed = AgentConversationSchedule.frequency(value, zone: task.trigger.timeZone),
+              value[parsed.end...].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !prompt.isBlank else { throw AgentProactiveTaskError.invalid("Invalid schedule") }
+        _ = try store.saveConversationSchedule(conversationId: task.action.conversationId, id: task.taskId,
+          prompt: prompt, trigger: parsed.trigger, frequency: value)
+        coordinator.cancelLocalScheduleRuns(task.taskId)
+        Task { await coordinator.runAutomationSchedulerCycle() }
+      }
+    }
+    .alert(t("galaxyssi.schedule.delete", "Delete scheduled task?"),
+      isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+      presenting: deleting) { task in
+        Button(t("galaxyssi.common.delete", "Delete"), role: .destructive) {
+          coordinator.cancelLocalScheduleRuns(task.taskId)
+          if !store.deleteAutomationTask(id: task.taskId) {
+            error = t("galaxyssi.schedule.save_failed", "The schedule could not be updated.")
+          }
+        }
+        Button(t("galaxyssi.common.cancel", "Cancel"), role: .cancel) {}
+      }
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    GalaxySSILocalization.string(key, fallback: fallback, language: language)
+  }
+}
+
+private struct GalaxySSIConversationScheduleEditor: View {
+  @Environment(\.dismiss) private var dismiss
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @State var prompt: String
+  @State var frequency: String
+  @State private var error = ""
+  let save: (String, String) throws -> Void
+
+  init(prompt: String, frequency: String, save: @escaping (String, String) throws -> Void) {
+    _prompt = State(initialValue: prompt)
+    _frequency = State(initialValue: frequency)
+    self.save = save
+  }
+
+  var body: some View {
+    NavigationView {
+      Form {
+        TextField(t("galaxyssi.schedule.frequency", "Frequency"), text: $frequency)
+        Section(header: Text(t("galaxyssi.schedule.prompt", "Task"))) {
+          TextEditor(text: $prompt).frame(minHeight: 90)
+        }
+        if !error.isEmpty { Text(error).foregroundColor(.red) }
+      }
+      .navigationTitle(t("galaxyssi.schedule.edit", "Edit"))
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button(t("galaxyssi.common.cancel", "Cancel")) { dismiss() }
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          Button(t("galaxyssi.common.save", "Save")) {
+            do { try save(prompt, frequency); dismiss() }
+            catch { self.error = t("galaxyssi.schedule.save_failed", "The schedule could not be updated.") }
+          }
+          .disabled(prompt.isBlank || frequency.isBlank)
+        }
+      }
+    }
+    .navigationViewStyle(.stack)
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    GalaxySSILocalization.string(key, fallback: fallback, language: language)
+  }
+}
+
 struct AutomationEditorDraft {
   var taskId: String
   var name: String
@@ -278,6 +445,8 @@ enum GalaxySSIAutomationLabels {
       return t("galaxyssi.automation.status_completed", "Completed", language: language)
     case .failed:
       return t("galaxyssi.automation.status_failed", "Failed", language: language)
+    case .unverified:
+      return t("galaxyssi.schedule.unverified", "Unverified", language: language)
     case .cancelled:
       return t("galaxyssi.automation.status_cancelled", "Cancelled", language: language)
     case .skipped:
@@ -291,7 +460,7 @@ enum GalaxySSIAutomationLabels {
       return .galaxySSIAccent
     case .failed, .cancelled:
       return .red
-    case .running, .retrying, .waiting:
+    case .running, .retrying, .waiting, .unverified:
       return .orange
     case .queued:
       return .blue
