@@ -28,6 +28,31 @@ final class PublicNewsFeedTests: XCTestCase {
     XCTAssertEqual(rgb(reader.backgroundColor, style: .dark), [0x20, 0x23, 0x29])
   }
 
+  func testNewsUnreadCountFitsOnlyBetweenCenteredTitleAndMenu() {
+    for width in [280.0, 320.0, 390.0, 768.0] {
+      for title in [70.0, 120.0, 280.0, 500.0] {
+        let container = CGFloat(width), measuredTitle = CGFloat(title)
+        let count = PublicNewsHeaderLayout.unreadWidth(container: container, title: measuredTitle)
+        let side = PublicNewsHeaderLayout.sidePadding + PublicNewsHeaderLayout.actionWidth
+        let clampedTitle = min(measuredTitle, container - 2 * side)
+        let titleRight = container / 2 + clampedTitle / 2
+        let menuStart = container - side
+        XCTAssertGreaterThanOrEqual(count, 0)
+        if count > 0 {
+          XCTAssertEqual(titleRight + PublicNewsHeaderLayout.countGap + count + PublicNewsHeaderLayout.actionGap,
+                         menuStart, accuracy: 0.001)
+        }
+      }
+    }
+  }
+
+  func testNewsMoreGlyphKeepsFiveBalancedDots() {
+    let dots = PublicNewsHeaderLayout.glyphOffsets
+    XCTAssertEqual(dots.count, 5)
+    XCTAssertEqual(dots.filter { $0.x == 0 }.map(\.y).sorted(), [-7, 0, 7])
+    XCTAssertEqual(dots.filter { $0.y == 0 }.map(\.x).sorted(), [-7, 0, 7])
+  }
+
   func testSpeechBookmarkResumesPausedAndInvalidatesOldParagraphCallbacks() throws {
     let suite = "PublicNewsSpeechBookmarkTests-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

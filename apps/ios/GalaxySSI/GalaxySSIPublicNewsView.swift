@@ -1,4 +1,24 @@
 import SwiftUI
+import UIKit
+
+enum PublicNewsHeaderLayout {
+  static let actionWidth: CGFloat = 40
+  static let sidePadding: CGFloat = 16
+  static let titleFontSize: CGFloat = 17
+  static let countGap: CGFloat = 8
+  static let actionGap: CGFloat = 4
+  static let height: CGFloat = 56
+
+  static func unreadWidth(container: CGFloat, title: CGFloat) -> CGFloat {
+    let side = actionWidth + sidePadding
+    let renderedTitle = min(max(0, title), max(0, container - 2 * side))
+    return max(0, (container - renderedTitle) / 2 - side - countGap - actionGap)
+  }
+
+  static let glyphOffsets: [CGPoint] = [
+    .init(x: 0, y: -7), .init(x: -7, y: 0), .zero, .init(x: 7, y: 0), .init(x: 0, y: 7)
+  ]
+}
 
 @MainActor
 struct GalaxySSIPublicNewsView: View {
@@ -21,11 +41,16 @@ struct GalaxySSIPublicNewsView: View {
   @State private var showHighlights = false
   @State private var showScience = false
   @State private var showHeadlineTranslation = false
+  @State private var showFeedMenu = false
+  @State private var showNewsSettings = false
+  @State private var settingsAction: SettingsAction?
+  @ScaledMetric(relativeTo: .body) private var menuRowHeight = 48.0
   @State private var selected: PublicNewsArticle?
   @State private var didOpenInitialArticle = false
   @SceneStorage("publicNews.showSearch") private var showSearch = false
 
-  private enum Filter: Hashable { case all, unread, saved }
+  private enum Filter: Hashable, CaseIterable { case all, unread, saved }
+  private enum SettingsAction { case read, search, highlights, backlog, refresh, science, translate }
 
   private var headlineWorkerEnabled: Bool {
     scenePhase == .active && !showHeadlineTranslation &&
@@ -54,62 +79,25 @@ struct GalaxySSIPublicNewsView: View {
         backgroundColor: pageBackground,
         leading: { GalaxySSIBackButton() },
         trailing: {
-          Menu {
-            Button {
-              noDownloadedSpeechItems = false
-              speechCandidates = visibleArticles.map(\.id)
-            } label: {
-              Label(t("public_news_speech_read_downloaded", "Read downloaded articles"), systemImage: "waveform")
-            }
-            .disabled(visibleArticles.isEmpty || speechCandidates != nil || !store.voiceSettings.textToSpeechEnabled)
-            Button { showSearch = true } label: {
-              Label(t("public_news_search", "Search news"), systemImage: "magnifyingglass")
-            }
-            Button { showHighlights = true } label: {
-              Label(t("public_news_highlights", "Highlights"), systemImage: "sparkles")
-            }
-            Button { showBacklog = true } label: {
-              Label(t("public_news_backlog_title", "Article processing"), systemImage: "list.bullet.rectangle")
-            }
-            Button { refreshRequest += 1 } label: {
-              Label(t("public_news_refresh", "Refresh news"), systemImage: "arrow.clockwise")
-            }
-            .disabled(archive.refreshing)
-            Button { showScience = true } label: {
-              Label(t("science_title", "Life sciences"), systemImage: "books.vertical")
-            }
-            Button { showHeadlineTranslation = true } label: {
-              Label(t("public_news_headline_translate", "Translate headlines"), systemImage: "character.bubble")
-            }
-            Toggle(t("public_news_headline_automatic", "Automatically translate headlines"),
-              isOn: $automaticHeadlineTranslation)
-            if automaticHeadlineTranslation {
-              Picker(t("public_news_headline_model", "Headline translation model"), selection: $headlineTranslationRoute) {
-                Text(t("public_news_headline_on_device", "On-device model")).tag("")
-                ForEach(headlineCloudRoutes) { contact in
-                  Text(contact.displayName + " · " + (contact.selectedCloudModel?.displayName ?? "")).tag(contact.id)
-                }
-                if !headlineTranslationRoute.isEmpty && !headlineCloudRoutes.contains(where: { $0.id == headlineTranslationRoute }) {
-                  Text(t("public_news_headline_waiting_model", "Waiting for model")).tag(headlineTranslationRoute)
-                }
+          Button { showFeedMenu.toggle() } label: {
+            ZStack {
+              ForEach(PublicNewsHeaderLayout.glyphOffsets.indices, id: \.self) { index in
+                let offset = PublicNewsHeaderLayout.glyphOffsets[index]
+                Circle().frame(width: 3, height: 3).offset(x: offset.x, y: offset.y)
               }
             }
-            Toggle(t("public_news_live", "Live Hacker News"), isOn: $liveNewsEnabled)
-            Toggle(t("public_news_learn_publishers", "Discover publisher feeds"), isOn: $publisherDiscovery)
-              .disabled(archive.refreshing)
-          } label: {
-            Image(systemName: "ellipsis").frame(width: 40, height: 44)
+            .foregroundColor(.galaxySSITextPrimary)
+            .frame(width: PublicNewsHeaderLayout.actionWidth, height: 48)
+            .contentShape(Rectangle())
           }
+          .buttonStyle(.plain)
           .accessibilityLabel(t("public_news_actions", "News actions"))
+          .accessibilityIdentifier("public-news-menu")
         }
       )
-      Picker(t("public_news_filter", "News filter"), selection: $filter) {
-        Text(t("public_news_all", "All")).tag(Filter.all)
-        Text(t("public_news_unread", "Unread")).tag(Filter.unread)
-        Text(t("public_news_saved", "Saved")).tag(Filter.saved)
+      .overlay {
+        unreadHeaderCount
       }
-      .pickerStyle(.segmented)
-      .padding(12)
 
       if speech.queue.current != nil {
         GalaxySSIPublicNewsSpeechControls(playback: speech, showTitle: true)
@@ -166,6 +154,11 @@ struct GalaxySSIPublicNewsView: View {
       .refreshable { await archive.refresh(force: true, learnPublishers: publisherDiscovery) }
     }
     .background(pageBackground.ignoresSafeArea())
+    .accessibilityHidden(showFeedMenu)
+    .overlay(alignment: .topTrailing) {
+      if showFeedMenu { feedMenu }
+    }
+    .onChange(of: scenePhase) { if $0 != .active { showFeedMenu = false } }
     .background {
       NavigationLink(destination: GalaxySSIPublicNewsSearchView(archive: archive), isActive: $showSearch) {
         EmptyView()
@@ -207,6 +200,7 @@ struct GalaxySSIPublicNewsView: View {
     .task(id: liveNewsEnabled && scenePhase == .active) {
       if liveNewsEnabled && scenePhase == .active { await archive.collectLive() }
     }
+    .sheet(isPresented: $showNewsSettings, onDismiss: performNewsSettingsAction) { newsSettings }
     .sheet(item: $selected) { GalaxySSIPublicNewsReader(archive: archive, original: $0) }
     .sheet(isPresented: $showBacklog) {
       NavigationView { GalaxySSIPublicNewsBacklogView(archive: archive) }
@@ -238,6 +232,174 @@ struct GalaxySSIPublicNewsView: View {
     case .deferred: return t("public_news_headline_auto_deferred", "Headline translation is waiting for device resources.")
     case .retrying: return t("public_news_headline_retrying", "Waiting to retry headline translation")
     case .storageFailed: return t("public_news_storage_failed", "The local news archive could not be accessed.")
+    }
+  }
+
+  @ViewBuilder private var unreadHeaderCount: some View {
+    if let count = archive.reminderUnreadCount, count > 0 {
+      let label = String(format: t("public_news_header_unread", "%lld unread"), Int64(count))
+      let title = t("public_news_title", "Discoveries")
+      let width = ceil((title as NSString).size(withAttributes: [
+        .font: UIFont.boldSystemFont(ofSize: PublicNewsHeaderLayout.titleFontSize)
+      ]).width) + 1
+      GeometryReader { geometry in
+        let available = PublicNewsHeaderLayout.unreadWidth(container: geometry.size.width, title: width)
+        HStack {
+          Spacer(minLength: 0)
+          Text(label)
+            .font(.caption2)
+            .foregroundColor(.galaxySSITextSecondary)
+            .lineLimit(1)
+            .frame(width: available, alignment: .leading)
+            .clipped()
+            .accessibilityLabel(Text(label))
+        }
+        .padding(.trailing, PublicNewsHeaderLayout.sidePadding + PublicNewsHeaderLayout.actionWidth + PublicNewsHeaderLayout.actionGap)
+        .frame(height: geometry.size.height)
+      }
+      .allowsHitTesting(false)
+    }
+  }
+
+  private var feedMenu: some View {
+    GeometryReader { geometry in
+      ZStack(alignment: .topTrailing) {
+        Color.clear.contentShape(Rectangle()).onTapGesture { showFeedMenu = false }
+          .accessibilityHidden(true)
+        ScrollView {
+          VStack(spacing: 0) {
+            ForEach(Filter.allCases, id: \.self) { option in
+              let label = filterLabel(option)
+              feedMenuRow(label.title, icon: label.icon, selected: filter == option) {
+                filter = option
+                showFeedMenu = false
+              }
+            }
+            Rectangle().fill(Color.galaxySSISeparator).frame(height: 1)
+              .padding(.horizontal, 16).padding(.vertical, 4)
+            feedMenuRow(t("public_news_settings", "News settings"), icon: "gearshape", selected: false) {
+              showFeedMenu = false
+              showNewsSettings = true
+            }
+          }
+          .padding(.vertical, 4)
+        }
+        .frame(width: min(242, max(0, geometry.size.width - 16)),
+          height: min(menuRowHeight * 4 + 17, max(0, geometry.size.height - PublicNewsHeaderLayout.height - 10)))
+        .background(Color.galaxySSISurface)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .shadow(color: .black.opacity(0.22), radius: 8, y: 3)
+        .padding(.top, PublicNewsHeaderLayout.height + 2)
+        .padding(.trailing, 8)
+        .accessibilityAction(.escape) { showFeedMenu = false }
+      }
+    }
+  }
+
+  private func feedMenuRow(_ title: String, icon: String, selected: Bool, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      HStack(spacing: 12) {
+        Image(systemName: icon).frame(width: 22).accessibilityHidden(true)
+        Text(title).multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
+        Image(systemName: "checkmark").font(.body.weight(.semibold))
+          .foregroundColor(.galaxySSIAccent).opacity(selected ? 1 : 0)
+          .frame(width: 20).accessibilityHidden(true)
+      }
+      .foregroundColor(.galaxySSITextPrimary)
+      .padding(.horizontal, 16)
+      .padding(.vertical, 4)
+      .frame(minHeight: menuRowHeight)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityAddTraits(selected ? .isSelected : [])
+  }
+
+  private func filterLabel(_ option: Filter) -> (title: String, icon: String) {
+    switch option {
+    case .all: return (t("public_news_all", "All"), "list.bullet.rectangle")
+    case .unread: return (t("public_news_unread", "Unread"), "envelope")
+    case .saved: return (t("public_news_saved", "Saved"), "bookmark")
+    }
+  }
+
+  private var newsSettings: some View {
+    NavigationView {
+      Form {
+        Section {
+          Button { openAfterSettings(.read) } label: {
+            Label(t("public_news_speech_read_downloaded", "Read downloaded articles"), systemImage: "waveform")
+          }
+          .disabled(visibleArticles.isEmpty || speechCandidates != nil || !store.voiceSettings.textToSpeechEnabled)
+          Button { openAfterSettings(.search) } label: {
+            Label(t("public_news_search", "Search news"), systemImage: "magnifyingglass")
+          }
+          Button { openAfterSettings(.highlights) } label: {
+            Label(t("public_news_highlights", "Highlights"), systemImage: "sparkles")
+          }
+          Button { openAfterSettings(.backlog) } label: {
+            Label(t("public_news_backlog_title", "Article processing"), systemImage: "list.bullet.rectangle")
+          }
+          Button { openAfterSettings(.refresh) } label: {
+            Label(t("public_news_refresh", "Refresh news"), systemImage: "arrow.clockwise")
+          }
+          .disabled(archive.refreshing)
+          Button { openAfterSettings(.science) } label: {
+            Label(t("science_title", "Life sciences"), systemImage: "books.vertical")
+          }
+          Button { openAfterSettings(.translate) } label: {
+            Label(t("public_news_headline_translate", "Translate headlines"), systemImage: "character.bubble")
+          }
+        }
+        Section {
+          Toggle(t("public_news_headline_automatic", "Automatically translate headlines"),
+            isOn: $automaticHeadlineTranslation)
+          if automaticHeadlineTranslation {
+            Picker(t("public_news_headline_model", "Headline translation model"), selection: $headlineTranslationRoute) {
+              Text(t("public_news_headline_on_device", "On-device model")).tag("")
+              ForEach(headlineCloudRoutes) { contact in
+                Text(contact.displayName + " · " + (contact.selectedCloudModel?.displayName ?? "")).tag(contact.id)
+              }
+              if !headlineTranslationRoute.isEmpty && !headlineCloudRoutes.contains(where: { $0.id == headlineTranslationRoute }) {
+                Text(t("public_news_headline_waiting_model", "Waiting for model")).tag(headlineTranslationRoute)
+              }
+            }
+          }
+          Toggle(t("public_news_live", "Live Hacker News"), isOn: $liveNewsEnabled)
+          Toggle(t("public_news_learn_publishers", "Discover publisher feeds"), isOn: $publisherDiscovery)
+            .disabled(archive.refreshing)
+        }
+      }
+      .navigationTitle(t("public_news_settings", "News settings"))
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button(t("common_close", "Close")) { showNewsSettings = false }
+        }
+      }
+    }
+    .navigationViewStyle(.stack)
+  }
+
+  private func openAfterSettings(_ action: SettingsAction) {
+    settingsAction = action
+    showNewsSettings = false
+  }
+
+  private func performNewsSettingsAction() {
+    let action = settingsAction
+    settingsAction = nil
+    switch action {
+    case .read:
+      noDownloadedSpeechItems = false
+      speechCandidates = visibleArticles.map(\.id)
+    case .search: showSearch = true
+    case .highlights: showHighlights = true
+    case .backlog: showBacklog = true
+    case .refresh: refreshRequest += 1
+    case .science: showScience = true
+    case .translate: showHeadlineTranslation = true
+    case nil: break
     }
   }
 
