@@ -12,7 +12,7 @@ final class AgentTaskSupervisorTests: XCTestCase {
       memoryObserver: { observer.record($0) }
     )
 
-    let handle = try supervisor.submit(workspace("memory")) { context in
+    let handle = try supervisor.submit(workspace: workspace("memory")) { context in
       _ = try context.recordExecutionSnapshot(AgentWorkspaceExecutionSnapshot(agentId: "model:deepseek"))
     }
     await handle.join()
@@ -36,7 +36,7 @@ final class AgentTaskSupervisorTests: XCTestCase {
     let probe = AgentTaskSupervisorProbe()
 
     let handles = try (1...4).map { index in
-      try supervisor.submit(workspace("\(index)")) { _ in
+      try supervisor.submit(workspace: workspace("\(index)")) { _ in
         await probe.begin("task-\(index)")
         await probe.waitForRelease()
         await probe.finish("task-\(index)")
@@ -66,7 +66,7 @@ final class AgentTaskSupervisorTests: XCTestCase {
     let probe = AgentTaskSupervisorProbe()
 
     let firstBackground = try supervisor.submit(
-      workspace("background-one"),
+      workspace: workspace("background-one"),
       lane: .readReasoning,
       priority: .background
     ) { _ in
@@ -77,7 +77,7 @@ final class AgentTaskSupervisorTests: XCTestCase {
     await probe.waitForStarted(id: "background-one")
 
     let secondBackground = try supervisor.submit(
-      workspace("background-two"),
+      workspace: workspace("background-two"),
       lane: .readReasoning,
       priority: .background
     ) { _ in
@@ -86,7 +86,7 @@ final class AgentTaskSupervisorTests: XCTestCase {
       await probe.finish("background-two")
     }
     let foreground = try supervisor.submit(
-      workspace("foreground"),
+      workspace: workspace("foreground"),
       lane: .readReasoning,
       priority: .foreground
     ) { _ in
@@ -116,14 +116,14 @@ final class AgentTaskSupervisorTests: XCTestCase {
     let supervisor = AgentTaskSupervisor(workspaceStore: store)
     let probe = AgentTaskSupervisorProbe()
 
-    let first = try supervisor.submit(workspace("first"), lane: .sideEffect) { _ in
+    let first = try supervisor.submit(workspace: workspace("first"), lane: .sideEffect) { _ in
       await probe.begin("first")
       await probe.waitForRelease()
       await probe.finish("first")
     }
     await probe.waitForStarted(id: "first")
 
-    let second = try supervisor.submit(workspace("second"), lane: .sideEffect) { _ in
+    let second = try supervisor.submit(workspace: workspace("second"), lane: .sideEffect) { _ in
       await probe.begin("second")
       await probe.finish("second")
     }
@@ -147,10 +147,10 @@ final class AgentTaskSupervisorTests: XCTestCase {
     let supervisor = AgentTaskSupervisor(workspaceStore: store)
     let probe = AgentTaskSupervisorProbe()
 
-    let failed = try supervisor.submit(workspace("failed")) { _ in
+    let failed = try supervisor.submit(workspace: workspace("failed")) { _ in
       throw AgentTaskSupervisorError(message: "reasoning failed")
     }
-    let sibling = try supervisor.submit(workspace("sibling")) { _ in
+    let sibling = try supervisor.submit(workspace: workspace("sibling")) { _ in
       await probe.begin("sibling")
       await probe.finish("sibling")
     }
@@ -172,7 +172,7 @@ final class AgentTaskSupervisorTests: XCTestCase {
     let supervisor = AgentTaskSupervisor(workspaceStore: store, clock: clock.tick)
     let probe = AgentTaskSupervisorProbe()
 
-    let handle = try supervisor.submit(workspace("cancel")) { context in
+    let handle = try supervisor.submit(workspace: workspace("cancel")) { context in
       _ = try context.checkpoint(
         checkpointId: "before-side-effect",
         planSnapshot: "1. Read\n2. Confirm\n3. Execute",
@@ -272,7 +272,7 @@ final class AgentTaskSupervisorTests: XCTestCase {
       clock: clock.current,
       livenessPolicy: livenessPolicy()
     )
-    let handle = try supervisor.submit(workspace("assessment", createdAtMillis: 1_000)) { _ in
+    let handle = try supervisor.submit(workspace: workspace("assessment", createdAtMillis: 1_000)) { _ in
       try await Task.sleep(nanoseconds: UInt64.max)
     }
     await Task.yield()
@@ -315,6 +315,42 @@ final class AgentTaskSupervisorTests: XCTestCase {
     let recovered = try XCTUnwrap(store.find("workspace-recovered"))
     XCTAssertFalse(livenessPolicy().hasUnresolvedStall(workspace: recovered))
     supervisor.close()
+  }
+
+  func testDeferredCancellationSurvivesReleasedLeaseAndSupervisorRecreation() async throws {
+    let store = InMemoryAgentWorkspaceStore()
+    let supervisor = AgentTaskSupervisor(workspaceStore: store)
+    var waiting = workspace("deferred-cancel")
+    waiting.handoffIds = ["codex:731"]
+    let handle = try supervisor.submit(workspace: waiting) { context in
+      _ = try context.checkpoint(checkpointId: "receipt", stateJson: #"{"retained":true}"#)
+      try context.waitForResponse()
+    }
+    await handle.join()
+    XCTAssertNil(supervisor.cancellationSource(taskId: waiting.taskId))
+    XCTAssertEqual(store.find(waiting.workspaceId)?.status, .waitingResponse)
+    let sibling = try store.upsert(workspace("sibling", status: .waitingResponse))
+    let completed = try store.upsert(workspace("completed", status: .completed))
+    let failed = try store.upsert(workspace("failed", status: .failed))
+    XCTAssertTrue(supervisor.cancelWorkspace(workspaceId: waiting.workspaceId))
+    XCTAssertFalse(supervisor.cancelWorkspace(workspaceId: waiting.workspaceId))
+    XCTAssertFalse(supervisor.cancelWorkspace(workspaceId: completed.workspaceId))
+    XCTAssertFalse(supervisor.cancelWorkspace(workspaceId: failed.workspaceId))
+    await supervisor.shutdown()
+
+    let restarted = AgentTaskSupervisor(workspaceStore: store)
+    defer { restarted.close() }
+    let cancelled = try XCTUnwrap(store.find(waiting.workspaceId))
+    XCTAssertEqual(cancelled.status, .cancelled)
+    XCTAssertTrue(cancelled.cancellationRequested)
+    XCTAssertEqual(cancelled.checkpoints.first?.stateJson, #"{"retained":true}"#)
+    XCTAssertEqual(cancelled.handoffIds, waiting.handoffIds)
+    XCTAssertEqual(restarted.recoverableTasks().map(\.workspaceId), [sibling.workspaceId])
+    XCTAssertNil(restarted.reconcileLateConnectorResponse(workspaceId: waiting.workspaceId, sourceMessageId: 731))
+    let stale = try restarted.recordExecutionSnapshot(workspaceId: waiting.workspaceId, snapshot: .init(status: .waitingResponse))
+    XCTAssertEqual(stale, cancelled)
+    XCTAssertEqual(store.find(completed.workspaceId), completed)
+    XCTAssertEqual(store.find(failed.workspaceId), failed)
   }
 
   func testAuthenticatedLateConnectorResponseReopensOnlyItsFailedHandoff() throws {

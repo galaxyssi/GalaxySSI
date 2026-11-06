@@ -3956,17 +3956,27 @@ final class MessageCoordinator: ObservableObject {
         switch decision.disposition {
         case .independent:
           break
-        case .interrupt:
-          await cancelActiveAgentTurn(active)
+        case .interrupt, .steer:
+          let cancelled = await cancelActiveAgentTurn(active)
+          if cancelled && decision.disposition == .steer {
+            requestText = AgentActiveTurnPolicy.supersedingGoal(
+              activeGoal: active.goal,
+              intervention: originalRequestText,
+              kind: decision.interventionKind
+            ) + "\nInspect the stopped task's current state before continuing. Do not repeat any effect that may already have happened."
+            break
+          }
+          let stage = cancelled ? "active_agent_interrupted" : "active_agent_interrupt_failed"
           let response = store.appendIncoming(
-            localizedReply(
+            cancelled ? localizedReply(
               "galaxyssi.agent.active_task_cancelled",
               fallback: "The active Agent task was cancelled."
-            ),
+            ) : localizedReply("galaxyssi.agent.task_control.cancel_failed",
+                               fallback: "This task could not be cancelled"),
             from: contact.id,
             remoteMessageId: "active-agent-interrupted-" + outgoing.turnId,
             status: .delivered,
-            traceStage: "active_agent_interrupted",
+            traceStage: stage,
             detail: active.goal,
             conversationId: outgoing.conversationId,
             turnId: outgoing.turnId
@@ -3974,19 +3984,12 @@ final class MessageCoordinator: ObservableObject {
           store.appendDeliveryTrace(
             outgoing.id,
             contactId: contact.id,
-            stage: "active_agent_interrupted",
+            stage: stage,
             detail: active.goal,
             status: .delivered
           )
           onIncomingMessage?(response)
           return true
-        case .steer:
-          await cancelActiveAgentTurn(active)
-          requestText = AgentActiveTurnPolicy.supersedingGoal(
-            activeGoal: active.goal,
-            intervention: originalRequestText,
-            kind: decision.interventionKind
-          ) + "\nInspect the stopped task's current state before continuing. Do not repeat any effect that may already have happened."
         }
       }
     }
@@ -4639,13 +4642,16 @@ final class MessageCoordinator: ObservableObject {
       }
   }
 
-  private func cancelActiveAgentTurn(_ candidate: ActiveAgentTurnCandidate) async {
+  private func cancelActiveAgentTurn(_ candidate: ActiveAgentTurnCandidate) async -> Bool {
+    var cancelled = true
     if let localTask = candidate.localTask {
-      _ = cancelLocalAgentTask(taskId: localTask.taskId)
+      cancelled = cancelLocalAgentTask(taskId: localTask.taskId)
     }
     if let remoteTask = candidate.remoteTask {
-      _ = await cancelRemoteAgentTask(remoteTask)
+      let remoteCancelled = await cancelRemoteAgentTask(remoteTask)
+      cancelled = cancelled && remoteCancelled
     }
+    return cancelled
   }
 
   private func manualSelection(
@@ -5377,7 +5383,7 @@ final class MessageCoordinator: ObservableObject {
     let toolId = rollbackAction.parameters["tool_id"] ?? rollbackAction.target
     task.executionLog.append("Native tool \(toolId): rollback requested")
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
-    store.upsertAgentTask(task)
+    store.upsertAgentTask(task, explicitRollback: true)
     return applyLocalNativeAction(action: rollbackAction, outgoing: outgoing, task: &task)
   }
 
@@ -5494,23 +5500,17 @@ final class MessageCoordinator: ObservableObject {
   @discardableResult
   func cancelLocalAgentTask(taskId: String, emitReply: Bool = true) -> Bool {
     guard let task = store.agentTask(id: taskId),
-          [
-            .observing,
-            .planning,
-            .waitingConfirmation,
-            .executing,
-            .verifying,
-            .waitingResponse,
-            .paused
-          ].contains(task.phase) else {
+          AgentTaskCenterPolicy.canRequestCancellation(task.phase) else {
       return false
     }
+    let timestamp = max(task.updatedAtMillis, Int64(Date().timeIntervalSince1970 * 1_000))
+    guard store.persistLocalWorkspaceCancellation(for: task, at: timestamp) else { return false }
     PhoneExecutionAuthority.requestCancellation(taskId: task.taskId)
-    if task.pendingAction != nil || !task.pendingActions.isEmpty {
-      cancelLocalNativeAction(taskId: taskId, emitReply: emitReply)
-      return store.agentTask(id: taskId)?.phase == .cancelled
+    if task.pendingAction != nil || !task.pendingActions.isEmpty || task.capturePermission != nil {
+      finalizeCancelledLocalNativeAction(task, at: timestamp, emitReply: emitReply)
+      return true
     }
-    guard var cancelled = store.agentTask(id: taskId) else { return false }
+    var cancelled = task
     cancelled.phase = .cancelled
     cancelled.pendingPlanning = nil
     cancelled.plannerSnapshot = nil
@@ -5521,7 +5521,7 @@ final class MessageCoordinator: ObservableObject {
     )
     cancelled.verification = "User cancelled local Agent execution"
     cancelled.executionLog.append("Agent task: cancelled")
-    cancelled.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    cancelled.updatedAtMillis = timestamp
     store.upsertAgentTask(cancelled)
     guard let outgoing = localOutgoingMessage(for: cancelled) else { return true }
     localRecordedRunStore.recordNativeExecution(task: cancelled, outgoing: outgoing, status: .cancelled)
@@ -5560,20 +5560,15 @@ final class MessageCoordinator: ObservableObject {
       }
   }
 
-  func cancelLocalNativeAction(taskId: String, emitReply: Bool = true) {
-    guard var task = store.agentTask(id: taskId),
-          [
-            .observing,
-            .waitingConfirmation,
-            .executing,
-            .verifying,
-            .waitingResponse,
-            .paused
-          ].contains(task.phase),
-          task.pendingAction != nil || !task.pendingActions.isEmpty else {
-      return
+  func reconcileInterruptedLocalCancellations() -> Int {
+    store.interruptedLocalWorkspaceCancellations().reduce(into: 0) { count, task in
+      if cancelLocalAgentTask(taskId: task.taskId, emitReply: false) { count += 1 }
     }
-    PhoneExecutionAuthority.requestCancellation(taskId: task.taskId)
+  }
+
+  private func finalizeCancelledLocalNativeAction(_ original: AgentTaskRecord, at timestamp: Int64, emitReply: Bool) {
+    var task = original
+    let taskId = task.taskId
     let action = task.pendingAction
     let captureWait = task.capturePermission
     if captureWait != nil {
@@ -5598,7 +5593,7 @@ final class MessageCoordinator: ObservableObject {
     task.verification = "User cancelled pending native tool execution"
     let toolId = action?.parameters["tool_id"] ?? action?.target ?? "queued native actions"
     task.executionLog.append("Native tool task: cancelled")
-    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    task.updatedAtMillis = timestamp
     store.upsertAgentTask(task)
     if let captureWait { recordCapturePermissionEvent(.runCancelled, wait: captureWait, stage: "cancelled") }
     guard let outgoing = captureWait.flatMap(capturePermissionMessage) ?? localOutgoingMessage(for: task) else { return }

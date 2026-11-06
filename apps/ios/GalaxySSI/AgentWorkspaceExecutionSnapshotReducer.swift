@@ -40,7 +40,8 @@ enum AgentWorkspaceExecutionSnapshotReducer {
     maxHandoffIdCount: Int = defaultMaxHandoffIdCount
   ) -> AgentWorkspaceExecutionSnapshotReduction {
     let nextStatus = snapshot.status ?? workspace.status
-    guard !workspace.status.isTerminal || nextStatus == workspace.status else {
+    guard (!workspace.status.isTerminal || nextStatus == workspace.status),
+          !workspace.cancellationRequested || snapshot.status == .cancelled else {
       return AgentWorkspaceExecutionSnapshotReduction(workspace: workspace)
     }
     var updated = appendEvent(
@@ -53,6 +54,7 @@ enum AgentWorkspaceExecutionSnapshotReducer {
     )
     let statusChanged = nextStatus != workspace.status
     updated.status = nextStatus
+    updated.cancellationRequested = workspace.cancellationRequested || nextStatus == .cancelled
     updated.currentPlanSnapshot = fallback(snapshot.planSnapshot, workspace.currentPlanSnapshot)
     updated.resultJson = fallback(snapshot.resultJson, workspace.resultJson)
     updated.errorMessage = fallback(snapshot.errorMessage, workspace.errorMessage)

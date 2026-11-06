@@ -13,22 +13,22 @@ extension AgentHomeView {
         }
       }
     }
-    if task.phase == .waitingResponse {
+    if primaryActionWaitingForResponse {
       richActionStatus = t(
         "agent_status_waiting_response",
         "Waiting for an Agent response."
       )
-    } else if task.phase == .waitingConfirmation {
+    } else if task.phase == .waitingConfirmation, task.pendingAction != nil {
       if requestAgentTaskApproval(task) {
         richActionStatus = t(
           "galaxyssi.agent.approval_status.approved",
           "The Agent action was approved."
         )
       }
-    } else if task.phase == .paused {
+    } else if AgentTaskCenterPolicy.resumable(task) {
       _ = coordinator.resumeLocalNativeAction(taskId: task.taskId)
     } else {
-      coordinator.cancelLocalNativeAction(taskId: task.taskId)
+      cancelActiveAgentTask(task)
     }
   }
 

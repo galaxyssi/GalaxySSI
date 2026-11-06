@@ -88,8 +88,13 @@ enum AgentTaskCenterPolicy {
   }
 
   static func cancellable(_ task: AgentTaskRecord) -> Bool {
-    cancellablePhases.contains(task.phase) &&
-      (task.pendingPlanning != nil || task.pendingAction != nil || !task.pendingActions.isEmpty)
+    canRequestCancellation(task.phase) &&
+      (task.pendingPlanning != nil || task.pendingAction != nil || !task.pendingActions.isEmpty ||
+        (task.routeKind == .localSystem && [.waitingResponse, .paused].contains(task.phase)))
+  }
+
+  static func canRequestCancellation(_ phase: AgentPhase) -> Bool {
+    cancellablePhases.contains(phase)
   }
 
   static func resumable(_ task: AgentTaskRecord) -> Bool {

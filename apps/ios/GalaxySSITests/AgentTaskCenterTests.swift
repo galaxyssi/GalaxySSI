@@ -25,6 +25,52 @@ final class AgentTaskCenterTests: XCTestCase {
     XCTAssertTrue(actions.contains(.delete))
   }
 
+  @MainActor
+  func testDeferredLocalCancellationFinishesAfterWorkspaceWasPersistedBeforeTaskHistory() throws {
+    let suite = "deferred-local-cancel-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+    defer {
+      defaults.removePersistentDomain(forName: suite)
+      try? FileManager.default.removeItem(at: folder)
+    }
+    let file = folder.appendingPathComponent("workspaces.json")
+    let workspaceStore = FileAgentWorkspaceStore(fileURL: file)
+    let secrets = InMemorySecretStore()
+    let store = GalaxySSIStore(defaults: defaults, secrets: secrets, workspaceStore: workspaceStore)
+    var waiting = task(taskId: suite, phase: .waitingResponse)
+    waiting.routeKind = .localSystem
+    XCTAssertTrue(AgentTaskCenterPolicy.actions(waiting).contains(.cancel))
+    var planning = waiting
+    planning.phase = .planning
+    planning.pendingAction = captureWait().0.pendingAction
+    store.upsertAgentTask(planning)
+    XCTAssertTrue(store.save())
+    let scope = AgentWorkspace(workspaceId: suite, sessionId: planning.sessionId,
+      conversationId: planning.sessionId, taskId: suite, status: .waitingResponse)
+    var foreign = scope
+    foreign.conversationId = "another-conversation"
+    let storedForeign = try workspaceStore.upsert(foreign)
+    XCTAssertTrue(store.persistLocalWorkspaceCancellation(for: planning, at: 100))
+    XCTAssertEqual(workspaceStore.find(suite), storedForeign)
+    XCTAssertTrue(try workspaceStore.delete(suite, expectedRevision: storedForeign.revision))
+    _ = try workspaceStore.upsert(scope)
+    XCTAssertTrue(store.persistLocalWorkspaceCancellation(for: planning, at: 200))
+    XCTAssertEqual(store.agentTask(id: suite)?.phase, .planning)
+
+    let reopenedWorkspaces = FileAgentWorkspaceStore(fileURL: file)
+    let reopened = GalaxySSIStore(defaults: defaults, secrets: secrets, workspaceStore: reopenedWorkspaces)
+    let coordinator = MessageCoordinator(store: reopened)
+    defer { PhoneExecutionAuthority.clearCancellation(taskId: suite) }
+    XCTAssertEqual(coordinator.reconcileInterruptedLocalCancellations(), 1)
+    XCTAssertEqual(coordinator.reconcileInterruptedLocalCancellations(), 0)
+    XCTAssertEqual(reopened.agentTask(id: suite)?.phase, .cancelled)
+    XCTAssertNil(reopened.agentTask(id: suite)?.pendingAction)
+    XCTAssertEqual(reopenedWorkspaces.find(suite)?.cancellationRequested, true)
+    XCTAssertEqual(reopened.upsertAgentTask(waiting).phase, .cancelled)
+    XCTAssertTrue(reopenedWorkspaces.recoverable().isEmpty)
+  }
+
   func testDeleteRemovesOnlySelectedTask() {
     let first = task(taskId: "task-1", sessionId: "shared-session")
     let second = task(taskId: "task-2", sessionId: "shared-session")

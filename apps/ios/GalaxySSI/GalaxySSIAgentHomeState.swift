@@ -374,7 +374,7 @@ extension AgentHomeView {
   }
 
   var primaryActionResumesTask: Bool {
-    primaryAgentTask?.phase == .paused
+    primaryAgentTask.map(AgentTaskCenterPolicy.resumable) ?? false
   }
 
   var primaryActionApprovesTask: Bool {
@@ -387,7 +387,8 @@ extension AgentHomeView {
   }
 
   var primaryActionWaitingForResponse: Bool {
-    primaryAgentTask?.phase == .waitingResponse
+    guard let task = primaryAgentTask else { return false }
+    return task.phase == .waitingResponse && task.routeKind != .localSystem
   }
 
   var primaryActionNeedsHighRiskConfirmation: Bool {
