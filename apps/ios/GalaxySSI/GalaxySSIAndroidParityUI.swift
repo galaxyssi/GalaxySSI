@@ -127,7 +127,10 @@ struct AgentHomeView: View {
   @State var timelineActionTaskIDsInFlight: Set<String> = []
   @State var pendingPrimaryActionTaskID: String?
   @State var fileImporterPresented = false
+  @State var fileAttachmentOwner: String?
+  @State var fileAttachmentRequest: UUID?
   @State var photoPickerPresented = false
+  @State var photoAttachmentOwner: String?
   @State var screenshotPickerPresented = false
   @State var screenCaptureSourcePresented = false
   @State var screenPagePickerPresented = false
@@ -177,6 +180,8 @@ struct AgentHomeView: View {
   @State var agentRuntimeAuditRecords: [AgentNativeToolAuditRecord] = []
   @State var modelSelection = AgentModelSelection()
   @State var voiceAttachmentSnapshot: [GalaxySSIDraftAttachment] = []
+  @State var voiceAppAnchor: VoiceAppCaptureAnchor?
+  @State var voiceAppCaptureInvalidated = false
   @State var voicePendingAttachments: [GalaxySSIDraftAttachment] = []
   @State var agentVoiceDraftSnapshot: AgentVoiceDraftSnapshot?
   @State var runtimeArtifactPreview: GalaxySSIRuntimeArtifactPreview?
@@ -352,6 +357,7 @@ struct AgentHomeView: View {
       }
       .onDisappear {
         cancelScreenPagePDFImport()
+        invalidateVoiceAppAnchor()
         homeVisible = false
         AgentIOSComposerInputBridge.shared.removeHandler()
         AgentIOSAgentHomeActionBridge.shared.removeTapHandler()
@@ -373,6 +379,11 @@ struct AgentHomeView: View {
         refreshVisibleAgentReplyReadState()
       }
       .onChange(of: homeWindowFocused) { _ in refreshVisibleAgentReplyReadState() }
+      .onChange(of: agentReplyReadBoundary) { _ in refreshVisibleAgentReplyReadState() }
+      .task(id: agentReplyReadBoundary) {
+        guard let boundary = agentReplyReadBoundary else { return }
+        await store.markLegacyAgentRepliesRead(through: boundary)
+      }
       .onReceive(NotificationCenter.default.publisher(for: .galaxySSIWorkspaceDidPersist)
         .debounce(for: .milliseconds(75), scheduler: RunLoop.main)) { _ in
         guard homeVisible, scenePhase == .active else { return }
@@ -396,6 +407,12 @@ struct AgentHomeView: View {
         refreshCommittedTurnProgress()
         refreshAgentRouteState()
         refreshVisibleAgentReplyReadState()
+      }
+      .onChange(of: photoPickerPresented) { presented in
+        if presented { photoAttachmentOwner = store.activeAgentConversationId }
+      }
+      .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+        cameraAttachmentOwner = nil
       }
       .onReceive(
         NotificationCenter.default.publisher(for: .galaxySSIDesktopPairingDidComplete)
@@ -487,11 +504,16 @@ struct AgentHomeView: View {
           _ = coordinator.requestCapabilityManifestRefresh(force: true)
           focusScannedAgents(agentIDs)
         },
-        onAddAttachment: addAttachment,
+        onAddAttachments: receiveComposerFiles,
         onAppendAttachment: { attachment in
+          guard scenePhase == .active else { return }
           if attachment.sourceDescription == "camera" {
             let owner = cameraAttachmentOwner
             cameraAttachmentOwner = nil
+            guard owner == store.activeAgentConversationId else { return }
+          } else if attachment.sourceDescription == "photo-library" {
+            let owner = photoAttachmentOwner
+            photoAttachmentOwner = nil
             guard owner == store.activeAgentConversationId else { return }
           }
           appendAttachment(attachment)
@@ -708,8 +730,6 @@ struct AgentHomeView: View {
     let presentation = headerPresentation
     return GalaxySSIAgentHomeHeaderView(
       sessionTitle: presentation.sessionTitle,
-      unreadCount: unreadTotal,
-      unreadLabel: String(format: t("galaxyssi.agent.unread", "%d unread"), unreadTotal),
       modelStatusLabel: presentation.modelStatusLabel,
       brandSubtitle: t("galaxyssi.agent.brand.subtitle", "Superintelligent agent"),
       newConversationLabel: t("new_conversation", "New conversation"),
@@ -733,9 +753,23 @@ struct AgentHomeView: View {
     )
   }
 
+  private var canReadAgentReplies: Bool {
+    AgentReplyUnreadPolicy.canRead(visible: homeVisible, active: scenePhase == .active, focused: homeWindowFocused)
+  }
+
+  private var agentReplyReadBoundary: AgentReplyUnreadPolicy.Boundary? {
+    return AgentReplyUnreadPolicy.boundary(
+      conversationId: store.activeAgentConversationId, rendered: transcriptMessages,
+      isAtLatest: canReadAgentReplies && transcriptAutoFollow && !transcriptShowLatestButton && olderTranscriptAnchor == nil
+    )
+  }
+
   func refreshVisibleAgentReplyReadState() {
-    if AgentReplyUnreadPolicy.canRead(visible: homeVisible, active: scenePhase == .active, focused: homeWindowFocused) {
-      store.markAgentRepliesRead(conversationId: store.activeAgentConversationId, rendered: transcriptMessages)
+    if canReadAgentReplies {
+      store.markAgentRepliesRead(
+        conversationId: store.activeAgentConversationId, rendered: transcriptMessages,
+        through: agentReplyReadBoundary?.cursor
+      )
     }
     agentUnreadCount = store.agentReplyUnreadCount()
   }
@@ -794,6 +828,7 @@ struct AgentHomeView: View {
       focusRequest: composerFocusRequest,
       attachmentScope: store.activeAgentConversationId,
       attachmentPreviewBlocked: cameraPickerPresented || photoPickerPresented || fileImporterPresented,
+      chatUnreadCount: unreadTotal,
       onRemoveAttachment: { attachment in
         attachments.removeAndWipe(id: attachment.id)
       },
@@ -812,6 +847,8 @@ struct AgentHomeView: View {
       },
       onTakePhoto: openCameraAttachmentPicker,
       onAddFile: {
+        fileAttachmentOwner = store.activeAgentConversationId
+        fileAttachmentRequest = UUID()
         fileImporterPresented = true
       },
       onAnalyzeScreenshot: presentScreenCaptureSources,
@@ -819,6 +856,7 @@ struct AgentHomeView: View {
       onPendingPrimaryAction: handlePendingAgentTaskAction,
       onVoiceStart: beginAgentVoiceCapture,
       onVoiceCancelled: {
+        invalidateVoiceAppAnchor()
         voiceTranscriptionPending = false
         voicePendingAttachments.removeAll()
         agentVoiceDraftSnapshot = nil

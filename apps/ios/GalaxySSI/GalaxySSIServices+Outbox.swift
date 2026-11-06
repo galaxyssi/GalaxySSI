@@ -84,6 +84,13 @@ extension MessageCoordinator {
         continue
       }
       let sourceId = item.clientSourceMessageId.ifBlank(item.messageId)
+      if GalaxySSIContactReminderOutbox.containsReminder(sourceId) {
+        guard !GalaxySSIContactReminderOutbox.isExpired(sourceId, now: AgentControlPlaneClock.nowMillis()),
+              let contact = store.contact(id: item.contactId), canSendContactReminder(to: contact) else {
+          deliveryStore.discard(messageId: item.messageId)
+          continue
+        }
+      }
       if rejectedSourceIds.contains(sourceId) { continue }
       if let deferred = item.deferredTaskPayload {
         guard deliveryStore.canPrepareDeferredTask(item),

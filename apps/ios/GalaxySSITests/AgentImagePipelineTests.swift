@@ -4,6 +4,20 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentImagePipelineTests: XCTestCase {
+  func testExplicitOriginalUsesSeparateCloudBudgetAndNeverFallsBackToCompression() throws {
+    let input = GalaxySSIDraftAttachment(displayName: "original.png", mimeType: "image/png",
+      data: Data(repeating: 42, count: CloudImagePayload.maximumBytes + 1), composerImageQuality: .original)
+    XCTAssertNil(AgentImagePipeline.encodeForTransport(input))
+    let cloud = try XCTUnwrap(CloudImagePayloadFactory.prepare([input]).first)
+    XCTAssertTrue(cloud.sendsOriginal)
+    XCTAssertEqual(cloud.data, input.data)
+    let inline = AgentMediaAttachmentTransportEncoder.inlinePayload(for: input, profile: nil,
+                                                                    remainingBytes: input.data.count)
+    XCTAssertEqual(inline?.data, input.data)
+    XCTAssertNil(AgentMediaAttachmentTransportEncoder.inlinePayload(for: input, profile: nil,
+                                                                      remainingBytes: input.data.count - 1))
+  }
+
   func testComposerCropKeepsOriginalBytesAndRejectsStaleReplacement() throws {
     let format = UIGraphicsImageRendererFormat()
     format.scale = 1

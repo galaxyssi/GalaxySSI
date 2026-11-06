@@ -335,6 +335,32 @@ final class AgentConversationDatabaseTests: XCTestCase {
 }
 
 final class GalaxySSIChatHistoryDatabaseTests: XCTestCase {
+  func testForwardViewportPagesUseTimestampAndIDWithinConversation() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let database = GalaxySSIChatHistoryDatabase(fileURL: root.appendingPathComponent("history.sqlite3"),
+      secrets: InMemorySecretStore())
+    let messages = (0..<7).map { index in
+      ChatMessage(contactId: "peer", content: "Row \(index)", isMine: true,
+        createdAt: Date(timeIntervalSince1970: index < 5 ? 1_000 : 2_000), conversationId: "chat")
+    }.sorted { GalaxySSIChatHistoryCursor($0) < GalaxySSIChatHistoryCursor($1) }
+    XCTAssertTrue(database.upsertAll(messages))
+    XCTAssertTrue(database.upsert(ChatMessage(contactId: "peer", content: "Other conversation", isMine: false,
+      createdAt: Date(timeIntervalSince1970: 1_500), conversationId: "other")))
+    XCTAssertTrue(database.upsert(ChatMessage(contactId: "other", content: "Other contact", isMine: false,
+      createdAt: Date(timeIntervalSince1970: 1_500), conversationId: "chat")))
+    let anchor = GalaxySSIChatHistoryCursor(messages[2])
+    let older = database.page(contactId: "peer", conversationId: "chat", before: anchor, pageSize: 2)
+    XCTAssertEqual(older.messages.map(\.id), Array(messages.prefix(2)).map(\.id))
+    let newer = database.page(contactId: "peer", conversationId: "chat", after: anchor, pageSize: 2)
+    XCTAssertEqual(newer.messages.map(\.id), Array(messages[3...4]).map(\.id))
+    XCTAssertTrue(newer.hasMore)
+    let next = try XCTUnwrap(newer.nextCursor)
+    let last = database.page(contactId: "peer", conversationId: "chat", after: next, pageSize: 2)
+    XCTAssertEqual(last.messages.map(\.id), Array(messages.suffix(2)).map(\.id))
+    XCTAssertFalse(last.hasMore)
+  }
+
   func testAttachmentRecoveryPagesStayInConversationAcrossContacts() {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }

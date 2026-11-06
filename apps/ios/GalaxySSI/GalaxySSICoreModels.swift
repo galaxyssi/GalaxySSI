@@ -747,6 +747,7 @@ struct ChatMessage: Codable, Identifiable, Equatable {
   var voiceTranscript: String
   var requestKind: AgentRequestKind
   var readOnlyAnalysis: Bool
+  var manualCloudBinding: AgentManualCloudBinding? = nil
 
   enum CodingKeys: String, CodingKey {
     case id
@@ -766,6 +767,7 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     case voiceTranscript
     case requestKind
     case readOnlyAnalysis
+    case manualCloudBinding
   }
 
   init(
@@ -825,6 +827,7 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     voiceTranscript = try container.decodeIfPresent(String.self, forKey: .voiceTranscript) ?? ""
     requestKind = try container.decodeIfPresent(AgentRequestKind.self, forKey: .requestKind) ?? .conversation
     readOnlyAnalysis = try container.decodeIfPresent(Bool.self, forKey: .readOnlyAnalysis) ?? false
+    manualCloudBinding = try container.decodeIfPresent(AgentManualCloudBinding.self, forKey: .manualCloudBinding)
   }
 
   func encode(to encoder: Encoder) throws {
@@ -846,6 +849,7 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     try container.encode(voiceTranscript, forKey: .voiceTranscript)
     try container.encode(requestKind, forKey: .requestKind)
     try container.encode(readOnlyAnalysis, forKey: .readOnlyAnalysis)
+    try container.encodeIfPresent(manualCloudBinding, forKey: .manualCloudBinding)
   }
 }
 

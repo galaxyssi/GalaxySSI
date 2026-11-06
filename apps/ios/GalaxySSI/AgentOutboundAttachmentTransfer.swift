@@ -493,7 +493,7 @@ final class AgentOutboundAttachmentTransferStore {
     try fileManager.createDirectory(at: preparing, withIntermediateDirectories: true)
     defer { try? fileManager.removeItem(at: preparing) }
 
-    let preparedPayload = transportPayload(
+    let preparedPayload = try transportPayload(
       for: attachment,
       mediaProfile: mediaProfile,
       preserveOriginalBytes: preserveOriginalBytes,
@@ -550,7 +550,9 @@ final class AgentOutboundAttachmentTransferStore {
       originalSizeBytes: Int64(attachment.sizeBytes),
       sha256: digest,
       chunkCount: chunkCount,
-      transportProfile: preserveOriginalBytes ? "peer-original" : mediaProfile.id,
+      transportProfile: preserveOriginalBytes
+        ? (attachment.composerImageQuality == .compressed ? "peer-compressed" : "peer-original")
+        : mediaProfile.id,
       requiresValidatedNetwork: !preserveOriginalBytes &&
         mediaProfile.deferMediaUpload &&
         attachment.isTransportMedia,
@@ -570,9 +572,23 @@ final class AgentOutboundAttachmentTransferStore {
     mediaProfile: AgentMediaDeliveryProfile,
     preserveOriginalBytes: Bool,
     taskId: String
-  ) -> (data: Data, mimeType: String, name: String) {
+  ) throws -> (data: Data, mimeType: String, name: String) {
+    if attachment.isImage, attachment.composerImageQuality == .original,
+       attachment.sizeBytes > ComposerImageQuality.maximumOriginalBytes {
+      throw AgentAttachmentTransferError.attachmentTooLarge
+    }
+    if attachment.isImage, preserveOriginalBytes, attachment.composerImageQuality == .compressed {
+      let limit = ComposerImageQuality.contactCompressedBytes
+      guard let encoded = AgentImagePipeline.encodeForTransport(attachment, byteLimit: limit, compressedCap: limit,
+                                                                 taskId: taskId) else {
+        throw AgentAttachmentTransferError.contentUnavailable
+      }
+      return (encoded.data, encoded.mimeType,
+              GalaxySSIAttachmentPayloadBuilder.sanitizeName(encoded.transportName(originalName: attachment.displayName)))
+    }
     if attachment.isImage,
        !preserveOriginalBytes,
+       attachment.composerImageQuality != .original,
        let encoded = AgentMediaAttachmentTransportEncoder.inlinePayload(
         for: attachment,
         profile: mediaProfile,
@@ -584,6 +600,9 @@ final class AgentOutboundAttachmentTransferStore {
         encoded.mimeType,
         GalaxySSIAttachmentPayloadBuilder.sanitizeName(encoded.displayName)
       )
+    }
+    if attachment.isImage, attachment.composerImageQuality == .compressed {
+      throw AgentAttachmentTransferError.contentUnavailable
     }
     return (
       attachment.data,

@@ -82,6 +82,7 @@ struct GalaxySSIHealthAnalysis {
     }
   }
 
+  let id = UUID()
   let scope: Scope
   let evidence: [Evidence]
   let versions: [String]
@@ -186,6 +187,16 @@ enum GalaxySSIHealthSummaryTransport {
   }
 
   static func send(_ request: URLRequest) async throws -> String {
+    let data = try await responseBytes(request)
+    guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let choices = object["choices"] as? [[String: Any]],
+          let message = choices.first?["message"] as? [String: Any],
+          let output = message["content"] as? String
+    else { throw GalaxySSIHealthAnalysis.Failure.invalid }
+    return output
+  }
+
+  static func responseBytes(_ request: URLRequest, limit: Int = 32_768) async throws -> Data {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.httpCookieStorage = nil
     configuration.urlCache = nil
@@ -196,15 +207,10 @@ enum GalaxySSIHealthSummaryTransport {
     else { throw GalaxySSIHealthAnalysis.Failure.invalid }
     var data = Data()
     for try await byte in bytes {
-      guard data.count < 32_768 else { throw GalaxySSIHealthAnalysis.Failure.invalid }
+      guard data.count < limit else { throw GalaxySSIHealthAnalysis.Failure.invalid }
       data.append(byte)
     }
-    guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-          let choices = object["choices"] as? [[String: Any]],
-          let message = choices.first?["message"] as? [String: Any],
-          let output = message["content"] as? String
-    else { throw GalaxySSIHealthAnalysis.Failure.invalid }
-    return output
+    return data
   }
 
   private final class NoRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable {

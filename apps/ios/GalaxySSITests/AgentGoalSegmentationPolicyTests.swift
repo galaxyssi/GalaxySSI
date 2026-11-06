@@ -44,17 +44,15 @@ final class AgentGoalSegmentationPolicyTests: XCTestCase {
     XCTAssertEqual(plan.actions[1].parameters["depends_on"], plan.actions[0].id)
   }
 
-  func testPlannerFallsBackToWholeGoalWhenOneSegmentIsNotRoutable() throws {
+  func testPlannerDoesNotExecuteAPartialGoalWhenOneSegmentIsNotRoutable() {
     let request = AgentPlanRequest(
       goal: "Read the current battery and then summarize it poetically",
       screen: AgentScreenContext(foregroundApp: "com.galaxyssi.chat", pageTitle: "GalaxySSI"),
       nativeTools: readyTools()
     )
 
-    let plan = try XCTUnwrap(AgentDirectNativeToolPlanner.plan(request: request))
-
-    XCTAssertEqual(plan.actions.count, 1)
-    XCTAssertEqual(plan.plannerProfile, "rule-based-direct-native-tool")
+    XCTAssertNil(AgentDirectNativeToolPlanner.plan(request: request))
+    XCTAssertNil(AgentDirectNativeToolPlanner.shortcutPlan(request: request))
   }
 
   func testCompoundPhoneOperationsBypassShortcutButStillPlanPerSegment() throws {

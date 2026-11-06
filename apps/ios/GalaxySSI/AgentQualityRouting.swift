@@ -359,21 +359,26 @@ enum AgentQualityRoutingService {
   static func baselineDecision(
     goal: String,
     targets: [AgentCallableTarget],
-    primaryTargetId: String
+    primaryTargetId: String,
+    requirements: AgentTaskRequirements? = nil
   ) -> AgentRoutingDecision? {
+    let requirements = requirements ?? AgentTaskRequirementAnalyzer.analyze(goal)
     let catalog = AgentResourceCatalog.build(targets: targets, tools: [])
       .filter { !$0.targetId.isBlank }
-    let candidates = catalog.map { resource in
+    let candidates = catalog.filter {
+      AgentCapabilityRoutingPolicy.missingRequired(requirements, available: $0.capabilities).isEmpty
+    }.map { resource in
       AgentResourceCandidate(
         resource: resource,
-        score: 0,
-        reasons: ["available_reasoning_resource"]
+        score: AgentCapabilityRoutingPolicy.fitScore(requirements, available: resource.capabilities),
+        reasons: ["available_reasoning_resource"] +
+          AgentCapabilityRoutingPolicy.evidence(requirements, available: resource.capabilities)
       )
     }
     guard !candidates.isEmpty else { return nil }
     let primary = candidates.first { $0.resource.targetId == primaryTargetId } ?? candidates[0]
     return AgentRoutingDecision(
-      requirements: AgentTaskRequirementAnalyzer.analyze(goal),
+      requirements: requirements,
       primary: primary,
       fallbacks: candidates.filter { $0.resource.id != primary.resource.id },
       catalog: catalog

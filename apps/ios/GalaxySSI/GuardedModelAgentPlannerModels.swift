@@ -5,6 +5,7 @@ struct AgentModelPlanningInvocation: Codable, Equatable {
   var prompt: String
   var nativeTools: [AgentNativeToolDescriptor]
   var request: AgentModelPlanningPromptRequest
+  var completionShapeRepairOnly: Bool? = nil
 
   init(
     systemPrompt: String,
@@ -23,11 +24,19 @@ struct AgentModelPlanningInvocation: Codable, Equatable {
     case prompt
     case nativeTools = "native_tools"
     case request
+    case completionShapeRepairOnly = "completion_shape_repair_only"
   }
 }
 
 protocol AgentModelPlanningProviding {
   func rawPlan(invocation: AgentModelPlanningInvocation) async throws -> String
+  func repairPlan(invocation: AgentModelPlanningInvocation) async throws -> String
+}
+
+extension AgentModelPlanningProviding {
+  func repairPlan(invocation: AgentModelPlanningInvocation) async throws -> String {
+    try await rawPlan(invocation: invocation)
+  }
 }
 
 enum AgentModelPlanningProviderError: LocalizedError, Equatable {

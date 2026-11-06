@@ -133,6 +133,10 @@
     E36380000000000000000001 /* AgentResearchCheckpointStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36380000000000000000002 /* AgentResearchCheckpointStore.swift */; };
     A10000000000000000000005 /* GalaxySSIViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* GalaxySSIViews.swift */; };
     A10000000000000000001763 /* GalaxySSIEncryptedUserDefaultsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001763 /* GalaxySSIEncryptedUserDefaultsStore.swift */; };
+    A100000000000000000F3600 /* GalaxySSIContactReminderStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000F3600 /* GalaxySSIContactReminderStore.swift */; };
+    A100000000000000000E3600 /* GalaxySSIContactReminderTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000E3600 /* GalaxySSIContactReminderTransport.swift */; };
+    A100000000000000000D3600 /* GalaxySSIContactReminderAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000D3600 /* GalaxySSIContactReminderAlert.swift */; };
+    A100000000000000000C3600 /* GalaxySSIContactReminderViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000C3600 /* GalaxySSIContactReminderViews.swift */; };
     A10000000000000000001762 /* GalaxySSIEncryptedStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001762 /* GalaxySSIEncryptedStateStore.swift */; };
     A10000000000000000001761 /* GalaxySSIContactRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001761 /* GalaxySSIContactRowView.swift */; };
     A10000000000000000001760 /* GalaxySSIContactAvatarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001760 /* GalaxySSIContactAvatarView.swift */; };
@@ -162,6 +166,7 @@
     E37730000000000000000001 /* GalaxySSIHealthSyncDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = E37730000000000000000002 /* GalaxySSIHealthSyncDelivery.swift */; };
     A10000000000000000009832 /* GalaxySSIHealthKitImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009832 /* GalaxySSIHealthKitImportView.swift */; };
     A10000000000000000009825 /* GalaxySSIHealthAnalysis.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009825 /* GalaxySSIHealthAnalysis.swift */; };
+    A10000000000000000009893 /* GalaxySSIHealthFollowUp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009893 /* GalaxySSIHealthFollowUp.swift */; };
     A10000000000000000009826 /* GalaxySSIHealthAssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009826 /* GalaxySSIHealthAssistantView.swift */; };
     A10000000000000000009837 /* GalaxySSIHealthBackgroundPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009837 /* GalaxySSIHealthBackgroundPicker.swift */; };
     A10000000000000000009821 /* GalaxySSIHealthMetricCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009821 /* GalaxySSIHealthMetricCatalog.swift */; };
@@ -218,6 +223,7 @@
     A10000000000000000002006 /* AgentWorkflowExecutionHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002006 /* AgentWorkflowExecutionHistory.swift */; };
     A10000000000000000002010 /* AgentRemoteProactiveEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002010 /* AgentRemoteProactiveEvents.swift */; };
     A10000000000000000002017 /* AgentRecordedRunStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002017 /* AgentRecordedRunStore.swift */; };
+    A10000000000000000009894 /* AgentRecordedExecutionEvidence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009894 /* AgentRecordedExecutionEvidence.swift */; };
     A10000000000000000002701 /* AgentEvalOpsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002701 /* AgentEvalOpsModels.swift */; };
     A10000000000000000002702 /* AgentEvalOpsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002702 /* AgentEvalOpsStore.swift */; };
     A10000000000000000002703 /* AgentQualityRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002703 /* AgentQualityRouting.swift */; };
@@ -350,7 +356,7 @@
     A10000000000000000000894 /* GalaxySSIDiscoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000894 /* GalaxySSIDiscoverView.swift */; };
     A10000000000000000000893 /* GalaxySSIAndroidMenuComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000893 /* GalaxySSIAndroidMenuComponents.swift */; };
     A10000000000000000000899 /* GalaxySSIAgentHomeSupportViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000899 /* GalaxySSIAgentHomeSupportViews.swift */; };
-    A10000000000000000001701 /* GalaxySSIAgentHomeInsightBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001701 /* GalaxySSIAgentHomeInsightBarView.swift */; };
+    A10000000000000000001701 /* GalaxySSIAgentChatShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001701 /* GalaxySSIAgentChatShortcuts.swift */; };
     E35390000000000000000001 /* PublicNewsFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000002 /* PublicNewsFeed.swift */; };
     E36510000000000000000001 /* PublicNewsPublisherDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36510000000000000000002 /* PublicNewsPublisherDiscovery.swift */; };
     E35390000000000000000003 /* PublicNewsArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000004 /* PublicNewsArchive.swift */; };
@@ -359,6 +365,13 @@
     E36200000000000000000003 /* PublicNewsBacklogWorker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36200000000000000000004 /* PublicNewsBacklogWorker.swift */; };
     E36200000000000000000005 /* GalaxySSIPublicNewsBacklogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36200000000000000000006 /* GalaxySSIPublicNewsBacklogView.swift */; };
     E36190000000000000000003 /* PublicNewsTranslation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36190000000000000000004 /* PublicNewsTranslation.swift */; };
+    A100000000000000000009F4 /* PublicNewsSpeechQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009F4 /* PublicNewsSpeechQueue.swift */; };
+    A100000000000000000009F6 /* AppSpokenMediaSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009F6 /* AppSpokenMediaSession.swift */; };
+    A100000000000000000009F9 /* VoiceAppContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009F9 /* VoiceAppContext.swift */; };
+    A100000000000000000009FA /* VoiceAppNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009FA /* VoiceAppNativeTools.swift */; };
+    A100000000000000000009F7 /* PublicNewsSpeechPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009F7 /* PublicNewsSpeechPlayback.swift */; };
+    A100000000000000000009F8 /* GalaxySSIPublicNewsSpeechControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009F8 /* GalaxySSIPublicNewsSpeechControls.swift */; };
+    A100000000000000000009F5 /* GalaxySSIPhoneAssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009F5 /* GalaxySSIPhoneAssistantView.swift */; };
     E36220000000000000000001 /* PublicNewsArticlePresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36220000000000000000002 /* PublicNewsArticlePresentation.swift */; };
     E36220000000000000000003 /* GalaxySSIPublicNewsDocumentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36220000000000000000004 /* GalaxySSIPublicNewsDocumentView.swift */; };
     E36190000000000000000005 /* GalaxySSIPublicNewsBodyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36190000000000000000006 /* GalaxySSIPublicNewsBodyView.swift */; };
@@ -900,6 +913,7 @@
     A10000000000000000002110 /* AgentPhoneDevelopmentManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002110 /* AgentPhoneDevelopmentManifest.swift */; };
     A10000000000000000000185 /* AgentPhoneRuntimePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000185 /* AgentPhoneRuntimePolicy.swift */; };
     A10000000000000000000160 /* AgentModelPlanningPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000160 /* AgentModelPlanningPrompt.swift */; };
+    A100000000000000000F3607 /* AgentResearchCapabilityDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000F3607 /* AgentResearchCapabilityDiscovery.swift */; };
     A10000000000000000000161 /* GuardedModelAgentPlannerModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000161 /* GuardedModelAgentPlannerModels.swift */; };
     A10000000000000000000162 /* GuardedModelAgentPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000162 /* GuardedModelAgentPlanner.swift */; };
     A10000000000000000000163 /* CloudModelAgentPlanningProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000163 /* CloudModelAgentPlanningProvider.swift */; };
@@ -923,6 +937,7 @@
     A10000000000000000000181 /* AgentWorkspaceRuntimeMetadataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000181 /* AgentWorkspaceRuntimeMetadataModels.swift */; };
     A10000000000000000000182 /* AgentConnectorLateResponseReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000182 /* AgentConnectorLateResponseReducer.swift */; };
     A10000000000000000000183 /* AgentWorkspaceExecutionSnapshotReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000183 /* AgentWorkspaceExecutionSnapshotReducer.swift */; };
+    A10000000000000000009896 /* AgentWorkspaceToolCallProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009896 /* AgentWorkspaceToolCallProjection.swift */; };
     A10000000000000000000184 /* AgentWorkspaceCheckpointReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000184 /* AgentWorkspaceCheckpointReducer.swift */; };
     C10000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift */; };
     A10000000000000000000186 /* AgentActiveTurnPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000186 /* AgentActiveTurnPolicy.swift */; };
@@ -983,6 +998,7 @@
     D12630000000000000000001 /* AgentIOSWebEvidencePack.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22630000000000000000001 /* AgentIOSWebEvidencePack.swift */; };
     D12658000000000000000001 /* AgentIOSWebResearchPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22658000000000000000001 /* AgentIOSWebResearchPlan.swift */; };
     D12631000000000000000001 /* AgentIOSDynamicWebRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22631000000000000000001 /* AgentIOSDynamicWebRenderer.swift */; };
+    A100000000000000000F3610 /* AgentIOSWebTextDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000F3610 /* AgentIOSWebTextDecoder.swift */; };
     D12632000000000000000001 /* AgentIOSCoreMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22632000000000000000001 /* AgentIOSCoreMemory.swift */; };
     D12632000000000000000002 /* AgentIOSBackgroundCognition.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22632000000000000000002 /* AgentIOSBackgroundCognition.swift */; };
     D12632000000000000000003 /* AgentIOSObsidianModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22632000000000000000003 /* AgentIOSObsidianModels.swift */; };
@@ -1020,6 +1036,7 @@
     A10000000000000000000459 /* AgentIOSVisibleCaptureArtifactStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000459 /* AgentIOSVisibleCaptureArtifactStore.swift */; };
     A10000000000000000000460 /* AgentIOSVisibleCaptureUIKitSurfaces.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000460 /* AgentIOSVisibleCaptureUIKitSurfaces.swift */; };
     A10000000000000000000461 /* AgentIOSOwnedNotificationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000461 /* AgentIOSOwnedNotificationStore.swift */; };
+    A100000000000000000F3608 /* AgentIOSTimerCheckpointStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000F3608 /* AgentIOSTimerCheckpointStore.swift */; };
     A10000000000000000000288 /* AgentIOSWebIntelligenceNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000288 /* AgentIOSWebIntelligenceNativeTools.swift */; };
     A10000000000000000000290 /* AgentIOSMediaNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000290 /* AgentIOSMediaNativeTools.swift */; };
     A10000000000000000000292 /* AgentIOSSelfEvolutionNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000292 /* AgentIOSSelfEvolutionNativeTools.swift */; };
@@ -1296,6 +1313,10 @@
     E36380000000000000000002 /* AgentResearchCheckpointStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentResearchCheckpointStore.swift; sourceTree = "<group>"; };
     A20000000000000000000005 /* GalaxySSIViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIViews.swift; sourceTree = "<group>"; };
     A20000000000000000001763 /* GalaxySSIEncryptedUserDefaultsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIEncryptedUserDefaultsStore.swift; sourceTree = "<group>"; };
+    A200000000000000000F3600 /* GalaxySSIContactReminderStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIContactReminderStore.swift; sourceTree = "<group>"; };
+    A200000000000000000E3600 /* GalaxySSIContactReminderTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIContactReminderTransport.swift; sourceTree = "<group>"; };
+    A200000000000000000D3600 /* GalaxySSIContactReminderAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIContactReminderAlert.swift; sourceTree = "<group>"; };
+    A200000000000000000C3600 /* GalaxySSIContactReminderViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIContactReminderViews.swift; sourceTree = "<group>"; };
     A20000000000000000001762 /* GalaxySSIEncryptedStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIEncryptedStateStore.swift; sourceTree = "<group>"; };
     A20000000000000000001761 /* GalaxySSIContactRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIContactRowView.swift; sourceTree = "<group>"; };
     A20000000000000000001760 /* GalaxySSIContactAvatarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIContactAvatarView.swift; sourceTree = "<group>"; };
@@ -1325,6 +1346,7 @@
     E37730000000000000000002 /* GalaxySSIHealthSyncDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthSyncDelivery.swift; sourceTree = "<group>"; };
     A20000000000000000009832 /* GalaxySSIHealthKitImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthKitImportView.swift; sourceTree = "<group>"; };
     A20000000000000000009825 /* GalaxySSIHealthAnalysis.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAnalysis.swift; sourceTree = "<group>"; };
+    A20000000000000000009893 /* GalaxySSIHealthFollowUp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthFollowUp.swift; sourceTree = "<group>"; };
     A20000000000000000009826 /* GalaxySSIHealthAssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAssistantView.swift; sourceTree = "<group>"; };
     A20000000000000000009837 /* GalaxySSIHealthBackgroundPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthBackgroundPicker.swift; sourceTree = "<group>"; };
     A20000000000000000009821 /* GalaxySSIHealthMetricCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMetricCatalog.swift; sourceTree = "<group>"; };
@@ -1381,6 +1403,7 @@
     A20000000000000000002006 /* AgentWorkflowExecutionHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowExecutionHistory.swift; sourceTree = "<group>"; };
     A20000000000000000002010 /* AgentRemoteProactiveEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteProactiveEvents.swift; sourceTree = "<group>"; };
     A20000000000000000002017 /* AgentRecordedRunStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRecordedRunStore.swift; sourceTree = "<group>"; };
+    A20000000000000000009894 /* AgentRecordedExecutionEvidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRecordedExecutionEvidence.swift; sourceTree = "<group>"; };
     A20000000000000000002701 /* AgentEvalOpsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentEvalOpsModels.swift; sourceTree = "<group>"; };
     A20000000000000000002702 /* AgentEvalOpsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentEvalOpsStore.swift; sourceTree = "<group>"; };
     A20000000000000000002703 /* AgentQualityRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentQualityRouting.swift; sourceTree = "<group>"; };
@@ -1513,7 +1536,7 @@
     A20000000000000000000894 /* GalaxySSIDiscoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIDiscoverView.swift; sourceTree = "<group>"; };
     A20000000000000000000893 /* GalaxySSIAndroidMenuComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAndroidMenuComponents.swift; sourceTree = "<group>"; };
     A20000000000000000000899 /* GalaxySSIAgentHomeSupportViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentHomeSupportViews.swift; sourceTree = "<group>"; };
-    A20000000000000000001701 /* GalaxySSIAgentHomeInsightBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentHomeInsightBarView.swift; sourceTree = "<group>"; };
+    A20000000000000000001701 /* GalaxySSIAgentChatShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentChatShortcuts.swift; sourceTree = "<group>"; };
     E35390000000000000000002 /* PublicNewsFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsFeed.swift; sourceTree = "<group>"; };
     E36510000000000000000002 /* PublicNewsPublisherDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsPublisherDiscovery.swift; sourceTree = "<group>"; };
     E35390000000000000000004 /* PublicNewsArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsArchive.swift; sourceTree = "<group>"; };
@@ -1522,6 +1545,13 @@
     E36200000000000000000004 /* PublicNewsBacklogWorker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsBacklogWorker.swift; sourceTree = "<group>"; };
     E36200000000000000000006 /* GalaxySSIPublicNewsBacklogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPublicNewsBacklogView.swift; sourceTree = "<group>"; };
     E36190000000000000000004 /* PublicNewsTranslation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsTranslation.swift; sourceTree = "<group>"; };
+    A200000000000000000009F4 /* PublicNewsSpeechQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsSpeechQueue.swift; sourceTree = "<group>"; };
+    A200000000000000000009F6 /* AppSpokenMediaSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSpokenMediaSession.swift; sourceTree = "<group>"; };
+    A200000000000000000009F9 /* VoiceAppContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAppContext.swift; sourceTree = "<group>"; };
+    A200000000000000000009FA /* VoiceAppNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAppNativeTools.swift; sourceTree = "<group>"; };
+    A200000000000000000009F7 /* PublicNewsSpeechPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsSpeechPlayback.swift; sourceTree = "<group>"; };
+    A200000000000000000009F8 /* GalaxySSIPublicNewsSpeechControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPublicNewsSpeechControls.swift; sourceTree = "<group>"; };
+    A200000000000000000009F5 /* GalaxySSIPhoneAssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPhoneAssistantView.swift; sourceTree = "<group>"; };
     E36220000000000000000002 /* PublicNewsArticlePresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsArticlePresentation.swift; sourceTree = "<group>"; };
     E36220000000000000000004 /* GalaxySSIPublicNewsDocumentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPublicNewsDocumentView.swift; sourceTree = "<group>"; };
     E36190000000000000000006 /* GalaxySSIPublicNewsBodyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPublicNewsBodyView.swift; sourceTree = "<group>"; };
@@ -2047,6 +2077,7 @@
     A20000000000000000002110 /* AgentPhoneDevelopmentManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneDevelopmentManifest.swift; sourceTree = "<group>"; };
     A20000000000000000000185 /* AgentPhoneRuntimePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneRuntimePolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000160 /* AgentModelPlanningPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelPlanningPrompt.swift; sourceTree = "<group>"; };
+    A200000000000000000F3607 /* AgentResearchCapabilityDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentResearchCapabilityDiscovery.swift; sourceTree = "<group>"; };
     A20000000000000000000161 /* GuardedModelAgentPlannerModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuardedModelAgentPlannerModels.swift; sourceTree = "<group>"; };
     A20000000000000000000162 /* GuardedModelAgentPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuardedModelAgentPlanner.swift; sourceTree = "<group>"; };
     A20000000000000000000163 /* CloudModelAgentPlanningProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelAgentPlanningProvider.swift; sourceTree = "<group>"; };
@@ -2070,6 +2101,7 @@
     A20000000000000000000181 /* AgentWorkspaceRuntimeMetadataModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceRuntimeMetadataModels.swift; sourceTree = "<group>"; };
     A20000000000000000000182 /* AgentConnectorLateResponseReducer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorLateResponseReducer.swift; sourceTree = "<group>"; };
     A20000000000000000000183 /* AgentWorkspaceExecutionSnapshotReducer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceExecutionSnapshotReducer.swift; sourceTree = "<group>"; };
+    A20000000000000000009896 /* AgentWorkspaceToolCallProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceToolCallProjection.swift; sourceTree = "<group>"; };
     A20000000000000000000184 /* AgentWorkspaceCheckpointReducer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceCheckpointReducer.swift; sourceTree = "<group>"; };
     C20000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceBoundsPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000186 /* AgentActiveTurnPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActiveTurnPolicy.swift; sourceTree = "<group>"; };
@@ -2130,6 +2162,7 @@
     D22630000000000000000001 /* AgentIOSWebEvidencePack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebEvidencePack.swift; sourceTree = "<group>"; };
     D22658000000000000000001 /* AgentIOSWebResearchPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebResearchPlan.swift; sourceTree = "<group>"; };
     D22631000000000000000001 /* AgentIOSDynamicWebRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSDynamicWebRenderer.swift; sourceTree = "<group>"; };
+    A200000000000000000F3610 /* AgentIOSWebTextDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebTextDecoder.swift; sourceTree = "<group>"; };
     D22632000000000000000001 /* AgentIOSCoreMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSCoreMemory.swift; sourceTree = "<group>"; };
     D22632000000000000000002 /* AgentIOSBackgroundCognition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSBackgroundCognition.swift; sourceTree = "<group>"; };
     D22632000000000000000003 /* AgentIOSObsidianModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSObsidianModels.swift; sourceTree = "<group>"; };
@@ -2167,6 +2200,7 @@
     A20000000000000000000459 /* AgentIOSVisibleCaptureArtifactStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSVisibleCaptureArtifactStore.swift; sourceTree = "<group>"; };
     A20000000000000000000460 /* AgentIOSVisibleCaptureUIKitSurfaces.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSVisibleCaptureUIKitSurfaces.swift; sourceTree = "<group>"; };
     A20000000000000000000461 /* AgentIOSOwnedNotificationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSOwnedNotificationStore.swift; sourceTree = "<group>"; };
+    A200000000000000000F3608 /* AgentIOSTimerCheckpointStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSTimerCheckpointStore.swift; sourceTree = "<group>"; };
     A20000000000000000000288 /* AgentIOSWebIntelligenceNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebIntelligenceNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000290 /* AgentIOSMediaNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSMediaNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000292 /* AgentIOSSelfEvolutionNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSelfEvolutionNativeTools.swift; sourceTree = "<group>"; };
@@ -2480,6 +2514,7 @@
         D22630000000000000000001 /* AgentIOSWebEvidencePack.swift */,
         D22658000000000000000001 /* AgentIOSWebResearchPlan.swift */,
         D22631000000000000000001 /* AgentIOSDynamicWebRenderer.swift */,
+        A200000000000000000F3610 /* AgentIOSWebTextDecoder.swift */,
         D22632000000000000000001 /* AgentIOSCoreMemory.swift */,
         D22632000000000000000002 /* AgentIOSBackgroundCognition.swift */,
         D22632000000000000000003 /* AgentIOSObsidianModels.swift */,
@@ -2790,6 +2825,7 @@
         A20000000000000000002110 /* AgentPhoneDevelopmentManifest.swift */,
         A20000000000000000000185 /* AgentPhoneRuntimePolicy.swift */,
         A20000000000000000000160 /* AgentModelPlanningPrompt.swift */,
+        A200000000000000000F3607 /* AgentResearchCapabilityDiscovery.swift */,
         A20000000000000000000161 /* GuardedModelAgentPlannerModels.swift */,
         A20000000000000000000162 /* GuardedModelAgentPlanner.swift */,
         A20000000000000000000163 /* CloudModelAgentPlanningProvider.swift */,
@@ -2813,6 +2849,7 @@
         A20000000000000000000181 /* AgentWorkspaceRuntimeMetadataModels.swift */,
         A20000000000000000000182 /* AgentConnectorLateResponseReducer.swift */,
         A20000000000000000000183 /* AgentWorkspaceExecutionSnapshotReducer.swift */,
+        A20000000000000000009896 /* AgentWorkspaceToolCallProjection.swift */,
         A20000000000000000000184 /* AgentWorkspaceCheckpointReducer.swift */,
         C20000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift */,
         A20000000000000000000186 /* AgentActiveTurnPolicy.swift */,
@@ -2875,6 +2912,7 @@
         A20000000000000000000459 /* AgentIOSVisibleCaptureArtifactStore.swift */,
         A20000000000000000000460 /* AgentIOSVisibleCaptureUIKitSurfaces.swift */,
         A20000000000000000000461 /* AgentIOSOwnedNotificationStore.swift */,
+        A200000000000000000F3608 /* AgentIOSTimerCheckpointStore.swift */,
         A20000000000000000000288 /* AgentIOSWebIntelligenceNativeTools.swift */,
         A20000000000000000000290 /* AgentIOSMediaNativeTools.swift */,
         A20000000000000000000446 /* AgentIOSAVFoundationMediaProvider.swift */,
@@ -2989,7 +3027,7 @@
         A20000000000000000000894 /* GalaxySSIDiscoverView.swift */,
         A20000000000000000000893 /* GalaxySSIAndroidMenuComponents.swift */,
         A20000000000000000000899 /* GalaxySSIAgentHomeSupportViews.swift */,
-        A20000000000000000001701 /* GalaxySSIAgentHomeInsightBarView.swift */,
+        A20000000000000000001701 /* GalaxySSIAgentChatShortcuts.swift */,
         E35390000000000000000002 /* PublicNewsFeed.swift */,
         E36510000000000000000002 /* PublicNewsPublisherDiscovery.swift */,
         E35390000000000000000004 /* PublicNewsArchive.swift */,
@@ -2998,6 +3036,13 @@
         E36200000000000000000004 /* PublicNewsBacklogWorker.swift */,
         E36200000000000000000006 /* GalaxySSIPublicNewsBacklogView.swift */,
         E36190000000000000000004 /* PublicNewsTranslation.swift */,
+        A200000000000000000009F4 /* PublicNewsSpeechQueue.swift */,
+        A200000000000000000009F6 /* AppSpokenMediaSession.swift */,
+        A200000000000000000009F9 /* VoiceAppContext.swift */,
+        A200000000000000000009FA /* VoiceAppNativeTools.swift */,
+        A200000000000000000009F7 /* PublicNewsSpeechPlayback.swift */,
+        A200000000000000000009F8 /* GalaxySSIPublicNewsSpeechControls.swift */,
+        A200000000000000000009F5 /* GalaxySSIPhoneAssistantView.swift */,
         E36220000000000000000002 /* PublicNewsArticlePresentation.swift */,
         E36220000000000000000004 /* GalaxySSIPublicNewsDocumentView.swift */,
         E36190000000000000000006 /* GalaxySSIPublicNewsBodyView.swift */,
@@ -3060,6 +3105,7 @@
         E37730000000000000000002 /* GalaxySSIHealthSyncDelivery.swift */,
         A20000000000000000009832 /* GalaxySSIHealthKitImportView.swift */,
         A20000000000000000009825 /* GalaxySSIHealthAnalysis.swift */,
+        A20000000000000000009893 /* GalaxySSIHealthFollowUp.swift */,
         A20000000000000000009826 /* GalaxySSIHealthAssistantView.swift */,
         A20000000000000000009837 /* GalaxySSIHealthBackgroundPicker.swift */,
         A20000000000000000009821 /* GalaxySSIHealthMetricCatalog.swift */,
@@ -3115,6 +3161,7 @@
         A20000000000000000002006 /* AgentWorkflowExecutionHistory.swift */,
         A20000000000000000002010 /* AgentRemoteProactiveEvents.swift */,
         A20000000000000000002017 /* AgentRecordedRunStore.swift */,
+        A20000000000000000009894 /* AgentRecordedExecutionEvidence.swift */,
         A20000000000000000002701 /* AgentEvalOpsModels.swift */,
         A20000000000000000002702 /* AgentEvalOpsStore.swift */,
         A20000000000000000002703 /* AgentQualityRouting.swift */,
@@ -3221,6 +3268,10 @@
         A20000000000000000000A01 /* GalaxySSIAsyncAnimatedImageView.swift */,
         A20000000000000000000005 /* GalaxySSIViews.swift */,
         A20000000000000000001763 /* GalaxySSIEncryptedUserDefaultsStore.swift */,
+        A200000000000000000F3600 /* GalaxySSIContactReminderStore.swift */,
+        A200000000000000000E3600 /* GalaxySSIContactReminderTransport.swift */,
+        A200000000000000000D3600 /* GalaxySSIContactReminderAlert.swift */,
+        A200000000000000000C3600 /* GalaxySSIContactReminderViews.swift */,
         A20000000000000000001762 /* GalaxySSIEncryptedStateStore.swift */,
         A20000000000000000001761 /* GalaxySSIContactRowView.swift */,
         A20000000000000000001760 /* GalaxySSIContactAvatarView.swift */,
@@ -4031,6 +4082,7 @@
         A10000000000000000002110 /* AgentPhoneDevelopmentManifest.swift in Sources */,
         A10000000000000000000185 /* AgentPhoneRuntimePolicy.swift in Sources */,
         A10000000000000000000160 /* AgentModelPlanningPrompt.swift in Sources */,
+        A100000000000000000F3607 /* AgentResearchCapabilityDiscovery.swift in Sources */,
         A10000000000000000000161 /* GuardedModelAgentPlannerModels.swift in Sources */,
         A10000000000000000000162 /* GuardedModelAgentPlanner.swift in Sources */,
         A10000000000000000000163 /* CloudModelAgentPlanningProvider.swift in Sources */,
@@ -4073,6 +4125,7 @@
         A10000000000000000000181 /* AgentWorkspaceRuntimeMetadataModels.swift in Sources */,
         A10000000000000000000182 /* AgentConnectorLateResponseReducer.swift in Sources */,
         A10000000000000000000183 /* AgentWorkspaceExecutionSnapshotReducer.swift in Sources */,
+        A10000000000000000009896 /* AgentWorkspaceToolCallProjection.swift in Sources */,
         A10000000000000000000184 /* AgentWorkspaceCheckpointReducer.swift in Sources */,
         C10000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift in Sources */,
         A10000000000000000000186 /* AgentActiveTurnPolicy.swift in Sources */,
@@ -4140,6 +4193,7 @@
         D12630000000000000000001 /* AgentIOSWebEvidencePack.swift in Sources */,
         D12658000000000000000001 /* AgentIOSWebResearchPlan.swift in Sources */,
         D12631000000000000000001 /* AgentIOSDynamicWebRenderer.swift in Sources */,
+        A100000000000000000F3610 /* AgentIOSWebTextDecoder.swift in Sources */,
         D12632000000000000000001 /* AgentIOSCoreMemory.swift in Sources */,
         D12632000000000000000002 /* AgentIOSBackgroundCognition.swift in Sources */,
         D12632000000000000000003 /* AgentIOSObsidianModels.swift in Sources */,
@@ -4179,6 +4233,7 @@
         A10000000000000000000459 /* AgentIOSVisibleCaptureArtifactStore.swift in Sources */,
         A10000000000000000000460 /* AgentIOSVisibleCaptureUIKitSurfaces.swift in Sources */,
         A10000000000000000000461 /* AgentIOSOwnedNotificationStore.swift in Sources */,
+        A100000000000000000F3608 /* AgentIOSTimerCheckpointStore.swift in Sources */,
         A10000000000000000000288 /* AgentIOSWebIntelligenceNativeTools.swift in Sources */,
         A10000000000000000000290 /* AgentIOSMediaNativeTools.swift in Sources */,
         A10000000000000000000446 /* AgentIOSAVFoundationMediaProvider.swift in Sources */,
@@ -4291,7 +4346,7 @@
         A10000000000000000000894 /* GalaxySSIDiscoverView.swift in Sources */,
         A10000000000000000000893 /* GalaxySSIAndroidMenuComponents.swift in Sources */,
         A10000000000000000000899 /* GalaxySSIAgentHomeSupportViews.swift in Sources */,
-        A10000000000000000001701 /* GalaxySSIAgentHomeInsightBarView.swift in Sources */,
+        A10000000000000000001701 /* GalaxySSIAgentChatShortcuts.swift in Sources */,
         E35390000000000000000001 /* PublicNewsFeed.swift in Sources */,
         E36510000000000000000001 /* PublicNewsPublisherDiscovery.swift in Sources */,
         E35390000000000000000003 /* PublicNewsArchive.swift in Sources */,
@@ -4300,6 +4355,13 @@
         E36200000000000000000003 /* PublicNewsBacklogWorker.swift in Sources */,
         E36200000000000000000005 /* GalaxySSIPublicNewsBacklogView.swift in Sources */,
         E36190000000000000000003 /* PublicNewsTranslation.swift in Sources */,
+        A100000000000000000009F4 /* PublicNewsSpeechQueue.swift in Sources */,
+        A100000000000000000009F6 /* AppSpokenMediaSession.swift in Sources */,
+        A100000000000000000009F9 /* VoiceAppContext.swift in Sources */,
+        A100000000000000000009FA /* VoiceAppNativeTools.swift in Sources */,
+        A100000000000000000009F7 /* PublicNewsSpeechPlayback.swift in Sources */,
+        A100000000000000000009F8 /* GalaxySSIPublicNewsSpeechControls.swift in Sources */,
+        A100000000000000000009F5 /* GalaxySSIPhoneAssistantView.swift in Sources */,
         E36220000000000000000001 /* PublicNewsArticlePresentation.swift in Sources */,
         E36220000000000000000003 /* GalaxySSIPublicNewsDocumentView.swift in Sources */,
         E36190000000000000000005 /* GalaxySSIPublicNewsBodyView.swift in Sources */,
@@ -4362,6 +4424,7 @@
         E37730000000000000000001 /* GalaxySSIHealthSyncDelivery.swift in Sources */,
         A10000000000000000009832 /* GalaxySSIHealthKitImportView.swift in Sources */,
         A10000000000000000009825 /* GalaxySSIHealthAnalysis.swift in Sources */,
+        A10000000000000000009893 /* GalaxySSIHealthFollowUp.swift in Sources */,
         A10000000000000000009826 /* GalaxySSIHealthAssistantView.swift in Sources */,
         A10000000000000000009837 /* GalaxySSIHealthBackgroundPicker.swift in Sources */,
         A10000000000000000009821 /* GalaxySSIHealthMetricCatalog.swift in Sources */,
@@ -4417,6 +4480,7 @@
         A10000000000000000002006 /* AgentWorkflowExecutionHistory.swift in Sources */,
         A10000000000000000002010 /* AgentRemoteProactiveEvents.swift in Sources */,
         A10000000000000000002017 /* AgentRecordedRunStore.swift in Sources */,
+        A10000000000000000009894 /* AgentRecordedExecutionEvidence.swift in Sources */,
         A10000000000000000002701 /* AgentEvalOpsModels.swift in Sources */,
         A10000000000000000002702 /* AgentEvalOpsStore.swift in Sources */,
         A10000000000000000002703 /* AgentQualityRouting.swift in Sources */,
@@ -4523,6 +4587,10 @@
         A10000000000000000000A01 /* GalaxySSIAsyncAnimatedImageView.swift in Sources */,
         A10000000000000000000005 /* GalaxySSIViews.swift in Sources */,
         A10000000000000000001763 /* GalaxySSIEncryptedUserDefaultsStore.swift in Sources */,
+        A100000000000000000F3600 /* GalaxySSIContactReminderStore.swift in Sources */,
+        A100000000000000000E3600 /* GalaxySSIContactReminderTransport.swift in Sources */,
+        A100000000000000000D3600 /* GalaxySSIContactReminderAlert.swift in Sources */,
+        A100000000000000000C3600 /* GalaxySSIContactReminderViews.swift in Sources */,
         A10000000000000000001762 /* GalaxySSIEncryptedStateStore.swift in Sources */,
         A10000000000000000001761 /* GalaxySSIContactRowView.swift in Sources */,
         A10000000000000000001760 /* GalaxySSIContactAvatarView.swift in Sources */,

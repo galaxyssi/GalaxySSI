@@ -104,39 +104,45 @@ final class UserDefaultsAgentRecordedRunStore: AgentRecordedRunStoring {
 }
 
 extension UserDefaultsAgentRecordedRunStore {
-  func recordNativeAction(
-    action: AgentAction,
-    result: AgentActionResult,
+  func recordNativeExecution(
+    _ observations: [AgentRecordedExecutionEvidence.Observation] = [],
     task: AgentTaskRecord,
     outgoing: ChatMessage,
-    final: Bool
+    status: AgentRecordedRunStatus,
+    events: AgentRunEventPersistence = UserDefaultsAgentRunEventStore()
   ) {
     let now = max(task.updatedAtMillis, Int64((Date().timeIntervalSince1970 * 1_000).rounded()))
     let runId = task.taskId.ifBlank(outgoing.turnId.ifBlank(outgoing.id.uuidString))
-    let toolId = action.parameters["tool_id"] ?? action.target
-    let call = AgentToolCallRecord(
-      id: runId + "-" + toolId + "-" + String(task.executionLog.count),
-      toolName: toolId,
-      status: result.success ? .succeeded : .failed,
-      arguments: inputObject(from: action),
-      result: resultObject(from: result),
-      errorMessage: result.success ? "" : result.message,
-      startedAtMillis: max(0, now),
-      completedAtMillis: max(0, now)
-    )
-    var run = runs(for: outgoing.conversationId).first { $0.runId == runId }
+    let scope = AgentPlanContinuationScope(conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString))
+    let previous = runs().first { $0.runId == runId }
+    guard outgoing.isMine, !scope.conversationId.isBlank,
+          task.sessionId.isBlank || task.sessionId == scope.conversationId,
+          task.taskId.isBlank || task.taskId == scope.turnId || task.taskId == outgoing.id.uuidString,
+          previous == nil || previous?.conversationId == scope.conversationId
+    else { return }
+    let projection = AgentRecordedExecutionEvidence.project(task: task, scope: scope,
+      previous: previous?.toolCalls ?? [], observations: observations, now: now)
+    guard !projection.calls.isEmpty else { return }
+    var run = previous
       ?? AgentRecordedRun(
         runId: runId,
-        conversationId: outgoing.conversationId,
+        conversationId: scope.conversationId,
         taskThreadId: task.sessionId.ifBlank(runId),
         originalRequest: task.goal.ifBlank(outgoing.content),
         createdAtMillis: max(0, task.createdAtMillis)
       )
-    run.toolCalls = Array((run.toolCalls + [call]).suffix(AgentSkillLimits.maxToolCalls))
-    run.finalOutput = ["message": .string(String(result.message.prefix(2_000)))]
-    run.status = final ? (result.success ? .completed : .failed) : .running
-    run.completedAtMillis = final ? max(0, now) : 0
-    upsert(run)
+    run.agentPlan = projection.plan
+    run.toolCalls = projection.calls
+    run.finalOutput = ["message": .string(String(task.result.prefix(2_000)))]
+    let unresolved = projection.calls.contains { $0.result["outcome_unverified"]?.boolValue == true }
+    run.status = unresolved && status != .cancelled ? .running : status
+    run.completedAtMillis = run.status == .running ? 0 :
+      (previous?.status == run.status ? previous?.completedAtMillis ?? now : now)
+    let missing = AgentRecordedExecutionEvidence.missingLifecycle(for: projection.calls,
+      events: events.events(runId: runId), scope: scope)
+    if !missing.isEmpty { _ = events.appendNextAll(missing) }
+    if previous != run { upsert(run) }
   }
 
   func recordSkillExecution(
@@ -172,27 +178,5 @@ extension UserDefaultsAgentRecordedRunStore {
       createdAtMillis: max(0, nowMillis),
       completedAtMillis: max(0, nowMillis)
     ))
-  }
-
-  private func inputObject(from action: AgentAction) -> AgentMcpJSONObject {
-    guard let raw = action.parameters["input_json"],
-          let data = raw.data(using: .utf8),
-          let input = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data) else {
-      return [:]
-    }
-    return input
-  }
-
-  private func resultObject(from result: AgentActionResult) -> AgentMcpJSONObject {
-    var object: AgentMcpJSONObject = [
-      "success": .bool(result.success),
-      "message": .string(String(result.message.prefix(2_000)))
-    ]
-    if let raw = result.metadata["native_tool_output"],
-       let data = raw.data(using: .utf8),
-       let output = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data) {
-      object["output"] = .object(output)
-    }
-    return object
   }
 }

@@ -1,11 +1,5 @@
-import AVFoundation
 import Combine
-import MediaPlayer
 import UIKit
-
-extension Notification.Name {
-  static let galaxySSIVoiceRecordingWillStart = Notification.Name("galaxyssi.voice_recording_will_start")
-}
 
 @MainActor
 final class AgentCompletedReplyPlayback: ObservableObject {
@@ -20,40 +14,9 @@ final class AgentCompletedReplyPlayback: ObservableObject {
   private lazy var speech = VoiceProgressiveReplySpeechService()
   private var loadTask: Task<Void, Never>?
   private var sessionID = ""
-  private var ownsAudioSession = false
-  private var commands: [(command: MPRemoteCommand, target: Any, wasEnabled: Bool)] = []
-  private var observations = Set<AnyCancellable>()
+  private let media = AppSpokenMediaSession.shared
 
-  private init() {
-    let center = NotificationCenter.default
-    center.publisher(for: .galaxySSIVoiceRecordingWillStart)
-      .sink { [weak self] _ in
-        if Thread.isMainThread { MainActor.assumeIsolated { self?.stop() } }
-        else { DispatchQueue.main.sync { self?.stop() } }
-      }.store(in: &observations)
-    center.publisher(for: UIApplication.willResignActiveNotification)
-      .receive(on: RunLoop.main)
-      .sink { [weak self] _ in
-        if self?.phase == .preparing { self?.stop() }
-      }.store(in: &observations)
-    center.publisher(for: AVAudioSession.interruptionNotification)
-      .receive(on: RunLoop.main)
-      .sink { [weak self] notification in
-        guard let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
-              AVAudioSession.InterruptionType(rawValue: raw) == .began else { return }
-        if self?.phase == .preparing { self?.stop() }
-        else { self?.pause() }
-      }.store(in: &observations)
-    center.publisher(for: AVAudioSession.routeChangeNotification)
-      .receive(on: RunLoop.main)
-      .sink { [weak self] notification in
-        let raw = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
-        if raw == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue { self?.stop() }
-      }.store(in: &observations)
-    center.publisher(for: AVAudioSession.mediaServicesWereResetNotification)
-      .receive(on: RunLoop.main)
-      .sink { [weak self] _ in self?.stop() }.store(in: &observations)
-  }
+  private init() {}
 
   func footerUpdates(messageId: UUID) -> AnyPublisher<AgentReplySpeechFooterState, Never> {
     Publishers.CombineLatest3($selection, $failedMessageID, $lastErrorDescription)
@@ -77,6 +40,13 @@ final class AgentCompletedReplyPlayback: ObservableObject {
     lastErrorDescription = ""
     failedMessageID = nil
     guard settings.textToSpeechEnabled, isAllowed(), UIApplication.shared.applicationState == .active else { return }
+    media.reserve(self, controls: .init(
+      title: GalaxySSILocalization.string("galaxyssi.agent.reply_speech.now_playing", fallback: "Agent reply"),
+      resume: { [weak self] in self?.resume() },
+      pause: { [weak self] in self?.pause() },
+      stop: { [weak self] in self?.stop() },
+      relinquish: { [weak self] in self?.stop() }
+    ))
     let id = UUID().uuidString
     sessionID = id
     self.selection = selection
@@ -94,36 +64,18 @@ final class AgentCompletedReplyPlayback: ObservableObject {
   }
 
   func stop() {
-    guard !sessionID.isEmpty || ownsAudioSession || loadTask != nil else { return }
+    guard !sessionID.isEmpty || media.owns(self) || loadTask != nil else { return }
     loadTask?.cancel()
     loadTask = nil
     sessionID = ""
     _ = speech.stop()
     phase = .idle
     selection = nil
-    if !commands.isEmpty { MPNowPlayingInfoCenter.default().nowPlayingInfo = nil }
-    for entry in commands {
-      entry.command.removeTarget(entry.target)
-      entry.command.isEnabled = entry.wasEnabled
-    }
-    commands.removeAll()
-    if ownsAudioSession {
-      ownsAudioSession = false
-      let audio = AVAudioSession.sharedInstance()
-      if audio.category == .playback {
-        try? audio.setActive(false, options: .notifyOthersOnDeactivation)
-      }
-    }
+    media.release(self)
   }
 
   private func start(text: String, sessionID: String, settings: VoiceSettings, languagePolicy: LanguagePolicySettings) {
-    GalaxySSIRichMediaPlaybackCoordinator.shared.pauseForRuntimeBoundary()
-    let audio = AVAudioSession.sharedInstance()
-    do {
-      try audio.setCategory(.playback, mode: .spokenAudio)
-      try audio.setActive(true)
-      ownsAudioSession = true
-    } catch {
+    guard media.activate(self) else {
       fail()
       return
     }
@@ -138,8 +90,7 @@ final class AgentCompletedReplyPlayback: ObservableObject {
     speech.beginProgressive(request, onPlaybackStarted: { [weak self] request in
       guard let self, self.sessionID == request.sessionId else { return }
       self.phase = .playing
-      self.installCommands()
-      self.publishNowPlaying()
+      self.media.setPlaying(true, owner: self)
     }, onDone: { [weak self] request, success, _ in
       guard let self, self.sessionID == request.sessionId else { return }
       if success { self.stop() }
@@ -151,15 +102,14 @@ final class AgentCompletedReplyPlayback: ObservableObject {
   private func pause() {
     guard phase == .playing, speech.pauseProgressive() else { return }
     phase = .paused
-    publishNowPlaying()
+    media.suspend(self)
   }
 
   private func resume() {
     guard phase == .paused else { return }
-    do { try AVAudioSession.sharedInstance().setActive(true) }
-    catch { fail(); return }
+    guard media.activate(self) else { fail(); return }
     phase = .playing
-    if speech.resumeProgressive(), phase == .playing { publishNowPlaying() }
+    if speech.resumeProgressive(), phase == .playing { media.setPlaying(true, owner: self) }
   }
 
   private func fail() {
@@ -168,38 +118,4 @@ final class AgentCompletedReplyPlayback: ObservableObject {
     lastErrorDescription = GalaxySSILocalization.string("galaxyssi.agent.reply_speech.failed", fallback: "Reply speech failed.")
   }
 
-  private func publishNowPlaying() {
-    MPNowPlayingInfoCenter.default().nowPlayingInfo = [
-      MPMediaItemPropertyTitle: GalaxySSILocalization.string(
-        "galaxyssi.agent.reply_speech.now_playing", fallback: "Agent reply"),
-      MPNowPlayingInfoPropertyPlaybackRate: phase == .playing ? 1.0 : 0.0,
-      MPNowPlayingInfoPropertyIsLiveStream: false
-    ]
-  }
-
-  private func installCommands() {
-    guard commands.isEmpty else { return }
-    let remote = MPRemoteCommandCenter.shared()
-    register(remote.playCommand) { $0.resume() }
-    register(remote.pauseCommand) { $0.pause() }
-    register(remote.togglePlayPauseCommand) { player in
-      if player.phase == .paused { player.resume() }
-      else { player.pause() }
-    }
-    register(remote.stopCommand) { $0.stop() }
-  }
-
-  private func register(_ command: MPRemoteCommand, action: @escaping (AgentCompletedReplyPlayback) -> Void) {
-    let wasEnabled = command.isEnabled
-    command.isEnabled = true
-    let id = sessionID
-    let target = command.addTarget { [weak self] _ in
-      Task { @MainActor [weak self] in
-        guard let self, self.sessionID == id else { return }
-        action(self)
-      }
-      return .success
-    }
-    commands.append((command, target, wasEnabled))
-  }
 }

@@ -1,13 +1,16 @@
+import CryptoKit
 import SwiftUI
 
 @MainActor
 struct GalaxySSIHealthAssistantView: View {
   @EnvironmentObject private var store: GalaxySSIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
   @Environment(\.calendar) private var calendar
   @Environment(\.timeZone) private var timeZone
   let records: GalaxySSIHealthRecords
+  let openRecord: (GalaxySSIHealthMetric?) -> Void
   @State private var from = Calendar.current.date(byAdding: .day, value: -6, to: Date()) ?? Date()
   @State private var to = Date()
   @State private var metrics: Set<GalaxySSIHealthMetric> = [.bloodPressure]
@@ -33,12 +36,48 @@ struct GalaxySSIHealthAssistantView: View {
   @State private var profileContext: GalaxySSIHealthProfile.AnalysisContext?
   @State private var backgroundSelection: [UUID: UUID] = [:]
   @State private var choosingBackground = false
+  @State private var comparison: GalaxySSIHealthAnalysis?
+  @State private var followUpDraft = ""
+  @State private var followUpProvider = ""
+  @State private var followUpReview: FollowUpReview?
+  @State private var followUpRequest: Consent?
+  @State private var followUpResult: FollowUpResult?
+  @State private var followUpNotice: FollowUpNotice?
+  @State private var followUpReminder = false
+  @State private var reminderRecord: GalaxySSIHealthMetric?
 
-  private struct Consent {
+  private struct Consent: Equatable {
     let contactID: String
     let model: CloudModelConfig
     let endpoint: URL
     let permission: UUID
+  }
+
+  private struct FollowUpReview: Identifiable {
+    let id = UUID()
+    let target: Consent
+    let packet: GalaxySSIHealthFollowUp
+    let credentialDigest: SHA256.Digest
+  }
+
+  private struct FollowUpResult {
+    let target: Consent
+    let analysisID: UUID
+    let comparisons: [String: GalaxySSIHealthFollowUp.Comparison]
+    let answer: GalaxySSIHealthFollowUp.Answer
+  }
+
+  private enum FollowUpNotice { case unavailable, blocked, invalidated }
+
+  private var followUpContacts: [GalaxySSIContact] {
+    store.contacts.filter {
+      !$0.deleted && $0.deliveryMode == .cloudAPI &&
+        $0.selectedCloudModel.flatMap(GalaxySSIHealthFollowUpTransport.endpoint(for:)) != nil
+    }
+  }
+
+  private var followUpModels: [String: CloudModelConfig] {
+    followUpContacts.reduce(into: [:]) { $0[$1.id] = $1.selectedCloudModel }
   }
 
   private var providers: [GalaxySSIContact] {
@@ -47,7 +86,7 @@ struct GalaxySSIHealthAssistantView: View {
     }
   }
 
-  var body: some View {
+  private var assistantList: some View {
     List {
       if scene == .active {
         if enabled {
@@ -57,6 +96,7 @@ struct GalaxySSIHealthAssistantView: View {
             analysisSection(analysis)
             if let profileContext { profileResult(profileContext) }
             providerSection(analysis)
+            followUpSection(analysis)
           }
         } else {
           Text(t("permission", "Enable the local measurement summary in Health Privacy."))
@@ -67,14 +107,22 @@ struct GalaxySSIHealthAssistantView: View {
     }
     .navigationTitle(t("title", "Health Assistant"))
     .navigationBarTitleDisplayMode(.inline)
+  }
+
+  private var activeAssistant: some View {
+    assistantList
     .onAppear(perform: refreshPermissions)
     .onChange(of: from) { _ in clear() }
     .onChange(of: to) { _ in clear() }
+    .onChange(of: calendar) { _ in clear() }
+    .onChange(of: timeZone) { _ in clear() }
     .onChange(of: metrics) { _ in clear() }
     .onChange(of: compareInReport) { _ in clear() }
     .onChange(of: profileFields) { _ in clear() }
     .onChange(of: backgroundSelection) { _ in clear() }
     .onChange(of: modelContactID) { _ in cancelRequest(); recommendation = nil }
+    .onChange(of: followUpModels) { _ in invalidateChangedFollowUpTarget() }
+    .onChange(of: store.profile.identityFingerprint) { _ in clear() }
     .onDisappear { clear() }
     .onChange(of: scene) {
       if $0 == .active { refreshPermissions() }
@@ -91,6 +139,10 @@ struct GalaxySSIHealthAssistantView: View {
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.profileInputsChanged)) {
       if $0.object as? String == records.owner { refreshPermissions() }
     }
+  }
+
+  var body: some View {
+    activeAssistant
     .confirmationDialog(t("confirm", "Send selected aggregates to this provider?"),
                         isPresented: $confirming, titleVisibility: .visible) {
       Button(t("send", "Send aggregates"), action: send)
@@ -104,6 +156,21 @@ struct GalaxySSIHealthAssistantView: View {
       GalaxySSIHealthBackgroundPicker(records: records, selection: backgroundSelection) { selected in
         backgroundSelection = selected
       }
+    }
+    .sheet(item: $followUpReview, content: followUpDisclosure)
+    .sheet(isPresented: $followUpReminder, onDismiss: {
+      if let metric = reminderRecord { reminderRecord = nil; openRecord(metric) }
+    }) {
+      NavigationView {
+        GalaxySSIHealthRecordingReminderView(records: records) { metric in
+          reminderRecord = metric
+          followUpReminder = false
+        }
+        .toolbar { ToolbarItem(placement: .cancellationAction) {
+          Button(t("close", "Close")) { followUpReminder = false }
+        } }
+      }
+      .navigationViewStyle(.stack)
     }
     .sheet(item: $evidence) { item in
       NavigationView {
@@ -145,7 +212,7 @@ struct GalaxySSIHealthAssistantView: View {
     Section(t("scope", "Analysis scope")) {
       DatePicker(t("from", "From"), selection: $from, in: ...Date(), displayedComponents: .date)
       DatePicker(t("to", "Through"), selection: $to, in: ...Date(), displayedComponents: .date)
-      Toggle(t("compare_previous", "Compare with the previous period in the report"), isOn: $compareInReport)
+      Toggle(t("compare_previous", "Include the previous period for comparison"), isOn: $compareInReport)
       DisclosureGroup(t("metrics", "Measurements")) {
         ForEach(GalaxySSIHealthMetric.allCases) { metric in
           Toggle(metric.title(language: language), isOn: Binding(get: { metrics.contains(metric) }, set: {
@@ -236,7 +303,7 @@ struct GalaxySSIHealthAssistantView: View {
 
   private func providerSection(_ analysis: GalaxySSIHealthAnalysis) -> some View {
     Section(t("online", "Optional online summary")) {
-      Toggle(t("online_permission", "Allow requests for online summaries"), isOn: Binding(
+      Toggle(t("online_permission", "Allow online summaries and follow-up requests"), isOn: Binding(
         get: { online != nil }, set: setOnline))
       if online != nil {
         Picker(t("provider", "Provider"), selection: $modelContactID) {
@@ -247,7 +314,7 @@ struct GalaxySSIHealthAssistantView: View {
         }
         Button(t("prepare_send", "Review and send aggregates"), action: prepareSend)
           .disabled(task != nil || modelContactID.isEmpty || analysis.evidence.allSatisfy { $0.aggregate.count == 0 })
-        if task != nil { ProgressView(t("working", "Waiting for provider")) }
+        if task != nil && followUpRequest == nil { ProgressView(t("working", "Waiting for provider")) }
         if let recommendation {
           Text(nextStep(recommendation.nextStep))
           ForEach(analysis.evidence.filter { recommendation.evidence.contains($0.id) }) { item in
@@ -257,6 +324,146 @@ struct GalaxySSIHealthAssistantView: View {
           }
         }
       }
+    }
+  }
+
+  private func followUpSection(_ analysis: GalaxySSIHealthAnalysis) -> some View {
+    Section(t("follow_up.title", "Ask about this analysis")) {
+      if online != nil && analysis.evidence.contains(where: { $0.aggregate.count > 0 }) {
+        if followUpContacts.isEmpty {
+          Text(t("follow_up.no_provider", "No compatible cloud model is configured."))
+        } else {
+          VStack(alignment: .leading, spacing: 4) {
+            Text(t("follow_up.question", "Follow-up question")).font(.subheadline)
+            TextEditor(text: $followUpDraft)
+              .frame(minHeight: 64, maxHeight: 112)
+              .accessibilityLabel(t("follow_up.question", "Follow-up question"))
+              .disabled(task != nil)
+            if !followUpDraft.isEmpty && GalaxySSIHealthFollowUp.question(followUpDraft) == nil {
+              Text(t("follow_up.invalid_question", "Enter up to 600 characters without unsupported control characters."))
+                .font(.caption).foregroundColor(.secondary)
+            }
+          }
+          Picker(t("provider", "Provider"), selection: $followUpProvider) {
+            Text(t("none", "Not selected")).tag("")
+            ForEach(followUpContacts) { contact in
+              Text(contact.selectedCloudModel?.displayName ?? "").tag(contact.id)
+            }
+          }.disabled(task != nil)
+          Button(t("follow_up.review", "Review request"), action: prepareFollowUp)
+            .disabled(task != nil || followUpModels[followUpProvider] == nil ||
+                      GalaxySSIHealthFollowUp.question(followUpDraft) == nil)
+        }
+        if followUpRequest != nil {
+          ProgressView(t("working", "Waiting for provider"))
+          Button(t("follow_up.cancel", "Cancel request"), action: cancelRequest)
+        }
+        if let followUpResult { followUpAnswer(followUpResult, analysis: analysis) }
+        if let followUpNotice { Text(notice(followUpNotice)).foregroundColor(.secondary) }
+      } else {
+        Text(t("follow_up.requires_online", "Follow-up requires online permission and numeric readings in this analysis."))
+          .foregroundColor(.secondary)
+      }
+    }
+  }
+
+  private func followUpDisclosure(_ review: FollowUpReview) -> some View {
+    NavigationView {
+      List {
+        if scene == .active && followUpReview?.id == review.id {
+          Section(t("provider", "Provider")) {
+            Text(verbatim: review.target.model.displayName)
+            Text(verbatim: review.target.model.modelId)
+            Text(verbatim: review.target.endpoint.absoluteString)
+          }
+          Section(t("follow_up.payload", "Exact analysis data to send")) {
+            Text(verbatim: String(decoding: review.packet.payload, as: UTF8.self))
+              .font(.system(.footnote, design: .monospaced))
+              .textSelection(.enabled)
+          }
+          Text(t("follow_up.disclosure", "Only this question, scoped facts and any previous verified selections are sent. Do not include private details in your question."))
+          Button(t("follow_up.send", "Send this question")) { sendFollowUp(review) }
+        }
+      }
+      .navigationTitle(t("follow_up.review", "Review request"))
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar { ToolbarItem(placement: .cancellationAction) {
+        Button(t("close", "Close")) { followUpReview = nil }
+      } }
+    }
+    .navigationViewStyle(.stack)
+  }
+
+  private func followUpAnswer(_ result: FollowUpResult, analysis: GalaxySSIHealthAnalysis) -> some View {
+    Group {
+      if result.answer.status == .outOfScope {
+        Text(t("follow_up.out_of_scope", "This question is outside the selected analysis."))
+      } else if result.answer.status == .partial {
+        Text(t("follow_up.partial", "Only part of the question is supported by this analysis."))
+      }
+      ForEach(result.answer.sections) { section in
+        Text(topicTitle(section.topic)).font(.headline).accessibilityAddTraits(.isHeader)
+        ForEach(section.factIDs, id: \.self) { id in
+          if let item = analysis.evidence.first(where: { $0.id == id }) {
+            followUpFact(item, topic: section.topic, result: result, days: analysis.requestedDays)
+          }
+        }
+      }
+      ForEach(result.answer.actions) { action in
+        Button(actionTitle(action)) {
+          guard validateFollowUpResult(result) else { return }
+          switch action {
+          case .addRecord: openRecord(metrics.count == 1 ? metrics.first : nil)
+          case .recordReminder: followUpReminder = true
+          case .weeklyReport: presentedReport = reportScope
+          }
+        }
+      }
+    }
+  }
+
+  private func followUpFact(_ item: GalaxySSIHealthAnalysis.Evidence, topic: GalaxySSIHealthFollowUp.Topic,
+                            result: FollowUpResult, days: Int) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Text(item.metric.title(language: language) + component(item.aggregate.component))
+      if topic == .changes, let delta = result.comparisons[item.id], let mean = item.aggregate.mean {
+        Text(String(format: t("follow_up.delta", "Mean %@ vs %@; change %@"),
+                    mean, delta.mean, delta.delta) + " " + item.aggregate.unit)
+        Button(t("follow_up.previous_sources", "Previous period source records")) {
+          if validateFollowUpResult(result) { sourceLimit = 30; evidence = delta.evidence }
+        }.buttonStyle(.borderless)
+      }
+      Text(String(format: t("coverage", "%lld / %lld days with readings"), Int64(item.aggregate.observedDays),
+                  Int64(days))).foregroundColor(.secondary)
+      if !item.readings.isEmpty {
+        Button(t("sources", "Source records")) {
+          if validateFollowUpResult(result) { sourceLimit = 30; evidence = item }
+        }.buttonStyle(.borderless)
+      }
+    }
+  }
+
+  private func topicTitle(_ topic: GalaxySSIHealthFollowUp.Topic) -> String {
+    switch topic {
+    case .changes: return t("follow_up.changes", "Changes")
+    case .coverage: return t("follow_up.coverage", "Coverage")
+    case .sources: return t("sources", "Source records")
+    }
+  }
+
+  private func actionTitle(_ action: GalaxySSIHealthFollowUp.Action) -> String {
+    switch action {
+    case .addRecord: return t("follow_up.add_record", "Record measurement")
+    case .recordReminder: return t("follow_up.reminder", "Recording reminders")
+    case .weeklyReport: return t("open_weekly_report", "Open scoped weekly report")
+    }
+  }
+
+  private func notice(_ value: FollowUpNotice) -> String {
+    switch value {
+    case .unavailable: return t("follow_up.unavailable", "This provider could not complete the follow-up.")
+    case .blocked: return t("follow_up.blocked", "Sharing with this provider is blocked in the Privacy Dashboard.")
+    case .invalidated: return t("follow_up.invalidated", "The analysis, permission, or provider changed. Review a new request.")
     }
   }
 
@@ -277,6 +484,10 @@ struct GalaxySSIHealthAssistantView: View {
       let current = archive.current
       analysis = GalaxySSIHealthAnalysis(scope: scope, current: current, calendar: local)
       reportScope = .init(scope: scope, calendar: local, compare: compareInReport, current: current)
+      if let interval = reportScope?.comparison {
+        comparison = GalaxySSIHealthAnalysis(scope: .init(interval: interval, metrics: metrics),
+                                             current: current, calendar: local)
+      }
     } catch GalaxySSIHealthRecords.Failure.stale { stale = true }
     catch { error = true }
   }
@@ -296,10 +507,13 @@ struct GalaxySSIHealthAssistantView: View {
       profileAllowed = permission != nil
       if !profileAllowed || profilePermission != permission { profileFields = []; clearBackgroundSelection() }
       profilePermission = permission
-      if online != archive.healthOnlinePermission { cancelRequest(); recommendation = nil }
+      if online != archive.healthOnlinePermission {
+        cancelRequest(); recommendation = nil; clearFollowUp(); evidence = nil
+      }
       online = archive.healthOnlinePermission
       let profileCurrent = try profileIsCurrent(archive)
-      if let analysis, !enabled || !analysis.isCurrent(archive.current) || !profileCurrent {
+      if let analysis, !enabled || !analysis.isCurrent(archive.current) ||
+          comparison?.isCurrent(archive.current) == false || !profileCurrent {
         clear()
         stale = true
       }
@@ -362,6 +576,120 @@ struct GalaxySSIHealthAssistantView: View {
       analysis.isCurrent(archive.current) && profileCurrent
   }
 
+  private func prepareFollowUp() {
+    guard task == nil, let analysis, let permission = online,
+          let model = followUpModels[followUpProvider],
+          let endpoint = GalaxySSIHealthFollowUpTransport.endpoint(for: model) else { return }
+    let target = Consent(contactID: followUpProvider, model: model, endpoint: endpoint, permission: permission)
+    do {
+      let ledger = coordinator.healthDisclosureStore
+      if let result = followUpResult,
+         followUpModels[result.target.contactID] != result.target.model ||
+           ledger.blockedDestinationIds().contains(result.target.contactID) {
+        followUpResult = nil
+      }
+      let packet = try GalaxySSIHealthFollowUp(analysis: analysis, baseline: comparison, question: followUpDraft,
+                                               previous: followUpResult?.answer)
+      guard try authorizedFollowUp(target, analysisID: packet.analysisID) else { invalidateFollowUp(); return }
+      guard let key = store.apiKey(for: model), CloudModelCredentialPolicy.isStoredCredential(key) else {
+        followUpNotice = .unavailable; return
+      }
+      followUpNotice = nil
+      followUpReview = FollowUpReview(target: target, packet: packet, credentialDigest: SHA256.hash(data: Data(key.utf8)))
+    } catch { followUpNotice = .unavailable }
+  }
+
+  private func sendFollowUp(_ review: FollowUpReview) {
+    guard task == nil, followUpReview?.id == review.id else { return }
+    followUpReview = nil
+    let target = review.target
+    let ledger = coordinator.healthDisclosureStore
+    do {
+      guard try authorizedFollowUp(target, analysisID: review.packet.analysisID) else { invalidateFollowUp(); return }
+      guard let contact = followUpContacts.first(where: { $0.id == target.contactID }),
+            let key = store.apiKey(for: target.model), CloudModelCredentialPolicy.isStoredCredential(key)
+      else { followUpNotice = .unavailable; return }
+      guard SHA256.hash(data: Data(key.utf8)) == review.credentialDigest else { invalidateFollowUp(); return }
+      let request = try GalaxySSIHealthFollowUpTransport.request(model: target.model, key: key, packet: review.packet)
+      let ticket = AgentDataDisclosureLedger.beginCloudRequest(store: ledger, destination: .init(contact: contact),
+        text: "", purpose: "Explicit health analysis follow-up",
+        textSummary: .init(characters: String(decoding: review.packet.payload, as: UTF8.self).count,
+                           kinds: [.messageText, .systemInstructions, .toolOutput]))
+      guard ticket.allowed else { followUpNotice = .blocked; return }
+      let id = UUID()
+      requestID = id
+      followUpRequest = target
+      followUpDraft = ""
+      followUpProvider = ""
+      followUpNotice = nil
+      task = Task {
+        var disclosure: AgentDisclosureStatus = .failed
+        defer {
+          AgentDataDisclosureLedger.update(store: ledger, ticket: ticket, status: disclosure,
+            failureReason: disclosure == .failed ? "health_request_not_completed" : "")
+          if requestID == id { task = nil; requestID = nil; followUpRequest = nil }
+        }
+        do {
+          guard requestID == id, !Task.isCancelled else { return }
+          guard try authorizedFollowUp(target, analysisID: review.packet.analysisID), store.apiKey(for: target.model) == key
+          else { invalidateFollowUp(); return }
+          guard !ledger.blockedDestinationIds().contains(target.contactID) else {
+            disclosure = .blocked; followUpNotice = .blocked; return
+          }
+          let bytes = try await GalaxySSIHealthSummaryTransport.responseBytes(request, limit: 65_536)
+          disclosure = .sent
+          guard requestID == id, !Task.isCancelled else { return }
+          guard try authorizedFollowUp(target, analysisID: review.packet.analysisID), store.apiKey(for: target.model) == key
+          else { invalidateFollowUp(); return }
+          guard !ledger.blockedDestinationIds().contains(target.contactID) else {
+            followUpResult = nil; followUpNotice = .blocked; return
+          }
+          let output = try GalaxySSIHealthFollowUpTransport.output(bytes, style: target.model.apiStyle)
+          let answer = try review.packet.answer(output)
+          followUpResult = FollowUpResult(target: target, analysisID: review.packet.analysisID,
+                                          comparisons: review.packet.comparisons, answer: answer)
+        } catch {
+          if requestID == id, !Task.isCancelled { followUpNotice = .unavailable }
+        }
+      }
+    } catch { followUpNotice = .unavailable }
+  }
+
+  private func authorizedFollowUp(_ target: Consent, analysisID: UUID) throws -> Bool {
+    guard scene == .active, store.profile.identityFingerprint == records.owner,
+          let analysis, analysis.id == analysisID, followUpModels[target.contactID] == target.model
+    else { return false }
+    let archive = try records.load()
+    let profileCurrent = try profileIsCurrent(archive)
+    return archive.derivesOverview == true && archive.healthOnlinePermission == target.permission &&
+      analysis.isCurrent(archive.current) && comparison?.isCurrent(archive.current) != false &&
+      profileCurrent
+  }
+
+  private func validateFollowUpResult(_ result: FollowUpResult) -> Bool {
+    guard (try? authorizedFollowUp(result.target, analysisID: result.analysisID)) == true else {
+      invalidateFollowUp()
+      return false
+    }
+    guard !coordinator.healthDisclosureStore.blockedDestinationIds().contains(result.target.contactID) else {
+      followUpResult = nil; followUpNotice = .blocked
+      return false
+    }
+    return true
+  }
+
+  private func invalidateChangedFollowUpTarget() {
+    let targets = [followUpRequest, followUpReview?.target, followUpResult?.target].compactMap { $0 }
+    if targets.contains(where: { followUpModels[$0.contactID] != $0.model }) { invalidateFollowUp() }
+  }
+
+  private func invalidateFollowUp() {
+    if followUpRequest != nil { cancelRequest() }
+    clearFollowUp()
+    evidence = nil
+    followUpNotice = .invalidated
+  }
+
   private func profileIsCurrent(_ archive: GalaxySSIHealthRecords.Archive) throws -> Bool {
     guard let profileContext else { return true }
     return profileContext.isCurrent(profile: try records.loadProfile(), permission: archive.profileAnalysisPermission)
@@ -369,6 +697,7 @@ struct GalaxySSIHealthAssistantView: View {
 
   private func cancelRequest() {
     task?.cancel(); task = nil; requestID = nil; consent = nil; confirming = false
+    followUpRequest = nil; followUpReview = nil
   }
 
   private func clear() {
@@ -376,6 +705,13 @@ struct GalaxySSIHealthAssistantView: View {
     analysis = nil; evidence = nil; recommendation = nil; stale = false; error = false
     reportScope = nil
     profileContext = nil
+    comparison = nil
+    clearFollowUp()
+  }
+
+  private func clearFollowUp() {
+    followUpDraft = ""; followUpProvider = ""; followUpReview = nil; followUpResult = nil; followUpNotice = nil
+    reminderRecord = nil; followUpReminder = false
   }
 
   private func clearBackgroundSelection() {

@@ -9,6 +9,7 @@ struct ParsedModelStreamFrame: Equatable {
   var error: ModelStreamError?
   var providerSequence: Int64?
   var reportedModel: String? = nil
+  var providerReasoningDelta: String? = nil
 }
 
 protocol ModelStreamProviderAdapter {
@@ -89,7 +90,8 @@ private final class OpenAIModelStreamAdapter: ModelStreamProviderAdapter {
       usage: json.object("usage")?.openAIUsage(),
       finishReason: choice?.string("finish_reason").nonBlank,
       providerSequence: json.optionalSequence(),
-      reportedModel: json.string("model").nonBlank
+      reportedModel: json.string("model").nonBlank,
+      providerReasoningDelta: delta?["reasoning_content"] as? String
     )
   }
 
@@ -121,7 +123,8 @@ private final class OpenAIModelStreamAdapter: ModelStreamProviderAdapter {
       usage: json.object("usage")?.openAIUsage(),
       finishReason: choice?.string("finish_reason").nonBlank,
       terminal: true,
-      reportedModel: json.string("model").nonBlank
+      reportedModel: json.string("model").nonBlank,
+      providerReasoningDelta: message?["reasoning_content"] as? String
     )
   }
 }

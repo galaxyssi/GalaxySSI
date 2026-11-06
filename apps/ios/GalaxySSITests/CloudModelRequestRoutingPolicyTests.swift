@@ -2,6 +2,24 @@ import XCTest
 @testable import GalaxySSI
 
 final class CloudModelRequestRoutingPolicyTests: XCTestCase {
+  func testManualRetryUsesOriginalModelAndRejectsChangedRoute() throws {
+    let original = deepSeekContact()
+    let binding = try XCTUnwrap(AgentManualCloudBinding(contact: original, hadAttachments: false))
+    let key = "sk-valid-credential-for-testing-4c918"
+    var contact = original
+    contact.selectedCloudModelId = CloudModelRequestRoutingPolicy.deepSeekV4Flash
+    XCTAssertEqual(binding.resolve(contact: contact) { _ in key }?.selectedCloudModel?.modelId,
+                   CloudModelRequestRoutingPolicy.deepSeekV4Pro)
+    XCTAssertNil(binding.resolve(contact: contact) { _ in nil })
+    contact.cloudModels[0].endpoint = "https://different.example/v1/chat/completions"
+    XCTAssertNil(binding.resolve(contact: contact) { _ in key })
+    var message = ChatMessage(contactId: "hermes", content: "test", isMine: true)
+    message.manualCloudBinding = binding
+    let encoded = try JSONEncoder().encode(message)
+    XCTAssertEqual(try JSONDecoder().decode(ChatMessage.self, from: encoded).manualCloudBinding, binding)
+    XCTAssertFalse(String(decoding: encoded, as: UTF8.self).contains("api.deepseek.com"))
+  }
+
   func testDeepSeekProfileExposesAllSupportedModels() {
     let profile = CloudModelRequestRoutingPolicy.invocationProfile(deepSeekContact())
 

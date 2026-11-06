@@ -83,7 +83,8 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
     _ request: ModelStreamRequest,
     continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation
   ) async {
-    let state = ModelStreamEmissionState()
+    let privateContinuation = request.preserveProviderReasoning && request.isDirectDeepSeekChatEndpoint
+    let state = ModelStreamEmissionState(preserveProviderReasoning: privateContinuation)
     let timing = ModelStreamTimingTracker(requestId: request.requestId, now: elapsedMillis)
     defer {
       locked { timings[request.requestId] = timing.snapshot() }
@@ -95,7 +96,8 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
       let adapter = ModelStreamProviderAdapters.create(provider: request.provider)
       timing.mark("reader_started")
       timing.mark("request_write_start")
-      let (bytes, response) = try await session.bytes(for: urlRequest)
+      let (bytes, response) = try await session.bytes(for: urlRequest,
+        delegate: privateContinuation ? NoPrivateContinuationRedirects() : nil)
       timing.mark("request_write_end")
       timing.mark("response_headers")
       try throwIfCancelled(request.requestId)
@@ -179,7 +181,8 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
                 requestId: request.requestId,
                 finishReason: finishReason,
                 completedAtElapsedMs: elapsedMillis(),
-                reportedModel: state.reportedModel
+                reportedModel: state.reportedModel,
+                providerReasoning: state.providerReasoning
               )
             )
           )
@@ -242,6 +245,13 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
       state.sawTerminal = true
       return true
     }
+    guard state.recordProviderReasoning(frame.providerReasoningDelta) else {
+      yieldFailed(requestId: requestId,
+        error: ModelStreamError(code: "REASONING_TOO_LARGE", message: "The provider's tool continuation exceeded its size limit"),
+        continuation: continuation)
+      state.sawTerminal = true
+      return true
+    }
     for delta in frame.textDeltas where !delta.isEmpty {
       timing.mark("first_text")
       state.emittedPayload = true
@@ -284,7 +294,8 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
           requestId: requestId,
           finishReason: state.finishReason,
           completedAtElapsedMs: elapsedMillis(),
-          reportedModel: state.reportedModel
+          reportedModel: state.reportedModel,
+          providerReasoning: state.providerReasoning
         )
       )
     )
@@ -381,6 +392,15 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
   }
 }
 
+private final class NoPrivateContinuationRedirects: NSObject, URLSessionTaskDelegate {
+  func urlSession(
+    _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void
+  ) {
+    completionHandler(nil)
+  }
+}
+
 final class ModelStreamEmissionState {
   private var sequence: Int64 = 0
   var emittedPayload = false
@@ -388,6 +408,22 @@ final class ModelStreamEmissionState {
   var finishReason: String?
   private(set) var reportedModel: String?
   private var reportedModelConflict = false
+  private let preserveProviderReasoning: Bool
+  private var reasoningBytes = 0
+  private(set) var providerReasoning: String?
+
+  init(preserveProviderReasoning: Bool = false) {
+    self.preserveProviderReasoning = preserveProviderReasoning
+  }
+
+  func recordProviderReasoning(_ delta: String?) -> Bool {
+    guard preserveProviderReasoning, let delta, !delta.isEmpty else { return true }
+    reasoningBytes += delta.utf8.count
+    guard reasoningBytes <= 192_000 else { return false }
+    if providerReasoning == nil { providerReasoning = "" }
+    providerReasoning?.append(delta)
+    return true
+  }
 
   func observeReportedModel(_ value: String?) {
     guard !reportedModelConflict, let value, !value.isBlank, value.utf8.count <= 256 else { return }
