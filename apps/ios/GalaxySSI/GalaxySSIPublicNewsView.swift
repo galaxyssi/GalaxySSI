@@ -535,13 +535,12 @@ struct GalaxySSIPublicNewsView: View {
       HStack(spacing: 8) {
         GalaxySSIPublicNewsCover(article: article)
         GalaxySSIPublicNewsHeadline(archive: archive, article: presented, expanded: expanded,
-          reservesBilingualSpace: reservesBilingualSpace, onOpen: {
+          reservesBilingualSpace: reservesBilingualSpace, stabilizesReadAppearance: true, onOpen: {
             expandedHeadline = expanded ? nil : article
             expandedKey = expanded ? "" : key
           }) {
           Text(presented.displayTitle)
             .font(expanded ? .body.weight(.semibold) : .system(size: collapsedHeadlineSize, weight: .semibold))
-            .foregroundColor(article.read ? .galaxySSITextSecondary : .galaxySSITextPrimary)
             .fontWeight(.regular)
             .lineLimit(expanded ? nil : reservesBilingualSpace ? 2 : 3)
         } detail: {
@@ -808,9 +807,8 @@ struct GalaxySSIPublicNewsReader: View {
       )
       ScrollView {
         VStack(alignment: .leading, spacing: 14) {
-          GalaxySSIPublicNewsHeadline(archive: archive, article: article, reader: true, onDismissArticle: {
-            dismiss()
-          }) {
+          GalaxySSIPublicNewsHeadline(archive: archive, article: article, reader: true, stabilizesReadAppearance: true,
+            onDismissArticle: { dismiss() }) {
             Text(article.displayTitle).font(.title2.weight(.semibold))
           } detail: {
             GalaxySSIPublicNewsByline(article: article)

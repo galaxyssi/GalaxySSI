@@ -1,11 +1,30 @@
 import SwiftUI
 import UIKit
 
+struct PublicNewsHeadlineReadAppearance {
+  private var attachment: (id: String, read: Bool)?
+
+  mutating func attach(id: String, read: Bool) {
+    if attachment?.id != id { attachment = (id, read) }
+  }
+
+  mutating func detach() { attachment = nil }
+
+  func isRead(id: String, persisted: Bool) -> Bool {
+    attachment?.id == id ? (attachment?.read ?? persisted) : persisted
+  }
+
+  static func titleColor(read: Bool) -> Color {
+    read ? .galaxySSITextPrimary : .galaxySSINewsUnreadTitle
+  }
+}
+
 @MainActor
 struct GalaxySSIPublicNewsHeadline<Title: View, Detail: View>: View {
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @State private var selection: String?
+  @State private var readAppearance = PublicNewsHeadlineReadAppearance()
   @ScaledMetric(relativeTo: .body) private var primarySlotHeight = 48.0
   @ScaledMetric(relativeTo: .caption) private var secondarySlotHeight = 36.0
 
@@ -14,10 +33,19 @@ struct GalaxySSIPublicNewsHeadline<Title: View, Detail: View>: View {
   var reader = false
   var expanded = false
   var reservesBilingualSpace = false
+  var stabilizesReadAppearance = false
   var onOpen: (() -> Void)? = nil
   var onDismissArticle: (() -> Void)? = nil
   @ViewBuilder let title: () -> Title
   @ViewBuilder let detail: () -> Detail
+
+  private var displayedRead: Bool {
+    stabilizesReadAppearance ? readAppearance.isRead(id: article.id, persisted: article.read) : article.read
+  }
+
+  private var titleColor: Color? {
+    stabilizesReadAppearance ? PublicNewsHeadlineReadAppearance.titleColor(read: displayedRead) : nil
+  }
 
   var body: some View {
     Group {
@@ -29,14 +57,14 @@ struct GalaxySSIPublicNewsHeadline<Title: View, Detail: View>: View {
               .fixedSize(horizontal: false, vertical: true)
               .frame(maxWidth: .infinity, alignment: .leading)
               .hidden()
-              .overlay { GalaxySSIPublicNewsNativeSelection(text: selection, reader: reader) }
+              .overlay { GalaxySSIPublicNewsNativeSelection(text: selection, reader: reader, color: titleColor) }
             Button { self.selection = nil } label: {
               Image(systemName: "checkmark").frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(t("public_news_done_selecting", "Done selecting"))
           }
-          detail()
+          byline
         }
         .frame(maxWidth: .infinity, alignment: .leading)
       } else if let onOpen {
@@ -48,26 +76,50 @@ struct GalaxySSIPublicNewsHeadline<Title: View, Detail: View>: View {
       }
     }
     .onChange(of: scenePhase) { if $0 != .active { selection = nil } }
-    .onDisappear { selection = nil }
+    .onAppear { readAppearance.attach(id: article.id, read: article.read) }
+    .onChange(of: article.id) { readAppearance.attach(id: $0, read: article.read) }
+    .onDisappear {
+      selection = nil
+      readAppearance.detach()
+    }
   }
 
   private var headline: some View {
     VStack(alignment: .leading, spacing: 6) {
       if reservesBilingualSpace {
-        title().frame(height: primarySlotHeight, alignment: .topLeading)
+        styledTitle.frame(height: primarySlotHeight, alignment: .topLeading)
         Text(article.displayTitle == article.title ? t("public_news_headline_pending", "Translation pending") : article.title)
           .font(.caption).foregroundColor(.secondary).lineLimit(2)
           .frame(height: secondarySlotHeight, alignment: .topLeading)
       } else {
-        title()
+        styledTitle
         if !reader && article.displayTitle != article.title {
           Text(article.title).font(.caption).foregroundColor(.secondary).lineLimit(expanded ? nil : 3)
         }
       }
-      detail()
+      byline
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .contentShape(Rectangle())
+  }
+
+  @ViewBuilder private var styledTitle: some View {
+    if let titleColor { title().foregroundColor(titleColor) }
+    else { title() }
+  }
+
+  @ViewBuilder private var byline: some View {
+    if stabilizesReadAppearance && displayedRead {
+      HStack(spacing: 6) {
+        detail()
+        Text(t("public_news_read_status", "Read"))
+          .font(.caption)
+          .foregroundColor(.galaxySSITextSecondary)
+          .layoutPriority(1)
+      }
+    } else {
+      detail()
+    }
   }
 
   private var actions: some View {
@@ -83,7 +135,7 @@ struct GalaxySSIPublicNewsHeadline<Title: View, Detail: View>: View {
       Button { archive.markRead(article.id) } label: {
         Label(t("public_news_mark_read", "Mark as read"), systemImage: "checkmark.circle")
       }
-      .disabled(article.read || !archive.loaded)
+      .disabled(displayedRead || !archive.loaded)
       Button {
         if archive.markNotRelevant(article.id) { onDismissArticle?() }
       } label: {
@@ -101,6 +153,7 @@ struct GalaxySSIPublicNewsHeadline<Title: View, Detail: View>: View {
 private struct GalaxySSIPublicNewsNativeSelection: UIViewRepresentable {
   let text: String
   let reader: Bool
+  let color: Color?
 
   func makeUIView(context: Context) -> SelectionTextView {
     let view = SelectionTextView()
@@ -108,7 +161,7 @@ private struct GalaxySSIPublicNewsNativeSelection: UIViewRepresentable {
     view.isSelectable = true
     view.isScrollEnabled = false
     view.backgroundColor = .clear
-    view.textColor = .label
+    view.textColor = color.map { UIColor($0) } ?? .label
     view.textContainerInset = .zero
     view.textContainer.lineFragmentPadding = 0
     view.font = .preferredFont(forTextStyle: reader ? .title2 : .body)
@@ -121,7 +174,7 @@ private struct GalaxySSIPublicNewsNativeSelection: UIViewRepresentable {
   }
 
   func updateUIView(_ view: SelectionTextView, context: Context) {
-    // The parent freezes the exact headline until selection ends.
+    view.textColor = color.map { UIColor($0) } ?? .label
   }
 
   static func dismantleUIView(_ view: SelectionTextView, coordinator: ()) {
