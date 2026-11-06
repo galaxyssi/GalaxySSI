@@ -250,6 +250,8 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
       "page_title": screen.pageTitle,
       "contact_id": clean(action.parameters["_galaxyssi_contact_id"] ?? ""),
       "response_language": clean(action.parameters["response_language"] ?? ""),
+      "capture_permission_preflight": action.parameters["_galaxyssi_capture_permission_preflight"] ?? "",
+      "capture_permission_task_id": action.parameters["_galaxyssi_task_id"] ?? "",
       AgentNativeToolRegistry.legacyActionIdAttribute: action.id
     ]
   }

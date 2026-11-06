@@ -74,6 +74,8 @@ extension AgentHomeView {
     task: AgentTaskRecord
   ) {
     switch action {
+    case .pause:
+      runAgentTimelineAction(.pause, task: task)
     case .cancel:
       richActionStatus = coordinator.cancelLocalAgentTask(taskId: task.taskId)
         ? t("galaxyssi.agent.task_control.cancelled", "Task cancelled")

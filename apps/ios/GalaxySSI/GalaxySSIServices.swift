@@ -126,6 +126,10 @@ final class MessageCoordinator: ObservableObject {
   private var globalCognitionResponseToken: UUID?
   private var globalAutonomousResponseToken: UUID?
   private var agentHomeDisplayContactIdsByTurnId: [String: String] = [:]
+  private var capturePermissionRequests = AgentCapturePermissionRequests()
+  private var capturePermissionsReady: [String: UUID] = [:]
+  private var captureDispatches: [String: UUID] = [:]
+  private lazy var capturePermissionEvents = UserDefaultsAgentRunEventStore()
   private var currentAgentScreenContext = AgentScreenContext(
     foregroundApp: "GalaxySSI iOS",
     pageTitle: "Agent"
@@ -534,7 +538,21 @@ final class MessageCoordinator: ObservableObject {
   func reconcileInterruptedLocalPlanNodes() -> Int {
     var recoveredTaskCount = 0
     for var task in store.recentAgentTasks(limit: 500) where
-      task.phase == .executing || (task.phase == .paused && task.teamRecoveryRunId != nil) {
+      task.phase == .executing || (task.phase == .paused && task.teamRecoveryRunId != nil) ||
+      (task.phase == .waitingResponse && task.capturePermission != nil) {
+      if let wait = task.capturePermission {
+        guard !capturePermissionRequests.contains(taskId: task.taskId),
+              capturePermissionsReady[task.taskId] == nil, captureDispatches[task.taskId] == nil else { continue }
+        task.phase = .paused
+        task.blocked = false
+        task.verification = capturePermissionResumeMessage(dispatched: wait.dispatched)
+        task.executionLog.append("Native capture: paused after app process interruption")
+        task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+        store.upsertAgentTask(task)
+        recordCapturePermissionEvent(.paused, wait: wait, stage: "interrupted")
+        recoveredTaskCount += 1
+        continue
+      }
       guard var plan = task.activePlan else { continue }
       let outgoing = localOutgoingMessage(for: task)
       let teamSpecs = plan.actions.filter { $0.kind == .callConnector }.compactMap {
@@ -823,6 +841,7 @@ final class MessageCoordinator: ObservableObject {
     ) { [weak self] _ in
       Task { @MainActor in
         guard let self else { return }
+        self.continueForegroundCapturePermissions()
         self.pendingReplyRecoveryWake.request(isConnected: self.mqttClient.relationshipSubscriptionsReady)
       }
     }
@@ -4805,6 +4824,7 @@ final class MessageCoordinator: ObservableObject {
     edit: (AgentTaskRecord) -> AgentPendingActionEditResult
   ) -> AgentPendingActionEditResult {
     guard let task = store.agentTask(id: taskId),
+          task.capturePermission == nil,
           [.waitingConfirmation, .paused].contains(task.phase) else {
       return AgentPendingActionEditResult(error: "Only paused or waiting tasks can be edited")
     }
@@ -5167,6 +5187,11 @@ final class MessageCoordinator: ObservableObject {
           AgentTaskCenterPolicy.pauseable(task) else {
       return false
     }
+    let captureWait = task.capturePermission
+    if captureWait != nil {
+      capturePermissionRequests.invalidate(taskId: taskId)
+      capturePermissionsReady.removeValue(forKey: taskId)
+    }
     if task.pendingAction == nil {
       task.pendingAction = task.pendingActions.first
     }
@@ -5178,6 +5203,7 @@ final class MessageCoordinator: ObservableObject {
     task.executionLog.append("Native tool task: paused")
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
     store.upsertAgentTask(task)
+    if let captureWait { recordCapturePermissionEvent(.paused, wait: captureWait, stage: "paused") }
     return true
   }
 
@@ -5186,6 +5212,18 @@ final class MessageCoordinator: ObservableObject {
     guard var task = store.agentTask(id: taskId),
           task.phase == .paused else {
       return false
+    }
+    if let wait = task.capturePermission {
+      guard !automatic, !wait.dispatched, !PhoneExecutionAuthority.isCancelled(taskId: taskId),
+            let outgoing = capturePermissionMessage(wait),
+            let action = wait.action(in: task, outgoing: outgoing),
+            UIApplication.shared.applicationState == .active else { return false }
+      recordCapturePermissionEvent(.runRecovered, wait: wait, stage: "resumed")
+      task.capturePermission = nil
+      if wait.permissionMode != store.agentSafetySettings.permissionMode {
+        return applyLocalNativeAction(action: action, outgoing: outgoing, task: &task)
+      }
+      return executeLocalNativeActionAndAdvance(action: action, outgoing: outgoing, task: &task)
     }
     guard task.teamRecoveryRunId == nil else { return false }
     if automatic {
@@ -5336,6 +5374,13 @@ final class MessageCoordinator: ObservableObject {
     }
     PhoneExecutionAuthority.requestCancellation(taskId: task.taskId)
     let action = task.pendingAction
+    let captureWait = task.capturePermission
+    if captureWait != nil {
+      capturePermissionRequests.invalidate(taskId: taskId)
+      capturePermissionsReady.removeValue(forKey: taskId)
+      captureDispatches.removeValue(forKey: taskId)
+      task.capturePermission = nil
+    }
     task.phase = .cancelled
     task.pendingPlanning = nil
     task.plannerSnapshot = nil
@@ -5354,7 +5399,8 @@ final class MessageCoordinator: ObservableObject {
     task.executionLog.append("Native tool task: cancelled")
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
     store.upsertAgentTask(task)
-    guard let outgoing = localOutgoingMessage(for: task) else { return }
+    if let captureWait { recordCapturePermissionEvent(.runCancelled, wait: captureWait, stage: "cancelled") }
+    guard let outgoing = captureWait.flatMap(capturePermissionMessage) ?? localOutgoingMessage(for: task) else { return }
     localRecordedRunStore.recordNativeExecution(task: task, outgoing: outgoing, status: .cancelled)
     guard emitReply else { return }
     store.appendDeliveryTrace(
@@ -8684,6 +8730,7 @@ final class MessageCoordinator: ObservableObject {
     }
     let sessionId = task.sessionId.ifBlank(store.activeAgentConversationId)
     return actions.allSatisfy { action in
+      AgentCapturePermissionContinuation.kind(for: action) == nil &&
       (mode != .readOnly || action.risk == .low) && !AgentConfirmationDecisionPolicy.decision(
         actions: [action],
         permissionMode: store.agentSafetySettings.permissionMode,
@@ -9094,23 +9141,194 @@ final class MessageCoordinator: ObservableObject {
     if task.pendingActions.isEmpty {
       task.pendingActions = [action]
     }
+    if let kind = AgentCapturePermissionContinuation.kind(for: action),
+       let registry = localNativeToolRuntime?.registry,
+       let data = (action.parameters["input_json"] ?? "").ifBlank("{}").data(using: .utf8),
+       let input = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data),
+       registry.validateInput(action.parameters["tool_id"] ?? "", input: input).isValid {
+      beginCapturePermission(kind: kind, action: action, outgoing: outgoing, task: &task)
+      return true
+    }
     task.pendingActions.removeAll { $0.id == action.id }
     task.pendingAction = task.pendingActions.first
     let handled = executeLocalNativeAction(action: action, outgoing: outgoing, task: &task)
     if task.phase == .failed, AgentSupervisorRecoveryPolicy.stopReason(
       action: action, result: task.lastNativeActionResult, history: supervisorHistory(task: task, outgoing: outgoing)
     ) == nil {
-      var retryableAction = action
-      retryableAction.status = .failed
-      retryableAction.result = task.result
-      retryableAction.evidence = task.verification
-      task.pendingActions.insert(retryableAction, at: 0)
-      task.pendingAction = retryableAction
-      task.executionLog.append("Native tool \(action.parameters["tool_id"] ?? action.target): retained for retry")
-      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
-      store.upsertAgentTask(task)
+      retainFailedLocalNativeAction(action, task: &task)
     }
     return handled
+  }
+
+  private func retainFailedLocalNativeAction(_ action: AgentAction, task: inout AgentTaskRecord) {
+    var retryable = action
+    retryable.status = .failed
+    retryable.result = task.result
+    retryable.evidence = task.verification
+    task.pendingActions.insert(retryable, at: 0)
+    task.pendingAction = retryable
+    task.executionLog.append("Native tool \(action.parameters["tool_id"] ?? action.target): retained for retry")
+    task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+    store.upsertAgentTask(task)
+  }
+
+  private func beginCapturePermission(
+    kind: AgentIOSVisibleCaptureKind, action: AgentAction, outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) {
+    guard !PhoneExecutionAuthority.isCancelled(taskId: task.taskId),
+          task.pendingActions.first == action else { return }
+    let wait = AgentCapturePermissionContinuation(task: task, outgoing: outgoing, action: action,
+      kind: kind, permissionMode: store.agentSafetySettings.permissionMode)
+    task.capturePermission = wait
+    task.pendingAction = action
+    task.phase = .waitingResponse
+    task.blocked = false
+    task.result = ""
+    let permission = AgentIOSCaptureSystemPermission.state(for: kind)
+    let canPresent = UIApplication.shared.applicationState == .active
+    if permission != .granted || !canPresent {
+      task.verification = localizedReply("galaxyssi.agent.capture_permission.waiting",
+        fallback: "Waiting for iOS capture permission.")
+      task.executionLog.append("Native capture: waiting for system permission")
+    }
+    task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+    store.upsertAgentTask(task)
+    if permission == .granted && canPresent {
+      dispatchApprovedCapture(wait, outgoing: outgoing, task: &task)
+      return
+    }
+    recordCapturePermissionEvent(.toolPermissionRequired, wait: wait, stage: "permission_required")
+    guard canPresent, permission == .undetermined else {
+      pauseCapturePermission(wait, task: &task, stage: permission == .denied ? "denied" : "not_foreground")
+      return
+    }
+    installForegroundRecoveryWake()
+    capturePermissionRequests.register(wait)
+    AgentIOSCaptureSystemPermission.request(kind) { [weak self] granted in
+      Task { @MainActor [weak self] in
+        self?.receiveCapturePermission(wait, granted: granted, stage: granted ? "granted" : "denied")
+      }
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
+      self?.receiveCapturePermission(wait, granted: false, stage: "timed_out")
+    }
+  }
+
+  private func receiveCapturePermission(
+    _ wait: AgentCapturePermissionContinuation, granted: Bool, stage: String
+  ) {
+    guard capturePermissionRequests.consume(wait) else { return }
+    guard var task = store.agentTask(id: wait.taskId),
+          let outgoing = capturePermissionMessage(wait),
+          wait.acceptsCallback(in: task, outgoing: outgoing),
+          !PhoneExecutionAuthority.isCancelled(taskId: wait.taskId) else { return }
+    guard granted else {
+      pauseCapturePermission(wait, task: &task, stage: stage)
+      return
+    }
+    if UIApplication.shared.applicationState == .active {
+      dispatchApprovedCapture(wait, outgoing: outgoing, task: &task)
+    } else {
+      capturePermissionsReady[wait.taskId] = wait.token
+    }
+  }
+
+  private func continueForegroundCapturePermissions() {
+    let ready = capturePermissionsReady
+    capturePermissionsReady.removeAll()
+    for (taskId, token) in ready {
+      guard var task = store.agentTask(id: taskId), let wait = task.capturePermission,
+            wait.token == token, let outgoing = capturePermissionMessage(wait) else { continue }
+      dispatchApprovedCapture(wait, outgoing: outgoing, task: &task)
+    }
+  }
+
+  private func pauseCapturePermission(
+    _ wait: AgentCapturePermissionContinuation, task: inout AgentTaskRecord, stage: String
+  ) {
+    task.phase = .paused
+    task.verification = capturePermissionResumeMessage(dispatched: false)
+    task.executionLog.append("Native capture permission: \(stage)")
+    task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+    store.upsertAgentTask(task)
+    recordCapturePermissionEvent(.paused, wait: wait, stage: stage)
+  }
+
+  private func capturePermissionResumeMessage(dispatched: Bool) -> String {
+    dispatched
+      ? localizedReply("galaxyssi.agent.capture_permission.interrupted",
+          fallback: "Capture was interrupted after dispatch. It will not be repeated.")
+      : localizedReply("galaxyssi.agent.capture_permission.resume",
+          fallback: "Check iOS permissions, then resume to continue the original action.")
+  }
+
+  private func capturePermissionMessage(_ wait: AgentCapturePermissionContinuation) -> ChatMessage? {
+    store.messages(for: wait.contactId).first { $0.id == wait.messageId && $0.isMine }
+  }
+
+  private func dispatchApprovedCapture(
+    _ wait: AgentCapturePermissionContinuation, outgoing: ChatMessage, task: inout AgentTaskRecord
+  ) {
+    guard wait.acceptsCallback(in: task, outgoing: outgoing),
+          let action = wait.action(in: task, outgoing: outgoing),
+          !PhoneExecutionAuthority.isCancelled(taskId: task.taskId),
+          let executor = localNativeToolRuntime?.actionExecutor else { return }
+    guard UIApplication.shared.applicationState == .active,
+          AgentIOSCaptureSystemPermission.state(for: wait.kind) == .granted,
+          wait.permissionMode == store.agentSafetySettings.permissionMode else {
+      pauseCapturePermission(wait, task: &task, stage: "recheck_required")
+      return
+    }
+    if rejectReadOnlyAnalysisAction(action, outgoing: outgoing, task: &task) { return }
+    var dispatched = wait
+    dispatched.dispatched = true
+    task.capturePermission = dispatched
+    task.phase = .executing
+    task.verification = "User-visible capture dispatched"
+    task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+    captureDispatches[task.taskId] = wait.token
+    store.upsertAgentTask(task)
+    recordCapturePermissionEvent(.runStarted, wait: wait, stage: "dispatched")
+    var scoped = scopedLocalNativeExecutionAction(action, outgoing: outgoing, task: task)
+    scoped.parameters["_galaxyssi_capture_permission_preflight"] = "true"
+    let executionAction = scoped
+    let screen = currentAgentScreenContext
+    Task { @MainActor [weak self] in
+      let result = await Task.detached(priority: .userInitiated) {
+        executor.execute(action: executionAction, screen: screen)
+      }.value
+      guard let self, self.captureDispatches[wait.taskId] == wait.token else { return }
+      self.captureDispatches.removeValue(forKey: wait.taskId)
+      guard var current = self.store.agentTask(id: wait.taskId), current.phase == .executing,
+            dispatched.action(in: current, outgoing: outgoing) == action,
+            !PhoneExecutionAuthority.isCancelled(taskId: wait.taskId) else { return }
+      current.capturePermission = nil
+      current.pendingActions.removeFirst()
+      current.pendingAction = current.pendingActions.first
+      self.finishLocalNativeAction(action: action, executionAction: executionAction, result: result,
+        outgoing: outgoing, rollbackAction: nil, task: &current)
+      self.recordCapturePermissionEvent(.toolCompleted, wait: wait,
+        stage: result.success ? "capture_completed" : "capture_failed")
+      if current.phase == .failed || (current.phase == .completed && current.pendingActions.isEmpty) {
+        self.recordCapturePermissionEvent(result.success ? .runCompleted : .runFailed, wait: wait,
+          stage: result.success ? "completed" : "failed")
+      }
+      if current.phase == .failed {
+        self.retainFailedLocalNativeAction(action, task: &current)
+      } else if current.phase == .completed, !current.pendingActions.isEmpty {
+        current.phase = .executing
+        _ = self.advanceLocalNativeActions(outgoing: outgoing, task: &current)
+      }
+    }
+  }
+
+  private func recordCapturePermissionEvent(
+    _ type: AgentRunControlEventType, wait: AgentCapturePermissionContinuation, stage: String
+  ) {
+    guard let session = store.agentSession(id: wait.conversationId),
+          !session.privateMode, !session.trackingPaused else { return }
+    _ = capturePermissionEvents.appendNext(wait.event(type, stage: stage, now: AgentControlPlaneClock.nowMillis()))
   }
 
   private func executeLocalNativeAction(
@@ -9127,19 +9345,7 @@ final class MessageCoordinator: ObservableObject {
 
     let history = supervisorHistory(task: task, outgoing: outgoing)
     let boundAction = AgentSupervisorRecoveryPolicy.restoreBinding(action, history: history)
-    var executionAction = boundAction
-    executionAction.parameters["_galaxyssi_task_id"] = task.taskId
-    executionAction.parameters["_galaxyssi_session_id"] = task.sessionId
-    executionAction.parameters["_galaxyssi_conversation_id"] = outgoing.conversationId
-    executionAction.parameters["_galaxyssi_turn_id"] = outgoing.turnId.ifBlank(outgoing.id.uuidString)
-    executionAction.parameters["_galaxyssi_contact_id"] = outgoing.contactId
-    executionAction.parameters["response_language"] = LanguagePolicySettings.resolve(
-      store.languagePolicy.responseLanguage
-    )
-    executionAction.parameters["_galaxyssi_workspace_id"] = AgentWorkspaceScope.id(
-      conversationId: outgoing.conversationId,
-      sessionId: task.sessionId
-    )
+    var executionAction = scopedLocalNativeExecutionAction(boundAction, outgoing: outgoing, task: task)
     var result = runtime.actionExecutor.execute(
       action: executionAction,
       screen: screen
@@ -9175,6 +9381,32 @@ final class MessageCoordinator: ObservableObject {
         fallbackTarget: action.target
       )
     }
+    finishLocalNativeAction(action: action, executionAction: executionAction, result: result,
+                            outgoing: outgoing, rollbackAction: rollbackAction, task: &task)
+    return true
+  }
+
+  private func scopedLocalNativeExecutionAction(
+    _ action: AgentAction, outgoing: ChatMessage, task: AgentTaskRecord
+  ) -> AgentAction {
+    var scoped = action
+    scoped.parameters["_galaxyssi_task_id"] = task.taskId
+    scoped.parameters["_galaxyssi_session_id"] = task.sessionId
+    scoped.parameters["_galaxyssi_conversation_id"] = outgoing.conversationId
+    scoped.parameters["_galaxyssi_turn_id"] = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    scoped.parameters["_galaxyssi_contact_id"] = outgoing.contactId
+    scoped.parameters["response_language"] = LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage)
+    scoped.parameters["_galaxyssi_workspace_id"] = AgentWorkspaceScope.id(
+      conversationId: outgoing.conversationId, sessionId: task.sessionId)
+    return scoped
+  }
+
+  private func finishLocalNativeAction(
+    action: AgentAction, executionAction: AgentAction, result: AgentActionResult,
+    outgoing: ChatMessage, rollbackAction: AgentAction?, task: inout AgentTaskRecord
+  ) {
+    let boundAction = AgentSupervisorRecoveryPolicy.restoreBinding(
+      action, history: supervisorHistory(task: task, outgoing: outgoing))
     AgentIOSNativeToolHandoffPresenter.openIfNeeded(result)
     let stepReply = localizedNativeToolReply(result).ifBlank(result.message)
       .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -9240,7 +9472,6 @@ final class MessageCoordinator: ObservableObject {
         await self?.continueRollingNativePlan(taskId: taskId, outgoing: outgoing)
       }
     }
-    return true
   }
 
   private func updateActiveNativePlan(
