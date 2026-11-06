@@ -18,8 +18,17 @@ class AgentProcessStatePolicyTest {
     }
 
     @Test fun anAttemptCompletionCannotCompleteTheWholeTurn() {
+        val suspended = mapOf(AgentWorkspaceStatus.WAITING_CONFIRMATION to AgentPhase.WAITING_CONFIRMATION,
+            AgentWorkspaceStatus.PAUSED to AgentPhase.PAUSED, AgentWorkspaceStatus.BLOCKED to AgentPhase.BLOCKED)
         for (status in AgentWorkspaceStatus.entries.filterNot { it.isTerminal }) {
-            assertTrue(status.name, AgentProcessClockPolicy.isRunning(AgentProcessClockPolicy.phase(status, AgentPhase.COMPLETED)))
+            val phase = AgentProcessClockPolicy.phase(status, AgentPhase.COMPLETED)
+            val expected = suspended[status]
+            if (expected != null) {
+                assertEquals(status.name, expected, phase)
+                assertFalse(status.name, AgentProcessClockPolicy.isRunning(phase))
+            } else {
+                assertTrue(status.name, AgentProcessClockPolicy.isRunning(phase))
+            }
         }
     }
 

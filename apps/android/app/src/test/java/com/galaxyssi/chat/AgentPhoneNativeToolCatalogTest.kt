@@ -110,6 +110,7 @@ class AgentPhoneNativeToolCatalogTest {
             addAll(AgentAndroidSystemNativeTools.toolIds)
             add(DoorAccessNativeTool.ID)
             add(CollaborationRecallNativeTool.ID)
+            add(AgentConversationRecallTool.ID)
             addAll(AgentSystemEvidenceNativeTools.toolIds)
             addAll(AgentPhoneUiNativeTools.toolIds)
             addAll(AgentMcpNativeTools.toolIds)

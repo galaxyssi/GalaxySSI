@@ -45,7 +45,7 @@ internal object AgentDeviceStatusShortcutCoverage {
             "(?:$subject)(?:\u591a\u5c11|\u72b6\u6001|\u72c0\u614b)?" +
             ")")
     }
-    private val READ_REQUEST = Regex("\\b(?:read|check|show|get|current|available|remaining|free|status|how much|if|when|unless)\\b|\u8bfb|\u8b80|\u67e5|\u5f53\u524d|\u7576\u524d|\u73b0\u5728|\u73fe\u5728|\u5269\u4f59|\u5269\u9918|\u53ef\u7528|\u591a\u5c11|\u72b6\u6001|\u72c0\u614b|\u5982\u679c")
+    private val READ_REQUEST = Regex("\\b(?:read|check|show|get|current|available|remaining|free|status|how much)\\b|\u8bfb|\u8b80|\u67e5|\u5f53\u524d|\u7576\u524d|\u73b0\u5728|\u73fe\u5728|\u5269\u4f59|\u5269\u9918|\u53ef\u7528|\u591a\u5c11|\u72b6\u6001|\u72c0\u614b")
     private val LIST_SEPARATOR = Regex("\\s+and\\s+|[,;\uff0c\uff1b\u3001]|\u4ee5\u53ca|\u548c|\u8207|\u4e0e")
     private val EXPLICIT_DESKTOP = Regex("\\b(?:computer|desktop|windows|macos)\\b|\u7535\u8111|\u96fb\u8166", RegexOption.IGNORE_CASE)
     private val SHORT_REPLY = Regex("(?:[,\uff0c]\\s*(?:\u8bf7|\u8acb)?(?:\u7b80\u77ed\u56de\u7b54|\u7b80\u77ed\u56de\u590d|\u7c21\u77ed\u56de\u7b54)|[,;]\\s*(?:please )?(?:reply briefly|answer briefly))$")

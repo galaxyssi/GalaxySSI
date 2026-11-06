@@ -366,7 +366,7 @@ print(json.dumps({'index':index,'original':json.loads(raw)}))
             with self.assertLogs("codex_tool_evidence_bridge", level="INFO") as logs:
                 self.assertIs(response, bridge_query(manager, request, client_route_id="private-route"))
             self.assertNotIn("private-", " ".join(logs.output))
-            self.assertIn("outcome=" + ("ready" if response else "rejected"), " ".join(logs.output))
+            self.assertIn("stage=lookup_" + ("ready" if response else "rejected"), " ".join(logs.output))
         manager.tool_evidence.query.side_effect = OSError("private-file-path")
         with self.assertLogs("codex_tool_evidence_bridge", level="WARNING") as logs:
             self.assertIsNone(bridge_query(manager, request, client_route_id="private-route"))
