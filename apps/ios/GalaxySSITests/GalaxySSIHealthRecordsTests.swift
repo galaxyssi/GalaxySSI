@@ -2519,6 +2519,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(row.id, 8)
     XCTAssertEqual(row.reading?.value, 61)
     XCTAssertEqual(row.reading?.measuredAt, ISO8601DateFormatter().date(from: "1904-01-02T12:00:00Z"))
+    XCTAssertEqual(row.excelDate1904, true)
+    XCTAssertNil(row.dateOnlyDecision)
     XCTAssertNil(GalaxySSIHealthXLSX.date(serial: 60, date1904: false, zone: utc))
     var damaged = data
     let cached = try XCTUnwrap(damaged.range(of: Data("<v>61</v>".utf8)))
@@ -2553,12 +2555,91 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let table = GalaxySSIHealthTableImport.Table(headers: ["Value", "Time"],
       rows: [["61", "2025-11-02T01:30:00-04:00"], ["62", "44500"]], rowNumbers: [4, 9],
       formulas: [[], []], date1904: false, isoDates: [[1], []])
-    let mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1,
+    var mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1,
       confirmedUnit: true, dateStyle: .excel, localZone: zone)
+    let unconfirmed = try GalaxySSIHealthTableImport.preview(table, mapping: mapping, current: [])
+    XCTAssertEqual(unconfirmed.map(\.status), [.ready, .missing])
+    XCTAssertEqual(unconfirmed.last?.needsDateOnlyTime, true)
+    mapping.dateOnlyMinute = 8 * 60 + 15
     let rows = try GalaxySSIHealthTableImport.preview(table, mapping: mapping, current: [])
     XCTAssertEqual(rows.map(\.status), [.ready, .ready])
     XCTAssertEqual(rows.first?.reading?.measuredAt, expected)
     XCTAssertEqual(rows.first?.rawDate, "2025-11-02T01:30:00-04:00")
+    XCTAssertNil(rows.first?.dateOnlyDecision)
+    XCTAssertEqual(rows.last?.dateOnlyDecision?.sourceDate, "44500")
+    XCTAssertEqual(rows.last?.dateOnlyDecision?.clock, "08:15")
+    XCTAssertEqual(rows.last?.excelDate1904, false)
+  }
+
+  func testTableDateOnlyFormatsRequireTimeAndKeepSourceOffsets() throws {
+    typealias Import = GalaxySSIHealthTableImport
+    let zone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+    let iso = ISO8601DateFormatter()
+    let formats: [(Import.DateStyle, String)] = [
+      (.iso, "2024-02-29"), (.day, "2024-02-29"), (.localMinute, "2024-02-29"), (.localTime, "2024-02-29"),
+      (.slashYearFirst, "2024/02/29"), (.slashDayFirst, "29/02/2024"), (.slashMonthFirst, "02/29/2024")
+    ]
+    var mapping = Import.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true, localZone: zone)
+    for (style, date) in formats {
+      let csv = Data("value,time\n61,\(date)\n".utf8)
+      let json = Data("[{\"value\":61,\"time\":\"\(date)\"}]".utf8)
+      for (data, isJSON) in [(csv, false), (json, true)] {
+        let table = try Import.parse(data, json: isJSON)
+        mapping.value = try XCTUnwrap(table.headers.firstIndex(of: "value"))
+        mapping.date = try XCTUnwrap(table.headers.firstIndex(of: "time"))
+        mapping.dateStyle = style
+        mapping.dateOnlyMinute = nil
+        let missing = try XCTUnwrap(Import.preview(table, mapping: mapping, current: []).first)
+        XCTAssertEqual(missing.status, .missing)
+        XCTAssertTrue(missing.needsDateOnlyTime)
+        mapping.dateOnlyMinute = 0
+        let ready = try XCTUnwrap(Import.preview(table, mapping: mapping, current: []).first)
+        XCTAssertEqual(ready.status, .ready)
+        XCTAssertEqual(ready.dateOnlyDecision?.sourceDate, date)
+        XCTAssertEqual(ready.dateOnlyDecision?.chosenMinute, 0)
+        XCTAssertEqual(ready.reading?.measuredAt, iso.date(from: "2024-02-29T05:00:00Z"))
+      }
+    }
+    mapping = Import.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true,
+                             localZone: zone, dateOnlyMinute: 90)
+    let table = Import.Table(headers: ["value", "time"], rows: [
+      ["61", "2024-02-29+08:00"], ["62", "2024-11-03"], ["63", "2024-02-30"], ["64", "2024-11-03T01:30:00-04:00"]
+    ])
+    let rows = try Import.preview(table, mapping: mapping, current: [])
+    XCTAssertEqual(rows.map(\.status), [.ready, .invalid, .invalid, .ready])
+    XCTAssertEqual(rows.first?.reading?.measuredAt, iso.date(from: "2024-02-28T17:30:00Z"))
+    XCTAssertEqual(rows.last?.reading?.measuredAt, iso.date(from: "2024-11-03T05:30:00Z"))
+    XCTAssertNil(rows.last?.dateOnlyDecision)
+    mapping.dateOnlyMinute = 150
+    let spring = Import.Table(headers: table.headers, rows: [["61", "2024-03-10"]])
+    XCTAssertEqual(try Import.preview(spring, mapping: mapping, current: []).first?.status, .invalid)
+  }
+
+  @MainActor
+  func testDateOnlyTableDecisionSurvivesEncryptedImportAndBatchUndo() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(),
+                                         isolatedFile: root.appendingPathComponent("records"))
+    let data = Data("value,time\n61,2024-02-29\n".utf8)
+    let utc = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+    var mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true, localZone: utc)
+    XCTAssertEqual(try records.importTable(data, name: "review.csv", json: false, mapping: mapping, expected: [.missing]), 0)
+    mapping.dateOnlyMinute = 495
+    XCTAssertEqual(try records.importTable(data, name: "review.csv", json: false, mapping: mapping,
+                                           expected: [.ready], retainOriginal: false), 1)
+    let archive = try records.load()
+    let batch = try XCTUnwrap(archive.tableBatches?.first)
+    let source = try XCTUnwrap(archive.current.first?.tableSource)
+    XCTAssertEqual(source.dateOnlyDecision?.sourceDate, "2024-02-29")
+    XCTAssertEqual(source.dateOnlyDecision?.clock, "08:15")
+    XCTAssertEqual(source.dateOnlyDecision?.resolvedTime, archive.current.first?.measuredAt)
+    XCTAssertTrue(batch.data.isEmpty)
+    XCTAssertThrowsError(try records.importTable(data, name: "review.csv", json: false,
+                                                 mapping: mapping, expected: [.ready]))
+    XCTAssertEqual(try records.undoTableBatch(batch.id), 1)
+    XCTAssertTrue(try records.load().current.isEmpty)
   }
 
   func testPaperEdgeSuggestionConvertsOriginAndRejectsClippedOrSmallRectangles() throws {
