@@ -88,7 +88,8 @@ enum AgentTaskRequirementAnalyzer {
       complexReasoning: complexReasoning,
       estimatedInputTokens: max(64, goal.count / 3),
       dataSensitivity: dataSensitivity,
-      executionHorizon: executionHorizon
+      executionHorizon: executionHorizon,
+      capabilitySource: .inferred
     )
   }
 

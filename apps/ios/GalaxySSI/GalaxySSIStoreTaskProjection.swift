@@ -17,6 +17,10 @@ extension GalaxySSIStore {
     agentWorkspaceStore.list().compactMap { workspace in
       let taskId = workspace.taskId.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !taskId.isEmpty else { return nil }
+      if workspace.eventJournal.last?.kind == AgentTaskEventKinds.localToolProjection,
+         agentTaskRecords.contains(where: { $0.taskId == taskId && $0.sessionId == workspace.sessionId }) {
+        return nil
+      }
       let routeKind = workspaceRouteKind(workspace)
       let locationKind = workspaceLocationKind(workspace, routeKind: routeKind)
       let runtimeKind = workspaceRuntimeKind(workspace, routeKind: routeKind, locationKind: locationKind)

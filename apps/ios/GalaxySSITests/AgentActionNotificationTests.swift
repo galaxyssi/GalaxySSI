@@ -2,6 +2,57 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentActionNotificationTests: XCTestCase {
+  func testPhoneTimerCheckpointKeepsGeneratedIdentityAndCountdownAcrossRelaunch() throws {
+    let name = "timer-checkpoint-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let secrets = InMemorySecretStore()
+    let store = AgentIOSTimerCheckpointStore(defaults: defaults, secrets: secrets)
+    guard case .new(let timer) = store.reserve(conversationId: "one", turnId: "turn", duration: 60, now: 1_000) else {
+      return XCTFail("Expected a new timer checkpoint")
+    }
+    XCTAssertTrue(store.update(conversationId: "one", id: timer.id, to: .scheduled))
+    let reopened = AgentIOSTimerCheckpointStore(defaults: defaults, secrets: secrets)
+    guard case .existing(let same) = reopened.reserve(conversationId: "one", turnId: "turn", duration: 60, now: 2_000) else {
+      return XCTFail("Retry must observe the existing timer")
+    }
+    XCTAssertEqual(same.id, timer.id)
+    XCTAssertEqual(same.evidence(now: 2_000)["remaining_seconds"], "59")
+    XCTAssertEqual(same.evidence(now: 61_000)["timer_state"], "elapsed")
+    XCTAssertNil(reopened.current(conversationId: "other"))
+
+    let executor = AgentIOSNativeActionExecutor(nowMillis: { 2_000 }, timerStore: reopened)
+    let scope = ["_galaxyssi_conversation_id": "one", "_galaxyssi_turn_id": "turn"]
+    let guessed = executor.execute(action: action(kind: .setAlarm, parameters: scope.merging([
+      "timer_seconds": "60", "operation_id": UUID().uuidString
+    ]) { _, new in new }), screen: screen())
+    XCTAssertFalse(guessed.success)
+    XCTAssertEqual(guessed.metadata["error_code"], "timer_operation_id_mismatch")
+    XCTAssertEqual(guessed.metadata["dispatch_accepted"], "false")
+    XCTAssertEqual(guessed.metadata["operation_id"], timer.id.uuidString)
+    XCTAssertEqual(reopened.current(conversationId: "one")?.id, timer.id)
+    let inspect = executor.execute(action: action(kind: .setAlarm, parameters: scope.merging([
+      "timer_operation": "inspect", "operation_id": timer.id.uuidString
+    ]) { _, new in new }), screen: screen())
+    XCTAssertTrue(inspect.success)
+    XCTAssertEqual(inspect.metadata["remaining_seconds"], "59")
+  }
+
+  func testPhoneToolCatalogAdvertisesTimerAndAppLaunchInputs() throws {
+    let descriptors = AgentPhoneNativeToolCatalog.descriptors()
+    let timer = try XCTUnwrap(descriptors.first {
+      $0.id == AgentNativeToolAgentActionAdapter.defaultToolId(.setAlarm)
+    })
+    let input = try XCTUnwrap(timer.inputSchema["properties"]?.objectValue)
+    for key in ["timer_seconds", "timer_operation", "operation_id", "hour", "minute", "label"] {
+      XCTAssertNotNil(input[key])
+    }
+    let app = try XCTUnwrap(descriptors.first {
+      $0.id == AgentNativeToolAgentActionAdapter.defaultToolId(.openApp)
+    })
+    XCTAssertNotNil(app.inputSchema["properties"]?.objectValue?["package"])
+  }
+
   func testIOSPresentationSuppressesProgressDismissesSuccessAndKeepsFailure() {
     XCTAssertEqual(AgentIOSUserNotificationPublisher.presentation(for: .running), .ignore)
     XCTAssertEqual(AgentIOSUserNotificationPublisher.presentation(for: .succeeded), .dismiss)

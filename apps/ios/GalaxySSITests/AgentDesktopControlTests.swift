@@ -517,6 +517,16 @@ extension GalaxySSIStoreTests {
     ))
   }
 
+  func testDesktopControlCanonicalDigestMatchesDesktopPython() {
+    let value: AgentMcpJSONObject = [
+      "contract_version": .string(AgentDesktopControlReceiptProtocol.contractVersion),
+      "image_mime": .string("image/jpeg"),
+      "text": .string("</tag>\u{2028}\u{2029}\u{0000}\n\t\\/\"\u{4e2d}\u{6587}")
+    ]
+    XCTAssertEqual(AgentDesktopControlReceiptProtocol.digest(value),
+                   "3d9f851b7ac913baa5dd80afd1ab6211245b17a0c0ad4e4a22bec2e841522744")
+  }
+
   func testAgentDesktopControlReceiptProtocolVerifiesSignedScreenshotEvidence() throws {
     let signerId = "desktop_test"
     let desktopSessionId = "sth_desktops_00000000000000000000000000000000"
@@ -660,12 +670,15 @@ extension GalaxySSIStoreTests {
       signature == signedDigest(payload)
     }
 
-    XCTAssertEqual(AgentDesktopControlReceiptProtocol.contractVersion, "galaxyssi.desktop-control/1.5")
+    XCTAssertEqual(AgentDesktopControlReceiptProtocol.contractVersion, "galaxyssi.desktop-control/1.6")
     XCTAssertEqual(AgentDesktopControlReceiptProtocol.receiptVersion, 4)
     XCTAssertEqual(pending.toolId, AgentDesktopControlAction.screenshot)
     XCTAssertEqual(pending.requestSha256.count, 64)
     XCTAssertEqual(pending.inputSha256.count, 64)
     XCTAssertTrue(AgentDesktopControlReceiptProtocol.verify(payload: receipt, context: context, verifier: verifier))
+    var wrongTool = context
+    wrongTool.pendingRequest?.toolId = AgentDesktopControlAction.perceive
+    XCTAssertFalse(AgentDesktopControlReceiptProtocol.verify(payload: receipt, context: wrongTool, verifier: verifier))
     let parsed = try XCTUnwrap(AgentDesktopControlReceipt.parse(receipt))
     XCTAssertEqual(parsed.controllerAppInstanceId, "galaxyssi:phone")
     XCTAssertEqual(parsed.controllerName, "Test iPhone")
@@ -901,7 +914,7 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(runs[1].resumable)
     XCTAssertTrue(runs[1].takeoverActive)
     XCTAssertEqual(runs[1].takeoverController, "iPhone")
-    XCTAssertEqual(AgentDesktopControlReceiptProtocol.contractVersion, "galaxyssi.desktop-control/1.5")
+    XCTAssertEqual(AgentDesktopControlReceiptProtocol.contractVersion, "galaxyssi.desktop-control/1.6")
     XCTAssertTrue(AgentDesktopControlAction.toolIds.contains(AgentDesktopControlAction.taskTakeover))
     XCTAssertEqual(pause.toolId, AgentDesktopControlAction.taskPause)
     XCTAssertNotEqual(pause.inputSha256, anotherTask.inputSha256)

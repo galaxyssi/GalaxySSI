@@ -9,6 +9,7 @@ struct ComposerAttachmentEditor: View {
   let attachment: GalaxySSIDraftAttachment
   let onReplace: (GalaxySSIDraftAttachment) -> Bool
   let onRemove: () -> Void
+  var compressedByteLimit = AgentImagePipeline.targetTransportBytes
   @State private var source: UIImage?
   @State private var preview: UIImage?
   @State private var crop = ComposerAttachmentCrop()
@@ -18,6 +19,8 @@ struct ComposerAttachmentEditor: View {
   @State private var finishAfterRetake = false
   @State private var saveTask: Task<Void, Never>?
   @State private var error = ""
+  @State private var quality = ComposerImageQuality.compressed
+  @State private var estimatedSize: Int?
 
   var body: some View {
     VStack(spacing: 12) {
@@ -45,8 +48,18 @@ struct ComposerAttachmentEditor: View {
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
     .onAppear {
       guard attachment.isImage, preview == nil else { return }
+      quality = attachment.composerImageQuality ?? .compressed
       source = ComposerAttachmentCrop.image(from: attachment.composerSourceData, maxPixelSize: 1_024)
       preview = ComposerAttachmentCrop.image(from: attachment.data, maxPixelSize: 1_024)
+    }
+    .task(id: quality) {
+      guard attachment.isImage else { return }
+      let selected = quality
+      estimatedSize = nil
+      let estimate = await ComposerAttachmentEstimateWorker.shared.estimate(
+        attachment, quality: selected, compressedByteLimit: compressedByteLimit)
+      guard !Task.isCancelled, quality == selected else { return }
+      estimatedSize = estimate
     }
     .onDisappear {
       saveTask?.cancel()
@@ -58,7 +71,11 @@ struct ComposerAttachmentEditor: View {
       CameraAttachmentPickerView(onAttachment: { replacement in
         var replacement = replacement
         replacement.id = attachment.id
-        finishAfterRetake = onReplace(replacement)
+        if let prepared = replacement.applyingComposerImageQuality(quality) {
+          finishAfterRetake = onReplace(prepared)
+        } else {
+          error = t("composer_attachment_quality_unavailable", "This image cannot be sent at the selected quality.")
+        }
         retake = false
       }, onCancel: { retake = false })
     }
@@ -106,9 +123,20 @@ struct ComposerAttachmentEditor: View {
   }
 
   private var previewActions: some View {
-    let count = 1 + (source != nil ? 1 : 0) + (attachment.composerOriginal != nil ? 1 : 0)
+    let count = 1 + (source != nil ? 1 : 0) + (attachment.composerCrop != nil ? 1 : 0)
     let columns = Array(repeating: GridItem(.flexible(minimum: 0), spacing: 0, alignment: .top), count: count)
     return VStack(spacing: 8) {
+      if attachment.isImage {
+        Picker(t("composer_attachment_quality", "Image quality"), selection: $quality) {
+          Text(t("composer_attachment_compressed", "Compressed")).tag(ComposerImageQuality.compressed)
+          Text(t("composer_attachment_original", "Original")).tag(ComposerImageQuality.original)
+        }
+        .pickerStyle(.segmented)
+        if let estimatedSize {
+          Text(GalaxySSIAttachmentPayloadBuilder.humanSize(estimatedSize))
+            .font(.footnote).monospacedDigit().foregroundColor(.secondary)
+        }
+      }
       LazyVGrid(columns: columns, spacing: 0) {
         if source != nil {
           Button {
@@ -122,13 +150,18 @@ struct ComposerAttachmentEditor: View {
         Button(role: .destructive) { onRemove(); dismiss() } label: {
           previewActionLabel(t("galaxyssi.common.delete", "Delete"), icon: "trash")
         }
-        if attachment.composerOriginal != nil {
+        if attachment.composerCrop != nil {
           Button {
-            if onReplace(attachment.restoringComposerOriginal()) { dismiss() }
+            confirm(attachment.restoringComposerOriginal())
           } label: {
-            previewActionLabel(t("composer_attachment_original", "Original"), icon: "photo")
+            previewActionLabel(t("composer_attachment_reset", "Reset"), icon: "arrow.counterclockwise")
           }
         }
+      }
+      if attachment.isImage {
+        Button(t("galaxyssi.common.done", "Done")) { confirm(attachment) }
+          .buttonStyle(.borderedProminent)
+          .disabled(preview == nil)
       }
       if attachment.sourceDescription == "camera",
          UIImagePickerController.isSourceTypeAvailable(.camera),
@@ -175,14 +208,21 @@ struct ComposerAttachmentEditor: View {
           crop.freeSelection = nil
         } label: { Image(systemName: "rotate.right").frame(width: 40, height: 40) }
           .accessibilityLabel(Text(t("composer_attachment_rotate", "Rotate")))
-        Button { crop.mirrored.toggle(); crop.freeSelection = nil } label: {
-          Image(systemName: "arrow.left.and.right").frame(width: 40, height: 40)
-        }
-        .accessibilityLabel(Text(t("composer_attachment_flip", "Flip")))
         Button { crop = ComposerAttachmentCrop() } label: {
           Image(systemName: "arrow.counterclockwise").frame(width: 40, height: 40)
         }
         .accessibilityLabel(Text(t("composer_attachment_reset", "Reset")))
+        Menu {
+          Button { crop.mirrored.toggle(); crop.freeSelection = nil } label: {
+            Label(t("composer_attachment_flip", "Flip"), systemImage: "arrow.left.and.right")
+          }
+          Button { crop.fineRotation = 0 } label: {
+            Label(t("composer_attachment_reset", "Reset"), systemImage: "arrow.counterclockwise")
+          }
+        } label: {
+          Image(systemName: "ellipsis").frame(width: 40, height: 40)
+        }
+        .accessibilityLabel(Text(t("galaxyssi.common.more", "More")))
       }
       HStack {
         Image(systemName: "rotate.right")
@@ -196,7 +236,7 @@ struct ComposerAttachmentEditor: View {
           preview = ComposerAttachmentCrop.image(from: attachment.data, maxPixelSize: 1_024)
         }
         Spacer()
-        Button(t("galaxyssi.common.save", "Save"), action: save)
+        Button(t("composer_attachment_use", "Use"), action: save)
           .buttonStyle(.borderedProminent)
       }
     }
@@ -220,13 +260,20 @@ struct ComposerAttachmentEditor: View {
       let rendered = await Task.detached(priority: .userInitiated) { requested.derivative(from: data) }.value
       guard !Task.isCancelled else { return }
       saveTask = nil
-      guard let rendered, let replacement = attachment.applyingComposerCrop(requested, derivative: rendered),
-            onReplace(replacement) else {
+      guard let rendered, let replacement = attachment.applyingComposerCrop(requested, derivative: rendered) else {
         error = t("composer_attachment_save_failed", "Could not save the crop")
         return
       }
-      dismiss()
+      confirm(replacement)
     }
+  }
+
+  private func confirm(_ candidate: GalaxySSIDraftAttachment) {
+    guard let replacement = candidate.applyingComposerImageQuality(quality), onReplace(replacement) else {
+      error = t("composer_attachment_quality_unavailable", "This image cannot be sent at the selected quality.")
+      return
+    }
+    dismiss()
   }
 
   private func aspectTitle(_ aspect: ComposerAttachmentCrop.Aspect) -> String {
@@ -241,6 +288,18 @@ struct ComposerAttachmentEditor: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     GalaxySSILocalization.string(key, fallback: fallback, language: language)
+  }
+}
+
+private actor ComposerAttachmentEstimateWorker {
+  static let shared = ComposerAttachmentEstimateWorker()
+
+  func estimate(_ attachment: GalaxySSIDraftAttachment, quality: ComposerImageQuality,
+                compressedByteLimit: Int) -> Int? {
+    guard !Task.isCancelled, let input = attachment.applyingComposerImageQuality(quality) else { return nil }
+    if quality == .original { return input.sizeBytes }
+    return AgentImagePipeline.encodeForTransport(input, byteLimit: compressedByteLimit,
+      compressedCap: compressedByteLimit)?.data.count
   }
 }
 

@@ -9,10 +9,12 @@ struct AttachmentPreviewStrip: View {
   var attachments: [GalaxySSIDraftAttachment]
   var scope: String
   var presentationBlocked: Bool
+  var compressedByteLimit = AgentImagePipeline.targetTransportBytes
   var onRemove: (GalaxySSIDraftAttachment) -> Void
   var onReplace: (String, GalaxySSIDraftAttachment, GalaxySSIDraftAttachment) -> Bool
   @State private var selection: Selection?
-  @State private var pendingID: String?
+  @State private var pendingIDs: [String] = []
+  @State private var reviewToDiscard: Selection?
 
   private struct Selection: Identifiable {
     let scope: String
@@ -21,20 +23,28 @@ struct AttachmentPreviewStrip: View {
   }
 
   private var previewCandidate: String? {
-    presentationBlocked || scenePhase != .active || selection != nil ? nil : pendingID
+    presentationBlocked || scenePhase != .active || selection != nil ? nil : pendingIDs.first
   }
 
   var body: some View {
     Group {
       if !attachments.isEmpty { strip }
     }
-    .sheet(item: $selection) { selection in
+    .sheet(item: $selection, onDismiss: {
+      guard let review = reviewToDiscard else { return }
+      reviewToDiscard = nil
+      guard review.scope == scope, attachments.contains(review.attachment) else { return }
+      onRemove(review.attachment)
+    }) { selection in
       ComposerAttachmentEditor(attachment: selection.attachment, onReplace: { edited in
-        onReplace(selection.scope, selection.attachment, edited)
+        guard scenePhase == .active, onReplace(selection.scope, selection.attachment, edited) else { return false }
+        reviewToDiscard = nil
+        return true
       }, onRemove: {
         guard scope == selection.scope, attachments.contains(selection.attachment) else { return }
+        reviewToDiscard = nil
         onRemove(selection.attachment)
-      })
+      }, compressedByteLimit: compressedByteLimit)
     }
     .onChange(of: scope) { _ in clearPreview() }
     .onChange(of: scenePhase) { phase in
@@ -45,18 +55,19 @@ struct AttachmentPreviewStrip: View {
     }
     .onChange(of: attachments.map(\.id)) { [previous = Set(attachments.map(\.id))] _ in
       if let selected = selection, !attachments.contains(selected.attachment) { selection = nil }
-      pendingID = attachments.last(where: {
-        !previous.contains($0.id) && ($0.sourceDescription == "camera" ||
-          $0.sourceDescription == "photo-library" || $0.sourceDescription.hasPrefix("file:"))
-      })?.id
+      let available = Set(attachments.map(\.id))
+      pendingIDs.removeAll { !available.contains($0) }
+      pendingIDs += attachments.filter { !previous.contains($0.id) && $0.requiresInitialComposerImageReview }.map(\.id)
     }
     .task(id: previewCandidate) {
       guard let candidate = previewCandidate else { return }
       // The system picker must finish dismissing before presenting the editor.
       try? await Task.sleep(nanoseconds: 400_000_000)
       guard !Task.isCancelled, let attachment = attachments.first(where: { $0.id == candidate }) else { return }
-      pendingID = nil
-      selection = Selection(scope: scope, attachment: attachment)
+      pendingIDs.removeAll { $0 == candidate }
+      let review = Selection(scope: scope, attachment: attachment)
+      reviewToDiscard = review
+      selection = review
     }
   }
 
@@ -66,8 +77,10 @@ struct AttachmentPreviewStrip: View {
         HStack(spacing: 8) {
           ForEach(attachments) { attachment in
             AttachmentPreviewChip(attachment: attachment, onPreview: {
-              pendingID = nil
-              selection = Selection(scope: scope, attachment: attachment)
+              pendingIDs.removeAll { $0 == attachment.id }
+              let review = Selection(scope: scope, attachment: attachment)
+              reviewToDiscard = attachment.requiresInitialComposerImageReview ? review : nil
+              selection = review
             }) {
               onRemove(attachment)
             }
@@ -88,7 +101,8 @@ struct AttachmentPreviewStrip: View {
   }
 
   private func clearPreview() {
-    pendingID = nil
+    pendingIDs = []
+    reviewToDiscard = nil
     selection = nil
   }
 
@@ -722,8 +736,15 @@ struct CameraAttachmentPickerView: UIViewControllerRepresentable {
       didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
     ) {
       defer { picker.dismiss(animated: true) }
+      if let url = info[.imageURL] as? URL,
+         var attachment = try? GalaxySSIAttachmentPayloadBuilder.makeAttachment(from: url),
+         attachment.isImage {
+        attachment.sourceDescription = "camera"
+        onAttachment(attachment)
+        return
+      }
       guard let image = info[.originalImage] as? UIImage,
-            let data = image.jpegData(compressionQuality: 0.9) else {
+            let data = image.jpegData(compressionQuality: 1) else {
         onCancel()
         return
       }

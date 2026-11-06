@@ -1,5 +1,39 @@
 import Foundation
 
+struct AgentManualCloudBinding: Codable, Equatable {
+  let contactId: String
+  let modelId: String
+  let routeSha256: String
+  let hadAttachments: Bool
+
+  init?(contact: GalaxySSIContact, hadAttachments: Bool) {
+    guard contact.deliveryMode == .cloudAPI, let model = contact.selectedCloudModel else { return nil }
+    self.contactId = contact.id
+    self.modelId = model.modelId
+    self.routeSha256 = Self.routeFingerprint(contact: contact, model: model)
+    self.hadAttachments = hadAttachments
+  }
+
+  func resolve(contact: GalaxySSIContact?, apiKey: (CloudModelConfig) -> String?) -> GalaxySSIContact? {
+    guard let contact, contact.id == contactId, !contact.deleted, contact.deliveryMode == .cloudAPI,
+          let model = CloudModelRequestRoutingPolicy.model(in: contact, modelId: modelId),
+          Self.routeFingerprint(contact: contact, model: model) == routeSha256,
+          AgentConnectorAvailability.cloudModelReady(model: model, apiKey: apiKey(model),
+            provider: contact.cloudProvider, setupStatus: contact.setupStatus) else { return nil }
+    var selected = contact
+    selected.cloudModels = CloudModelRequestRoutingPolicy.models(for: contact)
+    selected.selectedCloudModelId = modelId
+    return selected
+  }
+
+  private static func routeFingerprint(contact: GalaxySSIContact, model: CloudModelConfig) -> String {
+    AgentModelLoopRecoveryIdentity.sha256([
+      "contact": contact.id, "provider": contact.cloudProvider, "model": model.modelId,
+      "endpoint": model.endpoint, "api_style": model.apiStyle.rawValue
+    ])
+  }
+}
+
 enum CloudModelRequestRoutingPolicy {
   static let deepSeekV4Pro = "deepseek-v4-pro"
   static let deepSeekV4Flash = "deepseek-v4-flash"

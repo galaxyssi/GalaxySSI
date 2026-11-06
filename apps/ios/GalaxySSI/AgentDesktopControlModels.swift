@@ -1250,7 +1250,7 @@ typealias AgentDesktopControlReceiptSignatureVerifier = (
 ) -> Bool
 
 enum AgentDesktopControlReceiptProtocol {
-  static let contractVersion = "galaxyssi.desktop-control/1.5"
+  static let contractVersion = "galaxyssi.desktop-control/1.6"
   static let receiptVersion = 4
 
   static func pendingRequest(
@@ -1326,6 +1326,7 @@ enum AgentDesktopControlReceiptProtocol {
 
     if let pending = context.pendingRequest {
       guard pending.actionId == payload.string("action_id"),
+            pending.toolId == payload.string("tool_id"),
             pending.desktopSessionId == payload.string("desktop_session_id"),
             pending.requestSha256 == requestSha256,
             pending.inputSha256 == inputSha256 else {
@@ -1412,13 +1413,17 @@ enum AgentDesktopControlReceiptProtocol {
     return verifier(
       signerId,
       signatureKeyId,
-      Data(AgentMcpJSONCodec.stringify(signedFields).utf8),
+      canonicalData(signedFields),
       payload.string("signature")
     )
   }
 
   static func digest(_ object: AgentMcpJSONObject) -> String {
-    AgentMcpJSONCodec.sha256(object)
+    digest(canonicalData(object))
+  }
+
+  private static func canonicalData(_ object: AgentMcpJSONObject) -> Data {
+    Data(AgentMcpJSONCodec.stringify(object).utf8)
   }
 
   static func digest(_ data: Data) -> String {

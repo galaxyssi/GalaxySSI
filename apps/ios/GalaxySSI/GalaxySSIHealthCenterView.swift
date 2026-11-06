@@ -173,7 +173,9 @@ struct GalaxySSIHealthCenterView: View {
         Label(t("privacy.title", "Health Privacy"), systemImage: "lock.shield")
       }
       NavigationLink {
-        GalaxySSIHealthAssistantView(records: records)
+        GalaxySSIHealthAssistantView(records: records) { metric in
+          editor = (try? records.load())?.draft ?? GalaxySSIHealthDraft(metric: metric ?? .bloodPressure)
+        }
       } label: {
         Label(t("assistant.title", "Health Assistant"), systemImage: "chart.bar.xaxis")
       }

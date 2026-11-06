@@ -45,12 +45,8 @@ enum AgentIOSDynamicWebRenderError: Error, Equatable {
 
 enum AgentIOSDynamicWebFallbackPolicy {
   static func reason(contentType: String, body: Data) -> String? {
-    let source = String(decoding: body.prefix(300_000), as: UTF8.self)
-    let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
-    let isHTML = contentType.localizedCaseInsensitiveContains("html") ||
-      trimmed.lowercased().hasPrefix("<!doctype html") ||
-      trimmed.lowercased().hasPrefix("<html")
-    guard isHTML else { return nil }
+    let source = AgentIOSWebTextDecoder.decode(body.prefix(300_000), contentType: contentType).text
+    guard AgentIOSWebTextDecoder.isHTML(contentType: contentType, textPrefix: String(source.prefix(256))) else { return nil }
     let lower = source.lowercased()
     if javascriptRequiredMarkers.contains(where: lower.contains) { return "javascript_required" }
     if managedChallengeMarkers.contains(where: lower.contains) { return "managed_challenge" }

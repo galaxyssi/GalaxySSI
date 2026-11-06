@@ -22,6 +22,7 @@ enum AgentImagePipeline {
   static func encodeForTransport(
     _ attachment: GalaxySSIDraftAttachment,
     byteLimit: Int = targetTransportBytes,
+    compressedCap: Int = targetTransportBytes,
     taskId: String = "",
     timing: AgentRuntimeTiming = AgentLatencyTelemetry.runtime
   ) -> AgentTransportImage? {
@@ -33,6 +34,7 @@ enum AgentImagePipeline {
       prepareForTransport(
         attachment,
         byteLimit: byteLimit,
+        compressedCap: compressedCap,
         taskId: taskId,
         timing: timing
       )
@@ -42,11 +44,17 @@ enum AgentImagePipeline {
   private static func prepareForTransport(
     _ attachment: GalaxySSIDraftAttachment,
     byteLimit: Int,
+    compressedCap: Int,
     taskId: String,
     timing: AgentRuntimeTiming
   ) -> AgentTransportImage? {
-    let target = min(byteLimit, targetTransportBytes)
-    guard attachment.isImage, target >= minimumTransportBudget else { return nil }
+    guard attachment.isImage, !attachment.data.isEmpty else { return nil }
+    if attachment.composerImageQuality == .original {
+      guard attachment.data.count <= min(byteLimit, ComposerImageQuality.maximumOriginalBytes) else { return nil }
+      return .init(data: attachment.data, mimeType: attachment.mimeType, lossless: true, width: 0, height: 0)
+    }
+    let target = min(byteLimit, compressedCap)
+    guard target >= minimumTransportBudget else { return nil }
     let original = timing.measure(
       taskId: taskId,
       phase: .imageOriginalProbe

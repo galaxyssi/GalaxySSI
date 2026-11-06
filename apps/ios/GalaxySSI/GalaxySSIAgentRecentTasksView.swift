@@ -191,6 +191,10 @@ struct GalaxySSIAgentRecentTasksView: View {
 
   private func handleAction(_ action: AgentTaskCenterAction, task: AgentTaskRecord) {
     switch action {
+    case .pause:
+      statusText = coordinator.pauseLocalNativeAction(taskId: task.taskId)
+        ? t("galaxyssi.agent.task_control.paused", "Task paused")
+        : t("galaxyssi.agent.task_control.pause_failed", "This task could not be paused")
     case .cancel:
       cancelTask(task)
     case .resume:
@@ -446,6 +450,8 @@ struct GalaxySSIAgentRecentTasksView: View {
 
   private func actionLabel(_ action: AgentTaskCenterAction) -> String {
     switch action {
+    case .pause:
+      return t("galaxyssi.agent.task_control.pause", "Pause task")
     case .cancel:
       return t("galaxyssi.common.cancel_task", "Cancel task")
     case .resume:

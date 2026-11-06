@@ -423,6 +423,7 @@ final class VoiceProgressiveReplySpeechService: ObservableObject {
   private var reportedPlaybackStart = false
   private var onPlaybackStarted: ((VoiceReplyPlaybackRequest) -> Void)?
   private var onDone: ((VoiceReplyPlaybackRequest, Bool, String?) -> Void)?
+  private var onParagraphStarted: ((Int) -> Void)?
 
   init(inner: VoiceReplySpeechService = VoiceReplySpeechService()) {
     self.inner = inner
@@ -485,6 +486,23 @@ final class VoiceProgressiveReplySpeechService: ObservableObject {
     appendProgressive("", isFinal: true)
   }
 
+  func appendDocumentParagraphs(_ paragraphs: ArraySlice<String>, onParagraphStarted: @escaping (Int) -> Void) {
+    guard activeRequest != nil, nextChunkIndex == 0, inputBuffer.isEmpty, !inputClosed else { return }
+    self.onParagraphStarted = onParagraphStarted
+    for index in paragraphs.indices {
+      let chunks = PublicNewsTranslation.parts(paragraphs[index]).flatMap {
+        VoiceProgressiveSentenceChunker.split($0, final: true).committed
+      }
+      for (offset, text) in chunks.enumerated() {
+        nextChunkIndex += 1
+        queuedChunks.append(QueuedChunk(index: nextChunkIndex, text: text, paragraph: offset == 0 ? index : nil))
+      }
+    }
+    inputClosed = true
+    prefetchEdgeChunks()
+    pump()
+  }
+
   @MainActor
   func commitProgressive() {
     guard activeRequest != nil else { return }
@@ -527,6 +545,7 @@ final class VoiceProgressiveReplySpeechService: ObservableObject {
     paused = false
     onPlaybackStarted = nil
     onDone = nil
+    onParagraphStarted = nil
     let hadInnerPlayback = inner.stop()
     if let request {
       done?(request, false, "Speech playback was cancelled")
@@ -589,6 +608,7 @@ final class VoiceProgressiveReplySpeechService: ObservableObject {
         self.reportedPlaybackStart = true
         self.onPlaybackStarted?(baseRequest)
       }
+      if let paragraph = chunk.paragraph { self.onParagraphStarted?(paragraph) }
     }
     let completed: (VoiceReplyPlaybackRequest, Bool, String?) -> Void = { [weak self] _, success, error in
       guard let self else { return }
@@ -681,6 +701,7 @@ final class VoiceProgressiveReplySpeechService: ObservableObject {
   private struct QueuedChunk: Equatable {
     var index: Int
     var text: String
+    var paragraph: Int? = nil
   }
 
   private func chunkFinished(
@@ -716,6 +737,7 @@ final class VoiceProgressiveReplySpeechService: ObservableObject {
     paused = false
     onPlaybackStarted = nil
     onDone = nil
+    onParagraphStarted = nil
     done?(request, success, error)
   }
 }

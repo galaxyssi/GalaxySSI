@@ -54,6 +54,20 @@ final class GalaxySSISignalEngine {
     return identityKeySignature(payload)?.base64EncodedString()
   }
 
+  func verifyPairedDesktopSignature(
+    _ payload: Data, signature: String, envelope: [String: Any], link: ServerLink
+  ) -> Bool {
+    let sender = envelope.string("from")
+    guard link.paired, envelope.string("scheme") == "signal", !sender.isEmpty,
+          sender == link.signalName || sender == link.desktopId,
+          let deviceID = try? signalDeviceID(envelope),
+          let address = try? ProtocolAddress(name: sender, deviceId: deviceID),
+          let identity = try? store.identity(for: address, context: context) else { return false }
+    let serialized = identity.serialize()
+    guard Self.sha256(serialized) == link.desktopFingerprint.lowercased() else { return false }
+    return Self.verifyContactCard(publicKey: serialized.base64EncodedString(), payload: payload, signature: signature)
+  }
+
   static func verifyContactCard(
     publicKey: String,
     payload: Data,
@@ -403,6 +417,9 @@ final class GalaxySSISignalEngine {
        secrets: GalaxySSISecretStore = KeychainSecretStore.shared) throws { throw MqttRouteError.invalidPayload }
   var identity: GalaxySSISignalIdentity { GalaxySSISignalIdentity(name: "", fingerprint: "", publicKey: "", bundle: nil) }
   func signContactCard(_ payload: Data) -> String? { nil }
+  func verifyPairedDesktopSignature(
+    _ payload: Data, signature: String, envelope: [String: Any], link: ServerLink
+  ) -> Bool { false }
   static func verifyContactCard(publicKey: String, payload: Data, signature: String) -> Bool { false }
   static func bundleIdentityFingerprint(_ bundle: [String: Any]) -> String? { nil }
   func localBundle() -> [String: Any]? { nil }

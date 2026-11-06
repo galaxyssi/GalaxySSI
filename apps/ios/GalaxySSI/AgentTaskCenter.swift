@@ -2,6 +2,7 @@ import Foundation
 
 enum AgentTaskCenterAction: String, Codable, CaseIterable, Identifiable {
   case cancel = "CANCEL"
+  case pause = "PAUSE"
   case resume = "RESUME"
   case retry = "RETRY"
   case inspectEffect = "INSPECT_EFFECT"
@@ -20,6 +21,7 @@ enum AgentTaskCenterActionPresentation {
   ) -> String {
     switch action {
     case .cancel: return t("galaxyssi.common.cancel_task", "Cancel task")
+    case .pause: return t("galaxyssi.agent.task_control.pause", "Pause task")
     case .resume: return t("galaxyssi.common.resume", "Resume")
     case .retry: return t("galaxyssi.common.retry", "Retry")
     case .inspectEffect: return t("galaxyssi.agent.effect_recovery.inspect", "Inspect or re-plan")
@@ -33,6 +35,7 @@ enum AgentTaskCenterActionPresentation {
   static func icon(_ action: AgentTaskCenterAction) -> String {
     switch action {
     case .cancel: return "xmark.circle"
+    case .pause: return "pause.fill"
     case .resume: return "play.fill"
     case .retry: return "arrow.clockwise"
     case .inspectEffect: return "magnifyingglass"
@@ -59,6 +62,7 @@ protocol AgentTaskStore: AnyObject {
 enum AgentTaskCenterPolicy {
   static func actions(_ task: AgentTaskRecord) -> [AgentTaskCenterAction] {
     var actions: [AgentTaskCenterAction] = []
+    if task.capturePermission != nil, pauseable(task) { actions.append(.pause) }
     if resumable(task) {
       actions.append(.resume)
     }
@@ -89,12 +93,14 @@ enum AgentTaskCenterPolicy {
   }
 
   static func resumable(_ task: AgentTaskRecord) -> Bool {
-    task.phase == .paused &&
+    if let wait = task.capturePermission { return task.phase == .paused && !wait.dispatched }
+    return task.phase == .paused &&
       (task.pendingAction != nil || !task.pendingActions.isEmpty)
   }
 
   static func pauseable(_ task: AgentTaskRecord) -> Bool {
-    [.planning, .waitingConfirmation, .executing, .verifying].contains(task.phase) &&
+    if let wait = task.capturePermission { return task.phase == .waitingResponse && !wait.dispatched }
+    return [.planning, .waitingConfirmation, .executing, .verifying].contains(task.phase) &&
       (task.pendingPlanning != nil || task.pendingAction != nil || !task.pendingActions.isEmpty)
   }
 

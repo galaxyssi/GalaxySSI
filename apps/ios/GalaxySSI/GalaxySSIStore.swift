@@ -339,10 +339,12 @@ final class GalaxySSIStore: ObservableObject {
   private let phoneContactCardsKey = "galaxyssi.phone_contact_cards"
   private let homeAssistantAccessTokenAccount = "home_assistant.access_token"
   private var runtimePlaintextCleared = false
+  var canRestoreMessageViewport: Bool { !runtimePlaintextCleared }
   var canReadVoiceReminderSnapshot: Bool { !runtimePlaintextCleared }
   private var suppressMessageDatabaseSync = false
 
-  init(defaults: UserDefaults = .standard, secrets: GalaxySSISecretStore = KeychainSecretStore.shared) {
+  init(defaults: UserDefaults = .standard, secrets: GalaxySSISecretStore = KeychainSecretStore.shared,
+       workspaceStore: AgentWorkspaceStore = FileAgentWorkspaceStore()) {
     defaults.removeObject(forKey: "galaxyssi.phone_contact_cards")
     defaults.removeObject(forKey: "galaxyssi.phone_contact_inbox_route")
     self.defaults = defaults
@@ -368,7 +370,7 @@ final class GalaxySSIStore: ObservableObject {
     let preferenceModeStore = AgentPreferenceModeStore(defaults: defaults)
     self.memoryDeletionIndex = deletionIndex
     self.agentMemoryStore = memoryStore
-    self.agentWorkspaceStore = FileAgentWorkspaceStore()
+    self.agentWorkspaceStore = workspaceStore
     self.agentPreferenceModeStore = preferenceModeStore
     self.workflowExecutionHistoryStore = AgentWorkflowExecutionHistoryStore(defaults: defaults)
     let taskHistoryPersistence = AgentTaskHistoryPersistence(defaults: defaults, secrets: secrets)
@@ -680,22 +682,42 @@ final class GalaxySSIStore: ObservableObject {
     before message: ChatMessage? = nil,
     pageSize: Int = GalaxySSIChatHistoryDatabase.defaultPageSize
   ) -> GalaxySSIChatHistoryPage {
-    let cursor = message.map {
-      GalaxySSIChatHistoryCursor(
-        createdAtMillis: Self.millis($0.createdAt),
-        messageId: $0.id.uuidString
-      )
-    }
+    let cursor = message.map(GalaxySSIChatHistoryCursor.init)
     let page = chatHistoryDatabase.page(
       contactId: contactId,
       conversationId: conversationId,
       before: cursor,
       pageSize: pageSize
     )
-    guard !page.messages.isEmpty else { return page }
+    mergeMessageViewport(page.messages, contactId: contactId)
+    return page
+  }
+
+  func loadNewerMessagePage(contactId: String, conversationId: String?, after cursor: GalaxySSIChatHistoryCursor,
+                            pageSize: Int = 100) -> GalaxySSIChatHistoryPage {
+    let page = chatHistoryDatabase.page(contactId: contactId, conversationId: conversationId,
+                                       after: cursor, pageSize: pageSize)
+    mergeMessageViewport(page.messages, contactId: contactId)
+    return page
+  }
+
+  func restoreMessageViewport(contactId: String, conversationId: String?, around anchor: GalaxySSIChatHistoryCursor)
+    -> (oldest: GalaxySSIChatHistoryCursor, newest: GalaxySSIChatHistoryCursor?, hasOlder: Bool)? {
+    guard let id = UUID(uuidString: anchor.messageId), let center = chatHistoryDatabase.message(id: id),
+          center.contactId == contactId, conversationId == nil || center.conversationId == conversationId,
+          GalaxySSIChatHistoryCursor(center) == anchor else { return nil }
+    let older = chatHistoryDatabase.page(contactId: contactId, conversationId: conversationId, before: anchor, pageSize: 24)
+    let newer = chatHistoryDatabase.page(contactId: contactId, conversationId: conversationId, after: anchor, pageSize: 48)
+    let window = older.messages + [center] + newer.messages
+    mergeMessageViewport(window, contactId: contactId)
+    return (window.first.map(GalaxySSIChatHistoryCursor.init) ?? anchor, newer.nextCursor, older.hasMore)
+  }
+
+  private func mergeMessageViewport(_ window: [ChatMessage], contactId: String) {
+    guard !window.isEmpty else { return }
     var merged = messagesByContact[contactId] ?? []
     let existing = Set(merged.map(\.id))
-    merged += page.messages.filter { !existing.contains($0.id) }
+    merged += window.filter { !existing.contains($0.id) }
     suppressMessageDatabaseSync = true
     messagesByContact[contactId] = merged.sorted { left, right in
       left.createdAt == right.createdAt
@@ -703,7 +725,6 @@ final class GalaxySSIStore: ObservableObject {
         : left.createdAt < right.createdAt
     }
     suppressMessageDatabaseSync = false
-    return page
   }
 
   func attachmentRecoveryPage(conversationId: String, before: GalaxySSIChatHistoryCursor?) -> GalaxySSIChatHistoryPage {
@@ -750,8 +771,24 @@ final class GalaxySSIStore: ObservableObject {
     agentReplyUnreadStore.count(conversationId: conversationId)
   }
 
-  func markAgentRepliesRead(conversationId: String, rendered: [ChatMessage]) {
-    agentReplyUnreadStore.read(conversationId: conversationId, rendered: rendered)
+  func markAgentRepliesRead(
+    conversationId: String, rendered: [ChatMessage], through cursor: GalaxySSIChatHistoryCursor? = nil
+  ) {
+    agentReplyUnreadStore.read(conversationId: conversationId, rendered: rendered, through: cursor)
+  }
+
+  func markLegacyAgentRepliesRead(through boundary: AgentReplyUnreadPolicy.Boundary) async {
+    var cursor: GalaxySSIChatHistoryCursor? = boundary.cursor
+    while let before = cursor,
+          !Task.isCancelled, activeAgentConversationId == boundary.conversationId,
+          agentReplyUnreadStore.hasLegacyPending(conversationId: boundary.conversationId) {
+      let page = chatHistoryDatabase.page(
+        contactId: "hermes", conversationId: boundary.conversationId, before: before, pageSize: 48
+      )
+      agentReplyUnreadStore.readLegacyPage(conversationId: boundary.conversationId, messages: page.messages)
+      cursor = page.nextCursor
+      await Task.yield()
+    }
   }
 
   func removeAgentReplyUnreadConversations(_ ids: Set<String>) {
@@ -1352,6 +1389,71 @@ final class GalaxySSIStore: ObservableObject {
       suppressMessageDatabaseSync = true
       messagesByContact[message.contactId] = cached
       suppressMessageDatabaseSync = previous
+    }
+    return true
+  }
+
+  @discardableResult
+  func reconcileCloudDispatches(sourceId: UUID? = nil) -> Int {
+    var count = 0
+    for receipt in chatHistoryDatabase.pendingCloudDispatches(sourceId: sourceId) {
+      guard !AgentCloudDispatchRegistry.shared.contains(receipt.identity) else { continue }
+      guard var source = chatHistoryDatabase.message(id: receipt.sourceId) else {
+        if chatHistoryDatabase.isDeletedCloudDispatchSource(receipt),
+           chatHistoryDatabase.retireCloudDispatch(receipt) { count += 1 }
+        continue
+      }
+      guard receipt.matchesSource(source) else { continue }
+      if let session = agentSession(id: receipt.conversationId), session.privateMode || session.trackingPaused { continue }
+      guard let replies = chatHistoryDatabase.cloudDispatchReplies(receipt) else { continue }
+      let completed = replies.contains(where: receipt.isCommittedReply)
+      let interruption = GalaxySSILocalization.string(
+        "galaxyssi.agent.cloud_request_interrupted",
+        fallback: "The previous cloud request was interrupted. It was not sent again.",
+        language: languagePolicy.interfaceLanguage
+      )
+      let stage = sourceId == nil ? "cloud_request_interrupted" : "cloud_error"
+      let partialDetail = sourceId == nil ? interruption : (source.deliveryTrace.last?.detail ?? interruption)
+      var savedPartials = true
+      for var partial in replies where receipt.isPartialReply(partial) {
+        partial.deliveryStatus = .failed
+        partial.deliveryTrace.append(DeliveryTraceEvent(stage: stage, detail: partialDetail))
+        if !persistRecoveredCloudMessage(partial) { savedPartials = false }
+      }
+      guard savedPartials else { continue }
+      if completed && ![.delivered, .read].contains(source.deliveryStatus) {
+        source.deliveryStatus = .delivered
+        source.deliveryTrace.append(DeliveryTraceEvent(stage: "cloud_reply", detail: receipt.modelId))
+        guard persistRecoveredCloudMessage(source) else { continue }
+      } else if !completed && source.deliveryStatus != .failed {
+        source.deliveryStatus = .failed
+        source.deliveryTrace.append(DeliveryTraceEvent(stage: stage, detail: interruption))
+        guard persistRecoveredCloudMessage(source) else { continue }
+      }
+      if chatHistoryDatabase.retireCloudDispatch(receipt) { count += 1 }
+    }
+    return count
+  }
+
+  func bindManualCloudRequest(_ binding: AgentManualCloudBinding, to outgoing: ChatMessage) -> Bool {
+    guard var messages = messagesByContact[outgoing.contactId],
+          let index = messages.firstIndex(where: { $0.id == outgoing.id && $0.isMine &&
+            $0.conversationId == outgoing.conversationId && $0.turnId == outgoing.turnId }) else { return false }
+    if let existing = messages[index].manualCloudBinding, existing != binding { return false }
+    messages[index].manualCloudBinding = binding
+    messagesByContact[outgoing.contactId] = messages
+    return persistedMessage(id: outgoing.id, contactId: outgoing.contactId)?.manualCloudBinding == binding
+  }
+
+  private func persistRecoveredCloudMessage(_ message: ChatMessage) -> Bool {
+    guard chatHistoryDatabase.upsert(message) else { return false }
+    if !runtimePlaintextCleared, var cached = messagesByContact[message.contactId],
+       let index = cached.firstIndex(where: { $0.id == message.id }) {
+      cached[index] = message
+      let previous = suppressMessageDatabaseSync
+      suppressMessageDatabaseSync = true
+      defer { suppressMessageDatabaseSync = previous }
+      messagesByContact[message.contactId] = cached
     }
     return true
   }

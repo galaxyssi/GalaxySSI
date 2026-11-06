@@ -47,6 +47,7 @@ struct GalaxySSIDesktopControlView: View {
               mqttConnected: coordinator.mqttClient.isConnected,
               t: t
             )
+            .id(link.desktopId)
           } else {
             noPairedComputerSection
           }
@@ -150,11 +151,13 @@ private struct GalaxySSIDesktopControlDetail: View {
   var mqttConnected: Bool
   var t: (String, String) -> String
   @State private var statusMessage = ""
+  @State private var requestFailed = false
   @State private var streamFps = 1
   @State private var textInput = ""
   @State private var filePathInput = ""
   @State private var showingTextInput = false
   @State private var showingFileInput = false
+  @State private var statusRequestId: String?
 
   private var authorized: Bool {
     link.paired && coordinator.desktopControlSnapshot(for: link).authorized
@@ -177,9 +180,9 @@ private struct GalaxySSIDesktopControlDetail: View {
         GalaxySSIDesktopControlRow(
           title: t("desktop_control_latest_action", "Latest action"),
           subtitle: statusMessage,
-          systemImage: "checkmark.circle",
-          tint: .galaxySSIAccent,
-          badge: t("galaxyssi.status.ready", "Ready"),
+          systemImage: requestFailed ? "exclamationmark.circle" : "checkmark.circle",
+          tint: requestFailed ? .orange : .galaxySSIAccent,
+          badge: requestFailed ? t("galaxyssi.status.error", "Error") : t("galaxyssi.status.ready", "Ready"),
           showsDisclosure: false
         )
       }
@@ -268,30 +271,11 @@ private struct GalaxySSIDesktopControlDetail: View {
 
   private var displaySection: some View {
     section(t("desktop_control_live_display", "Remote display")) {
-      ZStack {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .fill(Color.black.opacity(0.86))
-        VStack(spacing: 10) {
-          if let data = snapshot.screenshot?.jpegBytes, let image = UIImage(data: data) {
-            Image(uiImage: image)
-              .resizable()
-              .scaledToFit()
-              .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-          } else {
-            Image(systemName: authorized ? "display" : "lock.shield")
-              .font(.system(size: 34, weight: .semibold))
-              .foregroundColor(.galaxySSITextSecondary)
-            Text(displayPlaceholder)
-              .font(.system(size: 14, weight: .semibold))
-              .foregroundColor(.galaxySSITextSecondary)
-              .multilineTextAlignment(.center)
-              .padding(.horizontal, 16)
-          }
-        }
-      }
-      .frame(maxWidth: .infinity)
-      .aspectRatio(16.0 / 10.0, contentMode: .fit)
-      .accessibilityLabel(t("desktop_control_screen_content_description", "Encrypted desktop screenshot"))
+      GalaxySSIDesktopControlPreview(
+        link: link, screenshot: snapshot.screenshot, authorized: authorized, placeholder: displayPlaceholder,
+        accessibilityTitle: t("desktop_control_screen_content_description", "Encrypted desktop screenshot")
+      )
+      .id(link.desktopId)
       GalaxySSIDesktopControlActionRow(
         title: t("desktop_control_refresh_screen", "Refresh screen"),
         subtitle: t("desktop_control_refresh_screen_subtitle", "Capture a compressed desktop snapshot"),
@@ -527,14 +511,19 @@ private struct GalaxySSIDesktopControlDetail: View {
 
   private func send(_ request: AgentDesktopControlActionRequest?) {
     guard let request else {
+      statusRequestId = nil
+      requestFailed = true
       statusMessage = t("desktop_control_request_unavailable", "Desktop session unavailable")
       return
     }
-    statusMessage = t("desktop_control_request_sent", "Encrypted request sent")
+    statusRequestId = request.actionId
+    statusMessage = ""
     Task { @MainActor in
-      if !(await coordinator.sendDesktopControl(request, link: link)) {
-        statusMessage = t("desktop_control_request_failed", "Request could not be sent")
-      }
+      let sent = await coordinator.sendDesktopControl(request, link: link)
+      guard statusRequestId == request.actionId else { return }
+      requestFailed = !sent
+      statusMessage = sent ? t("desktop_control_request_sent", "Encrypted request sent") :
+        t("desktop_control_request_failed", "Request could not be sent")
     }
   }
 
@@ -542,7 +531,49 @@ private struct GalaxySSIDesktopControlDetail: View {
     let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleaned.isEmpty else { return }
     UIPasteboard.general.string = cleaned
+    statusRequestId = nil
+    requestFailed = false
     statusMessage = message
+  }
+}
+
+private struct GalaxySSIDesktopControlPreview: View {
+  @EnvironmentObject private var coordinator: MessageCoordinator
+  @State private var live: AgentDesktopControlScreenshot? = nil
+  let link: ServerLink
+  let screenshot: AgentDesktopControlScreenshot?
+  let authorized: Bool
+  let placeholder: String
+  let accessibilityTitle: String
+
+  var body: some View {
+    ZStack {
+      RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.black.opacity(0.86))
+      if let data = (live ?? screenshot)?.jpegBytes, let image = UIImage(data: data) {
+        Image(uiImage: image)
+          .resizable()
+          .scaledToFit()
+          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      } else {
+        VStack(spacing: 10) {
+          Image(systemName: authorized ? "display" : "lock.shield")
+            .font(.system(size: 34, weight: .semibold))
+          Text(placeholder)
+            .font(.system(size: 14, weight: .semibold))
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 16)
+        }
+        .foregroundColor(.galaxySSITextSecondary)
+      }
+    }
+    .frame(maxWidth: .infinity)
+    .aspectRatio(16.0 / 10.0, contentMode: .fit)
+    .accessibilityLabel(accessibilityTitle)
+    .onReceive(coordinator.desktopControlFrameUpdates) { desktopId in
+      guard desktopId == link.desktopId else { return }
+      live = coordinator.desktopControlSnapshot(for: link).screenshot
+    }
+    .onChange(of: screenshot) { _ in live = nil }
   }
 }
 

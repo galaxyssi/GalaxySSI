@@ -56,7 +56,10 @@ enum AgentWorkspaceExecutionSnapshotReducer {
     updated.currentPlanSnapshot = fallback(snapshot.planSnapshot, workspace.currentPlanSnapshot)
     updated.resultJson = fallback(snapshot.resultJson, workspace.resultJson)
     updated.errorMessage = fallback(snapshot.errorMessage, workspace.errorMessage)
-    updated.toolCalls = distinctById(workspace.toolCalls + snapshot.toolCalls).suffixArray(maxToolCallCount)
+    if snapshot.lastRemoteEventSequence == 0 || snapshot.lastRemoteEventSequence >= workspace.lastRemoteEventSequence {
+      updated.toolCalls = AgentWorkspaceToolCallProjection.merge(workspace.toolCalls, snapshot.toolCalls)
+        .suffixArray(maxToolCallCount)
+    }
     updated.artifacts = distinctById(workspace.artifacts + snapshot.artifacts).suffixArray(maxArtifactCount)
     updated.permissionGrantIds = distinctClean(workspace.permissionGrantIds + snapshot.permissionGrantIds)
       .suffixArray(maxPermissionBindingCount)

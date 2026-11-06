@@ -10,9 +10,12 @@ struct GalaxySSIConversationComposer: View {
 
   var deviceInputPolicy: AgentDeviceInputTargetPolicy
   var voiceSettings: VoiceSettings
+  var attachmentImageLimit = AgentImagePipeline.targetTransportBytes
   var dedicatedPeerVoiceCapture = false
   var attachmentScope = ""
   var attachmentPreviewBlocked = false
+  var onContactReminder: (() -> Void)? = nil
+  var onContactReminderSettings: (() -> Void)? = nil
   var onReplaceAttachment: (String, GalaxySSIDraftAttachment, GalaxySSIDraftAttachment) -> Bool
   var onNewSession: () -> Void
   var onOpenSessions: () -> Void
@@ -63,7 +66,7 @@ struct GalaxySSIConversationComposer: View {
   var body: some View {
     VStack(spacing: 8) {
       AttachmentPreviewStrip(attachments: attachments, scope: attachmentScope,
-        presentationBlocked: attachmentPreviewBlocked, onRemove: { attachment in
+        presentationBlocked: attachmentPreviewBlocked, compressedByteLimit: attachmentImageLimit, onRemove: { attachment in
           attachments.removeAndWipe(id: attachment.id)
         }, onReplace: onReplaceAttachment)
       if !attachmentError.isEmpty {
@@ -174,7 +177,23 @@ struct GalaxySSIConversationComposer: View {
 
   @ViewBuilder
   private var primaryActionButton: some View {
-    if uiState.showPrimaryActionSlot {
+    if let onContactReminder, !uiState.showPrimaryActionSlot {
+      Button(action: onContactReminder) {
+        GalaxySSIComposerVoiceButtonIcon()
+          .frame(width: 54, height: 54)
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(Text(t("galaxyssi.contact_reminder.send", "Send contact reminder")))
+      .accessibilityIdentifier("ios.chat.contact-reminder")
+      .contextMenu {
+        if let onContactReminderSettings {
+          Button(action: onContactReminderSettings) {
+            Label(t("galaxyssi.contact_reminder.settings", "Reminder settings"), systemImage: "bell.badge")
+          }
+        }
+      }
+    } else if uiState.showPrimaryActionSlot {
       Button {
         if canSend {
           inputFocused = false

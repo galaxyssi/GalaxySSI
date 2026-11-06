@@ -74,14 +74,35 @@ struct GalaxySSIHealthXLSX {
       formulas: body.map(\.formulas), date1904: date1904, isoDates: body.map(\.isoDates))
   }
 
+  enum Timestamp {
+    case resolved(Date, usedDateOnlyTime: Bool)
+    case needsTime
+    case invalid
+  }
+
+  private static let utc = TimeZone(secondsFromGMT: 0) ?? .current
+
   static func date(serial: Decimal, date1904: Bool, zone: TimeZone) -> Date? {
+    excelWallTime(serial: serial, date1904: date1904).flatMap { uniqueWallTime($0, zone: zone) }
+  }
+
+  static func excelTimestamp(serial: Decimal, date1904: Bool, zone: TimeZone, chosenMinute: Int?) -> Timestamp {
+    guard let parts = excelWallTime(serial: serial, date1904: date1904) else { return .invalid }
+    var original = serial, integral = Decimal.zero
+    NSDecimalRound(&integral, &original, 0, .down)
+    if integral == serial { return dateOnly(parts, zone: zone, chosenMinute: chosenMinute) }
+    guard let date = uniqueWallTime(parts, zone: zone) else { return .invalid }
+    return .resolved(date, usedDateOnlyTime: false)
+  }
+
+  private static func excelWallTime(serial: Decimal, date1904: Bool) -> DateComponents? {
     let number = NSDecimalNumber(decimal: serial).doubleValue
     guard number.isFinite, number >= 0, number < 2_958_466 else { return nil }
     let day = Int(number.rounded(.down))
     if !date1904 && day == 60 { return nil }
     let offset = date1904 || day < 60 ? day : day - 1
     var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = zone
+    calendar.timeZone = utc
     let origin = date1904 ? DateComponents(year: 1904, month: 1, day: 1) : DateComponents(year: 1899, month: 12, day: 31)
     guard let base = calendar.date(from: origin), let dayStart = calendar.date(byAdding: .day, value: offset, to: base)
     else { return nil }
@@ -90,59 +111,82 @@ struct GalaxySSIHealthXLSX {
     wall.hour = seconds / 3600
     wall.minute = (seconds / 60) % 60
     wall.second = seconds % 60
-    return uniqueWallTime(wall, zone: zone)
+    return wall
   }
 
   static func isoDate(_ raw: String, zone: TimeZone, dateOnlyMinute: Int?) -> Date? {
-    guard raw.utf8.count <= 40 else { return nil }
+    guard case .resolved(let date, _) = isoTimestamp(raw, zone: zone, chosenMinute: dateOnlyMinute) else { return nil }
+    return date
+  }
+
+  static func isoTimestamp(_ raw: String, zone: TimeZone, chosenMinute: Int?) -> Timestamp {
+    guard raw.utf8.count <= 40 else { return .invalid }
     let fields = raw.split(separator: "T", omittingEmptySubsequences: false)
-    guard fields.count == 1 || fields.count == 2 else { return nil }
-    let day = fields[0].split(separator: "-", omittingEmptySubsequences: false)
+    guard fields.count == 1 || fields.count == 2 else { return .invalid }
+    let dayToken = fields[0]
+    let prefix = dayToken.prefix(10)
+    let day = prefix.split(separator: "-", omittingEmptySubsequences: false)
     guard day.count == 3, let year = digits(day[0], width: 4), year > 0,
-          let month = digits(day[1], width: 2), let date = digits(day[2], width: 2) else { return nil }
+          let month = digits(day[1], width: 2), let date = digits(day[2], width: 2) else { return .invalid }
     var parts = DateComponents(year: year, month: month, day: date)
     if fields.count == 1 {
-      guard let minute = dateOnlyMinute, (0..<1440).contains(minute) else { return nil }
-      parts.hour = minute / 60
-      parts.minute = minute % 60
-      parts.second = 0
-      return uniqueWallTime(parts, zone: zone)
+      let suffix = dayToken.dropFirst(10)
+      guard let resolvedZone = suffix.isEmpty ? zone : offsetZone(suffix) else { return .invalid }
+      return dateOnly(parts, zone: resolvedZone, chosenMinute: chosenMinute)
     }
+    guard dayToken.count == 10 else { return .invalid }
     var clock = fields[1]
     var resolvedZone = zone
-    if clock.last == "Z" {
-      clock = clock.dropLast()
-      resolvedZone = TimeZone(secondsFromGMT: 0) ?? zone
-    } else if let offset = clock.firstIndex(where: { $0 == "+" || $0 == "-" }) {
-      let suffix = clock[clock.index(after: offset)...].split(separator: ":", omittingEmptySubsequences: false)
-      guard suffix.count == 2, let hours = digits(suffix[0], width: 2),
-            let minutes = digits(suffix[1], width: 2), minutes < 60,
-            hours < 18 || (hours == 18 && minutes == 0),
-            let fixed = TimeZone(secondsFromGMT: (clock[offset] == "-" ? -1 : 1) * (hours * 3600 + minutes * 60))
-      else { return nil }
+    if let offset = clock.firstIndex(where: { $0 == "+" || $0 == "-" || $0 == "Z" }) {
+      guard let fixed = offsetZone(clock[offset...]) else { return .invalid }
       resolvedZone = fixed
       clock = clock[..<offset]
     }
     let time = clock.split(separator: ":", omittingEmptySubsequences: false)
     guard time.count == 2 || time.count == 3, let hour = digits(time[0], width: 2), hour < 24,
-          let minute = digits(time[1], width: 2), minute < 60 else { return nil }
+          let minute = digits(time[1], width: 2), minute < 60 else { return .invalid }
     var seconds = 0
     var fraction = 0.0
     if time.count == 3 {
       let second = time[2].split(separator: ".", omittingEmptySubsequences: false)
       guard second.count == 1 || second.count == 2, let integer = digits(second[0], width: 2), integer < 60
-      else { return nil }
+      else { return .invalid }
       seconds = integer
       if second.count == 2 {
         let count = second[1].utf8.count
-        guard (1...9).contains(count), let value = digits(second[1], width: count) else { return nil }
+        guard (1...9).contains(count), let value = digits(second[1], width: count) else { return .invalid }
         fraction = Double(value) / pow(10, Double(count))
       }
     }
     parts.hour = hour
     parts.minute = minute
     parts.second = seconds
-    return uniqueWallTime(parts, zone: resolvedZone)?.addingTimeInterval(fraction)
+    guard let date = uniqueWallTime(parts, zone: resolvedZone) else { return .invalid }
+    return .resolved(date.addingTimeInterval(fraction), usedDateOnlyTime: false)
+  }
+
+  private static func dateOnly(_ day: DateComponents, zone: TimeZone, chosenMinute: Int?) -> Timestamp {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = utc
+    var wall = DateComponents(year: day.year, month: day.month, day: day.day)
+    guard wall.isValidDate(in: calendar) else { return .invalid }
+    guard let minute = chosenMinute else { return .needsTime }
+    guard (0..<1440).contains(minute) else { return .invalid }
+    wall.hour = minute / 60
+    wall.minute = minute % 60
+    wall.second = 0
+    guard let date = uniqueWallTime(wall, zone: zone) else { return .invalid }
+    return .resolved(date, usedDateOnlyTime: true)
+  }
+
+  private static func offsetZone(_ value: Substring) -> TimeZone? {
+    if value == "Z" { return utc }
+    guard let sign = value.first, sign == "+" || sign == "-" else { return nil }
+    let fields = value.dropFirst().split(separator: ":", omittingEmptySubsequences: false)
+    guard fields.count == 2, let hours = digits(fields[0], width: 2),
+          let minutes = digits(fields[1], width: 2), minutes < 60,
+          hours < 18 || (hours == 18 && minutes == 0) else { return nil }
+    return TimeZone(secondsFromGMT: (sign == "-" ? -1 : 1) * (hours * 3600 + minutes * 60))
   }
 
   private static func digits(_ value: Substring, width: Int) -> Int? {
