@@ -85,11 +85,12 @@ extension CloudModelClient: CloudModelNativeToolSending {
       throw GalaxySSIError.missingAPIKey
     }
 
-    let adapter = AgentModelToolProtocolAdapters.adapter(for: model.apiStyle.toolProvider)
     let route = AgentModelLoopRecoveryIdentity.sha256([
       "contact": contact.id, "provider": contact.cloudProvider, "style": model.apiStyle.rawValue,
       "model": model.modelId, "endpoint": model.endpoint, "credential": apiKey
     ])
+    let adapter = AgentProviderRouteAdapter(
+      base: AgentModelToolProtocolAdapters.adapter(for: model.apiStyle.toolProvider), route: route)
     let contextWindow = CloudModelConversationContext.contextWindowTokens(model: model, apiKey: apiKey)
     let outputReserve = min(contextWindow / 2, max(512, Int(
       CloudModelNativeToolJSON.outputTokenLimit(modelRequest.remainingTokens))))

@@ -127,6 +127,7 @@ class StrictAgentModelToolProtocolAdapter: AgentModelToolProtocolAdapter {
   func parseCalls(
     _ calls: [AgentMcpJSONValue],
     catalog: [AgentNativeToolDescriptor],
+    allowDuplicateIDs: Bool = false,
     parser: (AgentMcpJSONObject, String) throws -> ParsedAgentModelToolCall
   ) throws -> [AgentModelToolCall] {
     try checkCallCount(calls.count, path: "response")
@@ -141,7 +142,7 @@ class StrictAgentModelToolProtocolAdapter: AgentModelToolProtocolAdapter {
           try parser(item, path),
           path: path,
           catalogById: catalogById,
-          callIds: &callIds
+          callIds: &callIds, allowDuplicateIDs: allowDuplicateIDs
         ))
       } catch let error as AgentModelToolProtocolError {
         throw error.asMalformedToolCall(path: path)
@@ -154,11 +155,12 @@ class StrictAgentModelToolProtocolAdapter: AgentModelToolProtocolAdapter {
     _ call: ParsedAgentModelToolCall,
     path: String,
     catalogById: [String: AgentNativeToolDescriptor],
-    callIds: inout Set<String>
+    callIds: inout Set<String>,
+    allowDuplicateIDs: Bool = false
   ) throws -> AgentModelToolCall {
     try checkedCallId(call.id, path: "\(path).id")
     try checkedToolName(call.name, path: "\(path).name")
-    if callIds.contains(call.id) {
+    if callIds.contains(call.id) && !allowDuplicateIDs {
       throw protocolError("malformed_tool_call", "Duplicate tool call id \(call.id)")
     }
     callIds.insert(call.id)

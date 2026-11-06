@@ -19,6 +19,7 @@ final class GeminiAgentModelToolProtocolAdapter: StrictAgentModelToolProtocolAda
   }
 
   override func encodeConversation(_ messages: [AgentModelMessage]) throws -> AgentMcpJSONObject {
+    let transcript = try AgentProviderTranscript(messages, adapter: self)
     var result: AgentMcpJSONObject = [:]
     let systemText = messages
       .filter { $0.role == .system }
@@ -41,6 +42,11 @@ final class GeminiAgentModelToolProtocolAdapter: StrictAgentModelToolProtocolAda
       case .user:
         contents.append(content(role: "user", parts: [textPart(message.text)]))
       case .assistant:
+        if let original = transcript.assistant(at: index) {
+          contents.append(.object(original))
+          index += 1
+          continue
+        }
         let path = "messages[\(index)]"
         var parts: [AgentMcpJSONValue] = []
         if !message.text.isBlank {
@@ -66,13 +72,11 @@ final class GeminiAgentModelToolProtocolAdapter: StrictAgentModelToolProtocolAda
             throw protocolError("malformed_tool_result", "\(path).tool_result is required")
           }
           let bounded = try boundedResult(toolResult, path: path)
-          parts.append(.object([
-            "functionResponse": .object([
-              "id": .string(toolResult.callId),
-              "name": .string(toolResult.toolId),
-              "response": .object(bounded.value)
-            ])
-          ]))
+          var reply: AgentMcpJSONObject = [
+            "name": .string(transcript.replyName(toolResult)), "response": .object(bounded.value)
+          ]
+          reply["id"] = transcript.replyId(toolResult.callId).map(AgentMcpJSONValue.string)
+          parts.append(.object(["functionResponse": .object(reply)]))
           index += 1
         }
         contents.append(content(role: "user", parts: parts))
@@ -104,7 +108,7 @@ final class GeminiAgentModelToolProtocolAdapter: StrictAgentModelToolProtocolAda
       if let value = try part.protocolOptionalString(
         "text",
         path: "response.candidates[0].content.parts[\(index)]"
-      ), !value.isBlank {
+      ), !value.isBlank, part["thought"] != .bool(true) {
         text.append(value)
       }
       if let function = try part.protocolOptionalObject(
@@ -114,6 +118,10 @@ final class GeminiAgentModelToolProtocolAdapter: StrictAgentModelToolProtocolAda
         rawCalls.append((function, index))
       }
     }
+    let retainsParts = parts.contains {
+      guard let part = $0.objectValue else { return false }
+      return part["thoughtSignature"] != nil || part["thought_signature"] != nil || part["thought"] == .bool(true)
+    } || rawCalls.contains { $0.0["id"] == nil || $0.0["id"] == .null }
 
     try checkCallCount(rawCalls.count, path: "response.candidates[0].content.parts")
     let catalogById = try checkedCatalog(catalog)
@@ -145,7 +153,7 @@ final class GeminiAgentModelToolProtocolAdapter: StrictAgentModelToolProtocolAda
           ParsedAgentModelToolCall(id: callId, name: name, arguments: arguments),
           path: path,
           catalogById: catalogById,
-          callIds: &callIds
+          callIds: &callIds, allowDuplicateIDs: retainsParts
         )
       } catch let error as AgentModelToolProtocolError {
         throw error.asMalformedToolCall(path: path)
@@ -175,12 +183,17 @@ final class GeminiAgentModelToolProtocolAdapter: StrictAgentModelToolProtocolAda
       outputTokens = 0
     }
 
-    return try modelResponse(
+    var response = try modelResponse(
       text: text.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines),
       calls: calls,
       usage: AgentModelUsage(inputTokens: inputTokens, outputTokens: outputTokens),
       metadata: providerMetadata
     )
+    if retainsParts {
+      response.providerContinuation = AgentProviderContinuation(provider: provider,
+        payload: ["role": .string("model"), "parts": .array(parts)], response: response)
+    }
+    return response
   }
 
   private func syntheticGeminiCallId(responseSeed: String, callIndex: Int, partIndex: Int) -> String {

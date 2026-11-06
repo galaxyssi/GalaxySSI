@@ -3,6 +3,73 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentModelToolProtocolAdapterTests: XCTestCase {
+  func testGeminiPreservesSignedPartsAndOmitsSyntheticIDFromProviderReply() throws {
+    let base = GeminiAgentModelToolProtocolAdapter()
+    let adapter = AgentProviderRouteAdapter(base: base, route: "gemini-account")
+    let response = try adapter.decodeResponse(#"""
+      {"candidates":[{"content":{"role":"model","parts":[
+        {"thought":true,"text":"private thought"},
+        {"text":"Visible text"},
+        {"functionCall":{"name":"\#(Self.echoToolId)","args":{"value":"one"}},"thoughtSignature":"sig-one"},
+        {"functionCall":{"id":"wire-two","name":"\#(Self.sumToolId)","args":{"left":1,"right":2}},"thoughtSignature":"sig-two"}
+      ]}}]}
+      """#, catalog: testCatalog())
+    XCTAssertEqual(response.assistantText, "Visible text")
+    let continuation = try XCTUnwrap(response.providerContinuation)
+    XCTAssertFalse(String(reflecting: continuation).contains("private thought"))
+    var assistant = AgentModelMessage.assistant(response.assistantText, toolCalls: response.toolCalls)
+    assistant.providerContinuation = continuation
+    let results = response.toolCalls.map { call in
+      AgentModelMessage.tool(.init(callId: call.callId, toolId: call.toolId, status: "succeeded"))
+    }
+    let retained = try adapter.encodeConversation([assistant] + results).requiredArray("contents")
+    let original = try retained.requiredObject(0).requiredArray("parts")
+    XCTAssertEqual(try original.requiredObject(2).requiredString("thoughtSignature"), "sig-one")
+    XCTAssertEqual(try original.requiredObject(3).requiredString("thoughtSignature"), "sig-two")
+    XCTAssertNil(try original.requiredObject(2).requiredObject("functionCall")["id"])
+    let replies = try retained.requiredObject(1).requiredArray("parts")
+    XCTAssertNil(try replies.requiredObject(0).requiredObject("functionResponse")["id"])
+    XCTAssertEqual(try replies.requiredObject(1).requiredObject("functionResponse").requiredString("id"), "wire-two")
+    let other = AgentProviderRouteAdapter(base: base, route: "new-gemini-key")
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(try other.encodeConversation([assistant] + results)).contains("sig-one"))
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(try base.encodeConversation([assistant] + results)).contains("sig-one"))
+    assistant.toolCalls[0].arguments["value"] = .string("changed")
+    expectProtocolError("continuation_history_changed") { _ = try adapter.encodeConversation([assistant] + results) }
+  }
+
+  func testAnthropicAndOpenAICompatibleRetainOnlySameRouteOpaquePayloads() throws {
+    let anthropic = AgentProviderRouteAdapter(base: AnthropicAgentModelToolProtocolAdapter(), route: "claude-key")
+    let claude = try anthropic.decodeResponse(#"""
+      {"content":[{"type":"thinking","thinking":"hidden","signature":"signed"},
+                  {"type":"redacted_thinking","data":"opaque"},
+                  {"type":"text","text":"Visible"},
+                  {"type":"tool_use","id":"toolu_1","name":"\#(Self.echoToolId)","input":{"value":"one"}}]}
+      """#, catalog: testCatalog())
+    var claudeTurn = AgentModelMessage.assistant(claude.assistantText, toolCalls: claude.toolCalls)
+    claudeTurn.providerContinuation = claude.providerContinuation
+    let content = try anthropic.encodeConversation([claudeTurn]).requiredArray("messages")
+      .requiredObject(0).requiredArray("content")
+    XCTAssertEqual(try content.requiredObject(0).requiredString("signature"), "signed")
+    XCTAssertEqual(try content.requiredObject(1).requiredString("data"), "opaque")
+    XCTAssertEqual(claude.assistantText, "Visible")
+    let openAI = AgentProviderRouteAdapter(base: OpenAiCompatibleAgentModelToolProtocolAdapter(), route: "reasoner-key")
+    let reasoner = try openAI.decodeResponse(#"""
+      {"choices":[{"message":{"role":"assistant","content":"Visible","reasoning_content":"private reasoning",
+        "tool_calls":[{"id":"wire-one","type":"function",
+        "function":{"name":"\#(Self.echoToolId)","arguments":"{ \"value\": \"one\" }"}}]}}]}
+      """#, catalog: testCatalog())
+    var reasonerTurn = AgentModelMessage.assistant(reasoner.assistantText, toolCalls: reasoner.toolCalls)
+    reasonerTurn.providerContinuation = reasoner.providerContinuation
+    let kept = try openAI.encodeConversation([reasonerTurn]).requiredArray("messages").requiredObject(0)
+    XCTAssertEqual(try kept.requiredString("reasoning_content"), "private reasoning")
+    XCTAssertEqual(try kept.requiredArray("tool_calls").requiredObject(0).requiredObject("function")
+      .requiredString("arguments"), "{ \"value\": \"one\" }")
+    let rotated = AgentProviderRouteAdapter(base: OpenAiCompatibleAgentModelToolProtocolAdapter(), route: "rotated-key")
+    XCTAssertNil(try rotated.encodeConversation([reasonerTurn]).requiredArray("messages")
+      .requiredObject(0)["reasoning_content"])
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(try openAI.encodeConversation([claudeTurn])).contains("opaque"))
+  }
+
   func testOpenAICompatibleEncodesCatalogConversationAndDecodesParallelCalls() throws {
     let adapter = OpenAiCompatibleAgentModelToolProtocolAdapter()
     let catalog = try testCatalog()

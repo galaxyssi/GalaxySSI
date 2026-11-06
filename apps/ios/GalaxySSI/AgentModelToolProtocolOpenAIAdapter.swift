@@ -20,6 +20,7 @@ final class OpenAiCompatibleAgentModelToolProtocolAdapter: StrictAgentModelToolP
   }
 
   override func encodeConversation(_ messages: [AgentModelMessage]) throws -> AgentMcpJSONObject {
+    let transcript = try AgentProviderTranscript(messages, adapter: self)
     var encoded: [AgentMcpJSONValue] = []
     for (index, message) in messages.enumerated() {
       let path = "messages[\(index)]"
@@ -29,6 +30,10 @@ final class OpenAiCompatibleAgentModelToolProtocolAdapter: StrictAgentModelToolP
       case .user:
         encoded.append(textMessage(role: "user", text: message.text))
       case .assistant:
+        if let original = transcript.assistant(at: index) {
+          encoded.append(.object(original))
+          continue
+        }
         var item: AgentMcpJSONObject = [
           "role": .string("assistant"),
           "content": message.text.isBlank ? .null : .string(message.text)
@@ -55,7 +60,7 @@ final class OpenAiCompatibleAgentModelToolProtocolAdapter: StrictAgentModelToolP
         let bounded = try boundedResult(result, path: path)
         encoded.append(.object([
           "role": .string("tool"),
-          "tool_call_id": .string(result.callId),
+          "tool_call_id": .string(transcript.replyId(result.callId) ?? result.callId),
           "content": .string(bounded.jsonText)
         ]))
       }
@@ -89,10 +94,11 @@ final class OpenAiCompatibleAgentModelToolProtocolAdapter: StrictAgentModelToolP
       text = try choice.protocolOptionalString("text", path: "response.choices[0]") ?? ""
     }
 
+    let retainsReasoning = message?["reasoning_content"] != nil && message?["reasoning_content"] != .null
     let toolCalls: [AgentModelToolCall]
     if let message,
        let rawCalls = try message.protocolOptionalArray("tool_calls", path: "response.choices[0].message") {
-      toolCalls = try parseCalls(rawCalls, catalog: catalog) { item, path in
+      toolCalls = try parseCalls(rawCalls, catalog: catalog, allowDuplicateIDs: retainsReasoning) { item, path in
         if let type = try item.protocolOptionalString("type", path: path), type != "function" {
           throw protocolError("malformed_tool_call", "\(path).type must be function")
         }
@@ -135,12 +141,19 @@ final class OpenAiCompatibleAgentModelToolProtocolAdapter: StrictAgentModelToolP
       providerMetadata["model"] = .string(model)
     }
 
-    return try modelResponse(
+    var response = try modelResponse(
       text: text,
       calls: toolCalls,
       usage: AgentModelUsage(inputTokens: inputTokens, outputTokens: outputTokens),
       metadata: providerMetadata
     )
+    if retainsReasoning, let message {
+      let fields = ["content", "tool_calls", "refusal", "reasoning_content"]
+      var payload = message.filter { fields.contains($0.key) }
+      payload["role"] = .string("assistant")
+      response.providerContinuation = AgentProviderContinuation(provider: provider, payload: payload, response: response)
+    }
+    return response
   }
 
   private func parseOpenAIArguments(
