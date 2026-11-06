@@ -60,7 +60,12 @@ struct GalaxySSIHealthOriginalsView: View {
   @State private var listing: GalaxySSIHealthOriginalStore.Listing?
   @State private var filter = "all"
   @State private var recentDays = 0
-  @State private var grid = false
+  @State private var query = ""
+  @State private var searchGeneration = UUID()
+  @State private var searchResult: SearchResult?
+  @State private var failedSearch: SearchRequest?
+  @State private var zipReview: ZIPReview?
+  @State private var confirmedZIP: ZIPReview?
   @State private var shown = 30
   @State private var selection: Set<UUID> = []
   @State private var preview: Preview?
@@ -77,13 +82,35 @@ struct GalaxySSIHealthOriginalsView: View {
   @State private var verifying = false
   @State private var receiptFailed = false
   @State private var preparedForShare = false
-  @State private var pending: [GalaxySSIHealthOriginalStore.Original] = []
   @State private var removal: GalaxySSIHealthOriginalStore.RemovalPreview?
   @State private var removalAfterPreview: GalaxySSIHealthOriginalStore.Original?
   @State private var evidenceAfterPreview: GalaxySSIHealthOriginalStore.Original?
   @State private var reportEvidenceOriginal: GalaxySSIHealthOriginalStore.Original?
   @State private var removalNotice: String?
   @State private var error = false
+
+  private struct SearchRequest: Equatable, Sendable {
+    let query: String
+    let timeZone: TimeZone
+    let generation: UUID
+  }
+
+  private struct SearchResult {
+    let request: SearchRequest
+    let ids: Set<UUID>
+  }
+
+  private struct ZIPReview: Identifiable {
+    let id = UUID()
+    let originals: [GalaxySSIHealthOriginalStore.Original]
+    let saveToFiles: Bool
+  }
+
+  private var searchRequest: SearchRequest? {
+    let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard exact == nil, scene == .active, listing != nil, !text.isEmpty else { return nil }
+    return .init(query: text, timeZone: timeZone, generation: searchGeneration)
+  }
 
   private struct Preview: Identifiable {
     let original: GalaxySSIHealthOriginalStore.Original
@@ -123,9 +150,21 @@ struct GalaxySSIHealthOriginalsView: View {
     }
     .onChange(of: filter) { _ in shown = 30 }
     .onChange(of: recentDays) { _ in shown = 30 }
+    .onChange(of: query) { _ in shown = 30; searchResult = nil; failedSearch = nil }
+    .task(id: searchRequest) { [request = searchRequest] in
+      if let request { await runSearch(request) }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { event in
+      if event.object as? String == store.owner { searchGeneration = UUID() }
+    }
     .onChange(of: scene) { phase in
+      if phase == .background { query = "" }
       if phase == .active { reload() }
       else {
+        searchResult = nil
+        failedSearch = nil
+        zipReview = nil
+        confirmedZIP = nil
         exactOriginal = nil
         listing = nil
         preview = nil
@@ -134,7 +173,6 @@ struct GalaxySSIHealthOriginalsView: View {
         evidenceAfterPreview = nil
         reportEvidenceOriginal = nil
         removalNotice = nil
-        pending = []
         pendingSingle = nil
         reviewAfterPreview = false
         confirming = false
@@ -149,31 +187,30 @@ struct GalaxySSIHealthOriginalsView: View {
       if scene == .active && !exporting {
         Section {
           Button { importing = true } label: { Label(t("import", "Import original"), systemImage: "plus") }
+          searchField
+          let available = listing.map { dateFiltered($0.originals) } ?? []
+          let photos = available.filter { $0.kind == .image }.count
           Picker(t("type", "File type"), selection: $filter) {
-            Text(t("all", "All files")).tag("all")
-            Text(t("image", "Images")).tag("image")
-            Text("PDF").tag("pdf")
+            tabTitle(t("tab_all", "All"), count: available.count).tag("all")
+            tabTitle(t("tab_photos", "Photos"), count: photos).tag("image")
+            tabTitle(t("tab_files", "Files"), count: available.count - photos).tag("pdf")
           }
+          .pickerStyle(.segmented)
           Picker(t("date_filter", "Import date"), selection: $recentDays) {
             Text(t("any_date", "Any date")).tag(0)
             Text(t("last_week", "Last 7 days")).tag(7)
             Text(t("last_month", "Last 30 days")).tag(30)
           }
-          Picker(t("layout", "Layout"), selection: $grid) {
-            Image(systemName: "list.bullet").accessibilityLabel(Text(t("list", "List"))).tag(false)
-            Image(systemName: "square.grid.2x2").accessibilityLabel(Text(t("grid", "Thumbnails"))).tag(true)
-          }
-          .pickerStyle(.segmented)
           if !selection.isEmpty {
-            Button(action: prepareForSharing) {
+            Text(String(format: t("selected_count", "%lld selected originals"), Int64(selection.count)))
+              .font(.footnote).foregroundColor(.secondary)
+            Button { reviewZIP(saveToFiles: false) } label: {
               Label(t("prepare_zip", "Prepare selected ZIP"), systemImage: "archivebox")
             }
             .disabled(verifying)
-            Button {
-              pendingSingle = nil
-              pending = listing?.originals.filter { selection.contains($0.id) } ?? []
-              confirming = !pending.isEmpty
-            } label: { Label(t("export", "Export selected ZIP"), systemImage: "square.and.arrow.up") }
+            Button { reviewZIP(saveToFiles: true) } label: {
+              Label(t("export", "Export selected ZIP"), systemImage: "square.and.arrow.up")
+            }
             .disabled(verifying)
           }
           if verifying { ProgressView(t("verifying_destination", "Verifying saved file")) }
@@ -182,38 +219,30 @@ struct GalaxySSIHealthOriginalsView: View {
           if receiptFailed { Text(t("verify_failed", "The destination could not be verified.")).foregroundColor(.secondary) }
         }
         if let listing {
-          let rows = filtered(listing.originals)
-          if rows.isEmpty { Text(t("empty", "No originals found")).foregroundColor(.secondary) }
+          let request = searchRequest
+          let found = searchResult.flatMap { $0.request == request ? $0.ids : nil }
+          let rows = filtered(listing.originals).filter { request == nil || found?.contains($0.id) == true }
+          if let request, failedSearch == request {
+            Text(t("search_error", "Could not search the original library.")).foregroundColor(.secondary)
+            Button(t("retry", "Reload originals"), action: reload)
+          } else if request != nil && found == nil {
+            ProgressView()
+          } else if rows.isEmpty {
+            Text(t("empty", "No originals found")).foregroundColor(.secondary)
+          }
           if listing.unavailable > 0 {
             Text(t("unreadable", "Some encrypted originals could not be opened.")).foregroundColor(.secondary)
           }
-          if grid {
+          let visible = rows.prefix(shown)
+          let photos = visible.filter { $0.kind == .image }
+          if !photos.isEmpty {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 12)], spacing: 16) {
-              ForEach(rows.prefix(shown)) { item in thumbnailTile(item) }
-            }
-          } else {
-            ForEach(rows.prefix(shown)) { item in
-              HStack(spacing: 10) {
-                selectButton(item)
-                Button { open(item) } label: {
-                  VStack(alignment: .leading, spacing: 4) {
-                    Text(item.name).foregroundColor(.primary)
-                    Text(item.importedAt, style: .date).foregroundColor(.secondary)
-                  }
-                  .frame(maxWidth: .infinity, alignment: .leading)
-                }
-              }
-              .buttonStyle(.borderless)
-              .contextMenu { singleSaveButton(item) }
-              .swipeActions(allowsFullSwipe: false) {
-                Button(role: .destructive) { reviewRemoval(item) } label: {
-                  Label(t("remove", "Remove"), systemImage: "trash")
-                }
-              }
+              ForEach(photos) { item in thumbnailTile(item) }
             }
           }
+          ForEach(visible.filter { $0.kind != .image }) { item in fileRow(item) }
           if rows.count > shown { Button(t("more", "Show more")) { shown += 30 } }
-          let removed = filtered(listing.removed)
+          let removed = request == nil ? filtered(listing.removed) : []
           if !removed.isEmpty {
             Section(t("removed_originals", "Removed originals")) {
               ForEach(removed.prefix(shown)) { item in
@@ -246,22 +275,45 @@ struct GalaxySSIHealthOriginalsView: View {
 
   private func destinationActions<Content: View>(_ content: Content) -> some View {
     content
+    .sheet(item: $zipReview, onDismiss: generateConfirmedZIP) { review in
+      NavigationView {
+        List {
+          Section(t("zip_boundary", "The ZIP is not encrypted.")) {
+            ForEach(review.originals) { item in
+              VStack(alignment: .leading) {
+                Text(item.name)
+                Text(ByteCountFormatter.string(fromByteCount: Int64(item.bytes), countStyle: .file))
+                  .font(.caption).foregroundColor(.secondary)
+              }
+            }
+          }
+        }
+        .navigationTitle(t("zip_preview", "Export preview"))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+          ToolbarItem(placement: .cancellationAction) {
+            Button(t("close", "Close")) { zipReview = nil }
+          }
+          ToolbarItem(placement: .confirmationAction) {
+            Button(t("generate_zip", "Generate ZIP")) { confirmZIP(review) }
+          }
+        }
+      }
+      .navigationViewStyle(.stack)
+    }
     .fileImporter(isPresented: $importing, allowedContentTypes: [.image, .pdf]) { result in
       guard scene == .active else { return }
       do { try store.importFile(result.get()); reload() }
       catch { error = true }
     }
-    .confirmationDialog(pendingSingle == nil ? t("plain_zip", "Save an unencrypted ZIP of these originals?") :
-                        t("plain_original", "Save an unencrypted copy of this original?"),
+    .confirmationDialog(t("plain_original", "Save an unencrypted copy of this original?"),
                         isPresented: $confirming, titleVisibility: .visible) {
       Button(t("save", "Choose save location")) {
-        if let item = pendingSingle { exportSingle(item) } else { export() }
+        if let item = pendingSingle { exportSingle(item) }
       }
     } message: {
       if let item = pendingSingle {
         Text(item.name + "\n" + ByteCountFormatter.string(fromByteCount: Int64(item.bytes), countStyle: .file))
-      } else {
-        Text(String(format: t("selected_count", "%lld selected originals"), Int64(pending.count)))
       }
     }
     .alert(item: $removal) { review in
@@ -345,12 +397,79 @@ struct GalaxySSIHealthOriginalsView: View {
     }
   }
 
-  private func filtered(_ originals: [GalaxySSIHealthOriginalStore.Original]) -> [GalaxySSIHealthOriginalStore.Original] {
+  private var searchField: some View {
+    HStack {
+      Image(systemName: "magnifyingglass").foregroundColor(.secondary).accessibilityHidden(true)
+      TextField(t("search", "Search name, date or measurement"), text: $query)
+        .textInputAutocapitalization(.never).disableAutocorrection(true)
+        .onChange(of: query) { if $0.count > 160 { query = String($0.prefix(160)) } }
+      if !query.isEmpty {
+        Button { query = "" } label: {
+          Image(systemName: "xmark.circle.fill").frame(width: 44, height: 44)
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(Text(t("clear_search", "Clear search")))
+      }
+    }
+  }
+
+  private func runSearch(_ request: SearchRequest) async {
+    guard request == searchRequest, let originals = listing?.originals else { return }
+    do {
+      try await Task.sleep(nanoseconds: 180_000_000)
+      let reader = try store.originalSearchReader()
+      let worker = Task.detached(priority: .userInitiated) {
+        let query = GalaxySSIHealthDataFiles.OriginalQuery(request.query, timeZone: request.timeZone)
+        return try reader.search(query, in: originals)
+      }
+      let ids = try await withTaskCancellationHandler(operation: { try await worker.value },
+                                                      onCancel: { worker.cancel() })
+      try Task.checkCancellation()
+      guard request == searchRequest else { return }
+      searchResult = .init(request: request, ids: ids)
+    } catch {
+      guard !Task.isCancelled, request == searchRequest else { return }
+      failedSearch = request
+    }
+  }
+
+  private func tabTitle(_ title: String, count: Int) -> Text {
+    Text("\(title) (\(count))")
+  }
+
+  private func dateFiltered(_ originals: [GalaxySSIHealthOriginalStore.Original]) -> [GalaxySSIHealthOriginalStore.Original] {
     var local = calendar
     local.timeZone = timeZone
     let cutoff = recentDays == 0 ? Date.distantPast :
       (local.date(byAdding: .day, value: 1 - recentDays, to: local.startOfDay(for: Date())) ?? .distantPast)
-    return originals.filter { $0.importedAt >= cutoff && (filter == "all" || $0.kind.rawValue == filter) }
+    return originals.filter { $0.importedAt >= cutoff }
+  }
+
+  private func filtered(_ originals: [GalaxySSIHealthOriginalStore.Original]) -> [GalaxySSIHealthOriginalStore.Original] {
+    dateFiltered(originals).filter { filter == "all" || $0.kind.rawValue == filter }
+  }
+
+  private func fileRow(_ item: GalaxySSIHealthOriginalStore.Original) -> some View {
+    HStack(spacing: 10) {
+      selectButton(item)
+      Button { open(item) } label: {
+        HStack(spacing: 8) {
+          Image(systemName: "doc.text").foregroundColor(.secondary).accessibilityHidden(true)
+          VStack(alignment: .leading, spacing: 4) {
+            Text(item.name).foregroundColor(.primary).lineLimit(2).truncationMode(.middle)
+            Text(item.importedAt, style: .date).font(.caption).foregroundColor(.secondary)
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+        }
+      }
+    }
+    .buttonStyle(.borderless)
+    .contextMenu { singleSaveButton(item) }
+    .swipeActions(allowsFullSwipe: false) {
+      Button(role: .destructive) { reviewRemoval(item) } label: {
+        Label(t("remove", "Remove"), systemImage: "trash")
+      }
+    }
   }
 
   private func selectButton(_ item: GalaxySSIHealthOriginalStore.Original) -> some View {
@@ -425,6 +544,7 @@ struct GalaxySSIHealthOriginalsView: View {
     do {
       let current = try store.list()
       listing = current
+      searchGeneration = UUID()
       selection.formIntersection(current.originals.map(\.id))
       error = false
     } catch { listing = nil; error = true }
@@ -517,10 +637,8 @@ struct GalaxySSIHealthOriginalsView: View {
     }
   }
 
-  private func export() {
+  private func export(_ selected: [GalaxySSIHealthOriginalStore.Original]) {
     guard scene == .active, !verifying else { return }
-    let selected = pending
-    pending = []
     receiptFailed = false
     do {
       let (data, attempt) = try store.prepareExport(selected)
@@ -533,11 +651,32 @@ struct GalaxySSIHealthOriginalsView: View {
     catch { error = true }
   }
 
-  private func prepareForSharing() {
+  private func reviewZIP(saveToFiles: Bool) {
     guard scene == .active, !verifying, let listing else { return }
+    let originals = listing.originals.filter { selection.contains($0.id) }
+    guard !originals.isEmpty else { return }
+    zipReview = .init(originals: originals, saveToFiles: saveToFiles)
+  }
+
+  private func confirmZIP(_ review: ZIPReview) {
+    guard scene == .active, !verifying, zipReview?.id == review.id else { return }
+    confirmedZIP = review
+    zipReview = nil
+  }
+
+  private func generateConfirmedZIP() {
+    guard let review = confirmedZIP else { return }
+    confirmedZIP = nil
+    guard scene == .active, !verifying else { return }
+    do { try store.validateOriginalSelection(review.originals) }
+    catch { reload(); error = true; return }
+    if review.saveToFiles {
+      export(review.originals)
+      return
+    }
     preparedForShare = false
     do {
-      _ = try store.prepareExport(listing.originals.filter { selection.contains($0.id) })
+      _ = try store.prepareExport(review.originals)
       preparedForShare = true
       error = false
     } catch { error = true }

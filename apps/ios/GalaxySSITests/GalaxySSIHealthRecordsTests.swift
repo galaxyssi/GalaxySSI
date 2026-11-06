@@ -59,6 +59,69 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testOriginalSearchMatchesOnlyCurrentConfirmedSourcesAndLocalDates() throws {
+    let zone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+    let iso = ISO8601DateFormatter()
+    let measured = try XCTUnwrap(iso.date(from: "2024-04-01T16:15:00Z"))
+    let imported = try XCTUnwrap(iso.date(from: "2024-05-03T08:00:00Z"))
+    let originals = (0..<37).map { index in
+      GalaxySSIHealthOriginalStore.Original(id: UUID(), name: index == 31 ? "Lab-report final.PDF" : "Scan \(index).pdf",
+        kind: .pdf, fileExtension: "pdf", importedAt: imported, bytes: 200, sha256: "digest-\(index)", acquisition: .uploaded)
+    }
+    func source(_ index: Int, digest: String? = nil) -> GalaxySSIHealthReportReview.Source {
+      let item = originals[index]
+      return .init(original: item.id, sha256: digest ?? item.sha256, page: 0, region: 0, fromOCR: true)
+    }
+    let reading = GalaxySSIHealthReading(revision: 2, metric: .glucose, measuredAt: measured, value: 6,
+                                        reportSource: source(31))
+    var old = reading
+    old.revision = 1
+    old.reportSource = source(33)
+    var deleted = GalaxySSIHealthReading(revision: 1, metric: .glucose, measuredAt: measured, value: 6,
+                                        reportSource: source(36))
+    var archive = GalaxySSIHealthRecords.Archive()
+    archive.revisions = [old, reading, deleted]
+    deleted.revision = 2
+    deleted.deleted = true
+    archive.revisions.append(deleted)
+    let target = GalaxySSIHealthReportReview.Target(record: reading.id, revision: reading.revision)
+    archive.reportEvidence = [
+      .init(target: target, source: source(32), excerpt: "confirmed"),
+      .init(target: target, source: source(34, digest: "wrong"), excerpt: "wrong digest"),
+      .init(target: target, source: source(35), excerpt: "removed"),
+      .init(target: .init(record: reading.id, revision: 1), source: source(30), excerpt: "old revision")
+    ]
+    var index = GalaxySSIHealthOriginalStore.Index()
+    for item in originals { try index.include(item) }
+    index.removals.pending.insert(originals[35].id)
+    archive.originalIndex = index
+    let metadata = try JSONEncoder().encode(archive)
+    func matches(_ query: String) throws -> Set<UUID> {
+      try GalaxySSIHealthDataFiles.OriginalQuery(query, timeZone: zone).matches(originals, metadata: metadata)
+    }
+    let linked = Set([originals[31].id, originals[32].id])
+    XCTAssertEqual(try matches("FINAL lab"), [originals[31].id])
+    XCTAssertEqual(try matches("GLU"), linked)
+    XCTAssertEqual(try matches("\u{8840}\u{7CD6}"), linked)
+    XCTAssertEqual(try matches("2024-04-02"), linked)
+    XCTAssertEqual(try matches("2024\u{5E74}4\u{6708}"), linked)
+    XCTAssertEqual(try matches("2024-04-01"), [])
+    XCTAssertEqual(try matches("2024-04-31"), [])
+    XCTAssertEqual(try matches("2024/05"), Set(originals.map(\.id)).subtracting([originals[35].id]))
+  }
+
+  func testOriginalSearchCancelsBeforeOpeningArchive() async throws {
+    let worker = Task {
+      withUnsafeCurrentTask { $0?.cancel() }
+      let reader = GalaxySSIHealthDataFiles.Reader(file: URL(fileURLWithPath: "/unreadable"),
+                                                  context: Data(), key: nil)
+      return try reader.search(.init("2024-04", timeZone: .current), in: [])
+    }
+    do { _ = try await worker.value; XCTFail("Expected cancellation") }
+    catch is CancellationError {}
+  }
+
+  @MainActor
   func testDataFilesAuthenticatesArchiveAndPersistsMeasurementExportStatus() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

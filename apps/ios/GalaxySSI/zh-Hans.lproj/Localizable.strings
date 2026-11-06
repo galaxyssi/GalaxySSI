@@ -40,6 +40,15 @@
 "galaxyssi.health.originals.type" = "文件类型";
 "galaxyssi.health.originals.all" = "所有文件";
 "galaxyssi.health.originals.image" = "图片";
+"galaxyssi.health.originals.search" = "搜索文件名、日期或测量项目";
+"galaxyssi.health.originals.clear_search" = "清除搜索";
+"galaxyssi.health.originals.search_error" = "无法搜索原件库。";
+"galaxyssi.health.originals.tab_all" = "全部";
+"galaxyssi.health.originals.tab_photos" = "照片";
+"galaxyssi.health.originals.tab_files" = "文件";
+"galaxyssi.health.originals.zip_preview" = "导出预览";
+"galaxyssi.health.originals.zip_boundary" = "ZIP 文件不加密。";
+"galaxyssi.health.originals.generate_zip" = "生成 ZIP";
 "galaxyssi.health.originals.export" = "导出所选 ZIP";
 "galaxyssi.health.originals.empty" = "没有找到原件";
 "galaxyssi.health.originals.unreadable" = "部分加密原件无法打开。";

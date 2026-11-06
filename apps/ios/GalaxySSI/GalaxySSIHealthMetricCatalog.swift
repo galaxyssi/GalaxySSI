@@ -1,6 +1,6 @@
 import Foundation
 
-enum GalaxySSIHealthMetric: String, Codable, CaseIterable, Identifiable {
+enum GalaxySSIHealthMetric: String, Codable, CaseIterable, Identifiable, Sendable {
   case bloodPressure
   case glucose
   case weight
