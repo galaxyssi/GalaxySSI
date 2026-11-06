@@ -343,7 +343,8 @@ final class GalaxySSIStore: ObservableObject {
   var canReadVoiceReminderSnapshot: Bool { !runtimePlaintextCleared }
   private var suppressMessageDatabaseSync = false
 
-  init(defaults: UserDefaults = .standard, secrets: GalaxySSISecretStore = KeychainSecretStore.shared) {
+  init(defaults: UserDefaults = .standard, secrets: GalaxySSISecretStore = KeychainSecretStore.shared,
+       workspaceStore: AgentWorkspaceStore = FileAgentWorkspaceStore()) {
     defaults.removeObject(forKey: "galaxyssi.phone_contact_cards")
     defaults.removeObject(forKey: "galaxyssi.phone_contact_inbox_route")
     self.defaults = defaults
@@ -369,7 +370,7 @@ final class GalaxySSIStore: ObservableObject {
     let preferenceModeStore = AgentPreferenceModeStore(defaults: defaults)
     self.memoryDeletionIndex = deletionIndex
     self.agentMemoryStore = memoryStore
-    self.agentWorkspaceStore = FileAgentWorkspaceStore()
+    self.agentWorkspaceStore = workspaceStore
     self.agentPreferenceModeStore = preferenceModeStore
     self.workflowExecutionHistoryStore = AgentWorkflowExecutionHistoryStore(defaults: defaults)
     let taskHistoryPersistence = AgentTaskHistoryPersistence(defaults: defaults, secrets: secrets)

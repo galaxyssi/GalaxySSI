@@ -50,6 +50,7 @@ enum AgentTaskEventKinds {
   static let paused = "task.paused"
   static let blocked = "task.blocked"
   static let snapshot = "task.execution_snapshot"
+  static let localToolProjection = "task.local_tool_projection"
   static let permissionRevoked = "task.permission_revoked"
   static let heartbeat = "task.heartbeat"
   static let progress = "task.progress"
