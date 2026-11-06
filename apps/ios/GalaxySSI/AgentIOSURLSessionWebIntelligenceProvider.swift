@@ -340,7 +340,10 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       item.evidence["source_receipt"]?.objectValue
         ?? sourceReceipt(forSearchResult: item)
     }
-    var output = baseOutput(operation: operation, invocation: invocation, status: "completed")
+    let disjoint = AgentSearchResponseQuality.isDisjoint(querySignals: AgentSearchResponseQuality.signals(query),
+      candidates: resultObjects.map { "\($0.result.string("title")) \($0.result.string("url")) \($0.evidence.string("snippet"))" })
+    var output = baseOutput(operation: operation, invocation: invocation, status: disjoint ? "partial" : "completed")
+    if disjoint { output["search_quality"] = .string("no_lexical_overlap") }
     output["request_id"] = .string(requestId(invocation, operation: operation))
     output["query"] = .string(query)
     output["result_count"] = .int(Int64(resultObjects.count))

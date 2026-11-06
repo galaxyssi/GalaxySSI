@@ -3,6 +3,58 @@ import CryptoKit
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testCodexSilenceBudgetRetriesTwoInitialAttemptsThenAlternativesAndOneFinalAttempt() throws {
+    var budget = AgentCodexSilenceRecoveryPolicy.Budget(origin: "codex")
+    XCTAssertEqual(budget.next(failed: "codex", attemptId: "one", confirmedTimeout: true, alternatives: ["other"]), "codex")
+    XCTAssertNil(budget.next(failed: "codex", attemptId: "one", confirmedTimeout: true, alternatives: ["other"]))
+    let disk = try JSONEncoder().encode(budget)
+    budget = try JSONDecoder().decode(AgentCodexSilenceRecoveryPolicy.Budget.self, from: disk)
+    XCTAssertEqual(budget.next(failed: "codex", attemptId: "two", confirmedTimeout: true, alternatives: ["other"]), "other")
+    XCTAssertNil(budget.next(failed: "codex", attemptId: "stale", confirmedTimeout: true, alternatives: ["other"]))
+    XCTAssertEqual(budget.next(failed: "other", attemptId: "three", confirmedTimeout: false, alternatives: ["other"]), "codex")
+    XCTAssertNil(budget.next(failed: "codex", attemptId: "four", confirmedTimeout: true, alternatives: ["new"]))
+    XCTAssertTrue(budget.exhausted)
+  }
+
+  func testOnlyAuthenticatedTerminalCodexNoProgressReasonQualifiesForRecovery() {
+    XCTAssertTrue(AgentCodexSilenceRecoveryPolicy.confirmedTimeout(status: "failed",
+      failureCode: "codex_no_progress_timeout", error: ""))
+    XCTAssertTrue(AgentCodexSilenceRecoveryPolicy.confirmedTimeout(status: "timed_out",
+      failureCode: "", error: "Codex task stalled"))
+    XCTAssertFalse(AgentCodexSilenceRecoveryPolicy.confirmedTimeout(status: "running",
+      failureCode: "codex_no_progress_timeout", error: ""))
+    XCTAssertFalse(AgentCodexSilenceRecoveryPolicy.confirmedTimeout(status: "timed_out",
+      failureCode: "codex_compaction_timeout", error: "Codex task stalled"))
+    XCTAssertFalse(AgentCodexSilenceRecoveryPolicy.confirmedTimeout(status: "failed",
+      failureCode: "", error: "Request timed out"))
+  }
+
+  func testCodexSilenceClockIgnoresStatusPollsAndReplayedEvents() {
+    let binding = AgentDesktopReplyBinding(desktopId: "desktop", displayContactId: "hermes", sourceId: UUID(),
+      contactId: "codex-contact", agentId: "codex",
+      identity: AgentTaskIdentity(clientRouteId: "route", conversationId: "conversation", taskId: "task", turnId: "turn"))
+    var record = AgentDesktopReplyRecoveryRecord(binding: binding, createdAt: 1_000)
+    record.status = "running"
+    record.lastResponseAt = 179_000
+    XCTAssertFalse(record.isCodexSilent(now: 180_999))
+    XCTAssertTrue(record.isCodexSilent(now: 181_000))
+    var progress = AgentDesktopCodexProgress(generation: 1, sequence: -1, lastProgressAt: 1_000, eventIds: [])
+    let genuine = AgentConnectorPublicProgress(eventId: "tool-finished", generation: 1, sequence: 2, text: "Read complete")
+    progress.observe([genuine], now: 170_000)
+    progress.observe([genuine], now: 175_000)
+    var steering = genuine
+    steering.eventId = "auto-replan"
+    steering.sequence = 3
+    steering.countsForCodexSilence = false
+    progress.observe([steering], now: 180_000)
+    record.codexProgress = progress
+    XCTAssertEqual(progress.lastProgressAt, 170_000)
+    XCTAssertFalse(record.isCodexSilent(now: 349_999))
+    XCTAssertTrue(record.isCodexSilent(now: 350_000))
+    record.status = "waiting_approval"
+    XCTAssertFalse(record.isCodexSilent(now: 600_000))
+  }
+
   func testManagedRecoveryPagesDoNotRepeatOrIncludeCompletedChildren() throws {
     let suite = "ManagedRecoveryPaging.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!

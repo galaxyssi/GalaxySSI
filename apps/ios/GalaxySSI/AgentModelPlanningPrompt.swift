@@ -30,10 +30,13 @@ enum AgentModelPlanningPrompt {
       hasAttachments: request.hasAttachments || request.conversationContext.hasAttachments,
       executionMode: request.planRequest.executionMode
     )
+    let compactResearch = AgentResearchCapabilityDiscovery.isResearchRequest(request) && !allowsPhoneRuntimeTools(for: request)
 
     var prompt = ""
     append(&prompt, "Return an executable ActionPlan when phone action is needed. The phone validates every field locally.\n\n")
-    append(&prompt, executionProfile.contract)
+    append(&prompt, compactResearch
+      ? "Research contract: search independent public sources, read relevant originals, and cite evidence. Search candidates and zero catalog hits are not verified conclusions. Rephrase a query or try another source only when it adds evidence."
+      : executionProfile.contract)
     append(&prompt, "\n\n")
     appendSchema(to: &prompt, request: request)
     appendActionRules(to: &prompt, request: request, settings: normalizedSettings)
@@ -45,6 +48,7 @@ enum AgentModelPlanningPrompt {
     AgentPlanningTiming.measure("goal") {
       append(&prompt, "User goal: \(request.planRequest.goal.prefixStringForPlanning(2_000))\n")
     }
+    let researchTools = compactResearch ? appendResearchTools(to: &prompt, request: request) : []
     appendReplanContext(to: &prompt, request: request)
     AgentPlanningTiming.measure("progress") {
       appendExecutionHistory(to: &prompt, request: request, settings: normalizedSettings, compact: compact)
@@ -67,7 +71,7 @@ enum AgentModelPlanningPrompt {
     appendInstalledApps(to: &prompt, request: request, limit: appItemLimit)
     appendConnectors(to: &prompt, request: request, limit: connectorItemLimit)
     AgentPlanningTiming.measure("inventory") {
-      appendNativeTools(to: &prompt, request: request, compact: compact)
+      appendNativeTools(to: &prompt, request: request, compact: compact, excluding: researchTools)
     }
     return prompt.prefixStringForPlanning(promptLimit)
   }
@@ -398,15 +402,32 @@ enum AgentModelPlanningPrompt {
   private static func appendNativeTools(
     to prompt: inout String,
     request: AgentModelPlanningPromptRequest,
-    compact: Bool
+    compact: Bool,
+    excluding: Set<String>
   ) {
     append(&prompt, "Phone-native tools:\n")
-    for tool in prioritizedNativeTools(request: request).prefix(compact ? 24 : 60) {
+    for tool in prioritizedNativeTools(request: request).filter({ !excluding.contains($0.id) }).prefix(compact ? 24 : 60) {
       append(&prompt, "- \(tool.id)")
       append(&prompt, " | \(tool.title.prefixStringForPlanning(100))")
       append(&prompt, " | risk=\(tool.risk.rawValue)")
       append(&prompt, " | input=\(AgentMcpJSONCodec.stringify(tool.inputSchema).prefixStringForPlanning(1_200))\n")
     }
+  }
+
+  private static func appendResearchTools(to prompt: inout String, request: AgentModelPlanningPromptRequest) -> Set<String> {
+    let available = request.planRequest.nativeTools.filter {
+      $0.availability.status == .available && AgentResearchCapabilityDiscovery.hasOnlyResearchConsent($0)
+    }
+    let tools = AgentResearchCapabilityDiscovery.orderedTools.compactMap { id in available.first { $0.id == id } }
+    guard !tools.isEmpty else { return [] }
+    append(&prompt, "Public research tools (independent read-only calls may run in parallel; runtime consent still applies):\n")
+    for tool in tools {
+      append(&prompt, "- \(tool.id) | input=\(AgentMcpJSONCodec.stringify(tool.inputSchema))\n")
+    }
+    if tools.contains(where: { $0.id == AgentIOSWebIntelligenceNativeToolCatalog.search }) {
+      append(&prompt, "For image or news search set verticals to [\"image\"] or [\"news\"]. Keep user-requested drawing/photo style in the query.\n")
+    }
+    return Set(tools.map(\.id))
   }
 
   private static func prioritizedNativeTools(

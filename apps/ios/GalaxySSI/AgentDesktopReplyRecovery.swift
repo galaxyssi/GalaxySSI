@@ -17,6 +17,7 @@ private struct AgentDesktopReplyRecoveryState: Codable {
   var records: [String: AgentDesktopReplyRecoveryRecord]
   var discovery = AgentDesktopReplyDiscoveryProgress()
   var retiredDuringDiscovery: Set<String>? = nil
+  var supersededCodexBindings: [AgentDesktopReplyBinding]? = nil
 }
 
 enum AgentDesktopReplyDiscoveryPolicy {
@@ -168,7 +169,11 @@ struct AgentDesktopReplyBinding: Codable, Equatable {
   var identity: AgentTaskIdentity
   var managedSource: AgentManagedDesktopReplySource? = nil
   var teamSource: AgentTeamDesktopReplySource? = nil
-  var sourceIdentity: String { teamSource?.sourceMessageId ?? managedSource.map { String($0.sourceMessageId) } ?? sourceId.uuidString }
+  var attemptSourceId: UUID? = nil
+  var sourceIdentity: String {
+    teamSource?.sourceMessageId ?? managedSource.map { String($0.sourceMessageId) } ??
+      attemptSourceId?.uuidString ?? sourceId.uuidString
+  }
 
   var fields: [String: String] {
     ["client_route_id": identity.clientRouteId, "conversation_id": identity.conversationId,
@@ -177,7 +182,9 @@ struct AgentDesktopReplyBinding: Codable, Equatable {
   }
 
   var isValid: Bool {
-    identity.isComplete && !(managedSource != nil && teamSource != nil) && (teamSource.map {
+    identity.isComplete && !(managedSource != nil && teamSource != nil) &&
+      (attemptSourceId == nil || (managedSource == nil && teamSource == nil && attemptSourceId != sourceId)) &&
+      (teamSource.map {
       !$0.supervisorRunId.isBlank && $0.supervisorRunId.count <= 200 && !$0.memberId.isBlank &&
         $0.memberId.count <= 200 && UUID(uuidString: $0.sourceMessageId) != nil
     } ?? true) && (managedSource.map {
@@ -191,6 +198,7 @@ struct AgentDesktopReplyBinding: Codable, Equatable {
     var values = [desktopId, displayContactId] + fields.keys.sorted().map { fields[$0]! }
     if let managedSource { values += [managedSource.ownerRunId, String(managedSource.executionGeneration)] }
     if let teamSource { values += ["team-observer", teamSource.supervisorRunId, teamSource.memberId] }
+    if attemptSourceId != nil { values += ["codex-replay", sourceId.uuidString] }
     let data = (try? JSONEncoder().encode(values)) ?? Data()
     return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
@@ -265,6 +273,16 @@ struct AgentDesktopReplyRecoveryRecord: Codable, Equatable {
   var sequence: Int64 = -1
   var status = ""
   var resultManifest: AgentDesktopResultManifest? = nil
+  var codexProgress: AgentDesktopCodexProgress? = nil
+  var codexReplay: AgentCodexReplaySeed? = nil
+  var codexDispatchPending: Bool? = nil
+
+  func isCodexSilent(now: Int64) -> Bool {
+    terminalObservedAt == 0 && AgentCodexSilenceRecoveryPolicy.isSilent(
+      status: status, since: codexProgress?.lastProgressAt ?? createdAt, now: now
+    )
+  }
+
   var acceptedReply: AgentDesktopAcceptedReply? = nil
 
   func accepts(status: String, generation: Int64, sequence: Int64) -> Bool {
@@ -291,6 +309,29 @@ struct AgentDesktopReplyRecoveryRecord: Codable, Equatable {
   }
 }
 
+struct AgentDesktopCodexProgress: Codable, Equatable {
+  var generation: Int64
+  var sequence: Int64
+  var lastProgressAt: Int64
+  var eventIds: [String]
+
+  mutating func observe(_ updates: [AgentConnectorPublicProgress], now: Int64) {
+    for event in updates.sorted(by: { ($0.generation, $0.sequence) < ($1.generation, $1.sequence) })
+      where event.countsForCodexSilence {
+      guard event.generation >= generation else { continue }
+      if event.generation > generation {
+        generation = event.generation
+        sequence = -1
+        eventIds = []
+      }
+      guard event.sequence >= sequence, !eventIds.contains(event.eventId) else { continue }
+      sequence = event.sequence
+      eventIds = Array((eventIds + [event.eventId]).suffix(128))
+      lastProgressAt = max(lastProgressAt, now)
+    }
+  }
+}
+
 // Owned by the main-thread MessageCoordinator. This journal is independent of task checkpoints.
 @MainActor
 final class AgentDesktopReplyRecovery {
@@ -309,6 +350,7 @@ final class AgentDesktopReplyRecovery {
   private var queries: [String: Query] = [:]
   private var healthy = true
   private var retiredDuringDiscovery: Set<String> = []
+  private var supersededCodexBindings: [AgentDesktopReplyBinding] = []
   private(set) var discoveryProgress = AgentDesktopReplyDiscoveryProgress()
 
   init(defaults: UserDefaults, secrets: GalaxySSISecretStore, journal: AgentDesktopReplyRecoveryPersisting) {
@@ -319,6 +361,7 @@ final class AgentDesktopReplyRecovery {
         records = decoded.records
         discoveryProgress = decoded.discovery
         retiredDuringDiscovery = decoded.retiredDuringDiscovery ?? []
+        supersededCodexBindings = decoded.supersededCodexBindings ?? []
         // SQLite is authoritative after migration, including when the last pending request was retired.
         GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: Self.storageKey, secrets: secrets)
       } else if let legacy = GalaxySSIEncryptedUserDefaultsStore.load(defaults: defaults, key: Self.storageKey, secrets: secrets) {
@@ -327,6 +370,7 @@ final class AgentDesktopReplyRecovery {
         records = decoded.records
         discoveryProgress = decoded.discovery
         retiredDuringDiscovery = decoded.retiredDuringDiscovery ?? []
+        supersededCodexBindings = decoded.supersededCodexBindings ?? []
         GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: Self.storageKey, secrets: secrets)
       } else if defaults.data(forKey: Self.storageKey + ".encrypted.v1") != nil { healthy = false }
     } catch { healthy = false }
@@ -348,6 +392,57 @@ final class AgentDesktopReplyRecovery {
   }
 
   func record(for binding: AgentDesktopReplyBinding) -> AgentDesktopReplyRecoveryRecord? { records[binding.key] }
+
+  func isSupersededCodexPayload(_ payload: [String: Any], desktopId: String) -> Bool {
+    supersededCodexBindings.contains { $0.desktopId == desktopId && $0.matches(payload) }
+  }
+
+  func scheduleCodexReplay(from old: AgentDesktopReplyRecoveryRecord, to next: AgentDesktopReplyBinding,
+                           replay: AgentCodexReplaySeed, now: Int64) -> Bool {
+    guard now > 0, records[old.binding.key] == old, old.codexReplay != nil,
+          next.isValid, next.sourceId == old.binding.sourceId,
+          next.identity.conversationId == old.binding.identity.conversationId,
+          next.identity.turnId == old.binding.identity.turnId,
+          next.displayContactId == old.binding.displayContactId,
+          next.desktopId == old.binding.desktopId,
+          next.attemptSourceId != nil, next.sourceIdentity != old.binding.sourceIdentity,
+          next.contactId == replay.budget.expectedTarget, records[next.key] == nil else { return false }
+    var updated = records
+    updated.removeValue(forKey: old.binding.key)
+    updated[next.key] = AgentDesktopReplyRecoveryRecord(binding: next, createdAt: now,
+      codexReplay: replay, codexDispatchPending: true)
+    let superseded = Array((supersededCodexBindings + [old.binding]).suffix(512))
+    guard save(updated, superseded: superseded) else { return false }
+    queries = queries.filter { $0.value.binding != old.binding }
+    return true
+  }
+
+  func markCodexReplayDispatched(_ binding: AgentDesktopReplyBinding) -> Bool {
+    guard var record = records[binding.key] else { return true }
+    guard record.codexDispatchPending == true else { return true }
+    record.codexDispatchPending = false
+    var updated = records
+    updated[binding.key] = record
+    return save(updated)
+  }
+
+  @discardableResult
+  func observeCodexProgress(_ updates: [AgentConnectorPublicProgress], binding: AgentDesktopReplyBinding, now: Int64) -> Bool {
+    guard var record = records[binding.key], record.terminalObservedAt == 0 else { return false }
+    let eligible = updates.filter {
+      $0.countsForCodexSilence && ($0.generation > record.generation ||
+        ($0.generation == record.generation && $0.sequence >= max(0, record.sequence)))
+    }
+    guard !eligible.isEmpty else { return true }
+    var progress = record.codexProgress ?? AgentDesktopCodexProgress(
+      generation: record.generation, sequence: -1, lastProgressAt: record.createdAt, eventIds: [])
+    progress.observe(eligible, now: now)
+    guard progress != record.codexProgress else { return true }
+    record.codexProgress = progress
+    var next = records
+    next[binding.key] = record
+    return save(next)
+  }
 
   @discardableResult
   func attachManifest(_ manifest: AgentDesktopResultManifest, to expected: AgentDesktopReplyRecoveryRecord) -> Bool {
@@ -408,11 +503,12 @@ final class AgentDesktopReplyRecovery {
   }
 
   @discardableResult
-  func track(_ binding: AgentDesktopReplyBinding, now: Int64) -> Bool {
+  func track(_ binding: AgentDesktopReplyBinding, now: Int64, codexReplay: AgentCodexReplaySeed? = nil) -> Bool {
     guard healthy, binding.isValid, now > 0 else { return false }
-    if records[binding.key] != nil || retiredDuringDiscovery.contains(binding.key) { return true }
+    if records[binding.key] != nil || retiredDuringDiscovery.contains(binding.key) ||
+       supersededCodexBindings.contains(binding) { return true }
     var next = records
-    next[binding.key] = AgentDesktopReplyRecoveryRecord(binding: binding, createdAt: now)
+    next[binding.key] = AgentDesktopReplyRecoveryRecord(binding: binding, createdAt: now, codexReplay: codexReplay)
     return save(next)
   }
 
@@ -457,7 +553,14 @@ final class AgentDesktopReplyRecovery {
           query.binding.managedSource == nil || query.binding.managedSource?.executionGeneration == generation,
           let sequence = Self.integer(items[0]["status_sequence"], minimum: 0),
           record.accepts(status: status, generation: generation, sequence: sequence) else { return nil }
-    if generation > record.generation { record.terminalObservedAt = 0; record.resultManifest = nil }
+    if generation > record.generation {
+      record.terminalObservedAt = 0
+      record.resultManifest = nil
+      if record.generation > 0, record.codexProgress != nil {
+        record.codexProgress = AgentDesktopCodexProgress(generation: generation, sequence: -1,
+          lastProgressAt: now, eventIds: [])
+      }
+    }
     record.generation = generation
     record.sequence = sequence
     record.status = status
@@ -480,15 +583,19 @@ final class AgentDesktopReplyRecovery {
   }
 
   private func save(_ next: [String: AgentDesktopReplyRecoveryRecord],
-                    discovery: AgentDesktopReplyDiscoveryProgress? = nil, retired: Set<String>? = nil) -> Bool {
+                    discovery: AgentDesktopReplyDiscoveryProgress? = nil, retired: Set<String>? = nil,
+                    superseded: [AgentDesktopReplyBinding]? = nil) -> Bool {
     let progress = discovery ?? discoveryProgress
     let retiredKeys = progress.completed ? [] : (retired ?? retiredDuringDiscovery)
-    let state = AgentDesktopReplyRecoveryState(records: next, discovery: progress, retiredDuringDiscovery: retiredKeys)
+    let tombstones = superseded ?? supersededCodexBindings
+    let state = AgentDesktopReplyRecoveryState(records: next, discovery: progress, retiredDuringDiscovery: retiredKeys,
+      supersededCodexBindings: tombstones.isEmpty ? nil : tombstones)
     guard healthy, let data = try? JSONEncoder().encode(state),
           journal.writeDesktopReplyRecoveryState(data) else { return false }
     records = next
     discoveryProgress = state.discovery
     retiredDuringDiscovery = retiredKeys
+    supersededCodexBindings = tombstones
     return true
   }
 
@@ -500,7 +607,9 @@ final class AgentDesktopReplyRecovery {
       decoded = AgentDesktopReplyRecoveryState(records:
         try JSONDecoder().decode([String: AgentDesktopReplyRecoveryRecord].self, from: data))
     }
-    guard decoded.version == 2, decoded.records.allSatisfy({ entry in
+    guard decoded.version == 2, (decoded.supersededCodexBindings?.count ?? 0) <= 512,
+      decoded.supersededCodexBindings?.allSatisfy(\.isValid) != false,
+      decoded.records.allSatisfy({ entry in
       let record = entry.value
       return entry.key == record.binding.key && record.binding.isValid &&
       record.createdAt > 0 && (record.resultManifest?.isValid ?? true) &&
