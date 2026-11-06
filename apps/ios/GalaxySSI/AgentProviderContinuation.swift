@@ -128,8 +128,11 @@ struct AgentProviderTranscript {
     return callId
   }
 
-  func replyName(_ result: AgentModelToolResultContent) -> String {
-    replies[result.callId]?.name ?? result.toolId
+  func geminiReply(to result: AgentModelToolResultContent, value: AgentMcpJSONObject) -> AgentMcpJSONValue? {
+    guard let wire = replies[result.callId] else { return nil }
+    var reply: AgentMcpJSONObject = ["name": .string(wire.name), "response": .object(value)]
+    reply["id"] = wire.id.map(AgentMcpJSONValue.string)
+    return .object(["functionResponse": .object(reply)])
   }
 
   private static func calls(in payload: AgentMcpJSONObject, provider: AgentModelToolProvider) -> [AgentMcpJSONObject] {

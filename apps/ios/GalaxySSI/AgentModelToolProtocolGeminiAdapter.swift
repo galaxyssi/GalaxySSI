@@ -72,11 +72,18 @@ final class GeminiAgentModelToolProtocolAdapter: StrictAgentModelToolProtocolAda
             throw protocolError("malformed_tool_result", "\(path).tool_result is required")
           }
           let bounded = try boundedResult(toolResult, path: path)
-          var reply: AgentMcpJSONObject = [
-            "name": .string(transcript.replyName(toolResult)), "response": .object(bounded.value)
-          ]
-          reply["id"] = transcript.replyId(toolResult.callId).map(AgentMcpJSONValue.string)
-          parts.append(.object(["functionResponse": .object(reply)]))
+          if let original = transcript.geminiReply(to: toolResult, value: bounded.value) {
+            parts.append(original)
+            index += 1
+            continue
+          }
+          parts.append(.object([
+            "functionResponse": .object([
+              "id": .string(toolResult.callId),
+              "name": .string(toolResult.toolId),
+              "response": .object(bounded.value)
+            ])
+          ]))
           index += 1
         }
         contents.append(content(role: "user", parts: parts))
