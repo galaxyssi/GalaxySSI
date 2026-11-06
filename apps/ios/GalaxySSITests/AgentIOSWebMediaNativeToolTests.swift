@@ -91,7 +91,7 @@ extension GalaxySSIStoreTests {
               "render_mode": .string(operation == .browserRender ? "isolated_static_dom" : "bounded_http")
             ]) { current, _ in current }
           )
-        case .browserSessionCreate, .browserSessionNavigate:
+        case .browserSessionCreate, .browserSessionNavigate, .browserSessionBack:
           return AgentNativeToolExecutionResult.success(
             output: commonWeb(method: "get").merging([
               "browser_id": .string("browser-session-0001"),
@@ -102,6 +102,12 @@ extension GalaxySSIStoreTests {
               "html_sha256": .string(sha)
             ]) { current, _ in current }
           )
+        case .browserSessionOperationStatus:
+          return .success(output: [
+            "request_id": input["request_id"] ?? .string("request"),
+            "operation": .string("navigate"), "observed_at_epoch_ms": .int(5_000),
+            "business_success_verified": .bool(false)
+          ])
         case .browserSessionClose:
           return AgentNativeToolExecutionResult.success(
             output: [
@@ -847,19 +853,26 @@ extension GalaxySSIStoreTests {
       }
     }
 
-    func response(url: String, body: String) -> AgentIOSURLSessionWebResponse {
+    func response(url: String, body: String, partial: Bool = false) -> AgentIOSURLSessionWebResponse {
       AgentIOSURLSessionWebResponse(
         statusCode: 200,
         finalURL: URL(string: url)!,
         headers: ["content-type": "text/html; charset=utf-8"],
         body: Data(body.utf8),
-        retrievedAtEpochMillis: 1_100
+        retrievedAtEpochMillis: 1_100,
+        isPartial: partial
       )
     }
 
     let transport = FakeURLSessionWebTransport(responses: [
       response(url: "https://galaxyssi.example/first", body: "<h1>First</h1><script>hidden()</script>"),
-      response(url: "https://galaxyssi.example/second", body: "<h1>Second</h1>")
+      response(url: "https://galaxyssi.example/second", body: """
+        <h1>Second</h1><a href="/public?page=2&amp;token=private-token#private-fragment">Next page</a>
+        <a href="https://127.0.0.1/hidden">Local</a>
+        <a href="https://user:password@galaxyssi.example/private">Auth</a>
+        <script>let html = '<a href="/fake">Fake link</a>'</script>
+        """, partial: true),
+      response(url: "https://galaxyssi.example/first", body: "<h1>First, read again</h1>")
     ])
     let provider = AgentIOSURLSessionWebMediaToolProvider(
       transport: transport,
@@ -873,9 +886,11 @@ extension GalaxySSIStoreTests {
     let registry = try AgentNativeToolRegistry().registerExecutables(
       AgentPhoneNativeToolCatalog.webMediaExecutableDefinitions(provider: provider)
     )
-    let context = AgentNativeToolInvocationContext(
+    var context = AgentNativeToolInvocationContext(
+      invocationId: "create",
       sessionId: "ios-session",
       conversationId: "conversation-1",
+      turnId: "turn-1",
       callerId: "agent-a",
       grantedPermissions: [
         AgentIOSWebMediaNativeToolCatalog.publicHttpsNetworkPermission,
@@ -884,7 +899,8 @@ extension GalaxySSIStoreTests {
       grantedConsents: [
         AgentIOSWebMediaNativeToolCatalog.publicWebConsent,
         AgentIOSWebMediaNativeToolCatalog.browserSessionConsent
-      ]
+      ],
+      attributes: ["recovery_task_id": "task-1"]
     )
     let hooks = AgentNativeToolInvocationHooks(nowMillis: { 1_000 })
 
@@ -895,6 +911,7 @@ extension GalaxySSIStoreTests {
       hooks: hooks
     )
     let browserId = try XCTUnwrap(created.output["browser_id"]?.stringValue)
+    context.invocationId = "navigate"
     let navigated = registry.invoke(
       AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate,
       input: [
@@ -904,12 +921,29 @@ extension GalaxySSIStoreTests {
       context: context,
       hooks: hooks
     )
+    let requestID = try XCTUnwrap(navigated.output["request_id"]?.stringValue)
+    context.invocationId = "status"
+    let status = registry.invoke(AgentIOSWebMediaNativeToolCatalog.browserSessionOperationStatus,
+      input: ["request_id": .string(requestID)], context: context, hooks: hooks)
+    var otherTurn = context
+    otherTurn.turnId = "foreign"
+    let foreign = registry.invoke(AgentIOSWebMediaNativeToolCatalog.browserSessionOperationStatus,
+      input: ["request_id": .string(requestID)], context: otherTurn, hooks: hooks)
+    XCTAssertEqual(transport.requests.count, 2, "Status lookup must not request the page again.")
+    context.invocationId = "back"
+    let back = registry.invoke(AgentIOSWebMediaNativeToolCatalog.browserSessionBack,
+      input: ["browser_id": .string(browserId)], context: context, hooks: hooks)
+    context.invocationId = "no-previous-page"
+    let noPrevious = registry.invoke(AgentIOSWebMediaNativeToolCatalog.browserSessionBack,
+      input: ["browser_id": .string(browserId)], context: context, hooks: hooks)
+    context.invocationId = "close"
     let closed = registry.invoke(
       AgentIOSWebMediaNativeToolCatalog.browserSessionClose,
       input: ["browser_id": .string(browserId)],
       context: context,
       hooks: hooks
     )
+    context.invocationId = "after-close"
     let afterClose = registry.invoke(
       AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate,
       input: [
@@ -933,13 +967,33 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(navigated.output["current_url"], .string("https://galaxyssi.example/second"))
     XCTAssertEqual(navigated.output["history_count"], .int(2))
     XCTAssertEqual(navigated.output["text"]?.stringValue?.contains("Second"), true)
+    XCTAssertEqual(navigated.output["navigation_completed"], .bool(false))
+    XCTAssertEqual(navigated.output["next_action"], .string("use_observation"))
+    XCTAssertEqual(navigated.output["business_success_verified"], .bool(false))
+    let observation = try XCTUnwrap(navigated.output["observation"]?.objectValue)
+    XCTAssertEqual(observation["revision"], .int(2))
+    XCTAssertEqual(observation["partial"], .bool(true))
+    XCTAssertEqual(observation["links"], .array([.object([
+      "url": .string("https://galaxyssi.example/public?page=2"), "title": .string("Next page")
+    ])]))
+    XCTAssertEqual(status.output["observation"], .object(observation))
+    XCTAssertEqual(status.output["operation"], .string("navigate"))
+    XCTAssertEqual(status.output["navigation_completed"], .bool(false))
+    XCTAssertEqual(foreign.error?.code, "browser_operation_not_found")
+    XCTAssertTrue(back.isSuccess)
+    XCTAssertEqual(back.output["current_url"], .string("https://galaxyssi.example/first"))
+    XCTAssertEqual(back.output["history_count"], .int(1))
+    XCTAssertEqual(back.output["revision"], .int(3))
+    XCTAssertEqual(back.output["observation"]?.objectValue?.string("text"), "First, read again")
+    XCTAssertEqual(noPrevious.error?.code, "browser_no_previous_page")
 
     XCTAssertTrue(closed.isSuccess)
     XCTAssertEqual(closed.output["browser_id"], .string(browserId))
     XCTAssertEqual(closed.output["closed"], .bool(true))
     XCTAssertEqual(afterClose.status, .failed)
     XCTAssertEqual(afterClose.error?.code, "tool_handle_not_found")
-    XCTAssertEqual(transport.requests.count, 2)
+    XCTAssertEqual(transport.requests.count, 3)
+    XCTAssertTrue(transport.requests.allSatisfy(\.allowsPartialBody))
   }
 
   private func doubleValue(_ value: AgentMcpJSONValue?) -> Double? {

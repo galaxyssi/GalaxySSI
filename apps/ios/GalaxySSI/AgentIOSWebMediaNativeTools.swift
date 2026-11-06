@@ -6,6 +6,8 @@ enum AgentIOSWebMediaOperation: String, Codable, CaseIterable, Identifiable {
   case browserRender = "browser.render"
   case browserSessionCreate = "browser.session.create"
   case browserSessionNavigate = "browser.session.navigate"
+  case browserSessionBack = "browser.session.back"
+  case browserSessionOperationStatus = "browser.session.operation_status"
   case browserSessionClose = "browser.session.close"
   case contentExtract = "content.extract"
   case httpRequest = "http.request"
@@ -60,6 +62,8 @@ enum AgentIOSWebMediaNativeToolCatalog {
   static let browserRender = "browser.render"
   static let browserSessionCreate = "browser.session.create"
   static let browserSessionNavigate = "browser.session.navigate"
+  static let browserSessionBack = "browser.session.back"
+  static let browserSessionOperationStatus = "browser.session.operation_status"
   static let browserSessionClose = "browser.session.close"
   static let contentExtract = "content.extract"
   static let httpRequest = "http.request"
@@ -99,6 +103,8 @@ enum AgentIOSWebMediaNativeToolCatalog {
     browserRender,
     browserSessionCreate,
     browserSessionNavigate,
+    browserSessionBack,
+    browserSessionOperationStatus,
     browserSessionClose,
     contentExtract,
     httpRequest,
@@ -115,6 +121,8 @@ enum AgentIOSWebMediaNativeToolCatalog {
     browserRender,
     browserSessionCreate,
     browserSessionNavigate,
+    browserSessionBack,
+    browserSessionOperationStatus,
     browserSessionClose,
     contentExtract,
     httpRequest,
@@ -151,6 +159,10 @@ enum AgentIOSWebMediaNativeToolCatalog {
       return "Create isolated browser session"
     case .browserSessionNavigate:
       return "Navigate isolated browser session"
+    case .browserSessionBack:
+      return "Go back in isolated browser session"
+    case .browserSessionOperationStatus:
+      return "Read a scoped browser operation receipt"
     case .browserSessionClose:
       return "Close isolated browser session"
     case .contentExtract:
@@ -214,7 +226,11 @@ enum AgentIOSWebMediaNativeToolCatalog {
     case .browserSessionCreate:
       return "Creates an explicit browser_id scoped to the caller and conversation, with optional bounded public HTTPS content."
     case .browserSessionNavigate:
-      return "Navigates an existing explicit browser_id and returns bounded readable public page content."
+      return "Navigates an existing browser_id and returns readable text, links and page revision inline."
+    case .browserSessionBack:
+      return "Loads the prior page in the existing browser_id and returns its fresh observation inline."
+    case .browserSessionOperationStatus:
+      return "Reads a terminal operation by its original request_id in this task and turn, without another network request."
     case .browserSessionClose:
       return "Closes a caller-scoped explicit browser_id without retaining page content."
     case .contentExtract:
@@ -238,8 +254,8 @@ enum AgentIOSWebMediaNativeToolCatalog {
     switch operation {
     case .fileDownload, .webDownload:
       return .medium
-    case .webSearch, .webOpen, .browserRender, .browserSessionCreate, .browserSessionNavigate,
-         .browserSessionClose, .contentExtract, .httpRequest, .webHead, .webFetch, .ocrRecognizeContent:
+    case .webSearch, .webOpen, .browserRender, .browserSessionCreate, .browserSessionNavigate, .browserSessionBack,
+         .browserSessionOperationStatus, .browserSessionClose, .contentExtract, .httpRequest, .webHead, .webFetch, .ocrRecognizeContent:
       return .low
     }
   }
@@ -248,9 +264,9 @@ enum AgentIOSWebMediaNativeToolCatalog {
     switch operation {
     case .fileDownload, .webDownload:
       return .idempotencyKeyRequired
-    case .browserSessionCreate, .browserSessionNavigate, .browserSessionClose:
+    case .browserSessionCreate, .browserSessionNavigate, .browserSessionBack, .browserSessionClose:
       return .nonIdempotent
-    case .webSearch, .webOpen, .browserRender, .contentExtract, .httpRequest, .webHead, .webFetch, .ocrRecognizeContent:
+    case .webSearch, .webOpen, .browserRender, .contentExtract, .httpRequest, .webHead, .webFetch, .ocrRecognizeContent, .browserSessionOperationStatus:
       return .idempotent
     }
   }
@@ -258,9 +274,9 @@ enum AgentIOSWebMediaNativeToolCatalog {
   private static func effect(_ operation: AgentIOSWebMediaOperation) -> AgentNativeToolEffect {
     switch operation {
     case .webSearch, .webOpen, .browserRender, .contentExtract, .httpRequest, .webHead, .webFetch,
-         .ocrRecognizeContent:
+         .ocrRecognizeContent, .browserSessionOperationStatus:
       return .readOnly
-    case .browserSessionCreate, .browserSessionNavigate, .browserSessionClose, .fileDownload, .webDownload:
+    case .browserSessionCreate, .browserSessionNavigate, .browserSessionBack, .browserSessionClose, .fileDownload, .webDownload:
       return .mutation
     }
   }
@@ -269,9 +285,9 @@ enum AgentIOSWebMediaNativeToolCatalog {
     switch operation {
     case .contentExtract:
       return ["content.extract", "html.no_script_execution", "result.bounded"]
-    case .browserSessionCreate, .browserSessionNavigate:
+    case .browserSessionCreate, .browserSessionNavigate, .browserSessionBack:
       return ["network.public_https", "network.local_hosts_blocked", "network.redirect_bounded", "browser.explicit_handle", "cookies.none"]
-    case .browserSessionClose:
+    case .browserSessionClose, .browserSessionOperationStatus:
       return ["browser.explicit_handle", "tool_handle.scoped"]
     case .fileDownload, .webDownload:
       return ["network.public_https", "network.local_hosts_blocked", "network.redirect_bounded", "content_uri.user_authorized", "auto_execute.disabled"]
@@ -293,13 +309,13 @@ enum AgentIOSWebMediaNativeToolCatalog {
           required: false
         )
       ]
-    case .browserSessionClose:
+    case .browserSessionClose, .browserSessionOperationStatus:
       return [browserSessionRequirement()]
     case .fileDownload, .webDownload:
       return [publicHttpsRequirement(), contentUriRequirement()]
     case .ocrRecognizeContent:
       return [contentUriRequirement()]
-    case .browserSessionCreate, .browserSessionNavigate:
+    case .browserSessionCreate, .browserSessionNavigate, .browserSessionBack:
       return [publicHttpsRequirement(), browserSessionRequirement()]
     case .webSearch, .webOpen, .browserRender, .httpRequest, .webHead, .webFetch:
       return [publicHttpsRequirement()]
@@ -316,9 +332,9 @@ enum AgentIOSWebMediaNativeToolCatalog {
           "Allows this invocation to transform the supplied HTML or plain text locally."
         )
       ]
-    case .browserSessionClose:
+    case .browserSessionClose, .browserSessionOperationStatus:
       return [browserSessionConsentRequirement()]
-    case .browserSessionCreate, .browserSessionNavigate:
+    case .browserSessionCreate, .browserSessionNavigate, .browserSessionBack:
       return [
         publicWebConsentRequirement(),
         browserSessionConsentRequirement()
@@ -357,6 +373,14 @@ enum AgentIOSWebMediaNativeToolCatalog {
         ]) { current, _ in current },
         required: ["browser_id", "url"]
       )
+    case .browserSessionBack:
+      return objectSchema([
+        "browser_id": stringSchema(minLength: 16, maxLength: maxBrowserHandleCharacters),
+        "timeout_ms": timeoutSchema(),
+        "max_bytes": integerSchema(minimum: 1, maximum: maxFetchBytes)
+      ], required: ["browser_id"])
+    case .browserSessionOperationStatus:
+      return objectSchema(["request_id": stringSchema(minLength: 1, maxLength: maxBrowserHandleCharacters)], required: ["request_id"])
     case .browserSessionClose:
       return objectSchema([
         "browser_id": stringSchema(minLength: 16, maxLength: maxBrowserHandleCharacters)
@@ -419,8 +443,18 @@ enum AgentIOSWebMediaNativeToolCatalog {
       ]) { current, _ in current })
     case .browserSessionCreate:
       return objectSchema(commonWebOutputProperties().merging(browserSessionOutputProperties()) { current, _ in current })
-    case .browserSessionNavigate:
+    case .browserSessionNavigate, .browserSessionBack:
       return objectSchema(commonWebOutputProperties().merging(browserSessionOutputProperties()) { current, _ in current })
+    case .browserSessionOperationStatus:
+      return objectSchema([
+        "request_id": stringSchema(minLength: 1, maxLength: maxBrowserHandleCharacters),
+        "operation": stringSchema(enumValues: ["create", "navigate", "back", "close"]),
+        "observed_at_epoch_ms": integerSchema(minimum: 0),
+        "observation": browserObservationSchema(),
+        "next_action": stringSchema(enumValues: ["use_observation"]),
+        "navigation_completed": boolSchema(),
+        "business_success_verified": boolSchema()
+      ], required: ["request_id", "operation", "observed_at_epoch_ms", "business_success_verified"])
     case .browserSessionClose:
       return objectSchema([
         "browser_id": stringSchema(minLength: 16, maxLength: maxBrowserHandleCharacters),
@@ -471,12 +505,12 @@ enum AgentIOSWebMediaNativeToolCatalog {
       metadata["android_executor_compat"] = androidContentExtractExecutorId
       metadata["script_execution"] = "false"
       metadata["network"] = "not_required"
-    case .browserSessionCreate, .browserSessionNavigate:
+    case .browserSessionCreate, .browserSessionNavigate, .browserSessionBack:
       metadata["android_executor_compat"] = androidWebExecutorId
       metadata["handle_executor_compat"] = androidHandleExecutorId
       metadata["state_model"] = "explicit_browser_id"
       metadata["javascript"] = "false"
-    case .browserSessionClose:
+    case .browserSessionClose, .browserSessionOperationStatus:
       metadata["android_executor_compat"] = androidHandleExecutorId
       metadata["state_model"] = "explicit_browser_id"
       metadata["persistence"] = "process_lifetime"
@@ -578,9 +612,27 @@ enum AgentIOSWebMediaNativeToolCatalog {
       "current_url": urlSchema(),
       "history_count": integerSchema(minimum: 0, maximum: 256),
       "expires_at_epoch_ms": integerSchema(minimum: 0),
+      "revision": integerSchema(minimum: 0),
+      "request_id": stringSchema(minLength: 1, maxLength: maxBrowserHandleCharacters),
+      "observation": browserObservationSchema(),
+      "next_action": stringSchema(enumValues: ["use_observation"]),
+      "navigation_completed": boolSchema(),
+      "business_success_verified": boolSchema(),
       "text": stringSchema(maxLength: maxContentCharacters),
       "html_sha256": sha256Schema()
     ]
+  }
+
+  private static func browserObservationSchema() -> AgentMcpJSONObject {
+    objectSchema([
+      "text": stringSchema(maxLength: 1_600),
+      "url": urlSchema(),
+      "revision": integerSchema(minimum: 0),
+      "partial": boolSchema(),
+      "links": arraySchema(itemSchema: objectSchema([
+        "url": stringSchema(maxLength: 240), "title": stringSchema(maxLength: 80)
+      ], required: ["url", "title"]), maxItems: 6)
+    ], required: ["text", "revision", "partial", "links"])
   }
 
   private static func ocrOutputSchema() -> AgentMcpJSONObject {
@@ -822,7 +874,7 @@ struct AgentIOSWebMediaNativeToolExecutor {
 
   private func requiresHTTPS(_ operation: AgentIOSWebMediaOperation) -> Bool {
     switch operation {
-    case .contentExtract, .browserSessionClose, .ocrRecognizeContent:
+    case .contentExtract, .browserSessionClose, .browserSessionBack, .browserSessionOperationStatus, .ocrRecognizeContent:
       return false
     case .webSearch, .webOpen, .browserRender, .browserSessionCreate, .browserSessionNavigate,
          .httpRequest, .fileDownload, .webHead, .webFetch, .webDownload:
@@ -832,9 +884,9 @@ struct AgentIOSWebMediaNativeToolExecutor {
 
   private func usesPublicHTTPS(_ operation: AgentIOSWebMediaOperation) -> Bool {
     switch operation {
-    case .contentExtract, .browserSessionClose, .ocrRecognizeContent:
+    case .contentExtract, .browserSessionClose, .browserSessionOperationStatus, .ocrRecognizeContent:
       return false
-    case .webSearch, .webOpen, .browserRender, .browserSessionCreate, .browserSessionNavigate,
+    case .webSearch, .webOpen, .browserRender, .browserSessionCreate, .browserSessionNavigate, .browserSessionBack,
          .httpRequest, .fileDownload, .webHead, .webFetch, .webDownload:
       return true
     }

@@ -19,11 +19,12 @@ struct AgentEffectRecoveryRecord: Codable, Equatable {
   }
 
   static let metadataKey = "host_effect_recovery"
-  static let browserObserver = "browser.session.operation_status"
+  static let browserObserver = AgentIOSWebMediaNativeToolCatalog.browserSessionOperationStatus
   static let nativeCaller = "galaxyssi.mobile_agent.plan"
   static let browserMutationTools: Set<String> = [
     AgentIOSWebMediaNativeToolCatalog.browserSessionCreate,
     AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate,
+    AgentIOSWebMediaNativeToolCatalog.browserSessionBack,
     AgentIOSWebMediaNativeToolCatalog.browserSessionClose
   ]
   let scope: AgentNativeEffectScope
@@ -63,6 +64,7 @@ struct AgentEffectRecoveryRecord: Codable, Equatable {
                 version: descriptor.version, input: [:], subject: "media") : nil
     case AgentIOSWebMediaNativeToolCatalog.browserSessionCreate,
          AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate,
+         AgentIOSWebMediaNativeToolCatalog.browserSessionBack,
          AgentIOSWebMediaNativeToolCatalog.browserSessionClose:
       query = Query(kind: .browser, toolId: browserObserver, version: descriptor.version,
                     input: ["request_id": .string(invocation)], subject: invocation)

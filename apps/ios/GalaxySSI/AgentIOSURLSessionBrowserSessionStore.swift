@@ -22,6 +22,7 @@ struct AgentIOSURLSessionBrowserSessionSnapshot: Equatable {
   var currentURL: String
   var historyCount: Int
   var expiresAtEpochMillis: Int64
+  var revision: Int64
 }
 
 enum AgentIOSURLSessionBrowserSessionStoreError: Error, Equatable {
@@ -29,6 +30,8 @@ enum AgentIOSURLSessionBrowserSessionStoreError: Error, Equatable {
   case toolHandleExpired
   case toolHandleOwnerMismatch
   case toolHandleContextMismatch
+  case noPreviousPage
+  case revisionChanged
 }
 
 final class AgentIOSURLSessionBrowserSessionStore {
@@ -46,14 +49,14 @@ final class AgentIOSURLSessionBrowserSessionStore {
     var createdAtEpochMillis: Int64
     var lastUsedAtEpochMillis: Int64
     var expiresAtEpochMillis: Int64
-    var useCount: Int64
+    var revision: Int64
 
     func snapshot() -> AgentIOSURLSessionBrowserSessionSnapshot {
       AgentIOSURLSessionBrowserSessionSnapshot(
         browserId: browserId,
         currentURL: currentURL,
         historyCount: history.count,
-        expiresAtEpochMillis: expiresAtEpochMillis
+        expiresAtEpochMillis: expiresAtEpochMillis, revision: revision
       )
     }
   }
@@ -70,6 +73,7 @@ final class AgentIOSURLSessionBrowserSessionStore {
     let scope: AgentIOSURLSessionBrowserSessionScope
     let name: String
     let time: Int64
+    let observation: AgentMcpJSONObject?
   }
 
   init(
@@ -86,7 +90,8 @@ final class AgentIOSURLSessionBrowserSessionStore {
     scope: AgentIOSURLSessionBrowserSessionScope,
     resourceId: String,
     currentURL: String,
-    nowMillis: Int64
+    nowMillis: Int64,
+    observation: AgentMcpJSONObject? = nil
   ) -> AgentIOSURLSessionBrowserSessionSnapshot {
     lock.lock()
     defer { lock.unlock() }
@@ -103,10 +108,11 @@ final class AgentIOSURLSessionBrowserSessionStore {
       createdAtEpochMillis: nowMillis,
       lastUsedAtEpochMillis: nowMillis,
       expiresAtEpochMillis: nowMillis + ttlMillis,
-      useCount: 0
+      revision: currentURL.isEmpty ? 0 : 1
     )
     records[browserId] = record
-    recordOperation(resourceId, scope: scope, name: "create", now: nowMillis)
+    recordOperation(resourceId, scope: scope, name: "create", now: nowMillis,
+      observation: observation, revision: record.revision)
     return record.snapshot()
   }
 
@@ -115,12 +121,19 @@ final class AgentIOSURLSessionBrowserSessionStore {
     scope: AgentIOSURLSessionBrowserSessionScope,
     currentURL: String,
     nowMillis: Int64,
-    requestId: String = ""
+    requestId: String = "",
+    observation: AgentMcpJSONObject? = nil,
+    backFromRevision: Int64? = nil
   ) throws -> AgentIOSURLSessionBrowserSessionSnapshot {
     lock.lock()
     defer { lock.unlock() }
     let key = clean(browserId, maxLength: 240)
     var record = try resolvedLocked(browserId: key, scope: scope, nowMillis: nowMillis)
+    if let backFromRevision {
+      guard record.revision == backFromRevision else { throw AgentIOSURLSessionBrowserSessionStoreError.revisionChanged }
+      guard record.history.count >= 2 else { throw AgentIOSURLSessionBrowserSessionStoreError.noPreviousPage }
+      record.history.removeLast(2)
+    }
     record.currentURL = String(currentURL.prefix(Int(AgentIOSWebMediaNativeToolCatalog.maxUrlCharacters)))
     if record.history.last != record.currentURL {
       record.history.append(record.currentURL)
@@ -129,10 +142,21 @@ final class AgentIOSURLSessionBrowserSessionStore {
       }
     }
     record.lastUsedAtEpochMillis = nowMillis
-    record.useCount += 1
+    record.revision += 1
     records[key] = record
-    recordOperation(requestId, scope: scope, name: "navigate", now: nowMillis)
+    recordOperation(requestId, scope: scope, name: backFromRevision == nil ? "navigate" : "back",
+      now: nowMillis, observation: observation, revision: record.revision)
     return record.snapshot()
+  }
+
+  func previousPage(
+    browserId: String, scope: AgentIOSURLSessionBrowserSessionScope, nowMillis: Int64
+  ) throws -> (url: String, revision: Int64) {
+    lock.lock()
+    defer { lock.unlock() }
+    let record = try resolvedLocked(browserId: clean(browserId, maxLength: 240), scope: scope, nowMillis: nowMillis)
+    guard record.history.count >= 2 else { throw AgentIOSURLSessionBrowserSessionStoreError.noPreviousPage }
+    return (record.history[record.history.count - 2], record.revision)
   }
 
   func validate(
@@ -165,7 +189,7 @@ final class AgentIOSURLSessionBrowserSessionStore {
       browserId: record.browserId,
       currentURL: record.currentURL,
       historyCount: record.history.count,
-      expiresAtEpochMillis: nowMillis
+      expiresAtEpochMillis: nowMillis, revision: record.revision
     )
   }
 
@@ -177,14 +201,27 @@ final class AgentIOSURLSessionBrowserSessionStore {
     guard !scope.contextId.isEmpty, !scope.turnId.isEmpty, !scope.taskId.isEmpty,
           let operation = operations.last(where: { $0.id == requestId && $0.scope == scope }),
           operation.time <= nowMillis, nowMillis - operation.time < ttlMillis else { return nil }
-    return ["request_id": .string(operation.id), "operation": .string(operation.name),
-            "observed_at_epoch_ms": .int(nowMillis)]
+    var output: AgentMcpJSONObject = [
+      "request_id": .string(operation.id), "operation": .string(operation.name),
+      "observed_at_epoch_ms": .int(nowMillis), "business_success_verified": .bool(false)
+    ]
+    if let observation = operation.observation {
+      output["observation"] = .object(observation)
+      output["next_action"] = .string("use_observation")
+      output["navigation_completed"] = .bool(observation["partial"] != .bool(true))
+    }
+    return output
   }
 
-  private func recordOperation(_ id: String, scope: AgentIOSURLSessionBrowserSessionScope, name: String, now: Int64) {
+  private func recordOperation(
+    _ id: String, scope: AgentIOSURLSessionBrowserSessionScope, name: String, now: Int64,
+    observation: AgentMcpJSONObject? = nil, revision: Int64 = 0
+  ) {
     guard !id.isEmpty, !scope.contextId.isEmpty, !scope.turnId.isEmpty, !scope.taskId.isEmpty else { return }
     operations.removeAll { $0.id == id && $0.scope == scope }
-    operations.append(Operation(id: id, scope: scope, name: name, time: now))
+    var page = observation
+    page?["revision"] = .int(revision)
+    operations.append(Operation(id: id, scope: scope, name: name, time: now, observation: page))
     if operations.count > 512 { operations.removeFirst(operations.count - 512) }
   }
 

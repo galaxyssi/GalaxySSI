@@ -16,6 +16,7 @@ struct AgentIOSURLSessionWebRequest: Equatable {
   var timeoutMillis: Int64
   var maxBodyBytes: Int64
   var headers: [String: String]
+  var allowsPartialBody = false
 }
 
 struct AgentIOSURLSessionWebResponse: Equatable {
@@ -24,6 +25,7 @@ struct AgentIOSURLSessionWebResponse: Equatable {
   var headers: [String: String]
   var body: Data
   var retrievedAtEpochMillis: Int64
+  var isPartial = false
 }
 
 protocol AgentIOSURLSessionWebTransporting {
@@ -57,7 +59,7 @@ private enum AgentIOSURLSessionWebContentPolicy {
   case download
 }
 
-private final class AgentIOSURLSessionNoRedirectDelegate: NSObject, URLSessionTaskDelegate {
+private class AgentIOSURLSessionNoRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
   func urlSession(
     _ session: URLSession,
     task: URLSessionTask,
@@ -69,9 +71,93 @@ private final class AgentIOSURLSessionNoRedirectDelegate: NSObject, URLSessionTa
   }
 }
 
+private final class AgentIOSBrowserBodyCollector {
+  private let lock = NSLock()
+  private let finished = DispatchSemaphore(value: 0)
+  private let maximumBytes: Int64
+  private var response: HTTPURLResponse?
+  private var data = Data()
+  private var error: Error?
+
+  init(maximumBytes: Int64) { self.maximumBytes = maximumBytes }
+
+  func receive(_ response: URLResponse) {
+    lock.lock()
+    self.response = response as? HTTPURLResponse
+    lock.unlock()
+  }
+
+  func receive(_ data: Data) -> Bool {
+    lock.lock()
+    let size = Int64(self.data.count) + Int64(data.count)
+    let oversized = size > maximumBytes
+    if oversized { error = AgentIOSURLSessionWebError.responseTooLarge(size, maximumBytes) }
+    else if error == nil { self.data.append(data) }
+    lock.unlock()
+    return !oversized
+  }
+
+  func complete(_ error: Error?) {
+    lock.lock()
+    if self.error == nil { self.error = error }
+    lock.unlock()
+    finished.signal()
+  }
+
+  func collect(timeoutMillis: Int64) throws -> (HTTPURLResponse, Data, Bool) {
+    let timedOut = finished.wait(timeout: .now() + Double(max(1, timeoutMillis)) / 1_000) == .timedOut
+    lock.lock()
+    defer { lock.unlock() }
+    if let error = error as? AgentIOSURLSessionWebError { throw error }
+    let partial = timedOut || (error as? URLError)?.code == .timedOut
+    if partial {
+      guard let response, (200...299).contains(response.statusCode), !data.isEmpty else {
+        throw AgentIOSURLSessionWebError.timeout
+      }
+      return (response, data, true)
+    }
+    if let error { throw AgentIOSURLSessionWebError.transportFailed(error.localizedDescription) }
+    guard let response else { throw AgentIOSURLSessionWebError.invalidResponse }
+    return (response, data, false)
+  }
+}
+
+private final class AgentIOSBrowserDataDelegate: AgentIOSURLSessionNoRedirectDelegate, URLSessionDataDelegate, @unchecked Sendable {
+  private let lock = NSLock()
+  private var collectors: [Int: AgentIOSBrowserBodyCollector] = [:]
+
+  func set(_ collector: AgentIOSBrowserBodyCollector?, for task: URLSessionTask) {
+    lock.lock()
+    collectors[task.taskIdentifier] = collector
+    lock.unlock()
+  }
+
+  private func collector(for task: URLSessionTask) -> AgentIOSBrowserBodyCollector? {
+    lock.lock()
+    defer { lock.unlock() }
+    return collectors[task.taskIdentifier]
+  }
+
+  func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+                  completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+    collector(for: dataTask)?.receive(response)
+    completionHandler(.allow)
+  }
+
+  func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+    if collector(for: dataTask)?.receive(data) == false { dataTask.cancel() }
+  }
+
+  func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    collector(for: task)?.complete(error)
+  }
+}
+
 final class AgentIOSDefaultURLSessionWebTransport: AgentIOSURLSessionWebTransporting {
   private let session: URLSession
   private let redirectDelegate: AgentIOSURLSessionNoRedirectDelegate?
+  private let browserSession: URLSession?
+  private let browserDelegate: AgentIOSBrowserDataDelegate?
   private let nowMillis: () -> Int64
 
   init(
@@ -84,6 +170,8 @@ final class AgentIOSDefaultURLSessionWebTransport: AgentIOSURLSessionWebTranspor
     if let session {
       self.session = session
       redirectDelegate = nil
+      browserSession = nil
+      browserDelegate = nil
     } else {
       let delegate = AgentIOSURLSessionNoRedirectDelegate()
       let configuration = URLSessionConfiguration.ephemeral
@@ -93,8 +181,13 @@ final class AgentIOSDefaultURLSessionWebTransport: AgentIOSURLSessionWebTranspor
       configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
       self.session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
       redirectDelegate = delegate
+      let browser = AgentIOSBrowserDataDelegate()
+      browserSession = URLSession(configuration: configuration, delegate: browser, delegateQueue: nil)
+      browserDelegate = browser
     }
   }
+
+  deinit { browserSession?.invalidateAndCancel() }
 
   func execute(_ request: AgentIOSURLSessionWebRequest) throws -> AgentIOSURLSessionWebResponse {
     var urlRequest = URLRequest(url: request.url)
@@ -106,6 +199,20 @@ final class AgentIOSDefaultURLSessionWebTransport: AgentIOSURLSessionWebTranspor
     urlRequest.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
     request.headers.forEach { name, value in
       urlRequest.setValue(value, forHTTPHeaderField: name)
+    }
+    if request.allowsPartialBody, let browserSession, let browserDelegate {
+      let collector = AgentIOSBrowserBodyCollector(maximumBytes: request.maxBodyBytes)
+      let task = browserSession.dataTask(with: urlRequest)
+      browserDelegate.set(collector, for: task)
+      defer {
+        browserDelegate.set(nil, for: task)
+        task.cancel()
+      }
+      task.resume()
+      let (response, data, partial) = try collector.collect(timeoutMillis: request.timeoutMillis)
+      return AgentIOSURLSessionWebResponse(statusCode: response.statusCode, finalURL: response.url ?? request.url,
+        headers: Self.normalizedHeaders(response.allHeaderFields), body: data,
+        retrievedAtEpochMillis: nowMillis(), isPartial: partial)
     }
 
     let semaphore = DispatchSemaphore(value: 0)
@@ -196,7 +303,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
   func availability(operation: AgentIOSWebMediaOperation) -> AgentNativeToolAvailability {
     switch operation {
     case .contentExtract, .webSearch, .webOpen, .browserRender, .browserSessionCreate, .browserSessionNavigate,
-         .browserSessionClose, .httpRequest, .fileDownload, .webHead, .webFetch, .webDownload:
+         .browserSessionBack, .browserSessionOperationStatus, .browserSessionClose, .httpRequest, .fileDownload, .webHead, .webFetch, .webDownload:
       return .available
     case .ocrRecognizeContent:
       return ocrProcessor.availability
@@ -214,7 +321,16 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     case .browserSessionCreate:
       return executeBrowserSessionCreate(input: input, invocation: invocation)
     case .browserSessionNavigate:
-      return executeBrowserSessionNavigate(input: input, invocation: invocation)
+      return executeBrowserSessionNavigate(input: input, invocation: invocation, back: false)
+    case .browserSessionBack:
+      return executeBrowserSessionNavigate(input: input, invocation: invocation, back: true)
+    case .browserSessionOperationStatus:
+      let requestId = string(input, "request_id", limit: Int(AgentIOSWebMediaNativeToolCatalog.maxBrowserHandleCharacters))
+      guard let observation = browserSessions.observeOperation(requestId: requestId,
+        scope: AgentIOSURLSessionBrowserSessionScope(context: invocation.context), nowMillis: nowMillis()) else {
+        return failure("browser_operation_not_found", "No terminal browser operation in this task and turn.")
+      }
+      return .success(output: observation, message: "Scoped browser operation observed", metadata: browserSessionMetadata())
     case .browserSessionClose:
       return executeBrowserSessionClose(input: input, invocation: invocation)
     case .webHead:
@@ -453,20 +569,21 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         method: .get,
         maxBodyBytes: try boundedMaxBytes(input),
         timeoutMillis: try boundedTimeout(input, invocation: invocation),
-        invocation: invocation
+        invocation: invocation,
+        allowsBrowserObservation: true
       )
+      let observation = browserObservation(resource)
+      if resource.isPartial && !hasReadableBrowserObservation(observation) { throw AgentIOSURLSessionWebError.timeout }
+      if invocation.isCancellationRequested { throw AgentIOSURLSessionWebError.cancelled }
       let snapshot = browserSessions.create(
         scope: scope,
         resourceId: invocation.context.invocationId,
         currentURL: resource.finalURL,
-        nowMillis: nowMillis()
+        nowMillis: nowMillis(),
+        observation: observation
       )
-      var output = commonOutput(resource).merging(browserSessionOutput(snapshot)) { current, _ in current }
-      let html = decodedText(resource).text
-      output["text"] = .string(boundedText(readableText(html), maxCharacters: AgentIOSWebMediaNativeToolCatalog.maxContentCharacters))
-      output["html_sha256"] = .string(sha256(resource.body))
       return AgentNativeToolExecutionResult.success(
-        output: output,
+        output: browserPageOutput(resource, snapshot: snapshot, observation: observation, invocation: invocation),
         message: "Isolated browser session created",
         metadata: browserSessionMetadata()
       )
@@ -481,33 +598,38 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
 
   private func executeBrowserSessionNavigate(
     input: AgentMcpJSONObject,
-    invocation: AgentNativeToolInvocation
+    invocation: AgentNativeToolInvocation,
+    back: Bool
   ) -> AgentNativeToolExecutionResult {
     let browserId = string(input, "browser_id", limit: Int(AgentIOSWebMediaNativeToolCatalog.maxBrowserHandleCharacters))
     let scope = AgentIOSURLSessionBrowserSessionScope(context: invocation.context)
     do {
-      try browserSessions.validate(browserId: browserId, scope: scope, nowMillis: nowMillis())
+      let previous = back ? try browserSessions.previousPage(browserId: browserId, scope: scope, nowMillis: nowMillis()) : nil
+      if !back { try browserSessions.validate(browserId: browserId, scope: scope, nowMillis: nowMillis()) }
       let resource = try requestResource(
-        requestedURL: try validatedPublicHTTPSURL(urlString(input)),
+        requestedURL: try validatedPublicHTTPSURL(previous?.url ?? urlString(input)),
         method: .get,
         maxBodyBytes: try boundedMaxBytes(input),
         timeoutMillis: try boundedTimeout(input, invocation: invocation),
-        invocation: invocation
+        invocation: invocation,
+        allowsBrowserObservation: true
       )
+      let observation = browserObservation(resource)
+      if resource.isPartial && !hasReadableBrowserObservation(observation) { throw AgentIOSURLSessionWebError.timeout }
+      if invocation.isCancellationRequested { throw AgentIOSURLSessionWebError.cancelled }
       let snapshot = try browserSessions.navigate(
         browserId: browserId,
         scope: scope,
         currentURL: resource.finalURL,
         nowMillis: nowMillis(),
-        requestId: invocation.context.invocationId
+        requestId: invocation.context.invocationId,
+        observation: observation,
+        backFromRevision: previous?.revision
       )
-      var output = commonOutput(resource).merging(browserSessionOutput(snapshot)) { current, _ in current }
-      let html = decodedText(resource).text
-      output["text"] = .string(boundedText(readableText(html), maxCharacters: AgentIOSWebMediaNativeToolCatalog.maxContentCharacters))
-      output["html_sha256"] = .string(sha256(resource.body))
       return AgentNativeToolExecutionResult.success(
-        output: output,
-        message: "Browser session navigated",
+        output: browserPageOutput(resource, snapshot: snapshot, observation: observation, invocation: invocation),
+        message: resource.isPartial ? "Navigation timed out with a partial public page observation" :
+          (back ? "Previous browser page observed" : "Browser page observed"),
         metadata: browserSessionMetadata()
       )
     } catch let error as AgentIOSURLSessionBrowserSessionStoreError {
@@ -716,7 +838,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
             })
           ])
         }
-      case .contentExtract, .webSearch, .browserSessionCreate, .browserSessionNavigate, .browserSessionClose,
+      case .contentExtract, .webSearch, .browserSessionCreate, .browserSessionNavigate, .browserSessionBack, .browserSessionOperationStatus, .browserSessionClose,
            .fileDownload, .webDownload, .ocrRecognizeContent:
         break
       }
@@ -1097,10 +1219,11 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     maxBodyBytes: Int64,
     timeoutMillis: Int64,
     invocation: AgentNativeToolInvocation,
-    contentPolicy: AgentIOSURLSessionWebContentPolicy = .fetchText
+    contentPolicy: AgentIOSURLSessionWebContentPolicy = .fetchText,
+    allowsBrowserObservation: Bool = false
   ) throws -> AgentIOSURLSessionWebResource {
     let requestedAt = invocation.startedAtEpochMillis
-    let deadline = min(requestedAt + timeoutMillis, invocation.deadlineEpochMillis)
+    let deadline = min(requestedAt + timeoutMillis, invocation.deadlineEpochMillis - (allowsBrowserObservation ? 250 : 0))
     var currentURL = requestedURL
     var redirects: [AgentIOSURLSessionWebRedirect] = []
     var visited: Set<String> = [canonicalURL(requestedURL)]
@@ -1119,7 +1242,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
           url: currentURL,
           timeoutMillis: remainingMillis,
           maxBodyBytes: maxBodyBytes,
-          headers: AgentIOSPublicArticleRequestPolicy.headers(for: currentURL)
+          headers: AgentIOSPublicArticleRequestPolicy.headers(for: currentURL),
+          allowsPartialBody: allowsBrowserObservation
         )
       )
       if invocation.isCancellationRequested {
@@ -1130,7 +1254,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         currentURL = try redirectURL(from: currentURL, headers: headers, statusCode: response.statusCode, redirects: &redirects, visited: &visited)
         continue
       }
-      guard (200...299).contains(response.statusCode) else {
+      guard (200...299).contains(response.statusCode) ||
+        (allowsBrowserObservation && (400...599).contains(response.statusCode)) else {
         throw AgentIOSURLSessionWebError.httpStatus(response.statusCode)
       }
       let rawContentType = header(headers, "content-type") ?? ""
@@ -1161,7 +1286,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         redirects: redirects,
         selectedHeaders: selectedHeaders(headers),
         requestedAtEpochMillis: requestedAt,
-        retrievedAtEpochMillis: response.retrievedAtEpochMillis
+        retrievedAtEpochMillis: response.retrievedAtEpochMillis,
+        isPartial: response.isPartial
       )
     }
   }
@@ -1348,12 +1474,100 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     var output: AgentMcpJSONObject = [
       "browser_id": .string(snapshot.browserId),
       "history_count": .int(Int64(snapshot.historyCount)),
-      "expires_at_epoch_ms": .int(snapshot.expiresAtEpochMillis)
+      "expires_at_epoch_ms": .int(snapshot.expiresAtEpochMillis),
+      "revision": .int(snapshot.revision)
     ]
-    if !snapshot.currentURL.isEmpty {
-      output["current_url"] = .string(snapshot.currentURL)
+    if let url = safeReceiptURL(snapshot.currentURL) {
+      output["current_url"] = .string(url)
     }
     return output
+  }
+
+  private func browserObservation(_ resource: AgentIOSURLSessionWebResource) -> AgentMcpJSONObject {
+    let html = decodedText(resource).text
+    let text = browserObservationText(html, limit: 1_600)
+    let links: [AgentMcpJSONValue]
+    if let base = URL(string: resource.finalURL), let pattern = try? NSRegularExpression(
+      pattern: #"(?is)<a\b[^>]*\s+href\s*=\s*["']([^"']+)["'][^>]*>(.*?)</a\s*>"#
+    ) {
+      let source = String(html.prefix(160_000)).replacingOccurrences(
+        of: #"(?is)<!--.*?(?:-->|$)|<(script|style|template)\b[^>]*>.*?(?:</\1\s*>|$)"#,
+        with: "", options: .regularExpression) as NSString
+      var seen: Set<String> = []
+      links = Array(pattern.matches(in: source as String, range: NSRange(location: 0, length: source.length))
+        .prefix(120).compactMap { match -> AgentMcpJSONValue? in
+          let target = decodeHTMLEntities(source.substring(with: match.range(at: 1)))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+          guard !target.hasPrefix("#"), let resolved = URL(string: target, relativeTo: base)?.absoluteURL,
+                let url = safeReceiptURL(resolved.absoluteString), url.count <= 240,
+                seen.insert(url).inserted else { return nil }
+          let title = browserObservationText(source.substring(with: match.range(at: 2)), limit: 80)
+          return .object(["url": .string(url), "title": .string(title)])
+        }.prefix(6))
+    } else {
+      links = []
+    }
+    var result: AgentMcpJSONObject = ["text": .string(text), "partial": .bool(resource.isPartial), "links": .array(links)]
+    if let url = safeReceiptURL(resource.finalURL) { result["url"] = .string(url) }
+    return result
+  }
+
+  private func browserObservationText(_ html: String, limit: Int64) -> String {
+    let text = AgentObservationRedaction.redact(readableText(html))
+      .replacingOccurrences(of: #"[\x00-\x1F\x7F]"#, with: " ", options: .regularExpression)
+    return boundedText(text, maxCharacters: limit)
+  }
+
+  private func hasReadableBrowserObservation(_ observation: AgentMcpJSONObject) -> Bool {
+    !observation.string("text").isBlank || !(observation["links"]?.arrayValue ?? []).isEmpty
+  }
+
+  private func browserPageOutput(
+    _ resource: AgentIOSURLSessionWebResource, snapshot: AgentIOSURLSessionBrowserSessionSnapshot,
+    observation: AgentMcpJSONObject, invocation: AgentNativeToolInvocation
+  ) -> AgentMcpJSONObject {
+    var page = observation
+    page["revision"] = .int(snapshot.revision)
+    var output = browserSessionOutput(snapshot)
+    output["request_id"] = .string(invocation.context.invocationId)
+    output["method"] = .string("get")
+    output["status_code"] = .int(Int64(resource.statusCode))
+    output["content_type"] = .string(resource.contentType)
+    output["content_length_bytes"] = .int(resource.contentLengthBytes)
+    output["requested_at_epoch_ms"] = .int(resource.requestedAtEpochMillis)
+    output["retrieved_at_epoch_ms"] = .int(resource.retrievedAtEpochMillis)
+    output["observation"] = .object(page)
+    output["next_action"] = .string("use_observation")
+    output["navigation_completed"] = .bool(!resource.isPartial)
+    output["business_success_verified"] = .bool(false)
+    output["text"] = page["text"]
+    output["html_sha256"] = .string(sha256(resource.body))
+    if AgentMcpJSONCodec.stringify(output).count > 7_600 { output["text"] = nil }
+    if let requested = safeReceiptURL(resource.requestedURL), let final = safeReceiptURL(resource.finalURL) {
+      let redirects = resource.redirects.compactMap { redirect -> AgentMcpJSONValue? in
+        guard let from = safeReceiptURL(redirect.fromURL), let to = safeReceiptURL(redirect.toURL) else { return nil }
+        return .object(["status_code": .int(Int64(redirect.statusCode)), "from_url": .string(from), "to_url": .string(to)])
+      }
+      var withSource = output
+      withSource["source"] = .object(["requested_url": .string(requested), "final_url": .string(final),
+        "redirect_chain": .array(redirects), "dns_resolution": .array([])])
+      if AgentMcpJSONCodec.stringify(withSource).count <= 7_600 { output = withSource }
+    }
+    return output
+  }
+
+  private func safeReceiptURL(_ value: String) -> String? {
+    guard let url = try? validatedPublicHTTPSURL(value), var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+    else { return nil }
+    components.fragment = nil
+    let parameters = components.queryItems?.filter { item in
+      let name = item.name.lowercased().replacingOccurrences(of: "-", with: "_")
+      return !["token", "secret", "pass", "auth", "key", "session", "signature", "otp", "code", "credential"]
+        .contains(where: name.contains)
+    }
+    components.queryItems = parameters?.isEmpty == false ? parameters : nil
+    guard let sanitized = components.url?.absoluteString, sanitized.count <= 600 else { return nil }
+    return sanitized
   }
 
   private func browserSessionMetadata() -> AgentMcpJSONObject {
@@ -1409,7 +1623,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       return method == .head ? "Public HTTPS HEAD request completed" : "Public HTTPS GET request completed"
     case .webOpen, .browserRender:
       return "Public HTTPS page extracted"
-    case .contentExtract, .browserSessionCreate, .browserSessionNavigate, .browserSessionClose,
+    case .contentExtract, .browserSessionCreate, .browserSessionNavigate, .browserSessionBack, .browserSessionOperationStatus, .browserSessionClose,
          .fileDownload, .webDownload, .ocrRecognizeContent:
       return "WebMedia operation completed"
     }
@@ -1492,6 +1706,10 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       return failure("tool_handle_owner_mismatch", "Tool handle belongs to a different caller")
     case .toolHandleContextMismatch:
       return failure("tool_handle_context_mismatch", "Tool handle belongs to a different conversation context")
+    case .noPreviousPage:
+      return failure("browser_no_previous_page", "No earlier page in this browser session.")
+    case .revisionChanged:
+      return failure("browser_revision_changed", "Browser state changed before Back could be committed.")
     }
   }
 
@@ -1723,6 +1941,7 @@ private struct AgentIOSURLSessionWebResource {
   var selectedHeaders: [String: String]
   var requestedAtEpochMillis: Int64
   var retrievedAtEpochMillis: Int64
+  var isPartial = false
 }
 
 private struct AgentIOSWebOpenResourceResolution {
