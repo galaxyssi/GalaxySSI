@@ -4,8 +4,6 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   var sessionTitle: String
-  var unreadCount: Int
-  var unreadLabel: String
   var modelStatusLabel: String
   var brandSubtitle: String
   var newConversationLabel: String
@@ -89,13 +87,6 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
     VStack(alignment: .trailing, spacing: 2) {
       NavigationLink(destination: GalaxySSIConversationHubView()) {
         HStack(spacing: 4) {
-          if unreadCount > 0 {
-            Circle()
-              .fill(Color.galaxySSITextPrimary)
-              .frame(width: 6, height: 6)
-              .accessibilityHidden(true)
-              .accessibilityIdentifier("ios.agent.header.unread")
-          }
           Text(sessionTitle)
             .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
             .truncationMode(.tail)
@@ -109,7 +100,6 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
       }
       .buttonStyle(.plain)
       .accessibilityIdentifier("ios.agent.header.sessions")
-      .accessibilityValue(Text(unreadCount > 0 ? unreadLabel : ""))
       NavigationLink(destination: modelSelectionDestination) {
         HStack(spacing: 3) {
           Image(systemName: "chevron.left")

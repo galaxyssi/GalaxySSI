@@ -2197,7 +2197,11 @@ enum AgentCallableInventorySearchCommand {
       "\u{641c}\u{7d22}\u{5de5}\u{5177} ", "\u{67e5}\u{627e}\u{5de5}\u{5177} ", "\u{641c}\u{7d22}\u{80fd}\u{529b} ", "\u{67e5}\u{627e}\u{80fd}\u{529b} ",
       "\u{641c}\u{7d22} agent ", "\u{641c}\u{7d22}\u{667a}\u{80fd}\u{4f53} ", "\u{67e5}\u{627e}\u{667a}\u{80fd}\u{4f53} ", "\u{641c}\u{7d22}\u{4ee3}\u{7406} ", "\u{67e5}\u{627e}\u{4ee3}\u{7406} ", "\u{641c}\u{7d22}\u{6a21}\u{578b} "
     ]
-    guard let prefix = prefixes.first(where: { normalized.hasPrefix($0) }) else {
+    let prefix = prefixes.first(where: { normalized.hasPrefix($0) }) ??
+      ["\u{641c}\u{7d22}\u{5de5}\u{5177}", "\u{67e5}\u{627e}\u{5de5}\u{5177}",
+       "\u{641c}\u{7d22}\u{80fd}\u{529b}", "\u{67e5}\u{627e}\u{80fd}\u{529b}"]
+        .first(where: { normalized.hasPrefix($0) })
+    guard let prefix else {
       return nil
     }
     let value = String(clean.dropFirst(prefix.count))

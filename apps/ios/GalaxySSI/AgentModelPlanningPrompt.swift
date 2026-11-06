@@ -30,10 +30,13 @@ enum AgentModelPlanningPrompt {
       hasAttachments: request.hasAttachments || request.conversationContext.hasAttachments,
       executionMode: request.planRequest.executionMode
     )
+    let compactResearch = AgentResearchCapabilityDiscovery.isResearchRequest(request) && !allowsPhoneRuntimeTools(for: request)
 
     var prompt = ""
     append(&prompt, "Return an executable ActionPlan when phone action is needed. The phone validates every field locally.\n\n")
-    append(&prompt, executionProfile.contract)
+    append(&prompt, compactResearch
+      ? "Research contract: search independent public sources, read relevant originals, and cite evidence. Search candidates and zero catalog hits are not verified conclusions. Rephrase a query or try another source only when it adds evidence."
+      : executionProfile.contract)
     append(&prompt, "\n\n")
     if request.phoneOwnsExecution {
       append(&prompt, "For an ActionPlan, add the root field execution_location=phone. ")
@@ -50,6 +53,7 @@ enum AgentModelPlanningPrompt {
     AgentPlanningTiming.measure("goal") {
       append(&prompt, "User goal: \(request.planRequest.goal.prefixStringForPlanning(2_000))\n")
     }
+    let researchTools = compactResearch ? appendResearchTools(to: &prompt, request: request) : []
     appendReplanContext(to: &prompt, request: request)
     if request.phoneOwnsExecution, let checkpoint = request.timerCheckpoint {
       let encoded = AgentMcpJSONCodec.stringify(checkpoint.mapValues { AgentMcpJSONValue.string($0) })
@@ -76,7 +80,7 @@ enum AgentModelPlanningPrompt {
     appendInstalledApps(to: &prompt, request: request, limit: appItemLimit)
     appendConnectors(to: &prompt, request: request, limit: connectorItemLimit)
     AgentPlanningTiming.measure("inventory") {
-      appendNativeTools(to: &prompt, request: request, compact: compact)
+      appendNativeTools(to: &prompt, request: request, compact: compact, excluding: researchTools)
     }
     return prompt.prefixStringForPlanning(promptLimit)
   }
@@ -103,11 +107,12 @@ enum AgentModelPlanningPrompt {
     if request.allowsDirectResponse {
       append(&prompt, "Initial response option: if no phone action is needed, return this JSON schema:\n")
       append(&prompt, "{\"disposition\":\"respond\",\"final_response\":\"user answer\"}\n")
+      append(&prompt, AgentVisualOutputPolicy.prompt + " Put any animation fence inside final_response, or provide presentation=inline_html with a versioned rich_output object.\n")
       append(&prompt, "Use the user's language and omit runtime, workspace, permission, and tool availability.\n\n")
     }
     append(&prompt, "ActionPlan JSON schema:\n")
     append(&prompt, "{\"summary\":\"...\",\"expected_result\":\"...\",\"rollback_strategy\":\"...\",")
-    append(&prompt, "\"completion_requirements\":{\"publication\":\"none|commit|push|pull_request\",\"phone_linux\":false,\"reason\":\"...\"},")
+    append(&prompt, "\"completion_requirements\":{\"publication\":\"none|commit|push|pull_request\",\"phone_linux\":false,\"reason\":\"...\",\"artifacts\":[]},")
     append(&prompt, "\"actions\":[{\"ref\":\"step_name\",\"kind\":\"ACTION_KIND\",\"target\":\"...\",")
     append(&prompt, "\"description\":\"...\",\"depends_on\":[\"earlier_ref\"],")
     append(&prompt, "\"use_outputs_from\":[\"earlier_ref\"],\"parameters\":{\"key\":\"value\"}}]}\n\n")
@@ -142,6 +147,8 @@ enum AgentModelPlanningPrompt {
     }
     append(&prompt, "Plan only the next bounded execution batch, never the entire long-running goal. ")
     append(&prompt, "Declare root completion_requirements by interpreting the user's actual requested outcome, including exclusions. There is no default publication requirement. publication is none, commit, push, or pull_request; phone_linux is true only when successful execution in the phone Linux guest is part of the requested outcome. These fields are completion obligations, not permissions. Preserve an existing declaration unless correcting it, and explain every outcome-changing correction in reason. ")
+    let workspace = AgentWorkspaceScope.id(conversationId: request.conversationContext.conversationId)
+    append(&prompt, "Omit artifacts unless a real MP4 is requested. For video, add an artifacts entry with workspace_id \(workspace) and path equal to the exact relative MP4 output path. Require a verified media conversion receipt before TASK_COMPLETE. HTML or a filename alone is not video. ")
     if maxBatchActions >= 3 {
       append(&prompt, "For a multi-step goal, prefer 3 to \(maxBatchActions) actionable steps when their inputs are already known; use 1 or 2 when the goal is that small or the next choice depends on an observation. ")
     }
@@ -411,15 +418,32 @@ enum AgentModelPlanningPrompt {
   private static func appendNativeTools(
     to prompt: inout String,
     request: AgentModelPlanningPromptRequest,
-    compact: Bool
+    compact: Bool,
+    excluding: Set<String>
   ) {
     append(&prompt, "Phone-native tools:\n")
-    for tool in prioritizedNativeTools(request: request).prefix(compact ? 24 : 60) {
+    for tool in prioritizedNativeTools(request: request).filter({ !excluding.contains($0.id) }).prefix(compact ? 24 : 60) {
       append(&prompt, "- \(tool.id)")
       append(&prompt, " | \(tool.title.prefixStringForPlanning(100))")
       append(&prompt, " | risk=\(tool.risk.rawValue)")
       append(&prompt, " | input=\(AgentMcpJSONCodec.stringify(tool.inputSchema).prefixStringForPlanning(1_200))\n")
     }
+  }
+
+  private static func appendResearchTools(to prompt: inout String, request: AgentModelPlanningPromptRequest) -> Set<String> {
+    let available = request.planRequest.nativeTools.filter {
+      $0.availability.status == .available && AgentResearchCapabilityDiscovery.hasOnlyResearchConsent($0)
+    }
+    let tools = AgentResearchCapabilityDiscovery.orderedTools.compactMap { id in available.first { $0.id == id } }
+    guard !tools.isEmpty else { return [] }
+    append(&prompt, "Public research tools (independent read-only calls may run in parallel; runtime consent still applies):\n")
+    for tool in tools {
+      append(&prompt, "- \(tool.id) | input=\(AgentMcpJSONCodec.stringify(tool.inputSchema))\n")
+    }
+    if tools.contains(where: { $0.id == AgentIOSWebIntelligenceNativeToolCatalog.search }) {
+      append(&prompt, "For image or news search set verticals to [\"image\"] or [\"news\"]. Keep user-requested drawing/photo style in the query.\n")
+    }
+    return Set(tools.map(\.id))
   }
 
   private static func prioritizedNativeTools(

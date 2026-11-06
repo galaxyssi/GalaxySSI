@@ -350,7 +350,7 @@
     A10000000000000000000894 /* GalaxySSIDiscoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000894 /* GalaxySSIDiscoverView.swift */; };
     A10000000000000000000893 /* GalaxySSIAndroidMenuComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000893 /* GalaxySSIAndroidMenuComponents.swift */; };
     A10000000000000000000899 /* GalaxySSIAgentHomeSupportViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000899 /* GalaxySSIAgentHomeSupportViews.swift */; };
-    A10000000000000000001701 /* GalaxySSIAgentHomeInsightBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001701 /* GalaxySSIAgentHomeInsightBarView.swift */; };
+    A10000000000000000001701 /* GalaxySSIAgentChatShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001701 /* GalaxySSIAgentChatShortcuts.swift */; };
     E35390000000000000000001 /* PublicNewsFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000002 /* PublicNewsFeed.swift */; };
     E36510000000000000000001 /* PublicNewsPublisherDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36510000000000000000002 /* PublicNewsPublisherDiscovery.swift */; };
     E35390000000000000000003 /* PublicNewsArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000004 /* PublicNewsArchive.swift */; };
@@ -359,6 +359,13 @@
     E36200000000000000000003 /* PublicNewsBacklogWorker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36200000000000000000004 /* PublicNewsBacklogWorker.swift */; };
     E36200000000000000000005 /* GalaxySSIPublicNewsBacklogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36200000000000000000006 /* GalaxySSIPublicNewsBacklogView.swift */; };
     E36190000000000000000003 /* PublicNewsTranslation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36190000000000000000004 /* PublicNewsTranslation.swift */; };
+    A100000000000000000009F4 /* PublicNewsSpeechQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009F4 /* PublicNewsSpeechQueue.swift */; };
+    A100000000000000000009F6 /* AppSpokenMediaSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009F6 /* AppSpokenMediaSession.swift */; };
+    A100000000000000000009F9 /* VoiceAppContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009F9 /* VoiceAppContext.swift */; };
+    A100000000000000000009FA /* VoiceAppNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009FA /* VoiceAppNativeTools.swift */; };
+    A100000000000000000009F7 /* PublicNewsSpeechPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009F7 /* PublicNewsSpeechPlayback.swift */; };
+    A100000000000000000009F8 /* GalaxySSIPublicNewsSpeechControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009F8 /* GalaxySSIPublicNewsSpeechControls.swift */; };
+    A100000000000000000009F5 /* GalaxySSIPhoneAssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009F5 /* GalaxySSIPhoneAssistantView.swift */; };
     E36220000000000000000001 /* PublicNewsArticlePresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36220000000000000000002 /* PublicNewsArticlePresentation.swift */; };
     E36220000000000000000003 /* GalaxySSIPublicNewsDocumentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36220000000000000000004 /* GalaxySSIPublicNewsDocumentView.swift */; };
     E36190000000000000000005 /* GalaxySSIPublicNewsBodyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36190000000000000000006 /* GalaxySSIPublicNewsBodyView.swift */; };
@@ -900,6 +907,7 @@
     A10000000000000000002110 /* AgentPhoneDevelopmentManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002110 /* AgentPhoneDevelopmentManifest.swift */; };
     A10000000000000000000185 /* AgentPhoneRuntimePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000185 /* AgentPhoneRuntimePolicy.swift */; };
     A10000000000000000000160 /* AgentModelPlanningPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000160 /* AgentModelPlanningPrompt.swift */; };
+    A100000000000000000F3607 /* AgentResearchCapabilityDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000F3607 /* AgentResearchCapabilityDiscovery.swift */; };
     A10000000000000000000161 /* GuardedModelAgentPlannerModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000161 /* GuardedModelAgentPlannerModels.swift */; };
     A10000000000000000000162 /* GuardedModelAgentPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000162 /* GuardedModelAgentPlanner.swift */; };
     A10000000000000000000163 /* CloudModelAgentPlanningProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000163 /* CloudModelAgentPlanningProvider.swift */; };
@@ -1514,7 +1522,7 @@
     A20000000000000000000894 /* GalaxySSIDiscoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIDiscoverView.swift; sourceTree = "<group>"; };
     A20000000000000000000893 /* GalaxySSIAndroidMenuComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAndroidMenuComponents.swift; sourceTree = "<group>"; };
     A20000000000000000000899 /* GalaxySSIAgentHomeSupportViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentHomeSupportViews.swift; sourceTree = "<group>"; };
-    A20000000000000000001701 /* GalaxySSIAgentHomeInsightBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentHomeInsightBarView.swift; sourceTree = "<group>"; };
+    A20000000000000000001701 /* GalaxySSIAgentChatShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentChatShortcuts.swift; sourceTree = "<group>"; };
     E35390000000000000000002 /* PublicNewsFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsFeed.swift; sourceTree = "<group>"; };
     E36510000000000000000002 /* PublicNewsPublisherDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsPublisherDiscovery.swift; sourceTree = "<group>"; };
     E35390000000000000000004 /* PublicNewsArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsArchive.swift; sourceTree = "<group>"; };
@@ -1523,6 +1531,13 @@
     E36200000000000000000004 /* PublicNewsBacklogWorker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsBacklogWorker.swift; sourceTree = "<group>"; };
     E36200000000000000000006 /* GalaxySSIPublicNewsBacklogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPublicNewsBacklogView.swift; sourceTree = "<group>"; };
     E36190000000000000000004 /* PublicNewsTranslation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsTranslation.swift; sourceTree = "<group>"; };
+    A200000000000000000009F4 /* PublicNewsSpeechQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsSpeechQueue.swift; sourceTree = "<group>"; };
+    A200000000000000000009F6 /* AppSpokenMediaSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSpokenMediaSession.swift; sourceTree = "<group>"; };
+    A200000000000000000009F9 /* VoiceAppContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAppContext.swift; sourceTree = "<group>"; };
+    A200000000000000000009FA /* VoiceAppNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAppNativeTools.swift; sourceTree = "<group>"; };
+    A200000000000000000009F7 /* PublicNewsSpeechPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsSpeechPlayback.swift; sourceTree = "<group>"; };
+    A200000000000000000009F8 /* GalaxySSIPublicNewsSpeechControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPublicNewsSpeechControls.swift; sourceTree = "<group>"; };
+    A200000000000000000009F5 /* GalaxySSIPhoneAssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPhoneAssistantView.swift; sourceTree = "<group>"; };
     E36220000000000000000002 /* PublicNewsArticlePresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsArticlePresentation.swift; sourceTree = "<group>"; };
     E36220000000000000000004 /* GalaxySSIPublicNewsDocumentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPublicNewsDocumentView.swift; sourceTree = "<group>"; };
     E36190000000000000000006 /* GalaxySSIPublicNewsBodyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPublicNewsBodyView.swift; sourceTree = "<group>"; };
@@ -2048,6 +2063,7 @@
     A20000000000000000002110 /* AgentPhoneDevelopmentManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneDevelopmentManifest.swift; sourceTree = "<group>"; };
     A20000000000000000000185 /* AgentPhoneRuntimePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneRuntimePolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000160 /* AgentModelPlanningPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelPlanningPrompt.swift; sourceTree = "<group>"; };
+    A200000000000000000F3607 /* AgentResearchCapabilityDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentResearchCapabilityDiscovery.swift; sourceTree = "<group>"; };
     A20000000000000000000161 /* GuardedModelAgentPlannerModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuardedModelAgentPlannerModels.swift; sourceTree = "<group>"; };
     A20000000000000000000162 /* GuardedModelAgentPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuardedModelAgentPlanner.swift; sourceTree = "<group>"; };
     A20000000000000000000163 /* CloudModelAgentPlanningProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelAgentPlanningProvider.swift; sourceTree = "<group>"; };
@@ -2792,6 +2808,7 @@
         A20000000000000000002110 /* AgentPhoneDevelopmentManifest.swift */,
         A20000000000000000000185 /* AgentPhoneRuntimePolicy.swift */,
         A20000000000000000000160 /* AgentModelPlanningPrompt.swift */,
+        A200000000000000000F3607 /* AgentResearchCapabilityDiscovery.swift */,
         A20000000000000000000161 /* GuardedModelAgentPlannerModels.swift */,
         A20000000000000000000162 /* GuardedModelAgentPlanner.swift */,
         A20000000000000000000163 /* CloudModelAgentPlanningProvider.swift */,
@@ -2992,7 +3009,7 @@
         A20000000000000000000894 /* GalaxySSIDiscoverView.swift */,
         A20000000000000000000893 /* GalaxySSIAndroidMenuComponents.swift */,
         A20000000000000000000899 /* GalaxySSIAgentHomeSupportViews.swift */,
-        A20000000000000000001701 /* GalaxySSIAgentHomeInsightBarView.swift */,
+        A20000000000000000001701 /* GalaxySSIAgentChatShortcuts.swift */,
         E35390000000000000000002 /* PublicNewsFeed.swift */,
         E36510000000000000000002 /* PublicNewsPublisherDiscovery.swift */,
         E35390000000000000000004 /* PublicNewsArchive.swift */,
@@ -3001,6 +3018,13 @@
         E36200000000000000000004 /* PublicNewsBacklogWorker.swift */,
         E36200000000000000000006 /* GalaxySSIPublicNewsBacklogView.swift */,
         E36190000000000000000004 /* PublicNewsTranslation.swift */,
+        A200000000000000000009F4 /* PublicNewsSpeechQueue.swift */,
+        A200000000000000000009F6 /* AppSpokenMediaSession.swift */,
+        A200000000000000000009F9 /* VoiceAppContext.swift */,
+        A200000000000000000009FA /* VoiceAppNativeTools.swift */,
+        A200000000000000000009F7 /* PublicNewsSpeechPlayback.swift */,
+        A200000000000000000009F8 /* GalaxySSIPublicNewsSpeechControls.swift */,
+        A200000000000000000009F5 /* GalaxySSIPhoneAssistantView.swift */,
         E36220000000000000000002 /* PublicNewsArticlePresentation.swift */,
         E36220000000000000000004 /* GalaxySSIPublicNewsDocumentView.swift */,
         E36190000000000000000006 /* GalaxySSIPublicNewsBodyView.swift */,
@@ -4034,6 +4058,7 @@
         A10000000000000000002110 /* AgentPhoneDevelopmentManifest.swift in Sources */,
         A10000000000000000000185 /* AgentPhoneRuntimePolicy.swift in Sources */,
         A10000000000000000000160 /* AgentModelPlanningPrompt.swift in Sources */,
+        A100000000000000000F3607 /* AgentResearchCapabilityDiscovery.swift in Sources */,
         A10000000000000000000161 /* GuardedModelAgentPlannerModels.swift in Sources */,
         A10000000000000000000162 /* GuardedModelAgentPlanner.swift in Sources */,
         A10000000000000000000163 /* CloudModelAgentPlanningProvider.swift in Sources */,
@@ -4295,7 +4320,7 @@
         A10000000000000000000894 /* GalaxySSIDiscoverView.swift in Sources */,
         A10000000000000000000893 /* GalaxySSIAndroidMenuComponents.swift in Sources */,
         A10000000000000000000899 /* GalaxySSIAgentHomeSupportViews.swift in Sources */,
-        A10000000000000000001701 /* GalaxySSIAgentHomeInsightBarView.swift in Sources */,
+        A10000000000000000001701 /* GalaxySSIAgentChatShortcuts.swift in Sources */,
         E35390000000000000000001 /* PublicNewsFeed.swift in Sources */,
         E36510000000000000000001 /* PublicNewsPublisherDiscovery.swift in Sources */,
         E35390000000000000000003 /* PublicNewsArchive.swift in Sources */,
@@ -4304,6 +4329,13 @@
         E36200000000000000000003 /* PublicNewsBacklogWorker.swift in Sources */,
         E36200000000000000000005 /* GalaxySSIPublicNewsBacklogView.swift in Sources */,
         E36190000000000000000003 /* PublicNewsTranslation.swift in Sources */,
+        A100000000000000000009F4 /* PublicNewsSpeechQueue.swift in Sources */,
+        A100000000000000000009F6 /* AppSpokenMediaSession.swift in Sources */,
+        A100000000000000000009F9 /* VoiceAppContext.swift in Sources */,
+        A100000000000000000009FA /* VoiceAppNativeTools.swift in Sources */,
+        A100000000000000000009F7 /* PublicNewsSpeechPlayback.swift in Sources */,
+        A100000000000000000009F8 /* GalaxySSIPublicNewsSpeechControls.swift in Sources */,
+        A100000000000000000009F5 /* GalaxySSIPhoneAssistantView.swift in Sources */,
         E36220000000000000000001 /* PublicNewsArticlePresentation.swift in Sources */,
         E36220000000000000000003 /* GalaxySSIPublicNewsDocumentView.swift in Sources */,
         E36190000000000000000005 /* GalaxySSIPublicNewsBodyView.swift in Sources */,

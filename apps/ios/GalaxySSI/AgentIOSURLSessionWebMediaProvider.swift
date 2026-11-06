@@ -270,6 +270,11 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       )
       let accumulator = AgentIOSWebSearchAccumulator()
       let group = DispatchGroup()
+      let querySignals = AgentSearchResponseQuality.signals(query)
+      func disjoint(_ attempt: AgentIOSWebSearchAttempt) -> Bool {
+        AgentSearchResponseQuality.isDisjoint(querySignals: querySignals,
+          candidates: attempt.results.map { "\($0.title) \($0.url)" })
+      }
       for (index, endpoint) in endpoints.enumerated() {
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async { [self] in
@@ -322,7 +327,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       var completed = false
       var earlyCompleted = false
       while !completed && !earlyCompleted {
-        let groups = accumulator.snapshot().map { attempt in
+        let groups = accumulator.snapshot().filter { !disjoint($0) }.map { attempt in
           attempt.results.map { $0.url }
         }
         if AgentIOSWebSearchCompletionPolicy.hasSufficientEvidence(
@@ -335,7 +340,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
           earlyCompleted = true
           break
         }
-        let remaining = max(0, min(timeoutMillis, invocation.remainingTimeMillis))
+        let remaining = max(0, min(deadline - nowMillis(), invocation.remainingTimeMillis))
         guard remaining > 0 else { break }
         let slice = max(1, min(100, remaining))
         completed = group.wait(timeout: .now() + .milliseconds(Int(slice))) == .success
@@ -343,7 +348,11 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       if invocation.isCancellationRequested {
         throw AgentIOSURLSessionWebError.cancelled
       }
-      let attempts = accumulator.snapshot().sorted { $0.index < $1.index }
+      let attempts = accumulator.snapshot().sorted { left, right in
+        let leftDisjoint = disjoint(left)
+        let rightDisjoint = disjoint(right)
+        return leftDisjoint == rightDisjoint ? left.index < right.index : !leftDisjoint
+      }
       guard let first = attempts.first(where: { !$0.results.isEmpty }),
             let resource = first.resource else {
         if !completed {
@@ -397,7 +406,10 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         routing.selected.map(\.id).map(AgentMcpJSONValue.string)
       )
       resultMetadata["parallel"] = .bool(true)
-      resultMetadata["partial"] = .bool(!completed && !earlyCompleted)
+      let uncertainProviders = attempts.filter(disjoint).map(\.provider)
+      resultMetadata["partial"] = .bool((!completed && !earlyCompleted) ||
+        (!successfulProviders.isEmpty && successfulProviders.count == uncertainProviders.count))
+      resultMetadata["uncertain_providers"] = .array(uncertainProviders.map(AgentMcpJSONValue.string))
       resultMetadata["early_completed"] = .bool(earlyCompleted)
       resultMetadata["completion_reason"] = .string(
         earlyCompleted ? "sufficient_diverse_evidence" : ""

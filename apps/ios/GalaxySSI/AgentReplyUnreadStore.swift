@@ -21,6 +21,18 @@ enum AgentReplyUnreadPolicy {
   static func canRead(visible: Bool, active: Bool, focused: Bool) -> Bool {
     visible && active && focused
   }
+
+  struct Boundary: Equatable {
+    let conversationId: String
+    let cursor: GalaxySSIChatHistoryCursor
+  }
+
+  static func boundary(conversationId: String, rendered: [ChatMessage], isAtLatest: Bool) -> Boundary? {
+    guard isAtLatest, !conversationId.isEmpty,
+          let cursor = rendered.lazy.filter({ $0.contactId == "hermes" && $0.conversationId == conversationId })
+            .map(GalaxySSIChatHistoryCursor.init).max() else { return nil }
+    return Boundary(conversationId: conversationId, cursor: cursor)
+  }
 }
 
 // Store identifiers only. Shared locking keeps multiple iPad windows from losing updates.
@@ -34,6 +46,7 @@ final class AgentReplyUnreadStore {
     var seen: [String: Set<String>] = [:]
     var pending: [String: Set<String>] = [:]
     var contactReadAt: [String: Date] = [:]
+    var positions: [String: [String: GalaxySSIChatHistoryCursor]]?
   }
 
   init(defaults: UserDefaults = .standard, secrets: GalaxySSISecretStore = KeychainSecretStore.shared) {
@@ -67,21 +80,53 @@ final class AgentReplyUnreadStore {
       // Rehydrating or editing an already-final reply must not create another unread event.
       if previous?.conversationId != conversation || previous.flatMap(AgentReplyUnreadPolicy.token) != token {
         state.pending[conversation, default: []].insert(token)
+        var positions = state.positions ?? [:]
+        positions[conversation, default: [:]][token] = GalaxySSIChatHistoryCursor(message)
+        state.positions = positions
       }
     }
   }
 
-  func read(conversationId: String, rendered: [ChatMessage]) {
+  func read(conversationId: String, rendered: [ChatMessage], through cursor: GalaxySSIChatHistoryCursor? = nil) {
     let tokens = Set(rendered.filter { $0.conversationId == conversationId }.compactMap(AgentReplyUnreadPolicy.token))
+    guard !tokens.isEmpty || cursor != nil else { return }
+    update { state in
+      var cleared = tokens
+      if let cursor, let positions = state.positions?[conversationId] {
+        for (token, position) in positions where position <= cursor {
+          cleared.insert(token)
+        }
+      }
+      state.pending[conversationId]?.subtract(cleared)
+      for token in cleared {
+        state.positions?[conversationId]?.removeValue(forKey: token)
+      }
+    }
+  }
+
+  func hasLegacyPending(conversationId: String) -> Bool {
+    Self.lock.lock()
+    defer { Self.lock.unlock() }
+    let state = load()
+    let positions = state.positions?[conversationId]
+    return state.pending[conversationId]?.contains(where: { positions?[$0] == nil }) == true
+  }
+
+  func readLegacyPage(conversationId: String, messages: [ChatMessage]) {
+    let tokens = Set(messages.filter { $0.conversationId == conversationId }.compactMap(AgentReplyUnreadPolicy.token))
     guard !tokens.isEmpty else { return }
     update { state in
-      state.pending[conversationId]?.subtract(tokens)
+      let positions = state.positions?[conversationId]
+      state.pending[conversationId]?.subtract(tokens.filter { positions?[$0] == nil })
     }
   }
 
   func remove(_ message: ChatMessage) {
     guard let token = AgentReplyUnreadPolicy.token(message) else { return }
-    update { _ = $0.pending[message.conversationId]?.remove(token) }
+    update {
+      $0.pending[message.conversationId]?.remove(token)
+      $0.positions?[message.conversationId]?.removeValue(forKey: token)
+    }
   }
 
   func removeConversations(_ ids: Set<String>) {
@@ -89,6 +134,7 @@ final class AgentReplyUnreadStore {
       for id in ids {
         state.pending.removeValue(forKey: id)
         state.seen.removeValue(forKey: id)
+        state.positions?.removeValue(forKey: id)
       }
     }
   }
@@ -101,6 +147,7 @@ final class AgentReplyUnreadStore {
     update { state in
       state.seen.removeAll()
       state.pending.removeAll()
+      state.positions = nil
     }
   }
 

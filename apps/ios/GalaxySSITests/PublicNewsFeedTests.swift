@@ -2,6 +2,74 @@ import XCTest
 @testable import GalaxySSI
 
 final class PublicNewsFeedTests: XCTestCase {
+  func testSpeechBookmarkResumesPausedAndInvalidatesOldParagraphCallbacks() throws {
+    let suite = "PublicNewsSpeechBookmarkTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = PublicNewsSpeechBookmarkStore(defaults: defaults)
+    let first = PublicNewsSpeechBookmark.Item(articleKey: PublicNewsSpeechBookmark.key(for: "first"), edition: .original)
+    let second = PublicNewsSpeechBookmark.Item(articleKey: PublicNewsSpeechBookmark.key(for: "second"), edition: .chinese)
+    let fingerprint = PublicNewsSpeechBookmark.key(for: "body")
+    var queue = PublicNewsSpeechQueue()
+    XCTAssertTrue(queue.replace([first, first, second], paragraph: 1, documentKey: fingerprint))
+    XCTAssertEqual(queue.bookmark.items, [first, second])
+    let token = try XCTUnwrap(queue.resume())
+    XCTAssertTrue(queue.prepare(documentKey: fingerprint, paragraphCount: 3, token: token))
+    XCTAssertTrue(queue.began(paragraph: 1, token: token))
+    queue.pause()
+    XCTAssertFalse(queue.finishedParagraph(1, count: 3, token: token))
+    store.save(queue.bookmark)
+    let restored = PublicNewsSpeechQueue(bookmark: store.load())
+    XCTAssertEqual(restored.phase, .paused)
+    XCTAssertEqual(restored.bookmark.paragraph, 1)
+    let next = try XCTUnwrap(queue.resume())
+    XCTAssertTrue(queue.prepare(documentKey: PublicNewsSpeechBookmark.key(for: "new-body"), paragraphCount: 3, token: next))
+    XCTAssertEqual(queue.bookmark.paragraph, 0)
+    XCTAssertTrue(queue.next())
+    XCTAssertEqual(queue.current, second)
+    queue.stop()
+    store.save(queue.bookmark)
+    XCTAssertEqual(store.load(), PublicNewsSpeechBookmark())
+  }
+
+  func testSpeechDocumentOnlyLoadsValidatedCachedArticlesAndAvailableEditions() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = PublicNewsBodyStore(root: root)
+    let articleID = "https://github.blog/example"
+    let body = PublicNewsOriginalBody(title: "News", paragraphs: ["First paragraph", "Second paragraph"])
+    _ = try await store.install(body, articleID: articleID)
+    let key = PublicNewsSpeechBookmark.key(for: articleID)
+    let original = store.speechDocument(for: .init(articleKey: key, edition: .original))
+    let translated = store.speechDocument(for: .init(articleKey: key, edition: .chinese))
+    let invalid = store.speechDocument(for: .init(articleKey: "../wrong", edition: .original))
+    XCTAssertEqual(original?.paragraphs, body.paragraphs)
+    XCTAssertEqual(original?.key, body.fingerprint)
+    XCTAssertNil(translated)
+    XCTAssertNil(invalid)
+    let items = await store.speechItems(articleIDs: ["https://github.blog/missing", articleID, articleID])
+    XCTAssertEqual(items, [.init(articleKey: key, edition: .original)])
+  }
+
+  func testNewsSpeechAdvancesBookmarkOnlyWhenTheNextParagraphCanStart() throws {
+    let key = PublicNewsSpeechBookmark.key(for: "article")
+    var queue = PublicNewsSpeechQueue()
+    XCTAssertTrue(queue.replace([.init(articleKey: key, edition: .original)]))
+    let token = try XCTUnwrap(queue.resume())
+    XCTAssertTrue(queue.prepare(documentKey: key, paragraphCount: 2, token: token))
+    XCTAssertFalse(queue.began(paragraph: 1, token: token))
+    XCTAssertTrue(queue.began(paragraph: 0, token: token))
+    XCTAssertTrue(queue.finishedParagraph(0, count: 2, token: token))
+    XCTAssertTrue(queue.began(paragraph: 1, token: token))
+    XCTAssertFalse(queue.finishedParagraph(0, count: 2, token: token))
+    queue.pause()
+    XCTAssertEqual(queue.bookmark.paragraph, 1)
+    XCTAssertFalse(queue.began(paragraph: 1, token: token))
+    XCTAssertFalse(queue.next())
+    XCTAssertEqual(queue.phase, .finished)
+    XCTAssertEqual(queue.bookmark.paragraph, 0)
+  }
+
   @MainActor
   func testNotRelevantPersistsAcrossReopenWithoutDiscardingArchive() throws {
     struct Fixture: Encodable { let articles: [PublicNewsArticle] }

@@ -256,6 +256,52 @@ final class GuardedModelAgentPlannerTests: XCTestCase {
     XCTAssertEqual(provider.invocations.count, 1)
   }
 
+  func testResearchPlannerKeepsFullReadOnlySchemasAndDoesNotExposeUnrelatedConsent() async throws {
+    let native = AgentIOSWebIntelligenceNativeToolCatalog.definitions().map(\.descriptor).map {
+      descriptor -> AgentNativeToolDescriptor in
+      var copy = descriptor
+      copy.availability = .available
+      return copy
+    }
+    let unrelated = try nativeToolDescriptor(id: "galaxyssi.safe.consent",
+      consents: [AgentNativeConsentRequirement(id: "needs.user", required: true)])
+    let recorder = RecordingModelPlanningProvider(raw: #"{"actions":[{"kind":"READ_SCREEN","parameters":{}}]}"#)
+    let planner = GuardedModelAgentPlanner(provider: recorder, modelProfile: "planner-model")
+    let goal = "Search the web for reference images of the moon"
+    _ = await planner.plan(request: promptRequest(goal: goal, requirements: AgentTaskRequirements(mode: .fast),
+      nativeTools: native + [unrelated]), settings: AgentModelPlannerSettings(enabled: true),
+      fallbackPlan: fallbackPlan(actions: [fallbackAction(id: "draft", kind: .draftPlan)]))
+    let invocation = try XCTUnwrap(recorder.invocations.first)
+    let required = [
+      AgentIOSWebIntelligenceNativeToolCatalog.search, AgentIOSWebIntelligenceNativeToolCatalog.fetch,
+      AgentIOSWebIntelligenceNativeToolCatalog.extract
+    ]
+    for id in required {
+      let tool = try XCTUnwrap(invocation.nativeTools.first { $0.id == id })
+      XCTAssertFalse(tool.requiredConsents.isEmpty)
+      XCTAssertTrue(invocation.prompt.contains(AgentMcpJSONCodec.stringify(tool.inputSchema)))
+    }
+    XCTAssertTrue(invocation.prompt.contains("Research contract:"))
+    XCTAssertTrue(invocation.prompt.contains("[\"image\"]"))
+    XCTAssertFalse(invocation.nativeTools.contains { $0.id == unrelated.id })
+  }
+
+  func testChineseCapabilityMetadataMatchingAndSearchQualityAreIndependent() throws {
+    let phrase = "\u{6211}\u{60f3}\u{641c}\u{7d22}\u{4e00}\u{4e9b}\u{56fe}\u{7247}"
+    let command = "\u{641c}\u{7d22}\u{5de5}\u{5177}" + phrase
+    let query = try XCTUnwrap(AgentCallableInventorySearchCommand.query(command))
+    let tools = AgentIOSWebIntelligenceNativeToolCatalog.definitions().map(\.descriptor)
+    let search = try XCTUnwrap(tools.first { $0.id == AgentIOSWebIntelligenceNativeToolCatalog.search })
+    let fetch = try XCTUnwrap(tools.first { $0.id == AgentIOSWebIntelligenceNativeToolCatalog.fetch })
+    XCTAssertTrue(AgentResearchCapabilityDiscovery.matches(query, tool: search))
+    XCTAssertFalse(AgentResearchCapabilityDiscovery.matches(query, tool: fetch))
+    XCTAssertFalse(AgentResearchCapabilityDiscovery.matches("MCP " + query, tool: search))
+    let signals = AgentSearchResponseQuality.signals("lunar eclipse")
+    XCTAssertTrue(AgentSearchResponseQuality.isDisjoint(querySignals: signals, candidates: ["Weather today"]))
+    XCTAssertFalse(AgentSearchResponseQuality.isDisjoint(querySignals: signals, candidates: ["Total lunar eclipse"]))
+    XCTAssertFalse(AgentSearchResponseQuality.isDisjoint(querySignals: signals, candidates: []))
+  }
+
   func testGuardedModelAgentPlannerPassesOnlySafeAvailableNativeTools() async throws {
     let low = try nativeToolDescriptor(id: "galaxyssi.safe.read", risk: .low)
     let medium = try nativeToolDescriptor(id: "galaxyssi.medium.write", risk: .medium)

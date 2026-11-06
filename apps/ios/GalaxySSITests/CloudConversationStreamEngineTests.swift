@@ -2,6 +2,68 @@ import XCTest
 @testable import GalaxySSI
 
 final class CloudConversationStreamEngineTests: XCTestCase {
+  func testFormatRepairBudgetDoesNotLimitToolProgressOrCitationRepair() {
+    let progress = CloudWebToolLoopProgress()
+    XCTAssertTrue(progress.requestFormatRepair("protocol"))
+    XCTAssertFalse(progress.requestFormatRepair("protocol"))
+    XCTAssertTrue(progress.requestFormatRepair("arguments:first"))
+    XCTAssertTrue(progress.requestFormatRepair("arguments:second"))
+    XCTAssertFalse(progress.requestFormatRepair("arguments:third"))
+    XCTAssertTrue(progress.requestRepair("citations"))
+    for index in 0..<12 {
+      XCTAssertTrue(progress.record(toolName: "web_search", arguments: ["query": .string("source \(index)")],
+                                    output: "new evidence"))
+    }
+  }
+
+  @MainActor
+  func testCloudColdBootSettlesOnlyExactOrphanAndPreservesCommittedReply() throws {
+    let suite = "cloud-dispatch-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = InMemorySecretStore()
+    let initial = GalaxySSIStore(defaults: defaults, secrets: secrets)
+    let session = initial.createAgentSession(title: "Recovery")
+    let orphan = initial.appendOutgoing("request", to: "hermes", status: .sent, turnId: "orphan")
+    let committed = initial.appendOutgoing("request", to: "hermes", status: .sent, turnId: "committed")
+    let live = initial.appendOutgoing("request", to: "hermes", status: .sent, turnId: "live")
+    XCTAssertEqual(orphan.conversationId, session.id)
+    func receipt(_ message: ChatMessage) -> AgentCloudDispatchReceipt {
+      AgentCloudDispatchReceipt(sourceId: message.id, contactId: message.contactId,
+        conversationId: message.conversationId, turnId: message.turnId, providerId: "cloud:provider", modelId: "original")
+    }
+    for source in [orphan, committed, live] {
+      XCTAssertTrue(initial.chatHistoryDatabase.registerCloudDispatch(receipt(source)))
+      XCTAssertFalse(initial.chatHistoryDatabase.registerCloudDispatch(receipt(source)))
+    }
+    let partial = initial.appendIncoming("Draft", from: "hermes", remoteMessageId: receipt(orphan).previewId,
+      status: .sent, traceStage: "cloud_citation_preview", conversationId: session.id, turnId: orphan.turnId)
+    let final = initial.appendIncoming("Complete", from: "hermes", remoteMessageId: committed.turnId,
+      status: .delivered, traceStage: "cloud_reply_received", conversationId: session.id, turnId: committed.turnId)
+    var foreign = final
+    foreign.id = UUID()
+    foreign.conversationId = "unrelated"
+    foreign.turnId = orphan.turnId
+    foreign.remoteMessageId = orphan.turnId
+    XCTAssertTrue(initial.chatHistoryDatabase.upsert(foreign))
+
+    let registry = AgentCloudDispatchRegistry.shared
+    let liveIdentity = receipt(live).identity
+    let lease = try XCTUnwrap(registry.register(liveIdentity))
+    defer { registry.release(liveIdentity, lease: lease) }
+    let reopened = GalaxySSIStore(defaults: defaults, secrets: secrets)
+    XCTAssertEqual(reopened.chatHistoryDatabase.pendingCloudDispatches(sourceId: orphan.id), [receipt(orphan)])
+    XCTAssertEqual(reopened.reconcileCloudDispatches(), 2)
+    XCTAssertEqual(reopened.persistedMessage(id: orphan.id, contactId: "hermes")?.deliveryStatus, .failed)
+    XCTAssertEqual(reopened.persistedMessage(id: partial.id, contactId: "hermes")?.deliveryStatus, .failed)
+    XCTAssertEqual(reopened.persistedMessage(id: committed.id, contactId: "hermes")?.deliveryStatus, .delivered)
+    XCTAssertEqual(reopened.persistedMessage(id: final.id, contactId: "hermes")?.deliveryStatus, .delivered)
+    XCTAssertEqual(reopened.persistedMessage(id: foreign.id, contactId: "hermes")?.deliveryStatus, .delivered)
+    XCTAssertEqual(reopened.persistedMessage(id: live.id, contactId: "hermes")?.deliveryStatus, .sent)
+    XCTAssertEqual(reopened.chatHistoryDatabase.pendingCloudDispatches(), [receipt(live)])
+    XCTAssertEqual(reopened.reconcileCloudDispatches(), 0)
+  }
+
   func testRuleRecallCountsOnlyNewAuthenticCharacters() throws {
     let tool = CloudModelStreamMutableConversation.collaborationRecallName
     let progress = CloudWebToolLoopProgress()

@@ -137,10 +137,22 @@ enum AgentModelPlanParser {
     } else {
       reason = ""
     }
+    var artifacts: [AgentVideoArtifactRequirement]?
+    if let declared = object["artifacts"] {
+      guard let items = declared.arrayValue, items.count <= 4 else { return nil }
+      let parsed = items.compactMap { item -> AgentVideoArtifactRequirement? in
+        guard let artifact = item.objectValue, let workspace = artifact["workspace_id"]?.stringValue,
+              let path = artifact["path"]?.stringValue else { return nil }
+        return AgentVideoArtifactRequirement(workspaceId: workspace, path: path)
+      }
+      guard parsed.count == items.count, Set(parsed).count == parsed.count else { return nil }
+      artifacts = parsed.isEmpty ? nil : parsed
+    }
     return AgentCompletionRequirements(
       publication: publication,
       phoneLinux: phoneLinux,
-      reason: reason
+      reason: reason,
+      artifacts: artifacts
     )
   }
 
