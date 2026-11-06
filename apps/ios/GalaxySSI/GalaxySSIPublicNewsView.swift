@@ -512,6 +512,7 @@ struct GalaxySSIPublicNewsView: View {
           Text(presented.displayTitle)
             .font(expanded ? .body.weight(.semibold) : .system(size: collapsedHeadlineSize, weight: .semibold))
             .foregroundColor(article.read ? .galaxySSITextSecondary : .galaxySSITextPrimary)
+            .fontWeight(.regular)
             .lineLimit(expanded ? nil : reservesBilingualSpace ? 2 : 3)
         } detail: {
           GalaxySSIPublicNewsByline(article: article)
@@ -531,7 +532,7 @@ struct GalaxySSIPublicNewsView: View {
       }
       if expanded {
         VStack(alignment: .leading, spacing: 8) {
-          if !article.summary.isEmpty { Text(article.summary).textSelection(.enabled) }
+          GalaxySSIPublicNewsSummary(text: article.summary)
           GalaxySSIPublicNewsBodyView(article: article, retainedArticleIDs: Set(archive.articles.map(\.id))) { cover in
             archive.rememberCover(cover, articleID: article.id)
           }
@@ -792,9 +793,7 @@ struct GalaxySSIPublicNewsReader: View {
             }
             .foregroundColor(.secondary)
           }
-          if !article.summary.isEmpty {
-            Text(article.summary).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
-          }
+          GalaxySSIPublicNewsSummary(text: article.summary)
           GalaxySSIPublicNewsBodyView(article: article, retainedArticleIDs: Set(archive.articles.map(\.id))) { cover in
             archive.rememberCover(cover, articleID: article.id)
           }
