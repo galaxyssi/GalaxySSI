@@ -8624,6 +8624,16 @@ final class MessageCoordinator: ObservableObject {
     return try managedBrowserContinuations.cookies(request.handoff.ticket, binding: request.binding)
   }
 
+  func recordManagedBrowserContentExit(_ request: AgentManagedBrowserPresentation) throws {
+    guard managedBrowserPresentationIsCurrent(request) else {
+      throw AgentManagedBrowserContinuationStore.Failure.scopeChanged
+    }
+    if try managedBrowserContinuations.recordWebContentExit(request.handoff.ticket, binding: request.binding) {
+      NotificationCenter.default.post(name: AgentManagedBrowserContinuationStore.changed, object: request.binding.owner.runId)
+      recoverManagedBrowserMembers()
+    }
+  }
+
   func saveManagedBrowserCookies(_ cookies: [HTTPCookie], for request: AgentManagedBrowserPresentation) throws {
     guard managedBrowserPresentationIsCurrent(request) else { throw AgentManagedBrowserContinuationStore.Failure.scopeChanged }
     try managedBrowserContinuations.saveCookies(cookies, ticket: request.handoff.ticket, binding: request.binding)
@@ -8683,6 +8693,9 @@ final class MessageCoordinator: ObservableObject {
   private func driveManagedBrowserMember(_ binding: AgentManagedBrowserDispatchBinding,
       mode: AgentManagedBrowserContinuationStore.Mode) async throws -> String? {
     let owner = binding.owner
+    if mode == .recovery, managedBrowserControl(binding) == .run {
+      try managedBrowserContinuations.reconcileHostProcess(binding)
+    }
     do {
       return try await managedBrowserContinuations.withLease(binding: binding, mode: mode,
         control: managedBrowserControl(binding)) { lease, work in

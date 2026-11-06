@@ -107,13 +107,34 @@ struct AgentManagedBrowserHandoff: Codable, Equatable, Identifiable {
     }
   }
 
-  enum State: String, Codable { case awaitingUser, returned, stopped }
+  enum State: String, Codable { case awaitingUser, returned, stopped, interrupted }
+  enum Interruption: String, Codable {
+    case appProcessChanged = "app_process_changed"
+    case webContentProcessExited = "web_content_process_exited"
+
+    var output: AgentMcpJSONObject {
+      ["state": .string("interrupted"), "interruption": .string(rawValue),
+       "control_owner": .string("unverified"), "browser_state_verified": .bool(false),
+       "authentication_verified": .bool(false), "business_success_verified": .bool(false),
+       "user_returned_control": .bool(false), "requires_external_observation": .bool(true)]
+    }
+  }
 
   let ticket: Ticket
   let address: String
   let invocationID: String
   var state: State
   var observation: Observation?
+  var hostProcessID: String? = nil
+  var interruption: Interruption? = nil
+
+  var isResolved: Bool {
+    switch state {
+    case .returned: return observation?.isValid == true && interruption == nil
+    case .interrupted: return interruption != nil && observation == nil
+    case .awaitingUser, .stopped: return false
+    }
+  }
 
   var id: UUID { ticket.generation }
 

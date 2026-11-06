@@ -498,8 +498,7 @@ final class AgentModelToolLoop {
       )
       return .continue
     }
-    let mutation = mutationIdentity(call, version: descriptor.version)
-    if descriptor.requiresEffectClaim, state.uncertainMutations.contains(mutation) {
+    if state.uncertainEffects.blocks(call, descriptor: descriptor) {
       appendSyntheticToolResult(state, call, code: "effect_outcome_unknown",
                                 message: "Observe current external state before repeating this operation.")
       return .continue
@@ -576,12 +575,6 @@ final class AgentModelToolLoop {
 
   private func callIdentity(_ call: AgentModelToolCall, version: String) -> String {
     "\(call.toolId)|\(version)|\(AgentMcpJSONCodec.sha256(call.arguments))|\(call.depth)"
-  }
-
-  private func mutationIdentity(_ call: AgentModelToolCall, version: String) -> String {
-    AgentMcpJSONCodec.sha256([
-      "id": .string(call.toolId), "version": .string(version), "input": .object(call.arguments)
-    ])
   }
 
   private func executePreparedCall(_ state: LoopState, prepared: PreparedCall) -> ProcessResult {
@@ -906,24 +899,35 @@ final class AgentModelToolLoop {
       return .terminal(recoveryFailed(state, error: AgentModelLoopRecoveryError(code: "model_loop_browser_owner_missing")))
     }
     do {
-      let handoff = try browserHandoff.resolve(call: call, result: result)
+      let ticket = try browserHandoff.ticket(call: call, result: result)
+      let original = result.receipt.originalInvocationId ?? result.receipt.invocationId
+      let saved = try checkpoint.browserResolution(ticket: ticket, invocationID: original, round: state.rounds)
+      let handoff = try saved ?? browserHandoff.resolve(ticket, result: result)
+      let message: AgentModelToolResultContent
       switch handoff.state {
       case .awaitingUser:
         return .terminal(outcome(state, status: .waitingForBrowserControl))
       case .stopped:
         return .terminal(cancelled(state))
       case .returned:
-        try checkpoint.commitBrowserReturn(handoff, round: state.rounds)
         guard let observation = handoff.observation else {
           throw AgentModelLoopRecoveryError(code: "model_loop_browser_return_invalid")
         }
-        let message = AgentModelToolResultContent(
+        message = AgentModelToolResultContent(
           callId: call.callId, toolId: call.toolId, status: AgentNativeToolResultStatus.succeeded.rawValue,
           output: observation.toolOutput, message: "User returned browser control; task completion is unverified.")
-        state.observationHistory?.append(record: state.messages.count, arguments: call.arguments, result: message)
-        state.messages.append(.tool(message))
-        return .continue
+      case .interrupted:
+        guard let interruption = handoff.interruption else {
+          throw AgentModelLoopRecoveryError(code: "model_loop_browser_interruption_invalid")
+        }
+        message = AgentModelToolResultContent(
+          callId: call.callId, toolId: call.toolId, status: AgentNativeToolResultStatus.failed.rawValue,
+          output: interruption.output, message: "Browser control was interrupted. Inspect the current external state before choosing recovery.")
       }
+      if saved == nil { try checkpoint.commitBrowserResolution(handoff, round: state.rounds) }
+      state.observationHistory?.append(record: state.messages.count, arguments: call.arguments, result: message)
+      state.messages.append(.tool(message))
+      return .continue
     } catch {
       return .terminal(recoveryFailed(state, error: error))
     }
@@ -935,18 +939,8 @@ final class AgentModelToolLoop {
     result: AgentNativeToolResult,
     retryCount: Int
   ) {
-    if state.observationHistory != nil, let descriptor = toolRegistry.lookup(call.toolId)?.descriptor {
-      if descriptor.requiresEffectClaim {
-        if result.error?.code == "effect_outcome_unknown" || result.error?.details["outcome_unknown"] == .bool(true) ||
-            result.output["outcome_unknown"] == .bool(true) || result.status == .verificationFailed {
-          state.uncertainMutations.insert(mutationIdentity(call, version: descriptor.version))
-        }
-      } else if result.isSuccess, !result.receipt.replayed,
-                call.toolId != AgentIOSLocalModelWebToolProtocol.collaborationRecallId,
-                call.toolId != AgentIOSWebMediaNativeToolCatalog.browserSessionOperationStatus,
-                !call.toolId.hasPrefix("galaxyssi.tools.") {
-        state.uncertainMutations.removeAll()
-      }
+    if let descriptor = toolRegistry.lookup(call.toolId)?.descriptor {
+      state.uncertainEffects.record(call, descriptor: descriptor, result: result)
     }
     var projectedOutput = result.output
     if nativeObservation != nil {
@@ -1305,7 +1299,7 @@ final class AgentModelToolLoop {
     var checkpoint: AgentModelLoopCheckpoint?
     var replayingResponse = false
     var observationHistory: AgentModelObservationHistory?
-    var uncertainMutations: Set<String> = []
+    var uncertainEffects = AgentModelUncertainEffectFence()
 
     init(
       request: AgentModelToolLoopRequest,

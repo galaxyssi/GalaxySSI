@@ -28,9 +28,12 @@ struct GalaxySSIManagedBrowserHandoffView: View {
         .disabled(!browser.canReturn)
         .padding(.trailing, 12)
       }
-      if failed {
+      if failed || browser.processExitUncommitted {
         Text(t("galaxyssi.managed_browser.failed", "Browser control could not be returned."))
           .font(.footnote).foregroundColor(.secondary).padding(8)
+      }
+      if browser.processExitUncommitted {
+        Button(t("galaxyssi.common.retry", "Retry")) { browser.commitObservedProcessExit() }
       }
       ManagedBrowserWebView(session: browser)
     }
@@ -41,6 +44,10 @@ struct GalaxySSIManagedBrowserHandoffView: View {
       browser.persistCookies = { [weak coordinator] cookies in
         guard let coordinator else { throw AgentManagedBrowserContinuationStore.Failure.staleTicket }
         try coordinator.saveManagedBrowserCookies(cookies, for: request)
+      }
+      browser.reportProcessExit = { [weak coordinator] in
+        guard let coordinator else { throw AgentManagedBrowserContinuationStore.Failure.staleTicket }
+        try coordinator.recordManagedBrowserContentExit(request)
       }
       Task { @MainActor in
         do {
@@ -90,8 +97,10 @@ private final class ManagedBrowserViewSession: NSObject, ObservableObject, WKNav
   WKHTTPCookieStoreObserver {
   @Published private(set) var currentAddress: URL?
   @Published private(set) var canReturn = false
+  @Published private(set) var processExitUncommitted = false
   var authorize: () -> Bool = { false }
   var persistCookies: ([HTTPCookie]) throws -> Void = { _ in }
+  var reportProcessExit: () throws -> Void = {}
   private var loaded = false
   private var cookieObserverInstalled = false
   private lazy var webView: WKWebView = {
@@ -125,6 +134,7 @@ private final class ManagedBrowserViewSession: NSObject, ObservableObject, WKNav
 
   func close() {
     authorize = { false }
+    reportProcessExit = {}
     canReturn = false
     if cookieObserverInstalled {
       webView.configuration.websiteDataStore.httpCookieStore.remove(self)
@@ -159,7 +169,18 @@ private final class ManagedBrowserViewSession: NSObject, ObservableObject, WKNav
     decisionHandler(.allow)
   }
 
-  func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { canReturn = false }
+  func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+    canReturn = false
+    commitObservedProcessExit()
+  }
+
+  func commitObservedProcessExit() {
+    guard authorize() else { return }
+    do {
+      try reportProcessExit()
+      processExitUncommitted = false
+    } catch { processExitUncommitted = true }
+  }
 
   func cookiesDidChange(in cookieStore: WKHTTPCookieStore) {
     Task { @MainActor [weak self] in try? await self?.flushCookies() }
