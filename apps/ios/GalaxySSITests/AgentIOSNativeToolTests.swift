@@ -3,6 +3,41 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testSupervisedNativeFailureKeepsBoundedRedactedDiagnosticsSeparateFromOutput() throws {
+    var native = nativeToolResult(status: .verificationFailed, invocationId: "verify-effect", idempotencyKey: "effect")
+    native.output = ["outcome_state": .string("unknown"), "safe_value": .int(7)]
+    native.error = AgentNativeToolError(code: "native_verification_failed",
+      message: "Request https://example.test/?token=hidden-url-value", retryable: false, details: [
+        "authorization": .string("hidden-authorization"),
+        "nested": .object(["set-cookie": .string("hidden-cookie")]),
+        "diagnostic": .string(String(repeating: "verbose", count: 900))
+      ])
+    native.verification = .init(status: .failed, message: "Cookie: hidden-verification")
+    let original = native
+    let diagnostic = try XCTUnwrap(AgentNativeFailureObservation.encode(native))
+    let fields = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(diagnostic.utf8))
+    XCTAssertEqual(fields["outcome_unknown"], .bool(true))
+    XCTAssertEqual(fields["details_partial"], .bool(true))
+    XCTAssertEqual(fields["verification_status"], .string("failed"))
+    XCTAssertNotNil(fields["details_sha256"])
+    for secret in ["hidden-url-value", "hidden-authorization", "hidden-cookie", "hidden-verification"] {
+      XCTAssertFalse(diagnostic.contains(secret))
+    }
+    XCTAssertLessThan(diagnostic.utf8.count, 3_000)
+    XCTAssertEqual(native, original)
+    var action = AgentAction(id: "action", kind: .callNativeTool, target: "phone.test.tool", risk: .low,
+      status: .failed, description: "Verify the effect", parameters: [:], requiresConfirmation: false)
+    let output = AgentMcpJSONCodec.stringify(native.output)
+    action.evidence = output
+    AgentCompletionEvidencePolicy.recordObservationEnvelope(.init(actionId: action.id, success: false,
+      message: "Unverified", metadata: [AgentNativeFailureObservation.metadataKey: diagnostic]), action: &action)
+    let summary = try XCTUnwrap(AgentPlannerObservation.nativeFailureSummary(action))
+    XCTAssertEqual(summary["error_code"] as? String, "native_verification_failed")
+    XCTAssertEqual(summary["outcome_unknown"] as? Bool, true)
+    XCTAssertEqual(action.evidence, output)
+    XCTAssertNil(AgentNativeFailureObservation.encode(nativeToolResult(invocationId: "success", idempotencyKey: "other")))
+  }
+
   func testDeviceStateEvidenceRequiresTypedReadbackForTheExactRequest() {
     let tool = AgentIOSSystemNativeToolCatalog.audioVolumeSet
     let input: AgentMcpJSONObject = ["stream": .string("media"), "percent": .int(50)]
