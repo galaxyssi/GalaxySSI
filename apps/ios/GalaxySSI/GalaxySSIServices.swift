@@ -2602,10 +2602,9 @@ final class MessageCoordinator: ObservableObject {
           let context = currentTeamObserverRecovery(binding), context.member.status == .succeeded,
           let generation = context.owner.observedGeneration,
           store.agentSession(id: context.team.conversationId)?.collaborationRoster != nil,
-          let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == binding.desktopId &&
+          store.serverLinks.contains(where: { $0.paired && $0.desktopId == binding.desktopId &&
             $0.routes.clientRouteId == binding.identity.clientRouteId }),
-          link.connectorCapabilities.contains("desktop_codex_tool_evidence_v1") ||
-            store.contact(id: binding.contactId)?.connectorCapabilities?.contains("desktop_codex_tool_evidence_v1") == true
+          store.contact(id: binding.contactId)?.connectorCapabilities?.contains("desktop_codex_tool_evidence_v1") == true
     else { return }
     let job = AgentDesktopToolEvidenceWire.ImportJob(binding: binding, generation: generation,
       profileIdentity: store.profile.identityFingerprint)
