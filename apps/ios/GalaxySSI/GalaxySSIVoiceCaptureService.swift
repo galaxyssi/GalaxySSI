@@ -36,7 +36,9 @@ private enum SpeechCaptureLiveWhisperFinalizationError: LocalizedError {
 
 final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
   @Published private(set) var transcript = ""
-  @Published private(set) var isRecording = false
+  @Published private(set) var isRecording = false {
+    didSet { GalaxySSIContactReminderRecordingState.set(self, active: isRecording) }
+  }
   private(set) var stableTranscript = ""
   private(set) var unstableTranscript = ""
   var onVoiceCommand: ((VoiceInteractionCommand) -> Void)?

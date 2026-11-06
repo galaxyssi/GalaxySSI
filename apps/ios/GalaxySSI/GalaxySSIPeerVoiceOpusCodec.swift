@@ -41,7 +41,9 @@ final class GalaxySSIPeerVoicePCMRecorder {
   private var captureSampleRate = 0.0
   private var peak: Float = 0
   private(set) var voiceProcessingEnabled = false
-  private(set) var isRunning = false
+  private(set) var isRunning = false {
+    didSet { GalaxySSIContactReminderRecordingState.set(self, active: isRunning) }
+  }
 
   func start() throws {
     guard !isRunning else { return }
