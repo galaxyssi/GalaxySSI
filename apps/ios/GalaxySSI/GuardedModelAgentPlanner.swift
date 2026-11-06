@@ -184,6 +184,9 @@ struct GuardedModelAgentPlanner {
           nativeTools: [], request: safeRequest.withNativeTools([])
         )
         invocation.completionShapeRepairOnly = true
+        invocation.repairIdentity = AgentModelLoopRecoveryIdentity.sha256(shapeRepair.original)
+      } else if let repair {
+        invocation.repairIdentity = AgentModelLoopRecoveryIdentity.sha256(repair.repairInstruction)
       }
       let raw: String
       do {

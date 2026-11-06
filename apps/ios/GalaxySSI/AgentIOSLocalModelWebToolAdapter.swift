@@ -243,6 +243,8 @@ enum AgentIOSLocalModelWebToolProtocol {
     AgentIOSWebMediaNativeToolCatalog.browserRender,
     AgentIOSWebMediaNativeToolCatalog.browserSessionCreate,
     AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate,
+    AgentIOSWebMediaNativeToolCatalog.browserSessionBack,
+    AgentIOSWebMediaNativeToolCatalog.browserSessionOperationStatus,
     AgentIOSWebMediaNativeToolCatalog.browserSessionClose,
     AgentIOSWebMediaNativeToolCatalog.contentExtract,
     AgentIOSWebMediaNativeToolCatalog.httpRequest,

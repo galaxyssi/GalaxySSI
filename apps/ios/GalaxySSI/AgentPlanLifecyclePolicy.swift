@@ -565,6 +565,7 @@ enum AgentCompletionEvidencePolicy {
   private static let browserContextTools: Set<String> = [
     AgentIOSWebMediaNativeToolCatalog.browserSessionCreate,
     AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate,
+    AgentIOSWebMediaNativeToolCatalog.browserSessionBack,
     AgentIOSWebMediaNativeToolCatalog.browserSessionClose
   ]
   private static let repositoryCommit = AgentIOSProjectRepositoryMutationToolCatalog.commit

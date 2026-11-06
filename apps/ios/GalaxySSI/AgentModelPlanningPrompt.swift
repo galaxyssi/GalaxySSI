@@ -518,6 +518,9 @@ enum AgentModelPlanningPrompt {
     if researchIds.contains(AgentIOSWebIntelligenceNativeToolCatalog.search) {
       header += "For image or news search set verticals to [\"image\"] or [\"news\"]. Keep user-requested drawing/photo style in the query. Public research reads can run independently; runtime consent still applies.\n"
     }
+    if tools.contains(where: { $0.id == AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate }) {
+      header += "Browser navigate and back return inline text, links and a revision. Use observation when next_action=use_observation, including readable partial pages. Do not fetch the same page again for known evidence. Query operation_status only for an uncertain dispatch with its original request_id. A browser observation is not proof of an external effect.\n"
+    }
     let rows = tools.map { tool in
       var line = "- \(tool.id) | \(tool.title.prefixStringForPlanning(100)) | risk=\(tool.risk.rawValue)"
       if request.phoneOwnsExecution && AgentPlanExecutionBatchPolicy.canShareObservationPlan(tool) {

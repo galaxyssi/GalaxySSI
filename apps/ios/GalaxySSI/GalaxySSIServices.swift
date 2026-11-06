@@ -8488,7 +8488,8 @@ final class MessageCoordinator: ObservableObject {
     let identity = dispatch.task
     guard invocation.request.phoneOwnsExecution, identity.isComplete,
           let link = pairedPhonePlannerLink(route),
-          store.agentTask(id: identity.turnId)?.phase == .planning else {
+          let task = store.agentTask(id: identity.turnId), task.phase == .planning,
+          task.sessionId == identity.conversationId else {
       throw AgentModelLoopRecoveryError(code: "paired_phone_planner_unavailable")
     }
     let source = String(dispatch.source)
@@ -8533,7 +8534,8 @@ final class MessageCoordinator: ObservableObject {
     let deadline = AgentControlPlaneClock.nowMillis() + 120_000
     repeat {
       try Task.checkCancellation()
-      guard store.agentTask(id: identity.turnId)?.phase == .planning,
+      guard let task = store.agentTask(id: identity.turnId), task.phase == .planning,
+            task.sessionId == identity.conversationId,
             pairedPhonePlannerLink(route) != nil else {
         throw AgentModelLoopRecoveryError(code: "paired_phone_planner_scope_changed")
       }

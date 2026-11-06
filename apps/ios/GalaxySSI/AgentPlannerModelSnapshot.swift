@@ -28,7 +28,7 @@ struct AgentPairedPhonePlannerRoute: Codable, Equatable {
     let request = invocation.request
     let conversation = request.conversationContext.conversationId
     let turn = request.executionTurnId
-    let digest = AgentModelLoopRecoveryIdentity.sha256([
+    var components = [
       "owner": ownerId,
       "route": AgentModelLoopRecoveryIdentity.sha256(self),
       "conversation": conversation,
@@ -37,7 +37,9 @@ struct AgentPairedPhonePlannerRoute: Codable, Equatable {
       "history": AgentModelLoopRecoveryIdentity.sha256(request.executionHistory),
       "requirements": AgentModelLoopRecoveryIdentity.sha256(request.planRequest.completionRequirements),
       "kind": invocation.completionShapeRepairOnly == true ? "shape-repair" : "plan"
-    ])
+    ]
+    if let repair = invocation.repairIdentity { components["repair"] = repair }
+    let digest = AgentModelLoopRecoveryIdentity.sha256(components)
     // Thirteen hex digits fit exactly in every JSON number implementation.
     let source = max(1, Int64(digest.prefix(13), radix: 16) ?? 0)
     let taskId = AgentTaskIdentityPolicy.taskId(ownerId: ownerId, contactId: contactId,

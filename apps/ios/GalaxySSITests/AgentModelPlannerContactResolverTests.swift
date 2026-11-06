@@ -24,6 +24,16 @@ final class AgentModelPlannerContactResolverTests: XCTestCase {
     XCTAssertEqual(payload["connector_task_mode"] as? String, "phone_supervised_project_plan_v1")
     XCTAssertEqual(payload["task_id"] as? String, first.task.taskId)
     XCTAssertEqual(payload["turn_id"] as? String, "turn")
+    invocation.repairIdentity = "repair-1"
+    let repair = route.dispatchIdentity(ownerId: "phone", invocation: invocation)
+    XCTAssertNotEqual(first.source, repair.source)
+    XCTAssertNotEqual(first.task.taskId, repair.task.taskId)
+    XCTAssertEqual(first.task.conversationId, repair.task.conversationId)
+    XCTAssertEqual(first.task.turnId, repair.task.turnId)
+    XCTAssertEqual(first.task.clientRouteId, repair.task.clientRouteId)
+    XCTAssertEqual(repair.task, route.dispatchIdentity(ownerId: "phone", invocation: invocation).task)
+    invocation.repairIdentity = "repair-2"
+    XCTAssertNotEqual(repair.task, route.dispatchIdentity(ownerId: "phone", invocation: invocation).task)
     invocation.completionShapeRepairOnly = true
     XCTAssertNotEqual(first.task, route.dispatchIdentity(ownerId: "phone", invocation: invocation).task)
     invocation.request.executionTurnId = "another-turn"
