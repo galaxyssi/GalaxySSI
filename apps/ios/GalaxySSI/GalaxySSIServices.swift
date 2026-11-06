@@ -8704,7 +8704,7 @@ final class MessageCoordinator: ObservableObject {
         descriptorFor: { runtime.registry.lookup($0)?.descriptor }
       ) {
         return .init("actions", rejection,
-          "Leave use_outputs_from empty for native tools, reference earlier actions in depends_on, and explicitly order conflicting resource access.")
+          "Leave use_outputs_from empty for native tools. In depends_on use earlier ref values from this response, not action IDs, targets, tool IDs or previous batches. Explicitly order conflicting resources.")
       }
       return nil
     }

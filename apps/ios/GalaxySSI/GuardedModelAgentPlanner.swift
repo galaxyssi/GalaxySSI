@@ -216,7 +216,8 @@ struct GuardedModelAgentPlanner {
         return .directResponse(response)
       }
       switch AgentModelPlanParser.parseWithDiagnostics(
-        request: safeRequest.planRequest, raw: raw, settings: normalizedSettings, context: safeRequest.parsingContext
+        request: safeRequest.planRequest, raw: raw, settings: normalizedSettings, context: safeRequest.parsingContext,
+        allowsNativeDependencies: safeRequest.phoneOwnsExecution
       ) {
       case .failure(let invalid):
         rejection = invalid

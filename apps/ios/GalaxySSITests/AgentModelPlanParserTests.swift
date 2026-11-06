@@ -30,6 +30,60 @@ final class AgentModelPlanParserTests: XCTestCase {
     }
   }
 
+  func testSerialHardwareReadsShareAPlanButDispatchInOrder() throws {
+    let battery = AgentIOSHardwareNativeToolCatalog.batteryStatus
+    let storage = AgentIOSHardwareNativeToolCatalog.storageStatus
+    let ids = [battery, storage, AgentIOSHardwareNativeToolCatalog.flashlightSet]
+    let tools = AgentIOSHardwareNativeToolCatalog.descriptors().filter { ids.contains($0.id) }
+    let descriptors = Dictionary(uniqueKeysWithValues: tools.map { ($0.id, $0) })
+    let planRequest = AgentPlanRequest(goal: "Read phone battery and storage",
+      screen: AgentScreenContext(foregroundApp: "GalaxySSI"), nativeTools: tools)
+    let settings = AgentModelPlannerSettings(multiAgentCoordination: false)
+    let raw = """
+    {"actions":[
+      {"ref":"battery","kind":"CALL_NATIVE_TOOL","parameters":{"tool_id":"\(battery)","arguments":{}}},
+      {"ref":"storage","kind":"CALL_NATIVE_TOOL","depends_on":[],"parameters":{"tool_id":"\(storage)","arguments":{}}}]}
+    """
+    func parse(_ raw: String) -> Result<AgentPlan, AgentModelPlanRejection> {
+      AgentModelPlanParser.parseWithDiagnostics(request: planRequest, raw: raw, settings: settings,
+        allowsNativeDependencies: true)
+    }
+    var plan = try parse(raw).get()
+    XCTAssertTrue(AgentPlanExecutionBatchPolicy.accepts(actions: plan.actions, descriptorFor: { descriptors[$0] }))
+    for id in [battery, storage] {
+      XCTAssertEqual(descriptors[id]?.concurrency, .serial)
+      XCTAssertEqual(descriptors[id]?.requiresEffectClaim, false)
+    }
+    let first = AgentPlanExecutionBatchPolicy.select(plan: plan, maximumParallelReads: 8,
+      descriptorFor: { descriptors[$0] })
+    XCTAssertFalse(first.parallel)
+    XCTAssertEqual(first.actions.compactMap { $0.parameters["tool_id"] }, [battery])
+    plan.actions[0].status = .completed
+    let second = AgentPlanExecutionBatchPolicy.select(plan: plan, maximumParallelReads: 8, workspaceId: "thread",
+      descriptorFor: { descriptors[$0] })
+    XCTAssertFalse(second.parallel)
+    XCTAssertEqual(second.actions.compactMap { $0.parameters["tool_id"] }, [storage])
+    let ordered = try parse(raw.replacingOccurrences(of: #""depends_on":[]"#, with: #""depends_on":["battery"]"#)).get()
+    XCTAssertEqual(ordered.actions[1].parameters["depends_on"], ordered.actions[0].id)
+    for bad in [#""depends_on":["model-1-battery"]"#, #""depends_on":["storage"]"#, #""depends_on":"battery""#] {
+      let rejected = parse(raw.replacingOccurrences(of: #""depends_on":[]"#, with: bad))
+      guard case .failure(let error) = rejected else { XCTFail("Invalid graph accepted"); continue }
+      XCTAssertEqual(error.field, "actions[1].depends_on")
+      XCTAssertEqual(error.code, "invalid_dependency")
+      if bad.contains("[") { XCTAssertTrue(error.correction.contains("Available earlier refs: battery")) }
+    }
+    var mutation = plan.actions[1]
+    let flashlight = AgentIOSHardwareNativeToolCatalog.flashlightSet
+    mutation.target = flashlight
+    mutation.parameters["tool_id"] = flashlight
+    XCTAssertEqual(AgentPlanExecutionBatchPolicy.rejectionReason(actions: [plan.actions[0], mutation],
+      descriptorFor: { descriptors[$0] }), "unordered_resource_conflict")
+    let prompt = AgentModelPlanningPrompt.build(request: AgentModelPlanningPromptRequest(
+      planRequest: planRequest, phoneOwnsExecution: true), settings: settings)
+    XCTAssertTrue(prompt.contains("effect=read_only | concurrency=serial"))
+    XCTAssertTrue(prompt.contains("depends_on names earlier refs"))
+  }
+
   func testAgentModelPlanParserBuildsBoundedExecutablePlanFromFencedJson() throws {
     let descriptor = try nativeToolDescriptor(id: "galaxyssi.web.search", risk: .low)
     let raw = """
