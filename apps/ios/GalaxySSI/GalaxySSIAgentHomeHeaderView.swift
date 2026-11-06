@@ -2,6 +2,9 @@ import SwiftUI
 
 struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @ScaledMetric(relativeTo: .headline) private var brandTitleSize: CGFloat = 14.5
+  @ScaledMetric(relativeTo: .headline) private var sessionTitleSize: CGFloat = 14
+  @ScaledMetric(relativeTo: .caption2) private var subtitleSize: CGFloat = 10
 
   var sessionTitle: String
   var modelStatusLabel: String
@@ -16,17 +19,14 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
 
   var body: some View {
     GeometryReader { proxy in
-      let compact = proxy.size.width < 360 || usesAccessibilityDynamicType
-      let stacked = proxy.size.width < 350 || usesAccessibilityDynamicType
-      let modelColumnWidth = min(
-        176,
-        max(104, proxy.size.width * (compact ? 0.30 : 0.34))
-      )
+      let compact = proxy.size.width < 360
+      let stacked = proxy.size.width < 320 || dynamicTypeSize >= .xxxLarge
+      let modelColumnWidth: CGFloat = compact ? 104 : 128
 
       if stacked {
         VStack(spacing: 4) {
           HStack(spacing: 8) {
-            brandButton(compact: true)
+            brandButton
             Spacer(minLength: 8)
             settingsButton
           }
@@ -37,9 +37,10 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
         HStack(spacing: compact ? 5 : 8) {
-          brandButton(compact: compact)
+          brandButton
           Spacer(minLength: compact ? 3 : 8)
           sessionNavigation
+            .padding(.horizontal, compact ? 4 : 8)
             .frame(minWidth: modelColumnWidth, maxWidth: modelColumnWidth, minHeight: 44, alignment: .trailing)
           settingsButton
         }
@@ -51,8 +52,8 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
     .background(Color.galaxySSIPageBackground)
   }
 
-  private func brandButton(compact: Bool) -> some View {
-    HStack(spacing: compact ? 5 : 8) {
+  private var brandButton: some View {
+    HStack(spacing: 6) {
       Button(action: { onOpenWindow?() }) {
         GalaxySSILogoView(size: headerLogoSize, cornerRadius: 8)
           .frame(minWidth: 44, minHeight: 44)
@@ -65,14 +66,14 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
       Button(action: onNewConversation) {
         VStack(alignment: .center, spacing: 2) {
           Text("GalaxySSI")
-            .font(.system(size: compact ? 15 : 18, weight: .bold))
+            .font(.system(size: brandTitleSize, weight: .bold))
             .foregroundColor(.galaxySSITextPrimary)
             .lineLimit(1)
           Text(brandSubtitle)
-            .font(.system(size: compact ? 10 : 12, weight: .regular))
+            .font(.system(size: subtitleSize))
             .foregroundColor(.galaxySSITextSecondary)
             .lineLimit(1)
-            .minimumScaleFactor(0.58)
+            .truncationMode(.tail)
         }
         .frame(minWidth: 0)
       }
@@ -93,7 +94,7 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
           Image(systemName: "chevron.right")
             .font(.system(size: 9, weight: .bold))
         }
-        .font(.system(size: compactHeaderTypography ? 14 : 17, weight: .bold))
+        .font(.system(size: sessionTitleSize, weight: .bold))
         .foregroundColor(.galaxySSIAgentSessionTitle)
         .multilineTextAlignment(.trailing)
         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -110,7 +111,7 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
             .minimumScaleFactor(usesAccessibilityDynamicType ? 1 : 0.72)
             .multilineTextAlignment(.trailing)
         }
-        .font(.system(size: compactHeaderTypography ? 10 : 12, weight: .regular))
+        .font(.system(size: subtitleSize))
         .foregroundColor(.galaxySSITextSecondary)
         .frame(maxWidth: .infinity, alignment: .trailing)
       }
@@ -140,9 +141,9 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
 
   private var headerHeight: CGFloat {
     if usesAccessibilityDynamicType {
-      return 108
+      return max(116, ceil(brandTitleSize + subtitleSize + (sessionTitleSize + subtitleSize) * 2 + 24))
     }
-    return 72
+    return dynamicTypeSize >= .xxxLarge ? 106 : 76
   }
 
   private var usesAccessibilityDynamicType: Bool {
@@ -174,10 +175,6 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
     default:
       scale = 1.40
     }
-    return min(56, max(36, 40 * scale))
-  }
-
-  private var compactHeaderTypography: Bool {
-    dynamicTypeSize >= .xxLarge
+    return min(56, max(32, 39 * scale))
   }
 }
