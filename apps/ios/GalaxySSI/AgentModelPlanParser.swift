@@ -110,6 +110,13 @@ enum AgentModelPlanParser {
       throw AgentModelPlanRejection("actions", "batch_size",
         "Provide between 1 and \(maximumActions) actions. Leave remaining work for the next batch.")
     }
+    if actionValues.count > 1 && actionValues.contains(where: { value in
+      let kind = value.objectValue?.string("kind").trimmedForModelPlan.uppercased() ?? ""
+      return kind == AgentActionKind.draftPlan.rawValue || kind.replacingOccurrences(of: "-", with: "_") == "TASK_COMPLETE"
+    }) {
+      throw AgentModelPlanRejection("actions", "completion_mixed_with_execution",
+        "Return only the executable actions first. After reviewing verified receipts, return a separate completion-only ActionPlan. A dependency cannot make a future completion valid in this batch.")
+    }
 
     var refs: [String: AgentModelPlanRef] = [:]
     for (index, value) in actionValues.enumerated() {

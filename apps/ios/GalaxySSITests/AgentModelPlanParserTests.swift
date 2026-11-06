@@ -30,6 +30,52 @@ final class AgentModelPlanParserTests: XCTestCase {
     }
   }
 
+  func testPhoneReadAndCompletionMustUseSeparateResponses() throws {
+    let battery = AgentIOSHardwareNativeToolCatalog.batteryStatus
+    let tools = AgentIOSHardwareNativeToolCatalog.descriptors().filter { $0.id == battery }
+    var previous = AgentCompletionRequirements(publication: .none, phoneLinux: false)
+    let settings = AgentModelPlannerSettings(maxActions: 4)
+    let read = """
+    {"ref":"battery","kind":"CALL_NATIVE_TOOL","parameters":{"tool_id":"\(battery)","arguments":{}}}
+    """
+    let completion = #"{"kind":"DRAFT_PLAN","target":"task-complete","description":"Battery level is 64 percent.","parameters":{},"depends_on":[],"use_outputs_from":[]}"#
+    func parse(_ raw: String, review: Bool = false) -> Result<AgentPlan, AgentModelPlanRejection> {
+      AgentModelPlanParser.parseWithDiagnostics(
+        request: AgentPlanRequest(goal: "Read this phone's battery level",
+          screen: AgentScreenContext(foregroundApp: "GalaxySSI"), nativeTools: tools,
+          completionRequirements: previous),
+        raw: raw, settings: settings,
+        context: context(replanReason: review ? "rolling_batch_completed:revision=1" : ""),
+        allowsNativeDependencies: true
+      )
+    }
+    XCTAssertEqual(try parse("{\"actions\":[\(read)]}").get().actions.first?.kind, .callNativeTool)
+    for kind in ["DRAFT_PLAN", "TASK_COMPLETE"] {
+      let mixed = """
+      {"actions":[\(read),{"kind":"\(kind)","target":"task-complete","description":"Done","depends_on":["battery"]}]}
+      """
+      guard case .failure(let rejection) = parse(mixed, review: true) else {
+        return XCTFail("A speculative completion was admitted")
+      }
+      XCTAssertEqual(rejection.code, "completion_mixed_with_execution")
+    }
+    XCTAssertThrowsError(try parse("{\"actions\":[\(completion)]}").get())
+
+    func reviewed(_ id: String, reason: String) -> String {
+      """
+      {"completion_requirements":{"publication":"none","phone_linux":false,"reason":"\(reason)",
+      "outcomes":[{"id":"\(id)","tool_id":"\(battery)","subject":{"/metadata/device":"fixture"},
+      "checks":{"/metadata/percent":64},"after_tool_id":""}]},"actions":[\(completion)]}
+      """
+    }
+    XCTAssertThrowsError(try parse(reviewed("battery-level", reason: ""), review: true).get())
+    let final = try parse(reviewed("battery-level", reason: "Bind the fields from the battery read."), review: true).get()
+    XCTAssertEqual(final.actions.map(\.kind), [.draftPlan])
+    XCTAssertEqual(final.completionRequirements?.outcomes?.first?.checks["/metadata/percent"], .int(64))
+    previous = try XCTUnwrap(final.completionRequirements)
+    XCTAssertThrowsError(try parse(reviewed("unrelated", reason: "Replace the outcome."), review: true).get())
+  }
+
   func testSerialHardwareReadsShareAPlanButDispatchInOrder() throws {
     let battery = AgentIOSHardwareNativeToolCatalog.batteryStatus
     let storage = AgentIOSHardwareNativeToolCatalog.storageStatus

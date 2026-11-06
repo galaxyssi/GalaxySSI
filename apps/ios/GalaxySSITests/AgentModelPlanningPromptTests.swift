@@ -170,6 +170,28 @@ final class AgentModelPlanningPromptTests: XCTestCase {
     XCTAssertTrue(prompt.contains("finalize only when the requested outcome is actually verified"))
   }
 
+  func testPhonePlanningSeparatesExecutionFromReceiptReview() {
+    var request = promptRequest(goal: "Read the media volume and ring volume.")
+    request.phoneOwnsExecution = true
+    let settings = AgentModelPlannerSettings(maxActions: 6)
+    let initial = AgentModelPlanningPrompt.build(request: request, settings: settings)
+    XCTAssertTrue(initial.contains("Phone execution stage"))
+    XCTAssertFalse(initial.contains("Phone receipt review stage"))
+    request.parsingContext = context(replanReason: "rolling_batch_completed:revision=1")
+    let review = AgentModelPlanningPrompt.build(request: request, settings: settings)
+    XCTAssertTrue(review.contains("Phone receipt review stage"))
+    XCTAssertFalse(review.contains("Phone execution stage"))
+    for prompt in [initial, review] {
+      XCTAssertTrue(prompt.contains("even with depends_on"))
+      XCTAssertTrue(prompt.contains("separate completion-only ActionPlan"))
+      XCTAssertTrue(prompt.contains("Retain completion_requirements and verified identity-bound checks"))
+      XCTAssertTrue(prompt.contains("typed values after observing them"))
+      XCTAssertTrue(prompt.contains("Explain added or corrected outcomes in completion_requirements.reason"))
+      XCTAssertTrue(prompt.contains("Do not change a mutation's expected state"))
+      XCTAssertFalse(prompt.contains("prefer 3 to 6 actionable steps"))
+    }
+  }
+
   func testAgentModelPlanningPromptFiltersAndSortsRuntimeToolsByEligibility() throws {
     let runtime = try nativeToolDescriptor(id: AgentIOSOnDeviceRuntimeNativeToolCatalog.status, title: "Runtime status")
     let softwareSearch = try nativeToolDescriptor(
