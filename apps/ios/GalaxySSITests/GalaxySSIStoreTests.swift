@@ -191,6 +191,23 @@ extension AgentRuntimePackCatalogEntry {
 
 @MainActor
 final class GalaxySSIStoreTests: XCTestCase {
+  func testViewportAnchorUsesPartiallyVisibleRowAndRejectsStaleScrollTicket() {
+    let above = UUID(), anchor = UUID(), below = UUID()
+    let frames = [
+      above: CGRect(x: 0, y: -90, width: 50, height: 30),
+      anchor: CGRect(x: 0, y: -8, width: 50, height: 30),
+      below: CGRect(x: 0, y: 35, width: 50, height: 30)
+    ]
+    let visible = GalaxySSIChatMessageViewportPolicy.firstVisible(frames, height: 80)
+    XCTAssertEqual(visible?.0, anchor)
+    XCTAssertEqual(visible?.1, -8)
+    var epoch = GalaxySSIChatViewportEpoch()
+    let restore = epoch.revision
+    epoch.invalidate()
+    XCTAssertFalse(epoch.accepts(restore))
+    XCTAssertTrue(epoch.accepts(epoch.revision))
+  }
+
   func testSystemNotificationViewportStartsAtTopAndDoesNotFollowUpdates() {
     XCTAssertEqual(
       GalaxySSIChatMessageViewportPolicy.initialPosition(

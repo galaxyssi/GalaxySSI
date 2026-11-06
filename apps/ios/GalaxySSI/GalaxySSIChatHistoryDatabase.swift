@@ -520,11 +520,13 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
     contactId: String?,
     conversationId: String? = nil,
     before cursor: GalaxySSIChatHistoryCursor? = nil,
+    after newerCursor: GalaxySSIChatHistoryCursor? = nil,
     pageSize: Int = GalaxySSIChatHistoryDatabase.defaultPageSize
   ) -> GalaxySSIChatHistoryPage {
     locked {
       let safeSize = min(max(1, pageSize), Self.maximumPageSize)
-      guard contactId != nil || conversationId?.isBlank == false else {
+      guard (contactId != nil || conversationId?.isBlank == false),
+            cursor == nil || newerCursor == nil else {
         return GalaxySSIChatHistoryPage(messages: [], nextCursor: nil, hasMore: false)
       }
       var clauses: [String] = []
@@ -537,16 +539,23 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
         clauses.append("conversation_id = ?")
         values.append(.text(conversationId))
       }
-      if let cursor {
-        clauses.append("(created_at < ? OR (created_at = ? AND message_id < ?))")
-        values += [.int64(cursor.createdAtMillis), .int64(cursor.createdAtMillis), .text(cursor.messageId)]
+      if let boundary = cursor ?? newerCursor {
+        let comparison = newerCursor == nil ? "<" : ">"
+        clauses.append("(created_at \(comparison) ? OR (created_at = ? AND message_id \(comparison) ?))")
+        values += [.int64(boundary.createdAtMillis), .int64(boundary.createdAtMillis), .text(boundary.messageId)]
       }
       values.append(.int(Int32(safeSize + 1)))
+      let direction = newerCursor == nil ? "DESC" : "ASC"
       let rows = query(
-        sql: "SELECT message_id, encrypted_payload FROM chat_messages WHERE \(clauses.joined(separator: " AND ")) ORDER BY created_at DESC, message_id DESC LIMIT ?",
+        sql: "SELECT message_id, encrypted_payload FROM chat_messages WHERE \(clauses.joined(separator: " AND ")) ORDER BY created_at \(direction), message_id \(direction) LIMIT ?",
         values: values
       )
       let hasMore = rows.count > safeSize
+      if newerCursor != nil {
+        let ascending = Array(rows.prefix(safeSize))
+        let next = hasMore ? ascending.last.map(GalaxySSIChatHistoryCursor.init) : nil
+        return GalaxySSIChatHistoryPage(messages: ascending, nextCursor: next, hasMore: hasMore)
+      }
       let descending = Array(rows.prefix(safeSize))
       let retained = descending.reversed()
       let oldest = descending.last
