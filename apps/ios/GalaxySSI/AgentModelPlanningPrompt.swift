@@ -211,6 +211,7 @@ enum AgentModelPlanningPrompt {
     )
     append(&prompt, "Generic native receipts are observations, not final answers. Stop the graph when later choices require interpreting a receipt. ")
     append(&prompt, "After verified evidence proves completion, return one DRAFT_PLAN with target=task-complete and a concise final answer in the user's language; do not repeat tools merely to produce an answer. ")
+    append(&prompt, "Reuse verified source observations. Isolated browser navigation does not prove an external side effect. ")
     append(&prompt, "For an answer with no outstanding effects or obligations, a respond envelope with final_response may deliver the answer directly. Keep sources in the answer and never include unexecuted tool markup. ")
     append(&prompt, "Use next_cursor for lists and keep same or nested paths ordered.\n\n")
   }
@@ -590,8 +591,11 @@ enum AgentPlanningHistoryContext {
       conversationId: conversationId,
       turnId: request.executionTurnId
     )
-    var lines: [String] = []
-    for action in request.executionHistory.reversed() where scope.owns(action) {
+    let scoped = request.executionHistory.enumerated().reversed().filter { scope.owns($0.element) }
+    let observations = scoped.filter { !AgentDurablePlanHistoryPolicy.isPlannerControl($0.element) }
+    let controls = scoped.filter { AgentDurablePlanHistoryPolicy.isPlannerControl($0.element) }
+    var lines: [(offset: Int, text: String)] = []
+    for (offset, action) in observations + controls {
       var object: [String: Any] = [
         "action_id": String(action.id.prefix(512)),
         "kind": action.kind.rawValue,
@@ -623,10 +627,10 @@ enum AgentPlanningHistoryContext {
         line = jsonLine(object)
       }
       guard line.count <= remaining else { break }
-      lines.append(line)
+      lines.append((offset, line))
       remaining -= line.count
     }
-    return header + lines.reversed().joined() + footer
+    return header + lines.sorted { $0.offset < $1.offset }.map { $0.text }.joined() + footer
   }
 
   private static func jsonLine(_ object: [String: Any]) -> String {
