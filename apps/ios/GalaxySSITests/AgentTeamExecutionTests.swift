@@ -2,6 +2,68 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  @MainActor
+  func testTeamRecoveryFailureBudgetSurvivesReloadAndOnlyResumesValidScope() throws {
+    let suite = "team-recovery-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = InMemorySecretStore()
+    let ledger = AgentTeamRecoveryRetryLedger(defaults: defaults, secrets: secrets)
+    let profile = "owner"
+    var now: Int64 = 100_000
+    for attempt in 1...10 {
+      ledger.failure(run: "retry", profile: profile, progress: "no-progress", now: now)
+      let state = ledger.state(run: "retry", profile: profile)
+      XCTAssertEqual(state.failures, attempt)
+      ledger.failure(run: "retry", profile: profile, progress: "no-progress", now: now)
+      XCTAssertEqual(ledger.state(run: "retry", profile: profile).failures, attempt)
+      now = state.retryAtMillis
+    }
+    XCTAssertTrue(ledger.stopMissingScope(run: "deleted", profile: profile, now: now))
+    let reopened = AgentTeamRecoveryRetryLedger(defaults: defaults, secrets: secrets)
+    XCTAssertTrue(reopened.state(run: "retry", profile: profile).stalled)
+    XCTAssertTrue(reopened.resume(run: "retry", profile: profile))
+    XCTAssertEqual(reopened.state(run: "retry", profile: profile).failures, 0)
+    XCTAssertFalse(reopened.resume(run: "deleted", profile: profile))
+    XCTAssertFalse(reopened.state(run: "deleted", profile: "other-profile").stalled)
+  }
+
+  func testTeamRecoveryProgressDoesNotCountStartupOrIgnoredMembers() {
+    var team = durableTeamSnapshot("recovery-progress")
+    let original = AgentTeamRecoveryRetryState.progress(team)
+    team.updatedAtMillis += 1
+    team.state = .running
+    team.members.append(.init(agentId: "ignored", deliveryMode: .ignore, status: .succeeded))
+    XCTAssertEqual(AgentTeamRecoveryRetryState.progress(team), original)
+    team.members[0].status = .succeeded
+    XCTAssertNotEqual(AgentTeamRecoveryRetryState.progress(team), original)
+  }
+
+  func testStoppingMissingTeamPreservesCompletedChildrenAndRejectsStaleSnapshot() throws {
+    let suite = "team-missing-scope-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let store = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: InMemorySecretStore(),
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: root.appendingPathComponent("team.sqlite3"))
+    let original = durableTeamSnapshot("deleted-group")
+    XCTAssertTrue(store.upsert(original))
+    var progressed = original
+    progressed.members[0].status = .succeeded
+    progressed.members[0].output = "Saved child result"
+    progressed.updatedAtMillis += 1
+    XCTAssertTrue(store.upsert(progressed))
+    XCTAssertNil(try store.cancelRecoveryForMissingScope(expected: original, now: progressed.updatedAtMillis + 1))
+    let stopped = try XCTUnwrap(store.cancelRecoveryForMissingScope(expected: progressed, now: progressed.updatedAtMillis + 1))
+    XCTAssertEqual(stopped.state, .cancelled)
+    XCTAssertEqual(stopped.members, progressed.members)
+    XCTAssertEqual(store.snapshot(supervisorRunId: progressed.supervisorRunId), stopped)
+    XCTAssertTrue(AgentTeamRecoveryRetryState.missingScope(conversation: "ios-agent-deleted",
+      session: nil, requiresRoster: true))
+    XCTAssertFalse(AgentTeamRecoveryRetryState.missingScope(conversation: "direct-contact",
+      session: nil, requiresRoster: false))
+  }
+
   func testCollaborationEvolutionRejectsUnboundOptionsAndUnsupportedNovelty() throws {
     let raw = """
     {"format":"galaxyssi.research-artifact.v1","workspace":[

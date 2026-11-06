@@ -6052,6 +6052,9 @@
 "galaxyssi.conversation_status.cancelled" = "已取消";
 "galaxyssi.team.recovery.cancelled" = "原智能体团队已取消";
 "galaxyssi.team.recovery.waiting" = "正在等待原智能体团队结果的验证";
+"galaxyssi.team.recovery.scope_removed" = "原协作组已不可用。";
+"galaxyssi.team.recovery.stalled" = "团队结果恢复连续失败，已暂停自动重试。";
+"galaxyssi.team.recovery.resume" = "继续恢复结果";
 "galaxyssi.team.recovery.missing" = "原智能体团队不可用，正在等待，不会重新派发";
 "galaxyssi.team.recovery.failed" = "原智能体团队未能成功完成任务。";
 "galaxyssi.team.reply_commit_failed" = "无法保存智能体团队回复，该回复不会显示为普通消息。";
