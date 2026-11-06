@@ -294,6 +294,53 @@ enum AgentPlanLifecyclePolicy {
   private static let restoredConnectorEvidence = "restored_connector_terminal_result"
 }
 
+enum AgentSupervisorRecoveryPolicy {
+  static let maximumFormatRepairs = 3
+  static let maximumConsecutiveFailures = 2
+  private static let bindingKeys: Set<String> = [
+    "connector_id", "connector_kind", "connector_adapter_type", "connector_failure_domain",
+    "manual_target_locked", "manual_model_id", "agent_model_id", "agent_reasoning_effort", "model_id"
+  ]
+
+  static func isSupervisor(_ action: AgentAction) -> Bool {
+    action.kind == .callConnector &&
+      action.parameters["connector_task_mode"] == "phone_supervised_project_plan_v1"
+  }
+
+  static func restoreBinding(_ action: AgentAction, history: [AgentAction]) -> AgentAction {
+    guard isSupervisor(action) else { return action }
+    let original = history.first { isSupervisor($0) && $0.parameters["manual_target_locked"] == "true" }
+    guard let binding = original ?? (action.parameters["manual_target_locked"] == "true" ? action : nil)
+    else { return action }
+    var restored = action
+    restored.target = binding.target
+    for key in bindingKeys { restored.parameters[key] = binding.parameters[key] }
+    restored.parameters["manual_target_locked"] = "true"
+    restored.parameters["auto_reroute_on_failure"] = "false"
+    restored.parameters["routing_fallback_ids"] = ""
+    return restored
+  }
+
+  static func stopReason(action: AgentAction, result: AgentActionResult?, history: [AgentAction]) -> String? {
+    guard isSupervisor(action), let result, result.actionId == action.id, !result.success else { return nil }
+    if result.metadata["non_retriable"] == "true" || result.metadata["recovery_exhausted"] == "true" {
+      return "supervisor_failure_non_retriable"
+    }
+    if result.metadata["failure_kind"] == "invalid_supervised_project_plan",
+       (Int(result.metadata["structured_repair_attempts"] ?? "") ?? 0) >= maximumFormatRepairs {
+      return "supervisor_format_repair_exhausted"
+    }
+    var seen: Set<String> = [action.id]
+    var failures = 1
+    for step in history.reversed() where [.completed, .failed].contains(step.status) && seen.insert(step.id).inserted {
+      guard isSupervisor(step), step.status == .failed else { break }
+      failures += 1
+      if failures >= maximumConsecutiveFailures { return "supervisor_consecutive_failures" }
+    }
+    return nil
+  }
+}
+
 enum AgentRollingPlanPolicy {
   static let replanReasonPrefix = "rolling_batch_completed:"
 

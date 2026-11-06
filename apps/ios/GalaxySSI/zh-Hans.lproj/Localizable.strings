@@ -4765,6 +4765,11 @@
 "delivery_trace_received" = "已接收";
 "delivery_trace_decrypted" = "已解密";
 "delivery_trace_cloud_request" = "模型请求";
+"delivery_trace_cloud_request_interrupted" = "模型请求已中断";
+"galaxyssi.agent.cloud_request_interrupted" = "上一次云端请求已中断，未自动重发。";
+"galaxyssi.agent.cloud_dispatch_not_saved" = "无法保存云端请求的恢复记录，因此未发送请求。";
+"galaxyssi.agent.cloud_retry_reattach" = "这条请求包含附件。请重新添加原附件后再发送。";
+"galaxyssi.agent.cloud_retry_binding_unavailable" = "原云端模型已不可用，未将请求发送给其他模型。";
 "delivery_trace_cloud_reply" = "模型已回复";
 "delivery_trace_cloud_reply_received" = "模型回复入站";
 "delivery_trace_cloud_error" = "模型错误";

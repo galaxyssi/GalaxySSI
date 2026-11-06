@@ -141,6 +141,7 @@ final class CloudWebToolLoopProgress {
   private var unavailableResources: [String: String] = [:]
   private var retrievedResources: [String: String] = [:]
   private var requestedRepairs: Set<String> = []
+  private var formatRepairs = 0
   private var ruleCoverage: [String: AgentCollaborationReadCoverage] = [:]
   private(set) var finalizationRequested = false
 
@@ -215,6 +216,12 @@ final class CloudWebToolLoopProgress {
   @discardableResult
   func requestRepair(_ kind: String) -> Bool {
     requestedRepairs.insert(kind).inserted
+  }
+
+  func requestFormatRepair(_ kind: String) -> Bool {
+    guard formatRepairs < AgentSupervisorRecoveryPolicy.maximumFormatRepairs, requestRepair(kind) else { return false }
+    formatRepairs += 1
+    return true
   }
 
   @discardableResult

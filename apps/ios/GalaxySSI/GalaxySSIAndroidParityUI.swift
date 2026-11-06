@@ -376,6 +376,11 @@ struct AgentHomeView: View {
         refreshVisibleAgentReplyReadState()
       }
       .onChange(of: homeWindowFocused) { _ in refreshVisibleAgentReplyReadState() }
+      .onChange(of: agentReplyReadBoundary) { _ in refreshVisibleAgentReplyReadState() }
+      .task(id: agentReplyReadBoundary) {
+        guard let boundary = agentReplyReadBoundary else { return }
+        await store.markLegacyAgentRepliesRead(through: boundary)
+      }
       .onReceive(NotificationCenter.default.publisher(for: .galaxySSIWorkspaceDidPersist)
         .debounce(for: .milliseconds(75), scheduler: RunLoop.main)) { _ in
         guard homeVisible, scenePhase == .active else { return }
@@ -734,9 +739,23 @@ struct AgentHomeView: View {
     )
   }
 
+  private var canReadAgentReplies: Bool {
+    AgentReplyUnreadPolicy.canRead(visible: homeVisible, active: scenePhase == .active, focused: homeWindowFocused)
+  }
+
+  private var agentReplyReadBoundary: AgentReplyUnreadPolicy.Boundary? {
+    return AgentReplyUnreadPolicy.boundary(
+      conversationId: store.activeAgentConversationId, rendered: transcriptMessages,
+      isAtLatest: canReadAgentReplies && transcriptAutoFollow && !transcriptShowLatestButton && olderTranscriptAnchor == nil
+    )
+  }
+
   func refreshVisibleAgentReplyReadState() {
-    if AgentReplyUnreadPolicy.canRead(visible: homeVisible, active: scenePhase == .active, focused: homeWindowFocused) {
-      store.markAgentRepliesRead(conversationId: store.activeAgentConversationId, rendered: transcriptMessages)
+    if canReadAgentReplies {
+      store.markAgentRepliesRead(
+        conversationId: store.activeAgentConversationId, rendered: transcriptMessages,
+        through: agentReplyReadBoundary?.cursor
+      )
     }
     agentUnreadCount = store.agentReplyUnreadCount()
   }
