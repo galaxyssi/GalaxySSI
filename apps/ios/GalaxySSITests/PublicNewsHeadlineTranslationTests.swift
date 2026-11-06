@@ -149,7 +149,10 @@ final class PublicNewsHeadlineTranslationTests: XCTestCase {
   func testCacheKeepsProvenanceAndRejectsObsoleteOrDuplicateCallback() throws {
     struct Fixture: Encodable { let articles: [PublicNewsArticle] }
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: file) }
+    defer {
+      try? FileManager.default.removeItem(at: PublicNewsRowArchive.directory(for: file))
+      try? FileManager.default.removeItem(at: file)
+    }
     var article = fixture()
     try JSONEncoder().encode(Fixture(articles: [article])).write(to: file)
     let archive = PublicNewsArchive(fileURL: file)

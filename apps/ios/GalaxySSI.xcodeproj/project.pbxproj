@@ -362,6 +362,7 @@
     E35390000000000000000001 /* PublicNewsFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000002 /* PublicNewsFeed.swift */; };
     E36510000000000000000001 /* PublicNewsPublisherDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36510000000000000000002 /* PublicNewsPublisherDiscovery.swift */; };
     E35390000000000000000003 /* PublicNewsArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000004 /* PublicNewsArchive.swift */; };
+    E35400000000000000000011 /* PublicNewsRowArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35400000000000000000012 /* PublicNewsRowArchive.swift */; };
     E36190000000000000000001 /* PublicNewsArticleBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36190000000000000000002 /* PublicNewsArticleBody.swift */; };
     E36200000000000000000001 /* PublicNewsBacklog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36200000000000000000002 /* PublicNewsBacklog.swift */; };
     E36200000000000000000003 /* PublicNewsBacklogWorker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36200000000000000000004 /* PublicNewsBacklogWorker.swift */; };
@@ -1551,6 +1552,7 @@
     E35390000000000000000002 /* PublicNewsFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsFeed.swift; sourceTree = "<group>"; };
     E36510000000000000000002 /* PublicNewsPublisherDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsPublisherDiscovery.swift; sourceTree = "<group>"; };
     E35390000000000000000004 /* PublicNewsArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsArchive.swift; sourceTree = "<group>"; };
+    E35400000000000000000012 /* PublicNewsRowArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsRowArchive.swift; sourceTree = "<group>"; };
     E36190000000000000000002 /* PublicNewsArticleBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsArticleBody.swift; sourceTree = "<group>"; };
     E36200000000000000000002 /* PublicNewsBacklog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsBacklog.swift; sourceTree = "<group>"; };
     E36200000000000000000004 /* PublicNewsBacklogWorker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsBacklogWorker.swift; sourceTree = "<group>"; };
@@ -3055,6 +3057,7 @@
         E35390000000000000000002 /* PublicNewsFeed.swift */,
         E36510000000000000000002 /* PublicNewsPublisherDiscovery.swift */,
         E35390000000000000000004 /* PublicNewsArchive.swift */,
+        E35400000000000000000012 /* PublicNewsRowArchive.swift */,
         E36190000000000000000002 /* PublicNewsArticleBody.swift */,
         E36200000000000000000002 /* PublicNewsBacklog.swift */,
         E36200000000000000000004 /* PublicNewsBacklogWorker.swift */,
@@ -4381,6 +4384,7 @@
         E35390000000000000000001 /* PublicNewsFeed.swift in Sources */,
         E36510000000000000000001 /* PublicNewsPublisherDiscovery.swift in Sources */,
         E35390000000000000000003 /* PublicNewsArchive.swift in Sources */,
+        E35400000000000000000011 /* PublicNewsRowArchive.swift in Sources */,
         E36190000000000000000001 /* PublicNewsArticleBody.swift in Sources */,
         E36200000000000000000001 /* PublicNewsBacklog.swift in Sources */,
         E36200000000000000000003 /* PublicNewsBacklogWorker.swift in Sources */,
