@@ -2456,6 +2456,11 @@
 "galaxyssi.agent.hermes.subtitle" = "继续桌面 Agent 对话与任务执行";
 "galaxyssi.agent.session.new" = "新会话";
 "galaxyssi.agent.unread" = "%d 条未读";
+"galaxyssi.agent.shortcuts.feed" = "动态";
+"galaxyssi.agent.shortcuts.new" = "新会话";
+"galaxyssi.agent.shortcuts.chats" = "会话";
+"galaxyssi.agent.shortcuts.photo" = "拍照";
+"galaxyssi.agent.shortcuts.files" = "文件";
 "galaxyssi.agent.insight.ready" = "原生工具调用链路已就绪。";
 "galaxyssi.agent.insight.unread" = "你有 %d 条未读 Agent 消息。";
 "galaxyssi.agent.status" = "Agent";

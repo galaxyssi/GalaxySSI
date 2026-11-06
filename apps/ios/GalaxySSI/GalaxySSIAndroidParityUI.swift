@@ -711,8 +711,6 @@ struct AgentHomeView: View {
     let presentation = headerPresentation
     return GalaxySSIAgentHomeHeaderView(
       sessionTitle: presentation.sessionTitle,
-      unreadCount: unreadTotal,
-      unreadLabel: String(format: t("galaxyssi.agent.unread", "%d unread"), unreadTotal),
       modelStatusLabel: presentation.modelStatusLabel,
       brandSubtitle: t("galaxyssi.agent.brand.subtitle", "Superintelligent agent"),
       newConversationLabel: t("new_conversation", "New conversation"),
@@ -797,6 +795,7 @@ struct AgentHomeView: View {
       focusRequest: composerFocusRequest,
       attachmentScope: store.activeAgentConversationId,
       attachmentPreviewBlocked: cameraPickerPresented || photoPickerPresented || fileImporterPresented,
+      chatUnreadCount: unreadTotal,
       onRemoveAttachment: { attachment in
         attachments.removeAndWipe(id: attachment.id)
       },
