@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_follow_up_hint">继续询问这份分析…</string>
+    <string name="health_follow_up_send">发送追问</string>
+    <string name="health_follow_up_checking">正在检查可用模型…</string>
+    <string name="health_follow_up_model">选择本次追问的模型</string>
+    <string name="health_follow_up_disclosure">接收方：%1$s\n\n将发送你输入的本次问题、下方所选汇总，以及上一条回答的已核验引用（如有）。不会附加档案资料、原始文件、原始记录或先前的问题。\n\n%2$s</string>
+    <string name="health_follow_up_changes">所选记录的变化</string>
+    <string name="health_follow_up_coverage">数据覆盖</string>
+    <string name="health_follow_up_sources">记录依据</string>
+    <string name="health_follow_up_no_source">此项没有可引用的已确认记录。</string>
+    <string name="health_follow_up_outside">这份分析没有足够依据回答这个问题。</string>
+    <string name="health_follow_up_partial">所选记录只能回答这次追问的一部分。</string>
+    <string name="health_follow_up_actions">下一步</string>
+</resources>

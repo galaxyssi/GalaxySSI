@@ -4,12 +4,19 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.app.DatePickerDialog
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.database.ContentObserver
+import android.graphics.Rect
 import android.os.Bundle
 import android.os.CancellationSignal
 import android.os.Handler
 import android.os.Looper
+import android.view.Gravity
+import android.view.View
 import android.widget.LinearLayout
+import android.widget.ScrollView
+import androidx.core.view.OneShotPreDrawListener
+import androidx.core.widget.doAfterTextChanged
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -43,6 +50,10 @@ class HealthAssistantActivity : Activity() {
     private var preview: HealthAnalysisPreview? = null
     private var plan: HealthAnalysisPlan? = null
     private var notice: Int? = null
+    private var gateway: HealthAnalysisGateway = HealthAnalysisProvider
+    private var followUpDraft = ""
+    private val followUps = ArrayList<Pair<String, HealthFollowUpAnswer>>()
+    private var followUpStatus = false
     private val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
             if (active && (preview != null || job?.isActive == true || dialog?.isShowing == true))
@@ -108,6 +119,11 @@ class HealthAssistantActivity : Activity() {
 
     override fun onDestroy() { tasks.cancel(); super.onDestroy() }
 
+    internal fun useFixtureGateway(value: HealthAnalysisGateway) {
+        check(BuildConfig.DEBUG && names.fixture != null)
+        gateway = value
+    }
+
     private fun reset(message: Int? = null) {
         generation++
         signal?.cancel()
@@ -120,13 +136,16 @@ class HealthAssistantActivity : Activity() {
         dialog = null
         preview = null
         plan = null
+        followUpDraft = ""
+        followUps.clear()
+        followUpStatus = false
         notice = message
         if (active) render()
     }
 
     private fun selection() = HealthWeeklyScope(end, zone, metrics, comparison = focus == HealthAnalysisFocus.CHANGES)
 
-    private fun render() {
+    private fun render(reveal: String? = null) {
         val content = healthProfileContent(body)
         val scope = selection()
         content.addView(ui.text(getString(R.string.health_assistant_scope), 19f, bold = true))
@@ -149,7 +168,7 @@ class HealthAssistantActivity : Activity() {
             tag = "health-assistant-calculate"
             isEnabled = notice != R.string.health_loading
         }, 12)
-        notice?.let { message ->
+        notice?.takeUnless { followUpStatus }?.let { message ->
             ui.add(content, ui.text(getString(message), 14f, muted = true).apply { tag = "health-assistant-status" }, 12)
             if (message == R.string.health_assistant_blocked || message == R.string.health_assistant_online_blocked ||
                 message == R.string.health_assistant_profile_blocked) {
@@ -159,6 +178,18 @@ class HealthAssistantActivity : Activity() {
             }
         }
         preview?.let { showResult(content, it) }
+        if (reveal != null) {
+            val scroll = body.getChildAt(0) as ScrollView
+            content.findViewWithTag<View>(reveal)?.let { target ->
+                OneShotPreDrawListener.add(scroll) {
+                    if (active && scroll.parent === body) {
+                        val rect = Rect().also(target::getDrawingRect)
+                        scroll.offsetDescendantRectToMyCoords(target, rect)
+                        scroll.scrollTo(0, rect.top)
+                    }
+                }
+            }
+        }
     }
 
     private fun showResult(content: LinearLayout, result: HealthAnalysisPreview) {
@@ -169,15 +200,7 @@ class HealthAssistantActivity : Activity() {
             ui.add(content, ui.text(text.title(stat.metric), 16f, bold = true).apply { tag = "health-assistant-fact-${stat.metric.name}" }, 12)
             if (result.focus == HealthAnalysisFocus.CHANGES) ui.add(content, ui.text(text.summary(stat)), 4)
             ui.add(content, ui.text(text.coverage(stat), 13f, muted = true), 4)
-            fact.refs.forEach { ref ->
-                val date = Instant.ofEpochMilli(ref.time).atZone(zone).toLocalDate()
-                ui.add(content, ui.profileRow(getString(if (ref.baseline) R.string.health_assistant_source_baseline
-                    else R.string.health_assistant_source_recent, date),
-                    getString(healthRecordSourceResource(ref.source))) {
-                    if (names.fixture == null) startActivity(Intent(this, HealthRecordRevisionActivity::class.java)
-                        .putExtra("health_record", ref.id).putExtra("health_revision", ref.revision))
-                }.apply { tag = "health-assistant-source" }, 2)
-            }
+            showSources(content, fact, "health-assistant-source")
         }
         if (result.weekly.scope.hasBaseline) text.comparison(result.weekly).forEach { ui.add(content, ui.text(it), 10) }
         result.profile?.let { profile ->
@@ -207,6 +230,28 @@ class HealthAssistantActivity : Activity() {
             HealthAnalysisFocus.CHANGES -> listOf(HealthAnalysisAction.WEEKLY_REPORT, HealthAnalysisAction.ADD_RECORD)
             else -> listOf(HealthAnalysisAction.ADD_RECORD, HealthAnalysisAction.RECORD_REMINDER)
         }
+        showActions(content, result, actions)
+        if (result.hasData && (names.fixture == null || gateway !== HealthAnalysisProvider)) {
+            ui.add(content, ui.command(R.string.health_assistant_online) {
+                chooseProvider(result)
+            }.apply { isEnabled = !onlineBusy() }, 14)
+            followUps.forEachIndexed { index, (question, answer) -> showFollowUp(content, result, index, question, answer) }
+            showComposer(content, result)
+        }
+    }
+
+    private fun showSources(content: LinearLayout, fact: HealthAnalysisFact, rowTag: String) {
+        fact.refs.forEach { ref ->
+            val date = Instant.ofEpochMilli(ref.time).atZone(zone).toLocalDate()
+            ui.add(content, ui.profileRow(getString(if (ref.baseline) R.string.health_assistant_source_baseline
+                else R.string.health_assistant_source_recent, date), getString(healthRecordSourceResource(ref.source))) {
+                startActivity(Intent(this, HealthRecordRevisionActivity::class.java).putHealthNavigationFixture(names)
+                    .putExtra("health_record", ref.id).putExtra("health_revision", ref.revision))
+            }.apply { tag = rowTag }, 2)
+        }
+    }
+
+    private fun showActions(content: LinearLayout, result: HealthAnalysisPreview, actions: List<HealthAnalysisAction>) {
         actions.forEach { action ->
             val (label, intent) = when (action) {
                 HealthAnalysisAction.ADD_RECORD -> R.string.health_manual to
@@ -219,9 +264,112 @@ class HealthAssistantActivity : Activity() {
                 if (names.fixture == null || action == HealthAnalysisAction.WEEKLY_REPORT) startActivity(intent)
             }.apply { tag = "health-assistant-action-${action.name}" }, 6)
         }
-        if (result.hasData && names.fixture == null) ui.add(content, ui.command(R.string.health_assistant_online) {
-            chooseProvider(result)
-        }.apply { isEnabled = notice != R.string.health_assistant_sending }, 14)
+    }
+
+    private fun showFollowUp(content: LinearLayout, result: HealthAnalysisPreview, index: Int, question: String, answer: HealthFollowUpAnswer) {
+        val turn = ui.column().apply { tag = "health-follow-up-turn-$index" }
+        turn.addView(ui.line().apply {
+            gravity = Gravity.END
+            addView(ui.text(question, 16f).apply {
+                setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(10))
+                background = ui.background(getColor(R.color.health_data_summary_fill), radius = 8)
+                setTextIsSelectable(true)
+            }, LinearLayout.LayoutParams(-2, -2))
+        })
+        ui.add(turn, ui.text(getString(R.string.health_assistant_title), 15f, bold = true), 14)
+        ui.add(turn, ui.card().apply {
+            when (answer.status) {
+                HealthFollowUpStatus.OUT_OF_SCOPE -> addView(ui.text(getString(R.string.health_follow_up_outside)))
+                HealthFollowUpStatus.PARTIAL -> addView(ui.text(getString(R.string.health_follow_up_partial)).apply {
+                    setTextColor(getColor(R.color.health_data_warning_text))
+                })
+                else -> Unit
+            }
+            val facts = result.facts.associateBy { it.key }
+            val covered = answer.sections.firstOrNull { it.topic == HealthFollowUpTopic.COVERAGE }?.facts.orEmpty()
+            for (section in answer.sections.filter { it.topic != HealthFollowUpTopic.SOURCES }) {
+                val title = if (section.topic == HealthFollowUpTopic.CHANGES) R.string.health_follow_up_changes
+                    else R.string.health_follow_up_coverage
+                ui.add(this, ui.text(getString(title), 15f, bold = true), if (childCount > 0) 10 else 0)
+                for (key in section.facts) {
+                    val fact = facts.getValue(key)
+                    ui.add(this, ui.text(text.title(fact.stat.metric), 14f, bold = true), 8)
+                    if (section.topic == HealthFollowUpTopic.CHANGES) {
+                        ui.add(this, ui.text(text.summary(fact.stat), 15f), 4)
+                        if (fact.stat.metric == HealthMetric.SLEEP_DURATION) text.comparison(result.weekly).forEach {
+                            ui.add(this, ui.text(it, 14f), 4)
+                        }
+                    }
+                    if (section.topic == HealthFollowUpTopic.COVERAGE || key !in covered) {
+                        ui.add(this, ui.text(text.coverage(fact.stat), 13f, muted = true), 4)
+                    }
+                }
+            }
+            val cited = answer.sections.flatMap { it.facts }.distinct().map(facts::getValue)
+            if (cited.isNotEmpty()) {
+                ui.add(this, ui.text(getString(R.string.health_follow_up_sources), 15f, bold = true), if (childCount > 0) 12 else 0)
+                for (fact in cited) {
+                    if (cited.size > 1) ui.add(this, ui.text(text.title(fact.stat.metric), 14f, bold = true), 6)
+                    if (fact.refs.isEmpty()) {
+                        ui.add(this, ui.text(getString(R.string.health_follow_up_no_source), 13f, muted = true), 4)
+                    }
+                    showSources(this, fact, "health-follow-up-source")
+                }
+                ui.add(this, ui.text(getString(R.string.health_not_diagnosis), 13f, muted = true), 8)
+            }
+            if (answer.actions.isNotEmpty()) {
+                ui.add(this, ui.text(getString(R.string.health_follow_up_actions), 14f, bold = true), if (childCount > 0) 12 else 0)
+                showActions(this, result, answer.actions)
+            }
+        }, 8)
+        ui.add(content, turn, 18)
+    }
+
+    private fun onlineBusy() = notice == R.string.health_assistant_sending || notice == R.string.health_follow_up_checking
+
+    private fun showComposer(content: LinearLayout, result: HealthAnalysisPreview) {
+        ui.add(content, ui.column().apply {
+            tag = "health-follow-up-composer"
+            background = ui.background(stroke = getColor(R.color.separator), radius = 8)
+            setPadding(ui.dp(12), ui.dp(6), ui.dp(8), ui.dp(8))
+            val input = healthProfileInput(followUpDraft, HEALTH_FOLLOW_UP_MAX_LENGTH, multiline = true).apply {
+                tag = "health-follow-up-input"
+                hint = getString(R.string.health_follow_up_hint)
+                minLines = 2
+                maxLines = 6
+                isEnabled = !onlineBusy()
+                background = null
+            }
+            addView(input, LinearLayout.LayoutParams(-1, -2))
+            addView(ui.line().apply {
+                gravity = Gravity.END
+                val send = ui.icon(R.drawable.ic_agent_arrow_up, R.string.health_follow_up_send) {
+                    if (!onlineBusy() && preview === result) {
+                        HealthFollowUpQuestion.from(followUpDraft, followUps.lastOrNull()?.second)?.let { chooseProvider(result, it) }
+                    }
+                }.apply {
+                    tag = "health-follow-up-send"
+                    background = ui.background(getColor(R.color.accent_green), radius = 8)
+                    imageTintList = ColorStateList.valueOf(android.graphics.Color.rgb(8, 40, 29))
+                }
+                fun enabled() {
+                    send.isEnabled = !onlineBusy() && HealthFollowUpQuestion.from(followUpDraft) != null
+                    send.alpha = if (send.isEnabled) 1f else .45f
+                }
+                input.doAfterTextChanged { draft -> followUpDraft = draft?.toString().orEmpty(); enabled() }
+                enabled()
+                addView(send)
+            })
+            if (followUpStatus) notice?.let {
+                ui.add(this, ui.text(getString(it), 14f).apply {
+                    tag = "health-assistant-status"
+                    accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+                }, 8)
+                if (it == R.string.health_assistant_online_blocked) ui.add(this, ui.profileRow(getString(R.string.health_privacy_title)) {
+                    startActivity(healthPrivacyIntent().putExtra("health_privacy_test_db", names.privacy))
+                })
+            }
+        }, 16)
     }
 
     private fun calculate() {
@@ -238,39 +386,58 @@ class HealthAssistantActivity : Activity() {
         }
     }
 
-    private fun chooseProvider(result: HealthAnalysisPreview) {
-        notice = R.string.health_assistant_sending
-        render()
+    private fun chooseProvider(result: HealthAnalysisPreview, question: HealthFollowUpQuestion? = null) {
+        if (onlineBusy()) return
+        followUpStatus = question != null
+        val reveal = if (question == null) null else "health-follow-up-composer"
+        notice = if (question == null) R.string.health_assistant_sending else R.string.health_follow_up_checking
+        render(reveal)
         work({
             HealthAnalysis.requireCurrent(applicationContext, names, result, online = true)
-            HealthAnalysisProvider.targets(applicationContext).ifEmpty { throw HealthAnalysisNoModel() }
+            gateway.targets(applicationContext).ifEmpty { throw HealthAnalysisNoModel() }
         }, online = true) { targets ->
             notice = null
-            render()
-            dialog = AlertDialog.Builder(this).setTitle(R.string.health_assistant_online)
+            render(reveal)
+            dialog = AlertDialog.Builder(this).setTitle(if (question == null) R.string.health_assistant_online else R.string.health_follow_up_model)
                 .setItems(targets.map { "${it.label}\n${it.destination}" }.toTypedArray()) { _, index ->
-                    confirm(result, targets[index])
+                    confirm(result, targets[index], question)
                 }.setNegativeButton(android.R.string.cancel, null).show()
         }
     }
 
-    private fun confirm(result: HealthAnalysisPreview, target: HealthAnalysisTarget) {
+    private fun confirm(result: HealthAnalysisPreview, target: HealthAnalysisTarget, question: HealthFollowUpQuestion?) {
         if (preview !== result) return
+        val payload = if (question == null) HealthAnalysis.payload(result) else HealthAnalysisFollowUp.payload(result, question)
+        val disclosure = if (question == null) R.string.health_assistant_disclosure else R.string.health_follow_up_disclosure
         dialog = AlertDialog.Builder(this).setTitle(R.string.health_assistant_consent)
-            .setMessage(getString(R.string.health_assistant_disclosure, target.destination, HealthAnalysis.payload(result).toString(2)))
+            .setMessage(getString(disclosure, target.destination, payload.toString(2)))
             .setNegativeButton(android.R.string.cancel, null)
             .setPositiveButton(R.string.health_assistant_send) { _, _ ->
                 if (preview === result) {
                     notice = R.string.health_assistant_sending
-                    render()
-                    work({
-                        HealthAnalysis.explain(applicationContext, names, result, target.destination) { data, guard ->
-                            HealthAnalysisProvider.explain(applicationContext, target, data, guard)
-                        }
-                    }, online = true) {
-                        plan = it
-                        notice = R.string.health_assistant_verified
+                    if (question == null) {
                         render()
+                        work({
+                            HealthAnalysis.explain(applicationContext, names, result, target.destination) { data, guard ->
+                                gateway.exchange(applicationContext, target, data, HealthAnalysisRequest.SUMMARY, guard)
+                            }
+                        }, online = true) {
+                            plan = it
+                            notice = R.string.health_assistant_verified
+                            render()
+                        }
+                    } else {
+                        render("health-follow-up-composer")
+                        work({
+                            HealthAnalysis.followUp(applicationContext, names, result, target.destination, question) { data, guard ->
+                                gateway.exchange(applicationContext, target, data, HealthAnalysisRequest.FOLLOW_UP, guard)
+                            }
+                        }, online = true) { answer ->
+                            followUps += question.text to answer
+                            followUpDraft = ""
+                            notice = null
+                            render("health-follow-up-turn-${followUps.lastIndex}")
+                        }
                     }
                 }
             }.show()
@@ -297,7 +464,7 @@ class HealthAssistantActivity : Activity() {
                             is HealthAnalysisInvalidReply -> R.string.health_assistant_invalid
                             else -> if (online) R.string.health_assistant_network_error else R.string.health_storage_error
                         }
-                        render()
+                        render(if (followUpStatus) "health-follow-up-composer" else null)
                     }
                 }
             }
