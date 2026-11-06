@@ -50,6 +50,9 @@ struct GalaxySSIPublicNewsHeadline<Title: View, Detail: View>: View {
   private var headline: some View {
     VStack(alignment: .leading, spacing: 6) {
       title()
+      if !reader && article.displayTitle != article.title {
+        Text(article.title).font(.caption).foregroundColor(.secondary).lineLimit(3)
+      }
       detail()
     }
     .frame(maxWidth: .infinity, alignment: .leading)

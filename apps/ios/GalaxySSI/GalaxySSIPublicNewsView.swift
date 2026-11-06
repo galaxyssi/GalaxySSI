@@ -8,7 +8,10 @@ struct GalaxySSIPublicNewsView: View {
   @EnvironmentObject private var store: GalaxySSIStore
   @AppStorage("publicNews.liveEnabled") private var liveNewsEnabled = false
   @AppStorage("publicNews.publisherDiscovery") private var publisherDiscovery = false
+  @AppStorage("publicNews.automaticHeadlineTranslation") private var automaticHeadlineTranslation = false
+  @AppStorage("publicNews.headlineTranslationRoute") private var headlineTranslationRoute = ""
   @StateObject private var archive = PublicNewsArchive()
+  @ObservedObject private var automaticHeadlines = PublicNewsAutomaticHeadlineWorker.shared
   @ObservedObject private var speech = PublicNewsSpeechPlayback.shared
   @State private var speechCandidates: [String]?
   @State private var noDownloadedSpeechItems = false
@@ -23,6 +26,17 @@ struct GalaxySSIPublicNewsView: View {
   @SceneStorage("publicNews.showSearch") private var showSearch = false
 
   private enum Filter: Hashable { case all, unread, saved }
+
+  private var headlineWorkerEnabled: Bool {
+    scenePhase == .active && !showHeadlineTranslation &&
+      PublicNewsAutomaticHeadlinePolicy.enabled(automaticHeadlineTranslation, language: language)
+  }
+
+  private var headlineCloudRoutes: [GalaxySSIContact] {
+    store.visibleContacts.filter {
+      $0.deliveryMode == .cloudAPI && $0.selectedCloudModel != nil
+    }
+  }
 
   private var visibleArticles: [PublicNewsArticle] {
     switch filter {
@@ -65,6 +79,19 @@ struct GalaxySSIPublicNewsView: View {
             Button { showHeadlineTranslation = true } label: {
               Label(t("public_news_headline_translate", "Translate headlines"), systemImage: "character.bubble")
             }
+            Toggle(t("public_news_headline_automatic", "Automatically translate headlines"),
+              isOn: $automaticHeadlineTranslation)
+            if automaticHeadlineTranslation {
+              Picker(t("public_news_headline_model", "Headline translation model"), selection: $headlineTranslationRoute) {
+                Text(t("public_news_headline_on_device", "On-device model")).tag("")
+                ForEach(headlineCloudRoutes) { contact in
+                  Text(contact.displayName + " · " + (contact.selectedCloudModel?.displayName ?? "")).tag(contact.id)
+                }
+                if !headlineTranslationRoute.isEmpty && !headlineCloudRoutes.contains(where: { $0.id == headlineTranslationRoute }) {
+                  Text(t("public_news_headline_waiting_model", "Waiting for model")).tag(headlineTranslationRoute)
+                }
+              }
+            }
             Toggle(t("public_news_live", "Live Hacker News"), isOn: $liveNewsEnabled)
             Toggle(t("public_news_learn_publishers", "Discover publisher feeds"), isOn: $publisherDiscovery)
               .disabled(archive.refreshing)
@@ -92,6 +119,7 @@ struct GalaxySSIPublicNewsView: View {
       if noDownloadedSpeechItems {
         status(t("public_news_speech_no_downloads", "No downloaded articles to read."))
       }
+      if headlineWorkerEnabled, let message = headlineWorkerStatus { status(message) }
 
       ScrollView {
         LazyVStack(alignment: .leading, spacing: 0) {
@@ -123,6 +151,8 @@ struct GalaxySSIPublicNewsView: View {
             }
             .padding(.leading, 12)
             .background(Color.galaxySSISurface)
+            .onAppear { automaticHeadlines.visible(article.id, true, archive: archive) }
+            .onDisappear { automaticHeadlines.visible(article.id, false, archive: archive) }
             Divider().padding(.leading, 12)
           }
         }
@@ -147,6 +177,13 @@ struct GalaxySSIPublicNewsView: View {
       .hidden()
     }
     .navigationBarHidden(true)
+    .task(id: "\(headlineWorkerEnabled):\(headlineTranslationRoute)") {
+      automaticHeadlines.configure(enabled: headlineWorkerEnabled, route: headlineTranslationRoute,
+        archive: archive, store: store)
+    }
+    .onChange(of: archive.articles) { _ in automaticHeadlines.wake() }
+    .onChange(of: headlineCloudRoutes) { _ in automaticHeadlines.wake() }
+    .onDisappear { automaticHeadlines.suspend(archive: archive, store: store) }
     .onAppear {
       guard let initialArticleKey, !didOpenInitialArticle else { return }
       didOpenInitialArticle = true
@@ -191,6 +228,17 @@ struct GalaxySSIPublicNewsView: View {
       .padding(12)
   }
 
+  private var headlineWorkerStatus: String? {
+    switch automaticHeadlines.status {
+    case .off, .idle: return nil
+    case .waitingModel: return t("public_news_headline_waiting_model", "Waiting for model")
+    case .translating: return t("public_news_headline_working", "Translating headlines")
+    case .deferred: return t("public_news_headline_auto_deferred", "Headline translation is waiting for device resources.")
+    case .retrying: return t("public_news_headline_retrying", "Waiting to retry headline translation")
+    case .storageFailed: return t("public_news_storage_failed", "The local news archive could not be accessed.")
+    }
+  }
+
   private func t(_ key: String, _ fallback: String) -> String {
     GalaxySSILocalization.string(key, fallback: fallback, language: language)
   }
@@ -229,9 +277,7 @@ struct GalaxySSIPublicNewsReader: View {
           if article.displayTitle != article.title, let translation = article.headlineTranslation {
             VStack(alignment: .leading, spacing: 4) {
               Text(article.title).textSelection(.enabled)
-              Text(translation.provider == .apple
-                ? t("public_news_headline_apple", "Translated with Apple Translation")
-                : t("public_news_headline_local", "Translated by an on-device model"))
+              Text(headlineProvider(translation.provider))
                 .font(.caption)
             }
             .foregroundColor(.secondary)
@@ -262,6 +308,14 @@ struct GalaxySSIPublicNewsReader: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     GalaxySSILocalization.string(key, fallback: fallback, language: language)
+  }
+
+  private func headlineProvider(_ provider: PublicNewsHeadlineTranslation.Provider) -> String {
+    switch provider {
+    case .apple: return t("public_news_headline_apple", "Translated with Apple Translation")
+    case .localModel: return t("public_news_headline_local", "Translated by an on-device model")
+    case .cloud: return t("public_news_headline_cloud", "Translated by a configured cloud model")
+    }
   }
 }
 
