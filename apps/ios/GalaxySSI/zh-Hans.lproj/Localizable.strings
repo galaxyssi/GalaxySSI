@@ -5631,6 +5631,7 @@
 "public_news_menu_saved" = "我的收藏";
 "public_news_new_arrivals" = "%d 条新动态";
 "public_news_open_article" = "打开文章";
+"public_news_content_summary" = "内容摘要";
 "public_news_bookmark_added" = "已收藏";
 "public_news_bookmark_removed" = "已取消收藏";
 "public_news_bookmark_undo" = "撤销";

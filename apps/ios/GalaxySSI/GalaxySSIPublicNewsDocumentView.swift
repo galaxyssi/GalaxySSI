@@ -1,6 +1,36 @@
 import SwiftUI
 import UIKit
 
+private struct PublicNewsReadingText: ViewModifier {
+  @ScaledMetric(relativeTo: .body) private var size = 18.0
+  @ScaledMetric(relativeTo: .body) private var spacing = 4.0
+
+  func body(content: Content) -> some View {
+    content.font(.system(size: size)).lineSpacing(spacing)
+  }
+}
+
+struct GalaxySSIPublicNewsSummary: View {
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @ScaledMetric(relativeTo: .subheadline) private var labelSize = 14.4
+  let text: String
+
+  var body: some View {
+    if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      VStack(alignment: .leading, spacing: 8) {
+        Text(GalaxySSILocalization.string("public_news_content_summary", fallback: "Article summary", language: language))
+          .font(.system(size: labelSize))
+          .foregroundColor(.galaxySSITextSecondary)
+          .accessibilityAddTraits(.isHeader)
+        Text(text)
+          .modifier(PublicNewsReadingText())
+          .textSelection(.enabled)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+  }
+}
+
 @MainActor
 struct GalaxySSIPublicNewsDocumentView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
@@ -69,12 +99,20 @@ struct GalaxySSIPublicNewsDocumentView: View {
     if role == .quote {
       HStack(alignment: .top, spacing: 8) {
         Rectangle().fill(Color.galaxySSIAccent).frame(width: 2)
-        Text(value).italic().textSelection(.enabled)
+        Text(value).italic()
+          .modifier(PublicNewsReadingText())
+          .textSelection(.enabled)
       }
       .fixedSize(horizontal: false, vertical: true)
     } else {
       let phrases = translated ? [] : (style?.emphasis ?? [])
-      emphasized(value, phrases: phrases).font(role == .heading ? .headline : .body).textSelection(.enabled)
+      if role == .heading {
+        emphasized(value, phrases: phrases).font(.headline).textSelection(.enabled)
+      } else {
+        emphasized(value, phrases: phrases)
+          .modifier(PublicNewsReadingText())
+          .textSelection(.enabled)
+      }
     }
   }
 
