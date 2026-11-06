@@ -294,7 +294,7 @@ final class AgentReplyParagraphTextView: UITextView, UIGestureRecognizerDelegate
     isScrollEnabled = false
     backgroundColor = .clear
     textContainerInset = .zero
-    textContainer.lineFragmentPadding = 0
+    self.textContainer.lineFragmentPadding = 0
     addGestureRecognizer(paragraphTap)
     addGestureRecognizer(emptyDoubleTap)
     addGestureRecognizer(emptyTap)
