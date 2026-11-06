@@ -382,7 +382,7 @@ enum GlobalRecordedRunObservationExtractor {
       causalEventIds: [startedEventId(run.runId)]
     )
     let roots: Set<String> = [startedEventId(run.runId), completedEventId]
-    let toolEvents = run.toolCalls.map { call in
+    let toolEvents = run.toolCalls.filter { $0.status != .pending }.map { call in
       toolEvent(run: run, call: call, terminalTimestampMillis: terminal.timestampMillis, conversationTitle: conversationTitle, roots: roots)
     }
     let artifactEvents = run.artifacts.map { artifact in

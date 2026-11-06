@@ -57,7 +57,7 @@ struct CloudConversationNonStreamingToolEngine {
       if calls.isEmpty {
         if CloudWebGrounding.containsInternalToolProtocol(response.text),
            !finalRound,
-           progress.requestRepair("nonstream_internal_protocol") {
+           progress.requestFormatRepair("nonstream_internal_protocol") {
           conversation.appendInlineToolRepairPrompt(response.text)
           continue
         }
@@ -93,7 +93,7 @@ struct CloudConversationNonStreamingToolEngine {
       }
       if let invalidToolCall {
         let repairKey = "nonstream_tool_arguments:\(invalidToolCall.name.lowercased())"
-        if progress.requestRepair(repairKey) {
+        if progress.requestFormatRepair(repairKey) {
           conversation.appendToolArgumentRepairPrompt(invalidToolCall)
         } else {
           progress.requestFinalization()

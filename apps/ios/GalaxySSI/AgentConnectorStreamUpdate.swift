@@ -21,6 +21,7 @@ struct AgentConnectorPublicProgress: Equatable {
   var generation: Int64
   var sequence: Int64
   var text: String
+  var countsForCodexSilence = true
 
   var traceStage: String {
     let digest = SHA256.hash(data: Data(eventId.utf8)).map { String(format: "%02x", $0) }.joined()
@@ -66,7 +67,12 @@ struct AgentConnectorPublicProgress: Equatable {
         }
       }
       guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-      return Self(eventId: id, generation: generation, sequence: sequence, text: text)
+      let source = (event.dictionary("metadata")?.string("source") ?? "").lowercased()
+      let internalSteering = ["replan", "steer", "heartbeat"].contains(kind) ||
+        ["replan", "steer", "heartbeat"].contains(code) ||
+        ["stall_watchdog", "auto_replan", "self_steering"].contains(source)
+      return Self(eventId: id, generation: generation, sequence: sequence, text: text,
+        countsForCodexSilence: !internalSteering)
     }
   }
 

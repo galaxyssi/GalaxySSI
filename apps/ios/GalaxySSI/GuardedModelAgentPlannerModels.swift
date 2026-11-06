@@ -5,6 +5,7 @@ struct AgentModelPlanningInvocation: Codable, Equatable {
   var prompt: String
   var nativeTools: [AgentNativeToolDescriptor]
   var request: AgentModelPlanningPromptRequest
+  var completionShapeRepairOnly: Bool? = nil
 
   init(
     systemPrompt: String,
@@ -23,6 +24,7 @@ struct AgentModelPlanningInvocation: Codable, Equatable {
     case prompt
     case nativeTools = "native_tools"
     case request
+    case completionShapeRepairOnly = "completion_shape_repair_only"
   }
 }
 

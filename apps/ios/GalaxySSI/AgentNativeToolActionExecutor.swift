@@ -341,6 +341,7 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
         "native_tool_id": result.provenance.toolId,
         "native_tool_version": result.provenance.toolVersion,
         "native_tool_status": result.status.rawValue,
+        "error_code": result.error?.code ?? "",
         "native_tool_output": output,
         "native_receipt_id": result.receipt.invocationId,
         "invocation_id": result.receipt.invocationId,
@@ -393,6 +394,7 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
       metadata: [
         "native_tool_id": toolId,
         "native_tool_status": "rejected",
+        "execution_started": "false",
         "error_code": code
       ]
     )

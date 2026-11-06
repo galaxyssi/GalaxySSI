@@ -108,6 +108,14 @@ struct GalaxySSIHealthTableSourceView: View {
                   .foregroundColor(.secondary)
                 Text(item.secondary ? t("secondary_link", "Additional source") : t("primary_link", "Primary source"))
                   .foregroundColor(.secondary)
+                if let decision = item.source.dateOnlyDecision {
+                  VStack(alignment: .leading, spacing: 3) {
+                    Text(tableLabel("source_time", "Source time") + ": " + decision.sourceDate)
+                    Text(String(format: tableLabel("date_only_applied", "Confirmed date-only time: %@"), decision.clock))
+                    Text(tableLabel("resolved_time", "Resolved time") + ": " + decision.resolvedTime.formatted(.iso8601))
+                  }
+                  .font(.caption).foregroundColor(.secondary)
+                }
               }
             }
             if linked.count > linkedLimit { Button(t("links_more", "Show more links")) { linkedLimit += 30 } }
@@ -236,6 +244,10 @@ struct GalaxySSIHealthTableSourceView: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     GalaxySSILocalization.string("galaxyssi.health.table_source." + key, fallback: fallback, language: language)
+  }
+
+  private func tableLabel(_ key: String, _ fallback: String) -> String {
+    GalaxySSILocalization.string("galaxyssi.health.table." + key, fallback: fallback, language: language)
   }
 }
 

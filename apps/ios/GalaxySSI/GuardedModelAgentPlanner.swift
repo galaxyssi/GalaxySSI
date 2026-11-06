@@ -30,11 +30,21 @@ enum AgentModelDirectResponseCodec {
     guard let data = unwrapped.data(using: .utf8),
           let object = try? JSONSerialization.jsonObject(with: data),
           let json = object as? [String: Any],
-          Set(json.keys).isSubset(of: ["disposition", "final_response"]),
+          Set(json.keys).isSubset(of: ["disposition", "final_response", "presentation", "rich_output", "completion_requirements"]),
           let disposition = json["disposition"] as? String,
           disposition.caseInsensitiveCompare("respond") == .orderedSame,
           let response = json["final_response"] as? String else {
       return nil
+    }
+    if let requirements = json["completion_requirements"] {
+      guard let scope = requirements as? [String: Any],
+            scope["publication"] == nil || (scope["publication"] as? String) == "none",
+            scope["phone_linux"] == nil || (scope["phone_linux"] as? Bool) == false else { return nil }
+    }
+    if json["presentation"] != nil || json["rich_output"] != nil || json["completion_requirements"] != nil {
+      guard unwrapped.utf8.count <= AgentRichContentCodec.maximumSerializedSize,
+            response.isEmpty || answer(response) != nil else { return nil }
+      return unwrapped
     }
     return answer(response)
   }
@@ -44,7 +54,7 @@ enum AgentModelDirectResponseCodec {
     guard !text.isEmpty, text.utf8.count <= 32_768 else { return nil }
     let lower = text.lowercased()
     let arrayObject = lower.hasPrefix("[") && lower.dropFirst().trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{")
-    guard !lower.hasPrefix("{"), !arrayObject,
+    guard !lower.hasPrefix("{"), !arrayObject, !CloudSupervisedResearch.isControlPayload(text),
           !["<tool_call", "<tool_use", "<function_call", "<invoke", "recipient=functions.",
             "[tool_call", "\"tool_calls\"", "\"actions\":"].contains(where: lower.contains) else { return nil }
     return text
@@ -97,14 +107,19 @@ struct GuardedModelAgentPlanner {
     admit: ((AgentPlan) -> AgentModelPlanRejection?)? = nil
   ) async -> GuardedModelAgentPlanningResult {
     let normalizedSettings = settings.normalized
-    let fallback = fallbackPlan
+    var fallback = fallbackPlan
+    if request.phoneOwnsExecution {
+      fallback = AgentPlanFactory.actions(request: request.planRequest, [])
+      fallback.actions = []
+      fallback.validation = AgentPlanValidator.validate(fallback)
+    }
     let replanning = !request.parsingContext.replanReason
       .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
     if fallback.plannerProfile.hasPrefix("specialized-adapter:") {
       return .plan(fallback)
     }
-    if !replanning,
+    if !request.phoneOwnsExecution, !replanning,
        safetySettings.localActionsAllowed,
        safetySettings.deviceControlAllowed,
        let directNativeToolPlan = AgentDirectNativeToolPlanner.shortcutPlan(
@@ -116,16 +131,17 @@ struct GuardedModelAgentPlanner {
         executionMode: fallback.executionMode
       ))
     }
-    if !normalizedSettings.enabled || !safetySettings.connectorCallsAllowed {
+    let onDeviceProvider = provider is LocalModelAgentPlanningProvider
+    if !normalizedSettings.enabled || (!onDeviceProvider && !safetySettings.connectorCallsAllowed) {
       return .plan(fallback.copyForGuardedPlanner(profile: "rule-based-local"))
     }
-    if request.requirements.localOnly {
+    if request.requirements.localOnly && !onDeviceProvider {
       return .plan(fallback.copyForGuardedPlanner(
         profile: "rule-based-private",
         rationale: "Cloud planning was skipped because the task requires a private route."
       ))
     }
-    if !replanning,
+    if !request.phoneOwnsExecution, !replanning,
       (request.requirements.mode == .fast || request.requirements.mode == .economy) &&
       !fallback.actions.contains(where: { $0.kind == .draftPlan }) {
       return .plan(fallback.copyForGuardedPlanner(
@@ -133,8 +149,8 @@ struct GuardedModelAgentPlanner {
         rationale: "A deterministic route avoided an unnecessary planning-model call."
       ))
     }
-    if hasSensitivePlannerContext(request.planRequest.screen) ||
-      hasSensitivePlannerGoal(request.planRequest.goal) {
+    if !onDeviceProvider && (hasSensitivePlannerContext(request.planRequest.screen) ||
+      hasSensitivePlannerGoal(request.planRequest.goal)) {
       return .plan(fallback.copyForGuardedPlanner(
         profile: "rule-based-sensitive-fallback",
         rationale: "Model planning skipped because the current iOS context is sensitive."
@@ -151,18 +167,27 @@ struct GuardedModelAgentPlanner {
     } ?? screenEnrichedRequest
     let prompt = AgentModelPlanningPrompt.build(request: safeRequest, settings: normalizedSettings)
     var rejection: AgentModelPlanRejection?
+    var shapeRepair: (diagnostic: String, original: AgentMcpJSONObject)?
     for _ in 0...1 {
       guard !Task.isCancelled else { break }
       let repair = rejection
-      let invocation = AgentModelPlanningInvocation(
+      var invocation = AgentModelPlanningInvocation(
         systemPrompt: AgentModelPlanningPrompt.systemPrompt,
         prompt: repair.map { prompt + "\n\n" + $0.repairInstruction } ?? prompt,
         nativeTools: safeRequest.planRequest.nativeTools,
         request: safeRequest
       )
+      if let shapeRepair {
+        invocation = AgentModelPlanningInvocation(
+          systemPrompt: "Repair JSON structure only. Do not use tools, take actions, or invent observations. Return one JSON object.",
+          prompt: prompt + "\nRepair only completion_requirements.outcomes in the following invalid plan. Preserve all actions and other fields verbatim. \(shapeRepair.diagnostic)\nInvalid plan data:\n\(AgentMcpJSONCodec.stringify(shapeRepair.original))",
+          nativeTools: [], request: safeRequest.withNativeTools([])
+        )
+        invocation.completionShapeRepairOnly = true
+      }
       let raw: String
       do {
-        if repair == nil { raw = try await provider.rawPlan(invocation: invocation) }
+        if repair == nil || shapeRepair != nil { raw = try await provider.rawPlan(invocation: invocation) }
         else { raw = try await provider.repairPlan(invocation: invocation) }
       } catch {
         if repair != nil { break }
@@ -172,8 +197,22 @@ struct GuardedModelAgentPlanner {
         ))
       }
       guard !Task.isCancelled else { break }
+      if safeRequest.phoneOwnsExecution && !AgentModelPlanParser.permitsPhoneExecutionSite(raw) {
+        return .plan(fallback.copyForGuardedPlanner(profile: "rule-based-phone-execution-rejected"))
+      }
+      if let shapeRepair {
+        guard AgentModelPlanParser.repairedOnlyCompletionShape(raw, original: shapeRepair.original) else {
+          return .plan(fallback.copyForGuardedPlanner(profile: "rule-based-invalid-completion-shape"))
+        }
+      } else if repair == nil, safeRequest.phoneOwnsExecution,
+                let invalidShape = AgentModelPlanParser.completionShapeRepair(raw) {
+        shapeRepair = invalidShape
+        rejection = .init("completion_requirements.outcomes", "invalid_completion_shape", invalidShape.diagnostic)
+        continue
+      }
       if repair == nil, safeRequest.allowsDirectResponse,
-         let response = AgentModelDirectResponseCodec.parse(raw) ?? AgentModelPlanParser.answerOnlyAction(raw) {
+         let response = AgentModelDirectResponseCodec.parse(raw, envelopeOnly: safeRequest.phoneOwnsExecution)
+           ?? AgentModelPlanParser.answerOnlyAction(raw) {
         return .directResponse(response)
       }
       switch AgentModelPlanParser.parseWithDiagnostics(
@@ -182,6 +221,11 @@ struct GuardedModelAgentPlanner {
       case .failure(let invalid):
         rejection = invalid
       case .success(var parsed):
+        guard !request.phoneOwnsExecution || parsed.actions.allSatisfy({
+          $0.kind == .callNativeTool || AgentRollingPlanPolicy.closesFromVerifiedEvidence($0)
+        }) else {
+          return .plan(fallback.copyForGuardedPlanner(profile: "rule-based-phone-execution-rejected"))
+        }
         guard AgentPhoneRuntimePolicy.acceptsModelPlan(goal: request.planRequest.goal, actions: parsed.actions) else {
           rejection = .init("actions", "phone_runtime_route",
             "This route cannot execute the proposed phone-runtime actions. Use the tools advertised for the selected route.")
@@ -217,13 +261,29 @@ struct GuardedModelAgentPlanner {
   private func safeNativeTools(
     for request: AgentModelPlanningPromptRequest
   ) -> [AgentNativeToolDescriptor] {
+    let ordinary = standardNativeTools(for: request)
+    guard request.phoneOwnsExecution else { return ordinary }
+    let ordinaryIDs = Set(ordinary.map(\.id))
+    let additional = request.planRequest.nativeTools.filter {
+      !ordinaryIDs.contains($0.id) && $0.availability.status == .available &&
+        $0.risk != .high && $0.risk != .blocked &&
+        AgentPhoneRuntimePolicy.directPhoneActionTools.contains($0.id)
+    }
+    return (ordinary + additional).sorted { $0.id < $1.id }
+  }
+
+  private func standardNativeTools(
+    for request: AgentModelPlanningPromptRequest
+  ) -> [AgentNativeToolDescriptor] {
     let allowsPhoneRuntimeTools = request.allowsPhoneRuntimeTools &&
       AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: request.planRequest.goal)
+    let isResearch = AgentResearchCapabilityDiscovery.isResearchRequest(request)
     return request.planRequest.nativeTools
       .filter { descriptor in
         descriptor.availability.status == .available &&
         descriptor.risk == .low &&
-        descriptor.requiredConsents.allSatisfy { !$0.required } &&
+        (descriptor.requiredConsents.allSatisfy { !$0.required } ||
+          (isResearch && AgentResearchCapabilityDiscovery.hasOnlyResearchConsent(descriptor))) &&
           (allowsPhoneRuntimeTools || !AgentPhoneRuntimePolicy.isPhoneRuntimeTool(descriptor.id))
       }
       .sorted { $0.id < $1.id }
@@ -252,20 +312,9 @@ struct GuardedModelAgentPlanner {
 
 private extension AgentModelPlanningPromptRequest {
   func withNativeTools(_ nativeTools: [AgentNativeToolDescriptor]) -> AgentModelPlanningPromptRequest {
-    var nextPlanRequest = planRequest
-    nextPlanRequest.nativeTools = nativeTools
-    return AgentModelPlanningPromptRequest(
-      planRequest: nextPlanRequest,
-      parsingContext: parsingContext,
-      conversationContext: conversationContext,
-      executionTurnId: executionTurnId,
-      executionHistory: executionHistory,
-      globalRealtimeContext: globalRealtimeContext,
-      requirements: requirements,
-      hasAttachments: hasAttachments,
-      allowsPhoneRuntimeTools: allowsPhoneRuntimeTools,
-      allowsDirectResponse: allowsDirectResponse
-    )
+    var copy = self
+    copy.planRequest.nativeTools = nativeTools
+    return copy
   }
 
   func withScreenElements() -> AgentModelPlanningPromptRequest {
@@ -279,18 +328,9 @@ private extension AgentModelPlanningPromptRequest {
     if nextContext.focusedInputField == nil {
       nextContext.focusedInputField = planRequest.screen.focusedInputField
     }
-    return AgentModelPlanningPromptRequest(
-      planRequest: planRequest,
-      parsingContext: nextContext,
-      conversationContext: conversationContext,
-      executionTurnId: executionTurnId,
-      executionHistory: executionHistory,
-      globalRealtimeContext: globalRealtimeContext,
-      requirements: requirements,
-      hasAttachments: hasAttachments,
-      allowsPhoneRuntimeTools: allowsPhoneRuntimeTools,
-      allowsDirectResponse: allowsDirectResponse
-    )
+    var copy = self
+    copy.parsingContext = nextContext
+    return copy
   }
 }
 

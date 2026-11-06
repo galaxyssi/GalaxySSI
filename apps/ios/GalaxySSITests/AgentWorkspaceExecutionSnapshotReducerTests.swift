@@ -60,7 +60,7 @@ final class AgentWorkspaceExecutionSnapshotReducerTests: XCTestCase {
     XCTAssertEqual(reduction.workspace.resultJson, #"{"waiting":true}"#)
     XCTAssertEqual(reduction.workspace.errorMessage, "waiting")
     XCTAssertEqual(reduction.workspace.toolCalls.map(\.id), ["call-a", "call-b", "call-c"])
-    XCTAssertEqual(reduction.workspace.toolCalls.first?.status, .running)
+    XCTAssertEqual(reduction.workspace.toolCalls.first?.status, .succeeded)
     XCTAssertEqual(reduction.workspace.artifacts.map(\.id), ["artifact-a", "artifact-b"])
     XCTAssertEqual(reduction.workspace.permissionGrantIds, ["grant-a", "grant-b"])
     XCTAssertEqual(reduction.workspace.permissionScopes, ["contacts.read", "calendar.write"])
@@ -167,6 +167,84 @@ final class AgentWorkspaceExecutionSnapshotReducerTests: XCTestCase {
     XCTAssertTrue(encoded.contains(#""status_changed":false"#))
     XCTAssertTrue(encoded.contains(#""task.execution_snapshot""#))
     XCTAssertTrue(encoded.contains(#""tool_calls":["#))
+  }
+
+  func testSameAttemptSummaryKeepsReceiptAndNewAttemptClearsObsoleteFailure() {
+    let failure = AgentWorkspaceToolCallRecord(id: "action", toolName: "tool", status: .failed,
+      resultJson: #"{"reason":"offline"}"#, errorMessage: "offline", startedAtMillis: 10, completedAtMillis: 20)
+    let stale = AgentWorkspaceToolCallRecord(id: "action", toolName: "tool", status: .running,
+      startedAtMillis: 8)
+    let retry = AgentWorkspaceToolCallRecord(id: "action", toolName: "tool", status: .running,
+      startedAtMillis: 30)
+    XCTAssertEqual(AgentWorkspaceToolCallProjection.merge([failure], [stale]), [failure])
+    XCTAssertEqual(AgentWorkspaceToolCallProjection.merge([failure], [retry]), [retry])
+    let result = AgentWorkspaceToolCallRecord(id: "action", toolName: "tool", status: .succeeded,
+      resultJson: #"{"value":40,"verified":true}"#, startedAtMillis: 30, completedAtMillis: 45)
+    let summary = AgentWorkspaceToolCallRecord(id: "action", toolName: "tool", status: .succeeded,
+      resultJson: #"{"message":"done"}"#)
+    XCTAssertEqual(AgentWorkspaceToolCallProjection.merge([retry], [result, summary]), [result])
+    let cancellation = AgentWorkspaceToolCallRecord(id: "action", toolName: "tool", status: .cancelled,
+      startedAtMillis: 55, completedAtMillis: 58)
+    XCTAssertEqual(AgentWorkspaceToolCallProjection.merge([result], [cancellation, failure]), [cancellation])
+  }
+
+  func testWorkspaceProjectionSeparatesAcceptanceAndIgnoresForeignEvidence() {
+    let owned = AgentPlanContinuationScope(conversationId: "session", turnId: "turn")
+    let other = AgentPlanContinuationScope(conversationId: "other", turnId: "turn")
+    let action = AgentAction(id: "logical-action", kind: .callConnector, target: "connector", risk: .low,
+      status: .waitingResponse, description: "Read")
+    var historical = owned.bind(action)
+    historical.status = .failed
+    let foreign = other.bind(AgentAction(id: "foreign", kind: .callNativeTool, target: "other", risk: .low,
+      status: .completed, description: "Foreign"))
+    var task = AgentTaskRecord(taskId: "turn", sessionId: "session", goal: "Read", phase: .waitingResponse,
+      routeKind: .localSystem, targetTitle: "Phone", risk: .low, blocked: false)
+    task.activePlan = AgentPlan(goal: task.goal, screen: AgentScreenContext(foregroundApp: "GalaxySSI"),
+      steps: [], actions: [owned.bind(action), foreign], actionHistory: [historical])
+    task.lastNativeActionResult = AgentActionResult(actionId: action.id, success: true, message: "accepted",
+      metadata: ["invocation_id": "receipt", "awaiting_response": "true", "completed_at_millis": "44"])
+    let projected = AgentWorkspaceToolCallProjection.records(task: task, recovered: [
+      .init(actionId: "foreign", success: true, message: "Not owned", metadata: ["native_tool_output": #"{"foreign":true}"#])
+    ])
+    XCTAssertEqual(projected.map(\.id), [action.id])
+    XCTAssertEqual(projected.first?.status, .running)
+    XCTAssertEqual(projected.first?.completedAtMillis, 0)
+    XCTAssertTrue(projected.first?.resultJson.contains("receipt") == true)
+    XCTAssertFalse(projected.first?.resultJson.contains("foreign") == true)
+  }
+
+  @MainActor
+  func testLocalTaskAndVerifiedRecoveryUpdateOneScopedWorkspaceWithoutReplacingThePlan() throws {
+    let domain = "WorkspaceProjection.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+    defer { defaults.removePersistentDomain(forName: domain) }
+    let workspaceStore = InMemoryAgentWorkspaceStore()
+    let store = GalaxySSIStore(defaults: defaults, secrets: InMemorySecretStore(), workspaceStore: workspaceStore)
+    let session = store.createAgentSession(title: "Projection")
+    let id = UUID().uuidString
+    let scope = AgentPlanContinuationScope(conversationId: session.id, turnId: id)
+    let action = scope.bind(AgentAction(id: "read", kind: .callNativeTool, target: "tool.read", risk: .low,
+      status: .running, description: "Read phone state"))
+    var task = AgentTaskRecord(taskId: id, sessionId: session.id, goal: "Inspect", phase: .executing,
+      routeKind: .localSystem, targetTitle: "Phone", risk: .low, blocked: false, createdAtMillis: 10, updatedAtMillis: 20)
+    task.activePlan = AgentPlan(goal: task.goal, screen: AgentScreenContext(foregroundApp: "GalaxySSI"),
+      steps: [], actions: [action])
+    store.upsertAgentTask(task)
+    XCTAssertEqual(workspaceStore.find(id)?.toolCalls.first?.status, .running)
+    task.phase = .paused
+    task.activePlan?.actions[0].status = .proposed
+    let receipt = AgentActionResult(actionId: action.id, success: true, message: "Read",
+      metadata: ["native_tool_output": #"{"percent":40}"#, "invocation_id": "receipt-1"])
+    store.upsertAgentTask(task, recoveredWorkspaceObservations: [receipt])
+    XCTAssertEqual(workspaceStore.find(id)?.status, .paused)
+    XCTAssertEqual(workspaceStore.find(id)?.toolCalls.map(\.id), ["read"])
+    XCTAssertEqual(workspaceStore.find(id)?.toolCalls.first?.status, .succeeded)
+    XCTAssertNotNil(store.agentTask(id: id)?.activePlan)
+    task.phase = .completed
+    task.activePlan?.actions[0].status = .completed
+    store.upsertAgentTask(task)
+    XCTAssertEqual(workspaceStore.find(id)?.status, .completed)
+    XCTAssertTrue(workspaceStore.find(id)?.toolCalls.first?.resultJson.contains("percent") == true)
   }
 
   private func workspace(

@@ -1729,11 +1729,13 @@ enum AgentNativeToolAgentActionAdapter {
     if result.success {
       return .success(output: output, message: result.message)
     }
+    let timerCode = result.metadata["error_code"] ?? ""
+    let code = timerCode.hasPrefix("timer_") || timerCode.hasPrefix("invalid_timer_") ? timerCode : "agent_action_failed"
     return AgentNativeToolExecutionResult(
       output: output,
       message: result.message,
       error: AgentNativeToolError(
-        code: "agent_action_failed",
+        code: code,
         message: result.message.isEmpty ? "Legacy AgentAction execution failed" : result.message
       )
     )
@@ -1813,13 +1815,18 @@ struct AgentActionNativeToolExecutor {
           input: invocation.input,
           context: invocation.context
         )
-        return AgentNativeToolAgentActionAdapter.toAgentAction(
+        var action = AgentNativeToolAgentActionAdapter.toAgentAction(
           call: call,
           descriptor: invocation.descriptor,
           kind: kind,
           target: targetProvider?(invocation),
           description: descriptionProvider?(invocation)
         )
+        if kind == .setAlarm {
+          action.parameters["_galaxyssi_conversation_id"] = invocation.context.conversationId
+          action.parameters["_galaxyssi_turn_id"] = invocation.context.turnId
+        }
+        return action
       }
     )
   }

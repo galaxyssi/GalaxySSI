@@ -650,13 +650,11 @@ struct GalaxySSIHealthRecords {
     for row in preview {
       if let selected = linkDuplicates[row.id] {
         guard row.duplicateTarget == selected else { throw Failure.stale }
-        links.append(.init(target: selected, source: .init(batch: id, row: row.id, sha256: hash,
-          sheet: table.sheet, worksheetPath: table.sheetPath, columns: mapping.sourceColumns)))
+        links.append(.init(target: selected, source: row.source(batch: id, sha256: hash, table: table, mapping: mapping)))
       }
       guard row.status == .ready, var reading = row.reading else { continue }
       reading.revision = 1
-      reading.tableSource = .init(batch: id, row: row.id, sha256: hash, sheet: table.sheet,
-                                  worksheetPath: table.sheetPath, columns: mapping.sourceColumns)
+      reading.tableSource = row.source(batch: id, sha256: hash, table: table, mapping: mapping)
       readings.append(reading)
     }
     guard links.count == linkDuplicates.count else { throw Failure.stale }

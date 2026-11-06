@@ -4,6 +4,32 @@ import XCTest
 
 @MainActor
 final class AgentModelPlannerContactResolverTests: XCTestCase {
+  func testPairedPhonePlannerPayloadAlwaysUsesPlanOnlyAndStableScopedIdentity() throws {
+    let route = AgentPairedPhonePlannerRoute(contactId: "desktop:codex", desktopId: "desktop",
+      clientRouteId: "client", modelId: "gpt-5.6-sol", reasoningEffort: .automatic)
+    let request = AgentModelPlanningPromptRequest(
+      planRequest: AgentPlanRequest(goal: "A phone operation", screen: AgentScreenContext(foregroundApp: "GalaxySSI", pageTitle: "Agent")),
+      conversationContext: AgentConversationContext(conversationId: "conversation", summary: "", turns: [], privateMode: true),
+      executionTurnId: "turn", phoneOwnsExecution: true
+    )
+    var invocation = AgentModelPlanningInvocation(systemPrompt: "Plan", prompt: "Phone", nativeTools: [], request: request)
+    let first = route.dispatchIdentity(ownerId: "phone", invocation: invocation)
+    let repeated = route.dispatchIdentity(ownerId: "phone", invocation: invocation)
+    XCTAssertEqual(first.owner, repeated.owner)
+    XCTAssertEqual(first.source, repeated.source)
+    XCTAssertEqual(first.task, repeated.task)
+    let payload = try XCTUnwrap(route.requestPayload(identity: first.task, source: String(first.source),
+      sender: "phone", prompt: invocation.prompt, responseLanguage: "en", now: 1))
+    XCTAssertEqual(payload["execution_mode"] as? String, AgentTaskExecutionMode.planOnly.rawValue)
+    XCTAssertEqual(payload["connector_task_mode"] as? String, "phone_supervised_project_plan_v1")
+    XCTAssertEqual(payload["task_id"] as? String, first.task.taskId)
+    XCTAssertEqual(payload["turn_id"] as? String, "turn")
+    invocation.completionShapeRepairOnly = true
+    XCTAssertNotEqual(first.task, route.dispatchIdentity(ownerId: "phone", invocation: invocation).task)
+    invocation.request.executionTurnId = "another-turn"
+    XCTAssertNotEqual(first.owner, route.dispatchIdentity(ownerId: "phone", invocation: invocation).owner)
+  }
+
   func testAgentModelPlannerContactResolverPrefersConfiguredReadyContact() throws {
     let store = makeStore(secrets: InMemorySecretStore())
     _ = try store.addCloudModelContact(
@@ -82,6 +108,41 @@ final class AgentModelPlannerContactResolverTests: XCTestCase {
 
     XCTAssertEqual(preferredNotReady?.contact.id, "cloud:zeta")
     XCTAssertEqual(preferredMissing?.contact.id, "cloud:zeta")
+  }
+
+  func testPhoneTurnSnapshotPinsTheSelectedProviderInsteadOfPlannerDefault() throws {
+    let store = makeStore(secrets: InMemorySecretStore())
+    _ = try store.addCloudModelContact(
+      displayName: "Default Planner",
+      provider: "OpenAI",
+      modelId: "default-model",
+      endpoint: "https://api.openai.com/v1/chat/completions",
+      apiKey: "sk-live-default",
+      apiStyle: .openAICompatible
+    )
+    _ = try store.addCloudModelContact(
+      displayName: "Selected Planner",
+      provider: "Anthropic",
+      modelId: "selected-model",
+      endpoint: "https://api.anthropic.com/v1/messages",
+      apiKey: "sk-live-selected",
+      apiStyle: .anthropic
+    )
+    var selected = try XCTUnwrap(store.contact(id: "cloud:anthropic"))
+    let resolver = AgentModelPlannerContactResolver(store: store)
+    let settings = AgentModelPlannerSettings(enabled: false, cloudContactId: "cloud:openai")
+    let snapshot = try XCTUnwrap(resolver.capturePhoneTurnSnapshot(settings: settings, selectedContact: selected))
+    let reopened = try JSONDecoder().decode(AgentPlannerModelSnapshot.self, from: JSONEncoder().encode(snapshot))
+
+    XCTAssertEqual(reopened, snapshot)
+    XCTAssertEqual(reopened.configurationSha256, snapshot.configurationSha256)
+    XCTAssertEqual(reopened.selectedForPhoneTurn, true)
+    XCTAssertTrue(reopened.settings.enabled)
+    XCTAssertEqual(reopened.route?.contactId, selected.id)
+    XCTAssertEqual(try resolver.makePlanner(snapshot: reopened).modelProfile, "selected-model")
+
+    selected.selectedCloudModelId = "missing-model"
+    XCTAssertNil(resolver.capturePhoneTurnSnapshot(settings: settings, selectedContact: selected))
   }
 
   func testAgentModelPlannerContactResolverRejectsUnsafeCandidates() {

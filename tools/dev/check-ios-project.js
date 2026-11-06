@@ -1177,7 +1177,7 @@ const requiredSourceSnippets = [
   [models, "galaxyssi-link-v2"],
   [models, "remote_verification_status"],
   [models, "AgentDesktopControlReceiptProtocol"],
-  [models, "galaxyssi.desktop-control/1.5"],
+  [models, "galaxyssi.desktop-control/1.6"],
   [models, "AgentDesktopScreenshotStreamPolicy"],
   [models, "AgentDesktopRemoteControlSnapshot"],
   [models, "var authorized: Bool"],
