@@ -340,6 +340,7 @@ final class GalaxySSIStore: ObservableObject {
   private let homeAssistantAccessTokenAccount = "home_assistant.access_token"
   private var runtimePlaintextCleared = false
   var canReadVoiceReminderSnapshot: Bool { !runtimePlaintextCleared }
+  var canReadAgentTranscript: Bool { !runtimePlaintextCleared }
   private var suppressMessageDatabaseSync = false
 
   init(defaults: UserDefaults = .standard, secrets: GalaxySSISecretStore = KeychainSecretStore.shared) {

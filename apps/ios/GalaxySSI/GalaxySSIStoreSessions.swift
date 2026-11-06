@@ -1044,7 +1044,7 @@ extension GalaxySSIStore {
     contact.id == "hermes" || contact.type == "agent" || contact.deliveryMode == .cloudAPI
   }
 
-  private func defaultAgentConversationId(for contactId: String) -> String {
+  func defaultAgentConversationId(for contactId: String) -> String {
     "ios-\(contactId)"
   }
 

@@ -3,7 +3,6 @@ import SwiftUI
 
 struct GalaxySSIMainTabView: View {
   @EnvironmentObject private var store: GalaxySSIStore
-  @SceneStorage("galaxyssi.agent.activeConversationID") private var sceneConversationID = ""
   @State private var selectedTab: GalaxySSIMainTab
   @State private var pendingContactId = ""
 
@@ -16,7 +15,6 @@ struct GalaxySSIMainTabView: View {
       .safeAreaInset(edge: .bottom, spacing: 0) {
         GalaxySSICompletedReplyReturnBar(visibleConversationId: selectedTab == .agent ? store.activeAgentConversationId : nil) {
           if store.switchAgentSession($0) {
-            sceneConversationID = store.activeAgentConversationId
             selectedTab = .agent
           }
         }

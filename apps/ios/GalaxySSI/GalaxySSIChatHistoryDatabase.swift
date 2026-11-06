@@ -16,7 +16,8 @@ enum GalaxySSIChatHistoryError: Error, Equatable {
   case locallyDeleted
 }
 
-final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, GalaxySSILinkDeliveryPersisting {
+// The SQLite connection, row cache and cipher access are serialized by lock.
+final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, GalaxySSILinkDeliveryPersisting, @unchecked Sendable {
   static let defaultPageSize = 100
   static let maximumPageSize = 500
 
@@ -448,6 +449,34 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
       } : nil
       return GalaxySSIChatHistoryPage(messages: Array(retained), nextCursor: next, hasMore: hasMore)
     }
+  }
+
+  func agentTranscriptWindow(conversationId: String, limit: Int) async -> GalaxySSIChatHistoryPage? {
+    guard !conversationId.isBlank, limit > 0 else { return nil }
+    let read = Task.detached(priority: .userInitiated) { [self] () -> GalaxySSIChatHistoryPage? in
+      var pages: [[ChatMessage]] = []
+      var cursor: GalaxySSIChatHistoryCursor?
+      var remaining = limit
+      var hasMore = false
+      repeat {
+        guard !Task.isCancelled else { return nil }
+        let next: GalaxySSIChatHistoryPage? = locked {
+          guard rowCachingEnabled else { return nil }
+          return page(contactId: nil, conversationId: conversationId, before: cursor,
+                      pageSize: min(remaining, Self.defaultPageSize))
+        }
+        guard let next else { return nil }
+        pages.append(next.messages)
+        remaining -= next.messages.count
+        cursor = next.nextCursor
+        hasMore = next.hasMore
+      } while remaining > 0 && hasMore && cursor != nil
+      guard !Task.isCancelled else { return nil }
+      var seen = Set<UUID>()
+      let messages = pages.reversed().flatMap { $0 }.filter { seen.insert($0.id).inserted }
+      return GalaxySSIChatHistoryPage(messages: messages, nextCursor: cursor, hasMore: hasMore)
+    }
+    return await withTaskCancellationHandler(operation: { await read.value }, onCancel: { read.cancel() })
   }
 
   func messages(conversationId: String) -> [ChatMessage] {

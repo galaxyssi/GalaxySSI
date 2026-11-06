@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct GalaxySSIAgentHomeTranscriptView<Content: View>: View {
-  @Binding var visibleMessageLimit: Int
   @Binding var olderTranscriptAnchor: UUID?
   @Binding var transcriptTopLoadTriggered: Bool
   @Binding var transcriptAutoFollow: Bool
@@ -21,18 +20,17 @@ struct GalaxySSIAgentHomeTranscriptView<Content: View>: View {
   let waitingForAgentReply: Bool
   let activeAgentPhase: AgentPhase?
   let activeAgentTasks: [AgentTaskRecord]
-  let pageSize: Int
   let reduceMotion: Bool
   let voiceTranscriptionPendingViewID: String
   let replyWaitingViewID: String
   let latestButtonTitle: String
+  let isCurrentWindow: () -> Bool
   let onLoadOlderTranscriptMessages: () -> Void
   let onMessagesChanged: () -> Void
   let onExecutionStateChanged: () -> Void
   private let content: () -> Content
 
   init(
-    visibleMessageLimit: Binding<Int>,
     olderTranscriptAnchor: Binding<UUID?>,
     transcriptTopLoadTriggered: Binding<Bool>,
     transcriptAutoFollow: Binding<Bool>,
@@ -51,17 +49,16 @@ struct GalaxySSIAgentHomeTranscriptView<Content: View>: View {
     waitingForAgentReply: Bool,
     activeAgentPhase: AgentPhase?,
     activeAgentTasks: [AgentTaskRecord],
-    pageSize: Int,
     reduceMotion: Bool,
     voiceTranscriptionPendingViewID: String,
     replyWaitingViewID: String,
     latestButtonTitle: String,
+    isCurrentWindow: @escaping () -> Bool,
     onLoadOlderTranscriptMessages: @escaping () -> Void,
     onMessagesChanged: @escaping () -> Void,
     onExecutionStateChanged: @escaping () -> Void,
     @ViewBuilder content: @escaping () -> Content
   ) {
-    _visibleMessageLimit = visibleMessageLimit
     _olderTranscriptAnchor = olderTranscriptAnchor
     _transcriptTopLoadTriggered = transcriptTopLoadTriggered
     _transcriptAutoFollow = transcriptAutoFollow
@@ -80,11 +77,11 @@ struct GalaxySSIAgentHomeTranscriptView<Content: View>: View {
     self.waitingForAgentReply = waitingForAgentReply
     self.activeAgentPhase = activeAgentPhase
     self.activeAgentTasks = activeAgentTasks
-    self.pageSize = pageSize
     self.reduceMotion = reduceMotion
     self.voiceTranscriptionPendingViewID = voiceTranscriptionPendingViewID
     self.replyWaitingViewID = replyWaitingViewID
     self.latestButtonTitle = latestButtonTitle
+    self.isCurrentWindow = isCurrentWindow
     self.onLoadOlderTranscriptMessages = onLoadOlderTranscriptMessages
     self.onMessagesChanged = onMessagesChanged
     self.onExecutionStateChanged = onExecutionStateChanged
@@ -93,7 +90,6 @@ struct GalaxySSIAgentHomeTranscriptView<Content: View>: View {
 
   var body: some View {
     GalaxySSIAgentTranscriptScrollView(
-      visibleMessageLimit: $visibleMessageLimit,
       olderTranscriptAnchor: $olderTranscriptAnchor,
       transcriptTopLoadTriggered: $transcriptTopLoadTriggered,
       transcriptAutoFollow: $transcriptAutoFollow,
@@ -112,11 +108,11 @@ struct GalaxySSIAgentHomeTranscriptView<Content: View>: View {
       waitingForAgentReply: waitingForAgentReply,
       activeAgentPhase: activeAgentPhase,
       activeAgentTasks: activeAgentTasks,
-      pageSize: pageSize,
       reduceMotion: reduceMotion,
       voiceTranscriptionPendingViewID: voiceTranscriptionPendingViewID,
       replyWaitingViewID: replyWaitingViewID,
       latestButtonTitle: latestButtonTitle,
+      isCurrentWindow: isCurrentWindow,
       onLoadOlderTranscriptMessages: onLoadOlderTranscriptMessages,
       onMessagesChanged: onMessagesChanged,
       onExecutionStateChanged: onExecutionStateChanged

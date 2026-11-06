@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -99,7 +100,9 @@ struct AgentHomeView: View {
 
   @Environment(\.galaxySSIInterfaceLanguage) var interfaceLanguage
   @Environment(\.scenePhase) var scenePhase
-  @State private var homeVisible = false
+  @State var homeVisible = false
+  @StateObject var transcriptWindow = AgentTranscriptWindow()
+  @State var transcriptRuntimeCleared = false
   @State var committedTurnProgress = AgentCommittedTurnProgress()
   @State private var homeWindowFocused = false
   @State private var screenAssistantCapture = GalaxySSIScreenAssistantCapture.noWindow
@@ -114,7 +117,6 @@ struct AgentHomeView: View {
   @State var actionTrayPresented = false
   @State var voiceTranscriptionPending = false
   @SceneStorage("galaxyssi.agent.transcriptAutoFollow") var transcriptAutoFollow = true
-  @SceneStorage("galaxyssi.agent.activeConversationID") private var sceneConversationID = ""
   @State var transcriptShowLatestButton = false
   @State var pendingAgentSwipeDirection = ""
   @State var agentSwipeRequest = 0
@@ -332,27 +334,26 @@ struct AgentHomeView: View {
       )
       .onAppear {
         homeVisible = true
-        coordinator.resumePendingAgentDelivery()
-        if !sceneConversationID.isEmpty {
-          _ = store.switchAgentSession(sceneConversationID)
-        }
-        ensureActiveAgentSession()
-        refreshCommittedTurnProgress()
-        sceneConversationID = store.activeAgentConversationId
-        presentPendingPhonePublicPageExport()
-        voiceAgentRunRecovery.start()
-        refreshVisibleAgentReplyReadState()
-        _ = coordinator.requestCapabilityManifestRefresh()
-        refreshAgentRouteState()
         installComposerInputBridge()
         installAgentHomeTapBridge()
         installAgentHomeLongPressBridge()
         installAgentHomeBackBridge()
         installAgentHomeSwipeBridge()
+        guard scenePhase == .active, store.canReadAgentTranscript else { return }
+        coordinator.resumePendingAgentDelivery()
+        ensureActiveAgentSession()
+        refreshTranscriptWindow()
+        refreshCommittedTurnProgress()
+        presentPendingPhonePublicPageExport()
+        voiceAgentRunRecovery.start()
+        refreshVisibleAgentReplyReadState()
+        _ = coordinator.requestCapabilityManifestRefresh()
+        refreshAgentRouteState()
       }
       .onDisappear {
         cancelScreenPagePDFImport()
         homeVisible = false
+        clearAgentTranscriptWindow()
         AgentIOSComposerInputBridge.shared.removeHandler()
         AgentIOSAgentHomeActionBridge.shared.removeTapHandler()
         AgentIOSAgentHomeActionBridge.shared.removeLongPressHandler()
@@ -364,6 +365,9 @@ struct AgentHomeView: View {
           clearAgentRuntimePlaintextPresentation()
           return
         }
+        guard homeVisible else { return }
+        ensureActiveAgentSession()
+        refreshTranscriptWindow()
         coordinator.resumePendingAgentDelivery()
         _ = coordinator.requestCapabilityManifestRefresh()
         refreshAgentRouteState()
@@ -385,14 +389,37 @@ struct AgentHomeView: View {
       .onReceive(
         NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)
       ) { _ in
+        transcriptRuntimeCleared = true
         clearAgentRuntimePlaintextPresentation()
+      }
+      .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextDidRestore)) { _ in
+        transcriptRuntimeCleared = false
+        refreshTranscriptWindow()
+      }
+      .onReceive(store.$messagesByContact.map { _ in () }
+        .debounce(for: .milliseconds(75), scheduler: RunLoop.main)) { _ in
+        refreshTranscriptWindow()
+      }
+      .onChange(of: transcriptWindow.snapshot.loadedLimit) { limit in
+        guard limit > 0, isCurrentTranscriptWindow(transcriptWindow.snapshot.owner) else { return }
+        olderTranscriptAnchor = transcriptWindow.snapshot.prependAnchor
+        visibleAgentMessageLimit = limit
+      }
+      .onChange(of: transcriptWindow.snapshot.messages) { _ in
+        refreshVisibleAgentReplyReadState()
       }
       .onChange(of: agentScreenSnapshot) { snapshot in
         coordinator.updateAgentScreenContext(snapshot.screen)
       }
+      .onReceive(store.$activeAgentConversationId.removeDuplicates()) { selected in
+        guard transcriptWindow.snapshot.owner?.conversationID != selected else { return }
+        clearAgentTranscriptWindow()
+        // Published sends before the store setter finishes; select the current ID on the next turn.
+        Task { @MainActor in refreshTranscriptWindow() }
+      }
       .onChange(of: store.activeAgentConversationId) { _ in
-        sceneConversationID = store.activeAgentConversationId
         resetAgentSessionPresentation()
+        refreshTranscriptWindow()
         refreshCommittedTurnProgress()
         refreshAgentRouteState()
         refreshVisibleAgentReplyReadState()
@@ -620,7 +647,15 @@ struct AgentHomeView: View {
   }
 
   func loadOlderTranscriptMessages() {
-    guard hasOlderTranscriptMessages, olderTranscriptAnchor == nil else { return }
+    guard hasOlderTranscriptMessages, olderTranscriptAnchor == nil,
+          isCurrentTranscriptWindow(transcriptWindow.snapshot.owner) else { return }
+    if !transcriptWindow.snapshot.messages.isEmpty {
+      if transcriptWindow.loadOlder(pageSize: Self.agentTranscriptPageSize) {
+        transcriptTopLoadTriggered = transcriptContentMinY >= -8
+        transcriptAutoFollow = false
+      }
+      return
+    }
     transcriptTopLoadTriggered = transcriptContentMinY >= -8
     olderTranscriptAnchor = transcriptMessages.first?.id
     visibleAgentMessageLimit += Self.agentTranscriptPageSize

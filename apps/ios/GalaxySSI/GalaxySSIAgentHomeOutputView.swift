@@ -2,12 +2,22 @@ import SwiftUI
 
 extension AgentHomeView {
   var agentOutput: some View {
+    Group {
+      if isCurrentTranscriptWindow(transcriptWindow.snapshot.owner), transcriptWindow.snapshot.loadedLimit > 0 {
+        activeAgentOutput
+      } else {
+        Color.galaxySSIPageBackground
+      }
+    }
+  }
+
+  private var activeAgentOutput: some View {
+    let owner = transcriptWindow.snapshot.owner
     let replyRuntimeIndex = AgentReplyRuntimeIndex(
       remoteTasks: Array(coordinator.remoteAgentTaskStatuses.values),
       voiceRuns: voiceAgentRunRecovery.activeSnapshots
     )
     return GalaxySSIAgentHomeTranscriptView(
-      visibleMessageLimit: $visibleAgentMessageLimit,
       olderTranscriptAnchor: $olderTranscriptAnchor,
       transcriptTopLoadTriggered: $transcriptTopLoadTriggered,
       transcriptAutoFollow: $transcriptAutoFollow,
@@ -26,11 +36,11 @@ extension AgentHomeView {
       waitingForAgentReply: waitingForAgentReply,
       activeAgentPhase: activeAgentPhase,
       activeAgentTasks: activeAgentTasks,
-      pageSize: Self.agentTranscriptPageSize,
       reduceMotion: deviceInputPolicy.reduceMotion,
       voiceTranscriptionPendingViewID: Self.voiceTranscriptionPendingViewId,
       replyWaitingViewID: Self.replyWaitingViewId,
       latestButtonTitle: t("galaxyssi.agent.latest", "Back to latest"),
+      isCurrentWindow: { isCurrentTranscriptWindow(owner) },
       onLoadOlderTranscriptMessages: loadOlderTranscriptMessages,
       onMessagesChanged: {
         if voiceTranscriptionPending && !messages.isEmpty {
