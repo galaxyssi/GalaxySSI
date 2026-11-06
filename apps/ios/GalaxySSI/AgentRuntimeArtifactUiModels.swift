@@ -79,6 +79,29 @@ struct AgentRuntimeArtifactActionPayload: Codable, Equatable {
 }
 
 enum AgentRuntimeArtifactUi {
+  static func allowsInlineImages(for message: ChatMessage) -> Bool {
+    !message.isMine && !message.isSystem && [.delivered, .read].contains(message.deliveryStatus) &&
+      message.deliveryTrace.contains { $0.stage == "local_native_tool_reply_received" }
+  }
+
+  static func inlineImagePayload(_ block: AgentRichBlock) -> AgentRuntimeArtifactActionPayload? {
+    guard block.type == .file, block.metadata["runtime_artifact"] == "true",
+          block.mimeType.hasPrefix("image/"),
+          let action = block.actions.first(where: { $0.verb == "save_runtime_artifact" }),
+          let payload = AgentRuntimeArtifactActionPayload.decode(action.value),
+          payload.artifactReference == block.uri, payload.sha256 == block.metadata["sha256"],
+          payload.mimeType == block.mimeType, AgentArtifactRequirement.validDigest(payload.sha256),
+          payload.sizeBytes > 0, payload.sizeBytes <= 16 * 1_024 * 1_024 else { return nil }
+    return payload
+  }
+
+  static func managedRoots() -> [URL] {
+    let root = AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL()
+    return [root, root.appendingPathComponent("runs", isDirectory: true),
+      root.appendingPathComponent("runs/artifacts", isDirectory: true),
+      root.appendingPathComponent("artifacts", isDirectory: true)]
+  }
+
   static func fileBlocks(verified: [AgentArtifactOperationReceipt.Inspection], zh: Bool) -> [AgentRichBlock] {
     verified.flatMap { receipt in
       AgentRichContentCodec.decode(richOutput(artifact: receipt.artifact, responseText: "",

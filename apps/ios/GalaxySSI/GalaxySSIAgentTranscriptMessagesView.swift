@@ -234,6 +234,7 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
     )
     .environment(\.agentRichHTMLPlaybackAllowed,
       [.delivered, .read, .local].contains(message.deliveryStatus))
+    .environment(\.agentInlineRuntimeImages, AgentRuntimeArtifactUi.allowsInlineImages(for: message))
     .environment(\.agentReplyParagraphSpeechAction, paragraphSpeechAction(message))
     .environment(\.agentReplyNativeParagraphs, true)
     .foregroundColor(.galaxySSITextPrimary)

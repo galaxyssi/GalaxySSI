@@ -1021,6 +1021,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
         "success": .bool(result.success),
         "source_message_id": .string(result.metadata["source_message_id"] ?? ""),
         "result": .string(result.message),
+        "rich_output": .string(result.success && !awaitingResponse ? (result.metadata["rich_output"] ?? "") : ""),
         "error": .string(result.success ? "" : result.message)
       ]
     )

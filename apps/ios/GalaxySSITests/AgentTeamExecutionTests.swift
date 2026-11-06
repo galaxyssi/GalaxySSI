@@ -2162,6 +2162,36 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(responseStore.pending().count, 2)
   }
 
+  func testArtifactOnlyPrimaryReplySurvivesTheCheckpointAndFinalDelivery() throws {
+    let image = AgentRichBlock(id: "primary-image", type: .image, uri: "https://example.com/result.png")
+    let file = AgentRichBlock(id: "primary-file", type: .file, uri: "https://example.com/result.zip")
+    let observer = AgentRichBlock(id: "observer-file", type: .file, uri: "https://example.com/observer.zip")
+    let snapshot = AgentTeamExecutionSnapshot(supervisorRunId: UUID().uuidString, teamId: "team",
+      conversationId: "conversation", taskId: "turn", primaryAgentId: "lead", state: .waitingResponse,
+      members: [
+        AgentTeamMemberSnapshot(agentId: "lead", deliveryMode: .respond, status: .running, sourceMessageId: "source"),
+        AgentTeamMemberSnapshot(agentId: "observer", deliveryMode: .observe, status: .succeeded,
+          richOutputJson: AgentRichContentCodec.encode([observer]))
+      ])
+    let settled = try XCTUnwrap(AgentSavedTeamReplyPolicy.apply(to: snapshot, source: "source",
+      conversation: "conversation", turn: "turn", task: "source", contact: "lead", content: "",
+      richOutputJson: AgentRichContentCodec.encode([image, file]), success: true, now: 1_000))
+    XCTAssertEqual(settled.state, .succeeded)
+    let restored = try JSONDecoder().decode(AgentTeamExecutionSnapshot.self, from: JSONEncoder().encode(settled))
+    let responses = InMemoryAgentConnectorResponseStore()
+    let sink = AgentConnectorTeamCompletionSink(responseStore: responses)
+    defer { sink.remove(supervisorRunId: restored.supervisorRunId) }
+    XCTAssertTrue(sink.publish(restored))
+    XCTAssertFalse(sink.publish(restored))
+    let response = try XCTUnwrap(responses.pending().first)
+    XCTAssertTrue(response.success)
+    XCTAssertEqual(AgentRichContentCodec.decode(response.richOutputJson).map(\.id), ["primary-image", "primary-file"])
+    let continued = AgentTeamArtifactOutput.appendingArtifacts(response.richOutputJson,
+      to: "Completed.", richOutput: AgentRichContentCodec.encode([image]))
+    XCTAssertEqual(AgentRichContentCodec.decode(continued).filter(\.isArtifactBlock).map(\.id),
+      ["primary-image", "primary-file"])
+  }
+
   func testAgentTeamCompletionRetriesWhenHistoryEncryptionFails() throws {
     let suite = "team-completion-write-failure-" + UUID().uuidString
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

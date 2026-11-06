@@ -100,6 +100,7 @@ enum AgentConnectorResponseResolver {
         "status_sequence": .int(response.statusSequence),
         "delivery_failure_code": .string(response.deliveryFailureCode),
         "result": .string(response.content),
+        "rich_output": .string(response.success ? response.richOutputJson : ""),
         "error": .string(response.success ? "" : response.content)
       ]
     )

@@ -1244,6 +1244,17 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
     )
   }
 
+  var primaryRichOutput: String {
+    guard let primary = members.first(where: { $0.memberId == primaryMemberId && $0.deliveryMode == .respond }),
+          primary.status == .succeeded else { return "" }
+    return AgentTeamArtifactOutput.bounded(primary.richOutputJson)
+  }
+
+  var hasSuccessfulOutput: Bool {
+    [.succeeded, .completedWithFailures].contains(state) &&
+      (!finalOutput.isBlank || AgentTeamArtifactOutput.hasArtifacts(primaryRichOutput))
+  }
+
   func elapsedExecutionMillis(now: Int64) -> Int64? {
     guard let start = executionStartedAtMillis, start > 0 else { return nil }
     let end: Int64
@@ -1257,6 +1268,34 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
       return nil
     }
     return end >= start ? end - start : nil
+  }
+}
+
+enum AgentTeamArtifactOutput {
+  static func hasArtifacts(_ raw: String) -> Bool {
+    AgentRichContentCodec.decode(raw).contains(where: \.isArtifactBlock)
+  }
+
+  static func bounded(_ raw: String) -> String {
+    let blocks = AgentRichContentCodec.decode(raw)
+    let encoded = AgentRichContentCodec.encode(blocks)
+    let limit = AgentConnectorResponse.maxRichOutputCharacters
+    if encoded.utf8.count <= limit { return encoded }
+    var included: [AgentRichBlock] = []
+    for block in blocks where block.isArtifactBlock {
+      let candidate = AgentRichContentCodec.encode(included + [block])
+      if !candidate.isEmpty && candidate.utf8.count <= limit { included.append(block) }
+    }
+    return AgentRichContentCodec.encode(included)
+  }
+
+  static func appendingArtifacts(_ raw: String, to reply: String, richOutput: String) -> String {
+    var blocks = AgentRichContentCodec.presentationBlocks(content: reply, richOutputJson: richOutput)
+    var seen = Set(blocks.filter(\.isArtifactBlock).map { $0.artifactIdentity() })
+    for artifact in AgentRichContentCodec.decode(raw) where artifact.isArtifactBlock {
+      if seen.insert(artifact.artifactIdentity()).inserted { blocks.append(artifact) }
+    }
+    return AgentRichContentCodec.encode(blocks).ifBlank(richOutput)
   }
 }
 
@@ -1305,10 +1344,11 @@ enum AgentSavedTeamReplyPolicy {
           spec.definition.members.allSatisfy({ expected in
             saved.members.contains { $0.memberId == expected.memberId && $0.agentId == expected.agentId }
           }) else { return nil }
-    let success = [.succeeded, .completedWithFailures].contains(saved.state) && !saved.finalOutput.isEmpty
+    let success = saved.hasSuccessfulOutput
     var result = parent
     result.phase = saved.state == .cancelled ? .cancelled : (success ? .completed : .failed)
-    result.result = success ? saved.finalOutput : failureText
+    result.result = success ? saved.finalOutput.ifBlank("Agent team returned attachments.") : failureText
+    result.teamResultRichOutput = success && !saved.primaryRichOutput.isEmpty ? saved.primaryRichOutput : nil
     result.blocked = false
     result.teamRecoveryRunId = nil
     result.pendingAction = nil
@@ -1316,7 +1356,7 @@ enum AgentSavedTeamReplyPolicy {
     plan.actions[index].status = success ? .completed : .failed
     plan.actions[index].result = result.result
     if success && !plan.actions.allSatisfy({ $0.status == .completed }) {
-      result.nativeActionResults = Array((result.nativeActionResults + [String(saved.finalOutput.prefix(600))]).suffix(8))
+      result.nativeActionResults = Array((result.nativeActionResults + [String(result.result.prefix(600))]).suffix(8))
       result.phase = .paused
       result.pendingActions = AgentToolCoordination.runnableActions(plan)
       result.pendingAction = result.pendingActions.first
@@ -1337,7 +1377,8 @@ enum AgentSavedTeamReplyPolicy {
               (!$0.status.isTerminal || (saved.state == .interrupted && $0.status == .interrupted))
           }),
           !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-            (success && saved.members[index].deliveryMode == .observe) else { return nil }
+            (success && (saved.members[index].deliveryMode == .observe || AgentTeamArtifactOutput.hasArtifacts(richOutputJson)))
+          else { return nil }
     var result = saved
     result.members[index].status = success ? .succeeded : .failed
     result.members[index].output = success ? String(content.prefix(AgentConnectorResponse.maxContentCharacters)) : ""
@@ -1351,7 +1392,8 @@ enum AgentSavedTeamReplyPolicy {
     } else if result.members.allSatisfy({ $0.status.isTerminal && $0.status != .interrupted }),
        let primary = result.members.first(where: { $0.memberId == saved.primaryMemberId }) {
       result.finalOutput = primary.output
-      if primary.status == .succeeded && !primary.output.isEmpty {
+      if primary.status == .succeeded &&
+        (!primary.output.isBlank || AgentTeamArtifactOutput.hasArtifacts(primary.richOutputJson)) {
         result.state = result.members.contains(where: { $0.status != .succeeded }) ? .completedWithFailures : .succeeded
       } else { result.state = .failed }
     }
@@ -1399,10 +1441,10 @@ final class AgentConnectorTeamCompletionSink: AgentTeamCompletionSink {
       return false
     }
     let output = snapshot.finalOutput.trimmingCharacters(in: .whitespacesAndNewlines)
-    let successful = !output.isEmpty && [.succeeded, .completedWithFailures].contains(snapshot.state)
+    let successful = snapshot.hasSuccessfulOutput
     let content: String
     if successful {
-      content = output
+      content = output.ifBlank("Agent team returned attachments.")
     } else if let error = snapshot.members.map(\.errorMessage).first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
       content = "Agent team failed: \(String(error.prefix(Self.maxErrorCharacters)))"
     } else {
@@ -1416,6 +1458,7 @@ final class AgentConnectorTeamCompletionSink: AgentTeamCompletionSink {
       turnId: snapshot.taskId,
       taskId: snapshot.taskId,
       success: successful,
+      richOutputJson: successful ? snapshot.primaryRichOutput : "",
       receivedAtMillis: max(snapshot.updatedAtMillis, nowMillis())
     ))
     ledger.mark(snapshot.supervisorRunId)

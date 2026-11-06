@@ -185,6 +185,7 @@ struct AgentIOSSignedFfmpegMediaProvider: AgentIOSMediaNativeToolProviding {
       let outputSize = try fileSize(destinationFile)
       let outputSha = try sha256File(destinationFile)
       var openability: AgentMcpJSONObject = [:]
+      var imageVerified = false
       if requestedTargetFormat == .mp4 {
         guard artifact?["size_bytes"]?.intValue == outputSize,
               artifact?["sha256"]?.stringValue?.lowercased() == outputSha,
@@ -196,6 +197,14 @@ struct AgentIOSSignedFfmpegMediaProvider: AgentIOSMediaNativeToolProviding {
           "decoded_frame_width": .int(Int64(evidence.frameWidth)),
           "decoded_frame_height": .int(Int64(evidence.frameHeight))
         ]
+      } else if requestedTargetFormat == .png || requestedTargetFormat == .jpg {
+        guard artifact?["size_bytes"]?.intValue == outputSize,
+              artifact?["sha256"]?.stringValue?.lowercased() == outputSha,
+              let bytes = try? Data(contentsOf: destinationFile, options: .mappedIfSafe),
+              AgentVerifiedArtifactSnapshot.verifiesImage(bytes, extension: requestedTargetFormat.fileExtension) else {
+          throw AgentIOSFfmpegMediaProviderError.ffmpegOutputUnverified
+        }
+        imageVerified = true
       }
       let artifacts = response.artifacts.map { AgentMcpJSONValue.object($0) }
       var output: AgentMcpJSONObject = [
@@ -213,6 +222,9 @@ struct AgentIOSSignedFfmpegMediaProvider: AgentIOSMediaNativeToolProviding {
         "completed_at_epoch_ms": .int(max(0, nowMillis()))
       ]
       if !openability.isEmpty { output["video_openability"] = .object(openability) }
+      if imageVerified {
+        output["image_openability"] = .object(["status": .string("verified"), "sha256": .string(outputSha)])
+      }
 
       return AgentNativeToolExecutionResult.success(
         output: output,

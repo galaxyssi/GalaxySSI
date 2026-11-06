@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 @testable import GalaxySSI
 
@@ -85,6 +86,36 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(destination.hasSuffix(".mp4"))
     XCTAssertEqual(runtimeRequest.arguments[try XCTUnwrap(runtimeRequest.arguments.firstIndex(of: "-i")) + 1], "./\(sourcePath)")
     XCTAssertEqual(runtimeRequest.artifactPaths, [destination])
+  }
+
+  @MainActor
+  func testAgentIOSSignedFfmpegMediaProviderVerifiesPNGAndJPEGBytesAgainstReceipt() throws {
+    let root = try temporaryDirectory("ios-ffmpeg-provider-image")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = root.appendingPathComponent("workspace/inputs/source.mov")
+    try FileManager.default.createDirectory(at: source.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data("source".utf8).write(to: source)
+    let renderer = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8))
+    let png = renderer.pngData { $0.fill(CGRect(x: 0, y: 0, width: 8, height: 8)) }
+    let jpeg = renderer.jpegData(withCompressionQuality: 0.9) {
+      $0.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+    }
+    let runtime = FakeIOSFfmpegRuntime(outputData: png)
+    let provider = AgentIOSSignedFfmpegMediaProvider(runtime: runtime, projectRoot: root)
+    for (format, data) in [("png", png), ("jpg", jpeg)] {
+      runtime.outputData = data
+      let request = iosFfmpegMediaRequest(workspaceId: "workspace", sourcePath: "inputs/source.mov",
+        destinationPath: "outputs/good.\(format)", targetFormat: format, invocationId: "good-\(format)")
+      let result = provider.transcode(request: request, invocation: try mediaInvocation())
+      XCTAssertTrue(result.isSuccess, format)
+      XCTAssertEqual(result.output["image_openability"]?.objectValue?["sha256"],
+        .string(GalaxySSIAttachmentPayloadBuilder.sha256(data)))
+    }
+    runtime.outputData = jpeg
+    let wrong = iosFfmpegMediaRequest(workspaceId: "workspace", sourcePath: "inputs/source.mov",
+      destinationPath: "outputs/wrong.png", targetFormat: "png", invocationId: "wrong-png")
+    XCTAssertEqual(provider.transcode(request: wrong, invocation: try mediaInvocation()).error?.code,
+      "ffmpeg_output_unverified")
   }
 
   func testAgentIOSSignedFfmpegMediaProviderMapsRuntimeAndOutputFailures() throws {

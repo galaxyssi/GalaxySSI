@@ -354,6 +354,31 @@ final class AgentDesktopArtifactHandoffTests: XCTestCase {
     XCTAssertEqual(try cipher.read(from: encrypted, purpose: purpose), bytes)
   }
 
+  func testRuntimeImageRequiresLocalReplyProvenanceAndHashVerifiedBytes() throws {
+    let root = temporaryDirectory("runtime-inline-image")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let bytes = Data("image fixture".utf8)
+    let url = root.appendingPathComponent("result.png")
+    try bytes.write(to: url)
+    let rich = AgentRuntimeArtifactUi.richOutput(artifact: [
+      "relative_path": .string("result.png"), "size_bytes": .int(Int64(bytes.count)),
+      "sha256": .string(sha256(bytes)), "artifact_kind": .string("file")
+    ], responseText: "", preferredFileName: "result.png", zh: false)
+    var block = try XCTUnwrap(AgentRichContentCodec.decode(rich).first)
+    let payload = try XCTUnwrap(AgentRuntimeArtifactUi.inlineImagePayload(block))
+    XCTAssertEqual(try AgentRuntimeArtifactUi.readVerified(payload: payload, managedRoots: [root]), bytes)
+    block.metadata["sha256"] = String(repeating: "0", count: 64)
+    XCTAssertNil(AgentRuntimeArtifactUi.inlineImagePayload(block))
+    try Data(repeating: 0, count: bytes.count).write(to: url)
+    XCTAssertThrowsError(try AgentRuntimeArtifactUi.readVerified(payload: payload, managedRoots: [root]))
+
+    var message = ChatMessage(contactId: "hermes", content: "", isMine: false, deliveryStatus: .delivered,
+      deliveryTrace: [DeliveryTraceEvent(stage: "local_native_tool_reply_received")], richOutputJson: rich)
+    XCTAssertTrue(AgentRuntimeArtifactUi.allowsInlineImages(for: message))
+    message.deliveryTrace = [DeliveryTraceEvent(stage: "desktop_result_received")]
+    XCTAssertFalse(AgentRuntimeArtifactUi.allowsInlineImages(for: message))
+  }
+
   func testRuntimeArtifactCardUsesSafeReferenceAndActions() throws {
     let root = temporaryDirectory("runtime-artifact")
     let source = root.appendingPathComponent("sample.py", isDirectory: false)

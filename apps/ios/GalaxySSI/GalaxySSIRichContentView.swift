@@ -11,10 +11,19 @@ private struct AgentRichHTMLPlaybackAllowedKey: EnvironmentKey {
   static let defaultValue = true
 }
 
+private struct AgentInlineRuntimeImagesKey: EnvironmentKey {
+  static let defaultValue = false
+}
+
 extension EnvironmentValues {
   var agentRichHTMLPlaybackAllowed: Bool {
     get { self[AgentRichHTMLPlaybackAllowedKey.self] }
     set { self[AgentRichHTMLPlaybackAllowedKey.self] = newValue }
+  }
+
+  var agentInlineRuntimeImages: Bool {
+    get { self[AgentInlineRuntimeImagesKey.self] }
+    set { self[AgentInlineRuntimeImagesKey.self] = newValue }
   }
 }
 
@@ -490,10 +499,45 @@ private struct GalaxySSIRichBlockListView: View {
   }
 }
 
+private struct GalaxySSIInlineRuntimeImage: View {
+  let payload: AgentRuntimeArtifactActionPayload
+  @State private var image: UIImage?
+  @State private var protected = false
+
+  var body: some View {
+    Group {
+      if let image {
+        Image(uiImage: image)
+          .resizable()
+          .scaledToFit()
+          .frame(maxWidth: 320, maxHeight: 260, alignment: .leading)
+          .accessibilityLabel(Text(payload.displayName))
+      }
+    }
+    .task(id: payload.encode()) {
+      image = nil
+      guard !protected else { return }
+      let request = payload
+      let decoded = await Task.detached(priority: .utility) {
+        guard let data = try? AgentRuntimeArtifactUi.readVerified(payload: request,
+          managedRoots: AgentRuntimeArtifactUi.managedRoots()) else { return nil as UIImage? }
+        return GalaxySSIImageResourceDecoder.staticImage(from: data)
+      }.value
+      guard !Task.isCancelled, !protected else { return }
+      image = decoded
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
+      protected = true
+      image = nil
+    }
+  }
+}
+
 private struct GalaxySSIRichBlockView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.agentRichHTMLPlaybackAllowed) private var allowsHTMLPlayback
+  @Environment(\.agentInlineRuntimeImages) private var inlineRuntimeImages
   @EnvironmentObject private var coordinator: MessageCoordinator
 
   var block: AgentRichBlock
@@ -575,7 +619,16 @@ private struct GalaxySSIRichBlockView: View {
         htmlBlock
       case .webpage:
         webpageBlock
-      case .file, .link, .citation, .unknown:
+      case .file:
+        if inlineRuntimeImages, let image = AgentRuntimeArtifactUi.inlineImagePayload(block) {
+          VStack(alignment: .leading, spacing: 8) {
+            GalaxySSIInlineRuntimeImage(payload: image)
+            resourceBlock
+          }
+        } else {
+          resourceBlock
+        }
+      case .link, .citation, .unknown:
         resourceBlock
       }
     }

@@ -9845,7 +9845,10 @@ final class MessageCoordinator: ObservableObject {
       status: verifiedStep && (hasRemainingActions || rollingBatchBoundary) ? .sent : (verifiedStep ? .delivered : .failed)
     )
     if !verifiedStep || (!hasRemainingActions && !rollingBatchBoundary) {
-      let richOutput = unresolvedEffect ? "" : localNativeRichOutput(result: result, responseText: reply)
+      var richOutput = unresolvedEffect ? "" : localNativeRichOutput(result: result, responseText: reply)
+      if verifiedStep, !unresolvedEffect, let teamOutput = task.teamResultRichOutput {
+        richOutput = AgentTeamArtifactOutput.appendingArtifacts(teamOutput, to: reply, richOutput: richOutput)
+      }
       _ = store.appendIncoming(
         reply,
         from: outgoing.contactId,
