@@ -1,5 +1,6 @@
 import AVFoundation
 import BackgroundTasks
+import Combine
 import CoreImage
 import os
 import SwiftUI
@@ -254,6 +255,7 @@ final class GalaxySSIStartupHandoff: ObservableObject {
   private var started = false
   private var scenePhase: ScenePhase = .active
   private var requestedConversationID = ""
+  private var sceneSelectionRestored = false
 
   func start() {
     guard !started else { return }
@@ -262,9 +264,9 @@ final class GalaxySSIStartupHandoff: ObservableObject {
       try? await Task.sleep(nanoseconds: Self.minimumVisibleNanoseconds)
       guard let self, !Task.isCancelled else { return }
       let runtime = GalaxySSIStartupRuntime()
-      self.runtime = runtime
       activateRequestedConversation(in: runtime.store)
       applyScenePhase(to: runtime.store)
+      self.runtime = runtime
     }
   }
 
@@ -278,6 +280,13 @@ final class GalaxySSIStartupHandoff: ObservableObject {
     requestedConversationID = conversationID.trimmingCharacters(in: .whitespacesAndNewlines)
     guard let store = runtime?.store else { return }
     activateRequestedConversation(in: store)
+  }
+
+  func restoreSceneConversation(_ conversationID: String) {
+    guard !sceneSelectionRestored else { return }
+    sceneSelectionRestored = true
+    guard requestedConversationID.isEmpty else { return }
+    activateConversation(conversationID)
   }
 
   private func activateRequestedConversation(in store: GalaxySSIStore) {
@@ -312,6 +321,7 @@ struct GalaxySSIApp: App {
 
 private struct GalaxySSIAppScene: View {
   @Environment(\.scenePhase) private var scenePhase
+  @SceneStorage("galaxyssi.agent.activeConversationID") private var sceneConversationID = ""
   @StateObject private var startup = GalaxySSIStartupHandoff()
 
   var body: some View {
@@ -322,7 +332,11 @@ private struct GalaxySSIAppScene: View {
         GalaxySSIStartupHandoffView()
       }
     }
-    .onAppear(perform: startup.start)
+    .onAppear {
+      startup.handleScenePhase(scenePhase)
+      startup.restoreSceneConversation(sceneConversationID)
+      startup.start()
+    }
     .onChange(of: scenePhase, perform: startup.handleScenePhase)
     .onContinueUserActivity(GalaxySSIConversationSceneController.activityType) { activity in
       startup.activateConversation(
@@ -333,10 +347,13 @@ private struct GalaxySSIAppScene: View {
 }
 
 private struct GalaxySSIRuntimeRoot: View {
+  @SceneStorage("galaxyssi.agent.activeConversationID") private var sceneConversationID = ""
   let runtime: GalaxySSIStartupRuntime
 
   var body: some View {
     RootView()
+      .onAppear { sceneConversationID = runtime.store.activeAgentConversationId }
+      .onReceive(runtime.store.$activeAgentConversationId.removeDuplicates()) { sceneConversationID = $0 }
       .environmentObject(runtime.store)
       .environmentObject(runtime.coordinator)
       .environmentObject(runtime.agentStartupRecovery)

@@ -502,6 +502,7 @@
     A10000000000000000000710 /* CodexStyleResponsePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000710 /* CodexStyleResponsePolicy.swift */; };
     A10000000000000000000711 /* AppDisplaySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000711 /* AppDisplaySettings.swift */; };
     A10000000000000000000712 /* AgentTranscriptScrollPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000712 /* AgentTranscriptScrollPolicy.swift */; };
+    A10000000000000000009895 /* AgentTranscriptWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009895 /* AgentTranscriptWindow.swift */; };
     A10000000000000000000713 /* AgentTranscriptRenderPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000713 /* AgentTranscriptRenderPolicy.swift */; };
     A10000000000000000000714 /* AgentFastLocalResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000714 /* AgentFastLocalResponse.swift */; };
     A10000000000000000000715 /* AgentFinalResponseIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000715 /* AgentFinalResponseIdentity.swift */; };
@@ -1687,6 +1688,7 @@
     A20000000000000000000710 /* CodexStyleResponsePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexStyleResponsePolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000711 /* AppDisplaySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDisplaySettings.swift; sourceTree = "<group>"; };
     A20000000000000000000712 /* AgentTranscriptScrollPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTranscriptScrollPolicy.swift; sourceTree = "<group>"; };
+    A20000000000000000009895 /* AgentTranscriptWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTranscriptWindow.swift; sourceTree = "<group>"; };
     A20000000000000000000713 /* AgentTranscriptRenderPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTranscriptRenderPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000714 /* AgentFastLocalResponse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentFastLocalResponse.swift; sourceTree = "<group>"; };
     A20000000000000000000715 /* AgentFinalResponseIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentFinalResponseIdentity.swift; sourceTree = "<group>"; };
@@ -2468,6 +2470,7 @@
         A20000000000000000000710 /* CodexStyleResponsePolicy.swift */,
         A20000000000000000000711 /* AppDisplaySettings.swift */,
         A20000000000000000000712 /* AgentTranscriptScrollPolicy.swift */,
+        A20000000000000000009895 /* AgentTranscriptWindow.swift */,
         A20000000000000000000713 /* AgentTranscriptRenderPolicy.swift */,
         A20000000000000000000714 /* AgentFastLocalResponse.swift */,
         A20000000000000000000715 /* AgentFinalResponseIdentity.swift */,
@@ -3744,6 +3747,7 @@
         A10000000000000000000710 /* CodexStyleResponsePolicy.swift in Sources */,
         A10000000000000000000711 /* AppDisplaySettings.swift in Sources */,
         A10000000000000000000712 /* AgentTranscriptScrollPolicy.swift in Sources */,
+        A10000000000000000009895 /* AgentTranscriptWindow.swift in Sources */,
         A10000000000000000000713 /* AgentTranscriptRenderPolicy.swift in Sources */,
         A10000000000000000000714 /* AgentFastLocalResponse.swift in Sources */,
         A10000000000000000000715 /* AgentFinalResponseIdentity.swift in Sources */,

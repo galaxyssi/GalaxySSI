@@ -1,6 +1,34 @@
 import Foundation
 
 extension AgentHomeView {
+  func isCurrentTranscriptWindow(_ owner: AgentTranscriptWindow.Owner?) -> Bool {
+    homeVisible && scenePhase == .active && store.canReadAgentTranscript && !transcriptRuntimeCleared &&
+      owner?.conversationID == store.activeAgentConversationId && transcriptWindow.owns(owner)
+  }
+
+  func refreshTranscriptWindow() {
+    guard homeVisible, scenePhase == .active, store.canReadAgentTranscript, !transcriptRuntimeCleared else { return }
+    let conversationID = store.activeAgentConversationId
+    if transcriptWindow.snapshot.owner?.conversationID == conversationID {
+      transcriptWindow.requestRefresh()
+    } else {
+      let database = store.chatHistoryDatabase
+      transcriptWindow.activate(conversationID, pageSize: Self.agentTranscriptPageSize) { id, limit in
+        await database.agentTranscriptWindow(conversationId: id, limit: limit)
+      }
+    }
+  }
+
+  func clearAgentTranscriptWindow() {
+    transcriptWindow.clear()
+    visibleAgentMessageLimit = Self.agentTranscriptPageSize
+    olderTranscriptAnchor = nil
+    transcriptTopLoadTriggered = false
+    transcriptAutoFollow = true
+    transcriptShowLatestButton = false
+    transcriptContentMinY = 0
+  }
+
   func refreshAgentRuntimeAuditRecords() {
     agentRuntimeAuditRecords = AgentNativeToolDefaultStores
       .makePersistentStores()
@@ -32,11 +60,7 @@ extension AgentHomeView {
     voiceTranscriptionPending = false
     actionTrayPresented = false
     attachmentError = ""
-    visibleAgentMessageLimit = Self.agentTranscriptPageSize
-    olderTranscriptAnchor = nil
-    transcriptTopLoadTriggered = false
-    transcriptAutoFollow = true
-    transcriptShowLatestButton = false
+    clearAgentTranscriptWindow()
     retryingAgentMessageIDs.removeAll()
     retryingAgentTaskIDs.removeAll()
     runtimeArtifactPreview = nil
@@ -58,11 +82,13 @@ extension AgentHomeView {
 
   func clearAgentRuntimePlaintextPresentation() {
     invalidateVoiceAppAnchor()
+    clearAgentTranscriptWindow()
     committedTurnProgress = AgentCommittedTurnProgress()
     cancelScreenPagePDFImport()
     fileAttachmentOwner = nil
     fileAttachmentRequest = nil
     photoAttachmentOwner = nil
+    cameraAttachmentOwner = nil
     draft.removeAll(keepingCapacity: false)
     attachments.wipeSensitive()
     voiceAttachmentSnapshot.wipeSensitive()

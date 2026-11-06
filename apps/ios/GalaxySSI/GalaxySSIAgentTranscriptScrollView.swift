@@ -242,6 +242,17 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
       .onChange(of: activeAgentPhase) { _ in
         onExecutionStateChanged()
       }
+      .onChange(of: messages.last?.id) { id in
+        guard messages.count >= pageSize, let id else { return }
+        guard transcriptAutoFollow else { transcriptShowLatestButton = true; return }
+        withAnimation(reduceMotion ? nil : Animation.default) {
+          if let waiting = latestWaitingIndicatorID {
+            proxy.scrollTo(waiting, anchor: .bottom)
+          } else {
+            proxy.scrollTo(id, anchor: .bottom)
+          }
+        }
+      }
       .onChange(of: activeAgentTasks) { _ in
         onExecutionStateChanged()
       }

@@ -6,7 +6,6 @@ struct GalaxySSIMainTabView: View {
   @Environment(\.scenePhase) private var scenePhase
   @EnvironmentObject private var store: GalaxySSIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
-  @SceneStorage("galaxyssi.agent.activeConversationID") private var sceneConversationID = ""
   @State private var selectedTab: GalaxySSIMainTab
   @State private var pendingContactId = ""
   @State private var navigationOwner = UUID()
@@ -38,7 +37,6 @@ struct GalaxySSIMainTabView: View {
           showNews: selectedTab != .discover
         ) {
           if store.switchAgentSession($0) {
-            sceneConversationID = store.activeAgentConversationId
             selectedTab = .agent
           }
         }
@@ -159,7 +157,6 @@ struct GalaxySSIMainTabView: View {
     var output: AgentMcpJSONObject = ["destination": .string(request.destination.rawValue), "state": .string("scheduled")]
     switch request.destination {
     case .agent:
-      sceneConversationID = request.conversationID
       selectedTab = .agent
       output["conversation_id"] = .string(request.conversationID)
     case .contact:
@@ -179,7 +176,6 @@ struct GalaxySSIMainTabView: View {
               store.agentConversationDatabase.read(session.id) != nil else {
         return .failure(code: "conversation_not_saved", message: "The new conversation could not be saved.")
       }
-      sceneConversationID = session.id
       selectedTab = .agent
       output["conversation_id"] = .string(session.id)
       if !request.message.isBlank {

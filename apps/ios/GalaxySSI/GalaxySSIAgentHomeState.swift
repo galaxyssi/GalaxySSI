@@ -87,20 +87,17 @@ extension AgentHomeView {
   }
 
   var messages: [ChatMessage] {
-    let allMessages = store.messages(for: contact.id).filter {
+    let snapshot = transcriptWindow.snapshot
+    guard isCurrentTranscriptWindow(snapshot.owner), snapshot.loadedLimit > 0 else { return [] }
+    let scopedMessages = snapshot.messages.filter {
       !isLegacyDesktopPairingPrompt($0)
     }
-    guard let session = activeAgentSession else {
-      return allMessages
-    }
-    let scopedMessages = store.agentSessionMessages(session.id).filter {
-      !isLegacyDesktopPairingPrompt($0)
-    }
-    guard scopedMessages.isEmpty else {
+    guard snapshot.messages.isEmpty,
+          snapshot.owner?.conversationID == store.defaultAgentConversationId(for: contact.id) else {
       return scopedMessages
     }
-    return allMessages.filter {
-      $0.conversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    return store.messages(for: contact.id).filter {
+      $0.conversationId.isBlank && !isLegacyDesktopPairingPrompt($0)
     }
   }
 
@@ -112,12 +109,12 @@ extension AgentHomeView {
   static let agentTranscriptPageSize = 24
 
   var transcriptMessages: [ChatMessage] {
-    guard messages.count > visibleAgentMessageLimit else { return messages }
-    return Array(messages.suffix(visibleAgentMessageLimit))
+    Array(messages.suffix(max(visibleAgentMessageLimit, transcriptWindow.snapshot.loadedLimit)))
   }
 
   var hasOlderTranscriptMessages: Bool {
-    messages.count > visibleAgentMessageLimit
+    isCurrentTranscriptWindow(transcriptWindow.snapshot.owner) &&
+      (transcriptWindow.snapshot.hasMore || messages.count > visibleAgentMessageLimit)
   }
 
   var waitingMessageIDs: Set<UUID> {
