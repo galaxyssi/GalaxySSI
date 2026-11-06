@@ -94,6 +94,8 @@ class HealthReminderActivity : Activity() {
         reportPrevious.addAll(state?.getStringArrayList("report_previous")?.map(::parseReportCursor).orEmpty())
         body = healthProfileBody(R.string.health_reminder_title) { back() }
         val header = (body.parent as LinearLayout).getChildAt(0) as LinearLayout
+        header.setBackgroundColor(getColor(R.color.surface_bg))
+        window.statusBarColor = getColor(R.color.surface_bg)
         title = header.getChildAt(1) as TextView
     }
     private fun parse(value: String?) = value?.takeIf(String::isNotBlank)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
@@ -481,58 +483,85 @@ class HealthReminderActivity : Activity() {
     private fun renderPreferences() {
         val value = draft ?: return
         val content = healthProfileContent(body)
-        content.addView(ui.text(getString(R.string.health_sleep_alert_group), 18f, bold = true))
-        toggle(content, R.string.health_sleep_alert_setting, "health-sleep-enabled", value.sleepChanges) { draft = draft?.copy(sleepChanges = it) }
-        ui.add(content, ui.profileRow(getString(R.string.health_sleep_alert_threshold), getString(R.string.health_sleep_alert_threshold_value, value.sleepDecrease)) {
-            val thresholds = HealthSleepAlertPolicy.thresholds
-            show(AlertDialog.Builder(this).setTitle(R.string.health_sleep_alert_threshold)
-                .setSingleChoiceItems(thresholds.map { getString(R.string.health_sleep_alert_threshold_value, it) }.toTypedArray(),
-                    thresholds.indexOf(value.sleepDecrease)) { d, index -> d.dismiss(); edit { copy(sleepDecrease = thresholds[index]) } }
-                .setNegativeButton(android.R.string.cancel, null).create())
-        })
-        toggle(content, R.string.health_sleep_alert_merge, "health-sleep-merge", value.mergeSleepChanges) { draft = draft?.copy(mergeSleepChanges = it) }
-        ui.add(content, ui.text(getString(R.string.health_sleep_alert_note), 13f, muted = true), 8)
-        ui.add(content, ui.text(getString(R.string.health_reminder_plan), 18f, bold = true), 24)
-        toggle(content, R.string.health_reminder_daily, "health-reminder-enabled", value.enabled) { draft = draft?.copy(enabled = it) }
-        toggle(content, R.string.health_report_review_setting, "health-report-review-enabled", value.reportReviews) { draft = draft?.copy(reportReviews = it) }
-        ui.add(content, ui.profileRow(getString(R.string.health_reminder_time), time(value.minute)) {
-            pick(R.string.health_reminder_time, value.minute) { edit { copy(minute = it) } }
-        }.apply { tag = "health-reminder-time" })
-        ui.add(content, ui.profileRow(getString(R.string.health_reminder_target), getString(value.target.titleResource())) {
-            val targets = HealthReminderTarget.entries
-            show(AlertDialog.Builder(this).setTitle(R.string.health_reminder_target)
-                .setSingleChoiceItems(targets.map { getString(it.titleResource()) }.toTypedArray(), value.target.ordinal) { d, index ->
-                    d.dismiss(); edit { copy(target = targets[index]) }
-                }.setNegativeButton(android.R.string.cancel, null).create())
-        })
-        val paused = value.pauseUntil > System.currentTimeMillis()
-        ui.add(content, button(if (paused) R.string.health_reminder_resume_plan else R.string.health_reminder_pause,
-            "health-reminder-pause") { edit { copy(pauseUntil = if (paused) 0 else System.currentTimeMillis() + HealthReminderPolicy.DAY) } }, 8)
-        if (paused) ui.add(content, ui.text(getString(R.string.health_reminder_snoozed_until,
-            format(value.pauseUntil, ZoneId.systemDefault().id)), 14f, muted = true), 6)
-        ui.add(content, ui.text(getString(R.string.health_reminder_delivery), 18f, bold = true), 24)
-        toggle(content, R.string.health_reminder_notifications, "health-reminder-notifications", value.notifications) { draft = draft?.copy(notifications = it) }
-        ui.add(content, ui.profileRow(getString(R.string.health_reminder_system_settings),
-            getString(if (HealthReminderWork.systemAllowed(this)) R.string.health_reminder_permission_allowed else R.string.health_reminder_permission_denied)) {
-            HealthReminderWork.requestPermission(this)
-        })
-        toggle(content, R.string.health_reminder_quiet, "health-reminder-quiet", value.quiet) { draft = draft?.copy(quiet = it) }
-        ui.add(content, ui.profileRow(getString(R.string.health_reminder_quiet_start), time(value.quietStart)) {
-            pick(R.string.health_reminder_quiet_start, value.quietStart) { minute ->
-                if (minute != draft?.quietEnd) edit { copy(quietStart = minute) } else sameTime()
+        preferenceGroup(content, R.string.health_sleep_alert_group, 0) {
+            toggle(this, R.string.health_sleep_alert_setting, "health-sleep-enabled", value.sleepChanges) {
+                draft = draft?.copy(sleepChanges = it)
             }
-        })
-        ui.add(content, ui.profileRow(getString(R.string.health_reminder_quiet_end), time(value.quietEnd)) {
-            pick(R.string.health_reminder_quiet_end, value.quietEnd) { minute ->
-                if (minute != draft?.quietStart) edit { copy(quietEnd = minute) } else sameTime()
+            ui.add(this, ui.profileRow(getString(R.string.health_sleep_alert_threshold), getString(R.string.health_sleep_alert_threshold_value, value.sleepDecrease)) {
+                val thresholds = HealthSleepAlertPolicy.thresholds
+                show(AlertDialog.Builder(this@HealthReminderActivity).setTitle(R.string.health_sleep_alert_threshold)
+                    .setSingleChoiceItems(thresholds.map { getString(R.string.health_sleep_alert_threshold_value, it) }.toTypedArray(),
+                        thresholds.indexOf(value.sleepDecrease)) { d, index -> d.dismiss(); edit { copy(sleepDecrease = thresholds[index]) } }
+                    .setNegativeButton(android.R.string.cancel, null).create())
+            })
+            toggle(this, R.string.health_sleep_alert_merge, "health-sleep-merge", value.mergeSleepChanges) {
+                draft = draft?.copy(mergeSleepChanges = it)
             }
-        })
-        toggle(content, R.string.health_reminder_hide_lock, "health-reminder-hide-lock", value.hideOnLock) { draft = draft?.copy(hideOnLock = it) }
+            ui.add(this, ui.text(getString(R.string.health_sleep_alert_note), 13f, muted = true), 8)
+        }
+        preferenceGroup(content, R.string.health_reminder_plan) {
+            toggle(this, R.string.health_reminder_daily, "health-reminder-enabled", value.enabled) { draft = draft?.copy(enabled = it) }
+            ui.add(this, ui.profileRow(getString(R.string.health_reminder_time), time(value.minute)) {
+                pick(R.string.health_reminder_time, value.minute) { edit { copy(minute = it) } }
+            }.apply { tag = "health-reminder-time" })
+            ui.add(this, ui.profileRow(getString(R.string.health_reminder_target), getString(value.target.titleResource())) {
+                val targets = HealthReminderTarget.entries
+                show(AlertDialog.Builder(this@HealthReminderActivity).setTitle(R.string.health_reminder_target)
+                    .setSingleChoiceItems(targets.map { getString(it.titleResource()) }.toTypedArray(), value.target.ordinal) { d, index ->
+                        d.dismiss(); edit { copy(target = targets[index]) }
+                    }.setNegativeButton(android.R.string.cancel, null).create())
+            })
+            toggle(this, R.string.health_report_review_setting, "health-report-review-enabled", value.reportReviews) {
+                draft = draft?.copy(reportReviews = it)
+            }
+        }
+        preferenceGroup(content, R.string.health_reminder_delivery) {
+            toggle(this, R.string.health_reminder_notifications, "health-reminder-notifications", value.notifications) {
+                draft = draft?.copy(notifications = it)
+            }
+            val allowed = HealthReminderWork.systemAllowed(this@HealthReminderActivity)
+            ui.add(this, ui.profileRow(getString(R.string.health_reminder_system_settings),
+                getString(if (allowed) R.string.health_reminder_permission_allowed else R.string.health_reminder_permission_denied)) {
+                HealthReminderWork.requestPermission(this@HealthReminderActivity)
+            })
+            toggle(this, R.string.health_reminder_quiet, "health-reminder-quiet", value.quiet) { draft = draft?.copy(quiet = it) }
+            ui.add(this, ui.profileRow(getString(R.string.health_reminder_quiet_start), time(value.quietStart)) {
+                pick(R.string.health_reminder_quiet_start, value.quietStart) { minute ->
+                    if (minute != draft?.quietEnd) edit { copy(quietStart = minute) } else sameTime()
+                }
+            })
+            ui.add(this, ui.profileRow(getString(R.string.health_reminder_quiet_end), time(value.quietEnd)) {
+                pick(R.string.health_reminder_quiet_end, value.quietEnd) { minute ->
+                    if (minute != draft?.quietStart) edit { copy(quietEnd = minute) } else sameTime()
+                }
+            })
+            toggle(this, R.string.health_reminder_hide_lock, "health-reminder-hide-lock", value.hideOnLock) { draft = draft?.copy(hideOnLock = it) }
+            val paused = value.pauseUntil > System.currentTimeMillis()
+            ui.add(this, button(if (paused) R.string.health_reminder_resume_plan else R.string.health_reminder_pause,
+                "health-reminder-pause") { edit { copy(pauseUntil = if (paused) 0 else System.currentTimeMillis() + HealthReminderPolicy.DAY) } }, 8)
+            if (paused) ui.add(this, ui.text(getString(R.string.health_reminder_snoozed_until,
+                format(value.pauseUntil, ZoneId.systemDefault().id)), 14f, muted = true).apply { tag = "health-reminder-paused-until" }, 6)
+        }
         ui.add(content, ui.text(getString(R.string.health_reminder_delivery_note), 13f, muted = true), 12)
-        ui.add(content, button(R.string.health_reminder_save, "health-reminder-save", true) {
-            val saved = draft ?: return@button
-            mutate(exitSettings = true) { HealthReminderWork.save(applicationContext, store, saved, live) }
-        }, 16)
+        body.addView(ui.column().apply {
+            setBackgroundColor(getColor(R.color.surface_bg))
+            setPadding(ui.dp(16), ui.dp(8), ui.dp(16), ui.dp(12))
+            addView(button(R.string.health_reminder_save, "health-reminder-save", true) {
+                val saved = draft ?: return@button
+                mutate(exitSettings = true) { HealthReminderWork.save(applicationContext, store, saved, live) }
+            })
+        })
+    }
+    private fun preferenceGroup(content: LinearLayout, title: Int, top: Int = 20, rows: LinearLayout.() -> Unit) {
+        ui.add(content, ui.text(getString(title), 18f, bold = true), top)
+        ui.add(content, ui.card().apply {
+            setPadding(ui.dp(14), ui.dp(6), ui.dp(14), ui.dp(12))
+            dividerDrawable = android.graphics.drawable.GradientDrawable().apply {
+                setColor(getColor(R.color.separator)); setSize(1, ui.dp(1))
+            }
+            showDividers = LinearLayout.SHOW_DIVIDER_MIDDLE
+            rows()
+        }, 8)
     }
     private fun toggle(parent: LinearLayout, label: Int, key: String, checked: Boolean, onChanged: (Boolean) -> Unit) {
         ui.add(parent, Switch(this).apply {

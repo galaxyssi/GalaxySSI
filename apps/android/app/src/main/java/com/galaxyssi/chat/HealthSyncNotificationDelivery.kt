@@ -11,7 +11,7 @@ internal object HealthSyncNotificationDelivery {
         val active = HealthConnectScope.entries.mapNotNull(records::storedSyncIncident).filterNot { it.handled }
         val visibleCandidates = active.filter { it.scope in selected }.associateBy { it.id }
         val allowed = settings.notifications && systemAllowed
-        val deferUntil = maxOf(settings.pauseUntil, HealthReminderPolicy.quietUntil(settings, now, zone) ?: 0L)
+        val deferUntil = HealthReminderPolicy.deliveryDeferredUntil(settings, now, zone)
         for ((id, privateOnLock) in visible) {
             if (!allowed || now < settings.pauseUntil || privateOnLock != settings.hideOnLock || id !in visibleCandidates) cancel(id)
         }
@@ -23,7 +23,7 @@ internal object HealthSyncNotificationDelivery {
                 if (!records.finishSyncNotice(incident, HealthReminderDelivery.POSTED)) cancel(incident.id)
                 continue
             }
-            if (eligible && deferUntil > now) {
+            if (eligible && deferUntil != null) {
                 deferred = true
                 continue
             }
