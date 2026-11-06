@@ -1140,6 +1140,10 @@ enum AgentRunControlPayloadValue: Codable, Equatable {
   case string(String)
   case int(Int64)
   case bool(Bool)
+  case double(Double)
+  case object([String: AgentRunControlPayloadValue])
+  case array([AgentRunControlPayloadValue])
+  case null
 
   var stringValue: String? {
     switch self {
@@ -1149,6 +1153,10 @@ enum AgentRunControlPayloadValue: Codable, Equatable {
       return String(value)
     case .bool(let value):
       return value ? "true" : "false"
+    case .double(let value):
+      return String(value)
+    case .object, .array, .null:
+      return nil
     }
   }
 
@@ -1158,7 +1166,9 @@ enum AgentRunControlPayloadValue: Codable, Equatable {
       return value
     case .string(let value):
       return Int64(value)
-    case .bool:
+    case .double(let value):
+      return Int64(exactly: value)
+    case .bool, .object, .array, .null:
       return nil
     }
   }
@@ -1169,19 +1179,27 @@ enum AgentRunControlPayloadValue: Codable, Equatable {
       return value
     case .string(let value):
       return Bool(value)
-    case .int:
+    case .int, .double, .object, .array, .null:
       return nil
     }
   }
 
   init(from decoder: Decoder) throws {
     let container = try decoder.singleValueContainer()
-    if let value = try? container.decode(Bool.self) {
+    if container.decodeNil() {
+      self = .null
+    } else if let value = try? container.decode(Bool.self) {
       self = .bool(value)
     } else if let value = try? container.decode(Int64.self) {
       self = .int(value)
+    } else if let value = try? container.decode(Double.self) {
+      self = .double(value)
+    } else if let value = try? container.decode(String.self) {
+      self = .string(value)
+    } else if let value = try? container.decode([String: Self].self) {
+      self = .object(value)
     } else {
-      self = .string((try? container.decode(String.self)) ?? "")
+      self = .array(try container.decode([Self].self))
     }
   }
 
@@ -1194,6 +1212,28 @@ enum AgentRunControlPayloadValue: Codable, Equatable {
       try container.encode(value)
     case .bool(let value):
       try container.encode(value)
+    case .double(let value):
+      try container.encode(value)
+    case .object(let value):
+      try container.encode(value)
+    case .array(let value):
+      try container.encode(value)
+    case .null:
+      try container.encodeNil()
+    }
+  }
+
+  static func == (lhs: Self, rhs: Self) -> Bool {
+    switch (lhs, rhs) {
+    case (.string(let a), .string(let b)): return a == b
+    case (.int(let a), .int(let b)): return a == b
+    case (.double(let a), .double(let b)): return a == b
+    case (.int(let a), .double(let b)), (.double(let b), .int(let a)): return Int64(exactly: b) == a
+    case (.bool(let a), .bool(let b)): return a == b
+    case (.object(let a), .object(let b)): return a == b
+    case (.array(let a), .array(let b)): return a == b
+    case (.null, .null): return true
+    default: return false
     }
   }
 }

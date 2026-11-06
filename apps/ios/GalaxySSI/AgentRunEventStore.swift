@@ -13,11 +13,36 @@ final class UserDefaultsAgentRunEventStore: AgentRunEventPersistence {
   private let storageKey: String
   private static let persistenceLock = NSRecursiveLock()
   private let lock = UserDefaultsAgentRunEventStore.persistenceLock
+  private let readCacheLock = NSLock()
   private let encoder = JSONEncoder()
-  private let decoder = JSONDecoder()
-  private var cachedEventsByRunId: [String: [AgentRunControlEvent]] = [:]
-  private var cachedRunIds: [String]?
-  private var cachedRecoverableRunIds: [String]?
+  private var readCache: [String: CachedRun] = [:]
+
+  private struct CachedRun {
+    let data: Data
+    let run: IndexedRun
+  }
+
+  private struct IndexedRun {
+    var events: [AgentRunControlEvent] = []
+    var byId: [String: Int] = [:]
+    var byKey: [String: Int] = [:]
+    var state: AgentRunControlState = .created
+
+    init(_ events: [AgentRunControlEvent] = []) {
+      for event in events { append(event) }
+    }
+
+    mutating func append(_ event: AgentRunControlEvent) {
+      if byId[event.eventId] == nil { byId[event.eventId] = events.count }
+      if byKey[event.idempotencyKey] == nil { byKey[event.idempotencyKey] = events.count }
+      events.append(event)
+      state = AgentRunEventStore.reduce(current: state, event: event.type)
+    }
+
+    func firstMatch(_ event: AgentRunControlEvent) -> AgentRunControlEvent? {
+      [byId[event.eventId], byKey[event.idempotencyKey]].compactMap { $0 }.min().map { events[$0] }
+    }
+  }
 
   init(
     defaults: UserDefaults = .standard,
@@ -30,30 +55,26 @@ final class UserDefaultsAgentRunEventStore: AgentRunEventPersistence {
   func appendNext(_ event: AgentRunControlEvent) -> AgentRunControlEvent {
     lock.lock()
     defer { lock.unlock() }
-    invalidateWriteCache()
     guard let canonical = AgentRunKernelContract.canonical(event) else { return event }
     let runId = canonical.runId
-    var current = eventsLocked(runId)
-    if let root = current.first, !AgentRunKernelContract.hasSameRoot(root, canonical) {
-      return current.last ?? event
+    var current = readRun(runId)
+    if let root = current.events.first, !AgentRunKernelContract.hasSameRoot(root, canonical) {
+      return current.events.last ?? event
     }
-    if let existing = current.first(where: {
-      $0.eventId == canonical.eventId || $0.idempotencyKey == canonical.idempotencyKey
-    }) {
+    if let existing = current.firstMatch(canonical) {
       guard AgentRunKernelContract.isIdempotentReplay(existing, canonical) else {
-        return current.last ?? existing
+        return current.events.last ?? existing
       }
       return existing
     }
-    let state = current.reduce(AgentRunControlState.created) {
-      AgentRunEventStore.reduce(current: $0, event: $1.type)
+    if current.state.isTerminal, canonical.type != .runRecovered {
+      return current.events.last ?? event
     }
-    if state.isTerminal, canonical.type != .runRecovered {
-      return current.last ?? event
-    }
-    let sequenced = canonical.withSequence((current.last?.sequence ?? 0) + 1)
+    let sequence = current.events.last?.sequence ?? 0
+    guard sequence < Int64.max else { return current.events.last ?? event }
+    let sequenced = canonical.withSequence(sequence + 1)
     current.append(sequenced)
-    persistLocked(runId: runId, events: Array(current.suffix(Self.maxEventsPerRun)))
+    persistLocked(runId: runId, run: current)
     return sequenced
   }
 
@@ -67,204 +88,144 @@ final class UserDefaultsAgentRunEventStore: AgentRunEventPersistence {
     let runId = first.runId
     lock.lock()
     defer { lock.unlock() }
-    invalidateWriteCache()
-    var current = eventsLocked(runId)
-    if let root = current.first, !AgentRunKernelContract.hasSameRoot(root, first) { return [] }
-    var knownEventsByIdempotencyKey: [String: AgentRunControlEvent] = [:]
-    current.forEach { knownEventsByIdempotencyKey[$0.idempotencyKey] = $0 }
-    var knownEventIds = Set(current.map(\.eventId))
-    var state = current.reduce(AgentRunControlState.created) {
-      AgentRunEventStore.reduce(current: $0, event: $1.type)
-    }
-    var sequence = current.last?.sequence ?? 0
+    var current = readRun(runId)
+    if let root = current.events.first, !AgentRunKernelContract.hasSameRoot(root, first) { return [] }
+    var sequence = current.events.last?.sequence ?? 0
     var appended: [AgentRunControlEvent] = []
     for event in canonicalEvents {
-      if let existing = knownEventsByIdempotencyKey[event.idempotencyKey] {
-        guard AgentRunKernelContract.isIdempotentReplay(existing, event) else { continue }
-        continue
-      }
-      guard knownEventIds.insert(event.eventId).inserted else { continue }
-      guard !state.isTerminal || event.type == .runRecovered else { continue }
+      guard current.firstMatch(event) == nil, sequence < Int64.max,
+            !current.state.isTerminal || event.type == .runRecovered else { continue }
       sequence += 1
       let sequenced = event.withSequence(sequence)
       current.append(sequenced)
       appended.append(sequenced)
-      knownEventsByIdempotencyKey[sequenced.idempotencyKey] = sequenced
-      state = AgentRunEventStore.reduce(current: state, event: sequenced.type)
     }
     guard !appended.isEmpty else { return [] }
-    persistLocked(runId: runId, events: Array(current.suffix(Self.maxEventsPerRun)))
+    persistLocked(runId: runId, run: current)
     return appended
   }
 
   func appendRecoveryIfCurrent(_ event: AgentRunControlEvent, expectedSequence: Int64) -> AgentRunControlEvent? {
     lock.lock()
     defer { lock.unlock() }
-    invalidateWriteCache()
-    guard let current = snapshotLocked(event.runId), !current.state.isTerminal,
+    guard let current = snapshot(runId: event.runId), !current.state.isTerminal,
           current.lastSequence == expectedSequence else { return nil }
     let committed = appendNext(event)
     return committed.eventId == event.eventId ? committed : nil
   }
 
-  private func invalidateWriteCache() {
-    cachedEventsByRunId.removeAll()
-    cachedRunIds = nil
-    cachedRecoverableRunIds = nil
-  }
-
   func events(runId: String) -> [AgentRunControlEvent] {
-    lock.lock()
-    defer { lock.unlock() }
-    return eventsLocked(runId).sorted { $0.sequence < $1.sequence }
+    readRun(runId).events
   }
 
   func latestEvent(runId: String) -> AgentRunControlEvent? {
-    lock.lock()
-    defer { lock.unlock() }
-    return eventsLocked(runId).max { $0.sequence < $1.sequence }
+    readRun(runId).events.last
   }
 
   func snapshot(runId: String) -> AgentRunControlSnapshot? {
-    lock.lock()
-    defer { lock.unlock() }
-    return snapshotLocked(runId)
+    let run = readRun(runId)
+    guard let last = run.events.last else { return nil }
+    return AgentRunControlSnapshot(runId: last.runId, taskId: last.taskId, state: run.state,
+      agentId: last.agentId, deviceId: last.deviceId, lastSequence: last.sequence, lastEvent: last)
   }
 
   func containsIdempotencyKey(runId: String, key: String) -> Bool {
-    lock.lock()
-    defer { lock.unlock() }
     let normalizedKey = clean(key)
     guard !normalizedKey.isEmpty else { return false }
-    return eventsLocked(runId).contains { $0.idempotencyKey == normalizedKey }
+    return readRun(runId).byKey[normalizedKey] != nil
   }
 
   func recoverableRuns() -> [AgentRunControlSnapshot] {
-    lock.lock()
-    defer { lock.unlock() }
-    invalidateWriteCache()
-    return recoverableRunIdsLocked().compactMap(snapshotLocked).filter { !$0.state.isTerminal }
+    recoverableRunIds().compactMap { snapshot(runId: $0) }.filter { !$0.state.isTerminal }
   }
 
   func storedRunIds(limit: Int = 500) -> [String] {
-    lock.lock()
-    defer { lock.unlock() }
-    return Array(runIdsLocked().suffix(max(1, min(limit, Self.maxRuns))))
+    Array(runIds().suffix(max(1, min(limit, Self.maxRuns))))
   }
 
   func removeRuns(_ runIds: Set<String>) {
     lock.lock()
     defer { lock.unlock() }
-    invalidateWriteCache()
     let normalized = Set(runIds.map(clean).filter { !$0.isEmpty })
     guard !normalized.isEmpty else { return }
-    let retained = runIdsLocked().filter { !normalized.contains($0) }
-    let recoverable = recoverableRunIdsLocked().filter { !normalized.contains($0) }
-    normalized.forEach { cachedEventsByRunId.removeValue(forKey: $0) }
-    cachedRunIds = retained
-    cachedRecoverableRunIds = recoverable
-    persistIndexesLocked()
+    persistIndexes(runIds: self.runIds().filter { !normalized.contains($0) },
+      recoverable: recoverableRunIds().filter { !normalized.contains($0) })
     normalized.forEach { defaults.removeObject(forKey: eventKey($0)) }
   }
 
   func clear() {
     lock.lock()
     defer { lock.unlock() }
-    invalidateWriteCache()
-    runIdsLocked().forEach { defaults.removeObject(forKey: eventKey($0)) }
+    runIds().forEach { defaults.removeObject(forKey: eventKey($0)) }
     defaults.removeObject(forKey: runIdsKey)
     defaults.removeObject(forKey: recoverableRunIdsKey)
-    cachedEventsByRunId.removeAll()
-    cachedRunIds = []
-    cachedRecoverableRunIds = []
+    readCacheLock.lock()
+    readCache.removeAll()
+    readCacheLock.unlock()
   }
 
-  private func eventsLocked(_ runId: String) -> [AgentRunControlEvent] {
-    let cleanRunId = clean(runId)
-    if let cached = cachedEventsByRunId[cleanRunId] { return cached }
-    let decoded: [AgentRunControlEvent]
-    if let data = defaults.data(forKey: eventKey(cleanRunId)) {
-      decoded = (try? decoder.decode([AgentRunControlEvent].self, from: data)) ?? []
-    } else {
-      decoded = []
-    }
-    let sorted = decoded.compactMap(AgentRunKernelContract.canonical).sorted {
-      $0.sequence < $1.sequence
-    }
-    cachedEventsByRunId[cleanRunId] = sorted
-    return sorted
+  private func readRun(_ id: String) -> IndexedRun {
+    let runId = clean(id)
+    // UserDefaults returns a complete immutable value. Readers never wait for ledger encoding or index writes.
+    guard let data = defaults.data(forKey: eventKey(runId)) else { return IndexedRun() }
+    readCacheLock.lock()
+    let cached = readCache[runId]
+    readCacheLock.unlock()
+    if let cached, cached.data == data { return cached.run }
+    let decoded = (try? JSONDecoder().decode([AgentRunControlEvent].self, from: data)) ?? []
+    let run = IndexedRun(decoded.compactMap(AgentRunKernelContract.canonical).sorted { $0.sequence < $1.sequence })
+    cache(run, data: data, id: runId)
+    return run
   }
 
-  private func snapshotLocked(_ runId: String) -> AgentRunControlSnapshot? {
-    let events = eventsLocked(runId)
-    guard let last = events.last else { return nil }
-    let state = events.reduce(AgentRunControlState.created) {
-      AgentRunEventStore.reduce(current: $0, event: $1.type)
+  private func cache(_ run: IndexedRun, data: Data, id: String) {
+    guard data.count <= 2 * 1_024 * 1_024 else { return }
+    readCacheLock.lock()
+    defer { readCacheLock.unlock() }
+    if readCache.count >= 8, readCache[id] == nil, let oldest = readCache.keys.first {
+      readCache.removeValue(forKey: oldest)
     }
-    return AgentRunControlSnapshot(
-      runId: last.runId,
-      taskId: last.taskId,
-      state: state,
-      agentId: last.agentId,
-      deviceId: last.deviceId,
-      lastSequence: last.sequence,
-      lastEvent: last
-    )
+    readCache[id] = CachedRun(data: data, run: run)
   }
 
-  private func persistLocked(runId: String, events: [AgentRunControlEvent]) {
-    let normalized = Array(events.suffix(Self.maxEventsPerRun))
-    cachedEventsByRunId[runId] = normalized
-    var runIds = runIdsLocked().filter { $0 != runId }
-    runIds.append(runId)
-    let retainedRunIds = Array(runIds.suffix(Self.maxRuns))
-    let staleRunIds = Set(runIds).subtracting(retainedRunIds)
-    let state = normalized.reduce(AgentRunControlState.created) {
-      AgentRunEventStore.reduce(current: $0, event: $1.type)
-    }
-    var recoverable = recoverableRunIdsLocked().filter {
+  private func persistLocked(runId: String, run: IndexedRun) {
+    let normalized = run.events.count > Self.maxEventsPerRun
+      ? IndexedRun(Array(run.events.suffix(Self.maxEventsPerRun))) : run
+    guard let data = try? encoder.encode(normalized.events) else { return }
+    var ids = runIds().filter { $0 != runId }
+    ids.append(runId)
+    let retainedRunIds = Array(ids.suffix(Self.maxRuns))
+    let staleRunIds = Set(ids).subtracting(retainedRunIds)
+    var recoverable = recoverableRunIds().filter {
       $0 != runId && !staleRunIds.contains($0)
     }
-    if !state.isTerminal { recoverable.append(runId) }
-    let retainedRecoverable = Array(recoverable.suffix(Self.maxRecoverableRuns))
-    cachedRunIds = retainedRunIds
-    cachedRecoverableRunIds = retainedRecoverable
-    if let data = try? encoder.encode(normalized) {
-      defaults.set(data, forKey: eventKey(runId))
-    }
-    staleRunIds.forEach {
-      cachedEventsByRunId.removeValue(forKey: $0)
-      defaults.removeObject(forKey: eventKey($0))
-    }
-    persistIndexesLocked()
+    if !normalized.state.isTerminal { recoverable.append(runId) }
+    defaults.set(data, forKey: eventKey(runId))
+    cache(normalized, data: data, id: runId)
+    staleRunIds.forEach { defaults.removeObject(forKey: eventKey($0)) }
+    persistIndexes(runIds: retainedRunIds, recoverable: Array(recoverable.suffix(Self.maxRecoverableRuns)))
   }
 
-  private func persistIndexesLocked() {
-    if let data = try? encoder.encode(runIdsLocked()) {
+  private func persistIndexes(runIds: [String], recoverable: [String]) {
+    if let data = try? encoder.encode(runIds) {
       defaults.set(data, forKey: runIdsKey)
     }
-    if let data = try? encoder.encode(recoverableRunIdsLocked()) {
+    if let data = try? encoder.encode(recoverable) {
       defaults.set(data, forKey: recoverableRunIdsKey)
     }
   }
 
-  private func runIdsLocked() -> [String] {
-    if let cachedRunIds { return cachedRunIds }
-    let decoded = decodeStrings(defaults.data(forKey: runIdsKey))
-    cachedRunIds = decoded
-    return decoded
+  private func runIds() -> [String] {
+    decodeStrings(defaults.data(forKey: runIdsKey))
   }
 
-  private func recoverableRunIdsLocked() -> [String] {
-    if let cachedRecoverableRunIds { return cachedRecoverableRunIds }
-    let decoded = decodeStrings(defaults.data(forKey: recoverableRunIdsKey))
-    cachedRecoverableRunIds = decoded
-    return decoded
+  private func recoverableRunIds() -> [String] {
+    decodeStrings(defaults.data(forKey: recoverableRunIdsKey))
   }
 
   private func decodeStrings(_ data: Data?) -> [String] {
     guard let data else { return [] }
-    return (try? decoder.decode([String].self, from: data)) ?? []
+    return (try? JSONDecoder().decode([String].self, from: data)) ?? []
   }
 
   private func eventKey(_ runId: String) -> String {

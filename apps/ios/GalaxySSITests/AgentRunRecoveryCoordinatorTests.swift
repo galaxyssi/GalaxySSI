@@ -81,6 +81,71 @@ final class AgentRunRecoveryCoordinatorTests: XCTestCase {
     XCTAssertNil(second.appendRecoveryIfCurrent(resumed, expectedSequence: advanced.sequence + 1))
   }
 
+  func testIndexedReadsSeeCrossInstanceCommitsAndPreserveNestedReplayPayloads() throws {
+    let suite = "run-index-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let reader = UserDefaultsAgentRunEventStore(defaults: defaults)
+    let writer = UserDefaultsAgentRunEventStore(defaults: defaults)
+    let started = writer.appendNext(runEvent(type: .runStarted, sequence: 0))
+    XCTAssertEqual(reader.latestEvent(runId: started.runId), started)
+    var event = started
+    event.eventId = "stable-progress"
+    event.idempotencyKey = "stable-progress"
+    event.actionId = "progress-action"
+    event.type = .toolProgress
+    event.payload = ["details": .object(["values": .array([.int(42), .double(0.25), .null, .bool(false)])])]
+    let committed = writer.appendNext(event)
+    XCTAssertTrue(reader.containsIdempotencyKey(runId: started.runId, key: event.idempotencyKey))
+    XCTAssertEqual(reader.snapshot(runId: started.runId)?.lastEvent, committed)
+
+    var replay = event
+    replay.eventId = "different-transport-id"
+    replay.payload = ["details": .object(["values": .array([.double(42.0), .double(0.25), .null, .bool(false)])])]
+    XCTAssertEqual(reader.appendNext(replay), committed)
+    replay.payload = ["details": .object(["values": .array([.string("42"), .double(0.25), .null, .bool(false)])])]
+    XCTAssertFalse(AgentRunKernelContract.isIdempotentReplay(committed, replay))
+    XCTAssertEqual(reader.events(runId: started.runId), [started, committed])
+    writer.removeRuns([started.runId])
+    XCTAssertNil(reader.snapshot(runId: started.runId))
+    XCTAssertFalse(reader.containsIdempotencyKey(runId: started.runId, key: event.idempotencyKey))
+  }
+
+  func testSnapshotReadDoesNotWaitForLedgerWriter() async throws {
+    let suite = "run-read-contention-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(BlockingLedgerDefaults(suiteName: suite))
+    let entered = expectation(description: "writer paused before publishing")
+    let read = expectation(description: "reader got last committed run")
+    let written = expectation(description: "writer completed")
+    let release = DispatchSemaphore(value: 0)
+    let ledger = UserDefaultsAgentRunEventStore(defaults: defaults)
+    let started = ledger.appendNext(runEvent(type: .runStarted, sequence: 0))
+    var progress = started
+    progress.type = .toolProgress
+    progress.eventId = "next-progress"
+    progress.idempotencyKey = progress.eventId
+    let next = progress
+    defaults.beforeSet = { key in
+      guard key.hasSuffix(".run." + started.runId) else { return }
+      entered.fulfill()
+      _ = release.wait(timeout: .now() + 5)
+    }
+    defer { defaults.removePersistentDomain(forName: suite) }
+    DispatchQueue.global().async {
+      _ = ledger.appendNext(next)
+      written.fulfill()
+    }
+    await fulfillment(of: [entered], timeout: 2)
+    DispatchQueue.global().async {
+      XCTAssertEqual(ledger.snapshot(runId: started.runId)?.lastEvent, started)
+      read.fulfill()
+    }
+    await fulfillment(of: [read], timeout: 2)
+    release.signal()
+    await fulfillment(of: [written], timeout: 2)
+    XCTAssertEqual(ledger.latestEvent(runId: started.runId)?.eventId, next.eventId)
+  }
+
   private func deliveryWorkspace() -> AgentWorkspace {
     AgentWorkspace(
       workspaceId: "turn-1", sessionId: "session-1", conversationId: "conversation-1",
@@ -355,6 +420,15 @@ final class AgentRunRecoveryCoordinatorTests: XCTestCase {
       type: type,
       sequence: sequence
     )
+  }
+}
+
+private final class BlockingLedgerDefaults: UserDefaults {
+  var beforeSet: ((String) -> Void)?
+
+  override func set(_ value: Any?, forKey defaultName: String) {
+    beforeSet?(defaultName)
+    super.set(value, forKey: defaultName)
   }
 }
 

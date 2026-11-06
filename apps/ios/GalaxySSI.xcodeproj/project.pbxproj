@@ -531,6 +531,9 @@
     A10000000000000000000737 /* voice in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000737 /* voice */; };
     C90000000000000000000001 /* local-models in Resources */ = {isa = PBXBuildFile; fileRef = C90000000000000000000002 /* local-models */; };
     D10000000000000000000001 /* runtime-bootstrap in Resources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000001 /* runtime-bootstrap */; };
+    F35620000000000000000001 /* browser-session-engine.cjs in Resources */ = {isa = PBXBuildFile; fileRef = F35620000000000000000011 /* browser-session-engine.cjs */; };
+    F35620000000000000000002 /* browser-runtime-readiness.cjs in Resources */ = {isa = PBXBuildFile; fileRef = F35620000000000000000012 /* browser-runtime-readiness.cjs */; };
+    F35620000000000000000003 /* AgentIOSBrowserRuntimeReadiness.swift in Sources */ = {isa = PBXBuildFile; fileRef = F35620000000000000000013 /* AgentIOSBrowserRuntimeReadiness.swift */; };
     A10000000000000000000738 /* VoiceWhisperBenchmarkDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000738 /* VoiceWhisperBenchmarkDefaults.swift */; };
     A10000000000000000000739 /* VoiceWhisperBenchmarkDefaultsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000739 /* VoiceWhisperBenchmarkDefaultsTests.swift */; };
     A10000000000000000000740 /* VoiceWhisperBenchmarkDetailsPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000740 /* VoiceWhisperBenchmarkDetailsPresenter.swift */; };
@@ -1719,6 +1722,9 @@
     A20000000000000000000737 /* voice */ = {isa = PBXFileReference; lastKnownFileType = folder; path = voice; sourceTree = "<group>"; };
     C90000000000000000000002 /* local-models */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "local-models"; sourceTree = "<group>"; };
     D20000000000000000000001 /* runtime-bootstrap */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "runtime-bootstrap"; sourceTree = "<group>"; };
+    F35620000000000000000011 /* browser-session-engine.cjs */ = {isa = PBXFileReference; lastKnownFileType = text; path = "../../tools/runtime/browser-session-engine.cjs"; sourceTree = SOURCE_ROOT; };
+    F35620000000000000000012 /* browser-runtime-readiness.cjs */ = {isa = PBXFileReference; lastKnownFileType = text; path = "../../tools/runtime/browser-runtime-readiness.cjs"; sourceTree = SOURCE_ROOT; };
+    F35620000000000000000013 /* AgentIOSBrowserRuntimeReadiness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSBrowserRuntimeReadiness.swift; sourceTree = "<group>"; };
     A20000000000000000000738 /* VoiceWhisperBenchmarkDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperBenchmarkDefaults.swift; sourceTree = "<group>"; };
     A20000000000000000000739 /* VoiceWhisperBenchmarkDefaultsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperBenchmarkDefaultsTests.swift; sourceTree = "<group>"; };
     A20000000000000000000740 /* VoiceWhisperBenchmarkDetailsPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperBenchmarkDetailsPresenter.swift; sourceTree = "<group>"; };
@@ -2494,6 +2500,9 @@
         A20000000000000000000737 /* voice */,
         C90000000000000000000002 /* local-models */,
         D20000000000000000000001 /* runtime-bootstrap */,
+        F35620000000000000000011 /* browser-session-engine.cjs */,
+        F35620000000000000000012 /* browser-runtime-readiness.cjs */,
+        F35620000000000000000013 /* AgentIOSBrowserRuntimeReadiness.swift */,
         A20000000000000000000704 /* AgentTaskExecutionMode.swift */,
         A20000000000000000000705 /* AgentSafetySettings.swift */,
         A20000000000000000000707 /* AgentDirectActionContext.swift */,
@@ -3700,7 +3709,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (E36400000000000000000003 /* vad in Resources */, A10000000000000000000737 /* voice in Resources */, C90000000000000000000001 /* local-models in Resources */, D10000000000000000000001 /* runtime-bootstrap in Resources */, F12660000000000000000002 /* mermaid in Resources */, F12660000000000000000003 /* licenses in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */, A10000000000000000000467 /* trust-anchors.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
+    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (E36400000000000000000003 /* vad in Resources */, A10000000000000000000000000737 /* voice in Resources */, C90000000000000000000001 /* local-models in Resources */, D10000000000000000000001 /* runtime-bootstrap in Resources */, F35620000000000000000001 /* browser-session-engine.cjs in Resources */, F35620000000000000000002 /* browser-runtime-readiness.cjs in Resources */, F12660000000000000000002 /* mermaid in Resources */, F12660000000000000000003 /* licenses in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */, A10000000000000000000467 /* trust-anchors.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
     A70000000000000000000002 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
@@ -4234,6 +4243,7 @@
         A10000000000000000000447 /* AgentIOSURLSessionWebIntelligenceProvider.swift in Sources */,
         A10000000000000000000901 /* AgentIOSWebIntelligenceCache.swift in Sources */,
         A10000000000000000000448 /* AgentIOSDefaultOnDeviceRuntimeProvider.swift in Sources */,
+        F35620000000000000000003 /* AgentIOSBrowserRuntimeReadiness.swift in Sources */,
         A10000000000000000002201 /* AgentIOSRuntimeBroker.swift in Sources */,
         B90000000000000000000001 /* AgentIOSQemuRuntime.swift in Sources */,
         B90000000000000000000003 /* AgentIOSQemuLinuxSoftware.swift in Sources */,

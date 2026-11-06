@@ -71,7 +71,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
   ) -> AgentNativeToolExecutionResult {
     switch operation {
     case .status:
-      return inspectBroker(invocation)
+      return input["verify_browser"]?.boolValue == true ? verifyBrowser(invocation) : inspectBroker(invocation)
     case .workspaceStatus:
       return workspaceStatus(invocation)
     case .workspaceRollback:
@@ -634,13 +634,46 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
       "id": .string(language.rawValue),
       "required_pack": .string(language.requiredPack),
       "required_capability": .string(language.requiredCapability),
-      "ready": .bool(backendReady && packReady),
+      "ready": .bool(language != .browser && backendReady && packReady),
       "pack_ready": .bool(packReady)
     ]
   }
 
   private func runtimeSetupReason() -> String {
     broker.availability().reason.ifBlank("The embedded iOS Linux runtime is unavailable.")
+  }
+
+  private func verifyBrowser(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    let readiness = AgentIOSBrowserRuntimeReadiness.self
+    let pack = cachedPackStatus(AgentRuntimeLanguage.browser.requiredPack)
+    guard pack.state == .ready,
+          pack.manifest?.capabilities.contains(AgentRuntimeLanguage.browser.requiredCapability) == true else {
+      return readiness.failure("browser_pack_not_ready")
+    }
+    guard availability(operation: .execute).status == .available else {
+      return readiness.failure("browser_readiness_unobserved")
+    }
+    guard let source = readiness.source() else { return readiness.failure("browser_probe_setup_failed") }
+    if let failure = brokerReadinessFailure(invocation) { return failure }
+    var context = invocation.context
+    let workspace = "browser-probe-" + UUID().uuidString.lowercased()
+    context.attributes["workspace_id"] = workspace
+    do {
+      let output = try broker.invoke(operation: .execute, input: [
+        "language": .string("shell"), "source": .string(source), "timeout_ms": .int(95_000),
+        "network_enabled": .bool(false)
+      ], context: context, deadlineEpochMillis: invocation.deadlineEpochMillis)
+      try? fileManager.removeItem(at: runtimeRootURL.appendingPathComponent("projects", isDirectory: true)
+        .appendingPathComponent(workspace, isDirectory: true))
+      var result = readiness.interpret(output)
+      if result.isSuccess {
+        result.output["backend"] = .string(broker.implementationId)
+        result.output["observed_at_epoch_ms"] = .int(max(0, nowMillis()))
+      }
+      return result
+    } catch {
+      return readiness.failure("browser_readiness_unobserved")
+    }
   }
 
   private func inspectBroker(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {

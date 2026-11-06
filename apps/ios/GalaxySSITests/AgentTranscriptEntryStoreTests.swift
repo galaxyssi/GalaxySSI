@@ -53,7 +53,8 @@ final class AgentTranscriptEntryStoreTests: XCTestCase {
     let earlier = ChatMessage(contactId: "hermes", content: "earlier", isMine: true, conversationId: "a")
     let page = GalaxySSIChatHistoryPage(messages: [latest], nextCursor: nil, hasMore: true)
     let observer = window.$snapshot.sink { snapshot in
-      if snapshot.loadedLimit == 1 { firstPage.fulfill() }
+      if snapshot.loadedLimit == 1 && snapshot.messages == [earlier] { XCTFail("Superseded page was published") }
+      if snapshot.loadedLimit == 1 && snapshot.messages == [latest] { firstPage.fulfill() }
       if snapshot.loadedLimit == 2 { older.fulfill() }
     }
     defer { observer.cancel(); window.clear() }
@@ -71,7 +72,7 @@ final class AgentTranscriptEntryStoreTests: XCTestCase {
     await fulfillment(of: [started], timeout: 2)
     window.requestRefresh()
     window.requestRefresh()
-    first?.resume(returning: page)
+    first?.resume(returning: .init(messages: [earlier], nextCursor: nil, hasMore: false))
     await fulfillment(of: [firstPage, refresh], timeout: 2)
     XCTAssertTrue(window.loadOlder(pageSize: 1))
     XCTAssertFalse(window.loadOlder(pageSize: 1))
