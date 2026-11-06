@@ -2,6 +2,94 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentRunRecoveryCoordinatorTests: XCTestCase {
+  func testLegacyDeviceCheckpointNeverReachesRecoveryOrInspectionAdapters() async throws {
+    let legacy = deviceOperationEvent(conversation: "checkpoint-owner", type: .checkpointSaved)
+    XCTAssertEqual(legacy.runId, "device-operation:ce858aedf9fc93591f2a2e2bb5f542c1b4d07c617678df8391c03937ca245a34")
+    let events = RecoveryRunControlStore(event: legacy)
+    let workspaces = InMemoryAgentWorkspaceStore()
+    let recovery = AgentRunRecoveryCoordinator(runStore: events, workspaceStore: workspaces,
+      recordedRun: { _ in XCTFail("Observation-only state must not resolve an executable run"); return nil },
+      registration: { _, _ in XCTFail("Observation-only state must not resolve a registration"); return nil },
+      adapterResolver: { _ in XCTFail("Observation-only state must not resolve an adapter"); return nil })
+    let recovered = try await recovery.recover()
+    let inspected = try await recovery.inspect()
+    XCTAssertTrue(recovered.isEmpty)
+    XCTAssertTrue(inspected.isEmpty)
+    XCTAssertTrue(events.appended.isEmpty)
+    XCTAssertTrue(workspaces.list().isEmpty)
+    var foreign = legacy
+    foreign.conversationId = "another-conversation"
+    XCTAssertFalse(AgentRunRecoveryPolicy.isObservationOnly(foreign))
+    XCTAssertFalse(AgentDeviceOperationCheckpoint.isSnapshot(runEvent(type: .checkpointSaved, sequence: 1)))
+  }
+
+  func testCheckpointWriteRepairsOnlyPersistedSyntheticFailureAndKeepsReceipts() throws {
+    let suite = "device-checkpoint-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let storage = "device-checkpoint-fixture"
+    let ledger = UserDefaultsAgentRunEventStore(defaults: defaults, storageKey: storage)
+    let legacy = try XCTUnwrap(AgentRunKernelContract.canonical(
+      deviceOperationEvent(conversation: "checkpoint-owner", type: .checkpointSaved)))
+    var synthetic = legacy
+    synthetic.eventId = "legacy-recovery-failure"
+    synthetic.idempotencyKey = synthetic.eventId
+    synthetic.sequence = 2
+    synthetic.type = .runFailed
+    synthetic.payload["reason"] = .string("interrupted_run_cannot_be_replayed_safely")
+    synthetic.payload["replay_safe"] = .bool(false)
+    let key = storage + ".run." + legacy.runId
+    defaults.set(try JSONEncoder().encode([legacy, synthetic]), forKey: key)
+    XCTAssertEqual(ledger.snapshot(runId: legacy.runId)?.state, .failed)
+
+    var next = legacy
+    next.eventId = "next-checkpoint"
+    next.idempotencyKey = next.eventId
+    next.sequence = 0
+    next.payload["updated_at"] = .int(300)
+    let repaired = ledger.appendNext(next)
+    XCTAssertEqual(repaired.type, .runRecovered)
+    XCTAssertEqual(repaired.sequence, 3)
+    XCTAssertEqual(repaired.payload["operation_id"], legacy.payload["operation_id"])
+    XCTAssertEqual(repaired.payload["status"], .string("completed"))
+    XCTAssertEqual(repaired.payload["evidence"], legacy.payload["evidence"])
+    XCTAssertEqual(repaired.payload["recovery_mode"], .string("observation_only"))
+    XCTAssertNil(repaired.payload["replay_safe"])
+    XCTAssertEqual(ledger.appendNext(next), repaired)
+
+    let reopened = UserDefaultsAgentRunEventStore(defaults: defaults, storageKey: storage)
+    XCTAssertEqual(reopened.events(runId: legacy.runId), [legacy, synthetic, repaired])
+    var stale = next
+    stale.eventId = "stale-checkpoint"
+    stale.idempotencyKey = stale.eventId
+    stale.payload["updated_at"] = .int(100)
+    XCTAssertEqual(reopened.appendNext(stale), repaired)
+
+    let foreign = deviceOperationEvent(conversation: "other-checkpoint", type: .checkpointSaved)
+    XCTAssertEqual(reopened.appendNext(foreign).sequence, 1)
+    for (type, reason) in [(AgentRunControlEventType.runCancelled, "user_cancelled"), (.runFailed, "real_failure")] {
+      var terminal = synthetic
+      terminal.type = type
+      terminal.payload["reason"] = .string(reason)
+      defaults.set(try JSONEncoder().encode([legacy, terminal]), forKey: key)
+      XCTAssertTrue(reopened.appendNextAll([next]).isEmpty)
+      XCTAssertEqual(reopened.appendNext(next), terminal)
+      var unsolicited = next
+      unsolicited.type = .runRecovered
+      XCTAssertEqual(reopened.appendNext(unsolicited), terminal)
+      XCTAssertEqual(reopened.latestEvent(runId: foreign.runId)?.payload["operation_id"], foreign.payload["operation_id"])
+    }
+  }
+
+  private func deviceOperationEvent(conversation: String, type: AgentRunControlEventType) -> AgentRunControlEvent {
+    let run = AgentDeviceOperationCheckpoint.runId(conversationId: conversation)
+    return AgentRunControlEvent(eventId: run + ":checkpoint", conversationId: conversation, messageId: "",
+      taskId: run, runId: run, agentId: "phone-operation", deviceId: "local", type: type, sequence: 1,
+      timestampMillis: 200, payload: ["snapshot_kind": .string("device_operation"),
+        "operation_id": .string("original-operation"), "kind": .string("agent"), "status": .string("completed"),
+        "updated_at": .int(200), "evidence": .string("original receipt")])
+  }
+
   func testTerminalDeliveryFailureStopsRecoveryBeforeResolvingAdapter() async throws {
     let workspaces = InMemoryAgentWorkspaceStore(clock: { 1_000 })
     _ = try workspaces.upsert(deliveryWorkspace())

@@ -27,7 +27,7 @@ final class UserDefaultsAgentRunEventStore: AgentRunEventPersistence {
     self.storageKey = storageKey
   }
 
-  func appendNext(_ event: AgentRunControlEvent) -> AgentRunControlEvent {
+  private func appendPreparedNext(_ event: AgentRunControlEvent) -> AgentRunControlEvent {
     lock.lock()
     defer { lock.unlock() }
     invalidateWriteCache()
@@ -57,7 +57,7 @@ final class UserDefaultsAgentRunEventStore: AgentRunEventPersistence {
     return sequenced
   }
 
-  func appendNextAll(_ events: [AgentRunControlEvent]) -> [AgentRunControlEvent] {
+  private func appendPreparedBatch(_ events: [AgentRunControlEvent]) -> [AgentRunControlEvent] {
     let canonicalEvents = events.compactMap(AgentRunKernelContract.canonical)
     guard canonicalEvents.count == events.count,
           let first = canonicalEvents.first,
@@ -276,6 +276,56 @@ final class UserDefaultsAgentRunEventStore: AgentRunEventPersistence {
 
   private func clean(_ value: String) -> String {
     value.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  func appendNext(_ event: AgentRunControlEvent) -> AgentRunControlEvent {
+    guard let candidate = AgentRunKernelContract.canonical(event),
+          candidate.runId.hasPrefix(AgentDeviceOperationCheckpoint.runPrefix) else { return appendPreparedNext(event) }
+    lock.lock()
+    defer { lock.unlock() }
+    let history = deviceOperationHistory(runId: candidate.runId)
+    guard AgentDeviceOperationCheckpoint.ownsRun(candidate) else { return history.last ?? event }
+    if let existing = history.first(where: {
+      $0.eventId == candidate.eventId || $0.idempotencyKey == candidate.idempotencyKey
+    }), AgentDeviceOperationCheckpoint.replayMatches(existing, candidate) { return existing }
+    guard let prepared = AgentDeviceOperationCheckpoint.preparingForAppend(candidate, after: history.last)
+    else { return history.last ?? event }
+    return appendPreparedNext(prepared)
+  }
+
+  func appendNextAll(_ events: [AgentRunControlEvent]) -> [AgentRunControlEvent] {
+    guard let first = events.first.flatMap(AgentRunKernelContract.canonical),
+          first.runId.hasPrefix(AgentDeviceOperationCheckpoint.runPrefix) else { return appendPreparedBatch(events) }
+    let canonical = events.compactMap(AgentRunKernelContract.canonical)
+    guard canonical.count == events.count,
+          canonical.allSatisfy({ AgentDeviceOperationCheckpoint.ownsRun($0) &&
+            AgentRunKernelContract.hasSameRoot(first, $0) }) else { return [] }
+    lock.lock()
+    defer { lock.unlock() }
+    let history = deviceOperationHistory(runId: first.runId)
+    var last = history.last
+    var ids = Set(history.map(\.eventId))
+    var keys = Set(history.map(\.idempotencyKey))
+    var state = history.reduce(AgentRunControlState.created) { AgentRunEventStore.reduce(current: $0, event: $1.type) }
+    var batch: [AgentRunControlEvent] = []
+    for candidate in canonical {
+      guard !ids.contains(candidate.eventId), !keys.contains(candidate.idempotencyKey),
+            let event = AgentDeviceOperationCheckpoint.preparingForAppend(candidate, after: last),
+            !state.isTerminal || event.type == .runRecovered else { continue }
+      ids.insert(event.eventId)
+      keys.insert(event.idempotencyKey)
+      state = AgentRunEventStore.reduce(current: state, event: event.type)
+      last = event
+      batch.append(event)
+    }
+    return appendPreparedBatch(batch)
+  }
+
+  private func deviceOperationHistory(runId: String) -> [AgentRunControlEvent] {
+    // Read the committed value under the writer lock, not an instance's potentially older cache.
+    guard let data = defaults.data(forKey: eventKey(runId)),
+          let events = try? JSONDecoder().decode([AgentRunControlEvent].self, from: data) else { return [] }
+    return events.compactMap(AgentRunKernelContract.canonical).sorted { $0.sequence < $1.sequence }
   }
 
   private static let maxRuns = 500

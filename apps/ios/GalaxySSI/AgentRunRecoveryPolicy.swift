@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 struct AgentRunRecoveryRegistration: Codable, Equatable {
@@ -193,6 +194,12 @@ enum AgentRunEventStore {
 }
 
 enum AgentRunRecoveryPolicy {
+  static func isObservationOnly(_ event: AgentRunControlEvent) -> Bool {
+    event.payload["recovery_mode"] == .string("observation_only") ||
+      event.payload["observation_only"]?.boolValue == true ||
+      AgentDeviceOperationCheckpoint.isSnapshot(event)
+  }
+
   static func decide(
     snapshot: AgentRunControlSnapshot,
     recordedRun: AgentRecordedRun?,
@@ -230,4 +237,66 @@ enum AgentRunRecoveryPolicy {
     .cliJson,
     .stdio
   ]
+}
+
+enum AgentDeviceOperationCheckpoint {
+  static let runPrefix = "device-operation:"
+
+  static func runId(conversationId: String) -> String {
+    let bytes = Data(AgentMcpJSONCodec.stringify(.string(conversationId)).utf8)
+    let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+    return runPrefix + digest
+  }
+
+  static func isSnapshot(_ event: AgentRunControlEvent) -> Bool {
+    guard event.payload["snapshot_kind"] == .string("device_operation"),
+          case .string(let operationId)? = event.payload["operation_id"], !operationId.isBlank
+    else { return false }
+    return ownsRun(event)
+  }
+
+  static func ownsRun(_ event: AgentRunControlEvent) -> Bool {
+    event.agentId == "phone-operation" && event.deviceId == "local" && !event.conversationId.isBlank &&
+      event.taskId == event.runId && event.messageId.isBlank &&
+      event.runId == runId(conversationId: event.conversationId)
+  }
+
+  static func isMisclassifiedFailure(_ event: AgentRunControlEvent) -> Bool {
+    isSnapshot(event) && event.type == .runFailed && event.payload["replay_safe"] == .bool(false) &&
+      event.payload["reason"] == .string("interrupted_run_cannot_be_replayed_safely") &&
+      event.payload["status"] != .string("cancelled")
+  }
+
+  static func preparingForAppend(
+    _ event: AgentRunControlEvent, after previous: AgentRunControlEvent?
+  ) -> AgentRunControlEvent? {
+    let deviceSnapshot = isSnapshot(event)
+    if event.type == .runRecovered && (ownsRun(event) || previous.map(ownsRun) == true) { return nil }
+    guard deviceSnapshot, event.type == .checkpointSaved else { return event }
+    if let previous, isSnapshot(previous) {
+      if previous.payload["operation_id"] == event.payload["operation_id"],
+         previous.payload["status"] == .string("cancelled"), event.payload["status"] != .string("cancelled") {
+        return nil
+      }
+      if let recordedAt = previous.payload["updated_at"]?.intValue,
+         let candidateAt = event.payload["updated_at"]?.intValue, candidateAt < recordedAt { return nil }
+    }
+    var checkpoint = event
+    checkpoint.payload["recovery_mode"] = .string("observation_only")
+    // Only a new checkpoint can repair the old synthetic failure; no operation is reissued.
+    if let previous, isMisclassifiedFailure(previous) {
+      guard event.payload["status"] != .string("cancelled") else { return nil }
+      checkpoint.type = .runRecovered
+    }
+    return checkpoint
+  }
+
+  static func replayMatches(_ existing: AgentRunControlEvent, _ checkpoint: AgentRunControlEvent) -> Bool {
+    var replay = checkpoint
+    if checkpoint.type == .checkpointSaved && isSnapshot(checkpoint) {
+      replay.payload["recovery_mode"] = .string("observation_only")
+      if existing.type == .runRecovered && isSnapshot(existing) { replay.type = .runRecovered }
+    }
+    return AgentRunKernelContract.isIdempotentReplay(existing, replay)
+  }
 }
