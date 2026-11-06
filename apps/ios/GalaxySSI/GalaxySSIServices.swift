@@ -170,15 +170,7 @@ final class MessageCoordinator: ObservableObject {
       )
     }
     let reminderTool = try? VoiceReminderNativeTool.executable { [weak settingsStore] context in
-      let load: @MainActor () -> VoiceReminderSnapshot? = {
-        guard let settingsStore, settingsStore.canReadVoiceReminderSnapshot,
-              UIApplication.shared.applicationState == .active,
-              let session = settingsStore.agentSession(id: context.conversationId.ifBlank(context.sessionId)),
-              session.status == .active, !session.privateMode, !session.trackingPaused else { return nil }
-        return settingsStore.voiceReminderSnapshot(calendar: VoiceReminderSnapshot.calendarRows())
-      }
-      if Thread.isMainThread { return MainActor.assumeIsolated { load() } }
-      return DispatchQueue.main.sync { load() }
+      VoiceReminderNativeTool.loadSnapshot(store: settingsStore, context: context)
     }
     guard let runtime = try? AgentPhoneNativeToolCatalog.defaultRuntime(
       actionExecutor: controlPlaneExecutor,

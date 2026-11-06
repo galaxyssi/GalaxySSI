@@ -540,10 +540,12 @@ struct GalaxySSIVoiceTabView: View {
 
   @MainActor
   private func loadVoiceReminders() async {
-    let calendarRead = Task.detached(priority: .utility) { VoiceReminderSnapshot.calendarRows() }
-    let calendar = await calendarRead.value
+    let read = Task.detached(priority: .utility) {
+      (VoiceReminderSnapshot.calendarRows(), PublicNewsArchive.readReminderUnreadCount())
+    }
+    let (calendar, unreadNewsCount) = await read.value
     guard !Task.isCancelled, showsVoiceReminders else { return }
-    reminderSnapshot = store.voiceReminderSnapshot(calendar: calendar)
+    reminderSnapshot = store.voiceReminderSnapshot(calendar: calendar, unreadNewsCount: unreadNewsCount)
   }
 
   private var reminderSection: some View {

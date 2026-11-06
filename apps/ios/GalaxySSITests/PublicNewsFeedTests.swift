@@ -203,6 +203,51 @@ final class PublicNewsFeedTests: XCTestCase {
   private let now = Date(timeIntervalSince1970: 1_800_000_000)
   private let source = PublicNewsSource(publisher: "Fixture", url: URL(string: "https://example.com/feed/")!)
 
+  @MainActor
+  func testUnreadMetadataCoexistsWithLegacyArchiveAndTracksReadAndHiddenArticles() throws {
+    struct LegacySnapshot: Codable {
+      let articles: [PublicNewsArticle]
+      let notRelevantIDs: Set<String>
+    }
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    func article(_ name: String) throws -> PublicNewsArticle {
+      PublicNewsArticle(url: try XCTUnwrap(URL(string: "https://example.com/\(name)")), title: name,
+        summary: String(repeating: "Summary ", count: 2048), publisher: "Fixture", discoveredAt: now, saved: true)
+    }
+    let first = try article("first")
+    let second = try article("second")
+    let hidden = try article("hidden")
+    XCTAssertEqual(PublicNewsArchive.readReminderUnreadCount(fileURL: file, allowLegacy: false), 0)
+    let fixture = LegacySnapshot(articles: [first, second, hidden], notRelevantIDs: [hidden.id])
+    try JSONEncoder().encode(fixture).write(to: file)
+    XCTAssertNil(PublicNewsArchive.readReminderUnreadCount(fileURL: file, allowLegacy: false))
+    XCTAssertEqual(PublicNewsArchive.readReminderUnreadCount(fileURL: file), 2)
+
+    let archive = PublicNewsArchive(fileURL: file)
+    archive.load()
+    archive.markRead(first.id)
+    XCTAssertEqual(archive.reminderUnreadCount, 1)
+    XCTAssertEqual(PublicNewsArchive.readReminderUnreadCount(fileURL: file, allowLegacy: false), 1)
+    let rewritten = try JSONDecoder().decode(LegacySnapshot.self, from: Data(contentsOf: file))
+    XCTAssertEqual(rewritten.articles.map(\.read), [true, false, false])
+    XCTAssertEqual(rewritten.articles.map(\.saved), [true, true, true])
+    XCTAssertEqual(rewritten.articles.map(\.summary), fixture.articles.map(\.summary))
+    XCTAssertEqual(rewritten.notRelevantIDs, [hidden.id])
+
+    XCTAssertTrue(archive.markNotRelevant(second.id))
+    XCTAssertEqual(archive.reminderUnreadCount, 0)
+    XCTAssertEqual(PublicNewsArchive.readReminderUnreadCount(fileURL: file, allowLegacy: false), 0)
+  }
+
+  func testUnreadMetadataDoesNotTreatTruncatedOrCorruptArchiveAsEmpty() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    try Data("{\"unreadCountV1\":9,\n\"articles\":".utf8).write(to: file)
+    XCTAssertNil(PublicNewsArchive.readReminderUnreadCount(fileURL: file, allowLegacy: false))
+    XCTAssertNil(PublicNewsArchive.readReminderUnreadCount(fileURL: file))
+  }
+
   func testRSSSkipsUnsafeLinksAndDuplicateAnchorsButKeepsOtherArticles() throws {
     let xml = """
       <rss version="2.0"><channel>
