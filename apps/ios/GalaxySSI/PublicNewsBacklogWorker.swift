@@ -130,7 +130,6 @@ final class PublicNewsBacklogWorker: ObservableObject {
   }
 
   private static var canWork: Bool {
-    let process = ProcessInfo.processInfo
-    return !process.isLowPowerModeEnabled && process.thermalState != .serious && process.thermalState != .critical
+    AgentIOSBackgroundLoad.current().deferSeconds == 0
   }
 }

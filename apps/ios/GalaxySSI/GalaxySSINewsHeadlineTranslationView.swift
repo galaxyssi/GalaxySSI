@@ -28,7 +28,7 @@ struct GalaxySSINewsHeadlineTranslationView: View {
         ProgressView(value: Double(work.processed), total: Double(max(1, work.total)))
       }
       if work.deferred {
-        Text(t("public_news_headline_deferred", "Translation is paused while the device is hot or in Low Power Mode."))
+        Text(t("public_news_headline_deferred", "Translation is paused while the device is hot, low on battery, or in Low Power Mode."))
           .foregroundColor(.secondary)
       } else if let result = work.result {
         Text(String(format: t("public_news_headline_translation_result", "%d translated, %d unchanged"), result.saved, result.skipped))
@@ -98,7 +98,14 @@ private final class NewsHeadlineTranslationBatch: ObservableObject {
     }
     for article in candidates {
       guard !Task.isCancelled, generation == operation else { return }
-      guard PublicNewsHeadlineTranslator.deviceAllowsTranslation else { deferred = true; return }
+      let load = AgentIOSBackgroundLoad.current()
+      guard load.deferSeconds == 0 else { deferred = true; return }
+      if processed > 0, load.spacing > 1 {
+        do { try await Task.sleep(nanoseconds: UInt64(load.spacing * 1_000_000_000)) }
+        catch { return }
+        guard generation == operation, !Task.isCancelled else { return }
+        guard PublicNewsHeadlineTranslator.deviceAllowsTranslation else { deferred = true; return }
+      }
       var provider = PublicNewsHeadlineTranslation.Provider.apple
       var translation: String?
       if let system, let output = try? await system(article.title) {

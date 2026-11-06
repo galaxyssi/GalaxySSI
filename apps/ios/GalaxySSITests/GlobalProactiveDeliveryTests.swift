@@ -2,6 +2,40 @@ import XCTest
 @testable import GalaxySSI
 
 final class GlobalProactiveDeliveryTests: XCTestCase {
+  func testDeliveryWakeKeepsOneSuccessorWhenResultsArriveDuringDelivery() {
+    var state = GlobalProactiveDeliveryWake.State()
+    XCTAssertTrue(state.request())
+    XCTAssertFalse(state.request())
+    state.begin()
+    XCTAssertFalse(state.request())
+    XCTAssertFalse(state.request())
+    XCTAssertTrue(state.end())
+    state.begin()
+    XCTAssertFalse(state.end())
+    XCTAssertTrue(state.request())
+  }
+
+  @MainActor
+  func testBatchPublicationDoesNotRewriteOrWakeForDeliveredReplays() throws {
+    let suite = "proactive-replay-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = GalaxySSIStore(defaults: defaults, secrets: InMemorySecretStore())
+    let original = message(id: "committed")
+    var delivered = original
+    delivered.status = .delivered
+    var wakes = 0
+    let listener = GlobalProactiveDeliveryListener { wakes += 1 }
+    GlobalProactiveDeliveryBus.addListener(listener)
+    defer { GlobalProactiveDeliveryBus.removeListener(listener) }
+    XCTAssertEqual(store.appendGlobalProactiveMessages([delivered, original]).count, 1)
+    XCTAssertEqual(wakes, 1)
+    XCTAssertTrue(store.appendGlobalProactiveMessages([original]).isEmpty)
+    XCTAssertTrue(store.appendGlobalProactiveMessages([]).isEmpty)
+    XCTAssertEqual(store.appendGlobalProactiveMessage(original).status, .delivered)
+    XCTAssertEqual(wakes, 1)
+  }
+
   func testNewsEligibilityDoesNotEnableOrUnpauseLearning() {
     let news = message(id: "attention-feed:news-1")
     let insight = message(id: "world-model:insight")

@@ -154,17 +154,21 @@ final class PublicNewsFeedTests: XCTestCase {
     func data(_ text: String) -> Data { Data(text.utf8) }
     try cursor.accept(type: "put", data: data(#"{"path":"/","data":[101,100]}"#), now: now)
     XCTAssertTrue(cursor.pending.isEmpty)
+    XCTAssertNil(cursor.nextWake(at: now))
     try cursor.accept(type: "patch", data: data(#"{"path":"/","data":{"0":102,"1":101,"2":100}}"#), now: now)
     XCTAssertEqual(cursor.next(at: now), 102)
+    XCTAssertEqual(cursor.nextWake(at: now), now)
     cursor = try JSONDecoder().decode(PublicNewsPushCursor.self, from: JSONEncoder().encode(cursor))
     cursor.deferItem(102, now: now)
     XCTAssertNil(cursor.next(at: now))
+    XCTAssertEqual(cursor.nextWake(at: now), now.addingTimeInterval(10))
     XCTAssertEqual(cursor.next(at: now.addingTimeInterval(11)), 102)
     cursor.complete(102)
     try cursor.accept(type: "put", data: data(#"{"path":"/0","data":null}"#), now: now)
     try cursor.accept(type: "put", data: data(#"{"path":"/","data":[103,102,101,100]}"#), now: now)
     XCTAssertEqual(Set(cursor.pending.keys), [103])
     XCTAssertNil(cursor.next(at: now.addingTimeInterval(PublicNewsPushCursor.retention + 1)))
+    XCTAssertNil(cursor.nextWake(at: now.addingTimeInterval(PublicNewsPushCursor.retention + 1)))
   }
 
   func testInvalidFirebasePatchDoesNotMutateCursor() throws {

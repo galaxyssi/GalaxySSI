@@ -2,6 +2,7 @@ import BackgroundTasks
 import Combine
 import Foundation
 import os
+import UIKit
 
 private let agentIOSCognitionLogger = Logger(
   subsystem: Bundle.main.bundleIdentifier ?? "com.galaxyssi.chat.ios",
@@ -14,6 +15,8 @@ enum AgentIOSCognitionWorkMode: Equatable {
   case scheduled
   case explicit
   case projection
+
+  var usesBackgroundLoadPolicy: Bool { self != .explicit && self != .projection }
 }
 
 struct AgentIOSCognitionWorkPlan: Equatable {
@@ -71,6 +74,10 @@ final class AgentIOSBackgroundCognitionScheduler {
   private var registered = false
   private var settingsObservation: AnyCancellable?
   private var learningWork: (id: UUID, task: Task<Bool, Never>)?
+  private var automaticWake = AgentIOSAutomaticCognitionWake()
+  private var retryWork: Task<Void, Never>?
+  private var retryAt: TimeInterval?
+  private var backgroundWakeAt: Date?
 
   init(store: GalaxySSIStore, coordinator: MessageCoordinator) {
     self.store = store
@@ -115,23 +122,79 @@ final class AgentIOSBackgroundCognitionScheduler {
       activeResearch: research,
       pendingInsights: store.globalProactiveInboxItems(limit: 100).filter { $0.isNew }.count
     )
+    scheduleBackgroundWake(after: Double(delay) / 1_000)
+  }
+
+  private func scheduleBackgroundWake(after delay: TimeInterval) {
+    guard registered, store.globalAgentSettings.enabled else { return }
+    let date = Date(timeIntervalSinceNow: max(1, delay))
+    if let backgroundWakeAt, backgroundWakeAt <= date { return }
     let request = BGAppRefreshTaskRequest(identifier: Self.taskIdentifier)
-    request.earliestBeginDate = Date(timeIntervalSinceNow: Double(delay) / 1_000)
+    request.earliestBeginDate = date
     BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.taskIdentifier)
-    try? BGTaskScheduler.shared.submit(request)
+    do {
+      try BGTaskScheduler.shared.submit(request)
+      backgroundWakeAt = date
+    } catch {
+      backgroundWakeAt = nil
+    }
   }
 
   func requestForegroundCycle() {
     guard store.globalAgentSettings.enabled else { return }
-    _ = startLearning(.foreground)
+    automaticWake.request(.foreground)
+    _ = drainAutomaticWake()
   }
 
   func run(_ mode: AgentIOSCognitionWorkMode) async -> Bool {
     guard !Task.isCancelled, AgentIOSCognitionSchedulePolicy.allows(mode, learningEnabled: store.globalAgentSettings.enabled)
     else { return false }
     if mode == .projection { return await perform(mode) }
-    guard let task = startLearning(mode) else { return false }
+    let task: Task<Bool, Never>?
+    if mode.usesBackgroundLoadPolicy {
+      automaticWake.request(mode)
+      task = drainAutomaticWake(allowInBackground: mode == .scheduled)
+      if task == nil {
+        if mode == .scheduled, learningWork != nil { scheduleBackgroundWake(after: 60) }
+        return true
+      }
+    } else {
+      task = startLearning(mode)
+    }
+    guard let task else { return false }
     return await withTaskCancellationHandler(operation: { await task.value }, onCancel: { task.cancel() })
+  }
+
+  private func drainAutomaticWake(allowInBackground: Bool = false) -> Task<Bool, Never>? {
+    guard store.globalAgentSettings.enabled, automaticWake.pending != nil, learningWork == nil else { return nil }
+    let now = ProcessInfo.processInfo.systemUptime
+    let delay = automaticWake.delay(now: now, load: .current())
+    let foreground = UIApplication.shared.applicationState == .active
+    guard delay == 0, foreground || allowInBackground else {
+      scheduleBackgroundWake(after: delay)
+      if foreground { armRetry(at: now + delay) }
+      return nil
+    }
+    guard let mode = automaticWake.take(now: now) else { return nil }
+    retryWork?.cancel()
+    retryWork = nil
+    retryAt = nil
+    return startLearning(mode)
+  }
+
+  private func armRetry(at uptime: TimeInterval) {
+    if let retryAt, retryAt <= uptime { return }
+    retryWork?.cancel()
+    retryAt = uptime
+    retryWork = Task { @MainActor [weak self] in
+      let delay = max(0, uptime - ProcessInfo.processInfo.systemUptime)
+      do { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
+      catch { return }
+      guard let self, !Task.isCancelled, self.retryAt == uptime else { return }
+      self.retryWork = nil
+      self.retryAt = nil
+      _ = self.drainAutomaticWake()
+    }
   }
 
   private func startLearning(_ mode: AgentIOSCognitionWorkMode) -> Task<Bool, Never>? {
@@ -139,7 +202,12 @@ final class AgentIOSBackgroundCognitionScheduler {
     let id = UUID()
     let task = Task { @MainActor [weak self] in
       guard let self else { return false }
-      defer { if self.learningWork?.id == id { self.learningWork = nil } }
+      defer {
+        if self.learningWork?.id == id {
+          self.learningWork = nil
+          _ = self.drainAutomaticWake()
+        }
+      }
       return await self.perform(mode)
     }
     learningWork = (id, task)
@@ -148,11 +216,26 @@ final class AgentIOSBackgroundCognitionScheduler {
 
   private func cancelLearning() {
     learningWork?.task.cancel()
+    automaticWake.clear()
+    retryWork?.cancel()
+    retryWork = nil
+    retryAt = nil
+    backgroundWakeAt = nil
     if registered { BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.taskIdentifier) }
   }
 
   private func mayContinue(_ mode: AgentIOSCognitionWorkMode) -> Bool {
     !Task.isCancelled && AgentIOSCognitionSchedulePolicy.allows(mode, learningEnabled: store.globalAgentSettings.enabled)
+  }
+
+  private func shouldDefer(_ mode: AgentIOSCognitionWorkMode) -> Bool {
+    guard mode.usesBackgroundLoadPolicy else { return false }
+    let load = AgentIOSBackgroundLoad.current()
+    guard load.deferSeconds > 0 else { return false }
+    automaticWake.request(mode)
+    let delay = automaticWake.delay(now: ProcessInfo.processInfo.systemUptime, load: load)
+    scheduleBackgroundWake(after: delay)
+    return true
   }
 
   private func perform(_ mode: AgentIOSCognitionWorkMode) async -> Bool {
@@ -165,6 +248,7 @@ final class AgentIOSBackgroundCognitionScheduler {
       return false
     }
     let plan = AgentIOSCognitionSchedulePolicy.workPlan(mode)
+    if shouldDefer(mode) { return true }
     var projection = AgentIOSObsidianProjectionResult(configured: false)
     if plan.runBatchCognition {
       _ = GalaxySSIGlobalAgentRuntimeBridge.processLongHorizonCycle(store: store)
@@ -181,14 +265,17 @@ final class AgentIOSBackgroundCognitionScheduler {
         }
         _ = await coordinator.runGlobalCognitionCycle()
         guard mayContinue(mode) else { return false }
+        if shouldDefer(mode) { return true }
         _ = await coordinator.runGlobalAutonomousCycle()
         guard mayContinue(mode) else { return false }
+        if shouldDefer(mode) { return true }
         _ = await coordinator.runGlobalResearchCycle()
       }
       guard mayContinue(mode) else { return false }
       _ = store.deliverPendingGlobalProactiveMessages()
     }
     guard mayContinue(mode) else { return false }
+    if shouldDefer(mode) { return true }
     if plan.projectKnowledge {
       projection = AgentIOSObsidianBridge.projectIncrementally(
         appStore: store,
@@ -220,6 +307,7 @@ final class AgentIOSBackgroundCognitionScheduler {
           refresh.setTaskCompleted(success: false)
           return
         }
+        self.backgroundWakeAt = nil
         guard self.store.globalAgentSettings.enabled else {
           refresh.setTaskCompleted(success: true)
           return

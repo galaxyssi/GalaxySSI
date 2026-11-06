@@ -22,18 +22,33 @@ extension GalaxySSIStore {
 
   @discardableResult
   func appendGlobalProactiveMessage(_ message: GlobalProactiveMessage) -> GlobalProactiveMessage {
+    if let existing = globalProactiveMessages.first(where: { $0.id == message.id }) { return existing }
+    return appendGlobalProactiveMessages([message]).first ?? message
+  }
+
+  @discardableResult
+  func appendGlobalProactiveMessages(_ messages: [GlobalProactiveMessage]) -> [GlobalProactiveMessage] {
+    guard !messages.isEmpty else { return [] }
     let now = Self.nowMillis()
-    var stored = message
-    if stored.createdAtMillis <= 0 {
-      stored.createdAtMillis = now
+    var seen = Set(globalProactiveMessages.map(\.id))
+    let retainedFloor = globalProactiveMessages.count >= 500
+      ? globalProactiveMessages.map(\.createdAtMillis).min() ?? 0 : 0
+    let additions = messages.compactMap { message -> GlobalProactiveMessage? in
+      var stored = message
+      if stored.createdAtMillis <= 0 { stored.createdAtMillis = now }
+      guard stored.createdAtMillis >= retainedFloor, seen.insert(stored.id).inserted else { return nil }
+      if stored.status == .delivered && stored.deliveredAtMillis <= 0 { stored.deliveredAtMillis = now }
+      return stored
     }
-    if stored.status == .delivered && stored.deliveredAtMillis <= 0 {
-      stored.deliveredAtMillis = now
-    }
-    globalProactiveMessages.removeAll { $0.id == stored.id }
-    globalProactiveMessages = Array((globalProactiveMessages + [stored]).suffix(500))
+    guard !additions.isEmpty else { return [] }
+    let next = Array((globalProactiveMessages + additions).sorted {
+      ($0.createdAtMillis, $0.id) < ($1.createdAtMillis, $1.id)
+    }.suffix(500))
+    guard next != globalProactiveMessages else { return [] }
+    globalProactiveMessages = next
     GlobalProactiveDeliveryBus.signalReady()
-    return stored
+    let retained = Set(next.map(\.id))
+    return additions.filter { retained.contains($0.id) }
   }
 
   @discardableResult

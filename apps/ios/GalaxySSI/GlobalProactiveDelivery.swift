@@ -1,5 +1,46 @@
 import Foundation
 
+final class GlobalProactiveDeliveryWake {
+  struct State {
+    private var queued = false
+    private var running = false
+
+    mutating func request() -> Bool {
+      guard !queued else { return false }
+      queued = true
+      return !running
+    }
+
+    mutating func begin() { queued = false; running = true }
+    mutating func end() -> Bool { running = false; return queued }
+  }
+
+  private let lock = NSLock()
+  private var state = State()
+  private let deliver: @MainActor () -> Void
+
+  init(deliver: @escaping @MainActor () -> Void) { self.deliver = deliver }
+
+  func request() {
+    if locked({ $0.request() }) { schedule() }
+  }
+
+  private func schedule() {
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      self.locked { $0.begin() }
+      self.deliver()
+      if self.locked({ $0.end() }) { self.schedule() }
+    }
+  }
+
+  private func locked<T>(_ action: (inout State) -> T) -> T {
+    lock.lock()
+    defer { lock.unlock() }
+    return action(&state)
+  }
+}
+
 final class GlobalProactiveDeliveryListener: Hashable {
   private let handler: () -> Void
 

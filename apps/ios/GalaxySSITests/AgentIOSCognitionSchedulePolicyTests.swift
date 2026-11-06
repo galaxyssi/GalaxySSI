@@ -2,6 +2,42 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentIOSCognitionSchedulePolicyTests: XCTestCase {
+  func testDeviceLoadUsesNativeThermalAndBatteryThresholds() {
+    func sample(_ thermal: ProcessInfo.ThermalState, _ battery: Int? = nil,
+                powered: Bool = false, lowPower: Bool = false) -> AgentIOSBackgroundLoad {
+      .evaluate(thermal: thermal, batteryPercent: battery, powered: powered, lowPower: lowPower)
+    }
+    XCTAssertEqual(sample(.nominal), .init(deferSeconds: 0, spacing: 1))
+    XCTAssertEqual(sample(.fair), .init(deferSeconds: 0, spacing: 30))
+    XCTAssertEqual(sample(.serious), .init(deferSeconds: 120, spacing: 30))
+    XCTAssertEqual(sample(.critical), .init(deferSeconds: 300, spacing: 60))
+    XCTAssertEqual(sample(.nominal, 10).deferSeconds, 300)
+    XCTAssertEqual(sample(.nominal, 10, powered: true).deferSeconds, 0)
+    XCTAssertEqual(sample(.nominal, 5, powered: true).deferSeconds, 300)
+    XCTAssertEqual(sample(.nominal, 80, lowPower: true).deferSeconds, 300)
+    XCTAssertFalse(AgentIOSCognitionWorkMode.explicit.usesBackgroundLoadPolicy)
+    XCTAssertFalse(AgentIOSCognitionWorkMode.projection.usesBackgroundLoadPolicy)
+  }
+
+  func testAutomaticWakeCoalescesWithoutPostponingTheExistingRetry() {
+    var wake = AgentIOSAutomaticCognitionWake()
+    let hot = AgentIOSBackgroundLoad(deferSeconds: 120, spacing: 30)
+    let fair = AgentIOSBackgroundLoad(deferSeconds: 0, spacing: 30)
+    wake.request(.foreground)
+    wake.request(.event)
+    XCTAssertEqual(wake.pending, .foreground)
+    XCTAssertEqual(wake.delay(now: 10, load: hot), 120)
+    wake.request(.scheduled)
+    XCTAssertEqual(wake.delay(now: 50, load: hot), 80)
+    XCTAssertEqual(wake.delay(now: 130, load: fair), 0)
+    XCTAssertEqual(wake.take(now: 130), .scheduled)
+    XCTAssertNil(wake.take(now: 130))
+    wake.request(.foreground)
+    XCTAssertEqual(wake.delay(now: 131, load: fair), 29)
+    wake.clear()
+    XCTAssertNil(wake.pending)
+  }
+
   func testPauseRejectsEveryLearningEntryPointButNotProjection() {
     for mode: AgentIOSCognitionWorkMode in [.foreground, .event, .scheduled, .explicit] {
       XCTAssertFalse(AgentIOSCognitionSchedulePolicy.allows(mode, learningEnabled: false))

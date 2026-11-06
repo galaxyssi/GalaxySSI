@@ -66,6 +66,12 @@ struct PublicNewsPushCursor: Codable, Equatable {
       }?.key
   }
 
+  func nextWake(at now: Date) -> Date? {
+    pending.values.lazy.filter {
+      now.timeIntervalSince($0.firstSeen) <= Self.retention && $0.retryAt <= $0.firstSeen.addingTimeInterval(Self.retention)
+    }.map(\.retryAt).min()
+  }
+
   mutating func complete(_ id: Int64) { pending.removeValue(forKey: id) }
 
   mutating func deferItem(_ id: Int64, now: Date) {
