@@ -199,6 +199,22 @@ enum AgentConnectorResearchProgress {
       (lhs.generation, lhs.sequence) < (rhs.generation, rhs.sequence)
     }
   }
+
+  struct FinishedRuns {
+    private var entries: [(key: String, version: Version)] = []
+
+    func admits(_ version: Version?, for key: String) -> Bool {
+      guard let finished = entries.first(where: { $0.key == key }) else { return true }
+      return version.map { $0.generation > finished.version.generation } ?? false
+    }
+
+    mutating func record(_ version: Version, for key: String) {
+      guard admits(version, for: key) else { return }
+      entries.removeAll { $0.key == key }
+      entries.append((key, version))
+      if entries.count > 128 { entries.removeFirst() }
+    }
+  }
 }
 
 enum AgentScreenAnalysisCancellationPolicy {

@@ -28,6 +28,7 @@ final class MessageCoordinator: ObservableObject {
   @Published private(set) var pendingPhonePublicPageExport: AgentIOSPhonePublicHTMLExport?
   @Published private(set) var desktopControlSnapshots: [String: AgentDesktopRemoteControlSnapshot] = [:]
   @Published private(set) var remoteAgentTaskStatuses: [String: AgentRemoteTaskStatusSnapshot] = [:]
+  private var finishedResearchRuns = AgentConnectorResearchProgress.FinishedRuns()
   var onIncomingMessage: ((ChatMessage) -> Void)?
   var onIncomingMessageDelta: ((ChatMessage) -> Void)?
 
@@ -13733,6 +13734,7 @@ final class MessageCoordinator: ObservableObject {
       .ifBlank(payload.string("text"))
     let snapshotKey = "\(conversationId):\(taskId.ifBlank(turnId))"
     let progressVersion = authenticated ? AgentConnectorResearchProgress.Version(payload) : nil
+    guard finishedResearchRuns.admits(progressVersion, for: snapshotKey) else { return }
     if let previous = remoteAgentTaskStatuses[snapshotKey]?.progressVersion {
       guard let progressVersion, progressVersion >= previous else { return }
     }
@@ -13768,6 +13770,7 @@ final class MessageCoordinator: ObservableObject {
       checkingOtherSources: checkingOtherSources
     )
     if AgentRemoteTaskStatusPolicy.isTerminal(snapshot.status) {
+      if let progressVersion { finishedResearchRuns.record(progressVersion, for: snapshotKey) }
       remoteAgentTaskStatuses.removeValue(forKey: snapshot.id)
       return
     }

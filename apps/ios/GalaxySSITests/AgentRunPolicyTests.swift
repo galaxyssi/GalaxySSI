@@ -319,6 +319,20 @@ extension GalaxySSIStoreTests {
   }
 
   @MainActor
+  func testConnectorResearchReplayCannotReopenAFinishedGeneration() throws {
+    typealias Version = AgentConnectorResearchProgress.Version
+    var finished = AgentConnectorResearchProgress.FinishedRuns()
+    let terminal = try XCTUnwrap(Version(["execution_generation": 3, "status_sequence": 20]))
+    let replay = try XCTUnwrap(Version(["execution_generation": 3, "status_sequence": 19]))
+    let laterGeneration = try XCTUnwrap(Version(["execution_generation": 4, "status_sequence": 1]))
+    finished.record(terminal, for: "conversation:task")
+    XCTAssertFalse(finished.admits(replay, for: "conversation:task"))
+    XCTAssertFalse(finished.admits(terminal, for: "conversation:task"))
+    XCTAssertFalse(finished.admits(nil, for: "conversation:task"))
+    XCTAssertTrue(finished.admits(laterGeneration, for: "conversation:task"))
+    XCTAssertTrue(finished.admits(replay, for: "other:task"))
+  }
+
   func testConnectorResearchRecoveryHeadlineRequiresTheCurrentVisibleFailedResearchTool() throws {
     var event: [String: Any] = ["event_id": "public-search", "kind": "tool", "code": "web_search", "status": "failed"]
     var payload: [String: Any] = ["type": "agent_task_event", "task_status": "running",
