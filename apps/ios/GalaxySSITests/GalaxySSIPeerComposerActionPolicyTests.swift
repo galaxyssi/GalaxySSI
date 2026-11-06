@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 @testable import GalaxySSI
 
@@ -158,5 +159,38 @@ final class GalaxySSIPeerComposerActionPolicyTests: XCTestCase {
       GalaxySSIParagraphSelectionPolicy.range(in: "", requestedUTF16Offset: 0),
       NSRange(location: 0, length: 0)
     )
+  }
+
+  func testParagraphExpansionRequiresNativeSelectionOnThePressedGlyph() {
+    let text = "first line\nsecond line"
+    let word = NSRange(location: 11, length: 6)
+    XCTAssertEqual(GalaxySSIParagraphSelectionPolicy.expansion(in: text, glyphOffset: 12, nativeSelection: word),
+                   NSRange(location: 11, length: 11))
+    XCTAssertNil(GalaxySSIParagraphSelectionPolicy.expansion(in: text, glyphOffset: 12,
+      nativeSelection: NSRange(location: 12, length: 0)))
+    XCTAssertNil(GalaxySSIParagraphSelectionPolicy.expansion(in: text, glyphOffset: 3, nativeSelection: word))
+    XCTAssertNil(GalaxySSIParagraphSelectionPolicy.expansion(in: text, glyphOffset: 12,
+      nativeSelection: NSRange(location: 0, length: 22)))
+    XCTAssertNil(GalaxySSIParagraphSelectionPolicy.expansion(in: text, glyphOffset: 12,
+      nativeSelection: NSRange(location: NSNotFound, length: 0)))
+  }
+
+  @MainActor
+  func testComposerHitTestingSeparatesGlyphsFromLineEndsAndBlankRows() {
+    let view = UITextView(frame: CGRect(x: 0, y: 0, width: 240, height: 180))
+    view.font = .systemFont(ofSize: 15)
+    view.text = "abc\n\nlast"
+    view.textContainerInset = UIEdgeInsets(top: 14, left: 12, bottom: 14, right: 12)
+    view.textContainer.lineFragmentPadding = 0
+    let layout = view.layoutManager
+    let container = view.textContainer
+    layout.ensureLayout(for: container)
+    let rect = layout.boundingRect(forGlyphRange: NSRange(location: 1, length: 1), in: container)
+    let textPoint = CGPoint(x: rect.midX + 12, y: rect.midY + 14)
+    XCTAssertEqual(GalaxySSIParagraphSelectionPolicy.glyphOffset(at: textPoint, in: view), 1)
+    XCTAssertNil(GalaxySSIParagraphSelectionPolicy.glyphOffset(at: CGPoint(x: 210, y: textPoint.y), in: view))
+    XCTAssertNil(GalaxySSIParagraphSelectionPolicy.glyphOffset(at: CGPoint(x: 24, y: 160), in: view))
+    view.text = ""
+    XCTAssertNil(GalaxySSIParagraphSelectionPolicy.glyphOffset(at: textPoint, in: view))
   }
 }
