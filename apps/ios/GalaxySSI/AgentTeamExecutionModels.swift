@@ -115,7 +115,7 @@ struct AgentCollaborationReadCoverage: Codable, Equatable {
   }
 }
 
-struct AgentCollaborationResearchReference: Codable, Equatable {
+struct AgentCollaborationResearchReference: Codable, Hashable {
   var objectId: String
   var revision: Int64
   var sha256: String
