@@ -46,7 +46,7 @@ enum AgentMcpJSONValue: Codable, Equatable {
     case .int(let value):
       return value
     case .double(let value):
-      return Int64(value)
+      return Int64(exactly: value.rounded(.towardZero))
     case .string(let value):
       return Int64(value)
     case .bool, .object, .array, .null:
