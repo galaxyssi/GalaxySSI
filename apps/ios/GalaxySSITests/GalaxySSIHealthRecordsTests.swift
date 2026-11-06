@@ -1504,6 +1504,12 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let report = try XCTUnwrap(originals.list().originals.first)
     let reusedPDF = try XCTUnwrap(existingFiles.list().originals.first)
     XCTAssertNotEqual(reusedPDF.id, report.id)
+    let png = UIGraphicsImageRenderer(size: CGSize(width: 10, height: 10)).pngData { _ in }
+    try originals.store(png, name: "image-report.png")
+    try existingFiles.store(png, name: "same-image-report.png")
+    let image = try XCTUnwrap(originals.list().originals.first { $0.kind == .image })
+    let reusedImage = try XCTUnwrap(existingFiles.list().originals.first { $0.kind == .image })
+    XCTAssertNotEqual(reusedImage.id, image.id)
 
     let reading = GalaxySSIHealthReading(metric: .weight, value: 65)
     try records.write(reading)
@@ -1520,8 +1526,9 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     try records.commitRestore(archive, receipt: UUID())
     let previousPlan = try GalaxySSIHealthPortableBackup.plan(records: records, originals: originals)
     archive.reportEvidence = (0..<35).map { region in
-      .init(target: .init(record: current.id, revision: region == 34 ? 1 : current.revision),
-        source: .init(original: report.id, sha256: report.sha256, page: 0, region: region, fromOCR: true),
+      let original = region == 0 ? image : report
+      return .init(target: .init(record: current.id, revision: region == 34 ? 1 : current.revision),
+        source: .init(original: original.id, sha256: original.sha256, page: 0, region: region, fromOCR: true),
         excerpt: "private OCR fixture")
     }
     archive.tableEvidence = [.init(target: .init(record: current.id, revision: current.revision),
@@ -1546,6 +1553,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     try destination.write(revised)
     let preview = try GalaxySSIHealthPortableBackup.previewRestore(input, records: destination, originals: existingFiles)
     XCTAssertEqual(preview.newLinks, 35)
+    XCTAssertEqual(preview.missing, 0)
     XCTAssertEqual(preview.originals, 0)
     XCTAssertEqual(preview.tables, 0)
     try GalaxySSIHealthPortableBackup.restore(input, expected: preview, records: destination, originals: existingFiles)
@@ -1553,7 +1561,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(restored.revisions.count, 2)
     XCTAssertEqual(restored.reportEvidence?.count, 34)
     XCTAssertTrue(restored.reportEvidence?.allSatisfy {
-      $0.source.original == reusedPDF.id && $0.target.revision == current.revision
+      $0.source.original == ($0.source.region == 0 ? reusedImage.id : reusedPDF.id) &&
+        $0.target.revision == current.revision
     } == true)
     XCTAssertEqual(restored.tableEvidence?.first?.source.batch, otherTable.id)
     XCTAssertEqual(try existingFiles.read(reusedPDF), pdf)

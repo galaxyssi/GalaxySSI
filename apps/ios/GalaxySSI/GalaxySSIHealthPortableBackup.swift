@@ -143,7 +143,7 @@ enum GalaxySSIHealthPortableBackup {
     let present = Dictionary(hashes, uniquingKeysWith: { first, _ in first })
     let links = readings.compactMap(\.tableSource) + frames.compactMap { $0.table?.source }
     let reports = readings.compactMap(\.reportSource) + frames.compactMap { $0.report?.source }
-    let originals = Dictionary(uniqueKeysWithValues: listing.originals.filter { $0.kind == .pdf }.map { ($0.id, $0.sha256) })
+    let originals = Dictionary(uniqueKeysWithValues: listing.originals.map { ($0.id, $0.sha256) })
     let absent = Set(links.filter { present[$0.batch] != $0.sha256 }.map(\.batch)).count +
       Set(reports.filter { originals[$0.original] != $0.sha256 }.map(\.original)).count
     let size = listing.originals.reduce(0) { $0 + $1.bytes } + tables.reduce(0) { $0 + $1.data.count }
@@ -225,7 +225,7 @@ enum GalaxySSIHealthPortableBackup {
     let links = payload.readings.compactMap(\.tableSource) + frames.compactMap { $0.table?.source }
     let reports = payload.readings.compactMap(\.reportSource) + frames.compactMap { $0.report?.source }
     missing += Set(links.filter { tables[$0.batch] != $0.sha256 }.map(\.batch)).count
-    let originalHashes = Dictionary(uniqueKeysWithValues: payload.originals.filter { $0.manifest.kind == .pdf }
+    let originalHashes = Dictionary(uniqueKeysWithValues: payload.originals
       .map { ($0.manifest.id, $0.manifest.sha256) })
     missing += Set(reports.filter { originalHashes[$0.original] != $0.sha256 }.map(\.original)).count
     let dates = payload.readings.map(\.measuredAt)
@@ -393,14 +393,14 @@ extension GalaxySSIHealthPortableBackup {
     guard listing.originals.count + listing.unavailable + newFiles <= 500,
           indexed.reduce(newBytes, { $0 + $1.bytes }) <= 512 * 1024 * 1024
     else { throw Failure.limit }
-    let staged = Dictionary(uniqueKeysWithValues: files.filter { $0.0.kind == .pdf }.map { ($0.0.id, $0.0.sha256) })
+    let staged = Dictionary(uniqueKeysWithValues: files.map { ($0.0.id, $0.0.sha256) })
     let originalsByID = Dictionary(uniqueKeysWithValues: listing.originals.map { ($0.id, $0) })
     var verifiedReports: [UUID: String] = [:]
     var unavailableReports = Set<UUID>()
     func reportIsAvailable(_ source: GalaxySSIHealthReportReview.Source) -> Bool {
       if let digest = staged[source.original] ?? verifiedReports[source.original] { return digest == source.sha256 }
       guard !unavailableReports.contains(source.original), let original = originalsByID[source.original],
-            original.kind == .pdf, original.sha256 == source.sha256 else { return false }
+            original.sha256 == source.sha256 else { return false }
       guard (try? originals.read(original, lease: lease)) != nil else {
         unavailableReports.insert(source.original)
         return false
@@ -438,11 +438,13 @@ extension GalaxySSIHealthPortableBackup {
   }
 
   private enum SourceSlot: Hashable {
-    case report(String, Int, Int, Bool)
+    case report(GalaxySSIHealthReportReview.Source)
     case table(String, String?, Int)
 
     init(_ source: GalaxySSIHealthReportReview.Source) {
-      self = .report(source.sha256, source.page, source.region, source.fromOCR)
+      var identity = source
+      identity.original = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+      self = .report(identity)
     }
 
     init(_ source: GalaxySSIHealthTableImport.Source) {
@@ -490,11 +492,11 @@ extension GalaxySSIHealthPortableBackup {
     let reportHashes = Set(frames.compactMap { $0.report?.source.sha256 })
     var reportIDs: [String: UUID] = [:]
     var availableReports: [UUID: String] = [:]
-    for (original, _) in staged where original.kind == .pdf && reportHashes.contains(original.sha256) {
+    for (original, _) in staged where reportHashes.contains(original.sha256) {
       reportIDs[original.sha256] = original.id
       availableReports[original.id] = original.sha256
     }
-    for original in listing.originals where original.kind == .pdf && reportHashes.contains(original.sha256) {
+    for original in listing.originals where reportHashes.contains(original.sha256) {
       if availableReports[original.id] == original.sha256 || (try? originals.read(original, lease: lease)) != nil {
         if reportIDs[original.sha256] == nil { reportIDs[original.sha256] = original.id }
         availableReports[original.id] = original.sha256
@@ -539,12 +541,11 @@ extension GalaxySSIHealthPortableBackup {
       let slot: SourceSlot
       let mapped: SourceFrame
       if let link = frame.report {
-        let source = link.source
+        var source = link.source
         slot = SourceSlot(source)
-        if reportIDs[source.sha256] == nil { missing.insert("pdf:\(source.sha256)") }
-        mapped = .init(report: .init(target: target, source: .init(original: reportIDs[source.sha256] ?? source.original,
-          sha256: source.sha256, page: source.page, region: source.region, fromOCR: source.fromOCR), excerpt: link.excerpt),
-          table: nil)
+        if let originalID = reportIDs[source.sha256] { source.original = originalID }
+        else { missing.insert("report:\(source.sha256)") }
+        mapped = .init(report: .init(target: target, source: source, excerpt: link.excerpt), table: nil)
       } else if let link = frame.table {
         let source = link.source
         slot = SourceSlot(source)
