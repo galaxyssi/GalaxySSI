@@ -46,9 +46,6 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
     .onChange(of: latest) { target in
       observeLatestReply(target)
     }
-    .onTapGesture(count: 2) {
-      replySpeech.stopPlaybackIfActive()
-    }
     .onDisappear {
       replySpeech.stop()
     }
@@ -206,6 +203,7 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
     .environment(\.agentRichHTMLPlaybackAllowed,
       [.delivered, .read, .local].contains(message.deliveryStatus))
     .environment(\.agentReplyParagraphSpeechAction, paragraphSpeechAction(message))
+    .environment(\.agentReplyNativeParagraphs, true)
     .foregroundColor(.galaxySSITextPrimary)
   }
 

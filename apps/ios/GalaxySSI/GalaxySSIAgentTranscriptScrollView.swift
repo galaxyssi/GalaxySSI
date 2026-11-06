@@ -3,6 +3,8 @@ import SwiftUI
 private let galaxySSIAgentTranscriptCoordinateSpace = "galaxyssi-agent-transcript"
 
 struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
+  @Environment(\.agentReplySpeechBlankTap) private var blankTap
+  @State private var measuredContentBottom: CGFloat?
   @Binding var visibleMessageLimit: Int
   @Binding var olderTranscriptAnchor: UUID?
   @Binding var transcriptTopLoadTriggered: Bool
@@ -102,6 +104,10 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
               .padding(.horizontal, 12)
               .padding(.top, 8)
               .padding(.bottom, 16)
+              .background(alignment: .leading) { blankSpeechTarget.frame(width: 12) }
+              .background(alignment: .trailing) { blankSpeechTarget.frame(width: 12) }
+              .background(alignment: .top) { blankSpeechTarget.frame(height: 8) }
+              .background(alignment: .bottom) { blankSpeechTarget.frame(height: 16) }
               .background(
                 GeometryReader { contentGeometry in
                   Color.clear.preference(
@@ -116,6 +122,11 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
                   )
                 }
               )
+          }
+          if let bottom = measuredContentBottom, bottom < viewport.size.height {
+            blankSpeechTarget
+              .frame(height: max(0, viewport.size.height - max(0, bottom)))
+              .frame(maxWidth: .infinity)
           }
           if transcriptShowLatestButton, let last = messages.last {
             GalaxySSIAgentLatestButton(title: latestButtonTitle) {
@@ -233,6 +244,7 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
       }
       .coordinateSpace(name: galaxySSIAgentTranscriptCoordinateSpace)
       .onPreferenceChange(AgentTranscriptScrollMetricsKey.self) { metrics in
+        measuredContentBottom = metrics.contentMaxY
         transcriptContentMinY = metrics.contentMinY
         let atTop = metrics.contentMinY >= -8
         let userIsAwayFromLatest = metrics.contentMaxY > metrics.viewportHeight + 56
@@ -253,6 +265,17 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
           transcriptShowLatestButton = true
         }
       }
+    }
+  }
+
+  @ViewBuilder private var blankSpeechTarget: some View {
+    if let blankTap {
+      Color.clear
+        .contentShape(Rectangle())
+        .gesture(TapGesture(count: 2).exclusively(before: TapGesture()).onEnded { result in
+          if case .second = result { blankTap() }
+        })
+        .accessibilityHidden(true)
     }
   }
 
