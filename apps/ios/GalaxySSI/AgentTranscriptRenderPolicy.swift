@@ -106,6 +106,96 @@ enum AgentProcessClockPolicy {
   }
 }
 
+struct AgentTranscriptExecutionProgress: Equatable {
+  struct TurnKey: Hashable {
+    let conversationId: String
+    let turnId: String
+
+    init(_ message: ChatMessage) {
+      conversationId = message.conversationId
+      turnId = AgentReplyWaitingIndicatorPolicy.turnKey(for: message)
+    }
+  }
+
+  let status: AgentInteractiveProgressStatus
+  let startedAt: Int64
+  let updatedAt: Int64
+
+  static func resolve(
+    owned: Self?, cached: Self?, deliveredAt: Int64?
+  ) -> Self? {
+    if let owned { return owned }
+    guard let cached else { return nil }
+    if cached.status.animating, let deliveredAt, deliveredAt >= cached.updatedAt, deliveredAt >= cached.startedAt {
+      return Self(status: .completed, startedAt: cached.startedAt, updatedAt: deliveredAt)
+    }
+    if cached.status == .completed, let deliveredAt, deliveredAt >= cached.startedAt {
+      return Self(status: .completed, startedAt: cached.startedAt, updatedAt: min(cached.updatedAt, deliveredAt))
+    }
+    return cached
+  }
+
+  static func finalDeliveryTime(_ message: ChatMessage) -> Int64? {
+    guard !message.isMine, !message.isSystem, !message.turnId.isBlank,
+          [.delivered, .read].contains(message.deliveryStatus),
+          !message.remoteMessageId.hasPrefix("agent-stream-"),
+          !message.deliveryTrace.contains(where: { event in
+            let stage = event.stage.lowercased()
+            return ["interim", "milestone", "partial", "cancelled", "failed", "blocked", "denied"]
+              .contains(where: stage.contains)
+          }) else { return nil }
+    return Int64(message.createdAt.timeIntervalSince1970 * 1_000)
+  }
+
+  static func finalDeliveryTimes(_ messages: [ChatMessage]) -> [TurnKey: Int64] {
+    messages.reduce(into: [:]) { result, message in
+      guard let timestamp = finalDeliveryTime(message) else { return }
+      let key = TurnKey(message)
+      result[key] = min(result[key] ?? timestamp, timestamp)
+    }
+  }
+
+  static func committed(_ turn: AgentCommittedTurnProgress.Turn) -> Self {
+    let status: AgentInteractiveProgressStatus
+    switch turn.status {
+    case .created, .queued, .running: status = .running
+    case .waitingResponse: status = .waitingResponse
+    case .waitingConfirmation: status = .waitingConfirmation
+    case .paused: status = .paused
+    case .blocked: status = .blocked
+    case .completed: status = .completed
+    case .failed: status = .failed
+    case .cancelled: status = .cancelled
+    }
+    return Self(status: status, startedAt: turn.startedAt, updatedAt: turn.updatedAt)
+  }
+
+  static func remoteStatus(_ value: String) -> AgentInteractiveProgressStatus {
+    switch AgentRemoteTaskStatusPolicy.normalize(value) {
+    case "created", "queued", "accepted", "starting", "running", "executing", "recovering": return .running
+    case "waiting_response", "waiting_reply", "cancelling": return .waitingResponse
+    case "waiting_input", "waiting_approval", "waiting_confirmation": return .waitingConfirmation
+    case "paused": return .paused
+    case "blocked": return .blocked
+    case "completed": return .completed
+    case "failed", "timed_out", "not_found": return .failed
+    case "cancelled": return .cancelled
+    default: return .unknown
+    }
+  }
+
+  static func voiceStatus(_ state: VoiceAgentRunState) -> AgentInteractiveProgressStatus {
+    switch state {
+    case .created, .accepted, .queued, .starting, .running: return .running
+    case .waitingInput, .waitingApproval: return .waitingConfirmation
+    case .cancelling: return .waitingResponse
+    case .completed: return .completed
+    case .failed, .timedOut: return .failed
+    case .cancelled: return .cancelled
+    }
+  }
+}
+
 final class AgentProcessClock {
   let startedAtMillis: Int64
   private(set) var completedAtMillis: Int64?
