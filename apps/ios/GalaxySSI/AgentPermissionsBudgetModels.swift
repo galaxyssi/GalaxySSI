@@ -539,6 +539,7 @@ struct GlobalAgentSettings: Codable, Equatable {
   var topicCooldownMillis: Int64
   var discoveryIntervalMillis: Int64
   var monitorIntervalMillis: Int64
+  var publicAttention: PublicAttentionPreferences?
 
   static let `default` = GlobalAgentSettings()
 
@@ -568,7 +569,8 @@ struct GlobalAgentSettings: Codable, Equatable {
     dailyDiscoveryTaskBudget: Int = 3,
     topicCooldownMillis: Int64 = 6 * 60 * 60 * 1_000,
     discoveryIntervalMillis: Int64 = 4 * 60 * 60 * 1_000,
-    monitorIntervalMillis: Int64 = 24 * 60 * 60 * 1_000
+    monitorIntervalMillis: Int64 = 24 * 60 * 60 * 1_000,
+    publicAttention: PublicAttentionPreferences? = nil
   ) {
     self.backgroundCognitionArchitectureVersion = max(backgroundCognitionArchitectureVersion, 1)
     self.enabled = enabled
@@ -596,6 +598,7 @@ struct GlobalAgentSettings: Codable, Equatable {
     self.topicCooldownMillis = max(0, min(topicCooldownMillis, 30 * 24 * 60 * 60 * 1_000))
     self.discoveryIntervalMillis = max(60_000, min(discoveryIntervalMillis, 30 * 24 * 60 * 60 * 1_000))
     self.monitorIntervalMillis = max(60_000, min(monitorIntervalMillis, 30 * 24 * 60 * 60 * 1_000))
+    self.publicAttention = publicAttention
   }
 
   enum CodingKeys: String, CodingKey {
@@ -625,6 +628,7 @@ struct GlobalAgentSettings: Codable, Equatable {
     case topicCooldownMillis = "topic_cooldown_millis"
     case discoveryIntervalMillis = "discovery_interval_millis"
     case monitorIntervalMillis = "monitor_interval_millis"
+    case publicAttention = "public_attention"
   }
 
   init(from decoder: Decoder) throws {
@@ -657,7 +661,8 @@ struct GlobalAgentSettings: Codable, Equatable {
       dailyDiscoveryTaskBudget: try container.decodeIfPresent(Int.self, forKey: .dailyDiscoveryTaskBudget) ?? fallback.dailyDiscoveryTaskBudget,
       topicCooldownMillis: try container.decodeIfPresent(Int64.self, forKey: .topicCooldownMillis) ?? fallback.topicCooldownMillis,
       discoveryIntervalMillis: try container.decodeIfPresent(Int64.self, forKey: .discoveryIntervalMillis) ?? fallback.discoveryIntervalMillis,
-      monitorIntervalMillis: try container.decodeIfPresent(Int64.self, forKey: .monitorIntervalMillis) ?? fallback.monitorIntervalMillis
+      monitorIntervalMillis: try container.decodeIfPresent(Int64.self, forKey: .monitorIntervalMillis) ?? fallback.monitorIntervalMillis,
+      publicAttention: try container.decodeIfPresent(PublicAttentionPreferences.self, forKey: .publicAttention)
     )
   }
 }

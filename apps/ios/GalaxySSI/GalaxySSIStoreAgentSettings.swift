@@ -83,4 +83,12 @@ extension GalaxySSIStore {
     mutate(&next)
     globalAgentSettings = next.normalized
   }
+
+  func updatePublicAttention(_ mutate: (inout PublicAttentionPreferences) -> Void) {
+    updateGlobalAgentSettings { settings in
+      var preferences = settings.publicAttention ?? PublicAttentionPreferences()
+      mutate(&preferences)
+      settings.publicAttention = preferences
+    }
+  }
 }

@@ -1421,7 +1421,7 @@ enum GlobalProactiveInboxPolicy {
       }
       return left.key < right.key
     }
-    return Array(sorted.prefix(min(max(limit, 1), 100)))
+    return Array(sorted.prefix(min(max(limit, 1), 500)))
   }
 
   static func newCount(_ items: [GlobalProactiveInboxItem]) -> Int {

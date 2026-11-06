@@ -8,6 +8,12 @@ private enum GlobalProactiveDigestDelivery {
 }
 
 extension GalaxySSIStore {
+  func markPublicAttentionNotified(_ id: String) {
+    guard let index = globalProactiveMessages.firstIndex(where: { $0.id == id && $0.notifiedAtMillis == 0 })
+    else { return }
+    globalProactiveMessages[index].notifiedAtMillis = Self.nowMillis()
+  }
+
   func globalProactiveInboxItems(limit: Int = 50) -> [GlobalProactiveInboxItem] {
     GlobalProactiveInboxPolicy.project(
       messages: globalProactiveMessages,

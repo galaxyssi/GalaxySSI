@@ -560,6 +560,24 @@ extension GalaxySSIStore {
     return switchAgentSession(session.id) ? session.id : nil
   }
 
+  func openPublicAttentionFinding(_ item: GlobalProactiveInboxItem) -> Bool {
+    guard PublicAttentionResearchPolicy.isPublicTask(item.sourceConversationId) else { return false }
+    let key = "attention-finding:" + GlobalAgentText.privateFingerprint(item.key)
+    let existing = agentConversationDatabase.readAll().first {
+      $0.globalTopicKey == key && $0.mergedIntoConversationId.isBlank && !$0.privateMode && !$0.trackingPaused
+    }
+    let session = existing ?? createAgentSession(title: String(item.title.prefix(72)), globalTopicKey: key)
+    let messageID = "\(key):\(session.id)"
+    if !chatHistoryDatabase.containsIncoming(contactId: "hermes", remoteMessageId: messageID) {
+      let evidence = AgentUntrustedEvidenceBoundary.wrapText(
+        sourceType: "public_attention", sourceId: key, content: item.content)
+      _ = appendIncoming(evidence, from: "hermes", remoteMessageId: messageID,
+        traceStage: "public_attention_finding", conversationId: session.id)
+      guard chatHistoryDatabase.containsIncoming(contactId: "hermes", remoteMessageId: messageID) else { return false }
+    }
+    return switchAgentSession(session.id)
+  }
+
   @discardableResult
   func createAgentConversation(
     title: String,
