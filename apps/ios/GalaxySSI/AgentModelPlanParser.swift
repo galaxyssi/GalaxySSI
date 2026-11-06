@@ -1,5 +1,27 @@
 import Foundation
 
+struct AgentModelPlanRejection: Error, Encodable, Equatable {
+  let field: String
+  let code: String
+  let correction: String
+
+  init(_ field: String, _ code: String, _ correction: String) {
+    self.field = field
+    self.code = code
+    self.correction = String(correction.prefix(1_024))
+  }
+
+  var repairInstruction: String {
+    let data = (try? JSONEncoder().encode(self)) ?? Data()
+    return """
+    Local ActionPlan rejection:
+    \(String(decoding: data, as: UTF8.self))
+    Return one corrected JSON ActionPlan. Keep the original goal, execution route and permissions.
+    Use only advertised tools and earlier dependencies in this batch. Never combine completion with executable actions.
+    """
+  }
+}
+
 enum AgentModelPlanParser {
   static let allowedKinds: Set<AgentActionKind> = [
     .readScreen,
@@ -32,43 +54,68 @@ enum AgentModelPlanParser {
     settings: AgentModelPlannerSettings,
     context: AgentModelPlanParsingContext = .empty
   ) -> AgentPlan? {
-    guard var json = extractJson(raw) else { return nil }
+    try? parseWithDiagnostics(request: request, raw: raw, settings: settings, context: context).get()
+  }
+
+  static func parseWithDiagnostics(
+    request: AgentPlanRequest,
+    raw: String,
+    settings: AgentModelPlannerSettings,
+    context: AgentModelPlanParsingContext = .empty
+  ) -> Result<AgentPlan, AgentModelPlanRejection> {
+    do { return .success(try parseChecked(request: request, raw: raw, settings: settings, context: context)) }
+    catch let rejection as AgentModelPlanRejection { return .failure(rejection) }
+    catch { return .failure(.init("$", "validation_failed", "Return an ActionPlan using the advertised schema.")) }
+  }
+
+  private static func parseChecked(
+    request: AgentPlanRequest,
+    raw: String,
+    settings: AgentModelPlannerSettings,
+    context: AgentModelPlanParsingContext
+  ) throws -> AgentPlan {
+    guard var json = extractJson(raw) else {
+      throw AgentModelPlanRejection("$", "invalid_json", "Return one JSON object containing an actions array.")
+    }
     if json["actions"] == nil, AgentRollingPlanPolicy.isBatchBoundaryReason(context.replanReason),
        let response = AgentModelDirectResponseCodec.parse(raw, envelopeOnly: true) {
       json["actions"] = .array([.object(["kind": .string(AgentActionKind.draftPlan.rawValue),
                                         "target": .string(taskCompleteTarget), "description": .string(response)])])
     }
-    guard let actionValues = json["actions"]?.arrayValue,
-          !actionValues.isEmpty else {
-      return nil
+    guard let actionValues = json["actions"]?.arrayValue else {
+      throw AgentModelPlanRejection("actions", "array_required", "Provide a non-empty actions array.")
     }
     let observed = observedCompletion(json["completion_requirements"]?.objectValue?["outcomes"])
     guard observed.error == nil else { return nil }
     var completionRequirements = parseCompletionRequirements(json["completion_requirements"])
     completionRequirements?.outcomes = observed.outcomes
     if json["completion_requirements"] != nil && completionRequirements == nil {
-      return nil
+      throw AgentModelPlanRejection("completion_requirements", "invalid_requirements",
+        "Use the advertised publication and phone_linux fields with their required types.")
     }
     if completionRequirements?.canReplace(request.completionRequirements) == false {
-      return nil
+      throw AgentModelPlanRejection("completion_requirements.reason", "unexplained_requirement_change",
+        "Preserve the previous completion requirements or explain why they must change.")
     }
     let normalizedSettings = settings.normalized
     let maximumActions = context.maximumActionsOverride ?? normalizedSettings.maxActions
-    guard actionValues.count <= maximumActions else {
-      return nil
+    guard !actionValues.isEmpty, actionValues.count <= maximumActions else {
+      throw AgentModelPlanRejection("actions", "batch_size",
+        "Provide between 1 and \(maximumActions) actions. Leave remaining work for the next batch.")
     }
 
     var refs: [String: AgentModelPlanRef] = [:]
     for (index, value) in actionValues.enumerated() {
       guard let item = value.objectValue else {
-        return nil
+        throw AgentModelPlanRejection("actions[\(index)]", "object_required", "Each action must be a JSON object.")
       }
       let fallback = "step-\(index + 1)"
       guard let ref = normalizedRef(item.string("ref").trimmedForModelPlan.ifBlank(fallback)) else {
-        return nil
+        throw AgentModelPlanRejection("actions[\(index)].ref", "invalid_ref",
+          "Use a 1 to 48 character reference containing letters, digits, hyphens or underscores.")
       }
       guard refs[ref] == nil else {
-        return nil
+        throw AgentModelPlanRejection("actions[\(index)].ref", "duplicate_ref", "Use a distinct reference for each action.")
       }
       refs[ref] = AgentModelPlanRef(index: index, actionId: "model-\(index + 1)-\(ref)")
     }
@@ -76,29 +123,24 @@ enum AgentModelPlanParser {
     var actions: [AgentAction] = []
     for (index, value) in actionValues.enumerated() {
       guard let item = value.objectValue else {
-        return nil
+        throw AgentModelPlanRejection("actions[\(index)]", "object_required", "Each action must be a JSON object.")
       }
       let fallback = "step-\(index + 1)"
       guard let ref = normalizedRef(item.string("ref").trimmedForModelPlan.ifBlank(fallback)),
-            let actionId = refs[ref]?.actionId,
-            let action = parseAction(
-              request: request,
-              context: context,
-              json: item,
-              index: index,
-              actionId: actionId,
-              refs: refs,
-              allowCoordination: normalizedSettings.multiAgentCoordination
-            ) else {
-        return nil
+            let actionId = refs[ref]?.actionId else {
+        throw AgentModelPlanRejection("actions[\(index)].ref", "invalid_ref", "Use a valid reference within this batch.")
       }
-      actions.append(action)
+      actions.append(try parseAction(request: request, context: context, json: item, index: index,
+        actionId: actionId, refs: refs, allowCoordination: normalizedSettings.multiAgentCoordination))
     }
 
     guard hasValidDraftPlanSemantics(context: context, actions: actions) else {
-      return nil
+      throw AgentModelPlanRejection("actions", "completion_mixed_with_execution",
+        "Return executable actions first. After reviewing receipts, use a single completion action in an eligible continuation.")
     }
-    if actions.contains(where: { $0.kind == .draftPlan }), extractJson(raw, exact: true) == nil { return nil }
+    if actions.contains(where: { $0.kind == .draftPlan }), extractJson(raw, exact: true) == nil {
+      throw AgentModelPlanRejection("$", "completion_envelope", "Return the completion object alone, with no surrounding prose.")
+    }
 
     var plan = AgentPlanningTiming.measure("plan") {
       AgentPlanFactory.actions(request: request, actions)
@@ -116,7 +158,19 @@ enum AgentModelPlanParser {
     }
     plan.validation = AgentPlanValidator.validate(plan)
     let maximumGraphDepth = context.maximumActionsOverride ?? normalizedSettings.maxAgentHops
-    return plan.validation.valid && toolGraphDepth(actions: plan.actions) <= maximumGraphDepth ? plan : nil
+    guard plan.validation.valid else {
+      if plan.validation.issues.contains("route_unknown") {
+        throw AgentModelPlanRejection("actions", "execution_tool_policy",
+          "The ActionPlan parses, but this route does not support the proposed connector or device. Use an advertised target for this route.")
+      }
+      throw AgentModelPlanRejection("actions", "plan_validation",
+        "Use non-empty action descriptions and retain the required confirmation for high-risk actions.")
+    }
+    guard toolGraphDepth(actions: plan.actions) <= maximumGraphDepth else {
+      throw AgentModelPlanRejection("actions.depends_on", "graph_depth",
+        "Keep dependency depth within \(maximumGraphDepth). Continue remaining work in a later batch.")
+    }
+    return plan
   }
 
   private static func parseCompletionRequirements(
@@ -267,37 +321,47 @@ enum AgentModelPlanParser {
     actionId: String,
     refs: [String: AgentModelPlanRef],
     allowCoordination: Bool
-  ) -> AgentAction? {
+  ) throws -> AgentAction {
+    let field = "actions[\(index)]"
     let rawKind = json.string("kind").trimmedForModelPlan.uppercased()
     let isAlias = rawKind.replacingOccurrences(of: "-", with: "_") == "TASK_COMPLETE"
     let kindName = isAlias ? AgentActionKind.draftPlan.rawValue : rawKind
     guard let kind = AgentActionKind.allCases.first(where: { $0.rawValue == kindName }),
           allowedKinds.contains(kind) else {
-      return nil
+      throw AgentModelPlanRejection(field + ".kind", "unsupported_kind", "Use an action kind advertised for this request.")
     }
     let completion = kind == .draftPlan ? completionAnswer(json) : nil
-    if kind == .draftPlan && completion == nil { return nil }
+    if kind == .draftPlan && completion == nil {
+      throw AgentModelPlanRejection(field, "invalid_completion", "Use the advertised completion envelope and a non-empty answer.")
+    }
     let dependencyRefs = stringArray(json["depends_on"])
     let outputRefs = stringArray(json["use_outputs_from"])
     if !allowCoordination && (!dependencyRefs.isEmpty || !outputRefs.isEmpty) {
-      return nil
+      throw AgentModelPlanRejection(field + ".depends_on", "coordination_unavailable",
+        "This planner does not allow dependency graphs. Remove dependency and output references.")
     }
     if !outputRefs.isEmpty && kind != .callConnector {
-      return nil
+      throw AgentModelPlanRejection(field + ".use_outputs_from", "native_output_substitution",
+        "Leave use_outputs_from empty for native actions. Order actions with depends_on and inspect actual receipts.")
     }
     if outputRefs.contains(where: { !dependencyRefs.contains($0) }) {
-      return nil
+      throw AgentModelPlanRejection(field + ".use_outputs_from", "missing_dependency",
+        "Each output reference must also appear in depends_on.")
     }
-    guard let dependencyIds = resolvePriorRefs(dependencyRefs, refs: refs, currentIndex: index),
-          let outputSourceIds = resolvePriorRefs(outputRefs, refs: refs, currentIndex: index),
-          let nodeRef = refs.first(where: { $0.value.actionId == actionId })?.key,
-          let parameters = resolveParameters(
-            kind: kind,
-            input: json.object("parameters") ?? [:],
-            request: request,
-            context: context
-          ) else {
-      return nil
+    guard let dependencyIds = resolvePriorRefs(dependencyRefs, refs: refs, currentIndex: index) else {
+      throw AgentModelPlanRejection(field + ".depends_on", "invalid_dependency",
+        "Reference only distinct earlier actions in this response, never this action, later actions, or prior batches.")
+    }
+    guard let outputSourceIds = resolvePriorRefs(outputRefs, refs: refs, currentIndex: index),
+          let nodeRef = refs.first(where: { $0.value.actionId == actionId })?.key else {
+      throw AgentModelPlanRejection(field + ".use_outputs_from", "invalid_output_reference",
+        "Reference only distinct earlier actions in this response.")
+    }
+    guard let parameters = try resolveParameters(kind: kind, input: json.object("parameters") ?? [:],
+      request: request, context: context, field: field + ".parameters") else {
+      let targetField = (kind == .callConnector || kind == .controlDevice) ? ".connector_id" : ""
+      throw AgentModelPlanRejection(field + ".parameters" + targetField, "unresolved_action",
+        "Select an available target and use the advertised parameters for this action.")
     }
 
     var resolvedParameters = parameters
@@ -331,8 +395,9 @@ enum AgentModelPlanParser {
     kind: AgentActionKind,
     input: AgentMcpJSONObject,
     request: AgentPlanRequest,
-    context: AgentModelPlanParsingContext
-  ) -> [String: String]? {
+    context: AgentModelPlanParsingContext,
+    field: String
+  ) throws -> [String: String]? {
     switch kind {
     case .tap, .longPress:
       guard let element = AgentScreenElementMatcher.resolve(
@@ -418,7 +483,7 @@ enum AgentModelPlanParser {
       return resolveConnector(kind: kind, input: input, request: request)
 
     case .callNativeTool:
-      return resolveNativeTool(input: input, request: request)
+      return try resolveNativeTool(input: input, request: request, field: field)
 
     case .readScreen,
          .saveScreenKnowledge,
@@ -461,18 +526,21 @@ enum AgentModelPlanParser {
 
   private static func resolveNativeTool(
     input: AgentMcpJSONObject,
-    request: AgentPlanRequest
-  ) -> [String: String]? {
+    request: AgentPlanRequest,
+    field: String
+  ) throws -> [String: String] {
     let toolId = input.string("tool_id").trimmedForModelPlan
     guard let descriptor = request.nativeTools.first(where: {
       $0.id == toolId && $0.availability.status == .available
     }) else {
-      return nil
+      throw AgentModelPlanRejection(field + ".tool_id", "native_tool_unavailable",
+        "Use an exact available tool ID from this request's inventory. Do not invent a replacement or change JSON syntax.")
     }
     let arguments = input.object("arguments") ?? [:]
     let inputJson = AgentMcpJSONCodec.stringify(arguments)
     guard inputJson.count <= maximumNativeToolArgumentCharacters else {
-      return nil
+      throw AgentModelPlanRejection(field + ".arguments", "arguments_too_large",
+        "Keep arguments within \(maximumNativeToolArgumentCharacters) characters, splitting work if needed.")
     }
     let effectiveRisk: String
     if descriptor.id == AgentMcpNativeTools.callTool {
