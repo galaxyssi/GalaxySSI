@@ -2,9 +2,14 @@ import Foundation
 
 extension AgentHomeView {
   func sendAgentMessage(
-    voiceAttachmentSnapshot: [GalaxySSIDraftAttachment]? = nil
+    voiceAttachmentSnapshot: [GalaxySSIDraftAttachment]? = nil,
+    voiceAppAnchor: VoiceAppCaptureAnchor? = nil
   ) {
     guard !screenAssistantStopping, screenPageImportTask == nil else { return }
+    if let voiceAppAnchor {
+      guard coordinator.voiceAppContexts.isForegroundOwner(voiceAppAnchor),
+            store.activeAgentConversationId == voiceAppAnchor.conversationID else { return }
+    }
     coordinator.updateAgentScreenContext(agentScreenSnapshot.screen)
     let cleanDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
     let outgoingAttachments = AgentVoiceAttachmentSubmissionPolicy.select(
@@ -48,6 +53,7 @@ extension AgentHomeView {
         to: contact,
         attachments: sensitiveAttachments,
         agentGoalOverride: agentGoal,
+        voiceAppAnchor: voiceAppAnchor,
         requestKind: assistantRunID == nil ? .conversation : .screenAnalysis,
         readOnlyAnalysis: assistantRunID != nil,
         onOutgoing: { outgoing in

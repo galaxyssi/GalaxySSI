@@ -177,6 +177,8 @@ struct AgentHomeView: View {
   @State var agentRuntimeAuditRecords: [AgentNativeToolAuditRecord] = []
   @State var modelSelection = AgentModelSelection()
   @State var voiceAttachmentSnapshot: [GalaxySSIDraftAttachment] = []
+  @State var voiceAppAnchor: VoiceAppCaptureAnchor?
+  @State var voiceAppCaptureInvalidated = false
   @State var voicePendingAttachments: [GalaxySSIDraftAttachment] = []
   @State var agentVoiceDraftSnapshot: AgentVoiceDraftSnapshot?
   @State var runtimeArtifactPreview: GalaxySSIRuntimeArtifactPreview?
@@ -352,6 +354,7 @@ struct AgentHomeView: View {
       }
       .onDisappear {
         cancelScreenPagePDFImport()
+        invalidateVoiceAppAnchor()
         homeVisible = false
         AgentIOSComposerInputBridge.shared.removeHandler()
         AgentIOSAgentHomeActionBridge.shared.removeTapHandler()
@@ -713,8 +716,6 @@ struct AgentHomeView: View {
     let presentation = headerPresentation
     return GalaxySSIAgentHomeHeaderView(
       sessionTitle: presentation.sessionTitle,
-      unreadCount: unreadTotal,
-      unreadLabel: String(format: t("galaxyssi.agent.unread", "%d unread"), unreadTotal),
       modelStatusLabel: presentation.modelStatusLabel,
       brandSubtitle: t("galaxyssi.agent.brand.subtitle", "Superintelligent agent"),
       newConversationLabel: t("new_conversation", "New conversation"),
@@ -813,6 +814,7 @@ struct AgentHomeView: View {
       focusRequest: composerFocusRequest,
       attachmentScope: store.activeAgentConversationId,
       attachmentPreviewBlocked: cameraPickerPresented || photoPickerPresented || fileImporterPresented,
+      chatUnreadCount: unreadTotal,
       onRemoveAttachment: { attachment in
         attachments.removeAndWipe(id: attachment.id)
       },
@@ -838,6 +840,7 @@ struct AgentHomeView: View {
       onPendingPrimaryAction: handlePendingAgentTaskAction,
       onVoiceStart: beginAgentVoiceCapture,
       onVoiceCancelled: {
+        invalidateVoiceAppAnchor()
         voiceTranscriptionPending = false
         voicePendingAttachments.removeAll()
         agentVoiceDraftSnapshot = nil

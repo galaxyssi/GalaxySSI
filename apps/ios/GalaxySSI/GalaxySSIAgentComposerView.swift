@@ -24,6 +24,7 @@ struct GalaxySSIAgentComposerView: View {
   var focusRequest: Int = 0
   var attachmentScope: String
   var attachmentPreviewBlocked: Bool
+  var chatUnreadCount: Int
   var onRemoveAttachment: (GalaxySSIDraftAttachment) -> Void
   var onReplaceAttachment: (String, GalaxySSIDraftAttachment, GalaxySSIDraftAttachment) -> Bool
   var onImageAttachment: ((GalaxySSIDraftAttachment) -> Void)? = nil
@@ -139,9 +140,6 @@ struct GalaxySSIAgentComposerView: View {
 
   var body: some View {
     VStack(spacing: 8) {
-      if newGlobalInsightCount > 0 {
-        GalaxySSIAgentHomeInsightBarView(count: newGlobalInsightCount)
-      }
       AttachmentPreviewStrip(attachments: attachments, scope: attachmentScope,
         presentationBlocked: attachmentPreviewBlocked, onRemove: onRemoveAttachment, onReplace: onReplaceAttachment)
       if !attachmentError.isEmpty {
@@ -172,6 +170,13 @@ struct GalaxySSIAgentComposerView: View {
         if !mentionSuggestions.isEmpty {
           mentionPicker
         }
+        GalaxySSIAgentChatShortcuts(feedUnread: newGlobalInsightCount, chatUnread: chatUnreadCount,
+          minimumTouchSize: minimumTouchSize,
+          onNewSession: { runShortcut(onNewSession) },
+          onOpenSessions: { runShortcut(onOpenSessions) },
+          onTakePhoto: { runShortcut(onTakePhoto) },
+          onAddFile: { runShortcut(onAddFile) },
+          t: t)
         inputRow
       }
       if trayVisible {
@@ -225,10 +230,18 @@ struct GalaxySSIAgentComposerView: View {
       emptySubmitMessage.removeAll(keepingCapacity: false)
     }
     .onDisappear {
+      inputFocused = false
+      actionTrayPresented = false
       voiceTranscriptionPending = false
       onVoiceCancelled()
       holdToTalk.cancelFromView()
     }
+  }
+
+  private func runShortcut(_ action: () -> Void) {
+    inputFocused = false
+    actionTrayPresented = false
+    action()
   }
 
   private var inputRow: some View {
