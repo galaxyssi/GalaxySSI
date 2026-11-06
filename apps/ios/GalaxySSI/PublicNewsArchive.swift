@@ -218,7 +218,8 @@ final class PublicNewsArchive: ObservableObject {
     loaded = true
   }
 
-  func refresh(force: Bool = false, learnPublishers: Bool = false) async {
+  func refresh(force: Bool = false, learnPublishers: Bool = false,
+               fetch: (@Sendable (PublicNewsSource, Date) async throws -> [PublicNewsArticle])? = nil) async {
     load()
     guard loaded, !refreshing else { return }
     let now = Date()
@@ -230,36 +231,44 @@ final class PublicNewsArchive: ObservableObject {
     var state = publisherState
     let probe = learnPublishers ? state.probeCandidate(in: eligibleArticles, now: now) : nil
     let sources = state.plan(now: now, enabled: learnPublishers, probe: probe != nil)
-    let results = await withTaskGroup(of: (Int, PollOutcome).self) { group in
+    let loadFeed: @Sendable (PublicNewsSource, Date) async throws -> [PublicNewsArticle] = fetch ?? { source, date in
+      try await PublicNewsFeedClient.fetch(source, now: date, useCache: !force)
+    }
+    let completed = await withTaskGroup(of: (Int, PollOutcome).self) { group in
       for (index, source) in sources.enumerated() {
         group.addTask {
-          do { return (index, .articles(try await PublicNewsFeedClient.fetch(source, now: now, useCache: !force))) }
+          do { return (index, .articles(try await loadFeed(source, now))) }
           catch PublicNewsFeedError.discussionFeed { return (index, .discussion) }
           catch { return (index, .failed) }
         }
       }
-      var batches: [(Int, PollOutcome)] = []
-      for await batch in group { batches.append(batch) }
-      return batches.sorted { $0.0 < $1.0 }
-    }
-    guard !Task.isCancelled else { return }
-    var received: [PublicNewsArticle] = []
-    var successful = false
-    for (index, result) in results {
-      switch result {
-      case .articles(let articles):
-        received += articles
-        successful = true
-        state.recordPoll(sources[index], success: true, discussion: false, now: now)
-      case .discussion:
-        state.recordPoll(sources[index], success: false, discussion: true, now: now)
-      case .failed:
-        refreshIncomplete = true
-        state.recordPoll(sources[index], success: false, discussion: false, now: now)
+      var batches: [Int: [PublicNewsArticle]] = [:]
+      for await (index, result) in group {
+        guard !Task.isCancelled else { return false }
+        let source = sources[index]
+        switch result {
+        case .articles(let incoming):
+          state.recordPoll(source, success: true, discussion: false, now: now)
+          batches[index] = incoming
+          guard !incoming.isEmpty else { continue }
+          // Keep configured source priority for duplicates regardless of arrival order.
+          let received = batches.keys.sorted().flatMap { batches[$0] ?? [] }
+          let next = Self.merge(existing: articles, incoming: received)
+          guard save(next, refreshedAt: refreshedAt) else {
+            group.cancelAll()
+            return false
+          }
+        case .discussion:
+          state.recordPoll(source, success: false, discussion: true, now: now)
+        case .failed:
+          refreshIncomplete = true
+          state.recordPoll(source, success: false, discussion: false, now: now)
+        }
       }
+      guard !Task.isCancelled else { return false }
+      return save(articles, refreshedAt: batches.isEmpty ? refreshedAt : now, publishers: state)
     }
-    let next = received.isEmpty ? articles : Self.merge(existing: articles, incoming: received)
-    guard save(next, refreshedAt: successful ? now : refreshedAt, publishers: state), let probe else { return }
+    guard completed, !Task.isCancelled, let probe else { return }
     do {
       let feeds = try await PublicNewsFeedClient.probe(probe.article.url)
       guard !Task.isCancelled else { return }

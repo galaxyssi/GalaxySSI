@@ -2,7 +2,7 @@ import SwiftUI
 
 struct GalaxySSIAgentChatShortcuts: View {
   @ScaledMetric(relativeTo: .caption) private var labelSize: CGFloat = 12
-  let feedUnread: Int
+  let feedUnread: Int?
   let chatUnread: Int
   let minimumTouchSize: CGFloat
   let onNewSession: () -> Void
@@ -17,17 +17,19 @@ struct GalaxySSIAgentChatShortcuts: View {
 
   var body: some View {
     GeometryReader { bounds in
-      let width = max(max(44, minimumTouchSize), bounds.size.width / 5)
+      let width = max(max(44, minimumTouchSize), bounds.size.width / (feedUnread == nil ? 4 : 5))
       ScrollView(.horizontal, showsIndicators: false) {
         HStack(spacing: 0) {
-          NavigationLink(destination: GalaxySSIGlobalAgentInsightInboxView()) {
-            label(t("galaxyssi.agent.shortcuts.feed", "Feed"), icon: "newspaper",
-              width: width, unread: feedUnread)
+          if let feedUnread {
+            NavigationLink(destination: GalaxySSIGlobalAgentInsightInboxView()) {
+              label(t("galaxyssi.agent.shortcuts.feed", "Feed"), icon: "newspaper",
+                width: width, unread: feedUnread)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(t("agent_global_insights_title", "GalaxySSI Insights")))
+            .accessibilityValue(unreadValue(feedUnread))
+            .accessibilityIdentifier("ios.agent.shortcuts.feed")
           }
-          .buttonStyle(.plain)
-          .accessibilityLabel(Text(t("agent_global_insights_title", "GalaxySSI Insights")))
-          .accessibilityValue(unreadValue(feedUnread))
-          .accessibilityIdentifier("ios.agent.shortcuts.feed")
 
           action(t("galaxyssi.agent.shortcuts.new", "New"), description: t("new_conversation", "New conversation"),
             icon: "square.and.pencil", id: "new", width: width, perform: onNewSession)

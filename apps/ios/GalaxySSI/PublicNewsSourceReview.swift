@@ -83,6 +83,7 @@ final class PublicNewsSourceReviewWorker {
           let lease = ledger.claim([key], at: now, retaining: Set(candidates.map(PublicNewsSourceReview.key)))
           try persist(ledger, file)
           var reason: String?
+          var notBefore: Date?
           do {
             let original = try await PublicNewsArticleBody.load(article.url)
             try Task.checkCancellation()
@@ -96,7 +97,8 @@ final class PublicNewsSourceReviewWorker {
             let runId = lease.uuidString
             let budget = GalaxySSIGlobalAutonomousBudgetRuntime.acquire(store: store, runId: runId,
               actionId: key, kind: .researchEvidence, resourceId: "ios:public-news-local",
-              systemPrompt: PublicNewsSourceReview.prompt, prompt: prompt, nowMillis: GlobalRealtimeClock.nowMillis())
+              systemPrompt: PublicNewsSourceReview.prompt, prompt: prompt, nowMillis: GlobalRealtimeClock.nowMillis(),
+              optedInPublicNewsReview: true)
             if budget.granted {
               var response = ""
               defer {
@@ -115,14 +117,21 @@ final class PublicNewsSourceReviewWorker {
               }
             } else {
               reason = "source_review_budget_deferred"
+              if budget.denial != .concurrencyLimit, budget.nextEligibleAtMillis > 0 {
+                notBefore = Date(timeIntervalSince1970: Double(budget.nextEligibleAtMillis) / 1_000)
+              }
             }
           } catch is CancellationError {
             reason = nil
           } catch {
             reason = Task.isCancelled ? nil : "source_review_retry"
           }
-          ledger.finish(key, lease: lease, at: Date(), reason: reason)
+          ledger.finish(key, lease: lease, at: Date(), reason: reason, notBefore: notBefore)
           try persist(ledger, file)
+          if let notBefore {
+            let delay = min(max(notBefore.timeIntervalSinceNow, 0), 60)
+            try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+          }
         }
         try await Task.sleep(nanoseconds: 30_000_000_000)
       }
