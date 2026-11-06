@@ -223,6 +223,7 @@
     A10000000000000000002006 /* AgentWorkflowExecutionHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002006 /* AgentWorkflowExecutionHistory.swift */; };
     A10000000000000000002010 /* AgentRemoteProactiveEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002010 /* AgentRemoteProactiveEvents.swift */; };
     A10000000000000000002017 /* AgentRecordedRunStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002017 /* AgentRecordedRunStore.swift */; };
+    A10000000000000000009894 /* AgentRecordedExecutionEvidence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009894 /* AgentRecordedExecutionEvidence.swift */; };
     A10000000000000000002701 /* AgentEvalOpsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002701 /* AgentEvalOpsModels.swift */; };
     A10000000000000000002702 /* AgentEvalOpsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002702 /* AgentEvalOpsStore.swift */; };
     A10000000000000000002703 /* AgentQualityRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002703 /* AgentQualityRouting.swift */; };
@@ -1401,6 +1402,7 @@
     A20000000000000000002006 /* AgentWorkflowExecutionHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowExecutionHistory.swift; sourceTree = "<group>"; };
     A20000000000000000002010 /* AgentRemoteProactiveEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteProactiveEvents.swift; sourceTree = "<group>"; };
     A20000000000000000002017 /* AgentRecordedRunStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRecordedRunStore.swift; sourceTree = "<group>"; };
+    A20000000000000000009894 /* AgentRecordedExecutionEvidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRecordedExecutionEvidence.swift; sourceTree = "<group>"; };
     A20000000000000000002701 /* AgentEvalOpsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentEvalOpsModels.swift; sourceTree = "<group>"; };
     A20000000000000000002702 /* AgentEvalOpsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentEvalOpsStore.swift; sourceTree = "<group>"; };
     A20000000000000000002703 /* AgentQualityRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentQualityRouting.swift; sourceTree = "<group>"; };
@@ -3156,6 +3158,7 @@
         A20000000000000000002006 /* AgentWorkflowExecutionHistory.swift */,
         A20000000000000000002010 /* AgentRemoteProactiveEvents.swift */,
         A20000000000000000002017 /* AgentRecordedRunStore.swift */,
+        A20000000000000000009894 /* AgentRecordedExecutionEvidence.swift */,
         A20000000000000000002701 /* AgentEvalOpsModels.swift */,
         A20000000000000000002702 /* AgentEvalOpsStore.swift */,
         A20000000000000000002703 /* AgentQualityRouting.swift */,
@@ -4473,6 +4476,7 @@
         A10000000000000000002006 /* AgentWorkflowExecutionHistory.swift in Sources */,
         A10000000000000000002010 /* AgentRemoteProactiveEvents.swift in Sources */,
         A10000000000000000002017 /* AgentRecordedRunStore.swift in Sources */,
+        A10000000000000000009894 /* AgentRecordedExecutionEvidence.swift in Sources */,
         A10000000000000000002701 /* AgentEvalOpsModels.swift in Sources */,
         A10000000000000000002702 /* AgentEvalOpsStore.swift in Sources */,
         A10000000000000000002703 /* AgentQualityRouting.swift in Sources */,
