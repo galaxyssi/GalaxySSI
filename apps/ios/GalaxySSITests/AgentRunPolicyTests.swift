@@ -259,8 +259,91 @@ extension GalaxySSIStoreTests {
     let payload: [String: Any] = ["type": "agent_task_event", "execution_generation": 2, "status_seq": 3, "events": events]
     let updates = AgentConnectorPublicProgress.entries(payload) { _, fallback in fallback }
     XCTAssertEqual(updates.map(\.eventId), ["comment", "command", "search-failed"])
-    XCTAssertEqual(updates.map(\.text), ["I will inspect the image.", "Running command", "Failed: Searching the web"])
+    XCTAssertEqual(updates.map(\.text), ["I will inspect the image.", "Running command", "Some sources could not be read"])
     XCTAssertFalse(updates.map(\.text).joined().contains("SECRET"))
+  }
+
+  @MainActor
+  func testConnectorResearchDiagnosticsStayOnTheMatchingToolEventAcrossReplay() throws {
+    let webTool: [String: Any] = [
+      "event_id": "read-pages", "kind": "tool", "code": "dynamic_tool", "status": "failed",
+      "detail": "galaxyssi.galaxyssi_fetch_public_pages",
+      "metadata": ["web_read_failures": [
+        ["host": "example.org", "code": "http_status", "http_status": 403, "body": "PRIVATE_BODY"],
+        ["host": "archive.example.org", "code": "http_status", "http_status": 503],
+        ["host": "https://example.org/private?token=SECRET", "code": "invalid_input",
+          "field": "max_bytes", "actual": 2_097_153, "minimum": 1, "maximum": 2_097_152],
+        ["host": "news.example.org", "code": "no_readable_body"],
+        ["host": "not-included.example.org", "code": "fetch_failed"]
+      ]]
+    ]
+    var envelope: [String: Any] = [
+      "type": "agent_task_event", "task_status": "running", "execution_generation": 3, "status_seq": 8,
+      "progress_event": webTool
+    ]
+    func entries(_ payload: [String: Any]) -> [AgentConnectorPublicProgress] {
+      AgentConnectorPublicProgress.entries(payload) { _, fallback in fallback }
+    }
+    XCTAssertTrue(AgentConnectorResearchProgress.checkingSources(envelope))
+    let update = try XCTUnwrap(entries(envelope).first)
+    XCTAssertEqual(update.compactText, "Some sources could not be read")
+    XCTAssertTrue(update.text.contains("example.org \u{00B7} HTTP 403"))
+    XCTAssertTrue(update.text.contains("HTTP 503"))
+    XCTAssertTrue(update.text.contains("Requested 2097153 bytes; allowed range: 1 to 2097152 bytes"))
+    XCTAssertTrue(update.text.contains("No readable page body"))
+    for forbidden in ["PRIVATE_BODY", "SECRET", "not-included"] { XCTAssertFalse(update.text.contains(forbidden)) }
+
+    let live = AgentConnectorPublicProgress.reducing([], updates: [update])
+    envelope.removeValue(forKey: "progress_event")
+    envelope["task_status"] = "completed"
+    envelope["status_seq"] = 9
+    var partialRead = webTool
+    partialRead["status"] = "completed"
+    envelope["events"] = [partialRead]
+    XCTAssertFalse(AgentConnectorResearchProgress.checkingSources(envelope))
+    let replay = AgentConnectorPublicProgress.reducing(live, updates: entries(envelope))
+    XCTAssertEqual(replay.count, 1)
+    XCTAssertEqual(replay.first?.id, live.first?.id)
+    XCTAssertEqual(replay.first?.detail, update.text)
+    XCTAssertEqual(replay.first?.compactDetail, update.compactText)
+    let restored = try JSONDecoder().decode([DeliveryTraceEvent].self, from: JSONEncoder().encode(replay))
+    XCTAssertEqual(restored, replay)
+
+    var plainReplay = partialRead
+    plainReplay.removeValue(forKey: "metadata")
+    envelope["events"] = [plainReplay]
+    envelope["status_seq"] = 10
+    XCTAssertEqual(AgentConnectorPublicProgress.reducing(restored, updates: entries(envelope)).first?.detail, update.text)
+    envelope["execution_generation"] = 4
+    XCTAssertNil(AgentConnectorPublicProgress.reducing(restored, updates: entries(envelope)).first?.compactDetail)
+  }
+
+  @MainActor
+  func testConnectorResearchRecoveryHeadlineRequiresTheCurrentVisibleFailedResearchTool() throws {
+    var event: [String: Any] = ["event_id": "public-search", "kind": "tool", "code": "web_search", "status": "failed"]
+    var payload: [String: Any] = ["type": "agent_task_event", "task_status": "running",
+      "execution_generation": 2, "status_seq": 9, "progress_event": event]
+    XCTAssertTrue(AgentConnectorResearchProgress.checkingSources(payload))
+    let current = try XCTUnwrap(AgentConnectorResearchProgress.Version(payload))
+    payload["status_seq"] = 8
+    XCTAssertLessThan(try XCTUnwrap(AgentConnectorResearchProgress.Version(payload)), current)
+    payload["execution_generation"] = 3
+    XCTAssertGreaterThan(try XCTUnwrap(AgentConnectorResearchProgress.Version(payload)), current)
+    event["user_visible"] = false
+    payload["progress_event"] = event
+    XCTAssertFalse(AgentConnectorResearchProgress.checkingSources(payload))
+    event["user_visible"] = true
+    event["code"] = "dynamic_tool"
+    event["detail"] = "example.unrelated"
+    event["metadata"] = ["web_read_failures": [["host": "example.org", "code": "http_status", "http_status": 403]]]
+    payload["progress_event"] = event
+    XCTAssertFalse(AgentConnectorResearchProgress.checkingSources(payload))
+    XCTAssertNil(AgentConnectorResearchProgress.entries(payload) { _, fallback in fallback }.first?.compactText)
+    event["detail"] = "galaxyssi_parallel_web_search"
+    payload["progress_event"] = event
+    payload["task_status"] = "failed"
+    XCTAssertFalse(AgentConnectorResearchProgress.checkingSources(payload))
+    XCTAssertNotNil(AgentConnectorResearchProgress.entries(payload) { _, fallback in fallback }.first?.compactText)
   }
 
   func testPublicConnectorProgressIsIdempotentAndFencesStaleUpdates() throws {

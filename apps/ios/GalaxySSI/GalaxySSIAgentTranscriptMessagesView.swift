@@ -84,7 +84,7 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
             } label: {
               HStack(alignment: .top, spacing: 6) {
                 Image(systemName: expandedProgress.contains(message.id) ? "chevron.up" : "chevron.down")
-                Text(progress.last?.detail ?? "")
+                Text(progressHeadline(progress.last, for: message))
                   .multilineTextAlignment(.leading)
               }
               .font(.system(size: 13))
@@ -220,6 +220,18 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
       !$0.isMine && !$0.isSystem && $0.conversationId == message.conversationId &&
         AgentReplyWaitingIndicatorPolicy.turnKey(for: $0) == turn
     }
+  }
+
+  private func progressHeadline(_ event: DeliveryTraceEvent?, for message: ChatMessage) -> String {
+    if let task = remoteAgentTask(message), task.checkingOtherSources {
+      let turn = AgentReplyWaitingIndicatorPolicy.turnKey(for: message)
+      let settled = messages.contains {
+        !$0.isMine && !$0.isSystem && $0.deliveryStatus == .delivered && $0.conversationId == message.conversationId &&
+          AgentReplyWaitingIndicatorPolicy.turnKey(for: $0) == turn
+      }
+      if !settled { return t("galaxyssi.agent.progress.research.checking", "Checking other sources") }
+    }
+    return event?.compactDetail ?? event?.detail ?? ""
   }
 
   private var latestSpeechTarget: AgentReplySpeechTarget? {
