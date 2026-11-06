@@ -3,6 +3,34 @@ import Foundation
 #if os(iOS) && canImport(AVFoundation) && canImport(UIKit)
 import AVFoundation
 import UIKit
+
+enum AgentIOSCaptureSystemPermission {
+  enum State: Equatable { case granted, undetermined, denied }
+
+  static func state(for kind: AgentIOSVisibleCaptureKind) -> State {
+    switch kind {
+    case .photo:
+      switch AVCaptureDevice.authorizationStatus(for: .video) {
+      case .authorized: return .granted
+      case .notDetermined: return .undetermined
+      default: return .denied
+      }
+    case .audio:
+      switch AVAudioSession.sharedInstance().recordPermission {
+      case .granted: return .granted
+      case .undetermined: return .undetermined
+      default: return .denied
+      }
+    }
+  }
+
+  static func request(_ kind: AgentIOSVisibleCaptureKind, completion: @escaping (Bool) -> Void) {
+    switch kind {
+    case .photo: AVCaptureDevice.requestAccess(for: .video, completionHandler: completion)
+    case .audio: AVAudioSession.sharedInstance().requestRecordPermission(completion)
+    }
+  }
+}
 #endif
 
 struct AgentIOSForegroundVisibleCaptureProvider: AgentIOSVisibleCaptureToolProviding {
@@ -122,7 +150,8 @@ private struct AgentIOSUIKitVisibleCaptureRuntime {
         retryable: true
       )
     }
-    guard requestCameraAccess() else {
+    guard invocation.context.attributes["capture_permission_preflight"] == "true"
+      ? AgentIOSCaptureSystemPermission.state(for: .photo) == .granted : requestCameraAccess() else {
       return failure(
         code: "camera_permission_denied",
         message: "The iOS camera permission was not granted",
@@ -153,6 +182,10 @@ private struct AgentIOSUIKitVisibleCaptureRuntime {
         fallbackSeconds: Self.defaultPhotoTimeoutSeconds
       )
     ) { completion in
+      guard !captureCancelled(invocation) else {
+        completion(cancelledCapture())
+        return
+      }
       guard let presenter = Self.topMostPresenter() else {
         completion(failure(
           code: "visible_capture_no_presenter",
@@ -219,7 +252,8 @@ private struct AgentIOSUIKitVisibleCaptureRuntime {
         retryable: true
       )
     }
-    guard requestAudioAccess() else {
+    guard invocation.context.attributes["capture_permission_preflight"] == "true"
+      ? AgentIOSCaptureSystemPermission.state(for: .audio) == .granted : requestAudioAccess() else {
       return failure(
         code: "microphone_permission_denied",
         message: "The iOS microphone permission was not granted",
@@ -250,6 +284,10 @@ private struct AgentIOSUIKitVisibleCaptureRuntime {
         fallbackSeconds: durationSeconds + 15
       )
     ) { completion in
+      guard !captureCancelled(invocation) else {
+        completion(cancelledCapture())
+        return
+      }
       guard let presenter = Self.topMostPresenter() else {
         completion(failure(
           code: "visible_capture_no_presenter",
@@ -283,6 +321,16 @@ private struct AgentIOSUIKitVisibleCaptureRuntime {
         ))
       }
     }
+  }
+
+  private func captureCancelled(_ invocation: AgentNativeToolInvocation) -> Bool {
+    invocation.context.attributes["capture_permission_preflight"] == "true" &&
+      PhoneExecutionAuthority.isCancelled(taskId: invocation.context.attributes["capture_permission_task_id"] ?? "")
+  }
+
+  private func cancelledCapture() -> AgentIOSVisibleCaptureOutcome {
+    AgentIOSVisibleCaptureOutcome(status: .cancelled, code: "capture_cancelled",
+      message: "The capture was cancelled before presentation")
   }
 
   private func photoAvailability() -> AgentNativeToolAvailability {

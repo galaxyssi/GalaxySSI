@@ -123,7 +123,7 @@ enum AgentModelPlanningPrompt {
     }
     append(&prompt, "ActionPlan JSON schema:\n")
     append(&prompt, "{\"summary\":\"...\",\"expected_result\":\"...\",\"rollback_strategy\":\"...\",")
-    append(&prompt, "\"completion_requirements\":{\"publication\":\"none|commit|push|pull_request\",\"phone_linux\":false,\"reason\":\"...\",\"artifacts\":[]},")
+    append(&prompt, "\"completion_requirements\":{\"publication\":\"none|commit|push|pull_request\",\"phone_linux\":false,\"reason\":\"...\",\"artifacts\":[],\"file_artifacts\":[]},")
     append(&prompt, "\"actions\":[{\"ref\":\"step_name\",\"kind\":\"ACTION_KIND\",\"target\":\"...\",")
     append(&prompt, "\"description\":\"...\",\"depends_on\":[\"earlier_ref\"],")
     append(&prompt, "\"use_outputs_from\":[\"earlier_ref\"],\"parameters\":{\"key\":\"value\"}}]}\n\n")
@@ -160,6 +160,7 @@ enum AgentModelPlanningPrompt {
     append(&prompt, "Declare root completion_requirements by interpreting the user's actual requested outcome, including exclusions. There is no default publication requirement. publication is none, commit, push, or pull_request; phone_linux is true only when successful execution in the phone Linux guest is part of the requested outcome. These fields are completion obligations, not permissions. Preserve an existing declaration unless correcting it, and explain every outcome-changing correction in reason. ")
     let workspace = AgentWorkspaceScope.id(conversationId: request.conversationContext.conversationId)
     append(&prompt, "Omit artifacts unless a real MP4 is requested. For video, add an artifacts entry with workspace_id \(workspace) and path equal to the exact relative MP4 output path. Require a verified media conversion receipt before TASK_COMPLETE. HTML or a filename alone is not video. ")
+    append(&prompt, "Declare other requested file deliverables in file_artifacts, each with path and optional workspace_id and source_sha256. Use galaxyssi.workspace.file.export after the last change (source=phone_linux for guest files). Set workspace_id only from the host artifact_workspace_id receipt. source_sha256 is the observed pre-edit digest, not the output hash. If evidence is stale, inspect and export again without repeating the write or program. ")
     if maxBatchActions >= 3 {
       append(&prompt, "For a multi-step goal, prefer 3 to \(maxBatchActions) actionable steps when their inputs are already known; use 1 or 2 when the goal is that small or the next choice depends on an observation. ")
     }
@@ -222,6 +223,7 @@ enum AgentModelPlanningPrompt {
     )
     append(&prompt, "Generic native receipts are observations, not final answers. Stop the graph when later choices require interpreting a receipt. ")
     append(&prompt, "After verified evidence proves completion, return one DRAFT_PLAN with target=task-complete and a concise final answer in the user's language; do not repeat tools merely to produce an answer. ")
+    append(&prompt, "Reuse verified source observations. Isolated browser navigation does not prove an external side effect. ")
     append(&prompt, "For an answer with no outstanding effects or obligations, a respond envelope with final_response may deliver the answer directly. Keep sources in the answer and never include unexecuted tool markup. ")
     append(&prompt, "Use next_cursor for lists and keep same or nested paths ordered.\n\n")
   }
@@ -601,8 +603,11 @@ enum AgentPlanningHistoryContext {
       conversationId: conversationId,
       turnId: request.executionTurnId
     )
-    var lines: [String] = []
-    for action in request.executionHistory.reversed() where scope.owns(action) {
+    let scoped = request.executionHistory.enumerated().reversed().filter { scope.owns($0.element) }
+    let observations = scoped.filter { !AgentDurablePlanHistoryPolicy.isPlannerControl($0.element) }
+    let controls = scoped.filter { AgentDurablePlanHistoryPolicy.isPlannerControl($0.element) }
+    var lines: [(offset: Int, text: String)] = []
+    for (offset, action) in observations + controls {
       var object: [String: Any] = [
         "action_id": String(action.id.prefix(512)),
         "kind": action.kind.rawValue,
@@ -634,10 +639,10 @@ enum AgentPlanningHistoryContext {
         line = jsonLine(object)
       }
       guard line.count <= remaining else { break }
-      lines.append(line)
+      lines.append((offset, line))
       remaining -= line.count
     }
-    return header + lines.reversed().joined() + footer
+    return header + lines.sorted { $0.offset < $1.offset }.map { $0.text }.joined() + footer
   }
 
   private static func jsonLine(_ object: [String: Any]) -> String {

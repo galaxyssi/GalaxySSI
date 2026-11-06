@@ -2,6 +2,109 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testEffectRecoveryRequiresFreshHostReceiptForOriginalScopeAndSubject() throws {
+    let tool = AgentIOSSystemNativeToolCatalog.audioVolumeSet
+    let descriptor = try XCTUnwrap(AgentIOSSystemNativeToolCatalog.descriptors().first { $0.id == tool })
+    let input: AgentMcpJSONObject = ["stream": .string("music"), "percent": .int(40)]
+    let action = AgentAction(id: "origin", kind: .callNativeTool, target: tool, risk: .medium,
+      status: .failed, description: "Set media volume", parameters: [
+        "tool_id": tool, "input_json": AgentMcpJSONCodec.stringify(input),
+        "_galaxyssi_task_id": "task", "_galaxyssi_session_id": "session",
+        "_galaxyssi_conversation_id": "conversation", "_galaxyssi_turn_id": "turn"
+      ])
+    let native = AgentNativeToolResult(status: .failed, output: [:], message: "",
+      metadata: ["effect_recovery_query": .string("untrusted")],
+      error: AgentNativeToolError(code: "effect_outcome_unknown", message: "Unknown",
+        details: ["original_invocation_id": .string("untrusted-other-dispatch")]),
+      receipt: AgentNativeToolReceipt(invocationId: "current-attempt", startedAtEpochMillis: 10,
+        finishedAtEpochMillis: 20, durationMillis: 10, status: .failed,
+        inputSha256: AgentMcpJSONCodec.sha256(input), outputSha256: AgentMcpJSONCodec.sha256([:]),
+        originalInvocationId: "original-dispatch"),
+      provenance: AgentNativeToolProvenance(toolId: tool, toolVersion: descriptor.version,
+        location: .application, executorId: "fixture", contractVersion: "1"))
+    var record = try XCTUnwrap(AgentEffectRecoveryRecord.fromNativeResult(native, action: action, descriptor: descriptor))
+    let query = try XCTUnwrap(record.query)
+    XCTAssertEqual(record.invocationId, "original-dispatch")
+    XCTAssertEqual(query.toolId, AgentIOSSystemNativeToolCatalog.audioStatus)
+    XCTAssertEqual(query.subject, "media")
+    XCTAssertTrue(record.isSameEffect(action))
+    var sameEffect = action
+    sameEffect.id = "new-action-id"
+    XCTAssertTrue(record.isSameEffect(sameEffect))
+    let output: AgentMcpJSONObject = ["observed_at_epoch_ms": .int(21), "streams": .object(["media": .object([
+      "stream": .string("media"), "current": .int(13), "scope": .string("app_visible_output_volume")
+    ])])]
+    let receipt = AgentNativeToolReceipt(invocationId: "fresh-read", startedAtEpochMillis: 21,
+      finishedAtEpochMillis: 22, durationMillis: 1, status: .succeeded,
+      inputSha256: AgentMcpJSONCodec.sha256(query.input), outputSha256: AgentMcpJSONCodec.sha256(output))
+    func observation(scope: AgentNativeEffectScope? = nil, tool: String? = nil,
+                     version: String? = nil, observedReceipt: AgentNativeToolReceipt? = nil,
+                     observedOutput: AgentMcpJSONObject? = nil) -> AgentEffectRecoveryRecord.Observation {
+      .init(scope: scope ?? record.scope, toolId: tool ?? query.toolId, version: version ?? query.version,
+        receipt: observedReceipt ?? receipt, output: observedOutput ?? output)
+    }
+    XCTAssertTrue(record.verifies(observation()))
+    XCTAssertFalse(record.verifies(observation(tool: "unrelated.read")))
+    XCTAssertFalse(record.verifies(observation(version: "old-version")))
+    var foreign = record.scope
+    foreign.turnId = "other-turn"
+    XCTAssertFalse(record.verifies(observation(scope: foreign)))
+    foreign = record.scope
+    foreign.conversationId = "other-conversation"
+    XCTAssertFalse(record.verifies(observation(scope: foreign)))
+    var invalid = receipt
+    invalid.replayed = true
+    XCTAssertFalse(record.verifies(observation(observedReceipt: invalid)))
+    invalid = receipt
+    invalid.startedAtEpochMillis = 19
+    XCTAssertFalse(record.verifies(observation(observedReceipt: invalid)))
+    invalid = receipt
+    invalid.inputSha256 = "wrong-input"
+    XCTAssertFalse(record.verifies(observation(observedReceipt: invalid)))
+    let wrongSubject: AgentMcpJSONObject = ["observed_at_epoch_ms": .int(21), "streams": .object(["media": .object([
+      "stream": .string("alarm"), "current": .int(13), "scope": .string("app_visible_output_volume")
+    ])])]
+    invalid = receipt
+    invalid.outputSha256 = AgentMcpJSONCodec.sha256(wrongSubject)
+    XCTAssertFalse(record.verifies(observation(observedReceipt: invalid, observedOutput: wrongSubject)))
+    var staleOutput = output
+    staleOutput["observed_at_epoch_ms"] = .int(18)
+    invalid.outputSha256 = AgentMcpJSONCodec.sha256(staleOutput)
+    XCTAssertFalse(record.verifies(observation(observedReceipt: invalid, observedOutput: staleOutput)))
+    var unknownStream = action
+    unknownStream.parameters["input_json"] = #"{"stream":"alarm","percent":40}"#
+    XCTAssertNil(AgentEffectRecoveryRecord.fromNativeResult(native, action: unknownStream, descriptor: descriptor)?.query)
+    let verified = observation()
+    record.observation = verified
+    var task = AgentTaskRecord(taskId: "task", sessionId: "session", goal: "Set volume",
+      phase: .failed, routeKind: .localSystem, targetTitle: "Phone", risk: .medium, blocked: false)
+    task.effectRecovery = [record]
+    let restored = try JSONDecoder().decode(AgentTaskRecord.self, from: JSONEncoder().encode(task))
+    XCTAssertEqual(restored.effectRecovery, [record])
+    XCTAssertTrue(restored.effectRecovery?.first?.hasObservation == true)
+    XCTAssertFalse(AgentTaskCenterPolicy.actions(restored).contains(.retry))
+    XCTAssertTrue(AgentTaskCenterPolicy.actions(restored).contains(.inspectEffect))
+  }
+
+  func testBrowserOperationObservationUsesExactRequestAndTurnAndExpires() throws {
+    let browser = AgentIOSURLSessionBrowserSessionStore(ttlMillis: 100)
+    var context = AgentNativeToolInvocationContext(sessionId: "session", conversationId: "conversation", turnId: "turn",
+      attributes: ["recovery_task_id": "task"])
+    let scope = AgentIOSURLSessionBrowserSessionScope(context: context)
+    let session = browser.create(scope: scope, resourceId: "create", currentURL: "", nowMillis: 10)
+    _ = try browser.navigate(browserId: session.browserId, scope: scope, currentURL: "https://example.test/",
+      nowMillis: 12, requestId: "navigate")
+    _ = try browser.close(browserId: session.browserId, scope: scope, nowMillis: 13, requestId: "close")
+    XCTAssertEqual(browser.observeOperation(requestId: "create", scope: scope, nowMillis: 15)?.string("operation"), "create")
+    XCTAssertEqual(browser.observeOperation(requestId: "navigate", scope: scope, nowMillis: 15)?.string("operation"), "navigate")
+    XCTAssertEqual(browser.observeOperation(requestId: "close", scope: scope, nowMillis: 15)?.string("operation"), "close")
+    XCTAssertNil(browser.observeOperation(requestId: "different", scope: scope, nowMillis: 15))
+    context.turnId = "other-turn"
+    XCTAssertNil(browser.observeOperation(requestId: "navigate",
+      scope: AgentIOSURLSessionBrowserSessionScope(context: context), nowMillis: 15))
+    XCTAssertNil(browser.observeOperation(requestId: "close", scope: scope, nowMillis: 113))
+  }
+
   @MainActor
   func testVoiceAppContextBindsOneExactTurnAndExpiresWithoutRetargeting() throws {
     var time: TimeInterval = 100
@@ -1006,6 +1109,100 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(delegatedResult.success)
     XCTAssertEqual(delegate.callCount, 1)
     XCTAssertEqual(delegated?.id, "open-url")
+  }
+
+  func testWorkspaceArtifactRequiresLatestScopedVerifiedExportThroughNativeExecutor() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let catalog = AgentPhoneNativeToolCatalog.self
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      catalog.workspaceExecutableDefinitions(store: AgentWorkspaceNativeToolExecutor(runtimeRoot: root)))
+    let executor = AgentNativeToolActionExecutor(registry: registry, delegate: TestAgentActionExecutor { action, _ in
+      AgentActionResult(actionId: action.id, success: false, message: "Unexpected legacy action")
+    })
+    let scope = AgentPlanContinuationScope(conversationId: "files", turnId: "current")
+    let workspace = AgentWorkspaceScope.id(conversationId: scope.conversationId)
+    let target = try XCTUnwrap(AgentArtifactRequirement(path: "output.txt", workspaceId: workspace))
+    func run(_ tool: String, input: AgentMcpJSONObject, key: String? = nil) -> AgentAction {
+      var action = scope.bind(AgentAction(id: UUID().uuidString, kind: .callNativeTool, target: tool,
+        risk: .low, status: .running, description: "Fixture", parameters: [
+          "tool_id": tool, "input_json": AgentMcpJSONCodec.stringify(input),
+          "_galaxyssi_workspace_id": workspace
+        ], requiresConfirmation: false))
+      action.parameters["idempotency_key"] = key
+      let result = executor.execute(action: action, screen: AgentScreenContext(foregroundApp: "GalaxySSI"))
+      action.status = result.success ? .completed : .failed
+      action.artifactReceipt = AgentArtifactOperationReceipt.from(result)
+      return action
+    }
+    func write(_ text: String) -> AgentAction {
+      run(catalog.workspaceWriteText, input: ["path": .string(target.path), "text": .string(text)])
+    }
+    func export(_ key: String? = nil) -> AgentAction {
+      run(catalog.workspaceExport, input: ["path": .string(target.path), "workspace_id": .string("foreign")], key: key)
+    }
+    func missing(_ history: [AgentAction], requirement: AgentArtifactRequirement? = nil) -> [String] {
+      AgentArtifactCompletionEvidence.missing([requirement ?? target], history: history, scope: scope)
+    }
+    let initial = write("Original")
+    let source = run(catalog.workspaceSha256, input: ["path": .string(target.path)])
+    let old = export("export-before-edit")
+    XCTAssertEqual(old.status, .completed)
+    let first = try XCTUnwrap(old.artifactReceipt)
+    XCTAssertEqual(first.workspaceId, workspace)
+    let snapshot = try XCTUnwrap(first.inspection)
+    let file = AgentVerifiedArtifactSnapshot.url(root: root, digest: snapshot.digest, path: snapshot.path)
+    XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "Original")
+    XCTAssertTrue(missing([initial, source, old]).isEmpty)
+    let changed = write("Edited")
+    XCTAssertFalse(missing([initial, source, old, changed]).isEmpty)
+    let replay = export("export-before-edit")
+    XCTAssertTrue(replay.artifactReceipt?.replayed == true)
+    XCTAssertFalse(missing([initial, source, old, changed, replay]).isEmpty)
+    let fresh = export()
+    XCTAssertTrue(missing([initial, source, old, changed, replay, fresh]).isEmpty)
+    let transform = try XCTUnwrap(AgentArtifactRequirement(path: target.path,
+      sourceSha256: try XCTUnwrap(source.artifactReceipt?.inspection?.digest), workspaceId: workspace))
+    XCTAssertTrue(missing([initial, source, old, changed, fresh], requirement: transform).isEmpty)
+    let deleted = run(catalog.workspaceDelete, input: ["path": .string(target.path)])
+    let failedExport = export()
+    XCTAssertEqual(failedExport.status, .failed)
+    XCTAssertFalse(missing([fresh, deleted, failedExport]).isEmpty)
+    let restored = try JSONDecoder().decode(AgentAction.self, from: JSONEncoder().encode(fresh))
+    XCTAssertTrue(missing([restored]).isEmpty)
+  }
+
+  func testArtifactEvidenceRejectsPendingParentOperationsAndAmbiguousWorkspace() throws {
+    let scope = AgentPlanContinuationScope(conversationId: "conversation", turnId: "turn")
+    let path = "outputs/result.csv"
+    let target = try XCTUnwrap(AgentArtifactRequirement(path: path))
+    func fixture(_ tool: String, path: String, workspace: String, status: AgentActionStatus = .completed,
+                 inspection: AgentArtifactOperationReceipt.Inspection? = nil) -> AgentAction {
+      var action = scope.bind(AgentAction(id: UUID().uuidString, kind: .callNativeTool, target: tool, risk: .low,
+        status: status, description: "Fixture", parameters: [
+          "tool_id": tool, "input_json": AgentMcpJSONCodec.stringify(["path": .string(path)])
+        ]))
+      action.artifactReceipt = AgentArtifactOperationReceipt(toolId: tool, workspaceId: workspace,
+        conversationId: scope.conversationId, turnId: scope.turnId, invocationId: action.id,
+        replayed: false, succeeded: status == .completed, inspection: inspection)
+      return action
+    }
+    let catalog = AgentPhoneNativeToolCatalog.self
+    let inspected = AgentArtifactOperationReceipt.Inspection(path: path, digest: String(repeating: "a", count: 64), size: 8)
+    let export = fixture(catalog.workspaceExport, path: path, workspace: "a", inspection: inspected)
+    let foreignExport = fixture(catalog.workspaceExport, path: path, workspace: "b", inspection: inspected)
+    let pending = fixture(catalog.workspaceDelete, path: "outputs", workspace: "a", status: .running)
+    let other = fixture(catalog.workspaceDelete, path: "outputs-old", workspace: "a", status: .failed)
+    let foreign = fixture(catalog.workspaceDelete, path: "outputs", workspace: "b", status: .failed)
+    XCTAssertTrue(AgentArtifactCompletionEvidence.missing([target], history: [export, other, foreign], scope: scope).isEmpty)
+    XCTAssertFalse(AgentArtifactCompletionEvidence.missing([target], history: [pending, export], scope: scope).isEmpty)
+    XCTAssertFalse(AgentArtifactCompletionEvidence.missing([target], history: [export, foreignExport], scope: scope).isEmpty)
+    let explicit = try XCTUnwrap(AgentArtifactRequirement(path: path, workspaceId: "a"))
+    XCTAssertTrue(AgentArtifactCompletionEvidence.missing([explicit], history: [export, foreignExport], scope: scope).isEmpty)
+    let wrongTurn = AgentPlanContinuationScope(conversationId: scope.conversationId, turnId: "other-turn")
+    XCTAssertFalse(AgentArtifactCompletionEvidence.missing([explicit], history: [export], scope: wrongTurn).isEmpty)
+    XCTAssertNil(AgentArtifactRequirement(path: "../result.csv"))
+    XCTAssertNil(AgentArtifactRequirement(path: path, workspaceId: " guessed "))
   }
 
   func testAgentNativeToolActionExecutorRejectsInvalidNativeActionInput() throws {

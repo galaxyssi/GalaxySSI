@@ -3,6 +3,33 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentModelPlanParserTests: XCTestCase {
+  func testRejectionDiagnosticsDistinguishSyntaxToolGraphAndCompletion() {
+    let cases: [(String, String, String)] = [
+      ("{", "$", "invalid_json"),
+      (#"{"actions":{}}"#, "actions", "array_required"),
+      (#"{"actions":[]}"#, "actions", "batch_size"),
+      (#"{"actions":[{"ref":"same","kind":"READ_SCREEN"},{"ref":"same","kind":"READ_SCREEN"}]}"#,
+        "actions[1].ref", "duplicate_ref"),
+      (#"{"actions":[{"kind":"CALL_NATIVE_TOOL","parameters":{"tool_id":"invented-private-marker"}}]}"#,
+        "actions[0].parameters.tool_id", "native_tool_unavailable"),
+      (#"{"actions":[{"kind":"READ_SCREEN","depends_on":["later"]},{"ref":"later","kind":"READ_SCREEN"}]}"#,
+        "actions[0].depends_on", "invalid_dependency"),
+      (#"{"actions":[{"kind":"READ_SCREEN"},{"kind":"TASK_COMPLETE","description":"Done"}]}"#,
+        "actions", "completion_mixed_with_execution")
+    ]
+    let settings = AgentModelPlannerSettings(maxActions: 4, multiAgentCoordination: true)
+    for (raw, field, code) in cases {
+      guard case .failure(let rejection) = AgentModelPlanParser.parseWithDiagnostics(
+        request: request(), raw: raw, settings: settings, context: context()
+      ) else { XCTFail("Expected local rejection for \(field)"); continue }
+      XCTAssertEqual(rejection.field, field)
+      XCTAssertEqual(rejection.code, code)
+      XCTAssertFalse(rejection.correction.isEmpty)
+      XCTAssertFalse(rejection.repairInstruction.contains("invented-private-marker"))
+      XCTAssertNil(AgentModelPlanParser.parse(request: request(), raw: raw, settings: settings, context: context()))
+    }
+  }
+
   func testAgentModelPlanParserBuildsBoundedExecutablePlanFromFencedJson() throws {
     let descriptor = try nativeToolDescriptor(id: "galaxyssi.web.search", risk: .low)
     let raw = """
@@ -291,6 +318,26 @@ final class AgentModelPlanParserTests: XCTestCase {
       settings: AgentModelPlannerSettings(),
       context: context()
     ))
+  }
+
+  func testFileAndVideoCompletionRequirementsRemainIndependent() throws {
+    let raw = """
+    {"completion_requirements":{"publication":"none","phone_linux":false,
+      "artifacts":[{"path":"demo.mp4","workspace_id":"workspace"}],
+      "file_artifacts":[{"path":"report.txt","workspace_id":"workspace:linux"}]},
+     "actions":[{"ref":"read","kind":"READ_SCREEN","parameters":{}}]}
+    """
+    let plan = try XCTUnwrap(AgentModelPlanParser.parse(
+      request: request(), raw: raw, settings: AgentModelPlannerSettings(), context: context()
+    ))
+    let requirements = try XCTUnwrap(plan.completionRequirements)
+    XCTAssertEqual(requirements.artifacts?.map(\.path), ["demo.mp4"])
+    XCTAssertEqual(requirements.fileArtifacts?.map(\.path), ["report.txt"])
+    XCTAssertEqual(try JSONDecoder().decode(AgentCompletionRequirements.self,
+      from: JSONEncoder().encode(requirements)), requirements)
+    XCTAssertNil(AgentModelPlanParser.parse(request: request(),
+      raw: raw.replacingOccurrences(of: "demo.mp4", with: "demo.txt"),
+      settings: AgentModelPlannerSettings(), context: context()))
   }
 
   func testAgentModelPlanParserUsesMcpCallToolProvisionalRisk() throws {

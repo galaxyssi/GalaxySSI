@@ -7,6 +7,95 @@ enum AgentIOSVisibleCaptureKind: String, Codable, CaseIterable, Identifiable {
   var id: String { rawValue }
 }
 
+struct AgentCapturePermissionContinuation: Codable, Equatable {
+  var token = UUID()
+  let taskId: String
+  let sessionId: String
+  let conversationId: String
+  let turnId: String
+  let messageId: UUID
+  let contactId: String
+  let planId: String?
+  let revision: Int?
+  let actionId: String
+  let actionDigest: String
+  let kind: AgentIOSVisibleCaptureKind
+  let permissionMode: AgentPermissionMode
+  var dispatched = false
+
+  init(task: AgentTaskRecord, outgoing: ChatMessage, action: AgentAction,
+       kind: AgentIOSVisibleCaptureKind, permissionMode: AgentPermissionMode) {
+    taskId = task.taskId
+    sessionId = task.sessionId
+    conversationId = outgoing.conversationId
+    turnId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    messageId = outgoing.id
+    contactId = outgoing.contactId
+    planId = task.activePlan?.planId
+    revision = task.activePlan?.revision
+    actionId = action.id
+    actionDigest = AgentModelLoopRecoveryIdentity.sha256(action)
+    self.kind = kind
+    self.permissionMode = permissionMode
+  }
+
+  func action(in task: AgentTaskRecord, outgoing: ChatMessage) -> AgentAction? {
+    guard task.capturePermission == self, task.taskId == taskId, task.sessionId == sessionId,
+          outgoing.isMine, outgoing.id == messageId, outgoing.contactId == contactId,
+          outgoing.conversationId == conversationId,
+          outgoing.turnId.ifBlank(outgoing.id.uuidString) == turnId,
+          task.activePlan?.planId == planId, task.activePlan?.revision == revision,
+          let action = task.pendingAction, task.pendingActions.first == action,
+          action.id == actionId, Self.kind(for: action) == kind,
+          !actionDigest.isEmpty,
+          AgentModelLoopRecoveryIdentity.sha256(action) == actionDigest else { return nil }
+    return action
+  }
+
+  func acceptsCallback(in task: AgentTaskRecord, outgoing: ChatMessage) -> Bool {
+    !dispatched && task.phase == .waitingResponse && action(in: task, outgoing: outgoing) != nil
+  }
+
+  func event(_ type: AgentRunControlEventType, stage: String, now: Int64) -> AgentRunControlEvent {
+    AgentRunControlEvent(
+      conversationId: conversationId, messageId: messageId.uuidString, taskId: taskId, runId: taskId,
+      stepId: actionId, toolCallId: actionId, agentId: "galaxyssi-mobile", deviceId: "",
+      type: type, sequence: 0, timestampMillis: now,
+      payload: ["permission": .string(kind.rawValue), "stage": .string(stage)],
+      idempotencyKey: "capture-permission-" + token.uuidString + "-" + stage,
+      turnId: turnId, actionId: actionId)
+  }
+
+  static func kind(for action: AgentAction) -> AgentIOSVisibleCaptureKind? {
+    guard action.kind == .callNativeTool, let toolId = action.parameters["tool_id"] else { return nil }
+    switch toolId {
+    case AgentIOSVisibleCaptureNativeToolCatalog.cameraCapture: return .photo
+    case AgentIOSVisibleCaptureNativeToolCatalog.microphoneRecord: return .audio
+    default: return nil
+    }
+  }
+}
+
+struct AgentCapturePermissionRequests {
+  private var tokens: [String: UUID] = [:]
+
+  func contains(taskId: String) -> Bool { tokens[taskId] != nil }
+
+  mutating func register(_ wait: AgentCapturePermissionContinuation) {
+    tokens[wait.taskId] = wait.token
+  }
+
+  mutating func consume(_ wait: AgentCapturePermissionContinuation) -> Bool {
+    guard tokens[wait.taskId] == wait.token else { return false }
+    invalidate(taskId: wait.taskId)
+    return true
+  }
+
+  mutating func invalidate(taskId: String) {
+    tokens.removeValue(forKey: taskId)
+  }
+}
+
 enum AgentIOSVisibleCaptureStatus: String, Codable, CaseIterable, Identifiable {
   case succeeded
   case cancelled

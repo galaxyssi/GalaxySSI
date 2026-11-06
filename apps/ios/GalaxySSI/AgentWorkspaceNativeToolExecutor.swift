@@ -48,17 +48,20 @@ final class AgentWorkspaceNativeToolExecutor {
   private let policy: AgentWorkspaceFilePolicy
   private let nowMillis: () -> Int64
   private let stateStore: AgentWorkspaceNativeToolStateStore?
+  private let runtimeRoot: URL
 
   init(
     policy: AgentWorkspaceFilePolicy = AgentWorkspaceFilePolicy(),
     nowMillis: @escaping () -> Int64 = {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     },
-    stateStore: AgentWorkspaceNativeToolStateStore? = nil
+    stateStore: AgentWorkspaceNativeToolStateStore? = nil,
+    runtimeRoot: URL = AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL()
   ) {
     self.policy = policy
     self.nowMillis = nowMillis
     self.stateStore = stateStore
+    self.runtimeRoot = runtimeRoot
     self.workspaces = Self.restoreWorkspaces(stateStore?.load() ?? [:])
   }
 
@@ -77,13 +80,15 @@ final class AgentWorkspaceNativeToolExecutor {
   private func execute(toolId: String, input: AgentMcpJSONObject) -> AgentNativeToolExecutionResult {
     switch run(toolId: toolId, input: input) {
     case .success(let output):
-      return .success(output: output)
+      return .success(output: output.merging(["workspace_id": .string(string(input, "workspace_id"))]) { _, host in host })
     case .failure(let error):
-      return AgentNativeToolExecutionResult.failure(
+      var result = AgentNativeToolExecutionResult.failure(
         code: "workspace_file_error",
         message: error.message,
         details: ["workspace_error": .object(errorObject(error))]
       )
+      result.output["workspace_id"] = .string(string(input, "workspace_id"))
+      return result
     }
   }
 
@@ -193,6 +198,8 @@ final class AgentWorkspaceNativeToolExecutor {
       return diffSummary(workspaceId, string(input, "path"), proposedText: string(input, "proposed_text"))
     case AgentPhoneNativeToolCatalog.workspaceSha256:
       return sha256(workspaceId, string(input, "path"))
+    case AgentPhoneNativeToolCatalog.workspaceExport:
+      return export(workspaceId, path: string(input, "path"), source: string(input, "source"))
     case AgentPhoneNativeToolCatalog.workspaceZipCreate:
       return createZip(
         workspaceId,
@@ -700,6 +707,31 @@ final class AgentWorkspaceNativeToolExecutor {
       "hex": .string(sha256Hex(read.data)),
       "size_bytes": .int(Int64(read.data.count))
     ])
+  }
+
+  private func export(_ workspace: String, path: String, source: String) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
+    guard canonicalWorkspaceId(workspace) == workspace, AgentArtifactRequirement.validPath(path) else {
+      return failure(.invalidPath, "export", path, "Artifact path or workspace is invalid")
+    }
+    do {
+      let data: Data
+      if source == "phone_linux" {
+        let project = runtimeRoot.appendingPathComponent("projects", isDirectory: true)
+          .appendingPathComponent(workspace, isDirectory: true)
+        data = try AgentVerifiedArtifactSnapshot.readLinuxFile(path: path, project: project)
+      } else {
+        guard let file = readFile(workspace, path, operation: "export", maxBytes: AgentVerifiedArtifactSnapshot.maximumBytes)
+        else { return failure(.notFound, "export", path, "Workspace file was not found") }
+        data = file.data
+      }
+      let artifact = try AgentVerifiedArtifactSnapshot.write(data: data, path: path, root: runtimeRoot)
+      return .success([
+        "artifact_workspace_id": .string(source == "phone_linux" ? workspace + ":linux" : workspace),
+        "artifacts": .array([.object(artifact)])
+      ])
+    } catch {
+      return failure(.invalidPath, "export", path, "The workspace file could not be exported and verified")
+    }
   }
 
   private func createZip(

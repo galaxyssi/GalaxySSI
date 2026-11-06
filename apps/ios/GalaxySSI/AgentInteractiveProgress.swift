@@ -3,9 +3,48 @@ import Foundation
 enum AgentInteractiveProgressStepState: String, Codable, Equatable {
   case pending
   case active
+  case waiting
+  case paused
+  case stopped
+  case notExecuted
+  case recorded
   case completed
   case superseded
   case failed
+}
+
+enum AgentInteractiveProgressStatus: Equatable {
+  case running, waitingResponse, waitingConfirmation, paused, blocked, failed, cancelled, completed, unknown
+
+  init(_ phase: AgentPhase) {
+    switch phase {
+    case .observing, .planning, .executing, .verifying: self = .running
+    case .waitingResponse: self = .waitingResponse
+    case .waitingConfirmation: self = .waitingConfirmation
+    case .paused: self = .paused
+    case .blocked: self = .blocked
+    case .failed: self = .failed
+    case .cancelled: self = .cancelled
+    case .completed: self = .completed
+    }
+  }
+
+  var animating: Bool { self == .running || self == .waitingResponse }
+  var finished: Bool { self == .completed || self == .failed || self == .cancelled }
+
+  func title(_ t: (String, String) -> String) -> String {
+    switch self {
+    case .running: return t("galaxyssi.agent.plan_progress.running", "In progress")
+    case .waitingResponse: return t("agent_status_waiting_response", "Waiting for reply")
+    case .waitingConfirmation: return t("agent_status_waiting_confirmation", "Waiting for confirmation")
+    case .paused: return t("agent_recent_status_paused", "Paused")
+    case .blocked: return t("agent_recent_status_blocked", "Blocked")
+    case .failed: return t("agent_recent_status_failed", "Failed")
+    case .cancelled: return t("agent_recent_status_cancelled", "Cancelled")
+    case .completed: return t("galaxyssi.agent.plan_progress.complete", "Completed")
+    case .unknown: return t("galaxyssi.agent.plan_progress.recorded", "Process record")
+    }
+  }
 }
 
 struct AgentInteractiveProgressStep: Identifiable, Equatable {
@@ -47,9 +86,10 @@ struct AgentInteractiveProgressPresentation: Equatable {
   var totalSteps: Int
   var completedSteps: Int
   var planRevision: Int
-  var running: Bool
+  var status: AgentInteractiveProgressStatus
   var agentLabel: String
   var recentActivity: [String]
+  var running: Bool { status.animating }
 
   var counter: String {
     "\(currentStep)/\(totalSteps)"
@@ -64,16 +104,19 @@ struct AgentInteractiveProgressPresentation: Equatable {
     totalSteps: 0,
     completedSteps: 0,
     planRevision: 1,
-    running: false,
+    status: .unknown,
     agentLabel: "",
     recentActivity: []
   )
 }
 
 enum AgentInteractiveProgressPolicy {
-  static func project(task: AgentTaskRecord) -> AgentInteractiveProgressPresentation {
+  static func project(
+    task: AgentTaskRecord, status resolvedStatus: AgentInteractiveProgressStatus? = nil
+  ) -> AgentInteractiveProgressPresentation {
+    let status = resolvedStatus ?? AgentInteractiveProgressStatus(task.phase)
     let plan = task.activePlan
-    let activity = task.executionLog
+    let activity = AgentPublicProgressPolicy.details(task.executionLog)
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
     let declaredPlan: [String]?
@@ -90,6 +133,7 @@ enum AgentInteractiveProgressPolicy {
       plan.map { $0.actionHistory + $0.actions } ?? legacyActions
     )
       .filter { !isTaskCompleteMarker($0) }
+      .filter { !AgentPublicProgressPolicy.isInternal($0.description) }
       .filter { !$0.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     let actionDescriptions = unique(planActions.map(\.description))
     let plannedDescriptions: [String]
@@ -109,7 +153,6 @@ enum AgentInteractiveProgressPolicy {
       return .hidden
     }
 
-    let terminal = terminalPhases.contains(task.phase)
     let steps: [AgentInteractiveProgressStep]
     if !planActions.isEmpty {
       let checkpointRevisions = Dictionary(
@@ -137,7 +180,7 @@ enum AgentInteractiveProgressPolicy {
         return AgentInteractiveProgressStep(
           id: "revision-\(revision)-\(actionId)",
           text: action.description.trimmingCharacters(in: .whitespacesAndNewlines),
-          state: state(for: action.status, superseded: superseded),
+          state: state(for: action.status, superseded: superseded, progress: status),
           actionId: action.id,
           planRevision: revision
         )
@@ -150,8 +193,7 @@ enum AgentInteractiveProgressPolicy {
           state: narrationState(
             index: index,
             lastIndex: plannedDescriptions.count - 1,
-            terminal: terminal,
-            failed: failedPhases.contains(task.phase),
+            progress: status,
             declaredPlan: declaredPlan != nil
           )
         )
@@ -164,16 +206,16 @@ enum AgentInteractiveProgressPolicy {
       return .hidden
     }
     let currentIndex = resolvedCurrentIndex(in: currentBatch.steps)
-    let activeAction = planActions.first { activeActionStatuses.contains($0.status) }
-    let pendingAction = planActions.first { pendingActionStatuses.contains($0.status) }
-    let summary = (activeAction?.description ?? "")
+    let activeStep = status.animating ? currentBatch.steps.first { currentStepStates.contains($0.state) } : nil
+    let pendingStep = currentBatch.steps.first { $0.state == .pending }
+    let summary = (activeStep?.text ?? "")
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(
-        declaredPlan != nil && !terminal
+        declaredPlan != nil && status.animating
           ? currentBatch.steps[currentIndex].text
           : narration.last ?? ""
       )
-      .ifBlank(pendingAction?.description ?? "")
+      .ifBlank(pendingStep?.text ?? "")
       .ifBlank(currentBatch.steps[currentIndex].text)
     let agentLabel = (plan?.route.targetTitle ?? "")
       .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -190,7 +232,7 @@ enum AgentInteractiveProgressPolicy {
       totalSteps: currentBatch.steps.count,
       completedSteps: steps.filter { $0.state == .completed }.count,
       planRevision: max(plan?.revision ?? currentBatch.planRevision, 1),
-      running: !terminal,
+      status: status,
       agentLabel: agentLabel,
       recentActivity: Array(narration.suffix(2))
     )
@@ -277,11 +319,8 @@ enum AgentInteractiveProgressPolicy {
   }
 
   private static func resolvedCurrentIndex(in steps: [AgentInteractiveProgressStep]) -> Int {
-    for state in [
-      AgentInteractiveProgressStepState.active,
-      .failed,
-      .pending
-    ] {
+    if let index = steps.firstIndex(where: { currentStepStates.contains($0.state) }) { return index }
+    for state in [AgentInteractiveProgressStepState.failed, .pending] {
       if let index = steps.firstIndex(where: { $0.state == state }) {
         return index
       }
@@ -292,30 +331,36 @@ enum AgentInteractiveProgressPolicy {
   private static func narrationState(
     index: Int,
     lastIndex: Int,
-    terminal: Bool,
-    failed: Bool,
+    progress: AgentInteractiveProgressStatus,
     declaredPlan: Bool
   ) -> AgentInteractiveProgressStepState {
-    if terminal && failed && index == lastIndex { return .failed }
-    if terminal { return .completed }
-    if declaredPlan { return index == 0 ? .active : .pending }
-    if index < lastIndex { return .completed }
-    return .active
+    if declaredPlan && index > 0 { return state(for: .proposed, superseded: false, progress: progress) }
+    if !declaredPlan && index < lastIndex { return .recorded }
+    return state(for: .running, superseded: false, progress: progress)
   }
 
   private static func state(
     for status: AgentActionStatus,
-    superseded: Bool
+    superseded: Bool,
+    progress: AgentInteractiveProgressStatus
   ) -> AgentInteractiveProgressStepState {
     switch status {
     case .completed:
       return .completed
     case .running, .waitingResponse:
-      return .active
+      if superseded { return .superseded }
+      switch progress {
+      case .running: return status == .waitingResponse ? .waiting : .active
+      case .waitingResponse, .waitingConfirmation, .blocked: return .waiting
+      case .paused: return .paused
+      case .failed, .cancelled: return .stopped
+      case .completed, .unknown: return .recorded
+      }
     case .failed, .blocked, .rolledBack:
       return superseded ? .superseded : .failed
     case .proposed, .pendingConfirmation:
-      return .pending
+      if superseded { return .superseded }
+      return progress.finished ? .notExecuted : .pending
     }
   }
 
@@ -408,23 +453,7 @@ enum AgentInteractiveProgressPolicy {
     .file,
     .automation
   ]
-  private static let activeActionStatuses: [AgentActionStatus] = [
-    .running,
-    .waitingResponse
-  ]
-  private static let pendingActionStatuses: [AgentActionStatus] = [
-    .proposed,
-    .pendingConfirmation
-  ]
-  private static let terminalPhases: [AgentPhase] = [
-    .completed,
-    .failed,
-    .cancelled,
-    .blocked
-  ]
-  private static let failedPhases: [AgentPhase] = [
-    .failed,
-    .cancelled,
-    .blocked
+  private static let currentStepStates: [AgentInteractiveProgressStepState] = [
+    .active, .waiting, .paused, .stopped
   ]
 }

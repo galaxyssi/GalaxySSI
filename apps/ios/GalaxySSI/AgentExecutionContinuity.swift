@@ -936,8 +936,13 @@ extension AgentPlan {
   }
 
   func historyForReplan() -> [AgentAction] {
-    let terminalStatuses: [AgentActionStatus] = [.completed, .failed, .blocked, .rolledBack]
-    return Array((actionHistory + actions.filter { terminalStatuses.contains($0.status) }).suffix(40))
+    AgentDurablePlanHistoryPolicy.plannerProjection(
+      AgentDurablePlanHistoryPolicy.latestSnapshots(actionHistory + actions)
+    )
+  }
+
+  func executionSnapshots(in scope: AgentPlanContinuationScope) -> [AgentAction] {
+    AgentDurablePlanHistoryPolicy.latestSnapshots((actionHistory + actions).filter(scope.owns))
   }
 
   func historyForNextRevision(_ nextRevision: Int) -> [AgentAction] {
@@ -997,6 +1002,31 @@ enum AgentDurablePlanHistoryPolicy {
     .running,
     .waitingResponse
   ]
+
+  static func isPlannerControl(_ action: AgentAction) -> Bool {
+    action.kind == .callConnector &&
+      (action.parameters["connector_task_mode"] ?? "").localizedCaseInsensitiveContains("supervised")
+  }
+
+  static func plannerProjection(_ snapshots: [AgentAction]) -> [AgentAction] {
+    let terminal = snapshots.filter { !openStatuses.contains($0.status) }
+    // Repeated model requests are control history, not observations about the goal.
+    let observations = terminal.enumerated().filter { !isPlannerControl($0.element) }.suffix(40)
+    guard let latestControlFailure = terminal.lastIndex(where: {
+      isPlannerControl($0) && [.failed, .blocked].contains($0.status)
+    }) else {
+      return observations.map { $0.element }
+    }
+    var marker = terminal[latestControlFailure]
+    marker.description = "Supervising planner request failed"
+    marker.evidence = ""
+    marker.parameters = marker.parameters.filter { key, _ in
+      ["connector_task_mode", "supervised_iteration", revisionParameter,
+       AgentPlanContinuationScope.conversationIdKey, AgentPlanContinuationScope.turnIdKey].contains(key)
+    }
+    return (Array(observations) + [(offset: latestControlFailure, element: marker)])
+      .sorted { $0.offset < $1.offset }.map { $0.element }
+  }
 
   static func latestSnapshots(_ actions: [AgentAction]) -> [AgentAction] {
     guard actions.count > 1 else { return actions }

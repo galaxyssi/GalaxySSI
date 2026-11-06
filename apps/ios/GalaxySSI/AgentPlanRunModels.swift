@@ -115,12 +115,14 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
   var plannerSnapshot: AgentPlannerModelSnapshot?
   var historyManifest: AgentSessionHistoryManifest?
   var lastNativeActionResult: AgentActionResult?
+  var effectRecovery: [AgentEffectRecoveryRecord]? = nil
   var nativeActionResults: [String]
   var result: String
   var verification: String
   var outputFiles: [String]
   var executionLog: [String]
   var teamRecoveryRunId: String? = nil
+  var capturePermission: AgentCapturePermissionContinuation? = nil
   var createdAtMillis: Int64
   var updatedAtMillis: Int64
 
@@ -217,12 +219,14 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     case plannerSnapshot = "planner_snapshot"
     case historyManifest = "history_pages"
     case lastNativeActionResult = "last_native_action_result"
+    case effectRecovery = "effect_recovery"
     case nativeActionResults = "native_action_results"
     case result
     case verification
     case outputFiles = "output_files"
     case executionLog = "execution_log"
     case teamRecoveryRunId = "team_recovery_run_id"
+    case capturePermission = "capture_permission"
     case createdAtMillis = "created_at_millis"
     case updatedAtMillis = "updated_at_millis"
   }
@@ -262,7 +266,9 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
       createdAtMillis: try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? 0,
       updatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? 0
     )
+    effectRecovery = try container.decodeIfPresent([AgentEffectRecoveryRecord].self, forKey: .effectRecovery)
     teamRecoveryRunId = try container.decodeIfPresent(String.self, forKey: .teamRecoveryRunId)
+    capturePermission = try container.decodeIfPresent(AgentCapturePermissionContinuation.self, forKey: .capturePermission)
   }
 }
 
@@ -613,22 +619,26 @@ struct AgentCompletionRequirements: Codable, Equatable {
   var phoneLinux: Bool
   var reason: String
   var artifacts: [AgentVideoArtifactRequirement]?
+  var fileArtifacts: [AgentArtifactRequirement]?
 
   init(
     publication: AgentPublicationRequirement,
     phoneLinux: Bool,
     reason: String = "",
-    artifacts: [AgentVideoArtifactRequirement]? = nil
+    artifacts: [AgentVideoArtifactRequirement]? = nil,
+    fileArtifacts: [AgentArtifactRequirement]? = nil
   ) {
     self.publication = publication
     self.phoneLinux = phoneLinux
     self.reason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
     self.artifacts = artifacts
+    self.fileArtifacts = fileArtifacts
   }
 
   func changesOutcome(from previous: AgentCompletionRequirements) -> Bool {
     publication != previous.publication || phoneLinux != previous.phoneLinux ||
-      Set(artifacts ?? []) != Set(previous.artifacts ?? [])
+      Set(artifacts ?? []) != Set(previous.artifacts ?? []) ||
+      Set(fileArtifacts ?? []) != Set(previous.fileArtifacts ?? [])
   }
 
   func canReplace(_ previous: AgentCompletionRequirements?) -> Bool {
@@ -645,6 +655,7 @@ struct AgentCompletionRequirements: Codable, Equatable {
     case phoneLinux = "phone_linux"
     case reason
     case artifacts
+    case fileArtifacts = "file_artifacts"
   }
 }
 

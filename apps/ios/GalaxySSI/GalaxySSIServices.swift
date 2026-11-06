@@ -126,10 +126,15 @@ final class MessageCoordinator: ObservableObject {
   private var globalCognitionResponseToken: UUID?
   private var globalAutonomousResponseToken: UUID?
   private var agentHomeDisplayContactIdsByTurnId: [String: String] = [:]
+  private var capturePermissionRequests = AgentCapturePermissionRequests()
+  private var capturePermissionsReady: [String: UUID] = [:]
+  private var captureDispatches: [String: UUID] = [:]
+  private lazy var capturePermissionEvents = UserDefaultsAgentRunEventStore()
   private var currentAgentScreenContext = AgentScreenContext(
     foregroundApp: "GalaxySSI iOS",
     pageTitle: "Agent"
   )
+  private let localBrowserSessions = AgentIOSURLSessionBrowserSessionStore()
   private lazy var localNativeToolRuntime: AgentPhoneNativeToolRuntime? = { [weak self] in
     guard let self else { return nil }
     let settingsStore = self.store
@@ -184,6 +189,7 @@ final class MessageCoordinator: ObservableObject {
       homeAssistantSettingsProvider: {
         settingsStore.homeAssistantSettings
       },
+      webMediaProvider: AgentIOSURLSessionWebMediaToolProvider(browserSessions: self.localBrowserSessions),
       voiceReminderTool: reminderTool
     ) else { return nil }
     if let appTools = try? VoiceAppNativeTools.executables(invoke: { [weak self, weak settingsStore] operation, invocation in
@@ -534,7 +540,21 @@ final class MessageCoordinator: ObservableObject {
   func reconcileInterruptedLocalPlanNodes() -> Int {
     var recoveredTaskCount = 0
     for var task in store.recentAgentTasks(limit: 500) where
-      task.phase == .executing || (task.phase == .paused && task.teamRecoveryRunId != nil) {
+      task.phase == .executing || (task.phase == .paused && task.teamRecoveryRunId != nil) ||
+      (task.phase == .waitingResponse && task.capturePermission != nil) {
+      if let wait = task.capturePermission {
+        guard !capturePermissionRequests.contains(taskId: task.taskId),
+              capturePermissionsReady[task.taskId] == nil, captureDispatches[task.taskId] == nil else { continue }
+        task.phase = .paused
+        task.blocked = false
+        task.verification = capturePermissionResumeMessage(dispatched: wait.dispatched)
+        task.executionLog.append("Native capture: paused after app process interruption")
+        task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+        store.upsertAgentTask(task)
+        recordCapturePermissionEvent(.paused, wait: wait, stage: "interrupted")
+        recoveredTaskCount += 1
+        continue
+      }
       guard var plan = task.activePlan else { continue }
       let outgoing = localOutgoingMessage(for: task)
       let teamSpecs = plan.actions.filter { $0.kind == .callConnector }.compactMap {
@@ -761,7 +781,7 @@ final class MessageCoordinator: ObservableObject {
             executionMode: input.executionMode,
             allowsDirectResponse: false,
             replanReason: intent.reason,
-            executionHistory: basePlan.historyForReplan().filter(continuationScope.owns),
+            executionHistory: basePlan.executionSnapshots(in: continuationScope),
             completionRequirements: input.completionRequirements,
             conversationOverride: input.conversation,
             hasAttachmentsOverride: false,
@@ -823,6 +843,7 @@ final class MessageCoordinator: ObservableObject {
     ) { [weak self] _ in
       Task { @MainActor in
         guard let self else { return }
+        self.continueForegroundCapturePermissions()
         self.pendingReplyRecoveryWake.request(isConnected: self.mqttClient.relationshipSubscriptionsReady)
       }
     }
@@ -4805,6 +4826,7 @@ final class MessageCoordinator: ObservableObject {
     edit: (AgentTaskRecord) -> AgentPendingActionEditResult
   ) -> AgentPendingActionEditResult {
     guard let task = store.agentTask(id: taskId),
+          task.capturePermission == nil,
           [.waitingConfirmation, .paused].contains(task.phase) else {
       return AgentPendingActionEditResult(error: "Only paused or waiting tasks can be edited")
     }
@@ -4926,6 +4948,9 @@ final class MessageCoordinator: ObservableObject {
           let outgoing = localOutgoingMessage(for: task) else {
       return false
     }
+    if let index = task.effectRecovery?.firstIndex(where: { !$0.hasObservation }) {
+      return inspectLocalEffect(index, outgoing: outgoing, task: &task, registry: runtime.registry)
+    }
     let previousPlan = task.activePlan
     let continuationScope = previousPlan.flatMap {
       AgentPlanContinuationScope.resolve(
@@ -4941,9 +4966,6 @@ final class MessageCoordinator: ObservableObject {
       store.upsertAgentTask(task)
       return false
     }
-    let plannerHistory = (previousPlan?.historyForReplan() ?? []).filter {
-      continuationScope?.owns($0) ?? true
-    }
     let planRequest = AgentPlanRequest(
       goal: task.goal,
       screen: currentAgentScreenContext,
@@ -4953,7 +4975,7 @@ final class MessageCoordinator: ObservableObject {
       responseLanguage: store.languagePolicy.responseLanguage,
       completionRequirements: previousPlan?.completionRequirements
     )
-    let fallbackPlan = AgentDirectNativeToolPlanner.plan(request: planRequest)
+    let fallbackPlan = AgentDirectNativeToolPlanner.shortcutPlan(request: planRequest)
     let taskExecutionMode = AgentTaskExecutionModePolicy.resolve(
       request: task.goal,
       configuredMode: store.agentSafetySettings.taskExecutionMode
@@ -5021,7 +5043,7 @@ final class MessageCoordinator: ObservableObject {
             executionMode: taskExecutionMode,
             allowsDirectResponse: false,
             replanReason: replanReason,
-            executionHistory: plannerHistory,
+            executionHistory: previousPlan.executionSnapshots(in: continuationScope),
             completionRequirements: previousPlan.completionRequirements,
             conversationOverride: conversation,
             hasAttachmentsOverride: false,
@@ -5054,11 +5076,10 @@ final class MessageCoordinator: ObservableObject {
         executionMode: taskExecutionMode,
         allowsDirectResponse: false,
         replanReason: replanReason,
-        executionHistory: plannerHistory,
         completionRequirements: previousPlan?.completionRequirements
       )
     }
-    let plan = modelOutcome?.actionPlan ?? fallbackPlan
+    let plan = modelOutcome?.actionPlan ?? ((task.effectRecovery ?? []).isEmpty ? fallbackPlan : nil)
     guard var resolvedPlan = plan else {
       return false
     }
@@ -5083,7 +5104,7 @@ final class MessageCoordinator: ObservableObject {
     }
     resolvedPlan.validation = AgentPlanValidator.validate(resolvedPlan)
     let actions = resolvedPlan.actions
-    guard !actions.isEmpty else {
+    guard !actions.isEmpty, permitsEffectRecoveryActions(actions, task: task, outgoing: outgoing) else {
       return false
     }
     task.phase = .executing
@@ -5106,6 +5127,7 @@ final class MessageCoordinator: ObservableObject {
   @discardableResult
   func retryFailedLocalNativeAction(taskId: String) -> Bool {
     guard var task = store.agentTask(id: taskId),
+          (task.effectRecovery ?? []).isEmpty,
           task.phase == .failed,
           let failedAction = task.pendingAction ?? task.pendingActions.first,
           failedAction.status == .failed,
@@ -5143,9 +5165,130 @@ final class MessageCoordinator: ObservableObject {
     return applyLocalNativeAction(action: retryAction, outgoing: outgoing, task: &task)
   }
 
+  private func rememberUnverifiedEffect(
+    _ result: AgentActionResult, action: AgentAction, outgoing: ChatMessage, task: inout AgentTaskRecord
+  ) {
+    let effect: AgentEffectRecoveryRecord
+    if let native = AgentEffectRecoveryRecord.fromActionResult(result) {
+      effect = native
+    } else if result.metadata["error_code"] == "effect_outcome_unknown" ||
+                result.metadata["plan_node_outcome_unknown"] == "true" {
+      // An old or interrupted journal entry without a host query must not invent one.
+      effect = AgentEffectRecoveryRecord(scope: AgentNativeEffectScope(sessionId: task.sessionId,
+        conversationId: outgoing.conversationId, taskId: task.taskId,
+        turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)),
+        actionId: action.id, toolId: action.parameters["tool_id"] ?? action.target,
+        version: "", inputDigest: "", invocationId: result.metadata["original_invocation_id"] ?? action.id,
+        uncertainAt: AgentControlPlaneClock.nowMillis(), query: nil)
+    } else { return }
+    var effects = task.effectRecovery ?? []
+    guard !effects.contains(where: { $0.invocationId == effect.invocationId && $0.toolId == effect.toolId }) else { return }
+    effects.append(effect)
+    task.effectRecovery = effects
+  }
+
+  private func permitsEffectRecoveryActions(
+    _ actions: [AgentAction], task: AgentTaskRecord, outgoing: ChatMessage
+  ) -> Bool {
+    (task.effectRecovery ?? []).allSatisfy { effect in
+      effect.matches(taskId: task.taskId, sessionId: task.sessionId, outgoing: outgoing) &&
+        effect.hasObservation && !actions.contains(where: effect.isSameEffect)
+    }
+  }
+
+  private func inspectLocalEffect(
+    _ index: Int, outgoing: ChatMessage, task: inout AgentTaskRecord, registry: AgentNativeToolRegistry
+  ) -> Bool {
+    guard var effects = task.effectRecovery, effects.indices.contains(index) else { return false }
+    let effect = effects[index]
+    guard effect.matches(taskId: task.taskId, sessionId: task.sessionId, outgoing: outgoing),
+          ![AgentPermissionMode.observeOnly, .suggestOnly].contains(store.agentSafetySettings.permissionMode),
+          !PhoneExecutionAuthority.isCancelled(taskId: task.taskId),
+          let query = effect.query,
+          let observation = observeLocalEffect(effect, query: query, registry: registry),
+          effect.verifies(observation) else {
+      task.verification = localizedReply("galaxyssi.agent.effect_recovery.unavailable",
+        fallback: "The original effect is still unverified. Its affected state could not be confirmed; nothing was repeated.")
+      task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+      store.upsertAgentTask(task)
+      return false
+    }
+    effects[index].observation = observation
+    task.effectRecovery = effects
+    if let observed = recoveryObservationAction(effects[index], outgoing: outgoing, task: task) {
+      var plan = task.activePlan ?? AgentPlan(goal: task.goal, screen: currentAgentScreenContext,
+        steps: [], actions: [], route: AgentRoute())
+      plan.actionHistory = Array((plan.actionHistory + [observed]).suffix(AgentLongTaskPersistenceLimits.maximumActions))
+      task.activePlan = plan
+      task.planContext = AgentTaskPlanContext(plan: plan)
+    }
+    task.verification = localizedReply("galaxyssi.agent.effect_recovery.observed",
+      fallback: "Affected state observed. The original outcome is not confirmed. Re-plan to decide the next step.")
+    task.executionLog.append("Recovery: observed the scoped state for \(effect.toolId); original effect was not repeated")
+    task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+    store.upsertAgentTask(task)
+    return true
+  }
+
+  private func observeLocalEffect(
+    _ effect: AgentEffectRecoveryRecord, query: AgentEffectRecoveryRecord.Query,
+    registry: AgentNativeToolRegistry
+  ) -> AgentEffectRecoveryRecord.Observation? {
+    let started = AgentControlPlaneClock.nowMillis()
+    var context = AgentNativeToolInvocationContext(
+      invocationId: UUID().uuidString, sessionId: effect.scope.sessionId,
+      conversationId: effect.scope.conversationId, turnId: effect.scope.turnId,
+      callerId: AgentEffectRecoveryRecord.nativeCaller, requestedAtEpochMillis: started,
+      attributes: ["task_id": effect.scope.taskId, "recovery_task_id": effect.scope.taskId])
+    switch query.kind {
+    case .audio:
+      let probe = AgentAction(id: context.invocationId, kind: .callNativeTool, target: query.toolId,
+        risk: .low, status: .proposed, description: "Observe media audio state",
+        parameters: ["tool_id": query.toolId], requiresConfirmation: false)
+      guard query.toolId == AgentIOSSystemNativeToolCatalog.audioStatus, query.input.isEmpty,
+            let descriptor = registry.lookup(query.toolId)?.descriptor,
+            descriptor.effect == .readOnly, descriptor.version == query.version,
+            AgentConfirmationPolicy.tier(for: probe) == .direct,
+            descriptor.requiredPermissions.allSatisfy({ $0.id == AgentIOSSystemNativeToolCatalog.iosAudioStatusPermission }),
+            !descriptor.requiredConsents.contains(where: \.required) else { return nil }
+      context.grantedPermissions = Set(descriptor.requiredPermissions.filter(\.required).map(\.id))
+      let result = registry.invoke(query.toolId, input: query.input, context: context)
+      guard AgentMcpJSONCodec.stringify(result.output).utf8.count <= 8_192 else { return nil }
+      return .init(scope: AgentNativeEffectScope(context: context), toolId: result.provenance.toolId,
+        version: result.provenance.toolVersion, receipt: result.receipt, output: result.output)
+    case .browser:
+      guard query.toolId == AgentEffectRecoveryRecord.browserObserver,
+            query.version == AgentPhoneNativeToolCatalog.version,
+            query.input.string("request_id") == effect.invocationId,
+            let output = localBrowserSessions.observeOperation(requestId: effect.invocationId,
+              scope: AgentIOSURLSessionBrowserSessionScope(context: context), nowMillis: started) else { return nil }
+      let finished = AgentControlPlaneClock.nowMillis()
+      let receipt = AgentNativeToolReceipt(invocationId: context.invocationId,
+        startedAtEpochMillis: started, finishedAtEpochMillis: finished, durationMillis: max(0, finished - started),
+        status: .succeeded, inputSha256: AgentMcpJSONCodec.sha256(query.input),
+        outputSha256: AgentMcpJSONCodec.sha256(output))
+      return .init(scope: AgentNativeEffectScope(context: context), toolId: query.toolId,
+        version: query.version, receipt: receipt, output: output)
+    }
+  }
+
+  private func recoveryObservationAction(
+    _ effect: AgentEffectRecoveryRecord, outgoing: ChatMessage, task: AgentTaskRecord
+  ) -> AgentAction? {
+    guard effect.matches(taskId: task.taskId, sessionId: task.sessionId, outgoing: outgoing),
+          let observation = effect.observation, effect.verifies(observation) else { return nil }
+    return AgentPlanContinuationScope(conversationId: effect.scope.conversationId, turnId: effect.scope.turnId)
+      .bind(AgentAction(id: observation.receipt.invocationId, kind: .callNativeTool,
+        target: observation.toolId, risk: .low, status: .completed,
+        description: "Host observation for original action \(effect.actionId); not proof of completion",
+        parameters: ["tool_id": observation.toolId], requiresConfirmation: false,
+        evidence: AgentMcpJSONCodec.stringify(observation.output)))
+  }
+
   @discardableResult
   func rollbackLastLocalNativeAction(taskId: String) -> Bool {
     guard var task = store.agentTask(id: taskId),
+          (task.effectRecovery ?? []).allSatisfy(\.hasObservation),
           [.completed, .failed, .cancelled, .blocked].contains(task.phase),
           var rollbackAction = task.nativeRollbackAction,
           let outgoing = localOutgoingMessage(for: task) else {
@@ -5171,6 +5314,11 @@ final class MessageCoordinator: ObservableObject {
           AgentTaskCenterPolicy.pauseable(task) else {
       return false
     }
+    let captureWait = task.capturePermission
+    if captureWait != nil {
+      capturePermissionRequests.invalidate(taskId: taskId)
+      capturePermissionsReady.removeValue(forKey: taskId)
+    }
     if task.pendingAction == nil {
       task.pendingAction = task.pendingActions.first
     }
@@ -5182,6 +5330,7 @@ final class MessageCoordinator: ObservableObject {
     task.executionLog.append("Native tool task: paused")
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
     store.upsertAgentTask(task)
+    if let captureWait { recordCapturePermissionEvent(.paused, wait: captureWait, stage: "paused") }
     return true
   }
 
@@ -5190,6 +5339,18 @@ final class MessageCoordinator: ObservableObject {
     guard var task = store.agentTask(id: taskId),
           task.phase == .paused else {
       return false
+    }
+    if let wait = task.capturePermission {
+      guard !automatic, !wait.dispatched, !PhoneExecutionAuthority.isCancelled(taskId: taskId),
+            let outgoing = capturePermissionMessage(wait),
+            let action = wait.action(in: task, outgoing: outgoing),
+            UIApplication.shared.applicationState == .active else { return false }
+      recordCapturePermissionEvent(.runRecovered, wait: wait, stage: "resumed")
+      task.capturePermission = nil
+      if wait.permissionMode != store.agentSafetySettings.permissionMode {
+        return applyLocalNativeAction(action: action, outgoing: outgoing, task: &task)
+      }
+      return executeLocalNativeActionAndAdvance(action: action, outgoing: outgoing, task: &task)
     }
     guard task.teamRecoveryRunId == nil else { return false }
     if automatic {
@@ -5340,6 +5501,13 @@ final class MessageCoordinator: ObservableObject {
     }
     PhoneExecutionAuthority.requestCancellation(taskId: task.taskId)
     let action = task.pendingAction
+    let captureWait = task.capturePermission
+    if captureWait != nil {
+      capturePermissionRequests.invalidate(taskId: taskId)
+      capturePermissionsReady.removeValue(forKey: taskId)
+      captureDispatches.removeValue(forKey: taskId)
+      task.capturePermission = nil
+    }
     task.phase = .cancelled
     task.pendingPlanning = nil
     task.plannerSnapshot = nil
@@ -5358,7 +5526,8 @@ final class MessageCoordinator: ObservableObject {
     task.executionLog.append("Native tool task: cancelled")
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
     store.upsertAgentTask(task)
-    guard let outgoing = localOutgoingMessage(for: task) else { return }
+    if let captureWait { recordCapturePermissionEvent(.runCancelled, wait: captureWait, stage: "cancelled") }
+    guard let outgoing = captureWait.flatMap(capturePermissionMessage) ?? localOutgoingMessage(for: task) else { return }
     localRecordedRunStore.recordNativeExecution(task: task, outgoing: outgoing, status: .cancelled)
     guard emitReply else { return }
     store.appendDeliveryTrace(
@@ -8429,7 +8598,9 @@ final class MessageCoordinator: ObservableObject {
       phoneOwnsExecution: true,
       timerCheckpoint: timerCheckpoint
     )
-    let scopedHistory = planningRequest.executionHistory
+    let snapshots = planningRequest.executionHistory
+    let scopedHistory = snapshots.filter { !AgentDurablePlanHistoryPolicy.isPlannerControl($0) }
+    planningRequest.executionHistory = AgentDurablePlanHistoryPolicy.plannerProjection(snapshots)
     let answerOnly = AgentCompletionEvidencePolicy.isAnswerOnly(history: scopedHistory) {
       runtime.registry.lookup($0)?.descriptor
     }
@@ -8440,26 +8611,23 @@ final class MessageCoordinator: ObservableObject {
       answerOnly && existingEvidence.isEmpty &&
       !AgentRollingPlanPolicy.isBatchBoundaryReason(replanReason)
     let fallbackPlan = AgentPlanFactory.actions(request: planRequest, [])
-    for repairAttempt in 0...1 {
-      let result = await AgentPlanningTiming.capture(
-        taskId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
-      ) {
-        await planner.planOrRespond(
-          request: planningRequest,
-          settings: plannerSettings,
-          safetySettings: store.agentSafetySettings,
-          fallbackPlan: fallbackPlan
-        )
-      }
-      if case .directResponse = result {
-        return result
-      }
-      guard case let .plan(plan) = result, plan.validation.valid else { return nil }
+    let artifactScope = AgentPlanContinuationScope(conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString))
+    let activeArtifactPlan = store.agentTask(id: artifactScope.turnId).flatMap {
+      $0.sessionId == artifactScope.conversationId ? $0.activePlan : nil
+    }
+    let artifactHistory = activeArtifactPlan.map { $0.actionHistory + $0.actions } ?? []
+    if !(completionRequirements?.fileArtifacts ?? []).isEmpty {
+      planningRequest.allowsDirectResponse = false
+    }
+    func admission(_ plan: AgentPlan) -> AgentModelPlanRejection? {
       if plan.actions.count == 1,
          let action = plan.actions.first,
          AgentRollingPlanPolicy.closesFromVerifiedEvidence(action),
          AgentRollingPlanPolicy.isBatchBoundaryReason(replanReason) {
-        guard executionMode != .planOnly else { return nil }
+        guard executionMode != .planOnly else {
+          return .init("actions", "completion_not_allowed", "Return a plan for review, not a completion marker.")
+        }
         let proposedMissing = AgentCompletionEvidencePolicy.missingEvidence(
           requirements: plan.completionRequirements,
           history: scopedHistory,
@@ -8469,67 +8637,51 @@ final class MessageCoordinator: ObservableObject {
         let priorMissing = completionRequirements == nil ? [] : existingEvidence
         let unsettled = scopedHistory.contains(where: AgentCompletionEvidencePolicy.hasUnverifiedOutcome)
           ? ["a settled result for every outstanding operation"] : []
-        let missing = Array(Set(priorMissing + proposedMissing + unsettled)).sorted()
-        if missing.isEmpty {
-          var completion = plan
-          let scope = AgentPlanContinuationScope(conversationId: outgoing.conversationId,
-            turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString))
-          completion.actions = completion.actions.map(scope.bind)
-          completion.executionMode = executionMode
-          return .plan(completion)
-        }
-        guard repairAttempt == 0 else { return nil }
         let diagnostics = AgentCompletionEvidencePolicy.observationDiagnostics(
           requirements: completionRequirements, history: observationHistory) +
           AgentCompletionEvidencePolicy.observationDiagnostics(
             requirements: plan.completionRequirements, history: observationHistory)
         var seenDiagnostics: Set<String> = []
-        planningRequest.observationRepairDiagnostics = diagnostics.filter {
+        let uniqueDiagnostics = diagnostics.filter {
           seenDiagnostics.insert(AgentMcpJSONCodec.stringify($0)).inserted
         }
-        planningRequest.planRequest.completionRequirements = plan.completionRequirements
-        let priorReason = planningRequest.parsingContext.replanReason
-          .trimmingCharacters(in: .whitespacesAndNewlines)
-        planningRequest.parsingContext.replanReason = String([
-          priorReason,
-          "Completion rejected. Declare or correct completion_requirements from the user's actual intent, including exclusions, and perform only genuinely missing work. Missing evidence: \(missing.joined(separator: "; "))."
-        ]
-          .filter { !$0.isEmpty }
-          .joined(separator: " ")
-          .prefix(500))
-        planningRequest.allowsDirectResponse = false
-        continue
+        let diagnosticText = uniqueDiagnostics.prefix(4).map { AgentMcpJSONCodec.stringify($0) }.joined(separator: "\n")
+        let requestedArtifacts = (completionRequirements?.fileArtifacts ?? []) + (plan.completionRequirements?.fileArtifacts ?? [])
+        let artifactMissing = AgentArtifactCompletionEvidence.missing(requestedArtifacts, history: artifactHistory,
+          scope: artifactScope)
+        let missing = Array(Set(priorMissing + proposedMissing + unsettled + artifactMissing)).sorted()
+        return missing.isEmpty ? nil : .init("completion_requirements", "missing_completion_evidence",
+          "Inspect existing state without repeating effects. Host observation diagnostics (no receipt values): \(diagnosticText)\nDeclare or correct requirements and perform only missing work. Missing: \(missing.joined(separator: "; ")).")
       }
-      let actions = plan.actions.filter { $0.kind == .callNativeTool }
-      guard !actions.isEmpty, actions.count == plan.actions.count else { return nil }
+      let actions = plan.actions
+      if let index = actions.firstIndex(where: { $0.kind != .callNativeTool }) {
+        return .init("actions[\(index)].kind", "execution_tool_policy",
+          "This route accepts only advertised phone-native tool actions. Keep the selected route and permissions.")
+      }
       if let rejection = AgentPlanExecutionBatchPolicy.rejectionReason(
         actions: actions,
         workspaceId: outgoing.conversationId,
         descriptorFor: { runtime.registry.lookup($0)?.descriptor }
       ) {
-        guard repairAttempt == 0 else { return nil }
-        let priorReason = planningRequest.parsingContext.replanReason
-          .trimmingCharacters(in: .whitespacesAndNewlines)
-        planningRequest.parsingContext.replanReason = String([
-          priorReason,
-          "Runtime rejection: action_batch:\(rejection). Native actions must leave use_outputs_from empty; depends_on must reference earlier successful actions. Order conflicting resources and do not repeat the rejected graph."
-        ]
-          .filter { !$0.isEmpty }
-          .joined(separator: " ")
-          .prefix(500))
-        planningRequest.allowsDirectResponse = false
-        continue
+        return .init("actions", rejection,
+          "Leave use_outputs_from empty for native tools, reference earlier actions in depends_on, and explicitly order conflicting resource access.")
       }
-      var resolvedPlan = plan
-      let continuationScope = AgentPlanContinuationScope(
-        conversationId: outgoing.conversationId,
-        turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
-      )
-      resolvedPlan.actions = resolvedPlan.actions.map(continuationScope.bind)
-      resolvedPlan.executionMode = executionMode
-      return .plan(resolvedPlan)
+      return nil
     }
-    return nil
+    let result = await AgentPlanningTiming.capture(taskId: outgoing.turnId.ifBlank(outgoing.id.uuidString)) {
+      await planner.planOrRespond(
+        request: planningRequest, settings: plannerSettings,
+        safetySettings: store.agentSafetySettings, fallbackPlan: fallbackPlan, admit: admission
+      )
+    }
+    guard !Task.isCancelled else { return nil }
+    if case .directResponse = result { return result }
+    guard case .plan(var resolvedPlan) = result, resolvedPlan.validation.valid, admission(resolvedPlan) == nil else { return nil }
+    let scope = AgentPlanContinuationScope(conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString))
+    resolvedPlan.actions = resolvedPlan.actions.map(scope.bind)
+    resolvedPlan.executionMode = executionMode
+    return .plan(resolvedPlan)
   }
 
   private func completeModelDirectResponse(
@@ -8671,6 +8823,7 @@ final class MessageCoordinator: ObservableObject {
       $0.kind == .callNativeTool || $0.kind == .callConnector
     }
     guard !nativeActions.isEmpty else { return false }
+    guard permitsEffectRecoveryActions(nativeActions, task: task, outgoing: outgoing) else { return false }
     for action in nativeActions {
       if rejectReadOnlyAnalysisAction(action, outgoing: outgoing, task: &task) { return true }
     }
@@ -8734,6 +8887,7 @@ final class MessageCoordinator: ObservableObject {
     }
     let sessionId = task.sessionId.ifBlank(store.activeAgentConversationId)
     return actions.allSatisfy { action in
+      AgentCapturePermissionContinuation.kind(for: action) == nil &&
       (mode != .readOnly || action.risk == .low) && !AgentConfirmationDecisionPolicy.decision(
         actions: [action],
         permissionMode: store.agentSafetySettings.permissionMode,
@@ -8887,6 +9041,7 @@ final class MessageCoordinator: ObservableObject {
       let action = actions[index]
       let executionAction = executionActions[index]
       let result = results[index]
+      rememberUnverifiedEffect(result, action: action, outgoing: outgoing, task: &task)
       AgentIOSNativeToolHandoffPresenter.openIfNeeded(result)
       let stepReply = localizedNativeToolReply(result).ifBlank(result.message)
         .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -8899,6 +9054,7 @@ final class MessageCoordinator: ObservableObject {
         AgentCompletionEvidencePolicy.recordObservationEnvelope(result, action: &completed)
         completed.status = result.success ? .completed : .failed
         completed.result = result.message
+        completed.artifactReceipt = AgentArtifactOperationReceipt.from(result)
         completed.evidence = result.metadata["native_tool_output"]
           ?? result.metadata["evidence"]
           ?? result.metadata["receipt"]
@@ -8983,6 +9139,11 @@ final class MessageCoordinator: ObservableObject {
     task.verification = rollingBatchBoundary
       ? "Waiting for the planning model to assess parallel native tool receipts"
       : "Parallel \(parallelMode.rawValue) actions returned verified native tool receipts"
+    if !rollingBatchBoundary, !(task.effectRecovery ?? []).isEmpty {
+      task.phase = .blocked
+      task.verification = localizedReply("galaxyssi.agent.effect_recovery.observed",
+        fallback: "Affected state observed. The original outcome is not confirmed. Re-plan to decide the next step.")
+    }
     task.executionLog.append(rollingBatchBoundary
       ? "Rolling plan: parallel batch completed; requesting model assessment"
       : "Native tools: \(parallelMode.rawValue) batch completed")
@@ -9145,23 +9306,194 @@ final class MessageCoordinator: ObservableObject {
     if task.pendingActions.isEmpty {
       task.pendingActions = [action]
     }
+    if let kind = AgentCapturePermissionContinuation.kind(for: action),
+       let registry = localNativeToolRuntime?.registry,
+       let data = (action.parameters["input_json"] ?? "").ifBlank("{}").data(using: .utf8),
+       let input = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data),
+       registry.validateInput(action.parameters["tool_id"] ?? "", input: input).isValid {
+      beginCapturePermission(kind: kind, action: action, outgoing: outgoing, task: &task)
+      return true
+    }
     task.pendingActions.removeAll { $0.id == action.id }
     task.pendingAction = task.pendingActions.first
     let handled = executeLocalNativeAction(action: action, outgoing: outgoing, task: &task)
     if task.phase == .failed, AgentSupervisorRecoveryPolicy.stopReason(
       action: action, result: task.lastNativeActionResult, history: supervisorHistory(task: task, outgoing: outgoing)
     ) == nil {
-      var retryableAction = action
-      retryableAction.status = .failed
-      retryableAction.result = task.result
-      retryableAction.evidence = task.verification
-      task.pendingActions.insert(retryableAction, at: 0)
-      task.pendingAction = retryableAction
-      task.executionLog.append("Native tool \(action.parameters["tool_id"] ?? action.target): retained for retry")
-      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
-      store.upsertAgentTask(task)
+      retainFailedLocalNativeAction(action, task: &task)
     }
     return handled
+  }
+
+  private func retainFailedLocalNativeAction(_ action: AgentAction, task: inout AgentTaskRecord) {
+    var retryable = action
+    retryable.status = .failed
+    retryable.result = task.result
+    retryable.evidence = task.verification
+    task.pendingActions.insert(retryable, at: 0)
+    task.pendingAction = retryable
+    task.executionLog.append("Native tool \(action.parameters["tool_id"] ?? action.target): retained for retry")
+    task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+    store.upsertAgentTask(task)
+  }
+
+  private func beginCapturePermission(
+    kind: AgentIOSVisibleCaptureKind, action: AgentAction, outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) {
+    guard !PhoneExecutionAuthority.isCancelled(taskId: task.taskId),
+          task.pendingActions.first == action else { return }
+    let wait = AgentCapturePermissionContinuation(task: task, outgoing: outgoing, action: action,
+      kind: kind, permissionMode: store.agentSafetySettings.permissionMode)
+    task.capturePermission = wait
+    task.pendingAction = action
+    task.phase = .waitingResponse
+    task.blocked = false
+    task.result = ""
+    let permission = AgentIOSCaptureSystemPermission.state(for: kind)
+    let canPresent = UIApplication.shared.applicationState == .active
+    if permission != .granted || !canPresent {
+      task.verification = localizedReply("galaxyssi.agent.capture_permission.waiting",
+        fallback: "Waiting for iOS capture permission.")
+      task.executionLog.append("Native capture: waiting for system permission")
+    }
+    task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+    store.upsertAgentTask(task)
+    if permission == .granted && canPresent {
+      dispatchApprovedCapture(wait, outgoing: outgoing, task: &task)
+      return
+    }
+    recordCapturePermissionEvent(.toolPermissionRequired, wait: wait, stage: "permission_required")
+    guard canPresent, permission == .undetermined else {
+      pauseCapturePermission(wait, task: &task, stage: permission == .denied ? "denied" : "not_foreground")
+      return
+    }
+    installForegroundRecoveryWake()
+    capturePermissionRequests.register(wait)
+    AgentIOSCaptureSystemPermission.request(kind) { [weak self] granted in
+      Task { @MainActor [weak self] in
+        self?.receiveCapturePermission(wait, granted: granted, stage: granted ? "granted" : "denied")
+      }
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
+      self?.receiveCapturePermission(wait, granted: false, stage: "timed_out")
+    }
+  }
+
+  private func receiveCapturePermission(
+    _ wait: AgentCapturePermissionContinuation, granted: Bool, stage: String
+  ) {
+    guard capturePermissionRequests.consume(wait) else { return }
+    guard var task = store.agentTask(id: wait.taskId),
+          let outgoing = capturePermissionMessage(wait),
+          wait.acceptsCallback(in: task, outgoing: outgoing),
+          !PhoneExecutionAuthority.isCancelled(taskId: wait.taskId) else { return }
+    guard granted else {
+      pauseCapturePermission(wait, task: &task, stage: stage)
+      return
+    }
+    if UIApplication.shared.applicationState == .active {
+      dispatchApprovedCapture(wait, outgoing: outgoing, task: &task)
+    } else {
+      capturePermissionsReady[wait.taskId] = wait.token
+    }
+  }
+
+  private func continueForegroundCapturePermissions() {
+    let ready = capturePermissionsReady
+    capturePermissionsReady.removeAll()
+    for (taskId, token) in ready {
+      guard var task = store.agentTask(id: taskId), let wait = task.capturePermission,
+            wait.token == token, let outgoing = capturePermissionMessage(wait) else { continue }
+      dispatchApprovedCapture(wait, outgoing: outgoing, task: &task)
+    }
+  }
+
+  private func pauseCapturePermission(
+    _ wait: AgentCapturePermissionContinuation, task: inout AgentTaskRecord, stage: String
+  ) {
+    task.phase = .paused
+    task.verification = capturePermissionResumeMessage(dispatched: false)
+    task.executionLog.append("Native capture permission: \(stage)")
+    task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+    store.upsertAgentTask(task)
+    recordCapturePermissionEvent(.paused, wait: wait, stage: stage)
+  }
+
+  private func capturePermissionResumeMessage(dispatched: Bool) -> String {
+    dispatched
+      ? localizedReply("galaxyssi.agent.capture_permission.interrupted",
+          fallback: "Capture was interrupted after dispatch. It will not be repeated.")
+      : localizedReply("galaxyssi.agent.capture_permission.resume",
+          fallback: "Check iOS permissions, then resume to continue the original action.")
+  }
+
+  private func capturePermissionMessage(_ wait: AgentCapturePermissionContinuation) -> ChatMessage? {
+    store.messages(for: wait.contactId).first { $0.id == wait.messageId && $0.isMine }
+  }
+
+  private func dispatchApprovedCapture(
+    _ wait: AgentCapturePermissionContinuation, outgoing: ChatMessage, task: inout AgentTaskRecord
+  ) {
+    guard wait.acceptsCallback(in: task, outgoing: outgoing),
+          let action = wait.action(in: task, outgoing: outgoing),
+          !PhoneExecutionAuthority.isCancelled(taskId: task.taskId),
+          let executor = localNativeToolRuntime?.actionExecutor else { return }
+    guard UIApplication.shared.applicationState == .active,
+          AgentIOSCaptureSystemPermission.state(for: wait.kind) == .granted,
+          wait.permissionMode == store.agentSafetySettings.permissionMode else {
+      pauseCapturePermission(wait, task: &task, stage: "recheck_required")
+      return
+    }
+    if rejectReadOnlyAnalysisAction(action, outgoing: outgoing, task: &task) { return }
+    var dispatched = wait
+    dispatched.dispatched = true
+    task.capturePermission = dispatched
+    task.phase = .executing
+    task.verification = "User-visible capture dispatched"
+    task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+    captureDispatches[task.taskId] = wait.token
+    store.upsertAgentTask(task)
+    recordCapturePermissionEvent(.runStarted, wait: wait, stage: "dispatched")
+    var scoped = scopedLocalNativeExecutionAction(action, outgoing: outgoing, task: task)
+    scoped.parameters["_galaxyssi_capture_permission_preflight"] = "true"
+    let executionAction = scoped
+    let screen = currentAgentScreenContext
+    Task { @MainActor [weak self] in
+      let result = await Task.detached(priority: .userInitiated) {
+        executor.execute(action: executionAction, screen: screen)
+      }.value
+      guard let self, self.captureDispatches[wait.taskId] == wait.token else { return }
+      self.captureDispatches.removeValue(forKey: wait.taskId)
+      guard var current = self.store.agentTask(id: wait.taskId), current.phase == .executing,
+            dispatched.action(in: current, outgoing: outgoing) == action,
+            !PhoneExecutionAuthority.isCancelled(taskId: wait.taskId) else { return }
+      current.capturePermission = nil
+      current.pendingActions.removeFirst()
+      current.pendingAction = current.pendingActions.first
+      self.finishLocalNativeAction(action: action, executionAction: executionAction, result: result,
+        outgoing: outgoing, rollbackAction: nil, task: &current)
+      self.recordCapturePermissionEvent(.toolCompleted, wait: wait,
+        stage: result.success ? "capture_completed" : "capture_failed")
+      if current.phase == .failed || (current.phase == .completed && current.pendingActions.isEmpty) {
+        self.recordCapturePermissionEvent(result.success ? .runCompleted : .runFailed, wait: wait,
+          stage: result.success ? "completed" : "failed")
+      }
+      if current.phase == .failed {
+        self.retainFailedLocalNativeAction(action, task: &current)
+      } else if current.phase == .completed, !current.pendingActions.isEmpty {
+        current.phase = .executing
+        _ = self.advanceLocalNativeActions(outgoing: outgoing, task: &current)
+      }
+    }
+  }
+
+  private func recordCapturePermissionEvent(
+    _ type: AgentRunControlEventType, wait: AgentCapturePermissionContinuation, stage: String
+  ) {
+    guard let session = store.agentSession(id: wait.conversationId),
+          !session.privateMode, !session.trackingPaused else { return }
+    _ = capturePermissionEvents.appendNext(wait.event(type, stage: stage, now: AgentControlPlaneClock.nowMillis()))
   }
 
   private func executeLocalNativeAction(
@@ -9169,6 +9501,7 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     task: inout AgentTaskRecord
   ) -> Bool {
+    guard permitsEffectRecoveryActions([action], task: task, outgoing: outgoing) else { return false }
     if rejectReadOnlyAnalysisAction(action, outgoing: outgoing, task: &task) { return true }
     guard let runtime = localNativeToolRuntime else { return false }
     let screen = currentAgentScreenContext
@@ -9178,19 +9511,7 @@ final class MessageCoordinator: ObservableObject {
 
     let history = supervisorHistory(task: task, outgoing: outgoing)
     let boundAction = AgentSupervisorRecoveryPolicy.restoreBinding(action, history: history)
-    var executionAction = boundAction
-    executionAction.parameters["_galaxyssi_task_id"] = task.taskId
-    executionAction.parameters["_galaxyssi_session_id"] = task.sessionId
-    executionAction.parameters["_galaxyssi_conversation_id"] = outgoing.conversationId
-    executionAction.parameters["_galaxyssi_turn_id"] = outgoing.turnId.ifBlank(outgoing.id.uuidString)
-    executionAction.parameters["_galaxyssi_contact_id"] = outgoing.contactId
-    executionAction.parameters["response_language"] = LanguagePolicySettings.resolve(
-      store.languagePolicy.responseLanguage
-    )
-    executionAction.parameters["_galaxyssi_workspace_id"] = AgentWorkspaceScope.id(
-      conversationId: outgoing.conversationId,
-      sessionId: task.sessionId
-    )
+    var executionAction = scopedLocalNativeExecutionAction(boundAction, outgoing: outgoing, task: task)
     var result = runtime.actionExecutor.execute(
       action: executionAction,
       screen: screen
@@ -9226,6 +9547,32 @@ final class MessageCoordinator: ObservableObject {
         fallbackTarget: action.target
       )
     }
+    finishLocalNativeAction(action: action, executionAction: executionAction, result: result,
+                            outgoing: outgoing, rollbackAction: rollbackAction, task: &task)
+    return true
+  }
+
+  private func scopedLocalNativeExecutionAction(
+    _ action: AgentAction, outgoing: ChatMessage, task: AgentTaskRecord
+  ) -> AgentAction {
+    var scoped = action
+    scoped.parameters["_galaxyssi_task_id"] = task.taskId
+    scoped.parameters["_galaxyssi_session_id"] = task.sessionId
+    scoped.parameters["_galaxyssi_conversation_id"] = outgoing.conversationId
+    scoped.parameters["_galaxyssi_turn_id"] = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    scoped.parameters["_galaxyssi_contact_id"] = outgoing.contactId
+    scoped.parameters["response_language"] = LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage)
+    scoped.parameters["_galaxyssi_workspace_id"] = AgentWorkspaceScope.id(
+      conversationId: outgoing.conversationId, sessionId: task.sessionId)
+    return scoped
+  }
+
+  private func finishLocalNativeAction(
+    action: AgentAction, executionAction: AgentAction, result: AgentActionResult,
+    outgoing: ChatMessage, rollbackAction: AgentAction?, task: inout AgentTaskRecord
+  ) {
+    let boundAction = AgentSupervisorRecoveryPolicy.restoreBinding(
+      action, history: supervisorHistory(task: task, outgoing: outgoing))
     AgentIOSNativeToolHandoffPresenter.openIfNeeded(result)
     let stepReply = localizedNativeToolReply(result).ifBlank(result.message)
       .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -9233,11 +9580,14 @@ final class MessageCoordinator: ObservableObject {
     let reply = recordLocalNativeActionResult(stepReply, task: &task)
     let hasRemainingActions = !task.pendingActions.isEmpty
     task.lastNativeActionResult = result
+    rememberUnverifiedEffect(result, action: action, outgoing: outgoing, task: &task)
     updateActiveNativePlan(action: boundAction, result: result, task: &task)
     let rollingBatchBoundary = !hasRemainingActions && AgentRollingPlanPolicy.shouldRequestNextBatch(
       plan: task.activePlan,
       result: result
     )
+    let needsOutcomeDecision = !hasRemainingActions && !rollingBatchBoundary && result.success &&
+      !(task.effectRecovery ?? []).isEmpty
     task.phase = rollingBatchBoundary ? .waitingResponse : (result.success ? .completed : .failed)
     if result.success {
       task.lastCompletedNativeAction = action
@@ -9247,6 +9597,11 @@ final class MessageCoordinator: ObservableObject {
     task.verification = rollingBatchBoundary
       ? "Waiting for the planning model to assess the completed execution batch"
       : (result.success ? "Native tool receipt returned" : "Native tool execution failed")
+    if needsOutcomeDecision {
+      task.phase = .blocked
+      task.verification = localizedReply("galaxyssi.agent.effect_recovery.observed",
+        fallback: "Affected state observed. The original outcome is not confirmed. Re-plan to decide the next step.")
+    }
     let toolId = action.parameters["tool_id"] ?? "unknown"
     let outcome = result.success ? "completed" : "failed"
     task.executionLog.append("Native tool \(toolId): \(outcome)")
@@ -9259,7 +9614,7 @@ final class MessageCoordinator: ObservableObject {
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
     store.upsertAgentTask(task)
     let recordedStatus: AgentRecordedRunStatus = !result.success ? .failed :
-      (hasRemainingActions || rollingBatchBoundary ? .running : .completed)
+      (hasRemainingActions || rollingBatchBoundary || needsOutcomeDecision ? .running : .completed)
     localRecordedRunStore.recordNativeExecution([.init(action: executionAction, result: result)],
       task: task, outgoing: outgoing, status: recordedStatus)
     store.appendDeliveryTrace(
@@ -9291,7 +9646,6 @@ final class MessageCoordinator: ObservableObject {
         await self?.continueRollingNativePlan(taskId: taskId, outgoing: outgoing)
       }
     }
-    return true
   }
 
   private func updateActiveNativePlan(
@@ -9306,6 +9660,7 @@ final class MessageCoordinator: ObservableObject {
     var completed = plan.actions[index]
     completed.status = result.success ? .completed : .failed
     completed.result = result.message
+    completed.artifactReceipt = AgentArtifactOperationReceipt.from(result)
     completed.evidence = result.metadata["native_tool_output"]
       ?? result.metadata["evidence"]
       ?? result.metadata["receipt"]
@@ -9341,7 +9696,7 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     let reason = AgentRollingPlanPolicy.reason(plan: previousPlan, result: previousResult)
-    let plannerHistory = previousPlan.historyForReplan().filter(continuationScope.owns)
+    let plannerHistory = previousPlan.executionSnapshots(in: continuationScope)
     let plannerSnapshot = task.plannerSnapshot
       ?? capturePlannerSnapshot(conversationId: outgoing.conversationId)
     let conversation = initialPlanningConversation(
@@ -9442,6 +9797,9 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     task: inout AgentTaskRecord
   ) async -> Bool {
+    guard (task.effectRecovery ?? []).allSatisfy({
+      $0.hasObservation && $0.matches(taskId: task.taskId, sessionId: task.sessionId, outgoing: outgoing)
+    }) else { return false }
     guard let outcome else {
       task.verification = "Rolling plan assessment is pending because the planning model is unavailable"
       task.executionLog.append("Rolling plan: waiting for model assessment for revision \(previousPlan.revision)")
@@ -9459,6 +9817,14 @@ final class MessageCoordinator: ObservableObject {
     if nextPlan.actions.count == 1,
        let finalAction = nextPlan.actions.first,
        AgentRollingPlanPolicy.closesFromVerifiedEvidence(finalAction) {
+      guard (task.effectRecovery ?? []).isEmpty else {
+        task.verification = localizedReply("galaxyssi.agent.effect_recovery.observed",
+          fallback: "Affected state observed. The original outcome is not confirmed. Re-plan to decide the next step.")
+        task.phase = .blocked
+        task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+        store.upsertAgentTask(task)
+        return false
+      }
       let requirements = Set((previousPlan.completionRequirements?.artifacts ?? []) +
                              (nextPlan.completionRequirements?.artifacts ?? []))
       var videos: [AgentRichBlock] = []
@@ -9554,6 +9920,27 @@ final class MessageCoordinator: ObservableObject {
     videos: [AgentRichBlock],
     verifiedArtifacts: [AgentVideoArtifactRequirement]
   ) {
+    let scope = AgentPlanContinuationScope(conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString))
+    let requested = (previousPlan.completionRequirements?.fileArtifacts ?? []) + (finalPlan.completionRequirements?.fileArtifacts ?? [])
+    var seen = Set<AgentArtifactRequirement>()
+    let requestedFiles = requested.filter { seen.insert($0).inserted }
+    let assessment = AgentArtifactCompletionEvidence.assess(requestedFiles,
+      history: previousPlan.actionHistory + previousPlan.actions, scope: scope)
+    let root = AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL()
+    guard assessment.missing.isEmpty, assessment.verified.allSatisfy({ receipt in
+      let url = AgentVerifiedArtifactSnapshot.url(root: root, digest: receipt.digest.lowercased(), path: receipt.path)
+      return (try? AgentDesktopArtifactActions.sha256(source: url)) == receipt.digest.lowercased()
+    }) else {
+      task.phase = .blocked
+      task.blocked = true
+      task.verification = localizedReply("galaxyssi.agent.artifact_evidence.stale",
+        fallback: "The requested files need fresh verification. Inspect and export again without repeating the original work.")
+      task.executionLog.append("Artifact completion blocked: verified export is missing or stale")
+      task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+      store.upsertAgentTask(task)
+      return
+    }
     let nextRevision = previousPlan.revision + 1
     var completedMarker = finalAction.withPlanRevision(nextRevision)
     completedMarker.status = .completed
@@ -9566,6 +9953,9 @@ final class MessageCoordinator: ObservableObject {
       ?? previousPlan.completionRequirements
     if !verifiedArtifacts.isEmpty {
       completedPlan.completionRequirements?.artifacts = verifiedArtifacts
+    }
+    if !requestedFiles.isEmpty {
+      completedPlan.completionRequirements?.fileArtifacts = requestedFiles
     }
     completedPlan.expectedResult = finalPlan.expectedResult
       .ifBlank(finalAction.result)
@@ -9584,6 +9974,9 @@ final class MessageCoordinator: ObservableObject {
       .ifBlank(task.result)
     task.verification = "Planning model verified the requested outcome after rolling execution"
     task.executionLog.append("Rolling plan: goal verified complete at revision \(completedPlan.revision)")
+    let files = AgentRuntimeArtifactUi.fileBlocks(verified: assessment.verified,
+      zh: LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage).hasPrefix("zh"))
+    let attachments = videos + files
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
     store.upsertAgentTask(task)
     localRecordedRunStore.recordNativeExecution(task: task, outgoing: outgoing, status: .completed)
@@ -9603,7 +9996,7 @@ final class MessageCoordinator: ObservableObject {
       detail: completedPlan.planId,
       conversationId: outgoing.conversationId,
       turnId: outgoing.turnId,
-      richOutputJson: videos.isEmpty ? "" : AgentRichContentCodec.encode(AgentRichContentCodec.fromText(task.result) + videos)
+      richOutputJson: attachments.isEmpty ? "" : AgentRichContentCodec.encode(AgentRichContentCodec.fromText(task.result) + attachments)
     )
   }
 

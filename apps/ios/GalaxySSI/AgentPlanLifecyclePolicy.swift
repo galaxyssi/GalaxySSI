@@ -411,8 +411,10 @@ enum AgentCompletionEvidencePolicy {
     history.allSatisfy { action in
       if AgentRollingPlanPolicy.closesFromVerifiedEvidence(action) { return action.status == .completed }
       guard action.kind == .callNativeTool, action.status == .completed,
-            descriptorFor(toolId(action))?.effect == .readOnly else { return false }
-      return !hasUnverifiedOutcome(action)
+            !hasUnverifiedOutcome(action),
+            let descriptor = descriptorFor(toolId(action)) else { return false }
+      // These fixed iOS tools only change an isolated browser session, not the website.
+      return descriptor.effect == .readOnly || browserContextTools.contains(descriptor.id)
     }
   }
 
@@ -560,6 +562,11 @@ enum AgentCompletionEvidencePolicy {
   }
 
   private static let runtimeExecute = AgentIOSOnDeviceRuntimeNativeToolCatalog.execute
+  private static let browserContextTools: Set<String> = [
+    AgentIOSWebMediaNativeToolCatalog.browserSessionCreate,
+    AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate,
+    AgentIOSWebMediaNativeToolCatalog.browserSessionClose
+  ]
   private static let repositoryCommit = AgentIOSProjectRepositoryMutationToolCatalog.commit
   private static let repositoryPush = AgentIOSProjectRepositoryMutationToolCatalog.push
   private static let createPullRequest = "galaxyssi.project.github.pull_request.create"

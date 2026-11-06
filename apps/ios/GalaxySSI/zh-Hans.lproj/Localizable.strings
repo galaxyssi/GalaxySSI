@@ -5410,6 +5410,9 @@
 "galaxyssi.agent.task_control.paused" = "任务已暂停";
 "galaxyssi.agent.task_control.pause_failed" = "此任务无法暂停";
 "galaxyssi.agent.task_control.replanned" = "已重新规划任务";
+"galaxyssi.agent.effect_recovery.inspect" = "查证或重新规划";
+"galaxyssi.agent.effect_recovery.unavailable" = "原操作结果仍未核实。无法确认受影响的状态，未重复执行。";
+"galaxyssi.agent.effect_recovery.observed" = "已查证受影响的状态，但原操作结果尚未确认。请重新规划下一步。";
 "galaxyssi.agent.task_control.replanning" = "正在重新规划任务……";
 "galaxyssi.agent.task_control.pause" = "暂停任务";
 "galaxyssi.agent.task_control.replan" = "重新规划任务";
@@ -5461,6 +5464,10 @@
 "galaxyssi.agent.plan_progress.running" = "进行中";
 "galaxyssi.agent.plan_progress.complete" = "已完成";
 "galaxyssi.agent.plan_progress.failed" = "失败";
+"galaxyssi.agent.plan_progress.waiting" = "等待中";
+"galaxyssi.agent.plan_progress.stopped" = "已停止";
+"galaxyssi.agent.plan_progress.not_executed" = "未执行";
+"galaxyssi.agent.plan_progress.recorded" = "过程记录";
 "galaxyssi.agent.plan_progress.current_batch_count" = "当前批次 %d / %d";
 "galaxyssi.agent.plan_progress.revision" = "计划第 %d 版";
 "galaxyssi.agent.plan_progress.revision_counter" = "第%d版 · %d/%d";
@@ -5469,6 +5476,7 @@
 "galaxyssi.agent.plan_progress.prepare" = "准备执行计划";
 "galaxyssi.agent.plan_progress.execute" = "运行工具与操作";
 "galaxyssi.agent.plan_progress.verify" = "验证结果";
+"galaxyssi.agent.artifact_evidence.stale" = "所需文件需要重新验证。请检查并重新导出，不要重复原操作。";
 "galaxyssi.agent.plan_progress.finalize" = "完成任务";
 "galaxyssi.agent.execution.duration_minutes" = "耗时 %dm %ds";
 "galaxyssi.agent.execution.duration_seconds" = "耗时 %ds";
@@ -5779,6 +5787,9 @@
 "galaxyssi.agent.original_request_unavailable" = "原始本地 Agent 请求已不可用。";
 "galaxyssi.agent.phone_action_not_executed" = "未执行请求的手机操作。";
 "galaxyssi.agent.local_task_cancelled" = "本地 Agent 任务已取消。";
+"galaxyssi.agent.capture_permission.waiting" = "正在等待 iOS 授予拍摄或录音权限。";
+"galaxyssi.agent.capture_permission.resume" = "请检查 iOS 权限，然后恢复原操作。";
+"galaxyssi.agent.capture_permission.interrupted" = "拍摄或录音在启动后中断，不会重复执行。";
 "galaxyssi.agent.task_control_success" = "Agent 任务已%@。";
 "galaxyssi.agent.task_control_failure" = "当前 Agent 任务无法%@。";
 "galaxyssi.agent.task_control_label.approve" = "批准";

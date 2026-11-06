@@ -1,5 +1,128 @@
 import Foundation
 
+struct AgentEffectRecoveryRecord: Codable, Equatable {
+  struct Query: Codable, Equatable {
+    enum Kind: String, Codable { case audio, browser }
+    let kind: Kind
+    let toolId: String
+    let version: String
+    let input: AgentMcpJSONObject
+    let subject: String
+  }
+
+  struct Observation: Codable, Equatable {
+    let scope: AgentNativeEffectScope
+    let toolId: String
+    let version: String
+    let receipt: AgentNativeToolReceipt
+    let output: AgentMcpJSONObject
+  }
+
+  static let metadataKey = "host_effect_recovery"
+  static let browserObserver = "browser.session.operation_status"
+  static let nativeCaller = "galaxyssi.mobile_agent.plan"
+  static let browserMutationTools: Set<String> = [
+    AgentIOSWebMediaNativeToolCatalog.browserSessionCreate,
+    AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate,
+    AgentIOSWebMediaNativeToolCatalog.browserSessionClose
+  ]
+  let scope: AgentNativeEffectScope
+  let actionId: String
+  let toolId: String
+  let version: String
+  let inputDigest: String
+  let invocationId: String
+  let uncertainAt: Int64
+  let query: Query?
+  var observation: Observation?
+
+  static func fromNativeResult(
+    _ result: AgentNativeToolResult, action: AgentAction, descriptor: AgentNativeToolDescriptor
+  ) -> AgentEffectRecoveryRecord? {
+    guard descriptor.requiresEffectClaim,
+          ["effect_outcome_unknown", "invalid_output", "missing_output_validation"].contains(result.error?.code ?? "") ||
+          result.status == .verificationFailed ||
+          result.output["outcome"]?.stringValue == "unknown" ||
+          result.output["outcome"]?.stringValue == "unverified" ||
+          result.output["outcome"]?.stringValue == "uncertain" else { return nil }
+    let scope = AgentNativeEffectScope(
+      sessionId: action.parameters["_galaxyssi_session_id"] ?? "",
+      conversationId: action.parameters["_galaxyssi_conversation_id"] ?? "",
+      taskId: action.parameters["_galaxyssi_task_id"] ?? "",
+      turnId: action.parameters["_galaxyssi_turn_id"] ?? "")
+    let invocation = result.receipt.originalInvocationId ?? result.receipt.invocationId
+    let input = parseInput(action) ?? [:]
+    let query: Query?
+    switch descriptor.id {
+    case AgentIOSSystemNativeToolCatalog.audioVolumeSet, AgentIOSSystemNativeToolCatalog.audioMuteSet:
+      let stream = input.string("stream").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      query = ["media", "music"].contains(stream)
+        ? Query(kind: .audio, toolId: AgentIOSSystemNativeToolCatalog.audioStatus,
+                version: descriptor.version, input: [:], subject: "media") : nil
+    case AgentIOSWebMediaNativeToolCatalog.browserSessionCreate,
+         AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate,
+         AgentIOSWebMediaNativeToolCatalog.browserSessionClose:
+      query = Query(kind: .browser, toolId: browserObserver, version: descriptor.version,
+                    input: ["request_id": .string(invocation)], subject: invocation)
+    default:
+      query = nil
+    }
+    return AgentEffectRecoveryRecord(scope: scope, actionId: action.id, toolId: descriptor.id,
+      version: descriptor.version, inputDigest: result.receipt.inputSha256, invocationId: invocation,
+      uncertainAt: result.receipt.finishedAtEpochMillis, query: query)
+  }
+
+  static func fromActionResult(_ result: AgentActionResult) -> AgentEffectRecoveryRecord? {
+    guard let data = result.metadata[metadataKey]?.data(using: .utf8) else { return nil }
+    return try? JSONDecoder().decode(Self.self, from: data)
+  }
+
+  static func parseInput(_ action: AgentAction) -> AgentMcpJSONObject? {
+    let text = (action.parameters["input_json"] ?? "").ifBlank("{}")
+    return try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(text.utf8))
+  }
+
+  func isSameEffect(_ action: AgentAction) -> Bool {
+    guard action.kind == .callNativeTool,
+          (action.parameters["tool_id"] ?? action.target) == toolId else { return false }
+    if action.id == actionId { return true }
+    return Self.parseInput(action).map { AgentMcpJSONCodec.sha256($0) == inputDigest } ?? false
+  }
+
+  func matches(taskId: String, sessionId: String, outgoing: ChatMessage) -> Bool {
+    !scope.taskId.isEmpty && !scope.sessionId.isEmpty && !scope.conversationId.isEmpty && !scope.turnId.isEmpty &&
+      outgoing.isMine && scope.taskId == taskId && scope.sessionId == sessionId &&
+      scope.conversationId == outgoing.conversationId && scope.turnId == outgoing.turnId.ifBlank(outgoing.id.uuidString)
+  }
+
+  func verifies(_ value: Observation) -> Bool {
+    guard let query, !invocationId.isEmpty, uncertainAt > 0, value.scope == scope,
+          value.toolId == query.toolId, value.version == query.version,
+          value.receipt.status == .succeeded, !value.receipt.replayed,
+          !value.receipt.invocationId.isEmpty, value.receipt.invocationId != invocationId,
+          value.receipt.originalInvocationId == nil,
+          value.receipt.inputSha256 == AgentMcpJSONCodec.sha256(query.input),
+          value.receipt.outputSha256 == AgentMcpJSONCodec.sha256(value.output),
+          value.receipt.startedAtEpochMillis >= uncertainAt,
+          value.receipt.finishedAtEpochMillis >= value.receipt.startedAtEpochMillis,
+          value.receipt.finishedAtEpochMillis > uncertainAt,
+          let sampledAt = value.output["observed_at_epoch_ms"]?.intValue,
+          sampledAt >= value.receipt.startedAtEpochMillis,
+          sampledAt <= value.receipt.finishedAtEpochMillis else { return false }
+    switch query.kind {
+    case .audio:
+      guard let stream = value.output["streams"]?.objectValue?[query.subject]?.objectValue else { return false }
+      return stream.string("stream") == query.subject && stream["current"]?.intValue != nil &&
+        stream.string("scope") == "app_visible_output_volume"
+    case .browser:
+      return value.output.string("request_id") == query.subject &&
+        value.output.string("operation") == String(toolId.split(separator: ".").last ?? "")
+    }
+  }
+
+  var hasObservation: Bool { observation.map(verifies) ?? false }
+}
+
 /// Durably claims legacy Agent actions before dispatching their external effects.
 final class AgentActionEffectExecutor {
   private let store: AgentNativeToolReplayStore

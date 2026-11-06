@@ -13,7 +13,7 @@ struct GalaxySSIAgentInteractiveProgressView: View {
   var canCancel: Bool
   var onTimelineAction: (AgentExecutionLoopTimelineAction) -> Void
   var onCancel: () -> Void
-  var onChangeAgent: () -> Void
+  var onChangeAgent: (() -> Void)? = nil
 
   var body: some View {
     Button {
@@ -26,11 +26,16 @@ struct GalaxySSIAgentInteractiveProgressView: View {
           .font(.system(size: 11, weight: .semibold, design: .monospaced))
           .foregroundColor(.galaxySSITextSecondary)
           .frame(minWidth: 26, alignment: .leading)
-        Text(presentation.summary)
-          .font(.system(size: 13))
-          .foregroundColor(.galaxySSITextPrimary)
-          .lineLimit(1)
-          .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(presentation.status.title(t))
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundColor(.galaxySSITextPrimary)
+          Text(presentation.summary)
+            .font(.system(size: 12))
+            .foregroundColor(.galaxySSITextSecondary)
+        }
+        .lineLimit(1)
+        .frame(maxWidth: .infinity, alignment: .leading)
         Image(systemName: "chevron.up.chevron.down")
           .font(.system(size: 10, weight: .semibold))
           .foregroundColor(.galaxySSITextSecondary)
@@ -46,7 +51,7 @@ struct GalaxySSIAgentInteractiveProgressView: View {
       Text(
         String(
           format: t("galaxyssi.agent.plan_progress.accessibility", "%@, step %@"),
-          presentation.summary,
+          presentation.status.title(t) + ": " + presentation.summary,
           compactCounter
         )
       )
@@ -60,17 +65,28 @@ struct GalaxySSIAgentInteractiveProgressView: View {
 
   @ViewBuilder
   private var progressIndicator: some View {
-    if presentation.running {
+    switch presentation.status {
+    case .running, .waitingResponse:
       ProgressView()
         .progressViewStyle(.circular)
         .tint(.galaxySSIInsightText)
         .scaleEffect(0.72)
-    } else if presentation.steps.contains(where: { $0.state == .failed }) {
+    case .failed:
       Image(systemName: "exclamationmark.circle")
         .foregroundColor(.red)
-    } else {
+    case .completed:
       Image(systemName: "checkmark.circle.fill")
         .foregroundColor(.green)
+    case .paused:
+      Image(systemName: "pause.circle").foregroundColor(.galaxySSITextSecondary)
+    case .blocked:
+      Image(systemName: "exclamationmark.shield").foregroundColor(.galaxySSITextSecondary)
+    case .waitingConfirmation:
+      Image(systemName: "hourglass").foregroundColor(.galaxySSITextSecondary)
+    case .cancelled:
+      Image(systemName: "xmark.circle").foregroundColor(.galaxySSITextSecondary)
+    case .unknown:
+      Image(systemName: "list.bullet.rectangle").foregroundColor(.galaxySSITextSecondary)
     }
   }
 
@@ -118,11 +134,7 @@ struct GalaxySSIAgentInteractiveProgressView: View {
           .font(.system(size: 12, weight: .semibold, design: .monospaced))
           .foregroundColor(.galaxySSITextSecondary)
       }
-      Text(
-        presentation.running
-          ? t("galaxyssi.agent.plan_progress.live", "Updating live")
-          : t("galaxyssi.agent.plan_progress.finished", "Execution finished")
-      )
+      Text(presentation.status.title(t))
       .font(.system(size: 11))
       .foregroundColor(.galaxySSITextSecondary)
       if !presentation.agentLabel.isEmpty {
@@ -158,7 +170,8 @@ struct GalaxySSIAgentInteractiveProgressView: View {
             Text(stepStateTitle(step.state))
               .font(.system(size: 10, weight: .medium))
               .foregroundColor(.galaxySSITextSecondary)
-              .lineLimit(1)
+              .multilineTextAlignment(.trailing)
+              .fixedSize(horizontal: false, vertical: true)
           }
           .padding(.vertical, 11)
           if step.id != batch.steps.last?.id {
@@ -191,7 +204,7 @@ struct GalaxySSIAgentInteractiveProgressView: View {
 
   private var recentActivity: some View {
     VStack(alignment: .leading, spacing: 7) {
-      Text(t("galaxyssi.agent.plan_progress.current_activity", "Current activity"))
+      Text(t("galaxyssi.agent.plan_progress.recorded", "Process record"))
         .font(.system(size: 12, weight: .semibold))
         .foregroundColor(.galaxySSITextPrimary)
       ForEach(Array(presentation.recentActivity.enumerated()), id: \.offset) { _, activity in
@@ -219,7 +232,7 @@ struct GalaxySSIAgentInteractiveProgressView: View {
   private var controls: some View {
     let pauseAction = timelineActions.first { $0 == .pause || $0 == .resume }
     let replanAction = timelineActions.first { $0 == .replan }
-    if presentation.running || canCancel {
+    if pauseAction != nil || replanAction != nil || canCancel || (presentation.running && onChangeAgent != nil) {
       Group {
         if dynamicTypeSize.isAccessibilitySize {
           VStack(spacing: 8) {
@@ -256,12 +269,14 @@ struct GalaxySSIAgentInteractiveProgressView: View {
         onTimelineAction(replanAction)
       }
     }
-    progressControl(
-      title: t("galaxyssi.agent.plan_progress.change_agent", "Change Agent"),
-      icon: "person.2"
-    ) {
-      detailsPresented = false
-      onChangeAgent()
+    if presentation.running, let onChangeAgent {
+      progressControl(
+        title: t("galaxyssi.agent.plan_progress.change_agent", "Change Agent"),
+        icon: "person.2"
+      ) {
+        detailsPresented = false
+        onChangeAgent()
+      }
     }
     if canCancel {
       Button(role: .destructive) {
@@ -309,6 +324,16 @@ struct GalaxySSIAgentInteractiveProgressView: View {
     case .pending:
       Image(systemName: "circle")
         .foregroundColor(.galaxySSITextSecondary)
+    case .waiting:
+      Image(systemName: "hourglass").foregroundColor(.galaxySSITextSecondary)
+    case .paused:
+      Image(systemName: "pause.circle").foregroundColor(.galaxySSITextSecondary)
+    case .stopped:
+      Image(systemName: "xmark.circle").foregroundColor(.galaxySSITextSecondary)
+    case .notExecuted:
+      Image(systemName: "minus.circle").foregroundColor(.galaxySSITextSecondary)
+    case .recorded:
+      Image(systemName: "doc.text").foregroundColor(.galaxySSITextSecondary)
     }
   }
 
@@ -324,6 +349,16 @@ struct GalaxySSIAgentInteractiveProgressView: View {
       return t("galaxyssi.agent.plan_progress.revised", "Adjusted")
     case .failed:
       return t("galaxyssi.agent.plan_progress.failed", "Failed")
+    case .waiting:
+      return t("galaxyssi.agent.plan_progress.waiting", "Waiting")
+    case .paused:
+      return t("agent_recent_status_paused", "Paused")
+    case .stopped:
+      return t("galaxyssi.agent.plan_progress.stopped", "Stopped")
+    case .notExecuted:
+      return t("galaxyssi.agent.plan_progress.not_executed", "Not executed")
+    case .recorded:
+      return t("galaxyssi.agent.plan_progress.recorded", "Process record")
     }
   }
 
