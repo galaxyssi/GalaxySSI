@@ -96,6 +96,55 @@ final class PublicNewsHeadlineTranslationTests: XCTestCase {
     XCTAssertNil(PublicNewsHeadlineTranslator.validate(source, source: source))
   }
 
+  func testPairedHeadlineBatchSurvivesReopenAndRejectsForeignOrExpiredReplies() throws {
+    let article = fixture()
+    let now = Date(timeIntervalSince1970: 100)
+    let key = PublicNewsHeadlineRetryLedger.key(article)
+    var ledger = PublicNewsHeadlineRetryLedger()
+    let lease = ledger.claim([key], at: now, retaining: [key])
+    ledger.paired = .init(id: "batch", source: 42, profile: "owner", desktop: "desktop", contact: "contact",
+      route: "route", agent: "codex", expiresAt: now.addingTimeInterval(900), lease: lease,
+      items: [.init(articleID: article.id, original: article.title, key: key)])
+    let reopened = try JSONDecoder().decode(PublicNewsHeadlineRetryLedger.self, from: JSONEncoder().encode(ledger))
+    var batch = try XCTUnwrap(reopened.paired)
+    let reply = AgentConnectorResponse(sourceMessageId: 42, contactId: "contact",
+      content: #"{"items":[{"id":0,"translation":"\#(translation)"}]}"#,
+      conversationId: batch.conversation, turnId: batch.id, taskId: batch.id, outputTokens: 12, taskStatus: "completed")
+    XCTAssertTrue(batch.matches(reply, desktop: "desktop", route: "route", agent: "codex", profile: "owner", now: now))
+    XCTAssertFalse(batch.matches(reply, desktop: "other", route: "route", agent: "codex", profile: "owner", now: now))
+    XCTAssertFalse(batch.matches(reply, desktop: "desktop", route: "other", agent: "codex", profile: "owner", now: now))
+    XCTAssertFalse(batch.matches(reply, desktop: "desktop", route: "route", agent: "codex", profile: "other", now: now))
+    XCTAssertFalse(batch.matches(reply, desktop: "desktop", route: "route", agent: "codex", profile: "owner",
+      now: batch.expiresAt))
+    var wrongTurn = reply
+    wrongTurn.turnId = "other"
+    XCTAssertFalse(batch.matches(wrongTurn, desktop: "desktop", route: "route", agent: "codex", profile: "owner", now: now))
+
+    var unknownID = reply
+    unknownID.content = #"{"items":[{"id":9,"translation":"\#(translation)"}]}"#
+    var rejected = batch
+    rejected.recordReply(unknownID)
+    XCTAssertEqual(rejected.reply?.feedback[0], "copy_only_requested_ids")
+    var fenced = reply
+    let fence = String(repeating: "\u{60}", count: 3)
+    fenced.content = fence + "json\n" + reply.content + "\n" + fence
+    batch.recordReply(fenced)
+    batch.recordReply(unknownID)
+    XCTAssertEqual(batch.reply?.translations[0], translation)
+    XCTAssertEqual(batch.usage?.output, 12)
+    let payload: [String: Any] = ["type": "text", "conversation_id": batch.conversation]
+    XCTAssertTrue(GalaxySSITransportPrivacyPolicy.isLocalOnly(payload))
+    XCTAssertFalse(GalaxySSITransportPrivacyPolicy.isLocalOnly(payload, trustedBackgroundCognitionAuthorized: true))
+  }
+
+  func testPairedHeadlineProvenanceKeepsTheLegacyArchiveReadable() throws {
+    struct Legacy: Decodable { let provider: String }
+    let title = PublicNewsHeadlineTranslation(source: fixture().title, chinese: translation, provider: .pairedDesktop)
+    let data = try JSONEncoder().encode(title)
+    XCTAssertEqual(try JSONDecoder().decode(Legacy.self, from: data).provider, "cloud")
+    XCTAssertEqual(try JSONDecoder().decode(PublicNewsHeadlineTranslation.self, from: data), title)
+  }
+
   @MainActor
   func testCacheKeepsProvenanceAndRejectsObsoleteOrDuplicateCallback() throws {
     struct Fixture: Encodable { let articles: [PublicNewsArticle] }

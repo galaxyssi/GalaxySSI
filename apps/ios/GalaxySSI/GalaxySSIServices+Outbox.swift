@@ -118,7 +118,12 @@ extension MessageCoordinator {
       if activeMessageIds.contains(item.messageId) || !deliveryStore.containsOutboxMessage(item.messageId) {
         continue
       }
-      if AgentIOSCognitionSchedulePolicy.isLearningTransport(item, legacySources: pausedLegacyLearningSourceIDs ?? []) {
+      if item.clientSourceMessageId.hasPrefix(PublicNewsPairedHeadlineBatch.outboxPrefix) {
+        guard allowsPairedHeadlineDelivery(item) else {
+          deliveryStore.discard(messageId: item.messageId)
+          continue
+        }
+      } else if AgentIOSCognitionSchedulePolicy.isLearningTransport(item, legacySources: pausedLegacyLearningSourceIDs ?? []) {
         // Expired reservations belong to the learning journal, not transport replay.
         let expiry = backgroundLearningLeases()[item.clientSourceMessageId] ?? 0
         guard expiry > GlobalRealtimeClock.nowMillis() else {

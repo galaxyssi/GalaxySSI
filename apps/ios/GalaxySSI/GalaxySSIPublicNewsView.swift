@@ -80,6 +80,7 @@ struct GalaxySSIPublicNewsView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scenePhase
   @EnvironmentObject private var store: GalaxySSIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @AppStorage("publicNews.liveEnabled") private var liveNewsEnabled = false
   @AppStorage("publicNews.publisherDiscovery") private var publisherDiscovery = false
   @AppStorage("publicNews.automaticHeadlineTranslation") private var automaticHeadlineTranslation = false
@@ -105,6 +106,7 @@ struct GalaxySSIPublicNewsView: View {
   @State private var showNewsSettings = false
   @State private var settingsAction: SettingsAction?
   @ScaledMetric(relativeTo: .body) private var menuRowHeight = 48.0
+  @ScaledMetric(relativeTo: .body) private var collapsedHeadlineSize = 19.36
   @State private var selected: PublicNewsArticle?
   @State private var didOpenInitialArticle = false
   @SceneStorage("publicNews.showSearch") private var showSearch = false
@@ -141,6 +143,10 @@ struct GalaxySSIPublicNewsView: View {
 
   private var activeFilter: Filter {
     didRestoreTimeline ? timeline.filter : (Filter(rawValue: savedFilter) ?? .all)
+  }
+
+  private var headlinePairedRoutes: [GalaxySSIContact] {
+    store.visibleContacts.filter { coordinator.pairedHeadlineLink($0, requireReady: false) != nil }
   }
 
   private var visibleArticles: [PublicNewsArticle] {
@@ -216,7 +222,7 @@ struct GalaxySSIPublicNewsView: View {
     .navigationBarHidden(true)
     .task(id: "\(headlineWorkerEnabled):\(headlineTranslationRoute)") {
       automaticHeadlines.configure(enabled: headlineWorkerEnabled, route: headlineTranslationRoute,
-        archive: archive, store: store)
+        archive: archive, store: store, coordinator: coordinator)
     }
     .onChange(of: archive.articles) { _ in
       guard archive.loaded else { return }
@@ -230,6 +236,7 @@ struct GalaxySSIPublicNewsView: View {
       scrollRequest = .init(id: article.id, offset: CGFloat(topOffset))
     }
     .onChange(of: headlineCloudRoutes) { _ in automaticHeadlines.wake() }
+    .onChange(of: headlinePairedRoutes) { _ in automaticHeadlines.wake() }
     .onDisappear { automaticHeadlines.suspend(archive: archive, store: store) }
     .task(id: savedFilter) {
       let filter = Filter(rawValue: savedFilter) ?? .all
@@ -503,7 +510,7 @@ struct GalaxySSIPublicNewsView: View {
             expandedKey = expanded ? "" : key
           }) {
           Text(presented.displayTitle)
-            .font(.body.weight(.semibold))
+            .font(expanded ? .body.weight(.semibold) : .system(size: collapsedHeadlineSize, weight: .semibold))
             .foregroundColor(article.read ? .galaxySSITextSecondary : .galaxySSITextPrimary)
             .lineLimit(expanded ? nil : reservesBilingualSpace ? 2 : 3)
         } detail: {
@@ -694,7 +701,11 @@ struct GalaxySSIPublicNewsView: View {
               ForEach(headlineCloudRoutes) { contact in
                 Text(contact.displayName + " · " + (contact.selectedCloudModel?.displayName ?? "")).tag(contact.id)
               }
-              if !headlineTranslationRoute.isEmpty && !headlineCloudRoutes.contains(where: { $0.id == headlineTranslationRoute }) {
+              ForEach(headlinePairedRoutes) { contact in
+                Text(contact.displayName + " · " + t("public_news_headline_paired_route", "Paired Desktop")).tag(contact.id)
+              }
+              if !headlineTranslationRoute.isEmpty &&
+                 !(headlineCloudRoutes + headlinePairedRoutes).contains(where: { $0.id == headlineTranslationRoute }) {
                 Text(t("public_news_headline_waiting_model", "Waiting for model")).tag(headlineTranslationRoute)
               }
             }
@@ -814,6 +825,7 @@ struct GalaxySSIPublicNewsReader: View {
     case .apple: return t("public_news_headline_apple", "Translated with Apple Translation")
     case .localModel: return t("public_news_headline_local", "Translated by an on-device model")
     case .cloud: return t("public_news_headline_cloud", "Translated by a configured cloud model")
+    case .pairedDesktop: return t("public_news_headline_paired_provider", "Translated by a paired Desktop")
     }
   }
 }

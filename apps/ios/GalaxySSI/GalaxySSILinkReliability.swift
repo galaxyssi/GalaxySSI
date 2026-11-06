@@ -1185,6 +1185,7 @@ enum GalaxySSITransportPrivacyPolicy {
   ]
 
   private static let localOnlyConversationPrefixes = [
+    PublicNewsPairedHeadlineBatch.prefix,
     "global-cognition:",
     "global-research:",
     "global-run:",
@@ -1196,6 +1197,7 @@ enum GalaxySSITransportPrivacyPolicy {
   ]
 
   private static let delegatableBackgroundConversationPrefixes = [
+    PublicNewsPairedHeadlineBatch.prefix,
     "global-cognition:",
     "global-research:",
     "global-run:",

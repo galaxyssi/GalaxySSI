@@ -3,10 +3,36 @@ import Foundation
 import NaturalLanguage
 
 struct PublicNewsHeadlineTranslation: Codable, Equatable {
-  enum Provider: String, Codable { case apple, localModel, cloud }
+  enum Provider: String, Codable { case apple, localModel, cloud, pairedDesktop }
   let source: String
   let chinese: String
   let provider: Provider
+
+  private enum CodingKeys: String, CodingKey { case source, chinese, provider, pairedDesktop }
+
+  init(source: String, chinese: String, provider: Provider) {
+    self.source = source
+    self.chinese = chinese
+    self.provider = provider
+  }
+
+  init(from decoder: Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    source = try values.decode(String.self, forKey: .source)
+    chinese = try values.decode(String.self, forKey: .chinese)
+    let legacyProvider = try values.decode(Provider.self, forKey: .provider)
+    let paired = try values.decodeIfPresent(Bool.self, forKey: .pairedDesktop) ?? false
+    provider = legacyProvider == .cloud && paired ? .pairedDesktop : legacyProvider
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var values = encoder.container(keyedBy: CodingKeys.self)
+    try values.encode(source, forKey: .source)
+    try values.encode(chinese, forKey: .chinese)
+    // Older apps can still read this archive and display the cached title.
+    try values.encode(provider == .pairedDesktop ? Provider.cloud : provider, forKey: .provider)
+    if provider == .pairedDesktop { try values.encode(true, forKey: .pairedDesktop) }
+  }
 }
 
 enum PublicNewsHeadlineTranslator {
@@ -183,6 +209,7 @@ struct PublicNewsHeadlineRetryLedger: Codable {
   }
 
   private(set) var entries: [String: Entry] = [:]
+  var paired: PublicNewsPairedHeadlineBatch?
 
   static func key(_ article: PublicNewsArticle) -> String {
     GlobalAgentText.privateFingerprint(article.id + "\n" + article.title)
@@ -213,8 +240,77 @@ struct PublicNewsHeadlineRetryLedger: Codable {
   }
 }
 
+struct PublicNewsPairedHeadlineBatch: Codable {
+  static let prefix = "public-attention:titles:"
+  static let outboxPrefix = "public-news-headline:"
+  static let leaseMillis: Int64 = 15 * 60 * 1_000
+
+  struct Item: Codable {
+    let articleID: String
+    let original: String
+    let key: String
+  }
+  struct Usage: Codable {
+    let input: Int64
+    let output: Int64
+    let cost: Int64
+  }
+
+  let id: String
+  let source: Int64
+  let profile: String
+  let desktop: String
+  let contact: String
+  let route: String
+  let agent: String
+  let expiresAt: Date
+  let lease: UUID
+  let items: [Item]
+  var reply: PublicNewsAutomaticHeadlinePolicy.BatchResult?
+  var usage: Usage?
+
+  var conversation: String { Self.prefix + id }
+  var outboxSource: String { Self.outboxPrefix + id }
+
+  func settleUsage(now: Date) {
+    guard let usage else { return }
+    GalaxySSIGlobalAutonomousBudgetRuntime.complete(runId: id, actionId: id, kind: .cognition,
+      inputTokens: usage.input, outputTokens: usage.output, reportedCostMicros: usage.cost,
+      responseText: "", nowMillis: Int64(now.timeIntervalSince1970 * 1_000))
+  }
+
+  func matches(_ response: AgentConnectorResponse, desktop: String, route: String, agent: String,
+               profile: String, now: Date) -> Bool {
+    expiresAt > now && self.profile == profile && self.desktop == desktop && self.route == route &&
+      self.agent == agent && response.sourceMessageId == source && response.contactId == contact &&
+      response.conversationId == conversation && response.turnId == id && response.taskId == id
+  }
+
+  mutating func recordReply(_ response: AgentConnectorResponse) {
+    guard reply == nil else { return }
+    reply = response.success && (response.taskStatus.isEmpty || response.taskStatus == "completed")
+      ? PublicNewsAutomaticHeadlinePolicy.read(Self.unfence(response.content),
+          sources: items.map(\.original), rejectUnknownIDs: true)
+      : .init(feedback: Dictionary(uniqueKeysWithValues: items.indices.map { ($0, "paired_request_failed") }))
+    usage = .init(input: response.inputTokens,
+      output: response.outputTokens > 0 || response.content.isEmpty ? response.outputTokens :
+        GlobalModelUsageEstimator.estimateTokens(response.content), cost: response.costMicros)
+  }
+
+  private static func unfence(_ text: String) -> String {
+    let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    let fence = String(repeating: "\u{60}", count: 3)
+    guard value.hasPrefix(fence), value.hasSuffix(fence), let firstLine = value.firstIndex(of: "\n") else { return value }
+    let label = value[..<firstLine].trimmingCharacters(in: .whitespacesAndNewlines)
+    guard label == fence || label.lowercased() == fence + "json", value.distance(from: firstLine, to: value.endIndex) > 3 else {
+      return value
+    }
+    return String(value[value.index(after: firstLine)..<value.index(value.endIndex, offsetBy: -3)])
+  }
+}
+
 enum PublicNewsAutomaticHeadlinePolicy {
-  struct BatchResult {
+  struct BatchResult: Codable {
     var translations: [Int: String] = [:]
     var feedback: [Int: String] = [:]
   }
@@ -236,21 +332,28 @@ enum PublicNewsAutomaticHeadlinePolicy {
   """
 
   static func read(_ text: String, articles: [PublicNewsArticle]) -> BatchResult {
+    read(text, sources: articles.map(\.title), rejectUnknownIDs: false)
+  }
+
+  static func read(_ text: String, sources: [String], rejectUnknownIDs: Bool) -> BatchResult {
     struct Item: Decodable { var id: Int; var translation: String }
     struct Reply: Decodable { var items: [Item] }
     guard text.utf8.count <= 16_384,
           let reply = try? JSONDecoder().decode(Reply.self, from: Data(text.utf8)),
-          reply.items.count <= articles.count * 2 else {
-      return .init(feedback: Dictionary(uniqueKeysWithValues: articles.indices.map { ($0, "return_the_requested_json_object") }))
+          reply.items.count <= sources.count * 2 else {
+      return .init(feedback: Dictionary(uniqueKeysWithValues: sources.indices.map { ($0, "return_the_requested_json_object") }))
+    }
+    if rejectUnknownIDs && reply.items.contains(where: { !sources.indices.contains($0.id) }) {
+      return .init(feedback: Dictionary(uniqueKeysWithValues: sources.indices.map { ($0, "copy_only_requested_ids") }))
     }
     let grouped = Dictionary(grouping: reply.items, by: \.id)
     var result = BatchResult()
-    for index in articles.indices {
+    for index in sources.indices {
       guard let items = grouped[index], items.count == 1, let item = items.first else {
         result.feedback[index] = grouped[index] == nil ? "include_missing_id" : "include_each_id_once"
         continue
       }
-      let source = articles[index].title
+      let source = sources[index]
       if let value = PublicNewsHeadlineTranslator.validate(item.translation, source: source) {
         result.translations[index] = value
       } else {
@@ -275,6 +378,7 @@ final class PublicNewsAutomaticHeadlineWorker: ObservableObject {
   private weak var visibleArchive: PublicNewsArchive?
   private weak var archive: PublicNewsArchive?
   private weak var store: GalaxySSIStore?
+  private weak var coordinator: MessageCoordinator?
   private var route = ""
   private var enabled = false
   private var nextBatch = Date.distantPast
@@ -284,7 +388,8 @@ final class PublicNewsAutomaticHeadlineWorker: ObservableObject {
   init(file: URL? = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
     .first?.appendingPathComponent("public-news-headline-retry.json")) { self.file = file }
 
-  func configure(enabled: Bool, route: String, archive: PublicNewsArchive, store: GalaxySSIStore) {
+  func configure(enabled: Bool, route: String, archive: PublicNewsArchive, store: GalaxySSIStore,
+                 coordinator: MessageCoordinator? = nil) {
     if self.enabled != enabled || self.route != route || self.archive !== archive {
       if visibleArchive !== archive { visible.removeAll(); visibleArchive = archive }
       generation = UUID()
@@ -297,6 +402,7 @@ final class PublicNewsAutomaticHeadlineWorker: ObservableObject {
     self.route = route
     self.archive = archive
     self.store = store
+    self.coordinator = coordinator
     if enabled { schedule(Date(timeIntervalSinceNow: 0.2)) } else { status = .off }
   }
 
@@ -316,6 +422,34 @@ final class PublicNewsAutomaticHeadlineWorker: ObservableObject {
   func wake() {
     guard enabled, work == nil, let archive, let store else { return }
     guard !archive.storageFailed else { status = .storageFailed; return }
+    guard var state = load() else { status = .storageFailed; return }
+    let now = Date()
+    if let pending = state.paired {
+      if let reply = pending.reply, pending.profile == store.profile.identityFingerprint {
+        pending.settleUsage(now: now)
+        for (index, item) in pending.items.enumerated() {
+          let saved = reply.translations[index].map {
+            archive.storeHeadline($0, for: item.articleID, source: item.original, provider: .pairedDesktop)
+          } ?? false
+          let alreadyStored = archive.articles.contains {
+            $0.id == item.articleID && $0.title == item.original && $0.headlineTranslation?.source == item.original
+          }
+          state.finish(item.key, lease: pending.lease, at: now,
+            reason: saved || alreadyStored ? nil : (reply.feedback[index] ?? "headline_changed_or_not_saved"))
+        }
+        guard !archive.storageFailed else { status = .storageFailed; return }
+      } else if pending.expiresAt > now {
+        status = .translating
+        schedule(pending.expiresAt)
+        return
+      } else {
+        coordinator?.retirePairedHeadlineBatch(pending, now: now)
+        for item in pending.items { state.finish(item.key, lease: pending.lease, at: now, reason: "paired_reply_timeout") }
+      }
+      state.paired = nil
+      guard persist(state) else { status = .storageFailed; return }
+      nextBatch = now.addingTimeInterval(30)
+    }
     let articles = PublicNewsAutomaticHeadlinePolicy.candidates(archive.eligibleArticles,
       visible: visibleArchive === archive ? visible : [])
     guard !articles.isEmpty else { status = .idle; return }
@@ -324,8 +458,6 @@ final class PublicNewsAutomaticHeadlineWorker: ObservableObject {
       schedule(Date(timeIntervalSinceNow: 120))
       return
     }
-    guard let state = load() else { status = .storageFailed; return }
-    let now = Date()
     guard now >= nextBatch else { schedule(nextBatch); return }
     let batch = Array(articles.filter { state.ready(PublicNewsHeadlineRetryLedger.key($0), at: now) }.prefix(4))
     guard !batch.isEmpty else {
@@ -336,6 +468,10 @@ final class PublicNewsAutomaticHeadlineWorker: ObservableObject {
       return
     }
     let target = route
+    if !target.isEmpty, let contact = store.contact(id: target), contact.deliveryMode.isGalaxySSILinkFamily {
+      dispatchPaired(batch, contact: contact, state: state, retaining: articles, now: now)
+      return
+    }
     let cloud: GalaxySSIContact?
     if target.isEmpty {
       cloud = nil
@@ -439,6 +575,57 @@ final class PublicNewsAutomaticHeadlineWorker: ObservableObject {
     }
   }
 
+  func pendingPairedBatch() -> PublicNewsPairedHeadlineBatch? { load()?.paired }
+
+  func consumePairedReply(_ response: AgentConnectorResponse, desktop: String, route: String, agent: String,
+                          profile: String, now: Date) -> Bool {
+    guard var state = load() else { return false }
+    guard var batch = state.paired, batch.reply == nil,
+          batch.matches(response, desktop: desktop, route: route, agent: agent, profile: profile, now: now) else { return true }
+    batch.recordReply(response)
+    state.paired = batch
+    guard persist(state) else { return false }
+    batch.settleUsage(now: now)
+    wake()
+    return true
+  }
+
+  private func dispatchPaired(_ articles: [PublicNewsArticle], contact: GalaxySSIContact,
+                              state: PublicNewsHeadlineRetryLedger, retaining candidates: [PublicNewsArticle], now: Date) {
+    guard let coordinator, let link = coordinator.pairedHeadlineLink(contact) else {
+      status = .waitingModel
+      schedule(now.addingTimeInterval(60))
+      return
+    }
+    let id = UUID().uuidString
+    let source = Int64(id.replacingOccurrences(of: "-", with: "").prefix(13), radix: 16) ?? 0
+    guard source > 0 else { return }
+    let items = articles.map {
+      PublicNewsPairedHeadlineBatch.Item(articleID: $0.id, original: $0.title, key: PublicNewsHeadlineRetryLedger.key($0))
+    }
+    var claimed = state
+    let lease = claimed.claim(items.map(\.key), at: now, retaining: Set(candidates.map(PublicNewsHeadlineRetryLedger.key)))
+    let batch = PublicNewsPairedHeadlineBatch(id: id, source: source, profile: coordinator.store.profile.identityFingerprint,
+      desktop: link.desktopId, contact: contact.id, route: link.routes.clientRouteId, agent: contact.connectorAgentId,
+      expiresAt: now.addingTimeInterval(Double(PublicNewsPairedHeadlineBatch.leaseMillis) / 1_000), lease: lease, items: items)
+    claimed.paired = batch
+    guard persist(claimed) else { status = .storageFailed; return }
+    let payload = items.enumerated().map { index, item in
+      ["id": .int(Int64(index)), "headline": .string(item.original),
+       "feedback": .string(state.entries[item.key]?.reason ?? "")] as AgentMcpJSONObject
+    }
+    let prompt = AgentMcpJSONCodec.stringify(["items": .array(payload.map(AgentMcpJSONValue.object))])
+    if coordinator.enqueuePairedHeadlineBatch(batch, link: link, prompt: prompt, now: now) {
+      status = .translating
+      schedule(batch.expiresAt)
+    } else {
+      claimed.paired = nil
+      for item in items { claimed.finish(item.key, lease: lease, at: now, reason: "paired_route_unavailable_or_budget_deferred") }
+      status = persist(claimed) ? .deferred : .storageFailed
+      schedule(now.addingTimeInterval(30))
+    }
+  }
+
   private func schedule(_ date: Date) {
     guard enabled else { return }
     if let timerDate, timerDate <= date { return }
@@ -477,5 +664,81 @@ final class PublicNewsAutomaticHeadlineWorker: ObservableObject {
       ledger = state
       return true
     } catch { return false }
+  }
+}
+
+@MainActor
+extension MessageCoordinator {
+  func pairedHeadlineLink(_ contact: GalaxySSIContact, requireReady: Bool = true) -> ServerLink? {
+    guard store.globalAgentSettings.enabled, store.globalAgentSettings.allowPairedAgentCognition,
+          contact.isCommunicable, contact.deliveryMode.isGalaxySSILinkFamily, !contact.isDesktopDeviceContact,
+          !contact.desktopId.isEmpty,
+          !contact.connectorAgentId.isEmpty, (!requireReady || AgentConnectorAvailability.desktopAgentReady(contact: contact)),
+          GalaxySSISignalEngine.isAvailable, signalEngine.hasSession(remoteName: contact.desktopId) else { return nil }
+    return store.serverLinks.first {
+      $0.paired && $0.desktopId == contact.desktopId &&
+        (contact.linkClientRouteId?.isEmpty != false || contact.linkClientRouteId == $0.routes.clientRouteId)
+    }
+  }
+
+  func enqueuePairedHeadlineBatch(_ batch: PublicNewsPairedHeadlineBatch, link: ServerLink,
+                                  prompt: String, now: Date) -> Bool {
+    guard let contact = store.contact(id: batch.contact), pairedHeadlineLink(contact) == link else { return false }
+    let system = PublicNewsAutomaticHeadlinePolicy.prompt +
+      "\nTranslate only the supplied headlines. Do not use tools, browse, or access chat history."
+    let content = system + "\n\n" + prompt
+    let millis = Int64(now.timeIntervalSince1970 * 1_000)
+    let budget = GalaxySSIGlobalAutonomousBudgetRuntime.acquire(store: store, runId: batch.id,
+      actionId: batch.id, kind: .cognition, resourceId: batch.contact, systemPrompt: system,
+      prompt: prompt, nowMillis: millis, leaseMillis: PublicNewsPairedHeadlineBatch.leaseMillis)
+    guard budget.granted else { return false }
+    let disclosure = FileAgentDataDisclosureStore(fileURL: AgentDataDisclosureStorePaths.ledgerURL())
+    let ticket = AgentDataDisclosureLedger.beginDesktopRequest(store: disclosure, contactId: batch.contact,
+      desktopId: batch.desktop, providerId: batch.agent, title: contact.displayName, text: content,
+      conversationId: batch.conversation, taskId: batch.id, turnId: batch.id)
+    guard ticket.allowed else { retirePairedHeadlineBatch(batch, now: now); return false }
+    let payload: [String: Any] = [
+      "type": "text", "message_id": batch.id, "source_message_id": batch.source,
+      "client_message_id": batch.source, "content": content, "contact_id": batch.contact,
+      "desktop_id": batch.desktop, "client_route_id": batch.route, "agent_id": batch.agent,
+      "conversation_id": batch.conversation, "turn_id": batch.id, "task_id": batch.id,
+      "sender": store.profile.galaxySSIId, "response_language": "zh-CN", "time": millis,
+      "execution_mode": AgentTaskExecutionMode.autoComplete.rawValue
+    ]
+    do {
+      let message = try enqueueLinkPayload(payload, link: link, topic: link.routes.upTopic,
+        clientSourceMessageId: batch.outboxSource, contactId: batch.contact,
+        trustedBackgroundCognitionAuthorized: true, backgroundLearning: true)
+      guard deliveryStore.containsOutboxMessage(message) else { throw CocoaError(.fileWriteUnknown) }
+      AgentDataDisclosureLedger.update(store: disclosure, ticket: ticket, status: .queued)
+      scheduleOutboxFlushFromStore()
+      return true
+    } catch {
+      AgentDataDisclosureLedger.update(store: disclosure, ticket: ticket, status: .failed)
+      retirePairedHeadlineBatch(batch, now: now)
+      return false
+    }
+  }
+
+  func allowsPairedHeadlineDelivery(_ item: PendingLinkMessage) -> Bool {
+    guard let batch = PublicNewsAutomaticHeadlineWorker.shared.pendingPairedBatch(), batch.reply == nil,
+          batch.outboxSource == item.clientSourceMessageId, batch.contact == item.contactId,
+          batch.expiresAt > Date(), batch.profile == store.profile.identityFingerprint,
+          UserDefaults.standard.bool(forKey: "publicNews.automaticHeadlineTranslation"),
+          UserDefaults.standard.string(forKey: "publicNews.headlineTranslationRoute") == batch.contact,
+          let contact = store.contact(id: batch.contact), let link = pairedHeadlineLink(contact, requireReady: false) else { return false }
+    return link.routes.upTopic == item.topic && link.routes.clientRouteId == batch.route &&
+      link.desktopId == batch.desktop && contact.connectorAgentId == batch.agent
+  }
+
+  func retirePairedHeadlineBatch(_ batch: PublicNewsPairedHeadlineBatch, now: Date) {
+    _ = deliveryStore.discardClientSourceMessage(batch.outboxSource)
+    guard batch.profile == store.profile.identityFingerprint else { return }
+    let budget = GalaxySSIGlobalResearchRuntimeStore()
+    var state = budget.state()
+    let lease = GalaxySSIGlobalAutonomousBudgetRuntime.leaseId(runId: batch.id, actionId: batch.id, kind: .cognition)
+    state.modelBudget = GlobalModelCallBudgetPolicy.release(state: state.modelBudget,
+      leaseId: lease, nowMillis: Int64(now.timeIntervalSince1970 * 1_000))
+    budget.save(state)
   }
 }
