@@ -972,6 +972,8 @@ final class GalaxySSIAttachmentTests: XCTestCase {
     block.metadata["transfer_progress"] = "100"
     block.metadata["transfer_state"] = GalaxySSIPeerAttachmentTransferProgress.complete
     XCTAssertEqual(GalaxySSIPeerImageThumbnailPolicy.cacheIdentity(block), identity)
+    block.metadata["sha256"] = String(repeating: "b", count: 64)
+    XCTAssertNotEqual(GalaxySSIPeerImageThumbnailPolicy.cacheIdentity(block), identity)
 
     let source = UIGraphicsImageRenderer(size: CGSize(width: 640, height: 480)).image { context in
       UIColor.systemBlue.setFill()
@@ -1034,10 +1036,74 @@ final class GalaxySSIAttachmentTests: XCTestCase {
     wait(for: [loaded], timeout: 20)
     XCTAssertEqual(thumbnails.count, 2)
     XCTAssertTrue(thumbnails.allSatisfy(GalaxySSIImageResourceDecoder.canDecode))
-    let storedURL = root.appendingPathComponent(".peer-image-thumbnail-v1.saenc")
-    XCTAssertTrue(cipher.isEncryptedFile(storedURL))
-    let stored = try cipher.read(from: storedURL, purpose: "peer-thumbnail:\(transferID)")
-    XCTAssertTrue(GalaxySSIImageResourceDecoder.canDecode(stored))
+    for size in [504, 420] {
+      let variant = GalaxySSIPeerImageThumbnailPolicy.variant(block, maxPixelSize: size)
+      let storedURL = root.appendingPathComponent(".peer-image-thumbnail-v2-\(variant).saenc")
+      XCTAssertTrue(cipher.isEncryptedFile(storedURL))
+      let stored = try cipher.read(from: storedURL, purpose: "peer-thumbnail-v2:\(variant)")
+      XCTAssertTrue(GalaxySSIImageResourceDecoder.canDecode(stored))
+    }
+  }
+
+  func testPeerThumbnailsIsolateSharedDirectoryAndRepairCorruptVariants() throws {
+    let manager = FileManager.default
+    let root = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try manager.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? manager.removeItem(at: root) }
+    let cipher = GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let repository = GalaxySSIPeerImageThumbnailRepository(cipher: cipher)
+    func image(_ color: UIColor) throws -> Data {
+      try XCTUnwrap(UIGraphicsImageRenderer(size: CGSize(width: 100, height: 100)).image { context in
+        color.setFill()
+        context.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+      }.pngData())
+    }
+    func block(_ file: URL, bytes: Data) -> AgentRichBlock {
+      AgentRichBlock(id: file.lastPathComponent, type: .image, title: "photo.png", uri: file.absoluteString,
+        mimeType: "image/png", metadata: ["source": "peer_message", "storage": "app_private_file",
+          "sha256": AgentAttachmentTransferProtocol.sha256(bytes)])
+    }
+    func load(_ block: AgentRichBlock) throws -> Data {
+      let loaded = expectation(description: "Load \(block.id)")
+      var data: Data?
+      repository.load(block: block) { data = $0; loaded.fulfill() }
+      wait(for: [loaded], timeout: 10)
+      return try XCTUnwrap(data)
+    }
+    let red = try image(.red), blue = try image(.blue)
+    let firstFile = root.appendingPathComponent("first.png")
+    let secondFile = root.appendingPathComponent("second.png")
+    let legacy = root.appendingPathComponent(".peer-image-thumbnail-v1.saenc")
+    try red.write(to: firstFile)
+    try blue.write(to: secondFile)
+    try cipher.write(blue, to: legacy, purpose: "peer-thumbnail:image")
+    let first = block(firstFile, bytes: red), second = block(secondFile, bytes: blue)
+    let firstThumbnail = try load(first)
+    let secondThumbnail = try load(second)
+    XCTAssertNotEqual(firstThumbnail, secondThumbnail)
+    XCTAssertFalse(manager.fileExists(atPath: legacy.path))
+    let variant = GalaxySSIPeerImageThumbnailPolicy.variant(first, maxPixelSize: 512)
+    let cache = root.appendingPathComponent(".peer-image-thumbnail-v2-\(variant).saenc")
+    try cipher.write(Data("not an image".utf8), to: cache, purpose: "peer-thumbnail-v2:\(variant)")
+    repository.clearMemoryCache()
+    let rebuilt = try load(first)
+    XCTAssertEqual(try cipher.read(from: cache, purpose: "peer-thumbnail-v2:\(variant)"), rebuilt)
+    XCTAssertEqual(try Data(contentsOf: firstFile), red)
+    XCTAssertEqual(repository.originalData(for: second), blue)
+    try manager.removeItem(at: secondFile)
+    repository.clearMemoryCache()
+    XCTAssertEqual(try load(first), rebuilt)
+
+    let replaced = block(firstFile, bytes: blue)
+    try blue.write(to: firstFile, options: .atomic)
+    XCTAssertNotEqual(GalaxySSIPeerImageThumbnailPolicy.cacheIdentity(first),
+                      GalaxySSIPeerImageThumbnailPolicy.cacheIdentity(replaced))
+    XCTAssertNotEqual(try load(replaced), rebuilt)
+    let stale = expectation(description: "Purged memory hit is not delivered")
+    stale.isInverted = true
+    repository.load(block: replaced) { _ in stale.fulfill() }
+    repository.clearMemoryCache()
+    wait(for: [stale], timeout: 0.2)
   }
 
   func testIncomingPeerAttachmentAssemblesResumesAndResolvesDurably() throws {
