@@ -430,7 +430,7 @@ struct GalaxySSIPublicNewsView: View {
 
   private func revealArrivals() {
     let previous = timeline.visibleIDs
-    timeline.revealArrivals()
+    timeline.revealArrivals(maximum: PublicNewsPageWindow.pageSize)
     pageWindow.reconcile(from: previous, to: timeline.visibleIDs)
     pageWindow.extend(older: false, count: timeline.visibleIDs.count)
   }
@@ -567,6 +567,7 @@ struct GalaxySSIPublicNewsView: View {
             archive.rememberCover(cover, articleID: article.id)
           }
           .disabled(!archive.loaded)
+          GalaxySSIPublicNewsArticleActions(article: article, archive: archive)
           Button { selected = article } label: {
             Label(t("public_news_open_article", "Open article"), systemImage: "doc.text")
               .frame(minHeight: 44)
@@ -834,9 +835,7 @@ struct GalaxySSIPublicNewsReader: View {
             Label(t("voice_app_open_controls", "Voice controls"), systemImage: "waveform")
               .frame(minHeight: 44)
           }
-          Link(destination: article.url) {
-            Label(t("public_news_open_source", "Open publisher"), systemImage: "arrow.up.right")
-          }
+          GalaxySSIPublicNewsArticleActions(article: article, archive: archive)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
@@ -856,6 +855,51 @@ struct GalaxySSIPublicNewsReader: View {
     case .cloud: return t("public_news_headline_cloud", "Translated by a configured cloud model")
     case .pairedDesktop: return t("public_news_headline_paired_provider", "Translated by a paired Desktop")
     }
+  }
+}
+
+extension Notification.Name {
+  static let galaxySSIOpenPublicNewsDiscussion = Notification.Name("galaxyssi.open_public_news_discussion")
+}
+
+@MainActor
+private struct GalaxySSIPublicNewsArticleActions: View {
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @EnvironmentObject private var store: GalaxySSIStore
+  @State private var discussionFailed = false
+  let article: PublicNewsArticle
+  @ObservedObject var archive: PublicNewsArchive
+
+  var body: some View {
+    if let seed = PublicNewsDiscussionSeed(article: article) {
+      let sourceLabel = t("public_news_original_source", "Original source")
+      VStack(alignment: .leading, spacing: 0) {
+        Link(destination: seed.source) {
+          Label(sourceLabel, systemImage: "arrow.up.right").frame(minHeight: 44)
+        }
+        Button {
+          guard let conversation = store.openPublicNewsDiscussion(seed,
+            fallbackTitle: t("public_news_title", "Following updates"), sourceLabel: sourceLabel) else {
+            discussionFailed = true
+            return
+          }
+          archive.markRead(article.id)
+          NotificationCenter.default.post(name: .galaxySSIOpenPublicNewsDiscussion, object: store,
+            userInfo: ["conversationId": conversation])
+        } label: {
+          Label(t("public_news_ask_agent", "Ask Agent"), systemImage: "bubble.left").frame(minHeight: 44)
+        }
+        .disabled(!archive.loaded)
+      }
+      .alert(t("public_news_discussion_failed", "The article conversation could not be opened."),
+        isPresented: $discussionFailed) {
+          Button(t("common_close", "Close"), role: .cancel) {}
+        }
+    }
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    GalaxySSILocalization.string(key, fallback: fallback, language: language)
   }
 }
 
