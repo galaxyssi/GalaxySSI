@@ -87,15 +87,13 @@ enum PublicNewsPushClient {
     guard object["type"] as? String == "story", object["dead"] as? Bool != true, object["deleted"] as? Bool != true,
           let time = PublicNewsPushCursor.positiveInteger(object["time"]),
           let rawURL = object["url"] as? String, rawURL.count <= 2_048,
-          var parts = URLComponents(string: rawURL),
-          ["http", "https"].contains(parts.scheme?.lowercased() ?? ""),
-          let host = parts.host, host.contains("."), parts.user == nil, parts.password == nil else { return nil }
+          let candidate = URL(string: rawURL), let url = PublicNewsCanonicalSource.url(candidate),
+          let host = url.host else { return nil }
     let submitted = Date(timeIntervalSince1970: Double(time))
     guard submitted >= now.addingTimeInterval(-PublicNewsPushCursor.retention),
           submitted <= now.addingTimeInterval(300) else { return nil }
-    parts.fragment = nil
     let title = PublicNewsFeedParser.plainText(object["title"] as? String ?? "", limit: 500)
-    guard let url = parts.url, !title.isEmpty else { return nil }
+    guard !title.isEmpty else { return nil }
     return PublicNewsArticle(
       url: url, title: title, summary: PublicNewsFeedParser.plainText(object["text"] as? String ?? "", limit: 800),
       publisher: host, publishedAt: nil, discoveredAt: min(submitted, now), interests: [.technology]

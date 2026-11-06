@@ -233,7 +233,7 @@ final class PublicNewsArchive: ObservableObject {
     let results = await withTaskGroup(of: (Int, PollOutcome).self) { group in
       for (index, source) in sources.enumerated() {
         group.addTask {
-          do { return (index, .articles(try await PublicNewsFeedClient.fetch(source, now: now))) }
+          do { return (index, .articles(try await PublicNewsFeedClient.fetch(source, now: now, useCache: !force))) }
           catch PublicNewsFeedError.discussionFeed { return (index, .discussion) }
           catch { return (index, .failed) }
         }
@@ -299,6 +299,16 @@ final class PublicNewsArchive: ObservableObject {
     update(articleID) { article in
       if article.coverURL == nil && PublicNewsImagePolicy.accepts(cover, for: article.url) { article.coverURL = cover }
     }
+  }
+
+  @discardableResult
+  func storeSourceReview(_ review: PublicNewsSourceReview, articleID: String) -> Bool {
+    guard let index = articles.firstIndex(where: { $0.id == articleID }),
+          !notRelevantIDs.contains(articleID), review.inputKey == PublicNewsSourceReview.key(articles[index]),
+          PublicNewsSourceReview.current(for: articles[index]) == nil else { return false }
+    var next = articles
+    next[index].sourceReview = review
+    return save(next, refreshedAt: refreshedAt)
   }
 
   @discardableResult
@@ -447,12 +457,18 @@ final class PublicNewsArchive: ObservableObject {
   nonisolated static func merge(existing: [PublicNewsArticle], incoming: [PublicNewsArticle]) -> [PublicNewsArticle] {
     var byID = [String: PublicNewsArticle]()
     var aliasIDs = [PublisherIdentity: Set<String>]()
+    var canonicalIDs: [String: Set<String>] = [:]
     for article in existing {
       byID[article.id] = article
       if let identity = PublisherIdentity(article) { aliasIDs[identity, default: []].insert(article.id) }
+      if let key = PublicNewsCanonicalSource.key(article.url) { canonicalIDs[key, default: []].insert(article.id) }
     }
     var seen = Set<String>()
     for var article in incoming {
+      if byID[article.id] == nil, let key = PublicNewsCanonicalSource.key(article.url),
+         let ids = canonicalIDs[key], ids.count == 1, let id = ids.first, let prior = byID[id] {
+        article.url = prior.url
+      }
       if byID[article.id] == nil, let identity = PublisherIdentity(article),
          let ids = aliasIDs[identity], ids.count == 1, let priorID = ids.first, let prior = byID[priorID],
          PublisherIdentity(prior) == identity, prior.url.host?.lowercased() != article.url.host?.lowercased(),
@@ -481,9 +497,13 @@ final class PublicNewsArchive: ObservableObject {
           article.interests = (article.interests ?? []).union(previousInterests)
         }
         if article.summary.isEmpty { article.summary = previous.summary }
+        if let review = previous.sourceReview, review.inputKey == PublicNewsSourceReview.key(article) {
+          article.sourceReview = review
+        }
       }
       byID[article.id] = article
       if let identity = PublisherIdentity(article) { aliasIDs[identity, default: []].insert(article.id) }
+      if let key = PublicNewsCanonicalSource.key(article.url) { canonicalIDs[key, default: []].insert(article.id) }
     }
     return byID.values.sorted {
       $0.sortDate == $1.sortDate ? $0.id < $1.id : $0.sortDate > $1.sortDate

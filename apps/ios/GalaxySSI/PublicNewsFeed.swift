@@ -12,12 +12,39 @@ struct PublicNewsArticle: Codable, Equatable, Identifiable {
   var interests: Set<PublicNewsInterest>?
   var headlineTranslation: PublicNewsHeadlineTranslation?
   var coverURL: URL?
+  var sourceReview: PublicNewsSourceReview?
 
   var id: String { url.absoluteString }
   var sortDate: Date { publishedAt ?? discoveredAt }
   var displayTitle: String {
     guard let headlineTranslation, headlineTranslation.source == title, !headlineTranslation.chinese.isEmpty else { return title }
     return headlineTranslation.chinese
+  }
+}
+
+enum PublicNewsCanonicalSource {
+  static func url(_ source: URL) -> URL? {
+    guard var parts = URLComponents(url: source, resolvingAgainstBaseURL: false),
+          let host = parts.host?.lowercased(), host.contains("."),
+          (parts.port == nil || parts.port == 443),
+          AgentIOSWebRenderURLPolicy.allows(source.absoluteString) else { return nil }
+    parts.scheme = "https"
+    parts.host = host
+    parts.port = nil
+    parts.fragment = nil
+    if let query = parts.percentEncodedQuery {
+      let kept = query.split(separator: "&", omittingEmptySubsequences: false).filter { item in
+        let raw = item.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
+        let name = (String(raw).removingPercentEncoding ?? String(raw)).lowercased()
+        return !name.hasPrefix("utm_") && !["fbclid", "gclid", "mc_cid", "mc_eid"].contains(name)
+      }
+      parts.percentEncodedQuery = kept.isEmpty ? nil : kept.joined(separator: "&")
+    }
+    return parts.url
+  }
+
+  static func key(_ source: URL) -> String? {
+    url(source).map { PublicNewsSpeechBookmark.key(for: $0.absoluteString) }
   }
 }
 
@@ -328,7 +355,8 @@ final class PublicNewsFeedParser: NSObject, XMLParserDelegate {
     let summary = ["summary", "description", "content", "encoded"]
       .compactMap { values[$0] }.lazy.map { Self.plainText($0, limit: 4_000) }.first { !$0.isEmpty } ?? ""
     let published = ["published", "pubdate", "date"].compactMap { values[$0] }
-      .lazy.compactMap { Self.date($0.trimmingCharacters(in: .whitespacesAndNewlines)) }.first
+      .lazy.compactMap { Self.date($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+      .first { $0.timeIntervalSince1970 >= 0 && $0 <= now.addingTimeInterval(300) }
     let cover = values["coverURL"].flatMap { URL(string: $0, relativeTo: source.url)?.absoluteURL }
       .flatMap { PublicNewsImagePolicy.accepts($0, for: url) ? $0 : nil }
     entries.append(PublicNewsArticle(
@@ -341,13 +369,8 @@ final class PublicNewsFeedParser: NSObject, XMLParserDelegate {
   private func publicArticleURL(_ text: String) -> URL? {
     let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !value.isEmpty, value.count <= 2_048,
-          let url = URL(string: value, relativeTo: source.url)?.absoluteURL,
-          var parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
-          ["http", "https"].contains(parts.scheme?.lowercased() ?? ""),
-          let host = parts.host, host.contains("."),
-          parts.user == nil, parts.password == nil else { return nil }
-    parts.fragment = nil
-    return parts.url
+          let url = URL(string: value, relativeTo: source.url)?.absoluteURL else { return nil }
+    return PublicNewsCanonicalSource.url(url)
   }
 
   private func localName(_ name: String) -> String {
@@ -377,19 +400,55 @@ final class PublicNewsFeedParser: NSObject, XMLParserDelegate {
 }
 
 enum PublicNewsFeedClient {
-  static func fetch(_ source: PublicNewsSource, now: Date) async throws -> [PublicNewsArticle] {
+  private struct CachedFeed {
+    let body: Data
+    let url: URL
+  }
+
+  private actor FeedCache {
+    struct Entry {
+      let feed: CachedFeed
+      let expires: Date
+    }
+    var cached: [String: Entry] = [:]
+    var inFlight: [String: Task<CachedFeed, Error>] = [:]
+
+    func read(url: URL, allowRedirects: Bool, useCache: Bool) async throws -> CachedFeed {
+      let key = "\(allowRedirects):\(url.absoluteString)"
+      let now = Date()
+      if useCache, let entry = cached[key], entry.expires > now { return entry.feed }
+      if let task = inFlight[key] { return try await task.value }
+      let task = Task.detached(priority: .utility) {
+        let (bytes, response) = try await PublicNewsFeedClient.fetchBytes(url,
+          accept: "application/rss+xml, application/atom+xml, application/xml, text/xml", allowRedirects: allowRedirects)
+        return CachedFeed(body: bytes, url: response.url ?? url)
+      }
+      inFlight[key] = task
+      defer { inFlight[key] = nil }
+      let feed = try await task.value
+      cached = cached.filter { $0.value.expires > now }
+      if cached.count >= 12, let oldest = cached.min(by: { $0.value.expires < $1.value.expires })?.key {
+        cached.removeValue(forKey: oldest)
+      }
+      cached[key] = Entry(feed: feed, expires: Date(timeIntervalSinceNow: 120))
+      return feed
+    }
+  }
+
+  private static let cache = FeedCache()
+
+  static func fetch(_ source: PublicNewsSource, now: Date, useCache: Bool = true) async throws -> [PublicNewsArticle] {
     if source.learned {
       guard PublicNewsPublisherDiscovery.acceptsFeed(source.url, publisher: source.publisher),
             AgentIOSWebRenderURLPolicy.resolvesToPublicAddress(source.url.absoluteString) else {
         throw PublicNewsFeedError.invalidResponse
       }
     }
-    let (body, response) = try await fetchBytes(
-      source.url, accept: "application/rss+xml, application/atom+xml, application/xml, text/xml", allowRedirects: !source.learned
-    )
-    let resolved = PublicNewsSource(publisher: source.publisher, url: response.url ?? source.url,
+    let feed = try await cache.read(url: source.url, allowRedirects: !source.learned, useCache: useCache)
+    try Task.checkCancellation()
+    let resolved = PublicNewsSource(publisher: source.publisher, url: feed.url,
       interest: source.interest, additionalInterests: source.additionalInterests, learned: source.learned)
-    return try PublicNewsFeedParser.parse(body, source: resolved, now: now)
+    return try PublicNewsFeedParser.parse(feed.body, source: resolved, now: now)
   }
 
   static func probe(_ article: URL) async throws -> [URL] {
