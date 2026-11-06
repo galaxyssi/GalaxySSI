@@ -630,12 +630,10 @@ struct GlobalAgentSettings: Codable, Equatable {
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     let fallback = Self.default
-    let architectureVersion = try container.decodeIfPresent(Int.self, forKey: .backgroundCognitionArchitectureVersion) ?? 0
+    let architectureVersion = try container.decodeIfPresent(Int.self, forKey: .backgroundCognitionArchitectureVersion) ?? 1
     self.init(
-      backgroundCognitionArchitectureVersion: 1,
-      enabled: architectureVersion < 1
-        ? true
-        : (try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true),
+      backgroundCognitionArchitectureVersion: architectureVersion,
+      enabled: try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? fallback.enabled,
       proactiveInsightsEnabled: try container.decodeIfPresent(Bool.self, forKey: .proactiveInsightsEnabled) ?? fallback.proactiveInsightsEnabled,
       proactiveDiscoveryEnabled: try container.decodeIfPresent(Bool.self, forKey: .proactiveDiscoveryEnabled) ?? fallback.proactiveDiscoveryEnabled,
       modelUnderstandingEnabled: try container.decodeIfPresent(Bool.self, forKey: .modelUnderstandingEnabled) ?? fallback.modelUnderstandingEnabled,

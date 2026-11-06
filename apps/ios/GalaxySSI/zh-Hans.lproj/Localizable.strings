@@ -4210,8 +4210,8 @@
 "cc_global_cloud_allowed" = "云端理解";
 "cc_global_local_first" = "本地优先";
 "cc_global_section_autonomy" = "自主能力";
-"cc_global_master_title" = "全局理解";
-"cc_global_master_subtitle" = "观察已授权会话并维护个人世界模型";
+"cc_global_master_title" = "后台学习";
+"cc_global_master_subtitle" = "通过已授权会话维护个人世界模型";
 "cc_global_model_understanding_title" = "模型辅助理解";
 "cc_global_model_understanding_subtitle" = "仅在跨主题含义需要深入分析时调用可信推理资源";
 "cc_global_autonomous_preparation_title" = "自主准备";

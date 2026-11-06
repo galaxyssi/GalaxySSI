@@ -41,7 +41,10 @@ extension GalaxySSIStore {
     nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
   ) -> [GlobalProactiveMessage] {
     let settings = globalAgentSettings
-    guard settings.enabled, settings.proactiveInsightsEnabled else { return [] }
+    let eligible = globalProactiveMessages.filter {
+      GlobalProactiveDeliveryPolicy.allowsInboxDelivery($0, settings: settings)
+    }
+    guard !eligible.isEmpty else { return [] }
 
     let profile = GlobalAgentLearningPolicy.profile(
       feedback: globalAgentFeedback,
@@ -50,7 +53,7 @@ extension GalaxySSIStore {
     var history = globalProactiveInterventionHistory()
     var delivered: [GlobalProactiveMessage] = []
 
-    for message in globalProactiveMessages
+    for message in eligible
       .filter({ $0.target != .globalDigest })
       .filter({ GlobalProactiveDeliveryPolicy.isRecoverable($0, nowMillis: nowMillis) })
       .sorted(by: { $0.createdAtMillis < $1.createdAtMillis }) {
@@ -111,7 +114,7 @@ extension GalaxySSIStore {
     }
 
     let digestMessages = GlobalProactiveDeliveryPolicy.digestBatch(
-      messages: globalProactiveMessages,
+      messages: eligible,
       settings: settings,
       profile: profile,
       history: globalProactiveInterventionHistory(),

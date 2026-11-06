@@ -40,6 +40,37 @@ struct LinkOutboxReceiptWindow {
 
 @MainActor
 extension MessageCoordinator {
+  func learningOutboxEligibility() -> (PendingLinkMessage) -> Bool {
+    let enabled = store.globalAgentSettings.enabled
+    if !enabled && pausedLegacyLearningSourceIDs == nil {
+      pausedLegacyLearningSourceIDs = Set(backgroundLearningLeases().keys)
+    }
+    let legacy = pausedLegacyLearningSourceIDs ?? []
+    return { AgentIOSCognitionSchedulePolicy.allowsTransport($0, learningEnabled: enabled, legacySources: legacy) }
+  }
+
+  private func backgroundLearningLeases() -> [String: Int64] {
+    var leases: [String: Int64] = [:]
+    func add(_ id: Int64, _ expires: Int64) {
+      guard id > 0 else { return }
+      let key = String(id)
+      leases[key] = max(expires, leases[key] ?? 0)
+    }
+    let deliberation = GlobalAgentDeliberationStore()
+    for task in deliberation.cognitionTasks() { add(task.sourceMessageId, task.leaseExpiresAtMillis) }
+    for run in deliberation.autonomousRuns() {
+      add(run.review.sourceMessageId, run.review.leaseExpiresAtMillis)
+      for action in run.actions { add(action.sourceMessageId, action.leaseExpiresAtMillis) }
+    }
+    let research = GalaxySSIGlobalAgentRuntimeBridge.researchState()
+    for task in research.tasks {
+      add(task.sourceMessageId, task.leaseExpiresAtMillis)
+      add(task.researchPlan.synthesisSourceMessageId, task.researchPlan.synthesisLeaseExpiresAtMillis)
+      for unit in task.researchPlan.units { add(unit.sourceMessageId, unit.leaseExpiresAtMillis) }
+    }
+    return leases
+  }
+
   private func flushPendingOutbox() async {
     guard !Task.isCancelled else { return }
     guard !outboxFlushInProgress else {
@@ -63,25 +94,37 @@ extension MessageCoordinator {
     var activeMessageIds = await mqttClient.outstandingDurableMessageIds()
     guard !Task.isCancelled else { return }
     reconcileOutboxReceiptWindow()
+    let eligible = learningOutboxEligibility()
     handleExhaustedDeliveries(
       deliveryStore.discardExhausted(
         maxAttempts: Self.maximumOutboxDeliveryAttempts,
         attachmentMaxAttempts: Self.maximumAttachmentOutboxDeliveryAttempts,
-        activeMessageIds: activeMessageIds.union(outboxReceiptWindow.messageIds)
+        activeMessageIds: activeMessageIds.union(outboxReceiptWindow.messageIds),
+        eligible: eligible
       )
     )
     let mediaProfile = mediaNetworkProfileProvider()
     let pending = deliveryStore.pending(
       allowValidatedNetworkMessages: mediaProfile.canUploadDeferredMedia,
       maxAttempts: Self.maximumOutboxDeliveryAttempts,
-      attachmentMaxAttempts: Self.maximumAttachmentOutboxDeliveryAttempts
+      attachmentMaxAttempts: Self.maximumAttachmentOutboxDeliveryAttempts,
+      eligible: eligible
     )
     guard !pending.isEmpty else { return }
     var rejectedSourceIds = Set<String>()
     for var item in pending {
       guard !Task.isCancelled else { return }
+      guard learningOutboxEligibility()(item) else { continue }
       if activeMessageIds.contains(item.messageId) || !deliveryStore.containsOutboxMessage(item.messageId) {
         continue
+      }
+      if AgentIOSCognitionSchedulePolicy.isLearningTransport(item, legacySources: pausedLegacyLearningSourceIDs ?? []) {
+        // Expired reservations belong to the learning journal, not transport replay.
+        let expiry = backgroundLearningLeases()[item.clientSourceMessageId] ?? 0
+        guard expiry > GlobalRealtimeClock.nowMillis() else {
+          deliveryStore.discard(messageId: item.messageId)
+          continue
+        }
       }
       let sourceId = item.clientSourceMessageId.ifBlank(item.messageId)
       if GalaxySSIContactReminderOutbox.containsReminder(sourceId) {
@@ -166,6 +209,7 @@ extension MessageCoordinator {
       allowValidatedNetworkMessages: mediaProfile.canUploadDeferredMedia,
       maxAttempts: Self.maximumOutboxDeliveryAttempts,
       attachmentMaxAttempts: Self.maximumAttachmentOutboxDeliveryAttempts,
+      eligible: learningOutboxEligibility(),
       minimumDelay: { item in
         receiptWindow.delay(topic: item.topic, messageId: item.messageId, now: now)
       }

@@ -111,7 +111,8 @@ enum AgentAttentionBudgetRuntime {
 }
 
 enum AgentCognitiveEvalBridge {
-  static func shouldNotify(_ message: GlobalProactiveMessage) -> Bool {
+  static func shouldNotify(_ message: GlobalProactiveMessage, settings: GlobalAgentSettings) -> Bool {
+    guard GlobalProactiveDeliveryPolicy.allowsNotification(message, settings: settings) else { return false }
     let threshold = AgentEvalOpsStore().settings().attentionThreshold
     return AgentAttentionBudgetRuntime.decide(message: message, threshold: threshold).decision.disposition == .notifyNow
   }
