@@ -8645,8 +8645,10 @@ final class MessageCoordinator: ObservableObject {
     defer { liveManagedBrowserMembers.remove(binding.key) }
     let prompt = localModelPrompt(text: requestText, attachments: attachments,
       conversation: recentLocalConversationContext(contactId: outgoing.contactId, excluding: outgoing.id))
+    let catalogBinding = try managedBrowserContinuations.existingCatalogBinding(binding) ?? .registeredContracts
     let input = try AgentIOSLocalModelWebToolRunner.prepareManagedInput(prompt: prompt, systemPrompt: localModelSystemPrompt,
-      hasAttachments: !attachments.isEmpty, registry: runtime.registry, binding: binding, database: store.agentConversationDatabase)
+      hasAttachments: !attachments.isEmpty, registry: runtime.registry, binding: binding,
+      database: store.agentConversationDatabase, catalogBinding: catalogBinding)
     let legacyIdentity = AgentModelLoopRecoveryIdentity.sha256([
       "prompt": prompt, "profile_id": profile.id, "has_attachments": String(!attachments.isEmpty)
     ])
