@@ -12,6 +12,22 @@ private enum PublicNewsArchiveStorage {
 
   private struct Metadata: Codable {
     let unreadCountV1: Int
+    let pageIndexOffset: Int?
+  }
+
+  private struct SnapshotState: Encodable {
+    let refreshedAt: Date?
+    let pushCursor: PublicNewsPushCursor?
+    let notRelevantIDs: Set<String>?
+    let publisherState: PublicNewsPublisherState?
+  }
+
+  private struct PageEntry: Codable {
+    let key: String
+    let offset: Int
+    let length: Int
+    let read: Bool
+    let saved: Bool
   }
 
   private struct LegacyMetadata: Decodable {
@@ -32,29 +48,92 @@ private enum PublicNewsArchiveStorage {
 
   static func encode(_ snapshot: Snapshot, unreadCount: Int) throws -> Data {
     let encoder = JSONEncoder()
-    let header = try encoder.encode(Metadata(unreadCountV1: unreadCount))
-    let payload = try encoder.encode(snapshot)
-    // Join two encoder-produced JSON objects so older readers still see the original snapshot fields.
+    let hidden = snapshot.notRelevantIDs ?? []
+    var body = Data("\"articles\":[".utf8)
+    var index: [PageEntry] = []
+    for (position, article) in snapshot.articles.enumerated() {
+      if position > 0 { body.append(0x2c) }
+      let encoded = try encoder.encode(article)
+      if !hidden.contains(article.id) {
+        index.append(.init(key: PublicNewsSpeechBookmark.key(for: article.id), offset: body.count,
+          length: encoded.count, read: article.read, saved: article.saved))
+      }
+      body.append(encoded)
+    }
+    body.append(0x5d)
+    let state = try encoder.encode(SnapshotState(refreshedAt: snapshot.refreshedAt, pushCursor: snapshot.pushCursor,
+      notRelevantIDs: snapshot.notRelevantIDs, publisherState: snapshot.publisherState))
+    if state.count > 2 {
+      body.append(0x2c)
+      body.append(contentsOf: state.dropFirst().dropLast())
+    }
+    body.append(contentsOf: ",\"pageIndex\":".utf8)
+    let header = try encoder.encode(Metadata(unreadCountV1: unreadCount, pageIndexOffset: body.count))
+    body.append(try encoder.encode(index))
+    body.append(0x7d)
+    // The index and rows are committed together; the JSON fields still work with older readers.
     var data = Data(header.dropLast())
     data.append(contentsOf: [0x2c, 0x0a])
-    data.append(contentsOf: payload.dropFirst())
+    data.append(body)
     return data
+  }
+
+  private static func readHeader(_ file: FileHandle) throws -> (Metadata, Int)? {
+    let prefix = try file.read(upToCount: 128) ?? Data()
+    guard let lineEnd = prefix.firstIndex(of: 0x0a), lineEnd > prefix.startIndex,
+          prefix[prefix.index(before: lineEnd)] == 0x2c else { return nil }
+    var header = Data(prefix[..<prefix.index(before: lineEnd)])
+    header.append(0x7d)
+    guard let metadata = try? JSONDecoder().decode(Metadata.self, from: header), metadata.unreadCountV1 >= 0 else { return nil }
+    return (metadata, lineEnd + 1)
+  }
+
+  static func firstPage(from url: URL, filter: PublicNewsTimeline.Filter, anchor: String,
+                        retaining: Set<String>) throws -> [PublicNewsArticle]? {
+    let file = try FileHandle(forReadingFrom: url)
+    defer { try? file.close() }
+    guard let (metadata, start) = try readHeader(file), let indexOffset = metadata.pageIndexOffset, indexOffset > 0 else {
+      return nil
+    }
+    let end = try file.seekToEnd()
+    guard UInt64(start) < end, UInt64(indexOffset) < end - UInt64(start) else { return nil }
+    let indexStart = UInt64(start) + UInt64(indexOffset)
+    let indexSize = end - indexStart - 1
+    guard indexSize <= 16 * 1024 * 1024 else { return nil }
+    try file.seek(toOffset: indexStart)
+    guard let indexData = try file.read(upToCount: Int(indexSize)), UInt64(indexData.count) == indexSize,
+          try file.read(upToCount: 1)?.first == 0x7d else { return nil }
+    let decoder = JSONDecoder()
+    let index = try decoder.decode([PageEntry].self, from: indexData).filter {
+      switch filter {
+      case .all: return true
+      case .unread: return !$0.read || retaining.contains($0.key)
+      case .saved: return $0.saved
+      }
+    }
+    let range = PublicNewsPageWindow.initialRange(count: index.count, anchor: index.firstIndex { $0.key == anchor })
+    return try index[range].map { entry in
+      guard entry.offset >= 0, entry.length > 0, entry.offset < indexOffset,
+            entry.length <= indexOffset - entry.offset else { throw CocoaError(.fileReadCorruptFile) }
+      try file.seek(toOffset: UInt64(start) + UInt64(entry.offset))
+      guard let data = try file.read(upToCount: entry.length), data.count == entry.length else {
+        throw CocoaError(.fileReadCorruptFile)
+      }
+      let article = try decoder.decode(PublicNewsArticle.self, from: data)
+      guard PublicNewsSpeechBookmark.key(for: article.id) == entry.key, article.read == entry.read,
+            article.saved == entry.saved else { throw CocoaError(.fileReadCorruptFile) }
+      return article
+    }
   }
 
   static func readUnreadCount(from url: URL, allowLegacy: Bool) throws -> Int? {
     let file = try FileHandle(forReadingFrom: url)
     defer { try? file.close() }
-    let prefix = try file.read(upToCount: 128) ?? Data()
-    if let lineEnd = prefix.firstIndex(of: 0x0a), lineEnd > prefix.startIndex,
-       prefix[prefix.index(before: lineEnd)] == 0x2c {
-      var header = Data(prefix[..<prefix.index(before: lineEnd)])
-      header.append(0x7d)
-      if let metadata = try? JSONDecoder().decode(Metadata.self, from: header), metadata.unreadCountV1 >= 0 {
-        let end = try file.seekToEnd()
-        if end > UInt64(lineEnd + 2) {
-          try file.seek(toOffset: end - 1)
-          if try file.read(upToCount: 1)?.first == 0x7d { return metadata.unreadCountV1 }
-        }
+    if let (metadata, start) = try readHeader(file) {
+      let end = try file.seekToEnd()
+      if end > UInt64(start + 1) {
+        try file.seek(toOffset: end - 1)
+        if try file.read(upToCount: 1)?.first == 0x7d { return metadata.unreadCountV1 }
       }
     }
     // Legacy archives are decoded on the caller's background queue and upgraded on the next save.
@@ -66,6 +145,13 @@ private enum PublicNewsArchiveStorage {
       if !article.read, !hidden.contains(article.url.absoluteString) { count += 1 }
     }
   }
+
+  static func readSnapshot(from url: URL) throws -> Snapshot? {
+    do { return try JSONDecoder().decode(Snapshot.self, from: Data(contentsOf: url)) }
+    catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+      return nil
+    }
+  }
 }
 
 @MainActor
@@ -75,10 +161,12 @@ final class PublicNewsArchive: ObservableObject {
   @Published private(set) var refreshIncomplete = false
   @Published private(set) var storageFailed = false
   @Published private(set) var notRelevantIDs: Set<String> = []
+  @Published private(set) var loaded = false
+  @Published private(set) var initialPage: [PublicNewsArticle]?
+  private(set) var initialPageFilter: PublicNewsTimeline.Filter?
 
   private let fileURL: URL?
   private var refreshedAt: Date?
-  private var loaded = false
   private var unreadCount = 0
   private var pushCursor = PublicNewsPushCursor()
   private var publisherState = PublicNewsPublisherState()
@@ -114,25 +202,50 @@ final class PublicNewsArchive: ObservableObject {
     self.fileURL = fileURL
   }
 
+  nonisolated static func readFirstPage(fileURL: URL, filter: PublicNewsTimeline.Filter, anchor: String,
+                                        retaining: Set<String>) -> [PublicNewsArticle]? {
+    try? PublicNewsArchiveStorage.firstPage(from: fileURL, filter: filter, anchor: anchor, retaining: retaining)
+  }
+
+  func loadForReader(filter: PublicNewsTimeline.Filter, anchor: String, retaining: Set<String>) async {
+    guard !loaded else { return }
+    guard let fileURL else { storageFailed = true; return }
+    initialPage = nil
+    let preview = await Task.detached(priority: .userInitiated) {
+      Self.readFirstPage(fileURL: fileURL, filter: filter, anchor: anchor, retaining: retaining)
+    }.value
+    guard !Task.isCancelled, !loaded else { return }
+    initialPageFilter = filter
+    initialPage = preview
+    let result = await Task.detached(priority: .utility) {
+      Result { try PublicNewsArchiveStorage.readSnapshot(from: fileURL) }
+    }.value
+    guard !Task.isCancelled, !loaded else { return }
+    switch result {
+    case .success(let snapshot): install(snapshot)
+    case .failure: storageFailed = true
+    }
+    initialPage = nil
+  }
+
   func load() {
     guard !loaded else { return }
     guard let fileURL else { storageFailed = true; return }
-    do {
-      let snapshot = try JSONDecoder().decode(PublicNewsArchiveStorage.Snapshot.self, from: Data(contentsOf: fileURL))
+    do { install(try PublicNewsArchiveStorage.readSnapshot(from: fileURL)) }
+    catch { storageFailed = true }
+  }
+
+  private func install(_ snapshot: PublicNewsArchiveStorage.Snapshot?) {
+    if let snapshot {
       articles = snapshot.articles
       refreshedAt = snapshot.refreshedAt
       pushCursor = snapshot.pushCursor ?? PublicNewsPushCursor()
       notRelevantIDs = snapshot.notRelevantIDs ?? []
       publisherState = snapshot.publisherState ?? PublicNewsPublisherState()
       unreadCount = PublicNewsArchiveStorage.unreadCount(articles, excluding: notRelevantIDs)
-    } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
-      // The archive is created after the first successful collection.
-    } catch {
-      storageFailed = true
-      return
     }
-    loaded = true
     storageFailed = false
+    loaded = true
   }
 
   func refresh(force: Bool = false, learnPublishers: Bool = false) async {
@@ -399,15 +512,8 @@ final class PublicNewsArchive: ObservableObject {
       byID[article.id] = article
       if let identity = PublisherIdentity(article) { aliasIDs[identity, default: []].insert(article.id) }
     }
-    let ordered = byID.values.sorted {
+    return byID.values.sorted {
       $0.sortDate == $1.sortDate ? $0.id < $1.id : $0.sortDate > $1.sortDate
-    }
-    var remaining = 600
-    return ordered.filter { article in
-      if article.saved { return true }
-      guard remaining > 0 else { return false }
-      remaining -= 1
-      return true
     }
   }
 

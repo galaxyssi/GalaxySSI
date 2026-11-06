@@ -80,6 +80,39 @@ struct PublicNewsReadDwell {
   }
 }
 
+struct PublicNewsPageWindow {
+  static let pageSize = 40
+  private(set) var range = 0..<0
+
+  static func initialRange(count: Int, anchor: Int?) -> Range<Int> {
+    let start = max(0, min((anchor ?? 0) - 12, count - pageSize))
+    return start..<min(count, start + pageSize)
+  }
+
+  mutating func reset(_ ids: [String], anchor: String? = nil) {
+    range = Self.initialRange(count: ids.count, anchor: anchor.flatMap { ids.firstIndex(of: $0) })
+  }
+
+  mutating func reconcile(from previous: [String], to next: [String]) {
+    let positions = Dictionary(next.enumerated().map { ($0.element, $0.offset) }, uniquingKeysWith: { first, _ in first })
+    let retained = previous[clamped(to: previous.count)].compactMap { positions[$0] }
+    if let first = retained.min(), let last = retained.max() {
+      range = first..<min(next.count, max(last + 1, first + Self.pageSize))
+    } else {
+      reset(next)
+    }
+  }
+
+  func clamped(to count: Int) -> Range<Int> {
+    min(range.lowerBound, count)..<min(range.upperBound, count)
+  }
+
+  mutating func extend(older: Bool, count: Int) {
+    if older { range = range.lowerBound..<min(count, range.upperBound + Self.pageSize) }
+    else { range = max(0, range.lowerBound - Self.pageSize)..<range.upperBound }
+  }
+}
+
 struct PublicNewsSource {
   let publisher: String
   let url: URL

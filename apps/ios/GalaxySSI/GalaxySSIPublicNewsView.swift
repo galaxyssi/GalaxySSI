@@ -91,6 +91,7 @@ struct GalaxySSIPublicNewsView: View {
   @State private var noDownloadedSpeechItems = false
   @State private var showBacklog = false
   @State private var timeline = PublicNewsTimeline()
+  @State private var pageWindow = PublicNewsPageWindow()
   @State private var scrollAccess = PublicNewsScrollAccess.Handle()
   @State private var scrollRequest: ScrollRequest?
   @State private var didRestoreTimeline = false
@@ -113,7 +114,7 @@ struct GalaxySSIPublicNewsView: View {
   @SceneStorage("publicNews.timelineExpanded") private var expandedKey = ""
 
   private typealias Filter = PublicNewsTimeline.Filter
-  private enum SettingsAction { case read, search, highlights, backlog, refresh, science, translate }
+  private enum SettingsAction: Equatable { case read, search, highlights, backlog, refresh, science, translate }
   private struct ScrollRequest: Equatable {
     let id: String
     var offset: CGFloat = 0
@@ -128,7 +129,7 @@ struct GalaxySSIPublicNewsView: View {
   private static let viewport = "public-news-viewport"
 
   private var headlineWorkerEnabled: Bool {
-    scenePhase == .active && !showHeadlineTranslation &&
+    archive.loaded && scenePhase == .active && !showHeadlineTranslation &&
       PublicNewsAutomaticHeadlinePolicy.enabled(automaticHeadlineTranslation, language: language)
   }
 
@@ -138,9 +139,14 @@ struct GalaxySSIPublicNewsView: View {
     }
   }
 
+  private var activeFilter: Filter {
+    didRestoreTimeline ? timeline.filter : (Filter(rawValue: savedFilter) ?? .all)
+  }
+
   private var visibleArticles: [PublicNewsArticle] {
+    guard archive.loaded else { return archive.initialPageFilter == activeFilter ? archive.initialPage ?? [] : [] }
     let byID = Dictionary(archive.eligibleArticles.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-    return timeline.visibleIDs.compactMap { byID[$0] }
+    return timeline.visibleIDs[pageWindow.clamped(to: timeline.visibleIDs.count)].compactMap { byID[$0] }
   }
 
   private var canTrackReading: Bool {
@@ -213,20 +219,34 @@ struct GalaxySSIPublicNewsView: View {
         archive: archive, store: store)
     }
     .onChange(of: archive.articles) { _ in
+      guard archive.loaded else { return }
       updateTimeline()
       automaticHeadlines.wake()
     }
     .onChange(of: archive.notRelevantIDs) { _ in updateTimeline() }
+    .onChange(of: archive.initialPage) { page in
+      guard !archive.loaded, !didRestoreTimeline, !topKey.isEmpty,
+            let article = page?.first(where: { PublicNewsSpeechBookmark.key(for: $0.id) == topKey }) else { return }
+      scrollRequest = .init(id: article.id, offset: CGFloat(topOffset))
+    }
     .onChange(of: headlineCloudRoutes) { _ in automaticHeadlines.wake() }
     .onDisappear { automaticHeadlines.suspend(archive: archive, store: store) }
-    .onAppear {
-      archive.load()
+    .task(id: savedFilter) {
+      let filter = Filter(rawValue: savedFilter) ?? .all
+      if !archive.loaded {
+        await archive.loadForReader(filter: filter, anchor: topKey, retaining: Set([topKey, expandedKey]))
+      }
+      guard !Task.isCancelled, archive.loaded else { return }
       updateTimeline()
+      automaticHeadlines.wake()
       guard let initialArticleKey, !didOpenInitialArticle else { return }
       didOpenInitialArticle = true
       selected = archive.eligibleArticles.first { PublicNewsSpeechBookmark.key(for: $0.id) == initialArticleKey }
     }
-    .task(id: refreshRequest) { await archive.refresh(force: refreshRequest != 0, learnPublishers: publisherDiscovery) }
+    .task(id: archive.loaded ? refreshRequest : nil) {
+      guard archive.loaded else { return }
+      await archive.refresh(force: refreshRequest != 0, learnPublishers: publisherDiscovery)
+    }
     .task(id: speechCandidates) {
       guard let ids = speechCandidates else { return }
       let items = await PublicNewsBodyStore.shared.speechItems(articleIDs: ids)
@@ -238,8 +258,8 @@ struct GalaxySSIPublicNewsView: View {
         speech.play(items, settings: store.voiceSettings, languagePolicy: store.languagePolicy)
       }
     }
-    .task(id: liveNewsEnabled && scenePhase == .active) {
-      if liveNewsEnabled && scenePhase == .active { await archive.collectLive() }
+    .task(id: archive.loaded && liveNewsEnabled && scenePhase == .active) {
+      if archive.loaded && liveNewsEnabled && scenePhase == .active { await archive.collectLive() }
     }
     .sheet(isPresented: $showNewsSettings, onDismiss: performNewsSettingsAction) { newsSettings }
     .sheet(item: $selected) { GalaxySSIPublicNewsReader(archive: archive, original: $0) }
@@ -269,7 +289,7 @@ struct GalaxySSIPublicNewsView: View {
             if archive.refreshIncomplete {
               status(t("public_news_refresh_incomplete", "Some publishers could not be refreshed."))
             }
-            if visibleArticles.isEmpty && !archive.refreshing {
+            if archive.loaded && visibleArticles.isEmpty && !archive.refreshing {
               status(t("public_news_empty", "No articles"))
             }
             ForEach(visibleArticles) { article in
@@ -305,6 +325,7 @@ struct GalaxySSIPublicNewsView: View {
           let offset = Double(-anchor.frame.minY.rounded())
           if topKey != key { topKey = key }
           if topOffset != offset { topOffset = offset }
+          extendPageIfNeeded(frames, height: viewport.size.height, anchor: anchor)
         }
         .task(id: scrollRequest) {
           guard let request = scrollRequest else { return }
@@ -319,7 +340,9 @@ struct GalaxySSIPublicNewsView: View {
           await trackReading()
         }
         .overlay(alignment: .top) {
-          if archive.refreshing && archive.articles.isEmpty { ProgressView().padding() }
+          if visibleArticles.isEmpty && (!archive.loaded && !archive.storageFailed || archive.refreshing) {
+            ProgressView().padding()
+          }
         }
         .overlay(alignment: .bottom) {
           VStack(spacing: 4) {
@@ -334,7 +357,7 @@ struct GalaxySSIPublicNewsView: View {
             if !timeline.pendingIDs.isEmpty {
               Button {
                 let anchor = topRow(scrollAccess.frames, height: viewport.size.height)
-                timeline.revealArrivals()
+                revealArrivals()
                 if let anchor {
                   scrollRequest = .init(id: anchor.id, offset: -anchor.frame.minY, forceProxy: true)
                 }
@@ -366,7 +389,8 @@ struct GalaxySSIPublicNewsView: View {
           if !Task.isCancelled, bookmarkChange == change { bookmarkChange = nil }
         }
         .refreshable {
-          if !timeline.pendingIDs.isEmpty { timeline.revealArrivals() }
+          guard archive.loaded else { return }
+          if !timeline.pendingIDs.isEmpty { revealArrivals() }
           await archive.refresh(force: true, learnPublishers: publisherDiscovery)
         }
       }
@@ -376,6 +400,26 @@ struct GalaxySSIPublicNewsView: View {
   private func topRow(_ frames: [String: CGRect], height: CGFloat) -> (id: String, frame: CGRect)? {
     frames.filter { $0.value.maxY > 0 && $0.value.minY < height }
       .min { $0.value.minY < $1.value.minY }.map { ($0.key, $0.value) }
+  }
+
+  private func extendPageIfNeeded(_ frames: [String: CGRect], height: CGFloat, anchor: (id: String, frame: CGRect)) {
+    guard archive.loaded else { return }
+    let ids = timeline.visibleIDs
+    let range = pageWindow.clamped(to: ids.count)
+    guard !range.isEmpty else { return }
+    if range.lowerBound > 0, let first = frames[ids[range.lowerBound]], first.maxY > 0 {
+      pageWindow.extend(older: false, count: ids.count)
+      scrollRequest = .init(id: anchor.id, offset: -anchor.frame.minY, forceProxy: true)
+    } else if range.upperBound < ids.count, let last = frames[ids[range.upperBound - 1]], last.minY < height {
+      pageWindow.extend(older: true, count: ids.count)
+    }
+  }
+
+  private func revealArrivals() {
+    let previous = timeline.visibleIDs
+    timeline.revealArrivals()
+    pageWindow.reconcile(from: previous, to: timeline.visibleIDs)
+    pageWindow.extend(older: false, count: timeline.visibleIDs.count)
   }
 
   private func trackReading() async {
@@ -409,9 +453,12 @@ struct GalaxySSIPublicNewsView: View {
   }
 
   private func updateTimeline() {
+    guard archive.loaded else { return }
     let articles = archive.eligibleArticles
     if didRestoreTimeline {
+      let previous = timeline.visibleIDs
       timeline.reconcile(articles)
+      if previous != timeline.visibleIDs { pageWindow.reconcile(from: previous, to: timeline.visibleIDs) }
     } else {
       let keys = Set([topKey, expandedKey].filter { !$0.isEmpty })
       let retained = Set(articles.filter { keys.contains(PublicNewsSpeechBookmark.key(for: $0.id)) }.map(\.id))
@@ -419,14 +466,16 @@ struct GalaxySSIPublicNewsView: View {
       guard !articles.isEmpty else { return }
       expandedHeadline = articles.first { PublicNewsSpeechBookmark.key(for: $0.id) == expandedKey }
       didRestoreTimeline = true
-      if let id = timeline.visibleIDs.first(where: { PublicNewsSpeechBookmark.key(for: $0) == topKey }) {
+      let anchor = topKey.isEmpty ? nil : timeline.visibleIDs.first { PublicNewsSpeechBookmark.key(for: $0) == topKey }
+      pageWindow.reset(timeline.visibleIDs, anchor: anchor)
+      if let id = anchor {
         scrollRequest = .init(id: id, offset: CGFloat(topOffset))
       }
     }
   }
 
   private func selectFilter(_ filter: Filter) {
-    guard timeline.filter != filter else { return }
+    guard activeFilter != filter else { return }
     didRestoreTimeline = true
     savedFilter = filter.rawValue
     topKey = ""
@@ -434,6 +483,7 @@ struct GalaxySSIPublicNewsView: View {
     expandedKey = ""
     expandedHeadline = nil
     timeline.select(filter, articles: archive.eligibleArticles)
+    pageWindow.reset(timeline.visibleIDs)
     scrollRequest = .init(id: "public-news-list-start")
   }
 
@@ -463,6 +513,7 @@ struct GalaxySSIPublicNewsView: View {
         GalaxySSIPublicNewsBookmark(archive: archive, article: article) { saved in
           bookmarkChange = .init(id: article.id, saved: saved)
         }
+        .disabled(!archive.loaded)
       }
       .padding(.leading, 12)
       .background {
@@ -477,10 +528,12 @@ struct GalaxySSIPublicNewsView: View {
           GalaxySSIPublicNewsBodyView(article: article, retainedArticleIDs: Set(archive.articles.map(\.id))) { cover in
             archive.rememberCover(cover, articleID: article.id)
           }
+          .disabled(!archive.loaded)
           Button { selected = article } label: {
             Label(t("public_news_open_article", "Open article"), systemImage: "doc.text")
               .frame(minHeight: 44)
           }
+          .disabled(!archive.loaded)
         }
         .padding(.horizontal, 12)
       }
@@ -551,7 +604,7 @@ struct GalaxySSIPublicNewsView: View {
           VStack(spacing: 0) {
             ForEach(Filter.allCases, id: \.self) { option in
               let label = filterLabel(option)
-              feedMenuRow(label.title, icon: label.icon, selected: timeline.filter == option) {
+              feedMenuRow(label.title, icon: label.icon, selected: activeFilter == option) {
                 selectFilter(option)
                 showFeedMenu = false
               }
@@ -611,7 +664,7 @@ struct GalaxySSIPublicNewsView: View {
           Button { openAfterSettings(.read) } label: {
             Label(t("public_news_speech_read_downloaded", "Read downloaded articles"), systemImage: "waveform")
           }
-          .disabled(visibleArticles.isEmpty || speechCandidates != nil || !store.voiceSettings.textToSpeechEnabled)
+          .disabled(timeline.visibleIDs.isEmpty || speechCandidates != nil || !store.voiceSettings.textToSpeechEnabled)
           Button { openAfterSettings(.search) } label: {
             Label(t("public_news_search", "Search news"), systemImage: "magnifyingglass")
           }
@@ -663,6 +716,7 @@ struct GalaxySSIPublicNewsView: View {
   }
 
   private func openAfterSettings(_ action: SettingsAction) {
+    guard archive.loaded || action == .science else { return }
     settingsAction = action
     showNewsSettings = false
   }
@@ -673,7 +727,7 @@ struct GalaxySSIPublicNewsView: View {
     switch action {
     case .read:
       noDownloadedSpeechItems = false
-      speechCandidates = visibleArticles.map(\.id)
+      speechCandidates = timeline.visibleIDs
     case .search: showSearch = true
     case .highlights: showHighlights = true
     case .backlog: showBacklog = true

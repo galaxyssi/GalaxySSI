@@ -248,6 +248,51 @@ final class PublicNewsFeedTests: XCTestCase {
     XCTAssertNil(PublicNewsArchive.readReminderUnreadCount(fileURL: file))
   }
 
+  @MainActor
+  func testIndexedFirstPageRestoresOlderAnchorWithoutDroppingRetainedHistory() throws {
+    struct LegacySnapshot: Codable { let articles: [PublicNewsArticle] }
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let articles = try (0..<1_205).map { index in
+      PublicNewsArticle(url: try XCTUnwrap(URL(string: "https://example.com/\(index)")),
+        title: "Article \(index)", summary: "Summary", publisher: "Fixture",
+        discoveredAt: now.addingTimeInterval(Double(-index)), saved: index.isMultiple(of: 2))
+    }
+    try JSONEncoder().encode(LegacySnapshot(articles: articles)).write(to: file)
+    let archive = PublicNewsArchive(fileURL: file)
+    archive.load()
+    archive.markRead(articles[900].id)
+    XCTAssertTrue(archive.markNotRelevant(articles[899].id))
+    let anchor = PublicNewsSpeechBookmark.key(for: articles[900].id)
+    let first = try XCTUnwrap(PublicNewsArchive.readFirstPage(fileURL: file, filter: .all, anchor: "", retaining: []))
+    XCTAssertEqual(first.map(\.id), articles.prefix(40).map(\.id))
+    let restored = try XCTUnwrap(PublicNewsArchive.readFirstPage(
+      fileURL: file, filter: .unread, anchor: anchor, retaining: [anchor]))
+    XCTAssertEqual(restored.count, 40)
+    XCTAssertEqual(restored[12].id, articles[900].id)
+    XCTAssertTrue(restored[12].read)
+    XCTAssertFalse(restored.contains { $0.id == articles[899].id })
+    let saved = try XCTUnwrap(PublicNewsArchive.readFirstPage(fileURL: file, filter: .saved, anchor: anchor, retaining: []))
+    XCTAssertEqual(saved[12].id, articles[900].id)
+    XCTAssertTrue(saved.allSatisfy(\.saved))
+    let reopened = try JSONDecoder().decode(LegacySnapshot.self, from: Data(contentsOf: file))
+    XCTAssertEqual(reopened.articles.count, 1_205)
+    XCTAssertEqual(PublicNewsArchive.merge(existing: reopened.articles, incoming: [articles[0]]).count, 1_205)
+  }
+
+  func testNewsPageWindowExtendsBothWaysAndKeepsTheExistingRowsWhenArrivalsPrepend() {
+    let ids = (0..<180).map(String.init)
+    var window = PublicNewsPageWindow()
+    window.reset(ids, anchor: "90")
+    XCTAssertEqual(window.range, 78..<118)
+    window.extend(older: true, count: ids.count)
+    window.extend(older: false, count: ids.count)
+    XCTAssertEqual(window.range, 38..<158)
+    let arrivals = ["new"] + ids
+    window.reconcile(from: ids, to: arrivals)
+    XCTAssertEqual(Array(arrivals[window.range]), Array(ids[38..<158]))
+  }
+
   func testRSSSkipsUnsafeLinksAndDuplicateAnchorsButKeepsOtherArticles() throws {
     let xml = """
       <rss version="2.0"><channel>
