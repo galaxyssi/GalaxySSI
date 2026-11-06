@@ -5415,7 +5415,7 @@ final class MessageCoordinator: ObservableObject {
       store.upsertAgentTask(task)
       switch outcome {
       case let .directResponse(response):
-        _ = completeModelDirectResponse(response, outgoing: outgoing, task: &task)
+        _ = await completeModelDirectResponse(response, outgoing: outgoing, task: &task)
       case let .plan(plan):
         if executionMode == .planOnly {
           _ = completePlanOnlyTask(plan: plan, outgoing: outgoing, task: &task)
