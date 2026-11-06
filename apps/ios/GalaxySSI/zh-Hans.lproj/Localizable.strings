@@ -5663,6 +5663,14 @@
 "public_news_headline_translation_result" = "已翻译 %d 条，保留原文 %d 条";
 "public_news_headline_apple" = "由 Apple 翻译提供端侧翻译";
 "public_news_headline_local" = "由本地模型翻译";
+"public_news_headline_cloud" = "由已配置的云端模型翻译";
+"public_news_headline_automatic" = "自动翻译新闻标题";
+"public_news_headline_model" = "标题翻译模型";
+"public_news_headline_on_device" = "端侧模型";
+"public_news_headline_waiting_model" = "等待可用的翻译模型";
+"public_news_headline_working" = "正在翻译新闻标题";
+"public_news_headline_auto_deferred" = "标题翻译正在等待设备资源";
+"public_news_headline_retrying" = "等待重试标题翻译";
 "public_news_done_selecting" = "完成选择";
 "agent_marketplace_desktop_empty" = "暂无可用的 Desktop 能力";
 "agent_marketplace_desktop_title" = "Desktop 能力市场";
