@@ -21,6 +21,7 @@ enum AgentPhoneNativeToolCatalog {
   static let workspaceApplyExactPatch = "galaxyssi.workspace.file.patch.exact"
   static let workspaceDiffSummary = "galaxyssi.workspace.file.diff.summary"
   static let workspaceSha256 = "galaxyssi.workspace.file.sha256"
+  static let workspaceExport = "galaxyssi.workspace.file.export"
   static let workspaceZipCreate = "galaxyssi.workspace.zip.create"
   static let workspaceZipList = "galaxyssi.workspace.zip.list"
   static let workspaceZipExtract = "galaxyssi.workspace.zip.extract"
@@ -544,6 +545,7 @@ enum AgentPhoneNativeToolCatalog {
       workspaceDefinition(workspaceApplyExactPatch, "Apply exact workspace patch", .medium, workspaceWriteConsent, .idempotencyKeyRequired),
       workspaceDefinition(workspaceDiffSummary, "Summarize workspace diff", .low, workspaceReadConsent, .idempotent),
       workspaceDefinition(workspaceSha256, "Hash workspace file", .low, workspaceReadConsent, .idempotent),
+      workspaceDefinition(workspaceExport, "Export and verify a workspace file", .low, workspaceReadConsent, .idempotent),
       workspaceDefinition(workspaceZipCreate, "Create workspace zip", .medium, workspaceWriteConsent, .idempotencyKeyRequired),
       workspaceDefinition(workspaceZipList, "List workspace zip", .low, workspaceReadConsent, .idempotent),
       workspaceDefinition(workspaceZipExtract, "Extract workspace zip", .medium, workspaceWriteConsent, .idempotencyKeyRequired)
@@ -561,10 +563,12 @@ enum AgentPhoneNativeToolCatalog {
       id: id,
       version: version,
       title: title,
-      description: "Bounded operation inside GalaxySSI app-private Agent workspace storage.",
+      description: id == workspaceExport
+        ? "Snapshot one file and verify its exported bytes. Use source=phone_linux only for the current Linux workspace; no program runs."
+        : "Bounded operation inside GalaxySSI app-private Agent workspace storage.",
       location: .application,
       inputSchema: workspaceInputSchema(id),
-      outputSchema: workspaceOutputSchema(id),
+      outputSchema: workspaceScopedOutputSchema(id),
       risk: risk,
       capabilities: ["workspace.app_private", "workspace.file.bounded"],
       requiredPermissions: [
@@ -805,6 +809,11 @@ enum AgentPhoneNativeToolCatalog {
       "workspace_id": .object(stringSchema(minLength: 1, maxLength: 64))
     ]
     var required: [String] = ["workspace_id"]
+    if id == workspaceExport {
+      properties["path"] = .object(stringSchema(minLength: 1, maxLength: 1_024))
+      properties["source"] = .object(enumStringSchema(["app_private", "phone_linux"]))
+      return objectSchema(properties: properties, required: ["workspace_id", "path"])
+    }
     if id == workspaceInitialize {
       return objectSchema(properties: properties, required: required)
     }
@@ -894,6 +903,12 @@ enum AgentPhoneNativeToolCatalog {
   }
 
   private static func workspaceOutputSchema(_ id: String) -> AgentMcpJSONObject {
+    if id == workspaceExport {
+      return objectSchema(properties: [
+        "artifact_workspace_id": .object(stringSchema(minLength: 1, maxLength: 256)),
+        "artifacts": .object(arraySchema(items: objectSchema(properties: [:], additionalProperties: true), minItems: 1, maxItems: 1))
+      ], required: ["artifact_workspace_id", "artifacts"])
+    }
     if id == workspaceList {
       return directoryListingSchema()
     }
@@ -928,6 +943,15 @@ enum AgentPhoneNativeToolCatalog {
       return batchMutationSchema()
     }
     return mutationSchema()
+  }
+
+  private static func workspaceScopedOutputSchema(_ id: String) -> AgentMcpJSONObject {
+    var schema = workspaceOutputSchema(id)
+    var properties = schema["properties"]?.objectValue ?? [:]
+    properties["workspace_id"] = .object(stringSchema(minLength: 1, maxLength: 64))
+    schema["properties"] = .object(properties)
+    schema["required"] = .array((schema["required"]?.arrayValue ?? []) + [.string("workspace_id")])
+    return schema
   }
 
   private static func workspaceMetadataSchema() -> AgentMcpJSONObject {
@@ -1219,6 +1243,7 @@ enum AgentPhoneNativeToolCatalog {
     workspaceSha256,
     workspaceZipCreate,
     workspaceZipList,
-    workspaceZipExtract
+    workspaceZipExtract,
+    workspaceExport
   ]
 }

@@ -70,6 +70,13 @@ struct AgentRuntimeArtifactActionPayload: Codable, Equatable {
 }
 
 enum AgentRuntimeArtifactUi {
+  static func fileBlocks(verified: [AgentArtifactOperationReceipt.Inspection], zh: Bool) -> [AgentRichBlock] {
+    verified.flatMap { receipt in
+      AgentRichContentCodec.decode(richOutput(artifact: receipt.artifact, responseText: "",
+        preferredFileName: receipt.path, zh: zh)).filter { $0.type == .file }
+    }
+  }
+
   static func richOutput(
     output: AgentMcpJSONObject,
     responseText: String,
@@ -160,7 +167,9 @@ enum AgentRuntimeArtifactUi {
     }
     let relative = AgentWorkspaceFilePathPolicy.displayPath(payload.relativePath)
     for root in managedRoots.map(\.standardizedFileURL) {
-      let candidate = root.appendingPathComponent(relative, isDirectory: false).standardizedFileURL
+      let candidate = payload.kind == AgentVerifiedArtifactSnapshot.kind
+        ? AgentVerifiedArtifactSnapshot.url(root: root, digest: payload.sha256, path: relative).standardizedFileURL
+        : root.appendingPathComponent(relative, isDirectory: false).standardizedFileURL
       guard candidate.path.hasPrefix(root.path + "/") else {
         continue
       }

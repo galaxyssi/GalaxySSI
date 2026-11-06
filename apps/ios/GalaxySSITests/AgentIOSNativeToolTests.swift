@@ -1111,6 +1111,100 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(delegated?.id, "open-url")
   }
 
+  func testWorkspaceArtifactRequiresLatestScopedVerifiedExportThroughNativeExecutor() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let catalog = AgentPhoneNativeToolCatalog.self
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      catalog.workspaceExecutableDefinitions(store: AgentWorkspaceNativeToolExecutor(runtimeRoot: root)))
+    let executor = AgentNativeToolActionExecutor(registry: registry, delegate: TestAgentActionExecutor { action, _ in
+      AgentActionResult(actionId: action.id, success: false, message: "Unexpected legacy action")
+    })
+    let scope = AgentPlanContinuationScope(conversationId: "files", turnId: "current")
+    let workspace = AgentWorkspaceScope.id(conversationId: scope.conversationId)
+    let target = try XCTUnwrap(AgentArtifactRequirement(path: "output.txt", workspaceId: workspace))
+    func run(_ tool: String, input: AgentMcpJSONObject, key: String? = nil) -> AgentAction {
+      var action = scope.bind(AgentAction(id: UUID().uuidString, kind: .callNativeTool, target: tool,
+        risk: .low, status: .running, description: "Fixture", parameters: [
+          "tool_id": tool, "input_json": AgentMcpJSONCodec.stringify(input),
+          "_galaxyssi_workspace_id": workspace
+        ], requiresConfirmation: false))
+      action.parameters["idempotency_key"] = key
+      let result = executor.execute(action: action, screen: AgentScreenContext(foregroundApp: "GalaxySSI"))
+      action.status = result.success ? .completed : .failed
+      action.artifactReceipt = AgentArtifactOperationReceipt.from(result)
+      return action
+    }
+    func write(_ text: String) -> AgentAction {
+      run(catalog.workspaceWriteText, input: ["path": .string(target.path), "text": .string(text)])
+    }
+    func export(_ key: String? = nil) -> AgentAction {
+      run(catalog.workspaceExport, input: ["path": .string(target.path), "workspace_id": .string("foreign")], key: key)
+    }
+    func missing(_ history: [AgentAction], requirement: AgentArtifactRequirement? = nil) -> [String] {
+      AgentArtifactCompletionEvidence.missing([requirement ?? target], history: history, scope: scope)
+    }
+    let initial = write("Original")
+    let source = run(catalog.workspaceSha256, input: ["path": .string(target.path)])
+    let old = export("export-before-edit")
+    XCTAssertEqual(old.status, .completed)
+    let first = try XCTUnwrap(old.artifactReceipt)
+    XCTAssertEqual(first.workspaceId, workspace)
+    let snapshot = try XCTUnwrap(first.inspection)
+    let file = AgentVerifiedArtifactSnapshot.url(root: root, digest: snapshot.digest, path: snapshot.path)
+    XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "Original")
+    XCTAssertTrue(missing([initial, source, old]).isEmpty)
+    let changed = write("Edited")
+    XCTAssertFalse(missing([initial, source, old, changed]).isEmpty)
+    let replay = export("export-before-edit")
+    XCTAssertTrue(replay.artifactReceipt?.replayed == true)
+    XCTAssertFalse(missing([initial, source, old, changed, replay]).isEmpty)
+    let fresh = export()
+    XCTAssertTrue(missing([initial, source, old, changed, replay, fresh]).isEmpty)
+    let transform = try XCTUnwrap(AgentArtifactRequirement(path: target.path,
+      sourceSha256: try XCTUnwrap(source.artifactReceipt?.inspection?.digest), workspaceId: workspace))
+    XCTAssertTrue(missing([initial, source, old, changed, fresh], requirement: transform).isEmpty)
+    let deleted = run(catalog.workspaceDelete, input: ["path": .string(target.path)])
+    let failedExport = export()
+    XCTAssertEqual(failedExport.status, .failed)
+    XCTAssertFalse(missing([fresh, deleted, failedExport]).isEmpty)
+    let restored = try JSONDecoder().decode(AgentAction.self, from: JSONEncoder().encode(fresh))
+    XCTAssertTrue(missing([restored]).isEmpty)
+  }
+
+  func testArtifactEvidenceRejectsPendingParentOperationsAndAmbiguousWorkspace() throws {
+    let scope = AgentPlanContinuationScope(conversationId: "conversation", turnId: "turn")
+    let path = "outputs/result.csv"
+    let target = try XCTUnwrap(AgentArtifactRequirement(path: path))
+    func fixture(_ tool: String, path: String, workspace: String, status: AgentActionStatus = .completed,
+                 inspection: AgentArtifactOperationReceipt.Inspection? = nil) -> AgentAction {
+      var action = scope.bind(AgentAction(id: UUID().uuidString, kind: .callNativeTool, target: tool, risk: .low,
+        status: status, description: "Fixture", parameters: [
+          "tool_id": tool, "input_json": AgentMcpJSONCodec.stringify(["path": .string(path)])
+        ]))
+      action.artifactReceipt = AgentArtifactOperationReceipt(toolId: tool, workspaceId: workspace,
+        conversationId: scope.conversationId, turnId: scope.turnId, invocationId: action.id,
+        replayed: false, succeeded: status == .completed, inspection: inspection)
+      return action
+    }
+    let catalog = AgentPhoneNativeToolCatalog.self
+    let inspected = AgentArtifactOperationReceipt.Inspection(path: path, digest: String(repeating: "a", count: 64), size: 8)
+    let export = fixture(catalog.workspaceExport, path: path, workspace: "a", inspection: inspected)
+    let foreignExport = fixture(catalog.workspaceExport, path: path, workspace: "b", inspection: inspected)
+    let pending = fixture(catalog.workspaceDelete, path: "outputs", workspace: "a", status: .running)
+    let other = fixture(catalog.workspaceDelete, path: "outputs-old", workspace: "a", status: .failed)
+    let foreign = fixture(catalog.workspaceDelete, path: "outputs", workspace: "b", status: .failed)
+    XCTAssertTrue(AgentArtifactCompletionEvidence.missing([target], history: [export, other, foreign], scope: scope).isEmpty)
+    XCTAssertFalse(AgentArtifactCompletionEvidence.missing([target], history: [pending, export], scope: scope).isEmpty)
+    XCTAssertFalse(AgentArtifactCompletionEvidence.missing([target], history: [export, foreignExport], scope: scope).isEmpty)
+    let explicit = try XCTUnwrap(AgentArtifactRequirement(path: path, workspaceId: "a"))
+    XCTAssertTrue(AgentArtifactCompletionEvidence.missing([explicit], history: [export, foreignExport], scope: scope).isEmpty)
+    let wrongTurn = AgentPlanContinuationScope(conversationId: scope.conversationId, turnId: "other-turn")
+    XCTAssertFalse(AgentArtifactCompletionEvidence.missing([explicit], history: [export], scope: wrongTurn).isEmpty)
+    XCTAssertNil(AgentArtifactRequirement(path: "../result.csv"))
+    XCTAssertNil(AgentArtifactRequirement(path: path, workspaceId: " guessed "))
+  }
+
   func testAgentNativeToolActionExecutorRejectsInvalidNativeActionInput() throws {
     let descriptor = try nativeToolDescriptor("galaxyssi.test.read")
     let registry = try AgentNativeToolRegistry(definitions: [

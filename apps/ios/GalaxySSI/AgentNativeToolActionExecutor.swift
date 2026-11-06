@@ -88,6 +88,7 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
     let maximumAttempts = descriptor.requiresEffectClaim ? 1 : maxRetries + 1
     var attempt = 0
     var result: AgentNativeToolResult
+    var artifactReceipt: AgentArtifactOperationReceipt?
 
     repeat {
       attempt += 1
@@ -121,6 +122,7 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
           eventSink: eventSink
         )
       )
+      artifactReceipt = AgentArtifactOperationReceipt.make(result: result, input: scopedInput, context: context)
       guard !result.isSuccess,
             result.error?.retryable == true,
             attempt < maximumAttempts else {
@@ -128,13 +130,17 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
       }
     } while true
 
-    return AgentLatencyTelemetry.runtime.measure(
+    var verifiedResult = AgentLatencyTelemetry.runtime.measure(
       taskId: Self.runtimeTimingTaskId(action),
       phase: .resultVerify,
       outcome: Self.runtimeOutcome
     ) {
       Self.actionResult(action: action, result: result, descriptor: descriptor, retryCount: attempt - 1)
     }
+    if let artifactReceipt, let data = try? JSONEncoder().encode(artifactReceipt) {
+      verifiedResult.metadata[AgentArtifactOperationReceipt.metadataKey] = String(decoding: data, as: UTF8.self)
+    }
+    return verifiedResult
   }
 
   static func defaultWorkspaceId(for action: AgentAction) -> String {
