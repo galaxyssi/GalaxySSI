@@ -159,7 +159,7 @@ struct GalaxySSIHealthRecognitionJobsView: View {
         }
         ForEach(originals.contains(job.original) && missingSource != id ? job.pages : [], id: \.index) { page in
           NavigationLink {
-            pageDetail(page, job: job)
+            pageDetail(page.index, jobID: job.id)
           } label: {
             Text(String(format: t("page", "Page %lld"), Int64(page.index + 1)))
           }
@@ -176,11 +176,11 @@ struct GalaxySSIHealthRecognitionJobsView: View {
     .navigationTitle(t("jobs", "Recognition jobs"))
   }
 
-  private func pageDetail(_ page: GalaxySSIHealthRecognitionJobs.Page,
-                          job: GalaxySSIHealthRecognitionJobs.Job) -> some View {
+  private func pageDetail(_ index: Int, jobID: UUID) -> some View {
     List {
-      if scene == .active, missingSource != job.id, originals.contains(job.original),
-         jobs.contains(where: { $0.id == job.id }) {
+      if scene == .active, missingSource != jobID,
+         let job = jobs.first(where: { $0.id == jobID }), originals.contains(job.original),
+         let page = job.pages.first(where: { $0.index == index }) {
         let sourceContext = GalaxySSIHealthOCRSourceContext.inspect(page.lines.map(\.text), timeZone: timeZone)
         ForEach(page.lines) { line in
           NavigationLink {
@@ -196,9 +196,10 @@ struct GalaxySSIHealthRecognitionJobsView: View {
         }
       }
     }
-    .navigationTitle(String(format: t("page", "Page %lld"), Int64(page.index + 1)))
+    .navigationTitle(String(format: t("page", "Page %lld"), Int64(index + 1)))
     .onAppear {
-      if scene == .active, (try? store.read(job.original)) == nil { missingSource = job.id }
+      if scene == .active, let job = jobs.first(where: { $0.id == jobID }),
+         (try? store.read(job.original)) == nil { missingSource = jobID }
     }
   }
 
@@ -264,7 +265,12 @@ struct GalaxySSIHealthRecognitionJobsView: View {
       let listing = try store.list()
       originals = listing.originals
       removedSources = Set(listing.removed.map(\.id)).union(listing.pendingRemovals)
-    } catch { failed = true }
+    } catch {
+      jobs = []
+      originals = []
+      removedSources = []
+      failed = true
+    }
   }
 
   private func phase(_ job: GalaxySSIHealthRecognitionJobs.Job) -> String {
