@@ -1,10 +1,11 @@
 import Foundation
 
-struct AgentIOSURLSessionBrowserSessionScope: Equatable {
+struct AgentIOSURLSessionBrowserSessionScope: Hashable {
   var ownerId: String
   var contextId: String
   var turnId: String
   var taskId: String
+  let sessionId: String
   let collaborationOwnerKey: String?
   let ownershipIsValid: Bool
 
@@ -14,6 +15,7 @@ struct AgentIOSURLSessionBrowserSessionScope: Equatable {
     let session = context.sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
     let caller = owner.isEmpty ? "galaxyssi.mobile_agent" : owner
     ownerId = caller
+    sessionId = session
     contextId = conversation.isEmpty ? session : conversation
     turnId = context.turnId
     let workspace = context.attributes["workspace_id"] ?? ""
@@ -28,7 +30,7 @@ struct AgentIOSURLSessionBrowserSessionScope: Equatable {
     } else {
       ownershipIsValid = true
       collaborationOwnerKey = nil
-      taskId = context.attributes["recovery_task_id"] ?? ""
+      taskId = context.attributes["recovery_task_id"] ?? context.attributes["task_id"] ?? ""
     }
   }
 }
@@ -48,6 +50,9 @@ enum AgentIOSURLSessionBrowserSessionStoreError: Error, Equatable {
   case toolHandleContextMismatch
   case noPreviousPage
   case revisionChanged
+  case invalidRequestID
+  case requestAlreadyDispatched
+  case operationCapacityReached
 }
 
 final class AgentIOSURLSessionBrowserSessionStore {
@@ -55,6 +60,8 @@ final class AgentIOSURLSessionBrowserSessionStore {
   static let defaultTTLMillis: Int64 = 30 * 60 * 1_000
   static let defaultIdleTimeoutMillis: Int64 = 10 * 60 * 1_000
   static let maxHistoryCount = 256
+  static let operationRetentionMillis: Int64 = 10 * 60 * 1_000
+  static let operationHistoryCapacity = 1_024
 
   private struct Record {
     var browserId: String
@@ -83,32 +90,51 @@ final class AgentIOSURLSessionBrowserSessionStore {
   private let idleTimeoutMillis: Int64
   private let maxSessions: Int
   private var records: [String: Record] = [:]
-  private var operations: [Operation] = []
+  private let operationTTLMillis: Int64
+  private let operationCapacity: Int
+  private var operations: [OperationKey: Operation] = [:]
+  private var finishSequence: UInt64 = 0
 
-  private struct Operation {
+  fileprivate struct OperationKey: Hashable {
     let id: String
     let scope: AgentIOSURLSessionBrowserSessionScope
-    let name: String
-    let time: Int64
-    let observation: AgentMcpJSONObject?
+  }
+
+  struct OperationTicket {
+    fileprivate let key: OperationKey
+    fileprivate let nonce: UUID
+  }
+
+  enum OperationName: String { case create, navigate, back, close }
+
+  private struct Operation {
+    let nonce: UUID
+    let name: OperationName
+    let startedAt: Int64
+    var finishedAt: Int64?
+    var finishOrder: UInt64 = 0
+    var errorCode: String?
+    var outcomeUnknown = false
   }
 
   init(
     ttlMillis: Int64 = AgentIOSURLSessionBrowserSessionStore.defaultTTLMillis,
     idleTimeoutMillis: Int64 = AgentIOSURLSessionBrowserSessionStore.defaultIdleTimeoutMillis,
-    maxSessions: Int = 512
+    maxSessions: Int = 512,
+    operationTTLMillis: Int64 = AgentIOSURLSessionBrowserSessionStore.operationRetentionMillis,
+    operationCapacity: Int = AgentIOSURLSessionBrowserSessionStore.operationHistoryCapacity
   ) {
     self.ttlMillis = max(1, min(ttlMillis, AgentIOSURLSessionBrowserSessionStore.defaultTTLMillis))
     self.idleTimeoutMillis = max(0, min(idleTimeoutMillis, self.ttlMillis))
     self.maxSessions = max(1, maxSessions)
+    self.operationTTLMillis = max(1, min(operationTTLMillis, Self.operationRetentionMillis))
+    self.operationCapacity = max(1, min(operationCapacity, Self.operationHistoryCapacity))
   }
 
   func create(
     scope: AgentIOSURLSessionBrowserSessionScope,
-    resourceId: String,
     currentURL: String,
-    nowMillis: Int64,
-    observation: AgentMcpJSONObject? = nil
+    nowMillis: Int64
   ) throws -> AgentIOSURLSessionBrowserSessionSnapshot {
     lock.lock()
     defer { lock.unlock() }
@@ -130,8 +156,6 @@ final class AgentIOSURLSessionBrowserSessionStore {
       revision: currentURL.isEmpty ? 0 : 1
     )
     records[browserId] = record
-    recordOperation(resourceId, scope: scope, name: "create", now: nowMillis,
-      observation: observation, revision: record.revision)
     return record.snapshot()
   }
 
@@ -140,8 +164,6 @@ final class AgentIOSURLSessionBrowserSessionStore {
     scope: AgentIOSURLSessionBrowserSessionScope,
     currentURL: String,
     nowMillis: Int64,
-    requestId: String = "",
-    observation: AgentMcpJSONObject? = nil,
     backFromRevision: Int64? = nil
   ) throws -> AgentIOSURLSessionBrowserSessionSnapshot {
     lock.lock()
@@ -163,8 +185,6 @@ final class AgentIOSURLSessionBrowserSessionStore {
     record.lastUsedAtEpochMillis = nowMillis
     record.revision += 1
     records[key] = record
-    recordOperation(requestId, scope: scope, name: backFromRevision == nil ? "navigate" : "back",
-      now: nowMillis, observation: observation, revision: record.revision)
     return record.snapshot()
   }
 
@@ -195,15 +215,13 @@ final class AgentIOSURLSessionBrowserSessionStore {
   func close(
     browserId: String,
     scope: AgentIOSURLSessionBrowserSessionScope,
-    nowMillis: Int64,
-    requestId: String = ""
+    nowMillis: Int64
   ) throws -> AgentIOSURLSessionBrowserSessionSnapshot {
     lock.lock()
     defer { lock.unlock() }
     let key = clean(browserId, maxLength: 240)
     let record = try resolvedLocked(browserId: key, scope: scope, nowMillis: nowMillis)
     records.removeValue(forKey: key)
-    recordOperation(requestId, scope: scope, name: "close", now: nowMillis)
     return AgentIOSURLSessionBrowserSessionSnapshot(
       browserId: record.browserId,
       currentURL: record.currentURL,
@@ -212,37 +230,79 @@ final class AgentIOSURLSessionBrowserSessionStore {
     )
   }
 
-  func observeOperation(
-    requestId: String, scope: AgentIOSURLSessionBrowserSessionScope, nowMillis: Int64
-  ) -> AgentMcpJSONObject? {
+  static func validOperationID(_ id: String) -> Bool {
+    (1...Int(AgentIOSWebMediaNativeToolCatalog.maxBrowserHandleCharacters)).contains(id.utf8.count) &&
+      id.utf8.allSatisfy { (48...57).contains($0) || (65...90).contains($0) ||
+        (97...122).contains($0) || $0 == 45 || $0 == 95 }
+  }
+
+  func beginOperation(requestId: String, scope: AgentIOSURLSessionBrowserSessionScope,
+                      name: OperationName, nowMillis: Int64) throws -> OperationTicket {
     lock.lock()
     defer { lock.unlock() }
-    guard scope.ownershipIsValid, !scope.contextId.isEmpty, !scope.turnId.isEmpty, !scope.taskId.isEmpty,
-          let operation = operations.last(where: { $0.id == requestId && $0.scope == scope }),
-          operation.time <= nowMillis, nowMillis - operation.time < ttlMillis else { return nil }
+    guard scope.ownershipIsValid else { throw AgentIOSURLSessionBrowserSessionStoreError.toolHandleOwnerMismatch }
+    guard Self.validOperationID(requestId) else { throw AgentIOSURLSessionBrowserSessionStoreError.invalidRequestID }
+    pruneOperations(nowMillis: nowMillis)
+    let key = OperationKey(id: requestId, scope: scope)
+    guard operations[key] == nil else { throw AgentIOSURLSessionBrowserSessionStoreError.requestAlreadyDispatched }
+    guard operations.values.lazy.filter({ $0.finishedAt == nil }).prefix(Self.operationHistoryCapacity).count <
+      Self.operationHistoryCapacity else { throw AgentIOSURLSessionBrowserSessionStoreError.operationCapacityReached }
+    let nonce = UUID()
+    operations[key] = Operation(nonce: nonce, name: name, startedAt: nowMillis)
+    return OperationTicket(key: key, nonce: nonce)
+  }
+
+  func finishOperation(_ ticket: OperationTicket, nowMillis: Int64, errorCode: String? = nil,
+                       outcomeUnknown: Bool = false) {
+    lock.lock()
+    defer { lock.unlock() }
+    guard var operation = operations[ticket.key], operation.nonce == ticket.nonce,
+          operation.finishedAt == nil else { return }
+    operation.finishedAt = max(operation.startedAt, nowMillis)
+    finishSequence &+= 1
+    operation.finishOrder = finishSequence
+    operation.errorCode = errorCode
+    operation.outcomeUnknown = errorCode != nil && outcomeUnknown
+    operations[ticket.key] = operation
+    pruneOperations(nowMillis: nowMillis)
+  }
+
+  func observeOperation(requestId: String, scope: AgentIOSURLSessionBrowserSessionScope,
+                        nowMillis: Int64) -> AgentMcpJSONObject? {
+    lock.lock()
+    defer { lock.unlock() }
+    pruneOperations(nowMillis: nowMillis)
+    guard scope.ownershipIsValid, !scope.contextId.isEmpty, !scope.turnId.isEmpty,
+          let operation = operations[OperationKey(id: requestId, scope: scope)] else { return nil }
+    let running = operation.finishedAt == nil
     var output: AgentMcpJSONObject = [
-      "request_id": .string(operation.id), "operation": .string(operation.name),
-      "observed_at_epoch_ms": .int(nowMillis), "business_success_verified": .bool(false)
+      "request_id": .string(requestId), "operation": .string(operation.name.rawValue),
+      "state": .string(running ? "running" : (operation.errorCode == nil ? "completed" : "failed")),
+      "started_at_epoch_ms": .int(operation.startedAt), "observed_at_epoch_ms": .int(nowMillis),
+      "outcome_unknown": .bool(running || operation.outcomeUnknown),
+      "business_success_verified": .bool(false), "verification_required": .bool(true),
+      "missing_receipt_means_not_executed": .bool(false),
+      "receipt_retention_ms": .int(operationTTLMillis),
+      "next_action": .string(running ? "observe_or_wait" : "observe")
     ]
-    if let observation = operation.observation {
-      output["observation"] = .object(observation)
-      output["next_action"] = .string("use_observation")
-      output["navigation_completed"] = .bool(observation["partial"] != .bool(true))
+    if let finished = operation.finishedAt {
+      output["finished_at_epoch_ms"] = .int(finished)
+      if !operation.outcomeUnknown { output["executed"] = .bool(operation.errorCode == nil) }
     }
+    if let error = operation.errorCode { output["error_code"] = .string(error) }
     return output
   }
 
-  private func recordOperation(
-    _ id: String, scope: AgentIOSURLSessionBrowserSessionScope, name: String, now: Int64,
-    observation: AgentMcpJSONObject? = nil, revision: Int64 = 0
-  ) {
-    guard scope.ownershipIsValid, !id.isEmpty, !scope.contextId.isEmpty,
-          !scope.turnId.isEmpty, !scope.taskId.isEmpty else { return }
-    operations.removeAll { $0.id == id && $0.scope == scope }
-    var page = observation
-    page?["revision"] = .int(revision)
-    operations.append(Operation(id: id, scope: scope, name: name, time: now, observation: page))
-    if operations.count > 512 { operations.removeFirst(operations.count - 512) }
+  private func pruneOperations(nowMillis: Int64) {
+    let completed = operations.compactMap { key, operation in
+      operation.finishedAt.map { (key, $0, operation.finishOrder) }
+    }
+    let retained = completed.filter { nowMillis < $0.1 || nowMillis - $0.1 < operationTTLMillis }
+      .sorted { $0.2 < $1.2 }
+    let retainedKeys = Set(retained.suffix(operationCapacity).map { $0.0 })
+    for (key, _, _) in completed where !retainedKeys.contains(key) {
+      operations.removeValue(forKey: key)
+    }
   }
 
   private func resolvedLocked(

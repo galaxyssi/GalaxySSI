@@ -319,20 +319,35 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     case .webSearch:
       return executeSearch(input: input, invocation: invocation)
     case .browserSessionCreate:
-      return executeBrowserSessionCreate(input: input, invocation: invocation)
-    case .browserSessionNavigate:
-      return executeBrowserSessionNavigate(input: input, invocation: invocation, back: false)
-    case .browserSessionBack:
-      return executeBrowserSessionNavigate(input: input, invocation: invocation, back: true)
-    case .browserSessionOperationStatus:
-      let requestId = string(input, "request_id", limit: Int(AgentIOSWebMediaNativeToolCatalog.maxBrowserHandleCharacters))
-      guard let observation = browserSessions.observeOperation(requestId: requestId,
-        scope: AgentIOSURLSessionBrowserSessionScope(context: invocation.context), nowMillis: nowMillis()) else {
-        return failure("browser_operation_not_found", "No terminal browser operation in this task and turn.")
+      return runBrowserOperation(.create, invocation: invocation) { scope, dispatched in
+        executeBrowserSessionCreate(input: input, invocation: invocation, scope: scope, dispatched: dispatched)
       }
-      return .success(output: observation, message: "Scoped browser operation observed", metadata: browserSessionMetadata())
+    case .browserSessionNavigate:
+      return runBrowserOperation(.navigate, invocation: invocation) { scope, dispatched in
+        executeBrowserSessionNavigate(input: input, invocation: invocation, scope: scope, back: false, dispatched: dispatched)
+      }
+    case .browserSessionBack:
+      return runBrowserOperation(.back, invocation: invocation) { scope, dispatched in
+        executeBrowserSessionNavigate(input: input, invocation: invocation, scope: scope, back: true, dispatched: dispatched)
+      }
+    case .browserSessionOperationStatus:
+      let requestId = input.string("request_id")
+      guard AgentIOSURLSessionBrowserSessionStore.validOperationID(requestId) else {
+        return browserSessionFailure(.invalidRequestID)
+      }
+      let now = nowMillis()
+      let receipt = browserSessions.observeOperation(requestId: requestId,
+        scope: AgentIOSURLSessionBrowserSessionScope(context: invocation.context), nowMillis: now) ?? [
+          "request_id": .string(requestId), "state": .string("unknown"), "observed_at_epoch_ms": .int(now),
+          "outcome_unknown": .bool(true), "business_success_verified": .bool(false), "verification_required": .bool(true),
+          "missing_receipt_means_not_executed": .bool(false), "next_action": .string("observe"),
+          "receipt_retention_ms": .int(AgentIOSURLSessionBrowserSessionStore.operationRetentionMillis)
+        ]
+      return .success(output: receipt, message: "Scoped browser operation status", metadata: browserSessionMetadata())
     case .browserSessionClose:
-      return executeBrowserSessionClose(input: input, invocation: invocation)
+      return runBrowserOperation(.close, invocation: invocation) { scope, _ in
+        executeBrowserSessionClose(input: input, scope: scope)
+      }
     case .webHead:
       return executeWeb(operation: operation, input: input, invocation: invocation, method: .head)
     case .webFetch:
@@ -542,18 +557,53 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     }
   }
 
+  private func runBrowserOperation(
+    _ name: AgentIOSURLSessionBrowserSessionStore.OperationName, invocation: AgentNativeToolInvocation,
+    execute: (AgentIOSURLSessionBrowserSessionScope, () -> Void) -> AgentNativeToolExecutionResult
+  ) -> AgentNativeToolExecutionResult {
+    let id = invocation.context.invocationId
+    let scope = AgentIOSURLSessionBrowserSessionScope(context: invocation.context)
+    let ticket: AgentIOSURLSessionBrowserSessionStore.OperationTicket
+    do {
+      ticket = try browserSessions.beginOperation(requestId: id, scope: scope, name: name, nowMillis: nowMillis())
+    } catch AgentIOSURLSessionBrowserSessionStoreError.requestAlreadyDispatched {
+      return failure("browser_request_id_reused",
+        "This browser request was already dispatched. Observe its status and verify external state.",
+        details: ["request_id": .string(id), "outcome_unknown": .bool(true), "repeated_dispatch": .bool(false)])
+    } catch let error as AgentIOSURLSessionBrowserSessionStoreError {
+      return browserSessionFailure(error)
+    } catch {
+      return failure("browser_operation_unavailable", "The browser operation could not be registered.")
+    }
+    var didDispatch = false
+    var result = invocation.isCancellationRequested ? failure(.cancelled) :
+      execute(scope) { didDispatch = true }
+    browserSessions.finishOperation(ticket, nowMillis: nowMillis(), errorCode: result.error?.code,
+      outcomeUnknown: didDispatch)
+    if var error = result.error {
+      error.details["request_id"] = .string(id)
+      error.details["outcome_unknown"] = .bool(didDispatch)
+      if didDispatch { error.retryable = false }
+      else { error.details["executed"] = .bool(false) }
+      result.error = error
+    } else {
+      result.output["request_id"] = .string(id)
+    }
+    return result
+  }
+
   private func executeBrowserSessionCreate(
     input: AgentMcpJSONObject,
-    invocation: AgentNativeToolInvocation
+    invocation: AgentNativeToolInvocation,
+    scope: AgentIOSURLSessionBrowserSessionScope,
+    dispatched: () -> Void
   ) -> AgentNativeToolExecutionResult {
     do {
       let requestedURL = urlString(input)
-      let scope = AgentIOSURLSessionBrowserSessionScope(context: invocation.context)
-      guard scope.ownershipIsValid else { throw AgentIOSURLSessionBrowserSessionStoreError.toolHandleOwnerMismatch }
+      if invocation.isCancellationRequested { throw AgentIOSURLSessionWebError.cancelled }
       if requestedURL.isEmpty {
         let snapshot = try browserSessions.create(
           scope: scope,
-          resourceId: invocation.context.invocationId,
           currentURL: "",
           nowMillis: nowMillis()
         )
@@ -565,23 +615,24 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       }
 
       let url = try validatedPublicHTTPSURL(requestedURL)
+      let maxBytes = try boundedMaxBytes(input)
+      let timeout = try boundedTimeout(input, invocation: invocation)
       let resource = try requestResource(
         requestedURL: url,
         method: .get,
-        maxBodyBytes: try boundedMaxBytes(input),
-        timeoutMillis: try boundedTimeout(input, invocation: invocation),
+        maxBodyBytes: maxBytes,
+        timeoutMillis: timeout,
         invocation: invocation,
-        allowsBrowserObservation: true
+        allowsBrowserObservation: true,
+        willDispatch: dispatched
       )
       let observation = browserObservation(resource)
       if resource.isPartial && !hasReadableBrowserObservation(observation) { throw AgentIOSURLSessionWebError.timeout }
       if invocation.isCancellationRequested { throw AgentIOSURLSessionWebError.cancelled }
       let snapshot = try browserSessions.create(
         scope: scope,
-        resourceId: invocation.context.invocationId,
         currentURL: resource.finalURL,
-        nowMillis: nowMillis(),
-        observation: observation
+        nowMillis: nowMillis()
       )
       return AgentNativeToolExecutionResult.success(
         output: browserPageOutput(resource, snapshot: snapshot, observation: observation, invocation: invocation),
@@ -600,20 +651,26 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
   private func executeBrowserSessionNavigate(
     input: AgentMcpJSONObject,
     invocation: AgentNativeToolInvocation,
-    back: Bool
+    scope: AgentIOSURLSessionBrowserSessionScope,
+    back: Bool,
+    dispatched: () -> Void
   ) -> AgentNativeToolExecutionResult {
     let browserId = string(input, "browser_id", limit: Int(AgentIOSWebMediaNativeToolCatalog.maxBrowserHandleCharacters))
-    let scope = AgentIOSURLSessionBrowserSessionScope(context: invocation.context)
     do {
+      if invocation.isCancellationRequested { throw AgentIOSURLSessionWebError.cancelled }
       let previous = back ? try browserSessions.previousPage(browserId: browserId, scope: scope, nowMillis: nowMillis()) : nil
       if !back { try browserSessions.validate(browserId: browserId, scope: scope, nowMillis: nowMillis()) }
+      let url = try validatedPublicHTTPSURL(previous?.url ?? urlString(input))
+      let maxBytes = try boundedMaxBytes(input)
+      let timeout = try boundedTimeout(input, invocation: invocation)
       let resource = try requestResource(
-        requestedURL: try validatedPublicHTTPSURL(previous?.url ?? urlString(input)),
+        requestedURL: url,
         method: .get,
-        maxBodyBytes: try boundedMaxBytes(input),
-        timeoutMillis: try boundedTimeout(input, invocation: invocation),
+        maxBodyBytes: maxBytes,
+        timeoutMillis: timeout,
         invocation: invocation,
-        allowsBrowserObservation: true
+        allowsBrowserObservation: true,
+        willDispatch: dispatched
       )
       let observation = browserObservation(resource)
       if resource.isPartial && !hasReadableBrowserObservation(observation) { throw AgentIOSURLSessionWebError.timeout }
@@ -623,8 +680,6 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         scope: scope,
         currentURL: resource.finalURL,
         nowMillis: nowMillis(),
-        requestId: invocation.context.invocationId,
-        observation: observation,
         backFromRevision: previous?.revision
       )
       return AgentNativeToolExecutionResult.success(
@@ -644,15 +699,14 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
 
   private func executeBrowserSessionClose(
     input: AgentMcpJSONObject,
-    invocation: AgentNativeToolInvocation
+    scope: AgentIOSURLSessionBrowserSessionScope
   ) -> AgentNativeToolExecutionResult {
     let browserId = string(input, "browser_id", limit: Int(AgentIOSWebMediaNativeToolCatalog.maxBrowserHandleCharacters))
     do {
       let snapshot = try browserSessions.close(
         browserId: browserId,
-        scope: AgentIOSURLSessionBrowserSessionScope(context: invocation.context),
-        nowMillis: nowMillis(),
-        requestId: invocation.context.invocationId
+        scope: scope,
+        nowMillis: nowMillis()
       )
       return AgentNativeToolExecutionResult.success(
         output: [
@@ -1221,7 +1275,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     timeoutMillis: Int64,
     invocation: AgentNativeToolInvocation,
     contentPolicy: AgentIOSURLSessionWebContentPolicy = .fetchText,
-    allowsBrowserObservation: Bool = false
+    allowsBrowserObservation: Bool = false,
+    willDispatch: () -> Void = {}
   ) throws -> AgentIOSURLSessionWebResource {
     let requestedAt = invocation.startedAtEpochMillis
     let deadline = min(requestedAt + timeoutMillis, invocation.deadlineEpochMillis - (allowsBrowserObservation ? 250 : 0))
@@ -1237,6 +1292,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       guard remainingMillis > 0 else {
         throw AgentIOSURLSessionWebError.timeout
       }
+      willDispatch()
       let response = try transport.execute(
         AgentIOSURLSessionWebRequest(
           method: method,
@@ -1711,6 +1767,12 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       return failure("browser_no_previous_page", "No earlier page in this browser session.")
     case .revisionChanged:
       return failure("browser_revision_changed", "Browser state changed before Back could be committed.")
+    case .invalidRequestID:
+      return failure("invalid_browser_request_id", "Provide a valid browser operation request ID.")
+    case .requestAlreadyDispatched:
+      return failure("browser_request_id_reused", "This browser request was already dispatched.")
+    case .operationCapacityReached:
+      return failure("browser_operation_capacity", "Too many browser requests are in flight.")
     }
   }
 

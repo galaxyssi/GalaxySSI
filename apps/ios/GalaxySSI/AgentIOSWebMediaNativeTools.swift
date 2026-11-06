@@ -200,6 +200,7 @@ enum AgentIOSWebMediaNativeToolCatalog {
       requiredConsents: consentRequirements(operation),
       timeoutMillis: maxToolTimeoutMillis,
       idempotency: idempotency(operation),
+      concurrency: operation == .browserSessionOperationStatus ? .parallelReadOnly : .serial,
       availability: availability(provider: provider, operation: operation),
       effect: effect(operation)
     )
@@ -230,7 +231,7 @@ enum AgentIOSWebMediaNativeToolCatalog {
     case .browserSessionBack:
       return "Loads the prior page in the existing browser_id and returns its fresh observation inline."
     case .browserSessionOperationStatus:
-      return "Reads a terminal operation by its original request_id in this task and turn, without another network request."
+      return "Reads scoped running, completed, failed or unknown status by original request_id without contacting the website. A receipt does not verify the user's goal."
     case .browserSessionClose:
       return "Closes a caller-scoped explicit browser_id without retaining page content."
     case .contentExtract:
@@ -449,15 +450,24 @@ enum AgentIOSWebMediaNativeToolCatalog {
       return objectSchema([
         "request_id": stringSchema(minLength: 1, maxLength: maxBrowserHandleCharacters),
         "operation": stringSchema(enumValues: ["create", "navigate", "back", "close"]),
+        "state": stringSchema(enumValues: ["running", "completed", "failed", "unknown"]),
+        "started_at_epoch_ms": integerSchema(minimum: 0),
+        "finished_at_epoch_ms": integerSchema(minimum: 0),
         "observed_at_epoch_ms": integerSchema(minimum: 0),
-        "observation": browserObservationSchema(),
-        "next_action": stringSchema(enumValues: ["use_observation"]),
-        "navigation_completed": boolSchema(),
-        "business_success_verified": boolSchema()
-      ], required: ["request_id", "operation", "observed_at_epoch_ms", "business_success_verified"])
+        "next_action": stringSchema(enumValues: ["observe_or_wait", "observe"]),
+        "error_code": stringSchema(maxLength: 120),
+        "executed": boolSchema(),
+        "outcome_unknown": boolSchema(),
+        "business_success_verified": boolSchema(),
+        "verification_required": boolSchema(),
+        "missing_receipt_means_not_executed": boolSchema(),
+        "receipt_retention_ms": integerSchema(minimum: 1)
+      ], required: ["request_id", "state", "observed_at_epoch_ms", "business_success_verified",
+                    "verification_required", "outcome_unknown", "missing_receipt_means_not_executed"])
     case .browserSessionClose:
       return objectSchema([
         "browser_id": stringSchema(minLength: 16, maxLength: maxBrowserHandleCharacters),
+        "request_id": stringSchema(minLength: 1, maxLength: maxBrowserHandleCharacters),
         "closed": boolSchema(),
         "expires_at_epoch_ms": integerSchema(minimum: 0)
       ])
@@ -816,7 +826,9 @@ struct AgentIOSWebMediaNativeToolExecutor {
     let execution = provider.invoke(operation: operation, input: normalizedInput(invocation.input, operation: operation), invocation: invocation)
     guard execution.isSuccess else { return execution }
     var output = execution.output
-    output["operation"] = output["operation"] ?? .string(operation.rawValue)
+    if operation != .browserSessionOperationStatus {
+      output["operation"] = output["operation"] ?? .string(operation.rawValue)
+    }
     var metadata = execution.metadata
     metadata["implementation"] = metadata["implementation"] ?? .string(provider.implementationId)
     metadata["platform"] = metadata["platform"] ?? .string("ios_phone")
