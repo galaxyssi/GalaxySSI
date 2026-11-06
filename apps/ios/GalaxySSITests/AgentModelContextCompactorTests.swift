@@ -3,6 +3,83 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentModelContextCompactorTests: XCTestCase {
+  func testHandoffPreservesInstructionsLiveHandlesAndReadOnlyRecoveryAcrossProviderChange() throws {
+    let first = AgentModelToolCall(callId: "waiting", toolId: "phone.browser.wait")
+    let mutation = AgentModelToolCall(callId: "uncertain", toolId: AgentEffectRecoveryRecord.browserMutationTools.sorted()[0])
+    let latest = AgentModelToolCall(callId: "recent", toolId: "phone.search")
+    let source: [AgentModelMessage] = [
+      .system("System policy exactly."),
+      .user("Original goal: keep the session."),
+      AgentModelMessage(role: .assistant, text: "Tentative progress", toolCalls: [first, mutation],
+                        providerRoute: "old-route"),
+      .tool(AgentModelToolResultContent(callId: first.callId, toolId: first.toolId, status: "succeeded",
+        output: ["control_owner": .string("user"), "handoff_id": .string("owned-handoff"),
+                 "host_wait_key": .string("owned-wait"), "host_wait_generation": .int(4)])),
+      .tool(AgentModelToolResultContent(callId: mutation.callId, toolId: mutation.toolId,
+        status: "verification_failed", invocationId: "retained-operation")),
+      .user("Additional constraint: never resubmit."),
+      AgentModelMessage(role: .assistant, toolCalls: [latest], providerRoute: "old-route"),
+      .tool(AgentModelToolResultContent(callId: latest.callId, toolId: latest.toolId, status: "succeeded",
+        message: "Last batch result"))
+    ]
+    let budget = ConversationContextBudget(contextWindowTokens: 8_192, reservedOutputTokens: 512)
+    let projection = try AgentModelContextHandoffProjection.prepare(source, budget: budget, route: "new-route")
+    let checkpoint = try XCTUnwrap(projection.newHandoff)
+    XCTAssertEqual(checkpoint.sourceCount, source.count)
+    XCTAssertEqual(projection.messages.filter { $0.role == .user }.prefix(2).map(\.text),
+                   ["Original goal: keep the session.", "Additional constraint: never resubmit."])
+    XCTAssertEqual(projection.messages.first?.text, "System policy exactly.")
+    XCTAssertFalse(projection.messages.contains { !$0.toolCalls.isEmpty || $0.toolResult != nil })
+    XCTAssertTrue(projection.messages.last?.text.hasPrefix(AgentUntrustedEvidenceBoundary.textMarker) == true)
+    for retained in ["owned-handoff", "owned-wait", "retained-operation",
+                     AgentEffectRecoveryRecord.browserObserver, "Last batch result", "completion_verified"] {
+      XCTAssertTrue(checkpoint.evidence.contains(retained), "Missing \(retained)")
+    }
+    let marker = AgentModelMessage(role: .assistant, text: "Continue.", contextHandoff: checkpoint,
+                                   providerRoute: "new-route")
+    let replay = try AgentModelContextHandoffProjection.prepare(source + [marker], budget: budget, route: "new-route")
+    XCTAssertNil(replay.newHandoff)
+    XCTAssertEqual(replay.messages.last?.text, "Continue.")
+    var changed = source
+    changed[1].text = "Different goal."
+    XCTAssertThrowsError(try AgentModelContextHandoffProjection.prepare(changed + [marker], budget: budget, route: "new-route")) {
+      XCTAssertEqual(($0 as? AgentModelLoopRecoveryError)?.code, "model_context_handoff_binding_changed")
+    }
+    XCTAssertThrowsError(try AgentModelContextHandoffProjection.prepare(
+      Array(source.dropLast()), budget: budget, route: "new-route"
+    )) {
+      XCTAssertEqual(($0 as? AgentModelLoopRecoveryError)?.code, "model_context_waiting_for_tool_results")
+    }
+  }
+
+  func testHandoffUnderBudgetPressureUsesAllProviderEncodersAndFailsOnOversizedRequiredReferences() throws {
+    let budget = ConversationContextBudget(contextWindowTokens: 4_096, reservedOutputTokens: 1_024)
+    let call = AgentModelToolCall(callId: "call_1", toolId: "phone.read")
+    var source: [AgentModelMessage] = [
+      .user("Read this information."),
+      AgentModelMessage(role: .assistant, toolCalls: [call], providerRoute: "current"),
+      .tool(AgentModelToolResultContent(callId: call.callId, toolId: call.toolId, status: "succeeded",
+        output: ["raw_document": .string(String(repeating: "long content ", count: 2_000))],
+        message: "Read the document."))
+    ]
+    let small = try AgentModelContextHandoffProjection.prepare(Array(source.prefix(1)), budget: budget, route: "current")
+    XCTAssertNil(small.newHandoff)
+    XCTAssertEqual(small.messages, Array(source.prefix(1)))
+    let projection = try AgentModelContextHandoffProjection.prepare(source, budget: budget, route: "current")
+    XCTAssertNotNil(projection.newHandoff)
+    for provider in [AgentModelToolProvider.openAICompatible, .anthropic, .gemini] {
+      let wire = try AgentModelToolProtocolAdapters.adapter(for: provider).encodeConversation(projection.messages)
+      let text = AgentMcpJSONCodec.stringify(wire)
+      XCTAssertTrue(text.contains("GALAXYSSI_UNTRUSTED_EVIDENCE"))
+      XCTAssertTrue(text.contains("Read this information."))
+      XCTAssertFalse(text.contains("raw_document"))
+    }
+    source[2].toolResult?.output["host_wait_key"] = .string(String(repeating: "must retain ", count: 2_000))
+    XCTAssertThrowsError(try AgentModelContextHandoffProjection.prepare(source, budget: budget, route: "current")) {
+      XCTAssertEqual(($0 as? AgentModelLoopRecoveryError)?.code, "model_context_required_evidence_too_large")
+    }
+  }
+
   func testAgentModelContextCompactorCompactsOldToolBlocksWithoutBreakingPairs() {
     var messages: [AgentModelMessage] = [
       .system("Use tools carefully."),

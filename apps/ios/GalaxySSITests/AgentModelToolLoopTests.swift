@@ -100,12 +100,57 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertEqual(first.status, .completed)
     XCTAssertEqual(restored.status, .completed)
     XCTAssertEqual(restored.assistantText, "Durable result.")
-    XCTAssertEqual(restored.messages, first.messages)
+    XCTAssertEqual(AgentModelContextHandoff.executionMessages(restored.messages),
+                   AgentModelContextHandoff.executionMessages(first.messages))
     XCTAssertEqual(firstAdapter.requests.count, 2)
     XCTAssertEqual(restoredAdapter.requests.count, 0)
     XCTAssertEqual(executions, 1)
     XCTAssertFalse(firstEvents.isEmpty)
     XCTAssertTrue(restoredEvents.isEmpty)
+  }
+
+  func testEncryptedLoopResumesAfterContextHandoffWithoutReexecutingCommittedCalls() async throws {
+    let domain = "context-handoff-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+    defer { defaults.removePersistentDomain(forName: domain) }
+    let secrets = InMemorySecretStore()
+    var executed: [String] = []
+    let registry = try registry { invocation in
+      executed.append(invocation.input["value"]?.strictStringValue ?? "")
+      return .success(output: invocation.input)
+    }
+    let input = request(loopId: "handoff-loop")
+    let budget = ConversationContextBudget(contextWindowTokens: 8_192, reservedOutputTokens: 512)
+    let firstAdapter = ContextHandoffTestModelAdapter { request in
+      switch request.round {
+      case 1:
+        return AgentModelResponse(toolCalls: [self.call("first")], providerRoute: "old")
+      case 2:
+        let projection = try AgentModelContextHandoffProjection.prepare(request.messages, budget: budget, route: "new")
+        return AgentModelResponse(toolCalls: [self.call("second", arguments: ["value": .string("Bob")])],
+          contextHandoff: try XCTUnwrap(projection.newHandoff), providerRoute: "new")
+      default:
+        throw AgentModelToolProtocolError(code: "interrupted", message: "Simulated process interruption.")
+      }
+    }
+    let interrupted = await loop(adapter: firstAdapter, registry: registry,
+      journal: EncryptedAgentModelLoopJournal(defaults: defaults, secrets: secrets)).run(input)
+    XCTAssertEqual(interrupted.status, .modelFailed)
+    XCTAssertEqual(executed, ["Alice", "Bob"])
+
+    let resumedAdapter = ContextHandoffTestModelAdapter { request in
+      XCTAssertEqual(request.round, 3)
+      let projection = try AgentModelContextHandoffProjection.prepare(request.messages, budget: budget, route: "new")
+      XCTAssertNil(projection.newHandoff)
+      XCTAssertFalse(projection.messages.flatMap(\.toolCalls).contains { $0.callId == "first" })
+      XCTAssertEqual(projection.messages.last?.toolResult?.callId, "second")
+      return AgentModelResponse(assistantText: "Finished.", providerRoute: "new")
+    }
+    let resumed = await loop(adapter: resumedAdapter, registry: registry,
+      journal: EncryptedAgentModelLoopJournal(defaults: defaults, secrets: secrets)).run(input)
+    XCTAssertEqual(resumed.status, .completed)
+    XCTAssertEqual(resumed.messages.compactMap(\.toolResult).map(\.callId), ["first", "second"])
+    XCTAssertEqual(executed, ["Alice", "Bob"])
   }
 
   func testDurableModelLoopRejectsInputAndManifestDrift() async throws {
@@ -714,6 +759,14 @@ final class AgentModelToolLoopTests: XCTestCase {
   }
 
   private static let toolId = "phone.test.echo"
+}
+
+private struct ContextHandoffTestModelAdapter: AgentModelAdapter {
+  let respond: (AgentModelRequest) throws -> AgentModelResponse
+
+  func complete(_ request: AgentModelRequest) async throws -> AgentModelResponse {
+    try respond(request)
+  }
 }
 
 private final class ScriptedModelAdapter: AgentModelAdapter {

@@ -188,12 +188,18 @@ final class AgentModelToolLoop {
           response = recordedResponse
         } else {
           response = try await modelAdapter.complete(modelRequest)
+        }
+        try response.contextHandoff?.validate(prefix: state.messages, route: response.providerRoute)
+        if recordedResponse == nil {
           state.checkpoint?.recordResponse(response, request: modelRequest)
           if state.checkpoint?.failure != nil { return recoveryFailed(state) }
         }
       } catch {
         if state.request.cancellationToken.isCancellationRequested {
           return cancelled(state)
+        }
+        if let recovery = error as? AgentModelLoopRecoveryError {
+          return recoveryFailed(state, error: recovery)
         }
         return modelFailed(state, error: error)
       }
@@ -204,7 +210,10 @@ final class AgentModelToolLoop {
       state.inputTokens = AgentModelToolLoopValidation.safeTokenSum(state.inputTokens, response.usage.inputTokens)
       state.outputTokens = AgentModelToolLoopValidation.safeTokenSum(state.outputTokens, response.usage.outputTokens)
       state.lastAssistantText = response.assistantText
-      state.messages.append(.assistant(response.assistantText, toolCalls: response.toolCalls))
+      state.messages.append(AgentModelMessage(
+        role: .assistant, text: response.assistantText, toolCalls: response.toolCalls,
+        contextHandoff: response.contextHandoff, providerRoute: response.providerRoute
+      ))
       emit(
         state,
         .modelResponded,

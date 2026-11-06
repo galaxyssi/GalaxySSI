@@ -256,6 +256,12 @@ final class AgentModelLoopCheckpoint {
     var round: Int
     var messages: [AgentModelMessage]
     var manifestSha256: String
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+      lhs.round == rhs.round && lhs.manifestSha256 == rhs.manifestSha256 &&
+        AgentModelContextHandoff.executionMessages(lhs.messages) ==
+          AgentModelContextHandoff.executionMessages(rhs.messages)
+    }
   }
 
   private struct ModelRecord: Codable {
