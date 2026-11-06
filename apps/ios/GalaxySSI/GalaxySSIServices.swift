@@ -5357,6 +5357,7 @@ final class MessageCoordinator: ObservableObject {
       guard store.agentSafetySettings.taskExecutionMode == .autoComplete,
             AgentSavedTeamReplyPolicy.canContinueAutomatically(task) else { return false }
     }
+    task.localOperationProcessId = AgentOwnedOperationContext.processId
     if task.pendingPlanning?.isReplanning == true {
       task.phase = .planning
       task.blocked = false
@@ -8311,7 +8312,7 @@ final class MessageCoordinator: ObservableObject {
       summary: recentLocalConversationContext(
         contactId: outgoing.contactId,
         excluding: outgoing.id,
-        conversationId: selectedProviderOnly ? outgoing.conversationId : nil
+        conversationId: outgoing.conversationId
       ),
       turns: [],
       privateMode: session?.privateMode ?? true,
@@ -8333,6 +8334,19 @@ final class MessageCoordinator: ObservableObject {
       "selection_target": selection.targetId,
       "selection_model": selection.modelId
     ])
+  }
+
+  private func ownedPriorPhoneOperation(request: String, outgoing: ChatMessage) -> AgentMcpJSONObject? {
+    guard let prior = AgentOwnedOperationContext.previousRequest(
+      before: outgoing, in: store.agentSessionMessages(outgoing.conversationId)
+    ) else { return nil }
+    let turn = prior.turnId.ifBlank(prior.id.uuidString)
+    // Workspace list rows are display projections, not the persisted phone executor state.
+    guard let task = store.agentTaskRecords.first(where: { $0.taskId == turn && $0.sessionId == prior.conversationId }),
+          AgentOwnedOperationContext.wantsContext(request: request, priorGoal: task.goal)
+    else { return nil }
+    let run = task.phase == .completed ? localRecordedRunStore.runs(for: task.sessionId).last { $0.runId == task.taskId } : nil
+    return AgentOwnedOperationContext.project(source: prior, task: task, run: run)
   }
 
   private func pairedPhonePlannerLink(_ route: AgentPairedPhonePlannerRoute) -> ServerLink? {
@@ -8522,8 +8536,10 @@ final class MessageCoordinator: ObservableObject {
       .code,
       .taskExecution
     ]
+    let ownedOperation = replanReason.isBlank && timerCheckpoint == nil && !(hasAttachmentsOverride ?? !attachments.isEmpty)
+      ? ownedPriorPhoneOperation(request: requestText, outgoing: outgoing) : nil
     let selectedForPhoneTurn = plannerSnapshotOverride?.selectedForPhoneTurn == true
-    guard selectedForPhoneTurn || timerCheckpoint != nil ||
+    guard selectedForPhoneTurn || timerCheckpoint != nil || ownedOperation != nil ||
       !requirements.capabilities.isDisjoint(with: nativeIntentCapabilities) else {
       return nil
     }
@@ -8601,6 +8617,7 @@ final class MessageCoordinator: ObservableObject {
     let snapshots = planningRequest.executionHistory
     let scopedHistory = snapshots.filter { !AgentDurablePlanHistoryPolicy.isPlannerControl($0) }
     planningRequest.executionHistory = AgentDurablePlanHistoryPolicy.plannerProjection(snapshots)
+    planningRequest.ownedOperationContext = ownedOperation
     let answerOnly = AgentCompletionEvidencePolicy.isAnswerOnly(history: scopedHistory) {
       runtime.registry.lookup($0)?.descriptor
     }
@@ -8751,7 +8768,9 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     task: inout AgentTaskRecord
   ) -> Bool {
-    task.planContext = AgentTaskPlanContext(plan: plan)
+    var planContext = AgentTaskPlanContext(plan: plan)
+    planContext.executionMode = .planOnly
+    task.planContext = planContext
     task.activePlan = nil
     task.pendingPlanning = nil
     task.lastNativeActionResult = nil
@@ -8818,7 +8837,13 @@ final class MessageCoordinator: ObservableObject {
     resetResults: Bool = true
   ) -> Bool {
     let revision = max(plan?.revision ?? 1, 1)
-    let versionedActions = actions.map { $0.ensurePlanRevision(revision) }
+    let scope = AgentPlanContinuationScope(conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString))
+    func bind(_ action: AgentAction) -> AgentAction {
+      let versioned = action.ensurePlanRevision(revision)
+      return scope.owns(versioned) ? scope.bind(versioned) : versioned
+    }
+    let versionedActions = actions.map(bind)
     let nativeActions = versionedActions.filter {
       $0.kind == .callNativeTool || $0.kind == .callConnector
     }
@@ -8830,12 +8855,13 @@ final class MessageCoordinator: ObservableObject {
     if var plan {
       let versionedById = Dictionary(versionedActions.map { ($0.id, $0) }) { _, latest in latest }
       plan.actions = plan.actions.map {
-        versionedById[$0.id] ?? $0.ensurePlanRevision(revision)
+        versionedById[$0.id] ?? bind($0)
       }
       task.planContext = AgentTaskPlanContext(plan: plan)
       task.activePlan = plan
     }
     task.pendingPlanning = nil
+    task.localOperationProcessId = AgentOwnedOperationContext.processId
     if resetResults {
       task.nativeActionResults = []
       task.lastNativeActionResult = nil

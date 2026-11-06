@@ -224,6 +224,7 @@
     A10000000000000000002010 /* AgentRemoteProactiveEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002010 /* AgentRemoteProactiveEvents.swift */; };
     A10000000000000000002017 /* AgentRecordedRunStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002017 /* AgentRecordedRunStore.swift */; };
     A10000000000000000009894 /* AgentRecordedExecutionEvidence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009894 /* AgentRecordedExecutionEvidence.swift */; };
+    A100000000000000000099C7 /* AgentOwnedOperationContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000099C7 /* AgentOwnedOperationContext.swift */; };
     A10000000000000000002701 /* AgentEvalOpsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002701 /* AgentEvalOpsModels.swift */; };
     A10000000000000000002702 /* AgentEvalOpsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002702 /* AgentEvalOpsStore.swift */; };
     A10000000000000000002703 /* AgentQualityRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002703 /* AgentQualityRouting.swift */; };
@@ -1072,6 +1073,7 @@
     A10000000000000000000204 /* AgentWorkspacePlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000204 /* AgentWorkspacePlanTests.swift */; };
     A10000000000000000000205 /* AgentTeamDelegationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000205 /* AgentTeamDelegationTests.swift */; };
     A10000000000000000000206 /* AgentRunPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000206 /* AgentRunPolicyTests.swift */; };
+    A100000000000000000099C8 /* AgentOwnedOperationContextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000099C8 /* AgentOwnedOperationContextTests.swift */; };
     A10000000000000000000672 /* AgentTaskCenterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000672 /* AgentTaskCenterTests.swift */; };
     A10000000000000000000674 /* AgentWorkspaceStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000674 /* AgentWorkspaceStoreTests.swift */; };
     A10000000000000000000676 /* AgentRunRecoveryCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000676 /* AgentRunRecoveryCoordinatorTests.swift */; };
@@ -1405,6 +1407,7 @@
     A20000000000000000002010 /* AgentRemoteProactiveEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteProactiveEvents.swift; sourceTree = "<group>"; };
     A20000000000000000002017 /* AgentRecordedRunStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRecordedRunStore.swift; sourceTree = "<group>"; };
     A20000000000000000009894 /* AgentRecordedExecutionEvidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRecordedExecutionEvidence.swift; sourceTree = "<group>"; };
+    A200000000000000000099C7 /* AgentOwnedOperationContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentOwnedOperationContext.swift; sourceTree = "<group>"; };
     A20000000000000000002701 /* AgentEvalOpsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentEvalOpsModels.swift; sourceTree = "<group>"; };
     A20000000000000000002702 /* AgentEvalOpsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentEvalOpsStore.swift; sourceTree = "<group>"; };
     A20000000000000000002703 /* AgentQualityRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentQualityRouting.swift; sourceTree = "<group>"; };
@@ -2254,6 +2257,7 @@
     A20000000000000000000204 /* AgentWorkspacePlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspacePlanTests.swift; sourceTree = "<group>"; };
     A20000000000000000000205 /* AgentTeamDelegationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamDelegationTests.swift; sourceTree = "<group>"; };
     A20000000000000000000206 /* AgentRunPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunPolicyTests.swift; sourceTree = "<group>"; };
+    A200000000000000000099C8 /* AgentOwnedOperationContextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentOwnedOperationContextTests.swift; sourceTree = "<group>"; };
     A20000000000000000000672 /* AgentTaskCenterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskCenterTests.swift; sourceTree = "<group>"; };
     A20000000000000000000674 /* AgentWorkspaceStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceStoreTests.swift; sourceTree = "<group>"; };
     A20000000000000000000676 /* AgentRunRecoveryCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunRecoveryCoordinatorTests.swift; sourceTree = "<group>"; };
@@ -3165,6 +3169,7 @@
         A20000000000000000002010 /* AgentRemoteProactiveEvents.swift */,
         A20000000000000000002017 /* AgentRecordedRunStore.swift */,
         A20000000000000000009894 /* AgentRecordedExecutionEvidence.swift */,
+        A200000000000000000099C7 /* AgentOwnedOperationContext.swift */,
         A20000000000000000002701 /* AgentEvalOpsModels.swift */,
         A20000000000000000002702 /* AgentEvalOpsStore.swift */,
         A20000000000000000002703 /* AgentQualityRouting.swift */,
@@ -3348,6 +3353,7 @@
         A20000000000000000000204 /* AgentWorkspacePlanTests.swift */,
         A20000000000000000000205 /* AgentTeamDelegationTests.swift */,
         A20000000000000000000206 /* AgentRunPolicyTests.swift */,
+        A200000000000000000099C8 /* AgentOwnedOperationContextTests.swift */,
         A20000000000000000000672 /* AgentTaskCenterTests.swift */,
         A20000000000000000000674 /* AgentWorkspaceStoreTests.swift */,
         A20000000000000000000676 /* AgentRunRecoveryCoordinatorTests.swift */,
@@ -4485,6 +4491,7 @@
         A10000000000000000002010 /* AgentRemoteProactiveEvents.swift in Sources */,
         A10000000000000000002017 /* AgentRecordedRunStore.swift in Sources */,
         A10000000000000000009894 /* AgentRecordedExecutionEvidence.swift in Sources */,
+        A100000000000000000099C7 /* AgentOwnedOperationContext.swift in Sources */,
         A10000000000000000002701 /* AgentEvalOpsModels.swift in Sources */,
         A10000000000000000002702 /* AgentEvalOpsStore.swift in Sources */,
         A10000000000000000002703 /* AgentQualityRouting.swift in Sources */,
@@ -4659,6 +4666,7 @@
         A10000000000000000000204 /* AgentWorkspacePlanTests.swift in Sources */,
         A10000000000000000000205 /* AgentTeamDelegationTests.swift in Sources */,
         A10000000000000000000206 /* AgentRunPolicyTests.swift in Sources */,
+        A100000000000000000099C8 /* AgentOwnedOperationContextTests.swift in Sources */,
         A10000000000000000000672 /* AgentTaskCenterTests.swift in Sources */,
         A10000000000000000000674 /* AgentWorkspaceStoreTests.swift in Sources */,
         A10000000000000000000676 /* AgentRunRecoveryCoordinatorTests.swift in Sources */,
