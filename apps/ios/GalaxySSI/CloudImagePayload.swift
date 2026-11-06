@@ -10,12 +10,13 @@ struct CloudImagePayload: Equatable {
   var data: Data
   var originalData: Data?
   var historicalSourceTurnId: String?
+  var sendsOriginal: Bool
 
   init(displayName: String, mimeType: String, data: Data, originalData: Data? = nil,
-       historicalSourceTurnId: String? = nil) throws {
+       historicalSourceTurnId: String? = nil, sendsOriginal: Bool = false) throws {
     let normalizedMimeType = mimeType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     guard !data.isEmpty,
-          data.count <= Self.maximumBytes,
+          data.count <= (sendsOriginal ? ComposerImageQuality.maximumOriginalBytes : Self.maximumBytes),
           normalizedMimeType.hasPrefix("image/") else {
       throw CloudImagePayloadError.invalidPayload(displayName)
     }
@@ -24,6 +25,7 @@ struct CloudImagePayload: Equatable {
     self.data = data
     self.originalData = originalData
     self.historicalSourceTurnId = historicalSourceTurnId
+    self.sendsOriginal = sendsOriginal
   }
 
   var base64: String {
@@ -64,9 +66,10 @@ enum CloudImagePayloadFactory {
     for attachment: GalaxySSIDraftAttachment,
     taskId: String
   ) -> CloudImagePayload? {
+    let sendsOriginal = attachment.composerImageQuality == .original
     guard let encoded = AgentImagePipeline.encodeForTransport(
       attachment,
-      byteLimit: CloudImagePayload.maximumBytes,
+      byteLimit: sendsOriginal ? ComposerImageQuality.maximumOriginalBytes : CloudImagePayload.maximumBytes,
       taskId: taskId
     ) else { return nil }
     return try? CloudImagePayload(
@@ -74,7 +77,8 @@ enum CloudImagePayloadFactory {
       mimeType: encoded.mimeType,
       data: encoded.data,
       originalData: attachment.data,
-      historicalSourceTurnId: attachment.historicalSourceTurnId
+      historicalSourceTurnId: attachment.historicalSourceTurnId,
+      sendsOriginal: sendsOriginal
     )
   }
 }

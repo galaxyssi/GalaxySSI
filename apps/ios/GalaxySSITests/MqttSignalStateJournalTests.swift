@@ -245,6 +245,29 @@ private func signalTestIdentity(local: String = String(repeating: "a", count: 64
 
 #if canImport(LibSignalClient)
 final class MqttSignalAtomicReceiveTests: XCTestCase {
+  func testDesktopReceiptSignatureUsesPairedSignalIdentity() throws {
+    let f = try SignalReceiveFixture()
+    let wire = try f.wire()
+    _ = try f.receive(wire)
+    let signed = Data("desktop-action-receipt".utf8)
+    let signature = try XCTUnwrap(f.alice.signContactCard(signed))
+    var link = ServerLink(desktopId: "desktop", desktopName: "Desktop",
+      desktopFingerprint: f.aliceIdentity.fingerprint, signalName: f.aliceIdentity.name,
+      routes: .init(clientRouteId: "route", linkSecret: "", localFingerprint: f.bobIdentity.fingerprint,
+                    remoteFingerprint: f.aliceIdentity.fingerprint),
+      paired: true, accessProfile: "", accessScopes: [], updatedAt: Date())
+    XCTAssertTrue(f.bob.verifyPairedDesktopSignature(signed, signature: signature, envelope: wire, link: link))
+    XCTAssertFalse(f.bob.verifyPairedDesktopSignature(Data("changed".utf8), signature: signature, envelope: wire, link: link))
+    var wrongSender = wire
+    wrongSender["from"] = "other-peer"
+    XCTAssertFalse(f.bob.verifyPairedDesktopSignature(signed, signature: signature, envelope: wrongSender, link: link))
+    link.desktopFingerprint = f.bobIdentity.fingerprint
+    XCTAssertFalse(f.bob.verifyPairedDesktopSignature(signed, signature: signature, envelope: wire, link: link))
+    link.desktopFingerprint = f.aliceIdentity.fingerprint
+    link.paired = false
+    XCTAssertFalse(f.bob.verifyPairedDesktopSignature(signed, signature: signature, envelope: wire, link: link))
+  }
+
   func testWrappedPhoneReceiptIsStoredAsReceiptWithoutReceiptLoop() throws {
     let f = try SignalReceiveFixture()
     let id = UUID().uuidString

@@ -1087,6 +1087,26 @@ enum AgentPhoneNativeToolCatalog {
       "parameters": .object(objectSchema(additionalProperties: true))
     ]
     var required: [String] = ["target"]
+    if kind == .setAlarm {
+      let fields: [String: AgentMcpJSONValue] = [
+        "timer_operation": .object(["type": .string("string"),
+          "enum": .array(["start", "inspect", "cancel"].map(AgentMcpJSONValue.string))]),
+        "timer_seconds": .object(actionNumberSchema(minimum: 1, maximum: 604_800)),
+        "operation_id": .object(stringSchema(minLength: 1, maxLength: 64).merging([
+          "description": .string("Omit for a new timer. Inspect or cancel only a timer ID returned by iOS.")
+        ]) { _, new in new }),
+        "hour": .object(actionNumberSchema(minimum: 0, maximum: 23)),
+        "minute": .object(actionNumberSchema(minimum: 0, maximum: 59)),
+        "label": .object(stringSchema(maxLength: 160))
+      ]
+      properties.merge(fields) { _, new in new }
+      properties["parameters"] = .object(objectSchema(properties: fields, additionalProperties: true))
+    }
+    if kind == .openApp {
+      let package: AgentMcpJSONValue = .object(stringSchema(minLength: 1, maxLength: 256))
+      properties["package"] = package
+      properties["parameters"] = .object(objectSchema(properties: ["package": package], additionalProperties: true))
+    }
     if kind == .openURL {
       properties["url"] = .object(stringSchema(minLength: 1, maxLength: 2_048))
       required.append("url")
@@ -1097,6 +1117,13 @@ enum AgentPhoneNativeToolCatalog {
       required.append(contentsOf: ["notification_key", "reply_text"])
     }
     return objectSchema(properties: properties, required: required)
+  }
+
+  private static func actionNumberSchema(minimum: Int64, maximum: Int64) -> AgentMcpJSONObject {
+    ["anyOf": .array([
+      .object(["type": .string("integer"), "minimum": .int(minimum), "maximum": .int(maximum)]),
+      .object(["type": .string("string"), "pattern": .string("^[0-9]+$")])
+    ])]
   }
 
   private static func actionOutputSchema() -> AgentMcpJSONObject {

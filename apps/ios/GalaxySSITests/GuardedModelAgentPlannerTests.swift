@@ -3,6 +3,74 @@ import XCTest
 @testable import GalaxySSI
 
 final class GuardedModelAgentPlannerTests: XCTestCase {
+  func testPhoneOwnedPlanCannotClaimAnotherExecutionSite() {
+    XCTAssertTrue(AgentModelPlanParser.permitsPhoneExecutionSite(#"{"execution_location":"phone","actions":[]}"#))
+    XCTAssertTrue(AgentModelPlanParser.permitsPhoneExecutionSite(#"{"disposition":"respond","final_response":"Hello"}"#))
+    XCTAssertFalse(AgentModelPlanParser.permitsPhoneExecutionSite(#"{"execution_location":"desktop","actions":[]}"#))
+    XCTAssertFalse(AgentModelPlanParser.permitsPhoneExecutionSite(#"{"execution_location":null,"actions":[]}"#))
+  }
+
+  func testPhoneOwnedPlanningRejectsConnectorAndNeverUsesHostFallback() async {
+    let provider = RecordingModelPlanningProvider(
+      raw: #"{"actions":[{"kind":"CALL_CONNECTOR","target":"desktop","parameters":{"connector_id":"desktop"}}]}"#
+    )
+    let planner = GuardedModelAgentPlanner(provider: provider)
+    var request = promptRequest(allowsDirectResponse: true)
+    request.phoneOwnsExecution = true
+    let fallback = fallbackPlan(actions: [fallbackAction(id: "desktop", kind: .callConnector)])
+    let result = await planner.planOrRespond(
+      request: request,
+      settings: AgentModelPlannerSettings(enabled: true),
+      fallbackPlan: fallback
+    )
+    XCTAssertTrue(result.actionPlan?.actions.isEmpty == true)
+    XCTAssertTrue(provider.invocations.singleValue().prompt.contains("iOS owns execution"))
+  }
+
+  func testPhoneOwnedPlannerKeepsTimerEvidenceAndOnlyOffersAllowlistedHandoffs() async throws {
+    let timerID = AgentNativeToolAgentActionAdapter.defaultToolId(.setAlarm)
+    let timer = try nativeToolDescriptor(id: timerID, risk: .medium)
+    let other = try nativeToolDescriptor(id: "galaxyssi.other.write", risk: .medium)
+    let provider = RecordingModelPlanningProvider(
+      raw: #"{"disposition":"respond","final_response":"Hello"}"#
+    )
+    let planner = GuardedModelAgentPlanner(provider: provider)
+    var request = promptRequest(nativeTools: [timer, other], allowsDirectResponse: true)
+    request.phoneOwnsExecution = true
+    request.timerCheckpoint = ["operation_id": "receipt-id", "timer_state": "running"]
+    let result = await planner.planOrRespond(
+      request: request,
+      settings: AgentModelPlannerSettings(enabled: true),
+      fallbackPlan: fallbackPlan()
+    )
+    XCTAssertEqual(result, .directResponse("Hello"))
+    XCTAssertEqual(provider.invocations.singleValue().nativeTools.map(\.id), [timerID])
+    XCTAssertTrue(provider.invocations.singleValue().prompt.contains("receipt-id"))
+  }
+
+  func testPhoneOwnedCompletionShapeRepairCannotChangeActionsOrRunTools() async throws {
+    let tool = try nativeToolDescriptor(id: "galaxyssi.safe.read", risk: .low)
+    let raw = #"{"completion_requirements":{"publication":"none","phone_linux":false,"outcomes":[{"id":"state","tool_id":"galaxyssi.safe.read","subject":"invalid","checks":{"/state":true}}]},"actions":[{"kind":"CALL_NATIVE_TOOL","parameters":{"tool_id":"galaxyssi.safe.read","arguments":{}}}]}"#
+    let corrected = raw.replacingOccurrences(of: #""subject":"invalid""#, with: #""subject":{"/device":"phone"}"#)
+    let provider = RecordingModelPlanningProvider(raw: raw)
+    provider.repairedRaw = corrected
+    let planner = GuardedModelAgentPlanner(provider: provider)
+    var request = promptRequest(nativeTools: [tool])
+    request.phoneOwnsExecution = true
+    let result = await planner.planOrRespond(request: request, settings: AgentModelPlannerSettings(enabled: true),
+      fallbackPlan: fallbackPlan())
+    XCTAssertEqual(result.actionPlan?.completionRequirements?.outcomes?.first?.subject, ["/device": "phone"])
+    XCTAssertEqual(provider.invocations.count, 2)
+    XCTAssertEqual(provider.invocations.last?.completionShapeRepairOnly, true)
+    XCTAssertTrue(provider.invocations.last?.nativeTools.isEmpty == true)
+    XCTAssertTrue(provider.invocations.last?.prompt.contains("outcomes[0].subject must be a JSON object") == true)
+
+    provider.repairedRaw = corrected.replacingOccurrences(of: #""arguments":{}"#, with: #""arguments":{"x":1}"#)
+    let rejected = await planner.planOrRespond(request: request, settings: AgentModelPlannerSettings(enabled: true),
+      fallbackPlan: fallbackPlan())
+    XCTAssertTrue(rejected.actionPlan?.actions.isEmpty == true)
+  }
+
   func testGuardedModelAgentPlannerUsesParsedModelPlanWhenEnabled() async throws {
     let provider = RecordingModelPlanningProvider(raw: """
     {"actions":[{"ref":"open","kind":"OPEN_URL","description":"Open docs","parameters":{"url":"https://galaxyssi.com/docs"}}]}
@@ -133,6 +201,42 @@ final class GuardedModelAgentPlannerTests: XCTestCase {
     XCTAssertEqual(throwingProvider.invocations.count, 1)
     XCTAssertEqual(invalidPlan.plannerProfile, "rule-based-invalid-model-plan")
     XCTAssertEqual(invalidProvider.invocations.count, 1)
+    XCTAssertEqual(invalidProvider.repairs.count, 1)
+  }
+
+  func testRepairUsesStructuredFeedbackAndDoesNotResendRejectedModelText() async throws {
+    let provider = RecordingModelPlanningProvider(
+      raw: #"{"actions":[{"kind":"CALL_NATIVE_TOOL","parameters":{"tool_id":"invented-private-marker"}}]}"#,
+      repair: #"{"actions":[{"kind":"READ_SCREEN","description":"Read the visible context"}]}"#
+    )
+    let planner = GuardedModelAgentPlanner(provider: provider, modelProfile: "selected")
+    let result = await planner.planOrRespond(request: promptRequest(),
+      settings: AgentModelPlannerSettings(enabled: true), fallbackPlan: fallbackPlan())
+    XCTAssertEqual(result.actionPlan?.actions.first?.kind, .readScreen)
+    XCTAssertEqual(result.actionPlan?.plannerProfile, "guarded-model:selected")
+    XCTAssertEqual(provider.invocations.count, 1)
+    let repair = try XCTUnwrap(provider.repairs.first)
+    XCTAssertEqual(provider.repairs.count, 1)
+    XCTAssertEqual(repair.request, provider.invocations.first?.request)
+    XCTAssertTrue(repair.prompt.contains("actions[0].parameters.tool_id"))
+    XCTAssertTrue(repair.prompt.contains("native_tool_unavailable"))
+    XCTAssertFalse(repair.prompt.contains("invented-private-marker"))
+  }
+
+  func testRouteRejectionUsesSameRepairBudgetAndCannotBecomeDirectReply() async throws {
+    let provider = RecordingModelPlanningProvider(
+      raw: #"{"actions":[{"kind":"READ_SCREEN","description":"Read"}]}"#,
+      repair: #"{"disposition":"respond","final_response":"Claim success without execution"}"#
+    )
+    let planner = GuardedModelAgentPlanner(provider: provider)
+    let result = await planner.planOrRespond(request: promptRequest(allowsDirectResponse: true),
+      settings: AgentModelPlannerSettings(enabled: true), fallbackPlan: fallbackPlan()) { _ in
+        .init("actions[0].kind", "execution_tool_policy", "Only advertised tools are allowed.")
+      }
+    XCTAssertEqual(result.actionPlan?.plannerProfile, "rule-based-invalid-model-plan")
+    XCTAssertEqual(provider.invocations.count, 1)
+    XCTAssertEqual(provider.repairs.count, 1)
+    XCTAssertTrue(provider.repairs.first?.prompt.contains("execution_tool_policy") == true)
   }
 
   func testDirectResponseCodecAcceptsPlainAndFencedJSONResponses() {
@@ -186,6 +290,52 @@ final class GuardedModelAgentPlannerTests: XCTestCase {
     }
     XCTAssertEqual(plan.actions.singleValue().kind, .readScreen)
     XCTAssertEqual(provider.invocations.count, 1)
+  }
+
+  func testResearchPlannerKeepsFullReadOnlySchemasAndDoesNotExposeUnrelatedConsent() async throws {
+    let native = AgentIOSWebIntelligenceNativeToolCatalog.definitions().map(\.descriptor).map {
+      descriptor -> AgentNativeToolDescriptor in
+      var copy = descriptor
+      copy.availability = .available
+      return copy
+    }
+    let unrelated = try nativeToolDescriptor(id: "galaxyssi.safe.consent",
+      consents: [AgentNativeConsentRequirement(id: "needs.user", required: true)])
+    let recorder = RecordingModelPlanningProvider(raw: #"{"actions":[{"kind":"READ_SCREEN","parameters":{}}]}"#)
+    let planner = GuardedModelAgentPlanner(provider: recorder, modelProfile: "planner-model")
+    let goal = "Search the web for reference images of the moon"
+    _ = await planner.plan(request: promptRequest(goal: goal, requirements: AgentTaskRequirements(mode: .fast),
+      nativeTools: native + [unrelated]), settings: AgentModelPlannerSettings(enabled: true),
+      fallbackPlan: fallbackPlan(actions: [fallbackAction(id: "draft", kind: .draftPlan)]))
+    let invocation = try XCTUnwrap(recorder.invocations.first)
+    let required = [
+      AgentIOSWebIntelligenceNativeToolCatalog.search, AgentIOSWebIntelligenceNativeToolCatalog.fetch,
+      AgentIOSWebIntelligenceNativeToolCatalog.extract
+    ]
+    for id in required {
+      let tool = try XCTUnwrap(invocation.nativeTools.first { $0.id == id })
+      XCTAssertFalse(tool.requiredConsents.isEmpty)
+      XCTAssertTrue(invocation.prompt.contains(AgentMcpJSONCodec.stringify(tool.inputSchema)))
+    }
+    XCTAssertTrue(invocation.prompt.contains("Research contract:"))
+    XCTAssertTrue(invocation.prompt.contains("[\"image\"]"))
+    XCTAssertFalse(invocation.nativeTools.contains { $0.id == unrelated.id })
+  }
+
+  func testChineseCapabilityMetadataMatchingAndSearchQualityAreIndependent() throws {
+    let phrase = "\u{6211}\u{60f3}\u{641c}\u{7d22}\u{4e00}\u{4e9b}\u{56fe}\u{7247}"
+    let command = "\u{641c}\u{7d22}\u{5de5}\u{5177}" + phrase
+    let query = try XCTUnwrap(AgentCallableInventorySearchCommand.query(command))
+    let tools = AgentIOSWebIntelligenceNativeToolCatalog.definitions().map(\.descriptor)
+    let search = try XCTUnwrap(tools.first { $0.id == AgentIOSWebIntelligenceNativeToolCatalog.search })
+    let fetch = try XCTUnwrap(tools.first { $0.id == AgentIOSWebIntelligenceNativeToolCatalog.fetch })
+    XCTAssertTrue(AgentResearchCapabilityDiscovery.matches(query, tool: search))
+    XCTAssertFalse(AgentResearchCapabilityDiscovery.matches(query, tool: fetch))
+    XCTAssertFalse(AgentResearchCapabilityDiscovery.matches("MCP " + query, tool: search))
+    let signals = AgentSearchResponseQuality.signals("lunar eclipse")
+    XCTAssertTrue(AgentSearchResponseQuality.isDisjoint(querySignals: signals, candidates: ["Weather today"]))
+    XCTAssertFalse(AgentSearchResponseQuality.isDisjoint(querySignals: signals, candidates: ["Total lunar eclipse"]))
+    XCTAssertFalse(AgentSearchResponseQuality.isDisjoint(querySignals: signals, candidates: []))
   }
 
   func testGuardedModelAgentPlannerPassesOnlySafeAvailableNativeTools() async throws {
@@ -379,12 +529,15 @@ final class GuardedModelAgentPlannerTests: XCTestCase {
 
 private final class RecordingModelPlanningProvider: AgentModelPlanningProviding {
   var raw: String
+  var repairedRaw: String?
   var error: AgentModelPlanningProviderError?
   var invocations: [AgentModelPlanningInvocation] = []
+  var repairs: [AgentModelPlanningInvocation] = []
 
-  init(raw: String = "", error: AgentModelPlanningProviderError? = nil) {
+  init(raw: String = "", error: AgentModelPlanningProviderError? = nil, repair: String? = nil) {
     self.raw = raw
     self.error = error
+    self.repairedRaw = repair
   }
 
   func rawPlan(invocation: AgentModelPlanningInvocation) async throws -> String {
@@ -392,7 +545,13 @@ private final class RecordingModelPlanningProvider: AgentModelPlanningProviding 
     if let error {
       throw error
     }
-    return raw
+    return invocation.completionShapeRepairOnly == true ? repairedRaw ?? raw : raw
+  }
+
+  func repairPlan(invocation: AgentModelPlanningInvocation) async throws -> String {
+    repairs.append(invocation)
+    if let error { throw error }
+    return repairedRaw ?? raw
   }
 }
 

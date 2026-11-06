@@ -4,7 +4,47 @@ import ImageIO
 import UIKit
 import UniformTypeIdentifiers
 
-struct GalaxySSIDraftAttachment: Identifiable, Equatable {
+enum ComposerImageQuality: String, Codable, CaseIterable, Sendable {
+  case compressed
+  case original
+
+  static let maximumOriginalBytes = 20 * 1024 * 1024
+  static let contactCompressedBytes = 512 * 1024
+}
+
+actor ComposerFileImportWorker {
+  static let shared = ComposerFileImportWorker()
+
+  func load(_ url: URL) throws -> GalaxySSIDraftAttachment {
+    try Task.checkCancellation()
+    return try GalaxySSIAttachmentPayloadBuilder.makeAttachment(from: url)
+  }
+}
+
+@MainActor
+enum ComposerFileSelection {
+  static func deliver(
+    _ urls: [URL], isCurrent: () -> Bool,
+    onImage: (GalaxySSIDraftAttachment) -> Void,
+    onDocument: (GalaxySSIDraftAttachment) async -> Void,
+    onFailure: (Error) -> Void
+  ) async {
+    for url in urls.prefix(GalaxySSIAttachmentPayloadBuilder.maximumAttachmentCount) {
+      guard !Task.isCancelled, isCurrent() else { return }
+      do {
+        var attachment = try await ComposerFileImportWorker.shared.load(url)
+        defer { attachment.wipeSensitive() }
+        guard !Task.isCancelled, isCurrent() else { return }
+        if attachment.isImage { onImage(attachment) }
+        else { await onDocument(attachment) }
+      } catch {
+        if !Task.isCancelled, isCurrent() { onFailure(error) }
+      }
+    }
+  }
+}
+
+struct GalaxySSIDraftAttachment: Identifiable, Equatable, Sendable {
   var id: String
   var displayName: String
   var mimeType: String
@@ -13,6 +53,7 @@ struct GalaxySSIDraftAttachment: Identifiable, Equatable {
   var historicalSourceTurnId: String?
   var composerOriginal: ComposerAttachmentOriginal?
   var composerCrop: ComposerAttachmentCrop?
+  var composerImageQuality: ComposerImageQuality?
 
   init(
     id: String = UUID().uuidString,
@@ -20,7 +61,8 @@ struct GalaxySSIDraftAttachment: Identifiable, Equatable {
     mimeType: String,
     data: Data,
     sourceDescription: String = "",
-    historicalSourceTurnId: String? = nil
+    historicalSourceTurnId: String? = nil,
+    composerImageQuality: ComposerImageQuality? = nil
   ) {
     self.id = id
     self.displayName = displayName.ifBlank("attachment")
@@ -28,6 +70,7 @@ struct GalaxySSIDraftAttachment: Identifiable, Equatable {
     self.data = data
     self.sourceDescription = sourceDescription
     self.historicalSourceTurnId = historicalSourceTurnId
+    self.composerImageQuality = composerImageQuality
   }
 
   var sizeBytes: Int {
@@ -55,6 +98,7 @@ struct GalaxySSIDraftAttachment: Identifiable, Equatable {
     composerOriginal?.data.wipeSensitive()
     composerOriginal = nil
     composerCrop = nil
+    composerImageQuality = nil
     sourceDescription.removeAll(keepingCapacity: false)
   }
 }
@@ -80,6 +124,7 @@ struct AgentStagedAttachment: Codable, Equatable {
   var mimeType: String
   var sizeBytes: Int64
   var sha256: String
+  var imageQuality: ComposerImageQuality?
 
   enum CodingKeys: String, CodingKey {
     case name
@@ -87,6 +132,7 @@ struct AgentStagedAttachment: Codable, Equatable {
     case mimeType = "mime_type"
     case sizeBytes = "size_bytes"
     case sha256
+    case imageQuality = "image_quality"
   }
 }
 
@@ -191,6 +237,7 @@ enum AgentAttachmentWorkspaceStager {
     var mimeType: String
     var sizeBytes: Int64
     var sha256: String
+    var imageQuality: ComposerImageQuality?
 
     enum CodingKeys: String, CodingKey {
       case attachmentId = "attachment_id"
@@ -199,6 +246,7 @@ enum AgentAttachmentWorkspaceStager {
       case mimeType = "mime_type"
       case sizeBytes = "size_bytes"
       case sha256
+      case imageQuality = "image_quality"
     }
   }
 
@@ -259,7 +307,8 @@ enum AgentAttachmentWorkspaceStager {
             relativePath: "inputs/\(turnId)/\(safeName)",
             mimeType: attachment.mimeType,
             sizeBytes: size,
-            sha256: GalaxySSIAttachmentPayloadBuilder.sha256(attachment.data)
+            sha256: GalaxySSIAttachmentPayloadBuilder.sha256(attachment.data),
+            imageQuality: attachment.composerImageQuality
           )
         )
       }
@@ -338,7 +387,8 @@ enum AgentAttachmentWorkspaceStager {
             displayName: record.name,
             mimeType: record.mimeType.ifBlank(block.mimeType),
             data: data,
-            sourceDescription: source.absoluteString
+            sourceDescription: source.absoluteString,
+            composerImageQuality: record.imageQuality
           )
           return AgentRestoredAttachment(
             attachment: attachment,
@@ -347,7 +397,8 @@ enum AgentAttachmentWorkspaceStager {
               relativePath: record.relativePath,
               mimeType: record.mimeType,
               sizeBytes: record.sizeBytes,
-              sha256: record.sha256
+              sha256: record.sha256,
+              imageQuality: record.imageQuality
             )
           )
         }
@@ -374,7 +425,8 @@ enum AgentAttachmentWorkspaceStager {
         relativePath: staged.relativePath,
         mimeType: staged.mimeType,
         sizeBytes: staged.sizeBytes,
-        sha256: staged.sha256
+        sha256: staged.sha256,
+        imageQuality: staged.imageQuality
       )
     }
     let target = directory.appendingPathComponent(manifestFile, isDirectory: false)
@@ -606,14 +658,20 @@ enum GalaxySSIAttachmentPayloadBuilder {
         url.stopAccessingSecurityScopedResource()
       }
     }
-    let data = AgentAnimatedImageTiming.normalizeZeroFrameDelays(
-      try Data(contentsOf: url, options: [.mappedIfSafe])
-    )
     let values = try? url.resourceValues(forKeys: [.nameKey, .contentTypeKey, .fileSizeKey])
+    if let size = values?.fileSize, size > maximumAttachmentBytes { throw AgentAttachmentWorkspaceStagingError.limitExceeded }
+    let file = try FileHandle(forReadingFrom: url)
+    defer { try? file.close() }
+    let data = try file.read(upToCount: maximumAttachmentBytes + 1) ?? Data()
+    guard !data.isEmpty else { throw AgentAttachmentWorkspaceStagingError.unavailable }
+    guard data.count <= maximumAttachmentBytes else { throw AgentAttachmentWorkspaceStagingError.limitExceeded }
     let name = values?.name ?? url.lastPathComponent.ifBlank("attachment")
-    let type = values?.contentType?.preferredMIMEType ??
+    let type = detectedImageMimeType(data) ?? values?.contentType?.preferredMIMEType ??
       UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ??
       "application/octet-stream"
+    if type.hasPrefix("image/") {
+      return photoAttachment(data: data, name: name, type: type, source: url.absoluteString)
+    }
     return GalaxySSIDraftAttachment(
       displayName: sanitizeName(name),
       mimeType: type,
@@ -627,14 +685,33 @@ enum GalaxySSIAttachmentPayloadBuilder {
     suggestedName: String = "photo.jpg",
     sourceDescription: String = "photo-library"
   ) -> GalaxySSIDraftAttachment {
-    let normalizedData = AgentAnimatedImageTiming.normalizeZeroFrameDelays(data)
-    let type = imageMimeType(for: normalizedData) ?? "image/jpeg"
-    return GalaxySSIDraftAttachment(
-      displayName: sanitizeName(suggestedName),
+    let type = detectedImageMimeType(data) ?? imageMimeType(for: data) ?? "image/jpeg"
+    return photoAttachment(data: data, name: suggestedName, type: type, source: sourceDescription)
+  }
+
+  private static func photoAttachment(data: Data, name: String, type: String, source: String) -> GalaxySSIDraftAttachment {
+    let normalized = AgentAnimatedImageTiming.normalizeZeroFrameDelays(data)
+    var attachment = GalaxySSIDraftAttachment(
+      displayName: sanitizeName(name),
       mimeType: type,
-      data: normalizedData,
-      sourceDescription: sourceDescription
+      data: normalized,
+      sourceDescription: source
     )
+    if normalized != data {
+      attachment.composerOriginal = .init(displayName: attachment.displayName, mimeType: type, data: data)
+    }
+    return attachment
+  }
+
+  private static func detectedImageMimeType(_ data: Data) -> String? {
+    guard let image = CGImageSourceCreateWithData(data as CFData, nil),
+          let identifier = CGImageSourceGetType(image),
+          let type = UTType(identifier as String), type.conforms(to: .image),
+          let properties = CGImageSourceCopyPropertiesAtIndex(image, 0, nil) as? [CFString: Any],
+          let width = properties[kCGImagePropertyPixelWidth] as? Int,
+          let height = properties[kCGImagePropertyPixelHeight] as? Int,
+          width > 0, height > 0 else { return nil }
+    return type.preferredMIMEType
   }
 
   static func humanSize(_ bytes: Int) -> String {

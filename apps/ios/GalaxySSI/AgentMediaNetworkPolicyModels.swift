@@ -277,7 +277,10 @@ enum AgentMediaAttachmentTransportEncoder {
         lossless: encoded.lossless
       )
     }
-    if attachment.sizeBytes <= budget {
+    if attachment.isImage, attachment.composerImageQuality == .compressed { return nil }
+    if attachment.sizeBytes <= budget,
+       !attachment.isImage || attachment.composerImageQuality != .original ||
+         attachment.sizeBytes <= ComposerImageQuality.maximumOriginalBytes {
       return AgentMediaInlinePayload(
         data: attachment.data,
         mimeType: attachment.mimeType,
@@ -294,6 +297,9 @@ enum AgentMediaAttachmentTransportEncoder {
     remainingBytes: Int
   ) -> Int {
     let remaining = max(0, remainingBytes)
+    if attachment.isImage, attachment.composerImageQuality == .original {
+      return min(remaining, ComposerImageQuality.maximumOriginalBytes)
+    }
     guard let profile, attachment.isImage else {
       return remaining
     }

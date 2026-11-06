@@ -81,7 +81,8 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       results = documents
     case "get":
       let url = string(input, "url", limit: 4_096)
-      guard let document = cacheStore.document(url: url, allowStale: true) else {
+      guard let document = cacheStore.document(url: url, allowStale: true),
+            AgentIOSWebTextDecoder.reusable(content: document.content, metadata: document.metadata) else {
         return failure("cache_miss", "The requested URL is not in the iOS web cache")
       }
       documents = [document.value()]
@@ -340,7 +341,10 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       item.evidence["source_receipt"]?.objectValue
         ?? sourceReceipt(forSearchResult: item)
     }
-    var output = baseOutput(operation: operation, invocation: invocation, status: "completed")
+    let disjoint = AgentSearchResponseQuality.isDisjoint(querySignals: AgentSearchResponseQuality.signals(query),
+      candidates: resultObjects.map { "\($0.result.string("title")) \($0.result.string("url")) \($0.evidence.string("snippet"))" })
+    var output = baseOutput(operation: operation, invocation: invocation, status: disjoint ? "partial" : "completed")
+    if disjoint { output["search_quality"] = .string("no_lexical_overlap") }
     output["request_id"] = .string(requestId(invocation, operation: operation))
     output["query"] = .string(query)
     output["result_count"] = .int(Int64(resultObjects.count))
@@ -369,7 +373,8 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     _ documents: [AgentIOSWebIntelligenceCacheDocument],
     limit: Int
   ) -> [(result: AgentMcpJSONObject, evidence: AgentMcpJSONObject)] {
-    documents.prefix(limit).enumerated().map { index, document in
+    documents.lazy.filter { AgentIOSWebTextDecoder.reusable(content: $0.content, metadata: $0.metadata) }
+      .prefix(limit).enumerated().map { index, document in
       let rank = index + 1
       let receipt = cachedSourceReceipt(document, rank: rank)
       let result: AgentMcpJSONObject = [
@@ -485,6 +490,9 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         webResult = self.webMediaProvider.invoke(operation: .webOpen, input: fetchInput, invocation: invocation)
       }
       guard webResult.isSuccess else { return webResult }
+      if webResult.output["text_decoding_lossless"] == .bool(false) {
+        return self.failure("web_text_decoding_failed", "The public page did not decode using its declared or detected charset")
+      }
       var result = self.readableFetchResult(
         operation: operation,
         requestedURL: url,
@@ -525,7 +533,8 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
 
   private func fullCachedDocument(url: String) -> AgentIOSWebIntelligenceCacheDocument? {
     guard let document = cacheStore.document(url: url, allowStale: false),
-          document.contentType != "text/x-galaxyssi-search-result" else {
+          document.contentType != "text/x-galaxyssi-search-result",
+          AgentIOSWebTextDecoder.reusable(content: document.content, metadata: document.metadata) else {
       return nil
     }
     return document
@@ -1125,6 +1134,9 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         : (articleSource.isEmpty ? "bounded_public_https" : "mobile_article_https"),
       "challenge_detected": challengeDetected(content).description
     ]
+    for key in ["charset", "text_decoder_version", "text_decoding_lossless"] {
+      if let value = output[key]?.stringValue { metadata[key] = value }
+    }
     if let reason = output["dynamic_fallback_reason"]?.stringValue {
       metadata["dynamic_fallback_reason"] = reason
     }

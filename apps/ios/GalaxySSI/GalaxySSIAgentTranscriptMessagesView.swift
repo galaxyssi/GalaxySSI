@@ -40,7 +40,7 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
   var body: some View {
     let latest = latestSpeechTarget
     let deliveredTimes = AgentTranscriptExecutionProgress.finalDeliveryTimes(messages)
-    ForEach(messages) { message in
+    ForEach(visibleMessages) { message in
       let turn = AgentTranscriptExecutionProgress.TurnKey(message)
       messageRow(message, latestSpeechEntryId: latest?.entryId, deliveredAt: deliveredTimes[turn])
     }
@@ -232,6 +232,8 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
       },
       onFormSubmit: onFormSubmit
     )
+    .environment(\.agentRichHTMLPlaybackAllowed,
+      [.delivered, .read, .local].contains(message.deliveryStatus))
     .environment(\.agentReplyParagraphSpeechAction, paragraphSpeechAction(message))
     .foregroundColor(.galaxySSITextPrimary)
   }
@@ -250,7 +252,11 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
   }
 
   private var latestSpeechTarget: AgentReplySpeechTarget? {
-    AgentReplySpeechPresentationPolicy.latestTarget(messages)
+    AgentReplySpeechPresentationPolicy.latestTarget(visibleMessages)
+  }
+
+  private var visibleMessages: [ChatMessage] {
+    messages.filter { !CloudSupervisedResearch.isTranscriptControlReply($0) }
   }
 
   private func observeLatestReply(_ target: AgentReplySpeechTarget?) {

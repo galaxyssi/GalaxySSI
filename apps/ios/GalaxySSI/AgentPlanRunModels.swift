@@ -115,12 +115,14 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
   var plannerSnapshot: AgentPlannerModelSnapshot?
   var historyManifest: AgentSessionHistoryManifest?
   var lastNativeActionResult: AgentActionResult?
+  var effectRecovery: [AgentEffectRecoveryRecord]? = nil
   var nativeActionResults: [String]
   var result: String
   var verification: String
   var outputFiles: [String]
   var executionLog: [String]
   var teamRecoveryRunId: String? = nil
+  var capturePermission: AgentCapturePermissionContinuation? = nil
   var createdAtMillis: Int64
   var updatedAtMillis: Int64
 
@@ -217,12 +219,14 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     case plannerSnapshot = "planner_snapshot"
     case historyManifest = "history_pages"
     case lastNativeActionResult = "last_native_action_result"
+    case effectRecovery = "effect_recovery"
     case nativeActionResults = "native_action_results"
     case result
     case verification
     case outputFiles = "output_files"
     case executionLog = "execution_log"
     case teamRecoveryRunId = "team_recovery_run_id"
+    case capturePermission = "capture_permission"
     case createdAtMillis = "created_at_millis"
     case updatedAtMillis = "updated_at_millis"
   }
@@ -262,7 +266,9 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
       createdAtMillis: try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? 0,
       updatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? 0
     )
+    effectRecovery = try container.decodeIfPresent([AgentEffectRecoveryRecord].self, forKey: .effectRecovery)
     teamRecoveryRunId = try container.decodeIfPresent(String.self, forKey: .teamRecoveryRunId)
+    capturePermission = try container.decodeIfPresent(AgentCapturePermissionContinuation.self, forKey: .capturePermission)
   }
 }
 
@@ -566,6 +572,20 @@ struct AgentAuditEntry: Codable, Equatable {
   }
 }
 
+struct AgentObservedCompletion: Codable, Equatable {
+  var id: String
+  var toolId: String
+  var subject: [String: String]
+  var checks: AgentMcpJSONObject
+  var afterToolId: String
+
+  enum CodingKeys: String, CodingKey {
+    case id, subject, checks
+    case toolId = "tool_id"
+    case afterToolId = "after_tool_id"
+  }
+}
+
 enum AgentPublicationRequirement: String, Codable, CaseIterable {
   case none
   case commit
@@ -573,35 +593,64 @@ enum AgentPublicationRequirement: String, Codable, CaseIterable {
   case pullRequest = "pull_request"
 }
 
+struct AgentVideoArtifactRequirement: Codable, Hashable {
+  var workspaceId: String
+  var path: String
+
+  init?(workspaceId: String, path: String) {
+    guard workspaceId.range(of: #"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"#, options: .regularExpression) != nil,
+          path.utf8.count <= 1_024,
+          case .success(let segments) = AgentWorkspaceFilePathPolicy.normalizeRelativePath(path, allowRoot: false),
+          segments.last?.lowercased().hasSuffix(".mp4") == true else { return nil }
+    self.workspaceId = workspaceId
+    self.path = segments.joined(separator: "/")
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case workspaceId = "workspace_id"
+    case path
+  }
+}
+
 /// Completion obligations interpreted by the planning model, never inferred from goal keywords.
 struct AgentCompletionRequirements: Codable, Equatable {
+  var outcomes: [AgentObservedCompletion]? = nil
   var publication: AgentPublicationRequirement
   var phoneLinux: Bool
   var reason: String
+  var artifacts: [AgentVideoArtifactRequirement]?
 
   init(
     publication: AgentPublicationRequirement,
     phoneLinux: Bool,
-    reason: String = ""
+    reason: String = "",
+    artifacts: [AgentVideoArtifactRequirement]? = nil
   ) {
     self.publication = publication
     self.phoneLinux = phoneLinux
     self.reason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.artifacts = artifacts
   }
 
   func changesOutcome(from previous: AgentCompletionRequirements) -> Bool {
-    publication != previous.publication || phoneLinux != previous.phoneLinux
+    publication != previous.publication || phoneLinux != previous.phoneLinux ||
+      Set(artifacts ?? []) != Set(previous.artifacts ?? [])
   }
 
   func canReplace(_ previous: AgentCompletionRequirements?) -> Bool {
     guard let previous else { return true }
-    return !changesOutcome(from: previous) || !reason.isEmpty
+    let currentOutcomes = outcomes ?? []
+    let priorOutcomes = previous.outcomes ?? []
+    guard Set(currentOutcomes.map(\.id)).isSuperset(of: priorOutcomes.map(\.id)) else { return false }
+    return (!changesOutcome(from: previous) && currentOutcomes == priorOutcomes) || !reason.isEmpty
   }
 
   enum CodingKeys: String, CodingKey {
+    case outcomes
     case publication
     case phoneLinux = "phone_linux"
     case reason
+    case artifacts
   }
 }
 

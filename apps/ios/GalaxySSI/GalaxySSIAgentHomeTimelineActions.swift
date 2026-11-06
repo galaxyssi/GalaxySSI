@@ -27,7 +27,9 @@ extension AgentHomeView {
   }
 
   func agentTimelineActions(for task: AgentTaskRecord) -> [AgentExecutionLoopTimelineAction] {
-    AgentExecutionLoopTimelinePolicy.actionsForPhase(task.phase).filter { action in
+    let actions: [AgentExecutionLoopTimelineAction] = task.capturePermission != nil && task.phase == .waitingResponse
+      ? [.pause, .cancel] : AgentExecutionLoopTimelinePolicy.actionsForPhase(task.phase)
+    return actions.filter { action in
       switch action {
       case .pause:
         return AgentTaskCenterPolicy.pauseable(task)
@@ -35,7 +37,9 @@ extension AgentHomeView {
         return AgentTaskCenterPolicy.resumable(task)
       case .cancel:
         return AgentTaskCenterPolicy.cancellable(task)
-      case .retry, .replan:
+      case .retry:
+        return (task.effectRecovery ?? []).isEmpty && AgentTaskCenterPolicy.isReusableGoal(task.goal)
+      case .replan:
         return AgentTaskCenterPolicy.isReusableGoal(task.goal)
       }
     }

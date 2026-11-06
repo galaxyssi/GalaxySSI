@@ -68,6 +68,69 @@ final class AgentReplyUnreadTests: XCTestCase {
     XCTAssertEqual(ledger.count(conversationId: "two"), 1)
   }
 
+  func testLatestPageClearsOffscreenRepliesWithoutClearingNewerOrForeignReplies() throws {
+    let ledger = makeLedger()
+    var boundaryRow = reply(turn: "process")
+    boundaryRow.isSystem = true
+    boundaryRow.createdAt = Date(timeIntervalSince1970: 2_000)
+    boundaryRow.id = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000002"))
+    for index in 0..<110 {
+      var old = reply(turn: "old-\(index)")
+      old.createdAt = Date(timeIntervalSince1970: Double(index))
+      ledger.record(old, previous: nil)
+    }
+    var beforeTie = reply(turn: "same-time-before")
+    beforeTie.createdAt = boundaryRow.createdAt
+    beforeTie.id = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
+    var afterTie = reply(turn: "same-time-after")
+    afterTie.createdAt = boundaryRow.createdAt
+    afterTie.id = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000003"))
+    let foreign = reply(conversation: "two")
+    [beforeTie, afterTie, foreign].forEach { ledger.record($0, previous: nil) }
+    let rendered = [boundaryRow, foreign]
+    XCTAssertNil(AgentReplyUnreadPolicy.boundary(conversationId: "one", rendered: rendered, isAtLatest: false))
+    let boundary = try XCTUnwrap(AgentReplyUnreadPolicy.boundary(
+      conversationId: "one", rendered: rendered, isAtLatest: true
+    ))
+    makeLedger().read(conversationId: boundary.conversationId, rendered: rendered, through: boundary.cursor)
+    XCTAssertEqual(ledger.count(conversationId: "one"), 1)
+    XCTAssertEqual(ledger.count(conversationId: "two"), 1)
+    ledger.read(conversationId: "one", rendered: [afterTie])
+    XCTAssertEqual(ledger.count(conversationId: "one"), 0)
+  }
+
+  @MainActor
+  func testLegacyUnreadIsReadThroughIndexedPagesWithoutClearingNewerLegacyMarkers() async throws {
+    let store = GalaxySSIStore(defaults: defaults, secrets: secrets)
+    let session = store.createAgentSession(title: "Legacy unread")
+    let old = store.appendIncoming(
+      "Offscreen", from: "hermes", status: .delivered, conversationId: session.id, turnId: "old"
+    )
+    for index in 1...49 {
+      var filler = reply(conversation: session.id, turn: "filler-\(index)")
+      filler.isSystem = true
+      filler.createdAt = old.createdAt.addingTimeInterval(Double(index))
+      XCTAssertTrue(store.chatHistoryDatabase.upsert(filler))
+    }
+    var newest = reply(conversation: session.id, turn: "newer")
+    newest.createdAt = old.createdAt.addingTimeInterval(60)
+    XCTAssertTrue(store.chatHistoryDatabase.upsert(newest))
+    let legacy = ["seen": [session.id: ["old", "newer"]], "pending": [session.id: ["old", "newer"]],
+                  "contactReadAt": [String: [String]]()]
+    XCTAssertTrue(GalaxySSIEncryptedUserDefaultsStore.write(
+      try JSONEncoder().encode(legacy), defaults: defaults, key: AgentReplyUnreadStore.key, secrets: secrets
+    ))
+    var boundaryRow = newest
+    boundaryRow.createdAt = old.createdAt.addingTimeInterval(55)
+    let boundary = AgentReplyUnreadPolicy.Boundary(
+      conversationId: session.id, cursor: GalaxySSIChatHistoryCursor(boundaryRow)
+    )
+    await store.markLegacyAgentRepliesRead(through: boundary)
+    XCTAssertEqual(store.agentReplyUnreadCount(conversationId: session.id), 1)
+    store.markAgentRepliesRead(conversationId: session.id, rendered: [newest])
+    XCTAssertEqual(store.agentReplyUnreadCount(conversationId: session.id), 0)
+  }
+
   func testDuplicateReplyWithDifferentLocalIDDoesNotReopenUnread() {
     let ledger = makeLedger()
     let first = reply()

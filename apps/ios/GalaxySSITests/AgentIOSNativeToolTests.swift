@@ -2,6 +2,180 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testEffectRecoveryRequiresFreshHostReceiptForOriginalScopeAndSubject() throws {
+    let tool = AgentIOSSystemNativeToolCatalog.audioVolumeSet
+    let descriptor = try XCTUnwrap(AgentIOSSystemNativeToolCatalog.descriptors().first { $0.id == tool })
+    let input: AgentMcpJSONObject = ["stream": .string("music"), "percent": .int(40)]
+    let action = AgentAction(id: "origin", kind: .callNativeTool, target: tool, risk: .medium,
+      status: .failed, description: "Set media volume", parameters: [
+        "tool_id": tool, "input_json": AgentMcpJSONCodec.stringify(input),
+        "_galaxyssi_task_id": "task", "_galaxyssi_session_id": "session",
+        "_galaxyssi_conversation_id": "conversation", "_galaxyssi_turn_id": "turn"
+      ])
+    let native = AgentNativeToolResult(status: .failed, output: [:], message: "",
+      metadata: ["effect_recovery_query": .string("untrusted")],
+      error: AgentNativeToolError(code: "effect_outcome_unknown", message: "Unknown",
+        details: ["original_invocation_id": .string("untrusted-other-dispatch")]),
+      receipt: AgentNativeToolReceipt(invocationId: "current-attempt", startedAtEpochMillis: 10,
+        finishedAtEpochMillis: 20, durationMillis: 10, status: .failed,
+        inputSha256: AgentMcpJSONCodec.sha256(input), outputSha256: AgentMcpJSONCodec.sha256([:]),
+        originalInvocationId: "original-dispatch"),
+      provenance: AgentNativeToolProvenance(toolId: tool, toolVersion: descriptor.version,
+        location: .application, executorId: "fixture", contractVersion: "1"))
+    var record = try XCTUnwrap(AgentEffectRecoveryRecord.fromNativeResult(native, action: action, descriptor: descriptor))
+    let query = try XCTUnwrap(record.query)
+    XCTAssertEqual(record.invocationId, "original-dispatch")
+    XCTAssertEqual(query.toolId, AgentIOSSystemNativeToolCatalog.audioStatus)
+    XCTAssertEqual(query.subject, "media")
+    XCTAssertTrue(record.isSameEffect(action))
+    var sameEffect = action
+    sameEffect.id = "new-action-id"
+    XCTAssertTrue(record.isSameEffect(sameEffect))
+    let output: AgentMcpJSONObject = ["observed_at_epoch_ms": .int(21), "streams": .object(["media": .object([
+      "stream": .string("media"), "current": .int(13), "scope": .string("app_visible_output_volume")
+    ])])]
+    let receipt = AgentNativeToolReceipt(invocationId: "fresh-read", startedAtEpochMillis: 21,
+      finishedAtEpochMillis: 22, durationMillis: 1, status: .succeeded,
+      inputSha256: AgentMcpJSONCodec.sha256(query.input), outputSha256: AgentMcpJSONCodec.sha256(output))
+    func observation(scope: AgentNativeEffectScope? = nil, tool: String? = nil,
+                     version: String? = nil, observedReceipt: AgentNativeToolReceipt? = nil,
+                     observedOutput: AgentMcpJSONObject? = nil) -> AgentEffectRecoveryRecord.Observation {
+      .init(scope: scope ?? record.scope, toolId: tool ?? query.toolId, version: version ?? query.version,
+        receipt: observedReceipt ?? receipt, output: observedOutput ?? output)
+    }
+    XCTAssertTrue(record.verifies(observation()))
+    XCTAssertFalse(record.verifies(observation(tool: "unrelated.read")))
+    XCTAssertFalse(record.verifies(observation(version: "old-version")))
+    var foreign = record.scope
+    foreign.turnId = "other-turn"
+    XCTAssertFalse(record.verifies(observation(scope: foreign)))
+    foreign = record.scope
+    foreign.conversationId = "other-conversation"
+    XCTAssertFalse(record.verifies(observation(scope: foreign)))
+    var invalid = receipt
+    invalid.replayed = true
+    XCTAssertFalse(record.verifies(observation(observedReceipt: invalid)))
+    invalid = receipt
+    invalid.startedAtEpochMillis = 19
+    XCTAssertFalse(record.verifies(observation(observedReceipt: invalid)))
+    invalid = receipt
+    invalid.inputSha256 = "wrong-input"
+    XCTAssertFalse(record.verifies(observation(observedReceipt: invalid)))
+    let wrongSubject: AgentMcpJSONObject = ["observed_at_epoch_ms": .int(21), "streams": .object(["media": .object([
+      "stream": .string("alarm"), "current": .int(13), "scope": .string("app_visible_output_volume")
+    ])])]
+    invalid = receipt
+    invalid.outputSha256 = AgentMcpJSONCodec.sha256(wrongSubject)
+    XCTAssertFalse(record.verifies(observation(observedReceipt: invalid, observedOutput: wrongSubject)))
+    var staleOutput = output
+    staleOutput["observed_at_epoch_ms"] = .int(18)
+    invalid.outputSha256 = AgentMcpJSONCodec.sha256(staleOutput)
+    XCTAssertFalse(record.verifies(observation(observedReceipt: invalid, observedOutput: staleOutput)))
+    var unknownStream = action
+    unknownStream.parameters["input_json"] = #"{"stream":"alarm","percent":40}"#
+    XCTAssertNil(AgentEffectRecoveryRecord.fromNativeResult(native, action: unknownStream, descriptor: descriptor)?.query)
+    let verified = observation()
+    record.observation = verified
+    var task = AgentTaskRecord(taskId: "task", sessionId: "session", goal: "Set volume",
+      phase: .failed, routeKind: .localSystem, targetTitle: "Phone", risk: .medium, blocked: false)
+    task.effectRecovery = [record]
+    let restored = try JSONDecoder().decode(AgentTaskRecord.self, from: JSONEncoder().encode(task))
+    XCTAssertEqual(restored.effectRecovery, [record])
+    XCTAssertTrue(restored.effectRecovery?.first?.hasObservation == true)
+    XCTAssertFalse(AgentTaskCenterPolicy.actions(restored).contains(.retry))
+    XCTAssertTrue(AgentTaskCenterPolicy.actions(restored).contains(.inspectEffect))
+  }
+
+  func testBrowserOperationObservationUsesExactRequestAndTurnAndExpires() throws {
+    let browser = AgentIOSURLSessionBrowserSessionStore(ttlMillis: 100)
+    var context = AgentNativeToolInvocationContext(sessionId: "session", conversationId: "conversation", turnId: "turn",
+      attributes: ["recovery_task_id": "task"])
+    let scope = AgentIOSURLSessionBrowserSessionScope(context: context)
+    let session = browser.create(scope: scope, resourceId: "create", currentURL: "", nowMillis: 10)
+    _ = try browser.navigate(browserId: session.browserId, scope: scope, currentURL: "https://example.test/",
+      nowMillis: 12, requestId: "navigate")
+    _ = try browser.close(browserId: session.browserId, scope: scope, nowMillis: 13, requestId: "close")
+    XCTAssertEqual(browser.observeOperation(requestId: "create", scope: scope, nowMillis: 15)?.string("operation"), "create")
+    XCTAssertEqual(browser.observeOperation(requestId: "navigate", scope: scope, nowMillis: 15)?.string("operation"), "navigate")
+    XCTAssertEqual(browser.observeOperation(requestId: "close", scope: scope, nowMillis: 15)?.string("operation"), "close")
+    XCTAssertNil(browser.observeOperation(requestId: "different", scope: scope, nowMillis: 15))
+    context.turnId = "other-turn"
+    XCTAssertNil(browser.observeOperation(requestId: "navigate",
+      scope: AgentIOSURLSessionBrowserSessionScope(context: context), nowMillis: 15))
+    XCTAssertNil(browser.observeOperation(requestId: "close", scope: scope, nowMillis: 113))
+  }
+
+  @MainActor
+  func testVoiceAppContextBindsOneExactTurnAndExpiresWithoutRetargeting() throws {
+    var time: TimeInterval = 100
+    let contexts = VoiceAppContextStore(now: { time })
+    let article = PublicNewsSpeechBookmark.key(for: "article")
+    let first = try XCTUnwrap(contexts.capture(conversationID: "original", contactID: "peer",
+      articleID: article, surface: .news, playbackState: "playing"))
+    contexts.bind(first, conversationID: "wrong", turnID: "same-turn")
+    XCTAssertNil(contexts.context(conversationID: "wrong", turnID: "same-turn"))
+    contexts.bind(first, conversationID: "original", turnID: "same-turn")
+    contexts.bind(first, conversationID: "original", turnID: "reused")
+    XCTAssertNil(contexts.context(conversationID: "original", turnID: "reused"))
+    let second = try XCTUnwrap(contexts.capture(conversationID: "other", surface: .agent))
+    XCTAssertFalse(contexts.isForegroundOwner(first))
+    XCTAssertTrue(contexts.isForegroundOwner(second))
+    XCTAssertEqual(contexts.context(conversationID: "original", turnID: "same-turn")?.articleID, article)
+    XCTAssertNil(contexts.context(conversationID: "other", turnID: "same-turn"))
+    time = 701
+    XCTAssertNil(contexts.context(conversationID: "original", turnID: "same-turn"))
+    XCTAssertFalse(contexts.isForegroundOwner(second))
+  }
+
+  func testVoiceAppPlaybackRequiresConsentAndAnIdempotencyKey() throws {
+    let registry = try AgentNativeToolRegistry().registerExecutables(VoiceAppNativeTools.executables { _, _ in
+      .success(output: [:])
+    })
+    let id = VoiceAppNativeTools.Operation.playback.id
+    let input: AgentMcpJSONObject = ["operation": .string("pause")]
+    XCTAssertEqual(registry.authorize(id, input: input).code, "missing_consents")
+    let confirmed = AgentNativeToolInvocationContext(idempotencyKey: "request",
+      grantedConsents: [VoiceAppNativeTools.playbackConsent])
+    XCTAssertTrue(registry.authorize(id, input: input, context: confirmed).allowed)
+    XCTAssertFalse(registry.authorize(id, input: ["operation": .string("start_microphone")], context: confirmed).allowed)
+    let send = VoiceAppNativeTools.Operation.sendMessage.id
+    XCTAssertFalse(registry.authorize(send, input: ["contact_id": .string("peer"), "text": .string("Exact")],
+      context: confirmed).allowed)
+  }
+
+  @MainActor
+  func testVoiceNavigationAndObservedContactCannotEscapeTheForegroundOwner() throws {
+    let contexts = VoiceAppContextStore()
+    let owner = UUID()
+    var opened: [String] = []
+    contexts.installNavigation(owner: owner) { request in
+      opened.append(request.contactID)
+      return .success(output: [:])
+    }
+    let first = try XCTUnwrap(contexts.capture(conversationID: "first", surface: .contact))
+    contexts.bind(first, conversationID: "first", turnID: "turn")
+    XCTAssertFalse(contexts.hasObservedContact("peer", anchor: first))
+    contexts.recordObservedContacts(["peer"], anchor: first)
+    XCTAssertTrue(contexts.hasObservedContact("peer", anchor: first))
+    _ = contexts.navigate(.init(destination: .contact, conversationID: "first", contactID: "peer", message: ""), anchor: first)
+    XCTAssertEqual(opened, ["peer"])
+    let second = try XCTUnwrap(contexts.capture(conversationID: "second", surface: .agent))
+    XCTAssertFalse(contexts.hasObservedContact("peer", anchor: second))
+    _ = contexts.navigate(.init(destination: .contact, conversationID: "first", contactID: "peer", message: ""), anchor: first)
+    XCTAssertEqual(opened, ["peer"])
+    contexts.removeNavigation(owner: owner)
+    _ = contexts.navigate(.init(destination: .agent, conversationID: "second", contactID: "", message: ""), anchor: second)
+    XCTAssertEqual(opened, ["peer"])
+  }
+
+  func testPhoneAssistantDialTargetRejectsControlCodesAndNonTelephoneLinks() {
+    XCTAssertEqual(GalaxySSIPhoneDialTarget.url(for: "+1 (415) 555-0100")?.absoluteString, "tel:+14155550100")
+    for input in ["", "+", "*21*5550100#", "5550100,123", "5550100%23", "https://example.com",
+                  String(repeating: "1", count: 25)] {
+      XCTAssertNil(GalaxySSIPhoneDialTarget.url(for: input), input)
+    }
+  }
+
   func testScreenAnalysisAllowsOnlyExplicitLowRiskReadOnlyIdempotentTools() throws {
     let descriptors = AgentIOSWebIntelligenceNativeToolCatalog.definitions().map(\.descriptor)
     let read = try XCTUnwrap(descriptors.first { $0.id == AgentIOSWebIntelligenceNativeToolCatalog.search })

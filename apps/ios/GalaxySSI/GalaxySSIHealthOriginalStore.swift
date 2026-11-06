@@ -132,6 +132,10 @@ struct GalaxySSIHealthOriginalStore {
           isolatedFile: restoreRecordsFile ?? fixtureDirectory?.appendingPathComponent("original-record-index"))
   }
 
+  func originalSearchReader() throws -> GalaxySSIHealthDataFiles.Reader {
+    try indexRecords.dataFilesReader()
+  }
+
   func importFile(_ url: URL) throws {
     let scoped = url.startAccessingSecurityScopedResource()
     defer { if scoped { url.stopAccessingSecurityScopedResource() } }
@@ -364,6 +368,17 @@ struct GalaxySSIHealthOriginalStore {
     try withRestoreLease { lease in
       try reconcileRestores(lease: lease)
       return try list(lease: lease)
+    }
+  }
+
+  func validateOriginalSelection(_ originals: [Original]) throws {
+    try withRestoreLease { lease in
+      try reconcileRestores(lease: lease)
+      let index = try ensureIndex(lease: lease)
+      let removed = index.removals.pending.union(index.removals.metadata.map(\.id))
+      guard !originals.isEmpty, originals.allSatisfy({
+        !removed.contains($0.id) && index.originals[$0.id] == $0
+      }) else { throw Failure.stale }
     }
   }
 

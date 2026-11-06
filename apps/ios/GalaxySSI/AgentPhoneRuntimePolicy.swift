@@ -1,6 +1,11 @@
 import Foundation
 
 enum AgentPhoneRuntimePolicy {
+  static let directPhoneActionTools: Set<String> = [
+    AgentNativeToolAgentActionAdapter.defaultToolId(.setAlarm),
+    AgentNativeToolAgentActionAdapter.defaultToolId(.openApp)
+  ]
+
   static func shouldUsePhoneRuntime(goal: String) -> Bool {
     let normalized = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal)
       .trimmingCharacters(in: .whitespacesAndNewlines)

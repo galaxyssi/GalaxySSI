@@ -2,6 +2,65 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testNativeShortcutsRequireCompleteCommandsAndTypedArguments() throws {
+    let tools = AgentPhoneNativeToolCatalog.descriptors(capabilityStatuses: readyPhoneCapabilityStatuses()) +
+      AgentIOSVisibleCaptureNativeToolCatalog.definitions(provider: DirectPlannerVisibleCaptureProvider()).map(\.descriptor)
+    func action(_ goal: String) -> AgentAction? {
+      AgentDirectNativeToolPlanner.action(for: AgentPlanRequest(goal: goal,
+        screen: AgentScreenContext(foregroundApp: "com.galaxyssi.chat"), nativeTools: tools))
+    }
+    for goal in [
+      "Don't open Wi-Fi settings; explain what it would do.",
+      "Open Wi-Fi settings if the phone is offline.",
+      "Open Photos and select a PDF.",
+      "Explain battery level and network status.",
+      "Read battery and network status.",
+      "Read battery level if charging.",
+      "Check VPN status, then open Settings.",
+      "Set media volume -30",
+      "Set media volume 130",
+      "Set media volume to 30 or 40",
+      "Do not mute media audio.",
+      "Dial 12345 after checking the contact.",
+      "Dial 12",
+      "Send SMS to 12345 if I approve: hello",
+      "Set alarm 07:30 on Monday",
+      "Set alarm 24:00",
+      "Set alarm 07:30 and 09:00",
+      "Set timer for 0 seconds",
+      "Set timer for 999999999999999999 hours",
+      "Record audio for five seconds and save it.",
+      "Take a photo after opening Settings.",
+      "Read sensor",
+      "Read sensor thermocouple",
+      "Read accelerometer and gyroscope",
+      "Open website https://example.com then copy the page.",
+      "Open website https://user:pass@example.com",
+      "Download https://example.com/file and open it",
+      "Download http://example.com/file",
+      "Delete contact 17 if it is a duplicate",
+      "Create contact Alice Example +1234567890123456789",
+      "Remove download 12 and 13",
+      "Package info com.example.app or com.example.other",
+      "Navigate to Shenzhen Bay. Open Photos.",
+      "\u{4e0d}\u{8981}\u{6253}\u{5f00}\u{76f8}\u{518c}",
+      "\u{5982}\u{679c}\u{6709}\u{7f51}\u{5c31}\u{6253}\u{5f00}\u{65e0}\u{7ebf}\u{7f51}\u{7edc}\u{8bbe}\u{7f6e}"
+    ] {
+      XCTAssertNil(action(goal), goal)
+    }
+    let battery = try XCTUnwrap(action("Please read the current battery level on this phone, reply briefly."))
+    XCTAssertEqual(battery.parameters["tool_id"], AgentIOSHardwareNativeToolCatalog.batteryStatus)
+    let settings = try XCTUnwrap(action("Please open Wi-Fi settings."))
+    XCTAssertEqual(settings.parameters["tool_id"], AgentIOSSystemNativeToolCatalog.wifiPanelOpen)
+    let call = try XCTUnwrap(action("Please dial +1 (555) 123-4567."))
+    XCTAssertEqual(try inputObject(call)["phone_number"] as? String, "+15551234567")
+    XCTAssertTrue(call.requiresConfirmation)
+    let sensor = try XCTUnwrap(action("Sample gyroscope sensor."))
+    XCTAssertEqual(try inputObject(sensor)["type"] as? String, "gyroscope")
+    XCTAssertNil(AgentScreenSearchCommand.query("Find on screen PDF, then tap it"))
+    XCTAssertNil(AgentNotificationCommand.parse("Search notifications Alice and reply to her"))
+  }
+
   func testAgentDirectNativeToolPlannerRoutesCommonPhoneOperations() throws {
     let requestTools = AgentPhoneNativeToolCatalog.descriptors(
       capabilityStatuses: readyPhoneCapabilityStatuses()
