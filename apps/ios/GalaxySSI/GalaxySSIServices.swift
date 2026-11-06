@@ -3897,24 +3897,29 @@ final class MessageCoordinator: ObservableObject {
         return false
       }
     }
+    if !readOnlyAnalysis, taskExecutionMode != .planOnly,
+       contact.deliveryMode == .local, effectiveAttachments.isEmpty,
+       handleConversationWorkflowSchedule(displayText, outgoing: outgoing) { return true }
     if contact.id == "hermes" {
       let previousSessionMessages = store.agentSessionMessages(outgoing.conversationId)
-        .filter { $0.id != outgoing.id && !$0.isSystem }
-      if !readOnlyAnalysis, effectiveAttachments.isEmpty,
+      let prior = AgentOwnedOperationContext.previousRequest(before: outgoing, in: previousSessionMessages)
+      if !readOnlyAnalysis, taskExecutionMode != .planOnly, effectiveAttachments.isEmpty,
          let command = AgentTaskControlCommand.parse(requestText),
-         let localControlTarget = localAgentTaskControlTarget(for: outgoing.conversationId),
+         let prior,
+         let localControlTarget = localAgentTaskControlTarget(for: outgoing.conversationId,
+           turnId: prior.turnId.ifBlank(prior.id.uuidString)),
          AgentActiveTurnPolicy.hasLocalControlTarget(hasCurrentPlan: localControlTarget.planContext != nil) {
         return await handleAgentTaskControlCommand(
           command,
           localTask: localControlTarget,
           outgoing: outgoing,
-          conversationId: outgoing.conversationId
+          source: prior
         )
       }
       let clarification = AgentClarificationPolicy.decide(
         goal: requestText,
         hasAttachments: !effectiveAttachments.isEmpty,
-        hasConversationContext: previousSessionMessages.contains { !$0.content.isBlank },
+        hasConversationContext: prior != nil,
         preferenceMode: store.agentPreferenceMode
       )
       if clarification.mode == .askLocally {
@@ -3941,7 +3946,7 @@ final class MessageCoordinator: ObservableObject {
         requestText = attachmentClarificationGoal(effectiveAttachments)
       }
       if !readOnlyAnalysis, taskExecutionMode != .planOnly,
-         let active = activeAgentTurn(for: outgoing.conversationId) {
+         let prior, let active = activeAgentTurn(source: prior) {
         let decision = AgentActiveTurnPolicy.decide(
           request: originalRequestText,
           activeGoal: active.goal,
@@ -3980,7 +3985,7 @@ final class MessageCoordinator: ObservableObject {
             activeGoal: active.goal,
             intervention: originalRequestText,
             kind: decision.interventionKind
-          )
+          ) + "\nInspect the stopped task's current state before continuing. Do not repeat any effect that may already have happened."
         }
       }
     }
@@ -3993,34 +3998,6 @@ final class MessageCoordinator: ObservableObject {
         staged: stagedAttachments,
         hasUserGoal: !trimmed.isEmpty
       )
-    }
-    if !readOnlyAnalysis, taskExecutionMode != .planOnly,
-       contact.deliveryMode == .local,
-       effectiveAttachments.isEmpty,
-       let commandResult = AgentWorkflowRunScheduleCommandRouter.handle(displayText, store: store) {
-      store.appendDeliveryTrace(
-        outgoing.id,
-        contactId: contact.id,
-        stage: commandResult.actionId,
-        detail: "Local workflow execution command",
-        status: .delivered
-      )
-      let response = store.appendIncoming(
-        commandResult.text,
-        from: contact.id,
-        remoteMessageId: "local-\(commandResult.actionId)-\(UUID().uuidString.lowercased())",
-        status: .delivered,
-        traceStage: commandResult.actionId,
-        conversationId: outgoing.conversationId,
-        turnId: outgoing.turnId
-      )
-      onIncomingMessage?(response)
-      if let workflow = commandResult.workflowToRun {
-        Task { @MainActor [weak self] in
-          _ = await self?.executeWorkflowManually(workflow)
-        }
-      }
-      return true
     }
     let workflowCommand: (text: String, actionId: String)? = {
       guard !readOnlyAnalysis else { return nil }
@@ -4560,9 +4537,36 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
-  private func activeAgentTurn(for conversationId: String) -> ActiveAgentTurnCandidate? {
-    let cleanConversationId = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !cleanConversationId.isEmpty else { return nil }
+  private func handleConversationWorkflowSchedule(_ request: String, outgoing: ChatMessage) -> Bool {
+    guard let result = AgentWorkflowRunScheduleCommandRouter.handle(request, store: store, scopedTaskId: {
+      let tasks = Set(store.automationTasks().map(\.taskId))
+      return AgentScheduleFollowupPolicy.target(before: outgoing,
+        messages: store.agentSessionMessages(outgoing.conversationId), liveTaskIds: tasks)
+    }) else { return false }
+    let turn = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId,
+      stage: result.actionId, detail: "Local workflow execution command", status: .delivered)
+    if let taskId = result.scheduleTaskId {
+      store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId,
+        stage: AgentScheduleFollowupPolicy.receiptStage, detail: taskId, status: .delivered)
+    }
+    let response = store.appendIncoming(result.text, from: outgoing.contactId,
+      remoteMessageId: result.scheduleTaskId == nil
+        ? "local-" + result.actionId + "-" + UUID().uuidString.lowercased()
+        : AgentScheduleFollowupPolicy.receiptId(turnId: turn),
+      status: .delivered, traceStage: result.scheduleTaskId == nil ? result.actionId : AgentScheduleFollowupPolicy.receiptStage,
+      detail: result.scheduleTaskId ?? "", conversationId: outgoing.conversationId, turnId: turn)
+    onIncomingMessage?(response)
+    if let workflow = result.workflowToRun {
+      Task { @MainActor [weak self] in _ = await self?.executeWorkflowManually(workflow) }
+    }
+    return true
+  }
+
+  private func activeAgentTurn(source: ChatMessage) -> ActiveAgentTurnCandidate? {
+    let conversationId = source.conversationId
+    let turn = source.turnId.ifBlank(source.id.uuidString)
+    guard !conversationId.isBlank else { return nil }
     let activePhases: Set<AgentPhase> = [
       .observing,
       .planning,
@@ -4572,8 +4576,8 @@ final class MessageCoordinator: ObservableObject {
       .waitingResponse,
       .paused
     ]
-    let localTask = store.agentTasks(forSession: cleanConversationId, limit: 50)
-      .filter { activePhases.contains($0.phase) && !$0.goal.isBlank }
+    let localTask = store.agentTaskRecords
+      .filter { $0.sessionId == conversationId && $0.taskId == turn && activePhases.contains($0.phase) && !$0.goal.isBlank }
       .max { left, right in
         if left.updatedAtMillis != right.updatedAtMillis {
           return left.updatedAtMillis < right.updatedAtMillis
@@ -4582,7 +4586,7 @@ final class MessageCoordinator: ObservableObject {
       }
     let remoteTask = remoteAgentTaskStatuses.values
       .filter {
-        $0.conversationId == cleanConversationId &&
+        $0.conversationId == conversationId && $0.turnId == turn &&
           !AgentRemoteTaskStatusPolicy.isTerminal($0.status)
       }
       .max { left, right in
@@ -4592,16 +4596,14 @@ final class MessageCoordinator: ObservableObject {
         return left.id < right.id
       }
     guard localTask != nil || remoteTask != nil else { return nil }
-    let fallbackGoal = store.agentSessionMessages(cleanConversationId)
-      .last { !$0.isSystem && $0.isMine }?.content ?? ""
     let goal = (localTask?.goal ?? "")
-      .ifBlank(fallbackGoal)
+      .ifBlank(source.content)
       .ifBlank(remoteTask?.currentStep ?? "")
     guard !goal.isBlank else { return nil }
     return ActiveAgentTurnCandidate(goal: goal, localTask: localTask, remoteTask: remoteTask)
   }
 
-  private func localAgentTaskControlTarget(for conversationId: String) -> AgentTaskRecord? {
+  private func localAgentTaskControlTarget(for conversationId: String, turnId: String) -> AgentTaskRecord? {
     let cleanConversationId = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanConversationId.isEmpty else { return nil }
     let controllablePhases: Set<AgentPhase> = [
@@ -4615,9 +4617,10 @@ final class MessageCoordinator: ObservableObject {
       .failed,
       .blocked
     ]
-    return store.agentTasks(forSession: cleanConversationId, limit: 50)
+    return store.agentTaskRecords
       .filter { task in
-        task.planContext != nil && controllablePhases.contains(task.phase)
+        task.sessionId == cleanConversationId && task.taskId == turnId &&
+          task.planContext != nil && controllablePhases.contains(task.phase)
       }
       .max { left, right in
         if left.updatedAtMillis != right.updatedAtMillis {
@@ -6050,9 +6053,8 @@ final class MessageCoordinator: ObservableObject {
     _ command: AgentTaskControlCommand,
     localTask: AgentTaskRecord,
     outgoing: ChatMessage,
-    conversationId: String
+    source: ChatMessage
   ) async -> Bool {
-    let active = activeAgentTurn(for: conversationId)
     let localTaskID = localTask.taskId
     var success = false
     switch command {
@@ -6082,7 +6084,7 @@ final class MessageCoordinator: ObservableObject {
       success = !localTaskID.isEmpty && rollbackLastLocalNativeAction(taskId: localTaskID)
     case .cancel:
       success = cancelLocalAgentTask(taskId: localTask.taskId, emitReply: false)
-      if !success, let remoteTask = active?.remoteTask {
+      if !success, let remoteTask = activeAgentTurn(source: source)?.remoteTask {
         success = await cancelRemoteAgentTask(remoteTask)
       }
     }
@@ -8337,14 +8339,19 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func ownedPriorPhoneOperation(request: String, outgoing: ChatMessage) -> AgentMcpJSONObject? {
-    guard let prior = AgentOwnedOperationContext.previousRequest(
-      before: outgoing, in: store.agentSessionMessages(outgoing.conversationId)
-    ) else { return nil }
-    let turn = prior.turnId.ifBlank(prior.id.uuidString)
     // Workspace list rows are display projections, not the persisted phone executor state.
-    guard let task = store.agentTaskRecords.first(where: { $0.taskId == turn && $0.sessionId == prior.conversationId }),
-          AgentOwnedOperationContext.wantsContext(request: request, priorGoal: task.goal)
+    func taskFor(_ message: ChatMessage) -> AgentTaskRecord? {
+      let turn = message.turnId.ifBlank(message.id.uuidString)
+      return store.agentTaskRecords.first { $0.taskId == turn && $0.sessionId == message.conversationId &&
+        ($0.activePlan != nil || $0.planContext != nil || $0.phase == .cancelled) }
+    }
+    guard AgentOwnedOperationContext.wantsContext(request: request, priorGoal: "prior task"),
+          let prior = AgentOwnedOperationContext.continuationSource(before: outgoing,
+            in: store.agentSessionMessages(outgoing.conversationId), hasTask: { taskFor($0) != nil })
     else { return nil }
+    if AgentIOSTimerCheckpointStore.shared.current(conversationId: prior.conversationId)?.sourceTurnId ==
+        prior.turnId.ifBlank(prior.id.uuidString) { return nil }
+    guard let task = taskFor(prior) else { return AgentOwnedOperationContext.transcriptGoal(prior) }
     let run = task.phase == .completed ? localRecordedRunStore.runs(for: task.sessionId).last { $0.runId == task.taskId } : nil
     return AgentOwnedOperationContext.project(source: prior, task: task, run: run)
   }
@@ -8559,8 +8566,12 @@ final class MessageCoordinator: ObservableObject {
       }
       planner = selected
     }
+    let plannerGoal = (ownedOperation?["goal"]?.strictStringValue).map { prior in
+      AgentActiveTurnPolicy.supersedingGoal(activeGoal: prior, intervention: requestText, kind: .constraint) +
+        "\nTreat prior state as context, not permission to repeat effects. Inspect before retrying."
+    } ?? requestText
     let planRequest = AgentPlanRequest(
-      goal: requestText,
+      goal: plannerGoal,
       screen: selectedForPhoneTurn && !plannerSettings.shareScreenText
         ? AgentScreenContext(foregroundApp: "GalaxySSI", pageTitle: "Agent")
         : currentAgentScreenContext,
@@ -8625,6 +8636,7 @@ final class MessageCoordinator: ObservableObject {
       requirements: completionRequirements, history: scopedHistory, answerOnly: answerOnly,
       observationHistory: observationHistory)
     planningRequest.allowsDirectResponse = planningRequest.allowsDirectResponse && timerCheckpoint == nil &&
+      ownedOperation?["status"] != .string("goal_only") &&
       answerOnly && existingEvidence.isEmpty &&
       !AgentRollingPlanPolicy.isBatchBoundaryReason(replanReason)
     let fallbackPlan = AgentPlanFactory.actions(request: planRequest, [])

@@ -39,6 +39,18 @@ enum AgentActiveTurnPolicy {
     hasCurrentPlan
   }
 
+  static func hasExplicitContinuationLead(_ request: String) -> Bool {
+    let clean = normalize(request)
+    guard !independentPrefixes.contains(where: clean.hasPrefix) else { return false }
+    return continuationPrefixes.contains { prefix in
+      if prefix.unicodeScalars.allSatisfy({ $0.isASCII }) {
+        let word = prefix.trimmingCharacters(in: .whitespaces)
+        return clean == word || clean.hasPrefix(word + " ")
+      }
+      return clean.hasPrefix(prefix)
+    }
+  }
+
   static func decide(
     request: String,
     activeGoal: String,
@@ -57,7 +69,7 @@ enum AgentActiveTurnPolicy {
     if standaloneRequests.contains(where: { regexMatches(pattern: $0, in: clean).first != nil }) {
       return independent
     }
-    if continuationPrefixes.contains(where: clean.hasPrefix) {
+    if hasExplicitContinuationLead(clean) {
       return steerDecision(clean)
     }
     if !hasNewAttachments && continuationReferences.contains(where: clean.contains) {

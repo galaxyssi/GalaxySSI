@@ -5,9 +5,46 @@ enum AgentOwnedOperationContext {
 
   static func wantsContext(request: String, priorGoal: String) -> Bool {
     guard !priorGoal.isBlank else { return false }
-    let clean = request.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
-    return ["resume", "resume task", "resume the task", "\u{7e7c}\u{7e8c}"].contains(clean) ||
-      AgentActiveTurnPolicy.decide(request: request, activeGoal: priorGoal).disposition == .steer
+    return AgentActiveTurnPolicy.decide(request: request, activeGoal: priorGoal).disposition != .interrupt &&
+      (AgentActiveTurnPolicy.hasExplicitContinuationLead(request) || bareContinuation(request) ||
+       ["start", "begin", "execute", "\u{5f00}\u{59cb}", "\u{6267}\u{884c}"].contains(normalized(request)))
+  }
+
+  static func continuationSource(
+    before outgoing: ChatMessage, in messages: [ChatMessage], hasTask: (ChatMessage) -> Bool
+  ) -> ChatMessage? {
+    var next = outgoing
+    while let previous = previousRequest(before: next, in: messages) {
+      if hasTask(previous) || !bareContinuation(previous.content) { return previous }
+      next = previous
+    }
+    return nil
+  }
+
+  static func transcriptGoal(_ message: ChatMessage) -> AgentMcpJSONObject? {
+    let goal = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !goal.isEmpty, !wantsContext(request: goal, priorGoal: "prior task"),
+          AgentActiveTurnPolicy.decide(request: goal, activeGoal: "prior task").disposition != .interrupt else { return nil }
+    let intent = AgentTaskIntentClassifier.classify(goal: goal)
+    let requestsWork = goal.range(of: #"(?i)^(?:please\s+)?(?:create|write|edit|update|save|export|convert|generate|build|implement|fix|run|install|search|find|open|inspect|read)\b"#,
+      options: .regularExpression) != nil ||
+      ["\u{521b}\u{5efa}", "\u{751f}\u{6210}", "\u{5bfc}\u{51fa}", "\u{4fdd}\u{5b58}", "\u{7f16}\u{5199}",
+       "\u{5b9e}\u{73b0}", "\u{67e5}\u{627e}", "\u{6253}\u{5f00}"].contains(where: goal.hasPrefix)
+    let namesFile = goal.range(of: #"(?i)\b[\w.-]+\.(?:txt|md|json|png|jpg|jpeg|wav|mp4)\b"#,
+      options: .regularExpression) != nil
+    guard requestsWork, namesFile || [.file, .code, .phoneControl, .research].contains(intent.intent) else { return nil }
+    return ["source_turn_id": .string(message.turnId.ifBlank(message.id.uuidString)),
+      "source_session_id": .string(message.conversationId), "status": .string("goal_only"),
+      "goal": .string(AgentPlannerObservation.sanitize(goal, maximumCharacters: 1_200)), "summary_only": .bool(true)]
+  }
+
+  private static func normalized(_ request: String) -> String {
+    request.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+  }
+
+  private static func bareContinuation(_ request: String) -> Bool {
+    ["continue", "resume", "resume task", "resume the task", "keep going", "go on", "retry", "try again",
+     "\u{7ee7}\u{7eed}", "\u{7e7c}\u{7e8c}", "\u{63a5}\u{7740}", "\u{91cd}\u{8bd5}", "\u{518d}\u{8bd5}\u{8bd5}"].contains(normalized(request))
   }
 
   static func previousRequest(before outgoing: ChatMessage, in messages: [ChatMessage]) -> ChatMessage? {
