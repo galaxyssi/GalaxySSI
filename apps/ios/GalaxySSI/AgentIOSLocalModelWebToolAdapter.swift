@@ -48,7 +48,7 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
     if request.cancellationToken.isCancellationRequested { throw CancellationError() }
     let inference = try await infer(
       systemPrompt: AgentIOSLocalModelWebToolProtocol.systemPrompt(
-        catalog: catalog,
+        catalog: AgentModelObservationHistory.modelCatalog(catalog, manifest: request.toolManifestJson),
         basePrompt: baseSystemPrompt
       ),
       userPrompt: AgentIOSLocalModelWebToolProtocol.turnPrompt(request.messages)
@@ -224,7 +224,9 @@ enum AgentIOSLocalModelWebToolRunner {
         callerId: "galaxyssi.local_model_web_loop",
         grantedPermissions: permissions,
         grantedConsents: consents,
-        recoveryInputIdentity: recoveryIdentity
+        recoveryInputIdentity: recoveryIdentity,
+        observationHistoryEnabled: true,
+        observationHistorySource: collaborationRecallScope.map { AgentModelLoopRecoveryIdentity.sha256($0) } ?? ""
       )
     )
     guard outcome.status == .completed, !outcome.assistantText.isBlank else {
@@ -323,7 +325,7 @@ enum AgentIOSLocalModelWebToolProtocol {
 
   static func encodedEvidence(_ messages: [AgentModelMessage]) -> [(String, String)] {
     messages.compactMap { message -> (String, String)? in
-      guard let result = message.toolResult else { return nil }
+      guard let result = message.toolResult, result.toolId != AgentModelObservationHistory.toolID else { return nil }
       let pack: AgentMcpJSONObject
       if result.output["protocol"]?.stringValue == AgentIOSWebEvidencePack.protocolId {
         pack = result.output

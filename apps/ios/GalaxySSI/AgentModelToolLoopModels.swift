@@ -145,6 +145,8 @@ struct AgentModelToolLoopRequest {
   var grantedPermissions: Set<String>
   var grantedConsents: Set<String>
   var recoveryInputIdentity: String
+  var observationHistoryEnabled: Bool
+  var observationHistorySource: String
   var cancellationToken: AgentModelToolLoopCancellationToken
   var eventSink: AgentModelToolLoopEventSink
 
@@ -164,6 +166,8 @@ struct AgentModelToolLoopRequest {
     grantedPermissions: Set<String> = [],
     grantedConsents: Set<String> = [],
     recoveryInputIdentity: String = "",
+    observationHistoryEnabled: Bool = false,
+    observationHistorySource: String = "",
     cancellationToken: AgentModelToolLoopCancellationToken = .none,
     eventSink: AgentModelToolLoopEventSink = .none
   ) {
@@ -196,6 +200,8 @@ struct AgentModelToolLoopRequest {
     self.grantedPermissions = grantedPermissions
     self.grantedConsents = grantedConsents
     self.recoveryInputIdentity = recoveryInputIdentity.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.observationHistoryEnabled = observationHistoryEnabled
+    self.observationHistorySource = observationHistorySource
     self.cancellationToken = cancellationToken
     self.eventSink = eventSink
   }

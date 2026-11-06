@@ -54,7 +54,7 @@ struct CloudModelNativeToolAdapter: AgentModelAdapter {
         contact: contact,
         store: store,
         request: request,
-        catalog: catalog
+        catalog: AgentModelObservationHistory.modelCatalog(catalog, manifest: request.toolManifestJson)
       )
       AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .sent)
       return response

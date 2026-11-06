@@ -199,7 +199,8 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
       callerId: toolLoopCallerId,
       grantedPermissions: grantedPermissions,
       grantedConsents: grantedConsents,
-      recoveryInputIdentity: recoveryIdentity
+      recoveryInputIdentity: recoveryIdentity,
+      observationHistoryEnabled: true
     )
   }
 

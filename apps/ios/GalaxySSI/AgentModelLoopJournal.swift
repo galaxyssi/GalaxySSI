@@ -308,6 +308,22 @@ final class AgentModelLoopCheckpoint {
     write(CancellationRecord(cancelled: true), operation: "cancelled")
   }
 
+  func observationHistoryEnabled(owner: String?, manifestSha256: String) throws -> Bool {
+    let operation = "observation-history-catalog"
+    if let marker = try records.read(operation) {
+      guard let owner,
+            try AgentModelLoopCodec.decode([String: String].self, data: marker) ==
+              ["owner": owner, "manifest": manifestSha256] else {
+        throw AgentModelLoopRecoveryError(code: "model_loop_history_catalog_changed")
+      }
+      return true
+    }
+    guard let owner, try records.read("initial") == nil else { return false }
+    try records.write(operation, data: AgentModelLoopCodec.encode(
+      ["owner": owner, "manifest": manifestSha256]))
+    return true
+  }
+
   func initial(request: AgentModelToolLoopRequest, manifestSha256: String) throws -> [AgentModelMessage] {
     let binding = InitialBinding(
       inputIdentity: request.recoveryInputIdentity.ifBlank(AgentModelLoopCodec.sha256(request.messages)),
