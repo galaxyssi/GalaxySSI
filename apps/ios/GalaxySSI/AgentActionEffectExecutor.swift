@@ -43,6 +43,8 @@ struct AgentEffectRecoveryRecord: Codable, Equatable {
     guard descriptor.requiresEffectClaim,
           ["effect_outcome_unknown", "invalid_output", "missing_output_validation"].contains(result.error?.code ?? "") ||
           result.status == .verificationFailed ||
+          (result.isSuccess && AgentIOSDeviceStateEvidence.tools.contains(descriptor.id) &&
+            !AgentIOSDeviceStateEvidence.verified(descriptor.id, output: result.output, input: parseInput(action))) ||
           result.output["state_verified"] == .bool(false) ||
           result.output["delivery_verified"] == .bool(false) ||
           result.output["outcome"]?.stringValue == "unknown" ||
@@ -59,7 +61,7 @@ struct AgentEffectRecoveryRecord: Codable, Equatable {
     switch descriptor.id {
     case AgentIOSSystemNativeToolCatalog.audioVolumeSet, AgentIOSSystemNativeToolCatalog.audioMuteSet:
       let stream = input.string("stream").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-      query = ["media", "music"].contains(stream)
+      query = ["media", "music"].contains(stream) && !AgentIOSDeviceStateEvidence.unavailableAudioControl(result.output)
         ? Query(kind: .audio, toolId: AgentIOSSystemNativeToolCatalog.audioStatus,
                 version: descriptor.version, input: [:], subject: "media") : nil
     case AgentIOSWebMediaNativeToolCatalog.browserSessionCreate,

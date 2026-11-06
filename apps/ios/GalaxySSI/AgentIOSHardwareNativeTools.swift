@@ -425,6 +425,7 @@ enum AgentIOSHardwareNativeToolCatalog {
         properties: ["enabled": boolSchema()],
         required: ["enabled"]
       ),
+      outputSchema: AgentIOSDeviceStateEvidence.outputSchema(id),
       idempotency: .idempotent,
       effect: .mutation
     )
@@ -815,10 +816,11 @@ struct AgentIOSHardwareNativeToolExecutor {
         nowMillis: now
       )
     case AgentIOSHardwareNativeToolCatalog.flashlightSet:
-      return provider.setFlashlight(
+      let result = provider.setFlashlight(
         enabled: invocation.input["enabled"]?.boolValue == true,
         nowMillis: now
       )
+      return AgentIOSDeviceStateEvidence.normalize(result, toolId: invocation.descriptor.id, input: invocation.input)
     case AgentIOSHardwareNativeToolCatalog.bluetoothStatus:
       return status(
         provider.bluetoothStatus(nowMillis: now),

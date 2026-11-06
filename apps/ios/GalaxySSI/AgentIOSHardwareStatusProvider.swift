@@ -261,35 +261,25 @@ struct AgentIOSDefaultHardwareStatusProvider: AgentIOSHardwareStatusProviding {
     do {
       try device.lockForConfiguration()
       defer { device.unlockForConfiguration() }
-      if enabled {
-        guard device.isTorchModeSupported(.on) else {
-          return AgentNativeToolExecutionResult.failure(
-            code: "flashlight_on_unsupported",
-            message: "The iOS torch does not support the requested on state.",
-            details: flashlightDetails(nowMillis: nowMillis, cameraAuthorization: cameraAuthorization(authorization))
-          )
-        }
-        try device.setTorchModeOn(level: AVCaptureDevice.maxAvailableTorchLevel)
-      } else if device.isTorchModeSupported(.off) {
-        device.torchMode = .off
-      }
-      let verified = enabled ? device.torchMode == .on : device.torchMode == .off
-      return AgentNativeToolExecutionResult.success(
-        output: [
-          "requested_enabled": .bool(enabled),
-          "request_accepted": .bool(true),
-          "state_verified": .bool(verified),
-          "settings_changed": .bool(false),
-          "observed_at_epoch_ms": .int(nowMillis)
-        ],
-        message: "Flashlight request submitted",
-        metadata: [
-          "camera_capture": .bool(false),
-          "continuous_state_guarantee": .bool(false),
-          "framework": .string("avfoundation_torch"),
-          "camera_authorization": .string(cameraAuthorization(authorization))
-        ]
-      )
+      var result = AgentIOSDeviceStateEvidence.torchReadback(enabled: enabled, read: { device.isTorchActive },
+        write: { enabled in
+          let mode: AVCaptureDevice.TorchMode = enabled ? .on : .off
+          guard device.isTorchModeSupported(mode) else {
+            throw NSError(domain: "GalaxySSI.Torch", code: 1)
+          }
+          if enabled {
+            try device.setTorchModeOn(level: AVCaptureDevice.maxAvailableTorchLevel)
+          } else {
+            device.torchMode = .off
+          }
+        }, nowMillis: { max(nowMillis, AgentControlPlaneClock.nowMillis()) })
+      result.metadata = [
+        "camera_capture": .bool(false),
+        "continuous_state_guarantee": .bool(false),
+        "framework": .string("avfoundation_torch"),
+        "camera_authorization": .string(cameraAuthorization(authorization))
+      ]
+      return result
     } catch {
       return AgentNativeToolExecutionResult.failure(
         code: "flashlight_control_failed",

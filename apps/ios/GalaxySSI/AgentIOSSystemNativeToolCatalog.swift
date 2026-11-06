@@ -453,7 +453,8 @@ enum AgentIOSSystemNativeToolCatalog {
       inputSchema: specification.inputSchema,
       outputSchema: handoffToolIds.contains(specification.id)
         ? handoffOutputSchema()
-        : AgentNativeToolDescriptor.objectSchema(),
+        : (AgentIOSDeviceStateEvidence.tools.contains(specification.id)
+          ? AgentIOSDeviceStateEvidence.outputSchema(specification.id) : AgentNativeToolDescriptor.objectSchema()),
       risk: specification.risk,
       capabilities: specification.capabilities,
       requiredPermissions: permissionRequirements(specification),

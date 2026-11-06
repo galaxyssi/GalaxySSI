@@ -290,8 +290,11 @@ extension GalaxySSIStoreTests {
         AgentNativeToolExecutionResult.success(
           output: [
             "requested_enabled": .bool(enabled),
+            "observed_enabled": .bool(enabled),
+            "dispatch_attempted": .bool(true),
             "request_accepted": .bool(true),
             "state_verified": .bool(true),
+            "observation_scope": .string("app_visible_torch"),
             "settings_changed": .bool(false),
             "observed_at_epoch_ms": .int(nowMillis)
           ],

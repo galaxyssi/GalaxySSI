@@ -6277,4 +6277,5 @@
 "public_news_speech_read_downloaded" = "朗读已下载文章";
 "public_news_speech_no_downloads" = "没有可朗读的已下载文章。";
 "voice_app_open_controls" = "语音控制";
+"galaxyssi.agent.audio_control.unsupported" = "iOS 不允许 GalaxySSI 更改全局音量或静音设置，未尝试更改。";
 "galaxyssi.agent.composite_device.requires_planner" = "此请求需要能调用这台 iPhone 工具的规划器，未返回部分结果。";
