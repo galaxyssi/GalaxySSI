@@ -669,7 +669,7 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
     )
     let coordinator = GlobalLongHorizonCoordinator(runtimeStore: runtimeStore)
     let result = coordinator.processDue(nowMillis: nowMillis)
-    runtimeStore.emittedProactiveMessages.forEach { store.appendGlobalProactiveMessage($0) }
+    store.appendGlobalProactiveMessages(runtimeStore.emittedProactiveMessages)
     return result
   }
 
@@ -682,7 +682,8 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
       return GalaxySSIGlobalResearchCycleResult()
     }
     let stateStore = GalaxySSIGlobalResearchRuntimeStore()
-    var state = stateStore.state()
+    let persisted = stateStore.state()
+    var state = persisted
     seedResearchTasks(from: GlobalAgentDeliberationStore().cognitionTasks(), into: &state, nowMillis: nowMillis)
     let existingDispatchIds = Set(state.dispatchRequests.map(\.id))
     let task = state.tasks.first {
@@ -701,11 +702,12 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
       context: context,
       nowMillis: nowMillis
     ) else {
-      stateStore.save(state)
+      if state != persisted { stateStore.save(state) }
+      store.appendGlobalProactiveMessages(state.proactiveMessages)
       return GalaxySSIGlobalResearchCycleResult()
     }
     stateStore.save(step.state)
-    step.state.proactiveMessages.forEach { store.appendGlobalProactiveMessage($0) }
+    store.appendGlobalProactiveMessages(step.state.proactiveMessages)
     let requests = step.state.dispatchRequests.filter { !existingDispatchIds.contains($0.id) }
     return GalaxySSIGlobalResearchCycleResult(
       result: step.result,
@@ -735,7 +737,7 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
     )
     guard let step else { return false }
     stateStore.save(step.state)
-    step.state.proactiveMessages.forEach { store.appendGlobalProactiveMessage($0) }
+    store.appendGlobalProactiveMessages(step.state.proactiveMessages)
     return true
   }
 

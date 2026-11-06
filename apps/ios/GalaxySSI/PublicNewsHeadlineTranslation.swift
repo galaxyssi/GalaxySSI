@@ -34,11 +34,9 @@ enum PublicNewsHeadlineTranslator {
     return value
   }
 
-  static var deviceAllowsTranslation: Bool {
-    let process = ProcessInfo.processInfo
-    return !process.isLowPowerModeEnabled && process.thermalState != .serious && process.thermalState != .critical
-  }
+  @MainActor static var deviceAllowsTranslation: Bool { AgentIOSBackgroundLoad.current().deferSeconds == 0 }
 
+  @MainActor
   static func translateWithLocalModel(_ source: String) async throws -> String? {
     guard deviceAllowsTranslation, !Task.isCancelled else { return nil }
     let model = LocalModelInferenceRuntime.shared

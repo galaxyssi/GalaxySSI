@@ -402,11 +402,8 @@ final class MessageCoordinator: ObservableObject {
     self.signalEngine = GalaxySSISignalEngine(profileName: store.profile.galaxySSIId)
     self.mqttClient = mqttClient ?? GalaxySSIMqttClient(diagnosticLedger: diagnosticLedger)
     self.transportConnected = self.mqttClient.isConnected
-    self.globalProactiveDeliveryListener = GlobalProactiveDeliveryListener {
-      Task { @MainActor in
-        _ = store.deliverPendingGlobalProactiveMessages()
-      }
-    }
+    let deliveryWake = GlobalProactiveDeliveryWake { _ = store.deliverPendingGlobalProactiveMessages() }
+    self.globalProactiveDeliveryListener = GlobalProactiveDeliveryListener { deliveryWake.request() }
     VoiceRemoteWhisperCaptureRuntime.shared.bind(coordinator: self)
     self.globalResearchResponseToken = connectorResponseBus.addListener { [weak self] response in
       Task { @MainActor in

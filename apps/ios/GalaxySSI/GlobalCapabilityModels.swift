@@ -208,6 +208,7 @@ struct AgentResourceHealth: Codable, Equatable {
 }
 
 enum GlobalAgentText {
+  private static let whitespace = try! NSRegularExpression(pattern: #"\s+"#)
   private static let legacyProductTitles: [String: String] = [
     "Signal insight": "GalaxySSI insight",
     "Signal prepared": "GalaxySSI prepared",
@@ -228,8 +229,8 @@ enum GlobalAgentText {
   }
 
   static func normalize(_ value: String) -> String {
-    value.lowercased()
-      .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+    let lower = value.lowercased()
+    return whitespace.stringByReplacingMatches(in: lower, range: NSRange(lower.startIndex..., in: lower), withTemplate: " ")
       .trimmingCharacters(in: .whitespacesAndNewlines)
   }
 

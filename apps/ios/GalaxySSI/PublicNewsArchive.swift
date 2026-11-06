@@ -22,6 +22,7 @@ final class PublicNewsArchive: ObservableObject {
   private var loaded = false
   private var pushCursor = PublicNewsPushCursor()
   private var publisherState = PublicNewsPublisherState()
+  private var liveWake: AsyncStream<Void>.Continuation?
 
   private enum PollOutcome {
     case articles([PublicNewsArticle])
@@ -152,10 +153,13 @@ final class PublicNewsArchive: ObservableObject {
 
   func collectLive() async {
     load()
-    guard loaded, !Task.isCancelled else { return }
+    guard loaded, liveWake == nil, !Task.isCancelled else { return }
+    let wakes = AsyncStream<Void>(bufferingPolicy: .bufferingNewest(1)) { self.liveWake = $0 }
+    defer { liveWake?.finish(); liveWake = nil }
+    liveWake?.yield(())
     await withTaskGroup(of: Void.self) { group in
       group.addTask { await self.receiveLiveEvents() }
-      group.addTask { await self.drainLiveStories() }
+      group.addTask { await self.drainLiveStories(wakes) }
       await group.waitForAll()
     }
   }
@@ -172,7 +176,8 @@ final class PublicNewsArchive: ObservableObject {
         if Task.isCancelled { return }
       }
       if ProcessInfo.processInfo.systemUptime - started >= 30 { retry = 2.5 }
-      do { try await Task.sleep(nanoseconds: UInt64((retry + Double.random(in: 0...1)) * 1_000_000_000)) }
+      let wait = max(retry, AgentIOSBackgroundLoad.current().spacing) + Double.random(in: 0...1)
+      do { try await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
       catch { return }
       retry = min(retry * 2, 300)
     }
@@ -182,28 +187,34 @@ final class PublicNewsArchive: ObservableObject {
     try Task.checkCancellation()
     var next = pushCursor
     try next.accept(type: event.type, data: event.data, now: Date())
+    let hasNewWork = !Set(next.pending.keys).subtracting(pushCursor.pending.keys).isEmpty
     if next != pushCursor, !save(articles, refreshedAt: refreshedAt, cursor: next) {
       throw PublicNewsPushError.unavailable
     }
+    if hasNewWork { liveWake?.yield(()) }
   }
 
-  private func drainLiveStories() async {
-    while !Task.isCancelled {
+  private func drainLiveStories(_ wakes: AsyncStream<Void>) async {
+    var timer: Task<Void, Never>?
+    var nextFetchAt = Date.distantPast
+    defer { timer?.cancel() }
+    for await _ in wakes {
+      guard !Task.isCancelled else { return }
+      timer?.cancel()
+      timer = nil
       let now = Date()
-      if let id = pushCursor.next(at: now) {
+      if nextFetchAt <= now, let id = pushCursor.next(at: now) {
         do {
           let article = try await PublicNewsPushClient.fetchStory(id, now: now)
           try Task.checkCancellation()
-          guard pushCursor.pending[id] != nil else { continue }
-          var nextArticles = articles
-          if let article, !articles.contains(where: { $0.id == article.id }) {
-            nextArticles = Self.merge(existing: articles, incoming: [article])
-          }
-          var next = pushCursor
-          next.complete(id)
-          if save(nextArticles, refreshedAt: refreshedAt, cursor: next) {
-            try await Task.sleep(nanoseconds: 250_000_000)
-            continue
+          if pushCursor.pending[id] != nil {
+            var nextArticles = articles
+            if let article, !articles.contains(where: { $0.id == article.id }) {
+              nextArticles = Self.merge(existing: articles, incoming: [article])
+            }
+            var next = pushCursor
+            next.complete(id)
+            _ = save(nextArticles, refreshedAt: refreshedAt, cursor: next)
           }
         } catch {
           if Task.isCancelled { return }
@@ -211,9 +222,15 @@ final class PublicNewsArchive: ObservableObject {
           next.deferItem(id, now: Date())
           _ = save(articles, refreshedAt: refreshedAt, cursor: next)
         }
+        nextFetchAt = Date(timeIntervalSinceNow: max(storageFailed ? 3 : 1, AgentIOSBackgroundLoad.current().spacing))
       }
-      do { try await Task.sleep(nanoseconds: 3_000_000_000) }
-      catch { return }
+      guard let next = pushCursor.nextWake(at: Date()), let wake = liveWake else { continue }
+      let delay = max(0.05, max(next, nextFetchAt).timeIntervalSinceNow)
+      timer = Task {
+        do { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
+        catch { return }
+        wake.yield(())
+      }
     }
   }
 
@@ -230,6 +247,9 @@ final class PublicNewsArchive: ObservableObject {
                     cursor: PublicNewsPushCursor? = nil, feedback: Set<String>? = nil,
                     publishers: PublicNewsPublisherState? = nil) -> Bool {
     guard loaded, let fileURL else { return false }
+    if !storageFailed, next == articles, refreshedAt == self.refreshedAt,
+       (cursor ?? pushCursor) == pushCursor, (feedback ?? notRelevantIDs) == notRelevantIDs,
+       (publishers ?? publisherState) == publisherState { return true }
     do {
       let data = try JSONEncoder().encode(Snapshot(
         articles: next, refreshedAt: refreshedAt, pushCursor: cursor ?? pushCursor,
