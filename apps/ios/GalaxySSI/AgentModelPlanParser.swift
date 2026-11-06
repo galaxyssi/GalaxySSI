@@ -93,11 +93,11 @@ enum AgentModelPlanParser {
     completionRequirements?.outcomes = observed.outcomes
     if json["completion_requirements"] != nil && completionRequirements == nil {
       throw AgentModelPlanRejection("completion_requirements", "invalid_requirements",
-        "Use the advertised publication and phone_linux fields with their required types.")
+        "Use the advertised publication and phone_linux fields. Results require a unique id, description, string-list outcome_ids and artifact_paths, and a string answer.")
     }
     if completionRequirements?.canReplace(request.completionRequirements) == false {
       throw AgentModelPlanRejection("completion_requirements.reason", "unexplained_requirement_change",
-        "Preserve the previous completion requirements or explain why they must change.")
+        "Preserve all previous outcome and requested result IDs. Explain corrections in reason; do not drop unfinished deliverables.")
     }
     let normalizedSettings = settings.normalized
     let maximumActions = context.maximumActionsOverride ?? normalizedSettings.maxActions
@@ -216,13 +216,20 @@ enum AgentModelPlanParser {
         fileArtifacts.append(artifact)
       }
     }
-    return AgentCompletionRequirements(
+    var requirements = AgentCompletionRequirements(
       publication: publication,
       phoneLinux: phoneLinux,
       reason: reason,
       artifacts: artifacts,
       fileArtifacts: fileArtifacts.isEmpty ? nil : fileArtifacts
     )
+    if let value = object["results"] {
+      guard let items = value.arrayValue, items.count <= 32 else { return nil }
+      let results = items.compactMap { item in item.objectValue.flatMap(AgentGoalResultRequirement.init(json:)) }
+      guard results.count == items.count, Set(results.map(\.id)).count == results.count else { return nil }
+      requirements.results = results
+    }
+    return requirements
   }
 
   static func permitsPhoneExecutionSite(_ raw: String) -> Bool {
@@ -291,7 +298,7 @@ enum AgentModelPlanParser {
       for (path, value) in identity.sorted(by: { $0.key < $1.key }) {
         guard validObservedPointer(path), case let .string(observed) = value,
               !observed.trimmedForModelPlan.isEmpty, observed.utf8.count <= 4_096 else {
-          return (nil, "\(field).subject requires valid receipt pointers with nonempty string identities; keep numbers and booleans in checks.")
+          return (nil, "\(field).subject[\(path)] requires a nonempty string identity. Keep numeric and boolean receipt values typed in checks; JSON syntax is valid.")
         }
         subject[path] = observed
       }

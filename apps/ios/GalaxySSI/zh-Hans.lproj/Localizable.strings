@@ -5477,6 +5477,7 @@
 "galaxyssi.agent.plan_progress.execute" = "运行工具与操作";
 "galaxyssi.agent.plan_progress.verify" = "验证结果";
 "galaxyssi.agent.artifact_evidence.stale" = "所需文件需要重新验证。请检查并重新导出，不要重复原操作。";
+"galaxyssi.agent.requested_results.unverified" = "部分请求的结果尚未验证。";
 "galaxyssi.agent.plan_progress.finalize" = "完成任务";
 "galaxyssi.agent.execution.duration_minutes" = "耗时 %dm %ds";
 "galaxyssi.agent.execution.duration_seconds" = "耗时 %ds";

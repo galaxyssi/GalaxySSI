@@ -893,6 +893,7 @@
     A10000000000000000000143 /* AgentDesktopArtifactActionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000143 /* AgentDesktopArtifactActionModels.swift */; };
     A10000000000000000000144 /* AgentRuntimeArtifactUiModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000144 /* AgentRuntimeArtifactUiModels.swift */; };
     A10000000000000000000F81 /* AgentArtifactCompletionEvidence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000F81 /* AgentArtifactCompletionEvidence.swift */; };
+    A100000000000000000099C9 /* AgentGoalResultEvidence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000099C9 /* AgentGoalResultEvidence.swift */; };
     A10000000000000000000145 /* AgentSkillLifecycleModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000145 /* AgentSkillLifecycleModels.swift */; };
     A10000000000000000000699 /* AgentSkillRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000699 /* AgentSkillRuntime.swift */; };
     A10000000000000000000146 /* AgentSkillExecutionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000146 /* AgentSkillExecutionModels.swift */; };
@@ -2060,6 +2061,7 @@
     A20000000000000000000143 /* AgentDesktopArtifactActionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDesktopArtifactActionModels.swift; sourceTree = "<group>"; };
     A20000000000000000000144 /* AgentRuntimeArtifactUiModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRuntimeArtifactUiModels.swift; sourceTree = "<group>"; };
     A20000000000000000000F81 /* AgentArtifactCompletionEvidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentArtifactCompletionEvidence.swift; sourceTree = "<group>"; };
+    A200000000000000000099C9 /* AgentGoalResultEvidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentGoalResultEvidence.swift; sourceTree = "<group>"; };
     A20000000000000000000145 /* AgentSkillLifecycleModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillLifecycleModels.swift; sourceTree = "<group>"; };
     A20000000000000000000699 /* AgentSkillRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillRuntime.swift; sourceTree = "<group>"; };
     A20000000000000000000146 /* AgentSkillExecutionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillExecutionModels.swift; sourceTree = "<group>"; };
@@ -2810,6 +2812,7 @@
         A20000000000000000000143 /* AgentDesktopArtifactActionModels.swift */,
         A20000000000000000000144 /* AgentRuntimeArtifactUiModels.swift */,
         A20000000000000000000F81 /* AgentArtifactCompletionEvidence.swift */,
+        A200000000000000000099C9 /* AgentGoalResultEvidence.swift */,
         A20000000000000000000145 /* AgentSkillLifecycleModels.swift */,
         A20000000000000000000699 /* AgentSkillRuntime.swift */,
         A20000000000000000000146 /* AgentSkillExecutionModels.swift */,
@@ -4070,6 +4073,7 @@
         A10000000000000000000143 /* AgentDesktopArtifactActionModels.swift in Sources */,
         A10000000000000000000144 /* AgentRuntimeArtifactUiModels.swift in Sources */,
         A10000000000000000000F81 /* AgentArtifactCompletionEvidence.swift in Sources */,
+        A100000000000000000099C9 /* AgentGoalResultEvidence.swift in Sources */,
         A10000000000000000000145 /* AgentSkillLifecycleModels.swift in Sources */,
         A10000000000000000000699 /* AgentSkillRuntime.swift in Sources */,
         A10000000000000000000146 /* AgentSkillExecutionModels.swift in Sources */,
