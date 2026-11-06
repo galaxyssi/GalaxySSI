@@ -976,6 +976,7 @@ extension AgentAction {
     nextRevision: Int
   ) -> AgentAction {
     var copy = ensurePlanRevision(sourceRevision)
+    copy.parameters[AgentDurablePlanHistoryPolicy.supersededStatusParameter] = status.rawValue
     copy.status = .rolledBack
     if copy.result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       copy.result = "Adjusted by plan revision \(max(nextRevision, 1))"
@@ -989,6 +990,7 @@ extension AgentAction {
 
 enum AgentDurablePlanHistoryPolicy {
   static let revisionParameter = "plan_revision"
+  static let supersededStatusParameter = "_galaxyssi_superseded_status"
   static let openStatuses: Set<AgentActionStatus> = [
     .proposed,
     .pendingConfirmation,

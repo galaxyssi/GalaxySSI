@@ -428,17 +428,15 @@ enum AgentCompletionEvidencePolicy {
   static func missingEvidence(
     requirements: AgentCompletionRequirements?,
     history: [AgentAction],
-    answerOnly: Bool = false
+    answerOnly: Bool = false,
+    observationHistory: [AgentAction]? = nil
   ) -> [String] {
     guard let requirements else {
       return answerOnly ? [] : ["model-declared completion_requirements (publication and phone_linux)"]
     }
     let completedTools = Set(history.filter(hasVerifiedCompletionReceipt).map(toolId))
-    var missing: [String] = []
-    for outcome in requirements.outcomes ?? [] {
-      if let reason = missingObservedOutcome(outcome, history: history) {
-        missing.append("Observed outcome \(outcome.id): \(reason). Inspect the existing receipt or obtain a fresh read-only observation; do not blindly repeat a mutation.")
-      }
+    var missing = observationDiagnostics(requirements: requirements, history: observationHistory ?? history).map {
+      "Observed outcome \($0.string("outcome_id")): \($0.string("code"))"
     }
     let timerTool = AgentNativeToolAgentActionAdapter.defaultToolId(.setAlarm)
     if let timer = history.last(where: { action in
@@ -578,50 +576,136 @@ enum AgentCompletionEvidencePolicy {
     repositoryPush
   ])
 
-  private static func missingObservedOutcome(_ outcome: AgentObservedCompletion, history: [AgentAction]) -> String? {
-    func receipt(_ action: AgentAction) -> AgentMcpJSONObject? { decodeObject(action.evidence) }
-    func isDifferentSubject(_ output: AgentMcpJSONObject?) -> Bool {
+  static func observationDiagnostics(
+    requirements: AgentCompletionRequirements?, history: [AgentAction]
+  ) -> [AgentMcpJSONObject] {
+    guard let outcomes = requirements?.outcomes, !outcomes.isEmpty else { return [] }
+    let snapshots = AgentDurablePlanHistoryPolicy.latestSnapshots(history)
+    return outcomes.compactMap { missingObservedOutcome($0, history: snapshots) }
+  }
+
+  static func recordObservationEnvelope(_ result: AgentActionResult, action: inout AgentAction) {
+    for key in ["native_tool_id", "native_tool_status", "native_tool_receipt_status"] {
+      action.parameters["_galaxyssi_observed_" + key] = result.metadata[key]
+    }
+  }
+
+  private static func missingObservedOutcome(
+    _ outcome: AgentObservedCompletion, history: [AgentAction]
+  ) -> AgentMcpJSONObject? {
+    func failure(_ code: String, _ action: AgentAction? = nil, fields: [String] = []) -> AgentMcpJSONObject {
+      let next: String
+      switch code {
+      case "required_action_not_observed":
+        next = "Inspect execution history; remove after_tool_id only for a genuinely read-only goal. Do not replay an effect for evidence."
+      case "required_action_still_pending", "required_action_superseded_unresolved":
+        next = "Reconcile the existing action receipt and current state without dispatching again."
+      case "required_action_rolled_back":
+        next = "Inspect current state and the latest user goal; do not reapply the rolled-back effect without a current request."
+      case "subject_not_matched", "checks_not_satisfied":
+        next = "Inspect actual receipt pointers; repair pointer errors without repeating a tool, otherwise observe the requested state again."
+      default:
+        next = "Obtain a fresh read-only observation of the requested subject; do not repeat mutations blindly."
+      }
+      var issue: AgentMcpJSONObject = ["code": .string(code), "outcome_id": .string(outcome.id),
+        "tool_id": .string(outcome.toolId), "next_action": .string(next)]
+      if !outcome.afterToolId.isEmpty { issue["after_tool_id"] = .string(outcome.afterToolId) }
+      if let action {
+        issue["action_id"] = .string(String(action.id.prefix(128)))
+        issue["action_status"] = .string(action.status.rawValue)
+      }
+      if !fields.isEmpty { issue["fields"] = .array(fields.sorted().prefix(8).map { .string($0) }) }
+      return issue
+    }
+    func output(_ receipt: AgentMcpJSONObject?) -> AgentMcpJSONObject? {
+      receipt?["output"]?.objectValue ?? receipt
+    }
+    func differentSubject(_ output: AgentMcpJSONObject?) -> Bool {
       outcome.subject.contains { path, expected in
-        guard case let .string(actual) = value(at: path, in: output) else { return false }
+        guard let actual = value(at: path, in: output)?.stringValue else { return false }
         return actual != expected
       }
     }
-    func dispatched(_ action: AgentAction) -> Bool {
-      action.kind == .callNativeTool &&
-        ![.proposed, .pendingConfirmation, .blocked].contains(action.status)
+    func interrupted(_ action: AgentAction) -> Bool {
+      ["interrupted", "agent_interrupted_execution", agentPlanNodeObservationPendingEvidence].contains(action.evidence)
+    }
+    func undispatched(_ action: AgentAction) -> Bool {
+      if interrupted(action) { return false }
+      let open = [AgentActionStatus.proposed.rawValue, AgentActionStatus.pendingConfirmation.rawValue]
+      let source = action.parameters[AgentDurablePlanHistoryPolicy.supersededStatusParameter]
+      return open.contains(action.status.rawValue) ||
+        (action.status == .rolledBack && open.contains(source ?? ""))
     }
     let latestMutation: Int
     if outcome.afterToolId.isEmpty {
       latestMutation = -1
     } else {
       guard let index = history.lastIndex(where: {
-        dispatched($0) && toolId($0) == outcome.afterToolId &&
-          (outcome.afterToolId != outcome.toolId || !isDifferentSubject(receipt($0)))
-      }) else { return "required action has no receipt" }
-      guard history[index].status != .rolledBack, !hasUnverifiedOutcome(history[index]) else {
-        return "required action is unsettled or rolled back"
+        $0.kind == .callNativeTool && !undispatched($0) && $0.status != .blocked &&
+          toolId($0) == outcome.afterToolId &&
+          (outcome.afterToolId != outcome.toolId || !differentSubject(output(decodeObject($0.evidence))))
+      }) else { return failure("required_action_not_observed") }
+      let mutation = history[index]
+      if mutation.status == .rolledBack {
+        let superseded = mutation.parameters[AgentDurablePlanHistoryPolicy.supersededStatusParameter] != nil ||
+          mutation.evidence.hasPrefix("superseded_by_plan_revision:")
+        return failure(superseded ? "required_action_superseded_unresolved" : "required_action_rolled_back", mutation)
+      }
+      if interrupted(mutation) || hasUnverifiedOutcome(mutation) {
+        return failure("required_action_still_pending", mutation)
       }
       latestMutation = index
     }
-    for index in history.indices.reversed() where index >= latestMutation {
+    var latestMismatch: AgentMcpJSONObject?
+    var stale = false
+    for index in history.indices.reversed() {
       let action = history[index]
-      guard dispatched(action), toolId(action) == outcome.toolId else { continue }
-      let output = receipt(action)
-      if isDifferentSubject(output) { continue }
-      guard let output, outcome.subject.allSatisfy({ value(at: $0.key, in: output) == .string($0.value) }) else {
-        return "latest receipt does not identify the requested subject"
+      guard action.kind == .callNativeTool, !undispatched(action), toolId(action) == outcome.toolId else { continue }
+      if index < latestMutation { stale = true; continue }
+      guard let raw = decodeObject(action.evidence), let observed = output(raw) else {
+        return failure("invalid_receipt", action)
       }
-      let metadata = output["metadata"]?.objectValue
-      guard action.status == .completed, !hasUnverifiedOutcome(action),
-            output["state_verified"] != .bool(false), output["delivery_verified"] != .bool(false),
-            metadata?.string("business_success_verified") != "false",
-            metadata?.string("completion_verified") != "false" else {
-        return "latest matching receipt is not verified"
+      let wrapped = raw["output"]?.objectValue != nil
+      let tools = [action.parameters["_galaxyssi_observed_native_tool_id"],
+        wrapped ? raw["tool_id"].map { $0.strictStringValue ?? "" } : nil]
+      if tools.compactMap({ $0 }).contains(where: { $0 != outcome.toolId }) {
+        return failure("receipt_tool_mismatch", action)
       }
-      return outcome.checks.allSatisfy { value(at: $0.key, in: output) == $0.value }
-        ? nil : "latest matching receipt does not satisfy the required state"
+      let identityIssues: [String] = outcome.subject.compactMap { path, expected in
+        value(at: path, in: observed)?.stringValue == expected ? nil : path
+      }
+      if !identityIssues.isEmpty {
+        let mismatch = failure("subject_not_matched", action, fields: identityIssues)
+        guard differentSubject(observed) else { return mismatch }
+        if latestMismatch == nil { latestMismatch = mismatch }
+        continue
+      }
+      guard action.status == .completed else { return failure("observation_not_completed", action) }
+      let statuses = [action.parameters["_galaxyssi_observed_native_tool_status"],
+        action.parameters["_galaxyssi_observed_native_tool_receipt_status"],
+        wrapped ? raw["status"].map { $0.strictStringValue ?? "" } : nil,
+        wrapped ? raw["receipt"]?.objectValue?["status"].map { $0.strictStringValue ?? "" } : nil]
+      if statuses.compactMap({ $0 }).contains(where: { $0 != "succeeded" }) {
+        return failure("receipt_not_succeeded", action)
+      }
+      if hasUnverifiedOutcome(action) || isUnverifiedObservation(raw) || isUnverifiedObservation(observed) {
+        return failure("state_unverified", action)
+      }
+      let checkIssues: [String] = outcome.checks.compactMap { path, expected in
+        value(at: path, in: observed) == expected ? nil : path
+      }
+      return checkIssues.isEmpty ? nil : failure("checks_not_satisfied", action, fields: checkIssues)
     }
-    return "no observation at or after the required action"
+    return latestMismatch ?? failure(stale ? "observation_stale" : "observation_missing")
+  }
+
+  private static func isUnverifiedObservation(_ output: AgentMcpJSONObject) -> Bool {
+    let metadata = output["metadata"]?.objectValue
+    return output["state_verified"] == .bool(false) || output["delivery_verified"] == .bool(false) ||
+      metadata?.string("business_success_verified") == "false" || metadata?.string("completion_verified") == "false" ||
+      ["dispatched", "blocked", "unknown", "failed"].contains(metadata?.string("goal_status") ?? "") ||
+      output.string("code").lowercased() == "effect_outcome_unknown" ||
+      ["unknown", "uncertain", "unverified"].contains(output.string("outcome").lowercased())
   }
 
   private static func value(at pointer: String, in output: AgentMcpJSONObject?) -> AgentMcpJSONValue? {

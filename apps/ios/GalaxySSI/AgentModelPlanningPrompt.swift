@@ -55,6 +55,17 @@ enum AgentModelPlanningPrompt {
     }
     let researchTools = compactResearch ? appendResearchTools(to: &prompt, request: request) : []
     appendReplanContext(to: &prompt, request: request)
+    if let diagnostics = request.observationRepairDiagnostics, !diagnostics.isEmpty {
+      append(&prompt, "Host observation diagnostics (no receipt values):\n")
+      append(&prompt, "after_tool_id must refer to an attempted action in this task. Resolve pending actions without resending them; a newer incomplete or unverified read cannot be replaced by older success.\n")
+      var remaining = 2_000
+      for diagnostic in diagnostics {
+        let row = AgentMcpJSONCodec.stringify(diagnostic)
+        guard row.utf8.count + 1 <= remaining else { continue }
+        append(&prompt, row + "\n")
+        remaining -= row.utf8.count + 1
+      }
+    }
     if request.phoneOwnsExecution, let checkpoint = request.timerCheckpoint {
       let encoded = AgentMcpJSONCodec.stringify(checkpoint.mapValues { AgentMcpJSONValue.string($0) })
       append(&prompt, "Phone timer checkpoint for this turn (not a new dispatch): \(encoded)\n")

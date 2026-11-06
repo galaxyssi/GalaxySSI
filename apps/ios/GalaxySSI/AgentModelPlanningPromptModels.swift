@@ -13,6 +13,7 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
   var allowsDirectResponse: Bool
   var phoneOwnsExecution: Bool
   var timerCheckpoint: [String: String]?
+  var observationRepairDiagnostics: [AgentMcpJSONObject]?
 
   init(
     planRequest: AgentPlanRequest,
@@ -31,7 +32,8 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
     allowsPhoneRuntimeTools: Bool? = nil,
     allowsDirectResponse: Bool = false,
     phoneOwnsExecution: Bool = false,
-    timerCheckpoint: [String: String]? = nil
+    timerCheckpoint: [String: String]? = nil,
+    observationRepairDiagnostics: [AgentMcpJSONObject]? = nil
   ) {
     let resolvedRequirements = requirements ?? AgentTaskRequirementAnalyzer.analyze(planRequest.goal)
     let resolvedHasAttachments = hasAttachments ?? conversationContext.hasAttachments
@@ -48,6 +50,7 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
     self.allowsDirectResponse = allowsDirectResponse
     self.phoneOwnsExecution = phoneOwnsExecution
     self.timerCheckpoint = timerCheckpoint
+    self.observationRepairDiagnostics = observationRepairDiagnostics
   }
 
   enum CodingKeys: String, CodingKey {
@@ -63,6 +66,7 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
     case allowsDirectResponse = "allows_direct_response"
     case phoneOwnsExecution = "phone_owns_execution"
     case timerCheckpoint = "timer_checkpoint"
+    case observationRepairDiagnostics = "observation_repair_diagnostics"
   }
 
   init(from decoder: Decoder) throws {
@@ -80,7 +84,8 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
       allowsPhoneRuntimeTools: try container.decodeIfPresent(Bool.self, forKey: .allowsPhoneRuntimeTools),
       allowsDirectResponse: try container.decodeIfPresent(Bool.self, forKey: .allowsDirectResponse) ?? false,
       phoneOwnsExecution: try container.decodeIfPresent(Bool.self, forKey: .phoneOwnsExecution) ?? false,
-      timerCheckpoint: try container.decodeIfPresent([String: String].self, forKey: .timerCheckpoint)
+      timerCheckpoint: try container.decodeIfPresent([String: String].self, forKey: .timerCheckpoint),
+      observationRepairDiagnostics: try container.decodeIfPresent([AgentMcpJSONObject].self, forKey: .observationRepairDiagnostics)
     )
   }
 }

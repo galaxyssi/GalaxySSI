@@ -8394,6 +8394,12 @@ final class MessageCoordinator: ObservableObject {
       conversation.globalContext = ""
     }
     let hasAttachments = hasAttachmentsOverride ?? !attachments.isEmpty
+    let observationScope = AgentPlanContinuationScope(conversationId: outgoing.conversationId, turnId: turnId)
+    let persistedObservationPlan = store.agentTask(id: turnId).flatMap {
+      $0.sessionId == outgoing.conversationId ? $0.activePlan : nil
+    }
+    let observationHistory = (persistedObservationPlan.map { $0.actionHistory + $0.actions } ?? executionHistory)
+      .filter(observationScope.owns)
     var planningRequest = AgentModelPlanningPromptRequest(
       planRequest: planRequest,
       parsingContext: AgentModelPlanParsingContext(
@@ -8428,7 +8434,8 @@ final class MessageCoordinator: ObservableObject {
       runtime.registry.lookup($0)?.descriptor
     }
     let existingEvidence = AgentCompletionEvidencePolicy.missingEvidence(
-      requirements: completionRequirements, history: scopedHistory, answerOnly: answerOnly)
+      requirements: completionRequirements, history: scopedHistory, answerOnly: answerOnly,
+      observationHistory: observationHistory)
     planningRequest.allowsDirectResponse = planningRequest.allowsDirectResponse && timerCheckpoint == nil &&
       answerOnly && existingEvidence.isEmpty &&
       !AgentRollingPlanPolicy.isBatchBoundaryReason(replanReason)
@@ -8456,7 +8463,8 @@ final class MessageCoordinator: ObservableObject {
         let proposedMissing = AgentCompletionEvidencePolicy.missingEvidence(
           requirements: plan.completionRequirements,
           history: scopedHistory,
-          answerOnly: answerOnly
+          answerOnly: answerOnly,
+          observationHistory: observationHistory
         )
         let priorMissing = completionRequirements == nil ? [] : existingEvidence
         let unsettled = scopedHistory.contains(where: AgentCompletionEvidencePolicy.hasUnverifiedOutcome)
@@ -8471,6 +8479,14 @@ final class MessageCoordinator: ObservableObject {
           return .plan(completion)
         }
         guard repairAttempt == 0 else { return nil }
+        let diagnostics = AgentCompletionEvidencePolicy.observationDiagnostics(
+          requirements: completionRequirements, history: observationHistory) +
+          AgentCompletionEvidencePolicy.observationDiagnostics(
+            requirements: plan.completionRequirements, history: observationHistory)
+        var seenDiagnostics: Set<String> = []
+        planningRequest.observationRepairDiagnostics = diagnostics.filter {
+          seenDiagnostics.insert(AgentMcpJSONCodec.stringify($0)).inserted
+        }
         planningRequest.planRequest.completionRequirements = plan.completionRequirements
         let priorReason = planningRequest.parsingContext.replanReason
           .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -8880,6 +8896,7 @@ final class MessageCoordinator: ObservableObject {
       _ = recordLocalNativeActionResult(stepReply, task: &task)
       if let planIndex = updatedPlan.actions.firstIndex(where: { $0.id == action.id }) {
         var completed = updatedPlan.actions[planIndex]
+        AgentCompletionEvidencePolicy.recordObservationEnvelope(result, action: &completed)
         completed.status = result.success ? .completed : .failed
         completed.result = result.message
         completed.evidence = result.metadata["native_tool_output"]
@@ -9298,6 +9315,7 @@ final class MessageCoordinator: ObservableObject {
     ) {
       completed.evidence = compact
     }
+    AgentCompletionEvidencePolicy.recordObservationEnvelope(result, action: &completed)
     plan.actions[index] = completed
     plan.validation = AgentPlanValidator.validate(plan)
     task.activePlan = plan
