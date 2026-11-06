@@ -26,6 +26,14 @@
     <string name="health_trend_bucket">%1$d calendar day(s) per point</string>
     <string name="health_trend_empty">No plottable numeric values</string>
     <string name="health_trend_chart_description">Trend chart: %1$d numeric records across %2$d days</string>
+    <string name="health_trend_chart_title">%1$s trend</string>
+    <string name="health_trend_chart_data">Chart data</string>
+    <string name="health_trend_chart_data_dates">%1$s to %2$s</string>
+    <string name="health_trend_chart_data_row">%1$s\n%2$s · %3$s: %4$s · %5$s</string>
+    <plurals name="health_trend_chart_data_records">
+        <item quantity="one">%d record</item>
+        <item quantity="other">%d records</item>
+    </plurals>
     <string name="health_trend_point">%1$s: %2$s %3$s · %4$d records</string>
     <string name="health_trend_from">Start date</string>
     <string name="health_trend_until">End date</string>

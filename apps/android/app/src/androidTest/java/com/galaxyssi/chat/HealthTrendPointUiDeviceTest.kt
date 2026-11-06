@@ -8,6 +8,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.accessibility.AccessibilityNodeInfo
 import android.view.inspector.WindowInspector
 import android.widget.ListView
 import android.widget.TextView
@@ -107,6 +108,93 @@ class HealthTrendPointUiDeviceTest {
                 assertFalse(has(it, "health-trend-audit-result"))
                 assertTrue(rows(it).isEmpty())
             }
+        }
+    }
+
+    @Test fun accessibleListSeparatesPressureComponentsAndOpensTheExactFilteredRecord() = fixture { names ->
+        val first = HealthRecordStore(context, names.records).use { store ->
+            fun pressure(systolic: String, diastolic: String, at: Long, evidence: HealthEvidence? = null) =
+                (store.save(HealthDraft(HealthMetric.BLOOD_PRESSURE, mapOf("systolic" to systolic, "diastolic" to diastolic),
+                    "mmHg", at, evidence = evidence)) as HealthSaveResult.Saved).record
+            pressure("125", "75", time - 86_400_000L + 1000)
+            val wanted = pressure("120", "80", time + 1000)
+            pressure("143", "93", time + 60_000, HealthEvidence(id(), id(), "value", "a".repeat(64), 1, "Synthetic", confirmed = true))
+            wanted
+        }
+        val intent = Intent(context, HealthTrendActivity::class.java).putExtra("health_metric", HealthMetric.BLOOD_PRESSURE.name)
+            .putHealthNavigationFixture(names)
+        ActivityScenario.launch<HealthTrendActivity>(intent).use { scenario ->
+            lateinit var trend: HealthTrendActivity
+            scenario.onActivity { trend = it }
+            await(trend) { has(it, "health-trend-chart-data") }
+            choose(trend, "health-trend-source", 1)
+            await(trend) { has(it, "health-trend-chart-data") }
+            scenario.onActivity {
+                val chart = it.window.decorView.findViewWithTag<View>("health-trend-chart")
+                val info = chart.createAccessibilityNodeInfo()
+                assertTrue(info.actionList.any { action -> action.id == AccessibilityNodeInfo.ACTION_CLICK &&
+                    action.label == it.getString(R.string.health_trend_chart_data) })
+                assertTrue(chart.performAccessibilityAction(AccessibilityNodeInfo.ACTION_CLICK, null))
+            }
+            instrumentation.waitForIdleSync()
+            val labels = chartLabels()
+            assertEquals(4, labels.size)
+            assertTrue(labels[0].contains("120 mmHg") && labels[1].contains("80 mmHg"))
+            assertTrue(labels[2].contains("125 mmHg") && labels[3].contains("75 mmHg"))
+            assertTrue(labels.all { it.contains(trend.getString(R.string.health_trend_mean)) })
+            assertTrue(labels[0].contains(trend.getString(R.string.health_systolic)))
+            assertTrue(labels[1].contains(trend.getString(R.string.health_diastolic)))
+            if (InstrumentationRegistry.getArguments().getString("trendPointListScreenshot") == "true") {
+                await(trend) { chartList()?.let { list -> list.hasWindowFocus() && list.childCount > 0 } == true }
+                instrumentation.uiAutomation.waitForIdle(250, 3_000)
+                val screenshot = instrumentation.uiAutomation.takeScreenshot()
+                checkNotNull(screenshot)
+                try {
+                    context.cacheDir.resolve("health-trend-point-list.png").outputStream().use {
+                        assertTrue(screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it))
+                    }
+                } finally { screenshot.recycle() }
+            }
+            val revision = open(HealthRecordRevisionActivity::class.java) {
+                instrumentation.runOnMainSync {
+                    val list = requireNotNull(chartList())
+                    assertTrue(list.performItemClick(list.getChildAt(1), 1, list.adapter.getItemId(1)))
+                }
+            }
+            try {
+                assertEquals(first.id, revision.intent.getStringExtra("health_record"))
+                assertEquals(first.revision, revision.intent.getIntExtra("health_revision", 0))
+                await(revision) { has(it, "health-revision-value") }
+                back(revision)
+                await(trend) { has(it, "health-trend-chart-data") }
+                assertTrue(chartLabels().isEmpty())
+            } finally { finish(revision) }
+        }
+    }
+
+    @Test fun changedSnapshotClosesThePointListAndRequiresRefreshBeforeOpeningItAgain() = fixture { names ->
+        val record = HealthRecordStore(context, names.records).use { save(it, 0, "51") }
+        val intent = Intent(context, HealthTrendActivity::class.java).putExtra("health_metric", HealthMetric.WEIGHT.name)
+            .putHealthNavigationFixture(names)
+        ActivityScenario.launch<HealthTrendActivity>(intent).use { scenario ->
+            lateinit var trend: HealthTrendActivity
+            scenario.onActivity { trend = it }
+            await(trend) { has(it, "health-trend-chart-data") }
+            tap(trend, "health-trend-chart-data")
+            assertTrue(chartLabels().single().contains("51 kg"))
+            HealthRecordStore(context, names.records).use {
+                assertTrue(it.save(record.editable().copy(values = mapOf("weight" to "52"))) is HealthSaveResult.Saved)
+            }
+            await(trend) { it.window.decorView.findViewWithTag<View>("health-trend-chart-data").visibility == View.GONE }
+            assertTrue(chartLabels().isEmpty())
+            scenario.onActivity {
+                val chart = it.window.decorView.findViewWithTag<View>("health-trend-chart")
+                assertFalse(chart.performAccessibilityAction(AccessibilityNodeInfo.ACTION_CLICK, null))
+            }
+            tap(trend, "health-trend-refresh")
+            await(trend) { it.window.decorView.findViewWithTag<View>("health-trend-chart-data")?.visibility == View.VISIBLE }
+            tap(trend, "health-trend-chart-data")
+            assertTrue(chartLabels().single().contains("52 kg"))
         }
     }
 
@@ -236,6 +324,15 @@ class HealthTrendPointUiDeviceTest {
         .filter { (it.tag as? String)?.startsWith("health-trend-record-") == true }
     private fun descendants(view: View): List<View> = listOf(view) + if (view is ViewGroup)
         (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) } else emptyList()
+    private fun chartList(): ListView? =
+        WindowInspector.getGlobalWindowViews().flatMap(::descendants).filterIsInstance<ListView>().lastOrNull()
+    private fun chartLabels(): List<String> {
+        var labels = emptyList<String>()
+        instrumentation.runOnMainSync {
+            chartList()?.let { list -> labels = (0 until list.count).map { list.adapter.getItem(it).toString() } }
+        }
+        return labels
+    }
     private fun has(activity: Activity, tag: String) = activity.window.decorView.findViewWithTag<View>(tag) != null
     private fun text(activity: Activity, tag: String) = activity.window.decorView.findViewWithTag<TextView>(tag).text.toString()
     private fun contributorCount(activity: Activity): Int {

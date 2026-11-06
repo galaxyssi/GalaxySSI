@@ -26,6 +26,13 @@
     <string name="health_trend_bucket">每个点聚合 %1$d 个自然日</string>
     <string name="health_trend_empty">暂无可绘制数值</string>
     <string name="health_trend_chart_description">趋势图：%1$d 条数值记录，覆盖 %2$d 天</string>
+    <string name="health_trend_chart_title">%1$s趋势</string>
+    <string name="health_trend_chart_data">查看图表数据</string>
+    <string name="health_trend_chart_data_dates">%1$s至%2$s</string>
+    <string name="health_trend_chart_data_row">%1$s\n%2$s · %3$s：%4$s · %5$s</string>
+    <plurals name="health_trend_chart_data_records">
+        <item quantity="other">%d 条记录</item>
+    </plurals>
     <string name="health_trend_point">%1$s：%2$s %3$s · %4$d 条记录</string>
     <string name="health_trend_from">开始日期</string>
     <string name="health_trend_until">结束日期</string>
