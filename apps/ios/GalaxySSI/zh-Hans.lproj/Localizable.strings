@@ -5632,6 +5632,9 @@
 "public_news_new_arrivals" = "%d 条新动态";
 "public_news_open_article" = "打开文章";
 "public_news_original_source" = "原始来源";
+"public_news_source_unverified" = "来源摘要 · 未核验";
+"public_news_source_checked" = "原文摘录 · 未经独立核验";
+"public_news_review_originals" = "在本机审阅原文";
 "public_news_ask_agent" = "询问 Agent";
 "public_news_discussion_failed" = "无法打开这篇文章的会话。";
 "public_news_content_summary" = "内容摘要";

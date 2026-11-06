@@ -451,6 +451,52 @@ final class PublicNewsFeedTests: XCTestCase {
     XCTAssertTrue(article.saved)
   }
 
+  func testPublicFeedCanonicalizesTrackingLinksAndRejectsPrivateAndFutureSourceClaims() throws {
+    let xml = """
+    <rss version="2.0"><channel>
+      <item><title>First</title><link>https://EXAMPLE.com:443/story?utm_source=a&amp;id=17#one</link>
+        <pubDate>Tue, 01 Nov 2099 12:00:00 GMT</pubDate></item>
+      <item><title>Duplicate</title><link>https://example.com/story?id=17&amp;gclid=click</link></item>
+      <item><title>Private</title><link>https://192.168.1.2/private</link></item>
+      <item><title>HTTP only</title><link>http://example.com/other</link></item>
+      <item><title>Other</title><link>https://example.com/other</link></item>
+    </channel></rss>
+    """
+    let result = try PublicNewsFeedParser.parse(Data(xml.utf8), source: source, now: now)
+    XCTAssertEqual(result.map(\.title), ["First", "Other"])
+    XCTAssertEqual(result.first?.url.absoluteString, "https://example.com/story?id=17")
+    XCTAssertNil(result.first?.publishedAt)
+    XCTAssertEqual(result.first?.discoveredAt, now)
+  }
+
+  func testSourceReviewRequiresExactPublisherExcerptsAndPreservesReaderStateOnMerge() throws {
+    var original = timelineArticle("source-review")
+    original.url = try XCTUnwrap(URL(string: "https://example.com/source-review?utm_source=legacy"))
+    original.summary = "Feed summary"
+    original.saved = true
+    original.read = true
+    let quote = "The original publisher recorded the observation in a public technical report."
+    let body = PublicNewsOriginalBody(title: original.title, paragraphs: [quote])
+    let reply = try JSONEncoder().encode(["quotes": [quote]])
+    original.sourceReview = try XCTUnwrap(PublicNewsSourceReview.accept(String(decoding: reply, as: UTF8.self),
+      article: original, source: body, now: now))
+    XCTAssertNil(PublicNewsSourceReview.accept(String(decoding: reply, as: UTF8.self)
+      .replacingOccurrences(of: "technical", with: "classified"), article: original, source: body, now: now))
+    var replay = timelineArticle("source-review")
+    replay.summary = original.summary
+    let merged = try XCTUnwrap(PublicNewsArchive.merge(existing: [original], incoming: [replay]).first)
+    XCTAssertEqual(merged.id, original.id)
+    XCTAssertTrue(merged.saved)
+    XCTAssertTrue(merged.read)
+    XCTAssertEqual(merged.summary, original.summary)
+    XCTAssertEqual(PublicNewsSourceReview.current(for: merged)?.excerpts, [quote])
+    replay.summary = "Corrected feed summary"
+    let changed = try XCTUnwrap(PublicNewsArchive.merge(existing: [merged], incoming: [replay]).first)
+    XCTAssertNil(PublicNewsSourceReview.current(for: changed))
+    XCTAssertTrue(changed.saved)
+    XCTAssertTrue(changed.read)
+  }
+
   func testFirebaseCursorPersistsPendingAndDeduplicatesReconnectAndReappearingStories() throws {
     var cursor = PublicNewsPushCursor()
     func data(_ text: String) -> Data { Data(text.utf8) }

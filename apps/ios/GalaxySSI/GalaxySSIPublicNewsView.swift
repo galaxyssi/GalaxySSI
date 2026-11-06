@@ -84,6 +84,7 @@ struct GalaxySSIPublicNewsView: View {
   @AppStorage("publicNews.liveEnabled") private var liveNewsEnabled = false
   @AppStorage("publicNews.publisherDiscovery") private var publisherDiscovery = false
   @AppStorage("publicNews.automaticHeadlineTranslation") private var automaticHeadlineTranslation = false
+  @AppStorage(PublicNewsSourceReviewWorker.preferenceKey) private var reviewOriginalSources = false
   @AppStorage("publicNews.headlineTranslationRoute") private var headlineTranslationRoute = ""
   @StateObject private var archive = PublicNewsArchive()
   @ObservedObject private var automaticHeadlines = PublicNewsAutomaticHeadlineWorker.shared
@@ -133,6 +134,11 @@ struct GalaxySSIPublicNewsView: View {
   private var headlineWorkerEnabled: Bool {
     archive.loaded && scenePhase == .active && !showHeadlineTranslation &&
       PublicNewsAutomaticHeadlinePolicy.enabled(automaticHeadlineTranslation, language: language)
+  }
+
+  private var sourceReviewEnabled: Bool {
+    archive.loaded && scenePhase == .active && reviewOriginalSources &&
+      PublicNewsSourceReviewWorker.allowed(store.globalAgentSettings)
   }
 
   private var headlineCloudRoutes: [GalaxySSIContact] {
@@ -225,6 +231,9 @@ struct GalaxySSIPublicNewsView: View {
     .task(id: "\(headlineWorkerEnabled):\(headlineTranslationRoute)") {
       automaticHeadlines.configure(enabled: headlineWorkerEnabled, route: headlineTranslationRoute,
         archive: archive, store: store, coordinator: coordinator)
+    }
+    .task(id: sourceReviewEnabled, priority: .utility) {
+      if sourceReviewEnabled { await PublicNewsSourceReviewWorker.shared.run(archive: archive, store: store) }
     }
     .onChange(of: archive.articles) { _ in
       guard archive.loaded else { return }
@@ -544,7 +553,7 @@ struct GalaxySSIPublicNewsView: View {
             .fontWeight(.regular)
             .lineLimit(expanded ? nil : reservesBilingualSpace ? 2 : 3)
         } detail: {
-          GalaxySSIPublicNewsByline(article: article)
+          GalaxySSIPublicNewsByline(article: article, showSourceStatus: true)
         }
         .padding(.vertical, 12)
         GalaxySSIPublicNewsBookmark(archive: archive, article: article) { saved in
@@ -561,7 +570,8 @@ struct GalaxySSIPublicNewsView: View {
       }
       if expanded {
         VStack(alignment: .leading, spacing: 8) {
-          GalaxySSIPublicNewsSummary(text: article.summary)
+          GalaxySSIPublicNewsSummary(text: PublicNewsSourceReview.current(for: article)?.excerpts.joined(separator: "\n\n")
+            ?? article.summary)
           GalaxySSIPublicNewsBodyView(article: article, retainedArticleIDs: Set(archive.articles.map(\.id))) { cover in
             archive.rememberCover(cover, articleID: article.id)
           }
@@ -742,6 +752,8 @@ struct GalaxySSIPublicNewsView: View {
             }
           }
           Toggle(t("public_news_live", "Live Hacker News"), isOn: $liveNewsEnabled)
+          Toggle(t("public_news_review_originals", "Review originals on this phone"), isOn: $reviewOriginalSources)
+            .disabled(!PublicNewsSourceReviewWorker.allowed(store.globalAgentSettings))
           Toggle(t("public_news_learn_publishers", "Discover publisher feeds"), isOn: $publisherDiscovery)
             .disabled(archive.refreshing)
         }
@@ -812,7 +824,7 @@ struct GalaxySSIPublicNewsReader: View {
             onDismissArticle: { dismiss() }) {
             Text(article.displayTitle).font(.title2.weight(.semibold))
           } detail: {
-            GalaxySSIPublicNewsByline(article: article)
+            GalaxySSIPublicNewsByline(article: article, showSourceStatus: true)
           }
           if article.displayTitle != article.title, let translation = article.headlineTranslation {
             VStack(alignment: .leading, spacing: 4) {
@@ -822,7 +834,8 @@ struct GalaxySSIPublicNewsReader: View {
             }
             .foregroundColor(.secondary)
           }
-          GalaxySSIPublicNewsSummary(text: article.summary)
+          GalaxySSIPublicNewsSummary(text: PublicNewsSourceReview.current(for: article)?.excerpts.joined(separator: "\n\n")
+            ?? article.summary)
           GalaxySSIPublicNewsBodyView(article: article, retainedArticleIDs: Set(archive.articles.map(\.id))) { cover in
             archive.rememberCover(cover, articleID: article.id)
           }
@@ -902,14 +915,25 @@ private struct GalaxySSIPublicNewsArticleActions: View {
 }
 
 struct GalaxySSIPublicNewsByline: View {
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
   let article: PublicNewsArticle
+  var showSourceStatus = false
 
   var body: some View {
-    HStack(spacing: 6) {
-      Text(article.publisher)
-      if let published = article.publishedAt {
-        Text("·").accessibilityHidden(true)
-        Text(published, style: .date)
+    VStack(alignment: .leading, spacing: 3) {
+      HStack(spacing: 6) {
+        Text(article.publisher)
+        if let published = article.publishedAt {
+          Text("·").accessibilityHidden(true)
+          Text(published, style: .date)
+        }
+      }
+      if showSourceStatus {
+        let checked = PublicNewsSourceReview.current(for: article) != nil
+        Text(GalaxySSILocalization.string(checked ? "public_news_source_checked" : "public_news_source_unverified",
+          fallback: checked ? "Publisher excerpt · not independently verified" : "Source summary · unverified",
+          language: language))
+          .lineLimit(1)
       }
     }
     .font(.caption)
