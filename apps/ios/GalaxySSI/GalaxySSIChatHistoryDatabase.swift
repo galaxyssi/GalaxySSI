@@ -1,7 +1,7 @@
 import Foundation
 import SQLite3
 
-struct GalaxySSIChatHistoryCursor: Codable, Comparable {
+struct GalaxySSIChatHistoryCursor: Codable, Comparable, Sendable {
   var createdAtMillis: Int64
   var messageId: String
 
@@ -393,8 +393,9 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
             let payload = encryptedPayload(message),
             let statement = prepare("""
               INSERT INTO chat_messages
-                (message_id, contact_id, conversation_id, created_at, is_mine, is_system, remote_message_id, encrypted_payload, agent_turn_key)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (message_id, contact_id, conversation_id, created_at, is_mine, is_system, remote_message_id, encrypted_payload,
+                 agent_turn_key, agent_unread_key)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT(message_id) DO UPDATE SET
                 contact_id = excluded.contact_id,
                 conversation_id = excluded.conversation_id,
@@ -403,7 +404,8 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
                 is_system = excluded.is_system,
                 remote_message_id = excluded.remote_message_id,
                 encrypted_payload = excluded.encrypted_payload,
-                agent_turn_key = excluded.agent_turn_key
+                agent_turn_key = excluded.agent_turn_key,
+                agent_unread_key = excluded.agent_unread_key
               """) else { return false }
       defer { sqlite3_finalize(statement) }
       bind(message.id.uuidString, at: 1, to: statement)
@@ -417,6 +419,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
         sqlite3_bind_blob(statement, 8, bytes.baseAddress, Int32(payload.count), Self.transient)
       }
       if let key = turnTimingKey(message) { bind(key, at: 9, to: statement) }
+      if let key = unreadReplyKey(message) { bind(key, at: 10, to: statement) }
       guard sqlite3_step(statement) == SQLITE_DONE else { return false }
       rowCache.remove(message.id.uuidString)
       return true
@@ -610,6 +613,81 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
     guard message.isMine, !message.isSystem, !message.conversationId.isBlank else { return "" }
     return try? cipher.chatTurnTimingIndex(conversationId: message.conversationId,
       turnId: AgentReplyWaitingIndicatorPolicy.turnKey(for: message))
+  }
+
+  private func unreadReplyKey(_ message: ChatMessage) -> String? {
+    guard let token = AgentReplyUnreadPolicy.token(message) else { return "" }
+    return try? cipher.chatUnreadReplyIndex(conversationId: message.conversationId, token: token)
+  }
+
+  // Older rows have no unread index. Upgrade small batches separately from identifier-only probes.
+  func prepareLegacyUnreadIndex(conversationId: String) {
+    for _ in 0..<4 {
+      guard !Task.isCancelled, locked({ indexUnreadPage(conversationId: conversationId) }) else { return }
+    }
+  }
+
+  private func indexUnreadPage(conversationId: String) -> Bool {
+    guard rowCachingEnabled, let read = prepare("""
+      SELECT message_id, encrypted_payload FROM chat_messages WHERE conversation_id = ?
+        AND contact_id = 'hermes' AND is_mine = 0 AND is_system = 0 AND agent_unread_key IS NULL LIMIT 64
+      """) else { return false }
+    bind(conversationId, at: 1, to: read)
+    var rows: [(id: String, key: String)] = []
+    while !Task.isCancelled, sqlite3_step(read) == SQLITE_ROW {
+      guard let text = sqlite3_column_text(read, 0) else { continue }
+      let id = String(cString: text)
+      guard let message = decode(read, id: id, payloadColumn: 1), message.conversationId == conversationId,
+            let key = unreadReplyKey(message) else { continue }
+      rows.append((id, key))
+    }
+    sqlite3_finalize(read)
+    guard !Task.isCancelled, !rows.isEmpty,
+          let update = prepare("UPDATE chat_messages SET agent_unread_key = ? WHERE message_id = ? AND agent_unread_key IS NULL")
+    else { return false }
+    defer { sqlite3_finalize(update) }
+    guard execute("BEGIN IMMEDIATE TRANSACTION") else { return false }
+    for row in rows {
+      sqlite3_reset(update)
+      bind(row.key, at: 1, to: update)
+      bind(row.id, at: 2, to: update)
+      guard sqlite3_step(update) == SQLITE_DONE else { _ = execute("ROLLBACK"); return false }
+    }
+    guard execute("COMMIT") else { _ = execute("ROLLBACK"); return false }
+    return rows.count == 64
+  }
+
+  func missingUnreadTokens(conversationId: String, candidates: Set<String>) -> Set<String>? {
+    locked {
+      guard rowCachingEnabled, !Task.isCancelled,
+            let legacy = prepare("""
+              SELECT 1 FROM chat_messages WHERE conversation_id = ?
+                AND contact_id = 'hermes' AND is_mine = 0 AND is_system = 0 AND agent_unread_key IS NULL LIMIT 1
+              """) else { return nil }
+      defer { sqlite3_finalize(legacy) }
+      bind(conversationId, at: 1, to: legacy)
+      // Absence is only authoritative once every eligible legacy row has an index value.
+      guard sqlite3_step(legacy) == SQLITE_DONE,
+            let lookup = prepare("""
+              SELECT 1 FROM chat_messages WHERE conversation_id = ?
+                AND contact_id = 'hermes' AND is_mine = 0 AND is_system = 0 AND agent_unread_key = ? LIMIT 1
+              """) else { return nil }
+      defer { sqlite3_finalize(lookup) }
+      var missing = Set<String>()
+      for token in candidates {
+        guard !Task.isCancelled,
+              let key = try? cipher.chatUnreadReplyIndex(conversationId: conversationId, token: token) else { return nil }
+        sqlite3_reset(lookup)
+        bind(conversationId, at: 1, to: lookup)
+        bind(key, at: 2, to: lookup)
+        switch sqlite3_step(lookup) {
+        case SQLITE_DONE: missing.insert(token)
+        case SQLITE_ROW: break
+        default: return nil
+        }
+      }
+      return missing
+    }
   }
 
   private func turnTimingStarts(conversationId: String, turnIds: Set<String>) -> [String: Int64]? {
@@ -949,13 +1027,19 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
     sqlite3_busy_timeout(database, 5_000)
     _ = execute("PRAGMA journal_mode = WAL")
     _ = execute("PRAGMA synchronous = NORMAL")
-    _ = execute("CREATE TABLE IF NOT EXISTS chat_messages (message_id TEXT PRIMARY KEY NOT NULL, contact_id TEXT NOT NULL, conversation_id TEXT NOT NULL, created_at INTEGER NOT NULL, is_mine INTEGER NOT NULL, is_system INTEGER NOT NULL, remote_message_id TEXT NOT NULL, encrypted_payload BLOB NOT NULL, agent_turn_key TEXT)")
+    _ = execute("CREATE TABLE IF NOT EXISTS chat_messages (message_id TEXT PRIMARY KEY NOT NULL, contact_id TEXT NOT NULL, conversation_id TEXT NOT NULL, created_at INTEGER NOT NULL, is_mine INTEGER NOT NULL, is_system INTEGER NOT NULL, remote_message_id TEXT NOT NULL, encrypted_payload BLOB NOT NULL, agent_turn_key TEXT, agent_unread_key TEXT)")
     if let column = prepare("SELECT agent_turn_key FROM chat_messages LIMIT 0") {
       sqlite3_finalize(column)
     } else {
       _ = execute("ALTER TABLE chat_messages ADD COLUMN agent_turn_key TEXT")
     }
     _ = execute("CREATE INDEX IF NOT EXISTS chat_messages_agent_turn_start ON chat_messages(conversation_id, agent_turn_key, created_at, message_id) WHERE is_mine = 1 AND is_system = 0")
+    if let column = prepare("SELECT agent_unread_key FROM chat_messages LIMIT 0") {
+      sqlite3_finalize(column)
+    } else {
+      _ = execute("ALTER TABLE chat_messages ADD COLUMN agent_unread_key TEXT")
+    }
+    _ = execute("CREATE INDEX IF NOT EXISTS chat_messages_agent_unread ON chat_messages(conversation_id, agent_unread_key) WHERE contact_id = 'hermes' AND is_mine = 0 AND is_system = 0")
     _ = execute("CREATE INDEX IF NOT EXISTS chat_messages_contact_order ON chat_messages(contact_id, created_at DESC, message_id DESC)")
     _ = execute("CREATE INDEX IF NOT EXISTS chat_messages_conversation_order ON chat_messages(conversation_id, created_at ASC, message_id ASC)")
     _ = execute("CREATE INDEX IF NOT EXISTS chat_messages_remote_dedupe ON chat_messages(contact_id, remote_message_id, is_mine)")

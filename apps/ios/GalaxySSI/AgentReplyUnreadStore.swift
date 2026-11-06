@@ -42,6 +42,11 @@ final class AgentReplyUnreadStore {
   private let defaults: UserDefaults
   private let secrets: GalaxySSISecretStore
 
+  struct PendingMarker: Sendable {
+    let token: String
+    let position: GalaxySSIChatHistoryCursor?
+  }
+
   private struct State: Codable, Equatable {
     var seen: [String: Set<String>] = [:]
     var pending: [String: Set<String>] = [:]
@@ -60,6 +65,28 @@ final class AgentReplyUnreadStore {
     let pending = load().pending
     if let conversationId { return pending[conversationId]?.count ?? 0 }
     return pending.values.reduce(0) { $0 + $1.count }
+  }
+
+  func pendingSnapshot() -> [String: [PendingMarker]] {
+    Self.lock.lock()
+    defer { Self.lock.unlock() }
+    let state = load()
+    return state.pending.reduce(into: [:]) { result, entry in
+      guard !entry.value.isEmpty else { return }
+      result[entry.key] = entry.value.map { PendingMarker(token: $0, position: state.positions?[entry.key]?[$0]) }
+    }
+  }
+
+  func discardMissing(_ snapshot: [String: [PendingMarker]]) {
+    guard !snapshot.isEmpty else { return }
+    update { state in
+      for (conversation, markers) in snapshot {
+        for marker in markers where state.positions?[conversation]?[marker.token] == marker.position {
+          state.pending[conversation]?.remove(marker.token)
+          state.positions?[conversation]?.removeValue(forKey: marker.token)
+        }
+      }
+    }
   }
 
   func contactReadAt(_ contactId: String) -> Date {

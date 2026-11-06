@@ -202,8 +202,9 @@ extension AgentHomeView {
 
   var unreadTotal: Int {
     _ = replyUnreadRevision
-    return store.visibleContacts.filter { $0.id != "hermes" }.reduce(agentUnreadCount) { total, contact in
-      total + store.conversationSummary(for: contact.id).unreadCount
+    return store.chatContacts.filter { $0.id != "hermes" }.reduce(agentUnreadCount) { total, contact in
+      let summary = GalaxySSIConversationHubContactHistoryPolicy.visibleSummary(contact, summary: store.conversationSummary(for:))
+      return total + (summary?.unreadCount ?? 0)
     }
   }
 

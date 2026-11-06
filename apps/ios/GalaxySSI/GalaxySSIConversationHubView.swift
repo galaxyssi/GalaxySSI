@@ -582,6 +582,9 @@ struct GalaxySSIConversationHubView: View {
     .task(id: hubContentTaskID) {
       await prepareHubContent()
     }
+    .task(id: unreadReconciliationScope) {
+      if unreadReconciliationScope != nil { await store.reconcileAgentReplyUnread() }
+    }
   }
 
   private func openInitialContactIfNeeded() {
@@ -785,8 +788,8 @@ struct GalaxySSIConversationHubView: View {
       "\($0.id):\($0.updatedAt):\($0.status):\($0.pinned):\($0.mergedIntoConversationId)"
     }.joined(separator: "|")
     let contactKey = store.contacts.map {
-      let summary = store.conversationSummary(for: $0.id)
-      return "\($0.id):\($0.updatedAt):\($0.deleted):\($0.displayName):\(summary.lastMessage?.createdAt.timeIntervalSince1970 ?? 0):\(summary.unreadCount):\(store.isContactPinned($0.id))"
+      let summary = GalaxySSIConversationHubContactHistoryPolicy.visibleSummary($0, summary: store.conversationSummary(for:))
+      return "\($0.id):\($0.updatedAt):\($0.deleted):\($0.displayName):\(summary?.lastMessage?.createdAt.timeIntervalSince1970 ?? 0):\(summary?.unreadCount ?? 0):\(store.isContactPinned($0.id))"
     }.joined(separator: "|")
     return [
       selectedTab.rawValue,
@@ -797,6 +800,11 @@ struct GalaxySSIConversationHubView: View {
       contactKey,
       "friend-unread:\(store.unreadFriendRequestCount)"
     ].joined(separator: "\u{001F}")
+  }
+
+  private var unreadReconciliationScope: String? {
+    guard scenePhase == .active, !backgroundSuspended, selectedTab == .conversations else { return nil }
+    return store.profile.identityFingerprint
   }
 
   private func refreshAfterContactImport() {
@@ -992,7 +1000,7 @@ struct GalaxySSIConversationHubView: View {
   @ViewBuilder
   private func unifiedConversationRow(_ item: GalaxySSIConversationHubItem) -> some View {
     if item.kind == .agent, let session = store.agentSession(id: item.id) {
-      conversationRow(session, preview: item.preview, updatedAt: item.updatedAt)
+      conversationRow(session, preview: item.preview, updatedAt: item.updatedAt, unreadCount: item.unreadCount)
         .id(scrollRowId(item))
         .background { scrollRowPosition(item) }
     } else if let contact = store.contact(id: item.id) {
@@ -1150,7 +1158,8 @@ struct GalaxySSIConversationHubView: View {
   private func conversationRow(
     _ session: AgentConversation,
     preview: String = "",
-    updatedAt: Date
+    updatedAt: Date,
+    unreadCount: Int
   ) -> some View {
     Button {
       if multiDeleteMode {
@@ -1171,10 +1180,11 @@ struct GalaxySSIConversationHubView: View {
           ? (selectedSessionIDs.contains(session.id) ? "checkmark.circle.fill" : "circle")
           : "",
         updatedAt: updatedAt,
+        unreadCount: multiDeleteMode ? 0 : unreadCount,
         showsDisclosure: false,
         executionStatus: GalaxySSIConversationExecutionPolicy.resolve(
           conversationID: session.id, message: store.latestAgentSessionMessage(session.id),
-          tasks: store.agentTaskRecords, unread: store.agentReplyUnreadCount(conversationId: session.id) > 0,
+          tasks: store.agentTaskRecords, unread: unreadCount > 0,
           workspaces: executionWorkspaces)
       )
     }
