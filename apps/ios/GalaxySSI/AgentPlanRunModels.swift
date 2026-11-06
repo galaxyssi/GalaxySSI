@@ -115,6 +115,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
   var plannerSnapshot: AgentPlannerModelSnapshot?
   var historyManifest: AgentSessionHistoryManifest?
   var lastNativeActionResult: AgentActionResult?
+  var effectRecovery: [AgentEffectRecoveryRecord]? = nil
   var nativeActionResults: [String]
   var result: String
   var verification: String
@@ -218,6 +219,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     case plannerSnapshot = "planner_snapshot"
     case historyManifest = "history_pages"
     case lastNativeActionResult = "last_native_action_result"
+    case effectRecovery = "effect_recovery"
     case nativeActionResults = "native_action_results"
     case result
     case verification
@@ -264,6 +266,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
       createdAtMillis: try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? 0,
       updatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? 0
     )
+    effectRecovery = try container.decodeIfPresent([AgentEffectRecoveryRecord].self, forKey: .effectRecovery)
     teamRecoveryRunId = try container.decodeIfPresent(String.self, forKey: .teamRecoveryRunId)
     capturePermission = try container.decodeIfPresent(AgentCapturePermissionContinuation.self, forKey: .capturePermission)
   }

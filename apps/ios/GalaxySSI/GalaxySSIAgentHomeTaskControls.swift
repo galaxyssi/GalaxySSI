@@ -88,6 +88,8 @@ extension AgentHomeView {
       resumePendingAgentDeliveryAfterTaskAction()
     case .retry:
       retryAgentTask(task, mode: .retry)
+    case .inspectEffect:
+      retryAgentTask(task, mode: .replan)
     case .rollback:
       richActionStatus = coordinator.rollbackLastLocalNativeAction(taskId: task.taskId)
         ? t("galaxyssi.agent.task_control.rollback_requested", "Rollback requested")

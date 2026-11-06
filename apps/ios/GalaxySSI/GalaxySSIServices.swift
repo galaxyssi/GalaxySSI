@@ -134,6 +134,7 @@ final class MessageCoordinator: ObservableObject {
     foregroundApp: "GalaxySSI iOS",
     pageTitle: "Agent"
   )
+  private let localBrowserSessions = AgentIOSURLSessionBrowserSessionStore()
   private lazy var localNativeToolRuntime: AgentPhoneNativeToolRuntime? = { [weak self] in
     guard let self else { return nil }
     let settingsStore = self.store
@@ -188,6 +189,7 @@ final class MessageCoordinator: ObservableObject {
       homeAssistantSettingsProvider: {
         settingsStore.homeAssistantSettings
       },
+      webMediaProvider: AgentIOSURLSessionWebMediaToolProvider(browserSessions: self.localBrowserSessions),
       voiceReminderTool: reminderTool
     ) else { return nil }
     if let appTools = try? VoiceAppNativeTools.executables(invoke: { [weak self, weak settingsStore] operation, invocation in
@@ -4946,6 +4948,9 @@ final class MessageCoordinator: ObservableObject {
           let outgoing = localOutgoingMessage(for: task) else {
       return false
     }
+    if let index = task.effectRecovery?.firstIndex(where: { !$0.hasObservation }) {
+      return inspectLocalEffect(index, outgoing: outgoing, task: &task, registry: runtime.registry)
+    }
     let previousPlan = task.activePlan
     let continuationScope = previousPlan.flatMap {
       AgentPlanContinuationScope.resolve(
@@ -5074,7 +5079,7 @@ final class MessageCoordinator: ObservableObject {
         completionRequirements: previousPlan?.completionRequirements
       )
     }
-    let plan = modelOutcome?.actionPlan ?? fallbackPlan
+    let plan = modelOutcome?.actionPlan ?? ((task.effectRecovery ?? []).isEmpty ? fallbackPlan : nil)
     guard var resolvedPlan = plan else {
       return false
     }
@@ -5099,7 +5104,7 @@ final class MessageCoordinator: ObservableObject {
     }
     resolvedPlan.validation = AgentPlanValidator.validate(resolvedPlan)
     let actions = resolvedPlan.actions
-    guard !actions.isEmpty else {
+    guard !actions.isEmpty, permitsEffectRecoveryActions(actions, task: task, outgoing: outgoing) else {
       return false
     }
     task.phase = .executing
@@ -5122,6 +5127,7 @@ final class MessageCoordinator: ObservableObject {
   @discardableResult
   func retryFailedLocalNativeAction(taskId: String) -> Bool {
     guard var task = store.agentTask(id: taskId),
+          (task.effectRecovery ?? []).isEmpty,
           task.phase == .failed,
           let failedAction = task.pendingAction ?? task.pendingActions.first,
           failedAction.status == .failed,
@@ -5159,9 +5165,130 @@ final class MessageCoordinator: ObservableObject {
     return applyLocalNativeAction(action: retryAction, outgoing: outgoing, task: &task)
   }
 
+  private func rememberUnverifiedEffect(
+    _ result: AgentActionResult, action: AgentAction, outgoing: ChatMessage, task: inout AgentTaskRecord
+  ) {
+    let effect: AgentEffectRecoveryRecord
+    if let native = AgentEffectRecoveryRecord.fromActionResult(result) {
+      effect = native
+    } else if result.metadata["error_code"] == "effect_outcome_unknown" ||
+                result.metadata["plan_node_outcome_unknown"] == "true" {
+      // An old or interrupted journal entry without a host query must not invent one.
+      effect = AgentEffectRecoveryRecord(scope: AgentNativeEffectScope(sessionId: task.sessionId,
+        conversationId: outgoing.conversationId, taskId: task.taskId,
+        turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)),
+        actionId: action.id, toolId: action.parameters["tool_id"] ?? action.target,
+        version: "", inputDigest: "", invocationId: result.metadata["original_invocation_id"] ?? action.id,
+        uncertainAt: AgentControlPlaneClock.nowMillis(), query: nil)
+    } else { return }
+    var effects = task.effectRecovery ?? []
+    guard !effects.contains(where: { $0.invocationId == effect.invocationId && $0.toolId == effect.toolId }) else { return }
+    effects.append(effect)
+    task.effectRecovery = effects
+  }
+
+  private func permitsEffectRecoveryActions(
+    _ actions: [AgentAction], task: AgentTaskRecord, outgoing: ChatMessage
+  ) -> Bool {
+    (task.effectRecovery ?? []).allSatisfy { effect in
+      effect.matches(taskId: task.taskId, sessionId: task.sessionId, outgoing: outgoing) &&
+        effect.hasObservation && !actions.contains(where: effect.isSameEffect)
+    }
+  }
+
+  private func inspectLocalEffect(
+    _ index: Int, outgoing: ChatMessage, task: inout AgentTaskRecord, registry: AgentNativeToolRegistry
+  ) -> Bool {
+    guard var effects = task.effectRecovery, effects.indices.contains(index) else { return false }
+    let effect = effects[index]
+    guard effect.matches(taskId: task.taskId, sessionId: task.sessionId, outgoing: outgoing),
+          ![AgentPermissionMode.observeOnly, .suggestOnly].contains(store.agentSafetySettings.permissionMode),
+          !PhoneExecutionAuthority.isCancelled(taskId: task.taskId),
+          let query = effect.query,
+          let observation = observeLocalEffect(effect, query: query, registry: registry),
+          effect.verifies(observation) else {
+      task.verification = localizedReply("galaxyssi.agent.effect_recovery.unavailable",
+        fallback: "The original effect is still unverified. Its affected state could not be confirmed; nothing was repeated.")
+      task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+      store.upsertAgentTask(task)
+      return false
+    }
+    effects[index].observation = observation
+    task.effectRecovery = effects
+    if let observed = recoveryObservationAction(effects[index], outgoing: outgoing, task: task) {
+      var plan = task.activePlan ?? AgentPlan(goal: task.goal, screen: currentAgentScreenContext,
+        steps: [], actions: [], route: AgentRoute())
+      plan.actionHistory = Array((plan.actionHistory + [observed]).suffix(AgentLongTaskPersistenceLimits.maximumActions))
+      task.activePlan = plan
+      task.planContext = AgentTaskPlanContext(plan: plan)
+    }
+    task.verification = localizedReply("galaxyssi.agent.effect_recovery.observed",
+      fallback: "Affected state observed. The original outcome is not confirmed. Re-plan to decide the next step.")
+    task.executionLog.append("Recovery: observed the scoped state for \(effect.toolId); original effect was not repeated")
+    task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+    store.upsertAgentTask(task)
+    return true
+  }
+
+  private func observeLocalEffect(
+    _ effect: AgentEffectRecoveryRecord, query: AgentEffectRecoveryRecord.Query,
+    registry: AgentNativeToolRegistry
+  ) -> AgentEffectRecoveryRecord.Observation? {
+    let started = AgentControlPlaneClock.nowMillis()
+    var context = AgentNativeToolInvocationContext(
+      invocationId: UUID().uuidString, sessionId: effect.scope.sessionId,
+      conversationId: effect.scope.conversationId, turnId: effect.scope.turnId,
+      callerId: AgentEffectRecoveryRecord.nativeCaller, requestedAtEpochMillis: started,
+      attributes: ["task_id": effect.scope.taskId, "recovery_task_id": effect.scope.taskId])
+    switch query.kind {
+    case .audio:
+      let probe = AgentAction(id: context.invocationId, kind: .callNativeTool, target: query.toolId,
+        risk: .low, status: .proposed, description: "Observe media audio state",
+        parameters: ["tool_id": query.toolId], requiresConfirmation: false)
+      guard query.toolId == AgentIOSSystemNativeToolCatalog.audioStatus, query.input.isEmpty,
+            let descriptor = registry.lookup(query.toolId)?.descriptor,
+            descriptor.effect == .readOnly, descriptor.version == query.version,
+            AgentConfirmationPolicy.tier(for: probe) == .direct,
+            descriptor.requiredPermissions.allSatisfy({ $0.id == AgentIOSSystemNativeToolCatalog.iosAudioStatusPermission }),
+            !descriptor.requiredConsents.contains(where: \.required) else { return nil }
+      context.grantedPermissions = Set(descriptor.requiredPermissions.filter(\.required).map(\.id))
+      let result = registry.invoke(query.toolId, input: query.input, context: context)
+      guard AgentMcpJSONCodec.stringify(result.output).utf8.count <= 8_192 else { return nil }
+      return .init(scope: AgentNativeEffectScope(context: context), toolId: result.provenance.toolId,
+        version: result.provenance.toolVersion, receipt: result.receipt, output: result.output)
+    case .browser:
+      guard query.toolId == AgentEffectRecoveryRecord.browserObserver,
+            query.version == AgentPhoneNativeToolCatalog.version,
+            query.input.string("request_id") == effect.invocationId,
+            let output = localBrowserSessions.observeOperation(requestId: effect.invocationId,
+              scope: AgentIOSURLSessionBrowserSessionScope(context: context), nowMillis: started) else { return nil }
+      let finished = AgentControlPlaneClock.nowMillis()
+      let receipt = AgentNativeToolReceipt(invocationId: context.invocationId,
+        startedAtEpochMillis: started, finishedAtEpochMillis: finished, durationMillis: max(0, finished - started),
+        status: .succeeded, inputSha256: AgentMcpJSONCodec.sha256(query.input),
+        outputSha256: AgentMcpJSONCodec.sha256(output))
+      return .init(scope: AgentNativeEffectScope(context: context), toolId: query.toolId,
+        version: query.version, receipt: receipt, output: output)
+    }
+  }
+
+  private func recoveryObservationAction(
+    _ effect: AgentEffectRecoveryRecord, outgoing: ChatMessage, task: AgentTaskRecord
+  ) -> AgentAction? {
+    guard effect.matches(taskId: task.taskId, sessionId: task.sessionId, outgoing: outgoing),
+          let observation = effect.observation, effect.verifies(observation) else { return nil }
+    return AgentPlanContinuationScope(conversationId: effect.scope.conversationId, turnId: effect.scope.turnId)
+      .bind(AgentAction(id: observation.receipt.invocationId, kind: .callNativeTool,
+        target: observation.toolId, risk: .low, status: .completed,
+        description: "Host observation for original action \(effect.actionId); not proof of completion",
+        parameters: ["tool_id": observation.toolId], requiresConfirmation: false,
+        evidence: AgentMcpJSONCodec.stringify(observation.output)))
+  }
+
   @discardableResult
   func rollbackLastLocalNativeAction(taskId: String) -> Bool {
     guard var task = store.agentTask(id: taskId),
+          (task.effectRecovery ?? []).allSatisfy(\.hasObservation),
           [.completed, .failed, .cancelled, .blocked].contains(task.phase),
           var rollbackAction = task.nativeRollbackAction,
           let outgoing = localOutgoingMessage(for: task) else {
@@ -8667,6 +8794,7 @@ final class MessageCoordinator: ObservableObject {
       $0.kind == .callNativeTool || $0.kind == .callConnector
     }
     guard !nativeActions.isEmpty else { return false }
+    guard permitsEffectRecoveryActions(nativeActions, task: task, outgoing: outgoing) else { return false }
     for action in nativeActions {
       if rejectReadOnlyAnalysisAction(action, outgoing: outgoing, task: &task) { return true }
     }
@@ -8884,6 +9012,7 @@ final class MessageCoordinator: ObservableObject {
       let action = actions[index]
       let executionAction = executionActions[index]
       let result = results[index]
+      rememberUnverifiedEffect(result, action: action, outgoing: outgoing, task: &task)
       AgentIOSNativeToolHandoffPresenter.openIfNeeded(result)
       let stepReply = localizedNativeToolReply(result).ifBlank(result.message)
         .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -8979,6 +9108,11 @@ final class MessageCoordinator: ObservableObject {
     task.verification = rollingBatchBoundary
       ? "Waiting for the planning model to assess parallel native tool receipts"
       : "Parallel \(parallelMode.rawValue) actions returned verified native tool receipts"
+    if !rollingBatchBoundary, !(task.effectRecovery ?? []).isEmpty {
+      task.phase = .blocked
+      task.verification = localizedReply("galaxyssi.agent.effect_recovery.observed",
+        fallback: "Affected state observed. The original outcome is not confirmed. Re-plan to decide the next step.")
+    }
     task.executionLog.append(rollingBatchBoundary
       ? "Rolling plan: parallel batch completed; requesting model assessment"
       : "Native tools: \(parallelMode.rawValue) batch completed")
@@ -9336,6 +9470,7 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     task: inout AgentTaskRecord
   ) -> Bool {
+    guard permitsEffectRecoveryActions([action], task: task, outgoing: outgoing) else { return false }
     if rejectReadOnlyAnalysisAction(action, outgoing: outgoing, task: &task) { return true }
     guard let runtime = localNativeToolRuntime else { return false }
     let screen = currentAgentScreenContext
@@ -9414,11 +9549,14 @@ final class MessageCoordinator: ObservableObject {
     let reply = recordLocalNativeActionResult(stepReply, task: &task)
     let hasRemainingActions = !task.pendingActions.isEmpty
     task.lastNativeActionResult = result
+    rememberUnverifiedEffect(result, action: action, outgoing: outgoing, task: &task)
     updateActiveNativePlan(action: boundAction, result: result, task: &task)
     let rollingBatchBoundary = !hasRemainingActions && AgentRollingPlanPolicy.shouldRequestNextBatch(
       plan: task.activePlan,
       result: result
     )
+    let needsOutcomeDecision = !hasRemainingActions && !rollingBatchBoundary && result.success &&
+      !(task.effectRecovery ?? []).isEmpty
     task.phase = rollingBatchBoundary ? .waitingResponse : (result.success ? .completed : .failed)
     if result.success {
       task.lastCompletedNativeAction = action
@@ -9428,6 +9566,11 @@ final class MessageCoordinator: ObservableObject {
     task.verification = rollingBatchBoundary
       ? "Waiting for the planning model to assess the completed execution batch"
       : (result.success ? "Native tool receipt returned" : "Native tool execution failed")
+    if needsOutcomeDecision {
+      task.phase = .blocked
+      task.verification = localizedReply("galaxyssi.agent.effect_recovery.observed",
+        fallback: "Affected state observed. The original outcome is not confirmed. Re-plan to decide the next step.")
+    }
     let toolId = action.parameters["tool_id"] ?? "unknown"
     let outcome = result.success ? "completed" : "failed"
     task.executionLog.append("Native tool \(toolId): \(outcome)")
@@ -9440,7 +9583,7 @@ final class MessageCoordinator: ObservableObject {
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
     store.upsertAgentTask(task)
     let recordedStatus: AgentRecordedRunStatus = !result.success ? .failed :
-      (hasRemainingActions || rollingBatchBoundary ? .running : .completed)
+      (hasRemainingActions || rollingBatchBoundary || needsOutcomeDecision ? .running : .completed)
     localRecordedRunStore.recordNativeExecution([.init(action: executionAction, result: result)],
       task: task, outgoing: outgoing, status: recordedStatus)
     store.appendDeliveryTrace(
@@ -9621,6 +9764,9 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     task: inout AgentTaskRecord
   ) async -> Bool {
+    guard (task.effectRecovery ?? []).allSatisfy({
+      $0.hasObservation && $0.matches(taskId: task.taskId, sessionId: task.sessionId, outgoing: outgoing)
+    }) else { return false }
     guard let outcome else {
       task.verification = "Rolling plan assessment is pending because the planning model is unavailable"
       task.executionLog.append("Rolling plan: waiting for model assessment for revision \(previousPlan.revision)")
@@ -9638,6 +9784,14 @@ final class MessageCoordinator: ObservableObject {
     if nextPlan.actions.count == 1,
        let finalAction = nextPlan.actions.first,
        AgentRollingPlanPolicy.closesFromVerifiedEvidence(finalAction) {
+      guard (task.effectRecovery ?? []).isEmpty else {
+        task.verification = localizedReply("galaxyssi.agent.effect_recovery.observed",
+          fallback: "Affected state observed. The original outcome is not confirmed. Re-plan to decide the next step.")
+        task.phase = .blocked
+        task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+        store.upsertAgentTask(task)
+        return false
+      }
       let requirements = Set((previousPlan.completionRequirements?.artifacts ?? []) +
                              (nextPlan.completionRequirements?.artifacts ?? []))
       var videos: [AgentRichBlock] = []

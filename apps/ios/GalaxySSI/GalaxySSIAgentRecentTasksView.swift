@@ -201,6 +201,8 @@ struct GalaxySSIAgentRecentTasksView: View {
       resumeTask(task)
     case .retry:
       retryTask(task)
+    case .inspectEffect:
+      inspectEffect(task)
     case .rollback:
       rollbackTask(task)
     case .copy:
@@ -231,6 +233,10 @@ struct GalaxySSIAgentRecentTasksView: View {
   }
 
   private func retryTask(_ task: AgentTaskRecord) {
+    if !(store.agentTask(id: task.taskId)?.effectRecovery ?? task.effectRecovery ?? []).isEmpty {
+      inspectEffect(task)
+      return
+    }
     if coordinator.retryFailedLocalNativeAction(taskId: task.taskId) {
       statusText = t(
         "galaxyssi.agent.task_control.action_retrying",
@@ -266,6 +272,15 @@ struct GalaxySSIAgentRecentTasksView: View {
       statusText = sent
         ? t("galaxyssi.agent_tasks.retry_sent", "Task sent to Agent")
         : t("galaxyssi.agent_tasks.retry_failed", "The task could not be sent")
+    }
+  }
+
+  private func inspectEffect(_ task: AgentTaskRecord) {
+    Task { @MainActor in
+      _ = await coordinator.replanLocalNativeAction(taskId: task.taskId)
+      let updated = store.agentTask(id: task.taskId) ?? task
+      statusText = updated.verification
+      if selectedTask?.taskId == updated.taskId { selectedTask = updated }
     }
   }
 
@@ -443,6 +458,8 @@ struct GalaxySSIAgentRecentTasksView: View {
       return t("galaxyssi.common.resume", "Resume")
     case .retry:
       return t("galaxyssi.common.retry", "Retry")
+    case .inspectEffect:
+      return t("galaxyssi.agent.effect_recovery.inspect", "Inspect or re-plan")
     case .rollback:
       return t("galaxyssi.agent.task_control.rollback", "Rollback last action")
     case .copy:

@@ -37,7 +37,9 @@ extension AgentHomeView {
         return AgentTaskCenterPolicy.resumable(task)
       case .cancel:
         return AgentTaskCenterPolicy.cancellable(task)
-      case .retry, .replan:
+      case .retry:
+        return (task.effectRecovery ?? []).isEmpty && AgentTaskCenterPolicy.isReusableGoal(task.goal)
+      case .replan:
         return AgentTaskCenterPolicy.isReusableGoal(task.goal)
       }
     }
