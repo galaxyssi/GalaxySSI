@@ -204,6 +204,104 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(durableHistory.last?.evidence, "superseded_by_plan_revision:5")
   }
 
+  func testResearchObservationsSurviveRepeatedPlannerRequestsAndColdRestore() throws {
+    let scope = AgentPlanContinuationScope(conversationId: "research", turnId: "turn")
+    let source = scope.bind(AgentAction(
+      id: "source", kind: .callNativeTool, target: "web.open", risk: .low,
+      status: .completed, description: "Read the verified source",
+      evidence: #"{"url":"https://example.test/source","text":"Observed source data"}"#
+    ))
+    let failures = (0..<55).map { index in
+      scope.bind(AgentAction(
+        id: "request-\(index)", kind: .callConnector, target: "planner", risk: .low,
+        status: .failed, description: String(repeating: "request body ", count: 1_000),
+        parameters: ["connector_task_mode": "phone_supervised", "supervised_iteration": String(index)],
+        result: "Provider failure \(index)", evidence: "Repeated request"
+      ))
+    }
+    var plan = lifecyclePlan()
+    plan.actionHistory = [source] + failures
+    let restored = try JSONDecoder().decode(AgentPlan.self, from: JSONEncoder().encode(plan))
+    let snapshots = restored.executionSnapshots(in: scope)
+    XCTAssertEqual(snapshots.first?.evidence, source.evidence)
+    XCTAssertEqual(snapshots.last?.result, "Provider failure 54")
+    let promptHistory = AgentDurablePlanHistoryPolicy.plannerProjection(snapshots)
+    XCTAssertEqual(promptHistory.map(\.id), ["source", "request-54"])
+    XCTAssertEqual(promptHistory.last?.evidence, "")
+    XCTAssertFalse(promptHistory.last?.description.contains("request body") ?? true)
+    XCTAssertEqual(promptHistory.last?.parameters["supervised_iteration"], "54")
+    var request = AgentModelPlanningPromptRequest(
+      planRequest: AgentPlanRequest(goal: plan.goal, screen: plan.screen),
+      conversationContext: AgentConversationContext(conversationId: scope.conversationId,
+        summary: "", turns: [], privateMode: false),
+      executionTurnId: scope.turnId,
+      executionHistory: [source]
+    )
+    let settings = AgentModelPlannerSettings()
+    let sourceOnly = AgentPlanningHistoryContext.build(
+      request: request, settings: settings, maximumCharacters: 2_000)
+    XCTAssertTrue(sourceOnly.contains("Observed source data"))
+    request.executionHistory = promptHistory
+    XCTAssertEqual(AgentPlanningHistoryContext.build(
+      request: request, settings: settings, maximumCharacters: sourceOnly.count), sourceOnly)
+  }
+
+  func testBrowserContextReceiptsDoNotRequireBusinessMutationEvidence() {
+    let tools = AgentIOSWebMediaNativeToolCatalog.definitions()
+    func descriptor(_ id: String) -> AgentNativeToolDescriptor? {
+      tools.first { $0.id == id }?.descriptor
+    }
+    func action(_ tool: String, status: AgentActionStatus = .completed, evidence: String = "") -> AgentAction {
+      AgentAction(id: tool, kind: .callNativeTool, target: tool, risk: .low,
+                  status: status, description: "Browser operation", evidence: evidence)
+    }
+    let catalog = AgentIOSWebMediaNativeToolCatalog.self
+    let browser = [catalog.browserSessionCreate, catalog.browserSessionNavigate, catalog.webOpen, catalog.browserSessionClose]
+      .map { action($0) }
+    XCTAssertEqual(descriptor(catalog.browserSessionNavigate)?.effect, .mutation)
+    XCTAssertTrue(AgentCompletionEvidencePolicy.isAnswerOnly(history: browser, descriptorFor: descriptor))
+    XCTAssertFalse(AgentCompletionEvidencePolicy.isAnswerOnly(
+      history: browser + [action(catalog.fileDownload)], descriptorFor: descriptor))
+    XCTAssertFalse(AgentCompletionEvidencePolicy.isAnswerOnly(
+      history: [action(catalog.browserSessionNavigate, status: .waitingResponse)], descriptorFor: descriptor))
+    XCTAssertFalse(AgentCompletionEvidencePolicy.isAnswerOnly(
+      history: [action(catalog.browserSessionNavigate, evidence: #"{"outcome":"unknown"}"#)],
+      descriptorFor: descriptor))
+    let publication = AgentCompletionRequirements(publication: .pullRequest, phoneLinux: false)
+    XCTAssertFalse(AgentCompletionEvidencePolicy.missingEvidence(
+      requirements: publication, history: browser, answerOnly: true).isEmpty)
+  }
+
+  func testCompletionUsesScopedLatestSnapshotsOutsidePromptBudget() {
+    let scope = AgentPlanContinuationScope(conversationId: "project", turnId: "current")
+    let foreignTurn = AgentPlanContinuationScope(conversationId: "project", turnId: "previous")
+    let foreignConversation = AgentPlanContinuationScope(conversationId: "other", turnId: "current")
+    let runtime = scope.bind(AgentAction(
+      id: "linux", kind: .callNativeTool, target: AgentIOSOnDeviceRuntimeNativeToolCatalog.execute,
+      risk: .low, status: .completed, description: "Run in the phone guest", evidence: #"{"exit_code":0}"#
+    ))
+    let requirements = AgentCompletionRequirements(publication: .none, phoneLinux: true)
+    var plan = lifecyclePlan()
+    plan.actionHistory = [runtime] + (0..<45).map { index in
+      scope.bind(AgentAction(
+        id: "read-\(index)", kind: .callNativeTool, target: "web.open", risk: .low,
+        status: .completed, description: "Read a source"
+      ))
+    } + [foreignTurn.bind(runtime), foreignConversation.bind(runtime)]
+    let snapshots = plan.executionSnapshots(in: scope)
+    let projected = AgentDurablePlanHistoryPolicy.plannerProjection(snapshots)
+    XCTAssertFalse(projected.contains { $0.id == runtime.id })
+    XCTAssertFalse(AgentCompletionEvidencePolicy.missingEvidence(requirements: requirements, history: projected).isEmpty)
+    XCTAssertTrue(AgentCompletionEvidencePolicy.missingEvidence(requirements: requirements, history: snapshots).isEmpty)
+    var pending = runtime
+    pending.status = .running
+    plan.actions = [pending]
+    let current = plan.executionSnapshots(in: scope)
+    XCTAssertEqual(current.filter { $0.id == runtime.id }.map(\.status), [.running])
+    XCTAssertFalse(AgentCompletionEvidencePolicy.missingEvidence(requirements: requirements, history: current).isEmpty)
+    XCTAssertTrue(current.contains(where: AgentCompletionEvidencePolicy.hasUnverifiedOutcome))
+  }
+
   func testAgentDurablePlanHistoryPreservesOriginalRevisionTags() {
     let previous = AgentAction(
       id: "r2-action",

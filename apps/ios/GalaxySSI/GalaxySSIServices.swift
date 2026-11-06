@@ -725,7 +725,7 @@ final class MessageCoordinator: ObservableObject {
             executionMode: input.executionMode,
             allowsDirectResponse: false,
             replanReason: intent.reason,
-            executionHistory: basePlan.historyForReplan().filter(continuationScope.owns),
+            executionHistory: basePlan.executionSnapshots(in: continuationScope),
             completionRequirements: input.completionRequirements,
             conversationOverride: input.conversation,
             hasAttachmentsOverride: false,
@@ -4569,9 +4569,6 @@ final class MessageCoordinator: ObservableObject {
       store.upsertAgentTask(task)
       return false
     }
-    let plannerHistory = (previousPlan?.historyForReplan() ?? []).filter {
-      continuationScope?.owns($0) ?? true
-    }
     let planRequest = AgentPlanRequest(
       goal: task.goal,
       screen: currentAgentScreenContext,
@@ -4646,7 +4643,7 @@ final class MessageCoordinator: ObservableObject {
             executionMode: taskExecutionMode,
             allowsDirectResponse: false,
             replanReason: replanReason,
-            executionHistory: plannerHistory,
+            executionHistory: previousPlan.executionSnapshots(in: continuationScope),
             completionRequirements: previousPlan.completionRequirements,
             conversationOverride: conversation,
             hasAttachmentsOverride: false,
@@ -4679,7 +4676,6 @@ final class MessageCoordinator: ObservableObject {
         executionMode: taskExecutionMode,
         allowsDirectResponse: false,
         replanReason: replanReason,
-        executionHistory: plannerHistory,
         completionRequirements: previousPlan?.completionRequirements
       )
     }
@@ -7817,7 +7813,9 @@ final class MessageCoordinator: ObservableObject {
       hasAttachments: hasAttachments,
       allowsDirectResponse: allowsDirectResponse && !hasAttachments && executionMode != .planOnly
     )
-    let scopedHistory = planningRequest.executionHistory
+    let snapshots = planningRequest.executionHistory
+    let scopedHistory = snapshots.filter { !AgentDurablePlanHistoryPolicy.isPlannerControl($0) }
+    planningRequest.executionHistory = AgentDurablePlanHistoryPolicy.plannerProjection(snapshots)
     let answerOnly = AgentCompletionEvidencePolicy.isAnswerOnly(history: scopedHistory) {
       runtime.registry.lookup($0)?.descriptor
     }
@@ -8687,7 +8685,7 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     let reason = AgentRollingPlanPolicy.reason(plan: previousPlan, result: previousResult)
-    let plannerHistory = previousPlan.historyForReplan().filter(continuationScope.owns)
+    let plannerHistory = previousPlan.executionSnapshots(in: continuationScope)
     let conversation = initialPlanningConversation(requestText: task.goal, outgoing: outgoing)
     let plannerSnapshot = task.plannerSnapshot
       ?? capturePlannerSnapshot(conversationId: outgoing.conversationId)
