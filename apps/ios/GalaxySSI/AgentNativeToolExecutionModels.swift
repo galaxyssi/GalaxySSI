@@ -875,6 +875,7 @@ final class AgentNativeToolRegistry {
       progressReporter: hooks.onProgress
     )
     var claimedEffect: AgentNativeToolReplayKey?
+    var claimedRecoveryQuery: AgentNativeEffectRecoveryQuery?
     var dispatchedEffect = false
     hooks.onStarted(invocation)
 
@@ -889,6 +890,16 @@ final class AgentNativeToolRegistry {
       originalInvocationId: String? = nil,
       finishedAtEpochMillis: Int64? = nil
     ) -> AgentNativeToolResult {
+      var error = error
+      if claimedEffect != nil, var uncertain = error {
+        uncertain.details.removeValue(forKey: "recovery_query")
+        if uncertain.code == "effect_outcome_unknown" || uncertain.code == "invalid_output" ||
+          uncertain.code == "missing_output_validation" || uncertain.details["outcome_unknown"] == .bool(true) ||
+          status == .verificationFailed {
+          uncertain.details["recovery_query"] = claimedRecoveryQuery?.json
+        }
+        error = uncertain
+      }
       let result = makeResult(
         id,
         input: input,
@@ -913,6 +924,8 @@ final class AgentNativeToolRegistry {
             result: result
           )
         } catch {
+          var details: AgentMcpJSONObject = ["original_invocation_id": .string(effectiveContext.invocationId)]
+          details["recovery_query"] = claimedRecoveryQuery?.json
           let persistenceFailure = makeResult(
             id,
             input: input,
@@ -922,7 +935,7 @@ final class AgentNativeToolRegistry {
               code: "effect_outcome_unknown",
               message: "The native effect outcome could not be committed durably",
               retryable: false,
-              details: ["original_invocation_id": .string(effectiveContext.invocationId)]
+              details: details
             ),
             startedAtEpochMillis: startedAt,
             finishedAtEpochMillis: hooks.nowMillis()
@@ -935,6 +948,16 @@ final class AgentNativeToolRegistry {
       appendAudit(result, context: effectiveContext, risk: descriptor.risk)
       hooks.onFinished(result)
       return result
+    }
+
+    func unknownDetails(_ claim: AgentNativeEffectClaim, key: AgentNativeToolReplayKey) -> AgentMcpJSONObject {
+      var details: AgentMcpJSONObject = [
+        "original_invocation_id": .string(claim.invocationId),
+        "effect_key": .string(key.idempotencyKey),
+        "input_sha256": .string(claim.inputSha256)
+      ]
+      details["recovery_query"] = claim.recoveryQuery?.json
+      return details
     }
 
     let replayKey = effectiveContext.idempotencyKey.map {
@@ -976,11 +999,7 @@ final class AgentNativeToolRegistry {
           code: "effect_outcome_unknown",
           message: "This effect was already started and has no durable outcome. Reconcile its external state before deciding the next action; it was not executed again.",
           retryable: false,
-          details: [
-            "original_invocation_id": .string(observation.invocationId),
-            "effect_key": .string(replayKey.idempotencyKey),
-            "input_sha256": .string(observation.inputSha256)
-          ]
+          details: unknownDetails(observation, key: replayKey)
         ),
         originalInvocationId: observation.invocationId
       )
@@ -1017,10 +1036,22 @@ final class AgentNativeToolRegistry {
 
       if let replayKey, descriptor.requiresEffectClaim {
         let inputSha256 = AgentMcpJSONCodec.sha256(input)
+        let query: AgentNativeEffectRecoveryQuery?
+        do {
+          query = try executable.recoveryQuery?(invocation)
+          if let query, !validRecoveryQuery(query) {
+            return finish(status: .rejected, error: AgentNativeToolError(code: "invalid_effect_recovery_query",
+              message: "Native effect was not dispatched because its recovery query did not match a registered read-only tool."))
+          }
+        } catch {
+          return finish(status: .rejected, error: AgentNativeToolError(code: "invalid_effect_recovery_query",
+            message: "Native effect was not dispatched because its recovery query could not be prepared."))
+        }
         let claim = try replayStore.claim(
           replayKey,
           inputSha256: inputSha256,
-          invocationId: effectiveContext.invocationId
+          invocationId: effectiveContext.invocationId,
+          recoveryQuery: query
         )
         if claim.inputSha256 != inputSha256 {
           return finish(
@@ -1033,6 +1064,7 @@ final class AgentNativeToolRegistry {
         }
         if claim.acquired {
           claimedEffect = replayKey
+          claimedRecoveryQuery = claim.recoveryQuery
         } else if let cached = claim.result {
           return finish(
             status: cached.status,
@@ -1051,11 +1083,7 @@ final class AgentNativeToolRegistry {
               code: "effect_outcome_unknown",
               message: "This effect was already started and has no durable outcome. Reconcile its external state before deciding the next action; it was not executed again.",
               retryable: false,
-              details: [
-                "original_invocation_id": .string(claim.invocationId),
-                "effect_key": .string(replayKey.idempotencyKey),
-                "input_sha256": .string(claim.inputSha256)
-              ]
+              details: unknownDetails(claim, key: replayKey)
             ),
             originalInvocationId: claim.invocationId
           )
@@ -1206,6 +1234,13 @@ final class AgentNativeToolRegistry {
         )
       )
     }
+  }
+
+  private func validRecoveryQuery(_ query: AgentNativeEffectRecoveryQuery) -> Bool {
+    guard let observer = executableById[query.toolId]?.descriptor,
+          observer.effect == .readOnly, !observer.requiresEffectClaim, observer.version == query.toolVersion,
+          let encoded = try? JSONEncoder().encode(query.json), encoded.count <= 8_192 else { return false }
+    return AgentNativeJsonSchemaValidator.validateObject(schema: observer.inputSchema, object: query.arguments).isValid
   }
 
   private static func safeAdd(_ left: Int64, _ right: Int64) -> Int64 {

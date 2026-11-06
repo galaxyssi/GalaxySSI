@@ -2029,6 +2029,99 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(result.error?.code, "effect_outcome_unknown")
     XCTAssertEqual(result.error?.retryable, false)
     XCTAssertEqual(result.error?.details["original_invocation_id"], .string("interrupted"))
+    XCTAssertNil(result.error?.details["recovery_query"], "Legacy claims must not invent an observation")
+  }
+
+  func testNativeEffectRecoveryQueryIsClaimedBeforeDispatchAndReplaysUncertainResults() throws {
+    let root = try temporaryDirectory("native-effect-query")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("replay.json")
+    let secrets = InMemorySecretStore()
+    let write = try nativeToolDescriptor("galaxyssi.test.recovery.write", idempotency: .idempotencyKeyRequired,
+      effect: .mutation)
+    let read = try nativeToolDescriptor("galaxyssi.test.recovery.read", inputSchema: [
+      "type": .string("object"), "properties": .object(["operation_id": .object(["type": .string("string")])]),
+      "required": .array([.string("operation_id")]), "additionalProperties": .bool(false)
+    ], idempotency: .idempotent, effect: .readOnly)
+    var context = AgentNativeToolInvocationContext(invocationId: "original-private-operation", sessionId: "session",
+      conversationId: "conversation", turnId: "turn", idempotencyKey: "effect",
+      attributes: ["task_id": "task", "goal_id": "goal", "client_route_id": "phone"])
+    let key = AgentNativeToolReplayKey(toolId: write.id, toolVersion: write.version, idempotencyKey: "effect",
+      scope: AgentNativeEffectScope(context: context))
+    let query = AgentNativeEffectRecoveryQuery(toolId: read.id, toolVersion: read.version,
+      arguments: ["operation_id": .string(context.invocationId)])
+    var executions = 0
+    var automaticReads = 0
+    var preparations = 0
+    let store = FileAgentNativeToolReplayStore(fileURL: file, secrets: secrets)
+    func registry(_ storage: AgentNativeToolReplayStore, recipe: AgentNativeEffectRecoveryQuery) throws -> AgentNativeToolRegistry {
+      let observer = AgentNativeToolExecutableDefinition(
+        definition: .init(descriptor: read, executorId: "test.effect_read"),
+        executor: { _ in automaticReads += 1; return .success() })
+      var mutation = AgentNativeToolExecutableDefinition(
+        definition: .init(descriptor: write, executorId: "test.effect_write"),
+        executor: { _ in
+          executions += 1
+          XCTAssertEqual(storage.observe(key)?.recoveryQuery, query)
+          return .failure(code: "lost_response", message: "Response lost",
+            details: ["outcome_unknown": .bool(true), "recovery_query": .string("untrusted")])
+        })
+      mutation.recoveryQuery = { _ in preparations += 1; return recipe }
+      return try AgentNativeToolRegistry(replayStore: storage).registerExecutables([observer, mutation])
+    }
+    let invalid = AgentNativeEffectRecoveryQuery(toolId: write.id, toolVersion: write.version, arguments: [:])
+    for recipe in [invalid, .init(toolId: read.id, toolVersion: "0.0.0", arguments: query.arguments),
+                   .init(toolId: read.id, toolVersion: read.version, arguments: [:])] {
+      let rejected = try registry(store, recipe: recipe).invoke(write.id, input: [:], context: context)
+      XCTAssertEqual(rejected.error?.code, "invalid_effect_recovery_query")
+    }
+    XCTAssertNil(store.observe(key))
+    let original = try registry(store, recipe: query).invoke(write.id, input: [:], context: context)
+    XCTAssertEqual(original.error?.details["recovery_query"], query.json)
+    XCTAssertEqual(executions, 1)
+    XCTAssertEqual(automaticReads, 0)
+    let bytes = try Data(contentsOf: file)
+    XCTAssertFalse(String(decoding: bytes, as: UTF8.self).contains("original-private-operation"))
+
+    let reopened = FileAgentNativeToolReplayStore(fileURL: file, secrets: secrets)
+    context.invocationId = "retry-invocation"
+    let retry = try registry(reopened, recipe: invalid).invoke(write.id, input: [:], context: context)
+    XCTAssertTrue(retry.receipt.replayed)
+    XCTAssertEqual(retry.error?.details["recovery_query"], query.json)
+    XCTAssertEqual(preparations, 4, "Replaying committed results must not reprepare the query")
+    XCTAssertEqual(executions, 1)
+
+    let pendingKey = AgentNativeToolReplayKey(toolId: write.id, toolVersion: write.version, idempotencyKey: "pending",
+      scope: key.scope)
+    _ = try store.claim(pendingKey, inputSha256: AgentMcpJSONCodec.sha256(AgentMcpJSONObject()),
+      invocationId: "original-private-operation", recoveryQuery: query)
+    context.idempotencyKey = "pending"
+    let interrupted = try registry(reopened, recipe: invalid).invoke(write.id, input: [:], context: context)
+    XCTAssertEqual(interrupted.error?.code, "effect_outcome_unknown")
+    XCTAssertEqual(interrupted.receipt.originalInvocationId, "original-private-operation")
+    XCTAssertEqual(interrupted.error?.details["recovery_query"], query.json)
+    let conflict = try registry(reopened, recipe: invalid).invoke(write.id, input: ["changed": .bool(true)], context: context)
+    XCTAssertEqual(conflict.error?.code, "idempotency_key_conflict")
+    XCTAssertNil(conflict.error?.details["recovery_query"])
+    var otherScope = context
+    otherScope.turnId = "foreign"
+    let foreign = try registry(reopened, recipe: invalid).invoke(write.id, input: [:], context: otherScope)
+    XCTAssertEqual(foreign.error?.code, "invalid_effect_recovery_query")
+    XCTAssertNil(foreign.error?.details["recovery_query"])
+    XCTAssertEqual(executions, 1)
+    XCTAssertEqual(automaticReads, 0)
+
+    let noKey = FileAgentNativeToolReplayStore(fileURL: file, secrets: InMemorySecretStore())
+    let inaccessible = try registry(noKey, recipe: query).invoke(write.id, input: [:], context: context)
+    XCTAssertFalse(inaccessible.isSuccess)
+    XCTAssertNil(inaccessible.error?.details["recovery_query"])
+    XCTAssertEqual(executions, 1, "Unreadable claims must not look like a new execution")
+    let corrupt = Data("not a replay journal".utf8)
+    try corrupt.write(to: file, options: .atomic)
+    let damaged = try registry(reopened, recipe: query).invoke(write.id, input: [:], context: context)
+    XCTAssertFalse(damaged.isSuccess)
+    XCTAssertEqual(try Data(contentsOf: file), corrupt)
+    XCTAssertEqual(executions, 1)
   }
 
   func testAgentNativeEffectObservationPrecedesLiveAvailability() throws {
