@@ -62,6 +62,10 @@ enum GalaxySSIEncryptedUserDefaultsStore {
     defaults.removeObject(forKey: key)
   }
 
+  static func contains(defaults: UserDefaults, key: String) -> Bool {
+    defaults.object(forKey: encryptedKey(for: key)) != nil
+  }
+
   static func storedKeys(defaults: UserDefaults, prefix: String) -> [String] {
     defaults.dictionaryRepresentation().keys.compactMap { storedKey in
       guard storedKey.hasPrefix(prefix), storedKey.hasSuffix(encryptedSuffix) else { return nil }
