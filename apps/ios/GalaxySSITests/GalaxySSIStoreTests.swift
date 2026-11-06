@@ -888,6 +888,24 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertTrue(GalaxySSIConversationHubContactHistoryPolicy.includes(nil))
   }
 
+  func testContactUnreadVisibilityMatchesConversationRows() {
+    let agent = conversationHubContact(id: "legacy-agent", name: "Agent", type: "agent")
+    let peer = conversationHubContact(id: "peer", name: "Person", type: "person")
+    let empty = conversationHubContact(id: "empty", name: "Empty", type: "person")
+    let summary: (String) -> ContactConversationSummary = { id in
+      .init(lastMessage: id == "empty" ? nil : ChatMessage(contactId: id, content: "Reply", isMine: false),
+            unreadCount: id == "legacy-agent" ? 7 : 2)
+    }
+    let contacts = [agent, peer, empty]
+    let visibleTotal = contacts.compactMap {
+      GalaxySSIConversationHubContactHistoryPolicy.visibleSummary($0, summary: summary)?.unreadCount
+    }.reduce(0, +)
+    let rows = GalaxySSIConversationHubModels.contactSummaries(contacts: contacts, summary: summary, isPinned: { _ in false })
+    XCTAssertEqual(rows.map(\.contactId), [peer.id])
+    XCTAssertEqual(visibleTotal, 2)
+    XCTAssertEqual(visibleTotal, rows.map(\.unreadCount).reduce(0, +))
+  }
+
   func testConversationHubContactSummariesExcludeLegacyAgentRows() {
     let latest = ChatMessage(contactId: "person-contact", content: "latest", isMine: false)
     let contacts = [

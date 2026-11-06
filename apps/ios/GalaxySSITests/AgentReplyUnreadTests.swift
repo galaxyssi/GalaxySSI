@@ -1,3 +1,4 @@
+import SQLite3
 import XCTest
 @testable import GalaxySSI
 
@@ -16,6 +17,63 @@ final class AgentReplyUnreadTests: XCTestCase {
   override func tearDown() {
     defaults.removePersistentDomain(forName: suite)
     super.tearDown()
+  }
+
+  func testUnreadIndexUsesTokenPrecedenceAndKeepsLegacyRowsUntilIndexed() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("unread.sqlite")
+    let history = GalaxySSIChatHistoryDatabase(fileURL: file, secrets: secrets)
+    var first = reply(turn: "turn-wins")
+    first.remoteMessageId = "remote-ignored"
+    var second = reply(turn: "")
+    second.remoteMessageId = "remote-wins"
+    let third = reply(turn: "")
+    var streaming = reply(turn: "stream-ignored")
+    streaming.deliveryStatus = .sent
+    let other = reply(conversation: "two", turn: "other-conversation")
+    for message in [first, second, third, streaming, other] { XCTAssertTrue(history.upsert(message)) }
+    let missing: Set<String> = ["remote-ignored", "stream-ignored", first.id.uuidString, "other-conversation"]
+    let all = missing.union(["turn-wins", "remote-wins", third.id.uuidString])
+    XCTAssertEqual(history.missingUnreadTokens(conversationId: "one", candidates: all), missing)
+
+    var raw: OpaquePointer?
+    XCTAssertEqual(sqlite3_open_v2(file.path, &raw, SQLITE_OPEN_READWRITE, nil), SQLITE_OK)
+    defer { sqlite3_close_v2(raw) }
+    XCTAssertEqual(sqlite3_exec(raw, "UPDATE chat_messages SET agent_unread_key = NULL WHERE conversation_id = 'one'",
+      nil, nil, nil), SQLITE_OK)
+    XCTAssertNil(history.missingUnreadTokens(conversationId: "one", candidates: all))
+    history.prepareLegacyUnreadIndex(conversationId: "one")
+    XCTAssertEqual(history.missingUnreadTokens(conversationId: "one", candidates: all), missing)
+  }
+
+  func testUnreadDiscardUsesSnapshotWithoutClearingNewOrRecreatedMarkers() {
+    let ledger = makeLedger()
+    let old = reply(turn: "old")
+    ledger.record(old, previous: nil)
+    let checked = ledger.pendingSnapshot()
+    ledger.removeConversations(["one"])
+    var recreated = reply(turn: "old")
+    recreated.createdAt = old.createdAt.addingTimeInterval(1)
+    ledger.record(recreated, previous: nil)
+    ledger.record(reply(turn: "new-arrival"), previous: nil)
+    ledger.discardMissing(checked)
+    XCTAssertEqual(ledger.count(conversationId: "one"), 2)
+  }
+
+  @MainActor
+  func testReconciliationAndSingleDeletePreserveOtherUnreadReplies() async {
+    let store = GalaxySSIStore(defaults: defaults, secrets: secrets)
+    let session = store.createAgentSession(title: "Unread")
+    let removed = store.appendIncoming("First", from: "hermes", conversationId: session.id, turnId: "first")
+    _ = store.appendIncoming("Second", from: "hermes", conversationId: session.id, turnId: "second")
+    let orphan = reply(conversation: session.id, turn: "orphan")
+    makeLedger().record(orphan, previous: nil)
+    XCTAssertEqual(store.agentReplyUnreadCount(conversationId: session.id), 3)
+    await store.reconcileAgentReplyUnread()
+    XCTAssertEqual(store.agentReplyUnreadCount(conversationId: session.id), 2)
+    XCTAssertTrue(store.deleteMessage(removed.id, contactId: "hermes"))
+    XCTAssertEqual(store.agentReplyUnreadCount(conversationId: session.id), 1)
   }
 
   func testStreamingToFinalCreatesOnePersistentUnreadReply() {

@@ -292,6 +292,13 @@ enum GalaxySSIConversationHubContactHistoryPolicy {
   static func includes(_ contact: GalaxySSIContact?) -> Bool {
     !ScannedAgentConversationPolicy.opensAgentConversation(contact)
   }
+
+  static func visibleSummary(_ contact: GalaxySSIContact, summary: (String) -> ContactConversationSummary)
+    -> ContactConversationSummary? {
+    guard !contact.deleted, includes(contact) else { return nil }
+    let history = summary(contact.id)
+    return history.lastMessage == nil ? nil : history
+  }
 }
 
 enum GalaxySSIConversationHubModels {
@@ -301,9 +308,8 @@ enum GalaxySSIConversationHubModels {
     isPinned: (String) -> Bool
   ) -> [GalaxySSIConversationHubContactSummary] {
     contacts.compactMap { contact in
-      guard GalaxySSIConversationHubContactHistoryPolicy.includes(contact) else { return nil }
-      let conversation = summary(contact.id)
-      guard let latest = conversation.lastMessage else { return nil }
+      guard let conversation = GalaxySSIConversationHubContactHistoryPolicy.visibleSummary(contact, summary: summary),
+            let latest = conversation.lastMessage else { return nil }
       return GalaxySSIConversationHubContactSummary(
         contactId: contact.id,
         title: contact.displayName.ifBlank(contact.name).ifBlank(contact.id),

@@ -787,6 +787,27 @@ final class GalaxySSIStore: ObservableObject {
     agentReplyUnreadStore.count(conversationId: conversationId)
   }
 
+  func reconcileAgentReplyUnread() async {
+    let snapshot = agentReplyUnreadStore.pendingSnapshot()
+    guard !snapshot.isEmpty else { return }
+    let identity = profile.identityFingerprint
+    let history = chatHistoryDatabase
+    let work = Task.detached(priority: .utility) { () -> [String: [AgentReplyUnreadStore.PendingMarker]] in
+      var confirmed: [String: [AgentReplyUnreadStore.PendingMarker]] = [:]
+      for (conversation, markers) in snapshot {
+        guard !Task.isCancelled else { return [:] }
+        history.prepareLegacyUnreadIndex(conversationId: conversation)
+        guard let missing = history.missingUnreadTokens(conversationId: conversation,
+          candidates: Set(markers.map(\.token))), !missing.isEmpty else { continue }
+        confirmed[conversation] = markers.filter { missing.contains($0.token) }
+      }
+      return confirmed
+    }
+    let confirmed = await withTaskCancellationHandler(operation: { await work.value }, onCancel: { work.cancel() })
+    guard !Task.isCancelled, profile.identityFingerprint == identity else { return }
+    agentReplyUnreadStore.discardMissing(confirmed)
+  }
+
   func markAgentRepliesRead(
     conversationId: String, rendered: [ChatMessage], through cursor: GalaxySSIChatHistoryCursor? = nil
   ) {
