@@ -2,6 +2,51 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testCompositeDeviceGoalsRequireWholeGoalPhonePlanning() {
+    let tools = AgentPhoneNativeToolCatalog.descriptors(capabilityStatuses: readyPhoneCapabilityStatuses())
+    func request(_ goal: String) -> AgentPlanRequest {
+      AgentPlanRequest(goal: goal, screen: AgentScreenContext(foregroundApp: "com.galaxyssi.chat"), nativeTools: tools)
+    }
+    for goal in [
+      "Check battery status and remaining storage", "Read battery status, free RAM, network status",
+      "Read battery percentage and temperature", "Don't read battery status; read storage only",
+      "Read battery level if charging", "Read battery status and save it to battery.txt",
+      "Read Wi-Fi status and Bluetooth status", "Read battery status and then turn on the flashlight",
+      "\u{7535}\u{91cf}\u{3001}\u{5185}\u{5b58}", "\u{96fb}\u{91cf}\u{8207}\u{5132}\u{5b58}"
+    ] {
+      XCTAssertTrue(AgentDeviceStatusShortcutCoverage.requiresPhoneReasoning(goal), goal)
+      XCTAssertNil(AgentDirectNativeToolPlanner.action(for: request(goal)), goal)
+      XCTAssertNil(AgentDirectNativeToolPlanner.plan(request: request(goal)), goal)
+      XCTAssertNil(AgentDirectNativeToolPlanner.shortcutPlan(request: request(goal)), goal)
+    }
+    for goal in [
+      "Read the current battery level on this phone.",
+      "\u{8bfb}\u{53d6}\u{8fd9}\u{53f0}\u{624b}\u{673a}\u{7684}\u{5f53}\u{524d}\u{7535}\u{91cf}\u{ff0c}\u{7b80}\u{77ed}\u{56de}\u{7b54}\u{3002}"
+    ] {
+      XCTAssertFalse(AgentDeviceStatusShortcutCoverage.requiresReasoning(goal), goal)
+      XCTAssertEqual(AgentDirectNativeToolPlanner.shortcutPlan(request: request(goal))?.actions.first?.parameters["tool_id"],
+        AgentIOSHardwareNativeToolCatalog.batteryStatus, goal)
+    }
+    XCTAssertNotNil(AgentDirectNativeToolPlanner.action(for: request(
+      "\u{9019}\u{53f0}\u{624b}\u{6a5f}\u{9084}\u{6709}\u{591a}\u{5c11}\u{904b}\u{884c}\u{5167}\u{5b58}"
+    )))
+    for goal in [
+      "Explain battery level and network status", "What is cloud storage?",
+      "Compare battery chemistry and memory technology", "Check this program for errors",
+      "Set media volume 30", "Turn on the flashlight", "Open Wi-Fi settings"
+    ] {
+      XCTAssertFalse(AgentDeviceStatusShortcutCoverage.requiresReasoning(goal), goal)
+    }
+    for goal in [
+      "Read battery status and available storage on my computer",
+      "Audit this repository, inspect available memory, Git, builds, tests, and replan from the evidence."
+    ] {
+      XCTAssertTrue(AgentDeviceStatusShortcutCoverage.requiresReasoning(goal), goal)
+      XCTAssertFalse(AgentDeviceStatusShortcutCoverage.requiresPhoneReasoning(goal), goal)
+      XCTAssertNil(AgentDirectNativeToolPlanner.plan(request: request(goal)), goal)
+    }
+  }
+
   func testNativeShortcutsRequireCompleteCommandsAndTypedArguments() throws {
     let tools = AgentPhoneNativeToolCatalog.descriptors(capabilityStatuses: readyPhoneCapabilityStatuses()) +
       AgentIOSVisibleCaptureNativeToolCatalog.definitions(provider: DirectPlannerVisibleCaptureProvider()).map(\.descriptor)

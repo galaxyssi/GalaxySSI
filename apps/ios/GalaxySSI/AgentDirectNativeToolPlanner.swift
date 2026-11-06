@@ -15,6 +15,7 @@ enum AgentDirectNativeToolPlanner {
   }
 
   static func plan(request: AgentPlanRequest) -> AgentPlan? {
+    guard !AgentDeviceStatusShortcutCoverage.requiresReasoning(request.goal) else { return nil }
     let segments = AgentGoalSegmentationPolicy.split(request.goal)
     if segments.count > 1 {
       var actions: [AgentAction] = []
@@ -53,6 +54,7 @@ enum AgentDirectNativeToolPlanner {
     let goal = AgentLocalCommandText.withoutPoliteness(request.goal)
     guard !goal.isEmpty else { return nil }
     let lower = goal.lowercased()
+    guard !AgentDeviceStatusShortcutCoverage.requiresReasoning(goal) else { return nil }
     let responseLanguage = responseLanguageCode(for: request)
     guard AgentTaskIntentClassifier.classify(goal: goal).intent != .desktopControl else {
       return nil
@@ -1006,9 +1008,17 @@ enum AgentDirectNativeToolPlanner {
     }
   }
 
+  static func isCompleteDeviceStatusRead(_ goal: String) -> Bool {
+    isBatteryStatusGoal(goal) || isDeviceStatusGoal(goal) || isPowerStatusGoal(goal) ||
+      isMemoryStatusGoal(goal) || isStorageStatusGoal(goal) || isNetworkStatusGoal(goal) ||
+      isBluetoothStatusGoal(goal) || isNFCStatusGoal(goal) || isWifiStatusGoal(goal) ||
+      isAudioStatusGoal(goal) || isVPNStatusGoal(goal)
+  }
+
   private static func isBatteryStatusGoal(_ lower: String) -> Bool {
-    AgentLocalCommandText.read(lower, ["battery", "battery level", "battery status", "battery percentage",
-      "phone battery", "\u{7535}\u{91cf}", "\u{96fb}\u{91cf}", "\u{624b}\u{673a}\u{7535}\u{91cf}"])
+    AgentLocalCommandText.statusRead(lower, ["battery", "battery level", "battery status", "battery percentage",
+      "phone battery", "\u{7535}\u{91cf}", "\u{96fb}\u{91cf}", "\u{624b}\u{673a}\u{7535}\u{91cf}",
+      "\u{624b}\u{6a5f}\u{96fb}\u{91cf}", "\u{7535}\u{6c60}\u{7535}\u{91cf}", "\u{96fb}\u{6c60}\u{96fb}\u{91cf}"])
   }
 
   private static func isDeviceStatusGoal(_ lower: String) -> Bool {
@@ -1194,17 +1204,20 @@ enum AgentDirectNativeToolPlanner {
   }
 
   private static func isMemoryStatusGoal(_ lower: String) -> Bool {
-    AgentLocalCommandText.read(lower, [
-      "memory", "ram", "memory status", "ram status", "phone memory", "\u{5185}\u{5b58}",
+    AgentLocalCommandText.statusRead(lower, [
+      "memory", "ram", "memory status", "ram status", "phone memory", "\u{5185}\u{5b58}", "\u{5167}\u{5b58}",
       "phone memory", "phone ram", "device memory", "device ram", "available ram", "free ram", "ram status",
       "\u{624b}\u{673a}\u{5185}\u{5b58}", "\u{8bbe}\u{5907}\u{5185}\u{5b58}", "\u{8fd0}\u{884c}\u{5185}\u{5b58}",
+      "\u{904b}\u{884c}\u{5167}\u{5b58}",
       "\u{53ef}\u{7528}\u{5185}\u{5b58}", "\u{5269}\u{4f59}\u{5185}\u{5b58}", "\u{5185}\u{5b58}\u{5360}\u{7528}",
       "\u{5185}\u{5b58}\u{4f7f}\u{7528}", "\u{67e5}\u{5185}\u{5b58}", "\u{67e5}\u{770b}\u{5185}\u{5b58}", "\u{67e5}\u{8be2}\u{5185}\u{5b58}"
     ])
   }
 
   private static func isStorageStatusGoal(_ lower: String) -> Bool {
-    AgentLocalCommandText.read(lower, ["storage", "storage status", "phone storage", "device storage", "\u{5b58}\u{50a8}"])
+    AgentLocalCommandText.statusRead(lower, ["storage", "storage status", "storage space", "internal storage",
+      "phone storage", "device storage", "\u{5b58}\u{50a8}", "\u{5132}\u{5b58}",
+      "\u{5b58}\u{50a8}\u{7a7a}\u{95f4}", "\u{5132}\u{5b58}\u{7a7a}\u{9593}"])
   }
 
   private static func isNetworkStatusGoal(_ lower: String) -> Bool {
