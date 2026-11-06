@@ -21,21 +21,108 @@ final class AgentActionNotificationTests: XCTestCase {
     XCTAssertEqual(same.evidence(now: 61_000)["timer_state"], "elapsed")
     XCTAssertNil(reopened.current(conversationId: "other"))
 
-    let executor = AgentIOSNativeActionExecutor(nowMillis: { 2_000 }, timerStore: reopened)
+    let notifications = TimerNotificationFixture()
+    notifications.pending.insert(timer.notificationId)
+    let executor = AgentIOSTimerExecutor(store: reopened, io: notifications.io, now: { 2_000 })
     let scope = ["_galaxyssi_conversation_id": "one", "_galaxyssi_turn_id": "turn"]
-    let guessed = executor.execute(action: action(kind: .setAlarm, parameters: scope.merging([
+    let guessed = executor.execute(action(kind: .setAlarm, parameters: scope.merging([
       "timer_seconds": "60", "operation_id": UUID().uuidString
-    ]) { _, new in new }), screen: screen())
+    ]) { _, new in new }))
     XCTAssertFalse(guessed.success)
     XCTAssertEqual(guessed.metadata["error_code"], "timer_operation_id_mismatch")
     XCTAssertEqual(guessed.metadata["dispatch_accepted"], "false")
     XCTAssertEqual(guessed.metadata["operation_id"], timer.id.uuidString)
     XCTAssertEqual(reopened.current(conversationId: "one")?.id, timer.id)
-    let inspect = executor.execute(action: action(kind: .setAlarm, parameters: scope.merging([
+    let inspect = executor.execute(action(kind: .setAlarm, parameters: scope.merging([
       "timer_operation": "inspect", "operation_id": timer.id.uuidString
-    ]) { _, new in new }), screen: screen())
+    ]) { _, new in new }))
     XCTAssertTrue(inspect.success)
     XCTAssertEqual(inspect.metadata["remaining_seconds"], "59")
+    notifications.pending.removeAll()
+    let missing = executor.execute(action(kind: .setAlarm, parameters: scope.merging([
+      "timer_operation": "inspect", "operation_id": timer.id.uuidString
+    ]) { _, new in new }))
+    XCTAssertFalse(missing.success)
+    XCTAssertEqual(missing.metadata["completion_verified"], "false")
+  }
+
+  func testPhoneTimerPauseResumeReplaceAndCancelRequireSystemReadback() throws {
+    let suite = "timer-lifecycle-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = InMemorySecretStore()
+    let notifications = TimerNotificationFixture()
+    var now: Int64 = 1_000
+    func execute(_ command: String, _ turn: String, id: String? = nil, seconds: Int? = nil,
+                 conversation: String = "one") -> AgentActionResult {
+      var params = ["_galaxyssi_conversation_id": conversation, "_galaxyssi_turn_id": turn, "timer_operation": command]
+      params["operation_id"] = id
+      params["timer_seconds"] = seconds.map(String.init)
+      return AgentIOSTimerExecutor(store: .init(defaults: defaults, secrets: secrets),
+        io: notifications.io, now: { now }).execute(action(kind: .setAlarm, parameters: params))
+    }
+
+    let started = execute("start", "start", seconds: 60)
+    XCTAssertTrue(started.success)
+    let id = try XCTUnwrap(started.metadata["operation_id"])
+    let originalNotification = try XCTUnwrap(started.metadata["notification_id"])
+    XCTAssertEqual(execute("start", "start", seconds: 60).metadata["operation_id"], id)
+    XCTAssertFalse(execute("pause", "foreign", id: id, conversation: "other").success)
+    now += 10_000
+    notifications.removalWorks = false
+    XCTAssertFalse(execute("pause", "pause", id: id).success)
+    XCTAssertFalse(execute("inspect", "inspect", id: id).success)
+    XCTAssertFalse(execute("resume", "resume", id: id).success)
+    XCTAssertEqual(notifications.adds.count, 1)
+    notifications.removalWorks = true
+    XCTAssertEqual(execute("pause", "pause", id: id).metadata["timer_state"], "paused")
+    XCTAssertFalse(execute("start", "start", seconds: 60).success)
+    now += 20_000
+    XCTAssertEqual(execute("inspect", "inspect", id: id).metadata["remaining_seconds"], "50")
+
+    let resumed = execute("resume", "resume", id: id)
+    XCTAssertTrue(resumed.success)
+    XCTAssertEqual(resumed.metadata["operation_id"], id)
+    XCTAssertNotEqual(resumed.metadata["notification_id"], originalNotification)
+    XCTAssertEqual(notifications.adds.last?.seconds, 50)
+    XCTAssertEqual(execute("resume", "resume", id: id).metadata["timer_state"], "running")
+    XCTAssertEqual(notifications.adds.count, 2)
+
+    notifications.allowed = false
+    XCTAssertEqual(execute("replace", "replace", id: id, seconds: 90).metadata["error_code"],
+                   "timer_notification_permission_required")
+    XCTAssertEqual(notifications.pending, Set([try XCTUnwrap(resumed.metadata["notification_id"])]))
+    notifications.allowed = true
+    let replacement = execute("replace", "replace", id: id, seconds: 90)
+    XCTAssertTrue(replacement.success)
+    let newId = try XCTUnwrap(replacement.metadata["operation_id"])
+    XCTAssertNotEqual(newId, id)
+    XCTAssertEqual(execute("replace", "replace", id: id, seconds: 90).metadata["operation_id"], newId)
+    XCTAssertEqual(notifications.adds.count, 3)
+    XCTAssertFalse(execute("cancel", "stale", id: id).success)
+    XCTAssertEqual(execute("cancel", "cancel", id: newId).metadata["timer_state"], "cancelled")
+    XCTAssertTrue(notifications.pending.isEmpty)
+  }
+
+  func testUnknownTimerDispatchIsNotReplayedAndRequiresAnExactNotification() throws {
+    let suite = "timer-dispatch-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let notifications = TimerNotificationFixture()
+    notifications.addResult = .unknown
+    let executor = AgentIOSTimerExecutor(store: .init(defaults: defaults, secrets: InMemorySecretStore()),
+      io: notifications.io, now: { 1_000 })
+    let params = ["_galaxyssi_conversation_id": "one", "_galaxyssi_turn_id": "start", "timer_seconds": "60"]
+    let start = action(kind: .setAlarm, parameters: params)
+    let result = executor.execute(start)
+    XCTAssertFalse(result.success)
+    let notification = try XCTUnwrap(result.metadata["notification_id"])
+    notifications.pending.insert("other-timer")
+    XCTAssertFalse(executor.execute(start).success)
+    XCTAssertEqual(notifications.adds.count, 1)
+    notifications.pending.insert(notification)
+    XCTAssertTrue(executor.execute(start).success)
+    XCTAssertEqual(notifications.adds.count, 1)
   }
 
   func testPhoneToolCatalogAdvertisesTimerAndAppLaunchInputs() throws {
@@ -47,6 +134,8 @@ final class AgentActionNotificationTests: XCTestCase {
     for key in ["timer_seconds", "timer_operation", "operation_id", "hour", "minute", "label"] {
       XCTAssertNotNil(input[key])
     }
+    XCTAssertEqual(input["timer_operation"]?.objectValue?["enum"]?.arrayValue?.compactMap(\.stringValue),
+                   ["start", "inspect", "pause", "resume", "cancel", "replace"])
     let app = try XCTUnwrap(descriptors.first {
       $0.id == AgentNativeToolAgentActionAdapter.defaultToolId(.openApp)
     })
@@ -173,6 +262,31 @@ final class AgentActionNotificationTests: XCTestCase {
 
   private func screen() -> AgentScreenContext {
     AgentScreenContext(foregroundApp: "GalaxySSI")
+  }
+}
+
+private final class TimerNotificationFixture {
+  var allowed: Bool? = true
+  var addResult = AgentIOSTimerNotificationIO.AddResult.accepted
+  var pending = Set<String>()
+  var delivered = Set<String>()
+  var removalWorks = true
+  var adds: [(id: String, seconds: TimeInterval)] = []
+
+  var io: AgentIOSTimerNotificationIO {
+    .init(authorization: { self.allowed }, add: { id, _, seconds in
+      self.adds.append((id, seconds))
+      if self.addResult == .accepted { self.pending.insert(id) }
+      return self.addResult
+    }, pending: {
+      .init(ids: self.pending, timers: self.pending)
+    }, delivered: {
+      self.delivered
+    }, remove: { id in
+      guard self.removalWorks else { return }
+      self.pending.remove(id)
+      self.delivered.remove(id)
+    })
   }
 }
 

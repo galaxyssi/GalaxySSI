@@ -8626,7 +8626,17 @@ final class MessageCoordinator: ObservableObject {
     }
     let timerCheckpoint = AgentIOSTimerCheckpointStore.shared.current(conversationId: outgoing.conversationId)
       .flatMap { checkpoint -> [String: String]? in
-        guard checkpoint.sourceTurnId == turnId, !outgoing.readOnlyAnalysis else { return nil }
+        guard !outgoing.readOnlyAnalysis, outgoing.isMine, outgoing.sourceConversationId.isBlank else { return nil }
+        let explicitlyTimer = requestText.range(of: #"(?i)\b(?:timer|countdown)\b|\u8BA1\u65F6\u5668|\u5012\u8BA1\u65F6"#,
+          options: .regularExpression) != nil
+        let previous = AgentOwnedOperationContext.wantsContext(request: requestText, priorGoal: "phone timer")
+          ? AgentOwnedOperationContext.previousRequest(before: outgoing, in: store.agentSessionMessages(outgoing.conversationId))
+          : nil
+        let previousTurn = previous.map { $0.turnId.ifBlank($0.id.uuidString) }
+        guard checkpoint.sourceTurnId == turnId || checkpoint.lastControlTurnId == turnId ||
+          (explicitlyTimer && AgentTaskIntentClassifier.classify(goal: requestText).intent == .phoneControl) ||
+          previousTurn == checkpoint.sourceTurnId ||
+          (previousTurn != nil && previousTurn == checkpoint.lastControlTurnId) else { return nil }
         return checkpoint.evidence(now: Int64(Date().timeIntervalSince1970 * 1_000))
           .filter { ["operation_id", "timer_state", "remaining_seconds", "completion_verified"].contains($0.key) }
       }
