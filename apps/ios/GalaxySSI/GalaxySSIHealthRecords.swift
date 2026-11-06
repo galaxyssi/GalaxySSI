@@ -149,6 +149,7 @@ struct GalaxySSIHealthRecords {
     var reportEvidence: [GalaxySSIHealthReportReview.Evidence]?
     var tableReviews: [GalaxySSIHealthReviewReminders.TableDraft]?
     var reviewReminderState: GalaxySSIHealthReviewReminders.State?
+    var recognitionJobs: [GalaxySSIHealthRecognitionJobs.Job]?
     var version = 1
     var recordingReminders: GalaxySSIHealthRecordingReminders.Ledger?
     var restoreReceipts: Set<UUID>?
@@ -536,6 +537,82 @@ struct GalaxySSIHealthRecords {
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
   }
 
+  func enqueueRecognition(original: GalaxySSIHealthOriginalStore.Original, pageCount: Int) throws {
+    guard (1...GalaxySSIHealthRecognitionJobs.maximumPages).contains(pageCount),
+          original.kind == .pdf || pageCount == 1,
+          GalaxySSIHealthRecognitionJobs.validDigest(original.sha256) else { throw Failure.invalid }
+    var archive = try load()
+    var jobs = archive.recognitionJobs ?? []
+    guard !jobs.contains(where: { $0.original.id == original.id && $0.original.sha256 == original.sha256 }) else { return }
+    guard jobs.count < GalaxySSIHealthRecognitionJobs.maximumJobs else { throw Failure.invalid }
+    jobs.insert(.init(original: original, addedAt: Date(), pageCount: pageCount), at: 0)
+    archive.recognitionJobs = jobs
+    try persist(archive)
+  }
+
+  func beginRecognitionJob(id: UUID, expected: UUID) throws -> UUID {
+    var archive = try load()
+    guard let index = archive.recognitionJobs?.firstIndex(where: { $0.id == id && $0.version == expected }),
+          var job = archive.recognitionJobs?[index], job.phase != .cancelled, job.phase != .completed,
+          job.pages.count < job.pageCount else { throw Failure.stale }
+    let run = UUID()
+    job.run = run
+    job.phase = .running
+    job.version = UUID()
+    archive.recognitionJobs?[index] = job
+    try persist(archive)
+    return run
+  }
+
+  func commitRecognitionPage(id: UUID, run: UUID, page: GalaxySSIHealthRecognitionJobs.Page) throws {
+    var archive = try load()
+    guard let index = archive.recognitionJobs?.firstIndex(where: { $0.id == id && $0.run == run }),
+          var job = archive.recognitionJobs?[index], job.phase == .running,
+          page.index == job.pages.count, page.index < job.pageCount,
+          page.lines.count <= 150, Set(page.lines.map(\.id)).count == page.lines.count,
+          page.lines.allSatisfy({ GalaxySSIHealthRecognitionJobs.validDigest($0.id) && $0.ordinal >= 0 &&
+            !$0.text.isEmpty && $0.text.count <= 500 && $0.text.utf8.count <= 8_192 &&
+            [$0.bounds.minX, $0.bounds.minY, $0.bounds.width, $0.bounds.height].allSatisfy(\.isFinite) })
+    else { throw Failure.stale }
+    let currentBytes = (archive.recognitionJobs ?? []).flatMap(\.pages).reduce(0) { $0 + $1.textBytes }
+    guard currentBytes + page.textBytes <= GalaxySSIHealthRecognitionJobs.maximumTextBytes else { throw Failure.invalid }
+    job.pages.append(page)
+    job.version = UUID()
+    if job.pages.count == job.pageCount { job.phase = .completed; job.run = nil }
+    archive.recognitionJobs?[index] = job
+    try persist(archive)
+  }
+
+  func finishRecognitionJob(id: UUID, run: UUID, phase: GalaxySSIHealthRecognitionJobs.Phase) throws {
+    guard phase == .cancelled || phase == .failed || phase == .interrupted else { throw Failure.invalid }
+    var archive = try load()
+    guard let index = archive.recognitionJobs?.firstIndex(where: { $0.id == id && $0.run == run && $0.phase == .running })
+    else { throw Failure.stale }
+    archive.recognitionJobs?[index].phase = phase
+    archive.recognitionJobs?[index].run = nil
+    archive.recognitionJobs?[index].version = UUID()
+    try persist(archive)
+  }
+
+  func cancelRecognitionJob(id: UUID, expected: UUID) throws {
+    var archive = try load()
+    guard let index = archive.recognitionJobs?.firstIndex(where: { $0.id == id && $0.version == expected &&
+      $0.phase != .completed && $0.phase != .cancelled })
+    else { throw Failure.stale }
+    archive.recognitionJobs?[index].phase = .cancelled
+    archive.recognitionJobs?[index].run = nil
+    archive.recognitionJobs?[index].version = UUID()
+    try persist(archive)
+  }
+
+  func removeRecognitionJob(id: UUID, expected: UUID) throws {
+    var archive = try load()
+    guard let index = archive.recognitionJobs?.firstIndex(where: { $0.id == id && $0.version == expected })
+    else { throw Failure.stale }
+    archive.recognitionJobs?.remove(at: index)
+    try persist(archive)
+  }
+
   func stageReportItem(_ input: GalaxySSIHealthReportReview.Item, replacing expected: UUID?) throws {
     var archive = try load()
     guard archive.reportEvidence?.contains(where: { $0.source == input.source }) != true else { throw Failure.duplicate }
@@ -543,6 +620,7 @@ struct GalaxySSIHealthRecords {
     let index = pending.firstIndex { $0.source == input.source }
     guard index.map({ pending[$0].version }) == expected, expected != input.version else { throw Failure.stale }
     guard input.validDraftValue, input.reading.reportSource == input.source,
+          input.source.evidenceKey.map(GalaxySSIHealthRecognitionJobs.validDigest) != false,
           input.reading.revision == 0, !input.reading.deleted,
           !input.excerpt.isEmpty, input.excerpt.count <= 500 else { throw Failure.invalid }
     var reviewed = input
