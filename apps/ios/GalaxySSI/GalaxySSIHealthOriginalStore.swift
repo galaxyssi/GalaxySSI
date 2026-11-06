@@ -137,13 +137,37 @@ struct GalaxySSIHealthOriginalStore {
   }
 
   func importFile(_ url: URL) throws {
+    try store(readImport(url), name: url.lastPathComponent)
+  }
+
+  private func readImport(_ url: URL) throws -> Data {
     let scoped = url.startAccessingSecurityScopedResource()
     defer { if scoped { url.stopAccessingSecurityScopedResource() } }
     let input = try FileHandle(forReadingFrom: url)
     defer { try? input.close() }
     let data = try input.read(upToCount: Self.maximumFileBytes + 1) ?? Data()
     guard data.count <= Self.maximumFileBytes else { throw Failure.limit }
-    try store(data, name: url.lastPathComponent)
+    return data
+  }
+
+  func repairRecognitionOriginal(_ original: Original, from url: URL) throws {
+    try repairRecognitionOriginal(original, data: readImport(url))
+  }
+
+  func repairRecognitionOriginal(_ original: Original, data: Data) throws {
+    try Self.validateRestoreOriginal(original, data: data)
+    try withRestoreLease { lease in
+      try reconcileRestores(lease: lease)
+      let ledger = try loadRemovals()
+      guard !ledger.pending.contains(original.id), !ledger.metadata.contains(where: { $0.id == original.id })
+      else { throw Failure.stale }
+      let destination = try url(original.id)
+      if let existing = try list(lease: lease).originals.first(where: { $0.id == original.id }) {
+        guard existing == original else { throw Failure.stale }
+        if (try? read(existing, lease: lease)) != nil { return }
+      }
+      try writeOriginal(original, data: data, to: destination)
+    }
   }
 
   func store(_ data: Data, name: String, acquisition: Acquisition = .uploaded) throws {
