@@ -42,7 +42,10 @@ enum AgentModelPlanParser {
           !actionValues.isEmpty else {
       return nil
     }
-    let completionRequirements = parseCompletionRequirements(json["completion_requirements"])
+    let observed = observedCompletion(json["completion_requirements"]?.objectValue?["outcomes"])
+    guard observed.error == nil else { return nil }
+    var completionRequirements = parseCompletionRequirements(json["completion_requirements"])
+    completionRequirements?.outcomes = observed.outcomes
     if json["completion_requirements"] != nil && completionRequirements == nil {
       return nil
     }
@@ -134,12 +137,127 @@ enum AgentModelPlanParser {
     } else {
       reason = ""
     }
+    var artifacts: [AgentVideoArtifactRequirement]?
+    if let declared = object["artifacts"] {
+      guard let items = declared.arrayValue, items.count <= 4 else { return nil }
+      let parsed = items.compactMap { item -> AgentVideoArtifactRequirement? in
+        guard let artifact = item.objectValue, let workspace = artifact["workspace_id"]?.stringValue,
+              let path = artifact["path"]?.stringValue else { return nil }
+        return AgentVideoArtifactRequirement(workspaceId: workspace, path: path)
+      }
+      guard parsed.count == items.count, Set(parsed).count == parsed.count else { return nil }
+      artifacts = parsed.isEmpty ? nil : parsed
+    }
     return AgentCompletionRequirements(
       publication: publication,
       phoneLinux: phoneLinux,
-      reason: reason
+      reason: reason,
+      artifacts: artifacts
     )
   }
+
+  static func permitsPhoneExecutionSite(_ raw: String) -> Bool {
+    guard let json = extractJson(raw, exact: true) else { return false }
+    guard let site = json["execution_location"] else { return true }
+    if case let .string(value) = site {
+      return value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "phone"
+    }
+    return false
+  }
+
+  static func completionShapeRepair(_ raw: String) -> (diagnostic: String, original: AgentMcpJSONObject)? {
+    guard raw.utf8.count <= 32_768, let json = extractJson(raw, exact: true),
+          let requirements = json["completion_requirements"]?.objectValue,
+          let actions = json["actions"]?.arrayValue, !actions.isEmpty,
+          let error = observedCompletion(requirements["outcomes"]).error else { return nil }
+    return (error, json)
+  }
+
+  static func repairedOnlyCompletionShape(_ raw: String, original: AgentMcpJSONObject) -> Bool {
+    guard raw.utf8.count <= 32_768, var corrected = extractJson(raw, exact: true),
+          var requirements = corrected["completion_requirements"]?.objectValue,
+          var prior = original["completion_requirements"]?.objectValue,
+          let outcomes = observedCompletion(requirements.removeValue(forKey: "outcomes")).outcomes,
+          !outcomes.isEmpty else { return false }
+    var expected = original
+    if let rows = prior.removeValue(forKey: "outcomes")?.arrayValue {
+      guard outcomes.count == rows.count else { return false }
+      for (row, outcome) in zip(rows, outcomes) {
+        guard let item = row.objectValue else { continue }
+        for (key, value) in [("id", outcome.id), ("tool_id", outcome.toolId), ("after_tool_id", outcome.afterToolId)] {
+          if case let .string(previous) = item[key], previous != value { return false }
+        }
+      }
+    }
+    corrected.removeValue(forKey: "completion_requirements")
+    expected.removeValue(forKey: "completion_requirements")
+    return corrected == expected && requirements == prior
+  }
+
+  private static func observedCompletion(
+    _ value: AgentMcpJSONValue?
+  ) -> (outcomes: [AgentObservedCompletion]?, error: String?) {
+    guard let value else { return (nil, nil) }
+    guard let rows = value.arrayValue, rows.count <= 32 else {
+      return (nil, "completion_requirements.outcomes must be an array of at most 32 receipt checks.")
+    }
+    var result: [AgentObservedCompletion] = []
+    var ids = Set<String>()
+    for (index, row) in rows.enumerated() {
+      let field = "completion_requirements.outcomes[\(index)]"
+      guard let object = row.objectValue, case let .string(id) = object["id"],
+            id.range(of: #"^[A-Za-z0-9_.-]{1,128}$"#, options: .regularExpression) != nil,
+            ids.insert(id).inserted,
+            case let .string(toolId) = object["tool_id"], validObservedToolID(toolId) else {
+        return (nil, "\(field) requires a unique id and a galaxyssi tool_id.")
+      }
+      let after = object["after_tool_id"] ?? .string("")
+      guard case let .string(afterToolId) = after, afterToolId.isEmpty || validObservedToolID(afterToolId) else {
+        return (nil, "\(field).after_tool_id must be a tool id or an empty string for read-only goals.")
+      }
+      guard let identity = object["subject"]?.objectValue, (1...16).contains(identity.count) else {
+        return (nil, "\(field).subject must be a JSON object mapping receipt JSON pointers to observed string identities, not an array or string.")
+      }
+      var subject: [String: String] = [:]
+      for (path, value) in identity.sorted(by: { $0.key < $1.key }) {
+        guard validObservedPointer(path), case let .string(observed) = value,
+              !observed.trimmedForModelPlan.isEmpty, observed.utf8.count <= 4_096 else {
+          return (nil, "\(field).subject requires valid receipt pointers with nonempty string identities; keep numbers and booleans in checks.")
+        }
+        subject[path] = observed
+      }
+      guard let checks = object["checks"]?.objectValue, (1...16).contains(checks.count) else {
+        return (nil, "\(field).checks must be a JSON object mapping receipt JSON pointers to expected scalar values, not an array or string.")
+      }
+      guard checks.allSatisfy({ path, value in
+        guard validObservedPointer(path), !dispatchOnlyFields.contains(path.split(separator: "/").last?.lowercased() ?? "") else { return false }
+        switch value {
+        case .string(let text): return text.utf8.count <= 1_024
+        case .int, .double, .bool: return true
+        default: return false
+        }
+      }) else {
+        return (nil, "\(field).checks must use real receipt pointers and typed scalar values; dispatch acceptance or prose is not proof.")
+      }
+      result.append(AgentObservedCompletion(id: id, toolId: toolId, subject: subject, checks: checks, afterToolId: afterToolId))
+    }
+    return (result, nil)
+  }
+
+  private static func validObservedToolID(_ value: String) -> Bool {
+    value.hasPrefix("galaxyssi.") && value.utf8.count <= 256 &&
+      value.range(of: #"^[A-Za-z0-9_.-]+$"#, options: .regularExpression) != nil
+  }
+
+  private static func validObservedPointer(_ path: String) -> Bool {
+    path.utf8.count <= 512 && path.range(of: #"^(/(?:[A-Za-z0-9_.-]|~[01])+)+$"#, options: .regularExpression) != nil
+  }
+
+  private static let dispatchOnlyFields: Set<String> = [
+    "accepted", "success", "message", "summary", "text", "exit_code", "queued", "dispatched",
+    "ui_changed", "request_accepted", "dispatch_attempted", "dispatch_accepted", "target_volume",
+    "requested_enabled", "requested_percent", "requested_muted"
+  ]
 
   private static func parseAction(
     request: AgentPlanRequest,

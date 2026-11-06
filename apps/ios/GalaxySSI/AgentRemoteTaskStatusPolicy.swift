@@ -36,6 +36,94 @@ struct AgentRemoteTaskStatusSnapshot: Equatable, Identifiable {
   }
 }
 
+struct AgentCodexReplaySeed: Codable, Equatable {
+  let sourceContentSha256: String
+  let lockedToOrigin: Bool
+  let invocation: [String: String]?
+  let transportContext: String
+  var budget: AgentCodexSilenceRecoveryPolicy.Budget
+
+  init?(source: ChatMessage, text: String, targetId: String, executionMode: AgentTaskExecutionMode,
+        hasAttachments: Bool, voiceSessionId: String, lockedToOrigin: Bool, invocation: [String: String]?,
+        transportContext: String) {
+    guard source.isMine, !source.isSystem, source.requestKind == .conversation, !source.readOnlyAnalysis,
+          !source.conversationId.isBlank, source.content == text, source.richOutputJson.isBlank,
+          !text.isBlank, text.utf8.count <= 12_000, !targetId.isBlank,
+          executionMode == .planOnly, !hasAttachments, voiceSessionId.isBlank, transportContext.utf8.count <= 32_768,
+          (invocation ?? [:]).allSatisfy({ ["model_id", "reasoning_effort"].contains($0.key) && $0.value.count <= 256 })
+    else { return nil }
+    sourceContentSha256 = AgentModelLoopRecoveryIdentity.sha256(text)
+    self.lockedToOrigin = lockedToOrigin
+    self.invocation = invocation
+    self.transportContext = transportContext
+    budget = AgentCodexSilenceRecoveryPolicy.Budget(origin: targetId)
+  }
+
+  func matches(_ source: ChatMessage) -> Bool {
+    source.isMine && !source.isSystem && source.requestKind == .conversation && !source.readOnlyAnalysis &&
+      source.richOutputJson.isBlank && AgentModelLoopRecoveryIdentity.sha256(source.content) == sourceContentSha256
+  }
+}
+
+enum AgentCodexSilenceRecoveryPolicy {
+  static let silenceMillis: Int64 = 180_000
+
+  static func isCodex(adapter: String, agentId: String) -> Bool {
+    ["codex-app-server-or-cli", "codex"].contains(adapter.lowercased()) || agentId.lowercased() == "codex"
+  }
+
+  static func confirmedTimeout(status: String, failureCode: String, error: String) -> Bool {
+    guard ["failed", "timed_out"].contains(AgentRemoteTaskStatusPolicy.normalize(status)) else { return false }
+    if !failureCode.isBlank { return failureCode == "codex_no_progress_timeout" }
+    return error.trimmingCharacters(in: .whitespacesAndNewlines)
+      .caseInsensitiveCompare("Codex task stalled") == .orderedSame
+  }
+
+  static func isSilent(status: String, since lastProgress: Int64, now: Int64) -> Bool {
+    ["accepted", "queued", "starting", "running", "recovering"].contains(status) &&
+      lastProgress > 0 && now >= lastProgress && now - lastProgress >= silenceMillis
+  }
+
+  struct Budget: Codable, Equatable {
+    let origin: String
+    private(set) var failedOriginAttempts = 0
+    private(set) var failedAlternatives: Set<String> = []
+    private(set) var finalOriginAttempt = false
+    private(set) var exhausted = false
+    private(set) var expectedTarget: String
+    private var settledAttemptIds: Set<String> = []
+
+    init(origin: String) {
+      self.origin = origin
+      expectedTarget = origin
+    }
+
+    mutating func next(failed target: String, attemptId: String, confirmedTimeout: Bool,
+                       alternatives: [String]) -> String? {
+      guard !exhausted, !origin.isBlank, target == expectedTarget,
+            !attemptId.isBlank, attemptId.count <= 200, settledAttemptIds.count < 12,
+            settledAttemptIds.insert(attemptId).inserted else { return nil }
+      if target == origin {
+        guard confirmedTimeout, !finalOriginAttempt else { exhausted = true; return nil }
+        failedOriginAttempts += 1
+        if failedOriginAttempts == 1 { return origin }
+      } else {
+        guard failedOriginAttempts >= 2, !finalOriginAttempt,
+              failedAlternatives.insert(target).inserted else { exhausted = true; return nil }
+      }
+      if failedAlternatives.count < 8, let alternative = alternatives.first(where: {
+        !$0.isBlank && $0 != origin && !failedAlternatives.contains($0)
+      }) {
+        expectedTarget = alternative
+        return alternative
+      }
+      finalOriginAttempt = true
+      expectedTarget = origin
+      return origin
+    }
+  }
+}
+
 enum AgentRemoteTaskStatusPolicy {
   static let remoteTimeoutStage = "REMOTE_TASK"
 

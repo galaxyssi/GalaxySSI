@@ -5,7 +5,10 @@ extension GalaxySSIStore {
     var next = voiceSettings
     mutate(&next)
     voiceSettings = next.normalized
-    if !voiceSettings.textToSpeechEnabled { AgentCompletedReplyPlayback.shared.stop() }
+    if !voiceSettings.textToSpeechEnabled {
+      AgentCompletedReplyPlayback.shared.stop()
+      PublicNewsSpeechPlayback.shared.pause(relinquish: true)
+    }
   }
 
   func updateLanguagePolicy(_ mutate: (inout LanguagePolicySettings) -> Void) {

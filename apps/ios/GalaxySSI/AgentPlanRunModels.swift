@@ -566,6 +566,20 @@ struct AgentAuditEntry: Codable, Equatable {
   }
 }
 
+struct AgentObservedCompletion: Codable, Equatable {
+  var id: String
+  var toolId: String
+  var subject: [String: String]
+  var checks: AgentMcpJSONObject
+  var afterToolId: String
+
+  enum CodingKeys: String, CodingKey {
+    case id, subject, checks
+    case toolId = "tool_id"
+    case afterToolId = "after_tool_id"
+  }
+}
+
 enum AgentPublicationRequirement: String, Codable, CaseIterable {
   case none
   case commit
@@ -573,35 +587,64 @@ enum AgentPublicationRequirement: String, Codable, CaseIterable {
   case pullRequest = "pull_request"
 }
 
+struct AgentVideoArtifactRequirement: Codable, Hashable {
+  var workspaceId: String
+  var path: String
+
+  init?(workspaceId: String, path: String) {
+    guard workspaceId.range(of: #"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"#, options: .regularExpression) != nil,
+          path.utf8.count <= 1_024,
+          case .success(let segments) = AgentWorkspaceFilePathPolicy.normalizeRelativePath(path, allowRoot: false),
+          segments.last?.lowercased().hasSuffix(".mp4") == true else { return nil }
+    self.workspaceId = workspaceId
+    self.path = segments.joined(separator: "/")
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case workspaceId = "workspace_id"
+    case path
+  }
+}
+
 /// Completion obligations interpreted by the planning model, never inferred from goal keywords.
 struct AgentCompletionRequirements: Codable, Equatable {
+  var outcomes: [AgentObservedCompletion]? = nil
   var publication: AgentPublicationRequirement
   var phoneLinux: Bool
   var reason: String
+  var artifacts: [AgentVideoArtifactRequirement]?
 
   init(
     publication: AgentPublicationRequirement,
     phoneLinux: Bool,
-    reason: String = ""
+    reason: String = "",
+    artifacts: [AgentVideoArtifactRequirement]? = nil
   ) {
     self.publication = publication
     self.phoneLinux = phoneLinux
     self.reason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.artifacts = artifacts
   }
 
   func changesOutcome(from previous: AgentCompletionRequirements) -> Bool {
-    publication != previous.publication || phoneLinux != previous.phoneLinux
+    publication != previous.publication || phoneLinux != previous.phoneLinux ||
+      Set(artifacts ?? []) != Set(previous.artifacts ?? [])
   }
 
   func canReplace(_ previous: AgentCompletionRequirements?) -> Bool {
     guard let previous else { return true }
-    return !changesOutcome(from: previous) || !reason.isEmpty
+    let currentOutcomes = outcomes ?? []
+    let priorOutcomes = previous.outcomes ?? []
+    guard Set(currentOutcomes.map(\.id)).isSuperset(of: priorOutcomes.map(\.id)) else { return false }
+    return (!changesOutcome(from: previous) && currentOutcomes == priorOutcomes) || !reason.isEmpty
   }
 
   enum CodingKeys: String, CodingKey {
+    case outcomes
     case publication
     case phoneLinux = "phone_linux"
     case reason
+    case artifacts
   }
 }
 

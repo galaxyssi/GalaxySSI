@@ -600,6 +600,33 @@ final class GalaxySSILinkDeliveryStore {
     state.outbox.contains { $0.messageId == messageId }
   }
 
+  func voiceTextQueueStatus(messageId: String, sourceId: String, contactId: String) -> String? {
+    state.outbox.first {
+      $0.messageId == messageId && $0.clientSourceMessageId == sourceId && $0.contactId == contactId
+    }?.status
+  }
+
+  @discardableResult
+  func enqueueConfirmedVoiceText(_ request: LinkDeliveryEnqueueRequest, now: Date = Date()) -> Bool {
+    guard journal != nil, journalHealthy, !request.messageId.isEmpty, !request.topic.isEmpty,
+          !request.clientSourceMessageId.isEmpty, !request.contactId.isEmpty,
+          !request.wirePayload.isEmpty, request.wirePayload.utf8.count <= 128 * 1_024,
+          request.blockedByAttachmentTransferIds.isEmpty, request.attachmentTransferId.isEmpty,
+          !containsOutboxMessage(request.messageId) else { return false }
+    let previous = state
+    state.outbox.append(PendingLinkMessage(messageId: request.messageId, topic: request.topic,
+      wirePayload: request.wirePayload, status: "queued", attempts: 0, nextAttemptAt: now,
+      createdAt: now, updatedAt: now, requiresValidatedNetwork: request.requiresValidatedNetwork,
+      clientSourceMessageId: request.clientSourceMessageId, contactId: request.contactId))
+    if request.recoverableEnvelope.utf8.count <= Self.maximumRecoverableEnvelopeBytes {
+      recoveryStore.set(request.recoverableEnvelope, messageId: request.messageId)
+    }
+    if save() { return true }
+    state = previous
+    recoveryStore.remove(messageId: request.messageId)
+    return false
+  }
+
   func discard(messageId: String) {
     guard !messageId.isEmpty else { return }
     let before = state.outbox.count

@@ -102,6 +102,27 @@ final class GalaxySSIPeerComposerActionPolicyTests: XCTestCase {
     )
   }
 
+  func testAgentComposerReturnsToVoiceWhenTrayClosesWithoutInput() {
+    let tray = GalaxySSIAgentComposerUiPolicy.resolve(hasInput: false, hasPendingPrimaryAction: false,
+      textModeActive: false, actionTrayRequested: true, voiceEntryAvailable: true)
+    let closed = GalaxySSIAgentComposerUiPolicy.resolve(hasInput: false, hasPendingPrimaryAction: false,
+      textModeActive: false, actionTrayRequested: false, voiceEntryAvailable: true)
+    XCTAssertTrue(tray.showMoreButton)
+    XCTAssertFalse(tray.showVoiceButton)
+    XCTAssertFalse(closed.showActionTray)
+    XCTAssertFalse(closed.showMoreButton)
+    XCTAssertTrue(closed.showVoiceButton)
+  }
+
+  func testAgentPendingTaskTakesPriorityOverAnExpandedTray() {
+    let state = GalaxySSIAgentComposerUiPolicy.resolve(hasInput: false, hasPendingPrimaryAction: true,
+      textModeActive: false, actionTrayRequested: true, voiceEntryAvailable: true)
+    XCTAssertTrue(state.showPendingActionButton)
+    XCTAssertFalse(state.showActionTray)
+    XCTAssertFalse(state.showMoreButton)
+    XCTAssertFalse(state.showVoiceButton)
+  }
+
   func testParagraphSelectionIncludesTheWholeParagraphAroundCursor() {
     let text = "\u{7b2c}\u{4e00}\u{6bb5}\u{5185}\u{5bb9}\n\u{7b2c}\u{4e8c}\u{6bb5}\u{53ef}\u{4ee5}\u{8de8}\u{884c}\u{9009}\u{62e9}\n\u{7b2c}\u{4e09}\u{6bb5}"
 

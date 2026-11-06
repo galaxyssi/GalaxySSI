@@ -1,6 +1,41 @@
 import Foundation
 
 extension GalaxySSIStore {
+  func commitAcceptedDesktopTask(_ binding: AgentDesktopReplyBinding, message: ChatMessage,
+                                 acceptedAt: Int64) -> Bool {
+    let taskIds = Set([binding.identity.taskId, binding.identity.turnId])
+    let candidates = taskIds.compactMap { agentTask(id: $0) }.filter { $0.sessionId == binding.identity.conversationId }
+    guard candidates.count == 1, let task = candidates.first else { return true }
+    let verification = "Committed authenticated Desktop result"
+    if task.phase == .completed && task.verification == verification && task.result == message.content {
+      return save()
+    }
+    guard let next = Self.desktopTaskCompletion(task, binding: binding, message: message,
+      acceptedAt: acceptedAt, verification: verification) else { return true }
+    guard replaceAgentTaskForRecovery(expected: task, updated: next) else { return false }
+    return save()
+  }
+
+  nonisolated static func desktopTaskCompletion(_ task: AgentTaskRecord, binding: AgentDesktopReplyBinding,
+                                               message: ChatMessage, acceptedAt: Int64, verification: String)
+    -> AgentTaskRecord? {
+    guard task.sessionId == binding.identity.conversationId,
+          [binding.identity.taskId, binding.identity.turnId].contains(task.taskId),
+          task.routeKind == .desktopAgent, [.waitingResponse, .executing, .verifying].contains(task.phase),
+          !task.blocked, task.planContext == nil, task.activePlan == nil, task.pendingPlanning == nil,
+          task.pendingAction == nil, task.pendingActions.isEmpty,
+          !message.isMine, !message.isSystem, message.contactId == binding.displayContactId,
+          message.conversationId == task.sessionId, message.turnId == binding.identity.turnId,
+          [.delivered, .read].contains(message.deliveryStatus)
+    else { return nil }
+    var completed = task
+    completed.phase = .completed
+    completed.result = message.content
+    completed.verification = verification
+    completed.updatedAtMillis = max(task.updatedAtMillis, acceptedAt)
+    return completed
+  }
+
   func replaceAgentTaskForRecovery(expected: AgentTaskRecord, updated: AgentTaskRecord) -> Bool {
     guard updated.taskId == expected.taskId, updated.sessionId == expected.sessionId,
           agentTask(id: expected.taskId) == expected else { return false }

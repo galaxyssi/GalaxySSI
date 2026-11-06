@@ -4,9 +4,11 @@ import UIKit
 @MainActor
 struct GalaxySSIPublicNewsDocumentView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @ObservedObject private var playback = PublicNewsSpeechPlayback.shared
   let checkpoint: PublicNewsBodyCheckpoint
   let articleURL: URL
   let showChinese: Bool
+  var playFromParagraph: ((Int) -> Void)? = nil
   @State private var visible = 24
   @State private var viewer: GalaxySSIImageViewerItem?
 
@@ -16,12 +18,21 @@ struct GalaxySSIPublicNewsDocumentView: View {
     let presentation = checkpoint.source.presentation
     let figures = Dictionary(grouping: presentation?.figures ?? [], by: \.beforeParagraph)
     let limit = min(paragraphs.count, visible)
+    let activeParagraph = highlightedParagraph(translated: translation != nil)
     return LazyVStack(alignment: .leading, spacing: 12) {
       if let translation { Text(translation.title).font(.headline).textSelection(.enabled) }
       ForEach(0..<limit, id: \.self) { index in
         images(figures[index] ?? [])
         let style = presentation?.styles.indices.contains(index) == true ? presentation?.styles[index] : nil
         paragraph(paragraphs[index], style: style, translated: translation != nil)
+          .background(activeParagraph == index ? Color.galaxySSIAccent.opacity(0.14) : Color.clear)
+          .contextMenu {
+            if let playFromParagraph {
+              Button { playFromParagraph(index) } label: {
+                Label(t("public_news_speech_here", "Read from here"), systemImage: "speaker.wave.2")
+              }
+            }
+          }
       }
       if limit == paragraphs.count {
         images(figures[limit] ?? [])
@@ -33,6 +44,15 @@ struct GalaxySSIPublicNewsDocumentView: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .fullScreenCover(item: $viewer) { GalaxySSIImageLightboxView(item: $0) }
     .onChange(of: checkpoint.fingerprint) { _ in visible = 24; viewer = nil }
+  }
+
+  private func highlightedParagraph(translated: Bool) -> Int? {
+    guard playback.queue.phase == .playing, let item = playback.queue.current,
+          item.articleKey == PublicNewsSpeechBookmark.key(for: articleURL.absoluteString),
+          item.edition == (translated ? .chinese : .original),
+          let document = PublicNewsSpeechDocument(checkpoint: checkpoint, edition: item.edition),
+          document.key == playback.queue.bookmark.documentKey else { return nil }
+    return playback.queue.bookmark.paragraph
   }
 
   private func images(_ figures: [PublicNewsArticlePresentation.Figure]) -> some View {

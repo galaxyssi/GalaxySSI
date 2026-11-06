@@ -107,13 +107,45 @@ struct AgentModelPlannerContactResolver {
   }
 
   @MainActor
+  func capturePhoneTurnSnapshot(
+    settings: AgentModelPlannerSettings,
+    selectedContact: GalaxySSIContact
+  ) -> AgentPlannerModelSnapshot? {
+    guard let resolution = Self.candidate(
+      for: selectedContact,
+      apiKey: { store.apiKey(for: $0) },
+      preferredModelId: selectedContact.selectedCloudModelId
+    )?.resolution else { return nil }
+    var selectedSettings = settings.normalized
+    selectedSettings.enabled = true
+    return AgentPlannerModelSnapshot(
+      settings: selectedSettings,
+      route: AgentPlannerProviderRoute(resolution: resolution),
+      localProfileId: nil,
+      selectedForPhoneTurn: true
+    )
+  }
+
+  func capturePhoneTurnSnapshot(
+    settings: AgentModelPlannerSettings,
+    localProfile: LocalModelRuntimeProfile
+  ) -> AgentPlannerModelSnapshot {
+    var selectedSettings = settings.normalized
+    selectedSettings.enabled = true
+    selectedSettings.cloudContactId = "local-llm"
+    return AgentPlannerModelSnapshot(settings: selectedSettings, route: nil,
+      localProfileId: localProfile.id, selectedForPhoneTurn: true)
+  }
+
+  @MainActor
   func makePlanner(
     snapshot: AgentPlannerModelSnapshot,
     sender: CloudModelStructuredSending = CloudModelClient()
   ) throws -> GuardedModelAgentPlanner {
     if let profileId = snapshot.localProfileId {
       guard snapshot.settings.normalized.cloudContactId == "local-llm",
-            let profile = LocalModelRuntimeCatalog.profiles().first(where: { $0.id == profileId }) else {
+            let profile = LocalModelRuntimeCatalog.profiles().first(where: { $0.id == profileId }),
+            snapshot.selectedForPhoneTurn != true || LocalModelRuntimeSettings.isProfileEnabled(profile) else {
         throw AgentModelLoopRecoveryError(code: "planner_local_model_unavailable")
       }
       return GuardedModelAgentPlanner(
