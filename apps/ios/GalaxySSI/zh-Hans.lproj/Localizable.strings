@@ -5624,6 +5624,8 @@
 "public_news_filter" = "筛选新闻";
 "public_news_all" = "全部";
 "public_news_unread" = "未读";
+"public_news_header_unread" = "%lld 条未读";
+"public_news_settings" = "资讯设置";
 "public_news_saved" = "已收藏";
 "public_news_storage_failed" = "无法访问本地新闻归档。";
 "public_news_refresh_incomplete" = "部分新闻来源暂时无法刷新。";
