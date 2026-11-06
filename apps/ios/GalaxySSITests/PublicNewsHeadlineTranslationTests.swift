@@ -50,6 +50,44 @@ final class PublicNewsHeadlineTranslationTests: XCTestCase {
     XCTAssertEqual(result.feedback[0], "include_each_id_once")
   }
 
+  func testHeadlineNumbersAllowEquivalentCountsAndMonthsWithoutRelaxingLiterals() {
+    let source = "Twenty-one teams launch version 2.4.1 on Sept. 15"
+    XCTAssertTrue(PublicNewsHeadlineNumbers.preserved(original: source, translated: "21 2.4.1 9 15"))
+    XCTAssertTrue(PublicNewsHeadlineNumbers.preserved(original: source, translated: "2.4.1 15"))
+    for invalid in ["20 2.4.1 9 15", "21 2.4.2 9 15", "21 2.4.1 9", "21 21 2.4.1 9 15"] {
+      XCTAssertFalse(PublicNewsHeadlineNumbers.preserved(original: source, translated: invalid), invalid)
+    }
+    XCTAssertFalse(PublicNewsHeadlineNumbers.preserved(original: "One hundred teams", translated: "1"))
+    XCTAssertFalse(PublicNewsHeadlineNumbers.preserved(original: "Two devices use 2 and 2.0", translated: "2 2"))
+    let shortTitle = "iPhone 17 Pro review"
+    XCTAssertEqual(PublicNewsHeadlineTranslator.validate("iPhone 17 Pro \u{8BC4}\u{6D4B}", source: shortTitle),
+      "iPhone 17 Pro \u{8BC4}\u{6D4B}")
+    XCTAssertEqual(PublicNewsHeadlineTranslator.rejection(
+      "\u{8BC4}\u{6D4B} 17 https://example.com", source: shortTitle), "remove_unexpected_markup")
+  }
+
+  func testPreviousValidatorBackoffRecoversWithoutBypassingAnActiveLeaseOrPermissionBackoff() throws {
+    let now = Date(timeIntervalSince1970: 100)
+    var current = PublicNewsHeadlineRetryLedger()
+    let lease = current.claim(["validation", "permission", "active"], at: now, retaining: ["validation", "permission", "active"])
+    current.finish("validation", lease: lease, at: now, reason: "preserve_exact_numbers_and_versions")
+    current.finish("permission", lease: lease, at: now, reason: "disclosure_blocked")
+
+    let data = try JSONEncoder().encode(current)
+    let dictionary = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    var entries = try XCTUnwrap(dictionary["entries"] as? [String: [String: Any]])
+    for key in Array(entries.keys) { entries[key]?.removeValue(forKey: "validatorRevision") }
+    let legacy = try JSONSerialization.data(withJSONObject: ["entries": entries])
+    var reopened = try JSONDecoder().decode(PublicNewsHeadlineRetryLedger.self, from: legacy)
+    XCTAssertTrue(reopened.ready("validation", at: now))
+    XCTAssertFalse(reopened.ready("permission", at: now))
+    XCTAssertFalse(reopened.ready("active", at: now))
+    let renewed = reopened.claim(["validation"], at: now, retaining: ["validation", "permission", "active"])
+    XCTAssertEqual(reopened.entries["validation"]?.attempts, 1)
+    reopened.finish("validation", lease: renewed, at: now, reason: "preserve_exact_numbers_and_versions")
+    XCTAssertFalse(reopened.ready("validation", at: now))
+  }
+
   func testValidationKeepsVersionsAndRejectsUntranslatedOrMultilineOutput() {
     let source = "Publisher releases new version 2.4.1"
     XCTAssertEqual(PublicNewsHeadlineTranslator.validate(translation, source: source), translation)
