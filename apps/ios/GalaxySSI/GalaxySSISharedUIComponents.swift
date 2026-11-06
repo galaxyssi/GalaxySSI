@@ -58,6 +58,7 @@ struct GalaxySSITopBar<Leading: View, Trailing: View>: View {
   var title: String
   var onTitleTap: (() -> Void)? = nil
   let sideContentWidth: CGFloat
+  let backgroundColor: Color
   let leading: Leading
   let trailing: Trailing
 
@@ -65,12 +66,14 @@ struct GalaxySSITopBar<Leading: View, Trailing: View>: View {
     title: String,
     onTitleTap: (() -> Void)? = nil,
     sideContentWidth: CGFloat = 40,
+    backgroundColor: Color = .galaxySSIBarBackground,
     @ViewBuilder leading: () -> Leading,
     @ViewBuilder trailing: () -> Trailing
   ) {
     self.title = title
     self.onTitleTap = onTitleTap
     self.sideContentWidth = sideContentWidth
+    self.backgroundColor = backgroundColor
     self.leading = leading()
     self.trailing = trailing()
   }
@@ -93,7 +96,7 @@ struct GalaxySSITopBar<Leading: View, Trailing: View>: View {
     }
     .padding(.horizontal, 16)
     .frame(height: 56)
-    .background(Color.galaxySSIBarBackground)
+    .background(backgroundColor)
   }
 
   private var titleLabel: some View {

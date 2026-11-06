@@ -1,7 +1,33 @@
+import SwiftUI
+import UIKit
 import XCTest
 @testable import GalaxySSI
 
 final class PublicNewsFeedTests: XCTestCase {
+  @MainActor
+  func testNewsFeedHeaderUsesPageColorsWithoutChangingTheSharedDefault() {
+    let feed = GalaxySSITopBar(title: "Discoveries", backgroundColor: .galaxySSIPageBackground,
+      leading: { EmptyView() }, trailing: { EmptyView() })
+    let reader = GalaxySSITopBar(title: "Article", leading: { EmptyView() }, trailing: { EmptyView() })
+
+    func rgb(_ color: Color, style: UIUserInterfaceStyle) -> [Int] {
+      let traits = UITraitCollection(userInterfaceStyle: style)
+      var result: [Int] = []
+      traits.performAsCurrent {
+        let resolved = UIColor(color).resolvedColor(with: traits)
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0
+        guard resolved.getRed(&red, green: &green, blue: &blue, alpha: nil) else { return }
+        result = [red, green, blue].map { Int(($0 * 255).rounded()) }
+      }
+      return result
+    }
+
+    XCTAssertEqual(rgb(feed.backgroundColor, style: .light), [0xF6, 0xF7, 0xF8])
+    XCTAssertEqual(rgb(feed.backgroundColor, style: .dark), [0x15, 0x17, 0x1B])
+    XCTAssertEqual(rgb(reader.backgroundColor, style: .light), [0xFF, 0xFF, 0xFF])
+    XCTAssertEqual(rgb(reader.backgroundColor, style: .dark), [0x20, 0x23, 0x29])
+  }
+
   func testSpeechBookmarkResumesPausedAndInvalidatesOldParagraphCallbacks() throws {
     let suite = "PublicNewsSpeechBookmarkTests-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

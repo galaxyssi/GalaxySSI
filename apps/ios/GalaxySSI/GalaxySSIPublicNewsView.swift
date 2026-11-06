@@ -47,9 +47,11 @@ struct GalaxySSIPublicNewsView: View {
   }
 
   var body: some View {
+    let pageBackground = Color.galaxySSIPageBackground
     VStack(spacing: 0) {
       GalaxySSITopBar(
         title: t("public_news_title", "Discoveries"),
+        backgroundColor: pageBackground,
         leading: { GalaxySSIBackButton() },
         trailing: {
           Menu {
@@ -163,7 +165,7 @@ struct GalaxySSIPublicNewsView: View {
       }
       .refreshable { await archive.refresh(force: true, learnPublishers: publisherDiscovery) }
     }
-    .background(Color.galaxySSIPageBackground.ignoresSafeArea())
+    .background(pageBackground.ignoresSafeArea())
     .background {
       NavigationLink(destination: GalaxySSIPublicNewsSearchView(archive: archive), isActive: $showSearch) {
         EmptyView()
