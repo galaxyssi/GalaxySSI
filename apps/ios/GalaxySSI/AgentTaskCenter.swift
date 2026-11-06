@@ -4,6 +4,7 @@ enum AgentTaskCenterAction: String, Codable, CaseIterable, Identifiable {
   case cancel = "CANCEL"
   case resume = "RESUME"
   case retry = "RETRY"
+  case inspectEffect = "INSPECT_EFFECT"
   case rollback = "ROLLBACK"
   case copy = "COPY"
   case viewLog = "VIEW_LOG"
@@ -21,6 +22,7 @@ enum AgentTaskCenterActionPresentation {
     case .cancel: return t("galaxyssi.common.cancel_task", "Cancel task")
     case .resume: return t("galaxyssi.common.resume", "Resume")
     case .retry: return t("galaxyssi.common.retry", "Retry")
+    case .inspectEffect: return t("galaxyssi.agent.effect_recovery.inspect", "Inspect or re-plan")
     case .rollback: return t("galaxyssi.agent.task_control.rollback", "Rollback last action")
     case .copy: return t("galaxyssi.common.copy", "Copy")
     case .viewLog: return t("galaxyssi.agent_task_center.view_log", "View log")
@@ -33,6 +35,7 @@ enum AgentTaskCenterActionPresentation {
     case .cancel: return "xmark.circle"
     case .resume: return "play.fill"
     case .retry: return "arrow.clockwise"
+    case .inspectEffect: return "magnifyingglass"
     case .rollback: return "arrow.uturn.backward.circle"
     case .copy: return "doc.on.doc"
     case .viewLog: return "list.bullet.rectangle"
@@ -63,7 +66,11 @@ enum AgentTaskCenterPolicy {
       actions.append(.cancel)
     }
     if terminalPhases.contains(task.phase), isReusableGoal(task.goal) {
-      actions.append(.retry)
+      if (task.effectRecovery ?? []).isEmpty {
+        actions.append(.retry)
+      } else if [.failed, .blocked].contains(task.phase) {
+        actions.append(.inspectEffect)
+      }
     }
     if rollbackAvailable(task) {
       actions.append(.rollback)
@@ -97,7 +104,8 @@ enum AgentTaskCenterPolicy {
   }
 
   static func rollbackAvailable(_ task: AgentTaskRecord) -> Bool {
-    terminalPhases.contains(task.phase) && task.nativeRollbackAction != nil
+    terminalPhases.contains(task.phase) && task.nativeRollbackAction != nil &&
+      (task.effectRecovery ?? []).allSatisfy(\.hasObservation)
   }
 
   private static let terminalPhases: Set<AgentPhase> = [.completed, .failed, .cancelled, .blocked]

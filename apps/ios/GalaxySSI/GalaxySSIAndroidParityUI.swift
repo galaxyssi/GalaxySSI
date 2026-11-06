@@ -646,6 +646,17 @@ struct AgentHomeView: View {
   }
 
   func retryAgentTask(_ task: AgentTaskRecord, mode: AgentTaskRestartMode) {
+    let current = store.agentTask(id: task.taskId) ?? task
+    if !(current.effectRecovery ?? []).isEmpty {
+      guard retryingAgentTaskIDs.insert(task.taskId).inserted else { return }
+      Task { @MainActor in
+        _ = await coordinator.replanLocalNativeAction(taskId: task.taskId)
+        retryingAgentTaskIDs.remove(task.taskId)
+        richActionStatus = store.agentTask(id: task.taskId)?.verification ?? current.verification
+        resumePendingAgentDeliveryAfterTaskAction()
+      }
+      return
+    }
     if mode == .retry,
        coordinator.retryFailedLocalNativeAction(taskId: task.taskId) {
       richActionStatus = t(

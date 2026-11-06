@@ -5356,6 +5356,9 @@
 "galaxyssi.agent.task_control.paused" = "任务已暂停";
 "galaxyssi.agent.task_control.pause_failed" = "此任务无法暂停";
 "galaxyssi.agent.task_control.replanned" = "已重新规划任务";
+"galaxyssi.agent.effect_recovery.inspect" = "查证或重新规划";
+"galaxyssi.agent.effect_recovery.unavailable" = "原操作结果仍未核实。无法确认受影响的状态，未重复执行。";
+"galaxyssi.agent.effect_recovery.observed" = "已查证受影响的状态，但原操作结果尚未确认。请重新规划下一步。";
 "galaxyssi.agent.task_control.replanning" = "正在重新规划任务……";
 "galaxyssi.agent.task_control.pause" = "暂停任务";
 "galaxyssi.agent.task_control.replan" = "重新规划任务";
