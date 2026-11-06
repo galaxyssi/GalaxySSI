@@ -4,11 +4,18 @@ extension AgentHomeView {
   var agentOutput: some View {
     Group {
       if isCurrentTranscriptWindow(transcriptWindow.snapshot.owner), transcriptWindow.snapshot.loadedLimit > 0 {
-        activeAgentOutput
+        activeAgentOutput.id(transcriptWindow.snapshot.owner)
       } else {
         Color.galaxySSIPageBackground
       }
     }
+  }
+
+  private func transcriptBinding<Value>(_ binding: Binding<Value>, owner: AgentTranscriptWindow.Owner?) -> Binding<Value> {
+    Binding(get: { binding.wrappedValue }, set: { value in
+      guard isCurrentTranscriptWindow(owner) else { return }
+      binding.wrappedValue = value
+    })
   }
 
   private var activeAgentOutput: some View {
@@ -219,15 +226,7 @@ extension AgentHomeView {
               agentRuntimePanel
                 .padding(.top, 2)
                 .transition(.opacity)
-    }
-    .id(owner)
-  }
-
-  private func transcriptBinding<Value>(_ binding: Binding<Value>, owner: AgentTranscriptWindow.Owner?) -> Binding<Value> {
-    Binding(get: { binding.wrappedValue }, set: { value in
-      guard isCurrentTranscriptWindow(owner) else { return }
-      binding.wrappedValue = value
-    })
+            }
           }
         }
       }
