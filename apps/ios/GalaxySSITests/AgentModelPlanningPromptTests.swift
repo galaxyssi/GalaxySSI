@@ -156,6 +156,66 @@ final class AgentModelPlanningPromptTests: XCTestCase {
     XCTAssertLessThanOrEqual(prompt.count, 24_000)
   }
 
+  func testCompactedPromptKeepsLatestReceiptWholeWithUserContextAndToolIDs() throws {
+    let latest = AgentAction(id: "readback-failed", kind: .callNativeTool, target: "galaxyssi.fixture.00",
+      risk: .low, status: .failed, description: "Read current output", result: "LATEST_FAILURE",
+      evidence: #"{"file":{"readable":false,"path":"outputs/a.txt"},"api_key":"DO_NOT_DISCLOSE"}"#)
+    var pending = latest
+    pending.id = "still-running"
+    pending.status = .running
+    pending.result = "NOT_A_FINAL_RECEIPT"
+    let older = (0..<40).map { index in
+      AgentAction(id: "old-\(index)", kind: .callNativeTool, target: "galaxyssi.fixture.00",
+        risk: .low, status: .completed, description: "Old result",
+        result: String(repeating: "earlier result ", count: 100))
+    }
+    let tools = try (0..<60).map { index in
+      try AgentNativeToolDescriptor(id: String(format: "galaxyssi.fixture.%02d", index), version: "1.0.0",
+        title: "Fixture", description: "A fixture tool", location: .phone,
+        inputSchema: ["type": .string("object"), "description": .string(String(repeating: "schema ", count: 120))],
+        risk: .low, availability: AgentNativeToolAvailability(status: .available))
+    }
+    let conversation = AgentConversationContext(conversationId: "conversation-1", summary: "Durable user constraint",
+      turns: [.init(id: "prior-user", role: .user, text: "DO_NOT_RESEND", timestampMillis: 1)], privateMode: false)
+    let settings = AgentModelPlannerSettings()
+    for compact in [false, true] {
+      var request = promptRequest(goal: "Verify the output file", conversationContext: conversation,
+        executionHistory: older + [latest, pending], nativeTools: tools,
+        requirements: AgentTaskRequirements(mode: compact ? .fast : .balanced))
+      request.phoneOwnsExecution = true
+      request.globalRealtimeContext = String(repeating: "unrelated context ", count: 800)
+      let history = AgentPlanningHistoryContext.parts(request: request, settings: settings,
+        maximumCharacters: compact ? 3_000 : 6_000)
+      let prompt = AgentModelPlanningPrompt.build(request: request, settings: settings)
+      XCTAssertLessThanOrEqual(prompt.count, compact ? 12_000 : 24_000)
+      XCTAssertTrue(prompt.hasSuffix(history.latest))
+      XCTAssertEqual(prompt.components(separatedBy: "LATEST_FAILURE").count, 2)
+      XCTAssertTrue(history.latest.contains(#""status":"FAILED""#))
+      XCTAssertTrue(history.latest.contains(#""observed_output_fields":["/file/path","/file/readable"]"#))
+      XCTAssertFalse(history.latest.contains("NOT_A_FINAL_RECEIPT"))
+      XCTAssertFalse(prompt.contains("DO_NOT_DISCLOSE"))
+      XCTAssertTrue(prompt.contains("User goal: Verify the output file"))
+      XCTAssertTrue(prompt.contains("Durable user constraint\nUser: DO_NOT_RESEND"))
+      XCTAssertTrue(prompt.contains("The phone validates every field locally"))
+      for tool in tools.prefix(compact ? 24 : 60) {
+        XCTAssertTrue(prompt.contains("- \(tool.id) |"), tool.id)
+      }
+    }
+  }
+
+  func testPromptDoesNotPinUnsettledOrOutOfScopeObservations() {
+    let pending = AgentAction(id: "pending", kind: .callNativeTool, target: "tool",
+      risk: .low, status: .waitingResponse, description: "Not settled", result: "UNSETTLED")
+    var foreign = pending
+    foreign.status = .completed
+    foreign.parameters[AgentPlanContinuationScope.conversationIdKey] = "different-conversation"
+    let request = promptRequest(executionHistory: [pending, foreign])
+    let history = AgentPlanningHistoryContext.parts(request: request, settings: AgentModelPlannerSettings(),
+      maximumCharacters: 3_000)
+    XCTAssertTrue(history.latest.isEmpty)
+    XCTAssertFalse(history.full.contains("different-conversation"))
+  }
+
   func testAgentModelPlanningPromptRequestsBoundedRollingBatch() {
     let reason = "rolling_batch_completed:revision=4;completed=3;last_action=verify"
     let prompt = AgentModelPlanningPrompt.build(
