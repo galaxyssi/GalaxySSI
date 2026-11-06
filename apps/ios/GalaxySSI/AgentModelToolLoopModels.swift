@@ -152,6 +152,7 @@ struct AgentModelToolLoopRequest {
   var observationHistorySource: String
   var cancellationToken: AgentModelToolLoopCancellationToken
   var eventSink: AgentModelToolLoopEventSink
+  var collaborationOwner: AgentCollaborationToolEvidenceScope?
 
   init(
     sessionId: String,
@@ -172,7 +173,8 @@ struct AgentModelToolLoopRequest {
     observationHistoryEnabled: Bool = false,
     observationHistorySource: String = "",
     cancellationToken: AgentModelToolLoopCancellationToken = .none,
-    eventSink: AgentModelToolLoopEventSink = .none
+    eventSink: AgentModelToolLoopEventSink = .none,
+    collaborationOwner: AgentCollaborationToolEvidenceScope? = nil
   ) {
     AgentModelToolLoopValidation.validateBoundId("Session", sessionId)
     AgentModelToolLoopValidation.validateBoundId("Conversation", conversationId)
@@ -207,6 +209,7 @@ struct AgentModelToolLoopRequest {
     self.observationHistorySource = observationHistorySource
     self.cancellationToken = cancellationToken
     self.eventSink = eventSink
+    self.collaborationOwner = collaborationOwner
   }
 
   static func forUserMessage(

@@ -221,7 +221,7 @@ extension GalaxySSIStoreTests {
     var context = AgentNativeToolInvocationContext(sessionId: "session", conversationId: "conversation", turnId: "turn",
       attributes: ["recovery_task_id": "task"])
     let scope = AgentIOSURLSessionBrowserSessionScope(context: context)
-    let session = browser.create(scope: scope, resourceId: "create", currentURL: "", nowMillis: 10)
+    let session = try browser.create(scope: scope, resourceId: "create", currentURL: "", nowMillis: 10)
     _ = try browser.navigate(browserId: session.browserId, scope: scope, currentURL: "https://example.test/",
       nowMillis: 12, requestId: "navigate")
     _ = try browser.close(browserId: session.browserId, scope: scope, nowMillis: 13, requestId: "close")
@@ -233,6 +233,63 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(browser.observeOperation(requestId: "navigate",
       scope: AgentIOSURLSessionBrowserSessionScope(context: context), nowMillis: 15))
     XCTAssertNil(browser.observeOperation(requestId: "close", scope: scope, nowMillis: 113))
+  }
+
+  func testCollaboratorBrowserHandlesAndReceiptsCannotBeAdoptedByAnotherMemberOrParent() throws {
+    let browser = AgentIOSURLSessionBrowserSessionStore(ttlMillis: 1_000)
+    let parent = AgentNativeToolInvocationContext(sessionId: "session", conversationId: "conversation",
+      turnId: "turn", attributes: ["workspace_id": "workspace", "task_id": "shared", "recovery_task_id": "shared"])
+    let owner = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "conversation",
+      turnId: "turn", memberId: "member", sourceId: String(Int64.min))
+    var first = parent
+    first.collaborationOwner = owner
+    var second = first
+    second.collaborationOwner?.sourceId = String(Int64.max)
+    let a = AgentIOSURLSessionBrowserSessionScope(context: first)
+    let b = AgentIOSURLSessionBrowserSessionScope(context: second)
+    let ordinary = AgentIOSURLSessionBrowserSessionScope(context: parent)
+    let aHandle = try browser.create(scope: a, resourceId: "same-request", currentURL: "", nowMillis: 10,
+      observation: ["source": .string("a")])
+    let bHandle = try browser.create(scope: b, resourceId: "same-request", currentURL: "", nowMillis: 11,
+      observation: ["source": .string("b")])
+    let legacy = try browser.create(scope: ordinary, resourceId: "legacy", currentURL: "", nowMillis: 12)
+    XCTAssertNotEqual(aHandle.browserId, bHandle.browserId)
+    for foreign in [b, ordinary] {
+      XCTAssertThrowsError(try browser.validate(browserId: aHandle.browserId, scope: foreign, nowMillis: 13))
+      XCTAssertThrowsError(try browser.close(browserId: aHandle.browserId, scope: foreign, nowMillis: 13))
+    }
+    XCTAssertThrowsError(try browser.validate(browserId: legacy.browserId, scope: a, nowMillis: 13))
+    XCTAssertNoThrow(try browser.validate(browserId: aHandle.browserId, scope: a, nowMillis: 13))
+    XCTAssertNoThrow(try browser.validate(browserId: legacy.browserId, scope: ordinary, nowMillis: 13))
+    XCTAssertEqual(browser.observeOperation(requestId: "same-request", scope: a, nowMillis: 13)?
+      .object("observation")?["source"], .string("a"))
+    XCTAssertEqual(browser.observeOperation(requestId: "same-request", scope: b, nowMillis: 13)?
+      .object("observation")?["source"], .string("b"))
+    XCTAssertNil(browser.observeOperation(requestId: "same-request", scope: ordinary, nowMillis: 13))
+    var forged = parent
+    forged.attributes["collaboration_owner"] = owner.ownershipDigest
+    XCTAssertEqual(AgentIOSURLSessionBrowserSessionScope(context: forged), ordinary)
+    var wrongWorkspace = first
+    wrongWorkspace.attributes["workspace_id"] = "elsewhere"
+    XCTAssertThrowsError(try browser.validate(browserId: aHandle.browserId,
+      scope: AgentIOSURLSessionBrowserSessionScope(context: wrongWorkspace), nowMillis: 13))
+    var wrongTurn = first
+    wrongTurn.turnId = "wrong"
+    XCTAssertThrowsError(try browser.create(scope: AgentIOSURLSessionBrowserSessionScope(context: wrongTurn),
+      resourceId: "invalid", currentURL: "", nowMillis: 14))
+
+    let contexts = [parent, first, second]
+    let entries = contexts.map { context in
+      AgentNativeToolReplayEntry(key: .init(toolId: "browser.session.create", toolVersion: "1.0.0",
+        idempotencyKey: "same-effect", scope: AgentNativeEffectScope(context: context)),
+        invocationId: "same-invocation", inputSha256: "hash", result: nil, savedAtMillis: 10)
+    }
+    let restored = AgentNativeToolReplayJsonCodec.decode(AgentNativeToolReplayJsonCodec.stringify(entries))
+    XCTAssertEqual(restored, entries)
+    XCTAssertEqual(Set(restored.map(\.key)).count, 3)
+    XCTAssertNil(restored.first?.key.scope.collaborationOwnerDigest)
+    let serialized = try JSONEncoder().encode(first)
+    XCTAssertEqual(try JSONDecoder().decode(AgentNativeToolInvocationContext.self, from: serialized).collaborationOwner, owner)
   }
 
   @MainActor

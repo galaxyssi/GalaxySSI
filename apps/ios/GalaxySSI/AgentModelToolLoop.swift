@@ -791,7 +791,8 @@ final class AgentModelToolLoop {
       idempotencyKey: idempotencyKey,
       grantedPermissions: state.request.grantedPermissions,
       grantedConsents: state.request.grantedConsents.union(approvedConsentIds),
-      attributes: attributes
+      attributes: attributes,
+      collaborationOwner: state.request.collaborationOwner
     )
   }
 

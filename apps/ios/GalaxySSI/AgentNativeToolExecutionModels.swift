@@ -289,6 +289,7 @@ struct AgentNativeToolInvocationContext: Codable, Equatable {
   var grantedPermissions: Set<String>
   var grantedConsents: Set<String>
   var attributes: [String: String]
+  var collaborationOwner: AgentCollaborationToolEvidenceScope?
 
   init(
     invocationId: String = UUID().uuidString,
@@ -301,7 +302,8 @@ struct AgentNativeToolInvocationContext: Codable, Equatable {
     idempotencyKey: String? = nil,
     grantedPermissions: Set<String> = [],
     grantedConsents: Set<String> = [],
-    attributes: [String: String] = [:]
+    attributes: [String: String] = [:],
+    collaborationOwner: AgentCollaborationToolEvidenceScope? = nil
   ) {
     let cleanInvocationId = invocationId.trimmingCharacters(in: .whitespacesAndNewlines)
     let cleanCallerId = callerId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -315,6 +317,7 @@ struct AgentNativeToolInvocationContext: Codable, Equatable {
     self.idempotencyKey = idempotencyKey?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
     self.grantedPermissions = Set(grantedPermissions.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
     self.grantedConsents = Set(grantedConsents.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+    self.collaborationOwner = collaborationOwner
     self.attributes = attributes.reduce(into: [:]) { result, entry in
       let key = entry.key.trimmingCharacters(in: .whitespacesAndNewlines)
       if !key.isEmpty {
@@ -335,6 +338,7 @@ struct AgentNativeToolInvocationContext: Codable, Equatable {
     case grantedPermissions = "granted_permissions"
     case grantedConsents = "granted_consents"
     case attributes
+    case collaborationOwner = "collaboration_owner"
   }
 
   init(from decoder: Decoder) throws {
@@ -350,7 +354,8 @@ struct AgentNativeToolInvocationContext: Codable, Equatable {
       idempotencyKey: try container.decodeIfPresent(String.self, forKey: .idempotencyKey),
       grantedPermissions: try container.decodeIfPresent(Set<String>.self, forKey: .grantedPermissions) ?? [],
       grantedConsents: try container.decodeIfPresent(Set<String>.self, forKey: .grantedConsents) ?? [],
-      attributes: try container.decodeIfPresent([String: String].self, forKey: .attributes) ?? [:]
+      attributes: try container.decodeIfPresent([String: String].self, forKey: .attributes) ?? [:],
+      collaborationOwner: try container.decodeIfPresent(AgentCollaborationToolEvidenceScope.self, forKey: .collaborationOwner)
     )
   }
 
@@ -367,6 +372,7 @@ struct AgentNativeToolInvocationContext: Codable, Equatable {
     try container.encode(Array(grantedPermissions).sorted(), forKey: .grantedPermissions)
     try container.encode(Array(grantedConsents).sorted(), forKey: .grantedConsents)
     try container.encode(attributes, forKey: .attributes)
+    try container.encodeIfPresent(collaborationOwner, forKey: .collaborationOwner)
   }
 }
 
