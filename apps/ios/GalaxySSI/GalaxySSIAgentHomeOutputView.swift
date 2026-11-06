@@ -205,6 +205,10 @@ extension AgentHomeView {
           }
         }
       }
+    .environment(\.agentReplySpeechBlankTap, {
+      _ = agentReplySpeechRuntime.stopPlaybackIfActive()
+      AgentCompletedReplyPlayback.shared.stop()
+    })
   }
 
   private func playCompletedAgentReply(_ message: ChatMessage, _ paragraph: AgentReplyParagraphSpeechSelection?) -> Bool {

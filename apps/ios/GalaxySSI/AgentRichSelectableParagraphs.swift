@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct AgentRichBlockRun: Equatable {
   var blocks: [AgentRichBlock]
@@ -7,6 +8,9 @@ struct AgentRichBlockRun: Equatable {
 
 struct AgentRichSelectableParagraphs: View {
   @Environment(\.agentReplyParagraphSpeechAction) private var paragraphSpeechAction
+  @Environment(\.agentReplySpeechProse) private var speechProse
+  @Environment(\.agentReplyNativeParagraphs) private var nativeParagraphs
+  @Environment(\.agentReplySpeechBlankTap) private var blankTap
   @Environment(\.peerTextSelection) private var peerSelection
 
   var blocks: [AgentRichBlock]
@@ -18,17 +22,25 @@ struct AgentRichSelectableParagraphs: View {
     } else if let paragraphSpeechAction {
       VStack(alignment: .leading, spacing: 8) {
         ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
-          Text(Self.render(block))
-            .font(.body)
-            .foregroundColor(.galaxySSITextPrimary)
-            .lineSpacing(4)
-            .fixedSize(horizontal: false, vertical: true)
-            .textSelection(.enabled)
-            .onTapGesture(count: 2) {
-              if let selection = Self.selection(blocks: blocks, selectedIndex: index) {
-                paragraphSpeechAction(selection)
+          if let selection = speechProse?.selection(for: block) {
+            if nativeParagraphs {
+              AgentReplySelectableParagraph(block: block, fallback: Self.render(block), blankTap: blankTap) { row in
+                if let row {
+                  if let selectedRow = speechProse?.selection(for: block, listRow: row) {
+                    paragraphSpeechAction(selectedRow)
+                  }
+                } else {
+                  paragraphSpeechAction(selection)
+                }
               }
+            } else {
+              selectable(block).onTapGesture(count: 2) { paragraphSpeechAction(selection) }
             }
+          } else if speechProse == nil, let selection = Self.selection(blocks: blocks, selectedIndex: index) {
+            selectable(block).onTapGesture(count: 2) { paragraphSpeechAction(selection) }
+          } else {
+            selectable(block)
+          }
         }
       }
     } else {
@@ -39,6 +51,15 @@ struct AgentRichSelectableParagraphs: View {
         .fixedSize(horizontal: false, vertical: true)
         .textSelection(.enabled)
     }
+  }
+
+  private func selectable(_ block: AgentRichBlock) -> some View {
+    Text(Self.render(block))
+      .font(.body)
+      .foregroundColor(.galaxySSITextPrimary)
+      .lineSpacing(4)
+      .fixedSize(horizontal: false, vertical: true)
+      .textSelection(.enabled)
   }
 
   static func supports(_ block: AgentRichBlock) -> Bool {
@@ -112,16 +133,7 @@ struct AgentRichSelectableParagraphs: View {
   }
 
   private static func speechText(_ block: AgentRichBlock) -> String {
-    switch block.type {
-    case .text, .heading, .quote:
-      return block.text.ifBlank(block.title)
-    case .list:
-      return block.rows.map { $0.dropFirst().joined(separator: " ") }.joined(separator: "\n")
-    case .divider:
-      return ""
-    default:
-      return ""
-    }
+    AgentReplySpeechPresentationPolicy.paragraphText(block)
   }
 
   private static func selection(
@@ -179,4 +191,165 @@ struct AgentRichSelectableParagraphs: View {
     .list,
     .divider
   ]
+}
+
+private struct AgentReplySelectableParagraph: View {
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @ScaledMetric(relativeTo: .body) private var fontSize: CGFloat = 17
+  @State private var width: CGFloat = 0
+  let block: AgentRichBlock
+  let fallback: AttributedString
+  let blankTap: (() -> Void)?
+  let speak: (Int?) -> Void
+
+  var body: some View {
+    Group {
+      if width > 0 {
+        let text = GalaxySSIPeerTextRenderer.render([block], fontSize: fontSize)
+        AgentReplyParagraphText(text: text, actionTitle: GalaxySSILocalization.string(
+          "galaxyssi.agent.reply_speech.paragraph", fallback: "Read from this paragraph", language: language),
+          speak: { speak(listRow(at: $0)) }, blankTap: blankTap)
+          .frame(width: width, height: GalaxySSIPeerTextRenderer.size(text, maximumWidth: width).height)
+      } else {
+        Text(fallback).font(.body).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+      }
+    }
+    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+    .background {
+      GeometryReader { proxy in
+        Color.clear
+          .onAppear { width = proxy.size.width }
+          .onChange(of: proxy.size.width) { width = $0 }
+          .allowsHitTesting(false)
+      }
+    }
+  }
+
+  private func listRow(at location: Int?) -> Int? {
+    guard block.type == .list, let location else { return nil }
+    var offset = 0
+    for (index, row) in block.rows.enumerated() {
+      let marker = AgentRichSelectableParagraphs.listMarkerLabel(row.first ?? "")
+      let rendered = AgentInlineMarkdown.parse("\(marker) \(row.dropFirst().joined(separator: " "))")
+      offset += rendered.reduce(0) { $0 + $1.text.utf16.count }
+      if location < offset { return index }
+      offset += 1
+    }
+    return nil
+  }
+}
+
+private struct AgentReplyParagraphText: UIViewRepresentable {
+  let text: NSAttributedString
+  let actionTitle: String
+  let speak: (Int?) -> Void
+  let blankTap: (() -> Void)?
+
+  func makeUIView(context: Context) -> AgentReplyParagraphTextView {
+    let view = AgentReplyParagraphTextView(frame: .zero, textContainer: nil)
+    view.accessibilityIdentifier = "ios.agent.reply-speech.paragraph"
+    return view
+  }
+
+  func updateUIView(_ view: AgentReplyParagraphTextView, context: Context) {
+    if view.attributedText?.isEqual(to: text) != true { view.attributedText = text }
+    view.speak = speak
+    view.blankTap = blankTap
+    view.accessibilityCustomActions = [UIAccessibilityCustomAction(name: actionTitle) { [weak view] _ in
+      guard let speak = view?.speak else { return false }
+      speak(nil)
+      return true
+    }]
+  }
+}
+
+final class AgentReplyParagraphTextView: UITextView, UIGestureRecognizerDelegate {
+  var speak: ((Int?) -> Void)?
+  var blankTap: (() -> Void)?
+
+  private lazy var paragraphTap: UITapGestureRecognizer = {
+    let tap = UITapGestureRecognizer(target: self, action: #selector(readParagraph))
+    tap.numberOfTapsRequired = 2
+    tap.delegate = self
+    return tap
+  }()
+  private lazy var emptyTap: UITapGestureRecognizer = {
+    let tap = UITapGestureRecognizer(target: self, action: #selector(stopAtBlank))
+    tap.delegate = self
+    tap.cancelsTouchesInView = false
+    return tap
+  }()
+  private lazy var emptyDoubleTap: UITapGestureRecognizer = {
+    let tap = UITapGestureRecognizer(target: self, action: #selector(ignoreBlankDoubleTap))
+    tap.numberOfTapsRequired = 2
+    tap.delegate = self
+    tap.cancelsTouchesInView = false
+    return tap
+  }()
+
+  override init(frame: CGRect, textContainer: NSTextContainer?) {
+    super.init(frame: frame, textContainer: textContainer)
+    isEditable = false
+    isSelectable = true
+    isScrollEnabled = false
+    backgroundColor = .clear
+    textContainerInset = .zero
+    self.textContainer.lineFragmentPadding = 0
+    addGestureRecognizer(paragraphTap)
+    addGestureRecognizer(emptyDoubleTap)
+    addGestureRecognizer(emptyTap)
+    emptyTap.require(toFail: emptyDoubleTap)
+  }
+
+  required init?(coder: NSCoder) { return nil }
+
+  func gestureRecognizer(_ gesture: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    guard selectedRange.length == 0 else { return false }
+    switch hit(at: touch.location(in: self)) {
+    case .text: return gesture === paragraphTap && speak != nil
+    case .blank: return (gesture === emptyTap || gesture === emptyDoubleTap) && blankTap != nil
+    case .link: return false
+    }
+  }
+
+  func gestureRecognizer(_ gesture: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
+    // Give the speech recognizer priority over native double-tap word selection, not long press or drags.
+    guard gesture === paragraphTap, other.view === self, let tap = other as? UITapGestureRecognizer,
+          other !== emptyDoubleTap else { return false }
+    return tap.numberOfTapsRequired >= 2
+  }
+
+  @objc private func readParagraph() {
+    guard selectedRange.length == 0, case .text(let index) = hit(at: paragraphTap.location(in: self)) else { return }
+    speak?(index)
+  }
+
+  @objc private func stopAtBlank() {
+    guard selectedRange.length == 0, hit(at: emptyTap.location(in: self)) == .blank else { return }
+    blankTap?()
+  }
+
+  @objc private func ignoreBlankDoubleTap() {}
+
+  enum Hit: Equatable { case blank, text(Int), link }
+
+  func hit(at point: CGPoint) -> Hit {
+    guard bounds.contains(point), let attributedText, attributedText.length > 0 else { return .blank }
+    let point = CGPoint(x: point.x - textContainerInset.left, y: point.y - textContainerInset.top)
+    layoutManager.ensureLayout(for: textContainer)
+    guard layoutManager.usedRect(for: textContainer).contains(point), layoutManager.numberOfGlyphs > 0 else {
+      return .blank
+    }
+    let glyph = layoutManager.glyphIndex(for: point, in: textContainer)
+    guard glyph < layoutManager.numberOfGlyphs,
+          layoutManager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: textContainer).contains(point)
+    else { return .blank }
+    let index = layoutManager.characterIndexForGlyph(at: glyph)
+    guard index < attributedText.length,
+          let range = Range((attributedText.string as NSString).rangeOfComposedCharacterSequence(at: index),
+                            in: attributedText.string),
+          !attributedText.string[range].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else { return .blank }
+    return attributedText.attribute(.link, at: index, effectiveRange: nil) == nil ? .text(index) : .link
+  }
 }
