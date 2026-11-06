@@ -23,6 +23,7 @@ extension Color {
   static var galaxySSICardBackground: Color { galaxySSISurface }
   static var galaxySSISearchBackground: Color { Color(galaxySSIColor(light: 0xE5E5EA, dark: 0x2B3038)) }
   static var galaxySSITextPrimary: Color { Color(galaxySSIColor(light: 0x111111, dark: 0xF2F4F7)) }
+  static var galaxySSINewsUnreadTitle: Color { Color(galaxySSIColor(light: 0x8261AA, dark: 0xCCB5EC)) }
   static var galaxySSITextSecondary: Color { Color(galaxySSIColor(light: 0x8E8E93, dark: 0xA5ABB6)) }
   static var galaxySSIAgentSessionTitle: Color { Color(galaxySSIColor(light: 0x505052, dark: 0xCCD0D7)) }
   static var galaxySSIAccent: Color { Color(galaxySSIColor(light: 0x14C66A, dark: 0x19D36B)) }

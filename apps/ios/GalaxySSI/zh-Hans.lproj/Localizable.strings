@@ -5668,6 +5668,7 @@
 "public_news_unsave" = "取消收藏";
 "public_news_save" = "收藏";
 "public_news_mark_read" = "标为已读";
+"public_news_read_status" = "已读";
 "public_news_headline_translate" = "翻译新闻标题";
 "public_news_headline_translate_next" = "翻译下一批标题";
 "public_news_headline_deferred" = "设备过热、电量过低或处于低电量模式时暂停翻译。";

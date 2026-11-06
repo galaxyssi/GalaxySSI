@@ -28,6 +28,56 @@ final class PublicNewsFeedTests: XCTestCase {
     XCTAssertEqual(rgb(reader.backgroundColor, style: .dark), [0x20, 0x23, 0x29])
   }
 
+  func testNewsHeadlineReadAppearanceRefreshesOnlyWhenTheRowReattachesOrChangesArticle() {
+    var state = PublicNewsHeadlineReadAppearance()
+    state.attach(id: "first", read: false)
+    XCTAssertFalse(state.isRead(id: "first", persisted: true))
+    state.attach(id: "first", read: true)
+    XCTAssertFalse(state.isRead(id: "first", persisted: true))
+    state.detach()
+    state.attach(id: "first", read: true)
+    XCTAssertTrue(state.isRead(id: "first", persisted: true))
+    state.attach(id: "second", read: false)
+    XCTAssertFalse(state.isRead(id: "second", persisted: false))
+    XCTAssertTrue(state.isRead(id: "first", persisted: true))
+  }
+
+  @MainActor
+  func testNewsHeadlineColorsAreOpaqueAndReadableOnTheArticleSurface() {
+    func channels(_ color: Color, _ style: UIUserInterfaceStyle) -> [Double] {
+      let traits = UITraitCollection(userInterfaceStyle: style)
+      var result: [Double] = []
+      traits.performAsCurrent {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        if UIColor(color).resolvedColor(with: traits).getRed(&red, green: &green, blue: &blue, alpha: &alpha) {
+          result = [red, green, blue, alpha].map { Double($0) }
+        }
+      }
+      return result
+    }
+    func luminance(_ color: [Double]) -> Double {
+      zip(color, [0.2126, 0.7152, 0.0722]).reduce(0) { sum, component in
+        let channel = component.0
+        return sum + component.1 * (channel <= 0.04045 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4))
+      }
+    }
+    let palettes: [(UIUserInterfaceStyle, [Int])] = [
+      (.light, [0x82, 0x61, 0xAA]), (.dark, [0xCC, 0xB5, 0xEC])
+    ]
+    for (style, expected) in palettes {
+      let unread = channels(PublicNewsHeadlineReadAppearance.titleColor(read: false), style)
+      let read = channels(PublicNewsHeadlineReadAppearance.titleColor(read: true), style)
+      let surface = luminance(channels(.galaxySSISurface, style))
+      XCTAssertEqual(unread.prefix(3).map { Int(($0 * 255).rounded()) }, expected)
+      XCTAssertEqual(read, channels(.galaxySSITextPrimary, style))
+      for color in [unread, read] {
+        XCTAssertEqual(color.last, 1)
+        let text = luminance(color)
+        XCTAssertGreaterThanOrEqual((max(text, surface) + 0.05) / (min(text, surface) + 0.05), 4.5)
+      }
+    }
+  }
+
   func testNewsUnreadCountFitsOnlyBetweenCenteredTitleAndMenu() {
     for width in [280.0, 320.0, 390.0, 768.0] {
       for title in [70.0, 120.0, 280.0, 500.0] {
