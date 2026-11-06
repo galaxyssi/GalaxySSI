@@ -24,6 +24,7 @@ struct GalaxySSIChatHistoryPage: Equatable {
   var messages: [ChatMessage]
   var nextCursor: GalaxySSIChatHistoryCursor?
   var hasMore: Bool
+  var turnStartMillis: [String: Int64] = [:]
 }
 
 enum GalaxySSIChatHistoryError: Error, Equatable {
@@ -392,8 +393,8 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
             let payload = encryptedPayload(message),
             let statement = prepare("""
               INSERT INTO chat_messages
-                (message_id, contact_id, conversation_id, created_at, is_mine, is_system, remote_message_id, encrypted_payload)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (message_id, contact_id, conversation_id, created_at, is_mine, is_system, remote_message_id, encrypted_payload, agent_turn_key)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT(message_id) DO UPDATE SET
                 contact_id = excluded.contact_id,
                 conversation_id = excluded.conversation_id,
@@ -401,7 +402,8 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
                 is_mine = excluded.is_mine,
                 is_system = excluded.is_system,
                 remote_message_id = excluded.remote_message_id,
-                encrypted_payload = excluded.encrypted_payload
+                encrypted_payload = excluded.encrypted_payload,
+                agent_turn_key = excluded.agent_turn_key
               """) else { return false }
       defer { sqlite3_finalize(statement) }
       bind(message.id.uuidString, at: 1, to: statement)
@@ -414,6 +416,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
       payload.withUnsafeBytes { bytes in
         sqlite3_bind_blob(statement, 8, bytes.baseAddress, Int32(payload.count), Self.transient)
       }
+      if let key = turnTimingKey(message) { bind(key, at: 9, to: statement) }
       guard sqlite3_step(statement) == SQLITE_DONE else { return false }
       rowCache.remove(message.id.uuidString)
       return true
@@ -588,9 +591,104 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
       guard !Task.isCancelled else { return nil }
       var seen = Set<UUID>()
       let messages = pages.reversed().flatMap { $0 }.filter { seen.insert($0.id).inserted }
-      return GalaxySSIChatHistoryPage(messages: messages, nextCursor: cursor, hasMore: hasMore)
+      var starts = AgentProcessClockPolicy.visibleRequestStarts(messages, conversationId: conversationId)
+      if hasMore {
+        let missing = Set(messages.lazy.filter { !$0.isMine && !$0.isSystem && !$0.turnId.isBlank }
+          .map { AgentReplyWaitingIndicatorPolicy.turnKey(for: $0) }).subtracting(starts.keys)
+        if !missing.isEmpty {
+          guard let persisted = turnTimingStarts(conversationId: conversationId, turnIds: missing) else { return nil }
+          starts.merge(persisted, uniquingKeysWith: min)
+        }
+      }
+      guard !Task.isCancelled, locked({ rowCachingEnabled }) else { return nil }
+      return GalaxySSIChatHistoryPage(messages: messages, nextCursor: cursor, hasMore: hasMore, turnStartMillis: starts)
     }
     return await withTaskCancellationHandler(operation: { await read.value }, onCancel: { read.cancel() })
+  }
+
+  private func turnTimingKey(_ message: ChatMessage) -> String? {
+    guard message.isMine, !message.isSystem, !message.conversationId.isBlank else { return "" }
+    return try? cipher.chatTurnTimingIndex(conversationId: message.conversationId,
+      turnId: AgentReplyWaitingIndicatorPolicy.turnKey(for: message))
+  }
+
+  private func turnTimingStarts(conversationId: String, turnIds: Set<String>) -> [String: Int64]? {
+    var cursor: GalaxySSIChatHistoryCursor?
+    while !Task.isCancelled {
+      let legacy: (allowed: Bool, cursor: GalaxySSIChatHistoryCursor?) = locked {
+        guard rowCachingEnabled else { return (false, nil) }
+        return (true, indexLegacyTurnTimingRows(conversationId: conversationId, after: cursor))
+      }
+      guard legacy.allowed else { return nil }
+      guard let next = legacy.cursor else { break }
+      cursor = next
+    }
+    guard !Task.isCancelled else { return nil }
+    var starts: [String: Int64] = [:]
+    for turn in turnIds {
+      guard !Task.isCancelled else { return nil }
+      let result: (allowed: Bool, start: Int64?) = locked {
+        guard rowCachingEnabled else { return (false, nil) }
+        guard let key = try? cipher.chatTurnTimingIndex(conversationId: conversationId, turnId: turn),
+              let statement = prepare("""
+                SELECT created_at FROM chat_messages
+                WHERE conversation_id = ? AND agent_turn_key = ? AND is_mine = 1 AND is_system = 0 AND created_at > 0
+                ORDER BY created_at ASC, message_id ASC LIMIT 1
+                """) else { return (true, nil) }
+        defer { sqlite3_finalize(statement) }
+        bind(conversationId, at: 1, to: statement)
+        bind(key, at: 2, to: statement)
+        return (true, sqlite3_step(statement) == SQLITE_ROW ? sqlite3_column_int64(statement, 0) : nil)
+      }
+      guard result.allowed else { return nil }
+      starts[turn] = result.start
+    }
+    return starts
+  }
+
+  // Older builds left the timing index empty. Hydrate only the selected conversation,
+  // off the UI thread and in bounded chunks; never store the decrypted turn identifier.
+  private func indexLegacyTurnTimingRows(
+    conversationId: String, after cursor: GalaxySSIChatHistoryCursor?
+  ) -> GalaxySSIChatHistoryCursor? {
+    let boundary = cursor == nil ? "" : "AND (created_at > ? OR (created_at = ? AND message_id > ?))"
+    guard let read = prepare("""
+      SELECT message_id, encrypted_payload, created_at FROM chat_messages
+      WHERE conversation_id = ? AND agent_turn_key IS NULL AND is_mine = 1 AND is_system = 0 \(boundary)
+      ORDER BY created_at ASC, message_id ASC LIMIT 64
+      """) else { return nil }
+    bind(conversationId, at: 1, to: read)
+    if let cursor {
+      sqlite3_bind_int64(read, 2, cursor.createdAtMillis)
+      sqlite3_bind_int64(read, 3, cursor.createdAtMillis)
+      bind(cursor.messageId, at: 4, to: read)
+    }
+    var last: GalaxySSIChatHistoryCursor?
+    var indexed: [(id: String, key: String)] = []
+    while !Task.isCancelled, sqlite3_step(read) == SQLITE_ROW {
+      guard let idText = sqlite3_column_text(read, 0) else { continue }
+      let id = String(cString: idText)
+      last = GalaxySSIChatHistoryCursor(createdAtMillis: sqlite3_column_int64(read, 2), messageId: id)
+      if let message = decode(read, id: id, payloadColumn: 1), message.conversationId == conversationId,
+         let key = turnTimingKey(message) {
+        indexed.append((id, key))
+      }
+    }
+    sqlite3_finalize(read)
+    guard !Task.isCancelled, !indexed.isEmpty,
+          let update = prepare("UPDATE chat_messages SET agent_turn_key = ? WHERE message_id = ? AND agent_turn_key IS NULL")
+    else { return last }
+    defer { sqlite3_finalize(update) }
+    guard execute("BEGIN IMMEDIATE TRANSACTION") else { return last }
+    for (id, key) in indexed {
+      guard !Task.isCancelled else { _ = execute("ROLLBACK"); return last }
+      sqlite3_reset(update)
+      bind(key, at: 1, to: update)
+      bind(id, at: 2, to: update)
+      guard sqlite3_step(update) == SQLITE_DONE else { _ = execute("ROLLBACK"); return last }
+    }
+    if !execute("COMMIT") { _ = execute("ROLLBACK") }
+    return last
   }
 
   func messages(conversationId: String) -> [ChatMessage] {
@@ -851,7 +949,13 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
     sqlite3_busy_timeout(database, 5_000)
     _ = execute("PRAGMA journal_mode = WAL")
     _ = execute("PRAGMA synchronous = NORMAL")
-    _ = execute("CREATE TABLE IF NOT EXISTS chat_messages (message_id TEXT PRIMARY KEY NOT NULL, contact_id TEXT NOT NULL, conversation_id TEXT NOT NULL, created_at INTEGER NOT NULL, is_mine INTEGER NOT NULL, is_system INTEGER NOT NULL, remote_message_id TEXT NOT NULL, encrypted_payload BLOB NOT NULL)")
+    _ = execute("CREATE TABLE IF NOT EXISTS chat_messages (message_id TEXT PRIMARY KEY NOT NULL, contact_id TEXT NOT NULL, conversation_id TEXT NOT NULL, created_at INTEGER NOT NULL, is_mine INTEGER NOT NULL, is_system INTEGER NOT NULL, remote_message_id TEXT NOT NULL, encrypted_payload BLOB NOT NULL, agent_turn_key TEXT)")
+    if let column = prepare("SELECT agent_turn_key FROM chat_messages LIMIT 0") {
+      sqlite3_finalize(column)
+    } else {
+      _ = execute("ALTER TABLE chat_messages ADD COLUMN agent_turn_key TEXT")
+    }
+    _ = execute("CREATE INDEX IF NOT EXISTS chat_messages_agent_turn_start ON chat_messages(conversation_id, agent_turn_key, created_at, message_id) WHERE is_mine = 1 AND is_system = 0")
     _ = execute("CREATE INDEX IF NOT EXISTS chat_messages_contact_order ON chat_messages(contact_id, created_at DESC, message_id DESC)")
     _ = execute("CREATE INDEX IF NOT EXISTS chat_messages_conversation_order ON chat_messages(conversation_id, created_at ASC, message_id ASC)")
     _ = execute("CREATE INDEX IF NOT EXISTS chat_messages_remote_dedupe ON chat_messages(contact_id, remote_message_id, is_mine)")

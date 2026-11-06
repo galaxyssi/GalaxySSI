@@ -3,6 +3,7 @@ import SwiftUI
 struct GalaxySSIAgentTranscriptMessagesView: View {
   @State private var expandedProgress = Set<UUID>()
   var messages: [ChatMessage]
+  var turnStartMillis: [String: Int64]
   var waitingMessageIDs: Set<UUID>
   var retryingMessageIDs: Set<UUID>
   var replySpeech: AgentReplySpeechRuntime
@@ -42,7 +43,8 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
     let deliveredTimes = AgentTranscriptExecutionProgress.finalDeliveryTimes(messages)
     ForEach(visibleMessages) { message in
       let turn = AgentTranscriptExecutionProgress.TurnKey(message)
-      messageRow(message, latestSpeechEntryId: latest?.entryId, deliveredAt: deliveredTimes[turn])
+      messageRow(message, latestSpeechEntryId: latest?.entryId, deliveredAt: deliveredTimes[turn],
+        requestStartedAt: turnStartMillis[turn.turnId])
     }
     .onAppear { observeLatestReply(latest) }
     .onChange(of: latest) { target in
@@ -58,7 +60,7 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
 
   @ViewBuilder
   private func messageRow(
-    _ message: ChatMessage, latestSpeechEntryId: String?, deliveredAt: Int64?
+    _ message: ChatMessage, latestSpeechEntryId: String?, deliveredAt: Int64?, requestStartedAt: Int64?
   ) -> some View {
     let task = agentTask(message)
     let remote = remoteAgentTask(message).flatMap {
@@ -69,7 +71,8 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
       $0.conversationId.ifBlank($0.sessionId) == message.conversationId &&
         (message.turnId.isBlank || $0.turnId == message.turnId || $0.taskId == message.turnId) ? $0 : nil
     }
-    let execution = executionProgress(message, task: task, remote: remote, voice: voice, deliveredAt: deliveredAt)
+    let execution = executionProgress(message, task: task, remote: remote, voice: voice,
+      deliveredAt: deliveredAt, requestStartedAt: requestStartedAt)
     let plan = message.isMine ? task.map {
       AgentInteractiveProgressPolicy.project(task: $0, status: execution?.status)
     } : nil
@@ -295,7 +298,7 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
 
   private func executionProgress(
     _ message: ChatMessage, task: AgentTaskRecord?, remote: AgentRemoteTaskStatusSnapshot?,
-    voice: VoiceAgentRunSnapshot?, deliveredAt: Int64?
+    voice: VoiceAgentRunSnapshot?, deliveredAt: Int64?, requestStartedAt: Int64?
   ) -> AgentTranscriptExecutionProgress? {
     let committed = committedProgress(message).map(AgentTranscriptExecutionProgress.committed)
     let remoteProgress = remote.map {
@@ -317,7 +320,10 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
       AgentTranscriptExecutionProgress(status: AgentInteractiveProgressStatus($0.phase),
         startedAt: $0.createdAtMillis, updatedAt: $0.updatedAtMillis)
     }
-    return AgentTranscriptExecutionProgress.resolve(owned: owned, cached: cached, deliveredAt: deliveredAt)
+    let finalAt = owned != nil || cached != nil || AgentTranscriptExecutionProgress.finalDeliveryTime(message) != nil
+      ? deliveredAt : nil
+    return AgentTranscriptExecutionProgress.resolve(owned: owned, cached: cached, deliveredAt: finalAt,
+      requestStartedAt: requestStartedAt)
   }
 
   private func messageExecutionFooter(

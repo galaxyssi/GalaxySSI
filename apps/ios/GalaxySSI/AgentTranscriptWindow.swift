@@ -14,6 +14,7 @@ final class AgentTranscriptWindow: ObservableObject {
     var hasMore = false
     var loadedLimit = 0
     var prependAnchor: UUID?
+    var turnStartMillis: [String: Int64] = [:]
   }
 
   typealias Loader = (String, Int) async -> GalaxySSIChatHistoryPage?
@@ -74,7 +75,7 @@ final class AgentTranscriptWindow: ObservableObject {
       guard let self, !Task.isCancelled, self.owns(owner) else { return }
       if let page, page.messages.allSatisfy({ $0.conversationId == owner.conversationID }) {
         let next = Snapshot(owner: owner, messages: page.messages, hasMore: page.hasMore,
-                            loadedLimit: limit, prependAnchor: anchor)
+                            loadedLimit: limit, prependAnchor: anchor, turnStartMillis: page.turnStartMillis)
         if self.snapshot != next { self.snapshot = next }
       } else if self.requestedLimit == limit {
         self.requestedLimit = max(1, self.snapshot.loadedLimit == 0 ? limit : self.snapshot.loadedLimit)

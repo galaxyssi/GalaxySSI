@@ -1,4 +1,5 @@
 import Combine
+import SQLite3
 import XCTest
 
 @testable import GalaxySSI
@@ -31,13 +32,15 @@ final class AgentTranscriptEntryStoreTests: XCTestCase {
     XCTAssertTrue(window.snapshot.messages.isEmpty)
     XCTAssertFalse(window.owns(oldOwner))
     window.activate("a", pageSize: 24) { _, _ in
-      GalaxySSIChatHistoryPage(messages: [latest], nextCursor: nil, hasMore: false)
+      GalaxySSIChatHistoryPage(messages: [latest], nextCursor: nil, hasMore: false, turnStartMillis: ["turn": 2_000])
     }
     await fulfillment(of: [restored], timeout: 2)
-    finishOld?.resume(returning: GalaxySSIChatHistoryPage(messages: [old], nextCursor: nil, hasMore: false))
+    finishOld?.resume(returning: GalaxySSIChatHistoryPage(messages: [old], nextCursor: nil, hasMore: false,
+      turnStartMillis: ["turn": 1_000]))
     await fulfillment(of: [stalePublished], timeout: 0.1)
     XCTAssertFalse(window.owns(oldOwner))
     XCTAssertEqual(window.snapshot.messages, [latest])
+    XCTAssertEqual(window.snapshot.turnStartMillis, ["turn": 2_000])
   }
 
   @MainActor
@@ -739,6 +742,58 @@ final class GalaxySSIChatHistoryDatabaseTests: XCTestCase {
     database.setRowCachingEnabled(false)
     let blocked = await database.agentTranscriptWindow(conversationId: "a", limit: 24)
     XCTAssertNil(blocked)
+  }
+
+  func testPagedTurnTimingUsesTheOriginalRequestAndMigratesLegacyRows() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("history.sqlite3")
+    let database = GalaxySSIChatHistoryDatabase(fileURL: file, secrets: InMemorySecretStore())
+    let turn = "private-turn-marker"
+    func message(_ conversation: String, _ turn: String, _ seconds: Double, mine: Bool) -> ChatMessage {
+      ChatMessage(contactId: "hermes", content: mine ? "Request" : "Progress", isMine: mine,
+        createdAt: Date(timeIntervalSince1970: seconds), conversationId: conversation, turnId: turn)
+    }
+    let request = message("active", turn, 1, mine: true)
+    let progress = (0..<85).map { message("active", turn, 66 + Double($0), mine: false) }
+    XCTAssertTrue(database.upsertAll([request, message("other", turn, 0.2, mine: true),
+      message("active", "different-turn", 0.3, mine: true)] + progress))
+
+    var sqlite: OpaquePointer?
+    XCTAssertEqual(sqlite3_open(file.path, &sqlite), SQLITE_OK)
+    defer { sqlite3_close(sqlite) }
+    XCTAssertEqual(sqlite3_exec(sqlite,
+      "UPDATE chat_messages SET agent_turn_key = NULL WHERE conversation_id = 'active' AND is_mine = 1",
+      nil, nil, nil), SQLITE_OK)
+    let paged = await database.agentTranscriptWindow(conversationId: "active", limit: 24)
+    XCTAssertEqual(paged?.hasMore, true)
+    XCTAssertFalse(paged?.messages.contains(where: \.isMine) ?? true)
+    XCTAssertEqual(paged?.turnStartMillis[turn], 1_000)
+    var indexed: OpaquePointer?
+    XCTAssertEqual(sqlite3_prepare_v2(sqlite, """
+      SELECT agent_turn_key FROM chat_messages
+      WHERE conversation_id = 'active' AND is_mine = 1 AND created_at = 1000
+      """, -1, &indexed, nil), SQLITE_OK)
+    defer { sqlite3_finalize(indexed) }
+    XCTAssertEqual(sqlite3_step(indexed), SQLITE_ROW)
+    let key = String(cString: try XCTUnwrap(sqlite3_column_text(indexed, 0)))
+    sqlite3_reset(indexed)
+    XCTAssertEqual(key.count, 44)
+    XCTAssertFalse(key.contains(turn))
+
+    let expanded = await database.agentTranscriptWindow(conversationId: "active", limit: 100)
+    XCTAssertEqual(expanded?.turnStartMillis[turn], paged?.turnStartMillis[turn])
+    let finished = AgentTranscriptExecutionProgress(status: .completed, startedAt: 66_000, updatedAt: 151_000)
+    let timing = try XCTUnwrap(AgentTranscriptExecutionProgress.resolve(owned: finished, cached: nil,
+      deliveredAt: nil, requestStartedAt: paged?.turnStartMillis[turn]))
+    XCTAssertEqual(timing.startedAt, 1_000)
+    XCTAssertEqual(timing.updatedAt, 151_000)
+    let clock = AgentProcessClock(startedAtMillis: timing.startedAt, completedAtMillis: timing.updatedAt)
+    XCTAssertEqual(clock.elapsed(at: 999_000), 150_000)
+    XCTAssertEqual(AgentTranscriptExecutionProgress.resolve(owned: nil, cached: nil, deliveredAt: 151_000,
+      requestStartedAt: paged?.turnStartMillis[turn]), timing)
+    XCTAssertEqual(AgentProcessClockPolicy.startedAt(request: 0, fallback: 66_000), 66_000)
+    XCTAssertEqual(AgentProcessClockPolicy.startedAt(request: 67_000, fallback: 66_000), 66_000)
   }
 
   func testConversationQueriesUpdatesDeletesAndUnreadSummary() throws {
