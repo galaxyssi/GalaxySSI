@@ -21,6 +21,7 @@ struct AgentTaskPlanContext: Codable, Equatable {
   var requiredPermissions: [AgentPermissionRequirement]
   var timeoutSeconds: Int
   var confirmationRequired: Bool
+  var executionMode: AgentTaskExecutionMode?
 
   enum CodingKeys: String, CodingKey {
     case planId = "plan_id"
@@ -42,6 +43,7 @@ struct AgentTaskPlanContext: Codable, Equatable {
     case requiredPermissions = "required_permissions"
     case timeoutSeconds = "timeout_seconds"
     case confirmationRequired = "confirmation_required"
+    case executionMode = "execution_mode"
   }
 
   init(from decoder: Decoder) throws {
@@ -65,6 +67,7 @@ struct AgentTaskPlanContext: Codable, Equatable {
     requiredPermissions = try container.decodeIfPresent([AgentPermissionRequirement].self, forKey: .requiredPermissions) ?? []
     timeoutSeconds = try container.decode(Int.self, forKey: .timeoutSeconds)
     confirmationRequired = try container.decode(Bool.self, forKey: .confirmationRequired)
+    executionMode = try container.decodeIfPresent(AgentTaskExecutionMode.self, forKey: .executionMode)
   }
 
   init(plan: AgentPlan) {
@@ -87,6 +90,7 @@ struct AgentTaskPlanContext: Codable, Equatable {
     requiredPermissions = plan.requiredPermissions
     timeoutSeconds = plan.timeoutSeconds
     confirmationRequired = plan.confirmationRequired
+    executionMode = plan.executionMode
   }
 }
 
@@ -123,6 +127,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
   var executionLog: [String]
   var teamRecoveryRunId: String? = nil
   var capturePermission: AgentCapturePermissionContinuation? = nil
+  var localOperationProcessId: String? = nil
   var createdAtMillis: Int64
   var updatedAtMillis: Int64
 
@@ -227,6 +232,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     case executionLog = "execution_log"
     case teamRecoveryRunId = "team_recovery_run_id"
     case capturePermission = "capture_permission"
+    case localOperationProcessId = "local_operation_process_id"
     case createdAtMillis = "created_at_millis"
     case updatedAtMillis = "updated_at_millis"
   }
@@ -269,6 +275,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     effectRecovery = try container.decodeIfPresent([AgentEffectRecoveryRecord].self, forKey: .effectRecovery)
     teamRecoveryRunId = try container.decodeIfPresent(String.self, forKey: .teamRecoveryRunId)
     capturePermission = try container.decodeIfPresent(AgentCapturePermissionContinuation.self, forKey: .capturePermission)
+    localOperationProcessId = try container.decodeIfPresent(String.self, forKey: .localOperationProcessId)
   }
 }
 

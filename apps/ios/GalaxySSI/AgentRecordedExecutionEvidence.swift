@@ -189,7 +189,7 @@ enum AgentRecordedExecutionEvidence {
     action.kind == .callNativeTool || action.kind == .callConnector
   }
 
-  private static func logicalID(_ id: String) -> String {
+  static func logicalID(_ id: String) -> String {
     let clean = id.trimmingCharacters(in: .whitespacesAndNewlines)
     return clean.count <= AgentSkillLimits.maxIdCharacters ? clean : GlobalAgentText.stableKey(clean)
   }

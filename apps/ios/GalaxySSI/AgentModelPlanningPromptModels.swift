@@ -11,6 +11,7 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
   var hasAttachments: Bool
   var allowsPhoneRuntimeTools: Bool
   var allowsDirectResponse: Bool
+  var ownedOperationContext: AgentMcpJSONObject? = nil
   var phoneOwnsExecution: Bool
   var timerCheckpoint: [String: String]?
 
@@ -52,6 +53,7 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
 
   enum CodingKeys: String, CodingKey {
     case planRequest = "plan_request"
+    case ownedOperationContext = "owned_operation_context"
     case parsingContext = "parsing_context"
     case conversationContext = "conversation_context"
     case executionTurnId = "execution_turn_id"
@@ -82,5 +84,6 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
       phoneOwnsExecution: try container.decodeIfPresent(Bool.self, forKey: .phoneOwnsExecution) ?? false,
       timerCheckpoint: try container.decodeIfPresent([String: String].self, forKey: .timerCheckpoint)
     )
+    ownedOperationContext = try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .ownedOperationContext)
   }
 }
