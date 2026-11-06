@@ -340,6 +340,79 @@ final class AgentModelPlanParserTests: XCTestCase {
       settings: AgentModelPlannerSettings(), context: context()))
   }
 
+  func testRequestedResultIdsSurvivePersistenceAndCannotBeDropped() throws {
+    let raw = """
+    {"completion_requirements":{"publication":"none","phone_linux":false,"results":[
+      {"id":"battery","description":"Battery percent"},
+      {"id":"storage","description":"Available storage","outcome_ids":[],"artifact_paths":[],"answer":""}]},
+     "actions":[{"ref":"read","kind":"READ_SCREEN","parameters":{}}]}
+    """
+    func parse(_ raw: String, previous: AgentCompletionRequirements? = nil) -> AgentPlan? {
+      AgentModelPlanParser.parse(request: request(completionRequirements: previous), raw: raw,
+        settings: AgentModelPlannerSettings(), context: context())
+    }
+    let plan = try XCTUnwrap(parse(raw))
+    let persisted = try JSONDecoder().decode(AgentPlan.self, from: JSONEncoder().encode(plan))
+    let previous = try XCTUnwrap(persisted.completionRequirements)
+    XCTAssertEqual(previous.results?.map(\.id), ["battery", "storage"])
+    XCTAssertEqual(previous.results?.first?.answer, "")
+    XCTAssertNil(parse(raw.replacingOccurrences(of: #""id":"storage""#, with: #""id":"battery""#)))
+    XCTAssertNil(parse(raw.replacingOccurrences(of: #""answer":"""#, with: #""answer":7"#)))
+    XCTAssertNil(parse(raw.replacingOccurrences(of: #""artifact_paths":[]"#, with: #""artifact_paths":["../report.csv"]"#)))
+    XCTAssertNil(parse(raw.replacingOccurrences(of: #""outcome_ids":[]"#, with: #""outcome_ids":[1]"#)))
+    let erased = """
+    {"completion_requirements":{"publication":"none","phone_linux":false,"reason":"Updated","results":[]},
+     "actions":[{"ref":"read","kind":"READ_SCREEN","parameters":{}}]}
+    """
+    XCTAssertNil(parse(erased, previous: previous))
+    let inherited = parse(planJson(actionJson(ref: "read", kind: "READ_SCREEN")), previous: previous)
+    XCTAssertEqual(inherited?.completionRequirements?.results, previous.results)
+    let changed = raw.replacingOccurrences(of: "Battery percent", with: "Battery state")
+    XCTAssertNil(parse(changed, previous: previous))
+    XCTAssertNotNil(parse(changed.replacingOccurrences(of: #""results":"#, with: #""reason":"Corrected the requested state","results":"#),
+      previous: previous))
+  }
+
+  func testRequestedResultsRequireTypedEvidenceLinksAndEveryDeliveredAnswer() throws {
+    let raw = """
+    {"completion_requirements":{"publication":"none","phone_linux":false,
+      "outcomes":[{"id":"battery-read","tool_id":"galaxyssi.hardware.device.status",
+        "subject":{"/scope":"ios_app_visible_device"},"checks":{"/battery/percent":40}}],
+      "file_artifacts":[{"path":"report.txt"}],
+      "results":[{"id":"battery","description":"Battery percent","outcome_ids":["battery-read"],"answer":"Battery: 40%."},
+                 {"id":"report","description":"Export report","artifact_paths":["report.txt"],"answer":"Report: report.txt."}]},
+     "actions":[{"ref":"read","kind":"READ_SCREEN","parameters":{}}]}
+    """
+    let plan = try XCTUnwrap(AgentModelPlanParser.parse(request: request(), raw: raw,
+      settings: AgentModelPlannerSettings(), context: context()))
+    var requirements = try XCTUnwrap(plan.completionRequirements)
+    let final = "Battery: 40%.\nReport: report.txt."
+    XCTAssertTrue(AgentGoalResultEvidence.missing(requirements, finalAnswer: final, required: true).isEmpty)
+    XCTAssertTrue(AgentGoalResultEvidence.missing(requirements, finalAnswer: "Battery: 40%.", required: true)
+      .contains { $0.contains("report is missing from the final answer") })
+    XCTAssertFalse(AgentCompletionEvidencePolicy.missingEvidence(requirements: requirements, history: []).isEmpty)
+    requirements.fileArtifacts = nil
+    XCTAssertTrue(AgentGoalResultEvidence.missing(requirements, finalAnswer: final, required: true)
+      .contains { $0.contains("undeclared artifact report.txt") })
+    XCTAssertFalse(AgentGoalResultEvidence.missing(nil, finalAnswer: final, required: true).isEmpty)
+    XCTAssertTrue(AgentGoalResultEvidence.missing(nil, finalAnswer: final, required: false).isEmpty)
+    let status = AgentAction(id: "status", kind: .callNativeTool, target: AgentIOSHardwareNativeToolCatalog.deviceStatus,
+      risk: .low, status: .completed, description: "Inspect", evidence: #"{"scope":"ios_app_visible_device","battery":{"percent":40}}"#)
+    XCTAssertTrue(AgentGoalResultEvidence.requiresDeclaration(for: [status]))
+    XCTAssertTrue(AgentCompletionEvidencePolicy.missingEvidence(requirements: requirements, history: [status]).isEmpty)
+    var stale = status
+    stale.id = "later-read"
+    stale.evidence = "{}"
+    XCTAssertFalse(AgentCompletionEvidencePolicy.missingEvidence(requirements: requirements, history: [status, stale]).isEmpty)
+  }
+
+  func testDeviceByteLabelsUseBinaryUnits() {
+    XCTAssertEqual(AgentIOSDeviceHealthStatusPresentation.formatBytes(1_023), "1023 B")
+    XCTAssertEqual(AgentIOSDeviceHealthStatusPresentation.formatBytes(1_024), "1.0 KiB")
+    XCTAssertEqual(AgentIOSDeviceHealthStatusPresentation.formatBytes(1_048_576), "1.0 MiB")
+    XCTAssertEqual(AgentIOSDeviceHealthStatusPresentation.formatBytes(1_073_741_824), "1.0 GiB")
+  }
+
   func testAgentModelPlanParserUsesMcpCallToolProvisionalRisk() throws {
     let callTool = try nativeToolDescriptor(id: AgentMcpNativeTools.callTool, risk: .low)
     let plan = try XCTUnwrap(AgentModelPlanParser.parse(

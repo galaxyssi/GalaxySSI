@@ -133,9 +133,6 @@ enum AgentIOSDeviceMemoryStatusPresentation {
   }
 
   private static func formatBytes(_ value: Int64) -> String {
-    let bytes = Double(max(0, value))
-    if bytes >= 1_024 * 1_024 * 1_024 { return String(format: "%.1f GB", bytes / (1_024 * 1_024 * 1_024)) }
-    if bytes >= 1_024 * 1_024 { return String(format: "%.1f MB", bytes / (1_024 * 1_024)) }
-    return String(format: "%.1f KB", bytes / 1_024)
+    AgentIOSDeviceHealthStatusPresentation.formatBytes(value)
   }
 }

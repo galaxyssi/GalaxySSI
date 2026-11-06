@@ -622,6 +622,7 @@ struct AgentVideoArtifactRequirement: Codable, Hashable {
 /// Completion obligations interpreted by the planning model, never inferred from goal keywords.
 struct AgentCompletionRequirements: Codable, Equatable {
   var outcomes: [AgentObservedCompletion]? = nil
+  var results: [AgentGoalResultRequirement]? = nil
   var publication: AgentPublicationRequirement
   var phoneLinux: Bool
   var reason: String
@@ -645,19 +646,23 @@ struct AgentCompletionRequirements: Codable, Equatable {
   func changesOutcome(from previous: AgentCompletionRequirements) -> Bool {
     publication != previous.publication || phoneLinux != previous.phoneLinux ||
       Set(artifacts ?? []) != Set(previous.artifacts ?? []) ||
-      Set(fileArtifacts ?? []) != Set(previous.fileArtifacts ?? [])
+      Set(fileArtifacts ?? []) != Set(previous.fileArtifacts ?? []) ||
+      (results ?? []) != (previous.results ?? [])
   }
 
   func canReplace(_ previous: AgentCompletionRequirements?) -> Bool {
     guard let previous else { return true }
     let currentOutcomes = outcomes ?? []
     let priorOutcomes = previous.outcomes ?? []
-    guard Set(currentOutcomes.map(\.id)).isSuperset(of: priorOutcomes.map(\.id)) else { return false }
+    guard Set(currentOutcomes.map(\.id)).isSuperset(of: priorOutcomes.map(\.id)),
+          Set((results ?? []).map(\.id)).isSuperset(of: (previous.results ?? []).map(\.id))
+    else { return false }
     return (!changesOutcome(from: previous) && currentOutcomes == priorOutcomes) || !reason.isEmpty
   }
 
   enum CodingKeys: String, CodingKey {
     case outcomes
+    case results
     case publication
     case phoneLinux = "phone_linux"
     case reason

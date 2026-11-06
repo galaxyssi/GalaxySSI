@@ -8635,9 +8635,14 @@ final class MessageCoordinator: ObservableObject {
     let existingEvidence = AgentCompletionEvidencePolicy.missingEvidence(
       requirements: completionRequirements, history: scopedHistory, answerOnly: answerOnly,
       observationHistory: observationHistory)
+    let phoneIntent = AgentTaskIntentClassifier.classify(goal: requestText).intent == .phoneControl
+    let requiresRequestedResults = timerCheckpoint != nil ||
+      (phoneIntent && (requirements.capabilities.contains(.deviceControl) || requirements.capabilities.contains(.liveData))) ||
+      AgentGoalResultEvidence.requiresDeclaration(for: observationHistory) ||
+      !(completionRequirements?.results ?? []).isEmpty
     planningRequest.allowsDirectResponse = planningRequest.allowsDirectResponse && timerCheckpoint == nil &&
       ownedOperation?["status"] != .string("goal_only") &&
-      answerOnly && existingEvidence.isEmpty &&
+      !requiresRequestedResults && answerOnly && existingEvidence.isEmpty &&
       !AgentRollingPlanPolicy.isBatchBoundaryReason(replanReason)
     let fallbackPlan = AgentPlanFactory.actions(request: planRequest, [])
     let artifactScope = AgentPlanContinuationScope(conversationId: outgoing.conversationId,
@@ -8650,6 +8655,10 @@ final class MessageCoordinator: ObservableObject {
       planningRequest.allowsDirectResponse = false
     }
     func admission(_ plan: AgentPlan) -> AgentModelPlanRejection? {
+      let needsResults = requiresRequestedResults || AgentGoalResultEvidence.requiresDeclaration(for: plan.actions)
+      if needsResults && (plan.completionRequirements?.results ?? []).isEmpty {
+        return .init("completion_requirements.results", "results_required", AgentGoalResultEvidence.declarationGuidance)
+      }
       if plan.actions.count == 1,
          let action = plan.actions.first,
          AgentRollingPlanPolicy.closesFromVerifiedEvidence(action),
@@ -8678,9 +8687,11 @@ final class MessageCoordinator: ObservableObject {
         let requestedArtifacts = (completionRequirements?.fileArtifacts ?? []) + (plan.completionRequirements?.fileArtifacts ?? [])
         let artifactMissing = AgentArtifactCompletionEvidence.missing(requestedArtifacts, history: artifactHistory,
           scope: artifactScope)
-        let missing = Array(Set(priorMissing + proposedMissing + unsettled + artifactMissing)).sorted()
+        let resultMissing = AgentGoalResultEvidence.missing(plan.completionRequirements,
+          finalAnswer: action.description, required: needsResults)
+        let missing = resultMissing + Array(Set(priorMissing + proposedMissing + unsettled + artifactMissing)).sorted()
         return missing.isEmpty ? nil : .init("completion_requirements", "missing_completion_evidence",
-          "Inspect existing state without repeating effects. Host observation diagnostics (no receipt values): \(diagnosticText)\nDeclare or correct requirements and perform only missing work. Missing: \(missing.joined(separator: "; ")).")
+          "Inspect existing state without repeating effects. Missing: \(missing.joined(separator: "; ")).\nHost observation diagnostics (no receipt values): \(diagnosticText)")
       }
       let actions = plan.actions
       if let index = actions.firstIndex(where: { $0.kind != .callNativeTool }) {
@@ -9911,7 +9922,7 @@ final class MessageCoordinator: ObservableObject {
         videos: videos,
         verifiedArtifacts: requirements.sorted { ($0.workspaceId, $0.path) < ($1.workspaceId, $1.path) }
       )
-      return true
+      return task.phase == .completed
     }
 
     let nextRevision = max(nextPlan.revision, previousPlan.revision + 1)
@@ -9960,11 +9971,30 @@ final class MessageCoordinator: ObservableObject {
   ) {
     let scope = AgentPlanContinuationScope(conversationId: outgoing.conversationId,
       turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString))
+    let finalRequirements = finalPlan.completionRequirements ?? previousPlan.completionRequirements
+    let settledPlan = task.activePlan ?? previousPlan
+    let history = (settledPlan.actionHistory + settledPlan.actions)
+      .filter { scope.owns($0) && !AgentDurablePlanHistoryPolicy.isPlannerControl($0) }
+    let hasResults = !(finalRequirements?.results ?? []).isEmpty
+    let missingResults = AgentGoalResultEvidence.missing(finalRequirements, finalAnswer: finalAction.description,
+      required: AgentGoalResultEvidence.requiresDeclaration(for: history))
+    let missingObservations = hasResults ? AgentCompletionEvidencePolicy.missingEvidence(
+      requirements: finalRequirements, history: history, observationHistory: history) : []
+    guard finalRequirements?.canReplace(previousPlan.completionRequirements) != false,
+          missingResults.isEmpty, missingObservations.isEmpty else {
+      task.phase = .blocked
+      task.blocked = true
+      task.verification = localizedReply("galaxyssi.agent.requested_results.unverified",
+        fallback: "Some requested results are not yet verified.")
+      task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+      store.upsertAgentTask(task)
+      return
+    }
     let requested = (previousPlan.completionRequirements?.fileArtifacts ?? []) + (finalPlan.completionRequirements?.fileArtifacts ?? [])
     var seen = Set<AgentArtifactRequirement>()
     let requestedFiles = requested.filter { seen.insert($0).inserted }
     let assessment = AgentArtifactCompletionEvidence.assess(requestedFiles,
-      history: previousPlan.actionHistory + previousPlan.actions, scope: scope)
+      history: history, scope: scope)
     let root = AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL()
     guard assessment.missing.isEmpty, assessment.verified.allSatisfy({ receipt in
       let url = AgentVerifiedArtifactSnapshot.url(root: root, digest: receipt.digest.lowercased(), path: receipt.path)
@@ -9987,15 +10017,14 @@ final class MessageCoordinator: ObservableObject {
     completedPlan.actions = [completedMarker]
     completedPlan.revision = nextRevision
     completedPlan.replanCount += 1
-    completedPlan.completionRequirements = finalPlan.completionRequirements
-      ?? previousPlan.completionRequirements
+    completedPlan.completionRequirements = finalRequirements
     if !verifiedArtifacts.isEmpty {
       completedPlan.completionRequirements?.artifacts = verifiedArtifacts
     }
     if !requestedFiles.isEmpty {
       completedPlan.completionRequirements?.fileArtifacts = requestedFiles
     }
-    completedPlan.expectedResult = finalPlan.expectedResult
+    completedPlan.expectedResult = hasResults ? finalAction.description : finalPlan.expectedResult
       .ifBlank(finalAction.result)
       .ifBlank(finalAction.description)
       .ifBlank(previousPlan.expectedResult)
@@ -10005,7 +10034,7 @@ final class MessageCoordinator: ObservableObject {
     task.pendingAction = nil
     task.pendingActions = []
     task.phase = .completed
-    task.result = finalPlan.expectedResult
+    task.result = hasResults ? finalAction.description : finalPlan.expectedResult
       .ifBlank(finalAction.result)
       .ifBlank(finalAction.description)
       .ifBlank(previousPlan.expectedResult)

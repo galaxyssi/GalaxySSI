@@ -36,14 +36,12 @@ enum AgentIOSDeviceHealthStatusPresentation {
     return "Device status: battery \(batteryText), memory \(usedPercent)% used, \(availableStorage) storage available, network \(connected ? "connected" : "offline")."
   }
 
-  private static func formatBytes(_ value: Int64) -> String {
-    let bytes = Double(max(0, value))
-    if bytes >= 1_024 * 1_024 * 1_024 {
-      return String(format: "%.1f GB", bytes / (1_024 * 1_024 * 1_024))
+  static func formatBytes(_ value: Int64) -> String {
+    let bytes = max(0, value)
+    for (unit, divisor) in [("GiB", Int64(1_024 * 1_024 * 1_024)), ("MiB", 1_024 * 1_024), ("KiB", 1_024)]
+    where bytes >= divisor {
+      return String(format: "%.1f %@", locale: Locale(identifier: "en_US_POSIX"), Double(bytes) / Double(divisor), unit)
     }
-    if bytes >= 1_024 * 1_024 {
-      return String(format: "%.1f MB", bytes / (1_024 * 1_024))
-    }
-    return String(format: "%.1f KB", bytes / 1_024)
+    return "\(bytes) B"
   }
 }
