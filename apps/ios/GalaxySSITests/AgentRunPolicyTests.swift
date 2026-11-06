@@ -333,6 +333,7 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(finished.admits(replay, for: "other:task"))
   }
 
+  @MainActor
   func testConnectorResearchRecoveryHeadlineRequiresTheCurrentVisibleFailedResearchTool() throws {
     var event: [String: Any] = ["event_id": "public-search", "kind": "tool", "code": "web_search", "status": "failed"]
     var payload: [String: Any] = ["type": "agent_task_event", "task_status": "running",
@@ -352,12 +353,14 @@ extension GalaxySSIStoreTests {
     event["metadata"] = ["web_read_failures": [["host": "example.org", "code": "http_status", "http_status": 403]]]
     payload["progress_event"] = event
     XCTAssertFalse(AgentConnectorResearchProgress.checkingSources(payload))
-    XCTAssertNil(AgentConnectorResearchProgress.entries(payload) { _, fallback in fallback }.first?.compactText)
+    let unrelated = try XCTUnwrap(AgentConnectorPublicProgress.entries(payload) { _, fallback in fallback }.first)
+    XCTAssertNil(unrelated.compactText)
     event["detail"] = "galaxyssi_parallel_web_search"
     payload["progress_event"] = event
     payload["task_status"] = "failed"
     XCTAssertFalse(AgentConnectorResearchProgress.checkingSources(payload))
-    XCTAssertNotNil(AgentConnectorResearchProgress.entries(payload) { _, fallback in fallback }.first?.compactText)
+    let research = try XCTUnwrap(AgentConnectorPublicProgress.entries(payload) { _, fallback in fallback }.first)
+    XCTAssertEqual(research.compactText, "Some sources could not be read")
   }
 
   func testPublicConnectorProgressIsIdempotentAndFencesStaleUpdates() throws {

@@ -1590,8 +1590,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     archive.reportEvidence = (0..<35).map { region in
       let original = region == 0 ? image : report
       return .init(target: .init(record: current.id, revision: region == 34 ? 1 : current.revision),
-        source: .init(original: original.id, sha256: original.sha256, page: 0, region: region, fromOCR: true),
-        excerpt: "private OCR fixture")
+        source: .init(original: original.id, sha256: original.sha256, page: 0, region: region, fromOCR: region != 1),
+        excerpt: "private report fixture")
     }
     archive.tableEvidence = [.init(target: .init(record: current.id, revision: current.revision),
       source: .init(batch: table.id, row: 0, sha256: tableHash))]
@@ -1603,7 +1603,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let password = "fixture-password"
     let package = try GalaxySSIHealthPortableBackup.seal(plain, password: password)
     XCTAssertTrue(package.starts(with: Data("GalaxySSI-Health-Backup-v2\n".utf8)))
-    XCTAssertNil(package.range(of: Data("private OCR fixture".utf8)))
+    XCTAssertNil(package.range(of: Data("private report fixture".utf8)))
     let input = try GalaxySSIHealthPortableBackup.unlock(package, password: password)
 
     let otherTable = GalaxySSIHealthTableImport.Batch(id: UUID(), name: "same-table.csv", at: Date(), data: csv, inserted: 0)
@@ -1624,6 +1624,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(restored.reportEvidence?.count, 34)
     XCTAssertTrue(restored.reportEvidence?.allSatisfy {
       $0.source.original == ($0.source.region == 0 ? reusedImage.id : reusedPDF.id) &&
+        $0.source.fromOCR == ($0.source.region != 1) &&
         $0.target.revision == current.revision
     } == true)
     XCTAssertEqual(restored.tableEvidence?.first?.source.batch, otherTable.id)
@@ -1975,6 +1976,39 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let stale = try GalaxySSIHealthLinkedExport.prepare(readings, batches: [], store: store, choices: camera)
     XCTAssertEqual(stale.links.map(\.status), [.missing, .missing])
     XCTAssertNotEqual(package.links, stale.links)
+  }
+
+  @MainActor
+  func testLinkedHealthExportIncludesVerifiedImageEvidenceOnlyOnItsSingleOCRPage() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: HealthFixtureSecrets(), fixtureDirectory: root)
+    let png = UIGraphicsImageRenderer(size: CGSize(width: 10, height: 10)).pngData { _ in }
+    try store.store(png, name: "camera.png", acquisition: .camera)
+    let original = try XCTUnwrap(store.list().originals.first)
+    let reading = GalaxySSIHealthReading(revision: 1, metric: .weight, value: 65,
+      reportSource: .init(original: original.id, sha256: original.sha256, page: 0, region: 0, fromOCR: true))
+    let target = GalaxySSIHealthReportReview.Target(record: reading.id, revision: reading.revision)
+    let evidence: [GalaxySSIHealthReportReview.Evidence] = [
+      .init(target: target, source: .init(original: original.id, sha256: original.sha256,
+        page: 0, region: 1, fromOCR: true), excerpt: "Verified image evidence"),
+      .init(target: target, source: .init(original: original.id, sha256: original.sha256,
+        page: 1, region: 1, fromOCR: true), excerpt: "Invalid image page"),
+      .init(target: target, source: .init(original: original.id, sha256: original.sha256,
+        page: 0, region: 2, fromOCR: false), excerpt: "Invalid native image text"),
+      .init(target: target, source: .init(original: original.id, sha256: String(repeating: "0", count: 64),
+        page: 0, region: 3, fromOCR: true), excerpt: "Wrong digest")
+    ]
+    let package = try GalaxySSIHealthLinkedExport.prepare([reading], batches: [], store: store,
+      choices: .init(camera: true), reportEvidence: evidence)
+    XCTAssertEqual(package.links.map(\.status), [.included, .included, .mismatched, .mismatched, .mismatched])
+    XCTAssertEqual(package.links.map(\.path), [original.entryPath, original.entryPath, nil, nil, nil])
+    XCTAssertEqual(package.files.map(\.data), [png])
+    let unselected = try GalaxySSIHealthLinkedExport.prepare([reading], batches: [], store: store,
+      choices: .init(uploaded: true))
+    XCTAssertEqual(unselected.links.map(\.status), [.unselected])
+    XCTAssertTrue(unselected.files.isEmpty)
   }
 
   func testMeasurementExportKeepsComponentsAndProtectsCSVFormulas() throws {

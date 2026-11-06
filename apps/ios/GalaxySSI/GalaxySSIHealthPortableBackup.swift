@@ -209,7 +209,7 @@ enum GalaxySSIHealthPortableBackup {
       guard (frame.report == nil) != (frame.table == nil), let target = frame.target,
             versions[target.record] == target.revision else { throw Failure.invalid }
       if let report = frame.report {
-        guard report.source.fromOCR, report.source.page >= 0, report.source.region >= 0,
+        guard report.source.page >= 0, report.source.region >= 0,
               validDigest(report.source.sha256), !report.excerpt.isEmpty, report.excerpt.count <= 500,
               report.excerpt.utf8.count <= 8_192 else { throw Failure.invalid }
       }
