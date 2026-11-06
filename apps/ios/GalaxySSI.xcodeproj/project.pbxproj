@@ -939,6 +939,7 @@
     A10000000000000000000166 /* GalaxySSILinkDiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000166 /* GalaxySSILinkDiagnosticsView.swift */; };
     A10000000000000000000167 /* CloudModelNativeToolAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000167 /* CloudModelNativeToolAdapter.swift */; };
     A10000000000000000000168 /* CloudModelToolLoopAgentPlanningProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000168 /* CloudModelToolLoopAgentPlanningProvider.swift */; };
+    A10000000000000000009B3A /* AgentPlannerToolCatalogSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B3A /* AgentPlannerToolCatalogSession.swift */; };
     A10000000000000000000169 /* AgentRemoteTaskStatusPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000169 /* AgentRemoteTaskStatusPolicy.swift */; };
     A10000000000000000000170 /* AgentConnectorTerminalStatusResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000170 /* AgentConnectorTerminalStatusResolver.swift */; };
     A10000000000000000000171 /* AgentConnectorTaskStatusRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000171 /* AgentConnectorTaskStatusRecorder.swift */; };
@@ -2122,6 +2123,7 @@
     A20000000000000000000166 /* GalaxySSILinkDiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSILinkDiagnosticsView.swift; sourceTree = "<group>"; };
     A20000000000000000000167 /* CloudModelNativeToolAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelNativeToolAdapter.swift; sourceTree = "<group>"; };
     A20000000000000000000168 /* CloudModelToolLoopAgentPlanningProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelToolLoopAgentPlanningProvider.swift; sourceTree = "<group>"; };
+    A20000000000000000009B3A /* AgentPlannerToolCatalogSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPlannerToolCatalogSession.swift; sourceTree = "<group>"; };
     A20000000000000000000169 /* AgentRemoteTaskStatusPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteTaskStatusPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000170 /* AgentConnectorTerminalStatusResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorTerminalStatusResolver.swift; sourceTree = "<group>"; };
     A20000000000000000000171 /* AgentConnectorTaskStatusRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorTaskStatusRecorder.swift; sourceTree = "<group>"; };
@@ -2885,6 +2887,7 @@
         A20000000000000000000166 /* GalaxySSILinkDiagnosticsView.swift */,
         A20000000000000000000167 /* CloudModelNativeToolAdapter.swift */,
         A20000000000000000000168 /* CloudModelToolLoopAgentPlanningProvider.swift */,
+        A20000000000000000009B3A /* AgentPlannerToolCatalogSession.swift */,
         A20000000000000000000169 /* AgentRemoteTaskStatusPolicy.swift */,
         A20000000000000000000170 /* AgentConnectorTerminalStatusResolver.swift */,
         A20000000000000000000171 /* AgentConnectorTaskStatusRecorder.swift */,
@@ -4177,6 +4180,7 @@
         A10000000000000000000166 /* GalaxySSILinkDiagnosticsView.swift in Sources */,
         A10000000000000000000167 /* CloudModelNativeToolAdapter.swift in Sources */,
         A10000000000000000000168 /* CloudModelToolLoopAgentPlanningProvider.swift in Sources */,
+        A10000000000000000009B3A /* AgentPlannerToolCatalogSession.swift in Sources */,
         A10000000000000000000169 /* AgentRemoteTaskStatusPolicy.swift in Sources */,
         A10000000000000000000170 /* AgentConnectorTerminalStatusResolver.swift in Sources */,
         A10000000000000000000171 /* AgentConnectorTaskStatusRecorder.swift in Sources */,

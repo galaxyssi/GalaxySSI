@@ -69,7 +69,9 @@ final class InMemoryAgentModelLoopJournal: AgentModelLoopJournal {
   func hasRecords(scope: AgentModelLoopScope) throws -> Bool {
     lock.lock()
     defer { lock.unlock() }
-    return records[scope]?["initial"] != nil
+    let stored = records[scope]
+    return stored?["initial"] != nil || stored?[AgentPlannerToolCatalogSession.operation] != nil ||
+      stored?["observation-history-catalog"] != nil
   }
 
   func withLease<T>(
@@ -145,7 +147,9 @@ final class EncryptedAgentModelLoopJournal: AgentModelLoopJournal {
   }
 
   func hasRecords(scope: AgentModelLoopScope) throws -> Bool {
-    try load().recordsByScope[scope.digest]?["initial"] != nil
+    let records = try load().recordsByScope[scope.digest]
+    return records?["initial"] != nil || records?[AgentPlannerToolCatalogSession.operation] != nil ||
+      records?["observation-history-catalog"] != nil
   }
 
   func withLease<T>(
@@ -327,6 +331,21 @@ final class AgentModelLoopCheckpoint {
     guard let owner, try records.read("initial") == nil else { return false }
     try records.write(operation, data: AgentModelLoopCodec.encode(
       ["owner": owner, "manifest": manifestSha256]))
+    return true
+  }
+
+  func plannerCatalogUsesContracts(scope: AgentModelLoopScope, fingerprint: String) throws -> Bool {
+    let operation = AgentPlannerToolCatalogSession.operation
+    let binding = ["scope": scope.digest, "fingerprint": fingerprint, "kind": "registered_contracts_v1"]
+    if let marker = try records.read(operation) {
+      let saved = try AgentModelLoopCodec.decode([String: String].self, data: marker)
+      guard saved == binding else {
+        throw AgentModelLoopRecoveryError(code: "planner_tool_contracts_changed")
+      }
+      return true
+    }
+    guard try records.read("initial") == nil, try records.read("observation-history-catalog") == nil else { return false }
+    try records.write(operation, data: AgentModelLoopCodec.encode(binding))
     return true
   }
 

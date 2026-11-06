@@ -3,6 +3,7 @@ import Foundation
 enum GuardedModelAgentPlanningResult: Equatable {
   case plan(AgentPlan)
   case directResponse(String)
+  case recoveryRequired(String)
 
   var actionPlan: AgentPlan? {
     guard case let .plan(plan) = self else { return nil }
@@ -91,6 +92,11 @@ struct GuardedModelAgentPlanner {
     switch result {
     case let .plan(plan):
       return plan
+    case let .recoveryRequired(reason):
+      var blocked = fallbackPlan
+      blocked.actions = []
+      blocked.steps = []
+      return blocked.copyForGuardedPlanner(profile: "model-recovery-required", rationale: reason)
     case .directResponse:
       return fallbackPlan.copyForGuardedPlanner(
         profile: "rule-based-direct-response-unsupported",
@@ -177,6 +183,9 @@ struct GuardedModelAgentPlanner {
         nativeTools: safeRequest.planRequest.nativeTools,
         request: safeRequest
       )
+      if provider is CloudModelToolLoopAgentPlanningProvider {
+        invocation.registeredNativeTools = request.planRequest.nativeTools
+      }
       if let shapeRepair {
         invocation = AgentModelPlanningInvocation(
           systemPrompt: "Repair JSON structure only. Do not use tools, take actions, or invent observations. Return one JSON object.",
@@ -193,6 +202,10 @@ struct GuardedModelAgentPlanner {
         if repair == nil || shapeRepair != nil { raw = try await provider.rawPlan(invocation: invocation) }
         else { raw = try await provider.repairPlan(invocation: invocation) }
       } catch {
+        if let planningError = error as? AgentModelPlanningProviderError,
+           case let .recoveryRequired(reason) = planningError {
+          return .recoveryRequired(reason)
+        }
         if repair != nil { break }
         return .plan(fallback.copyForGuardedPlanner(
           profile: "rule-based-model-error",

@@ -22,7 +22,9 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
   var memoryTelemetryCapture: (AgentWorkspace?) -> Void
   var recoveryJournal: AgentModelLoopJournal?
 
-  private var makeToolLoop: ([AgentNativeToolDescriptor], AgentNativeToolRegistry) throws -> AgentModelPlanningToolLoopRunning
+  private var makeToolLoop: (
+    [AgentNativeToolDescriptor], AgentNativeToolRegistry, AgentPlannerToolCatalogSession?
+  ) throws -> AgentModelPlanningToolLoopRunning
 
   init(
     contact: GalaxySSIContact,
@@ -54,14 +56,15 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
       requestIdFactory: requestIdFactory,
       memoryTelemetryCapture: memoryTelemetryCapture,
       recoveryJournal: journal
-    ) { catalog, registry in
+    ) { catalog, registry, session in
       AgentModelToolLoop(
         modelAdapter: CloudModelNativeToolAdapter(
           contact: contact,
           store: store,
           catalog: catalog,
           sender: nativeToolSender,
-          disclosureStore: disclosureStore
+          disclosureStore: disclosureStore,
+          plannerCatalog: session
         ),
         toolRegistry: registry,
         clock: clock,
@@ -80,7 +83,9 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
       AgentMemoryPssRuntime.requestCapture(workspace: $0)
     },
     recoveryJournal: AgentModelLoopJournal? = nil,
-    makeToolLoop: @escaping ([AgentNativeToolDescriptor], AgentNativeToolRegistry) throws -> AgentModelPlanningToolLoopRunning
+    makeToolLoop: @escaping (
+      [AgentNativeToolDescriptor], AgentNativeToolRegistry, AgentPlannerToolCatalogSession?
+    ) throws -> AgentModelPlanningToolLoopRunning
   ) {
     self.fallbackProvider = fallbackProvider
     self.toolRegistry = toolRegistry
@@ -100,31 +105,54 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
       "planner-\(recoveryIdentity)",
       fallback: requestIdFactory()
     )
-    guard let selection = try safeExecutableSelection(for: invocation) else {
-      let recoveryRequest = Self.toolLoopRequest(
-        invocation: invocation,
-        catalog: [],
-        budget: budget,
-        loopId: loopId,
-        recoveryIdentity: recoveryIdentity
-      )
-      if try recoveryJournal?.hasRecords(scope: AgentModelLoopScope(request: recoveryRequest)) == true {
-        throw AgentModelPlanningProviderError.unavailable("model_loop_requires_recovery_not_fallback")
+    let scope = AgentModelLoopScope(request: Self.toolLoopRequest(invocation: invocation,
+      catalog: [], budget: budget, loopId: loopId, recoveryIdentity: recoveryIdentity))
+    if let journal = recoveryJournal {
+      do {
+        if let registered = try safeExecutableSelection(for: invocation, useRegisteredContracts: true) {
+          let fingerprint = registered.registry.registeredContractFingerprint()
+          let stable = try await journal.withLease(scope: scope) { records in
+            try AgentModelLoopCheckpoint(records: records).plannerCatalogUsesContracts(
+              scope: scope, fingerprint: fingerprint)
+          }
+          if stable {
+            let session = AgentPlannerToolCatalogSession(scope: scope, registry: registered.registry)
+            return try await run(invocation, selection: registered, session: session, loopId: loopId,
+                                 recoveryIdentity: recoveryIdentity)
+          }
+        }
+        if let legacy = try safeExecutableSelection(for: invocation, useRegisteredContracts: false) {
+          return try await run(invocation, selection: legacy, session: nil, loopId: loopId,
+                               recoveryIdentity: recoveryIdentity)
+        }
+        if try journal.hasRecords(scope: scope) {
+          throw AgentModelLoopRecoveryError(code: "model_loop_requires_recovery_not_fallback")
+        }
+      } catch {
+        throw AgentModelPlanningProviderError.recoveryRequired(error.localizedDescription)
       }
-      return try await fallbackProvider.rawPlan(invocation: invocation)
+    } else if let selection = try safeExecutableSelection(for: invocation, useRegisteredContracts: false) {
+      return try await run(invocation, selection: selection, session: nil, loopId: loopId,
+                           recoveryIdentity: recoveryIdentity)
     }
+    return try await fallbackProvider.rawPlan(invocation: invocation)
+  }
 
-    let request = Self.toolLoopRequest(
+  private func run(_ invocation: AgentModelPlanningInvocation,
+                   selection: (registry: AgentNativeToolRegistry, catalog: [AgentNativeToolDescriptor]),
+                   session: AgentPlannerToolCatalogSession?, loopId: String, recoveryIdentity: String) async throws -> String {
+    var request = Self.toolLoopRequest(
       invocation: invocation,
       catalog: selection.catalog,
       budget: budget,
       loopId: loopId,
       recoveryIdentity: recoveryIdentity
     )
-    let runner = try makeToolLoop(selection.catalog, selection.registry)
+    request.plannerRegisteredCatalog = session != nil
+    let runner = try makeToolLoop(selection.catalog, selection.registry, session)
     memoryTelemetryCapture(Self.telemetryWorkspace(request: request))
+    defer { memoryTelemetryCapture(nil) }
     let outcome = await runner.run(request)
-    memoryTelemetryCapture(nil)
     guard outcome.status == .completed else {
       throw AgentModelPlanningProviderError.unavailable(
         outcome.error?.message ?? "Model-native tool planning did not complete"
@@ -143,25 +171,26 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
   }
 
   private func safeExecutableSelection(
-    for invocation: AgentModelPlanningInvocation
+    for invocation: AgentModelPlanningInvocation, useRegisteredContracts: Bool
   ) throws -> (registry: AgentNativeToolRegistry, catalog: [AgentNativeToolDescriptor])? {
     let allowsPhoneRuntimeTools = invocation.request.allowsPhoneRuntimeTools &&
       AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: invocation.request.planRequest.goal)
     let phoneOwnsExecution = invocation.request.phoneOwnsExecution
-    let requestedIds = Set(invocation.nativeTools
+    let requested = useRegisteredContracts ? (invocation.registeredNativeTools ?? invocation.nativeTools) : invocation.nativeTools
+    let requestedIds = Set(requested
       .filter { Self.isSafePlannerTool($0, allowsPhoneRuntimeTools: allowsPhoneRuntimeTools,
-                                       phoneOwnsExecution: phoneOwnsExecution) }
+                                       phoneOwnsExecution: phoneOwnsExecution, requireAvailable: !useRegisteredContracts) }
       .map(\.id))
     guard !requestedIds.isEmpty else {
       return nil
     }
 
-    let registry = try toolRegistry.subset { descriptor in
+    let registry = try toolRegistry.subset(useRegisteredContracts: useRegisteredContracts) { descriptor in
       requestedIds.contains(descriptor.id) &&
         Self.isSafePlannerTool(descriptor, allowsPhoneRuntimeTools: allowsPhoneRuntimeTools,
-                               phoneOwnsExecution: phoneOwnsExecution)
+                               phoneOwnsExecution: phoneOwnsExecution, requireAvailable: !useRegisteredContracts)
     }
-    let catalog = registry.descriptors()
+    let catalog = useRegisteredContracts ? registry.registeredContracts() : registry.descriptors()
     return catalog.isEmpty ? nil : (registry, catalog)
   }
 
@@ -219,9 +248,9 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
   private static func isSafePlannerTool(
     _ descriptor: AgentNativeToolDescriptor,
     allowsPhoneRuntimeTools: Bool,
-    phoneOwnsExecution: Bool
+    phoneOwnsExecution: Bool, requireAvailable: Bool
   ) -> Bool {
-    descriptor.availability.status == .available &&
+    (!requireAvailable || descriptor.availability.status == .available) &&
       descriptor.risk == .low &&
       descriptor.requiredConsents.allSatisfy { !$0.required } &&
       (!phoneOwnsExecution || (!descriptor.requiresEffectClaim &&

@@ -657,7 +657,7 @@ enum AgentPhoneNativeToolCatalog {
           "result_policy": "bounded-v1",
           "platform": "ios"
         ],
-        availabilityProvider: AgentNativeToolAvailabilityProvider { _ in
+        availabilityProvider: AgentNativeToolAvailabilityProvider(invalidate: snapshotProvider.invalidate) { _ in
           capabilityAvailability(capabilityIds, statuses: snapshotProvider.current())
         }
       )

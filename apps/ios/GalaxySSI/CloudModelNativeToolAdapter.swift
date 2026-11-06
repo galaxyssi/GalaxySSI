@@ -15,6 +15,7 @@ struct CloudModelNativeToolAdapter: AgentModelAdapter {
   var catalog: [AgentNativeToolDescriptor]
   var sender: CloudModelNativeToolSending
   var disclosureStore: AgentDataDisclosureStore
+  var plannerCatalog: AgentPlannerToolCatalogSession?
 
   init(
     contact: GalaxySSIContact,
@@ -23,13 +24,15 @@ struct CloudModelNativeToolAdapter: AgentModelAdapter {
     sender: CloudModelNativeToolSending = CloudModelClient(),
     disclosureStore: AgentDataDisclosureStore = FileAgentDataDisclosureStore(
       fileURL: AgentDataDisclosureStorePaths.ledgerURL()
-    )
+    ),
+    plannerCatalog: AgentPlannerToolCatalogSession? = nil
   ) {
     self.contact = contact
     self.store = store
     self.catalog = catalog
     self.sender = sender
     self.disclosureStore = disclosureStore
+    self.plannerCatalog = plannerCatalog
   }
 
   func complete(_ request: AgentModelRequest) async throws -> AgentModelResponse {
@@ -50,11 +53,12 @@ struct CloudModelNativeToolAdapter: AgentModelAdapter {
     }
 
     do {
+      let snapshot = try plannerCatalog?.providerCatalog(request) ?? catalog
       let response = try await sender.sendNativeToolTurn(
         contact: contact,
         store: store,
         request: request,
-        catalog: AgentModelObservationHistory.modelCatalog(catalog, manifest: request.toolManifestJson)
+        catalog: AgentModelObservationHistory.modelCatalog(snapshot, manifest: request.toolManifestJson)
       )
       AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .sent)
       return response

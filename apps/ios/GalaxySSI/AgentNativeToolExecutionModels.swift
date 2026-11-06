@@ -580,8 +580,37 @@ final class AgentNativeToolRegistry {
     return resolved
   }
 
-  func subset(_ predicate: (AgentNativeToolDescriptor) -> Bool) throws -> AgentNativeToolRegistry {
-    let matchingDefinitions = definitionsById.values.filter { predicate(resolvedDescriptor($0, context: nil)) }
+  func refreshAvailability() {
+    for definition in definitionsById.values { definition.availabilityProvider.invalidate() }
+    descriptorSnapshot = nil
+  }
+
+  func registeredContracts() -> [AgentNativeToolDescriptor] {
+    definitionsById.values.map {
+      var descriptor = $0.descriptor
+      descriptor.availability = .available
+      return descriptor
+    }.sorted { $0.id < $1.id }
+  }
+
+  func registeredContractFingerprint() -> String {
+    AgentMcpJSONCodec.sha256([
+      "contract_version": .string(Self.contractVersion),
+      "tools": .array(registeredContracts().map { descriptor in
+        var value = catalogValue(descriptor)
+        value["effect"] = descriptor.effect.map { .string($0.rawValue) } ?? .null
+        value["concurrency"] = .string(descriptor.concurrency.rawValue)
+        value["executor_id"] = definitionsById[descriptor.id].map { .string($0.executorId) } ?? .null
+        return .object(value)
+      })
+    ])
+  }
+
+  func subset(useRegisteredContracts: Bool = false,
+              _ predicate: (AgentNativeToolDescriptor) -> Bool) throws -> AgentNativeToolRegistry {
+    let matchingDefinitions = definitionsById.values.filter {
+      predicate(useRegisteredContracts ? $0.descriptor : resolvedDescriptor($0, context: nil))
+    }
     let matchingIds = Set(matchingDefinitions.map(\.id))
     let matchingExecutables = executableById.values.filter { matchingIds.contains($0.id) }
     let registry = try AgentNativeToolRegistry(
@@ -599,15 +628,19 @@ final class AgentNativeToolRegistry {
     return try registry.registerAll(definitionOnly)
   }
 
-  func catalogObject(additionalDescriptors: [AgentNativeToolDescriptor] = []) -> AgentMcpJSONObject {
+  func catalogObject(additionalDescriptors: [AgentNativeToolDescriptor] = [],
+                     useRegisteredContracts: Bool = false) -> AgentMcpJSONObject {
     [
       "contract_version": .string(Self.contractVersion),
-      "tools": .array((descriptors() + additionalDescriptors).map { .object(catalogValue($0)) })
+      "tools": .array(((useRegisteredContracts ? registeredContracts() : descriptors()) + additionalDescriptors)
+        .map { .object(catalogValue($0)) })
     ]
   }
 
-  func catalogJson(additionalDescriptors: [AgentNativeToolDescriptor] = []) -> String {
-    AgentMcpJSONCodec.stringify(catalogObject(additionalDescriptors: additionalDescriptors))
+  func catalogJson(additionalDescriptors: [AgentNativeToolDescriptor] = [],
+                   useRegisteredContracts: Bool = false) -> String {
+    AgentMcpJSONCodec.stringify(catalogObject(
+      additionalDescriptors: additionalDescriptors, useRegisteredContracts: useRegisteredContracts))
   }
 
   func audit(
