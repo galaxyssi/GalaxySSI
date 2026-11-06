@@ -197,16 +197,18 @@ extension AgentRichContentCodec {
     while index < lines.count && blocks.count < maximumBlocks {
       let line = lines[index]
       let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-      if trimmed.hasPrefix("```") {
+      if let marker = trimmed.first, marker == "`" || marker == "~",
+         trimmed.prefix(while: { $0 == marker }).count >= 3 {
         flushParagraph()
-        let language = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespacesAndNewlines)
+        let fenceLength = trimmed.prefix(while: { $0 == marker }).count
+        let language = String(trimmed.dropFirst(fenceLength)).trimmingCharacters(in: .whitespacesAndNewlines)
         let declaredHTML = language.caseInsensitiveCompare("galaxyssi-html") == .orderedSame
         index += 1
         var code: [String] = []
         while index < lines.count {
           let candidate = lines[index]
           let closing = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
-          if declaredHTML ? closing == "```" : closing.hasPrefix("```") {
+          if closing.count >= fenceLength && closing.allSatisfy({ $0 == marker }) {
             break
           }
           code.append(candidate)

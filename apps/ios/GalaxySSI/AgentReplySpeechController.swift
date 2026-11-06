@@ -77,22 +77,75 @@ enum AgentReplySpeechPresentationPolicy {
   }
 
   static func speakableText(_ message: ChatMessage) -> String {
-    let plain = CodexStyleResponsePolicy.sanitizeAssistantText(message.content)
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    if !plain.isEmpty { return plain }
-    return AgentRichContentCodec.decode(message.richOutputJson)
-      .compactMap { block -> String? in
-        switch block.type {
-        case .text, .heading, .quote:
-          return block.text.ifBlank(block.title)
-        case .list:
-          return block.rows.map { $0.dropFirst().joined(separator: " ") }.joined(separator: "\n")
-        default:
-          return nil
+    let blocks = AgentRichContentCodec.presentationBlocks(content: message.content, richOutputJson: message.richOutputJson)
+    let prose = Prose(blocks)
+    if !prose.text.isEmpty { return prose.text }
+    // Older connectors can provide a structured action card alongside a plain reply.
+    return Prose(AgentRichContentCodec.fromText(message.content)).text
+  }
+
+  struct Prose {
+    private struct Paragraph {
+      let text: String
+      let startOffset: Int
+    }
+    private var paragraphs: [String: Paragraph] = [:]
+    private(set) var text = ""
+
+    init(_ blocks: [AgentRichBlock]) {
+      var duplicateIDs = Set<String>()
+      var offset = 0
+      for block in blocks {
+        let paragraph = AgentReplySpeechPresentationPolicy.paragraphText(block)
+        guard !paragraph.isEmpty else { continue }
+        if !text.isEmpty { text += "\n\n"; offset += 2 }
+        if paragraphs[block.id] == nil, !duplicateIDs.contains(block.id) {
+          paragraphs[block.id] = Paragraph(text: paragraph, startOffset: offset)
+        } else {
+          // An ambiguous connector ID must not jump to a different paragraph.
+          paragraphs.removeValue(forKey: block.id)
+          duplicateIDs.insert(block.id)
         }
+        text += paragraph
+        offset += paragraph.count
       }
-      .filter { !$0.isBlank }
-      .joined(separator: "\n\n")
+    }
+
+    func selection(for block: AgentRichBlock, listRow: Int? = nil) -> AgentReplyParagraphSpeechSelection? {
+      guard let entry = paragraphs[block.id], entry.text == AgentReplySpeechPresentationPolicy.paragraphText(block)
+      else { return nil }
+      if let listRow, block.type == .list, block.rows.indices.contains(listRow) {
+        let rows = AgentReplySpeechPresentationPolicy.listText(block)
+        let row = rows[listRow]
+        guard !row.isEmpty else { return nil }
+        let preceding = rows.prefix(listRow).filter { !$0.isEmpty }
+        let offset = preceding.reduce(0) { $0 + $1.count + 1 }
+        return .init(paragraph: row, sourceText: text, startOffset: entry.startOffset + offset)
+      }
+      return .init(paragraph: entry.text, sourceText: text, startOffset: entry.startOffset)
+    }
+  }
+
+  static func paragraphText(_ block: AgentRichBlock) -> String {
+    let raw: String
+    switch block.type {
+    case .text, .heading, .quote:
+      raw = block.text.ifBlank(block.title)
+    case .list:
+      return listText(block).filter { !$0.isEmpty }.joined(separator: "\n")
+    default:
+      return ""
+    }
+    return normalizedProse(raw)
+  }
+
+  private static func listText(_ block: AgentRichBlock) -> [String] {
+    block.rows.map { normalizedProse($0.dropFirst().joined(separator: " ")) }
+  }
+
+  private static func normalizedProse(_ raw: String) -> String {
+    let visible = AgentInlineMarkdown.parse(raw).map { $0.style == .code ? " " : $0.text }.joined()
+    return CodexStyleResponsePolicy.sanitizeAssistantText(visible)
   }
 
   private static func responseId(_ message: ChatMessage) -> String {
