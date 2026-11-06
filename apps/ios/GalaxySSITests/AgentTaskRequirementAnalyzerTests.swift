@@ -1,7 +1,80 @@
+import Foundation
 import XCTest
 @testable import GalaxySSI
 
 final class AgentTaskRequirementAnalyzerTests: XCTestCase {
+  func testDiscussedCapabilitiesRemainHintsAndTheirPenaltyCannotGoBelowZero() {
+    let reasoning: Set<AgentCapability> = [.chat, .reasoning]
+    let goals = [
+      "Do not open Settings or select PDF. Explain what the commands would do.",
+      "Explain MCP and skills without executing anything.",
+      "Explain code, PDF, knowledge, MCP, skills, click and turn on light. Do not execute anything."
+    ]
+    for goal in goals {
+      let requirements = AgentTaskRequirementAnalyzer.analyze(goal)
+      XCTAssertEqual(requirements.capabilitySource, .inferred, goal)
+      XCTAssertTrue(AgentCapabilityRoutingPolicy.missingRequired(requirements, available: reasoning).isEmpty, goal)
+      XCTAssertGreaterThanOrEqual(AgentCapabilityRoutingPolicy.fitScore(requirements, available: reasoning), 0, goal)
+    }
+    let saturated = AgentTaskRequirementAnalyzer.analyze(goals[2])
+    XCTAssertEqual(AgentCapabilityRoutingPolicy.fitScore(saturated, available: reasoning), 0)
+    let pdf = AgentTaskRequirementAnalyzer.analyze("Explain PDF document retrieval.")
+    XCTAssertTrue(pdf.capabilities.contains(.knowledgeSearch))
+    XCTAssertGreaterThan(AgentCapabilityRoutingPolicy.fitScore(pdf, available: reasoning.union([.knowledgeSearch])),
+                         AgentCapabilityRoutingPolicy.fitScore(pdf, available: reasoning))
+  }
+
+  func testLegacyAndDeclaredCapabilityRequirementsStayMandatory() throws {
+    let legacy = try JSONDecoder().decode(AgentTaskRequirements.self,
+      from: Data(#"{"capabilities":["MCP"]}"#.utf8))
+    XCTAssertEqual(legacy.capabilitySource, .declared)
+    XCTAssertEqual(AgentCapabilityRoutingPolicy.missingRequired(legacy, available: [.chat]), [.mcp])
+    XCTAssertTrue(AgentCapabilityRoutingPolicy.missingRequired(legacy, available: [.chat, .mcp]).isEmpty)
+    let optionalTool = AgentTaskRequirements(capabilities: [.chat, .toolUse])
+    XCTAssertEqual(AgentCapabilityRoutingPolicy.fitScore(optionalTool, available: [.chat, .reasoning]), 320)
+    XCTAssertEqual(AgentCapabilityRoutingPolicy.fitScore(optionalTool, available: [.chat, .toolUse]), 500)
+    var confirmed = AgentTaskRequirementAnalyzer.analyze("Explain PDF documents.")
+    let inferred = confirmed
+    confirmed.capabilitySource = .declared
+    XCTAssertEqual(confirmed.capabilities, inferred.capabilities)
+    XCTAssertEqual(AgentCapabilityRoutingPolicy.missingRequired(confirmed, available: [.chat]), [.knowledgeSearch])
+    let roundTrip = try JSONDecoder().decode(AgentTaskRequirements.self, from: JSONEncoder().encode(inferred))
+    XCTAssertEqual(roundTrip, inferred)
+    let live = AgentTaskRequirements(liveDataRequired: true, capabilitySource: .inferred)
+    XCTAssertEqual(AgentCapabilityRoutingPolicy.missingRequired(live, available: [.chat]), [.liveData])
+    let privateGoal = AgentTaskRequirementAnalyzer.analyze("Keep this private key document local only and offline.")
+    XCTAssertTrue(privateGoal.localOnly)
+    XCTAssertEqual(privateGoal.dataSensitivity, .restricted)
+    XCTAssertEqual(privateGoal.mode, .private)
+  }
+
+  func testConnectorSelectionDoesNotBypassDeclaredCapabilityOrUnavailableDecision() throws {
+    let codex = AgentCallableTarget(id: "codex", title: "Codex", kind: .agent,
+      status: .available, capabilities: [.chat, .reasoning])
+    let specialist = AgentCallableTarget(id: "knowledge", title: "Knowledge", kind: .model,
+      status: .available, capabilities: [.chat, .reasoning, .knowledgeSearch])
+    let goal = "Explain PDF document retrieval."
+    let inferred = AgentTaskRequirementAnalyzer.analyze(goal)
+    let baseline = try XCTUnwrap(AgentQualityRoutingService.baselineDecision(
+      goal: goal, targets: [codex, specialist], primaryTargetId: codex.id, requirements: inferred
+    ))
+    XCTAssertEqual(baseline.primary?.resource.targetId, codex.id)
+    XCTAssertTrue(baseline.primary?.reasons.contains("capability_source:inferred") == true)
+    XCTAssertGreaterThan(try XCTUnwrap(baseline.fallbacks.first?.score), try XCTUnwrap(baseline.primary?.score))
+    XCTAssertEqual(AgentConnectorRouteSelector.select(targets: [codex], decision: baseline)?.target.id, codex.id)
+    var declared = baseline
+    declared.requirements.capabilitySource = .declared
+    let selection = try XCTUnwrap(AgentConnectorRouteSelector.select(
+      targets: [codex, specialist], decision: declared, preferredTargetId: codex.id
+    ))
+    XCTAssertEqual(selection.target.id, specialist.id)
+    XCTAssertTrue(selection.decision?.primary?.reasons.contains("capability_source:declared") == true)
+    XCTAssertTrue(selection.decision?.fallbacks.isEmpty == true)
+    XCTAssertNil(AgentConnectorRouteSelector.select(targets: [codex], decision: declared))
+    let unavailable = AgentRoutingDecision(requirements: inferred, primary: nil)
+    XCTAssertNil(AgentConnectorRouteSelector.select(targets: [codex], decision: unavailable))
+  }
+
   func testBusinessWarehouseAndProjectOfficeDocumentsDoNotRequestSoftwareDevelopment() {
     let goals = [
       "\u{8bf7}\u{5236}\u{4f5c}\u{4ed3}\u{5e93}\u{76d8}\u{70b9}\u{4f5c}\u{4e1a}\u{89c4}\u{8303}\u{3002}\u{751f}\u{6210}\u{53ef}\u{7f16}\u{8f91}\u{7684} DOCX\u{ff0c}\u{5305}\u{542b}\u{4e09}\u{4e2a}\u{7ae0}\u{8282}\u{548c}\u{539f}\u{59cb}\u{6570}\u{636e}\u{8868}\u{3002}\u{4e0d}\u{80fd}\u{53ea}\u{7ed9}\u{672c}\u{673a}\u{8def}\u{5f84}\u{3001}\u{4ee3}\u{7801}\u{6216}\u{5236}\u{4f5c}\u{65b9}\u{6cd5}\u{3002}",
