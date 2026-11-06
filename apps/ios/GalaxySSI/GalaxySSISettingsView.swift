@@ -496,6 +496,15 @@ struct SettingsView: View {
         GalaxySSIAgentRecentTasksView()
       }
       SettingsNavigationRow(
+        title: t("galaxyssi.schedule.title", "Scheduled Tasks"),
+        subtitle: "\(store.conversationSchedules().count)",
+        systemImage: "clock",
+        tint: .galaxySSIAccent,
+        badge: t("galaxyssi.common.manage", "Manage")
+      ) {
+        GalaxySSIConversationSchedulesView()
+      }
+      SettingsNavigationRow(
         title: t("galaxyssi.automation.title", "Automation"),
         subtitle: automationSummary,
         systemImage: "clock",

@@ -18,6 +18,7 @@ final class MessageCoordinator: ObservableObject {
   var contactReminderExpiryTask: Task<Void, Never>?
   lazy var contactReminderAlert = GalaxySSIContactReminderAlert()
   private var pendingCollaborationConversations: Set<String> = []
+  private var runningAutomationCycle = false
   @Published private(set) var lastRevokedContactIds: Set<String> = []
   @Published private(set) var pairingRevocationRevision = 0
   @Published private(set) var transportConnected = false
@@ -1480,12 +1481,20 @@ final class MessageCoordinator: ObservableObject {
   }
 
   func runAutomationSchedulerCycle() async {
+    guard !runningAutomationCycle else { return }
+    runningAutomationCycle = true
+    defer { runningAutomationCycle = false; scheduleAutomationBackgroundRefresh() }
+    reconcileConversationScheduleRuns()
     _ = store.claimDueAutomationTasks()
-    for run in store.queuedAutomationRuns(limit: 8) {
+    let ready = store.queuedAutomationRuns(limit: 500).filter { run in
+      guard let task = store.automationTask(id: run.taskId), task.action.isConversationSchedule else { return true }
+      return !AgentConversationSchedule.expectsPhone(task.action.prompt) || UIApplication.shared.applicationState == .active
+    }
+    for run in ready.prefix(8) {
+      guard !Task.isCancelled else { break }
       guard let running = store.beginAutomationRun(id: run.runId) else { continue }
       await executeAutomationRun(running)
     }
-    scheduleAutomationBackgroundRefresh()
   }
 
   private func registerAutomationBackgroundTask() {
@@ -1540,6 +1549,10 @@ final class MessageCoordinator: ObservableObject {
       )
       return
     }
+    if task.action.isConversationSchedule {
+      await executeConversationSchedule(task, run: run)
+      return
+    }
     do {
       let summary = try await executeAutomationAction(task.action, task: task, run: run)
       _ = store.finishAutomationRun(
@@ -1554,6 +1567,115 @@ final class MessageCoordinator: ObservableObject {
         resultSummary: error.localizedDescription,
         errorCode: "automation_execution_failed"
       )
+    }
+  }
+
+  private func executeConversationSchedule(_ task: AgentProactiveTask, run: AgentProactiveRun) async {
+    let conversation = task.action.conversationId
+    let goal = task.action.prompt
+    guard let session = store.agentSession(id: conversation), session.status == .active, !session.privateMode, !session.trackingPaused,
+          session.collaborationRoster == nil, let contact = store.contact(id: "hermes"),
+          let messageID = UUID(uuidString: run.runId),
+          store.automationTask(id: task.taskId)?.revision == AgentConversationSchedule.revision(run) else {
+      _ = store.finishAutomationRun(id: run.runId, status: .failed,
+        resultSummary: "The scheduled conversation is unavailable.", errorCode: "schedule_conversation_unavailable")
+      return
+    }
+    guard store.persistedMessage(id: messageID, contactId: contact.id) == nil else { return }
+    let mode = AgentTaskExecutionModePolicy.resolve(request: goal, configuredMode: store.agentSafetySettings.taskExecutionMode).mode
+    guard mode != .planOnly else {
+      _ = store.finishAutomationRun(id: run.runId, status: .failed,
+        resultSummary: "Plan-only mode does not execute scheduled tasks.", errorCode: "schedule_plan_only")
+      return
+    }
+    let outgoing = store.appendOutgoing(goal, to: contact.id, turnId: run.runId, messageId: messageID,
+      conversationOverride: conversation, sourceTrace: AgentConversationSchedule.occurrenceStage)
+    let desktop = AgentConversationSchedule.targetsDesktop(goal)
+    do {
+      if !desktop, let plan = deterministicLocalNativePlan(for: goal, hasAttachments: false) {
+        try await receiveLocalModelReply(profile: LocalModelRuntimeSettings.selectedProfile(),
+          requestText: goal, attachments: [], outgoing: outgoing, initialPlan: plan)
+      } else if !desktop, let local = selectedLocalModel(for: contact, conversationId: conversation, goal: goal) {
+        try await receiveLocalModelReply(profile: local, requestText: goal, attachments: [],
+          outgoing: outgoing, useSelectedProvider: true)
+      } else if !desktop, let cloud = selectedCloudModelContact(for: contact, conversationId: conversation, goal: goal),
+                let snapshot = AgentModelPlannerContactResolver(store: store).capturePhoneTurnSnapshot(
+                  settings: store.modelPlannerSettings, selectedContact: cloud) {
+        try await receivePhoneOwnedProviderReply(snapshot: snapshot, targetTitle: cloud.displayName,
+          requestText: goal, outgoing: outgoing, executionMode: mode)
+      } else if let agent = selectedAgentContact(for: contact, conversationId: conversation, goal: goal) {
+        if !desktop, AgentConversationSchedule.expectsPhone(goal) {
+          guard agent.connectorAgentId == "codex" else {
+            throw AgentProactiveTaskError.invalid("This model cannot plan phone tools from the scheduled conversation")
+          }
+          let snapshot = try capturePairedPhonePlannerSnapshot(contact: agent, outgoing: outgoing)
+          try await receivePhoneOwnedProviderReply(snapshot: snapshot, targetTitle: agent.displayName,
+            requestText: goal, outgoing: outgoing, executionMode: mode)
+        } else {
+          let request = goal + "\n\n" + AgentConversationSchedule.remoteContract
+          let ticket = AgentDataDisclosureLedger.beginDesktopRequest(store: disclosureStore, contactId: agent.id,
+            desktopId: agent.desktopId, providerId: agent.galaxySSIId, title: agent.displayName, text: request,
+            attachments: [], conversationId: conversation, taskId: run.runId, turnId: run.runId)
+          guard ticket.allowed else { throw AgentDataDisclosureBlockedError(destination: agent.displayName) }
+          agentHomeDisplayContactIdsByTurnId[run.runId] = contact.id
+          do {
+            let status = try await publishLinkMessage(request, contact: agent, outgoing: outgoing, attachments: [],
+              executionMode: mode)
+            AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: status)
+          } catch {
+            AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .failed)
+            throw error
+          }
+        }
+      } else {
+        throw AgentProactiveTaskError.invalid(desktop
+          ? "The conversation does not have a verified Desktop route."
+          : "The conversation's selected model is unavailable.")
+      }
+    } catch {
+      _ = store.finishAutomationRun(id: run.runId, status: Task.isCancelled ? .unverified : .failed,
+        resultSummary: error.localizedDescription, errorCode: Task.isCancelled ? "schedule_interrupted" : "schedule_dispatch_failed")
+    }
+    reconcileConversationScheduleRuns()
+  }
+
+  private func reconcileConversationScheduleRuns() {
+    let now = AgentControlPlaneClock.nowMillis()
+    for run in store.proactiveRuns where [.running, .waiting].contains(run.status) {
+      guard let schedule = store.automationTask(id: run.taskId), schedule.action.isConversationSchedule else { continue }
+      let conversation = schedule.action.conversationId
+      let goal = UUID(uuidString: run.runId).flatMap { store.persistedMessage(id: $0, contactId: "hermes") }?.content
+        ?? schedule.action.prompt
+      if let task = store.agentTask(id: run.runId), task.sessionId == conversation,
+         [.completed, .failed, .blocked, .cancelled].contains(task.phase) {
+        let outcome = AgentConversationSchedule.localOutcome(task, goal: goal)
+        _ = store.finishAutomationRun(id: run.runId, status: outcome.status,
+          resultSummary: outcome.summary, errorCode: outcome.code)
+      } else if let reply = store.agentSessionMessages(conversation).last(where: {
+        !$0.isMine && !$0.isSystem && $0.turnId == run.runId &&
+          [.delivered, .read].contains($0.deliveryStatus) && !$0.remoteMessageId.hasPrefix("agent-stream-")
+      }), store.agentTask(id: run.runId) == nil {
+        let outcome = AgentConversationSchedule.remoteOutcome(reply.content, desktop: AgentConversationSchedule.targetsDesktop(goal))
+        _ = store.finishAutomationRun(id: run.runId, status: outcome.status,
+          resultSummary: outcome.summary, errorCode: outcome.code)
+      } else if now - run.startedAtMillis > 15 * 60_000 {
+        _ = store.finishAutomationRun(id: run.runId, status: .unverified,
+          resultSummary: "No verified outcome arrived. This occurrence was not replayed.", errorCode: "schedule_observation_timeout")
+      }
+    }
+  }
+
+  @discardableResult
+  func setConversationScheduleEnabled(_ task: AgentProactiveTask, enabled: Bool) throws -> Bool {
+    let updated = try store.setConversationScheduleEnabled(id: task.taskId,
+      conversationId: task.action.conversationId, enabled: enabled)
+    if updated && !enabled { cancelLocalScheduleRuns(task.taskId) }
+    return updated
+  }
+
+  func cancelLocalScheduleRuns(_ taskId: String) {
+    for run in store.automationRuns(taskId: taskId) where [.running, .waiting].contains(run.status) {
+      _ = cancelLocalAgentTask(taskId: run.runId, emitReply: false)
     }
   }
 
@@ -3900,6 +4022,9 @@ final class MessageCoordinator: ObservableObject {
     }
     if !readOnlyAnalysis, taskExecutionMode != .planOnly,
        contact.deliveryMode == .local, effectiveAttachments.isEmpty,
+       contact.id == "hermes", handleConversationSchedule(displayText, outgoing: outgoing) { return true }
+    if !readOnlyAnalysis, taskExecutionMode != .planOnly,
+       contact.deliveryMode == .local, effectiveAttachments.isEmpty,
        handleConversationWorkflowSchedule(displayText, outgoing: outgoing) { return true }
     if contact.id == "hermes" {
       let previousSessionMessages = store.agentSessionMessages(outgoing.conversationId)
@@ -4559,6 +4684,63 @@ final class MessageCoordinator: ObservableObject {
       store.appendSystem(error.localizedDescription, to: contact.id, conversationId: outgoing.conversationId)
       return false
     }
+  }
+
+  private func handleConversationSchedule(_ request: String, outgoing: ChatMessage) -> Bool {
+    guard let command = AgentConversationSchedule.parse(request) else { return false }
+    let conversation = outgoing.conversationId
+    let tasks = store.conversationSchedules(conversation)
+    let turn = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    let stage = AgentConversationSchedule.receiptStage
+    let scoped = AgentScheduleFollowupPolicy.target(before: outgoing, messages: store.agentSessionMessages(conversation),
+      liveTaskIds: Set(tasks.map(\.taskId)), stage: stage)
+    var task: AgentProactiveTask?
+    var text = ""
+    var runNow = false
+    do {
+      switch command {
+      case .save(let prompt, let trigger, let frequency, let new):
+        let id = new ? nil : scoped ?? (tasks.count == 1 ? tasks.first?.taskId : nil)
+        if trigger == nil && id == nil { return false }
+        task = try store.saveConversationSchedule(conversationId: conversation, id: id, prompt: prompt,
+          trigger: trigger, frequency: frequency)
+        if let id { cancelLocalScheduleRuns(id) }
+        runNow = true
+      case .pause, .resume:
+        let bare = ["stop", "pause", "\u{505c}\u{6b62}", "\u{6682}\u{505c}", "\u{66ab}\u{505c}"]
+          .contains(request.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)))
+        guard let id = scoped ?? (!bare && tasks.count == 1 ? tasks.first?.taskId : nil),
+              let existing = tasks.first(where: { $0.taskId == id }) else {
+          if bare || tasks.isEmpty { return false }
+          text = localizedReply("galaxyssi.schedule.choose", fallback: "Select a task in Scheduled Tasks.")
+          break
+        }
+        if try setConversationScheduleEnabled(existing, enabled: command == .resume) {
+          task = store.automationTask(id: id)
+        } else {
+          text = localizedReply("galaxyssi.schedule.save_failed", fallback: "The schedule could not be updated.")
+        }
+      case .list:
+        text = localizedReply("galaxyssi.schedule.title", fallback: "Scheduled Tasks")
+      }
+    } catch {
+      text = localizedReply("galaxyssi.schedule.save_failed", fallback: "The schedule could not be updated.")
+    }
+    if let task {
+      text = [task.name, task.action.scheduleText, AgentConversationSchedule.state(task,
+        language: store.languagePolicy.interfaceLanguage)].filter { !$0.isBlank }.joined(separator: "\n")
+    }
+    let resultStage = task == nil && command != .list ? stage + "_error" : stage
+    store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId, stage: resultStage,
+      detail: task?.taskId ?? "", status: .delivered)
+    let replyID = AgentScheduleFollowupPolicy.receiptId(turnId: turn)
+    if !store.hasIncomingDuplicate(text, from: outgoing.contactId, remoteMessageId: replyID) {
+      let reply = store.appendIncoming(text, from: outgoing.contactId, remoteMessageId: replyID,
+        traceStage: resultStage, detail: task?.taskId ?? "", conversationId: conversation, turnId: turn)
+      onIncomingMessage?(reply)
+    }
+    if runNow { Task { @MainActor [weak self] in await self?.runAutomationSchedulerCycle() } }
+    return true
   }
 
   private func handleConversationWorkflowSchedule(_ request: String, outgoing: ChatMessage) -> Bool {

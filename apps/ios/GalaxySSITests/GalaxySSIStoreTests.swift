@@ -191,6 +191,57 @@ extension AgentRuntimePackCatalogEntry {
 
 @MainActor
 final class GalaxySSIStoreTests: XCTestCase {
+  func testConversationScheduleClaimsOnceAndFencesOldRevisions() throws {
+    let store = makeStore()
+    let owner = store.createAgentSession(title: "Owner")
+    let other = store.createAgentSession(title: "Other")
+    let trigger = try AgentProactiveTrigger(kind: .interval, intervalSeconds: 60)
+    let start: Int64 = 1_000_000
+    let task = try store.saveConversationSchedule(conversationId: owner.id, id: nil,
+      prompt: "Check the weather", trigger: trigger, frequency: "every minute", nowMillis: start)
+    XCTAssertTrue(store.conversationSchedules(other.id).isEmpty)
+    XCTAssertThrowsError(try store.saveConversationSchedule(conversationId: other.id, id: task.taskId,
+      prompt: "Wrong conversation", trigger: trigger, frequency: "every minute", nowMillis: start))
+    XCTAssertEqual(store.claimDueAutomationTasks(nowMillis: start), 1)
+    XCTAssertEqual(store.claimDueAutomationTasks(nowMillis: start), 0)
+    let run = try XCTUnwrap(store.queuedAutomationRuns().first)
+    XCTAssertNotNil(UUID(uuidString: run.runId))
+    XCTAssertEqual(AgentConversationSchedule.revision(run), task.revision)
+    XCTAssertNotNil(store.beginAutomationRun(id: run.runId, nowMillis: start))
+    XCTAssertNil(store.beginAutomationRun(id: run.runId, nowMillis: start))
+    let changed = try store.saveConversationSchedule(conversationId: owner.id, id: task.taskId,
+      prompt: "Check tomorrow's weather", trigger: nil, frequency: "", nowMillis: start + 1)
+    XCTAssertEqual(store.claimDueAutomationTasks(nowMillis: start + 1), 0)
+    XCTAssertTrue(store.finishAutomationRun(id: run.runId, status: .failed,
+      resultSummary: "Original result", nowMillis: start + 2))
+    XCTAssertEqual(store.automationTask(id: task.taskId)?.lastStatus, .queued)
+    XCTAssertEqual(store.claimDueAutomationTasks(nowMillis: start + 2), 1)
+    let next = try XCTUnwrap(store.queuedAutomationRuns().first)
+    XCTAssertNotEqual(run.runId, next.runId)
+    XCTAssertEqual(AgentConversationSchedule.revision(next), changed.revision)
+    XCTAssertTrue(try store.setConversationScheduleEnabled(id: task.taskId, conversationId: owner.id, enabled: false))
+    XCTAssertNil(store.beginAutomationRun(id: next.runId, nowMillis: start + 3))
+    XCTAssertTrue(try store.setConversationScheduleEnabled(id: task.taskId, conversationId: owner.id, enabled: true))
+    XCTAssertEqual(store.automationTask(id: task.taskId)?.lastStatus, .queued)
+  }
+
+  func testConversationScheduleSpeechUsesLiveCardState() throws {
+    let store = makeStore()
+    let session = store.createAgentSession(title: "Schedule")
+    let task = try store.saveConversationSchedule(conversationId: session.id, id: nil, prompt: "Check weather",
+      trigger: .init(kind: .interval, intervalSeconds: 60), frequency: "every minute")
+    let message = store.appendIncoming("Hidden confirmation", from: "hermes",
+      remoteMessageId: AgentScheduleFollowupPolicy.receiptId(turnId: "request"),
+      traceStage: AgentConversationSchedule.receiptStage, detail: task.taskId, conversationId: session.id, turnId: "request")
+    XCTAssertTrue(try store.setConversationScheduleEnabled(id: task.taskId, conversationId: session.id, enabled: false))
+    let projected = AgentConversationSchedule.presentation(message, task: store.automationTask(id: task.taskId),
+      language: LanguagePolicySettings.enUS)
+    XCTAssertTrue(projected.content.contains("Paused"))
+    let target = try XCTUnwrap(AgentReplySpeechPresentationPolicy.target(projected))
+    XCTAssertTrue(target.text.contains("Paused"))
+    XCTAssertFalse(target.text.contains("Hidden confirmation"))
+  }
+
   func testViewportAnchorUsesPartiallyVisibleRowAndRejectsStaleScrollTicket() {
     let above = UUID(), anchor = UUID(), below = UUID()
     let frames = [

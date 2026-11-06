@@ -258,13 +258,14 @@ enum AgentProactiveRunStatus: String, Codable, CaseIterable, Identifiable {
   case waiting = "WAITING"
   case retrying = "RETRYING"
   case completed = "COMPLETED"
+  case unverified = "UNVERIFIED"
   case failed = "FAILED"
   case cancelled = "CANCELLED"
   case skipped = "SKIPPED"
 
   var id: String { rawValue }
   var terminal: Bool {
-    [.completed, .failed, .cancelled, .skipped].contains(self)
+    [.completed, .unverified, .failed, .cancelled, .skipped].contains(self)
   }
 
   static func fromWireValue(_ value: String?) -> AgentProactiveRunStatus {
@@ -430,6 +431,10 @@ struct AgentProactiveAction: Codable, Equatable {
   var clientRouteId: String
   var grantedPermissions: Set<String>
   var grantedConsents: Set<String>
+  var conversationId: String
+  var scheduleText: String
+
+  var isConversationSchedule: Bool { kind == .agent && targetId == "conversation" && !conversationId.isBlank }
 
   init(
     kind: AgentProactiveActionKind,
@@ -441,7 +446,9 @@ struct AgentProactiveAction: Codable, Equatable {
     contactId: String = "system",
     clientRouteId: String = "",
     grantedPermissions: Set<String> = [],
-    grantedConsents: Set<String> = []
+    grantedConsents: Set<String> = [],
+    conversationId: String = "",
+    scheduleText: String = ""
   ) throws {
     guard prompt.count <= 65_536 else {
       throw AgentProactiveTaskError.invalid("Proactive prompt is too long")
@@ -485,6 +492,8 @@ struct AgentProactiveAction: Codable, Equatable {
     self.clientRouteId = clientRouteId
     self.grantedPermissions = Set(grantedPermissions.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
     self.grantedConsents = Set(grantedConsents.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+    self.conversationId = String(conversationId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(256))
+    self.scheduleText = String(scheduleText.prefix(160))
   }
 
   enum CodingKeys: String, CodingKey {
@@ -498,6 +507,8 @@ struct AgentProactiveAction: Codable, Equatable {
     case clientRouteId = "client_route_id"
     case grantedPermissions = "granted_permissions"
     case grantedConsents = "granted_consents"
+    case conversationId = "conversation_id"
+    case scheduleText = "schedule_text"
   }
 
   init(from decoder: Decoder) throws {
@@ -512,7 +523,9 @@ struct AgentProactiveAction: Codable, Equatable {
       contactId: try container.decodeIfPresent(String.self, forKey: .contactId) ?? "system",
       clientRouteId: try container.decodeIfPresent(String.self, forKey: .clientRouteId) ?? "",
       grantedPermissions: try container.decodeIfPresent(Set<String>.self, forKey: .grantedPermissions) ?? [],
-      grantedConsents: try container.decodeIfPresent(Set<String>.self, forKey: .grantedConsents) ?? []
+      grantedConsents: try container.decodeIfPresent(Set<String>.self, forKey: .grantedConsents) ?? [],
+      conversationId: try container.decodeIfPresent(String.self, forKey: .conversationId) ?? "",
+      scheduleText: try container.decodeIfPresent(String.self, forKey: .scheduleText) ?? ""
     )
   }
 
@@ -528,6 +541,8 @@ struct AgentProactiveAction: Codable, Equatable {
     try container.encode(clientRouteId, forKey: .clientRouteId)
     try container.encode(Array(grantedPermissions).sorted(), forKey: .grantedPermissions)
     try container.encode(Array(grantedConsents).sorted(), forKey: .grantedConsents)
+    if !conversationId.isEmpty { try container.encode(conversationId, forKey: .conversationId) }
+    if !scheduleText.isEmpty { try container.encode(scheduleText, forKey: .scheduleText) }
   }
 }
 

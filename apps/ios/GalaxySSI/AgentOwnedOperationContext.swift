@@ -51,7 +51,10 @@ enum AgentOwnedOperationContext {
     guard outgoing.isMine, !outgoing.isSystem, !outgoing.readOnlyAnalysis,
           outgoing.sourceConversationId.isBlank, !outgoing.conversationId.isBlank,
           let index = messages.firstIndex(where: { $0.id == outgoing.id && $0.conversationId == outgoing.conversationId }),
-          let previous = messages[..<index].last(where: { $0.isMine && !$0.isSystem }),
+          let previous = messages[..<index].last(where: { message in
+            message.isMine && !message.isSystem &&
+              !message.deliveryTrace.contains(where: { $0.stage == AgentConversationSchedule.occurrenceStage })
+          }),
           previous.conversationId == outgoing.conversationId, previous.sourceConversationId.isBlank,
           !previous.readOnlyAnalysis,
           previous.turnId.ifBlank(previous.id.uuidString) != outgoing.turnId.ifBlank(outgoing.id.uuidString)

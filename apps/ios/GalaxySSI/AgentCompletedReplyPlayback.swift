@@ -34,6 +34,7 @@ final class AgentCompletedReplyPlayback: ObservableObject {
     database: GalaxySSIChatHistoryDatabase,
     settings: VoiceSettings,
     languagePolicy: LanguagePolicySettings,
+    project: @escaping (ChatMessage) -> ChatMessage = { $0 },
     isAllowed: @escaping () -> Bool
   ) {
     stop()
@@ -52,9 +53,10 @@ final class AgentCompletedReplyPlayback: ObservableObject {
     self.selection = selection
     phase = .preparing
     loadTask = Task { [weak self] in
-      let text = await Task.detached(priority: .userInitiated) {
-        selection.resolve(database.message(id: selection.messageID))
+      let persisted = await Task.detached(priority: .userInitiated) {
+        database.message(id: selection.messageID)
       }.value
+      let text = selection.resolve(persisted.map(project))
       guard let self, !Task.isCancelled, self.sessionID == id else { return }
       self.loadTask = nil
       guard isAllowed(), UIApplication.shared.applicationState == .active else { self.stop(); return }

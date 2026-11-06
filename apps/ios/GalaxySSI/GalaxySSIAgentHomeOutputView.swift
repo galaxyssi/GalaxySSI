@@ -248,7 +248,16 @@ extension AgentHomeView {
     }
     agentReplySpeechRuntime.stop()
     player.play(selection, database: store.chatHistoryDatabase, settings: store.voiceSettings,
-      languagePolicy: store.languagePolicy, isAllowed: { [weak store] in
+      languagePolicy: store.languagePolicy, project: { [weak store] message in
+        guard let store else { return message }
+        if let run = store.proactiveRuns.first(where: { $0.runId == message.turnId }),
+           let schedule = store.automationTask(id: run.taskId), schedule.action.isConversationSchedule,
+           schedule.action.conversationId == message.conversationId {
+          return AgentConversationSchedule.remotePresentation(message)
+        }
+        let task = AgentConversationSchedule.receiptTaskID(message).flatMap { store.automationTask(id: $0) }
+        return AgentConversationSchedule.presentation(message, task: task, language: store.languagePolicy.interfaceLanguage)
+      }, isAllowed: { [weak store] in
         guard let store, store.voiceSettings.textToSpeechEnabled,
               let session = store.agentSession(id: selection.conversationID) else { return false }
         return session.status == .active && !session.privateMode && !session.trackingPaused
