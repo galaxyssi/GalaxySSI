@@ -82,7 +82,8 @@ internal data class HealthTablePreview(val row: HealthTableRow, val state: Healt
 internal data class HealthTableCounts(val states: Map<HealthTableRowState, Long>) {
     operator fun get(state: HealthTableRowState): Long = states[state] ?: 0L
 }
-internal data class HealthTableEvaluation(val draft: HealthDraft?, val state: HealthTableRowState, val issue: String)
+internal data class HealthTableEvaluation(val draft: HealthDraft?, val state: HealthTableRowState, val issue: String,
+                                          val usedDateOnlyTime: Boolean = false)
 
 internal object HealthTablePolicy {
     private fun name(value: String) = value.trim().lowercase(Locale.ROOT).replace(Regex("[\\s_()\\[\\]-]"), "")
@@ -120,12 +121,40 @@ internal object HealthTablePolicy {
         require(mapping.dateOnlyTime.matches(Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]")))
         return LocalTime.parse(mapping.dateOnlyTime)
     }
-    private fun xlsxDateOnly(raw: String, mapping: HealthTableMapping): Long? = runCatching {
-        val parsed = DateTimeFormatter.ISO_DATE.parse(raw.trim())
-        val local = LocalDate.from(parsed).atTime(dateOnlyTime(mapping))
-        if (parsed.isSupported(ChronoField.OFFSET_SECONDS)) local.toInstant(ZoneOffset.from(parsed)).toEpochMilli()
-        else localTime(local, mapping.zone)
-    }.getOrNull()
+    private sealed interface Timestamp {
+        data class Resolved(val value: Long, val usedDateOnlyTime: Boolean = false) : Timestamp
+        data object NeedsTime : Timestamp
+        data object Invalid : Timestamp
+    }
+
+    private fun resolvedDate(date: LocalDate, mapping: HealthTableMapping, offset: ZoneOffset? = null): Timestamp {
+        if (mapping.dateOnlyTime.isBlank()) return Timestamp.NeedsTime
+        return runCatching {
+            val local = date.atTime(dateOnlyTime(mapping))
+            Timestamp.Resolved(offset?.let { local.toInstant(it).toEpochMilli() } ?: localTime(local, mapping.zone), true)
+        }.getOrElse { Timestamp.Invalid }
+    }
+
+    private fun timestamp(batch: HealthTableBatch, row: HealthTableRow): Timestamp {
+        val mapping = batch.mapping
+        val raw = row.cells[mapping.timeColumn].orEmpty().trim()
+        return runCatching {
+            if (mapping.date == HealthTableDate.EXCEL) {
+                require(batch.format == "xlsx")
+                val local = LocalDateTime.parse(requireNotNull(row.excelDates[mapping.timeColumn]))
+                if (raw.toBigDecimalOrNull()?.remainder(java.math.BigDecimal.ONE)?.signum() == 0) {
+                    resolvedDate(local.toLocalDate(), mapping)
+                } else Timestamp.Resolved(localTime(local, mapping.zone))
+            } else if (raw.none { it == 'T' || it == 't' || it.isWhitespace() }) {
+                val format = if (mapping.date == HealthTableDate.ISO) DateTimeFormatter.ISO_DATE
+                    else DateTimeFormatter.ofPattern(mapping.date.pattern.substringBefore(' '), Locale.ROOT)
+                        .withResolverStyle(ResolverStyle.STRICT)
+                val parsed = format.parse(raw)
+                val offset = if (parsed.isSupported(ChronoField.OFFSET_SECONDS)) ZoneOffset.from(parsed) else null
+                resolvedDate(LocalDate.from(parsed), mapping, offset)
+            } else measuredAt(raw, mapping)?.let { Timestamp.Resolved(it) } ?: Timestamp.Invalid
+        }.getOrElse { Timestamp.Invalid }
+    }
     fun evaluate(batch: HealthTableBatch, row: HealthTableRow, now: Long = System.currentTimeMillis()): HealthTableEvaluation {
         fun error(state: HealthTableRowState, issue: String) = HealthTableEvaluation(null, state, issue)
         if (row.issue.isNotBlank()) return error(HealthTableRowState.INVALID, row.issue)
@@ -139,40 +168,35 @@ internal object HealthTablePolicy {
         val values = m.metric.fields.associateWith { field -> m.columns[field].let { row.numbers[it] ?: row.cells[it] }.orEmpty().trim() }
         if (m.metric.requiredFields.any { values[it].isNullOrBlank() } || row.cells[m.timeColumn].isNullOrBlank())
             return error(HealthTableRowState.MISSING, "missing")
-        val rawTime = row.cells[m.timeColumn].orEmpty()
-        val time = if (m.date != HealthTableDate.EXCEL) {
-            measuredAt(rawTime, m) ?: if (batch.format == "xlsx" && m.date == HealthTableDate.ISO) xlsxDateOnly(rawTime, m) else null
-        } else runCatching {
-            require(batch.format == "xlsx")
-            var local = LocalDateTime.parse(requireNotNull(row.excelDates[m.timeColumn]))
-            if (row.cells[m.timeColumn]?.toBigDecimalOrNull()?.remainder(java.math.BigDecimal.ONE)?.signum() == 0) {
-                local = local.toLocalDate().atTime(dateOnlyTime(m))
-            }
-            localTime(local, m.zone)
-        }.getOrNull()
-        if (time == null) return error(HealthTableRowState.INVALID, "time")
+        val timestamp = when (val parsed = timestamp(batch, row)) {
+            is Timestamp.Resolved -> parsed
+            Timestamp.NeedsTime -> return error(HealthTableRowState.MISSING, "date_only_time")
+            Timestamp.Invalid -> return error(HealthTableRowState.INVALID, "time")
+        }
+        val time = timestamp.value
         val rawUnit = if (m.unitColumn.isBlank()) m.unit else row.cells[m.unitColumn].orEmpty().trim()
         val results = values.values.filter(String::isNotBlank).map { HealthResult.parse(it, m.metric.form) ?: return error(HealthTableRowState.INVALID, "number") }
         val unitlessLabel = results.isNotEmpty() && results.all { it.kind == HealthResultKind.QUALITATIVE }
         if (rawUnit.isBlank() && !unitlessLabel) return error(HealthTableRowState.MISSING, "unit")
         val unit = if (rawUnit.isBlank() && unitlessLabel) "" else m.metric.units.singleOrNull { it.equals(rawUnit, true) } ?: return error(HealthTableRowState.INVALID, "unit")
         val sheet = batch.sheets.singleOrNull { it.index == batch.sheetIndex }?.name.orEmpty()
+        val interpreted = "Interpreted time: ${java.time.Instant.ofEpochMilli(time)}; zone: ${m.zone}"
         val source = (listOf("Row ${row.sourceRow}", "${m.timeColumn}: ${row.cells[m.timeColumn]}") +
             m.metric.fields.mapNotNull { field -> m.columns[field]?.takeIf(String::isNotBlank)?.let { "$it: ${row.cells[it].orEmpty()}" } } +
             listOf("Unit: $rawUnit") + (if (m.referenceColumn.isBlank()) emptyList() else listOf("Reference [${m.referenceColumn}]: ${row.cells[m.referenceColumn].orEmpty()}")) +
-            if (batch.format == "xlsx") listOf("Sheet: $sheet",
-                if (m.date == HealthTableDate.EXCEL) "Excel epoch: ${if (batch.date1904) 1904 else 1900}" else "Time format: ${m.date.pattern}",
-                "Interpreted time: ${java.time.Instant.ofEpochMilli(time)}; zone: ${m.zone}") +
-                (if (m.dateOnlyTime.isBlank()) emptyList() else listOf("Confirmed date-only time: ${m.dateOnlyTime}")) +
+            (if (batch.format == "xlsx") listOf("Sheet: $sheet",
+                if (m.date == HealthTableDate.EXCEL) "Excel epoch: ${if (batch.date1904) 1904 else 1900}" else "Time format: ${m.date.pattern}") +
                 formulas.map { (column, formula) -> "${row.addresses[column].orEmpty()} $column: =$formula; cached=${row.cells[column].orEmpty()} (not recalculated)" }
-            else emptyList()).joinToString("\n")
+            else emptyList()) +
+            (if (batch.format == "xlsx" || timestamp.usedDateOnlyTime) listOf(interpreted) else emptyList()) +
+            (if (timestamp.usedDateOnlyTime) listOf("Confirmed date-only time: ${m.dateOnlyTime}") else emptyList())).joinToString("\n")
         if (source.length > 8000) return error(HealthTableRowState.INVALID, "cell_size")
         val evidence = HealthEvidence(batch.originalId, batch.id, "table-row-${row.sourceRow}", batch.sha256, if (batch.format == "xlsx") batch.sheetIndex + 1 else 1, source,
             confirmed = true, kind = "table", tableRow = row.sourceRow, tableSheet = sheet)
         val draft = HealthDraft(m.metric, values, unit, time, note = row.cells[m.noteColumn].orEmpty(), evidence = evidence,
             reference = row.cells[m.referenceColumn].orEmpty())
         val validation = HealthObservationPolicy.validate(draft, now)
-        return if (validation == null) HealthTableEvaluation(draft, HealthTableRowState.VALID, "")
+        return if (validation == null) HealthTableEvaluation(draft, HealthTableRowState.VALID, "", timestamp.usedDateOnlyTime)
             else error(if (validation.issue == HealthValidationIssue.MISSING_VALUE) HealthTableRowState.MISSING else HealthTableRowState.INVALID,
                 when (validation.issue) { HealthValidationIssue.INVALID_TIME -> "time"; HealthValidationIssue.INVALID_NUMBER -> "number"; else -> "value" })
     }

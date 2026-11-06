@@ -22,6 +22,7 @@ import java.util.concurrent.Executors
 /** Native column mapping and paged source review, with no health values in saved instance state. */
 class HealthTableActivity : Activity() {
     private val ui by lazy { HealthCenterViews(this) }
+    private val names by lazy { intent.healthNavigationDatabases() }
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     private lateinit var body: LinearLayout
@@ -53,14 +54,14 @@ class HealthTableActivity : Activity() {
             addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_back) { finish() })
             addView(ui.text(getString(R.string.health_table_title), 19f, bold = true).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
             addView(ui.icon(R.drawable.ic_health_grid, R.string.health_functions) {
-                startActivity(Intent(this@HealthTableActivity, HealthCenterActivity::class.java).putExtra("health_functions", true))
+                startActivity(Intent(this@HealthTableActivity, HealthCenterActivity::class.java).putExtra("health_functions", true).putHealthNavigationFixture(names))
             })
         }, LinearLayout.LayoutParams(-1, ui.dp(56)))
         body = ui.column(); root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f)); setContentView(root)
     }
     override fun onStart() {
         super.onStart(); if (!::body.isInitialized) return
-        active = true; contentResolver.registerContentObserver(HealthTableScheduler.changes(this), false, observer); refresh()
+        active = true; contentResolver.registerContentObserver(HealthTableScheduler.changes(this, names), false, observer); refresh()
     }
     override fun onStop() {
         active = false; generation++; dialog?.dismiss(); dialog = null
@@ -78,7 +79,7 @@ class HealthTableActivity : Activity() {
         if (querying) { dirty = true; return }
         querying = true; val token = generation; val cursor = after
         worker.execute {
-            val result = runCatching { HealthTableStore(applicationContext).use { store ->
+            val result = runCatching { HealthTableStore(applicationContext, names.records).use { store ->
                 val batch = requireNotNull(store.batch(id))
                 Triple(batch, if (batch.state.working) emptyList() else store.page(id, cursor),
                     if (batch.state.working || batch.state in listOf(HealthTableState.MAPPING, HealthTableState.SHEET_SELECTION)) HealthTableCounts(emptyMap()) else store.counts(id))
@@ -93,9 +94,9 @@ class HealthTableActivity : Activity() {
     private fun change(action: (HealthTableStore) -> Unit, enqueue: Boolean = false, retry: Boolean = false) {
         worker.execute {
             val result = runCatching {
-                HealthTableStore(applicationContext).use(action)
-                if (enqueue) HealthTableScheduler.enqueue(applicationContext, id, retry)
-                HealthTableScheduler.notify(applicationContext)
+                HealthTableStore(applicationContext, names.records).use(action)
+                if (enqueue) HealthTableScheduler.enqueue(applicationContext, id, retry, names)
+                HealthTableScheduler.notify(applicationContext, names)
             }
             main.post { if (active) { if (result.isFailure) failure(); refresh() } }
         }
@@ -138,7 +139,7 @@ class HealthTableActivity : Activity() {
                 }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = ui.dp(12) })
             })
             addView(ui.row(getString(R.string.health_view_original)) {
-                startActivity(Intent(this@HealthTableActivity, HealthCaptureActivity::class.java).putExtra("original", batch.originalId))
+                startActivity(Intent(this@HealthTableActivity, HealthCaptureActivity::class.java).putExtra("original", batch.originalId).putHealthNavigationFixture(names))
             })
             if (batch.format == "xlsx") {
                 val selected = batch.sheets.singleOrNull { it.index == batch.sheetIndex }
@@ -171,7 +172,7 @@ class HealthTableActivity : Activity() {
         }
         if (batch.state == HealthTableState.READING && batch.format == "xlsx") {
             ui.add(content, ui.row(getString(R.string.common_cancel)) { change({
-                it.cancelReading(id, batch.mappingRevision); HealthTableScheduler.cancelReading(applicationContext, id, batch.mappingRevision)
+                it.cancelReading(id, batch.mappingRevision); HealthTableScheduler.cancelReading(applicationContext, id, batch.mappingRevision, names)
             }) })
         }
         val editable = batch.state in listOf(HealthTableState.MAPPING, HealthTableState.READY)
@@ -186,24 +187,27 @@ class HealthTableActivity : Activity() {
             ui.add(content, ui.command(R.string.common_retry) { change({}, true, true) }, 12)
         }
         if (batch.state.working) return
-        ui.add(content, ui.text(getString(R.string.health_table_preview), 19f, bold = true), 20)
+        ui.add(content, ui.text(getString(R.string.health_table_preview), 19f, bold = true).apply { tag = "health-table-preview" }, 20)
         if (batch.state != HealthTableState.MAPPING) {
             ui.add(content, ui.text(getString(R.string.health_table_counts, counts[HealthTableRowState.VALID], counts[HealthTableRowState.DUPLICATE],
-                counts[HealthTableRowState.MISSING], counts[HealthTableRowState.INVALID]), 13f, muted = true), 8)
+                counts[HealthTableRowState.MISSING], counts[HealthTableRowState.INVALID]), 13f, muted = true).apply { tag = "health-table-counts" }, 8)
         }
         ui.add(content, ui.card().apply {
             addView(previewLine(getString(R.string.health_table_time), getString(R.string.health_table_values), getString(R.string.health_table_status), true))
             rows.forEach { preview ->
                 addView(android.view.View(this@HealthTableActivity).apply { setBackgroundColor(getColor(R.color.separator)) }, LinearLayout.LayoutParams(-1, ui.dp(1)))
-                val draft = HealthTablePolicy.evaluate(batch, preview.row).draft
+                val evaluation = HealthTablePolicy.evaluate(batch, preview.row)
+                val draft = evaluation.draft
                 val values = batch.mapping.metric.fields.mapNotNull { field ->
                     val column = batch.mapping.columns[field].orEmpty()
                     if (column.isBlank()) null else (draft?.values?.get(field) ?: preview.row.cells[column]).orEmpty().ifBlank { "\u2014" }
                 }.joinToString(" / ")
                 val time = draft?.let { interpretedTime(it, batch) } ?: preview.row.cells[batch.mapping.timeColumn].orEmpty().ifBlank { "\u2014" }
-                addView(previewLine(time, values,
-                    getString(rowState(preview.state)), state = preview.state).apply {
-                    isFocusable = true; contentDescription = getString(R.string.health_table_row_status, preview.row.number, getString(rowState(preview.state)))
+                val stateLabel = getString(if (preview.issue == "date_only_time") R.string.health_table_date_only_pending else rowState(preview.state))
+                val timeNote = if (evaluation.usedDateOnlyTime) getString(R.string.health_table_date_only_preview) else ""
+                addView(previewLine(time, values, stateLabel, state = preview.state, timeNote = timeNote).apply {
+                    tag = "health-table-row-${preview.row.number}"
+                    isFocusable = true; contentDescription = getString(R.string.health_table_row_status, preview.row.number, stateLabel)
                     setOnClickListener { showRow(preview, batch) }
                 })
             }
@@ -218,10 +222,13 @@ class HealthTableActivity : Activity() {
             HealthTableState.MAPPING -> ui.add(footer, ui.command(R.string.health_table_validate) {
                 if (!batch.mapping.valid(batch.headers)) Toast.makeText(this, R.string.health_table_mapping_required, Toast.LENGTH_LONG).show()
                 else change({ it.mapping(id, batch.mappingRevision, batch.mapping, true) }, true)
-            }, 20)
+            }.apply { tag = "health-table-validate" }, 20)
             HealthTableState.READY -> {
                 ui.add(content, ui.text(getString(R.string.health_table_skip_notice), 13f, muted = true), 16)
-                val confirmed = CheckBox(this).apply { text = getString(R.string.health_confirm_source); setTextColor(getColor(R.color.text_primary)); textSize = 13f }
+                val confirmed = CheckBox(this).apply {
+                    text = getString(R.string.health_confirm_source); setTextColor(getColor(R.color.text_primary)); textSize = 13f
+                    tag = "health-table-confirm-source"; isSaveEnabled = false
+                }
                 val linkDuplicates = CheckBox(this).apply {
                     text = getString(R.string.health_table_link_duplicates)
                     setTextColor(getColor(R.color.text_primary))
@@ -236,7 +243,7 @@ class HealthTableActivity : Activity() {
                         val link = linkDuplicates.isChecked
                         change({ it.confirmSave(id, batch.mappingRevision, link) }, true)
                     }
-                }
+                }.apply { tag = "health-table-save" }
                 val valid = counts[HealthTableRowState.VALID]
                 fun updateSave() {
                     save.text = if (valid > 0) getString(R.string.health_table_save_count, valid) else getString(R.string.health_table_save_links)
@@ -253,7 +260,7 @@ class HealthTableActivity : Activity() {
                 ui.add(content, ui.row(getString(R.string.health_table_undo)) {
                     dialog = AlertDialog.Builder(this).setTitle(R.string.health_table_undo).setMessage(R.string.health_table_undo_notice)
                         .setNegativeButton(R.string.common_cancel, null).setPositiveButton(R.string.health_table_undo) { _, _ -> change({ it.undo(id) }, true) }.show()
-                }, 10)
+                }.apply { tag = "health-table-undo" }, 10)
             }
             HealthTableState.UNDONE -> {
                 ui.add(content, ui.text(getString(R.string.health_table_undone,
@@ -265,12 +272,18 @@ class HealthTableActivity : Activity() {
         if (footer.childCount > 0) body.addView(footer, LinearLayout.LayoutParams(-1, -2))
         scroll.post { if (active) scroll.scrollTo(0, oldScroll) }
     }
-    private fun previewLine(time: String, values: String, status: String, heading: Boolean = false, state: HealthTableRowState? = null) = ui.line().apply {
+    private fun previewLine(time: String, values: String, status: String, heading: Boolean = false,
+                            state: HealthTableRowState? = null, timeNote: String = "") = ui.line().apply {
         minimumHeight = ui.dp(if (heading) 40 else 58)
         fun cell(value: String, weight: Float) = addView(ui.text(value, if (heading) 12f else 13f, muted = heading).apply {
             maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; setPadding(0, ui.dp(6), ui.dp(8), ui.dp(6))
         }, LinearLayout.LayoutParams(0, -2, weight))
-        cell(time, 1.1f); cell(values, 1f)
+        if (timeNote.isBlank()) cell(time, 1.1f) else addView(ui.column().apply {
+            setPadding(0, ui.dp(6), ui.dp(8), ui.dp(6))
+            addView(ui.text(time, 13f))
+            addView(ui.text(timeNote, 11f).apply { setTextColor(getColor(R.color.health_data_link_text)) })
+        }, LinearLayout.LayoutParams(0, -2, 1.1f))
+        cell(values, 1f)
         addView(ui.text(status, 12f, muted = heading).apply {
             setPadding(ui.dp(6), ui.dp(5), ui.dp(6), ui.dp(5)); gravity = Gravity.CENTER; maxLines = 2
             if (!heading) background = ui.background(when (state) {
@@ -284,9 +297,12 @@ class HealthTableActivity : Activity() {
         .atZone(java.time.ZoneId.of(batch.mapping.zone)).format(java.time.format.DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm", java.util.Locale.getDefault()))
     private fun showRow(preview: HealthTablePreview, batch: HealthTableBatch) {
         val content = ui.column().apply { setPadding(ui.dp(16), ui.dp(16), ui.dp(16), ui.dp(16)) }
-        if (preview.issue.isNotBlank()) ui.add(content, ui.text(getString(rowIssue(preview.issue)), 14f), 8)
-        HealthTablePolicy.evaluate(batch, preview.row).draft?.let { draft ->
+        val evaluation = HealthTablePolicy.evaluate(batch, preview.row)
+        val issue = preview.issue.ifBlank { evaluation.issue.takeIf { it == "date_only_time" }.orEmpty() }
+        if (issue.isNotBlank()) ui.add(content, ui.text(getString(rowIssue(issue)), 14f), 8)
+        evaluation.draft?.let { draft ->
             ui.add(content, ui.text(getString(R.string.health_table_interpreted_time, interpretedTime(draft, batch), batch.mapping.zone), 14f, bold = true), 8)
+            if (evaluation.usedDateOnlyTime) ui.add(content, ui.text(getString(R.string.health_table_date_only_applied, batch.mapping.dateOnlyTime), 14f), 8)
         }
         preview.row.cells.forEach { (key, value) ->
             val label = preview.row.addresses[key]?.let { "$it \u00b7 $key" } ?: key
@@ -299,7 +315,7 @@ class HealthTableActivity : Activity() {
         dialog = AlertDialog.Builder(this).setTitle(getString(R.string.health_table_source_row, preview.row.sourceRow))
             .setView(ScrollView(this).apply { addView(content) }).setNegativeButton(R.string.common_close, null).apply {
                 if (preview.recordId.isNotBlank()) setPositiveButton(R.string.health_already_confirmed) { _, _ ->
-                    startActivity(Intent(this@HealthTableActivity, HealthCenterActivity::class.java).putExtra("health_record", preview.recordId))
+                    startActivity(Intent(this@HealthTableActivity, HealthCenterActivity::class.java).putExtra("health_record", preview.recordId).putHealthNavigationFixture(names))
                 }
             }.show()
     }
@@ -309,7 +325,8 @@ class HealthTableActivity : Activity() {
         ui.add(content, ui.card().apply {
             addView(ui.row(getString(R.string.health_choose_metric), getString(m.metric.titleResource())) {
                 choose(R.string.health_choose_metric, HealthMetric.entries.map { getString(it.titleResource()) }, getString(m.metric.titleResource())) { index ->
-                    mapping(batch, HealthTablePolicy.suggest(batch.headers, HealthMetric.entries[index]).copy(date = m.date, zone = m.zone))
+                    mapping(batch, HealthTablePolicy.suggest(batch.headers, HealthMetric.entries[index]).copy(date = m.date, zone = m.zone,
+                        dateOnlyTime = m.dateOnlyTime))
                 }
             })
             addView(ui.line().apply {
@@ -337,7 +354,7 @@ class HealthTableActivity : Activity() {
                 fun label(value: HealthTableDate) = if (value == HealthTableDate.EXCEL) getString(R.string.health_xlsx_date_format) else value.pattern.replace("uuuu", "yyyy")
                 choose(R.string.health_table_date, dates.map(::label), label(m.date)) { mapping(batch, m.copy(date = dates[it])) }
             })
-            if (m.date == HealthTableDate.EXCEL || batch.format == "xlsx" && m.date == HealthTableDate.ISO) addView(ui.row(getString(R.string.health_xlsx_date_only), m.dateOnlyTime.ifBlank { getString(R.string.health_xlsx_time_required) }) {
+            addView(ui.row(getString(R.string.health_xlsx_date_only), m.dateOnlyTime.ifBlank { getString(R.string.health_xlsx_time_required) }) {
                 val initial = m.dateOnlyTime.split(':').mapNotNull(String::toIntOrNull)
                 dialog = android.app.TimePickerDialog(this@HealthTableActivity, { _, hour, minute ->
                     mapping(batch, m.copy(dateOnlyTime = String.format(java.util.Locale.ROOT, "%02d:%02d", hour, minute)))
@@ -345,7 +362,7 @@ class HealthTableActivity : Activity() {
                     setButton(android.app.AlertDialog.BUTTON_NEUTRAL, getString(R.string.health_xlsx_clear_time)) { _, _ -> mapping(batch, m.copy(dateOnlyTime = "")) }
                     show()
                 }
-            })
+            }.apply { tag = "health-table-date-only-time" })
             if (batch.format == "xlsx") addView(CheckBox(this@HealthTableActivity).apply {
                 text = getString(R.string.health_xlsx_allow_cache); textSize = 13f; setTextColor(getColor(R.color.text_primary))
                 isChecked = m.allowFormulaCache
@@ -394,6 +411,7 @@ class HealthTableActivity : Activity() {
         "missing" -> R.string.health_table_missing_error
         "unit" -> R.string.health_table_unit_error
         "time" -> R.string.health_table_time_error
+        "date_only_time" -> R.string.health_table_date_only_missing
         "number" -> R.string.health_table_number_error
         "formula_ack" -> R.string.health_xlsx_formula_ack
         "formula_cache" -> R.string.health_xlsx_no_cache

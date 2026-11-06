@@ -421,9 +421,9 @@ enum AgentCompletionEvidencePolicy {
   static func hasUnverifiedOutcome(_ action: AgentAction) -> Bool {
     if [.proposed, .pendingConfirmation, .running, .waitingResponse].contains(action.status) { return true }
     return [action.evidence, action.result].contains { value in
-      let decoded = decodeObject(value)
-      return decoded?.string("code").lowercased() == "effect_outcome_unknown" ||
-        ["unknown", "uncertain", "unverified"].contains(decoded?.string("outcome").lowercased() ?? "")
+      guard let decoded = decodeObject(value) else { return false }
+      return isUnverifiedObservation(decoded) ||
+        (decoded["output"]?.objectValue.map(isUnverifiedObservation) ?? false)
     }
   }
 

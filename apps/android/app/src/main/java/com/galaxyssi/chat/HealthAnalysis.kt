@@ -152,7 +152,17 @@ internal object HealthAnalysis {
     }
 
     suspend fun explain(context: Context, names: HealthOverviewDatabases, preview: HealthAnalysisPreview, destination: String,
-        exchange: suspend (JSONObject, () -> Unit) -> String): HealthAnalysisPlan {
+        exchange: suspend (JSONObject, () -> Unit) -> String): HealthAnalysisPlan =
+        online(context, names, preview, destination, payload(preview), exchange) { decodeReply(it, preview) }
+
+    suspend fun followUp(context: Context, names: HealthOverviewDatabases, preview: HealthAnalysisPreview, destination: String,
+        question: HealthFollowUpQuestion, exchange: suspend (JSONObject, () -> Unit) -> String): HealthFollowUpAnswer =
+        online(context, names, preview, destination, HealthAnalysisFollowUp.payload(preview, question), exchange) {
+            HealthAnalysisFollowUp.decode(it, preview)
+        }
+
+    private suspend fun <T> online(context: Context, names: HealthOverviewDatabases, preview: HealthAnalysisPreview,
+        destination: String, payload: JSONObject, exchange: suspend (JSONObject, () -> Unit) -> String, decode: (String) -> T): T {
         require(preview.hasData)
         val job = currentCoroutineContext()
         val scope = HealthAccessScope.analysis(preview.weekly.scope, destination)
@@ -163,9 +173,9 @@ internal object HealthAnalysis {
                     requireCurrent(context, names, preview, online = true)
                 }
                 guard()
-                val raw = exchange(payload(preview), guard)
+                val raw = exchange(payload, guard)
                 guard()
-                decodeReply(raw, preview)
+                decode(raw)
             }
         }
     }

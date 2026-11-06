@@ -58,7 +58,9 @@ class HealthXlsxPolicyTest {
     @Test fun wholeDaySerialRequiresAUserChosenTimeAndKeepsThatDecisionInEvidence() {
         val source = row().copy(cells = row().cells + ("time" to "46266"), excelDates = mapOf("time" to "2026-09-01T00:00"))
         val b = batch().let { it.copy(mapping = it.mapping.copy(date = HealthTableDate.EXCEL)) }
-        assertEquals("time", HealthTablePolicy.evaluate(b, source).issue)
+        val unresolved = HealthTablePolicy.evaluate(b, source)
+        assertEquals(HealthTableRowState.MISSING, unresolved.state)
+        assertEquals("date_only_time", unresolved.issue)
         val draft = HealthTablePolicy.evaluate(b.copy(mapping = b.mapping.copy(dateOnlyTime = "08:15")), source).draft!!
         assertEquals(Instant.parse("2026-09-01T08:15:00Z").toEpochMilli(), draft.measuredAt)
         assertTrue(draft.evidence!!.rawText.contains("Confirmed date-only time: 08:15"))

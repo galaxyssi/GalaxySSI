@@ -14,8 +14,10 @@ internal enum class HealthOriginalKind {
         }
     }
 }
-internal data class HealthLibraryFilter(val kind: HealthOriginalKind? = null, val from: Long = 0, val until: Long = Long.MAX_VALUE) {
-    init { require(from >= 0 && until > from) }
+internal data class HealthLibraryFilter(
+    val kind: HealthOriginalKind? = null, val from: Long = 0, val until: Long = Long.MAX_VALUE, val filesOnly: Boolean = false,
+) {
+    init { require(from >= 0 && until > from && !(filesOnly && kind == HealthOriginalKind.IMAGE)) }
     companion object {
         fun dates(first: LocalDate, last: LocalDate, zone: ZoneId, kind: HealthOriginalKind? = null): HealthLibraryFilter {
             require(!first.isBefore(LocalDate.of(1970, 1, 1)) && !last.isBefore(first))

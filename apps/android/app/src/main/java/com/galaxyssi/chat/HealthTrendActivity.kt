@@ -19,6 +19,8 @@ import android.widget.Toast
 import androidx.core.view.OneShotPreDrawListener
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import java.util.concurrent.CancellationException
 import java.util.concurrent.Executors
 
@@ -39,6 +41,9 @@ class HealthTrendActivity : Activity() {
     private var chart: HealthTrendChart? = null; private var progress: TextView? = null; private var scroll: ScrollView? = null; private var scrollY = 0
     private var notice: TextView? = null; private var retry: TextView? = null; private var version: String? = null
     private var pointSelection: PointSelection? = null
+    private var chartSnapshot: HealthTrendSummary? = null
+    private var pointList: AlertDialog? = null
+    private var pointListEntry: View? = null
     private var observing = false; private var probing = false; private var probeAgain = false; private var probeSerial = 0
     private val observer = object : android.database.ContentObserver(main) { override fun onChange(selfChange: Boolean) = probeVersion() }
     private val privacyDatabase by lazy { if (names.fixture == null) healthPrivacyDatabaseName() else names.privacy }
@@ -74,12 +79,16 @@ class HealthTrendActivity : Activity() {
         if (preset < 3) { last = LocalDate.now(zone); first = last.minusDays(listOf(7L, 30L, 90L)[preset] - 1) }
         load()
     }
+    override fun onPause() {
+        pointList?.dismiss(); pointList = null
+        super.onPause()
+    }
     override fun onStop() {
         active = false; scrollY = scroll?.scrollY ?: scrollY; generation++; signal?.cancel(); signal = null
         if (observing) { contentResolver.unregisterContentObserver(observer); contentResolver.unregisterContentObserver(privacyObserver); observing = false }
         probeSerial++; probing = false; probeAgain = false; version = null; notice?.text = ""; notice = null; retry = null
         dialog?.dismiss(); dialog = null; chart?.clear(); chart = null; progress?.text = ""; progress = null
-        sourceName = ""; scroll = null; if (::body.isInitialized) body.removeAllViews()
+        sourceName = ""; scroll = null; chartSnapshot = null; pointListEntry = null; if (::body.isInitialized) body.removeAllViews()
         super.onStop()
     }
     override fun onDestroy() { worker.shutdown(); super.onDestroy() }
@@ -126,6 +135,8 @@ class HealthTrendActivity : Activity() {
         }
     }
     private fun render(summary: HealthTrendSummary?) {
+        pointList?.dismiss(); pointList = null; pointListEntry = null
+        chartSnapshot = summary?.takeIf { it.points.isNotEmpty() }
         version = summary?.version
         chart?.clear(); chart = null; body.removeAllViews()
         val content = ui.column().apply { setPadding(ui.dp(16), ui.dp(16), ui.dp(16), ui.dp(24)) }
@@ -178,15 +189,35 @@ class HealthTrendActivity : Activity() {
             else null
         }
         if (summary != null && focused == null) pointSelection = null
-        chart = HealthTrendChart(this, ::openPoint).apply { tag = "health-trend-chart"; bind(summary, focused) }
-        ui.add(content, requireNotNull(chart), 12); chart!!.layoutParams.height = ui.dp(240)
-        val legend = ui.line()
-        metric.requiredFields.forEachIndexed { index, field -> legend.addView(ui.text(getString(healthFieldResource(field)), 12f).apply {
-            setTextColor(if (index == 0) HealthTrendChart.GREEN else HealthTrendChart.BLUE)
-        }, LinearLayout.LayoutParams(0, -2, 1f)) }
-        content.addView(legend)
-        progress = ui.text(if (summary == null) getString(R.string.health_loading) else getString(R.string.health_trend_counts, summary.eligible, summary.numericDays, summary.reportedDays, summary.missingDays), 14f, muted = true)
-            .apply { tag = "health-trend-counts"; minimumHeight = ui.dp(48) }.also { ui.add(content, it, 12) }
+        val openPoints = if (chartSnapshot != null) ::showPointList else null
+        chart = HealthTrendChart(this, openPoints, ::openPoint).apply { tag = "health-trend-chart"; bind(summary, focused) }
+        ui.add(content, ui.card().apply {
+            addView(ui.line().apply {
+                val title = getString(R.string.health_trend_chart_title, getString(metric.titleResource()))
+                addView(ui.text(title, bold = true), LinearLayout.LayoutParams(0, -2, 1f))
+                if (openPoints != null) {
+                    pointListEntry = ui.text(getString(R.string.health_trend_chart_data), 14f, bold = true).apply {
+                        tag = "health-trend-chart-data"
+                        minimumHeight = ui.dp(48); gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                        isFocusable = true
+                        setOnClickListener { openPoints() }
+                    }.also {
+                        addView(it, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = ui.dp(8) })
+                    }
+                }
+            })
+            addView(requireNotNull(chart), LinearLayout.LayoutParams(-1, ui.dp(240)))
+            addView(ui.line().apply {
+                metric.requiredFields.forEachIndexed { index, field ->
+                    addView(ui.text(getString(healthFieldResource(field)), 12f).apply {
+                        setTextColor(if (index == 0) HealthTrendChart.GREEN else HealthTrendChart.BLUE)
+                    }, LinearLayout.LayoutParams(0, -2, 1f))
+                }
+            })
+            progress = ui.text(if (summary == null) getString(R.string.health_loading) else getString(R.string.health_trend_counts, summary.eligible,
+                summary.numericDays, summary.reportedDays, summary.missingDays), 14f, muted = true)
+                .apply { tag = "health-trend-counts"; minimumHeight = ui.dp(48) }.also { ui.add(this, it, 12) }
+        }, 12)
         summary?.let {
             val time = java.time.Instant.ofEpochMilli(it.calculatedAt).atZone(zone).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"))
             ui.add(content, ui.text(getString(R.string.health_trend_calculated, time), 12f, muted = true), 6)
@@ -195,7 +226,8 @@ class HealthTrendActivity : Activity() {
             ui.add(content, ui.row(getString(R.string.health_all_records), getString(R.string.health_record_count, it.total)) { openRecords(it.spec) }, 16)
         }
         notice = ui.text("", 13f, muted = true).apply { visibility = View.GONE }.also { ui.add(content, it, 8) }
-        retry = ui.command(R.string.health_trend_refresh) { load() }.apply { visibility = View.GONE }.also { ui.add(content, it, 8) }
+        retry = ui.command(R.string.health_trend_refresh) { load() }
+            .apply { tag = "health-trend-refresh"; visibility = View.GONE }.also { ui.add(content, it, 8) }
         ui.add(content, ui.text(getString(R.string.health_not_diagnosis), 12f, muted = true), 12)
         body.addView(ui.column().apply { setPadding(ui.dp(16), ui.dp(8), ui.dp(16), ui.dp(12)); addView(ui.command(R.string.health_add_measurement) {
             startActivity(Intent(this@HealthTrendActivity, HealthCenterActivity::class.java).putExtra("health_manual", true)
@@ -215,10 +247,46 @@ class HealthTrendActivity : Activity() {
                 if (ticket != probeSerial) return@post
                 probing = false
                 if (active && token == generation && version == displayed) result.fold({ current ->
-                    if (current != displayed) { notice?.text = getString(R.string.health_trend_stale); notice?.visibility = View.VISIBLE; retry?.visibility = View.VISIBLE }
-                }, { notice?.text = getString(R.string.health_storage_error); notice?.visibility = View.VISIBLE; retry?.visibility = View.VISIBLE })
+                    if (current != displayed) invalidateSnapshot(R.string.health_trend_stale)
+                }, { invalidateSnapshot(R.string.health_storage_error) })
                 if (active && probeAgain) { probeAgain = false; probeVersion() }
             }
+        }
+    }
+    private fun invalidateSnapshot(reason: Int) {
+        version = null
+        chartSnapshot = null
+        pointList?.dismiss(); pointList = null
+        pointListEntry?.visibility = View.GONE
+        val message = getString(reason)
+        chart?.unavailable(message)
+        notice?.text = message; notice?.visibility = View.VISIBLE; retry?.visibility = View.VISIBLE
+    }
+    private fun showPointList() {
+        val summary = chartSnapshot ?: return
+        if (!active || version != summary.version || spec() != summary.spec || pointList?.isShowing == true) return
+        val points = summary.points.sortedByDescending { it.bucket }
+        val date = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(resources.configuration.locales[0])
+        val aggregation = getString(summary.spec.aggregation.titleResource())
+        val labels = points.map { point ->
+            val period = if (point.first == point.last) point.first.format(date)
+                else getString(R.string.health_trend_chart_data_dates, point.first.format(date), point.last.format(date))
+            val field = getString(healthFieldResource(point.field))
+            val value = listOf(point.value.toPlainString(), summary.spec.unit).filter { it.isNotBlank() }.joinToString(" ")
+            val count = resources.getQuantityString(
+                R.plurals.health_trend_chart_data_records, point.count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), point.count,
+            )
+            getString(R.string.health_trend_chart_data_row, period, field, aggregation, value, count)
+        }.toTypedArray()
+        val list = AlertDialog.Builder(this).setTitle(R.string.health_trend_chart_data)
+            .setItems(labels) { _, index -> if (version == summary.version && spec() == summary.spec) openPoint(points[index]) }
+            .setNegativeButton(R.string.common_close, null).create()
+        list.setOnDismissListener { if (pointList === list) pointList = null }
+        pointList = list
+        list.show()
+        pointSelection?.takeIf { it.version == summary.version && it.spec == summary.spec }?.let { selection ->
+            val index = points.indexOfFirst { it.bucket == selection.bucket && it.field == selection.field }
+            if (index >= 0) list.listView.setSelection(index)
         }
     }
     private fun openRecord(id: String, revision: Int) {

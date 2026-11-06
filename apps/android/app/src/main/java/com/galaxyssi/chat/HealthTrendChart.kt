@@ -6,16 +6,20 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import android.os.Bundle
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.accessibility.AccessibilityNodeInfo
 import java.math.BigDecimal
 import java.math.MathContext
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlin.math.hypot
 
-internal class HealthTrendChart(context: Context, private val selected: (HealthTrendPoint) -> Unit) : View(context) {
+internal class HealthTrendChart(
+    context: Context, private val showPoints: (() -> Unit)? = null, private val selected: (HealthTrendPoint) -> Unit,
+) : View(context) {
     private val density = resources.displayMetrics.density
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
@@ -35,8 +39,8 @@ internal class HealthTrendChart(context: Context, private val selected: (HealthT
             else context.getString(R.string.health_trend_chart_description, value.eligible, value.numericDays)
         rebuild(); invalidate()
     }
-    fun unavailable(message: String) { summary = null; anchors.clear(); unavailable = message; isEnabled = false; contentDescription = message; invalidate() }
-    fun clear() { summary = null; unavailable = null; anchors.clear(); isEnabled = false; contentDescription = ""; invalidate() }
+    fun unavailable(message: String) { clear(); unavailable = message; contentDescription = message; invalidate() }
+    fun clear() { summary = null; unavailable = null; anchors.clear(); focus = -1; isEnabled = false; isClickable = false; contentDescription = ""; invalidate() }
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { super.onSizeChanged(w, h, oldw, oldh); rebuild() }
     private fun rebuild() {
         anchors.clear(); area.set(58 * density, 20 * density, (width - 14 * density).coerceAtLeast(60 * density), (height - 40 * density).coerceAtLeast(24 * density))
@@ -103,6 +107,21 @@ internal class HealthTrendChart(context: Context, private val selected: (HealthT
         else -> super.onTouchEvent(event)
     }
     override fun performClick(): Boolean { super.performClick(); return true }
+    override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
+        super.onInitializeAccessibilityNodeInfo(info)
+        if (showPoints != null && isClickable) {
+            info.addAction(AccessibilityNodeInfo.AccessibilityAction(
+                AccessibilityNodeInfo.ACTION_CLICK, context.getString(R.string.health_trend_chart_data),
+            ))
+        }
+    }
+    override fun performAccessibilityAction(action: Int, arguments: Bundle?): Boolean {
+        if (action == AccessibilityNodeInfo.ACTION_CLICK && isClickable && showPoints != null) {
+            showPoints.invoke()
+            return true
+        }
+        return super.performAccessibilityAction(action, arguments)
+    }
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         if (anchors.isEmpty()) return super.onKeyDown(keyCode, event)
         when (keyCode) {
@@ -112,7 +131,11 @@ internal class HealthTrendChart(context: Context, private val selected: (HealthT
                 contentDescription = describe(point, summary!!.spec.unit)
                 announceForAccessibility(contentDescription); invalidate(); return true
             }
-            KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_DPAD_CENTER -> { anchors.getOrNull(focus)?.let { selected(it.point) }; return true }
+            KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_DPAD_CENTER -> {
+                val point = anchors.getOrNull(focus)?.point
+                if (point != null) selected(point) else showPoints?.invoke()
+                return true
+            }
         }
         return super.onKeyDown(keyCode, event)
     }
