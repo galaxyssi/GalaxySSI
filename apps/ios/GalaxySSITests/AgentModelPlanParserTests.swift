@@ -320,6 +320,18 @@ final class AgentModelPlanParserTests: XCTestCase {
     ))
   }
 
+  func testMalformedObservedOutcomeReturnsARejection() {
+    let raw = """
+    {"completion_requirements":{"publication":"none","phone_linux":false,"outcomes":{}},
+     "actions":[{"ref":"read","kind":"READ_SCREEN","parameters":{}}]}
+    """
+    let result = AgentModelPlanParser.parseWithDiagnostics(request: request(), raw: raw,
+      settings: AgentModelPlannerSettings(), context: context())
+    guard case .failure(let rejection) = result else { return XCTFail("Invalid outcomes were accepted") }
+    XCTAssertEqual(rejection.field, "completion_requirements.outcomes")
+    XCTAssertEqual(rejection.code, "invalid_completion_shape")
+  }
+
   func testFileAndVideoCompletionRequirementsRemainIndependent() throws {
     let raw = """
     {"completion_requirements":{"publication":"none","phone_linux":false,
