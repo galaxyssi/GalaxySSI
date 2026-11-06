@@ -5,7 +5,7 @@ struct GalaxySSIAgentExecutionFooterView: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @State private var detailsExpanded = false
 
-  var completed: Bool
+  var status: AgentInteractiveProgressStatus
   var duration: String
   var details: [String]
   var detailsTitle: String
@@ -17,10 +17,12 @@ struct GalaxySSIAgentExecutionFooterView: View {
   var canCancel: Bool = false
   var cancelTitle: String = ""
   var onCancel: () -> Void = {}
+  var liveStartedAt: Int64 = 0
+  var liveDuration: ((Int64) -> String)? = nil
 
   var body: some View {
     VStack(alignment: .leading, spacing: 5) {
-      Text(processingSummary)
+      processingLabel
         .font(.system(size: 13))
         .foregroundColor(.galaxySSITextPrimary)
         .lineLimit(1)
@@ -63,9 +65,24 @@ struct GalaxySSIAgentExecutionFooterView: View {
     .accessibilityElement(children: .contain)
   }
 
-  private var processingSummary: String {
-    AgentTranscriptPresentationPolicy.processedSummary(
-      completed: completed,
+  @ViewBuilder
+  private var processingLabel: some View {
+    if status.animating, liveStartedAt > 0, let liveDuration {
+      TimelineView(.periodic(from: Date(), by: 1)) { context in
+        Text(processingSummary(liveDuration(max(0,
+          Int64(context.date.timeIntervalSince1970 * 1_000) - liveStartedAt))))
+      }
+    } else {
+      Text(processingSummary(duration))
+    }
+  }
+
+  private func processingSummary(_ duration: String) -> String {
+    guard status == .running || status == .completed else {
+      return duration.isEmpty ? status.title(t) : status.title(t) + " \u{00B7} " + duration
+    }
+    return AgentTranscriptPresentationPolicy.processedSummary(
+      completed: status == .completed,
       duration: duration,
       processingFormat: t("galaxyssi.agent.trace.processing", "Working for %@"),
       processedFormat: t("galaxyssi.agent.trace.processed", "Worked for %@")
