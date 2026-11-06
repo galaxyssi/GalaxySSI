@@ -1240,6 +1240,111 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(encoded.contains(#""timestamp_millis":14"#))
   }
 
+  func testRecordedExecutionProjectsLatestOwnedActionAndKeepsItsExactReceipt() throws {
+    let scope = AgentPlanContinuationScope(conversationId: "conversation", turnId: "turn")
+    let failed = scope.bind(AgentAction(id: "battery", kind: .callNativeTool, target: "battery.read", risk: .low,
+      status: .failed, description: "Read battery", evidence: #"{"outcome":"unverified"}"#))
+    var repaired = failed
+    repaired.status = .completed
+    repaired.evidence = ""
+    let foreign = AgentPlanContinuationScope(conversationId: "conversation", turnId: "other").bind(failed)
+    let pending = scope.bind(AgentAction(id: "volume", kind: .callNativeTool, target: "audio.read", risk: .low,
+      status: .pendingConfirmation, description: "Read volume"))
+    let running = scope.bind(AgentAction(id: "clock", kind: .callNativeTool, target: "clock.read", risk: .low,
+      status: .running, description: "Read clock"))
+    var task = AgentTaskRecord(taskId: "turn", sessionId: "conversation", goal: "Inspect phone", phase: .executing,
+      routeKind: .localSystem, targetTitle: "Phone", risk: .low, blocked: false)
+    task.activePlan = AgentPlan(goal: task.goal, screen: AgentScreenContext(foregroundApp: "GalaxySSI"),
+      steps: [], actions: [repaired, foreign, pending, running], actionHistory: [failed])
+    let result = AgentActionResult(actionId: repaired.id, success: true, message: "Battery read", metadata: [
+      "native_tool_output": #"{"percent":40,"charging":true}"#,
+      "started_at_millis": "80", "completed_at_millis": "100", "native_receipt_id": "retry"
+    ])
+    let projection = AgentRecordedExecutionEvidence.project(task: task, scope: scope, previous: [],
+      observations: [.init(action: repaired, result: result)], now: 101)
+    XCTAssertEqual(projection.calls.map(\.id), ["battery", "volume", "clock"])
+    XCTAssertEqual(projection.calls.map(\.status), [.succeeded, .pending, .running])
+    let observed = try XCTUnwrap(projection.calls.first)
+    XCTAssertEqual(observed.result["output"]?.objectValue?["percent"], .int(40))
+    XCTAssertEqual(observed.startedAtMillis, 80)
+    XCTAssertEqual(projection.calls[1].completedAtMillis, 0)
+    XCTAssertEqual(projection.calls[2].completedAtMillis, 0)
+
+    let historical = AgentActionResult(actionId: repaired.id, success: false, message: "Old failure",
+      metadata: ["started_at_millis": "50", "completed_at_millis": "75"])
+    let replay = AgentRecordedExecutionEvidence.project(task: task, scope: scope, previous: projection.calls,
+      observations: [.init(action: repaired, result: historical)], now: 110)
+    XCTAssertEqual(replay.calls, projection.calls)
+    let snapshotOnly = AgentRecordedExecutionEvidence.project(task: task, scope: scope, previous: projection.calls,
+      observations: [], now: 120)
+    XCTAssertEqual(snapshotOnly.calls, projection.calls)
+  }
+
+  func testRecordedExecutionPreservesRawDiagnosticsAndDoesNotFinalizeUnknownOutcomes() throws {
+    let scope = AgentPlanContinuationScope(conversationId: "conversation", turnId: "turn")
+    let action = scope.bind(AgentAction(id: "read", kind: .callNativeTool, target: "tool.read", risk: .low,
+      status: .failed, description: "Read", parameters: ["input_json": #"{"incomplete":"#]))
+    let task = AgentTaskRecord(taskId: "turn", sessionId: "conversation", goal: "Inspect phone", phase: .failed,
+      routeKind: .localSystem, targetTitle: "Phone", risk: .low, blocked: false, result: "Awaiting verification")
+    let result = AgentActionResult(actionId: action.id, success: false, message: "Read did not verify", metadata: [
+      "plan_node_outcome_unknown": "true", "native_tool_output": #"{"partial":"#,
+      "plan_node_journal_error": "observation_commit_failed"
+    ])
+    let outgoing = ChatMessage(contactId: "hermes", content: task.goal, isMine: true,
+      conversationId: scope.conversationId, turnId: scope.turnId)
+    let domain = "AgentRecordedExecutionEvidence.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+    defer { defaults.removePersistentDomain(forName: domain) }
+    let store = UserDefaultsAgentRecordedRunStore(defaults: defaults)
+    let events = UserDefaultsAgentRunEventStore(defaults: defaults)
+    store.recordNativeExecution([.init(action: action, result: result)], task: task, outgoing: outgoing,
+      status: .failed, events: events)
+    let run = try XCTUnwrap(store.runs().first)
+    XCTAssertEqual(run.status, .running)
+    XCTAssertEqual(run.completedAtMillis, 0)
+    let call = try XCTUnwrap(run.toolCalls.first)
+    XCTAssertEqual(call.status, .running)
+    XCTAssertEqual(call.arguments["raw_input"], .string(#"{"incomplete":"#))
+    XCTAssertEqual(call.result["raw_evidence"], .string(#"{"partial":"#))
+    XCTAssertEqual(call.result["outcome_unverified"], .bool(true))
+    XCTAssertEqual(call.result["error_code"], .string("observation_commit_failed"))
+    XCTAssertTrue(events.events(runId: run.runId).isEmpty)
+    var foreign = outgoing
+    foreign.conversationId = "other"
+    store.recordNativeExecution([.init(action: action, result: result)], task: task, outgoing: foreign,
+      status: .completed, events: events)
+    XCTAssertEqual(store.runs(), [run])
+  }
+
+  func testRecordedExecutionLifecycleRespectsPreDispatchCancellationAndCurrentAttempt() {
+    let scope = AgentPlanContinuationScope(conversationId: "conversation", turnId: "turn")
+    func event(_ type: AgentRunControlEventType, _ invocation: String = "", at: Int64,
+               status: String = "") -> AgentRunControlEvent {
+      AgentRunControlEvent(conversationId: scope.conversationId, messageId: scope.turnId, taskId: "task",
+        runId: "run", stepId: "read", toolCallId: invocation, agentId: "ios", deviceId: "phone", type: type,
+        sequence: at, timestampMillis: at, payload: ["tool_id": .string("tool.read"), "status": .string(status)],
+        turnId: scope.turnId)
+    }
+    let root = event(.planning, at: 1)
+    let staleFailure = event(.toolCompleted, "old", at: 15, status: "failed")
+    let nativeStart = event(.toolStarted, "retry", at: 20)
+    let nativeEnd = event(.toolCompleted, "retry", at: 30, status: "succeeded")
+    let success = AgentToolCallRecord(id: "read", toolName: "tool.read", status: .succeeded,
+      result: ["invocation_id": .string("retry")], startedAtMillis: 20, completedAtMillis: 30)
+    let cancellation = AgentToolCallRecord(id: "cancelled", toolName: "tool.read", status: .cancelled,
+      result: ["execution_started": .bool(false)], completedAtMillis: 40)
+    let pending = AgentToolCallRecord(id: "not-dispatched", toolName: "tool.read", status: .pending)
+    let missing = AgentRecordedExecutionEvidence.missingLifecycle(for: [success, cancellation, pending],
+      events: [root, staleFailure, nativeStart], scope: scope)
+    XCTAssertEqual(missing.map(\.type), [.toolCompleted, .toolCompleted])
+    XCTAssertEqual(missing.map(\.stepId), ["read", "cancelled"])
+    XCTAssertEqual(missing.last?.payload["status"], .string("cancelled"))
+    XCTAssertTrue(AgentRecordedExecutionEvidence.missingLifecycle(for: [success],
+      events: [root, staleFailure, nativeStart, nativeEnd], scope: scope).isEmpty)
+    XCTAssertTrue(AgentRecordedExecutionEvidence.missingLifecycle(for: [success], events: [root],
+      scope: .init(conversationId: scope.conversationId, turnId: "other")).isEmpty)
+  }
+
   func testAgentNativeToolLifecycleRunControlAdapterMatchesAndroidTimelinePayload() {
     let progress = AgentNativeToolLifecycleEvent(
       stage: .progress,
