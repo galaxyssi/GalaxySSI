@@ -40,6 +40,7 @@ enum AgentModelPlanningPrompt {
     append(&prompt, "\n\n")
     if request.phoneOwnsExecution {
       append(&prompt, "For an ActionPlan, add the root field execution_location=phone. ")
+      appendPhoneCompletionStages(to: &prompt, request: request)
       append(&prompt, "For phone-control and phone status tasks, before executing list every requested deliverable under completion_requirements.results as {id,description,outcome_ids:[],artifact_paths:[],answer:\"\"}. Keep IDs across revisions, and leave evidence links and answers empty until observed. At completion link each result to verified outcomes or declared file/video paths, and include every evidence-grounded answer verbatim in the task-complete description. A successful tool call is not full-goal coverage. Use KiB/MiB/GiB for powers of 1024, KB/MB/GB for powers of 1000.\n\n")
       append(&prompt, "The model reasons; iOS owns execution. Never use a Desktop app, host shell, web timer, or cloud scheduler as a substitute for a phone operation. Decide from meaning and context, not exact command phrases. Use only listed CALL_NATIVE_TOOL actions and wait for their receipts. A one-time countdown is not a recurring alarm. For a new countdown use galaxyssi.agent_action.set.alarm with timer_operation=start and timer_seconds; omit operation_id. For inspection or cancellation reuse only a scoped operation_id from phone evidence. Never guess IDs or repeat an unsettled operation.\n\n")
       append(&prompt, "For side effects, declare completion_requirements.outcomes once the subject identity is known. Each outcome has id, tool_id, subject, checks and after_tool_id. subject and checks are JSON objects mapping actual receipt JSON pointers to observed string identities and expected typed scalar values respectively. after_tool_id identifies the mutation, or is empty for a pure read. For a running timer, use /metadata/operation_id with the observed ID, /metadata/timer_state=running and /metadata/completion_verified=true (string). Dispatch acceptance is not proof. A newer failed observation overrides earlier success. Fix malformed receipt checks without rerunning the tool.\n\n")
@@ -167,10 +168,24 @@ enum AgentModelPlanningPrompt {
     let workspace = AgentWorkspaceScope.id(conversationId: request.conversationContext.conversationId)
     append(&prompt, "Omit artifacts unless a real MP4 is requested. For video, add an artifacts entry with workspace_id \(workspace) and path equal to the exact relative MP4 output path. Require a verified media conversion receipt before TASK_COMPLETE. HTML or a filename alone is not video. ")
     append(&prompt, "Declare other requested file deliverables in file_artifacts, each with path and optional workspace_id and source_sha256. Use galaxyssi.workspace.file.export after the last change (source=phone_linux for guest files). Set workspace_id only from the host artifact_workspace_id receipt. source_sha256 is the observed pre-edit digest, not the output hash. If evidence is stale, inspect and export again without repeating the write or program. ")
-    if maxBatchActions >= 3 {
+    if maxBatchActions >= 3 && !request.phoneOwnsExecution {
       append(&prompt, "For a multi-step goal, prefer 3 to \(maxBatchActions) actionable steps when their inputs are already known; use 1 or 2 when the goal is that small or the next choice depends on an observation. ")
     }
     append(&prompt, "Never create more than \(maxBatchActions) actions.\n\n")
+  }
+
+  private static func appendPhoneCompletionStages(
+    to prompt: inout String,
+    request: AgentModelPlanningPromptRequest
+  ) {
+    if request.parsingContext.replanReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      append(&prompt, "Phone execution stage: first obtain missing observations. Planned actions and expected_result are not evidence. ")
+    } else {
+      append(&prompt, "Phone receipt review stage: use actual receipts from this task. Reuse valid evidence and obtain only what is still missing. ")
+    }
+    append(&prompt, "Choose the next executable step or a batch of independent observations. Stop before any step that depends on interpreting an unread result. Never mix DRAFT_PLAN/task-complete with executable actions, even with depends_on. ")
+    append(&prompt, "For read-only requests, declare previously unknown field paths and typed values after observing them; never use placeholders such as 'observed'. Preserve prior outcome IDs and requested targets. Explain added or corrected outcomes in completion_requirements.reason. Do not change a mutation's expected state to match an unsuccessful receipt. ")
+    append(&prompt, "Only when the receipts prove the whole goal, return a separate completion-only ActionPlan. Retain completion_requirements and verified identity-bound checks. Its sole action is {\"kind\":\"DRAFT_PLAN\",\"target\":\"task-complete\",\"description\":\"evidence-grounded answer in the user's language\",\"parameters\":{},\"depends_on\":[],\"use_outputs_from\":[]}.\n\n")
   }
 
   private static func appendResponseLanguageRule(
