@@ -22,6 +22,7 @@ struct AgentConnectorPublicProgress: Equatable {
   var sequence: Int64
   var text: String
   var countsForCodexSilence = true
+  var compactText: String? = nil
 
   var traceStage: String {
     let digest = SHA256.hash(data: Data(eventId.utf8)).map { String(format: "%02x", $0) }.joined()
@@ -51,8 +52,13 @@ struct AgentConnectorPublicProgress: Equatable {
         return nil
       }
       let text: String
-      if ["narration", "reasoning", "plan"].contains(kind) || ["commentary", "reasoning_summary", "plan"].contains(code) {
+      let compactText: String?
+      if let research = AgentConnectorResearchProgress.diagnostic(event, localize: localize) {
+        text = research.detail
+        compactText = research.title
+      } else if ["narration", "reasoning", "plan"].contains(kind) || ["commentary", "reasoning_summary", "plan"].contains(code) {
         text = String(detail.ifBlank(event.string("title")).prefix(2_000))
+        compactText = nil
       } else {
         let operations: [String: String] = ["command": "Running command", "file_change": "Updating files",
           "web_search": "Searching the web", "web_image_search": "Searching images", "image_view": "Viewing images",
@@ -65,6 +71,7 @@ struct AgentConnectorPublicProgress: Equatable {
         case "failed": text = String(format: localize("galaxyssi.agent.progress.failed", "Failed: %@"), label)
         default: text = String(format: localize("galaxyssi.agent.progress.completed", "Completed: %@"), label)
         }
+        compactText = nil
       }
       guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
       let source = (event.dictionary("metadata")?.string("source") ?? "").lowercased()
@@ -72,7 +79,7 @@ struct AgentConnectorPublicProgress: Equatable {
         ["replan", "steer", "heartbeat"].contains(code) ||
         ["stall_watchdog", "auto_replan", "self_steering"].contains(source)
       return Self(eventId: id, generation: generation, sequence: sequence, text: text,
-        countsForCodexSilence: !internalSteering)
+        countsForCodexSilence: !internalSteering, compactText: compactText)
     }
   }
 
@@ -88,13 +95,109 @@ struct AgentConnectorPublicProgress: Equatable {
       if let floor, update.generation < floor.0 || (update.generation == floor.0 && update.sequence < floor.1) { continue }
       let suffix = update.traceStage.split(separator: ":").last!
       if let index = result.firstIndex(where: { $0.stage.hasPrefix(tracePrefix) && $0.stage.split(separator: ":").last == suffix }) {
-        guard result[index].stage != update.traceStage || result[index].detail != update.text else { continue }
+        let parts = result[index].stage.split(separator: ":")
+        let sameGeneration = parts.count == 4 && Int64(parts[1]) == update.generation
+        let previous = result[index].compactDetail
+        let preserveDiagnostic = sameGeneration && previous != nil &&
+          (update.compactText == nil || (update.text == update.compactText && result[index].detail != previous))
+        let detail = preserveDiagnostic ? result[index].detail : update.text
+        let compact = preserveDiagnostic ? result[index].compactDetail : update.compactText
+        guard result[index].stage != update.traceStage || result[index].detail != detail ||
+              result[index].compactDetail != compact else { continue }
         result[index].stage = update.traceStage
-        result[index].detail = update.text
-      } else { result.append(DeliveryTraceEvent(stage: update.traceStage, detail: update.text)) }
+        result[index].detail = detail
+        result[index].compactDetail = compact
+      } else {
+        var event = DeliveryTraceEvent(stage: update.traceStage, detail: update.text)
+        event.compactDetail = update.compactText
+        result.append(event)
+      }
     }
     let retained = Set(result.filter { $0.stage.hasPrefix(tracePrefix) }.suffix(64).map(\.id))
     return result.filter { !$0.stage.hasPrefix(tracePrefix) || retained.contains($0.id) }
+  }
+}
+
+enum AgentConnectorResearchProgress {
+  private static let tools: Set<String> = ["galaxyssi_fetch_public_pages", "galaxyssi_parallel_web_search"]
+
+  static func checkingSources(_ envelope: [String: Any]) -> Bool {
+    guard envelope.string("type") == "agent_task_event",
+          AgentRemoteTaskStatusPolicy.normalize(
+            envelope.string("task_status").ifBlank(envelope.string("status"))) == "running",
+          let current = envelope.dictionary("progress_event"), visible(current), isResearchTool(current)
+    else { return false }
+    return current.string("status").lowercased() == "failed" && Version(envelope) != nil
+  }
+
+  static func diagnostic(_ event: [String: Any], localize: (String, String) -> String)
+    -> (title: String, detail: String)? {
+    guard visible(event), isResearchTool(event) else { return nil }
+    let failures = event.dictionary("metadata")?["web_read_failures"] as? [Any] ?? []
+    guard event.string("status").lowercased() == "failed" || !failures.isEmpty else { return nil }
+    let title = localize("galaxyssi.agent.progress.research.unavailable", "Some sources could not be read")
+    let lines = failures.prefix(4).compactMap { value -> String? in
+      guard let failure = value as? [String: Any] else { return nil }
+      let code = failure.string("code")
+      let reason: String
+      if code == "http_status",
+         let status = AgentDesktopReplyRecovery.integer(failure["http_status"], minimum: 100), status <= 599 {
+        reason = status == 403
+          ? localize("galaxyssi.agent.progress.research.forbidden", "HTTP 403: site denied access")
+          : "HTTP \(status)"
+      } else if code == "invalid_input", failure.string("field") == "max_bytes",
+                let actual = AgentDesktopReplyRecovery.integer(failure["actual"], minimum: -9_007_199_254_740_991),
+                let maximum = AgentDesktopReplyRecovery.integer(failure["maximum"], minimum: 1) {
+        if let minimum = AgentDesktopReplyRecovery.integer(failure["minimum"], minimum: 0), minimum <= maximum {
+          reason = String(format: localize("galaxyssi.agent.progress.research.range",
+            "Requested %lld bytes; allowed range: %lld to %lld bytes"), actual, minimum, maximum)
+        } else {
+          reason = String(format: localize("galaxyssi.agent.progress.research.limit",
+            "Requested %lld bytes; maximum: %lld bytes"), actual, maximum)
+        }
+      } else if code == "no_readable_body" {
+        reason = localize("galaxyssi.agent.progress.research.no_body", "No readable page body")
+      } else {
+        reason = localize("galaxyssi.agent.progress.research.fetch_failed", "Page retrieval failed")
+      }
+      let host = failure.string("host")
+      let safeHost = !host.isEmpty && host.utf8.count <= 253 && host.utf8.allSatisfy {
+        (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) ||
+          $0 == 45 || $0 == 46 || $0 == 58
+      }
+      return safeHost ? String(host.prefix(100)) + " \u{00B7} " + reason : reason
+    }
+    return (title, ([title] + lines).joined(separator: "\n"))
+  }
+
+  private static func isResearchTool(_ event: [String: Any]) -> Bool {
+    guard event.string("kind").lowercased() == "tool" else { return false }
+    let code = event.string("code").ifBlank(event.dictionary("metadata")?.string("code") ?? "").lowercased()
+    let tool = event.string("detail").trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ".").last
+    return code == "web_search" || (code == "dynamic_tool" && tools.contains(tool.map { String($0) } ?? ""))
+  }
+
+  private static func visible(_ event: [String: Any]) -> Bool {
+    event["user_visible"] as? Bool != false &&
+      !AgentPublicProgressPolicy.isInternal(event.string("detail")) &&
+      !AgentPublicProgressPolicy.isInternal(event.string("title"))
+  }
+
+  struct Version: Comparable {
+    let generation: Int64
+    let sequence: Int64
+
+    init?(_ payload: [String: Any]) {
+      guard let generation = AgentDesktopReplyRecovery.integer(payload["execution_generation"], minimum: 1),
+            let sequence = AgentDesktopReplyRecovery.integer(payload["status_sequence"] ?? payload["status_seq"],
+              minimum: 0) else { return nil }
+      self.generation = generation
+      self.sequence = sequence
+    }
+
+    static func < (lhs: Self, rhs: Self) -> Bool {
+      (lhs.generation, lhs.sequence) < (rhs.generation, rhs.sequence)
+    }
   }
 }
 
