@@ -228,10 +228,7 @@ struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
     effect: AgentNativeToolEffect? = nil
   ) throws {
     let cleanId = id.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard cleanId.range(
-      of: #"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"#,
-      options: .regularExpression
-    ) != nil else {
+    guard Self.isValidID(cleanId) else {
       throw AgentRuntimeCapabilityError.invalid("Tool id must be a stable lowercase dotted identifier")
     }
     guard version.range(
@@ -341,6 +338,10 @@ extension AgentNativeToolDescriptor {
   var requiresEffectClaim: Bool {
     idempotency != .idempotent ||
       !(effect == .readOnly || (effect == nil && concurrency == .parallelReadOnly))
+  }
+
+  static func isValidID(_ id: String) -> Bool {
+    id.range(of: #"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*\z"#, options: .regularExpression) != nil
   }
 }
 

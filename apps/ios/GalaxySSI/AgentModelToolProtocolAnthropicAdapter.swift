@@ -11,8 +11,8 @@ final class AnthropicAgentModelToolProtocolAdapter: StrictAgentModelToolProtocol
     _ = try checkedCatalog(catalog)
     return catalog.map { descriptor in
       .object([
-        "name": .string(descriptor.id),
-        "description": .string(descriptor.description),
+        "name": .string(AgentModelToolWireNames.name(descriptor.id)),
+        "description": .string(AgentModelToolWireNames.description(descriptor)),
         "input_schema": .object(descriptor.inputSchema)
       ])
     }
@@ -59,7 +59,7 @@ final class AnthropicAgentModelToolProtocolAdapter: StrictAgentModelToolProtocol
           blocks.append(.object([
             "type": .string("tool_use"),
             "id": .string(call.callId),
-            "name": .string(call.toolId),
+            "name": .string(AgentModelToolWireNames.name(call.toolId)),
             "input": .object(call.arguments)
           ]))
         }

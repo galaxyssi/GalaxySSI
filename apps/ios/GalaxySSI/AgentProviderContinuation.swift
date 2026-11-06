@@ -129,7 +129,7 @@ struct AgentProviderTranscript {
   }
 
   func replyName(_ result: AgentModelToolResultContent) -> String {
-    replies[result.callId]?.name ?? result.toolId
+    replies[result.callId]?.name ?? AgentModelToolWireNames.name(result.toolId)
   }
 
   private static func calls(in payload: AgentMcpJSONObject, provider: AgentModelToolProvider) -> [AgentMcpJSONObject] {

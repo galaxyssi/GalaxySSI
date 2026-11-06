@@ -10,7 +10,7 @@ final class AgentModelToolProtocolAdapterTests: XCTestCase {
       {"candidates":[{"content":{"role":"model","parts":[
         {"thought":true,"text":"private thought"},
         {"text":"Visible text"},
-        {"functionCall":{"name":"\#(Self.echoToolId)","args":{"value":"one"}},"thoughtSignature":"sig-one"},
+        {"functionCall":{"name":"phone__test__echo","args":{"value":"one"}},"thoughtSignature":"sig-one"},
         {"functionCall":{"id":"wire-two","name":"\#(Self.sumToolId)","args":{"left":1,"right":2}},"thoughtSignature":"sig-two"}
       ]}}]}
       """#, catalog: testCatalog())
@@ -29,6 +29,8 @@ final class AgentModelToolProtocolAdapterTests: XCTestCase {
     XCTAssertNil(try original.requiredObject(2).requiredObject("functionCall")["id"])
     let replies = try retained.requiredObject(1).requiredArray("parts")
     XCTAssertNil(try replies.requiredObject(0).requiredObject("functionResponse")["id"])
+    XCTAssertEqual(try replies.requiredObject(0).requiredObject("functionResponse").requiredString("name"), "phone__test__echo")
+    XCTAssertEqual(try replies.requiredObject(1).requiredObject("functionResponse").requiredString("name"), Self.sumToolId)
     XCTAssertEqual(try replies.requiredObject(1).requiredObject("functionResponse").requiredString("id"), "wire-two")
     let other = AgentProviderRouteAdapter(base: base, route: "new-gemini-key")
     XCTAssertFalse(AgentMcpJSONCodec.stringify(try other.encodeConversation([assistant] + results)).contains("sig-one"))
@@ -79,7 +81,8 @@ final class AgentModelToolProtocolAdapterTests: XCTestCase {
     let echoTool = try tools.requiredObject(0)
     XCTAssertEqual(try echoTool.requiredString("type"), "function")
     let echoFunction = try echoTool.requiredObject("function")
-    XCTAssertEqual(try echoFunction.requiredString("name"), Self.echoToolId)
+    XCTAssertEqual(try echoFunction.requiredString("name"), "phone__test__echo")
+    XCTAssertTrue(try echoFunction.requiredString("description").contains("Native tool ID: phone.test.echo."))
     XCTAssertEqual(try echoFunction.requiredObject("parameters").requiredString("type"), "object")
 
     let response = try adapter.decodeResponse(
@@ -98,7 +101,7 @@ final class AgentModelToolProtocolAdapterTests: XCTestCase {
               {
                 "id": "call-openai-1",
                 "type": "function",
-                "function": {"name": "\#(Self.echoToolId)", "arguments": "{\"value\":\"hello\"}"}
+                "function": {"name": "phone__test__echo", "arguments": "{\"value\":\"hello\"}"}
               },
               {
                 "id": "call-openai-2",
@@ -136,6 +139,7 @@ final class AgentModelToolProtocolAdapterTests: XCTestCase {
     let assistant = try messages.requiredObject(2)
     let calls = try assistant.requiredArray("tool_calls")
     XCTAssertEqual(try calls.requiredObject(1).requiredString("id"), "call-openai-2")
+    XCTAssertEqual(try calls.requiredObject(0).requiredObject("function").requiredString("name"), "phone__test__echo")
     XCTAssertEqual(try messages.requiredObject(3).requiredString("tool_call_id"), "call-openai-1")
   }
 
@@ -144,7 +148,7 @@ final class AgentModelToolProtocolAdapterTests: XCTestCase {
     let catalog = try testCatalog()
 
     let tools = try adapter.encodeToolCatalog(catalog)
-    XCTAssertEqual(try tools.requiredObject(0).requiredString("name"), Self.echoToolId)
+    XCTAssertEqual(try tools.requiredObject(0).requiredString("name"), "phone__test__echo")
     XCTAssertEqual(try tools.requiredObject(0).requiredObject("input_schema").requiredString("type"), "object")
 
     let response = try adapter.decodeResponse(
@@ -154,7 +158,7 @@ final class AgentModelToolProtocolAdapterTests: XCTestCase {
         "model": "claude-test",
         "content": [
           {"type": "text", "text": "I will check."},
-          {"type": "tool_use", "id": "call-anthropic-1", "name": "\#(Self.echoToolId)", "input": {"value": "hi"}},
+          {"type": "tool_use", "id": "call-anthropic-1", "name": "phone__test__echo", "input": {"value": "hi"}},
           {"type": "tool_use", "id": "call-anthropic-2", "name": "\#(Self.sumToolId)", "input": {"left": 4, "right": 5}},
           {"type": "text", "text": "Both are independent."}
         ],
@@ -188,6 +192,7 @@ final class AgentModelToolProtocolAdapterTests: XCTestCase {
     let messages = try conversation.requiredArray("messages")
     let assistantBlocks = try messages.requiredObject(1).requiredArray("content")
     XCTAssertEqual(try assistantBlocks.requiredObject(1).requiredString("id"), "call-anthropic-2")
+    XCTAssertEqual(try assistantBlocks.requiredObject(0).requiredString("name"), "phone__test__echo")
     let resultBlocks = try messages.requiredObject(2).requiredArray("content")
     XCTAssertEqual(resultBlocks.count, 2)
     XCTAssertEqual(try resultBlocks.requiredObject(0).requiredString("tool_use_id"), "call-anthropic-1")
@@ -202,7 +207,7 @@ final class AgentModelToolProtocolAdapterTests: XCTestCase {
     let tools = try adapter.encodeToolCatalog(catalog)
     let declarations = try tools.requiredObject(0).requiredArray("functionDeclarations")
     XCTAssertEqual(declarations.count, 2)
-    XCTAssertEqual(try declarations.requiredObject(0).requiredString("name"), Self.echoToolId)
+    XCTAssertEqual(try declarations.requiredObject(0).requiredString("name"), "phone__test__echo")
     XCTAssertEqual(try declarations.requiredObject(0).requiredObject("response").requiredString("type"), "object")
 
     let response = try adapter.decodeResponse(
@@ -215,7 +220,7 @@ final class AgentModelToolProtocolAdapterTests: XCTestCase {
             "role": "model",
             "parts": [
               {"text": "Calling two functions."},
-              {"functionCall": {"id": "call-gemini-1", "name": "\#(Self.echoToolId)", "args": {"value": "hola"}}},
+              {"functionCall": {"id": "call-gemini-1", "name": "phone__test__echo", "args": {"value": "hola"}}},
               {"functionCall": {"id": "call-gemini-2", "name": "\#(Self.sumToolId)", "args": {"left": 8, "right": 9}}},
               {"text": "Results will follow."}
             ]
@@ -256,7 +261,11 @@ final class AgentModelToolProtocolAdapterTests: XCTestCase {
     let contents = try conversation.requiredArray("contents")
     let calls = try contents.requiredObject(1).requiredArray("parts")
     XCTAssertEqual(try calls.requiredObject(0).requiredObject("functionCall").requiredString("id"), "call-gemini-1")
+    XCTAssertEqual(try calls.requiredObject(0).requiredObject("functionCall").requiredString("name"), "phone__test__echo")
     let results = try contents.requiredObject(2).requiredArray("parts")
+    let reply = try results.requiredObject(0).requiredObject("functionResponse")
+    XCTAssertEqual(try reply.requiredString("name"), "phone__test__echo")
+    XCTAssertEqual(try reply.requiredObject("response").requiredString("tool_id"), Self.echoToolId)
     XCTAssertEqual(
       try results.requiredObject(1).requiredObject("functionResponse").requiredString("id"),
       "call-gemini-2"
@@ -398,6 +407,62 @@ final class AgentModelToolProtocolAdapterTests: XCTestCase {
     XCTAssertEqual(decoded.usage.totalTokens, 3)
     XCTAssertTrue(encoded.contains(#""assistant_text":"Done""#))
     XCTAssertTrue(encoded.contains(#""tool_version":"1.0.0""#))
+  }
+
+  func testWireNamesAreStableBoundedAndDistinctFromCanonicalIDs() throws {
+    let longID = "phone." + String(repeating: "a", count: 75) + ".read"
+    XCTAssertEqual(AgentModelToolWireNames.name(longID), "gssi_h_943a3145fc5733468097ae3515ad445274b2ca5c51ad9d8f9481b8c2")
+    XCTAssertEqual(AgentModelToolWireNames.name("phone.browser_open"), "phone__browser_uopen")
+    XCTAssertNotEqual(AgentModelToolWireNames.name("a.b"), AgentModelToolWireNames.name("a_b"))
+    let native = (0..<1_000).map { index in
+      let separator = [".", "_", "-"][index % 3]
+      let segment = String(repeating: "a", count: index % 90 + 1)
+      return "phone\(separator)\(segment).tool\(index)"
+    }
+    let wire = native.map(AgentModelToolWireNames.name)
+    XCTAssertEqual(wire, native.map(AgentModelToolWireNames.name))
+    XCTAssertEqual(Set(wire).count, native.count)
+    XCTAssertTrue(wire.allSatisfy { $0.range(of: #"^[a-z0-9_-]{1,64}$"#, options: .regularExpression) != nil })
+
+    let schema = AgentNativeToolDescriptor.objectSchema()
+    let collisionSets = [["a_b", "a_ub"], [longID, AgentModelToolWireNames.name(longID)]]
+    for provider in AgentModelToolProvider.allCases {
+      let adapter = AgentModelToolProtocolAdapters.adapter(for: provider)
+      for ids in collisionSets {
+        let catalog = try ids.map { try descriptor(id: $0, inputSchema: schema) }
+        for ordered in [catalog, Array(catalog.reversed())] {
+          expectProtocolError("ambiguous_tool_name") { _ = try adapter.encodeToolCatalog(ordered) }
+          expectProtocolError("ambiguous_tool_name") {
+            _ = try adapter.decodeResponse(wireResponse(provider, name: ordered[0].id), catalog: ordered)
+          }
+        }
+      }
+      let known = try descriptor(id: longID, inputSchema: schema)
+      for name in [longID, AgentModelToolWireNames.name(longID)] {
+        let call = try adapter.decodeResponse(wireResponse(provider, name: name), catalog: [known]).toolCalls.singleValue()
+        XCTAssertEqual(call.toolId, longID)
+        XCTAssertEqual(call.toolVersion, known.version)
+        XCTAssertEqual(call.callId, "wire-call")
+        XCTAssertEqual(call.arguments["tool_id"], .string("unchanged.native.id"))
+      }
+      expectProtocolError("unknown_tool") {
+        _ = try adapter.decodeResponse(wireResponse(provider, name: "phone__hidden__read"), catalog: [known])
+      }
+      expectProtocolError("malformed_tool_call") {
+        _ = try adapter.encodeConversation([.assistant(toolCalls: [.init(callId: "bad", toolId: "bad name")])])
+      }
+    }
+  }
+
+  private func wireResponse(_ provider: AgentModelToolProvider, name: String) -> String {
+    switch provider {
+    case .openAICompatible:
+      return #"{"choices":[{"message":{"tool_calls":[{"id":"wire-call","function":{"name":"\#(name)","arguments":{"tool_id":"unchanged.native.id"}}}]}}]}"#
+    case .anthropic:
+      return #"{"content":[{"type":"tool_use","id":"wire-call","name":"\#(name)","input":{"tool_id":"unchanged.native.id"}}]}"#
+    case .gemini:
+      return #"{"candidates":[{"content":{"parts":[{"functionCall":{"id":"wire-call","name":"\#(name)","args":{"tool_id":"unchanged.native.id"}}}]}}]}"#
+    }
   }
 
   private func assertBoundedSummary(_ content: String, limit: Int) throws {

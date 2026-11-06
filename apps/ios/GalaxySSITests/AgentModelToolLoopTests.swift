@@ -821,6 +821,42 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertTrue(callJSON.contains(#""depth":2"#))
   }
 
+  func testCanonicalJournalReopensThroughProviderWireAliasesWithoutExecutingAgain() async throws {
+    let domain = "provider-wire-names-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+    defer { defaults.removePersistentDomain(forName: domain) }
+    let secrets = InMemorySecretStore()
+    var executions = 0
+    let registry = try registry { invocation in
+      executions += 1
+      return .success(output: invocation.input)
+    }
+    let input = request(loopId: "legacy-wire-journal")
+    let original = await loop(adapter: WireNameRecoveryModelAdapter { turn in
+      if turn.round == 1 {
+        return AgentModelResponse(toolCalls: [self.call("canonical-call", arguments: ["value": .string(Self.toolId)])])
+      }
+      throw AgentModelToolProtocolError(code: "interrupted", message: "Simulated interruption.")
+    }, registry: registry, journal: EncryptedAgentModelLoopJournal(defaults: defaults, secrets: secrets)).run(input)
+    XCTAssertEqual(original.status, .modelFailed)
+    XCTAssertEqual(executions, 1)
+    let resumed = await loop(adapter: WireNameRecoveryModelAdapter { turn in
+      XCTAssertEqual(turn.round, 2)
+      XCTAssertEqual(turn.messages.last?.toolResult?.toolId, Self.toolId)
+      XCTAssertEqual(turn.messages.last?.toolResult?.output["value"], .string(Self.toolId))
+      for provider in AgentModelToolProvider.allCases {
+        let protocolAdapter = AgentModelToolProtocolAdapters.adapter(for: provider)
+        let wire = AgentMcpJSONCodec.stringify(try protocolAdapter.encodeConversation(turn.messages))
+        XCTAssertTrue(wire.contains("phone__test__echo"))
+        XCTAssertTrue(wire.contains("canonical-call"))
+      }
+      return AgentModelResponse(assistantText: "Done.")
+    }, registry: registry, journal: EncryptedAgentModelLoopJournal(defaults: defaults, secrets: secrets)).run(input)
+    XCTAssertEqual(resumed.status, .completed)
+    XCTAssertEqual(executions, 1)
+    XCTAssertEqual(resumed.messages.compactMap(\.toolResult).map(\.toolId), [Self.toolId])
+  }
+
   private func loop(
     adapter: AgentModelAdapter,
     registry: AgentNativeToolRegistry,
@@ -934,6 +970,14 @@ final class AgentModelToolLoopTests: XCTestCase {
 }
 
 private struct ContextHandoffTestModelAdapter: AgentModelAdapter {
+  let respond: (AgentModelRequest) throws -> AgentModelResponse
+
+  func complete(_ request: AgentModelRequest) async throws -> AgentModelResponse {
+    try respond(request)
+  }
+}
+
+private struct WireNameRecoveryModelAdapter: AgentModelAdapter {
   let respond: (AgentModelRequest) throws -> AgentModelResponse
 
   func complete(_ request: AgentModelRequest) async throws -> AgentModelResponse {

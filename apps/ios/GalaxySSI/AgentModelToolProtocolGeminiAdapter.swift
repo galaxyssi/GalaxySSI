@@ -9,8 +9,8 @@ final class GeminiAgentModelToolProtocolAdapter: StrictAgentModelToolProtocolAda
     _ = try checkedCatalog(catalog)
     let declarations = catalog.map { descriptor in
       AgentMcpJSONValue.object([
-        "name": .string(descriptor.id),
-        "description": .string(descriptor.description),
+        "name": .string(AgentModelToolWireNames.name(descriptor.id)),
+        "description": .string(AgentModelToolWireNames.description(descriptor)),
         "parameters": .object(descriptor.inputSchema),
         "response": .object(descriptor.outputSchema)
       ])
@@ -58,7 +58,7 @@ final class GeminiAgentModelToolProtocolAdapter: StrictAgentModelToolProtocolAda
           parts.append(.object([
             "functionCall": .object([
               "id": .string(call.callId),
-              "name": .string(call.toolId),
+              "name": .string(AgentModelToolWireNames.name(call.toolId)),
               "args": .object(call.arguments)
             ])
           ]))
