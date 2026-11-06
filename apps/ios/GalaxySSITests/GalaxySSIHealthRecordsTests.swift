@@ -909,6 +909,68 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testRecognitionCheckpointResumesAndCancellationRejectsLatePages() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let original = GalaxySSIHealthOriginalStore.Original(id: UUID(), name: "fixture.pdf", kind: .pdf,
+      fileExtension: "pdf", importedAt: Date(), bytes: 1, sha256: String(repeating: "a", count: 64))
+    try records.enqueueRecognition(original: original, pageCount: 2)
+    let job = try XCTUnwrap(records.load().recognitionJobs?.first)
+    let run = try records.beginRecognitionJob(id: job.id, expected: job.version)
+    let bounds = CGRect(x: 0.1, y: 0.2, width: 0.3, height: 0.4)
+    let line = GalaxySSIHealthRecognitionJobs.line(.init(id: 1, text: "fixture value", bounds: bounds, highlight: nil))
+    let reordered = GalaxySSIHealthRecognitionJobs.line(.init(id: 8, text: "fixture value", bounds: bounds, highlight: nil))
+    XCTAssertEqual(line.id, reordered.id)
+    let source = GalaxySSIHealthReportReview.Source(original: original.id, sha256: original.sha256, page: 0,
+      region: line.ordinal, fromOCR: true, evidenceKey: line.id)
+    let moved = GalaxySSIHealthReportReview.Source(original: original.id, sha256: original.sha256, page: 0,
+      region: reordered.ordinal, fromOCR: true, evidenceKey: reordered.id)
+    XCTAssertEqual(Set([source, moved]).count, 1)
+    XCTAssertNotEqual(source, .init(original: original.id, sha256: original.sha256, page: 0,
+                                   region: line.ordinal, fromOCR: true))
+    let first = GalaxySSIHealthRecognitionJobs.Page(index: 0, fromOCR: true, lines: [line])
+    let second = GalaxySSIHealthRecognitionJobs.Page(index: 1, fromOCR: true, lines: [line])
+    try records.commitRecognitionPage(id: job.id, run: run, page: first)
+    let saved = try XCTUnwrap(records.load().recognitionJobs?.first)
+    XCTAssertThrowsError(try records.beginRecognitionJob(id: job.id, expected: job.version))
+    let resumed = try records.beginRecognitionJob(id: job.id, expected: saved.version)
+    XCTAssertThrowsError(try records.commitRecognitionPage(id: job.id, run: run, page: second))
+    try records.finishRecognitionJob(id: job.id, run: resumed, phase: .cancelled)
+    XCTAssertThrowsError(try records.commitRecognitionPage(id: job.id, run: resumed, page: second))
+    let archive = try records.load()
+    let cancelled = try XCTUnwrap(archive.recognitionJobs?.first)
+    XCTAssertThrowsError(try records.beginRecognitionJob(id: job.id, expected: cancelled.version))
+    XCTAssertEqual(archive.recognitionJobs?.first?.pages, [first])
+    XCTAssertTrue(archive.current.isEmpty)
+    XCTAssertNil(try Data(contentsOf: file).range(of: Data("fixture value".utf8)))
+  }
+
+  @MainActor
+  func testRecognitionRepairRequiresExactOriginalAndCannotResurrectRemoval() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let secrets = HealthFixtureSecrets()
+    let file = root.appendingPathComponent("records")
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: root, restoreRecordsFile: file)
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData { $0.beginPage() }
+    try store.store(pdf, name: "report.pdf", acquisition: .camera)
+    let original = try XCTUnwrap(store.list().originals.first)
+    try records.enqueueRecognition(original: original, pageCount: 1)
+    try FileManager.default.removeItem(at: root.appendingPathComponent(original.id.uuidString))
+    XCTAssertThrowsError(try store.repairRecognitionOriginal(original, data: pdf + Data([0])))
+    try store.repairRecognitionOriginal(original, data: pdf)
+    XCTAssertEqual(try store.list().originals, [original])
+    XCTAssertEqual(try store.read(original), pdf)
+    XCTAssertEqual(try records.load().recognitionJobs?.first?.original, original)
+    try store.remove(store.previewRemoval(original))
+    XCTAssertThrowsError(try store.repairRecognitionOriginal(original, data: pdf))
+    XCTAssertTrue(try store.list().originals.isEmpty)
+  }
+
+  @MainActor
   func testReportReviewBatchIsAtomicAndVersionPinned() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }
