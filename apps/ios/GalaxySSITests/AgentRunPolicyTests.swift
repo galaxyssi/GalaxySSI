@@ -398,6 +398,48 @@ extension GalaxySSIStoreTests {
       hasDeliveredReply: false, hasActiveTask: true))
   }
 
+  func testDesktopRecoveryExcludesPersistedNonDesktopTransportEvenWithStaleDesktopIdentity() throws {
+    let pending = ChatMessage(contactId: "hermes", content: "Pending", isMine: true, deliveryStatus: .sent,
+      conversationId: "conversation", turnId: "turn")
+    let identity = AgentTaskIdentity(clientRouteId: "route", conversationId: pending.conversationId,
+      taskId: pending.id.uuidString, turnId: pending.turnId)
+    for stage in ["cloud_request", "peer_send_started", AgentDesktopReplyDiscoveryPolicy.localExecutionStarted,
+                  "local_model_reply", "delivered_local_estimate"] {
+      var source = pending
+      source.deliveryTrace = [.init(stage: stage), .init(stage: "queued")]
+      let restored = try JSONDecoder().decode(ChatMessage.self, from: JSONEncoder().encode(source))
+      XCTAssertFalse(AgentDesktopReplyDiscoveryPolicy.matchesSource(restored, identity: identity), stage)
+      XCTAssertFalse(AgentDesktopReplyDiscoveryPolicy.eligible(restored, identity: identity,
+        hasDeliveredReply: false, hasActiveTask: true), stage)
+      XCTAssertEqual(restored.deliveryStatus, .sent, stage)
+    }
+    var desktop = pending
+    desktop.deliveryTrace = [.init(stage: "phone_public_page_ready"), .init(stage: "mqtt_published")]
+    XCTAssertTrue(AgentDesktopReplyDiscoveryPolicy.matchesSource(desktop, identity: identity))
+    XCTAssertTrue(AgentDesktopReplyDiscoveryPolicy.eligible(desktop, identity: identity,
+      hasDeliveredReply: false, hasActiveTask: false))
+  }
+
+  func testDesktopRecoveryRequiresVerifiedDesktopAgentEndpoint() {
+    var contact = GalaxySSIContact.hermes()
+    contact.type = "agent"
+    contact.desktopId = "desktop"
+    contact.agentId = "codex"
+    contact.deliveryMode = .pcConnector
+    contact.trustState = .verified
+    XCTAssertTrue(AgentDesktopReplyDiscoveryPolicy.isDesktopEndpoint(contact))
+    for mode in [GalaxySSIDeliveryMode.cloudAPI, .local] {
+      contact.deliveryMode = mode
+      XCTAssertFalse(AgentDesktopReplyDiscoveryPolicy.isDesktopEndpoint(contact))
+    }
+    contact.deliveryMode = .link
+    contact.type = "person"
+    XCTAssertFalse(AgentDesktopReplyDiscoveryPolicy.isDesktopEndpoint(contact))
+    contact.type = "agent"
+    contact.trustState = .unverified
+    XCTAssertFalse(AgentDesktopReplyDiscoveryPolicy.isDesktopEndpoint(contact))
+  }
+
   @MainActor
   func testDesktopReplyDiscoveryCursorAndRetiredRequestsSurviveReopen() throws {
     let suite = "DesktopReplyDiscoveryTests-\(UUID().uuidString)"
