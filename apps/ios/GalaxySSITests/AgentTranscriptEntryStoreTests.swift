@@ -1,8 +1,87 @@
+import Combine
 import XCTest
 
 @testable import GalaxySSI
 
 final class AgentTranscriptEntryStoreTests: XCTestCase {
+  @MainActor
+  func testTranscriptWindowDropsOldHydrationAfterReopeningTheSameConversation() async throws {
+    let window = AgentTranscriptWindow()
+    let started = expectation(description: "old load started")
+    let restored = expectation(description: "foreground loaded")
+    let stalePublished = expectation(description: "old load must never publish")
+    stalePublished.isInverted = true
+    var finishOld: CheckedContinuation<GalaxySSIChatHistoryPage?, Never>?
+    let old = ChatMessage(contactId: "hermes", content: "old snapshot", isMine: false, conversationId: "a")
+    let latest = ChatMessage(contactId: "hermes", content: "current snapshot", isMine: false, conversationId: "a")
+    let observer = window.$snapshot.sink { snapshot in
+      if snapshot.messages == [old] { stalePublished.fulfill() }
+      if snapshot.messages == [latest] { restored.fulfill() }
+    }
+    defer { observer.cancel(); window.clear() }
+    window.activate("a", pageSize: 24) { _, _ in
+      await withCheckedContinuation {
+        finishOld = $0
+        started.fulfill()
+      }
+    }
+    await fulfillment(of: [started], timeout: 2)
+    let oldOwner = try XCTUnwrap(window.snapshot.owner)
+    window.clear()
+    XCTAssertTrue(window.snapshot.messages.isEmpty)
+    XCTAssertFalse(window.owns(oldOwner))
+    window.activate("a", pageSize: 24) { _, _ in
+      GalaxySSIChatHistoryPage(messages: [latest], nextCursor: nil, hasMore: false)
+    }
+    await fulfillment(of: [restored], timeout: 2)
+    finishOld?.resume(returning: GalaxySSIChatHistoryPage(messages: [old], nextCursor: nil, hasMore: false))
+    await fulfillment(of: [stalePublished], timeout: 0.1)
+    XCTAssertFalse(window.owns(oldOwner))
+    XCTAssertEqual(window.snapshot.messages, [latest])
+  }
+
+  @MainActor
+  func testTranscriptWindowCoalescesRefreshAndKeepsOlderAnchor() async throws {
+    let window = AgentTranscriptWindow()
+    let started = expectation(description: "first load started")
+    let firstPage = expectation(description: "first page published")
+    let refresh = expectation(description: "one coalesced refresh")
+    let older = expectation(description: "older page published")
+    var first: CheckedContinuation<GalaxySSIChatHistoryPage?, Never>?
+    var limits: [Int] = []
+    let latest = ChatMessage(contactId: "hermes", content: "latest", isMine: false, conversationId: "a")
+    let earlier = ChatMessage(contactId: "hermes", content: "earlier", isMine: true, conversationId: "a")
+    let page = GalaxySSIChatHistoryPage(messages: [latest], nextCursor: nil, hasMore: true)
+    let observer = window.$snapshot.sink { snapshot in
+      if snapshot.loadedLimit == 1 { firstPage.fulfill() }
+      if snapshot.loadedLimit == 2 { older.fulfill() }
+    }
+    defer { observer.cancel(); window.clear() }
+    window.activate("a", pageSize: 1) { _, limit in
+      limits.append(limit)
+      if limits.count == 1 {
+        return await withCheckedContinuation { first = $0; started.fulfill() }
+      }
+      if limit == 1 {
+        refresh.fulfill()
+        return page
+      }
+      return GalaxySSIChatHistoryPage(messages: [earlier, latest], nextCursor: nil, hasMore: false)
+    }
+    await fulfillment(of: [started], timeout: 2)
+    window.requestRefresh()
+    window.requestRefresh()
+    first?.resume(returning: page)
+    await fulfillment(of: [firstPage, refresh], timeout: 2)
+    XCTAssertTrue(window.loadOlder(pageSize: 1))
+    XCTAssertFalse(window.loadOlder(pageSize: 1))
+    await fulfillment(of: [older], timeout: 2)
+    XCTAssertEqual(limits, [1, 1, 2])
+    XCTAssertEqual(window.snapshot.prependAnchor, latest.id)
+    XCTAssertEqual(window.snapshot.messages, [earlier, latest])
+    XCTAssertFalse(window.snapshot.hasMore)
+  }
+
   func testEncryptedRowCacheRequiresIdenticalCiphertextAndEvictsWithinBounds() {
     var cache = GalaxySSIChatHistoryDatabase.RowCache(maximumRows: 2, maximumBytes: 8)
     let message = ChatMessage(contactId: "fixture", content: "private", isMine: false)
@@ -635,6 +714,31 @@ final class GalaxySSIChatHistoryDatabaseTests: XCTestCase {
     XCTAssertEqual(messages.count, Set(loaded.map(\.id)).count)
     XCTAssertTrue(database.containsIncoming(contactId: "contact", remoteMessageId: "remote-2103"))
     XCTAssertNil(try Data(contentsOf: file).range(of: Data("private-message-2104".utf8)))
+  }
+
+  func testAgentTranscriptWindowLoadsOnlySelectedConversationAcrossPageBoundaries() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let database = GalaxySSIChatHistoryDatabase(fileURL: root.appendingPathComponent("history.sqlite3"),
+      secrets: InMemorySecretStore())
+    let history = (0..<128).map { index in
+      ChatMessage(contactId: index.isMultiple(of: 2) ? "hermes" : "codex", content: String(index), isMine: false,
+                  createdAt: Date(timeIntervalSince1970: TimeInterval(index)), conversationId: "a")
+    }
+    let unrelated = ChatMessage(contactId: "hermes", content: "different", isMine: false, conversationId: "b")
+    XCTAssertTrue(database.upsertAll(history + [unrelated]))
+    let initial = await database.agentTranscriptWindow(conversationId: "a", limit: 24)
+    XCTAssertEqual(initial?.messages, Array(history.suffix(24)))
+    XCTAssertEqual(initial?.hasMore, true)
+    let expanded = await database.agentTranscriptWindow(conversationId: "a", limit: 124)
+    XCTAssertEqual(expanded?.messages, Array(history.suffix(124)))
+    XCTAssertEqual(expanded?.hasMore, true)
+    let complete = await database.agentTranscriptWindow(conversationId: "a", limit: 140)
+    XCTAssertEqual(complete?.messages, history)
+    XCTAssertEqual(complete?.hasMore, false)
+    database.setRowCachingEnabled(false)
+    let blocked = await database.agentTranscriptWindow(conversationId: "a", limit: 24)
+    XCTAssertNil(blocked)
   }
 
   func testConversationQueriesUpdatesDeletesAndUnreadSummary() throws {

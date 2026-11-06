@@ -2,19 +2,37 @@ import SwiftUI
 
 extension AgentHomeView {
   var agentOutput: some View {
+    Group {
+      if isCurrentTranscriptWindow(transcriptWindow.snapshot.owner), transcriptWindow.snapshot.loadedLimit > 0 {
+        activeAgentOutput.id(transcriptWindow.snapshot.owner)
+      } else {
+        Color.galaxySSIPageBackground
+      }
+    }
+  }
+
+  private func transcriptBinding<Value>(_ binding: Binding<Value>, owner: AgentTranscriptWindow.Owner?) -> Binding<Value> {
+    Binding(get: { binding.wrappedValue }, set: { value in
+      guard isCurrentTranscriptWindow(owner) else { return }
+      binding.wrappedValue = value
+    })
+  }
+
+  private var activeAgentOutput: some View {
+    let owner = transcriptWindow.snapshot.owner
     let replyRuntimeIndex = AgentReplyRuntimeIndex(
       remoteTasks: Array(coordinator.remoteAgentTaskStatuses.values),
       voiceRuns: voiceAgentRunRecovery.activeSnapshots
     )
     return GalaxySSIAgentHomeTranscriptView(
-      visibleMessageLimit: $visibleAgentMessageLimit,
-      olderTranscriptAnchor: $olderTranscriptAnchor,
-      transcriptTopLoadTriggered: $transcriptTopLoadTriggered,
-      transcriptAutoFollow: $transcriptAutoFollow,
-      transcriptShowLatestButton: $transcriptShowLatestButton,
-      transcriptContentMinY: $transcriptContentMinY,
+      visibleMessageLimit: transcriptBinding($visibleAgentMessageLimit, owner: owner),
+      olderTranscriptAnchor: transcriptBinding($olderTranscriptAnchor, owner: owner),
+      transcriptTopLoadTriggered: transcriptBinding($transcriptTopLoadTriggered, owner: owner),
+      transcriptAutoFollow: transcriptBinding($transcriptAutoFollow, owner: owner),
+      transcriptShowLatestButton: transcriptBinding($transcriptShowLatestButton, owner: owner),
+      transcriptContentMinY: transcriptBinding($transcriptContentMinY, owner: owner),
       agentSwipeRequest: agentSwipeRequest,
-      pendingAgentSwipeDirection: $pendingAgentSwipeDirection,
+      pendingAgentSwipeDirection: transcriptBinding($pendingAgentSwipeDirection, owner: owner),
       activeAgentConversationID: store.activeAgentConversationId,
       messages: messages,
       transcriptMessages: transcriptMessages,
@@ -31,15 +49,20 @@ extension AgentHomeView {
       voiceTranscriptionPendingViewID: Self.voiceTranscriptionPendingViewId,
       replyWaitingViewID: Self.replyWaitingViewId,
       latestButtonTitle: t("galaxyssi.agent.latest", "Back to latest"),
-      onLoadOlderTranscriptMessages: loadOlderTranscriptMessages,
+      onLoadOlderTranscriptMessages: {
+        if isCurrentTranscriptWindow(owner) { loadOlderTranscriptMessages() }
+      },
       onMessagesChanged: {
+        guard isCurrentTranscriptWindow(owner) else { return }
         if voiceTranscriptionPending && !messages.isEmpty {
           voiceTranscriptionPending = false
         }
         refreshVisibleAgentReplyReadState()
         refreshAgentRuntimeAuditRecords()
       },
-      onExecutionStateChanged: refreshAgentRuntimeAuditRecords
+      onExecutionStateChanged: {
+        if isCurrentTranscriptWindow(owner) { refreshAgentRuntimeAuditRecords() }
+      }
     ) {
       LazyVStack(spacing: 5) {
           if let session = activeAgentSession, let roster = session.collaborationRoster,
@@ -73,7 +96,9 @@ extension AgentHomeView {
                 for: store.activeAgentConversationId
               )
             },
-            onLoadOlderTranscriptMessages: loadOlderTranscriptMessages,
+            onLoadOlderTranscriptMessages: {
+              if isCurrentTranscriptWindow(owner) { loadOlderTranscriptMessages() }
+            },
             onApproveOnce: { task in
               requestAgentTaskApproval(task)
             },

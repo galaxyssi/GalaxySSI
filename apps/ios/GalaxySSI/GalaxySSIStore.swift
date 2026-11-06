@@ -341,6 +341,7 @@ final class GalaxySSIStore: ObservableObject {
   private var runtimePlaintextCleared = false
   var canRestoreMessageViewport: Bool { !runtimePlaintextCleared }
   var canReadVoiceReminderSnapshot: Bool { !runtimePlaintextCleared }
+  var canReadAgentTranscript: Bool { !runtimePlaintextCleared }
   private var suppressMessageDatabaseSync = false
 
   init(defaults: UserDefaults = .standard, secrets: GalaxySSISecretStore = KeychainSecretStore.shared,
