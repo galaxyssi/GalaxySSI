@@ -549,8 +549,9 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     do {
       let requestedURL = urlString(input)
       let scope = AgentIOSURLSessionBrowserSessionScope(context: invocation.context)
+      guard scope.ownershipIsValid else { throw AgentIOSURLSessionBrowserSessionStoreError.toolHandleOwnerMismatch }
       if requestedURL.isEmpty {
-        let snapshot = browserSessions.create(
+        let snapshot = try browserSessions.create(
           scope: scope,
           resourceId: invocation.context.invocationId,
           currentURL: "",
@@ -575,7 +576,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       let observation = browserObservation(resource)
       if resource.isPartial && !hasReadableBrowserObservation(observation) { throw AgentIOSURLSessionWebError.timeout }
       if invocation.isCancellationRequested { throw AgentIOSURLSessionWebError.cancelled }
-      let snapshot = browserSessions.create(
+      let snapshot = try browserSessions.create(
         scope: scope,
         resourceId: invocation.context.invocationId,
         currentURL: resource.finalURL,

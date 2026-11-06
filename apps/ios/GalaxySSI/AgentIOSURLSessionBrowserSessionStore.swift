@@ -5,15 +5,31 @@ struct AgentIOSURLSessionBrowserSessionScope: Equatable {
   var contextId: String
   var turnId: String
   var taskId: String
+  let collaborationOwnerKey: String?
+  let ownershipIsValid: Bool
 
   init(context: AgentNativeToolInvocationContext) {
     let owner = context.callerId.trimmingCharacters(in: .whitespacesAndNewlines)
     let conversation = context.conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
     let session = context.sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
-    ownerId = owner.isEmpty ? "galaxyssi.mobile_agent" : owner
+    let caller = owner.isEmpty ? "galaxyssi.mobile_agent" : owner
+    ownerId = caller
     contextId = conversation.isEmpty ? session : conversation
     turnId = context.turnId
-    taskId = context.attributes["recovery_task_id"] ?? ""
+    let workspace = context.attributes["workspace_id"] ?? ""
+    if let managed = context.collaborationOwner {
+      ownershipIsValid = managed.matchesBrowserInvocation(conversation: conversation, turn: context.turnId) &&
+        !session.isEmpty && !workspace.isBlank
+      collaborationOwnerKey = AgentMcpJSONCodec.sha256([
+        "member": .string(managed.ownershipDigest), "session": .string(session),
+        "conversation": .string(conversation), "workspace": .string(workspace), "caller": .string(caller)
+      ])
+      taskId = context.attributes["task_id"] ?? managed.sourceId
+    } else {
+      ownershipIsValid = true
+      collaborationOwnerKey = nil
+      taskId = context.attributes["recovery_task_id"] ?? ""
+    }
   }
 }
 
@@ -44,6 +60,7 @@ final class AgentIOSURLSessionBrowserSessionStore {
     var browserId: String
     var ownerId: String
     var contextId: String
+    let collaborationOwnerKey: String?
     var currentURL: String
     var history: [String]
     var createdAtEpochMillis: Int64
@@ -92,9 +109,10 @@ final class AgentIOSURLSessionBrowserSessionStore {
     currentURL: String,
     nowMillis: Int64,
     observation: AgentMcpJSONObject? = nil
-  ) -> AgentIOSURLSessionBrowserSessionSnapshot {
+  ) throws -> AgentIOSURLSessionBrowserSessionSnapshot {
     lock.lock()
     defer { lock.unlock() }
+    guard scope.ownershipIsValid else { throw AgentIOSURLSessionBrowserSessionStoreError.toolHandleOwnerMismatch }
     pruneLocked(nowMillis: nowMillis)
     evictIfNeededLocked()
     let browserId = Self.newHandleId()
@@ -103,6 +121,7 @@ final class AgentIOSURLSessionBrowserSessionStore {
       browserId: browserId,
       ownerId: clean(scope.ownerId, maxLength: 240).nilIfEmpty ?? "galaxyssi.mobile_agent",
       contextId: clean(scope.contextId, maxLength: 240),
+      collaborationOwnerKey: scope.collaborationOwnerKey,
       currentURL: String(currentURL.prefix(Int(AgentIOSWebMediaNativeToolCatalog.maxUrlCharacters))),
       history: history,
       createdAtEpochMillis: nowMillis,
@@ -198,7 +217,7 @@ final class AgentIOSURLSessionBrowserSessionStore {
   ) -> AgentMcpJSONObject? {
     lock.lock()
     defer { lock.unlock() }
-    guard !scope.contextId.isEmpty, !scope.turnId.isEmpty, !scope.taskId.isEmpty,
+    guard scope.ownershipIsValid, !scope.contextId.isEmpty, !scope.turnId.isEmpty, !scope.taskId.isEmpty,
           let operation = operations.last(where: { $0.id == requestId && $0.scope == scope }),
           operation.time <= nowMillis, nowMillis - operation.time < ttlMillis else { return nil }
     var output: AgentMcpJSONObject = [
@@ -217,7 +236,8 @@ final class AgentIOSURLSessionBrowserSessionStore {
     _ id: String, scope: AgentIOSURLSessionBrowserSessionScope, name: String, now: Int64,
     observation: AgentMcpJSONObject? = nil, revision: Int64 = 0
   ) {
-    guard !id.isEmpty, !scope.contextId.isEmpty, !scope.turnId.isEmpty, !scope.taskId.isEmpty else { return }
+    guard scope.ownershipIsValid, !id.isEmpty, !scope.contextId.isEmpty,
+          !scope.turnId.isEmpty, !scope.taskId.isEmpty else { return }
     operations.removeAll { $0.id == id && $0.scope == scope }
     var page = observation
     page?["revision"] = .int(revision)
@@ -239,7 +259,8 @@ final class AgentIOSURLSessionBrowserSessionStore {
     }
     let ownerId = clean(scope.ownerId, maxLength: 240).nilIfEmpty ?? "galaxyssi.mobile_agent"
     let contextId = clean(scope.contextId, maxLength: 240)
-    guard record.ownerId == ownerId else {
+    guard scope.ownershipIsValid, record.ownerId == ownerId,
+          record.collaborationOwnerKey == scope.collaborationOwnerKey else {
       throw AgentIOSURLSessionBrowserSessionStoreError.toolHandleOwnerMismatch
     }
     if !record.contextId.isEmpty, record.contextId != contextId {

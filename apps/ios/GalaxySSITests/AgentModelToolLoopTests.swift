@@ -191,6 +191,39 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertTrue(second.events.allSatisfy { $0.details["model_loop_id"] == .string("loop-b") })
   }
 
+  func testCollaborationOwnerSeparatesJournalsAndHostInvocationEvenWithSharedParentIDs() async throws {
+    var owners: [AgentCollaborationToolEvidenceScope?] = []
+    var effectKeys: [String] = []
+    let registry = try registry { invocation in
+      owners.append(invocation.context.collaborationOwner)
+      effectKeys.append(invocation.context.idempotencyKey ?? "")
+      return .success()
+    }
+    let journal = InMemoryAgentModelLoopJournal()
+    let ordinary = request(loopId: "shared-loop")
+    let encoder = JSONEncoder()
+    let ordinaryJSON = try JSONDecoder().decode(AgentMcpJSONObject.self,
+      from: encoder.encode(AgentModelLoopScope(request: ordinary)))
+    XCTAssertNil(ordinaryJSON["collaboration_owner_digest"])
+    var owned = ordinary
+    owned.collaborationOwner = AgentCollaborationToolEvidenceScope(runId: "run",
+      conversationId: ordinary.conversationId, turnId: ordinary.turnId,
+      memberId: "member", sourceId: String(Int64.min))
+    var other = owned
+    other.collaborationOwner?.sourceId = String(Int64.max)
+    XCTAssertEqual(Set([ordinary, owned, other].map { AgentModelLoopScope(request: $0).digest }).count, 3)
+
+    for request in [ordinary, owned, other] {
+      let adapter = ScriptedModelAdapter(AgentModelResponse(toolCalls: [call("same-call")]),
+                                         AgentModelResponse(assistantText: "Done."))
+      let result = await loop(adapter: adapter, registry: registry, journal: journal).run(request)
+      XCTAssertEqual(result.status, .completed)
+      XCTAssertEqual(adapter.requests.count, 2)
+    }
+    XCTAssertEqual(owners, [nil, owned.collaborationOwner, other.collaborationOwner])
+    XCTAssertEqual(Set(effectKeys).count, 3)
+  }
+
   func testDurableModelLoopRestoresCommittedResponsesAndToolObservations() async throws {
     var executions = 0
     let journal = InMemoryAgentModelLoopJournal()

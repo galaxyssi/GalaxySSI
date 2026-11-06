@@ -6417,12 +6417,13 @@ final class MessageCoordinator: ObservableObject {
         hasAttachments: !attachments.isEmpty,
         sessionID: outgoing.conversationId,
         conversationID: outgoing.conversationId,
-        turnID: outgoing.turnId,
+        turnID: outgoing.turnId.ifBlank(outgoing.id.uuidString),
         taskID: recall?.sourceId ?? task.taskId,
         baseSystemPrompt: localModelSystemPrompt,
         registry: localNativeToolRuntime.registry,
         readOnlyAnalysis: outgoing.readOnlyAnalysis,
         collaborationRecallScope: recall,
+        collaborationOwner: collaborationRecallScope,
         collaborationConversationDatabase: store.agentConversationDatabase,
         collaborationOriginalsOnly: true
       )
@@ -8507,12 +8508,13 @@ final class MessageCoordinator: ObservableObject {
       hasAttachments: !attachments.isEmpty,
       sessionID: outgoing.conversationId,
       conversationID: outgoing.conversationId,
-      turnID: outgoing.turnId,
+      turnID: outgoing.turnId.ifBlank(outgoing.id.uuidString),
       taskID: memberSourceId ?? outgoing.turnId.ifBlank(outgoing.id.uuidString),
       baseSystemPrompt: localModelSystemPrompt,
       registry: localNativeToolRuntime.registry,
       readOnlyAnalysis: outgoing.readOnlyAnalysis,
       collaborationRecallScope: recall,
+      collaborationOwner: collaborationRecallScope,
       collaborationConversationDatabase: store.agentConversationDatabase,
       nativeObservation: nativeObservation
     )

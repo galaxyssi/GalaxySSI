@@ -9,6 +9,7 @@ struct AgentModelLoopScope: Codable, Equatable, Hashable {
   var workspaceId: String
   var callerId: String
   var loopId: String
+  var collaborationOwnerDigest: String?
 
   init(request: AgentModelToolLoopRequest) {
     precondition(!request.loopId.isBlank, "A durable model loop requires a stable loop id")
@@ -19,6 +20,7 @@ struct AgentModelLoopScope: Codable, Equatable, Hashable {
     workspaceId = request.workspaceId
     callerId = request.callerId
     loopId = request.loopId
+    collaborationOwnerDigest = request.collaborationOwner?.ownershipDigest
   }
 
   var digest: String {
@@ -33,6 +35,7 @@ struct AgentModelLoopScope: Codable, Equatable, Hashable {
     case workspaceId = "workspace_id"
     case callerId = "caller_id"
     case loopId = "loop_id"
+    case collaborationOwnerDigest = "collaboration_owner_digest"
   }
 }
 

@@ -96,7 +96,8 @@ struct AgentEffectRecoveryRecord: Codable, Equatable {
   }
 
   func matches(taskId: String, sessionId: String, outgoing: ChatMessage) -> Bool {
-    !scope.taskId.isEmpty && !scope.sessionId.isEmpty && !scope.conversationId.isEmpty && !scope.turnId.isEmpty &&
+    scope.collaborationOwnerDigest == nil &&
+      !scope.taskId.isEmpty && !scope.sessionId.isEmpty && !scope.conversationId.isEmpty && !scope.turnId.isEmpty &&
       outgoing.isMine && scope.taskId == taskId && scope.sessionId == sessionId &&
       scope.conversationId == outgoing.conversationId && scope.turnId == outgoing.turnId.ifBlank(outgoing.id.uuidString)
   }

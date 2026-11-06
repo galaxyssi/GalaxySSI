@@ -727,6 +727,7 @@ struct AgentNativeEffectScope: Codable, Equatable, Hashable {
   var goalId: String
   var taskId: String
   var turnId: String
+  var collaborationOwnerDigest: String?
 
   init(
     clientRouteId: String = "",
@@ -734,7 +735,8 @@ struct AgentNativeEffectScope: Codable, Equatable, Hashable {
     conversationId: String = "",
     goalId: String = "",
     taskId: String = "",
-    turnId: String = ""
+    turnId: String = "",
+    collaborationOwnerDigest: String? = nil
   ) {
     self.clientRouteId = clientRouteId.trimmingCharacters(in: .whitespacesAndNewlines)
     self.sessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -742,6 +744,7 @@ struct AgentNativeEffectScope: Codable, Equatable, Hashable {
     self.goalId = goalId.trimmingCharacters(in: .whitespacesAndNewlines)
     self.taskId = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
     self.turnId = turnId.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.collaborationOwnerDigest = collaborationOwnerDigest
   }
 
   init(context: AgentNativeToolInvocationContext) {
@@ -751,7 +754,13 @@ struct AgentNativeEffectScope: Codable, Equatable, Hashable {
       conversationId: context.conversationId,
       goalId: context.attributes["goal_id"] ?? "",
       taskId: context.attributes["task_id"] ?? "",
-      turnId: context.turnId
+      turnId: context.turnId,
+      collaborationOwnerDigest: context.collaborationOwner.map { owner in
+        AgentMcpJSONCodec.sha256([
+          "owner": .string(owner.ownershipDigest), "workspace": .string(context.attributes["workspace_id"] ?? ""),
+          "caller": .string(context.callerId)
+        ])
+      }
     )
   }
 
@@ -762,6 +771,7 @@ struct AgentNativeEffectScope: Codable, Equatable, Hashable {
     case goalId = "goal_id"
     case taskId = "task_id"
     case turnId = "turn_id"
+    case collaborationOwnerDigest = "collaboration_owner_digest"
   }
 }
 
@@ -990,7 +1000,8 @@ enum AgentNativeToolReplayJsonCodec {
           conversationId: object.object("scope")?.string("conversation_id") ?? "",
           goalId: object.object("scope")?.string("goal_id") ?? "",
           taskId: object.object("scope")?.string("task_id") ?? "",
-          turnId: object.object("scope")?.string("turn_id") ?? ""
+          turnId: object.object("scope")?.string("turn_id") ?? "",
+          collaborationOwnerDigest: object.object("scope")?["collaboration_owner_digest"]?.strictStringValue
         )
       )
       guard key.isComplete else {
@@ -1010,18 +1021,20 @@ enum AgentNativeToolReplayJsonCodec {
   }
 
   private static func entryObject(_ entry: AgentNativeToolReplayEntry) -> AgentMcpJSONValue {
-    .object([
+    var scope: AgentMcpJSONObject = [
+      "client_route_id": .string(entry.key.scope.clientRouteId),
+      "session_id": .string(entry.key.scope.sessionId),
+      "conversation_id": .string(entry.key.scope.conversationId),
+      "goal_id": .string(entry.key.scope.goalId),
+      "task_id": .string(entry.key.scope.taskId),
+      "turn_id": .string(entry.key.scope.turnId)
+    ]
+    scope["collaboration_owner_digest"] = entry.key.scope.collaborationOwnerDigest.map(AgentMcpJSONValue.string)
+    return .object([
       "tool_id": .string(entry.key.toolId),
       "tool_version": .string(entry.key.toolVersion),
       "idempotency_key": .string(entry.key.idempotencyKey),
-      "scope": .object([
-        "client_route_id": .string(entry.key.scope.clientRouteId),
-        "session_id": .string(entry.key.scope.sessionId),
-        "conversation_id": .string(entry.key.scope.conversationId),
-        "goal_id": .string(entry.key.scope.goalId),
-        "task_id": .string(entry.key.scope.taskId),
-        "turn_id": .string(entry.key.scope.turnId)
-      ]),
+      "scope": .object(scope),
       "invocation_id": .string(entry.invocationId),
       "input_sha256": .string(entry.inputSha256),
       "saved_at_millis": .int(entry.savedAtMillis),

@@ -163,10 +163,19 @@ enum AgentIOSLocalModelWebToolRunner {
     registry: AgentNativeToolRegistry,
     readOnlyAnalysis: Bool = false,
     collaborationRecallScope: AgentCollaborationToolEvidenceScope? = nil,
+    collaborationOwner: AgentCollaborationToolEvidenceScope? = nil,
     collaborationConversationDatabase: AgentConversationDatabase? = nil,
     collaborationOriginalsOnly: Bool = false,
     nativeObservation: ((AgentMcpJSONObject, AgentNativeToolResult) -> AgentMcpJSONObject?)? = nil
   ) async throws -> AgentIOSLocalModelWebToolCompletion {
+    let owner = collaborationOwner ?? collaborationRecallScope
+    let effectiveTurn = turnID.ifBlank(taskID)
+    if let owner {
+      guard owner.matchesBrowserInvocation(conversation: conversationID, turn: effectiveTurn),
+            collaborationRecallScope == nil || collaborationRecallScope == owner else {
+        throw AgentIOSLocalModelWebToolError.incomplete("The collaboration browser owner does not match this turn.")
+      }
+    }
     let webRegistry = try registry.subset {
       AgentIOSLocalModelWebToolProtocol.toolIDs.contains($0.id) &&
         (!readOnlyAnalysis || AgentScreenAnalysisToolPolicy.allows($0))
@@ -201,13 +210,13 @@ enum AgentIOSLocalModelWebToolRunner {
     let outcome = await AgentModelToolLoop(
       modelAdapter: session,
       toolRegistry: webRegistry,
-      journal: scopedRecall == nil ? EncryptedAgentModelLoopJournal() : InMemoryAgentModelLoopJournal(),
+      journal: owner == nil ? EncryptedAgentModelLoopJournal() : InMemoryAgentModelLoopJournal(),
       nativeObservation: nativeObservation
     ).run(
       AgentModelToolLoopRequest(
         sessionId: sessionID.ifBlank(taskID),
         conversationId: conversationID.ifBlank(taskID),
-        turnId: turnID.ifBlank(taskID),
+        turnId: effectiveTurn,
         taskId: taskID,
         workspaceId: conversationID.ifBlank(taskID),
         loopId: "local-web-\(recoveryIdentity)",
@@ -226,7 +235,8 @@ enum AgentIOSLocalModelWebToolRunner {
         grantedConsents: consents,
         recoveryInputIdentity: recoveryIdentity,
         observationHistoryEnabled: true,
-        observationHistorySource: collaborationRecallScope.map { AgentModelLoopRecoveryIdentity.sha256($0) } ?? ""
+        observationHistorySource: owner?.ownershipDigest ?? "",
+        collaborationOwner: owner
       )
     )
     guard outcome.status == .completed, !outcome.assistantText.isBlank else {

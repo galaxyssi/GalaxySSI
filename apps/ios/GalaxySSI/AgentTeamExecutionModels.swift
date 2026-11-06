@@ -16,6 +16,18 @@ struct AgentCollaborationToolEvidenceScope: Codable, Equatable {
   var turnId: String
   var memberId: String
   var sourceId: String
+
+  var ownershipDigest: String {
+    AgentMcpJSONCodec.sha256([
+      "run": .string(runId), "conversation": .string(conversationId), "turn": .string(turnId),
+      "member": .string(memberId), "source": .string(sourceId)
+    ])
+  }
+
+  func matchesBrowserInvocation(conversation: String, turn: String) -> Bool {
+    !runId.isBlank && !memberId.isBlank && !sourceId.isBlank &&
+      !conversationId.isBlank && !turnId.isBlank && conversationId == conversation && turnId == turn
+  }
 }
 
 struct AgentCollaborationModelAdmission: Codable, Equatable {
