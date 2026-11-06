@@ -52,7 +52,7 @@ struct VoiceReminderSnapshot: Codable, Equatable, Sendable {
           conversationID: $0.conversationID, state: "unread")
     }
     if let unreadNewsCount, unreadNewsCount > 0 {
-      items.append(row("news:unread", "news", "Discoveries", "Unread updates: \(unreadNewsCount)",
+      items.append(row("news:unread", "news", "Following updates", "Unread updates: \(unreadNewsCount)",
                        0, state: "unread"))
     }
     return [
