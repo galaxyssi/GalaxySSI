@@ -38,6 +38,7 @@ internal object HealthImportScheduler {
             runCatching { HealthOriginalStore(context).use { it.recoverCropWrites() } }
             runCatching { HealthOriginalRetention.recover(context) }
             runCatching { HealthOriginalStore(context).use { store ->
+                HealthProtectedPdfImport.recoverInterrupted(store)
                 var after: Pair<Long, String>? = null
                 do {
                     val jobs = store.pendingJobs(after)
@@ -73,7 +74,7 @@ private class HealthImportInterrupted : CancellationException()
 internal class HealthImportPipeline(private val context: Context, private val recordDatabase: String = "health_records_v1.db") {
     fun run(store: HealthOriginalStore, id: String, prepareCapture: Boolean = false, stopped: () -> Boolean = { false }): HealthImportOutcome {
             val initial = store.job(id) ?: return HealthImportOutcome.FAILED
-            if (initial.needsPdfPassword()) return HealthImportOutcome.FAILED
+            if (initial.needsPdfPassword() || initial.state == HealthImportState.PROTECTED_RECOGNIZING) return HealthImportOutcome.FAILED
             if (initial.state in listOf(HealthImportState.CANCELLED, HealthImportState.REVIEW, HealthImportState.TABLE_REVIEW, HealthImportState.ORIGINAL_ONLY, HealthImportState.CAPTURE_READY)) return HealthImportOutcome.COMPLETE
             if (prepareCapture && initial.captureSubmitted) return HealthImportOutcome.COMPLETE
             if (!prepareCapture && initial.captureBatch.isNotBlank() && !initial.captureSubmitted) return HealthImportOutcome.COMPLETE
@@ -159,7 +160,7 @@ internal class HealthImportPipeline(private val context: Context, private val re
                     is java.io.FileNotFoundException -> "source_unavailable"
                     else -> "import_failed"
                 }
-                store.updateJob(id) { it.copy(state = HealthImportState.FAILED, error = code) }
+                store.updateJob(id) { it.copy(state = HealthImportState.FAILED, error = code, protectedPdf = it.protectedPdf || code == "pdf_password") }
                 return HealthImportOutcome.FAILED
             }
     }

@@ -5,7 +5,16 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.app.KeyguardManager
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.ServiceConnection
+import android.os.Bundle
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.os.Message
+import android.os.Messenger
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
@@ -29,6 +38,9 @@ import com.tom_roush.pdfbox.pdmodel.graphics.state.RenderingMode
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Assert.*
 import org.junit.Assume.assumeFalse
 import org.junit.Test
@@ -174,6 +186,138 @@ class HealthPdfTextDeviceTest {
         assertEquals(HealthImportOutcome.COMPLETE, HealthProtectedPdfImport.run(context, store, job.id,
             "fixture-owner".toCharArray(), { false }))
         assertEquals(HealthImportState.REVIEW, store.job(job.id)?.state)
+    }
+
+    @Test fun killedProtectedPdfReaderResumesFromItsEncryptedCheckpointInTheNativeQueue() = isolated { names, store ->
+        assumeFalse("Native restart recovery requires an unlocked Android 10+ display", android.os.Build.VERSION.SDK_INT < 29 ||
+            context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val bytes = pdf {
+            addTextPage(this)
+            addScan(this, header = false)
+            protect(StandardProtectionPolicy("fixture-owner", "fixture-password", AccessPermission()).apply {
+                encryptionKeyLength = 128; setPreferAES(true)
+            })
+        }
+        try {
+            val job = import(store, bytes)
+            val pipeline = HealthImportPipeline(context, names.records)
+            assertEquals(HealthImportOutcome.FAILED, pipeline.run(store, job.id))
+            lateinit var first: HealthOcrPage
+            killPdfReaderAtCheckpoint(names, job.id) {
+                val active = requireNotNull(store.job(job.id))
+                assertEquals(HealthImportState.PROTECTED_RECOGNIZING, active.state)
+                assertEquals(1, active.nextPage)
+                assertEquals(2, active.pageCount)
+                assertTrue(active.protectedReviewPending())
+                first = requireNotNull(store.page(job.id, 1))
+                assertNull(store.page(job.id, 2))
+                HealthProtectedPdfImport.recoverInterrupted(store)
+                assertEquals(active, store.job(job.id))
+                val duplicate = "fixture-password".toCharArray()
+                assertEquals(HealthImportOutcome.RETRY, HealthProtectedPdfImport.run(context, store, job.id, duplicate, { false }))
+                assertTrue(duplicate.all { it == '\u0000' })
+                assertEquals(HealthImportOutcome.FAILED, pipeline.run(store, job.id))
+                assertTrue(store.pendingJobs().none { it.id == job.id })
+            }
+            assertEquals(HealthImportState.PROTECTED_RECOGNIZING, store.job(job.id)?.state)
+            val intent = Intent(context, HealthCaptureActivity::class.java).putExtra("health_review_test_id", names.fixture)
+            ActivityScenario.launch<HealthCaptureActivity>(intent).use { scenario ->
+                val saved = context.getString(R.string.health_pdf_saved_progress, 1, 2)
+                awaitPdfUi(scenario, "recoverable page checkpoint") { views ->
+                    val labels = views.filterIsInstance<TextView>().map { it.text.toString() }
+                    labels.any { it.contains(saved) } && context.getString(R.string.health_review_title) !in labels
+                }
+                val recovered = requireNotNull(store.job(job.id))
+                assertEquals("pdf_password_interrupted", recovered.error)
+                assertEquals(1, recovered.nextPage)
+                assertEquals(first, store.page(job.id, 1))
+                assertTrue(store.pendingJobs().none { it.id == job.id })
+                assertFalse(recovered.json().toString().contains("fixture-password"))
+                if (InstrumentationRegistry.getArguments().getString("healthProtectedPdfScreenshot") == "true") {
+                    val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+                    automation.waitForIdle(250, 3_000)
+                    val image = requireNotNull(automation.takeScreenshot())
+                    try { context.cacheDir.resolve("health-protected-pdf-recovered.png").outputStream().use {
+                        assertTrue(image.compress(Bitmap.CompressFormat.PNG, 100, it))
+                    } } finally { image.recycle() }
+                }
+                val unlock = context.getString(R.string.health_pdf_unlock)
+                awaitPdfUi(scenario, "unlock row") { views ->
+                    val label = views.filterIsInstance<TextView>().firstOrNull { it.text.toString() == unlock }
+                    generateSequence(label as View?) { it.parent as? View }.firstOrNull { it.isClickable }?.performClick() == true
+                }
+                awaitPdfUi(scenario, "new password dialog") { views ->
+                    val input = views.filterIsInstance<EditText>().firstOrNull { it.tag == "health-pdf-password-input" }
+                    val button = views.filterIsInstance<Button>().firstOrNull { it.id == android.R.id.button1 && it.text.toString() == unlock }
+                    if (input == null || button == null) false else {
+                        assertTrue(input.text.isEmpty())
+                        input.setText("fixture-password")
+                        button.performClick()
+                    }
+                }
+                awaitPdfUi(scenario, "review action") { views ->
+                    views.filterIsInstance<TextView>().any { it.text == context.getString(R.string.health_review_title) }
+                }
+                assertEquals(HealthImportState.REVIEW, store.job(job.id)?.state)
+                assertEquals(first, store.page(job.id, 1))
+                assertEquals(HealthRecognition.OCR, store.page(job.id, 2)?.recognition)
+                assertNull(store.page(job.id, 3))
+                val original = requireNotNull(store.originalForJob(job.id))
+                assertArrayEquals(bytes, store.input(original).use { it.readBytes() })
+                HealthRecordStore(context, names.records).use { assertEquals(0L, it.count()) }
+            }
+        } finally { bytes.fill(0) }
+    }
+
+    private fun awaitPdfUi(scenario: ActivityScenario<HealthCaptureActivity>, label: String, ready: (List<View>) -> Boolean) {
+        val deadline = SystemClock.elapsedRealtime() + 16_000
+        do {
+            var found = false
+            scenario.onActivity {
+                found = ready(WindowInspector.getGlobalWindowViews().flatMap(::descendants).filter { it.isShown })
+            }
+            if (found) return
+            SystemClock.sleep(50)
+        } while (SystemClock.elapsedRealtime() < deadline)
+        fail("Missing native state: $label")
+    }
+
+    private fun killPdfReaderAtCheckpoint(names: HealthOverviewDatabases, id: String, beforeDeath: () -> Unit) {
+        val checkpoint = CountDownLatch(1)
+        val disconnected = CountDownLatch(1)
+        val sent = AtomicBoolean()
+        val remote = java.util.concurrent.atomic.AtomicReference<Messenger>()
+        val failure = java.util.concurrent.atomic.AtomicReference<String>()
+        val reply = Messenger(Handler(Looper.getMainLooper()) { message ->
+            if (message.what != 1) failure.set(message.data.getString("failure").orEmpty())
+            checkpoint.countDown()
+            true
+        })
+        val connection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName, binder: IBinder) {
+                if (!sent.compareAndSet(false, true)) return
+                val service = Messenger(binder).also(remote::set)
+                runCatching {
+                    service.send(Message.obtain(null, 1).apply {
+                        replyTo = reply
+                        data = Bundle().apply { putString("fixture", names.fixture); putString("job", id) }
+                    })
+                }.onFailure { failure.set(it.javaClass.simpleName); checkpoint.countDown() }
+            }
+            override fun onServiceDisconnected(name: ComponentName) { disconnected.countDown() }
+            override fun onBindingDied(name: ComponentName) { disconnected.countDown() }
+        }
+        assertTrue(context.bindService(Intent(context, HealthProtectedPdfProcessFixture::class.java), connection, Context.BIND_AUTO_CREATE))
+        try {
+            assertTrue("Reader did not checkpoint", checkpoint.await(25, TimeUnit.SECONDS))
+            assertNull(failure.get())
+            beforeDeath()
+            requireNotNull(remote.get()).send(Message.obtain(null, 2))
+            assertTrue("Reader process did not die", disconnected.await(15, TimeUnit.SECONDS))
+        } finally {
+            if (disconnected.count != 0L) runCatching { remote.get()?.send(Message.obtain(null, 2)) }
+            context.unbindService(connection)
+        }
     }
 
     @Test fun nativeQueuePasswordDialogCancelsRejectsWrongPasswordAndUnlocksForReview() = isolated { names, store ->
