@@ -230,12 +230,13 @@ struct PublicNewsHeadlineRetryLedger: Codable {
     return lease
   }
 
-  mutating func finish(_ key: String, lease: UUID, at now: Date, reason: String?) {
+  mutating func finish(_ key: String, lease: UUID, at now: Date, reason: String?, notBefore: Date? = nil) {
     guard var entry = entries[key], entry.lease == lease else { return }
     guard let reason else { entries.removeValue(forKey: key); return }
     entry.lease = nil
     entry.reason = reason
-    entry.next = now.addingTimeInterval(min(1_800, 30 * pow(2, Double(max(0, entry.attempts - 1)))))
+    let retry = now.addingTimeInterval(min(1_800, 30 * pow(2, Double(max(0, entry.attempts - 1)))))
+    entry.next = max(retry, notBefore ?? retry)
     entries[key] = entry
   }
 }

@@ -1,10 +1,68 @@
 import SQLite3
+import Combine
 import SwiftUI
 import UIKit
 import XCTest
 @testable import GalaxySSI
 
 final class PublicNewsFeedTests: XCTestCase {
+  @MainActor
+  func testRefreshPersistsCompletedPublisherBeforeSlowPublishersAndSurvivesCancellation() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appendingPathComponent("public-news.json")
+    let archive = PublicNewsArchive(fileURL: file)
+    let firstSource = try XCTUnwrap(PublicNewsSource.builtIn.first).url
+    XCTAssertGreaterThan(PublicNewsSource.builtIn.count, 1)
+    let article = PublicNewsArticle(url: try XCTUnwrap(URL(string: "https://example.com/finished")),
+      title: "Finished", summary: "Available without a model", publisher: "Fixture",
+      publishedAt: nil, discoveredAt: Date())
+    let published = expectation(description: "Completed source becomes visible while other sources are pending")
+    let observation = archive.$articles.dropFirst().first(where: { !$0.isEmpty }).sink { _ in published.fulfill() }
+    defer { observation.cancel() }
+
+    let refresh = Task {
+      await archive.refresh { source, _ in
+        if source.url == firstSource { return [article] }
+        try await Task.sleep(nanoseconds: 60_000_000_000)
+        return []
+      }
+    }
+    defer { refresh.cancel() }
+    await fulfillment(of: [published], timeout: 3)
+    XCTAssertTrue(archive.refreshing)
+    XCTAssertEqual(PublicNewsArchive.readReminderUnreadCount(fileURL: file), 1)
+    XCTAssertTrue(archive.setSaved(article.id, to: true))
+    archive.markRead(article.id)
+    refresh.cancel()
+    await refresh.value
+
+    let reopened = PublicNewsArchive(fileURL: file)
+    reopened.load()
+    XCTAssertEqual(reopened.articles.map(\.id), [article.id])
+    XCTAssertEqual(reopened.articles.first?.read, true)
+    XCTAssertEqual(reopened.articles.first?.saved, true)
+    XCTAssertNil(try PublicNewsRowArchive.load(legacyURL: file).snapshot.refreshedAt)
+  }
+
+  @MainActor
+  func testRefreshReportsPublisherFailureWithoutDiscardingCompletedBatch() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appendingPathComponent("public-news.json")
+    let archive = PublicNewsArchive(fileURL: file)
+    let firstSource = try XCTUnwrap(PublicNewsSource.builtIn.first).url
+    let url = try XCTUnwrap(URL(string: "https://example.com/finished"))
+    await archive.refresh { source, now in
+      guard source.url == firstSource else { throw URLError(.timedOut) }
+      return [.init(url: url, title: "Finished", summary: "", publisher: "Fixture",
+                    publishedAt: nil, discoveredAt: now)]
+    }
+    XCTAssertTrue(archive.refreshIncomplete)
+    XCTAssertEqual(archive.articles.map(\.url), [url])
+    XCTAssertNotNil(try PublicNewsRowArchive.load(legacyURL: file).snapshot.refreshedAt)
+  }
+
   @MainActor
   func testNewsFeedHeaderUsesPageColorsWithoutChangingTheSharedDefault() {
     let feed = GalaxySSITopBar(title: "Following updates", backgroundColor: .galaxySSIPageBackground,

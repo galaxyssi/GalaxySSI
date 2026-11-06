@@ -2,6 +2,32 @@ import XCTest
 @testable import GalaxySSI
 
 final class GlobalModelCallBudgetTests: XCTestCase {
+  func testOptedInReviewSkipsOnlyTheLegacyDailyDispatchCount() {
+    let first = acquireModelCall(GlobalModelCallBudgetState(), "private", dailyLimit: 1)
+    let completed = GlobalModelCallBudgetPolicy.complete(state: first.state, leaseId: first.leaseId,
+      inputTokens: 8_000, outputTokens: 1_000, reportedCostMicros: 5,
+      responseText: "", nowMillis: globalBudgetNow + 1)
+    let now = globalBudgetNow + 2
+
+    func review(_ state: GlobalModelCallBudgetState, id: String = "review",
+                tokens: Int64 = 500, cost: Int64 = 100) -> GlobalModelCallBudgetDecision {
+      GlobalModelCallBudgetPolicy.acquire(state: state, leaseId: id, kind: .researchEvidence, ownerKey: id,
+        leaseMillis: globalBudgetLeaseMillis, dailyLimit: 1, concurrencyLimit: 1, nowMillis: now,
+        estimatedInputTokens: tokens, dailyTokenLimit: 10_000, dailyReportedCostLimitMicros: cost,
+        enforceDailyDispatchLimit: false)
+    }
+
+    XCTAssertEqual(acquireModelCall(completed, "private-next", dailyLimit: 1, nowMillis: now).denial, .dailyLimit)
+    XCTAssertEqual(review(completed, tokens: 1_001).denial, .tokenLimit)
+    XCTAssertEqual(review(completed, cost: 5).denial, .reportedCostLimit)
+    let allowed = review(completed)
+    XCTAssertTrue(allowed.granted)
+    XCTAssertEqual(allowed.state.dispatches.count, 2)
+    XCTAssertEqual(review(allowed.state, id: "different").denial, .concurrencyLimit)
+    let released = GlobalModelCallBudgetPolicy.release(state: allowed.state, leaseId: allowed.leaseId, nowMillis: now)
+    XCTAssertEqual(review(released).denial, .duplicateDispatch)
+  }
+
   func testGlobalModelCallBudgetAcquisitionIdempotencyAndConcurrency() {
     let first = acquireModelCall(GlobalModelCallBudgetState(), "call-1", concurrencyLimit: 1)
     let duplicateActive = acquireModelCall(first.state, "call-1", concurrencyLimit: 1)

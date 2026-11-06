@@ -11,7 +11,8 @@ enum GalaxySSIGlobalAutonomousBudgetRuntime {
     systemPrompt: String,
     prompt: String,
     nowMillis: Int64,
-    leaseMillis: Int64 = GlobalAutonomousRunPolicy.leaseMillis
+    leaseMillis: Int64 = GlobalAutonomousRunPolicy.leaseMillis,
+    optedInPublicNewsReview: Bool = false
   ) -> GlobalModelCallBudgetDecision {
     let settings = store.globalAgentSettings
     let ownerKey = ownerKey(runId: runId, actionId: actionId, kind: kind)
@@ -31,7 +32,10 @@ enum GalaxySSIGlobalAutonomousBudgetRuntime {
       resourceId: resourceId,
       estimatedInputTokens: estimatedInputTokens,
       dailyTokenLimit: settings.dailyBackgroundTokenBudget,
-      dailyReportedCostLimitMicros: settings.dailyBackgroundReportedCostBudgetMicros
+      dailyReportedCostLimitMicros: settings.dailyBackgroundReportedCostBudgetMicros,
+      enforceDailyDispatchLimit: !(optedInPublicNewsReview && kind == .researchEvidence &&
+        resourceId == "ios:public-news-local" && PublicNewsSourceReviewWorker.allowed(settings) &&
+        UserDefaults.standard.bool(forKey: PublicNewsSourceReviewWorker.preferenceKey))
     )
     state.modelBudget = decision.state
     budgetStore.save(state)

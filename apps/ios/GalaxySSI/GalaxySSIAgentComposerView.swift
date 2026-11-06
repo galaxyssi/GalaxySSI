@@ -60,10 +60,6 @@ struct GalaxySSIAgentComposerView: View {
     CGFloat(deviceInputPolicy.minimumTouchTargetDp)
   }
 
-  private var newGlobalInsightCount: Int {
-    store.globalProactiveInboxNewCount()
-  }
-
   private var voiceAuthorizationRequirement: VoiceASRAuthorizationRequirement {
     VoiceASRProviderRoutingPolicy.currentAuthorizationRequirement(settings: voiceSettings)
   }
@@ -170,7 +166,10 @@ struct GalaxySSIAgentComposerView: View {
         if !mentionSuggestions.isEmpty {
           mentionPicker
         }
-        GalaxySSIAgentChatShortcuts(feedUnread: newGlobalInsightCount, chatUnread: chatUnreadCount,
+        let findings = store.globalProactiveInboxItems(limit: 100)
+        GalaxySSIAgentChatShortcuts(
+          feedUnread: findings.isEmpty ? nil : GlobalProactiveInboxPolicy.newCount(findings),
+          chatUnread: chatUnreadCount,
           minimumTouchSize: minimumTouchSize,
           onNewSession: { runShortcut(onNewSession) },
           onOpenSessions: { runShortcut(onOpenSessions) },

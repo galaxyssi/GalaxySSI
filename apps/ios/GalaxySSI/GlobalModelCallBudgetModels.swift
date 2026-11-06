@@ -342,7 +342,8 @@ enum GlobalModelCallBudgetPolicy {
     resourceId: String = "",
     estimatedInputTokens: Int64 = 0,
     dailyTokenLimit: Int64 = GlobalModelCallBudgetPolicy.maxDailyTokenLimit,
-    dailyReportedCostLimitMicros: Int64 = 0
+    dailyReportedCostLimitMicros: Int64 = 0,
+    enforceDailyDispatchLimit: Bool = true
   ) -> GlobalModelCallBudgetDecision {
     let normalized = normalize(state: state, nowMillis: nowMillis)
     if let existing = normalized.activeLeases.first(where: { $0.id == leaseId }) {
@@ -360,7 +361,9 @@ enum GlobalModelCallBudgetPolicy {
       )
     }
 
-    let appliedDailyLimit = clamp(dailyLimit, minDailyLimit, maxDailyLimit)
+    // Admission must not evict active-window usage from the bounded ledger.
+    let appliedDailyLimit = enforceDailyDispatchLimit
+      ? clamp(dailyLimit, minDailyLimit, maxDailyLimit) : maxDispatchHistory
     if normalized.dispatches.count >= appliedDailyLimit {
       let oldest = normalized.dispatches.map(\.startedAtMillis).min() ?? nowMillis
       return denied(
