@@ -531,14 +531,33 @@ extension GalaxySSIStore {
   }
 
   @discardableResult
-  func createAgentSession(title: String = "", privateMode: Bool = false) -> AgentConversation {
+  func createAgentSession(title: String = "", privateMode: Bool = false, globalTopicKey: String = "") -> AgentConversation {
     createAgentSession(
       title: title,
       createdByAgent: false,
       parentConversationId: "",
-      globalTopicKey: "",
+      globalTopicKey: globalTopicKey,
       privateMode: privateMode
     )
+  }
+
+  func openPublicNewsDiscussion(_ seed: PublicNewsDiscussionSeed, fallbackTitle: String, sourceLabel: String) -> String? {
+    let existing = agentConversationDatabase.readAll().first {
+      $0.globalTopicKey == seed.key && $0.mergedIntoConversationId.isBlank && !$0.privateMode && !$0.trackingPaused
+    }
+    let title = String(seed.title.prefix(72)).ifBlank(fallbackTitle)
+    let session = existing ?? createAgentSession(title: title, globalTopicKey: seed.key)
+    guard agentConversationDatabase.read(session.id) != nil || agentConversationDatabase.readDraft(session.id) != nil else {
+      return nil
+    }
+    let messageID = seed.key + ":" + session.id
+    if !chatHistoryDatabase.containsIncoming(contactId: "hermes", remoteMessageId: messageID) {
+      _ = appendIncoming(seed.evidence, from: "hermes", remoteMessageId: messageID,
+        traceStage: "public_news_discussion_seed", conversationId: session.id,
+        richOutputJson: seed.richOutput(sourceLabel: sourceLabel))
+      guard chatHistoryDatabase.containsIncoming(contactId: "hermes", remoteMessageId: messageID) else { return nil }
+    }
+    return switchAgentSession(session.id) ? session.id : nil
   }
 
   @discardableResult

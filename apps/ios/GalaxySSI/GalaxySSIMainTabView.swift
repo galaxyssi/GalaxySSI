@@ -69,6 +69,12 @@ struct GalaxySSIMainTabView: View {
           .trimmingCharacters(in: .whitespacesAndNewlines)
         routeToContact(contactId)
       }
+      .onReceive(NotificationCenter.default.publisher(for: .galaxySSIOpenPublicNewsDiscussion, object: store)) { notification in
+        guard scenePhase == .active, let conversation = notification.userInfo?["conversationId"] as? String,
+              conversation == store.activeAgentConversationId else { return }
+        voicePage = nil
+        selectedTab = .agent
+      }
       .task {
         try? await Task.sleep(nanoseconds: 250_000_000)
         guard !Task.isCancelled else { return }

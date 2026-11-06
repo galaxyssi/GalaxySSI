@@ -21,6 +21,41 @@ struct PublicNewsArticle: Codable, Equatable, Identifiable {
   }
 }
 
+struct PublicNewsDiscussionSeed {
+  let key: String
+  let title: String
+  let source: URL
+  let summary: String
+
+  static func sourceURL(_ url: URL) -> URL? {
+    guard let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          let scheme = parts.scheme?.lowercased(), ["https", "http"].contains(scheme),
+          let host = parts.host, !host.isEmpty, parts.user == nil, parts.password == nil else { return nil }
+    return parts.url
+  }
+
+  init?(article: PublicNewsArticle) {
+    guard let source = Self.sourceURL(article.url) else { return nil }
+    key = "public-news-discussion:" + PublicNewsSpeechBookmark.key(for: article.id)
+    title = String(article.title.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").prefix(160))
+    self.source = source
+    summary = String(article.summary.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1_500))
+  }
+
+  var evidence: String {
+    AgentUntrustedEvidenceBoundary.wrapText(sourceType: "public_news", sourceId: key,
+      content: [title, source.absoluteString, summary].filter { !$0.isEmpty }.joined(separator: "\n"))
+  }
+
+  func richOutput(sourceLabel: String) -> String {
+    var blocks: [AgentRichBlock] = []
+    if !title.isEmpty { blocks.append(.init(id: "news-title", type: .heading, text: title)) }
+    if !summary.isEmpty { blocks.append(.init(id: "news-summary", type: .quote, text: summary)) }
+    blocks.append(.init(id: "news-source", type: .link, title: sourceLabel, uri: source.absoluteString))
+    return AgentRichContentCodec.encode(blocks)
+  }
+}
+
 struct PublicNewsTimeline {
   enum Filter: String, CaseIterable { case all, unread, saved }
 
@@ -58,9 +93,10 @@ struct PublicNewsTimeline {
     if filter == .saved { revealArrivals() }
   }
 
-  mutating func revealArrivals() {
-    visibleIDs.insert(contentsOf: pendingIDs, at: 0)
-    pendingIDs = []
+  mutating func revealArrivals(maximum: Int = .max) {
+    let count = min(max(0, maximum), pendingIDs.count)
+    visibleIDs.insert(contentsOf: pendingIDs.suffix(count), at: 0)
+    pendingIDs.removeLast(count)
   }
 }
 
