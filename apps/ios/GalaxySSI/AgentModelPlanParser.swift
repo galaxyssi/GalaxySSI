@@ -86,7 +86,9 @@ enum AgentModelPlanParser {
       throw AgentModelPlanRejection("actions", "array_required", "Provide a non-empty actions array.")
     }
     let observed = observedCompletion(json["completion_requirements"]?.objectValue?["outcomes"])
-    guard observed.error == nil else { return nil }
+    if let diagnostic = observed.error {
+      throw AgentModelPlanRejection("completion_requirements.outcomes", "invalid_completion_shape", diagnostic)
+    }
     var completionRequirements = parseCompletionRequirements(json["completion_requirements"])
     completionRequirements?.outcomes = observed.outcomes
     if json["completion_requirements"] != nil && completionRequirements == nil {
