@@ -2629,7 +2629,11 @@ final class MessageCoordinator: ObservableObject {
           let context = try AgentTeamExecutionHistoryStore.shared.recoveryContext(source: binding.sourceIdentity,
             conversation: binding.identity.conversationId, turn: binding.identity.turnId, contact: binding.contactId),
           context.owner.supervisorRunId == teamSource.supervisorRunId, context.owner.memberId == teamSource.memberId,
-          context.owner.deliveryMode == .observe, context.team.state != .cancelled,
+          context.owner.deliveryMode == (teamSource.primary == true ? .respond : .observe),
+          context.team.state != .cancelled, context.member.dispatchCheckpoint != .notStarted,
+          teamSource.primary != true || (context.team.primaryMemberId == context.member.memberId &&
+            (context.member.dispatchCheckpoint == .dispatching || context.member.dispatchCheckpoint == .accepted) &&
+            originalTeamPrimarySource(context.team)?.id == binding.sourceId),
           binding.identity.taskId == context.owner.sourceMessageId,
           taskIdentityStore.identity(contactId: binding.contactId, sourceMessageId: binding.sourceIdentity) == binding.identity,
           let contact = store.contact(id: binding.contactId), contact.trustState == .verified,
@@ -2638,10 +2642,25 @@ final class MessageCoordinator: ObservableObject {
           store.serverLinks.contains(where: { $0.paired && $0.desktopId == binding.desktopId &&
             $0.routes.clientRouteId == binding.identity.clientRouteId }),
           !GalaxySSITransportPrivacyPolicy.isLocalOnly(binding.fields), scope(context.team),
-          let session = store.agentSession(id: binding.identity.conversationId), !session.privateMode, !session.trackingPaused
+          let session = store.agentSession(id: binding.identity.conversationId), !session.privateMode, !session.trackingPaused,
+          session.mergedIntoConversationId.isBlank, teamSource.primary != true || session.collaborationRoster != nil
     else { return nil }
-    if let parent = store.agentTask(id: context.team.taskId), parent.phase == .cancelled { return nil }
+    if let parent = store.agentTask(id: context.team.taskId),
+       parent.sessionId == context.team.conversationId, [.cancelled, .paused].contains(parent.phase) { return nil }
     return context
+  }
+
+  private func originalTeamPrimarySource(_ team: AgentTeamExecutionSnapshot) -> ChatMessage? {
+    func matches(_ source: ChatMessage) -> Bool {
+      source.isMine && !source.isSystem && source.conversationId == team.conversationId &&
+        source.turnId.ifBlank(source.id.uuidString) == team.taskId
+    }
+    if let id = UUID(uuidString: team.taskId), let source = store.chatHistoryDatabase.message(id: id), matches(source) {
+      return source
+    }
+    let sources = store.agentSessionMessages(team.conversationId).filter(matches)
+    guard sources.count == 1, let source = sources.first else { return nil }
+    return store.persistedMessage(id: source.id, contactId: source.contactId).flatMap { matches($0) ? $0 : nil }
   }
 
   func teamRecoveryRetryState(runID: String) -> AgentTeamRecoveryRetryState {
@@ -2850,15 +2869,24 @@ final class MessageCoordinator: ObservableObject {
       teamRecoveryRetries.observed(team, profile: store.profile.identityFingerprint)
       let retry = teamRecoveryRetryState(runID: team.supervisorRunId)
       guard !retry.stalled, retry.retryAtMillis <= now else { continue }
-      for member in team.members where member.deliveryMode == .observe &&
+      for member in team.members where (member.deliveryMode == .observe || member.memberId == team.primaryMemberId) &&
+        member.dispatchCheckpoint != .notStarted &&
         (!member.status.isTerminal || (team.state == .interrupted && member.status == .interrupted)) {
         guard let context = try? AgentTeamExecutionHistoryStore.shared.recoveryContext(source: member.sourceMessageId,
                 conversation: team.conversationId, turn: team.taskId, contact: member.agentId),
+              context.team.supervisorRunId == team.supervisorRunId,
               let contact = store.contact(id: member.agentId), !contact.connectorAgentId.isBlank,
-              let identity = taskIdentityStore.identity(contactId: member.agentId, sourceMessageId: member.sourceMessageId),
-              let binding = AgentDesktopReplyBinding.teamObserver(owner: context.owner, desktopId: contact.desktopId,
-                agentId: contact.connectorAgentId, identity: identity), currentTeamObserverRecovery(binding) != nil else { continue }
-        guard desktopReplyRecovery.track(binding, now: max(1, team.createdAtMillis)) else { return }
+              let identity = taskIdentityStore.identity(contactId: member.agentId, sourceMessageId: member.sourceMessageId)
+        else { continue }
+        if context.owner.deliveryMode == .respond,
+           member.dispatchCheckpoint != .dispatching && member.dispatchCheckpoint != .accepted { continue }
+        let binding = context.owner.deliveryMode == .respond ? originalTeamPrimarySource(team).flatMap {
+          AgentDesktopReplyBinding.teamPrimary(owner: context.owner, desktopId: contact.desktopId,
+            agentId: contact.connectorAgentId, identity: identity, outgoing: $0)
+        } : AgentDesktopReplyBinding.teamObserver(owner: context.owner, desktopId: contact.desktopId,
+          agentId: contact.connectorAgentId, identity: identity)
+        guard let binding, currentTeamObserverRecovery(binding) != nil else { continue }
+        guard desktopReplyRecovery.track(binding, now: max(1, now)) else { return }
       }
     }
     teamObserverDiscoveryCursor = page.next ?? ""
@@ -2883,6 +2911,9 @@ final class MessageCoordinator: ObservableObject {
   private func persistRecoveredTeamObserver(_ payload: [String: Any], record: AgentDesktopReplyRecoveryRecord) -> Bool {
     let binding = record.binding
     guard currentTeamObserverRecovery(binding) != nil, let receipt = desktopResultRecovery.receipt(record) else { return false }
+    if binding.teamSource?.primary == true {
+      return persistRecoveredTeamPrimary(payload, binding: binding, receipt: receipt)
+    }
     do {
       let disposition = try AgentTeamExecutionHistoryStore.shared.consumeOwnedReply(source: binding.sourceIdentity,
         conversation: binding.identity.conversationId, turn: binding.identity.turnId, task: binding.identity.taskId,
@@ -2905,12 +2936,67 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
+  private func persistRecoveredTeamPrimary(_ payload: [String: Any], binding: AgentDesktopReplyBinding,
+                                           receipt: AgentResultReceipt) -> Bool {
+    guard let context = currentTeamObserverRecovery(binding), context.owner.deliveryMode == .respond,
+          payload.string("type") == "text", AgentDesktopReplyRecovery.terminalStatuses.contains(payload.string("task_status")),
+          binding.matches(payload), receipt.desktopId == binding.desktopId,
+          receipt == AgentResultReceipt.fromPayload(payload, desktopId: binding.desktopId) else { return false }
+    let observation = AgentTeamReplyObservation(payload: payload)
+    let rich = payload.string("rich_output").ifBlank(payload.string("rich_output_json"))
+    let content = teamReplyContent(payload).ifBlank(AgentRichContentCodec.fallbackText(rich))
+    let success = !AgentRemoteOutcomePolicy.isFailure(payload.string("task_status"))
+    let remoteID = payload.string("message_id")
+    guard !remoteID.isBlank, observation.generation == receipt.executionGeneration,
+          observation.sequence != nil, context.owner.accepts(observation) else { return false }
+    if context.member.status.isTerminal, context.member.status != .interrupted {
+      guard context.member.status == (success ? .succeeded : .failed), context.member.replyContent == content,
+            context.member.richOutputJson == rich else { return false }
+    } else {
+      guard AgentSavedTeamReplyPolicy.apply(to: context.team, source: binding.sourceIdentity,
+        conversation: binding.identity.conversationId, turn: binding.identity.turnId, task: binding.identity.taskId,
+        contact: binding.contactId, content: content, richOutputJson: rich, success: success,
+        now: AgentControlPlaneClock.nowMillis()) != nil else { return false }
+    }
+    let history = AgentTeamExecutionHistoryStore.shared
+    do {
+      let pending = store.messages(for: binding.displayContactId).last {
+        !$0.isMine && $0.conversationId == binding.identity.conversationId &&
+          $0.turnId == binding.identity.turnId && $0.remoteMessageId == "agent-stream-\(binding.sourceIdentity)"
+      }
+      let known = store.hasIncomingDuplicate(content, from: binding.displayContactId,
+        remoteMessageId: remoteID, turnId: binding.identity.turnId)
+      do {
+        let incoming = try store.persistTransportIncoming(content, from: binding.displayContactId,
+          remoteMessageId: remoteID, conversationId: binding.identity.conversationId, turnId: binding.identity.turnId,
+          richOutputJson: richContentMaterializer.materialize(AgentRichContentCodec.normalize(rich)),
+          replacing: pending, tracePrefix: "desktop_team_result")
+        if !known || pending != nil {
+          onIncomingMessage?(incoming)
+          hydrateBlobArtifactPresentation(message: incoming, contactId: incoming.contactId, sourceMessageId: binding.sourceIdentity)
+        }
+      } catch GalaxySSIChatHistoryError.locallyDeleted {
+        // Respect an existing durable deletion without recreating the reply.
+      }
+      guard try history.commitRecoveredPrimary(binding: binding, content: content, rich: rich, success: success,
+        observation: observation, now: AgentControlPlaneClock.nowMillis()),
+        desktopResultRecovery.receipts.insert(receipt) else { return false }
+      UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: binding.sourceIdentity)
+      finishPendingAgentReply(turnId: binding.identity.turnId)
+      reconcileSavedTeamParents(runId: context.team.supervisorRunId)
+      if desktopReplyRecovery.retire(binding) { desktopReplyRecoverySweepRequested = true }
+      return true
+    } catch { return false }
+  }
+
   private func sweepTeamObserverReply(_ record: AgentDesktopReplyRecoveryRecord, now: Int64, mayPublish: Bool) async -> Bool {
     let binding = record.binding
     guard let run = binding.teamSource?.supervisorRunId else { return false }
     let profile = store.profile.identityFingerprint
     let retry = teamRecoveryRetryState(runID: run)
     guard !retry.stalled, retry.retryAtMillis <= now else { return false }
+    if store.agentSession(id: binding.identity.conversationId)?.trackingPaused == true ||
+      store.agentTask(id: binding.identity.turnId)?.phase == .paused { return false }
     let context: AgentTeamReplyRecoveryContext
     do {
       guard let checked = try checkedTeamObserverRecovery(binding, scope: { saved in
@@ -2936,6 +3022,10 @@ final class MessageCoordinator: ObservableObject {
       return false
     }
     if let reason = record.expiryReason(now: now) {
+      if binding.teamSource?.primary == true {
+        teamRecoveryRetries.failure(run: run, profile: profile, progress: progress, now: now)
+        return false
+      }
       if !context.member.status.isTerminal || context.member.status == .interrupted {
         let detail = reason == "desktop_result_unavailable"
           ? localizedReply("galaxyssi.agent.desktop_result_unavailable", fallback: "The Desktop task finished, but its result could not be delivered. The task was not run again.")
@@ -8951,6 +9041,26 @@ final class MessageCoordinator: ObservableObject {
     }
     let disposition: AgentTeamReplyDisposition
     do {
+      if terminal,
+         let context = try AgentTeamExecutionHistoryStore.shared.recoveryContext(source: source,
+           conversation: conversation, turn: turn, contact: contact.id),
+         context.owner.deliveryMode == .respond,
+         context.member.dispatchCheckpoint == .dispatching || context.member.dispatchCheckpoint == .accepted {
+        if context.team.state == .cancelled || store.agentTask(id: turn)?.phase == .cancelled {
+          if !messageId.isEmpty { deliveryStore.completeIncoming(messageId: messageId) }
+          return true
+        }
+        if let receipt = AgentResultReceipt.fromPayload(payload, desktopId: link.desktopId) {
+          guard let identity = taskIdentityStore.identity(contactId: contact.id, sourceMessageId: source),
+                let outgoing = originalTeamPrimarySource(context.team),
+                let binding = AgentDesktopReplyBinding.teamPrimary(owner: context.owner, desktopId: link.desktopId,
+                  agentId: contact.connectorAgentId, identity: identity, outgoing: outgoing),
+                persistRecoveredTeamPrimary(payload, binding: binding, receipt: receipt) else { return true }
+          if !messageId.isEmpty { deliveryStore.completeIncoming(messageId: messageId) }
+          return true
+        }
+        if store.agentTask(id: turn)?.phase == .paused || session?.trackingPaused == true { return true }
+      }
       if !tracked, volatile?.deliveryMode == .observe {
         disposition = .observerProgress
       } else {
@@ -12933,14 +13043,21 @@ final class MessageCoordinator: ObservableObject {
           throw GalaxySSIError.invalidPayload("Agent reply recovery identity could not be saved")
         }
       }
-      if let teamContext, teamContext.member.deliveryMode == .observe,
+      if let teamContext,
          let session = store.agentSession(id: taskIdentity.conversationId), !session.privateMode, !session.trackingPaused,
+         teamContext.member.deliveryMode == .observe ||
+           (teamContext.member.deliveryMode == .respond && session.collaborationRoster != nil),
          contact.desktopId == link.desktopId, !contact.connectorAgentId.isBlank {
-        guard let owner = volatileTeamReplyOwners[sourceMessageId],
-              let binding = AgentDesktopReplyBinding.teamObserver(owner: owner, desktopId: link.desktopId,
-                agentId: contact.connectorAgentId, identity: taskIdentity), currentTeamObserverRecovery(binding) != nil,
+        guard let owner = volatileTeamReplyOwners[sourceMessageId] else {
+          throw GalaxySSIError.invalidPayload("Agent team reply owner could not be saved")
+        }
+        let binding = owner.deliveryMode == .respond ? AgentDesktopReplyBinding.teamPrimary(owner: owner,
+          desktopId: link.desktopId, agentId: contact.connectorAgentId, identity: taskIdentity, outgoing: outgoing)
+          : AgentDesktopReplyBinding.teamObserver(owner: owner, desktopId: link.desktopId,
+            agentId: contact.connectorAgentId, identity: taskIdentity)
+        guard let binding, currentTeamObserverRecovery(binding) != nil,
               desktopReplyRecovery.track(binding, now: publishStartedAt) else {
-          throw GalaxySSIError.invalidPayload("Agent team observer recovery identity could not be saved")
+          throw GalaxySSIError.invalidPayload("Agent team recovery identity could not be saved")
         }
       }
     }
