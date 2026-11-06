@@ -43,18 +43,34 @@ final class AgentModelToolLoop {
     checkpoint: AgentModelLoopCheckpoint?
   ) async -> AgentModelToolLoopOutcome {
     let startedAt = clock.nowEpochMillis()
-    let manifestJson = toolRegistry.catalogJson()
-    let manifestSha256 = AgentModelToolProtocolJSON.sha256(manifestJson)
+    let descriptor = AgentModelObservationHistory.descriptor
+    let owner = request.observationHistoryEnabled && !request.loopId.isBlank
+      ? AgentModelLoopRecoveryIdentity.sha256([
+        "loop": AgentModelLoopScope(request: request).digest, "source": request.observationHistorySource
+      ]) : nil
+    let historyManifest = toolRegistry.catalogJson(additionalDescriptors: [descriptor])
+    let historyManifestSha256 = AgentModelToolProtocolJSON.sha256(historyManifest)
+    let manifestJson: String
+    let manifestSha256: String
+    let history: AgentModelObservationHistory?
     var effectiveRequest = request
-    if let checkpoint {
-      do {
+    do {
+      if owner != nil, toolRegistry.lookup(descriptor.id) != nil {
+        throw AgentModelLoopRecoveryError(code: "model_loop_history_tool_id_reserved")
+      }
+      let enabled = try checkpoint?.observationHistoryEnabled(
+        owner: owner, manifestSha256: historyManifestSha256) ?? (owner != nil)
+      history = enabled ? owner.map { AgentModelObservationHistory(owner: $0) } : nil
+      manifestJson = enabled ? historyManifest : toolRegistry.catalogJson()
+      manifestSha256 = enabled ? historyManifestSha256 : AgentModelToolProtocolJSON.sha256(manifestJson)
+      if let checkpoint {
         effectiveRequest.messages = try checkpoint.initial(
           request: request,
           manifestSha256: manifestSha256
         )
-      } catch {
-        return recoveryFailed(request: request, error: error)
       }
+    } catch {
+      return recoveryFailed(request: request, error: error)
     }
     let state = LoopState(
       request: effectiveRequest,
@@ -63,7 +79,8 @@ final class AgentModelToolLoop {
       manifestSha256: manifestSha256,
       startedAtEpochMillis: startedAt,
       deadlineEpochMillis: AgentModelToolLoopValidation.safeAdd(startedAt, request.budget.maxDurationMillis),
-      checkpoint: checkpoint
+      checkpoint: checkpoint,
+      observationHistory: history
     )
     if checkpoint?.cancelled == true { return cancelled(state) }
     if checkpoint?.failure != nil { return recoveryFailed(state) }
@@ -347,7 +364,9 @@ final class AgentModelToolLoop {
     }
 
     let argumentsSha256 = AgentMcpJSONCodec.sha256(call.arguments)
-    let resolvedVersion = toolRegistry.lookup(call.toolId)?.descriptor.version ?? call.toolVersion ?? ""
+    let historyTool = call.toolId == AgentModelObservationHistory.toolID ? state.observationHistory : nil
+    let resolvedVersion = (historyTool != nil ? AgentModelObservationHistory.descriptor.version :
+      toolRegistry.lookup(call.toolId)?.descriptor.version) ?? call.toolVersion ?? ""
     let callIdentity = "\(call.toolId)|\(resolvedVersion)|\(argumentsSha256)|\(call.depth)"
     if let previousIdentity = state.callIds[call.callId] {
       return .terminal(loopDetected(
@@ -368,6 +387,29 @@ final class AgentModelToolLoop {
         message: "The model repeated the same tool call beyond the configured limit",
         call: call
       ))
+    }
+
+    if let historyTool {
+      if call.depth > state.request.budget.maxDepth {
+        appendSyntheticToolResult(state, call, code: "max_depth_exceeded",
+                                  message: "The history call exceeds the configured graph depth")
+      } else if let version = call.toolVersion, version != AgentModelObservationHistory.descriptor.version {
+        appendSyntheticToolResult(state, call, code: "tool_version_mismatch",
+                                  message: "The history call version does not match the loop manifest")
+      } else {
+        do {
+          let output = try historyTool.read(call.arguments)
+          state.messages.append(.tool(AgentModelToolResultContent(
+            callId: call.callId, toolId: call.toolId, status: AgentNativeToolResultStatus.succeeded.rawValue,
+            output: output, message: "Historical evidence only; no target was executed."
+          )))
+        } catch {
+          let failure = error as? AgentModelObservationHistory.ReadError
+          appendSyntheticToolResult(state, call, code: failure?.code ?? "model_history_read_failed",
+                                    message: failure?.message ?? "Could not read historical evidence.")
+        }
+      }
+      return .continue
     }
 
     let inputValidation = toolRegistry.validateInput(call.toolId, input: call.arguments)
@@ -397,6 +439,12 @@ final class AgentModelToolLoop {
         code: "unknown_tool",
         message: "No native tool is registered with id \(call.toolId)"
       )
+      return .continue
+    }
+    let mutation = mutationIdentity(call, version: descriptor.version)
+    if descriptor.requiresEffectClaim, state.uncertainMutations.contains(mutation) {
+      appendSyntheticToolResult(state, call, code: "effect_outcome_unknown",
+                                message: "Observe current external state before repeating this operation.")
       return .continue
     }
     if let toolVersion = call.toolVersion, toolVersion != descriptor.version {
@@ -471,6 +519,12 @@ final class AgentModelToolLoop {
 
   private func callIdentity(_ call: AgentModelToolCall, version: String) -> String {
     "\(call.toolId)|\(version)|\(AgentMcpJSONCodec.sha256(call.arguments))|\(call.depth)"
+  }
+
+  private func mutationIdentity(_ call: AgentModelToolCall, version: String) -> String {
+    AgentMcpJSONCodec.sha256([
+      "id": .string(call.toolId), "version": .string(version), "input": .object(call.arguments)
+    ])
   }
 
   private func executePreparedCall(_ state: LoopState, prepared: PreparedCall) -> ProcessResult {
@@ -773,13 +827,25 @@ final class AgentModelToolLoop {
     result: AgentNativeToolResult,
     retryCount: Int
   ) {
+    if state.observationHistory != nil, let descriptor = toolRegistry.lookup(call.toolId)?.descriptor {
+      if descriptor.requiresEffectClaim {
+        if result.error?.code == "effect_outcome_unknown" || result.error?.details["outcome_unknown"] == .bool(true) ||
+            result.output["outcome_unknown"] == .bool(true) || result.status == .verificationFailed {
+          state.uncertainMutations.insert(mutationIdentity(call, version: descriptor.version))
+        }
+      } else if result.isSuccess, !result.receipt.replayed,
+                call.toolId != AgentIOSLocalModelWebToolProtocol.collaborationRecallId,
+                !call.toolId.hasPrefix("galaxyssi.tools.") {
+        state.uncertainMutations.removeAll()
+      }
+    }
     var projectedOutput = result.output
     if nativeObservation != nil {
       for key in ["galaxyssi_evidence_receipt", "galaxyssi_evidence_recording"] {
         projectedOutput[key] = result.metadata[key]
       }
     }
-    state.messages.append(.tool(AgentModelToolResultContent(
+    let observation = AgentModelToolResultContent(
       callId: call.callId,
       toolId: call.toolId,
       status: result.status.rawValue,
@@ -790,7 +856,9 @@ final class AgentModelToolLoop {
       retryCount: retryCount,
       receipt: result.receipt,
       nativeResult: result
-    )))
+    )
+    state.observationHistory?.append(record: state.messages.count, arguments: call.arguments, result: observation)
+    state.messages.append(.tool(observation))
   }
 
   private func appendSyntheticToolResult(
@@ -801,13 +869,15 @@ final class AgentModelToolLoop {
     details: AgentMcpJSONObject = [:]
   ) {
     let error = AgentNativeToolError(code: code, message: message, retryable: false, details: details)
-    state.messages.append(.tool(AgentModelToolResultContent(
+    let observation = AgentModelToolResultContent(
       callId: call.callId,
       toolId: call.toolId,
       status: AgentNativeToolResultStatus.rejected.rawValue,
       message: message,
       error: error
-    )))
+    )
+    state.observationHistory?.append(record: state.messages.count, arguments: call.arguments, result: observation)
+    state.messages.append(.tool(observation))
     var eventDetails: AgentMcpJSONObject = ["code": .string(code), "message": .string(message)]
     for (key, value) in details {
       eventDetails[key] = value
@@ -1120,6 +1190,8 @@ final class AgentModelToolLoop {
     var eventSequence: Int64 = 0
     var checkpoint: AgentModelLoopCheckpoint?
     var replayingResponse = false
+    var observationHistory: AgentModelObservationHistory?
+    var uncertainMutations: Set<String> = []
 
     init(
       request: AgentModelToolLoopRequest,
@@ -1128,7 +1200,8 @@ final class AgentModelToolLoop {
       manifestSha256: String,
       startedAtEpochMillis: Int64,
       deadlineEpochMillis: Int64,
-      checkpoint: AgentModelLoopCheckpoint? = nil
+      checkpoint: AgentModelLoopCheckpoint? = nil,
+      observationHistory: AgentModelObservationHistory? = nil
     ) {
       self.request = request
       self.messages = messages
@@ -1137,6 +1210,7 @@ final class AgentModelToolLoop {
       self.startedAtEpochMillis = startedAtEpochMillis
       self.deadlineEpochMillis = deadlineEpochMillis
       self.checkpoint = checkpoint
+      self.observationHistory = observationHistory
     }
 
     func totalTokens() -> Int64 {

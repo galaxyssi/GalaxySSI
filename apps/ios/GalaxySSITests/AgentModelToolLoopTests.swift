@@ -3,6 +3,137 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentModelToolLoopTests: XCTestCase {
+  func testHistorySnapshotFiltersAndUTF16Chunks() throws {
+    var history = AgentModelObservationHistory(owner: "loop-a")
+    func add(_ record: Int, _ tool: String, _ status: AgentNativeToolResultStatus, _ text: String,
+             to reader: inout AgentModelObservationHistory) {
+      reader.append(record: record, arguments: [:], result: AgentModelToolResultContent(
+        callId: "call-\(record)", toolId: tool, status: status.rawValue, output: ["a/b~": .string(text)]))
+    }
+    let original = "A\u{1F642}B"
+    add(3, "test.echo", .failed, original, to: &history)
+    add(4, "test.other", .failed, "other", to: &history)
+    add(5, "test.echo", .succeeded, "success", to: &history)
+    add(6, "test.echo", .timedOut, "timed out", to: &history)
+    add(7, AgentModelObservationHistory.toolID, .succeeded, "excluded", to: &history)
+    var filters: AgentMcpJSONObject = ["limit": .int(1), "tool_id": .string("test.echo"), "failures_only": .bool(true)]
+    let page = try history.read(filters)
+    XCTAssertEqual(page["entries"]?.arrayValue?.first?.objectValue?["record"], .int(3))
+    filters["cursor"] = try XCTUnwrap(page["next_cursor"])
+    add(8, "test.echo", .failed, "new", to: &history)
+    let next = try history.read(filters)
+    XCTAssertEqual(next["snapshot_observations"], .int(4))
+    XCTAssertEqual(next["entries"]?.arrayValue?.first?.objectValue?["record"], .int(6))
+    XCTAssertNil(next["next_cursor"])
+    var changedQuery = filters
+    changedQuery["failures_only"] = .bool(false)
+    XCTAssertThrowsError(try history.read(changedQuery))
+    for owner in ["loop-a", "loop-b"] {
+      var changed = AgentModelObservationHistory(owner: owner)
+      add(3, "test.echo", .failed, owner == "loop-a" ? "changed" : original, to: &changed)
+      add(4, "test.other", .failed, "other", to: &changed)
+      add(5, "test.echo", .succeeded, "success", to: &changed)
+      add(6, "test.echo", .timedOut, "timed out", to: &changed)
+      XCTAssertThrowsError(try changed.read(filters))
+    }
+    var chunk: AgentMcpJSONObject = ["record": .int(3), "path": .string("/observation/output/a~1b~0"), "length": .int(2)]
+    let first = try history.read(chunk)
+    XCTAssertEqual(first["text"], .string("A"))
+    chunk["offset"] = .int(2)
+    XCTAssertThrowsError(try history.read(chunk))
+    chunk["offset"] = first["next_offset"]
+    let middle = try history.read(chunk)
+    XCTAssertEqual(middle["text"], .string("\u{1F642}"))
+    chunk["offset"] = middle["next_offset"]
+    let end = try history.read(chunk)
+    XCTAssertEqual(end["text"], .string("B"))
+    XCTAssertEqual(end["sha256"], first["sha256"])
+    XCTAssertEqual(end["total_characters"], .int(4))
+    XCTAssertEqual(end["external_state_observed"], .bool(false))
+    XCTAssertEqual(end["completion_verified"], .bool(false))
+    XCTAssertNil(end["next_offset"])
+  }
+
+  func testEncryptedHistoryRestoresWithoutRunningNativeToolOrIndexingPriorMessages() async throws {
+    let domain = "model-history-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+    defer { defaults.removePersistentDomain(forName: domain) }
+    let secrets = InMemorySecretStore()
+    var executions = 0
+    let registry = try registry(idempotency: .idempotent) { _ in
+      executions += 1
+      return .success(output: ["text": .string("original"), "number": .double(12)])
+    }
+    var input = request(loopId: "history-restored")
+    input.observationHistoryEnabled = true
+    input.observationHistorySource = "member-1"
+    input.messages.append(.tool(AgentModelToolResultContent(
+      callId: "earlier-call", toolId: Self.toolId, status: "succeeded", output: ["secret": .string("prior turn")])))
+    let historyID = AgentModelObservationHistory.toolID
+    let adapter = ScriptedModelAdapter(
+      AgentModelResponse(toolCalls: [call("original"), AgentModelToolCall(callId: "history-page", toolId: historyID)]),
+      AgentModelResponse(toolCalls: [AgentModelToolCall(callId: "history-detail", toolId: historyID, arguments: [
+        "record": .int(3), "path": .string("/observation/output")
+      ])]),
+      AgentModelResponse(assistantText: "Done.")
+    )
+    let first = await loop(adapter: adapter, registry: registry,
+                           journal: EncryptedAgentModelLoopJournal(defaults: defaults, secrets: secrets)).run(input)
+    let history = first.messages.compactMap(\.toolResult).filter { $0.toolId == historyID }
+    XCTAssertEqual(first.status, .completed)
+    XCTAssertEqual(history.count, 2)
+    XCTAssertEqual(history.first?.output["snapshot_observations"], .int(1))
+    XCTAssertEqual(history.last?.output["text"], .string("{\"number\":12,\"text\":\"original\"}"))
+    XCTAssertNil(history.last?.nativeResult)
+    XCTAssertEqual(AgentModelObservationHistory.modelCatalog(registry.descriptors(), manifest: first.toolManifestJson)
+      .last?.id, historyID)
+    let unexpected = ScriptedModelAdapter(AgentModelResponse(assistantText: "Unexpected replay."))
+    let reopened = EncryptedAgentModelLoopJournal(defaults: defaults, secrets: secrets)
+    let restored = await loop(adapter: unexpected, registry: registry, journal: reopened).run(input)
+    XCTAssertEqual(restored.status, .completed)
+    XCTAssertEqual(restored.messages.compactMap(\.toolResult).filter { $0.toolId == historyID }, history)
+    XCTAssertTrue(unexpected.requests.isEmpty)
+    XCTAssertEqual(executions, 1)
+    input.observationHistorySource = "different-member"
+    let rejected = await loop(adapter: unexpected, registry: registry, journal: reopened).run(input)
+    XCTAssertEqual(rejected.error?.code, "model_loop_history_catalog_changed")
+  }
+
+  func testHistoryKeepsLegacyCatalogAndDoesNotUnlockUncertainMutation() async throws {
+    let journal = InMemoryAgentModelLoopJournal()
+    var executions = 0
+    let registry = try registry { _ in
+      executions += 1
+      return .failure(code: "effect_outcome_unknown", message: "Uncertain.")
+    }
+    var legacy = request(loopId: "legacy-catalog")
+    let legacyResult = await loop(adapter: ScriptedModelAdapter(AgentModelResponse(assistantText: "Legacy.")),
+                                  registry: registry, journal: journal).run(legacy)
+    legacy.observationHistoryEnabled = true
+    let unexpected = ScriptedModelAdapter(AgentModelResponse(assistantText: "Unexpected replay."))
+    let replay = await loop(adapter: unexpected, registry: registry, journal: journal).run(legacy)
+    XCTAssertEqual(replay.assistantText, "Legacy.")
+    XCTAssertTrue(unexpected.requests.isEmpty)
+    XCTAssertEqual(replay.toolManifestJson, legacyResult.toolManifestJson)
+    XCTAssertEqual(AgentModelObservationHistory.modelCatalog(registry.descriptors(), manifest: replay.toolManifestJson),
+                   registry.descriptors())
+
+    var enabled = request(loopId: "new-catalog")
+    enabled.observationHistoryEnabled = true
+    let historyID = AgentModelObservationHistory.toolID
+    let outcome = await loop(adapter: ScriptedModelAdapter(
+      AgentModelResponse(toolCalls: [call("mutation")]),
+      AgentModelResponse(toolCalls: [AgentModelToolCall(callId: "history", toolId: historyID)]),
+      AgentModelResponse(toolCalls: [call("repeat-mutation")]),
+      AgentModelResponse(assistantText: "Needs verification.")
+    ), registry: registry, journal: journal).run(enabled)
+    let observations = outcome.messages.compactMap(\.toolResult)
+    XCTAssertEqual(executions, 1)
+    XCTAssertEqual(observations.first { $0.toolId == historyID }?.output["target_executed"], .bool(false))
+    XCTAssertEqual(observations.last?.error?.code, "effect_outcome_unknown")
+    XCTAssertNil(observations.last?.nativeResult)
+  }
+
   func testNonIdempotentModelCallReceivesStableDerivedEffectKey() async throws {
     var capturedKeys: [String?] = []
     let registry = try registry(idempotency: .nonIdempotent) { invocation in

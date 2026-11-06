@@ -599,15 +599,15 @@ final class AgentNativeToolRegistry {
     return try registry.registerAll(definitionOnly)
   }
 
-  func catalogObject() -> AgentMcpJSONObject {
+  func catalogObject(additionalDescriptors: [AgentNativeToolDescriptor] = []) -> AgentMcpJSONObject {
     [
       "contract_version": .string(Self.contractVersion),
-      "tools": .array(descriptors().map { .object(catalogValue($0)) })
+      "tools": .array((descriptors() + additionalDescriptors).map { .object(catalogValue($0)) })
     ]
   }
 
-  func catalogJson() -> String {
-    AgentMcpJSONCodec.stringify(catalogObject())
+  func catalogJson(additionalDescriptors: [AgentNativeToolDescriptor] = []) -> String {
+    AgentMcpJSONCodec.stringify(catalogObject(additionalDescriptors: additionalDescriptors))
   }
 
   func audit(
