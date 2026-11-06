@@ -54,7 +54,7 @@ enum AgentModelDirectResponseCodec {
     guard !text.isEmpty, text.utf8.count <= 32_768 else { return nil }
     let lower = text.lowercased()
     let arrayObject = lower.hasPrefix("[") && lower.dropFirst().trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{")
-    guard !lower.hasPrefix("{"), !arrayObject,
+    guard !lower.hasPrefix("{"), !arrayObject, !CloudSupervisedResearch.isControlPayload(text),
           !["<tool_call", "<tool_use", "<function_call", "<invoke", "recipient=functions.",
             "[tool_call", "\"tool_calls\"", "\"actions\":"].contains(where: lower.contains) else { return nil }
     return text
