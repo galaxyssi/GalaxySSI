@@ -39,8 +39,10 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
 
   var body: some View {
     let latest = latestSpeechTarget
+    let deliveredTimes = AgentTranscriptExecutionProgress.finalDeliveryTimes(messages)
     ForEach(visibleMessages) { message in
-      messageRow(message, latestSpeechEntryId: latest?.entryId)
+      let turn = AgentTranscriptExecutionProgress.TurnKey(message)
+      messageRow(message, latestSpeechEntryId: latest?.entryId, deliveredAt: deliveredTimes[turn])
     }
     .onAppear { observeLatestReply(latest) }
     .onChange(of: latest) { target in
@@ -58,7 +60,22 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
   }
 
   @ViewBuilder
-  private func messageRow(_ message: ChatMessage, latestSpeechEntryId: String?) -> some View {
+  private func messageRow(
+    _ message: ChatMessage, latestSpeechEntryId: String?, deliveredAt: Int64?
+  ) -> some View {
+    let task = agentTask(message)
+    let remote = remoteAgentTask(message).flatMap {
+      $0.conversationId == message.conversationId &&
+        (message.turnId.isBlank || $0.turnId == message.turnId || $0.taskId == message.turnId) ? $0 : nil
+    }
+    let voice = voiceAgentRun(message).flatMap {
+      $0.conversationId.ifBlank($0.sessionId) == message.conversationId &&
+        (message.turnId.isBlank || $0.turnId == message.turnId || $0.taskId == message.turnId) ? $0 : nil
+    }
+    let execution = executionProgress(message, task: task, remote: remote, voice: voice, deliveredAt: deliveredAt)
+    let plan = message.isMine ? task.map {
+      AgentInteractiveProgressPolicy.project(task: $0, status: execution?.status)
+    } : nil
     VStack(alignment: .leading, spacing: 4) {
       if let mergedSource = mergedSourceLabel(message) {
         Text(mergedSource)
@@ -68,17 +85,29 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
           .accessibilityLabel(mergedSource)
       }
       if !message.isMine, !message.isSystem {
-        messageExecutionFooter(message)
+        if let execution { messageExecutionFooter(execution, task: task, remote: remote, voice: voice) }
       }
       agentMessageContent(message)
       if message.isMine {
+        if let task, let plan, plan.visible {
+          let sameState = plan.status == AgentInteractiveProgressStatus(task.phase)
+          GalaxySSIAgentInteractiveProgressView(
+            presentation: plan,
+            timelineActions: sameState ? timelineActions(task) : [],
+            timelineActionTitle: timelineActionTitle,
+            timelineActionIcon: timelineActionIcon,
+            t: t,
+            canCancel: sameState && AgentTaskCenterPolicy.cancellable(task),
+            onTimelineAction: { onTimelineAction($0, task) },
+            onCancel: { onCancelAgentTask(task) }
+          )
+        } else if let execution, !hasReply(for: message) {
+          messageExecutionFooter(execution, task: task, remote: remote, voice: voice)
+        }
         let progress = message.deliveryTrace.filter { $0.stage.hasPrefix(AgentConnectorPublicProgress.tracePrefix) &&
           !AgentPublicProgressPolicy.isInternal($0.detail) }
         if !progress.isEmpty {
           VStack(alignment: .leading, spacing: 8) {
-            if let committed = committedProgress(message), !hasReply(for: message) {
-              committedFooter(committed, message: message)
-            }
             Button {
               if !expandedProgress.insert(message.id).inserted { expandedProgress.remove(message.id) }
             } label: {
@@ -137,7 +166,7 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
         Label(t("galaxyssi.message.delete", "Delete Message"), systemImage: "trash")
       }
     }
-    if waitingMessageIDs.contains(message.id) {
+    if waitingMessageIDs.contains(message.id), execution == nil {
       AgentReplyWaitingIndicatorView(bubbleBackground: false)
         .frame(maxWidth: .infinity, alignment: .leading)
         .id(AgentReplyWaitingIndicatorPolicy.viewID(for: message))
@@ -254,111 +283,68 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
     }
   }
 
-  @ViewBuilder
-  private func messageExecutionFooter(_ message: ChatMessage) -> some View {
-    if let committed = committedProgress(message) {
-      committedFooter(committed, message: message, task: agentTask(message), remote: remoteAgentTask(message))
-    } else if let task = agentTask(message) {
-      GalaxySSIAgentExecutionFooterView(
-        completed: [.completed, .failed, .cancelled, .blocked].contains(task.phase),
-        duration: executionDuration(task.createdAtMillis, task.updatedAtMillis),
-        details: task.executionLog,
-        detailsTitle: t("galaxyssi.agent.execution.timeline", "Execution timeline"),
-        timelineActions: timelineActions(task),
-        timelineActionTitle: timelineActionTitle,
-        timelineActionIcon: timelineActionIcon,
-        timelineActionMenuTitle: t("galaxyssi.agent.task_control.title", "Task controls"),
-        onTimelineAction: { action in
-          onTimelineAction(action, task)
-        },
-        canCancel: AgentTaskCenterPolicy.cancellable(task),
-        cancelTitle: t("galaxyssi.agent.task_control.cancel", "Cancel task"),
-        onCancel: {
-          onCancelAgentTask(task)
-        }
-      )
-    } else if let remoteTask = remoteAgentTask(message) {
-      GalaxySSIAgentExecutionFooterView(
-        completed: AgentRemoteTaskStatusPolicy.isTerminal(remoteTask.status),
-        duration: executionDuration(
-          remoteTask.history.first?.updatedAtMillis ?? remoteTask.updatedAtMillis,
-          remoteTask.updatedAtMillis
-        ),
-        details: remoteTask.history.map(remoteAgentTimelineLine),
-        detailsTitle: t("galaxyssi.agent.execution.timeline", "Execution timeline"),
-        canCancel: remoteTask.isCancellable && !isRemoteTaskCancelling(remoteTask.id),
-        cancelTitle: isRemoteTaskCancelling(remoteTask.id)
-          ? t("galaxyssi.agent.remote_status.cancelling", "Cancelling...")
-          : t("galaxyssi.agent.remote_status.cancel", "Cancel task"),
-        onCancel: {
-          onCancelRemoteTask(remoteTask)
-        }
-      )
-    } else if let run = voiceAgentRun(message) {
-      GalaxySSIAgentExecutionFooterView(
-        completed: run.state.isTerminal,
-        duration: executionDuration(
-          run.acceptedAtMillis > 0 ? run.acceptedAtMillis : run.createdAtMillis,
-          run.updatedAtMillis
-        ),
-        details: [run.progressMessage, run.partialResult, run.resultSummary]
-          .filter { !$0.isBlank },
-        detailsTitle: t("galaxyssi.agent.execution.timeline", "Execution timeline"),
-        canCancel: run.cancellable && !isVoiceRunCancelling(run.runId),
-        cancelTitle: isVoiceRunCancelling(run.runId)
-          ? t("galaxyssi.agent.remote_status.cancelling", "Cancelling...")
-          : t("galaxyssi.agent.remote_status.cancel", "Cancel task"),
-        onCancel: {
-          onCancelVoiceRun(run)
-        }
-      )
+  private func executionProgress(
+    _ message: ChatMessage, task: AgentTaskRecord?, remote: AgentRemoteTaskStatusSnapshot?,
+    voice: VoiceAgentRunSnapshot?, deliveredAt: Int64?
+  ) -> AgentTranscriptExecutionProgress? {
+    let committed = committedProgress(message).map(AgentTranscriptExecutionProgress.committed)
+    let remoteProgress = remote.map {
+      AgentTranscriptExecutionProgress(status: AgentTranscriptExecutionProgress.remoteStatus($0.status),
+        startedAt: $0.history.first?.updatedAtMillis ?? $0.updatedAtMillis,
+        updatedAt: AgentProcessClockPolicy.pausesRemoteClock($0.status)
+          ? AgentProcessClockPolicy.remotePauseTimestamp($0) : $0.updatedAtMillis)
     }
-  }
-
-  @ViewBuilder
-  private func committedFooter(
-    _ committed: AgentCommittedTurnProgress.Turn,
-    message: ChatMessage,
-    task: AgentTaskRecord? = nil,
-    remote: AgentRemoteTaskStatusSnapshot? = nil
-  ) -> some View {
-    let fallbackStart = Int64(message.createdAt.timeIntervalSince1970 * 1_000)
-    if committed.isRunning {
-      TimelineView(.periodic(from: Date(), by: 1)) { context in
-        committedFooterContent(committed, fallbackStart: fallbackStart, task: task, remote: remote,
-          now: Int64(context.date.timeIntervalSince1970 * 1_000))
+    let voiceProgress = voice.map {
+      AgentTranscriptExecutionProgress(status: AgentTranscriptExecutionProgress.voiceStatus($0.state),
+        startedAt: $0.acceptedAtMillis > 0 ? $0.acceptedAtMillis : $0.createdAtMillis, updatedAt: $0.updatedAtMillis)
+    }
+    let owned = [committed, remoteProgress, voiceProgress].compactMap { $0 }
+      .reduce(nil as AgentTranscriptExecutionProgress?) { current, candidate in
+        guard let current else { return candidate }
+        return current.updatedAt >= candidate.updatedAt ? current : candidate
       }
-    } else {
-      committedFooterContent(committed, fallbackStart: fallbackStart, task: task, remote: remote, now: committed.updatedAt)
+    let cached = task.map {
+      AgentTranscriptExecutionProgress(status: AgentInteractiveProgressStatus($0.phase),
+        startedAt: $0.createdAtMillis, updatedAt: $0.updatedAtMillis)
     }
+    return AgentTranscriptExecutionProgress.resolve(owned: owned, cached: cached, deliveredAt: deliveredAt)
   }
 
-  private func committedFooterContent(
-    _ committed: AgentCommittedTurnProgress.Turn,
-    fallbackStart: Int64,
-    task: AgentTaskRecord?,
-    remote: AgentRemoteTaskStatusSnapshot?,
-    now: Int64
+  private func messageExecutionFooter(
+    _ progress: AgentTranscriptExecutionProgress, task: AgentTaskRecord?,
+    remote: AgentRemoteTaskStatusSnapshot?, voice: VoiceAgentRunSnapshot?
   ) -> some View {
-    let canCancel = committed.isRunning && (task.map(AgentTaskCenterPolicy.cancellable) ??
-      remote.map { $0.isCancellable && !isRemoteTaskCancelling($0.id) } ?? false)
+    let local = task.flatMap { AgentInteractiveProgressStatus($0.phase) == progress.status ? $0 : nil }
+    let remoteCanCancel = remote.map {
+      AgentTranscriptExecutionProgress.remoteStatus($0.status) == progress.status &&
+        $0.isCancellable && !isRemoteTaskCancelling($0.id)
+    } ?? false
+    let voiceCanCancel = voice.map {
+      AgentTranscriptExecutionProgress.voiceStatus($0.state) == progress.status &&
+        $0.cancellable && !isVoiceRunCancelling($0.runId)
+    } ?? false
+    let canCancel = local.map(AgentTaskCenterPolicy.cancellable) ?? (remoteCanCancel || voiceCanCancel)
     return GalaxySSIAgentExecutionFooterView(
-      completed: !committed.isRunning,
-      duration: elapsedDuration(committed.elapsed(at: now, fallbackStart: fallbackStart)),
-      details: task?.executionLog ?? remote?.history.map(remoteAgentTimelineLine) ?? [],
+      status: progress.status,
+      duration: executionDuration(progress.startedAt, progress.updatedAt),
+      details: task?.executionLog ?? remote?.history.map(remoteAgentTimelineLine) ??
+        voice.map { [$0.progressMessage, $0.partialResult, $0.resultSummary] } ?? [],
       detailsTitle: t("galaxyssi.agent.execution.timeline", "Execution timeline"),
-      timelineActions: committed.status.isTerminal ? [] : task.map(timelineActions) ?? [],
+      timelineActions: local.map(timelineActions) ?? [],
       timelineActionTitle: timelineActionTitle,
       timelineActionIcon: timelineActionIcon,
       timelineActionMenuTitle: t("galaxyssi.agent.task_control.title", "Task controls"),
       onTimelineAction: { action in
-        if let task { onTimelineAction(action, task) }
+        if let local { onTimelineAction(action, local) }
       },
       canCancel: canCancel,
       onCancel: {
-        if let task { onCancelAgentTask(task) }
-        else if let remote { onCancelRemoteTask(remote) }
-      }
+        if let local { onCancelAgentTask(local) }
+        else if remoteCanCancel, let remote { onCancelRemoteTask(remote) }
+        else if voiceCanCancel, let voice { onCancelVoiceRun(voice) }
+      },
+      liveStartedAt: progress.startedAt,
+      liveDuration: elapsedDuration
     )
   }
 }

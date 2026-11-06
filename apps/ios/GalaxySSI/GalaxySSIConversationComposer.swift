@@ -10,6 +10,7 @@ struct GalaxySSIConversationComposer: View {
 
   var deviceInputPolicy: AgentDeviceInputTargetPolicy
   var voiceSettings: VoiceSettings
+  var attachmentImageLimit = AgentImagePipeline.targetTransportBytes
   var dedicatedPeerVoiceCapture = false
   var attachmentScope = ""
   var attachmentPreviewBlocked = false
@@ -65,7 +66,7 @@ struct GalaxySSIConversationComposer: View {
   var body: some View {
     VStack(spacing: 8) {
       AttachmentPreviewStrip(attachments: attachments, scope: attachmentScope,
-        presentationBlocked: attachmentPreviewBlocked, onRemove: { attachment in
+        presentationBlocked: attachmentPreviewBlocked, compressedByteLimit: attachmentImageLimit, onRemove: { attachment in
           attachments.removeAndWipe(id: attachment.id)
         }, onReplace: onReplaceAttachment)
       if !attachmentError.isEmpty {

@@ -164,6 +164,22 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
     XCTAssertEqual(runner.requests.count, 1)
   }
 
+  func testPlanRepairDoesNotRestartTheNativeToolLoop() async throws {
+    let descriptor = try nativeToolDescriptor(id: Self.echoToolId)
+    let registry = try executableRegistry(descriptor: descriptor)
+    let runner = RecordingPlanningToolLoopRunner(.completedPlan())
+    let textProvider = RecordingPlanningProvider(raw: "repaired plan")
+    let provider = CloudModelToolLoopAgentPlanningProvider(
+      fallbackProvider: textProvider, toolRegistry: registry, requestIdFactory: { "fixture" }
+    ) { _, _ in runner }
+    let source = invocation(nativeTools: [descriptor])
+    _ = try await provider.rawPlan(invocation: source)
+    let repair = try await provider.repairPlan(invocation: source)
+    XCTAssertEqual(repair, "repaired plan")
+    XCTAssertEqual(runner.requests.count, 1)
+    XCTAssertEqual(textProvider.invocations, [source])
+  }
+
   func testPlanningAttemptsReuseStableDurableLoopIdentity() async throws {
     let descriptor = try nativeToolDescriptor(id: Self.echoToolId)
     let registry = try executableRegistry(descriptor: descriptor)

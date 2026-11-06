@@ -68,10 +68,12 @@ final class AgentInteractiveProgressTests: XCTestCase {
     XCTAssertTrue(result.visible)
     XCTAssertEqual(result.counter, "1/1")
     XCTAssertEqual(result.steps.count, 1)
-    XCTAssertEqual(result.steps.first?.state, .active)
+    XCTAssertEqual(result.status, .waitingResponse)
+    XCTAssertTrue(result.running)
+    XCTAssertEqual(result.steps.first?.state, .waiting)
   }
 
-  func testCompletedNarrationPlanReportsFinalStep() {
+  func testCompletedNarrationIsProcessHistoryNotVerifiedWork() {
     var record = task(goal: "Research and compare several sources", phase: .completed)
     record.executionLog = ["Define scope", "Compare sources", "Verify conclusion"]
 
@@ -80,13 +82,87 @@ final class AgentInteractiveProgressTests: XCTestCase {
     XCTAssertTrue(result.visible)
     XCTAssertFalse(result.running)
     XCTAssertEqual(result.counter, "3/3")
-    XCTAssertEqual(result.completedSteps, 3)
+    XCTAssertEqual(result.status, .completed)
+    XCTAssertEqual(result.steps.map(\.state), [.recorded, .recorded, .recorded])
+    XCTAssertEqual(result.completedSteps, 0)
+  }
+
+  func testStoppedPhasesDoNotPromoteAStaleActionOrUnexecutedPlan() {
+    let cases: [(AgentPhase, AgentInteractiveProgressStatus, AgentInteractiveProgressStepState, AgentInteractiveProgressStepState)] = [
+      (.waitingConfirmation, .waitingConfirmation, .waiting, .pending),
+      (.paused, .paused, .paused, .pending),
+      (.blocked, .blocked, .waiting, .pending),
+      (.failed, .failed, .stopped, .notExecuted),
+      (.cancelled, .cancelled, .stopped, .notExecuted),
+      (.completed, .completed, .recorded, .notExecuted)
+    ]
+    for (phase, status, current, future) in cases {
+      var record = task(goal: "Research and compare several sources", phase: phase)
+      record.pendingActions = [
+        action(id: "done", status: .completed, description: "Read one source"),
+        action(id: "stale", status: .running, description: "Read another source"),
+        action(id: "later", status: .proposed, description: "Verify the conclusion")
+      ]
+      let progress = AgentInteractiveProgressPolicy.project(task: record)
+      XCTAssertEqual(progress.status, status)
+      XCTAssertFalse(progress.running)
+      XCTAssertEqual(progress.steps.map(\.state), [.completed, current, future])
+      XCTAssertEqual(progress.completedSteps, 1)
+    }
+  }
+
+  func testTerminalNarrationListDoesNotClaimUnexecutedSteps() {
+    var record = task(goal: "Research and compare several sources", phase: .completed)
+    record.executionLog = ["1. Gather sources\n2. Compare findings\n3. Verify conclusion"]
+    XCTAssertEqual(AgentInteractiveProgressPolicy.project(task: record).steps.map(\.state),
+      [.recorded, .notExecuted, .notExecuted])
+    record.phase = .cancelled
+    XCTAssertEqual(AgentInteractiveProgressPolicy.project(task: record).steps.map(\.state),
+      [.stopped, .notExecuted, .notExecuted])
+  }
+
+  func testOwnedRuntimeAndStableFinalDeliveryResolveCachedPhase() {
+    let waiting = AgentTranscriptExecutionProgress(status: .waitingResponse, startedAt: 1_000, updatedAt: 20_000)
+    let completed = AgentTranscriptExecutionProgress(status: .completed, startedAt: 1_000, updatedAt: 44_000)
+    XCTAssertEqual(AgentTranscriptExecutionProgress.resolve(owned: waiting, cached: completed, deliveredAt: 44_000),
+      waiting)
+    XCTAssertEqual(AgentTranscriptExecutionProgress.resolve(owned: nil, cached: waiting, deliveredAt: 44_000),
+      completed)
+    XCTAssertEqual(AgentTranscriptExecutionProgress.resolve(owned: nil, cached: waiting, deliveredAt: 19_000),
+      waiting)
+    let explicitStates: [AgentInteractiveProgressStatus] = [.failed, .cancelled, .paused, .blocked, .waitingConfirmation]
+    for status in explicitStates {
+      let state = AgentTranscriptExecutionProgress(status: status, startedAt: 1_000, updatedAt: 40_000)
+      XCTAssertEqual(AgentTranscriptExecutionProgress.resolve(owned: nil, cached: state, deliveredAt: 44_000), state)
+    }
+  }
+
+  func testFinalDeliveryIsScopedAndDoesNotUseStreamsOrMilestones() {
+    func message(conversation: String = "first", time: TimeInterval, remoteId: String = "",
+                 trace: String = "received", status: ChatDeliveryStatus = .delivered) -> ChatMessage {
+      ChatMessage(contactId: "hermes", content: "Reply", isMine: false,
+        createdAt: Date(timeIntervalSince1970: time), deliveryStatus: status,
+        deliveryTrace: [DeliveryTraceEvent(stage: trace)], conversationId: conversation, turnId: "same-turn",
+        remoteMessageId: remoteId)
+    }
+    let reply = message(time: 44)
+    let other = message(conversation: "second", time: 51)
+    let snapshots = AgentTranscriptExecutionProgress.finalDeliveryTimes([
+      message(time: 8, remoteId: "agent-stream-42"),
+      message(time: 9, trace: "collaboration_interim_milestone"),
+      message(time: 12, trace: "local_agent_task_cancelled_received"),
+      message(time: 13, status: .failed), reply, message(time: 49), other
+    ])
+    XCTAssertEqual(snapshots[.init(reply)], 44_000)
+    XCTAssertEqual(snapshots[.init(other)], 51_000)
+    XCTAssertEqual(snapshots.count, 2)
   }
 
   func testRollingPlanPreservesBatchesAndMarksRecoveredFailureAsAdjusted() {
     let previous = [
       action(id: "inspect", status: .completed, description: "Inspect project structure"),
-      action(id: "r2-1-build", status: .failed, description: "Run the first build")
+      action(id: "r2-1-build", status: .failed, description: "Run the first build"),
+      action(id: "r2-2-stale", status: .running, description: "Retired active action")
     ]
     let current = [
       action(id: "r3-1-repair", status: .completed, description: "Repair build settings"),
@@ -120,7 +196,7 @@ final class AgentInteractiveProgressTests: XCTestCase {
     let result = AgentInteractiveProgressPolicy.project(task: record)
 
     XCTAssertEqual(result.batches.map(\.planRevision), [1, 2, 3])
-    XCTAssertEqual(result.steps.count, 5)
+    XCTAssertEqual(result.steps.count, 6)
     XCTAssertEqual(
       result.steps.first { $0.actionId == "r2-1-build" }?.state,
       .superseded
@@ -128,6 +204,7 @@ final class AgentInteractiveProgressTests: XCTestCase {
     XCTAssertEqual(result.counter, "2/3")
     XCTAssertEqual(result.planRevision, 3)
     XCTAssertEqual(result.summary, "Run tests again")
+    XCTAssertEqual(result.steps.first { $0.actionId == "r2-2-stale" }?.state, .superseded)
   }
 
   func testRepeatedDescriptionsAcrossPlanRevisionsRemainVisible() {

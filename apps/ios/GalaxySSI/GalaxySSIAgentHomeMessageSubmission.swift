@@ -17,6 +17,10 @@ extension AgentHomeView {
       composerAttachments: attachments,
       attachmentSnapshot: voiceAttachmentSnapshot
     )
+    guard !outgoingAttachments.contains(where: \.requiresInitialComposerImageReview) else {
+      attachmentError = t("composer_attachment_review_required", "Review the selected images before sending.")
+      return
+    }
     let text = cleanDraft.ifBlank(attachmentLabel(for: outgoingAttachments))
     let isVoiceSubmission = voiceAttachmentSnapshot != nil
     let agentGoal = cleanDraft.isEmpty && !outgoingAttachments.isEmpty
@@ -39,6 +43,7 @@ extension AgentHomeView {
       screenAssistantOwnedTurns = []
     }
     let submissionID = UUID()
+    let submittingConversation = store.activeAgentConversationId
     let assistantRunID = screenAssistantConversationID == store.activeAgentConversationId
       ? screenAssistantRunID : nil
     let submission = Task { @MainActor in
@@ -57,6 +62,11 @@ extension AgentHomeView {
         requestKind: assistantRunID == nil ? .conversation : .screenAnalysis,
         readOnlyAnalysis: assistantRunID != nil,
         onOutgoing: { outgoing in
+          if outgoing.conversationId == submittingConversation, store.activeAgentConversationId == submittingConversation {
+            olderTranscriptAnchor = nil
+            pendingAgentSwipeDirection = AgentIOSAgentSwipeDirection.down.rawValue
+            agentSwipeRequest &+= 1
+          }
           guard let assistantRunID, screenAssistantRunID == assistantRunID else { return }
           screenAssistantOwnedTurns.append(outgoing)
         }

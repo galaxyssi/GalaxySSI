@@ -3,6 +3,8 @@ import Foundation
 struct AgentIOSURLSessionBrowserSessionScope: Equatable {
   var ownerId: String
   var contextId: String
+  var turnId: String
+  var taskId: String
 
   init(context: AgentNativeToolInvocationContext) {
     let owner = context.callerId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -10,6 +12,8 @@ struct AgentIOSURLSessionBrowserSessionScope: Equatable {
     let session = context.sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
     ownerId = owner.isEmpty ? "galaxyssi.mobile_agent" : owner
     contextId = conversation.isEmpty ? session : conversation
+    turnId = context.turnId
+    taskId = context.attributes["recovery_task_id"] ?? ""
   }
 }
 
@@ -59,6 +63,14 @@ final class AgentIOSURLSessionBrowserSessionStore {
   private let idleTimeoutMillis: Int64
   private let maxSessions: Int
   private var records: [String: Record] = [:]
+  private var operations: [Operation] = []
+
+  private struct Operation {
+    let id: String
+    let scope: AgentIOSURLSessionBrowserSessionScope
+    let name: String
+    let time: Int64
+  }
 
   init(
     ttlMillis: Int64 = AgentIOSURLSessionBrowserSessionStore.defaultTTLMillis,
@@ -94,6 +106,7 @@ final class AgentIOSURLSessionBrowserSessionStore {
       useCount: 0
     )
     records[browserId] = record
+    recordOperation(resourceId, scope: scope, name: "create", now: nowMillis)
     return record.snapshot()
   }
 
@@ -101,7 +114,8 @@ final class AgentIOSURLSessionBrowserSessionStore {
     browserId: String,
     scope: AgentIOSURLSessionBrowserSessionScope,
     currentURL: String,
-    nowMillis: Int64
+    nowMillis: Int64,
+    requestId: String = ""
   ) throws -> AgentIOSURLSessionBrowserSessionSnapshot {
     lock.lock()
     defer { lock.unlock() }
@@ -117,6 +131,7 @@ final class AgentIOSURLSessionBrowserSessionStore {
     record.lastUsedAtEpochMillis = nowMillis
     record.useCount += 1
     records[key] = record
+    recordOperation(requestId, scope: scope, name: "navigate", now: nowMillis)
     return record.snapshot()
   }
 
@@ -137,19 +152,40 @@ final class AgentIOSURLSessionBrowserSessionStore {
   func close(
     browserId: String,
     scope: AgentIOSURLSessionBrowserSessionScope,
-    nowMillis: Int64
+    nowMillis: Int64,
+    requestId: String = ""
   ) throws -> AgentIOSURLSessionBrowserSessionSnapshot {
     lock.lock()
     defer { lock.unlock() }
     let key = clean(browserId, maxLength: 240)
     let record = try resolvedLocked(browserId: key, scope: scope, nowMillis: nowMillis)
     records.removeValue(forKey: key)
+    recordOperation(requestId, scope: scope, name: "close", now: nowMillis)
     return AgentIOSURLSessionBrowserSessionSnapshot(
       browserId: record.browserId,
       currentURL: record.currentURL,
       historyCount: record.history.count,
       expiresAtEpochMillis: nowMillis
     )
+  }
+
+  func observeOperation(
+    requestId: String, scope: AgentIOSURLSessionBrowserSessionScope, nowMillis: Int64
+  ) -> AgentMcpJSONObject? {
+    lock.lock()
+    defer { lock.unlock() }
+    guard !scope.contextId.isEmpty, !scope.turnId.isEmpty, !scope.taskId.isEmpty,
+          let operation = operations.last(where: { $0.id == requestId && $0.scope == scope }),
+          operation.time <= nowMillis, nowMillis - operation.time < ttlMillis else { return nil }
+    return ["request_id": .string(operation.id), "operation": .string(operation.name),
+            "observed_at_epoch_ms": .int(nowMillis)]
+  }
+
+  private func recordOperation(_ id: String, scope: AgentIOSURLSessionBrowserSessionScope, name: String, now: Int64) {
+    guard !id.isEmpty, !scope.contextId.isEmpty, !scope.turnId.isEmpty, !scope.taskId.isEmpty else { return }
+    operations.removeAll { $0.id == id && $0.scope == scope }
+    operations.append(Operation(id: id, scope: scope, name: name, time: now))
+    if operations.count > 512 { operations.removeFirst(operations.count - 512) }
   }
 
   private func resolvedLocked(

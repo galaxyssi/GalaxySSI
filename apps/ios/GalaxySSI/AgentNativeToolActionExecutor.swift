@@ -81,7 +81,9 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
       )
     }
     let idempotencyKey = Self.idempotencyKey(for: action, descriptor: descriptor)
-    let baseInvocationId = Self.clean(action.parameters["invocation_id"] ?? "").nilIfEmpty ?? action.id
+    // The browser operation journal must never use a model-selected request identity.
+    let baseInvocationId = AgentEffectRecoveryRecord.browserMutationTools.contains(toolId)
+      ? UUID().uuidString : (Self.clean(action.parameters["invocation_id"] ?? "").nilIfEmpty ?? action.id)
     let deadlineEpochMillis = Self.deadlineEpochMillis(action: action, nowMillis: nowMillis())
     let maximumAttempts = descriptor.requiresEffectClaim ? 1 : maxRetries + 1
     var attempt = 0
@@ -95,7 +97,7 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
         sessionId: Self.clean(action.parameters[Self.sessionIdKey] ?? ""),
         conversationId: Self.clean(action.parameters[Self.conversationIdKey] ?? ""),
         turnId: Self.clean(action.parameters[Self.turnIdKey] ?? ""),
-        callerId: "galaxyssi.mobile_agent.plan",
+        callerId: AgentEffectRecoveryRecord.nativeCaller,
         requestedAtEpochMillis: nowMillis(),
         deadlineEpochMillis: deadlineEpochMillis,
         idempotencyKey: idempotencyKey,
@@ -133,7 +135,7 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
       phase: .resultVerify,
       outcome: Self.runtimeOutcome
     ) {
-      Self.actionResult(action: action, result: result, retryCount: attempt - 1)
+      Self.actionResult(action: action, result: result, descriptor: descriptor, retryCount: attempt - 1)
     }
     if let artifactReceipt, let data = try? JSONEncoder().encode(artifactReceipt) {
       verifiedResult.metadata[AgentArtifactOperationReceipt.metadataKey] = String(decoding: data, as: UTF8.self)
@@ -250,12 +252,15 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
       "confirmation_id": action.id,
       "step_id": action.id,
       "workspace_id": workspaceId,
+      "recovery_task_id": clean(action.parameters["_galaxyssi_task_id"] ?? ""),
       "explicit_user_approval": explicitUserApproval.description,
       "retry_attempt": String(max(0, retryAttempt)),
       "foreground_app": screen.foregroundApp,
       "page_title": screen.pageTitle,
       "contact_id": clean(action.parameters["_galaxyssi_contact_id"] ?? ""),
       "response_language": clean(action.parameters["response_language"] ?? ""),
+      "capture_permission_preflight": action.parameters["_galaxyssi_capture_permission_preflight"] ?? "",
+      "capture_permission_task_id": action.parameters["_galaxyssi_task_id"] ?? "",
       AgentNativeToolRegistry.legacyActionIdAttribute: action.id
     ]
   }
@@ -335,18 +340,21 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
   private static func actionResult(
     action: AgentAction,
     result: AgentNativeToolResult,
+    descriptor: AgentNativeToolDescriptor,
     retryCount: Int = 0
   ) -> AgentActionResult {
     let output = String(AgentMcpJSONCodec.stringify(result.output).prefix(maxOutputCharacters))
     let nativeMessage = modelVisibleMessage(result)
-    return AgentActionResult(
+    let recovery = AgentEffectRecoveryRecord.fromNativeResult(result, action: action, descriptor: descriptor)
+    var actionResult = AgentActionResult(
       actionId: action.id,
-      success: result.isSuccess,
-      message: nativeMessage.nilIfEmpty ?? output,
+      success: result.isSuccess && recovery == nil,
+      message: recovery == nil ? (nativeMessage.nilIfEmpty ?? output) : "The original effect is not verified. Observe its affected state before deciding what to do next.",
       metadata: [
         "native_tool_id": result.provenance.toolId,
         "native_tool_version": result.provenance.toolVersion,
         "native_tool_status": result.status.rawValue,
+        "error_code": result.error?.code ?? "",
         "native_tool_output": output,
         "native_receipt_id": result.receipt.invocationId,
         "invocation_id": result.receipt.invocationId,
@@ -358,6 +366,10 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
         "provenance": result.provenance.executorId
       ]
     )
+    if let recovery, let data = try? JSONEncoder().encode(recovery) {
+      actionResult.metadata[AgentEffectRecoveryRecord.metadataKey] = String(decoding: data, as: UTF8.self)
+    }
+    return actionResult
   }
 
   private static func modelVisibleMessage(_ result: AgentNativeToolResult) -> String {
@@ -399,6 +411,7 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
       metadata: [
         "native_tool_id": toolId,
         "native_tool_status": "rejected",
+        "execution_started": "false",
         "error_code": code
       ]
     )

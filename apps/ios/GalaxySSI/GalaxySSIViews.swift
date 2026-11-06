@@ -555,6 +555,8 @@ struct ConversationView: View {
   @State private var attachments: [GalaxySSIDraftAttachment] = []
   @State private var attachmentMenuPresented = false
   @State private var fileImporterPresented = false
+  @State private var fileAttachmentOwner: String?
+  @State private var fileAttachmentRequest: UUID?
   @State private var cameraPickerPresented = false
   @State private var cameraAttachmentOwner: String?
   @State private var attachmentError = ""
@@ -578,7 +580,20 @@ struct ConversationView: View {
   @State private var messageContentHeight: CGFloat = 0
   @State private var messageViewportHeight: CGFloat = 0
   @State private var messageViewportNearLatest = true
-  @State private var messageWindowContactId = ""
+  @State private var messageWindowScope = ""
+  @State private var messageViewportEpoch = GalaxySSIChatViewportEpoch()
+  @State private var messageViewportSuspended = false
+  @State private var messageViewportDragging = false
+  @State private var pinLatestAfterSend = false
+  @State private var visibleMessageAnchor: GalaxySSIChatViewportAnchor?
+  @State private var pendingMessageAnchor: GalaxySSIChatViewportAnchor?
+  @State private var pickerMessageAnchor: GalaxySSIChatViewportAnchor?
+  @State private var pickerViewportDetached = false
+  @State private var messageWindowOldest: GalaxySSIChatHistoryCursor?
+  @State private var messageWindowNewest: GalaxySSIChatHistoryCursor?
+  @State private var messageScroll = GalaxySSIChatScrollReference()
+  private let messageScrollSpace = "conversation-message-viewport"
+  private let messageTail = "conversation-message-tail"
   @State private var pendingVoiceRiskConfirmation: GalaxySSIConversationVoiceRiskConfirmation?
   @State private var visibilityToken = UUID()
   var contactId: String
@@ -626,7 +641,12 @@ struct ConversationView: View {
   }
 
   private var renderedMessages: [ChatMessage] {
-    Array(displayedMessages.suffix(min(visibleMessageCount, displayedMessages.count)))
+    let window = displayedMessages.filter { message in
+      let cursor = GalaxySSIChatHistoryCursor(message)
+      return (messageWindowOldest.map { cursor >= $0 } ?? true) &&
+        (messageWindowNewest.map { cursor <= $0 } ?? true)
+    }
+    return Array(window.suffix(visibleMessageCount))
   }
 
   private var waitingMessageIDs: Set<UUID> {
@@ -681,18 +701,31 @@ struct ConversationView: View {
           ScrollView {
             LazyVStack(spacing: 10) {
               ForEach(Array(renderedMessages.enumerated()), id: \.element.id) { index, message in
-                conversationMessageRow(
-                  index: index,
-                  message: message,
-                  firstRenderedMessageID: firstRenderedMessageID,
-                  lastRenderedMessageID: renderedMessages.last?.id,
-                  proxy: proxy
-                )
+                VStack(spacing: 10) {
+                  conversationMessageRow(index: index, message: message,
+                    firstRenderedMessageID: firstRenderedMessageID, proxy: proxy)
+                }
+                .id(message.id)
+                .background {
+                  GeometryReader { row in
+                    Color.clear.preference(key: GalaxySSIChatMessageFramesKey.self,
+                      value: [message.id: row.frame(in: .named(messageScrollSpace))])
+                  }
+                }
               }
+              if messageWindowNewest != nil {
+                Button(t("galaxyssi.agent.latest", "Back to latest")) {
+                  openLatestMessageWindow()
+                  scrollToMessageTail(proxy)
+                }
+                Button(t("chat_load_newer", "Show newer messages"), action: loadNewerMessages)
+              }
+              Color.clear.frame(height: 1).id(messageTail).accessibilityHidden(true)
             }
             .padding(.horizontal, 12)
             .padding(.top, 14)
             .padding(.bottom, 10)
+            .background(GalaxySSIChatScrollResolver(reference: messageScroll))
             .background {
               GeometryReader { content in
                 Color.clear.preference(
@@ -702,6 +735,19 @@ struct ConversationView: View {
               }
             }
           }
+          .coordinateSpace(name: messageScrollSpace)
+          .simultaneousGesture(DragGesture(minimumDistance: 12)
+            .onChanged { value in
+              guard !messageViewportDragging, abs(value.translation.height) >= abs(value.translation.width) else { return }
+              messageViewportDragging = true
+              pinLatestAfterSend = false
+              pendingMessageAnchor = nil
+              pickerMessageAnchor = nil
+              loadingOlderMessages = false
+              initialMessageScrollCompleted = true
+              messageViewportEpoch.invalidate()
+            }
+            .onEnded { _ in messageViewportDragging = false })
           .background(Color.galaxySSIPageBackground)
           .onAppear {
             messageViewportHeight = viewport.size.height
@@ -711,15 +757,33 @@ struct ConversationView: View {
           .onChange(of: viewport.size.height) { height in
             messageViewportHeight = height
             scrollToInitialMessageIfReady(proxy)
+            if pinLatestAfterSend { scrollToMessageTail(proxy) }
           }
           .onPreferenceChange(GalaxySSIChatMessageContentHeightKey.self) { height in
             messageContentHeight = height
             scrollToInitialMessageIfReady(proxy)
+            if pinLatestAfterSend { scrollToMessageTail(proxy) }
+          }
+          .onPreferenceChange(GalaxySSIChatMessageFramesKey.self) { frames in
+            guard !messageViewportSuspended, pendingMessageAnchor == nil else { return }
+            if let (id, top) = GalaxySSIChatMessageViewportPolicy.firstVisible(frames, height: messageViewportHeight),
+               let message = renderedMessages.first(where: { $0.id == id }) {
+              visibleMessageAnchor = .init(cursor: GalaxySSIChatHistoryCursor(message), top: top)
+            }
+            if let id = renderedMessages.last?.id {
+              messageViewportNearLatest = messageWindowNewest == nil &&
+                (frames[id].map { $0.maxY <= messageViewportHeight + 56 } ?? false)
+            }
+          }
+          .onChange(of: messageViewportEpoch.revision) { _ in
+            scrollToInitialMessageIfReady(proxy)
+            if pinLatestAfterSend { scrollToMessageTail(proxy) }
           }
           .onChange(of: displayedMessages.count) { _ in
             if !initialMessageScrollCompleted {
               scrollToInitialMessageIfReady(proxy)
-            } else if GalaxySSIChatMessageViewportPolicy.followsLatest(
+            } else if messageWindowNewest == nil, !messageViewportSuspended, !loadingOlderMessages,
+                      GalaxySSIChatMessageViewportPolicy.followsLatest(
               systemNotifications: isSystemNoticeContact,
               nearLatest: messageViewportNearLatest
             ), let last = renderedMessages.last {
@@ -730,7 +794,8 @@ struct ConversationView: View {
             refreshVisibleContactReadState()
           }
           .onChange(of: waitingMessageIDs.count) { _ in
-            guard GalaxySSIChatMessageViewportPolicy.followsLatest(
+            guard !messageViewportSuspended, messageWindowNewest == nil,
+                  GalaxySSIChatMessageViewportPolicy.followsLatest(
               systemNotifications: isSystemNoticeContact,
               nearLatest: messageViewportNearLatest
             ) else { return }
@@ -791,6 +856,8 @@ struct ConversationView: View {
           textModeActive: $composerTextModeActive,
           deviceInputPolicy: deviceInputPolicy,
           voiceSettings: store.voiceSettings,
+          attachmentImageLimit: contact.isDesktopDeviceContact || isPhonePersonContact
+            ? ComposerImageQuality.contactCompressedBytes : AgentImagePipeline.targetTransportBytes,
           dedicatedPeerVoiceCapture: GalaxySSIPeerVoiceMessageAudio.shouldUseDedicatedCapture(
             purpose: "chat_message",
             isPersonContact: isPhonePersonContact
@@ -807,7 +874,7 @@ struct ConversationView: View {
           onOpenSessions: openAgentSessionsFromChat,
           onScan: openContactScannerFromChat,
           onTakePhoto: openCameraAttachmentPicker,
-          onAddFile: { fileImporterPresented = true },
+          onAddFile: openComposerFilePicker,
           onSend: sendCurrentMessage,
           onVoiceTranscript: sendVoiceTranscript,
           t: t
@@ -822,16 +889,31 @@ struct ConversationView: View {
     .onAppear {
       conversationVisible = true
       resetMessageWindowIfNeeded()
+      resumeMessageViewport()
       refreshVisibleContactReadState()
     }
-    .onChange(of: contactId) { _ in
+    .onChange(of: composerAttachmentScope) { _ in
       resetMessageWindowIfNeeded()
       refreshVisibleContactReadState()
     }
-    .onChange(of: scenePhase) { _ in refreshVisibleContactReadState() }
+    .onChange(of: fileImporterPresented || cameraPickerPresented, perform: attachmentPickerViewportChanged)
+    .onChange(of: scenePhase) { phase in
+      if phase == .active { resumeMessageViewport() } else { suspendMessageViewport() }
+      refreshVisibleContactReadState()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
+      suspendMessageViewport()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextDidRestore)) { _ in
+      resumeMessageViewport()
+    }
     .onChange(of: conversationWindowFocused) { _ in refreshVisibleContactReadState() }
     .onDisappear {
       conversationVisible = false
+      if fileImporterPresented || cameraPickerPresented { pickerViewportDetached = true }
+      loadingOlderMessages = false
+      messageViewportDragging = false
+      messageViewportEpoch.invalidate()
       GalaxySSIVisibleConversationTracker.shared.markHidden(token: visibilityToken)
       attachmentMenuPresented = false
     }
@@ -848,10 +930,23 @@ struct ConversationView: View {
     ) { result in
       switch result {
       case .success(let urls):
-        urls.forEach(addAttachment)
+        receiveComposerFiles(urls)
       case .failure(let error):
-        attachmentError = error.localizedDescription
+        if fileAttachmentOwner == composerAttachmentScope { attachmentError = error.localizedDescription }
+        fileAttachmentOwner = nil
+        fileAttachmentRequest = nil
       }
+    }
+    .onChange(of: composerAttachmentScope) { _ in
+      fileAttachmentOwner = nil
+      fileAttachmentRequest = nil
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
+      fileAttachmentOwner = nil
+      fileAttachmentRequest = nil
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+      cameraAttachmentOwner = nil
     }
     .fullScreenCover(isPresented: $cameraPickerPresented) {
       CameraAttachmentPickerView(
@@ -860,7 +955,7 @@ struct ConversationView: View {
             cameraAttachmentOwner = nil
             cameraPickerPresented = false
           }
-          guard cameraAttachmentOwner == composerAttachmentScope else {
+          guard cameraAttachmentOwner == composerAttachmentScope, scenePhase == .active else {
             var discarded = attachment
             discarded.wipeSensitive()
             return
@@ -949,7 +1044,6 @@ struct ConversationView: View {
     index: Int,
     message: ChatMessage,
     firstRenderedMessageID: UUID?,
-    lastRenderedMessageID: UUID?,
     proxy: ScrollViewProxy
   ) -> some View {
     if GalaxySSIConversationDateDivider.shouldShow(
@@ -972,7 +1066,6 @@ struct ConversationView: View {
       onRetry: { retryMessage(message) },
       onDelete: { store.deleteMessage(message.id, contactId: contact.id) }
     )
-      .id(message.id)
       .contextMenu {
         if !message.isSystem {
           Button {
@@ -986,12 +1079,6 @@ struct ConversationView: View {
             Label(t("galaxyssi.message.delete", "Delete Message"), systemImage: "trash")
           }
         }
-      }
-      .onAppear {
-        if message.id == lastRenderedMessageID { messageViewportNearLatest = true }
-      }
-      .onDisappear {
-        if message.id == lastRenderedMessageID { messageViewportNearLatest = false }
       }
     if waitingMessageIDs.contains(message.id) {
       AgentReplyWaitingIndicatorView()
@@ -1008,23 +1095,91 @@ struct ConversationView: View {
   }
 
   private func resetMessageWindowIfNeeded() {
-    guard messageWindowContactId != contact.id else { return }
-    messageWindowContactId = contact.id
+    guard messageWindowScope != composerAttachmentScope else { return }
+    messageWindowScope = composerAttachmentScope
+    messageViewportEpoch.invalidate()
+    messageViewportSuspended = false
+    messageViewportDragging = false
+    pinLatestAfterSend = false
+    pendingMessageAnchor = nil
+    pickerMessageAnchor = nil
+    pickerViewportDetached = false
+    visibleMessageAnchor = nil
+    initialMessageScrollCompleted = false
+    messageViewportNearLatest = true
+    openLatestMessageWindow()
+  }
+
+  private func openLatestMessageWindow() {
     visibleMessageCount = 100
     loadingOlderMessages = false
-    initialMessageScrollCompleted = false
-    messageContentHeight = 0
-    messageViewportNearLatest = true
+    messageWindowNewest = nil
     let page = store.loadMessagePage(
       contactId: contact.id,
       conversationId: visibleAgentConversationId,
       pageSize: 100
     )
+    messageWindowOldest = page.messages.first.map(GalaxySSIChatHistoryCursor.init)
     messageHistoryHasMore = page.hasMore
   }
 
+  private func suspendMessageViewport() {
+    guard !messageViewportSuspended, !messageWindowScope.isEmpty else { return }
+    if !pinLatestAfterSend, isSystemNoticeContact || !messageViewportNearLatest {
+      pendingMessageAnchor = pendingMessageAnchor ?? visibleMessageAnchor
+    }
+    messageViewportSuspended = true
+    messageViewportDragging = false
+    loadingOlderMessages = false
+    messageViewportEpoch.invalidate()
+  }
+
+  private func attachmentPickerViewportChanged(_ presented: Bool) {
+    if presented {
+      pickerMessageAnchor = pinLatestAfterSend ? nil : visibleMessageAnchor
+      pickerViewportDetached = false
+      return
+    }
+    defer { pickerMessageAnchor = nil; pickerViewportDetached = false }
+    guard let anchor = pickerMessageAnchor, !messageViewportSuspended, !pinLatestAfterSend,
+          renderedMessages.contains(where: { $0.id.uuidString == anchor.cursor.messageId }) else { return }
+    let unchanged = visibleMessageAnchor.map { $0.cursor == anchor.cursor && abs($0.top - anchor.top) < 1 } ?? false
+    guard pickerViewportDetached || !unchanged else { return }
+    pendingMessageAnchor = anchor
+    initialMessageScrollCompleted = false
+    messageViewportEpoch.invalidate()
+  }
+
+  private func resumeMessageViewport() {
+    guard messageViewportSuspended, scenePhase == .active, conversationVisible,
+          store.canRestoreMessageViewport else { return }
+    messageViewportSuspended = false
+    messageViewportEpoch.invalidate()
+    initialMessageScrollCompleted = false
+    if let anchor = pendingMessageAnchor,
+       let window = store.restoreMessageViewport(contactId: contact.id, conversationId: visibleAgentConversationId,
+                                                  around: anchor.cursor) {
+      visibleMessageCount = 100
+      messageWindowOldest = window.oldest
+      messageWindowNewest = window.newest
+      messageHistoryHasMore = window.hasOlder
+    } else {
+      pendingMessageAnchor = nil
+      openLatestMessageWindow()
+    }
+  }
+
+  private func scrollToMessageTail(_ proxy: ScrollViewProxy) {
+    guard !messageViewportSuspended, messageWindowNewest == nil else { return }
+    let ticket = messageViewportEpoch.revision
+    DispatchQueue.main.async {
+      guard messageViewportEpoch.accepts(ticket), !messageViewportSuspended else { return }
+      proxy.scrollTo(messageTail, anchor: .bottom)
+    }
+  }
+
   private func scrollToInitialMessageIfReady(_ proxy: ScrollViewProxy) {
-    guard !initialMessageScrollCompleted,
+    guard !initialMessageScrollCompleted, !messageViewportSuspended,
           messageContentHeight > 0,
           messageViewportHeight > 0 else { return }
     let initialPosition = GalaxySSIChatMessageViewportPolicy.initialPosition(
@@ -1035,10 +1190,20 @@ struct ConversationView: View {
     let initialMessage = initialPosition == .first
       ? renderedMessages.first
       : renderedMessages.last
-    guard let initialMessage else { return }
+    let restored = pendingMessageAnchor
+    guard let id = restored.flatMap({ UUID(uuidString: $0.cursor.messageId) }) ?? initialMessage?.id else { return }
+    let ticket = messageViewportEpoch.revision
     DispatchQueue.main.async {
-      proxy.scrollTo(initialMessage.id, anchor: initialPosition == .first ? .top : .bottom)
+      guard messageViewportEpoch.accepts(ticket), !messageViewportSuspended, !initialMessageScrollCompleted else { return }
       initialMessageScrollCompleted = true
+      proxy.scrollTo(id, anchor: restored != nil || initialPosition == .first ? .top : .bottom)
+      if let restored {
+        DispatchQueue.main.async {
+          guard messageViewportEpoch.accepts(ticket), !messageViewportSuspended else { return }
+          messageScroll.adjustTop(by: -restored.top)
+          pendingMessageAnchor = nil
+        }
+      }
     }
   }
 
@@ -1049,24 +1214,31 @@ struct ConversationView: View {
 
   private func loadOlderMessages(anchorID: UUID, proxy: ScrollViewProxy) {
     guard initialMessageScrollCompleted,
-          !loadingOlderMessages else { return }
+          !loadingOlderMessages, !messageViewportSuspended, pendingMessageAnchor == nil,
+          !pinLatestAfterSend, messageHistoryHasMore else { return }
     loadingOlderMessages = true
-    if visibleMessageCount < displayedMessages.count {
-      visibleMessageCount = min(visibleMessageCount + 100, displayedMessages.count)
-    } else if messageHistoryHasMore {
-      let page = store.loadMessagePage(
-        contactId: contact.id,
-        conversationId: visibleAgentConversationId,
-        before: renderedMessages.first,
-        pageSize: 100
-      )
-      visibleMessageCount = min(visibleMessageCount + page.messages.count, displayedMessages.count)
-      messageHistoryHasMore = page.hasMore
-    }
+    let page = store.loadMessagePage(
+      contactId: contact.id,
+      conversationId: visibleAgentConversationId,
+      before: renderedMessages.first,
+      pageSize: 100
+    )
+    visibleMessageCount += page.messages.count
+    messageWindowOldest = page.messages.first.map(GalaxySSIChatHistoryCursor.init) ?? messageWindowOldest
+    messageHistoryHasMore = page.hasMore
+    let ticket = messageViewportEpoch.revision
     DispatchQueue.main.async {
+      guard messageViewportEpoch.accepts(ticket), !messageViewportSuspended else { return }
       proxy.scrollTo(anchorID, anchor: .top)
       loadingOlderMessages = false
     }
+  }
+
+  private func loadNewerMessages() {
+    guard !messageViewportSuspended, let cursor = messageWindowNewest else { return }
+    let page = store.loadNewerMessagePage(contactId: contact.id, conversationId: visibleAgentConversationId, after: cursor)
+    visibleMessageCount += page.messages.count
+    messageWindowNewest = page.nextCursor
   }
 
   private var visibleAgentConversationId: String? {
@@ -1251,8 +1423,14 @@ struct ConversationView: View {
   }
 
   private func sendCurrentMessage() {
+    guard !attachments.contains(where: \.requiresInitialComposerImageReview) else {
+      attachmentError = t("composer_attachment_review_required", "Review the selected images before sending.")
+      return
+    }
     let cleanDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
     let outgoingAttachments = attachments
+    let target = contact
+    let scope = composerAttachmentScope
     let text = cleanDraft.ifBlank(attachmentLabel(for: outgoingAttachments))
     let agentGoal = cleanDraft.isEmpty && !outgoingAttachments.isEmpty
       ? t("agent_attachment_default_goal", "Inspect and understand the attached content first. Infer the user's most likely goal from its content, type, conversation context, and common use cases, then directly complete the most helpful relevant action. If several interpretations are reasonable, act on the most probable reversible one and briefly state the assumption. Ask one minimal question only when the content cannot be read or no reasonable intent can be inferred.")
@@ -1265,9 +1443,19 @@ struct ConversationView: View {
       defer { sensitiveAttachments.wipeSensitive() }
       await coordinator.send(
         text,
-        to: contact,
+        to: target,
         attachments: sensitiveAttachments,
-        agentGoalOverride: agentGoal
+        agentGoalOverride: agentGoal,
+        onOutgoing: { _ in
+          guard scope == composerAttachmentScope, conversationVisible,
+                !messageViewportSuspended else { return }
+          pendingMessageAnchor = nil
+          pickerMessageAnchor = nil
+          initialMessageScrollCompleted = true
+          pinLatestAfterSend = true
+          openLatestMessageWindow()
+          messageViewportEpoch.invalidate()
+        }
       )
     }
   }
@@ -1506,12 +1694,24 @@ struct ConversationView: View {
     }
   }
 
-  private func addAttachment(url: URL) {
-    do {
-      let attachment = try GalaxySSIAttachmentPayloadBuilder.makeAttachment(from: url)
-      appendAttachment(attachment)
-    } catch {
-      attachmentError = error.localizedDescription
+  private func openComposerFilePicker() {
+    fileAttachmentOwner = composerAttachmentScope
+    fileAttachmentRequest = UUID()
+    fileImporterPresented = true
+  }
+
+  private func receiveComposerFiles(_ urls: [URL]) {
+    guard let owner = fileAttachmentOwner, let request = fileAttachmentRequest, owner == composerAttachmentScope else { return }
+    fileAttachmentOwner = nil
+    let target = contact
+    Task { @MainActor in
+      defer { if fileAttachmentRequest == request { fileAttachmentRequest = nil } }
+      let isCurrent = { fileAttachmentRequest == request && owner == composerAttachmentScope && scenePhase == .active }
+      await ComposerFileSelection.deliver(urls, isCurrent: isCurrent, onImage: appendAttachment, onDocument: { attachment in
+        if !(await coordinator.send("", to: target, attachments: [attachment])), isCurrent() {
+          attachmentError = coordinator.lastError.ifBlank(t("composer_attachment_send_failed", "Could not send the file."))
+        }
+      }, onFailure: { attachmentError = $0.localizedDescription })
     }
   }
 

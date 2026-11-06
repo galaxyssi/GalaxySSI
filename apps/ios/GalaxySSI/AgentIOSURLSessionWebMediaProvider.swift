@@ -498,7 +498,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         browserId: browserId,
         scope: scope,
         currentURL: resource.finalURL,
-        nowMillis: nowMillis()
+        nowMillis: nowMillis(),
+        requestId: invocation.context.invocationId
       )
       var output = commonOutput(resource).merging(browserSessionOutput(snapshot)) { current, _ in current }
       let html = decodedText(resource).text
@@ -527,7 +528,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       let snapshot = try browserSessions.close(
         browserId: browserId,
         scope: AgentIOSURLSessionBrowserSessionScope(context: invocation.context),
-        nowMillis: nowMillis()
+        nowMillis: nowMillis(),
+        requestId: invocation.context.invocationId
       )
       return AgentNativeToolExecutionResult.success(
         output: [

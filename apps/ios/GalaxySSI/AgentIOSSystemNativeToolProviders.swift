@@ -47,6 +47,7 @@ struct AgentIOSDefaultAudioStatusProvider: AgentIOSAudioStatusProviding {
       "microphone_muted": .null,
       "streams": .object([
         "media": .object([
+          "stream": .string("media"),
           "current": .int(volumePercent),
           "max": .int(100),
           "muted": .bool(volumePercent == 0),

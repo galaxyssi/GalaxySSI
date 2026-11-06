@@ -339,10 +339,12 @@ final class GalaxySSIStore: ObservableObject {
   private let phoneContactCardsKey = "galaxyssi.phone_contact_cards"
   private let homeAssistantAccessTokenAccount = "home_assistant.access_token"
   private var runtimePlaintextCleared = false
+  var canRestoreMessageViewport: Bool { !runtimePlaintextCleared }
   var canReadVoiceReminderSnapshot: Bool { !runtimePlaintextCleared }
   private var suppressMessageDatabaseSync = false
 
-  init(defaults: UserDefaults = .standard, secrets: GalaxySSISecretStore = KeychainSecretStore.shared) {
+  init(defaults: UserDefaults = .standard, secrets: GalaxySSISecretStore = KeychainSecretStore.shared,
+       workspaceStore: AgentWorkspaceStore = FileAgentWorkspaceStore()) {
     defaults.removeObject(forKey: "galaxyssi.phone_contact_cards")
     defaults.removeObject(forKey: "galaxyssi.phone_contact_inbox_route")
     self.defaults = defaults
@@ -368,7 +370,7 @@ final class GalaxySSIStore: ObservableObject {
     let preferenceModeStore = AgentPreferenceModeStore(defaults: defaults)
     self.memoryDeletionIndex = deletionIndex
     self.agentMemoryStore = memoryStore
-    self.agentWorkspaceStore = FileAgentWorkspaceStore()
+    self.agentWorkspaceStore = workspaceStore
     self.agentPreferenceModeStore = preferenceModeStore
     self.workflowExecutionHistoryStore = AgentWorkflowExecutionHistoryStore(defaults: defaults)
     let taskHistoryPersistence = AgentTaskHistoryPersistence(defaults: defaults, secrets: secrets)
@@ -680,22 +682,42 @@ final class GalaxySSIStore: ObservableObject {
     before message: ChatMessage? = nil,
     pageSize: Int = GalaxySSIChatHistoryDatabase.defaultPageSize
   ) -> GalaxySSIChatHistoryPage {
-    let cursor = message.map {
-      GalaxySSIChatHistoryCursor(
-        createdAtMillis: Self.millis($0.createdAt),
-        messageId: $0.id.uuidString
-      )
-    }
+    let cursor = message.map(GalaxySSIChatHistoryCursor.init)
     let page = chatHistoryDatabase.page(
       contactId: contactId,
       conversationId: conversationId,
       before: cursor,
       pageSize: pageSize
     )
-    guard !page.messages.isEmpty else { return page }
+    mergeMessageViewport(page.messages, contactId: contactId)
+    return page
+  }
+
+  func loadNewerMessagePage(contactId: String, conversationId: String?, after cursor: GalaxySSIChatHistoryCursor,
+                            pageSize: Int = 100) -> GalaxySSIChatHistoryPage {
+    let page = chatHistoryDatabase.page(contactId: contactId, conversationId: conversationId,
+                                       after: cursor, pageSize: pageSize)
+    mergeMessageViewport(page.messages, contactId: contactId)
+    return page
+  }
+
+  func restoreMessageViewport(contactId: String, conversationId: String?, around anchor: GalaxySSIChatHistoryCursor)
+    -> (oldest: GalaxySSIChatHistoryCursor, newest: GalaxySSIChatHistoryCursor?, hasOlder: Bool)? {
+    guard let id = UUID(uuidString: anchor.messageId), let center = chatHistoryDatabase.message(id: id),
+          center.contactId == contactId, conversationId == nil || center.conversationId == conversationId,
+          GalaxySSIChatHistoryCursor(center) == anchor else { return nil }
+    let older = chatHistoryDatabase.page(contactId: contactId, conversationId: conversationId, before: anchor, pageSize: 24)
+    let newer = chatHistoryDatabase.page(contactId: contactId, conversationId: conversationId, after: anchor, pageSize: 48)
+    let window = older.messages + [center] + newer.messages
+    mergeMessageViewport(window, contactId: contactId)
+    return (window.first.map(GalaxySSIChatHistoryCursor.init) ?? anchor, newer.nextCursor, older.hasMore)
+  }
+
+  private func mergeMessageViewport(_ window: [ChatMessage], contactId: String) {
+    guard !window.isEmpty else { return }
     var merged = messagesByContact[contactId] ?? []
     let existing = Set(merged.map(\.id))
-    merged += page.messages.filter { !existing.contains($0.id) }
+    merged += window.filter { !existing.contains($0.id) }
     suppressMessageDatabaseSync = true
     messagesByContact[contactId] = merged.sorted { left, right in
       left.createdAt == right.createdAt
@@ -703,7 +725,6 @@ final class GalaxySSIStore: ObservableObject {
         : left.createdAt < right.createdAt
     }
     suppressMessageDatabaseSync = false
-    return page
   }
 
   func attachmentRecoveryPage(conversationId: String, before: GalaxySSIChatHistoryCursor?) -> GalaxySSIChatHistoryPage {

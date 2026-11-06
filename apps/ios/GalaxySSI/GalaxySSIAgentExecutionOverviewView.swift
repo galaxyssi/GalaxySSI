@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct GalaxySSIAgentExecutionOverviewView: View {
-  @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
   var activeRemoteAgentTask: AgentRemoteTaskStatusSnapshot?
   var activeExecutionTask: AgentTaskRecord?
   var actionQueueItems: [GalaxySSIAgentActionQueueItem]
@@ -31,6 +30,7 @@ struct GalaxySSIAgentExecutionOverviewView: View {
       if let activeRemoteAgentTask {
         let completed = AgentRemoteTaskStatusPolicy.isTerminal(activeRemoteAgentTask.status)
         let paused = AgentProcessClockPolicy.pausesRemoteClock(activeRemoteAgentTask.status)
+        let status = AgentTranscriptExecutionProgress.remoteStatus(activeRemoteAgentTask.status)
         GalaxySSIAgentExecutionStatusCard(
           completed: completed,
           duration: executionDuration(
@@ -41,8 +41,7 @@ struct GalaxySSIAgentExecutionOverviewView: View {
           liveDurationStartMillis: activeRemoteAgentTask.history.first?.updatedAtMillis
             ?? activeRemoteAgentTask.updatedAtMillis,
           liveDurationFormatter: completed || paused ? nil : liveExecutionDuration,
-          inactiveTitle: paused ? GalaxySSIRemoteTaskStatusPresentation.title(activeRemoteAgentTask.status,
-            language: interfaceLanguage) : "",
+          inactiveTitle: status == .running || status == .completed ? "" : status.title(t),
           detailsTitle: t("galaxyssi.agent.execution.timeline", "Execution timeline"),
           details: activeRemoteAgentTask.history.map(remoteTimelineLine),
           canResume: false,
@@ -65,7 +64,7 @@ struct GalaxySSIAgentExecutionOverviewView: View {
         )
         let paused = AgentProcessClockPolicy.pausesLocalClock(activeExecutionTask.phase)
         let progress = AgentInteractiveProgressPolicy.project(task: activeExecutionTask)
-        if progress.visible && !paused {
+        if progress.visible {
           GalaxySSIAgentInteractiveProgressView(
             presentation: progress,
             timelineActions: timelineActions(activeExecutionTask),
@@ -130,11 +129,7 @@ struct GalaxySSIAgentExecutionOverviewView: View {
   }
 
   private func localInactiveTitle(_ phase: AgentPhase) -> String {
-    switch phase {
-    case .blocked: return t("agent_recent_status_blocked", "Blocked")
-    case .paused: return t("agent_recent_status_paused", "Paused")
-    case .waitingConfirmation: return t("agent_status_waiting_confirmation", "Waiting for confirmation")
-    default: return ""
-    }
+    let status = AgentInteractiveProgressStatus(phase)
+    return status == .running || status == .completed ? "" : status.title(t)
   }
 }

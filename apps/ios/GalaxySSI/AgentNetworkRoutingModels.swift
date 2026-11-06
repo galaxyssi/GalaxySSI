@@ -89,6 +89,11 @@ enum AgentExecutionHorizon: String, Codable, CaseIterable, Identifiable {
   }
 }
 
+enum AgentCapabilityRequirementSource: String, Codable, Equatable {
+  case declared
+  case inferred
+}
+
 struct AgentTaskRequirements: Codable, Equatable {
   var capabilities: Set<AgentCapability>
   var mode: AgentRoutingMode
@@ -98,6 +103,7 @@ struct AgentTaskRequirements: Codable, Equatable {
   var estimatedInputTokens: Int
   var dataSensitivity: AgentDataSensitivity
   var executionHorizon: AgentExecutionHorizon
+  var capabilitySource: AgentCapabilityRequirementSource
 
   init(
     capabilities: Set<AgentCapability> = [],
@@ -107,7 +113,8 @@ struct AgentTaskRequirements: Codable, Equatable {
     complexReasoning: Bool = false,
     estimatedInputTokens: Int = 0,
     dataSensitivity: AgentDataSensitivity = .personal,
-    executionHorizon: AgentExecutionHorizon = .interactive
+    executionHorizon: AgentExecutionHorizon = .interactive,
+    capabilitySource: AgentCapabilityRequirementSource = .declared
   ) {
     self.capabilities = capabilities
     self.mode = mode
@@ -117,6 +124,7 @@ struct AgentTaskRequirements: Codable, Equatable {
     self.estimatedInputTokens = max(0, estimatedInputTokens)
     self.dataSensitivity = dataSensitivity
     self.executionHorizon = executionHorizon
+    self.capabilitySource = capabilitySource
   }
 
   enum CodingKeys: String, CodingKey {
@@ -128,6 +136,7 @@ struct AgentTaskRequirements: Codable, Equatable {
     case estimatedInputTokens = "estimated_input_tokens"
     case dataSensitivity = "data_sensitivity"
     case executionHorizon = "execution_horizon"
+    case capabilitySource = "capability_source"
   }
 
   init(from decoder: Decoder) throws {
@@ -143,6 +152,8 @@ struct AgentTaskRequirements: Codable, Equatable {
     dataSensitivity = try container.decodeIfPresent(AgentDataSensitivity.self, forKey: .dataSensitivity) ?? .personal
     executionHorizon = try container.decodeIfPresent(AgentExecutionHorizon.self, forKey: .executionHorizon) ??
       .interactive
+    let source = try container.decodeIfPresent(String.self, forKey: .capabilitySource) ?? ""
+    capabilitySource = AgentCapabilityRequirementSource(rawValue: source.lowercased()) ?? .declared
   }
 
   func encode(to encoder: Encoder) throws {
@@ -155,6 +166,35 @@ struct AgentTaskRequirements: Codable, Equatable {
     try container.encode(estimatedInputTokens, forKey: .estimatedInputTokens)
     try container.encode(dataSensitivity, forKey: .dataSensitivity)
     try container.encode(executionHorizon, forKey: .executionHorizon)
+    try container.encode(capabilitySource, forKey: .capabilitySource)
+  }
+}
+
+enum AgentCapabilityRoutingPolicy {
+  private static let mandatory: Set<AgentCapability> = [
+    .liveData, .code, .deviceControl, .appNavigation, .knowledgeSearch, .mcp, .skill
+  ]
+
+  static func missingRequired(_ requirements: AgentTaskRequirements,
+                              available: Set<AgentCapability>) -> Set<AgentCapability> {
+    var required = requirements.capabilitySource == .declared
+      ? requirements.capabilities.intersection(mandatory) : []
+    if requirements.liveDataRequired { required.insert(.liveData) }
+    return required.subtracting(available)
+  }
+
+  static func fitScore(_ requirements: AgentTaskRequirements, available: Set<AgentCapability>) -> Int {
+    let score = 500 - 180 * requirements.capabilities.subtracting(available).count
+    return requirements.capabilitySource == .inferred ? max(0, score) : score
+  }
+
+  static func evidence(_ requirements: AgentTaskRequirements, available: Set<AgentCapability>) -> [String] {
+    let missing = requirements.capabilities.subtracting(available).map(\.rawValue).sorted()
+    return [sourceEvidence(requirements), missing.isEmpty ? "capability_match" : "partial_match:\(missing.joined(separator: ","))"]
+  }
+
+  static func sourceEvidence(_ requirements: AgentTaskRequirements) -> String {
+    "capability_source:\(requirements.capabilitySource.rawValue)"
   }
 }
 
@@ -657,7 +697,13 @@ enum AgentConnectorRouteSelector {
     goal: String = ""
   ) -> AgentConnectorRouteSelection? {
     let routingGoal = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal)
-    let reasoningTargets = targets.filter(hasReasoningCapability)
+    if let decision, decision.primary == nil, decision.fallbacks.isEmpty { return nil }
+    let requirements = decision?.requirements ?? AgentTaskRequirementAnalyzer.analyze(routingGoal)
+    let reasoningTargets = targets.filter {
+      hasReasoningCapability($0) && AgentCapabilityRoutingPolicy.missingRequired(
+        requirements, available: Set($0.capabilities)
+      ).isEmpty
+    }
     var eligible = reasoningTargets.filter { $0.status == .available }
     if eligible.isEmpty {
       eligible = reasoningTargets.filter(isDeliverable)
@@ -674,7 +720,8 @@ enum AgentConnectorRouteSelector {
       routingDecision = AgentQualityRoutingService.baselineDecision(
         goal: routingGoal,
         targets: eligible,
-        primaryTargetId: baselineTarget.id
+        primaryTargetId: baselineTarget.id,
+        requirements: requirements
       )
     }
     if let current = routingDecision, !routingGoal.isBlank {
@@ -690,6 +737,12 @@ enum AgentConnectorRouteSelector {
     let routedCandidates = decisionCandidates
       .filter { eligibleById[$0.resource.targetId] != nil }
       .filter { seenTargetIds.insert($0.resource.targetId).inserted }
+      .map { candidate in
+        var candidate = candidate
+        candidate.reasons.removeAll { $0.hasPrefix("capability_source:") }
+        candidate.reasons.append(AgentCapabilityRoutingPolicy.sourceEvidence(requirements))
+        return candidate
+      }
     let routedOrder = Dictionary(uniqueKeysWithValues: routedCandidates.enumerated().map {
       ($0.element.resource.targetId, $0.offset)
     })
@@ -697,12 +750,12 @@ enum AgentConnectorRouteSelector {
       let leftAdjustment = AgentSelfModelReducer.calibrationAdjustment(
         goal: routingGoal,
         resourceId: lhs.resource.targetId,
-        requirements: routingDecision?.requirements ?? AgentTaskRequirements()
+        requirements: requirements
       )
       let rightAdjustment = AgentSelfModelReducer.calibrationAdjustment(
         goal: routingGoal,
         resourceId: rhs.resource.targetId,
-        requirements: routingDecision?.requirements ?? AgentTaskRequirements()
+        requirements: requirements
       )
       let leftScore = lhs.score + leftAdjustment
       let rightScore = rhs.score + rightAdjustment
@@ -724,7 +777,8 @@ enum AgentConnectorRouteSelector {
           reasons: [
             selectedTarget.status == .disconnected ?
               "recoverable_connector_status" :
-              "eligible_reasoning_fallback"
+              "eligible_reasoning_fallback",
+            AgentCapabilityRoutingPolicy.sourceEvidence(requirements)
           ]
         )
       }

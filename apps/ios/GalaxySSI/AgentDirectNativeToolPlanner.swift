@@ -50,7 +50,7 @@ enum AgentDirectNativeToolPlanner {
   }
 
   static func action(for request: AgentPlanRequest) -> AgentAction? {
-    let goal = request.goal.trimmingCharacters(in: .whitespacesAndNewlines)
+    let goal = AgentLocalCommandText.withoutPoliteness(request.goal)
     guard !goal.isEmpty else { return nil }
     let lower = goal.lowercased()
     let responseLanguage = responseLanguageCode(for: request)
@@ -152,8 +152,7 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
-    if isDownloadQueryGoal(lower),
-       let downloadID = downloadID(in: goal),
+    if let downloadID = positiveID(goal, command: "query download|download status|check download|\u{67e5}\u{770b}\u{4e0b}\u{8f7d}|\u{4e0b}\u{8f7d}\u{72b6}\u{6001}|\u{67e5}\u{8be2}\u{4e0b}\u{8f7d}"),
        let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.downloadQuery, in: request) {
       return nativeAction(
         descriptor: descriptor,
@@ -165,8 +164,7 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
-    if isDownloadRemoveGoal(lower),
-       let downloadID = downloadID(in: goal),
+    if let downloadID = positiveID(goal, command: "remove download|delete download|cancel download|\u{5220}\u{9664}\u{4e0b}\u{8f7d}|\u{53d6}\u{6d88}\u{4e0b}\u{8f7d}"),
        let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.downloadRemove, in: request) {
       return nativeAction(
         descriptor: descriptor,
@@ -178,17 +176,16 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
-    if isSMSComposeGoal(lower),
-       let phoneNumber = phoneNumber(in: goal),
+    if let sms = smsArguments(goal, compose: true),
        let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.smsComposeHandoff, in: request) {
       return nativeAction(
         descriptor: descriptor,
         idPrefix: "compose-sms",
-        target: phoneNumber,
+        target: sms.phone,
         description: "Open SMS composer",
         input: [
-          "phone_number": .string(phoneNumber),
-          "message": .string(smsMessage(in: goal))
+          "phone_number": .string(sms.phone),
+          "message": .string(sms.body)
         ],
         responseLanguage: responseLanguage
       )
@@ -268,16 +265,12 @@ enum AgentDirectNativeToolPlanner {
 
     if isSMSListGoal(lower),
        let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.smsList, in: request) {
-      var input: AgentMcpJSONObject = ["limit": .int(20)]
-      if let address = phoneNumber(in: goal) {
-        input["address"] = .string(address)
-      }
       return nativeAction(
         descriptor: descriptor,
         idPrefix: "list-sms",
         target: "SMS",
         description: "Read recent SMS messages",
-        input: input,
+        input: ["limit": .int(20)],
         responseLanguage: responseLanguage
       )
     }
@@ -297,8 +290,7 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
-    if isContactDeleteGoal(lower),
-       let contactID = contactID(in: goal),
+    if let contactID = positiveID(goal, command: "(?:delete|remove|erase) contact(?: id)?|\u{5220}\u{9664}\u{8054}\u{7cfb}\u{4eba}|\u{79fb}\u{9664}\u{8054}\u{7cfb}\u{4eba}"),
        let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.contactsDelete, in: request) {
       return nativeAction(
         descriptor: descriptor,
@@ -339,8 +331,7 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
-    if isCalendarEventDeleteGoal(lower),
-       let eventID = calendarEventID(in: goal),
+    if let eventID = positiveID(goal, command: "(?:delete|remove) (?:calendar )?event(?: id)?|\u{5220}\u{9664}\u{65e5}\u{5386}\u{4e8b}\u{4ef6}|\u{5220}\u{9664}\u{65e5}\u{7a0b}"),
        let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.calendarEventDelete, in: request) {
       return nativeAction(
         descriptor: descriptor,
@@ -424,23 +415,19 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
-    if isSMSGoal(lower),
-       let phoneNumber = phoneNumber(in: goal),
+    if let sms = smsArguments(goal, compose: false),
        let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.smsSend, in: request) {
-      let message = smsMessage(in: goal)
-      guard !message.isEmpty else { return nil }
       return nativeAction(
         descriptor: descriptor,
         idPrefix: "send-sms",
-        target: phoneNumber,
+        target: sms.phone,
         description: "Send SMS message",
-        input: ["phone_number": .string(phoneNumber), "message": .string(message)],
+        input: ["phone_number": .string(sms.phone), "message": .string(sms.body)],
         responseLanguage: responseLanguage
       )
     }
 
-    if isDialGoal(lower),
-       let phoneNumber = phoneNumber(in: goal),
+    if let phoneNumber = dialNumber(goal),
        let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.telephonyDialHandoff, in: request) {
       return nativeAction(
         descriptor: descriptor,
@@ -515,20 +502,19 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
-    if isMicrophoneCaptureGoal(lower),
+    if let duration = audioDurationSeconds(for: lower),
        let descriptor = descriptor(AgentIOSVisibleCaptureNativeToolCatalog.microphoneRecord, in: request) {
       return nativeAction(
         descriptor: descriptor,
         idPrefix: "record-audio",
         target: "Microphone",
         description: "Record user-visible audio",
-        input: ["max_duration_seconds": .int(Int64(audioDurationSeconds(for: lower)))],
+        input: ["max_duration_seconds": .int(Int64(duration))],
         responseLanguage: responseLanguage
       )
     }
 
-    if isTimerGoal(lower),
-       let seconds = timerDurationSeconds(for: lower),
+    if let seconds = timerDurationSeconds(for: lower),
        let descriptor = descriptor(AgentNativeToolAgentActionAdapter.defaultToolId(.setAlarm), in: request) {
       return nativeAction(
         descriptor: descriptor,
@@ -546,8 +532,7 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
-    if isAlarmGoal(lower),
-       let time = alarmClockTime(in: lower),
+    if let time = alarmClockTime(in: lower),
        let descriptor = descriptor(AgentNativeToolAgentActionAdapter.defaultToolId(.setAlarm), in: request) {
       let hour = String(format: "%02d", time.hour)
       let minute = String(format: "%02d", time.minute)
@@ -568,8 +553,7 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
-    if isVolumeSetGoal(lower),
-       let percent = firstPercent(in: lower),
+    if let percent = volumePercent(lower),
        let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.audioVolumeSet, in: request) {
       return nativeAction(
         descriptor: descriptor,
@@ -713,7 +697,7 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
-    if isSensorSampleGoal(lower),
+    if let sensor = sensorType(in: lower),
        let descriptor = descriptor(AgentIOSHardwareNativeToolCatalog.sensorSample, in: request) {
       return nativeAction(
         descriptor: descriptor,
@@ -721,7 +705,7 @@ enum AgentDirectNativeToolPlanner {
         target: "Sensors",
         description: "Read one foreground sensor sample",
         input: [
-          "type": .string(sensorType(in: lower)),
+          "type": .string(sensor),
           "timeout_ms": .int(5_000)
         ],
         responseLanguage: responseLanguage
@@ -794,7 +778,7 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
-    if let package = packageName(in: goal, lower: lower),
+    if let package = packageName(in: goal),
        let descriptor = descriptor(AgentIOSHardwareNativeToolCatalog.packageDetail, in: request) {
       return nativeAction(
         descriptor: descriptor,
@@ -962,7 +946,7 @@ enum AgentDirectNativeToolPlanner {
     }
     let value = String(goal.dropFirst(prefix.count))
       .trimmingCharacters(in: .whitespacesAndNewlines)
-    return value.isEmpty ? nil : String(value.prefix(200))
+    return AgentLocalCommandText.plainArgument(value, limit: 200) ? value : nil
   }
 
   private static func homeAssistantEntityReadID(
@@ -984,38 +968,9 @@ enum AgentDirectNativeToolPlanner {
     }
     let value = String(goal.dropFirst(prefix.count))
       .trimmingCharacters(in: .whitespacesAndNewlines)
-    return value.isEmpty ? nil : String(value.prefix(160))
-  }
-
-  private static func firstPercent(in value: String) -> Int? {
-    value
-      .components(separatedBy: CharacterSet.decimalDigits.inverted)
-      .compactMap(Int.init)
-      .first { (0...100).contains($0) }
-  }
-
-  private static func phoneNumber(in value: String) -> String? {
-    guard let range = value.range(
-      of: #"\+?[0-9][0-9\s().-]{2,}[0-9]"#,
-      options: .regularExpression
-    ) else {
-      return nil
-    }
-    let raw = String(value[range])
-    var normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-    for removable in [" ", "-", "(", ")", "."] {
-      normalized = normalized.replacingOccurrences(of: removable, with: "")
-    }
-    return normalized.isEmpty ? nil : String(normalized.prefix(64))
-  }
-
-  private static func smsMessage(in goal: String) -> String {
-    if let separator = goal.firstIndex(of: ":") {
-      return String(goal[goal.index(after: separator)...])
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-        .prefixString(2_000)
-    }
-    return ""
+    guard value.count <= 160,
+          AgentLocalCommandText.captures(value, #"[a-z0-9_]+\.[a-z0-9_]+"#) != nil else { return nil }
+    return value
   }
 
   private static func responseLanguageCode(for request: AgentPlanRequest) -> String {
@@ -1052,33 +1007,27 @@ enum AgentDirectNativeToolPlanner {
   }
 
   private static func isBatteryStatusGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["battery level", "battery status", "read battery", "\u{7535}\u{91cf}"])
+    AgentLocalCommandText.read(lower, ["battery", "battery level", "battery status", "battery percentage",
+      "phone battery", "\u{7535}\u{91cf}", "\u{96fb}\u{91cf}", "\u{624b}\u{673a}\u{7535}\u{91cf}"])
   }
 
   private static func isDeviceStatusGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
+    AgentLocalCommandText.read(lower, [
       "device status", "phone status", "device health", "phone health",
       "\u{8BBE}\u{5907}\u{72B6}\u{6001}", "\u{624B}\u{673A}\u{72B6}\u{6001}",
       "\u{8BBE}\u{5907}\u{5065}\u{5EB7}", "\u{624B}\u{673A}\u{5065}\u{5EB7}"
     ])
   }
 
-  private static func isSMSComposeGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
-      "compose sms", "draft sms", "write sms", "compose text", "draft text",
-      "\u{7f16}\u{8f91}\u{77ed}\u{4fe1}", "\u{8d77}\u{8349}\u{77ed}\u{4fe1}", "\u{7f16}\u{5199}\u{77ed}\u{4fe1}"
-    ])
-  }
-
   private static func isWifiHotspotSettingsGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
+    AgentLocalCommandText.matches(lower, [
       "open hotspot settings", "open personal hotspot", "hotspot settings", "personal hotspot",
       "\u{6253}\u{5f00}\u{70ed}\u{70b9}\u{8bbe}\u{7f6e}", "\u{4e2a}\u{4eba}\u{70ed}\u{70b9}\u{8bbe}\u{7f6e}"
     ])
   }
 
   private static func isBiometricEnrollmentGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
+    AgentLocalCommandText.matches(lower, [
       "open face id settings", "face id settings", "touch id settings", "biometric settings",
       "set up face id", "set up touch id", "\u{6253}\u{5f00}\u{9762}\u{5bb9}id\u{8bbe}\u{7f6e}",
       "\u{9762}\u{5bb9}id\u{8bbe}\u{7f6e}", "\u{89e6}\u{63a7}id\u{8bbe}\u{7f6e}", "\u{751f}\u{7269}\u{8bc6}\u{522b}\u{8bbe}\u{7f6e}"
@@ -1086,14 +1035,14 @@ enum AgentDirectNativeToolPlanner {
   }
 
   private static func isVPNConsentGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
+    AgentLocalCommandText.matches(lower, [
       "set up vpn", "configure vpn", "vpn consent", "vpn settings", "open vpn settings",
       "\u{914d}\u{7f6e}vpn", "vpn\u{8bbe}\u{7f6e}", "\u{6253}\u{5f00}vpn\u{8bbe}\u{7f6e}"
     ])
   }
 
   private static func isTelephonyStatusGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
+    AgentLocalCommandText.read(lower, [
       "phone service status", "telephony status", "carrier status", "\u{624b}\u{673a}\u{670d}\u{52a1}\u{72b6}\u{6001}", "\u{7535}\u{8bdd}\u{670d}\u{52a1}\u{72b6}\u{6001}"
     ])
   }
@@ -1102,7 +1051,8 @@ enum AgentDirectNativeToolPlanner {
     let prefixes = ["download file ", "download ", "save file ", "\u{4e0b}\u{8f7d}\u{6587}\u{4ef6} ", "\u{4e0b}\u{8f7d}"]
     for prefix in prefixes where lower.hasPrefix(prefix) {
       let raw = String(goal.dropFirst(prefix.count))
-      return normalizedHTTPURL(raw)
+      guard let url = normalizedHTTPURL(raw), URLComponents(string: url)?.scheme?.lowercased() == "https" else { return nil }
+      return url
     }
     return nil
   }
@@ -1118,46 +1068,42 @@ enum AgentDirectNativeToolPlanner {
     )
   }
 
-  private static func isDownloadQueryGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["query download", "download status", "check download", "\u{67e5}\u{770b}\u{4e0b}\u{8f7d}", "\u{4e0b}\u{8f7d}\u{72b6}\u{6001}", "\u{67e5}\u{8be2}\u{4e0b}\u{8f7d}"])
-  }
-
-  private static func isDownloadRemoveGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
-      "remove download", "delete download", "cancel download", "\u{5220}\u{9664}\u{4e0b}\u{8f7d}", "\u{53d6}\u{6d88}\u{4e0b}\u{8f7d}"
-    ])
-  }
-
-  private static func downloadID(in goal: String) -> Int? {
-    let pattern = "(?:download|file|\u{4e0b}\u{8f7d})[^0-9]{0,24}([0-9]+)"
-    guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
-      return nil
-    }
-    let value = goal as NSString
-    let range = NSRange(location: 0, length: value.length)
-    guard let match = regex.firstMatch(in: goal, range: range),
-          match.numberOfRanges > 1,
-          let id = Int(value.substring(with: match.range(at: 1))),
-          id > 0 else {
-      return nil
-    }
+  private static func positiveID(_ goal: String, command: String) -> Int? {
+    guard let fields = AgentLocalCommandText.captures(AgentLocalCommandText.sentence(goal),
+      "(?:\(command))(?:[ \\t]+|(?<=[^\\x00-\\x7f])|(?=#))#?([0-9]+)"),
+      let id = fields.first.flatMap(Int.init), id > 0 else { return nil }
     return id
   }
 
+  private static func dialNumber(_ goal: String) -> String? {
+    let command = "(?:(?:dial|call)[ \\t]+|(?:\u{62e8}\u{53f7}|\u{64a5}\u{865f}|\u{6253}\u{7535}\u{8bdd}\u{7ed9})[ \\t]*)"
+    return AgentLocalCommandText.captures(AgentLocalCommandText.sentence(goal),
+      command + "(\(AgentLocalCommandText.phonePattern))")?.first.flatMap(AgentLocalCommandText.phone)
+  }
+
+  private static func smsArguments(_ goal: String, compose: Bool) -> (phone: String, body: String)? {
+    let verbs = compose ? "(?:compose sms|draft sms|write sms|compose text|draft text|sms|message|\u{7f16}\u{5199}\u{77ed}\u{4fe1})(?: to)?" :
+      "(?:send sms to|text|send message to|\u{53d1}\u{9001}\u{77ed}\u{4fe1})"
+    let body = compose ? "(?:[ \\t]*[:\u{ff1a}][ \\t]*(.+))?" : "[ \\t]*[:\u{ff1a}][ \\t]*(.+)"
+    guard let fields = AgentLocalCommandText.captures(goal, verbs + "[ \\t]+(\(AgentLocalCommandText.phonePattern))" + body),
+          let phone = AgentLocalCommandText.phone(fields[0]), fields[1].count <= 2_000 else { return nil }
+    return (phone, fields[1])
+  }
+
   private static func isTelephonyCallStateGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
+    AgentLocalCommandText.read(lower, [
       "call state", "current call", "incoming call", "\u{901a}\u{8bdd}\u{72b6}\u{6001}", "\u{5f53}\u{524d}\u{901a}\u{8bdd}", "\u{6765}\u{7535}\u{72b6}\u{6001}"
     ])
   }
 
   private static func isTelephonyCallStateObserveGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
+    AgentLocalCommandText.matches(lower, [
       "observe call", "wait for call", "watch call", "\u{76d1}\u{542c}\u{901a}\u{8bdd}", "\u{7b49}\u{5f85}\u{6765}\u{7535}", "\u{89c2}\u{5bdf}\u{901a}\u{8bdd}"
     ])
   }
 
   private static func isSMSListGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
+    AgentLocalCommandText.read(lower, [
       "read sms", "list sms", "sms inbox", "recent sms", "read text messages", "\u{8bfb}\u{53d6}\u{77ed}\u{4fe1}", "\u{77ed}\u{4fe1}\u{5217}\u{8868}", "\u{77ed}\u{4fe1}\u{6536}\u{4ef6}\u{7bb1}"
     ])
   }
@@ -1168,7 +1114,8 @@ enum AgentDirectNativeToolPlanner {
       "\u{641c}\u{7d22}\u{8054}\u{7cfb}\u{4eba}", "\u{67e5}\u{627e}\u{8054}\u{7cfb}\u{4eba}"
     ]
     for prefix in prefixes where lower.hasPrefix(prefix) {
-      return String(goal.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines).prefixString(160)
+      let query = String(goal.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+      return AgentLocalCommandText.plainArgument(query, limit: 160) ? query : nil
     }
     return [
       "search contacts", "find contacts", "search contact", "find contact",
@@ -1176,62 +1123,24 @@ enum AgentDirectNativeToolPlanner {
     ].contains(lower) ? "" : nil
   }
 
-  private static func isContactDeleteGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
-      "delete contact", "remove contact", "erase contact",
-      "\u{5220}\u{9664}\u{8054}\u{7cfb}\u{4eba}", "\u{79fb}\u{9664}\u{8054}\u{7cfb}\u{4eba}"
-    ])
-  }
-
-  private static func contactID(in goal: String) -> Int? {
-    numericIdentifier(in: goal, pattern: "(?:contact|contact id|\u{8054}\u{7cfb}\u{4eba})[^0-9]{0,24}([0-9]+)")
-  }
-
   private static func isCalendarsListGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["list calendars", "calendar list", "show calendars", "\u{65e5}\u{5386}\u{5217}\u{8868}", "\u{67e5}\u{770b}\u{65e5}\u{5386}"])
+    AgentLocalCommandText.read(lower, ["list calendars", "calendar list", "show calendars", "\u{65e5}\u{5386}\u{5217}\u{8868}", "\u{67e5}\u{770b}\u{65e5}\u{5386}"])
   }
 
   private static func isCalendarEventsQueryGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
+    AgentLocalCommandText.read(lower, [
       "calendar events", "upcoming events", "today's events", "today events", "my schedule",
       "\u{65e5}\u{5386}\u{4e8b}\u{4ef6}", "\u{65e5}\u{7a0b}", "\u{4eca}\u{5929}\u{7684}\u{65e5}\u{7a0b}", "\u{8fd1}\u{671f}\u{65e5}\u{7a0b}"
     ])
   }
 
-  private static func isCalendarEventDeleteGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
-      "delete calendar event", "remove calendar event", "delete event", "remove event",
-      "\u{5220}\u{9664}\u{65e5}\u{5386}\u{4e8b}\u{4ef6}", "\u{5220}\u{9664}\u{65e5}\u{7a0b}"
-    ])
-  }
-
-  private static func calendarEventID(in goal: String) -> Int? {
-    numericIdentifier(
-      in: goal,
-      pattern: "(?:calendar event|event|\u{65e5}\u{5386}\u{4e8b}\u{4ef6}|\u{65e5}\u{7a0b})[^0-9]{0,24}([0-9]+)"
-    )
-  }
-
-  private static func numericIdentifier(in goal: String, pattern: String) -> Int? {
-    guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
-      return nil
-    }
-    let value = goal as NSString
-    let range = NSRange(location: 0, length: value.length)
-    guard let match = regex.firstMatch(in: goal, range: range),
-          match.numberOfRanges > 1,
-          let identifier = Int(value.substring(with: match.range(at: 1))),
-          identifier > 0 else {
-      return nil
-    }
-    return identifier
-  }
-
   private static func calendarEventWindow(for lower: String) -> (start: Int64, end: Int64) {
     let now = Date()
     let calendar = Calendar.current
-    let start = lower.contains("today") || lower.contains("\u{4eca}\u{5929}") ? calendar.startOfDay(for: now) : now
-    let end = calendar.date(byAdding: .day, value: 7, to: start) ?? start.addingTimeInterval(7 * 24 * 60 * 60)
+    let today = lower.contains("today") || lower.contains("\u{4eca}\u{5929}")
+    let start = today ? calendar.startOfDay(for: now) : now
+    let days = today ? 1 : 7
+    let end = calendar.date(byAdding: .day, value: days, to: start) ?? start.addingTimeInterval(Double(days * 24 * 60 * 60))
     return (
       Int64(start.timeIntervalSince1970 * 1_000),
       Int64(end.timeIntervalSince1970 * 1_000)
@@ -1239,7 +1148,7 @@ enum AgentDirectNativeToolPlanner {
   }
 
   private static func isWifiScanResultsGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
+    AgentLocalCommandText.matches(lower, [
       "scan wifi", "scan wi-fi", "wifi networks", "nearby wifi",
       "\u{626b}\u{63cf}wifi", "\u{626b}\u{63cf} wi-fi", "\u{9644}\u{8fd1}wifi", "wifi\u{7f51}\u{7edc}",
       "\u{626b}\u{63cf}\u{65e0}\u{7ebf}\u{7f51}\u{7edc}", "\u{9644}\u{8fd1}\u{65e0}\u{7ebf}\u{7f51}\u{7edc}", "\u{65e0}\u{7ebf}\u{7f51}\u{7edc}\u{5217}\u{8868}"
@@ -1247,45 +1156,46 @@ enum AgentDirectNativeToolPlanner {
   }
 
   private static func isWifiScanStartGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
+    AgentLocalCommandText.matches(lower, [
       "start wifi scan", "start wi-fi scan", "begin wifi scan",
       "\u{5f00}\u{59cb}\u{626b}\u{63cf}wifi", "\u{5f00}\u{59cb}\u{626b}\u{63cf} wi-fi", "\u{5f00}\u{59cb}\u{626b}\u{63cf}\u{65e0}\u{7ebf}\u{7f51}\u{7edc}"
     ])
   }
 
   private static func isAudioStatusGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["audio status", "sound status", "volume status", "\u{97f3}\u{9891}\u{72b6}\u{6001}", "\u{58f0}\u{97f3}\u{72b6}\u{6001}", "\u{97f3}\u{91cf}\u{72b6}\u{6001}"])
+    AgentLocalCommandText.read(lower, ["audio status", "sound status", "volume status", "\u{97f3}\u{9891}\u{72b6}\u{6001}", "\u{58f0}\u{97f3}\u{72b6}\u{6001}", "\u{97f3}\u{91cf}\u{72b6}\u{6001}"])
   }
 
   private static func isBiometricStatusGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
+    AgentLocalCommandText.read(lower, [
       "biometric status", "face id status", "touch id status", "biometric capability", "\u{751f}\u{7269}\u{8bc6}\u{522b}\u{72b6}\u{6001}", "\u{9762}\u{5bb9}id", "\u{89e6}\u{63a7}id"
     ])
   }
 
   private static func isVPNStatusGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
+    AgentLocalCommandText.read(lower, [
       "vpn status", "is vpn on", "vpn connection status", "vpn\u{72b6}\u{6001}", "vpn\u{662f}\u{5426}\u{5f00}\u{542f}",
       "\u{865a}\u{62df}\u{4e13}\u{7528}\u{7f51}\u{7edc}\u{72b6}\u{6001}", "\u{865a}\u{62df}\u{4e13}\u{7f51}\u{72b6}\u{6001}"
     ])
   }
 
   private static func isDevicePolicyStatusGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
+    AgentLocalCommandText.read(lower, [
       "device policy status", "device owner status", "management status", "\u{8bbe}\u{5907}\u{7b56}\u{7565}\u{72b6}\u{6001}", "\u{8bbe}\u{5907}\u{7ba1}\u{7406}\u{5458}\u{72b6}\u{6001}",
       "\u{8bbe}\u{5907}\u{7ba1}\u{7406}\u{72b6}\u{6001}", "\u{8bbe}\u{5907}\u{7ba1}\u{7406}\u{6743}\u{9650}"
     ])
   }
 
   private static func isPowerStatusGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
-      "battery saver", "low power", "power status", "\u{7701}\u{7535}\u{6a21}\u{5f0f}",
+    AgentLocalCommandText.read(lower, [
+      "battery saver", "battery saver status", "low power", "power status", "\u{7701}\u{7535}\u{6a21}\u{5f0f}",
       "\u{4f4e}\u{7535}\u{91cf}\u{6a21}\u{5f0f}", "\u{7535}\u{6e90}\u{72b6}\u{6001}"
     ])
   }
 
   private static func isMemoryStatusGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
+    AgentLocalCommandText.read(lower, [
+      "memory", "ram", "memory status", "ram status", "phone memory", "\u{5185}\u{5b58}",
       "phone memory", "phone ram", "device memory", "device ram", "available ram", "free ram", "ram status",
       "\u{624b}\u{673a}\u{5185}\u{5b58}", "\u{8bbe}\u{5907}\u{5185}\u{5b58}", "\u{8fd0}\u{884c}\u{5185}\u{5b58}",
       "\u{53ef}\u{7528}\u{5185}\u{5b58}", "\u{5269}\u{4f59}\u{5185}\u{5b58}", "\u{5185}\u{5b58}\u{5360}\u{7528}",
@@ -1294,15 +1204,16 @@ enum AgentDirectNativeToolPlanner {
   }
 
   private static func isStorageStatusGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["storage status", "phone storage", "device storage", "\u{5b58}\u{50a8}"])
+    AgentLocalCommandText.read(lower, ["storage", "storage status", "phone storage", "device storage", "\u{5b58}\u{50a8}"])
   }
 
   private static func isNetworkStatusGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["network status", "phone network", "device network", "\u{7f51}\u{7edc}\u{72b6}\u{6001}"])
+    AgentLocalCommandText.read(lower, ["network status", "phone network", "phone network status", "device network",
+      "\u{7f51}\u{7edc}\u{72b6}\u{6001}"])
   }
 
   private static func isLocationReadGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
+    AgentLocalCommandText.read(lower, [
       "current location",
       "phone location",
       "where am i",
@@ -1315,7 +1226,7 @@ enum AgentDirectNativeToolPlanner {
   }
 
   private static func isSensorListGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
+    AgentLocalCommandText.read(lower, [
       "list sensors",
       "device sensors",
       "sensor list",
@@ -1325,33 +1236,25 @@ enum AgentDirectNativeToolPlanner {
     ])
   }
 
-  private static func isSensorSampleGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
-      "sample sensor",
-      "read sensor",
-      "sensor sample",
-      "sensor data",
-      "\u{8bfb}\u{53d6}\u{4f20}\u{611f}\u{5668}",
-      "\u{4f20}\u{611f}\u{5668}\u{6570}\u{636e}",
-      "\u{91c7}\u{6837}\u{4f20}\u{611f}\u{5668}"
-    ])
-  }
-
-  private static func sensorType(in lower: String) -> String {
-    if containsAny(lower, ["gyroscope", "gyro", "\u{9640}\u{87ba}\u{4eea}"]) { return "gyroscope" }
-    if containsAny(lower, ["magnetic", "magnetometer", "\u{78c1}\u{529b}\u{8ba1}", "\u{78c1}\u{573a}"]) {
-      return "magnetic_field"
-    }
-    if containsAny(lower, ["gravity", "\u{91cd}\u{529b}"]) { return "gravity" }
-    if containsAny(lower, ["linear acceleration", "\u{7ebf}\u{6027}\u{52a0}\u{901f}\u{5ea6}"]) {
-      return "linear_acceleration"
-    }
-    if containsAny(lower, ["rotation", "\u{65cb}\u{8f6c}"]) { return "rotation_vector" }
-    return "accelerometer"
+  private static func sensorType(in lower: String) -> String? {
+    let aliases = [
+      "accelerometer": "accelerometer", "\u{52a0}\u{901f}\u{5ea6}": "accelerometer",
+      "gyroscope": "gyroscope", "gyro": "gyroscope", "\u{9640}\u{87ba}\u{4eea}": "gyroscope",
+      "magnetic": "magnetic_field", "magnetometer": "magnetic_field", "\u{78c1}\u{573a}": "magnetic_field",
+      "gravity": "gravity", "\u{91cd}\u{529b}": "gravity",
+      "linear acceleration": "linear_acceleration", "\u{7ebf}\u{6027}\u{52a0}\u{901f}\u{5ea6}": "linear_acceleration",
+      "rotation": "rotation_vector", "\u{65cb}\u{8f6c}": "rotation_vector"
+    ]
+    let names = aliases.keys.sorted().map(NSRegularExpression.escapedPattern(for:)).joined(separator: "|")
+    let pattern = "(?:read|sample) (?:sensor )?(\(names))(?: sensor)?|" +
+      "(?:\u{8bfb}\u{53d6}|\u{91c7}\u{6837})\\s*(\(names))(?:\u{4f20}\u{611f}\u{5668})?(?:\u{6570}\u{636e})?"
+    guard let groups = AgentLocalCommandText.captures(AgentLocalCommandText.sentence(lower), pattern),
+          let name = groups.first(where: { !$0.isEmpty }) else { return nil }
+    return aliases[name]
   }
 
   private static func isBluetoothStatusGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
+    AgentLocalCommandText.read(lower, [
       "bluetooth status",
       "is bluetooth on",
       "\u{84dd}\u{7259}\u{72b6}\u{6001}",
@@ -1360,7 +1263,7 @@ enum AgentDirectNativeToolPlanner {
   }
 
   private static func isBluetoothDiscoveryGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
+    AgentLocalCommandText.matches(lower, [
       "discover bluetooth",
       "scan bluetooth",
       "nearby bluetooth",
@@ -1371,7 +1274,7 @@ enum AgentDirectNativeToolPlanner {
   }
 
   private static func isBluetoothPairingGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
+    AgentLocalCommandText.matches(lower, [
       "open bluetooth pairing",
       "pair bluetooth",
       "\u{6253}\u{5f00}\u{84dd}\u{7259}\u{914d}\u{5bf9}",
@@ -1381,7 +1284,7 @@ enum AgentDirectNativeToolPlanner {
   }
 
   private static func isNFCStatusGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
+    AgentLocalCommandText.read(lower, [
       "nfc status",
       "is nfc on",
       "check nfc",
@@ -1398,12 +1301,11 @@ enum AgentDirectNativeToolPlanner {
       "\u{641c}\u{7d22}\u{5df2}\u{5b89}\u{88c5}\u{5e94}\u{7528}",
       "\u{67e5}\u{627e}\u{5df2}\u{5b89}\u{88c5}\u{5e94}\u{7528}"
     ]
-    if let prefix = searchPrefixes.first(where: { lower.hasPrefix($0) }) {
-      return String(goal.dropFirst(prefix.count))
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-        .prefixString(160)
+    if let prefix = searchPrefixes.first(where: { lower == $0 || lower.hasPrefix($0 + " ") }) {
+      let query = String(goal.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+      return query.isEmpty || AgentLocalCommandText.plainArgument(query, limit: 160) ? query : nil
     }
-    guard containsAny(lower, [
+    guard AgentLocalCommandText.matches(lower, [
       "list installed apps",
       "installed applications",
       "installed app list",
@@ -1416,92 +1318,77 @@ enum AgentDirectNativeToolPlanner {
     return ""
   }
 
-  private static func packageName(in goal: String, lower: String) -> String? {
-    guard containsAny(lower, [
-      "package detail",
-      "package info",
-      "app package",
-      "\u{5e94}\u{7528}\u{5305}\u{540d}",
-      "\u{5e94}\u{7528}\u{8be6}\u{60c5}"
-    ]),
-    let regex = try? NSRegularExpression(
-      pattern: #"\b[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+\b"#
-    ) else {
-      return nil
-    }
-    let nsGoal = goal as NSString
-    let range = NSRange(location: 0, length: nsGoal.length)
-    guard let match = regex.firstMatch(in: goal, range: range) else { return nil }
-    return nsGoal.substring(with: match.range).prefixString(255)
+  private static func packageName(in goal: String) -> String? {
+    let command = "(?:package detail|package info|app package|\u{5e94}\u{7528}\u{5305}\u{540d}|\u{5e94}\u{7528}\u{8be6}\u{60c5})[ \\t]+"
+    guard let package = AgentLocalCommandText.captures(AgentLocalCommandText.sentence(goal),
+      command + #"([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+)"#)?.first, package.count <= 255 else { return nil }
+    return package
   }
 
   private static func isWifiStatusGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["wifi status", "wi-fi status", "wireless status", "\u{65e0}\u{7ebf}\u{7f51}\u{7edc}\u{72b6}\u{6001}", "\u{65e0}\u{7ebf}\u{7f51}\u{72b6}\u{6001}"]) ||
-      (containsAny(lower, ["wifi", "wi-fi"]) && lower.contains("status"))
+    AgentLocalCommandText.read(lower, ["wifi status", "wi-fi status", "wireless status", "\u{65e0}\u{7ebf}\u{7f51}\u{7edc}\u{72b6}\u{6001}", "\u{65e0}\u{7ebf}\u{7f51}\u{72b6}\u{6001}"])
   }
 
   private static func isWifiSettingsGoal(_ lower: String) -> Bool {
-    containsAny(lower, [
+    AgentLocalCommandText.matches(lower, [
       "open wifi settings", "open wi-fi settings", "wifi settings", "wi-fi settings",
       "\u{6253}\u{5f00}\u{65e0}\u{7ebf}\u{7f51}\u{7edc}\u{8bbe}\u{7f6e}", "\u{65e0}\u{7ebf}\u{7f51}\u{7edc}\u{8bbe}\u{7f6e}"
     ])
   }
 
-  private static func isVolumeSetGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["set volume", "media volume", "\u{97f3}\u{91cf}"]) && firstPercent(in: lower) != nil
-  }
-
   private static func isMuteGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["mute", "unmute", "\u{9759}\u{97f3}", "\u{53d6}\u{6d88}\u{9759}\u{97f3}"])
+    isUnmuteGoal(lower) || AgentLocalCommandText.matches(lower, [
+      "mute", "mute media", "mute media audio", "mute phone", "\u{9759}\u{97f3}", "\u{624b}\u{673a}\u{9759}\u{97f3}"
+    ])
   }
 
   private static func isUnmuteGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["unmute", "turn sound on", "\u{53d6}\u{6d88}\u{9759}\u{97f3}", "\u{89e3}\u{9664}\u{9759}\u{97f3}"])
+    AgentLocalCommandText.matches(lower, ["unmute", "unmute media", "unmute media audio", "unmute phone",
+      "turn sound on", "\u{53d6}\u{6d88}\u{9759}\u{97f3}", "\u{89e3}\u{9664}\u{9759}\u{97f3}"])
   }
 
-  private static func isDialGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["dial ", "call ", "phone call", "\u{62e8}\u{53f7}", "\u{6253}\u{7535}\u{8bdd}"])
-  }
-
-  private static func isSMSGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["send sms", "text ", "send message", "\u{53d1}\u{9001}\u{77ed}\u{4fe1}", "\u{53d1}\u{6d88}\u{606f}"])
+  private static func volumePercent(_ lower: String) -> Int? {
+    let pattern = "(?:(?:set (?:media )?volume(?: to)?|media volume)[ \\t]+|" +
+      "\u{628a}?\u{97f3}\u{91cf}\u{8bbe}\u{7f6e}(?:\u{4e3a}|\u{5230})?[ \\t]*)([0-9]{1,3})[ \\t]*[%\u{ff05}]?"
+    guard let groups = AgentLocalCommandText.captures(AgentLocalCommandText.sentence(lower), pattern),
+          let percent = Int(groups[0]), (0...100).contains(percent) else { return nil }
+    return percent
   }
 
   private static func isCameraCaptureGoal(_ lower: String) -> Bool {
-    guard !isExplanationOnlyGoal(lower) else { return false }
-    let hasCamera = containsAny(lower, ["camera", "\u{76f8}\u{673a}", "\u{6444}\u{50cf}\u{5934}"])
-    let hasCapture = containsAny(lower, ["take photo", "take a photo", "capture photo", "snap photo", "\u{62cd}\u{7167}"])
-    let hasOpenAction = containsAny(
-      lower,
-      ["open", "launch", "use", "\u{6253}\u{5f00}", "\u{542f}\u{52a8}", "\u{8c03}\u{7528}", "\u{4f7f}\u{7528}"]
-    )
-    return hasCapture || (hasCamera && hasOpenAction)
+    AgentLocalCommandText.matches(lower, [
+      "take photo", "take a photo", "capture photo", "snap photo", "open camera and take a photo",
+      "open the camera and take a photo", "\u{62cd}\u{7167}", "\u{6253}\u{5f00}\u{76f8}\u{673a}\u{62cd}\u{7167}",
+      "\u{6253}\u{5f00}\u{624b}\u{673a}\u{6444}\u{50cf}\u{5934}\u{62cd}\u{7167}"
+    ])
   }
 
-  private static func isMicrophoneCaptureGoal(_ lower: String) -> Bool {
-    guard !isExplanationOnlyGoal(lower) else { return false }
-    let hasMicrophone = containsAny(lower, ["microphone", "mic", "\u{9ea6}\u{514b}\u{98ce}"])
-    let hasRecording = containsAny(
-      lower,
-      ["record audio", "record voice", "record sound", "start recording", "\u{5f55}\u{97f3}", "\u{5f55}\u{5236}"]
-    )
-    let hasUseAction = containsAny(
-      lower,
-      ["open", "start", "use", "\u{6253}\u{5f00}", "\u{5f00}\u{59cb}", "\u{8c03}\u{7528}", "\u{4f7f}\u{7528}"]
-    )
-    return hasRecording || (hasMicrophone && hasUseAction)
-  }
-
-  private static func audioDurationSeconds(for lower: String) -> Int {
-    clampAudioDuration(durationSecondsFromDigitUnit(in: lower) ?? durationSecondsFromSpokenUnit(in: lower) ??
-      AgentIOSVisibleCaptureNativeToolCatalog.defaultAudioDurationSeconds)
+  private static func audioDurationSeconds(for lower: String) -> Int? {
+    let command = "(?:record audio|record voice|record sound|start recording|\u{5f55}\u{97f3}|\u{5f55}\u{5236}\u{97f3}\u{9891})"
+    guard let match = AgentLocalCommandText.captures(AgentLocalCommandText.sentence(lower),
+      command + "(?:[ \\t]*(?:for[ \\t]+)?(\(durationPattern)))?") else { return nil }
+    if match[0].isEmpty { return AgentIOSVisibleCaptureNativeToolCatalog.defaultAudioDurationSeconds }
+    return parsedDuration(match[0]).map(clampAudioDuration)
   }
 
   private static func timerDurationSeconds(for lower: String) -> Int? {
-    guard let seconds = durationSecondsFromDigitUnit(in: lower) ?? durationSecondsFromSpokenUnit(in: lower) else {
-      return nil
-    }
-    return max(1, min(seconds, maximumTimerDurationSeconds))
+    let pattern = "(?:set|start|create|begin|run) (?:a |an )?(?:(?:timer|countdown)(?: for)? (\(durationPattern))|(\(durationPattern)) (?:timer|countdown))|" +
+      "(?:\u{8bbe}\u{7f6e}|\u{5f00}\u{59cb})\\s*(?:(\(durationPattern))\\s*(?:\u{5012}\u{8ba1}\u{65f6}|\u{8ba1}\u{65f6}\u{5668})|(?:\u{5012}\u{8ba1}\u{65f6}|\u{8ba1}\u{65f6}\u{5668})\\s*(\(durationPattern)))"
+    guard let groups = AgentLocalCommandText.captures(AgentLocalCommandText.sentence(lower), pattern),
+          let duration = groups.first(where: { !$0.isEmpty }),
+          let seconds = parsedDuration(duration), (1...maximumTimerDurationSeconds).contains(seconds) else { return nil }
+    return seconds
+  }
+
+  private static var durationPattern: String {
+    let words = spokenDurations.map(\.0).joined(separator: "|")
+    return "(?:[0-9]{1,6}|(?:\(words)))[ \\t-]*(?:seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|\u{79d2}\u{949f}?|\u{5206}\u{949f}?|\u{5c0f}\u{65f6})"
+  }
+
+  private static func parsedDuration(_ value: String) -> Int? {
+    let clean = value.replacingOccurrences(of: #"([0-9])-(?=[a-z])"#, with: "$1 ", options: .regularExpression)
+    let seconds = durationSecondsFromDigitUnit(in: clean) ?? durationSecondsFromSpokenUnit(in: clean)
+    return seconds.flatMap { $0 > 0 ? $0 : nil }
   }
 
   private static func durationSecondsFromDigitUnit(in value: String) -> Int? {
@@ -1517,7 +1404,8 @@ enum AgentDirectNativeToolPlanner {
           let amount = Int(nsValue.substring(with: match.range(at: 1))) else {
       return nil
     }
-    return amount * durationMultiplier(for: nsValue.substring(with: match.range(at: 2)))
+    let seconds = amount.multipliedReportingOverflow(by: durationMultiplier(for: nsValue.substring(with: match.range(at: 2))))
+    return seconds.overflow ? nil : seconds.partialValue
   }
 
   private static func durationSecondsFromSpokenUnit(in value: String) -> Int? {
@@ -1536,7 +1424,7 @@ enum AgentDirectNativeToolPlanner {
   }
 
   private static func containsDurationPhrase(_ value: String, phrase: String, unitTerms: [String]) -> Bool {
-    unitTerms.contains { value.contains("\(phrase) \($0)") }
+    unitTerms.contains { value == "\(phrase) \($0)" || value == "\(phrase)-\($0)" }
   }
 
   private static func durationMultiplier(for unit: String) -> Int {
@@ -1561,13 +1449,6 @@ enum AgentDirectNativeToolPlanner {
     ("one", 1), ("an", 1), ("a", 1)
   ]
 
-  private static func isExplanationOnlyGoal(_ lower: String) -> Bool {
-    containsAny(
-      lower,
-      ["explain", "what is", "what are", "how does", "how do", "\u{89e3}\u{91ca}", "\u{4ecb}\u{7ecd}", "\u{8bf4}\u{660e}"]
-    )
-  }
-
   private static func contactUpsertDraft(goal: String, lower: String) -> ContactUpsertDraft? {
     let raw: Substring
     if lower.hasPrefix("add contact ") {
@@ -1577,32 +1458,31 @@ enum AgentDirectNativeToolPlanner {
     } else {
       return nil
     }
-    var nameSource = String(raw)
+    var nameSource = AgentLocalCommandText.sentence(String(raw))
+    guard AgentLocalCommandText.plainArgument(nameSource, limit: 200) else { return nil }
     let parsed = contactPhone(in: nameSource)
     if let rawPhone = parsed.rawPhone {
+      guard parsed.number != nil else { return nil }
       nameSource = nameSource.replacingOccurrences(of: rawPhone, with: " ")
     }
     let displayName = cleanContactName(nameSource)
-    guard !displayName.isEmpty else { return nil }
+    guard !displayName.isEmpty, displayName.count <= 160,
+          displayName.rangeOfCharacter(from: .decimalDigits) == nil else { return nil }
     return ContactUpsertDraft(
-      displayName: displayName.prefixString(160),
-      phoneNumber: (parsed.number ?? "").prefixString(64)
+      displayName: displayName,
+      phoneNumber: parsed.number ?? ""
     )
   }
 
   private static func contactPhone(in value: String) -> (number: String?, rawPhone: String?) {
     guard let range = value.range(
-      of: #"\+?[0-9][0-9\s().-]{2,}[0-9]"#,
+      of: #"(?<= )\+?[0-9][0-9 ()-]{1,30}[0-9]\z"#,
       options: .regularExpression
     ) else {
       return (nil, nil)
     }
     let rawPhone = String(value[range])
-    var normalized = rawPhone.trimmingCharacters(in: .whitespacesAndNewlines)
-    for removable in [" ", "-", "(", ")", "."] {
-      normalized = normalized.replacingOccurrences(of: removable, with: "")
-    }
-    return (normalized.isEmpty ? nil : normalized, rawPhone)
+    return (AgentLocalCommandText.phone(rawPhone), rawPhone)
   }
 
   private static func cleanContactName(_ value: String) -> String {
@@ -1670,7 +1550,8 @@ enum AgentDirectNativeToolPlanner {
 
   private static func normalizedHTTPURL(_ raw: String) -> String? {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else { return nil }
+    guard !trimmed.isEmpty, trimmed.count <= 2_048,
+          trimmed.rangeOfCharacter(from: .whitespacesAndNewlines.union(.controlCharacters)) == nil else { return nil }
     let lower = trimmed.lowercased()
     if lower.contains("://") && !lower.hasPrefix("http://") && !lower.hasPrefix("https://") {
       return nil
@@ -1678,18 +1559,21 @@ enum AgentDirectNativeToolPlanner {
     let candidate = lower.hasPrefix("http://") || lower.hasPrefix("https://") ? trimmed : "https://\(trimmed)"
     guard let components = URLComponents(string: candidate),
           ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
-          !(components.host ?? "").isEmpty else {
+          !(components.host ?? "").isEmpty,
+          components.user == nil, components.password == nil, components.url != nil else {
       return nil
     }
-    return candidate.prefixString(2_048)
+    return candidate.count <= 2_048 ? candidate : nil
   }
 
   private static func encodedURLQuery(_ raw: String) -> String? {
-    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else { return nil }
+    let trimmed = AgentLocalCommandText.sentence(raw)
+    guard AgentLocalCommandText.plainArgument(trimmed, limit: 500) else { return nil }
     var allowed = CharacterSet.urlQueryAllowed
     allowed.remove(charactersIn: "&=?+")
-    return trimmed.addingPercentEncoding(withAllowedCharacters: allowed)?.prefixString(2_048)
+    guard let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: allowed),
+          encoded.count <= 2_048 else { return nil }
+    return encoded
   }
 
   private struct URLHandoff {
@@ -1700,73 +1584,63 @@ enum AgentDirectNativeToolPlanner {
   }
 
   private static func systemAppHandoff(for lower: String) -> SystemAppHandoff? {
-    if containsAny(
-      lower,
-      [
-        "open gallery", "open photos", "open photo library",
-        "\u{6253}\u{5f00}\u{76f8}\u{518c}", "\u{6253}\u{5f00}\u{7167}\u{7247}"
-      ]
-    ) {
+    if AgentLocalCommandText.matches(lower, [
+      "open gallery", "open photos", "open photo library",
+      "\u{6253}\u{5f00}\u{76f8}\u{518c}", "\u{6253}\u{5f00}\u{7167}\u{7247}"
+    ]) {
       return SystemAppHandoff(
         idPrefix: "open-photos",
         target: "Photos",
         bundleId: "com.apple.mobileslideshow"
       )
     }
-    if containsAny(
-      lower,
-      ["open browser", "open safari", "launch safari", "\u{6253}\u{5f00}\u{6d4f}\u{89c8}\u{5668}", "\u{6253}\u{5f00}safari"]
-    ) {
+    if AgentLocalCommandText.matches(lower, [
+      "open browser", "open safari", "launch safari", "\u{6253}\u{5f00}\u{6d4f}\u{89c8}\u{5668}", "\u{6253}\u{5f00}safari"
+    ]) {
       return SystemAppHandoff(
         idPrefix: "open-safari",
         target: "Safari",
         bundleId: "com.apple.mobilesafari"
       )
     }
-    if containsAny(
-      lower,
-      [
-        "open contacts", "open address book",
-        "\u{6253}\u{5f00}\u{901a}\u{8baf}\u{5f55}", "\u{6253}\u{5f00}\u{8054}\u{7cfb}\u{4eba}"
-      ]
-    ) {
+    if AgentLocalCommandText.matches(lower, [
+      "open contacts", "open address book",
+      "\u{6253}\u{5f00}\u{901a}\u{8baf}\u{5f55}", "\u{6253}\u{5f00}\u{8054}\u{7cfb}\u{4eba}"
+    ]) {
       return SystemAppHandoff(
         idPrefix: "open-contacts",
         target: "Contacts",
         bundleId: "com.apple.MobileAddressBook"
       )
     }
-    if containsAny(lower, ["open calendar", "\u{6253}\u{5f00}\u{65e5}\u{5386}"]) {
+    if AgentLocalCommandText.matches(lower, ["open calendar", "\u{6253}\u{5f00}\u{65e5}\u{5386}"]) {
       return SystemAppHandoff(
         idPrefix: "open-calendar",
         target: "Calendar",
         bundleId: "com.apple.mobilecal"
       )
     }
-    if containsAny(
-      lower,
-      ["open files", "open file manager", "open documents", "\u{6253}\u{5f00}\u{6587}\u{4ef6}"]
-    ) {
+    if AgentLocalCommandText.matches(lower, [
+      "open files", "open file manager", "open documents", "\u{6253}\u{5f00}\u{6587}\u{4ef6}"
+    ]) {
       return SystemAppHandoff(
         idPrefix: "open-files",
         target: "Files",
         bundleId: "com.apple.DocumentsApp"
       )
     }
-    if containsAny(
-      lower,
-      ["open messages", "open sms", "\u{6253}\u{5f00}\u{4fe1}\u{606f}", "\u{6253}\u{5f00}\u{77ed}\u{4fe1}"]
-    ) {
+    if AgentLocalCommandText.matches(lower, [
+      "open messages", "open sms", "\u{6253}\u{5f00}\u{4fe1}\u{606f}", "\u{6253}\u{5f00}\u{77ed}\u{4fe1}"
+    ]) {
       return SystemAppHandoff(
         idPrefix: "open-messages",
         target: "Messages",
         bundleId: "com.apple.MobileSMS"
       )
     }
-    if containsAny(
-      lower,
-      ["open phone", "open dialer", "\u{6253}\u{5f00}\u{7535}\u{8bdd}", "\u{6253}\u{5f00}\u{62e8}\u{53f7}\u{76d8}"]
-    ) {
+    if AgentLocalCommandText.matches(lower, [
+      "open phone", "open dialer", "\u{6253}\u{5f00}\u{7535}\u{8bdd}", "\u{6253}\u{5f00}\u{62e8}\u{53f7}\u{76d8}"
+    ]) {
       return SystemAppHandoff(
         idPrefix: "open-phone",
         target: "Phone",
@@ -1783,7 +1657,8 @@ enum AgentDirectNativeToolPlanner {
   }
 
   private static func blockedSensitiveAction(goal: String, lower: String) -> AgentAction? {
-    if containsAny(
+    guard AgentLocalCommandText.plainArgument(AgentLocalCommandText.sentence(lower), limit: 300) else { return nil }
+    if AgentLocalCommandText.startsCommand(
       lower,
       ["install apk", "install app", "unknown app sources", "install unknown apps", "apk install permission"]
     ) {
@@ -1794,7 +1669,7 @@ enum AgentDirectNativeToolPlanner {
         goal: goal
       )
     }
-    if containsAny(
+    if AgentLocalCommandText.startsCommand(
       lower,
       [
         "uninstall app", "delete app", "factory reset", "erase phone", "clear all data",
@@ -1808,7 +1683,7 @@ enum AgentDirectNativeToolPlanner {
         goal: goal
       )
     }
-    if containsAny(lower, ["unlock phone", "disable lock", "change screen lock"]) {
+    if AgentLocalCommandText.startsCommand(lower, ["unlock phone", "disable lock", "change screen lock"]) {
       return blockedAction(
         id: "blocked-lock-control",
         target: "Screen Lock",
@@ -1816,7 +1691,7 @@ enum AgentDirectNativeToolPlanner {
         goal: goal
       )
     }
-    if containsAny(lower, ["answer call", "listen call", "record call"]) {
+    if AgentLocalCommandText.startsCommand(lower, ["answer call", "listen call", "record call"]) {
       return blockedAction(
         id: "blocked-call-control",
         target: "Phone Call",
@@ -1824,7 +1699,7 @@ enum AgentDirectNativeToolPlanner {
         goal: goal
       )
     }
-    if containsAny(lower, ["send wechat", "reply wechat", "send message to"]) {
+    if AgentLocalCommandText.startsCommand(lower, ["send wechat", "reply wechat", "send message to"]) {
       return blockedAction(
         id: "blocked-third-party-send",
         target: "Third-party messaging",
@@ -1832,7 +1707,7 @@ enum AgentDirectNativeToolPlanner {
         goal: goal
       )
     }
-    if containsAny(
+    if AgentLocalCommandText.startsCommand(
       lower,
       [
         "make payment", "transfer money", "purchase", "checkout", "place order",
@@ -1847,7 +1722,7 @@ enum AgentDirectNativeToolPlanner {
         goal: goal
       )
     }
-    if containsAny(
+    if AgentLocalCommandText.startsCommand(
       lower,
       [
         "authorize login", "approve login", "grant permission", "share password", "share private key",
@@ -1881,31 +1756,10 @@ enum AgentDirectNativeToolPlanner {
     )
   }
 
-  private static func isTimerGoal(_ lower: String) -> Bool {
-    guard timerDurationSeconds(for: lower) != nil else { return false }
-    let hasTimerTerm = containsAny(lower, ["timer", "countdown", "\u{8ba1}\u{65f6}\u{5668}", "\u{5012}\u{8ba1}\u{65f6}"])
-    let hasStartAction = containsAny(
-      lower,
-      ["set", "start", "create", "begin", "run", "\u{8bbe}\u{7f6e}", "\u{5f00}\u{59cb}"]
-    )
-    return hasTimerTerm && hasStartAction
-  }
-
-  private static func isAlarmGoal(_ lower: String) -> Bool {
-    alarmClockTime(in: lower) != nil &&
-      containsAny(lower, ["set alarm", "alarm at", "alarm for", "\u{95f9}\u{949f}"])
-  }
-
   private static func alarmClockTime(in value: String) -> (hour: Int, minute: Int)? {
-    guard let regex = try? NSRegularExpression(pattern: "\\b([0-9]{1,2}):([0-9]{2})\\b") else {
-      return nil
-    }
-    let nsValue = value as NSString
-    let range = NSRange(location: 0, length: nsValue.length)
-    guard let match = regex.firstMatch(in: value, range: range),
-          match.numberOfRanges >= 3,
-          let hour = Int(nsValue.substring(with: match.range(at: 1))),
-          let minute = Int(nsValue.substring(with: match.range(at: 2))),
+    let pattern = "(?:set (?:an? )?alarm(?: at| for)? |alarm (?:at|for) |(?:\u{8bbe}\u{7f6e}|\u{5b9a})\u{95f9}\u{949f}\\s*)([0-9]{1,2}):([0-9]{2})"
+    guard let groups = AgentLocalCommandText.captures(AgentLocalCommandText.sentence(value), pattern),
+          let hour = Int(groups[0]), let minute = Int(groups[1]),
           (0...23).contains(hour),
           (0...59).contains(minute) else {
       return nil
@@ -1929,11 +1783,12 @@ enum AgentDirectNativeToolPlanner {
   private static let maximumTimerDurationSeconds = 24 * 60 * 60
 
   private static func isFlashlightGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["flashlight", "torch", "\u{624b}\u{7535}\u{7b52}"])
+    let pattern = "(?:(?:turn|switch) (?:on|off) (?:the )?(?:flashlight|torch)|(?:turn|switch) (?:the )?(?:flashlight|torch) (?:on|off)|(?:enable|disable) (?:the )?(?:flashlight|torch)|(?:\u{6253}\u{5f00}|\u{5173}\u{95ed}|\u{5173}\u{6389})\u{624b}\u{7535}\u{7b52})"
+    return AgentLocalCommandText.captures(AgentLocalCommandText.sentence(lower), pattern) != nil
   }
 
   private static func isTurnOffGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["turn off", "switch off", "disable", "\u{5173}\u{95ed}", "\u{5173}\u{6389}"])
+    containsAny(lower, [" off", "disable", "\u{5173}\u{95ed}", "\u{5173}\u{6389}"])
   }
 
   private static func containsAny(_ value: String, _ terms: [String]) -> Bool {
@@ -2051,7 +1906,7 @@ enum AgentScreenSearchCommand {
     }
     let value = String(clean.dropFirst(prefix.count))
       .trimmingCharacters(in: .whitespacesAndNewlines)
-    return value.isEmpty ? nil : value
+    return AgentLocalCommandText.plainArgument(value, limit: 200) ? value : nil
   }
 }
 
@@ -2109,7 +1964,7 @@ enum AgentNotificationCommand: Equatable {
     }
     let query = String(clean.dropFirst(prefix.count))
       .trimmingCharacters(in: .whitespacesAndNewlines)
-    return query.isEmpty ? nil : .search(query)
+    return AgentLocalCommandText.plainArgument(query, limit: 200) ? .search(query) : nil
   }
 }
 

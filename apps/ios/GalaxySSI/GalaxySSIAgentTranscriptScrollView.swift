@@ -9,6 +9,12 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
   @Binding var transcriptAutoFollow: Bool
   @Binding var transcriptShowLatestButton: Bool
   @Binding var transcriptContentMinY: CGFloat
+  @Environment(\.scenePhase) private var scene
+  @State private var scrollEpoch = GalaxySSIChatViewportEpoch()
+  @State private var positionedConversation: String?
+  @State private var draggingTranscript = false
+  @State private var pinnedToLatest = false
+  private let transcriptTail = "agent-transcript-tail"
 
   var agentSwipeRequest: Int
   @Binding var pendingAgentSwipeDirection: String
@@ -98,7 +104,10 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
       GeometryReader { viewport in
         ZStack(alignment: .bottomTrailing) {
           ScrollView {
-            content
+            VStack(spacing: 0) {
+              content
+              Color.clear.frame(height: 1).id(transcriptTail).accessibilityHidden(true)
+            }
               .padding(.horizontal, 12)
               .padding(.top, 8)
               .padding(.bottom, 16)
@@ -119,6 +128,9 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
           }
           if transcriptShowLatestButton, let last = messages.last {
             GalaxySSIAgentLatestButton(title: latestButtonTitle) {
+              scrollEpoch.invalidate()
+              olderTranscriptAnchor = nil
+              pinnedToLatest = true
               transcriptAutoFollow = true
               transcriptShowLatestButton = false
               withAnimation(reduceMotion ? nil : Animation.default) {
@@ -134,7 +146,15 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
       .background(Color.galaxySSIPageBackground)
       .simultaneousGesture(
         DragGesture(minimumDistance: 12)
+          .onChanged { value in
+            guard !draggingTranscript, abs(value.translation.height) >= abs(value.translation.width) else { return }
+            draggingTranscript = true
+            scrollEpoch.invalidate()
+            pinnedToLatest = false
+            olderTranscriptAnchor = nil
+          }
           .onEnded { value in
+            draggingTranscript = false
             guard hasOlderTranscriptMessages,
                   transcriptContentMinY >= -8,
                   value.translation.height >= 12,
@@ -146,7 +166,9 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
       )
       .onChange(of: visibleMessageLimit) { _ in
         guard let anchor = olderTranscriptAnchor else { return }
+        let ticket = scrollEpoch.revision
         DispatchQueue.main.async {
+          guard scrollEpoch.accepts(ticket), olderTranscriptAnchor == anchor, scene == .active else { return }
           withAnimation(reduceMotion ? nil : Animation.default) {
             proxy.scrollTo(anchor, anchor: .top)
           }
@@ -157,12 +179,17 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
         applyPendingSwipe(with: proxy)
       }
       .onChange(of: activeAgentConversationID) { _ in
+        scrollEpoch.invalidate()
+        pinnedToLatest = false
+        positionedConversation = activeAgentConversationID
         visibleMessageLimit = pageSize
         olderTranscriptAnchor = nil
         transcriptTopLoadTriggered = false
         transcriptAutoFollow = true
         transcriptShowLatestButton = false
+        let ticket = scrollEpoch.revision
         DispatchQueue.main.async {
+          guard scrollEpoch.accepts(ticket), scene == .active else { return }
           guard let last = messages.last else { return }
           withAnimation(reduceMotion ? nil : Animation.default) {
             proxy.scrollTo(last.id, anchor: .bottom)
@@ -170,12 +197,27 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
         }
       }
       .onAppear {
+        guard positionedConversation != activeAgentConversationID else { return }
+        positionedConversation = activeAgentConversationID
         transcriptAutoFollow = true
         transcriptShowLatestButton = false
+        let ticket = scrollEpoch.revision
         DispatchQueue.main.async {
+          guard scrollEpoch.accepts(ticket), scene == .active else { return }
           guard let last = messages.last else { return }
           proxy.scrollTo(last.id, anchor: .bottom)
         }
+      }
+      .onDisappear {
+        scrollEpoch.invalidate()
+        draggingTranscript = false
+        olderTranscriptAnchor = nil
+      }
+      .onChange(of: scene) { phase in
+        guard phase != .active else { return }
+        scrollEpoch.invalidate()
+        olderTranscriptAnchor = nil
+        draggingTranscript = false
       }
       .onChange(of: messages.count) { _ in
         onMessagesChanged()
@@ -234,6 +276,15 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
       .coordinateSpace(name: galaxySSIAgentTranscriptCoordinateSpace)
       .onPreferenceChange(AgentTranscriptScrollMetricsKey.self) { metrics in
         transcriptContentMinY = metrics.contentMinY
+        guard scene == .active else { return }
+        if pinnedToLatest {
+          transcriptAutoFollow = true
+          transcriptShowLatestButton = false
+          if metrics.contentMaxY > metrics.viewportHeight + 18 {
+            proxy.scrollTo(transcriptTail, anchor: .bottom)
+          }
+          return
+        }
         let atTop = metrics.contentMinY >= -8
         let userIsAwayFromLatest = metrics.contentMaxY > metrics.viewportHeight + 56
         if !atTop {
@@ -263,8 +314,11 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
       direction == AgentIOSAgentSwipeDirection.down.rawValue else {
       return
     }
+    scrollEpoch.invalidate()
+    olderTranscriptAnchor = nil
 
     if direction == AgentIOSAgentSwipeDirection.up.rawValue {
+      pinnedToLatest = false
       transcriptAutoFollow = false
       if hasOlderTranscriptMessages {
         onLoadOlderTranscriptMessages()
@@ -277,11 +331,11 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
       return
     }
 
-    guard let last = messages.last else { return }
+    pinnedToLatest = true
     transcriptAutoFollow = true
     transcriptShowLatestButton = false
     withAnimation(reduceMotion ? nil : Animation.default) {
-      proxy.scrollTo(last.id, anchor: .bottom)
+      proxy.scrollTo(transcriptTail, anchor: .bottom)
     }
   }
 }

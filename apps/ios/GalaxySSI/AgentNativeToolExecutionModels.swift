@@ -836,6 +836,7 @@ final class AgentNativeToolRegistry {
       progressReporter: hooks.onProgress
     )
     var claimedEffect: AgentNativeToolReplayKey?
+    var dispatchedEffect = false
     hooks.onStarted(invocation)
 
     func finish(
@@ -879,9 +880,10 @@ final class AgentNativeToolRegistry {
             context: effectiveContext,
             status: .failed,
             error: AgentNativeToolError(
-              code: "tool_invocation_failed",
+              code: "effect_outcome_unknown",
               message: "The native effect outcome could not be committed durably",
-              retryable: false
+              retryable: false,
+              details: ["original_invocation_id": .string(effectiveContext.invocationId)]
             ),
             startedAtEpochMillis: startedAt,
             finishedAtEpochMillis: hooks.nowMillis()
@@ -940,7 +942,8 @@ final class AgentNativeToolRegistry {
             "effect_key": .string(replayKey.idempotencyKey),
             "input_sha256": .string(observation.inputSha256)
           ]
-        )
+        ),
+        originalInvocationId: observation.invocationId
       )
     }
 
@@ -1014,7 +1017,8 @@ final class AgentNativeToolRegistry {
                 "effect_key": .string(replayKey.idempotencyKey),
                 "input_sha256": .string(claim.inputSha256)
               ]
-            )
+            ),
+            originalInvocationId: claim.invocationId
           )
         }
       }
@@ -1050,6 +1054,7 @@ final class AgentNativeToolRegistry {
         descriptor: descriptor,
         invocation: invocation
       ) {
+        dispatchedEffect = claimedEffect != nil
         let execution = try executable.executor(invocation)
         guard execution.isSuccess else {
           return GuardedNativeToolExecution(execution: execution)
@@ -1138,9 +1143,9 @@ final class AgentNativeToolRegistry {
       return finish(
         status: .cancelled,
         error: AgentNativeToolError(
-          code: "cancelled",
+          code: dispatchedEffect ? "effect_outcome_unknown" : "cancelled",
           message: "Native tool invocation was cancelled",
-          retryable: true
+          retryable: !dispatchedEffect
         )
       )
     } catch AgentNativeToolInvocationError.timedOut {
@@ -1148,16 +1153,16 @@ final class AgentNativeToolRegistry {
       return finish(
         status: .timedOut,
         error: AgentNativeToolError(
-          code: "timeout",
+          code: dispatchedEffect ? "effect_outcome_unknown" : "timeout",
           message: "Native tool invocation exceeded its deadline",
-          retryable: true
+          retryable: !dispatchedEffect
         )
       )
     } catch {
       return finish(
         status: .failed,
         error: AgentNativeToolError(
-          code: "tool_invocation_failed",
+          code: dispatchedEffect ? "effect_outcome_unknown" : "tool_invocation_failed",
           message: error.localizedDescription.isEmpty ? String(describing: error) : error.localizedDescription
         )
       )

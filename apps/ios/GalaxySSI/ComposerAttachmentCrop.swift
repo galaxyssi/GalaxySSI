@@ -1,8 +1,8 @@
 import ImageIO
 import UIKit
 
-struct ComposerAttachmentCrop: Equatable {
-  enum Aspect: String, CaseIterable, Identifiable {
+struct ComposerAttachmentCrop: Equatable, Sendable {
+  enum Aspect: String, CaseIterable, Identifiable, Sendable {
     case free, original, square, fourThree, sixteenNine
     var id: Self { self }
 
@@ -94,7 +94,7 @@ struct ComposerAttachmentCrop: Equatable {
   }
 }
 
-struct ComposerAttachmentOriginal: Equatable {
+struct ComposerAttachmentOriginal: Equatable, Sendable {
   let displayName: String
   let mimeType: String
   var data: Data
@@ -102,6 +102,28 @@ struct ComposerAttachmentOriginal: Equatable {
 
 extension GalaxySSIDraftAttachment {
   var composerSourceData: Data { composerOriginal?.data ?? data }
+  var requiresInitialComposerImageReview: Bool {
+    isImage && composerImageQuality == nil &&
+      (sourceDescription == "camera" || sourceDescription == "photo-library" || sourceDescription.hasPrefix("file:"))
+  }
+
+  func applyingComposerImageQuality(_ quality: ComposerImageQuality) -> Self? {
+    guard isImage else { return nil }
+    var edited = self
+    if quality == .original {
+      if composerCrop == nil { edited = restoringComposerOriginal() }
+      guard !edited.data.isEmpty, edited.data.count <= ComposerImageQuality.maximumOriginalBytes else { return nil }
+    } else if composerCrop == nil {
+      let source = composerSourceData
+      let normalized = AgentAnimatedImageTiming.normalizeZeroFrameDelays(source)
+      if normalized != source {
+        edited.composerOriginal = composerOriginal ?? .init(displayName: displayName, mimeType: mimeType, data: source)
+        edited.data = normalized
+      }
+    }
+    edited.composerImageQuality = quality
+    return edited
+  }
 
   func applyingComposerCrop(_ crop: ComposerAttachmentCrop, derivative: Data) -> Self? {
     guard isImage, !derivative.isEmpty,

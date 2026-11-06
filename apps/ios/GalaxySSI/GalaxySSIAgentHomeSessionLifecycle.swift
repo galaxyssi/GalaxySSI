@@ -19,6 +19,10 @@ extension AgentHomeView {
   func resetAgentSessionPresentation() {
     invalidateVoiceAppAnchor()
     cancelScreenPagePDFImport()
+    fileAttachmentOwner = nil
+    fileAttachmentRequest = nil
+    photoAttachmentOwner = nil
+    cameraAttachmentOwner = nil
     agentScreenContextCapturedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     draft = ""
     attachments.wipeSensitive()
@@ -56,6 +60,9 @@ extension AgentHomeView {
     invalidateVoiceAppAnchor()
     committedTurnProgress = AgentCommittedTurnProgress()
     cancelScreenPagePDFImport()
+    fileAttachmentOwner = nil
+    fileAttachmentRequest = nil
+    photoAttachmentOwner = nil
     draft.removeAll(keepingCapacity: false)
     attachments.wipeSensitive()
     voiceAttachmentSnapshot.wipeSensitive()
