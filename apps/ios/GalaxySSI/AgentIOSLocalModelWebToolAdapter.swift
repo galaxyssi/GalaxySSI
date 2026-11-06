@@ -351,6 +351,9 @@ enum AgentIOSLocalModelWebToolProtocol {
       "{\"answer\":\"optional brief progress\",\"tool_calls\":[" +
       "{\"id\":\"unique-call-id\",\"name\":\"exact tool id\",\"arguments\":{}}]}.\n" +
       "Available tools (exact IDs and input contracts):\n"
+    if catalog.contains(where: \.requiresEffectClaim) {
+      prompt += "For an uncertain effect, use the original read-only recovery_query if present. Verify external state before another write; a receipt is not proof of success.\n"
+    }
     for descriptor in catalog {
       let contract: AgentMcpJSONObject = [
         "properties": descriptor.inputSchema["properties"] ?? .object([:]),

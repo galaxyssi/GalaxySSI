@@ -815,11 +815,37 @@ struct AgentNativeToolReplayKey: Codable, Equatable, Hashable {
   }
 }
 
+struct AgentNativeEffectRecoveryQuery: Equatable {
+  let toolId: String
+  let toolVersion: String
+  let arguments: AgentMcpJSONObject
+
+  init(toolId: String, toolVersion: String, arguments: AgentMcpJSONObject) {
+    self.toolId = toolId
+    self.toolVersion = toolVersion
+    self.arguments = arguments
+  }
+
+  init?(_ object: AgentMcpJSONObject) {
+    guard object["format_version"] == .int(1),
+          let id = object["tool_id"]?.strictStringValue, !id.isBlank,
+          let version = object["tool_version"]?.strictStringValue, !version.isBlank,
+          let arguments = object["arguments"]?.objectValue else { return nil }
+    self.init(toolId: id, toolVersion: version, arguments: arguments)
+  }
+
+  var json: AgentMcpJSONValue {
+    .object(["format_version": .int(1), "tool_id": .string(toolId),
+             "tool_version": .string(toolVersion), "arguments": .object(arguments)])
+  }
+}
+
 struct AgentNativeEffectClaim: Equatable {
   var acquired: Bool
   var invocationId: String
   var inputSha256: String
   var result: AgentNativeToolResult?
+  var recoveryQuery: AgentNativeEffectRecoveryQuery? = nil
 }
 
 protocol AgentNativeToolReplayStore: AnyObject {
@@ -828,7 +854,8 @@ protocol AgentNativeToolReplayStore: AnyObject {
   func claim(
     _ key: AgentNativeToolReplayKey,
     inputSha256: String,
-    invocationId: String
+    invocationId: String,
+    recoveryQuery: AgentNativeEffectRecoveryQuery?
   ) throws -> AgentNativeEffectClaim
   func complete(
     _ key: AgentNativeToolReplayKey,
@@ -839,12 +866,19 @@ protocol AgentNativeToolReplayStore: AnyObject {
   func clear()
 }
 
+extension AgentNativeToolReplayStore {
+  func claim(_ key: AgentNativeToolReplayKey, inputSha256: String, invocationId: String) throws -> AgentNativeEffectClaim {
+    try claim(key, inputSha256: inputSha256, invocationId: invocationId, recoveryQuery: nil)
+  }
+}
+
 enum AgentNativeToolReplayError: Error, Equatable {
   case unsuccessfulResult
   case missingClaim
   case claimBindingChanged
   case outcomeChanged
   case legacyScopeUnverified
+  case invalidJournal
 }
 
 final class InMemoryAgentNativeToolReplayStore: AgentNativeToolReplayStore {
@@ -869,7 +903,8 @@ final class InMemoryAgentNativeToolReplayStore: AgentNativeToolReplayStore {
         acquired: false,
         invocationId: result.receipt.invocationId,
         inputSha256: result.receipt.inputSha256,
-        result: result
+        result: result,
+        recoveryQuery: claims[key]?.recoveryQuery
       )
     }
     guard var claim = claims[key] else { return nil }
@@ -880,7 +915,8 @@ final class InMemoryAgentNativeToolReplayStore: AgentNativeToolReplayStore {
   func claim(
     _ key: AgentNativeToolReplayKey,
     inputSha256: String,
-    invocationId: String
+    invocationId: String,
+    recoveryQuery: AgentNativeEffectRecoveryQuery?
   ) throws -> AgentNativeEffectClaim {
     lock.lock()
     defer { lock.unlock() }
@@ -898,7 +934,8 @@ final class InMemoryAgentNativeToolReplayStore: AgentNativeToolReplayStore {
       acquired: true,
       invocationId: invocationId,
       inputSha256: inputSha256,
-      result: nil
+      result: nil,
+      recoveryQuery: recoveryQuery
     )
     claims[key] = claim
     return claim
@@ -925,7 +962,8 @@ final class InMemoryAgentNativeToolReplayStore: AgentNativeToolReplayStore {
       acquired: false,
       invocationId: invocationId,
       inputSha256: claim.inputSha256,
-      result: result
+      result: result,
+      recoveryQuery: claim.recoveryQuery
     )
   }
 
@@ -949,19 +987,22 @@ struct AgentNativeToolReplayEntry: Equatable {
   var inputSha256: String
   var result: AgentNativeToolResult?
   var savedAtMillis: Int64
+  var recoveryQuery: AgentNativeEffectRecoveryQuery?
 
   init(
     key: AgentNativeToolReplayKey,
     invocationId: String,
     inputSha256: String,
     result: AgentNativeToolResult?,
-    savedAtMillis: Int64
+    savedAtMillis: Int64,
+    recoveryQuery: AgentNativeEffectRecoveryQuery? = nil
   ) {
     self.key = key
     self.invocationId = invocationId
     self.inputSha256 = inputSha256
     self.result = result
     self.savedAtMillis = savedAtMillis
+    self.recoveryQuery = recoveryQuery
   }
 
   init(key: AgentNativeToolReplayKey, result: AgentNativeToolResult, savedAtMillis: Int64) {
@@ -981,11 +1022,19 @@ enum AgentNativeToolReplayJsonCodec {
   }
 
   static func decode(_ raw: String) -> [AgentNativeToolReplayEntry] {
-    guard let data = raw.data(using: .utf8),
-          let values = try? JSONDecoder().decode([AgentMcpJSONValue].self, from: data) else {
-      return []
-    }
-    return values.compactMap { value in
+    guard let values = try? JSONDecoder().decode([AgentMcpJSONValue].self, from: Data(raw.utf8)) else { return [] }
+    return decodeEntries(values)
+  }
+
+  static func decodeStrict(_ data: Data) throws -> [AgentNativeToolReplayEntry] {
+    let values = try JSONDecoder().decode([AgentMcpJSONValue].self, from: data)
+    let entries = decodeEntries(values)
+    guard entries.count == values.count else { throw AgentNativeToolReplayError.invalidJournal }
+    return entries
+  }
+
+  private static func decodeEntries(_ values: [AgentMcpJSONValue]) -> [AgentNativeToolReplayEntry] {
+    values.compactMap { value in
       guard let object = value.objectValue else {
         return nil
       }
@@ -1010,12 +1059,15 @@ enum AgentNativeToolReplayJsonCodec {
       let invocationId = object.string("invocation_id").nilIfEmpty ?? result?.receipt.invocationId ?? ""
       let inputSha256 = object.string("input_sha256").nilIfEmpty ?? result?.receipt.inputSha256 ?? ""
       guard !invocationId.isEmpty, !inputSha256.isEmpty else { return nil }
+      let query = (object["recovery_query"]?.objectValue).flatMap { AgentNativeEffectRecoveryQuery($0) }
+      if object["recovery_query"] != nil, query == nil { return nil }
       return AgentNativeToolReplayEntry(
         key: key,
         invocationId: invocationId,
         inputSha256: inputSha256,
         result: result,
-        savedAtMillis: object.int64("saved_at_millis")
+        savedAtMillis: object.int64("saved_at_millis"),
+        recoveryQuery: query
       )
     }
   }
@@ -1030,7 +1082,7 @@ enum AgentNativeToolReplayJsonCodec {
       "turn_id": .string(entry.key.scope.turnId)
     ]
     scope["collaboration_owner_digest"] = entry.key.scope.collaborationOwnerDigest.map(AgentMcpJSONValue.string)
-    return .object([
+    var object: AgentMcpJSONObject = [
       "tool_id": .string(entry.key.toolId),
       "tool_version": .string(entry.key.toolVersion),
       "idempotency_key": .string(entry.key.idempotencyKey),
@@ -1039,7 +1091,9 @@ enum AgentNativeToolReplayJsonCodec {
       "input_sha256": .string(entry.inputSha256),
       "saved_at_millis": .int(entry.savedAtMillis),
       "result": entry.result?.toJsonValue() ?? .null
-    ])
+    ]
+    object["recovery_query"] = entry.recoveryQuery?.json
+    return .object(object)
   }
 }
 
@@ -1074,14 +1128,16 @@ final class AgentNativeToolReplaySnapshotStore: AgentNativeToolReplayStore {
       acquired: false,
       invocationId: entry.invocationId,
       inputSha256: entry.inputSha256,
-      result: entry.result
+      result: entry.result,
+      recoveryQuery: entry.recoveryQuery
     )
   }
 
   func claim(
     _ key: AgentNativeToolReplayKey,
     inputSha256: String,
-    invocationId: String
+    invocationId: String,
+    recoveryQuery: AgentNativeEffectRecoveryQuery?
   ) throws -> AgentNativeEffectClaim {
     lock.lock()
     defer { lock.unlock() }
@@ -1101,14 +1157,16 @@ final class AgentNativeToolReplaySnapshotStore: AgentNativeToolReplayStore {
       invocationId: invocationId,
       inputSha256: inputSha256,
       result: nil,
-      savedAtMillis: nowMillis()
+      savedAtMillis: nowMillis(),
+      recoveryQuery: recoveryQuery
     ))
     save(entries)
     return AgentNativeEffectClaim(
       acquired: true,
       invocationId: invocationId,
       inputSha256: inputSha256,
-      result: nil
+      result: nil,
+      recoveryQuery: recoveryQuery
     )
   }
 
@@ -1664,6 +1722,7 @@ struct AgentNativeToolExecutableDefinition {
   var definition: AgentPhoneNativeToolDefinition
   var executor: (AgentNativeToolInvocation) throws -> AgentNativeToolExecutionResult
   var verifier: ((AgentNativeToolInvocation, AgentNativeToolExecutionResult) throws -> AgentNativeToolVerification?)?
+  var recoveryQuery: ((AgentNativeToolInvocation) throws -> AgentNativeEffectRecoveryQuery?)? = nil
 
   var id: String { definition.id }
   var descriptor: AgentNativeToolDescriptor { definition.descriptor }

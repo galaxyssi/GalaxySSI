@@ -531,6 +531,9 @@ enum AgentModelPlanningPrompt {
     if tools.contains(where: { $0.id == AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate }) {
       header += "Browser navigate and back return inline text, links and a revision. Use observation when next_action=use_observation, including readable partial pages. Do not fetch the same page again for known evidence. Query operation_status with the original request_id after uncertain dispatch. A missing receipt does not justify repeating the operation. Verify external state; neither a receipt nor a page observation proves the user's goal.\n"
     }
+    if tools.contains(where: \.requiresEffectClaim) {
+      header += "For an uncertain effect, use its original read-only recovery_query if available, then verify external state before another write. A receipt is not proof of success.\n"
+    }
     let rows = tools.map { tool in
       var line = "- \(tool.id) | \(tool.title.prefixStringForPlanning(100)) | risk=\(tool.risk.rawValue)"
       if request.phoneOwnsExecution && AgentPlanExecutionBatchPolicy.canShareObservationPlan(tool) {

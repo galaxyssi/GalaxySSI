@@ -1770,11 +1770,17 @@ final class GalaxySSIStoreTests: XCTestCase {
       toolVersion: "1.0.0",
       idempotencyKey: "file-replay"
     )
-    let store = FileAgentNativeToolReplayStore(fileURL: fileURL, nowMillis: { now })
+    let secrets = InMemorySecretStore()
+    let store = FileAgentNativeToolReplayStore(fileURL: fileURL, secrets: secrets, nowMillis: { now })
+    let legacyResult = nativeToolResult(invocationId: "legacy", idempotencyKey: "file-replay")
+    try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try AgentNativeToolReplayJsonCodec.stringify([.init(key: key, result: legacyResult, savedAtMillis: now)])
+      .write(to: fileURL, atomically: true, encoding: .utf8)
+    XCTAssertEqual(store.get(key)?.receipt.invocationId, "legacy")
 
     try store.put(key, result: nativeToolResult(invocationId: "stored", idempotencyKey: "file-replay"))
 
-    let restored = FileAgentNativeToolReplayStore(fileURL: fileURL, nowMillis: { now })
+    let restored = FileAgentNativeToolReplayStore(fileURL: fileURL, secrets: secrets, nowMillis: { now })
     let replayed = try XCTUnwrap(restored.get(key))
 
     XCTAssertEqual(replayed.receipt.invocationId, "stored")
@@ -1790,14 +1796,14 @@ final class GalaxySSIStoreTests: XCTestCase {
     now += AgentNativeToolReplaySnapshotStore.retentionMillis + 1
 
     XCTAssertEqual(restored.get(key)?.receipt.invocationId, "stored")
-    XCTAssertFalse(((try? String(contentsOf: fileURL, encoding: .utf8)) ?? "").isEmpty)
+    XCTAssertFalse(String(decoding: try Data(contentsOf: fileURL), as: UTF8.self).contains("stored"))
 
     try restored.put(key, result: nativeToolResult(invocationId: "fresh", idempotencyKey: "file-replay"))
-    XCTAssertNotNil(FileAgentNativeToolReplayStore(fileURL: fileURL, nowMillis: { now }).get(key))
+    XCTAssertNotNil(FileAgentNativeToolReplayStore(fileURL: fileURL, secrets: secrets, nowMillis: { now }).get(key))
 
     restored.clear()
 
-    XCTAssertNil(FileAgentNativeToolReplayStore(fileURL: fileURL, nowMillis: { now }).get(key))
+    XCTAssertNil(FileAgentNativeToolReplayStore(fileURL: fileURL, secrets: secrets, nowMillis: { now }).get(key))
     XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
   }
 

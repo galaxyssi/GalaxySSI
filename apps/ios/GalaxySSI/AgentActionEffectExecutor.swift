@@ -42,6 +42,7 @@ struct AgentEffectRecoveryRecord: Codable, Equatable {
   ) -> AgentEffectRecoveryRecord? {
     guard descriptor.requiresEffectClaim,
           ["effect_outcome_unknown", "invalid_output", "missing_output_validation"].contains(result.error?.code ?? "") ||
+          result.error?.details["outcome_unknown"] == .bool(true) ||
           result.status == .verificationFailed ||
           (result.isSuccess && AgentIOSDeviceStateEvidence.tools.contains(descriptor.id) &&
             !AgentIOSDeviceStateEvidence.verified(descriptor.id, output: result.output, input: parseInput(action))) ||
@@ -68,8 +69,13 @@ struct AgentEffectRecoveryRecord: Codable, Equatable {
          AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate,
          AgentIOSWebMediaNativeToolCatalog.browserSessionBack,
          AgentIOSWebMediaNativeToolCatalog.browserSessionClose:
-      query = Query(kind: .browser, toolId: browserObserver, version: descriptor.version,
-                    input: ["request_id": .string(invocation)], subject: invocation)
+      if let raw = result.error?.details["recovery_query"]?.objectValue,
+         let recovery = AgentNativeEffectRecoveryQuery(raw),
+         recovery.toolId == browserObserver, recovery.toolVersion == AgentPhoneNativeToolCatalog.version,
+         recovery.arguments == ["request_id": .string(invocation)] {
+        query = Query(kind: .browser, toolId: recovery.toolId, version: recovery.toolVersion,
+                      input: recovery.arguments, subject: invocation)
+      } else { query = nil }
     default:
       query = nil
     }

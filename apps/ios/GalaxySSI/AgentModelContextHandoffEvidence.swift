@@ -7,7 +7,7 @@ enum AgentModelContextHandoffEvidence {
     "request_id", "handoff_id", "host_wait_key", "host_wait_generation", "control_owner", "next_action",
     "next_cursor", "cursor", "next_offset", "window_id", "revision", "node_path", "path", "page_id", "frame_id",
     "next_text_offset", "next_control_offset", "state", "status", "complete", "completed", "business_success_verified",
-    "outcome", "outcome_unknown", "state_verified", "delivery_verified", "recovery_query",
+    "outcome", "outcome_unknown", "state_verified", "delivery_verified",
     "galaxyssi_evidence_receipt", "galaxyssi_evidence_recording"
   ]
 
@@ -75,13 +75,9 @@ enum AgentModelContextHandoffEvidence {
     references["summary"] = .string(ConversationContextCompactor.fitTextToTokenBudget(summary, 160))
     references["compacted"] = .bool(true)
     references["original_output_sha256"] = .string(AgentModelLoopRecoveryIdentity.sha256(observation))
-    let invocation = receipt?.originalInvocationId ?? receipt?.invocationId ?? result.invocationId
-    if isUncertain(result), let invocation, !invocation.isEmpty,
-       AgentEffectRecoveryRecord.browserMutationTools.contains(result.toolId) {
-      references["recovery_query"] = .object([
-        "tool_id": .string(AgentEffectRecoveryRecord.browserObserver),
-        "arguments": .object(["request_id": .string(invocation)])
-      ])
+    if isUncertain(result), let query = result.error?.details["recovery_query"]?.objectValue,
+       let saved = AgentNativeEffectRecoveryQuery(query) {
+      references["recovery_query"] = saved.json
     }
     var entry: AgentMcpJSONObject = [
       "call_id": .string(result.callId), "tool": .string(result.toolId), "status": .string(result.status),

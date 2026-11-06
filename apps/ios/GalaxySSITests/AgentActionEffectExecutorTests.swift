@@ -256,9 +256,10 @@ private final class FailingCompletionReplayStore: AgentNativeToolReplayStore {
   func claim(
     _ key: AgentNativeToolReplayKey,
     inputSha256: String,
-    invocationId: String
+    invocationId: String,
+    recoveryQuery: AgentNativeEffectRecoveryQuery?
   ) throws -> AgentNativeEffectClaim {
-    try backing.claim(key, inputSha256: inputSha256, invocationId: invocationId)
+    try backing.claim(key, inputSha256: inputSha256, invocationId: invocationId, recoveryQuery: recoveryQuery)
   }
 
   func complete(
