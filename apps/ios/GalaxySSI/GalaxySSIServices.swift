@@ -13216,6 +13216,24 @@ final class MessageCoordinator: ObservableObject {
       }
       return
     }
+    if appPayload.string("conversation_id").hasPrefix(PublicNewsPairedHeadlineBatch.prefix) {
+      if object.string("scheme") == "signal", appPayload.string("type") == "text",
+         let link, let response = AgentConnectorResponse.fromPayload(appPayload),
+         let contact = store.contact(id: response.contactId), pairedHeadlineLink(contact, requireReady: false) == link,
+         appPayload.string("desktop_id").ifBlank(link.desktopId) == link.desktopId,
+         appPayload.string("client_route_id") == link.routes.clientRouteId {
+        guard PublicNewsAutomaticHeadlineWorker.shared.consumePairedReply(response, desktop: link.desktopId,
+          route: link.routes.clientRouteId, agent: appPayload.string("agent_id"),
+          profile: store.profile.identityFingerprint, now: Date()) else { return }
+      }
+      if allowStage {
+        handleLocalOnlyTransportPayload(appPayload, object: object, originalPayload: originalPayload,
+          link: link, allowStage: true)
+      } else if !appPayload.string("message_id").isEmpty {
+        deliveryStore.completeIncoming(messageId: appPayload.string("message_id"))
+      }
+      return
+    }
     if GalaxySSITransportPrivacyPolicy.isLocalOnly(appPayload) {
       handleLocalOnlyTransportPayload(
         appPayload,

@@ -10,7 +10,8 @@ enum GalaxySSIGlobalAutonomousBudgetRuntime {
     resourceId: String,
     systemPrompt: String,
     prompt: String,
-    nowMillis: Int64
+    nowMillis: Int64,
+    leaseMillis: Int64 = GlobalAutonomousRunPolicy.leaseMillis
   ) -> GlobalModelCallBudgetDecision {
     let settings = store.globalAgentSettings
     let ownerKey = ownerKey(runId: runId, actionId: actionId, kind: kind)
@@ -23,7 +24,7 @@ enum GalaxySSIGlobalAutonomousBudgetRuntime {
       leaseId: leaseId,
       kind: kind,
       ownerKey: ownerKey,
-      leaseMillis: GlobalAutonomousRunPolicy.leaseMillis,
+      leaseMillis: leaseMillis,
       dailyLimit: settings.dailyBackgroundModelCallBudget,
       concurrencyLimit: settings.maxConcurrentBackgroundModelCalls,
       nowMillis: nowMillis,
