@@ -112,6 +112,15 @@ final class GalaxySSIAttachmentAtRestCipher {
     return plaintext
   }
 
+  func chatTurnTimingIndex(conversationId: String, turnId: String) throws -> String {
+    lock.lock()
+    defer { lock.unlock() }
+    let payload = try JSONEncoder().encode([conversationId, turnId])
+    let indexKey = HKDF<SHA256>.deriveKey(inputKeyMaterial: try encryptionKey(createIfMissing: false),
+      info: Data("galaxyssi.chat-turn-timing.v1".utf8), outputByteCount: 32)
+    return Data(HMAC<SHA256>.authenticationCode(for: payload, using: indexKey)).base64EncodedString()
+  }
+
   func write(_ plaintext: Data, to url: URL, purpose: String) throws {
     let container = try encrypt(plaintext, purpose: purpose)
     try fileManager.createDirectory(

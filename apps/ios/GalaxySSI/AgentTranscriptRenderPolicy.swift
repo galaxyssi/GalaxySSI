@@ -73,6 +73,21 @@ struct AgentTranscriptRenderDiff: Codable, Equatable {
 }
 
 enum AgentProcessClockPolicy {
+  static func visibleRequestStarts(_ messages: [ChatMessage], conversationId: String) -> [String: Int64] {
+    guard !conversationId.isBlank else { return [:] }
+    return messages.reduce(into: [:]) { result, message in
+      guard message.conversationId == conversationId, message.isMine, !message.isSystem else { return }
+      let start = GalaxySSIChatHistoryCursor(message).createdAtMillis
+      guard start > 0 else { return }
+      let key = AgentReplyWaitingIndicatorPolicy.turnKey(for: message)
+      result[key] = min(result[key] ?? start, start)
+    }
+  }
+
+  static func startedAt(request: Int64?, fallback: Int64) -> Int64 {
+    [request, fallback].compactMap { $0 }.filter { $0 > 0 }.min() ?? fallback
+  }
+
   static func pausesLocalClock(_ phase: AgentPhase) -> Bool {
     [.blocked, .paused, .waitingConfirmation].contains(phase)
   }
@@ -122,10 +137,18 @@ struct AgentTranscriptExecutionProgress: Equatable {
   let updatedAt: Int64
 
   static func resolve(
-    owned: Self?, cached: Self?, deliveredAt: Int64?
+    owned: Self?, cached: Self?, deliveredAt: Int64?, requestStartedAt: Int64? = nil
   ) -> Self? {
-    if let owned { return owned }
-    guard let cached else { return nil }
+    func rebased(_ progress: Self) -> Self {
+      Self(status: progress.status, startedAt: AgentProcessClockPolicy.startedAt(request: requestStartedAt,
+        fallback: progress.startedAt), updatedAt: progress.updatedAt)
+    }
+    if let owned { return rebased(owned) }
+    guard let cached = cached.map(rebased) else {
+      guard let requestStartedAt, requestStartedAt > 0,
+            let deliveredAt, deliveredAt >= requestStartedAt else { return nil }
+      return Self(status: .completed, startedAt: requestStartedAt, updatedAt: deliveredAt)
+    }
     if cached.status.animating, let deliveredAt, deliveredAt >= cached.updatedAt, deliveredAt >= cached.startedAt {
       return Self(status: .completed, startedAt: cached.startedAt, updatedAt: deliveredAt)
     }
