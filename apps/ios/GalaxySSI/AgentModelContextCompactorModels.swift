@@ -252,6 +252,7 @@ struct AgentModelToolResultContent: Codable, Equatable, Identifiable {
 }
 
 struct AgentModelMessage: Codable, Equatable, Identifiable {
+  var providerContinuation: AgentProviderContinuation? = nil
   var id: String
   var role: AgentModelMessageRole
   var text: String
@@ -296,6 +297,7 @@ struct AgentModelMessage: Codable, Equatable, Identifiable {
 
   enum CodingKeys: String, CodingKey {
     case id
+    case providerContinuation = "provider_continuation"
     case role
     case text
     case toolCalls = "tool_calls"
@@ -306,6 +308,7 @@ struct AgentModelMessage: Codable, Equatable, Identifiable {
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
+    let continuation = try container.decodeIfPresent(AgentProviderContinuation.self, forKey: .providerContinuation)
     self.init(
       id: try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString,
       role: try container.decodeIfPresent(AgentModelMessageRole.self, forKey: .role) ?? .user,
@@ -315,6 +318,7 @@ struct AgentModelMessage: Codable, Equatable, Identifiable {
       contextHandoff: try container.decodeIfPresent(AgentModelContextHandoff.self, forKey: .contextHandoff),
       providerRoute: try container.decodeIfPresent(String.self, forKey: .providerRoute)
     )
+    self.providerContinuation = continuation
   }
 }
 
@@ -393,6 +397,7 @@ enum AgentModelContextCompactor {
     for block in blocks.reversed() {
       let blockTokens = estimate(block.messages)
       let mustKeep = block.unresolvedToolCalls ||
+        block.messages.contains { $0.providerContinuation != nil } ||
         retainedBlocks < budget.minimumRecentGroups ||
         block.containsLatestUserRequest
       if mustKeep || retainedTokens + blockTokens <= tailAllowance {
@@ -426,6 +431,9 @@ enum AgentModelContextCompactor {
 
   static func estimate(_ messages: [AgentModelMessage]) -> Int {
     messages.reduce(0) { total, message in
+      if let continuation = message.providerContinuation {
+        return total + continuation.estimatedTokens + 6
+      }
       var tokens = ConversationContextCompactor.estimateTokens(message.text) + 6
       for call in message.toolCalls {
         tokens += ConversationContextCompactor.estimateTokens(call.toolId)
@@ -544,6 +552,7 @@ enum AgentModelContextCompactor {
           current[index] = AgentModelMessage(id: message.id, role: .tool, toolResult: compactedResult)
         }
       case .assistant:
+        guard message.providerContinuation == nil else { continue }
         current[index] = AgentModelMessage(
           id: message.id,
           role: .assistant,

@@ -242,6 +242,27 @@ final class AgentModelToolLoop {
         publish: !state.replayingResponse
       )
 
+      var admittedCalls = response.toolCalls
+      if let continuation = response.providerContinuation {
+        do {
+          guard response.assistantText.count <= AgentSkillLimits.maxInstructionsCharacters else {
+            throw AgentModelToolProtocolError(code: "continuation_text_too_large",
+                                              message: "Signed assistant text exceeds the model history limit.")
+          }
+          let index = state.messages.count - 1
+          let previous = Set(state.messages.prefix(index).flatMap(\.toolCalls).map(\.callId))
+          let admission = AgentProviderCallAdmission(response.toolCalls, previous: previous, round: state.rounds)
+          state.messages[index].providerContinuation = try continuation.forHistory(response, admitted: admission.calls)
+          state.messages[index].toolCalls = admission.calls
+          admittedCalls = admission.calls
+          state.rejectedProviderCallIDs = admission.rejectedIDs
+        } catch {
+          return modelFailed(state, error: error)
+        }
+      } else {
+        state.rejectedProviderCallIDs.removeAll()
+      }
+
       if let terminal = terminalGuard(state) {
         return terminal
       }
@@ -252,7 +273,9 @@ final class AgentModelToolLoop {
         return completed(state, assistantText: response.assistantText)
       }
 
-      let fingerprint = responseFingerprint(response)
+      var admittedResponse = response
+      admittedResponse.toolCalls = admittedCalls
+      let fingerprint = responseFingerprint(admittedResponse)
       if state.seenResponseFingerprints.contains(fingerprint) {
         return loopDetected(
           state,
@@ -261,7 +284,7 @@ final class AgentModelToolLoop {
         )
       }
       state.seenResponseFingerprints.insert(fingerprint)
-      calls = response.toolCalls
+      calls = admittedCalls
     }
   }
 
@@ -325,6 +348,7 @@ final class AgentModelToolLoop {
     guard state.toolCallAttempts < state.request.budget.maxToolCalls else { return nil }
     let call = boundWorkspaceCall(proposedCall, workspaceId: state.request.workspaceId)
     guard basicCallError(call) == nil,
+          !state.rejectedProviderCallIDs.contains(call.callId),
           call.depth <= state.request.budget.maxDepth,
           let descriptor = toolRegistry.lookup(call.toolId)?.descriptor,
           call.toolVersion == nil || call.toolVersion == descriptor.version,
@@ -367,6 +391,11 @@ final class AgentModelToolLoop {
       ))
     }
 
+    if state.rejectedProviderCallIDs.contains(call.callId) {
+      appendSyntheticToolResult(state, call, code: "repeated_tool_call_id",
+                                message: "The provider repeated a tool call ID; the duplicate was not executed.")
+      return .continue
+    }
     if let basicError = basicCallError(call) {
       appendSyntheticToolResult(state, call, code: basicError.code, message: basicError.message)
       return .continue
@@ -1031,7 +1060,11 @@ final class AgentModelToolLoop {
     AgentModelToolLoopOutcome(
       status: status,
       assistantText: state.lastAssistantText,
-      messages: state.messages,
+      messages: state.messages.map { message in
+        var visible = message
+        visible.providerContinuation = nil
+        return visible
+      },
       events: state.events,
       usage: AgentModelToolLoopUsage(
         rounds: state.rounds,
@@ -1188,6 +1221,7 @@ final class AgentModelToolLoop {
     var startedAtEpochMillis: Int64
     var deadlineEpochMillis: Int64
     var callIds: [String: String] = [:]
+    var rejectedProviderCallIDs: Set<String> = []
     var callSignatures: [String: Int] = [:]
     var seenResponseFingerprints: Set<String> = []
     var rounds = 0

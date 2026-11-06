@@ -912,6 +912,7 @@
     A10000000000000000009B36 /* AgentModelContextHandoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B36 /* AgentModelContextHandoff.swift */; };
     A10000000000000000009B37 /* AgentModelContextHandoffEvidence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B37 /* AgentModelContextHandoffEvidence.swift */; };
     A10000000000000000000150 /* AgentModelToolProtocolModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000150 /* AgentModelToolProtocolModels.swift */; };
+    A10000000000000000009B38 /* AgentProviderContinuation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B38 /* AgentProviderContinuation.swift */; };
     A10000000000000000000151 /* AgentModelToolProtocolStrictAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000151 /* AgentModelToolProtocolStrictAdapter.swift */; };
     A10000000000000000000152 /* AgentModelToolProtocolOpenAIAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000152 /* AgentModelToolProtocolOpenAIAdapter.swift */; };
     C10000000000000000000153 /* AgentModelToolProtocolAnthropicAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000153 /* AgentModelToolProtocolAnthropicAdapter.swift */; };
@@ -2093,6 +2094,7 @@
     A20000000000000000009B36 /* AgentModelContextHandoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelContextHandoff.swift; sourceTree = "<group>"; };
     A20000000000000000009B37 /* AgentModelContextHandoffEvidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelContextHandoffEvidence.swift; sourceTree = "<group>"; };
     A20000000000000000000150 /* AgentModelToolProtocolModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelToolProtocolModels.swift; sourceTree = "<group>"; };
+    A20000000000000000009B38 /* AgentProviderContinuation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderContinuation.swift; sourceTree = "<group>"; };
     A20000000000000000000151 /* AgentModelToolProtocolStrictAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelToolProtocolStrictAdapter.swift; sourceTree = "<group>"; };
     A20000000000000000000152 /* AgentModelToolProtocolOpenAIAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelToolProtocolOpenAIAdapter.swift; sourceTree = "<group>"; };
     C20000000000000000000153 /* AgentModelToolProtocolAnthropicAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelToolProtocolAnthropicAdapter.swift; sourceTree = "<group>"; };
@@ -2854,6 +2856,7 @@
         A20000000000000000009B36 /* AgentModelContextHandoff.swift */,
         A20000000000000000009B37 /* AgentModelContextHandoffEvidence.swift */,
         A20000000000000000000150 /* AgentModelToolProtocolModels.swift */,
+        A20000000000000000009B38 /* AgentProviderContinuation.swift */,
         A20000000000000000000151 /* AgentModelToolProtocolStrictAdapter.swift */,
         A20000000000000000000152 /* AgentModelToolProtocolOpenAIAdapter.swift */,
         C20000000000000000000153 /* AgentModelToolProtocolAnthropicAdapter.swift */,
@@ -4125,6 +4128,7 @@
         A10000000000000000009B36 /* AgentModelContextHandoff.swift in Sources */,
         A10000000000000000009B37 /* AgentModelContextHandoffEvidence.swift in Sources */,
         A10000000000000000000150 /* AgentModelToolProtocolModels.swift in Sources */,
+        A10000000000000000009B38 /* AgentProviderContinuation.swift in Sources */,
         A10000000000000000000151 /* AgentModelToolProtocolStrictAdapter.swift in Sources */,
         A10000000000000000000152 /* AgentModelToolProtocolOpenAIAdapter.swift in Sources */,
         C10000000000000000000153 /* AgentModelToolProtocolAnthropicAdapter.swift in Sources */,

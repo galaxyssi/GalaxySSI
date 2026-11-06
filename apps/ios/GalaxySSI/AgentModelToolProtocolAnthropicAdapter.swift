@@ -19,6 +19,7 @@ final class AnthropicAgentModelToolProtocolAdapter: StrictAgentModelToolProtocol
   }
 
   override func encodeConversation(_ messages: [AgentModelMessage]) throws -> AgentMcpJSONObject {
+    let transcript = try AgentProviderTranscript(messages, adapter: self)
     var result: AgentMcpJSONObject = [:]
     let systemText = messages
       .filter { $0.role == .system }
@@ -42,6 +43,11 @@ final class AnthropicAgentModelToolProtocolAdapter: StrictAgentModelToolProtocol
           "content": .array([textBlock(message.text)])
         ]))
       case .assistant:
+        if let original = transcript.assistant(at: index) {
+          encoded.append(.object(original))
+          index += 1
+          continue
+        }
         let path = "messages[\(index)]"
         var blocks: [AgentMcpJSONValue] = []
         if !message.text.isBlank {
@@ -68,7 +74,7 @@ final class AnthropicAgentModelToolProtocolAdapter: StrictAgentModelToolProtocol
           let bounded = try boundedResult(toolResult, path: path)
           blocks.append(.object([
             "type": .string("tool_result"),
-            "tool_use_id": .string(toolResult.callId),
+            "tool_use_id": .string(transcript.replyId(toolResult.callId) ?? toolResult.callId),
             "content": .string(bounded.jsonText),
             "is_error": .bool(!successStatuses.contains(toolResult.status.lowercased()))
           ]))
@@ -107,7 +113,11 @@ final class AnthropicAgentModelToolProtocolAdapter: StrictAgentModelToolProtocol
       }
     }
 
-    let calls = try parseCalls(callBlocks, catalog: catalog) { item, path in
+    let retainsThinking = content.contains {
+      let type = $0.objectValue?["type"]?.strictStringValue
+      return type == "thinking" || type == "redacted_thinking"
+    }
+    let calls = try parseCalls(callBlocks, catalog: catalog, allowDuplicateIDs: retainsThinking) { item, path in
       ParsedAgentModelToolCall(
         id: try item.protocolRequiredString("id", path: path),
         name: try item.protocolRequiredString("name", path: path),
@@ -147,12 +157,17 @@ final class AnthropicAgentModelToolProtocolAdapter: StrictAgentModelToolProtocol
       providerMetadata["model"] = .string(model)
     }
 
-    return try modelResponse(
+    var response = try modelResponse(
       text: text.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines),
       calls: calls,
       usage: AgentModelUsage(inputTokens: inputTokens, outputTokens: outputTokens),
       metadata: providerMetadata
     )
+    if retainsThinking {
+      response.providerContinuation = AgentProviderContinuation(provider: provider,
+        payload: ["role": .string("assistant"), "content": .array(content)], response: response)
+    }
+    return response
   }
 
   private func textBlock(_ text: String) -> AgentMcpJSONValue {

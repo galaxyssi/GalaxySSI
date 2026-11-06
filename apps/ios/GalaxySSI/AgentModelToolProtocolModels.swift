@@ -113,6 +113,7 @@ struct AgentModelUsage: Codable, Equatable {
 }
 
 struct AgentModelResponse: Codable, Equatable {
+  var providerContinuation: AgentProviderContinuation? = nil
   var assistantText: String
   var toolCalls: [AgentModelToolCall]
   var usage: AgentModelUsage
@@ -139,6 +140,7 @@ struct AgentModelResponse: Codable, Equatable {
 
   enum CodingKeys: String, CodingKey {
     case assistantText = "assistant_text"
+    case providerContinuation = "provider_continuation"
     case toolCalls = "tool_calls"
     case usage
     case providerMetadata = "provider_metadata"
@@ -148,6 +150,7 @@ struct AgentModelResponse: Codable, Equatable {
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
+    let continuation = try container.decodeIfPresent(AgentProviderContinuation.self, forKey: .providerContinuation)
     self.init(
       assistantText: try container.decodeIfPresent(String.self, forKey: .assistantText) ?? "",
       toolCalls: try container.decodeIfPresent([AgentModelToolCall].self, forKey: .toolCalls) ?? [],
@@ -156,6 +159,7 @@ struct AgentModelResponse: Codable, Equatable {
       contextHandoff: try container.decodeIfPresent(AgentModelContextHandoff.self, forKey: .contextHandoff),
       providerRoute: try container.decodeIfPresent(String.self, forKey: .providerRoute)
     )
+    self.providerContinuation = continuation
   }
 }
 

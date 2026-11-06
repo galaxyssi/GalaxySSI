@@ -308,6 +308,47 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertEqual(secondAdapter.requests.count, 0)
   }
 
+  func testEncryptedRecoveryResendsOpaqueAssistantStateWithoutRunningDuplicateCalls() async throws {
+    let domain = "provider-continuation-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+    defer { defaults.removePersistentDomain(forName: domain) }
+    let secrets = InMemorySecretStore()
+    var executions = 0
+    let registry = try registry { _ in
+      executions += 1
+      return .success()
+    }
+    let adapter = AgentProviderRouteAdapter(base: OpenAiCompatibleAgentModelToolProtocolAdapter(), route: "same-account")
+    let signed = try adapter.decodeResponse(#"""
+      {"choices":[{"message":{"role":"assistant","content":"Working","reasoning_content":"private continuation",
+        "tool_calls":[
+          {"id":"wire-dup","type":"function","function":{"name":"\#(Self.toolId)","arguments":"{\"value\":\"one\"}"}},
+          {"id":"wire-dup","type":"function","function":{"name":"\#(Self.toolId)","arguments":"{\"value\":\"two\"}"}}
+        ]}}]}
+      """#, catalog: registry.descriptors())
+    let input = request(loopId: "signed-loop")
+    let interrupted = await loop(adapter: ContinuationTestModelAdapter { turn in
+      if turn.round == 1 { return signed }
+      throw AgentModelToolProtocolError(code: "interrupted", message: "Simulated interruption.")
+    }, registry: registry, journal: EncryptedAgentModelLoopJournal(defaults: defaults, secrets: secrets)).run(input)
+    XCTAssertEqual(interrupted.status, .modelFailed)
+    XCTAssertEqual(executions, 1)
+    let resumed = await loop(adapter: ContinuationTestModelAdapter { turn in
+      XCTAssertEqual(turn.round, 2)
+      let wire = try adapter.encodeConversation(turn.messages)
+      let items = try XCTUnwrap(wire["messages"]?.arrayValue)
+      XCTAssertEqual(items[1].objectValue?["reasoning_content"], .string("private continuation"))
+      XCTAssertEqual(items.suffix(2).compactMap { $0.objectValue?["tool_call_id"]?.strictStringValue },
+                     ["wire-dup", "wire-dup"])
+      XCTAssertEqual(turn.messages.last?.toolResult?.error?.code, "repeated_tool_call_id")
+      return AgentModelResponse(assistantText: "Done.")
+    }, registry: registry, journal: EncryptedAgentModelLoopJournal(defaults: defaults, secrets: secrets)).run(input)
+    XCTAssertEqual(resumed.status, .completed)
+    XCTAssertEqual(executions, 1)
+    XCTAssertFalse(resumed.messages.contains { $0.providerContinuation != nil })
+    XCTAssertEqual(resumed.messages.compactMap(\.toolResult).map(\.status), ["succeeded", "rejected"])
+  }
+
   func testInitialPlanningJournalRestoresBoundEncryptedInput() async throws {
     let backing = InMemoryAgentModelLoopJournal()
     let journal = AgentInitialPlanningJournal(journal: backing)
@@ -927,6 +968,14 @@ private final class MutableClock {
 
   init(now: Int64) {
     self.now = now
+  }
+}
+
+private struct ContinuationTestModelAdapter: AgentModelAdapter {
+  let respond: (AgentModelRequest) throws -> AgentModelResponse
+
+  func complete(_ request: AgentModelRequest) async throws -> AgentModelResponse {
+    try respond(request)
   }
 }
 
