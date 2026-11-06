@@ -972,6 +972,79 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(AgentCompletionRequirements(publication: .none, phoneLinux: false, reason: "Changed").canReplace(requirements))
   }
 
+  func testObservedCompletionRejectsLatestUncertainReadAndPreservesReceiptEnvelope() {
+    let read = "galaxyssi.fixture.read"
+    let success = #"{"path":"private-report.csv","rows":3}"#
+    let output = #""output":{"path":"private-report.csv","rows":3}"#
+    var requirements = AgentCompletionRequirements(publication: .none, phoneLinux: false)
+    requirements.outcomes = [AgentObservedCompletion(id: "report", toolId: read,
+      subject: ["/path": "private-report.csv"], checks: ["/rows": .int(3)], afterToolId: "")]
+    func action(_ evidence: String, status: AgentActionStatus = .completed) -> AgentAction {
+      AgentAction(id: UUID().uuidString, kind: .callNativeTool, target: read, risk: .low, status: status,
+        description: "Read", parameters: [:], requiresConfirmation: false, result: "", evidence: evidence)
+    }
+    let prior = action(success)
+    func diagnostics(_ newer: AgentAction) -> [AgentMcpJSONObject] {
+      AgentCompletionEvidencePolicy.observationDiagnostics(requirements: requirements, history: [prior, newer])
+    }
+    for (evidence, code) in [
+      ("{broken", "invalid_receipt"),
+      (#"{"path":null,"rows":3}"#, "subject_not_matched"),
+      (#"{"path":"private-report.csv","rows":"3"}"#, "checks_not_satisfied"),
+      ("{\(output),\"status\":\"failed\"}", "receipt_not_succeeded"),
+      ("{\(output),\"receipt\":{\"status\":\"waiting\"}}", "receipt_not_succeeded"),
+      ("{\(output),\"tool_id\":\"different.tool\"}", "receipt_tool_mismatch"),
+      ("{\(output),\"delivery_verified\":false}", "state_unverified"),
+      ("{\(output),\"metadata\":{\"goal_status\":\"dispatched\"}}", "state_unverified"),
+      ("{\(output),\"metadata\":{\"business_success_verified\":false}}", "state_unverified"),
+    ] {
+      let issues = diagnostics(action(evidence))
+      XCTAssertEqual(issues.first?.string("code"), code, evidence)
+      XCTAssertFalse(AgentMcpJSONCodec.stringify(issues.first ?? [:]).contains("private-report.csv"))
+    }
+    XCTAssertTrue(diagnostics(action("{\(output),\"tool_id\":\"\(read)\",\"status\":\"succeeded\"}")).isEmpty)
+    XCTAssertTrue(diagnostics(action(#"{"path":"other.csv","rows":0}"#, status: .failed)).isEmpty)
+    XCTAssertTrue(diagnostics(action("", status: .proposed).supersededByPlanRevision(sourceRevision: 1, nextRevision: 2)).isEmpty)
+    XCTAssertEqual(diagnostics(action(success, status: .blocked)).first?.string("code"), "observation_not_completed")
+    var stamped = action(success)
+    AgentCompletionEvidencePolicy.recordObservationEnvelope(AgentActionResult(
+      actionId: stamped.id, success: true, message: "",
+      metadata: ["native_tool_id": read, "native_tool_status": "succeeded", "native_tool_receipt_status": "verification_failed"]
+    ), action: &stamped)
+    XCTAssertEqual(diagnostics(stamped).first?.string("code"), "receipt_not_succeeded")
+    XCTAssertFalse(AgentCompletionEvidencePolicy.missingEvidence(requirements: requirements, history: [prior],
+      observationHistory: [prior, stamped]).isEmpty)
+  }
+
+  func testObservedCompletionRequiresAnAttemptedAndSettledAfterAction() {
+    let read = "galaxyssi.fixture.read"
+    let write = "galaxyssi.fixture.write"
+    var requirements = AgentCompletionRequirements(publication: .none, phoneLinux: false)
+    requirements.outcomes = [AgentObservedCompletion(id: "report", toolId: read, subject: [:],
+      checks: ["/rows": .int(3)], afterToolId: write)]
+    func action(_ tool: String, _ status: AgentActionStatus, evidence: String = "") -> AgentAction {
+      AgentAction(id: UUID().uuidString, kind: .callNativeTool, target: tool, risk: .low, status: status,
+        description: "Action", parameters: [:], requiresConfirmation: false, result: "", evidence: evidence)
+    }
+    let observation = action(read, .completed, evidence: #"{"rows":3}"#)
+    let proposed = action(write, .proposed)
+    let running = action(write, .running)
+    let retired = { (step: AgentAction) in step.supersededByPlanRevision(sourceRevision: 1, nextRevision: 2) }
+    func code(_ history: [AgentAction]) -> String? {
+      AgentCompletionEvidencePolicy.observationDiagnostics(requirements: requirements, history: history).first?.string("code")
+    }
+    XCTAssertEqual(code([observation]), "required_action_not_observed")
+    XCTAssertEqual(code([retired(proposed), observation]), "required_action_not_observed")
+    XCTAssertEqual(code([running, observation]), "required_action_still_pending")
+    XCTAssertEqual(code([action(write, .proposed, evidence: "agent_interrupted_execution"), observation]),
+      "required_action_still_pending")
+    XCTAssertEqual(code([retired(running), observation]), "required_action_superseded_unresolved")
+    XCTAssertEqual(code([action(write, .rolledBack), observation]), "required_action_rolled_back")
+    let completed = action(write, .completed)
+    XCTAssertEqual(code([observation, completed]), "observation_stale")
+    XCTAssertNil(code([completed, observation]))
+  }
+
   func testAgentExecutionPresentationPolicyMatchesAndroidLocalAndRemoteLocations() {
     let desktop = AgentExecutionPresentationPolicy.local(
       routeKind: .desktopAgent,

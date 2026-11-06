@@ -357,6 +357,7 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
         "error_code": result.error?.code ?? "",
         "native_tool_output": output,
         "native_receipt_id": result.receipt.invocationId,
+        "native_tool_receipt_status": result.receipt.status.rawValue,
         "invocation_id": result.receipt.invocationId,
         "idempotency_key": result.receipt.idempotencyKey ?? "",
         "started_at_millis": String(result.receipt.startedAtEpochMillis),
