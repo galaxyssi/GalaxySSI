@@ -1,6 +1,73 @@
 import Combine
 import Foundation
 
+private enum PublicNewsArchiveStorage {
+  struct Snapshot: Codable {
+    var articles: [PublicNewsArticle]
+    var refreshedAt: Date?
+    var pushCursor: PublicNewsPushCursor?
+    var notRelevantIDs: Set<String>?
+    var publisherState: PublicNewsPublisherState?
+  }
+
+  private struct Metadata: Codable {
+    let unreadCountV1: Int
+  }
+
+  private struct LegacyMetadata: Decodable {
+    struct Row: Decodable {
+      let url: URL
+      let read: Bool
+    }
+
+    let articles: [Row]
+    let notRelevantIDs: Set<String>?
+  }
+
+  static func unreadCount(_ articles: [PublicNewsArticle], excluding hidden: Set<String>) -> Int {
+    articles.reduce(into: 0) { count, article in
+      if !article.read, !hidden.contains(article.id) { count += 1 }
+    }
+  }
+
+  static func encode(_ snapshot: Snapshot, unreadCount: Int) throws -> Data {
+    let encoder = JSONEncoder()
+    let header = try encoder.encode(Metadata(unreadCountV1: unreadCount))
+    let payload = try encoder.encode(snapshot)
+    // Join two encoder-produced JSON objects so older readers still see the original snapshot fields.
+    var data = Data(header.dropLast())
+    data.append(contentsOf: [0x2c, 0x0a])
+    data.append(contentsOf: payload.dropFirst())
+    return data
+  }
+
+  static func readUnreadCount(from url: URL, allowLegacy: Bool) throws -> Int? {
+    let file = try FileHandle(forReadingFrom: url)
+    defer { try? file.close() }
+    let prefix = try file.read(upToCount: 128) ?? Data()
+    if let lineEnd = prefix.firstIndex(of: 0x0a), lineEnd > prefix.startIndex,
+       prefix[prefix.index(before: lineEnd)] == 0x2c {
+      var header = Data(prefix[..<prefix.index(before: lineEnd)])
+      header.append(0x7d)
+      if let metadata = try? JSONDecoder().decode(Metadata.self, from: header), metadata.unreadCountV1 >= 0 {
+        let end = try file.seekToEnd()
+        if end > UInt64(lineEnd + 2) {
+          try file.seek(toOffset: end - 1)
+          if try file.read(upToCount: 1)?.first == 0x7d { return metadata.unreadCountV1 }
+        }
+      }
+    }
+    // Legacy archives are decoded on the caller's background queue and upgraded on the next save.
+    guard allowLegacy else { return nil }
+    try file.seek(toOffset: 0)
+    let metadata = try JSONDecoder().decode(LegacyMetadata.self, from: try file.readToEnd() ?? Data())
+    let hidden = metadata.notRelevantIDs ?? []
+    return metadata.articles.reduce(into: 0) { count, article in
+      if !article.read, !hidden.contains(article.url.absoluteString) { count += 1 }
+    }
+  }
+}
+
 @MainActor
 final class PublicNewsArchive: ObservableObject {
   @Published private(set) var articles: [PublicNewsArticle] = []
@@ -9,17 +76,10 @@ final class PublicNewsArchive: ObservableObject {
   @Published private(set) var storageFailed = false
   @Published private(set) var notRelevantIDs: Set<String> = []
 
-  private struct Snapshot: Codable {
-    var articles: [PublicNewsArticle]
-    var refreshedAt: Date?
-    var pushCursor: PublicNewsPushCursor?
-    var notRelevantIDs: Set<String>?
-    var publisherState: PublicNewsPublisherState?
-  }
-
   private let fileURL: URL?
   private var refreshedAt: Date?
   private var loaded = false
+  private var unreadCount = 0
   private var pushCursor = PublicNewsPushCursor()
   private var publisherState = PublicNewsPublisherState()
   private var liveWake: AsyncStream<Void>.Continuation?
@@ -33,14 +93,24 @@ final class PublicNewsArchive: ObservableObject {
   var eligibleArticles: [PublicNewsArticle] { articles.filter { !notRelevantIDs.contains($0.id) } }
 
   var reminderUnreadCount: Int? {
-    guard loaded, !storageFailed else { return nil }
-    return articles.reduce(into: 0) { count, article in
-      if !article.read, !notRelevantIDs.contains(article.id) { count += 1 }
-    }
+    loaded && !storageFailed ? unreadCount : nil
   }
 
-  init(fileURL: URL? = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-    .first?.appendingPathComponent("public-news.json")) {
+  nonisolated static var defaultFileURL: URL? {
+    FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+      .first?.appendingPathComponent("public-news.json")
+  }
+
+  nonisolated static func readReminderUnreadCount(
+    fileURL: URL? = PublicNewsArchive.defaultFileURL, allowLegacy: Bool = true
+  ) -> Int? {
+    guard let fileURL else { return nil }
+    do { return try PublicNewsArchiveStorage.readUnreadCount(from: fileURL, allowLegacy: allowLegacy) }
+    catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile { return 0 }
+    catch { return nil }
+  }
+
+  init(fileURL: URL? = PublicNewsArchive.defaultFileURL) {
     self.fileURL = fileURL
   }
 
@@ -48,12 +118,13 @@ final class PublicNewsArchive: ObservableObject {
     guard !loaded else { return }
     guard let fileURL else { storageFailed = true; return }
     do {
-      let snapshot = try JSONDecoder().decode(Snapshot.self, from: Data(contentsOf: fileURL))
+      let snapshot = try JSONDecoder().decode(PublicNewsArchiveStorage.Snapshot.self, from: Data(contentsOf: fileURL))
       articles = snapshot.articles
       refreshedAt = snapshot.refreshedAt
       pushCursor = snapshot.pushCursor ?? PublicNewsPushCursor()
       notRelevantIDs = snapshot.notRelevantIDs ?? []
       publisherState = snapshot.publisherState ?? PublicNewsPublisherState()
+      unreadCount = PublicNewsArchiveStorage.unreadCount(articles, excluding: notRelevantIDs)
     } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
       // The archive is created after the first successful collection.
     } catch {
@@ -266,12 +337,14 @@ final class PublicNewsArchive: ObservableObject {
        (cursor ?? pushCursor) == pushCursor, (feedback ?? notRelevantIDs) == notRelevantIDs,
        (publishers ?? publisherState) == publisherState { return true }
     do {
-      let data = try JSONEncoder().encode(Snapshot(
+      let count = PublicNewsArchiveStorage.unreadCount(next, excluding: feedback ?? notRelevantIDs)
+      let data = try PublicNewsArchiveStorage.encode(.init(
         articles: next, refreshedAt: refreshedAt, pushCursor: cursor ?? pushCursor,
         notRelevantIDs: feedback ?? notRelevantIDs, publisherState: publishers ?? publisherState
-      ))
+      ), unreadCount: count)
       try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
       try data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+      unreadCount = count
       if articles != next { articles = next }
       self.refreshedAt = refreshedAt
       if let cursor { pushCursor = cursor }

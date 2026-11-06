@@ -1,5 +1,6 @@
 import EventKit
 import Foundation
+import UIKit
 
 struct VoiceReminderSnapshot: Codable, Equatable, Sendable {
   struct TaskRow: Codable, Equatable, Identifiable, Sendable {
@@ -112,6 +113,29 @@ enum VoiceReminderNativeTool {
   static let id = "galaxyssi.app.reminders"
   static let consentID = "voice_reminders.read"
 
+  static func loadSnapshot(store: GalaxySSIStore?, context: AgentNativeToolInvocationContext) -> VoiceReminderSnapshot? {
+    let allowed: @MainActor () -> Bool = {
+      guard let store, store.canReadVoiceReminderSnapshot,
+            UIApplication.shared.applicationState == .active,
+            let session = store.agentSession(id: context.conversationId.ifBlank(context.sessionId)) else { return false }
+      return session.status == .active && !session.privateMode && !session.trackingPaused
+    }
+    if Thread.isMainThread {
+      return MainActor.assumeIsolated {
+        guard allowed() else { return nil }
+        return store?.voiceReminderSnapshot(calendar: VoiceReminderSnapshot.calendarRows(),
+          unreadNewsCount: PublicNewsArchive.readReminderUnreadCount(allowLegacy: false))
+      }
+    }
+    guard DispatchQueue.main.sync(execute: { allowed() }) else { return nil }
+    let calendar = VoiceReminderSnapshot.calendarRows()
+    let unreadNewsCount = PublicNewsArchive.readReminderUnreadCount()
+    return DispatchQueue.main.sync {
+      guard allowed() else { return nil }
+      return store?.voiceReminderSnapshot(calendar: calendar, unreadNewsCount: unreadNewsCount)
+    }
+  }
+
   static func executable(load: @escaping (AgentNativeToolInvocationContext) -> VoiceReminderSnapshot?)
     throws -> AgentNativeToolExecutableDefinition {
     let descriptor = try AgentNativeToolDescriptor(
@@ -142,7 +166,7 @@ enum VoiceReminderNativeTool {
 }
 
 extension GalaxySSIStore {
-  func voiceReminderSnapshot(calendar: [VoiceReminderSnapshot.CalendarRow]?) -> VoiceReminderSnapshot? {
+  func voiceReminderSnapshot(calendar: [VoiceReminderSnapshot.CalendarRow]?, unreadNewsCount: Int?) -> VoiceReminderSnapshot? {
     guard canReadVoiceReminderSnapshot else { return nil }
     var allowed: [String: Bool] = [:]
     func isActiveAndShareable(_ id: String) -> Bool {
@@ -163,10 +187,8 @@ extension GalaxySSIStore {
         isActiveAndShareable(message.deliveredConversationId.ifBlank(message.sourceConversationId))
     }
     let inbox = GlobalProactiveInboxPolicy.project(messages: messages, feedback: globalAgentFeedback, limit: 100)
-    let archive = PublicNewsArchive()
-    archive.load()
     return VoiceReminderSnapshot(tasks: VoiceReminderSnapshot.taskRows(tasks),
                                  personal: VoiceReminderSnapshot.personalRows(inbox),
-                                 calendar: calendar, unreadNewsCount: archive.reminderUnreadCount)
+                                 calendar: calendar, unreadNewsCount: unreadNewsCount)
   }
 }
