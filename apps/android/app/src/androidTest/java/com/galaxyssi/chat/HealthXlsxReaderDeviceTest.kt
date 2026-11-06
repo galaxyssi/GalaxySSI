@@ -250,7 +250,8 @@ class HealthXlsxReaderDeviceTest {
         fun checkRow(row: Int, dateOnly: String = "") = HealthTablePolicy.evaluate(
             loaded.copy(mapping = mapping.copy(dateOnlyTime = dateOnly)), rows.getValue(row))
         assertEquals(Instant.parse("2026-09-01T12:30:00Z").toEpochMilli(), checkRow(2).draft!!.measuredAt)
-        assertEquals("time", checkRow(3).issue)
+        assertEquals(HealthTableRowState.MISSING, checkRow(3).state)
+        assertEquals("date_only_time", checkRow(3).issue)
         assertEquals(Instant.parse("2026-09-01T12:30:00Z").toEpochMilli(), checkRow(3, "08:30").draft!!.measuredAt)
         assertEquals("time", checkRow(4).issue)
         assertEquals(Instant.parse("2026-11-01T05:30:00Z").toEpochMilli(), checkRow(5).draft!!.measuredAt)

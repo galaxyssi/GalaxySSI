@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_table_date_only_missing">This row has a date but no time. Choose a measurement time in the mapping before saving it.</string>
+    <string name="health_table_date_only_applied">The selected time (%1$s) was applied to the source date.</string>
+    <string name="health_table_date_only_preview">Time added</string>
+    <string name="health_table_date_only_pending">Time needed</string>
+</resources>
