@@ -221,6 +221,10 @@ struct GalaxySSIHealthBackupView: View {
                   Int64(preview.readings), Int64(preview.duplicates), Int64(preview.conflicts.count)))
       Text(String(format: t("restore_files", "%lld original files · %lld tables · %lld missing sources"),
                   Int64(preview.originals), Int64(preview.tables), Int64(preview.missing)))
+      if preview.newLinks + preview.reusedLinks + preview.skippedLinks > 0 {
+        Text(String(format: t("restore_source_links", "Secondary links: %lld new, %lld already present, %lld skipped"),
+                    Int64(preview.newLinks), Int64(preview.reusedLinks), Int64(preview.skippedLinks)))
+      }
       ForEach(preview.conflicts.prefix(shownConflicts)) { conflict in
         DisclosureGroup(conflict.backup.metric.title(language: language)) {
           conflictVersion(t("restore_local", "Local version"), reading: conflict.local)
@@ -284,6 +288,9 @@ struct GalaxySSIHealthBackupView: View {
       Text(String(format: t("originals", "%lld image or PDF originals"), Int64(value.originals)))
       Text(String(format: t("tables", "%lld table originals"), Int64(value.tables)))
       Text(String(format: t("links", "%lld measurement source links"), Int64(value.links)))
+      if value.secondaryLinks > 0 {
+        Text(String(format: t("secondary_links", "%lld secondary source links"), Int64(value.secondaryLinks)))
+      }
       if let start = value.start, let end = value.end {
         Text(start.formatted(date: .abbreviated, time: .omitted) + " – " + end.formatted(date: .abbreviated, time: .omitted))
       }

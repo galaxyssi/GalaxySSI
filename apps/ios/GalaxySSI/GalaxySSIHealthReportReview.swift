@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 
 enum GalaxySSIHealthReportReview {
   struct Source: Codable, Hashable {
-    let original: UUID
+    var original: UUID
     let sha256: String
     let page: Int
     let region: Int

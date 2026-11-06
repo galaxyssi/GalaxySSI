@@ -1,4 +1,5 @@
 import CoreGraphics
+import CryptoKit
 import Foundation
 import UIKit
 import XCTest
@@ -1481,6 +1482,104 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertFalse(serialized.contains("private fixture"))
     XCTAssertFalse(serialized.contains("unrelated update"))
     XCTAssertEqual(try records.load().privacyEvents?.filter { $0.scope == .profileAnalysis }.map(\.enabled), [true, false, true])
+  }
+
+  @MainActor
+  func testHealthBackupV2RestoresSecondaryLinksWithoutReplacingMeasurements() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = root.appendingPathComponent("source")
+    let target = root.appendingPathComponent("target")
+    for folder in [source, target] { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: source.appendingPathComponent("records"))
+    let destination = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: target.appendingPathComponent("records"))
+    let originals = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: source,
+      restoreRecordsFile: records.isolatedFile)
+    let existingFiles = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: target,
+      restoreRecordsFile: destination.isolatedFile)
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData { $0.beginPage() }
+    try originals.store(pdf, name: "report.pdf")
+    try existingFiles.store(pdf, name: "same-report.pdf")
+    let report = try XCTUnwrap(originals.list().originals.first)
+    let reusedPDF = try XCTUnwrap(existingFiles.list().originals.first)
+    XCTAssertNotEqual(reusedPDF.id, report.id)
+    let png = UIGraphicsImageRenderer(size: CGSize(width: 10, height: 10)).pngData { _ in }
+    try originals.store(png, name: "image-report.png")
+    try existingFiles.store(png, name: "same-image-report.png")
+    let image = try XCTUnwrap(originals.list().originals.first { $0.kind == .image })
+    let reusedImage = try XCTUnwrap(existingFiles.list().originals.first { $0.kind == .image })
+    XCTAssertNotEqual(reusedImage.id, image.id)
+
+    let reading = GalaxySSIHealthReading(metric: .weight, value: 65)
+    try records.write(reading)
+    try destination.write(reading)
+    var revised = try XCTUnwrap(records.load().current.first)
+    revised.notes = "current"
+    try records.write(revised)
+    var archive = try records.load()
+    let current = try XCTUnwrap(archive.current.first)
+    let csv = Data("value,time\n65,2025-01-01T12:00:00Z\n".utf8)
+    let tableHash = GalaxySSIHealthTableImport.digest(csv)
+    let table = GalaxySSIHealthTableImport.Batch(id: UUID(), name: "table.csv", at: Date(), data: csv, inserted: 0)
+    archive.tableBatches = [table]
+    try records.commitRestore(archive, receipt: UUID())
+    let previousPlan = try GalaxySSIHealthPortableBackup.plan(records: records, originals: originals)
+    archive.reportEvidence = (0..<35).map { region in
+      let original = region == 0 ? image : report
+      return .init(target: .init(record: current.id, revision: region == 34 ? 1 : current.revision),
+        source: .init(original: original.id, sha256: original.sha256, page: 0, region: region, fromOCR: true),
+        excerpt: "private OCR fixture")
+    }
+    archive.tableEvidence = [.init(target: .init(record: current.id, revision: current.revision),
+      source: .init(batch: table.id, row: 0, sha256: tableHash))]
+    try records.commitRestore(archive, receipt: UUID())
+    XCTAssertThrowsError(try GalaxySSIHealthPortableBackup.prepare(previousPlan, records: records, originals: originals))
+    let plan = try GalaxySSIHealthPortableBackup.plan(records: records, originals: originals)
+    let (plain, summary) = try GalaxySSIHealthPortableBackup.prepare(plan, records: records, originals: originals)
+    XCTAssertEqual(summary.secondaryLinks, 35)
+    let password = "fixture-password"
+    let package = try GalaxySSIHealthPortableBackup.seal(plain, password: password)
+    XCTAssertTrue(package.starts(with: Data("GalaxySSI-Health-Backup-v2\n".utf8)))
+    XCTAssertNil(package.range(of: Data("private OCR fixture".utf8)))
+    let input = try GalaxySSIHealthPortableBackup.unlock(package, password: password)
+
+    let otherTable = GalaxySSIHealthTableImport.Batch(id: UUID(), name: "same-table.csv", at: Date(), data: csv, inserted: 0)
+    var local = try destination.load()
+    local.tableBatches = [otherTable]
+    try destination.commitRestore(local, receipt: UUID())
+    let conflict = try GalaxySSIHealthPortableBackup.previewRestore(input, records: destination, originals: existingFiles)
+    XCTAssertEqual(conflict.skippedLinks, 35)
+    try destination.write(revised)
+    let preview = try GalaxySSIHealthPortableBackup.previewRestore(input, records: destination, originals: existingFiles)
+    XCTAssertEqual(preview.newLinks, 35)
+    XCTAssertEqual(preview.missing, 0)
+    XCTAssertEqual(preview.originals, 0)
+    XCTAssertEqual(preview.tables, 0)
+    try GalaxySSIHealthPortableBackup.restore(input, expected: preview, records: destination, originals: existingFiles)
+    let restored = try destination.load()
+    XCTAssertEqual(restored.revisions.count, 2)
+    XCTAssertEqual(restored.reportEvidence?.count, 34)
+    XCTAssertTrue(restored.reportEvidence?.allSatisfy {
+      $0.source.original == ($0.source.region == 0 ? reusedImage.id : reusedPDF.id) &&
+        $0.target.revision == current.revision
+    } == true)
+    XCTAssertEqual(restored.tableEvidence?.first?.source.batch, otherTable.id)
+    XCTAssertEqual(try existingFiles.read(reusedPDF), pdf)
+    let repeated = try GalaxySSIHealthPortableBackup.previewRestore(input, records: destination, originals: existingFiles)
+    XCTAssertEqual(repeated.reusedLinks, 35)
+    XCTAssertFalse(repeated.hasChanges)
+
+    var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: plain) as? [String: Any])
+    legacy.removeValue(forKey: "sourceFrames")
+    let salt = Data(repeating: 0x12, count: 16)
+    let header = Data("GalaxySSI-Health-Backup-v1\n".utf8) + salt
+    let key = SymmetricKey(data: try GalaxySSIBackupManager.pbkdf2SHA256(
+      password: password, salt: salt, iterations: 600_000, keyByteCount: 32))
+    let sealed = try AES.GCM.seal(JSONSerialization.data(withJSONObject: legacy), using: key, authenticating: header)
+    let v1 = try GalaxySSIHealthPortableBackup.unlock(header + XCTUnwrap(sealed.combined), password: password)
+    XCTAssertEqual(v1.summary.secondaryLinks, 0)
+    XCTAssertEqual(v1.summary.readings, 1)
   }
 
   @MainActor
