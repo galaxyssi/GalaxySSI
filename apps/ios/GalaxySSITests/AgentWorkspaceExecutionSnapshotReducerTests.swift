@@ -127,6 +127,24 @@ final class AgentWorkspaceExecutionSnapshotReducerTests: XCTestCase {
     XCTAssertEqual(reduction.workspace, completed)
   }
 
+  func testCancelledSnapshotPersistsIntentAndFencesLateProgress() {
+    let current = workspace(status: .waitingResponse, handoffIds: ["codex:731"])
+    let stopped = AgentWorkspaceExecutionSnapshotReducer.apply(
+      snapshot: .init(status: .cancelled, resultJson: "stopped"), to: current, observedAtMillis: 2_000)
+    XCTAssertTrue(stopped.workspace.cancellationRequested)
+    XCTAssertEqual(stopped.workspace.status, .cancelled)
+    XCTAssertEqual(stopped.workspace.resultJson, "stopped")
+    XCTAssertEqual(stopped.workspace.handoffIds, current.handoffIds)
+    let late = AgentWorkspaceExecutionSnapshotReducer.apply(
+      snapshot: .init(status: .waitingResponse, resultJson: "stale"), to: stopped.workspace, observedAtMillis: 3_000)
+    XCTAssertFalse(late.changed)
+    XCTAssertEqual(late.workspace, stopped.workspace)
+    let receipt = AgentWorkspaceExecutionSnapshotReducer.apply(
+      snapshot: .init(resultJson: "late result"), to: stopped.workspace, observedAtMillis: 3_000)
+    XCTAssertFalse(receipt.changed)
+    XCTAssertEqual(receipt.workspace, stopped.workspace)
+  }
+
   func testSnapshotPrunesMergedCollectionsAndUsesAndroidWireNames() throws {
     let currentCalls = (1...55).map { toolCall("call-\($0)", .succeeded) }
     let currentArtifacts = (1...55).map { artifact("artifact-\($0)") }

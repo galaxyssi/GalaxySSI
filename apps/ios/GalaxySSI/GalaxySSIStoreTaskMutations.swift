@@ -39,17 +39,56 @@ extension GalaxySSIStore {
   func replaceAgentTaskForRecovery(expected: AgentTaskRecord, updated: AgentTaskRecord) -> Bool {
     guard updated.taskId == expected.taskId, updated.sessionId == expected.sessionId,
           agentTask(id: expected.taskId) == expected else { return false }
-    upsertAgentTask(updated)
-    return true
+    return upsertAgentTask(updated) == updated
+  }
+
+  func persistLocalWorkspaceCancellation(for task: AgentTaskRecord, at timestamp: Int64) -> Bool {
+    for _ in 0..<3 {
+      guard let current = agentWorkspaceStore.find(task.taskId),
+            Self.isLocalWorkspace(current, for: task) else { return true }
+      let cancellation = AgentTaskWorkspaceControlReducer.cancel(workspace: current, observedAtMillis: timestamp)
+      guard cancellation.changed else { return cancellation.shouldCancelExecution }
+      do {
+        _ = try agentWorkspaceStore.upsert(cancellation.workspace, expectedRevision: current.revision)
+        return true
+      } catch is AgentWorkspaceRevisionConflictError {
+        continue
+      } catch {
+        return false
+      }
+    }
+    return false
+  }
+
+  func interruptedLocalWorkspaceCancellations() -> [AgentTaskRecord] {
+    // The workspace is committed first; a crash can leave the task record at its old phase.
+    let candidates = agentTaskRecords.filter { AgentTaskCenterPolicy.canRequestCancellation($0.phase) }
+    guard !candidates.isEmpty else { return [] }
+    let cancelled = Dictionary(uniqueKeysWithValues: agentWorkspaceStore.list().lazy
+      .filter { $0.status == .cancelled && $0.cancellationRequested }.map { ($0.workspaceId, $0) })
+    return candidates.filter { task in
+      cancelled[task.taskId].map { Self.isLocalWorkspace($0, for: task) } ?? false
+    }
+  }
+
+  private static func isLocalWorkspace(_ workspace: AgentWorkspace, for task: AgentTaskRecord) -> Bool {
+    !task.sessionId.isBlank && workspace.workspaceId == task.taskId && workspace.taskId == task.taskId &&
+      workspace.sessionId == task.sessionId && workspace.conversationId == task.sessionId &&
+      workspace.parentRunId.isBlank && workspace.agentId.isBlank && workspace.deviceId.isBlank &&
+      workspace.remoteRunId.isBlank && workspace.deliveryMode == AgentDeliveryMode.respond.rawValue
   }
 
   @discardableResult
-  func upsertAgentTask(_ record: AgentTaskRecord, recoveredWorkspaceObservations: [AgentActionResult] = []) -> AgentTaskRecord {
+  func upsertAgentTask(_ record: AgentTaskRecord, recoveredWorkspaceObservations: [AgentActionResult] = [],
+                       explicitRollback: Bool = false) -> AgentTaskRecord {
     let clean = record.taskId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !clean.isEmpty else { return record }
     var updated = record
     updated.taskId = clean
     let previous = agentTaskRecords.first { $0.taskId == clean && $0.sessionId == updated.sessionId }
+    if let previous, previous.phase == .cancelled, updated.phase != .cancelled, !explicitRollback {
+      return previous
+    }
     var items = agentTaskRecords.filter { $0.taskId != clean }
     items.append(updated)
     agentTaskRecords = Array(Self.sortedAgentTasks(items).prefix(200))
@@ -89,10 +128,7 @@ extension GalaxySSIStore {
       let last = base.eventJournal.last
       let sourceTimestamp = last?.kind == AgentTaskEventKinds.localToolProjection
         ? last?.timestampMillis ?? 0 : base.updatedAtMillis
-      guard base.taskId == task.taskId, base.sessionId == task.sessionId,
-            base.conversationId == task.sessionId, base.parentRunId.isBlank,
-            base.agentId.isBlank, base.deviceId.isBlank, base.remoteRunId.isBlank,
-            base.deliveryMode == AgentDeliveryMode.respond.rawValue,
+      guard Self.isLocalWorkspace(base, for: task),
             sourceTimestamp <= task.updatedAtMillis, !base.cancellationRequested || status == .cancelled
       else { return }
       // An explicit local retry may reopen a failed workspace, but never one that was cancelled.
@@ -102,7 +138,8 @@ extension GalaxySSIStore {
       let snapshot = AgentWorkspaceExecutionSnapshot(status: status, resultJson: base.resultJson, toolCalls: calls)
       var next = AgentWorkspaceExecutionSnapshotReducer.apply(snapshot: snapshot, to: base,
         observedAtMillis: task.updatedAtMillis).workspace
-      if let existing, next.status == existing.status && next.toolCalls == existing.toolCalls { return }
+      if let existing, next.status == existing.status && next.toolCalls == existing.toolCalls &&
+        next.cancellationRequested == existing.cancellationRequested { return }
       if next.eventJournal.last?.kind == AgentTaskEventKinds.snapshot {
         next.eventJournal[next.eventJournal.count - 1].kind = AgentTaskEventKinds.localToolProjection
       }
