@@ -9405,6 +9405,8 @@ final class MessageCoordinator: ObservableObject {
     action: AgentAction, executionAction: AgentAction, result: AgentActionResult,
     outgoing: ChatMessage, rollbackAction: AgentAction?, task: inout AgentTaskRecord
   ) {
+    let boundAction = AgentSupervisorRecoveryPolicy.restoreBinding(
+      action, history: supervisorHistory(task: task, outgoing: outgoing))
     AgentIOSNativeToolHandoffPresenter.openIfNeeded(result)
     let stepReply = localizedNativeToolReply(result).ifBlank(result.message)
       .trimmingCharacters(in: .whitespacesAndNewlines)
