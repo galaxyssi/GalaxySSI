@@ -880,7 +880,8 @@ struct GalaxySSIGlobalAgentInsightInboxView: View {
                   "Your feedback changes when and where GalaxySSI intervenes."
                 ),
                 sourceLabel: sourceLabel(item),
-                canOpenTopic: store.agentSessionDestination(id: item.destinationConversationId) != nil,
+                canOpenTopic: PublicAttentionResearchPolicy.isPublicTask(item.sourceConversationId) ||
+                  store.agentSessionDestination(id: item.destinationConversationId) != nil,
                 openTitle: t("agent_global_insight_open_topic", "Open topic"),
                 helpfulTitle: t("agent_global_feedback_helpful", "Helpful"),
                 notRelevantTitle: t("agent_global_feedback_not_relevant", "Not relevant"),
@@ -965,9 +966,11 @@ struct GalaxySSIGlobalAgentInsightInboxView: View {
   }
 
   private func openTopic(_ item: GlobalProactiveInboxItem) {
-    guard let destination = store.agentSessionDestination(id: item.destinationConversationId),
-          store.switchAgentSession(destination) else {
-      return
+    if PublicAttentionResearchPolicy.isPublicTask(item.sourceConversationId) {
+      guard store.openPublicAttentionFinding(item) else { return }
+    } else {
+      guard let destination = store.agentSessionDestination(id: item.destinationConversationId),
+            store.switchAgentSession(destination) else { return }
     }
     store.markGlobalProactiveInboxViewed(item)
     dismiss()
@@ -1052,6 +1055,12 @@ private struct GalaxySSIGlobalInsightCard: View {
         .font(.system(size: 14))
         .foregroundColor(.galaxySSITextPrimary)
         .fixedSize(horizontal: false, vertical: true)
+      if PublicAttentionResearchPolicy.isPublicTask(item.sourceConversationId) {
+        ForEach(PublicAttentionResearchPolicy.sourceLinks(item.content), id: \.self) { url in
+          Link(url.host ?? url.absoluteString, destination: url)
+            .font(.footnote)
+        }
+      }
       Text(feedbackHint)
         .font(.system(size: 12))
         .foregroundColor(.galaxySSITextSecondary)

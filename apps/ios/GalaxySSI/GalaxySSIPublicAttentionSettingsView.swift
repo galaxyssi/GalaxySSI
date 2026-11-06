@@ -22,6 +22,22 @@ struct GalaxySSIPublicAttentionSettingsView: View {
         })
       List {
         Section {
+          Toggle(t("attention_collect", "Monitor public topics"), isOn: Binding(
+            get: { preferences.enabled }, set: { value in store.updatePublicAttention { $0.enabled = value } }))
+          Toggle(t("attention_allow_paired", "Allow paired Agent for public research"), isOn: Binding(
+            get: { preferences.allowPairedModel == true }, set: { value in
+              store.updatePublicAttention { $0.allowPairedModel = value }
+            }))
+          Toggle(t("attention_allow_cloud", "Allow cloud model for public research"), isOn: Binding(
+            get: { preferences.allowCloudModel }, set: { value in
+              store.updatePublicAttention { $0.allowCloudModel = value }
+            }))
+          Picker(t("attention_alerts", "Notifications"), selection: Binding(
+            get: { preferences.alertMode }, set: { value in store.updatePublicAttention { $0.alertMode = value } })) {
+            Text(t("attention_filter_important", "Important")).tag(PublicAttentionAlertMode.important)
+            Text(t("attention_filter_all", "All")).tag(PublicAttentionAlertMode.all)
+            Text(t("attention_alert_silent", "Silent")).tag(PublicAttentionAlertMode.silent)
+          }
           NavigationLink {
             GalaxySSIGlobalAgentInsightInboxView()
           } label: {

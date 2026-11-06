@@ -126,6 +126,7 @@ final class MessageCoordinator: ObservableObject {
   var pausedLegacyLearningSourceIDs: Set<String>?
   let signalEngine: GalaxySSISignalEngine
   private var globalResearchResponseToken: UUID?
+  private var activePublicAttentionResponses = Set<Int64>()
   private var globalCognitionResponseToken: UUID?
   private var globalAutonomousResponseToken: UUID?
   private var agentHomeDisplayContactIdsByTurnId: [String: String] = [:]
@@ -401,10 +402,11 @@ final class MessageCoordinator: ObservableObject {
     self.globalResearchResponseToken = connectorResponseBus.addListener { [weak self] response in
       Task { @MainActor in
         guard let self else { return }
-        _ = GalaxySSIGlobalAgentRuntimeBridge.consumeResearchResponse(
-          store: self.store,
-          response: response
-        )
+        if response.conversationId.hasPrefix(PublicAttentionResearchPolicy.conversationPrefix) {
+          await self.consumePublicAttentionResponse(response)
+          return
+        }
+        _ = GalaxySSIGlobalAgentRuntimeBridge.consumeResearchResponse(store: self.store, response: response)
         let consumedAutonomous = GalaxySSIGlobalAgentRuntimeBridge.consumeAutonomousResearchResponse(
           response,
           settings: self.store.globalAgentSettings
@@ -1152,6 +1154,9 @@ final class MessageCoordinator: ObservableObject {
     _ request: GlobalResearchDispatchRequest
   ) async -> Bool {
     guard !Task.isCancelled, store.globalAgentSettings.enabled else { return false }
+    let publicAttention = PublicAttentionResearchPolicy.isPublicTask(request.taskId)
+    guard !publicAttention || PublicAttentionResearchPolicy.allows(request, settings: store.globalAgentSettings)
+    else { return false }
     let nowMillis = GlobalRealtimeClock.nowMillis()
     switch request.transport {
     case .onDeviceModel:
@@ -1171,7 +1176,7 @@ final class MessageCoordinator: ObservableObject {
       let link = requestedDesktopId.isEmpty
         ? store.serverLinks.first(where: { $0.paired })
         : store.serverLinks.first(where: { $0.paired && $0.desktopId == requestedDesktopId })
-      guard let link else { return false }
+      guard let link, !publicAttention || publicAttentionLink(contact) == link else { return false }
       var payload: [String: Any] = [
         "type": "text",
         "message_id": "global-research-\(request.sourceMessageId)",
@@ -1195,13 +1200,22 @@ final class MessageCoordinator: ObservableObject {
       payload["_galaxyssi_turn_id"] = request.turnId
       payload["_galaxyssi_conversation_id"] = request.conversationId
       do {
+        if publicAttention {
+          payload["execution_mode"] = AgentTaskExecutionMode.planOnly.rawValue
+          let disclosure = FileAgentDataDisclosureStore(fileURL: AgentDataDisclosureStorePaths.ledgerURL())
+          let ticket = AgentDataDisclosureLedger.beginDesktopRequest(store: disclosure, contactId: contact.id,
+            desktopId: link.desktopId, providerId: contact.connectorAgentId, title: contact.displayName,
+            text: payload.string("content"), conversationId: request.conversationId, taskId: request.taskId,
+            turnId: request.turnId)
+          guard ticket.allowed else { return false }
+        }
         _ = try enqueueLinkPayload(
           payload,
           link: link,
           topic: link.routes.upTopic,
-          clientSourceMessageId: String(request.sourceMessageId),
+          clientSourceMessageId: (publicAttention ? PublicAttentionResearchPolicy.outboxPrefix : "") + String(request.sourceMessageId),
           contactId: contact.id,
-          trustedBackgroundCognitionAuthorized: store.globalAgentSettings.allowPairedAgentCognition,
+          trustedBackgroundCognitionAuthorized: !publicAttention && store.globalAgentSettings.allowPairedAgentCognition,
           backgroundLearning: true
         )
         scheduleOutboxFlushFromStore()
@@ -1224,6 +1238,7 @@ final class MessageCoordinator: ObservableObject {
         turnId: request.turnId
       )
       var accumulated = ""
+      var usage = ModelUsage()
       do {
         for try await event in cloudStreamEngine.streamConversation(
           contact: contact,
@@ -1232,7 +1247,9 @@ final class MessageCoordinator: ObservableObject {
           images: [],
           requestId: "global-research-\(request.sourceMessageId)"
         ) {
-          guard !Task.isCancelled, store.globalAgentSettings.enabled else { return false }
+          guard !Task.isCancelled, store.globalAgentSettings.enabled,
+                !publicAttention || PublicAttentionResearchPolicy.allows(request, settings: store.globalAgentSettings)
+          else { return false }
           switch event {
           case .textDelta(let delta):
             accumulated += delta.text
@@ -1248,7 +1265,9 @@ final class MessageCoordinator: ObservableObject {
               receivedAtMillis: nowMillis
             ))
             return true
-          case .connected, .usage, .toolCallDelta, .citationPreview, .completed:
+          case .usage(let event):
+            usage = event.usage
+          case .connected, .toolCallDelta, .citationPreview, .completed:
             continue
           }
         }
@@ -1262,6 +1281,8 @@ final class MessageCoordinator: ObservableObject {
           turnId: request.turnId,
           taskId: request.taskId,
           success: true,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
           receivedAtMillis: nowMillis
         ))
         return true
@@ -1269,6 +1290,66 @@ final class MessageCoordinator: ObservableObject {
         lastError = error.localizedDescription
         return false
       }
+    }
+  }
+
+  func publicAttentionLink(_ contact: GalaxySSIContact, requireReady: Bool = true) -> ServerLink? {
+    guard contact.trustState == .verified, contact.isCommunicable, contact.deliveryMode.isGalaxySSILinkFamily,
+          !contact.isDesktopDeviceContact, !contact.desktopId.isEmpty, !contact.connectorAgentId.isEmpty,
+          (!requireReady || AgentConnectorAvailability.desktopAgentReady(contact: contact)),
+          GalaxySSISignalEngine.isAvailable, signalEngine.hasSession(remoteName: contact.desktopId) else { return nil }
+    return store.serverLinks.first {
+      $0.paired && $0.desktopId == contact.desktopId &&
+        (contact.linkClientRouteId?.isEmpty != false || contact.linkClientRouteId == $0.routes.clientRouteId)
+    }
+  }
+
+  private func consumePublicAttentionResponse(_ response: AgentConnectorResponse) async {
+    let requests = GalaxySSIGlobalAgentRuntimeBridge.researchState().dispatchRequests
+    guard let request = requests.first(where: { PublicAttentionResearchPolicy.matches(response, request: $0) }),
+          PublicAttentionResearchPolicy.allows(request, settings: store.globalAgentSettings),
+          activePublicAttentionResponses.insert(response.sourceMessageId).inserted else { return }
+    defer { activePublicAttentionResponses.remove(response.sourceMessageId) }
+    var settled = response
+    if response.success {
+      var excerpts: [String] = []
+      for candidate in PublicAttentionResearchPolicy.candidates(response.content) {
+        guard !Task.isCancelled, PublicAttentionResearchPolicy.allows(request, settings: store.globalAgentSettings) else { return }
+        guard let page = try? await PublicNewsArticleBody.load(candidate.url),
+              let excerpt = PublicAttentionResearchPolicy.capturedExcerpt(candidate, in: page) else { continue }
+        excerpts.append(excerpt)
+      }
+      guard !Task.isCancelled else { return }
+      settled.content = excerpts.joined(separator: "\n\n")
+      settled.success = !excerpts.isEmpty
+      if !settled.success { settled.content = "No original public excerpts could be confirmed" }
+      settled.richOutputJson = ""
+    }
+    let before = Set(store.globalProactiveMessages.map(\.id))
+    guard GalaxySSIGlobalAgentRuntimeBridge.consumeResearchResponse(
+      store: store, response: settled, capturedPublicEvidence: settled.success) else { return }
+    for finding in store.globalProactiveMessages where !before.contains(finding.id) && finding.sourceConversationId == request.taskId {
+      await notifyPublicAttentionFinding(finding)
+    }
+  }
+
+  private func notifyPublicAttentionFinding(_ finding: GlobalProactiveMessage) async {
+    let center = UNUserNotificationCenter.current()
+    let authorization = await center.notificationSettings().authorizationStatus
+    guard [.authorized, .provisional, .ephemeral].contains(authorization),
+          PublicAttentionResearchPolicy.shouldAlert(finding, settings: store.globalAgentSettings) else { return }
+    let content = UNMutableNotificationContent()
+    content.title = GalaxySSILocalization.string("attention_discoveries", fallback: "Discoveries")
+    content.body = GalaxySSILocalization.string("attention_new_finding", fallback: "A new public research finding is available.")
+    content.sound = .default
+    content.threadIdentifier = "public-attention"
+    let identifier = "public-attention:" + GlobalAgentText.privateFingerprint(finding.id)
+    let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
+    do {
+      try await center.add(request)
+      store.markPublicAttentionNotified(finding.id)
+    } catch {
+      // Keep the finding in the inbox even if iOS declines the notification.
     }
   }
 
@@ -13397,6 +13478,23 @@ final class MessageCoordinator: ObservableObject {
         ]
       )
       if !appPayload.string("message_id").isEmpty {
+        deliveryStore.completeIncoming(messageId: appPayload.string("message_id"))
+      }
+      return
+    }
+    if appPayload.string("conversation_id").hasPrefix(PublicAttentionResearchPolicy.conversationPrefix) {
+      if object.string("scheme") == "signal", let link,
+         ["text", "agent_response"].contains(appPayload.string("type")),
+         let response = AgentConnectorResponse.fromPayload(appPayload),
+         let contact = store.contact(id: response.contactId), publicAttentionLink(contact, requireReady: false) == link,
+         appPayload.string("agent_id") == contact.connectorAgentId,
+         appPayload.string("client_route_id") == link.routes.clientRouteId {
+        Task { @MainActor [weak self] in await self?.consumePublicAttentionResponse(response) }
+      }
+      if allowStage {
+        handleLocalOnlyTransportPayload(appPayload, object: object, originalPayload: originalPayload,
+          link: link, allowStage: true)
+      } else if !appPayload.string("message_id").isEmpty {
         deliveryStore.completeIncoming(messageId: appPayload.string("message_id"))
       }
       return

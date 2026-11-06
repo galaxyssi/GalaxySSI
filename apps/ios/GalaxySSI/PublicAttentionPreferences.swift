@@ -40,6 +40,7 @@ struct PublicAttentionPreferences: Codable, Equatable {
   var topics: [String: TopicOverride] = [:]
   var savedKeys: Set<String> = []
   var allowCloudModel = false
+  var allowPairedModel: Bool? = nil
 
   var catalog: [PublicAttentionCatalog.Topic] {
     let defaults = PublicAttentionCatalog.defaults
@@ -168,8 +169,72 @@ enum PublicAttentionCatalog {
 
 enum PublicAttentionResearchPolicy {
   static let taskPrefix = "attention-research:"
+  static let conversationPrefix = "public-attention:attention-research:"
+  static let outboxPrefix = "public-attention-request:"
 
   static func isPublicTask(_ id: String) -> Bool { id.hasPrefix(taskPrefix) }
+
+  static func conversationID(_ taskID: String) -> String {
+    (isPublicTask(taskID) ? "public-attention:" : "global-research:") + taskID
+  }
+
+  static func allows(_ request: GlobalResearchDispatchRequest, settings: GlobalAgentSettings) -> Bool {
+    guard allows(taskID: request.taskId, settings: settings),
+          request.conversationId == conversationID(request.taskId),
+          let preferences = settings.publicAttention else { return false }
+    switch request.transport {
+    case .pairedAgent: return preferences.allowPairedModel == true
+    case .cloudModel: return preferences.allowCloudModel
+    case .onDeviceModel: return request.stage == .synthesis
+    }
+  }
+
+  static func matches(_ response: AgentConnectorResponse, request: GlobalResearchDispatchRequest) -> Bool {
+    response.sourceMessageId == request.sourceMessageId && response.conversationId == request.conversationId &&
+      response.taskId == request.taskId && response.turnId == request.turnId &&
+      response.contactId == request.contactId
+  }
+
+  static func shouldAlert(_ finding: GlobalProactiveMessage, settings: GlobalAgentSettings) -> Bool {
+    settings.notificationsEnabled && finding.status == .delivered && finding.notifiedAtMillis == 0 &&
+      allows(taskID: finding.sourceConversationId, settings: settings) &&
+      settings.publicAttention?.alertMode.allows(important: finding.urgent) == true
+  }
+
+  struct Candidate: Decodable {
+    let url: URL
+    let quote: String
+  }
+
+  static func candidates(_ text: String) -> [Candidate] {
+    struct Envelope: Decodable { let items: [Candidate] }
+    guard text.utf8.count <= 12_000 else { return [] }
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    let lines = trimmed.components(separatedBy: .newlines)
+    let payload = lines.count >= 3 && (lines.first == "```json" || lines.first == "```") && lines.last == "```"
+      ? lines.dropFirst().dropLast().joined(separator: "\n") : trimmed
+    guard let result = try? JSONDecoder().decode(Envelope.self, from: Data(payload.utf8)),
+          result.items.count <= 3 else { return [] }
+    var seen = Set<URL>()
+    return result.items.filter { PublicNewsArticleBody.supports($0.url) && (45...400).contains($0.quote.count) &&
+      !$0.quote.contains(where: \.isNewline) && seen.insert($0.url).inserted }
+  }
+
+  static func capturedExcerpt(_ candidate: Candidate, in body: PublicNewsOriginalBody) -> String? {
+    guard body.paragraphs.contains(where: { $0.range(of: candidate.quote, options: .literal) != nil })
+    else { return nil }
+    return "\(candidate.quote)\n\(candidate.url.absoluteString)"
+  }
+
+  static func sourceLinks(_ content: String) -> [URL] {
+    var seen = Set<URL>()
+    return content.components(separatedBy: "\n\n").compactMap { paragraph in
+      let lines = paragraph.components(separatedBy: "\n")
+      guard lines.count == 2, let url = URL(string: lines[1]),
+            PublicNewsArticleBody.supports(url), seen.insert(url).inserted else { return nil }
+      return url
+    }
+  }
 
   static func allows(taskID: String, settings: GlobalAgentSettings) -> Bool {
     guard isPublicTask(taskID), settings.enabled, settings.autonomousResearchEnabled,

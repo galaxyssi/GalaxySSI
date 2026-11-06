@@ -6327,6 +6327,12 @@
 "galaxyssi.schedule.save_failed" = "无法更新定时任务。";
 "galaxyssi.schedule.removed" = "定时任务已不可用";
 "attention_title" = "主动关注";
+"attention_collect" = "监测公开主题";
+"attention_allow_paired" = "允许配对智能体研究公开信息";
+"attention_allow_cloud" = "允许云端模型研究公开信息";
+"attention_alerts" = "通知";
+"attention_alert_silent" = "静默";
+"attention_new_finding" = "有一条新的公开研究发现。";
 "attention_subtitle" = "公开研究主题与发现";
 "attention_discoveries" = "发现";
 "attention_add_topic" = "添加主题";

@@ -4,11 +4,15 @@ enum GlobalResearchExecutorPolicy {
   static func executeNext(
     state: GlobalResearchExecutorState,
     resources: [GlobalResearchExecutorResource],
+    publicAttentionResources: [GlobalResearchExecutorResource] = [],
     context: GlobalResearchExecutionContext = GlobalResearchExecutionContext(),
     budgetLimits: GlobalResearchExecutorBudgetLimits = GlobalResearchExecutorBudgetLimits(),
     nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
   ) -> GlobalResearchExecutorStep? {
     guard let claimed = claimTask(from: state.tasks, nowMillis: nowMillis) else { return nil }
+    let isPublic = PublicAttentionResearchPolicy.isPublicTask(claimed.id)
+    let resources = isPublic ? publicAttentionResources : resources
+    let context = isPublic ? GlobalResearchExecutionContext() : context
     var next = state
     var task = prepareClaimedTask(claimed, nowMillis: nowMillis)
     let initialPlan = task.researchPlan.id.isBlank
@@ -40,7 +44,8 @@ enum GlobalResearchExecutorPolicy {
       )
     }
 
-    let routedResources = GlobalResearchPromptBuilder.routeResources(task: task, resources: resources)
+    let routedResources = GlobalResearchPromptBuilder.routeResources(task: task,
+      resources: isPublic ? resources.filter { $0.transport != .onDeviceModel } : resources)
     if routedResources.isEmpty {
       return waitForResource(
         task: task,
@@ -49,7 +54,7 @@ enum GlobalResearchExecutorPolicy {
         nowMillis: nowMillis
       )
     }
-    let parallelism = GlobalResearchPlanBuilder.parallelism(depth: task.depth, resourceCount: routedResources.count)
+    let parallelism = isPublic ? 1 : GlobalResearchPlanBuilder.parallelism(depth: task.depth, resourceCount: routedResources.count)
     let running = task.researchPlan.runningUnits().count
     let capacity = max(parallelism - running, 0)
     if capacity <= 0 {
@@ -190,6 +195,11 @@ enum GlobalResearchExecutorPolicy {
           state: &next,
           nowMillis: nowMillis
         )
+        if PublicAttentionResearchPolicy.isPublicTask(task.id) {
+          return complete(task: updated, rawResult: response.content, resourceId: "local-evidence-synthesis",
+            evidenceLedger: updated.evidenceLedger, state: next, context: GlobalResearchExecutionContext(),
+            nowMillis: nowMillis)
+        }
         return GlobalResearchExecutorStep(
           state: next,
           result: GlobalResearchExecutionResult(
@@ -321,7 +331,7 @@ enum GlobalResearchExecutorPolicy {
       resourceId: resource.id,
       contactId: resource.targetContactId,
       sourceMessageId: sourceMessageId,
-      conversationId: "global-research:\(running.id)",
+      conversationId: PublicAttentionResearchPolicy.conversationID(running.id),
       turnId: unit.id,
       ownerKey: ownerKey,
       leaseId: leaseId,
@@ -676,7 +686,7 @@ enum GlobalResearchExecutorPolicy {
       resourceId: resource.id,
       contactId: resource.targetContactId,
       sourceMessageId: sourceMessageId,
-      conversationId: "global-research:\(synthesizing.id)",
+      conversationId: PublicAttentionResearchPolicy.conversationID(synthesizing.id),
       turnId: "\(synthesizing.id):synthesis",
       ownerKey: ownerKey,
       leaseId: leaseId,
@@ -887,8 +897,17 @@ enum GlobalResearchExecutorPolicy {
     state: inout GlobalResearchExecutorState
   ) {
     let continuous = task.depth == .continuousMonitor
-    if continuous && (!materialChange || !task.evidenceLedger.verified) { return }
+    let publicAttention = PublicAttentionResearchPolicy.isPublicTask(task.id)
+    if continuous && (!materialChange || (!publicAttention && !task.evidenceLedger.verified)) { return }
     let nowMillis = task.updatedAtMillis
+    if publicAttention {
+      let eventID = "research:\(task.id):\(task.lastResultFingerprint)"
+      guard !state.proactiveMessages.contains(where: { $0.id == eventID }) else { return }
+      state.proactiveMessages.append(GlobalProactiveMessage(id: eventID, sourceEventId: eventID,
+        sourceConversationId: task.id, target: .newConversation, title: task.topic,
+        content: task.result, topic: task.topic, urgent: false, status: .delivered, createdAtMillis: nowMillis))
+      return
+    }
     let chinese = GlobalAgentText.containsCjk(task.question)
     let causalEventIds = task.causalEventIds.isEmpty ? Set([task.sourceEventId].filter { !$0.isBlank }) : task.causalEventIds
     let target: GlobalProactiveTarget
@@ -1087,14 +1106,16 @@ enum GlobalResearchExecutorPolicy {
     ))
   }
 
-  private static func claimTask(from tasks: [GlobalResearchTask], nowMillis: Int64) -> GlobalResearchTask? {
+  static func claimTask(from tasks: [GlobalResearchTask], nowMillis: Int64) -> GlobalResearchTask? {
     tasks
       .map { GlobalResearchTaskPolicy.recoverIfStale($0, nowMillis: nowMillis) }
       .filter { isClaimable($0, nowMillis: nowMillis) }
       .sorted { left, right in
         let leftScore = GlobalResearchTaskPolicy.selectionScore(left, nowMillis: nowMillis)
         let rightScore = GlobalResearchTaskPolicy.selectionScore(right, nowMillis: nowMillis)
-        if leftScore == rightScore { return left.createdAtMillis < right.createdAtMillis }
+        if leftScore == rightScore {
+          return (left.createdAtMillis, left.id) < (right.createdAtMillis, right.id)
+        }
         return leftScore > rightScore
       }
       .first

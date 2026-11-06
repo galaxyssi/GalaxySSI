@@ -118,7 +118,19 @@ extension MessageCoordinator {
       if activeMessageIds.contains(item.messageId) || !deliveryStore.containsOutboxMessage(item.messageId) {
         continue
       }
-      if item.clientSourceMessageId.hasPrefix(PublicNewsPairedHeadlineBatch.outboxPrefix) {
+      if item.clientSourceMessageId.hasPrefix(PublicAttentionResearchPolicy.outboxPrefix) {
+        let source = Int64(item.clientSourceMessageId.dropFirst(PublicAttentionResearchPolicy.outboxPrefix.count))
+        let research = GalaxySSIGlobalAgentRuntimeBridge.researchState()
+        guard let source, let request = research.dispatchRequests.first(where: {
+          $0.sourceMessageId == source && $0.contactId == item.contactId && $0.transport == .pairedAgent
+        }), PublicAttentionResearchPolicy.allows(request, settings: store.globalAgentSettings),
+           let contact = store.contact(id: item.contactId), publicAttentionLink(contact)?.routes.upTopic == item.topic,
+           let task = research.task(id: request.taskId), task.leaseExpiresAtMillis > GlobalRealtimeClock.nowMillis()
+        else {
+          deliveryStore.discard(messageId: item.messageId)
+          continue
+        }
+      } else if item.clientSourceMessageId.hasPrefix(PublicNewsPairedHeadlineBatch.outboxPrefix) {
         guard allowsPairedHeadlineDelivery(item) else {
           deliveryStore.discard(messageId: item.messageId)
           continue

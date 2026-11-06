@@ -685,10 +685,9 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
     let persisted = stateStore.state()
     var state = persisted
     seedResearchTasks(from: GlobalAgentDeliberationStore().cognitionTasks(), into: &state, nowMillis: nowMillis)
+    PublicAttentionResearchPolicy.reconcile(&state, settings: store.globalAgentSettings, nowMillis: nowMillis)
     let existingDispatchIds = Set(state.dispatchRequests.map(\.id))
-    let task = state.tasks.first {
-      [.queued, .scheduled, .waitingForResource].contains($0.status) && $0.nextAttemptAtMillis <= nowMillis
-    } ?? state.tasks.first(where: { $0.status == .running })
+    let task = GlobalResearchExecutorPolicy.claimTask(from: state.tasks, nowMillis: nowMillis)
     let context = researchContext(
       store: store,
       state: state,
@@ -696,10 +695,20 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
       nowMillis: nowMillis
     )
     let resources = researchResources(from: store, settings: store.globalAgentSettings)
+    var publicSettings = store.globalAgentSettings
+    publicSettings.allowPairedAgentCognition = publicSettings.publicAttention?.allowPairedModel == true
+    publicSettings.allowCloudCognition = publicSettings.publicAttention?.allowCloudModel == true
+    let publicResources = task.map { PublicAttentionResearchPolicy.isPublicTask($0.id) } == true
+      ? researchResources(from: store, settings: publicSettings) : []
+    let settings = store.globalAgentSettings
     guard let step = GlobalResearchExecutorPolicy.executeNext(
       state: state,
       resources: resources,
+      publicAttentionResources: publicResources,
       context: context,
+      budgetLimits: GlobalResearchExecutorBudgetLimits(
+        dailyLimit: settings.dailyBackgroundModelCallBudget, concurrencyLimit: settings.maxConcurrentBackgroundModelCalls,
+        dailyTokenLimit: settings.dailyBackgroundTokenBudget, dailyReportedCostLimitMicros: settings.dailyBackgroundReportedCostBudgetMicros),
       nowMillis: nowMillis
     ) else {
       if state != persisted { stateStore.save(state) }
@@ -719,6 +728,7 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
   static func consumeResearchResponse(
     store: GalaxySSIStore,
     response: AgentConnectorResponse,
+    capturedPublicEvidence: Bool = false,
     nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
   ) -> Bool {
     guard response.sourceMessageId > 0 else { return false }
@@ -729,6 +739,12 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
         $0.researchPlan.synthesisSourceMessageId == response.sourceMessageId ||
         $0.researchPlan.units.contains { $0.sourceMessageId == response.sourceMessageId }
     }) else { return false }
+    if PublicAttentionResearchPolicy.isPublicTask(task.id) {
+      guard let dispatch = state.dispatchRequests.first(where: { $0.sourceMessageId == response.sourceMessageId }),
+            PublicAttentionResearchPolicy.matches(response, request: dispatch),
+            PublicAttentionResearchPolicy.allows(dispatch, settings: store.globalAgentSettings),
+            !response.success || capturedPublicEvidence else { return false }
+    }
     let step = GlobalResearchExecutorPolicy.consumeConnectorResponse(
       response,
       state: state,
@@ -904,6 +920,7 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
     task: GlobalResearchTask?,
     nowMillis: Int64
   ) -> GlobalResearchExecutionContext {
+    if let task, PublicAttentionResearchPolicy.isPublicTask(task.id) { return GlobalResearchExecutionContext() }
     let conversationId = task?.sourceConversationId ?? ""
     let conversationContext = store.agentSessionMessages(conversationId)
       .filter { !$0.isSystem }

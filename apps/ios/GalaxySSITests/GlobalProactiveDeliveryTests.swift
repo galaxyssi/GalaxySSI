@@ -2,6 +2,71 @@ import XCTest
 @testable import GalaxySSI
 
 final class GlobalProactiveDeliveryTests: XCTestCase {
+  func testPublicAttentionDispatchExcludesPrivateContextAndUsesScopedRoute() throws {
+    var settings = GlobalAgentSettings()
+    var preferences = PublicAttentionPreferences()
+    preferences.enabled = true
+    preferences.allowPairedModel = true
+    settings.publicAttention = preferences
+    var state = GlobalResearchExecutorState()
+    PublicAttentionResearchPolicy.reconcile(&state, settings: settings, nowMillis: 100_000)
+    let privateRoute = GlobalResearchExecutorResource(id: "private-model", transport: .cloudModel)
+    let publicRoute = GlobalResearchExecutorResource(id: "paired-public", transport: .pairedAgent)
+    let step = try XCTUnwrap(GlobalResearchExecutorPolicy.executeNext(state: state, resources: [privateRoute],
+      publicAttentionResources: [publicRoute], context: .init(conversationContext: "PRIVATE_CHAT_MARKER",
+        realtimeContext: "PRIVATE_REALTIME_MARKER", worldContext: "PRIVATE_MEMORY_MARKER"), nowMillis: 100_000))
+    let request = try XCTUnwrap(step.state.dispatchRequests.first)
+    XCTAssertEqual(step.state.dispatchRequests.count, 1)
+    XCTAssertEqual(request.resourceId, publicRoute.id)
+    XCTAssertTrue(request.conversationId.hasPrefix(PublicAttentionResearchPolicy.conversationPrefix))
+    XCTAssertFalse(request.prompt.contains("PRIVATE_"))
+    XCTAssertFalse(settings.allowPairedAgentCognition)
+    XCTAssertTrue(PublicAttentionResearchPolicy.allows(request, settings: settings))
+    var reply = AgentConnectorResponse(sourceMessageId: request.sourceMessageId, contactId: request.contactId,
+      conversationId: request.conversationId, turnId: request.turnId, taskId: request.taskId)
+    XCTAssertTrue(PublicAttentionResearchPolicy.matches(reply, request: request))
+    reply.turnId = "different-turn"
+    XCTAssertFalse(PublicAttentionResearchPolicy.matches(reply, request: request))
+    settings.publicAttention?.allowPairedModel = false
+    XCTAssertFalse(PublicAttentionResearchPolicy.allows(request, settings: settings))
+  }
+
+  func testPublicAttentionAcceptsOnlyExactOriginalExcerptsOnSupportedPublishers() throws {
+    let quote = "This release includes a new API for running the task without connecting to a remote service."
+    let data = try JSONSerialization.data(withJSONObject: ["items": [
+      ["url": "https://github.blog/release", "quote": quote],
+      ["url": "https://127.0.0.1/internal", "quote": quote],
+      ["url": "https://github.blog/release", "quote": quote]
+    ]])
+    let candidates = PublicAttentionResearchPolicy.candidates(String(decoding: data, as: UTF8.self))
+    XCTAssertEqual(candidates.count, 1)
+    let candidate = try XCTUnwrap(candidates.first)
+    let changed = PublicNewsOriginalBody(title: "Publisher", paragraphs: [quote + " Additional context."])
+    let excerpt = try XCTUnwrap(PublicAttentionResearchPolicy.capturedExcerpt(candidate, in: changed))
+    XCTAssertEqual(PublicAttentionResearchPolicy.sourceLinks(excerpt), [candidate.url])
+    XCTAssertNil(PublicAttentionResearchPolicy.capturedExcerpt(candidate,
+      in: PublicNewsOriginalBody(title: "Publisher", paragraphs: [quote.replacingOccurrences(of: "without", with: "by")])))
+  }
+
+  func testPublicAttentionAlertRespectsModeAndTopicOptIn() {
+    var settings = GlobalAgentSettings()
+    var preferences = PublicAttentionPreferences()
+    preferences.enabled = true
+    settings.publicAttention = preferences
+    var finding = message(id: "finding")
+    finding.sourceConversationId = "attention-research:macro"
+    finding.status = .delivered
+    finding.urgent = false
+    XCTAssertFalse(PublicAttentionResearchPolicy.shouldAlert(finding, settings: settings))
+    settings.publicAttention?.alertMode = .all
+    XCTAssertTrue(PublicAttentionResearchPolicy.shouldAlert(finding, settings: settings))
+    settings.publicAttention?.alertMode = .silent
+    XCTAssertFalse(PublicAttentionResearchPolicy.shouldAlert(finding, settings: settings))
+    settings.publicAttention?.alertMode = .all
+    settings.publicAttention?.enabled = false
+    XCTAssertFalse(PublicAttentionResearchPolicy.shouldAlert(finding, settings: settings))
+  }
+
   func testAttentionCatalogAndPreferencesSurviveGlobalSettingsRoundTrip() throws {
     XCTAssertEqual(PublicAttentionCatalog.defaults.count, 31)
     XCTAssertEqual(Set(PublicAttentionCatalog.defaults.map(\.id)).count, 31)
