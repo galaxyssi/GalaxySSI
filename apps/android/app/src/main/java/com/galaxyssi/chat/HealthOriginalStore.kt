@@ -160,18 +160,48 @@ internal class HealthOriginalStore(
                 }
             } }
     }
-    fun library(filter: HealthLibraryFilter, before: Pair<Long, String>? = null, signal: android.os.CancellationSignal? = null): HealthLibraryPage {
+    private fun libraryChunk(filter: HealthLibraryFilter, before: Pair<Long, String>?,
+                             signal: android.os.CancellationSignal?): List<HealthOriginal> {
         val terms = arrayListOf(ARCHIVED, "imported_at>=?", "imported_at<?")
         val args = arrayListOf(filter.from.toString(), filter.until.toString())
         filter.kind?.let { terms += "kind=?"; args += it.name }
-        before?.let { terms += "(imported_at<? OR (imported_at=? AND id<?))"; args += listOf(it.first.toString(), it.first.toString(), it.second) }
-        val rows = helper.readableDatabase.rawQuery("SELECT id,payload,imported_at,kind FROM originals WHERE ${terms.joinToString(" AND ")} ORDER BY imported_at DESC,id DESC LIMIT 31", args.toTypedArray(), signal)
-            .use { cursor -> buildList { while (cursor.moveToNext()) add(decodeOriginal(cursor.getString(0), cursor.getBlob(1)).also {
-                check(it.importedAt == cursor.getLong(2) && HealthOriginalKind.of(it).name == cursor.getString(3)) { "Health original index mismatch" }
-            }) } }
+        if (filter.filesOnly) { terms += "kind<>?"; args += HealthOriginalKind.IMAGE.name }
+        before?.let { terms += "(imported_at,id)<(?,?)"; args += listOf(it.first.toString(), it.second) }
+        return helper.readableDatabase.rawQuery("SELECT id,payload,imported_at,kind FROM originals WHERE ${terms.joinToString(" AND ")} ORDER BY imported_at DESC,id DESC LIMIT 31", args.toTypedArray(), signal)
+            .use { cursor -> buildList {
+                while (cursor.moveToNext()) {
+                    signal?.throwIfCanceled()
+                    add(decodeOriginal(cursor.getString(0), cursor.getBlob(1)).also {
+                        check(it.importedAt == cursor.getLong(2) && HealthOriginalKind.of(it).name == cursor.getString(3)) { "Health original index mismatch" }
+                    })
+                }
+            } }
+    }
+
+    fun library(filter: HealthLibraryFilter, before: Pair<Long, String>? = null, signal: android.os.CancellationSignal? = null,
+                matches: ((HealthOriginal) -> Boolean)? = null): HealthLibraryPage {
+        val rows = if (matches == null) libraryChunk(filter, before, signal) else buildList {
+            var after = before
+            do {
+                signal?.throwIfCanceled()
+                val candidates = libraryChunk(filter, after, signal)
+                for (original in candidates) {
+                    signal?.throwIfCanceled()
+                    if (matches(original)) add(original)
+                    if (size == 31) break
+                }
+                after = candidates.takeIf { it.size == 31 }?.last()?.let { it.importedAt to it.id }
+            } while (size < 31 && after != null)
+        }
         val visible = rows.take(30)
         return HealthLibraryPage(visible, if (rows.size > 30) visible.last().let { it.importedAt to it.id } else null)
     }
+
+    fun libraryCounts(filter: HealthLibraryFilter, signal: android.os.CancellationSignal): Map<HealthOriginalKind, Long> =
+        helper.readableDatabase.rawQuery(
+            "SELECT kind,COUNT(*) FROM originals WHERE $ARCHIVED AND imported_at>=? AND imported_at<? GROUP BY kind",
+            arrayOf(filter.from.toString(), filter.until.toString()), signal,
+        ).use { rows -> buildMap { while (rows.moveToNext()) put(HealthOriginalKind.valueOf(rows.getString(0)), rows.getLong(1)) } }
     fun createJob(job: HealthImportJob) {
         require(validId(job.id) && job.sourceUri.startsWith("content://") && job.mode in listOf("report", "device"))
         helper.writableDatabase.insertOrThrow("jobs", null, jobValues(job))
