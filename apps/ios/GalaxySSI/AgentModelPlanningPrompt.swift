@@ -239,6 +239,10 @@ enum AgentModelPlanningPrompt {
     request: AgentModelPlanningPromptRequest,
     settings: AgentModelPlannerSettings
   ) {
+    if request.phoneOwnsExecution {
+      append(&prompt, "Independent low-risk, idempotent read-only tools may share one plan even with concurrency=serial. Serial tools still run in order without a new plan between reads. Use distinct ref values; depends_on names earlier refs in this response, not action IDs, targets, tool IDs, or older batches. Leave use_outputs_from empty. If a later argument requires an unread result, stop the batch before that step.\n")
+      return
+    }
     if settings.multiAgentCoordination {
       append(&prompt, "You may create a directed task graph using ref and depends_on. Dependencies must refer only to earlier refs. ")
       append(&prompt, "CALL_CONNECTOR may use_outputs_from dependencies to pass their confirmed outputs to another Agent. ")
@@ -445,6 +449,9 @@ enum AgentModelPlanningPrompt {
       append(&prompt, "- \(tool.id)")
       append(&prompt, " | \(tool.title.prefixStringForPlanning(100))")
       append(&prompt, " | risk=\(tool.risk.rawValue)")
+      if request.phoneOwnsExecution && AgentPlanExecutionBatchPolicy.canShareObservationPlan(tool) {
+        append(&prompt, " | effect=read_only | concurrency=\(tool.concurrency.rawValue)")
+      }
       append(&prompt, " | input=\(AgentMcpJSONCodec.stringify(tool.inputSchema).prefixStringForPlanning(1_200))\n")
     }
   }
@@ -469,6 +476,13 @@ enum AgentModelPlanningPrompt {
     request: AgentModelPlanningPromptRequest
   ) -> [AgentNativeToolDescriptor] {
     let allowsPhoneRuntimeTools = allowsPhoneRuntimeTools(for: request)
+    let preferPhoneStatus = request.phoneOwnsExecution &&
+      AgentTaskIntentClassifier.classify(goal: request.planRequest.goal).intent == .phoneControl
+    let phoneStatusTools: Set<String> = [
+      AgentIOSHardwareNativeToolCatalog.deviceStatus, AgentIOSHardwareNativeToolCatalog.batteryStatus,
+      AgentIOSHardwareNativeToolCatalog.powerStatus, AgentIOSHardwareNativeToolCatalog.memoryStatus,
+      AgentIOSHardwareNativeToolCatalog.storageStatus, AgentIOSHardwareNativeToolCatalog.networkStatus
+    ]
     let priority = Dictionary(uniqueKeysWithValues: developmentToolPriority.enumerated().map { pair in
       (pair.element, pair.offset)
     })
@@ -482,6 +496,11 @@ enum AgentModelPlanningPrompt {
           let firstDirect = AgentPhoneRuntimePolicy.directPhoneActionTools.contains($0.id)
           let secondDirect = AgentPhoneRuntimePolicy.directPhoneActionTools.contains($1.id)
           if firstDirect != secondDirect { return firstDirect }
+        }
+        if preferPhoneStatus {
+          let firstStatus = phoneStatusTools.contains($0.id)
+          let secondStatus = phoneStatusTools.contains($1.id)
+          if firstStatus != secondStatus { return firstStatus }
         }
         let firstPriority = priority[$0.id] ?? Int.max
         let secondPriority = priority[$1.id] ?? Int.max

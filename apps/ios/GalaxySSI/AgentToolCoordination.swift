@@ -389,8 +389,8 @@ enum AgentPlanExecutionBatchPolicy {
         if observationIdentity(earlier) == observationIdentity(action) {
           return "duplicate_unordered_action"
         }
-        if isParallelReadOnly(earlier, descriptorFor: descriptorFor),
-           isParallelReadOnly(action, descriptorFor: descriptorFor) {
+        if let left = descriptors[earlier.id], let right = descriptors[action.id],
+           canShareObservationPlan(left), canShareObservationPlan(right) {
           continue
         }
         guard let left = resourcePlans[earlier.id],
@@ -525,6 +525,10 @@ enum AgentPlanExecutionBatchPolicy {
     return descriptor.concurrency == .parallelReadOnly &&
       descriptor.risk == .low &&
       descriptor.idempotency == .idempotent
+  }
+
+  static func canShareObservationPlan(_ descriptor: AgentNativeToolDescriptor) -> Bool {
+    descriptor.risk == .low && !descriptor.requiresEffectClaim
   }
 
   private static func toolId(_ action: AgentAction) -> String {

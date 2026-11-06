@@ -61,9 +61,13 @@ enum AgentModelPlanParser {
     request: AgentPlanRequest,
     raw: String,
     settings: AgentModelPlannerSettings,
-    context: AgentModelPlanParsingContext = .empty
+    context: AgentModelPlanParsingContext = .empty,
+    allowsNativeDependencies: Bool = false
   ) -> Result<AgentPlan, AgentModelPlanRejection> {
-    do { return .success(try parseChecked(request: request, raw: raw, settings: settings, context: context)) }
+    do {
+      return .success(try parseChecked(request: request, raw: raw, settings: settings, context: context,
+        allowsNativeDependencies: allowsNativeDependencies))
+    }
     catch let rejection as AgentModelPlanRejection { return .failure(rejection) }
     catch { return .failure(.init("$", "validation_failed", "Return an ActionPlan using the advertised schema.")) }
   }
@@ -72,7 +76,8 @@ enum AgentModelPlanParser {
     request: AgentPlanRequest,
     raw: String,
     settings: AgentModelPlannerSettings,
-    context: AgentModelPlanParsingContext
+    context: AgentModelPlanParsingContext,
+    allowsNativeDependencies: Bool
   ) throws -> AgentPlan {
     guard var json = extractJson(raw) else {
       throw AgentModelPlanRejection("$", "invalid_json", "Return one JSON object containing an actions array.")
@@ -133,7 +138,8 @@ enum AgentModelPlanParser {
         throw AgentModelPlanRejection("actions[\(index)].ref", "invalid_ref", "Use a valid reference within this batch.")
       }
       actions.append(try parseAction(request: request, context: context, json: item, index: index,
-        actionId: actionId, refs: refs, allowCoordination: normalizedSettings.multiAgentCoordination))
+        actionId: actionId, refs: refs, allowCoordination: normalizedSettings.multiAgentCoordination,
+        allowsNativeDependencies: allowsNativeDependencies))
     }
 
     guard hasValidDraftPlanSemantics(context: context, actions: actions) else {
@@ -342,7 +348,8 @@ enum AgentModelPlanParser {
     index: Int,
     actionId: String,
     refs: [String: AgentModelPlanRef],
-    allowCoordination: Bool
+    allowCoordination: Bool,
+    allowsNativeDependencies: Bool
   ) throws -> AgentAction {
     let field = "actions[\(index)]"
     let rawKind = json.string("kind").trimmedForModelPlan.uppercased()
@@ -356,9 +363,16 @@ enum AgentModelPlanParser {
     if kind == .draftPlan && completion == nil {
       throw AgentModelPlanRejection(field, "invalid_completion", "Use the advertised completion envelope and a non-empty answer.")
     }
-    let dependencyRefs = stringArray(json["depends_on"])
-    let outputRefs = stringArray(json["use_outputs_from"])
-    if !allowCoordination && (!dependencyRefs.isEmpty || !outputRefs.isEmpty) {
+    guard let dependencyRefs = stringArray(json["depends_on"]) else {
+      throw AgentModelPlanRejection(field + ".depends_on", "invalid_dependency",
+        "Use a JSON array of earlier ref strings, or leave depends_on empty.")
+    }
+    guard let outputRefs = stringArray(json["use_outputs_from"]) else {
+      throw AgentModelPlanRejection(field + ".use_outputs_from", "invalid_output_reference",
+        "Use a JSON array of earlier ref strings. Leave use_outputs_from empty for native actions.")
+    }
+    if !allowCoordination && !(allowsNativeDependencies && kind == .callNativeTool) &&
+        (!dependencyRefs.isEmpty || !outputRefs.isEmpty) {
       throw AgentModelPlanRejection(field + ".depends_on", "coordination_unavailable",
         "This planner does not allow dependency graphs. Remove dependency and output references.")
     }
@@ -371,8 +385,12 @@ enum AgentModelPlanParser {
         "Each output reference must also appear in depends_on.")
     }
     guard let dependencyIds = resolvePriorRefs(dependencyRefs, refs: refs, currentIndex: index) else {
+      let available = refs.filter { $0.value.index < index }
+        .sorted { $0.value.index < $1.value.index }.map(\.key)
+      let earlier = available.isEmpty ? "(none)" : available.prefix(12).joined(separator: ", ")
+      let suffix = available.count > 12 ? ", ..." : ""
       throw AgentModelPlanRejection(field + ".depends_on", "invalid_dependency",
-        "Reference only distinct earlier actions in this response, never this action, later actions, or prior batches.")
+        "Use earlier ref values from this response, not action IDs, targets, tool IDs or prior batches. Available earlier refs: \(earlier)\(suffix).")
     }
     guard let outputSourceIds = resolvePriorRefs(outputRefs, refs: refs, currentIndex: index),
           let nodeRef = refs.first(where: { $0.value.actionId == actionId })?.key else {
@@ -782,13 +800,11 @@ enum AgentModelPlanParser {
     return try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data)
   }
 
-  private static func stringArray(_ value: AgentMcpJSONValue?) -> [String] {
-    guard let array = value?.arrayValue else {
-      return []
-    }
-    return array.compactMap {
-      $0.stringValue?.trimmedForModelPlan.nonEmpty
-    }
+  private static func stringArray(_ value: AgentMcpJSONValue?) -> [String]? {
+    guard let value else { return [] }
+    guard let array = value.arrayValue, array.count <= AgentPlanExecutionBatchPolicy.maximumModelBatchActions else { return nil }
+    let values = array.compactMap { $0.strictStringValue?.trimmedForModelPlan.nonEmpty }
+    return values.count == array.count ? values : nil
   }
 
   private static func csvValues(_ value: String) -> [String] {
