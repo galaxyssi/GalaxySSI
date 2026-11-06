@@ -4,6 +4,16 @@ import CryptoKit
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testDesktopReceiptRecoverySkipsCancelledOrMissingAgentSessions() {
+    XCTAssertFalse(AgentDesktopReplyDiscoveryPolicy.mayRecover(
+      conversationID: "ios-agent-deleted", savedSessionExists: false, taskCancelled: false))
+    XCTAssertFalse(AgentDesktopReplyDiscoveryPolicy.mayRecover(
+      conversationID: "ios-agent-current", savedSessionExists: true, taskCancelled: true))
+    XCTAssertTrue(AgentDesktopReplyDiscoveryPolicy.mayRecover(
+      conversationID: "ios-agent-current", savedSessionExists: true, taskCancelled: false))
+    XCTAssertTrue(AgentDesktopReplyDiscoveryPolicy.mayRecover(
+      conversationID: "direct-contact", savedSessionExists: false, taskCancelled: false))
+  }
   @MainActor
   func testCodexRetryClaimSurvivesRelaunchAndRetiresOnlyExactOldIdentity() throws {
     let name = "codex-retry-\(UUID())"

@@ -2,6 +2,41 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentIOSCognitionSchedulePolicyTests: XCTestCase {
+  func testCognitionRecoveryPersistsExponentialDelayAndStopsAtTen() throws {
+    var state = AgentIOSCognitionRecoveryState()
+    let now: Int64 = 100_000
+    state.recordFailure(nowMillis: now)
+    XCTAssertEqual(state.delay(nowMillis: now), 30)
+    state.recordFailure(nowMillis: now + 30_000)
+    XCTAssertEqual(state.delay(nowMillis: now + 30_000), 60)
+    for _ in 0..<7 { state.recordFailure(nowMillis: now + 90_000) }
+    let restored = try JSONDecoder().decode(AgentIOSCognitionRecoveryState.self, from: JSONEncoder().encode(state))
+    XCTAssertEqual(restored.failures, 9)
+    XCTAssertEqual(restored.firstFailureAtMillis, now)
+    XCTAssertEqual(restored.delay(nowMillis: now + 90_000), 1_800)
+    state.recordFailure(nowMillis: now + 1_890_000)
+    XCTAssertTrue(state.stopped)
+    XCTAssertNil(state.delay(nowMillis: now + 1_890_000))
+    state.recordFailure(nowMillis: now + 2_000_000)
+    XCTAssertEqual(state.failures, 10)
+  }
+
+  @MainActor
+  func testResearchCycleDoesNotDispatchOrOverwriteCorruptState() throws {
+    let name = "cognition-recovery-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let corrupt = Data("invalid research snapshot".utf8)
+    try corrupt.write(to: file)
+    let store = GalaxySSIStore(defaults: defaults, secrets: InMemorySecretStore())
+    let cycle = GalaxySSIGlobalAgentRuntimeBridge.processResearchCycle(
+      store: store, stateStore: GalaxySSIGlobalResearchRuntimeStore(fileURL: file))
+    XCTAssertEqual(cycle.persistenceFailed, true)
+    XCTAssertTrue(cycle.dispatchRequests.isEmpty)
+    XCTAssertEqual(try Data(contentsOf: file), corrupt)
+  }
   func testDeviceLoadUsesNativeThermalAndBatteryThresholds() {
     func sample(_ thermal: ProcessInfo.ThermalState, _ battery: Int? = nil,
                 powered: Bool = false, lowPower: Bool = false) -> AgentIOSBackgroundLoad {

@@ -94,13 +94,16 @@ final class GalaxySSIGlobalProactiveDiscoveryRuntimeStore {
 struct GalaxySSIGlobalResearchCycleResult: Codable, Equatable {
   var result: GlobalResearchExecutionResult?
   var dispatchRequests: [GlobalResearchDispatchRequest]
+  var persistenceFailed: Bool?
 
   init(
     result: GlobalResearchExecutionResult? = nil,
-    dispatchRequests: [GlobalResearchDispatchRequest] = []
+    dispatchRequests: [GlobalResearchDispatchRequest] = [],
+    persistenceFailed: Bool? = nil
   ) {
     self.result = result
     self.dispatchRequests = dispatchRequests
+    self.persistenceFailed = persistenceFailed
   }
 }
 
@@ -148,11 +151,11 @@ final class GalaxySSIGlobalResearchRuntimeStore {
 
   private func load() -> GlobalResearchExecutorState {
     guard fileManager.fileExists(atPath: fileURL.path) else {
+      lastErrorDescription = ""
       return GlobalResearchExecutorState()
     }
     do {
       let data = try Data(contentsOf: fileURL)
-      guard !data.isEmpty else { return GlobalResearchExecutorState() }
       let snapshot = try JSONDecoder().decode(Snapshot.self, from: data)
       guard snapshot.formatVersion == formatVersion else {
         lastErrorDescription = "Unsupported global research store format"
@@ -676,13 +679,14 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
   @discardableResult
   static func processResearchCycle(
     store: GalaxySSIStore,
-    nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
+    nowMillis: Int64 = GlobalRealtimeClock.nowMillis(),
+    stateStore: GalaxySSIGlobalResearchRuntimeStore = GalaxySSIGlobalResearchRuntimeStore()
   ) -> GalaxySSIGlobalResearchCycleResult {
     guard store.globalAgentSettings.enabled, store.globalAgentSettings.autonomousResearchEnabled else {
       return GalaxySSIGlobalResearchCycleResult()
     }
-    let stateStore = GalaxySSIGlobalResearchRuntimeStore()
     let persisted = stateStore.state()
+    guard stateStore.lastErrorDescription.isEmpty else { return .init(persistenceFailed: true) }
     var state = persisted
     seedResearchTasks(from: GlobalAgentDeliberationStore().cognitionTasks(), into: &state, nowMillis: nowMillis)
     let existingDispatchIds = Set(state.dispatchRequests.map(\.id))
@@ -703,10 +707,12 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
       nowMillis: nowMillis
     ) else {
       if state != persisted { stateStore.save(state) }
+      guard stateStore.lastErrorDescription.isEmpty else { return .init(persistenceFailed: true) }
       store.appendGlobalProactiveMessages(state.proactiveMessages)
       return GalaxySSIGlobalResearchCycleResult()
     }
     stateStore.save(step.state)
+    guard stateStore.lastErrorDescription.isEmpty else { return .init(persistenceFailed: true) }
     store.appendGlobalProactiveMessages(step.state.proactiveMessages)
     let requests = step.state.dispatchRequests.filter { !existingDispatchIds.contains($0.id) }
     return GalaxySSIGlobalResearchCycleResult(

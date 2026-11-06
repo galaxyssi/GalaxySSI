@@ -149,12 +149,30 @@ enum GlobalMemoryEvolutionPolicyError: Error, Equatable {
 }
 
 enum GlobalMemorySupersessionPolicy {
+  static func restoreTruncatedForwardLinks(_ world: PersonalWorldModel) -> PersonalWorldModel {
+    let report = inspect(world: world)
+    guard !report.isSafe, report.violations.allSatisfy({ $0.hasPrefix("missing_forward:") }) else { return world }
+    var indexByID: [String: Int] = [:]
+    for (index, item) in world.items.enumerated() {
+      guard indexByID.updateValue(index, forKey: item.id) == nil else { return world }
+    }
+    var repaired = world
+    for previous in world.items where !previous.supersededByItemId.isEmpty {
+      guard let index = indexByID[previous.supersededByItemId] else { return world }
+      let successor = repaired.items[index]
+      guard !successor.supersedesItemIds.contains(previous.id) else { continue }
+      guard previous.status == .superseded, GlobalMemoryNamespacePolicy.same(previous, successor) else { return world }
+      repaired.items[index].supersedesItemIds.append(previous.id)
+    }
+    return inspect(world: repaired).isSafe ? repaired : world
+  }
+
   static func inspect(world: PersonalWorldModel) -> GlobalMemorySupersessionIntegrityReport {
     let byId = world.items.reduce(into: [String: GlobalWorldItem]()) { result, item in
       result[item.id] = item
     }
     let graphEdges = edges(world: world)
-    var violations: [String] = []
+    var violations: [String] = byId.count == world.items.count ? [] : ["duplicate_item_id"]
 
     for replacement in world.items {
       for previousId in GlobalMemoryEvolutionPolicy.uniqueStrings(replacement.supersedesItemIds).filter({ !$0.isEmpty }) {
@@ -342,6 +360,7 @@ enum GlobalMemoryEvolutionPolicy {
     candidateId: String,
     nowMillis: Int64 = GlobalMemoryClock.nowMillis()
   ) -> (world: PersonalWorldModel, inbox: GlobalMemoryInbox) {
+    let world = GlobalMemorySupersessionPolicy.restoreTruncatedForwardLinks(world)
     guard let candidate = inbox.candidates.first(where: {
       $0.id == candidateId && [.pendingReview, .conflicted].contains($0.status)
     }) else {
@@ -387,7 +406,7 @@ enum GlobalMemoryEvolutionPolicy {
         .prefix(maxEvolutionTargets)
 
       var incoming = incomingBase
-      incoming.supersedesItemIds = Array(uniqueStrings(incoming.supersedesItemIds + Array(supersededItemIds)).suffix(maxEvolutionTargets))
+      incoming.supersedesItemIds = uniqueStrings(incoming.supersedesItemIds + Array(supersededItemIds))
       replaced = world.items
         .map { existing -> GlobalWorldItem in
           if incoming.supersedesItemIds.contains(existing.id) {

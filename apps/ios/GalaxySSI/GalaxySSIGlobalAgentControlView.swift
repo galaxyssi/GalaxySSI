@@ -781,8 +781,12 @@ struct GalaxySSIGlobalAgentControlView: View {
       await coordinator.runAutomationSchedulerCycle()
     }
     Task { @MainActor in
-      _ = await coordinator.runBackgroundCognition(.explicit)
+      let completed = await coordinator.runBackgroundCognition(.explicit)
       refreshRuntime()
+      guard completed else {
+        statusMessage = t("cognition_recovery_incomplete", "Background processing did not complete.")
+        return
+      }
       statusMessage = String(
         format: t("cc_global_processed_result", "Processed %d events"),
         queued

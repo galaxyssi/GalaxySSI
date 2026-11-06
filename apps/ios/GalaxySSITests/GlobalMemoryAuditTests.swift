@@ -2,6 +2,16 @@ import XCTest
 @testable import GalaxySSI
 
 final class GlobalMemoryAuditTests: XCTestCase {
+  func testConsolidationKeepsEveryPredecessorBeyondFormerLimit() throws {
+    let items = (1...20).map { index in
+      auditItem("duplicate-\(index)", topic: "Public test topic", value: "The current route uses a local model",
+        lastSeenAtMillis: Int64(index))
+    }
+    let result = GlobalMemoryCritic.audit(world: PersonalWorldModel(items: items), inbox: GlobalMemoryInbox())
+    let winner = try XCTUnwrap(result.world.items.first { $0.id == "duplicate-20" })
+    XCTAssertEqual(Set(winner.supersedesItemIds), Set(items.dropLast().map(\.id)))
+    XCTAssertTrue(GlobalMemorySupersessionPolicy.inspect(world: result.world).isSafe)
+  }
   func testGlobalMemoryCriticRetiresExpiredAndReportsOperationalFindings() {
     let day: Int64 = 24 * 60 * 60 * 1_000
     let expired = auditItem(

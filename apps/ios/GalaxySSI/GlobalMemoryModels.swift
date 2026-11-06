@@ -269,6 +269,16 @@ struct PersonalWorldModel: Codable, Equatable {
     self.updatedAtMillis = max(updatedAtMillis, 0)
   }
 
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(items: try container.decode([GlobalWorldItem].self, forKey: .items),
+      links: try container.decode([GlobalConversationLink].self, forKey: .links),
+      processedEventIds: try container.decode([String].self, forKey: .processedEventIds),
+      retractedEventIds: try container.decode([String].self, forKey: .retractedEventIds),
+      updatedAtMillis: try container.decode(Int64.self, forKey: .updatedAtMillis))
+    self = GlobalMemorySupersessionPolicy.restoreTruncatedForwardLinks(self)
+  }
+
   func hasRetractedEvidence(_ eventIds: Set<String>) -> Bool {
     !eventIds.isDisjoint(with: Set(retractedEventIds))
   }

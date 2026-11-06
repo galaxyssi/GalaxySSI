@@ -1106,13 +1106,18 @@ final class MessageCoordinator: ObservableObject {
 
   @discardableResult
   func runGlobalResearchCycle(
-    nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
+    nowMillis: Int64 = GlobalRealtimeClock.nowMillis(),
+    onPersistenceFailure: () -> Void = {}
   ) async -> Int {
     guard !Task.isCancelled, store.globalAgentSettings.enabled else { return 0 }
     let cycle = GalaxySSIGlobalAgentRuntimeBridge.processResearchCycle(
       store: store,
       nowMillis: nowMillis
     )
+    if cycle.persistenceFailed == true {
+      onPersistenceFailure()
+      return 0
+    }
     var dispatched = 0
     for request in cycle.dispatchRequests {
       guard !Task.isCancelled, store.globalAgentSettings.enabled else { break }
@@ -2451,6 +2456,8 @@ final class MessageCoordinator: ObservableObject {
 
   private func currentDesktopReplySource(_ binding: AgentDesktopReplyBinding) -> ChatMessage? {
     guard binding.managedSource == nil, binding.teamSource == nil else { return nil }
+    guard mayRecoverSavedDesktopSource(conversation: binding.identity.conversationId,
+      turn: binding.identity.turnId, sourceID: binding.sourceId.uuidString) else { return nil }
     guard let source = store.persistedMessage(id: binding.sourceId, contactId: binding.displayContactId),
           source.isMine, source.conversationId == binding.identity.conversationId,
           source.turnId.ifBlank(source.id.uuidString) == binding.identity.turnId,
@@ -2468,6 +2475,8 @@ final class MessageCoordinator: ObservableObject {
 
   private func currentManagedDesktopReply(_ binding: AgentDesktopReplyBinding) -> AgentManagedResponseRecord? {
     guard let managed = binding.managedSource,
+          mayRecoverSavedDesktopSource(conversation: binding.identity.conversationId,
+            turn: binding.identity.turnId, sourceID: binding.sourceId.uuidString),
           let record = try? managedDesktopReplyLedger.recoveryRecord(owner: managed.ownerRunId),
           record.sourceMessageId == managed.sourceMessageId, record.executionGeneration == managed.executionGeneration,
           record.contactId == binding.contactId, record.conversationId == binding.identity.conversationId,
@@ -2486,6 +2495,16 @@ final class MessageCoordinator: ObservableObject {
           (try? managedDesktopReplyLedger.ownsResponse(probe)) == true else { return nil }
     if let task = store.agentTask(id: record.turnId), [.cancelled, .failed].contains(task.phase) { return nil }
     return record
+  }
+
+  private func mayRecoverSavedDesktopSource(conversation: String, turn: String, sourceID: String) -> Bool {
+    let cancelled = [turn, sourceID].contains { key in
+      guard let task = store.agentTask(id: key), task.sessionId == conversation else { return false }
+      return task.phase == .cancelled
+    }
+    let exists = !conversation.hasPrefix("ios-agent-") || store.agentSession(id: conversation) != nil
+    return AgentDesktopReplyDiscoveryPolicy.mayRecover(conversationID: conversation,
+      savedSessionExists: exists, taskCancelled: cancelled)
   }
 
   private func desktopRecoveryBindingIsCurrent(_ binding: AgentDesktopReplyBinding) -> Bool {
@@ -3124,6 +3143,9 @@ final class MessageCoordinator: ObservableObject {
       for source in page.messages where AgentDesktopReplyDiscoveryPolicy.mayOwn(source) {
         await Task.yield()
         try checkDesktopDiscoveryScope()
+        let turn = source.turnId.ifBlank(source.id.uuidString)
+        guard mayRecoverSavedDesktopSource(conversation: source.conversationId, turn: turn, sourceID: source.id.uuidString)
+        else { continue }
         let candidates = store.visibleContacts.compactMap { contact -> (GalaxySSIContact, AgentTaskIdentity)? in
           guard AgentDesktopReplyDiscoveryPolicy.isDesktopEndpoint(contact),
                 let identity = taskIdentityStore.identity(contactId: contact.id, sourceMessageId: source.id.uuidString)
@@ -3131,7 +3153,6 @@ final class MessageCoordinator: ObservableObject {
           return (contact, identity)
         }
         guard !candidates.isEmpty else { continue }
-        let turn = source.turnId.ifBlank(source.id.uuidString)
         func hasActiveTask() -> Bool {
           [turn, source.id.uuidString].compactMap { store.agentTask(id: $0) }.contains {
             $0.sessionId == source.conversationId && AgentScreenAnalysisCancellationPolicy.activePhases.contains($0.phase)

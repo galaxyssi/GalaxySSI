@@ -9,7 +9,7 @@ private let agentIOSCognitionLogger = Logger(
   category: "cognition"
 )
 
-enum AgentIOSCognitionWorkMode: Equatable {
+enum AgentIOSCognitionWorkMode: String, CaseIterable {
   case event
   case foreground
   case scheduled
@@ -17,6 +17,27 @@ enum AgentIOSCognitionWorkMode: Equatable {
   case projection
 
   var usesBackgroundLoadPolicy: Bool { self != .explicit && self != .projection }
+}
+
+struct AgentIOSCognitionRecoveryState: Codable, Equatable {
+  static let failureLimit = 10
+  private(set) var failures = 0
+  private(set) var firstFailureAtMillis: Int64 = 0
+  private(set) var retryAtMillis: Int64 = 0
+
+  var stopped: Bool { failures >= Self.failureLimit }
+
+  mutating func recordFailure(nowMillis: Int64) {
+    guard !stopped else { return }
+    if failures == 0 { firstFailureAtMillis = nowMillis }
+    failures += 1
+    let delay = min(Int64(30_000) << min(failures - 1, 6), 30 * 60 * 1_000)
+    retryAtMillis = nowMillis + delay
+  }
+
+  func delay(nowMillis: Int64) -> TimeInterval? {
+    stopped ? nil : Double(max(0, retryAtMillis - nowMillis)) / 1_000
+  }
 }
 
 struct AgentIOSCognitionWorkPlan: Equatable {
@@ -73,7 +94,7 @@ final class AgentIOSBackgroundCognitionScheduler {
   private weak var coordinator: MessageCoordinator?
   private var registered = false
   private var settingsObservation: AnyCancellable?
-  private var learningWork: (id: UUID, task: Task<Bool, Never>)?
+  private var learningWork: (id: UUID, mode: AgentIOSCognitionWorkMode, task: Task<Bool, Never>)?
   private var automaticWake = AgentIOSAutomaticCognitionWake()
   private var retryWork: Task<Void, Never>?
   private var retryAt: TimeInterval?
@@ -127,7 +148,12 @@ final class AgentIOSBackgroundCognitionScheduler {
 
   private func scheduleBackgroundWake(after delay: TimeInterval) {
     guard registered, store.globalAgentSettings.enabled else { return }
-    let date = Date(timeIntervalSinceNow: max(1, delay))
+    guard let recoveryDelay = recovery(for: .scheduled).delay(nowMillis: GlobalRealtimeClock.nowMillis()) else {
+      BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.taskIdentifier)
+      backgroundWakeAt = nil
+      return
+    }
+    let date = Date(timeIntervalSinceNow: max(1, max(delay, recoveryDelay)))
     if let backgroundWakeAt, backgroundWakeAt <= date { return }
     let request = BGAppRefreshTaskRequest(identifier: Self.taskIdentifier)
     request.earliestBeginDate = date
@@ -141,7 +167,7 @@ final class AgentIOSBackgroundCognitionScheduler {
   }
 
   func requestForegroundCycle() {
-    guard store.globalAgentSettings.enabled else { return }
+    guard store.globalAgentSettings.enabled, !recovery(for: .foreground).stopped else { return }
     automaticWake.request(.foreground)
     _ = drainAutomaticWake()
   }
@@ -149,7 +175,11 @@ final class AgentIOSBackgroundCognitionScheduler {
   func run(_ mode: AgentIOSCognitionWorkMode) async -> Bool {
     guard !Task.isCancelled, AgentIOSCognitionSchedulePolicy.allows(mode, learningEnabled: store.globalAgentSettings.enabled)
     else { return false }
-    if mode == .projection { return await perform(mode) }
+    if mode == .projection {
+      while let running = learningWork, !Task.isCancelled { _ = await running.task.value }
+      guard !Task.isCancelled else { return false }
+    }
+    if mode.usesBackgroundLoadPolicy && recovery(for: mode).stopped { return true }
     let task: Task<Bool, Never>?
     if mode.usesBackgroundLoadPolicy {
       automaticWake.request(mode)
@@ -166,9 +196,13 @@ final class AgentIOSBackgroundCognitionScheduler {
   }
 
   private func drainAutomaticWake(allowInBackground: Bool = false) -> Task<Bool, Never>? {
-    guard store.globalAgentSettings.enabled, automaticWake.pending != nil, learningWork == nil else { return nil }
+    guard store.globalAgentSettings.enabled, let pending = automaticWake.pending, learningWork == nil else { return nil }
+    guard let recoveryDelay = recovery(for: pending).delay(nowMillis: GlobalRealtimeClock.nowMillis()) else {
+      automaticWake.clear()
+      return nil
+    }
     let now = ProcessInfo.processInfo.systemUptime
-    let delay = automaticWake.delay(now: now, load: .current())
+    let delay = max(recoveryDelay, automaticWake.delay(now: now, load: .current()))
     let foreground = UIApplication.shared.applicationState == .active
     guard delay == 0, foreground || allowInBackground else {
       scheduleBackgroundWake(after: delay)
@@ -198,7 +232,11 @@ final class AgentIOSBackgroundCognitionScheduler {
   }
 
   private func startLearning(_ mode: AgentIOSCognitionWorkMode) -> Task<Bool, Never>? {
-    guard learningWork == nil, store.globalAgentSettings.enabled else { return nil }
+    guard learningWork == nil, AgentIOSCognitionSchedulePolicy.allows(mode, learningEnabled: store.globalAgentSettings.enabled)
+    else { return nil }
+    if mode == .explicit {
+      for mode in AgentIOSCognitionWorkMode.allCases { UserDefaults.standard.removeObject(forKey: recoveryKey(mode)) }
+    }
     let id = UUID()
     let task = Task { @MainActor [weak self] in
       guard let self else { return false }
@@ -210,12 +248,12 @@ final class AgentIOSBackgroundCognitionScheduler {
       }
       return await self.perform(mode)
     }
-    learningWork = (id, task)
+    learningWork = (id, mode, task)
     return task
   }
 
   private func cancelLearning() {
-    learningWork?.task.cancel()
+    if learningWork?.mode != .projection { learningWork?.task.cancel() }
     automaticWake.clear()
     retryWork?.cancel()
     retryWork = nil
@@ -226,6 +264,35 @@ final class AgentIOSBackgroundCognitionScheduler {
 
   private func mayContinue(_ mode: AgentIOSCognitionWorkMode) -> Bool {
     !Task.isCancelled && AgentIOSCognitionSchedulePolicy.allows(mode, learningEnabled: store.globalAgentSettings.enabled)
+  }
+
+  private func recoveryKey(_ mode: AgentIOSCognitionWorkMode) -> String {
+    "ios.cognition.recovery.\(store.profile.identityFingerprint).\(mode.rawValue)"
+  }
+
+  private func recovery(for mode: AgentIOSCognitionWorkMode) -> AgentIOSCognitionRecoveryState {
+    guard let data = UserDefaults.standard.data(forKey: recoveryKey(mode)),
+          let state = try? JSONDecoder().decode(AgentIOSCognitionRecoveryState.self, from: data),
+          (0...AgentIOSCognitionRecoveryState.failureLimit).contains(state.failures),
+          state.retryAtMillis >= 0, state.firstFailureAtMillis >= 0 else { return .init() }
+    return state
+  }
+
+  private func recordPersistenceFailure(_ mode: AgentIOSCognitionWorkMode) {
+    guard mode.usesBackgroundLoadPolicy, !Task.isCancelled else { return }
+    var state = recovery(for: mode)
+    guard !state.stopped else { return }
+    state.recordFailure(nowMillis: GlobalRealtimeClock.nowMillis())
+    guard let data = try? JSONEncoder().encode(state) else { return }
+    UserDefaults.standard.set(data, forKey: recoveryKey(mode))
+    if state.stopped {
+      let body = GalaxySSILocalization.string("cognition_recovery_stopped",
+        fallback: "Background research paused after repeated storage failures. Use Process now to retry.")
+      let id = "cognition-recovery:\(mode.rawValue):\(state.firstFailureAtMillis)"
+      NotificationService.notify(title: "GalaxySSI", body: body, identifier: id, threadIdentifier: "cognition")
+    } else {
+      automaticWake.request(mode)
+    }
   }
 
   private func shouldDefer(_ mode: AgentIOSCognitionWorkMode) -> Bool {
@@ -269,7 +336,15 @@ final class AgentIOSBackgroundCognitionScheduler {
         _ = await coordinator.runGlobalAutonomousCycle()
         guard mayContinue(mode) else { return false }
         if shouldDefer(mode) { return true }
-        _ = await coordinator.runGlobalResearchCycle()
+        var persistenceFailed = false
+        _ = await coordinator.runGlobalResearchCycle(onPersistenceFailure: { persistenceFailed = true })
+        guard mayContinue(mode) else { return false }
+        if persistenceFailed {
+          recordPersistenceFailure(mode)
+          scheduleDynamic()
+          // The persisted retry schedule is authoritative; don't ask iOS for a competing retry.
+          return mode.usesBackgroundLoadPolicy
+        }
       }
       guard mayContinue(mode) else { return false }
       _ = store.deliverPendingGlobalProactiveMessages()
@@ -281,6 +356,9 @@ final class AgentIOSBackgroundCognitionScheduler {
         appStore: store,
         maximumWrites: mode == .projection ? 32 : 12
       )
+    }
+    if plan.runBatchCognition && mayContinue(mode) {
+      UserDefaults.standard.removeObject(forKey: recoveryKey(mode))
     }
     if mode != .projection { scheduleDynamic() }
     let completed = !Task.isCancelled

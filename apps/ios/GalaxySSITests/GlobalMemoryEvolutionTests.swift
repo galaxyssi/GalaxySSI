@@ -2,6 +2,25 @@ import XCTest
 @testable import GalaxySSI
 
 final class GlobalMemoryEvolutionTests: XCTestCase {
+  func testDecodingRepairsOnlyVerifiedMissingForwardLinks() throws {
+    let previous = (0..<18).map { index in
+      evolutionItem("old-\(index)", status: .superseded, temporalState: .deprecated, supersededByItemId: "new")
+    }
+    let successor = evolutionItem("new", supersedesItemIds: previous.suffix(12).map(\.id))
+    let truncated = PersonalWorldModel(items: previous + [successor])
+    XCTAssertFalse(GlobalMemorySupersessionPolicy.inspect(world: truncated).isSafe)
+    let repaired = try JSONDecoder().decode(PersonalWorldModel.self, from: JSONEncoder().encode(truncated))
+    XCTAssertTrue(GlobalMemorySupersessionPolicy.inspect(world: repaired).isSafe)
+    XCTAssertEqual(Set(repaired.items.last?.supersedesItemIds ?? []), Set(previous.map(\.id)))
+    XCTAssertEqual(GlobalMemorySupersessionPolicy.restoreTruncatedForwardLinks(repaired), repaired)
+
+    var crossScope = truncated
+    crossScope.items[0].namespaceId = "another-scope"
+    XCTAssertEqual(GlobalMemorySupersessionPolicy.restoreTruncatedForwardLinks(crossScope), crossScope)
+    var duplicate = truncated
+    duplicate.items.append(previous[0])
+    XCTAssertEqual(GlobalMemorySupersessionPolicy.restoreTruncatedForwardLinks(duplicate), duplicate)
+  }
   func testGlobalMemorySupersessionPolicyInspectsAndTracesSafeChains() throws {
     let old = evolutionItem(
       "old",

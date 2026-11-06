@@ -114,6 +114,7 @@ enum GlobalMemoryCritic {
     inbox: GlobalMemoryInbox,
     nowMillis: Int64 = GlobalMemoryClock.nowMillis()
   ) -> (world: PersonalWorldModel, report: GlobalMemoryAuditReport) {
+    let world = GlobalMemorySupersessionPolicy.restoreTruncatedForwardLinks(world)
     var findings: [GlobalMemoryAuditFinding] = []
     var items = world.items.map { item -> GlobalWorldItem in
       var updated = item
@@ -225,9 +226,7 @@ enum GlobalMemoryCritic {
         if !GlobalMemoryEvolutionPolicy.equivalentAssertion(currentPrimary, duplicate) { continue }
 
         var merged = GlobalMemoryEvolutionPolicy.strengthened(existing: currentPrimary, incoming: duplicate)
-        merged.supersedesItemIds = Array(
-          GlobalMemoryEvolutionPolicy.uniqueStrings(currentPrimary.supersedesItemIds + [duplicate.id]).suffix(maxSupersessionTargets)
-        )
+        merged.supersedesItemIds = GlobalMemoryEvolutionPolicy.uniqueStrings(currentPrimary.supersedesItemIds + [duplicate.id])
         items[primaryIndex] = merged
 
         var superseded = duplicate
@@ -323,7 +322,6 @@ enum GlobalMemoryCritic {
   private static let minThemeItems = 3
   private static let minThemeConversations = 2
   private static let maxThemes = 80
-  private static let maxSupersessionTargets = 12
 }
 
 private extension GlobalWorldItem {
