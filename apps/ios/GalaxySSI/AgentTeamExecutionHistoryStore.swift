@@ -328,6 +328,20 @@ final class AgentTeamExecutionHistoryStore {
     try access { try $0.recoveryPage(after: after, limit: limit) }
   }
 
+  func cancelRecoveryForMissingScope(expected: AgentTeamExecutionSnapshot, now: Int64) throws -> AgentTeamExecutionSnapshot? {
+    let stopped = try access { database -> AgentTeamExecutionSnapshot? in
+      guard var current = try database.snapshots(runId: expected.supervisorRunId).first,
+            current == expected, !current.state.deliverable else { return nil }
+      current.state = .cancelled
+      current.updatedAtMillis = max(current.updatedAtMillis, now)
+      current.executionEndedAtMillis = now
+      try database.put(current)
+      return current
+    }
+    if let stopped { notify(stopped.supervisorRunId) }
+    return stopped
+  }
+
   func pendingPublicationRecoveryPage(after: String) throws -> (owners: [AgentTeamReplyOwner], next: String?) {
     try access { database in
       let page = try database.publicationRecoveryPage(after: after)

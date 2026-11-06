@@ -110,6 +110,19 @@ final class AgentConversationDatabase {
     }
   }
 
+  func confirmsAbsent(_ conversationId: String) -> Bool {
+    locked {
+      guard let statement = prepare("""
+        SELECT 1 FROM agent_conversations WHERE conversation_id = ?
+        UNION ALL SELECT 1 FROM agent_conversation_drafts WHERE conversation_id = ? LIMIT 1
+        """) else { return false }
+      defer { sqlite3_finalize(statement) }
+      bind(conversationId, at: 1, to: statement)
+      bind(conversationId, at: 2, to: statement)
+      return sqlite3_step(statement) == SQLITE_DONE
+    }
+  }
+
   @discardableResult
   func deleteDraft(_ conversationId: String) -> Bool {
     locked {

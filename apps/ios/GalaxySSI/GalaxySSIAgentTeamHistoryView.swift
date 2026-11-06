@@ -509,6 +509,7 @@ struct GalaxySSIAgentTeamSummaryRow: View {
 struct GalaxySSIAgentTeamDetailView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: GalaxySSIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   var snapshot: AgentTeamExecutionSnapshot
   @State private var messageDraft = ""
   @State private var selectedInstanceId = ""
@@ -516,6 +517,7 @@ struct GalaxySSIAgentTeamDetailView: View {
   @State private var recentMessages: [AgentTeamMessageEnvelope] = []
   @State private var mailboxLoadFailed = false
   @State private var mailboxRevision = 0
+  @State private var recoveryRetry = AgentTeamRecoveryRetryState()
 
   private var canReadMailbox: Bool {
     guard let session = store.agentSession(id: snapshot.conversationId), session.id == snapshot.conversationId,
@@ -544,6 +546,21 @@ struct GalaxySSIAgentTeamDetailView: View {
             badge: GalaxySSIAgentTeamPresentation.stateLabel(snapshot.state, language: interfaceLanguage)
           )
           overview
+          if recoveryRetry.stalled {
+            let removed = recoveryRetry.scopeMissing
+            Text(removed
+              ? t("galaxyssi.team.recovery.scope_removed", "The original collaboration group is no longer available.")
+              : t("galaxyssi.team.recovery.stalled", "Automatic team result recovery paused after repeated failures."))
+              .font(.footnote)
+              .foregroundColor(.secondary)
+            if !removed && canResumeRecovery {
+              Button {
+                _ = coordinator.resumeTeamResultRecovery(runID: snapshot.supervisorRunId)
+              } label: {
+                Label(t("galaxyssi.team.recovery.resume", "Resume result recovery"), systemImage: "arrow.clockwise")
+              }
+            }
+          }
           membersSection
           if canReadMailbox { recentMessagesSection }
           if !snapshot.state.isTerminal {
@@ -564,9 +581,22 @@ struct GalaxySSIAgentTeamDetailView: View {
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
     .task(id: mailboxRevision) { await loadRecentMessages() }
+    .onAppear(perform: refreshRecoveryRetry)
+    .onReceive(NotificationCenter.default.publisher(for: AgentTeamRecoveryRetryLedger.changed)) { _ in
+      refreshRecoveryRetry()
+    }
     .onChange(of: canReadMailbox) { _ in recentMessages = []; mailboxRevision &+= 1 }
     .onChange(of: store.profile.identityFingerprint) { _ in recentMessages = []; mailboxRevision &+= 1 }
     .onChange(of: snapshot.supervisorRunId) { _ in recentMessages = []; mailboxRevision &+= 1 }
+  }
+
+  private func refreshRecoveryRetry() {
+    recoveryRetry = coordinator.teamRecoveryRetryState(runID: snapshot.supervisorRunId)
+  }
+
+  private var canResumeRecovery: Bool {
+    guard let session = store.agentSession(id: snapshot.conversationId) else { return false }
+    return !session.privateMode && !session.trackingPaused && session.mergedIntoConversationId.isBlank
   }
 
   @ViewBuilder private var recentMessagesSection: some View {
