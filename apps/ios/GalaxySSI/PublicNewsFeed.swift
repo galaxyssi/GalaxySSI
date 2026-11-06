@@ -80,6 +80,28 @@ struct PublicNewsReadDwell {
   }
 }
 
+struct PublicNewsExpansionDwell {
+  private var previousOffset: CGPoint?
+
+  mutating func reset() { previousOffset = nil }
+
+  mutating func shouldCollapse(offset: CGPoint, moving: Bool, expandedFrame: CGRect?,
+                               viewportHeight: CGFloat, anchorFrame: CGRect?) -> Bool {
+    guard !moving, viewportHeight > 0, let anchorFrame,
+          anchorFrame.maxY > 0, anchorFrame.minY < viewportHeight else {
+      reset()
+      return false
+    }
+    let settled = previousOffset == offset
+    previousOffset = offset
+    guard settled else { return false }
+    // Lazy stacks may already have removed a fully offscreen row's frame.
+    guard let expandedFrame else { return true }
+    guard expandedFrame.height > 0 else { return false }
+    return expandedFrame.maxY <= 0 || expandedFrame.minY >= viewportHeight
+  }
+}
+
 struct PublicNewsPageWindow {
   static let pageSize = 40
   private(set) var range = 0..<0

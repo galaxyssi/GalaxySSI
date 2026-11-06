@@ -149,11 +149,13 @@ struct GalaxySSIPublicNewsView: View {
     return timeline.visibleIDs[pageWindow.clamped(to: timeline.visibleIDs.count)].compactMap { byID[$0] }
   }
 
-  private var canTrackReading: Bool {
-    scenePhase == .active && didRestoreTimeline && scrollRequest == nil && (archive.reminderUnreadCount ?? 0) > 0 &&
+  private var timelineIsInteractive: Bool {
+    scenePhase == .active && didRestoreTimeline && archive.loaded && scrollRequest == nil &&
       !showFeedMenu && !showNewsSettings && !showSearch && !showHighlights &&
       !showBacklog && !showScience && !showHeadlineTranslation && selected == nil
   }
+
+  private var canTrackReading: Bool { timelineIsInteractive && (archive.reminderUnreadCount ?? 0) > 0 }
 
   var body: some View {
     let pageBackground = Color.galaxySSIPageBackground
@@ -339,6 +341,10 @@ struct GalaxySSIPublicNewsView: View {
           guard canTrackReading else { return }
           await trackReading()
         }
+        .task(id: timelineIsInteractive ? expandedHeadline?.id : nil) {
+          guard timelineIsInteractive, let id = expandedHeadline?.id else { return }
+          await collapseAfterScrolling(id)
+        }
         .overlay(alignment: .top) {
           if visibleArticles.isEmpty && (!archive.loaded && !archive.storageFailed || archive.refreshing) {
             ProgressView().padding()
@@ -441,6 +447,30 @@ struct GalaxySSIPublicNewsView: View {
       let ready = dwell.sample(idle ? visible : [], now: ProcessInfo.processInfo.systemUptime)
       if !ready.isEmpty { archive.markRead(ready) }
       if unread.isEmpty { return }
+    }
+  }
+
+  private func collapseAfterScrolling(_ id: String) async {
+    var dwell = PublicNewsExpansionDwell()
+    while !Task.isCancelled {
+      try? await Task.sleep(nanoseconds: 160_000_000)
+      guard !Task.isCancelled, timelineIsInteractive, expandedHeadline?.id == id else { return }
+      guard let scroll = scrollAccess.scrollView, scroll.window != nil else {
+        dwell.reset()
+        continue
+      }
+      let height = scroll.bounds.height
+      let frames = scrollAccess.frames
+      let anchor = topRow(frames, height: height)
+      let moving = scroll.isTracking || scroll.isDragging || scroll.isDecelerating
+      if dwell.shouldCollapse(offset: scroll.contentOffset, moving: moving,
+        expandedFrame: frames[id], viewportHeight: height, anchorFrame: anchor?.frame), let anchor {
+        // A row above the viewport may shrink considerably; restore the same point in the visible row.
+        scrollRequest = .init(id: anchor.id, offset: -anchor.frame.minY, forceProxy: true)
+        expandedKey = ""
+        expandedHeadline = nil
+        return
+      }
     }
   }
 
