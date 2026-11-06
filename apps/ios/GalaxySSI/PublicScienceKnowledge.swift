@@ -67,6 +67,11 @@ enum PublicScienceError: Error { case invalidSource, unavailable, tooLarge, unre
 
 enum PublicScienceTransport {
   static func fetch(_ url: URL, limit: Int) async throws -> Data {
+    let resource = try await fetchResource(url, limit: limit)
+    return resource.body
+  }
+
+  static func fetchResource(_ url: URL, limit: Int) async throws -> (body: Data, contentType: String) {
     guard PublicScienceSource.safe(url) else { throw PublicScienceError.invalidSource }
     let config = URLSessionConfiguration.ephemeral
     config.httpShouldSetCookies = false
@@ -84,7 +89,7 @@ enum PublicScienceTransport {
       body.append(byte)
     }
     try Task.checkCancellation()
-    return body
+    return (body, http.value(forHTTPHeaderField: "Content-Type") ?? "")
   }
 
   private final class NoRedirects: NSObject, URLSessionTaskDelegate {
