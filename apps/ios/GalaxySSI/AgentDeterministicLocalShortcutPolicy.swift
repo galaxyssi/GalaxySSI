@@ -104,6 +104,52 @@ enum AgentDeterministicLocalShortcutPolicy {
   }
 }
 
+enum AgentInstalledAppLaunchPolicy {
+  struct Target: Equatable {
+    let name: String
+    let explicitlyLocal: Bool
+    let appMarker: Bool
+  }
+
+  private static let phone = "(?:\\u624b[\\u673a\\u6a5f]|\\u672c[\\u673a\\u6a5f]|iPhone)"
+  private static let englishPhone = #"(?:(?:my|this|the)\s+)?(?:phone|device|iphone)"#
+  private static let verb = "(?:(?:open|launch|start|run)\\s+|\\u6253[\\u5f00\\u958b]|[\\u5f00\\u958b][\\u542f\\u555f]|[\\u542f\\u555f][\\u52a8\\u52d5]|[\\u8fd0\\u904b]\\u884c)"
+  private static let desktopLocation = #"\b(?:on|from)\s+(?:(?:my|this|the)\s+)?(?:computer|desktop|pc|mac|windows|macos)\b"# +
+    "|(?:\\u5728)?(?:\\u6211\\u7684)?(?:\\u7535\\u8111|\\u96fb\\u8166)(?:\\u4e0a(?:\\u7684)?|\\u7684)"
+
+  static func target(_ goal: String) -> Target? {
+    let trusted = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal)
+    var command = AgentLocalCommandText.withoutPoliteness(trusted)
+    guard !command.hasSuffix("?"), !command.hasSuffix("\u{ff1f}"),
+          command.range(of: desktopLocation, options: [.regularExpression, .caseInsensitive]) == nil else { return nil }
+    command = AgentLocalCommandText.sentence(command)
+    var explicitlyLocal = false
+    func strip(_ value: inout String, _ pattern: String) -> Bool {
+      guard let range = value.range(of: pattern, options: [.regularExpression, .caseInsensitive]) else { return false }
+      value.removeSubrange(range)
+      value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+      return true
+    }
+    if strip(&command, "^(?:on\\s+\(englishPhone)(?:\\s*,\\s*|\\s+)|\\u5728(?:\\u6211\\u7684)?\(phone)\\u4e0a[ \\t]*[,\\uff0c]?[ \\t]*)") {
+      explicitlyLocal = true
+      command = AgentLocalCommandText.withoutPoliteness(command)
+    }
+    guard strip(&command, "^\(verb)[ \\t]*") else { return nil }
+    if strip(&command, "^\\s*(?:\\u6211\\u7684)?\(phone)(?:\\u4e0a(?:\\u7684)?|\\u7684)[ \\t]*") { explicitlyLocal = true }
+    if strip(&command, "(?:^|\\s+)on\\s+\(englishPhone)\\s*$") { explicitlyLocal = true }
+    let leadingApp = strip(&command, #"^app\s+"#)
+    let trailingApp = strip(&command, "(?:\\s+app|\\u5e94\\u7528|\\u61c9\\u7528)$")
+    guard AgentLocalCommandText.plainArgument(command, limit: 128),
+          command.range(of: "[\\u7136\\u968f\\u96a8][\\u540e\\u5f8c]|\\u63a5[\\u7740\\u8457]|[\\u5e76\\u4e26]\\u4e14",
+                        options: .regularExpression) == nil,
+          command.range(of: #"^(?:the\s+)?(?:app|device|iphone|website|url|link|wifi|wi-fi|bluetooth|vpn|settings|file(?!\s+manager$)|folder|report|document|timer|countdown|recording|flashlight|torch)(?:\s|$)"#,
+                        options: [.regularExpression, .caseInsensitive]) == nil,
+          !["\u{624b}\u{673a}", "\u{624b}\u{6a5f}", "\u{672c}\u{673a}", "\u{672c}\u{6a5f}", "\u{5e94}\u{7528}", "\u{61c9}\u{7528}",
+            "\u{624b}\u{7535}\u{7b52}", "\u{624b}\u{96fb}\u{7b52}"].contains(command) else { return nil }
+    return Target(name: command, explicitlyLocal: explicitlyLocal, appMarker: leadingApp || trailingApp)
+  }
+}
+
 enum AgentDeviceMutationShortcutCoverage {
   private static let flashlight = #"\b(?:flashlight|torch)\b"# + "|\u{624b}[\u{7535}\u{96fb}]\u{7b52}|[\u{95ea}\u{9583}]\u{5149}[\u{706f}\u{71c8}]"
   private static let switchAction = #"\b(?:on|off|open|close|enable|disable)\b"# +
@@ -145,20 +191,16 @@ enum AgentDeviceMutationShortcutCoverage {
 
   static func prohibitsCameraCapture(_ goal: String) -> Bool {
     let text = commandText(goal)
-    return matches(#"^(?:open|launch) (?:the )?(?:phone )?camera(?: app)?(?: on (?:this|my|the) (?:phone|device|iphone))?$"#, text) ||
+    let app = AgentInstalledAppLaunchPolicy.target(goal)?.name.lowercased()
+    return ["camera", "the camera", "phone camera", "\u{76f8}\u{673a}", "\u{76f8}\u{6a5f}",
+      "\u{6444}\u{50cf}\u{5934}", "\u{651d}\u{50cf}\u{982d}"].contains(app ?? "") ||
+      matches(#"^(?:open|launch) (?:the )?(?:phone )?camera(?: app)?(?: on (?:this|my|the) (?:phone|device|iphone))?$"#, text) ||
       matches("^(?:\u{6253}[\u{5f00}\u{958b}]|\u{542f}\u{52a8}|\u{555f}\u{52d5})(?:\u{624b}[\u{673a}\u{6a5f}])?\u{76f8}[\u{673a}\u{6a5f}]$", text)
-  }
-
-  static func appCommand(_ goal: String) -> String {
-    let location = #"\s+on\s+(?:(?:my|this|the)\s+)?(?:phone|device|iphone)\s*$"#
-    return AgentLocalCommandText.sentence(goal)
-      .replacingOccurrences(of: location, with: "", options: .regularExpression)
-      .replacingOccurrences(of: #"\s+app$"#, with: "", options: .regularExpression)
-      .replacingOccurrences(of: #"^launch\s+"#, with: "open ", options: .regularExpression)
   }
 
   private static func isAppLaunch(_ text: String) -> Bool {
     if AgentDirectNativeToolPlanner.isNamedSystemAppCommand(text) { return true }
+    if let target = AgentInstalledAppLaunchPolicy.target(text), target.explicitlyLocal || target.appMarker { return true }
     let nonApp = #"^(?:open|launch)\s+(?:https?://|url\b|website\b|link\b|wifi\b|wi-fi\b|bluetooth\b|vpn\b|settings\b|file\b|folder\b|report\b|document\b)"#
     guard !matches(nonApp, text) else { return false }
     if matches(#"^(?:open|launch)\s+.+\b(?:app|on (?:my|this|the) (?:phone|device|iphone))\b"#, text) { return true }

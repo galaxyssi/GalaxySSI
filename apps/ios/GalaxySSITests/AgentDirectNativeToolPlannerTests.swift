@@ -2,6 +2,56 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testPhoneQualifiedLaunchResolvesExactIOSHandoffInBothChineseScriptsAndEnglish() throws {
+    let tools = AgentPhoneNativeToolCatalog.descriptors(capabilityStatuses: readyPhoneCapabilityStatuses())
+    func request(_ goal: String) -> AgentPlanRequest {
+      AgentPlanRequest(goal: goal, screen: AgentScreenContext(foregroundApp: "com.galaxyssi.chat"), nativeTools: tools)
+    }
+    for goal in [
+      "Open Maps on my phone", "Launch Maps app on this device", "Please start Maps on the iPhone",
+      "On my iPhone, open Maps", "\u{6253}\u{5f00}\u{624b}\u{673a}\u{4e0a}\u{7684}\u{5730}\u{56fe}",
+      "\u{8acb}\u{958b}\u{555f}\u{6211}\u{7684}\u{624b}\u{6a5f}\u{4e0a}\u{7684}\u{5730}\u{5716}",
+      "\u{5728}\u{672c}\u{6a5f}\u{4e0a}\u{ff0c}\u{6253}\u{958b}\u{5730}\u{5716}"
+    ] {
+      let target = try XCTUnwrap(AgentInstalledAppLaunchPolicy.target(goal), goal)
+      XCTAssertTrue(target.explicitlyLocal, goal)
+      let plan = try XCTUnwrap(AgentDirectNativeToolPlanner.shortcutPlan(request: request(goal)), goal)
+      let action = try XCTUnwrap(plan.actions.first, goal)
+      XCTAssertEqual(action.parameters["tool_id"], AgentNativeToolAgentActionAdapter.defaultToolId(.openApp), goal)
+      XCTAssertEqual(try inputParameters(action)["package"] as? String, "com.apple.maps", goal)
+      XCTAssertFalse(AgentDirectNativeToolPlanner.appHandoffMatches(goal, package: "com.apple.mobilesafari"), goal)
+    }
+    XCTAssertEqual(AgentInstalledAppLaunchPolicy.target("Open Phone Link")?.name, "Phone Link")
+    XCTAssertEqual(AgentInstalledAppLaunchPolicy.target("Open My Phone")?.name, "My Phone")
+    XCTAssertEqual(AgentInstalledAppLaunchPolicy.target("\u{6253}\u{5f00}\u{624b}\u{673a}\u{94f6}\u{884c}")?.name,
+      "\u{624b}\u{673a}\u{94f6}\u{884c}")
+
+    for goal in ["Open Maps on my computer", "Open on my phone", "Open Maps on my phone?",
+      "Open website on my phone", "Open Maps on my phone and then export a file",
+      "\u{6253}\u{958b}\u{96fb}\u{8166}\u{4e0a}\u{7684}\u{5730}\u{5716}",
+      "\u{6253}\u{5f00}\u{624b}\u{673a}\u{4e0a}\u{7684}"] {
+      XCTAssertNil(AgentInstalledAppLaunchPolicy.target(goal), goal)
+      XCTAssertFalse(AgentDirectNativeToolPlanner.isUnsupportedExplicitAppHandoff(goal), goal)
+      XCTAssertNil(AgentDirectNativeToolPlanner.shortcutPlan(request: request(goal)), goal)
+    }
+    for goal in ["Open Calculator on my iPhone", "Open Mobile Banking on this phone",
+      "\u{6253}\u{958b}\u{624b}\u{6a5f}\u{4e0a}\u{7684}\u{8a08}\u{7b97}\u{6a5f}"] {
+      XCTAssertTrue(AgentDirectNativeToolPlanner.isUnsupportedExplicitAppHandoff(goal), goal)
+      XCTAssertNil(AgentDirectNativeToolPlanner.shortcutPlan(request: request(goal)), goal)
+      XCTAssertFalse(AgentDirectNativeToolPlanner.appHandoffMatches(goal, package: "com.apple.maps"), goal)
+    }
+    XCTAssertTrue(AgentDeviceMutationShortcutCoverage.prohibitsCameraCapture(
+      "\u{5728}\u{624b}\u{6a5f}\u{4e0a}\u{958b}\u{555f}\u{76f8}\u{6a5f}"))
+    let wrongPackage = AgentNativeToolAgentActionAdapter.defaultToolId(.openApp)
+    let raw = """
+    {"actions":[{"kind":"CALL_NATIVE_TOOL","parameters":{"tool_id":"\(wrongPackage)","arguments":{"parameters":{"package":"com.apple.mobilesafari"}}}}]}
+    """
+    guard case .failure(let rejection) = AgentModelPlanParser.parseWithDiagnostics(
+      request: request("Open Maps on my iPhone"), raw: raw, settings: AgentModelPlannerSettings())
+    else { return XCTFail("A different supported app must not replace Maps") }
+    XCTAssertEqual(rejection.code, "unavailable_app_handoff")
+  }
+
   func testDeviceMutationShortcutMustCoverTheWholeCommand() throws {
     let tools = AgentPhoneNativeToolCatalog.descriptors(capabilityStatuses: readyPhoneCapabilityStatuses()) +
       AgentIOSHardwareNativeToolCatalog.descriptors().filter { $0.id == AgentIOSHardwareNativeToolCatalog.flashlightSet } +

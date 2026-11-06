@@ -4183,6 +4183,18 @@ final class MessageCoordinator: ObservableObject {
         finishPendingAgentReply(for: outgoing)
         return true
       }
+      if contact.id == "hermes", !readOnlyAnalysis, effectiveAttachments.isEmpty,
+         AgentDirectNativeToolPlanner.isUnsupportedExplicitAppHandoff(requestText) {
+        let reply = localizedReply("galaxyssi.agent.app_handoff_unavailable",
+          fallback: "GalaxySSI cannot open the requested app on this iPhone.")
+        let stage = "local_app_handoff_unavailable"
+        store.appendDeliveryTrace(outgoing.id, contactId: contact.id, stage: stage, detail: reply, status: .delivered)
+        let response = store.appendIncoming(reply, from: contact.id, remoteMessageId: stage + "-" + outgoing.turnId,
+          status: .delivered, traceStage: stage, conversationId: outgoing.conversationId, turnId: outgoing.turnId)
+        onIncomingMessage?(response)
+        finishPendingAgentReply(for: outgoing)
+        return true
+      }
       if let localProfile = selectedLocalModel(
         for: contact,
         conversationId: outgoing.conversationId,
