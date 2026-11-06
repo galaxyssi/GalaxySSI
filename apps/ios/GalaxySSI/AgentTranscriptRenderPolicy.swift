@@ -143,7 +143,15 @@ struct AgentTranscriptExecutionProgress: Equatable {
       Self(status: progress.status, startedAt: AgentProcessClockPolicy.startedAt(request: requestStartedAt,
         fallback: progress.startedAt), updatedAt: progress.updatedAt)
     }
-    if let owned { return rebased(owned) }
+    if let owned {
+      if owned.status.finished, let cached, cached.status.animating,
+         cached.updatedAt > max(owned.updatedAt, deliveredAt ?? 0) {
+        let start = AgentProcessClockPolicy.startedAt(request: requestStartedAt,
+          fallback: AgentProcessClockPolicy.startedAt(request: owned.startedAt, fallback: cached.startedAt))
+        return Self(status: cached.status, startedAt: start, updatedAt: cached.updatedAt)
+      }
+      return rebased(owned)
+    }
     guard let cached = cached.map(rebased) else {
       guard let requestStartedAt, requestStartedAt > 0,
             let deliveredAt, deliveredAt >= requestStartedAt else { return nil }
@@ -228,7 +236,11 @@ final class AgentProcessClock {
     self.completedAtMillis = completedAtMillis.map { max($0, startedAtMillis) }
   }
 
-  func observe(completedAtMillis: Int64?) {
+  func observe(completedAtMillis: Int64?, running: Bool = false) {
+    if running {
+      self.completedAtMillis = nil
+      return
+    }
     guard self.completedAtMillis == nil, let completedAtMillis else { return }
     self.completedAtMillis = max(completedAtMillis, startedAtMillis)
   }

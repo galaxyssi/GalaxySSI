@@ -770,7 +770,8 @@ final class AgentAdapterTeamMemberWorker: AgentTeamMemberWorker {
     }
     switch terminalEvent.type {
     case .runCompleted:
-      return AgentSubagentOutput(content: Self.payloadText(terminalEvent.payload))
+      return AgentSubagentOutput(content: Self.payloadText(terminalEvent.payload),
+        richOutputJson: terminalEvent.payload["rich_output"]?.stringValue)
     case .runCancelled:
       throw CancellationError()
     default:
@@ -918,7 +919,8 @@ private extension AgentTeamExecutionRecord {
         output: result?.output ?? "",
         errorMessage: (result?.errorMessage ?? "").ifBlank(event?.message ?? ""),
         updatedAtMillis: updatedAt,
-        instanceId: member.memberId
+        instanceId: member.memberId,
+        richOutputJson: result?.richOutputJson ?? ""
       )
     }
     let terminal = events.last { $0.runStatus != nil }

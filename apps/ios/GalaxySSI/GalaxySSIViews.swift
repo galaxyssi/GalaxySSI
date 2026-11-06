@@ -1921,6 +1921,7 @@ struct MessageBubble: View {
             onFormSubmit: onFormSubmit
           )
             .environment(\.agentReplyParagraphSpeechAction, onParagraphDoubleTap)
+            .environment(\.agentInlineRuntimeImages, AgentRuntimeArtifactUi.allowsInlineImages(for: message))
             .environment(\.peerTextSelection, onDelete.map {
               GalaxySSIPeerTextSelectionContext(maximumWidth: max(1, bubbleMaxWidth - 24), onDelete: $0)
             })

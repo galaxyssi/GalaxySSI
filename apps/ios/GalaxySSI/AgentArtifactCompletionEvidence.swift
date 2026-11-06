@@ -364,6 +364,10 @@ enum AgentVerifiedArtifactSnapshot {
     return nil
   }
 
+  static func verifiesImage(_ data: Data, extension ext: String) -> Bool {
+    verifyBinary(data, extension: ext, format: "image_first_frame_decode")
+  }
+
   private static func verifyBinary(_ data: Data, extension ext: String, format: String) -> Bool {
     switch format {
     case "pdf_document_open":

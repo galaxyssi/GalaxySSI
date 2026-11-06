@@ -137,6 +137,23 @@ final class AgentInteractiveProgressTests: XCTestCase {
     }
   }
 
+  func testNewerOwnedTaskResumeUnfreezesTheClockWithoutResettingTheUserTurn() throws {
+    let completed = AgentTranscriptExecutionProgress(status: .completed, startedAt: 200, updatedAt: 600)
+    let resumed = AgentTranscriptExecutionProgress(status: .running, startedAt: 700, updatedAt: 800)
+    XCTAssertEqual(AgentTranscriptExecutionProgress.resolve(owned: completed, cached: resumed,
+      deliveredAt: 610, requestStartedAt: 100),
+      AgentTranscriptExecutionProgress(status: .running, startedAt: 100, updatedAt: 800))
+    XCTAssertEqual(AgentTranscriptExecutionProgress.resolve(owned: completed, cached: resumed,
+      deliveredAt: 800)?.status, .completed)
+    let clock = AgentProcessClock(startedAtMillis: 100, completedAtMillis: 600)
+    clock.observe(completedAtMillis: nil)
+    XCTAssertEqual(clock.elapsed(at: 900), 500)
+    clock.observe(completedAtMillis: nil, running: true)
+    XCTAssertEqual(clock.elapsed(at: 900), 800)
+    clock.observe(completedAtMillis: 1_000)
+    XCTAssertEqual(clock.elapsed(at: 1_100), 900)
+  }
+
   func testFinalDeliveryIsScopedAndDoesNotUseStreamsOrMilestones() {
     func message(conversation: String = "first", time: TimeInterval, remoteId: String = "",
                  trace: String = "received", status: ChatDeliveryStatus = .delivered) -> ChatMessage {

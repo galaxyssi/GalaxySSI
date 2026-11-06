@@ -159,9 +159,11 @@ struct AgentSubagentExecutionContext {
 
 struct AgentSubagentOutput: Codable, Equatable {
   var content: String
+  var richOutputJson: String?
 
-  init(content: String = "") {
+  init(content: String = "", richOutputJson: String? = nil) {
     self.content = content
+    self.richOutputJson = richOutputJson
   }
 }
 
@@ -191,6 +193,7 @@ struct AgentSubagentChildResult: Codable, Equatable, Identifiable {
   var status: AgentSubagentStatus
   var output: String
   var outputTruncated: Bool
+  var richOutputJson: String?
   var errorMessage: String
   var provenance: AgentSubagentProvenance
   var startedAtMillis: Int64
@@ -206,6 +209,7 @@ struct AgentSubagentChildResult: Codable, Equatable, Identifiable {
     status: AgentSubagentStatus,
     output: String = "",
     outputTruncated: Bool = false,
+    richOutputJson: String? = nil,
     errorMessage: String = "",
     provenance: AgentSubagentProvenance = AgentSubagentProvenance(),
     startedAtMillis: Int64 = 0,
@@ -218,6 +222,7 @@ struct AgentSubagentChildResult: Codable, Equatable, Identifiable {
     self.status = status
     self.output = output
     self.outputTruncated = outputTruncated
+    self.richOutputJson = richOutputJson
     self.errorMessage = String(errorMessage.prefix(Self.maxErrorCharacters))
     self.provenance = provenance
     self.startedAtMillis = max(startedAtMillis, 0)
@@ -566,6 +571,7 @@ final class AgentSubagentRuntime {
         status: .succeeded,
         output: bounded,
         outputTruncated: bounded.count < output.content.count,
+        richOutputJson: output.richOutputJson.map(AgentRichContentCodec.normalize),
         startedAt: startedAt
       )
       try await emitter.emit(
@@ -656,6 +662,7 @@ final class AgentSubagentRuntime {
     status: AgentSubagentStatus,
     output: String = "",
     outputTruncated: Bool = false,
+    richOutputJson: String? = nil,
     errorMessage: String = "",
     startedAt: Int64
   ) -> AgentSubagentChildResult {
@@ -667,6 +674,7 @@ final class AgentSubagentRuntime {
       status: status,
       output: output,
       outputTruncated: outputTruncated,
+      richOutputJson: richOutputJson,
       errorMessage: errorMessage,
       provenance: child.provenance,
       startedAtMillis: startedAt,

@@ -126,6 +126,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
   var outputFiles: [String]
   var executionLog: [String]
   var teamRecoveryRunId: String? = nil
+  var teamResultRichOutput: String? = nil
   var capturePermission: AgentCapturePermissionContinuation? = nil
   var localOperationProcessId: String? = nil
   var createdAtMillis: Int64
@@ -231,6 +232,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     case outputFiles = "output_files"
     case executionLog = "execution_log"
     case teamRecoveryRunId = "team_recovery_run_id"
+    case teamResultRichOutput = "team_result_rich_output"
     case capturePermission = "capture_permission"
     case localOperationProcessId = "local_operation_process_id"
     case createdAtMillis = "created_at_millis"
@@ -274,6 +276,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     )
     effectRecovery = try container.decodeIfPresent([AgentEffectRecoveryRecord].self, forKey: .effectRecovery)
     teamRecoveryRunId = try container.decodeIfPresent(String.self, forKey: .teamRecoveryRunId)
+    teamResultRichOutput = try container.decodeIfPresent(String.self, forKey: .teamResultRichOutput)
     capturePermission = try container.decodeIfPresent(AgentCapturePermissionContinuation.self, forKey: .capturePermission)
     localOperationProcessId = try container.decodeIfPresent(String.self, forKey: .localOperationProcessId)
   }

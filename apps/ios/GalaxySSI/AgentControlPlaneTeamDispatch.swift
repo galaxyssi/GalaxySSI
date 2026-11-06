@@ -160,7 +160,7 @@ final class AgentControlPlaneTeamDispatchCoordinator {
         .ifBlank(action.parameters["prompt"] ?? "")
         .ifBlank(action.description)
     )
-    return [
+    var context: AgentMcpJSONObject = [
       "action_id": .string(action.id),
       "action_target": .string(action.target),
       "risk": .string(action.risk.rawValue.lowercased()),
@@ -169,6 +169,10 @@ final class AgentControlPlaneTeamDispatchCoordinator {
       "_galaxyssi_agent_team_role": .string("supervisor"),
       "_galaxyssi_agent_team_visibility": .string(spec.definition.visibilityMode.rawValue)
     ]
+    for key in inheritedExecutionKeys {
+      if let value = action.parameters[key], !value.isBlank { context[key] = .string(value) }
+    }
+    return context
   }
 
   private static func requiredCapabilities(
@@ -190,7 +194,7 @@ final class AgentControlPlaneTeamDispatchCoordinator {
     context["_galaxyssi_agent_team_role"] = .string(member.role.ifBlank("member"))
     context["_galaxyssi_agent_team_delivery_mode"] = .string(member.deliveryMode.rawValue)
     context["_galaxyssi_agent_team_instance_id"] = .string(member.memberId)
-    for item in member.context {
+    for item in member.context where !inheritedExecutionKeys.contains(item.key) {
       context[item.key] = .string(item.value)
     }
     return context
@@ -215,13 +219,16 @@ final class AgentControlPlaneTeamDispatchCoordinator {
     action.parameters["idempotency_key"] = idempotencyKey
     action.parameters["original_goal"] = goal
     action.parameters[AgentExecutionPolicyPrompt.contextKey] = goal
-    for item in member.context {
+    for item in member.context where !inheritedExecutionKeys.contains(item.key) {
       action.parameters[item.key] = item.value
     }
   }
 
   private static let conversationIdKey = "_galaxyssi_conversation_id"
   private static let turnIdKey = "_galaxyssi_turn_id"
+  private static let inheritedExecutionKeys: Set<String> = [
+    "connector_task_mode", "_galaxyssi_task_execution_mode", "_galaxyssi_conversation_has_attachments"
+  ]
 }
 
 private extension AgentRunRequest {
