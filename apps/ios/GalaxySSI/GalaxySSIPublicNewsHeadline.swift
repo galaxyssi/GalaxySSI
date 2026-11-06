@@ -6,10 +6,14 @@ struct GalaxySSIPublicNewsHeadline<Title: View, Detail: View>: View {
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @State private var selection: String?
+  @ScaledMetric(relativeTo: .body) private var primarySlotHeight = 48.0
+  @ScaledMetric(relativeTo: .caption) private var secondarySlotHeight = 36.0
 
   let archive: PublicNewsArchive
   let article: PublicNewsArticle
   var reader = false
+  var expanded = false
+  var reservesBilingualSpace = false
   var onOpen: (() -> Void)? = nil
   var onDismissArticle: (() -> Void)? = nil
   @ViewBuilder let title: () -> Title
@@ -49,9 +53,16 @@ struct GalaxySSIPublicNewsHeadline<Title: View, Detail: View>: View {
 
   private var headline: some View {
     VStack(alignment: .leading, spacing: 6) {
-      title()
-      if !reader && article.displayTitle != article.title {
-        Text(article.title).font(.caption).foregroundColor(.secondary).lineLimit(3)
+      if reservesBilingualSpace {
+        title().frame(height: primarySlotHeight, alignment: .topLeading)
+        Text(article.displayTitle == article.title ? t("public_news_headline_pending", "Translation pending") : article.title)
+          .font(.caption).foregroundColor(.secondary).lineLimit(2)
+          .frame(height: secondarySlotHeight, alignment: .topLeading)
+      } else {
+        title()
+        if !reader && article.displayTitle != article.title {
+          Text(article.title).font(.caption).foregroundColor(.secondary).lineLimit(expanded ? nil : 3)
+        }
       }
       detail()
     }

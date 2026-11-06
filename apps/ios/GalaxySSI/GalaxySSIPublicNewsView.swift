@@ -94,6 +94,7 @@ struct GalaxySSIPublicNewsView: View {
   @State private var scrollAccess = PublicNewsScrollAccess.Handle()
   @State private var scrollRequest: ScrollRequest?
   @State private var didRestoreTimeline = false
+  @State private var expandedHeadline: PublicNewsArticle?
   @State private var bookmarkChange: BookmarkChange?
   @State private var refreshRequest = 0
   @State private var showHighlights = false
@@ -186,8 +187,6 @@ struct GalaxySSIPublicNewsView: View {
       if noDownloadedSpeechItems {
         status(t("public_news_speech_no_downloads", "No downloaded articles to read."))
       }
-      if headlineWorkerEnabled, let message = headlineWorkerStatus { status(message) }
-
       newsTimeline
     }
     .background(pageBackground.ignoresSafeArea())
@@ -288,7 +287,13 @@ struct GalaxySSIPublicNewsView: View {
           .background(PublicNewsScrollAccess(handle: scrollAccess))
         }
         .coordinateSpace(name: Self.viewport)
-        .onPreferenceChange(PublicNewsReadableFrames.self) { scrollAccess.readableFrames = $0 }
+        .onPreferenceChange(PublicNewsReadableFrames.self) { frames in
+          scrollAccess.readableFrames = frames
+          let visible = frames.compactMap { id, frame in
+            frame.maxY > 0 && frame.minY < viewport.size.height ? id : nil
+          }
+          automaticHeadlines.prioritizeVisible(Set(visible), archive: archive)
+        }
         .onPreferenceChange(PublicNewsRowFrames.self) { frames in
           scrollAccess.frames = frames
           if let request = scrollRequest {
@@ -318,6 +323,14 @@ struct GalaxySSIPublicNewsView: View {
         }
         .overlay(alignment: .bottom) {
           VStack(spacing: 4) {
+            if headlineWorkerEnabled, let message = headlineWorkerStatus {
+              Text(message)
+                .font(.caption)
+                .foregroundColor(.galaxySSITextSecondary)
+                .padding(8)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                .allowsHitTesting(false)
+            }
             if !timeline.pendingIDs.isEmpty {
               Button {
                 let anchor = topRow(scrollAccess.frames, height: viewport.size.height)
@@ -404,6 +417,7 @@ struct GalaxySSIPublicNewsView: View {
       let retained = Set(articles.filter { keys.contains(PublicNewsSpeechBookmark.key(for: $0.id)) }.map(\.id))
       timeline.select(Filter(rawValue: savedFilter) ?? .all, articles: articles, retainingUnread: retained)
       guard !articles.isEmpty else { return }
+      expandedHeadline = articles.first { PublicNewsSpeechBookmark.key(for: $0.id) == expandedKey }
       didRestoreTimeline = true
       if let id = timeline.visibleIDs.first(where: { PublicNewsSpeechBookmark.key(for: $0) == topKey }) {
         scrollRequest = .init(id: id, offset: CGFloat(topOffset))
@@ -418,6 +432,7 @@ struct GalaxySSIPublicNewsView: View {
     topKey = ""
     topOffset = 0
     expandedKey = ""
+    expandedHeadline = nil
     timeline.select(filter, articles: archive.eligibleArticles)
     scrollRequest = .init(id: "public-news-list-start")
   }
@@ -425,16 +440,22 @@ struct GalaxySSIPublicNewsView: View {
   private func timelineRow(_ article: PublicNewsArticle) -> some View {
     let key = PublicNewsSpeechBookmark.key(for: article.id)
     let expanded = expandedKey == key
+    let presented = presentedHeadline(article, expanded: expanded)
+    let reservesBilingualSpace = !expanded && (article.displayTitle != article.title ||
+      (PublicNewsAutomaticHeadlinePolicy.enabled(automaticHeadlineTranslation, language: language) &&
+        PublicNewsHeadlineTranslator.isEnglish(article.title)))
     return VStack(alignment: .leading, spacing: 0) {
       HStack(spacing: 8) {
         GalaxySSIPublicNewsCover(article: article)
-        GalaxySSIPublicNewsHeadline(archive: archive, article: article, onOpen: {
-          expandedKey = expanded ? "" : key
-        }) {
-          Text(article.displayTitle)
+        GalaxySSIPublicNewsHeadline(archive: archive, article: presented, expanded: expanded,
+          reservesBilingualSpace: reservesBilingualSpace, onOpen: {
+            expandedHeadline = expanded ? nil : article
+            expandedKey = expanded ? "" : key
+          }) {
+          Text(presented.displayTitle)
             .font(.body.weight(.semibold))
             .foregroundColor(article.read ? .galaxySSITextSecondary : .galaxySSITextPrimary)
-            .lineLimit(3)
+            .lineLimit(expanded ? nil : reservesBilingualSpace ? 2 : 3)
         } detail: {
           GalaxySSIPublicNewsByline(article: article)
         }
@@ -452,9 +473,6 @@ struct GalaxySSIPublicNewsView: View {
       }
       if expanded {
         VStack(alignment: .leading, spacing: 8) {
-          if article.displayTitle != article.title {
-            Text(article.title).foregroundColor(.secondary).textSelection(.enabled)
-          }
           if !article.summary.isEmpty { Text(article.summary).textSelection(.enabled) }
           GalaxySSIPublicNewsBodyView(article: article, retainedArticleIDs: Set(archive.articles.map(\.id))) { cover in
             archive.rememberCover(cover, articleID: article.id)
@@ -469,8 +487,14 @@ struct GalaxySSIPublicNewsView: View {
       Divider().padding(.leading, 12)
     }
     .background(Color.galaxySSISurface)
-    .onAppear { automaticHeadlines.visible(article.id, true, archive: archive) }
-    .onDisappear { automaticHeadlines.visible(article.id, false, archive: archive) }
+  }
+
+  private func presentedHeadline(_ article: PublicNewsArticle, expanded: Bool) -> PublicNewsArticle {
+    guard expanded, let expandedHeadline, expandedHeadline.id == article.id,
+          expandedHeadline.title == article.title else { return article }
+    var presented = article
+    presented.headlineTranslation = expandedHeadline.headlineTranslation
+    return presented
   }
 
   private func status(_ text: String) -> some View {
