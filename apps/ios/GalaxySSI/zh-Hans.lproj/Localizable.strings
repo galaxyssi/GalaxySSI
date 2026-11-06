@@ -4265,6 +4265,8 @@
 "cc_global_process_now_title" = "立即处理";
 "cc_global_process_now_subtitle" = "处理待分析事件并启动当前可用的研究任务";
 "cc_global_process_now_action" = "运行";
+"cognition_recovery_stopped" = "后台研究因多次存储失败已暂停。可选择「立即处理」重试。";
+"cognition_recovery_incomplete" = "后台处理未完成。";
 "cc_global_processed_result" = "已处理 %d 个事件";
 "cc_global_section_resources" = "资源策略";
 "cc_global_battery_protection" = "电量保护";

@@ -414,7 +414,7 @@ enum GlobalMemoryPromptCompiler {
   ) -> String {
     let plan = GlobalMemoryQueryPlanner.plan(query)
     let selectedWorld = selectWorld(
-      world: world,
+      world: GlobalMemorySupersessionPolicy.restoreTruncatedForwardLinks(world),
       query: query,
       currentConversationId: currentConversationId,
       plan: plan,

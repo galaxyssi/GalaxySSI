@@ -33,6 +33,10 @@ enum AgentDesktopReplyDiscoveryPolicy {
       !source.deliveryTrace.contains { nonDesktopStages.contains($0.stage) }
   }
 
+  static func mayRecover(conversationID: String, savedSessionExists: Bool, taskCancelled: Bool) -> Bool {
+    !taskCancelled && (!conversationID.hasPrefix("ios-agent-") || savedSessionExists)
+  }
+
   static func isDesktopEndpoint(_ contact: GalaxySSIContact) -> Bool {
     !contact.deleted && contact.type.caseInsensitiveCompare("agent") == .orderedSame &&
       contact.trustState == .verified && contact.deliveryMode.isGalaxySSILinkFamily &&
