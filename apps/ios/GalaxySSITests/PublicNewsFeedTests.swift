@@ -1,3 +1,4 @@
+import SQLite3
 import SwiftUI
 import UIKit
 import XCTest
@@ -261,7 +262,7 @@ final class PublicNewsFeedTests: XCTestCase {
   func testNotRelevantPersistsAcrossReopenWithoutDiscardingArchive() throws {
     struct Fixture: Encodable { let articles: [PublicNewsArticle] }
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: file) }
+    defer { removeArchiveFixture(file) }
     let article = PublicNewsArticle(url: URL(string: "https://example.com/a")!, title: "Headline",
       summary: "Summary", publisher: "Fixture", discoveredAt: Date(), saved: true)
     try JSONEncoder().encode(Fixture(articles: [article])).write(to: file)
@@ -290,7 +291,7 @@ final class PublicNewsFeedTests: XCTestCase {
       let notRelevantIDs: Set<String>
     }
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: file) }
+    defer { removeArchiveFixture(file) }
     func article(_ name: String) throws -> PublicNewsArticle {
       PublicNewsArticle(url: try XCTUnwrap(URL(string: "https://example.com/\(name)")), title: name,
         summary: String(repeating: "Summary ", count: 2048), publisher: "Fixture", discoveredAt: now, saved: true)
@@ -300,7 +301,8 @@ final class PublicNewsFeedTests: XCTestCase {
     let hidden = try article("hidden")
     XCTAssertEqual(PublicNewsArchive.readReminderUnreadCount(fileURL: file, allowLegacy: false), 0)
     let fixture = LegacySnapshot(articles: [first, second, hidden], notRelevantIDs: [hidden.id])
-    try JSONEncoder().encode(fixture).write(to: file)
+    let legacyBytes = try JSONEncoder().encode(fixture)
+    try legacyBytes.write(to: file)
     XCTAssertNil(PublicNewsArchive.readReminderUnreadCount(fileURL: file, allowLegacy: false))
     XCTAssertEqual(PublicNewsArchive.readReminderUnreadCount(fileURL: file), 2)
 
@@ -309,11 +311,13 @@ final class PublicNewsFeedTests: XCTestCase {
     archive.markRead(first.id)
     XCTAssertEqual(archive.reminderUnreadCount, 1)
     XCTAssertEqual(PublicNewsArchive.readReminderUnreadCount(fileURL: file, allowLegacy: false), 1)
-    let rewritten = try JSONDecoder().decode(LegacySnapshot.self, from: Data(contentsOf: file))
-    XCTAssertEqual(rewritten.articles.map(\.read), [true, false, false])
-    XCTAssertEqual(rewritten.articles.map(\.saved), [true, true, true])
-    XCTAssertEqual(rewritten.articles.map(\.summary), fixture.articles.map(\.summary))
-    XCTAssertEqual(rewritten.notRelevantIDs, [hidden.id])
+    let reopened = try PublicNewsRowArchive.load(legacyURL: file).snapshot
+    XCTAssertEqual(reopened.articles.first { $0.id == first.id }?.read, true)
+    XCTAssertEqual(reopened.articles.first { $0.id == second.id }?.read, false)
+    XCTAssertTrue(reopened.articles.allSatisfy(\.saved))
+    XCTAssertEqual(Set(reopened.articles.map(\.summary)), Set(fixture.articles.map(\.summary)))
+    XCTAssertEqual(reopened.notRelevantIDs, [hidden.id])
+    XCTAssertEqual(try Data(contentsOf: file), legacyBytes)
 
     XCTAssertTrue(archive.markNotRelevant(second.id))
     XCTAssertEqual(archive.reminderUnreadCount, 0)
@@ -332,7 +336,7 @@ final class PublicNewsFeedTests: XCTestCase {
   func testIndexedFirstPageRestoresOlderAnchorWithoutDroppingRetainedHistory() throws {
     struct LegacySnapshot: Codable { let articles: [PublicNewsArticle] }
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: file) }
+    defer { removeArchiveFixture(file) }
     let articles = try (0..<1_205).map { index in
       PublicNewsArticle(url: try XCTUnwrap(URL(string: "https://example.com/\(index)")),
         title: "Article \(index)", summary: "Summary", publisher: "Fixture",
@@ -355,9 +359,60 @@ final class PublicNewsFeedTests: XCTestCase {
     let saved = try XCTUnwrap(PublicNewsArchive.readFirstPage(fileURL: file, filter: .saved, anchor: anchor, retaining: []))
     XCTAssertEqual(saved[12].id, articles[900].id)
     XCTAssertTrue(saved.allSatisfy(\.saved))
-    let reopened = try JSONDecoder().decode(LegacySnapshot.self, from: Data(contentsOf: file))
+    let reopened = try PublicNewsRowArchive.load(legacyURL: file).snapshot
     XCTAssertEqual(reopened.articles.count, 1_205)
     XCTAssertEqual(PublicNewsArchive.merge(existing: reopened.articles, incoming: [articles[0]]).count, 1_205)
+  }
+
+  func testNewsRowMigrationRollsBackDuplicateSourceRowsAndCanRetry() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { removeArchiveFixture(file) }
+    let article = timelineArticle("duplicate")
+    let invalid = try JSONEncoder().encode(PublicNewsArchiveStorage.Snapshot(articles: [article, article]))
+    try invalid.write(to: file)
+    XCTAssertThrowsError(try PublicNewsRowArchive.load(legacyURL: file))
+    XCTAssertNil(try PublicNewsRowArchive.unreadCount(legacyURL: file))
+    XCTAssertEqual(try Data(contentsOf: file), invalid)
+    try JSONEncoder().encode(PublicNewsArchiveStorage.Snapshot(articles: [article])).write(to: file)
+    XCTAssertEqual(try PublicNewsRowArchive.load(legacyURL: file).snapshot.articles, [article])
+    XCTAssertEqual(try PublicNewsRowArchive.unreadCount(legacyURL: file), 1)
+  }
+
+  @MainActor
+  func testNewsRowUpdateDoesNotRewriteUnrelatedArticleAndRejectsAStaleWriter() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { removeArchiveFixture(file) }
+    let first = timelineArticle("first")
+    let second = timelineArticle("second")
+    try JSONEncoder().encode(PublicNewsArchiveStorage.Snapshot(articles: [first, second])).write(to: file)
+    let archive = PublicNewsArchive(fileURL: file)
+    let stale = PublicNewsArchive(fileURL: file)
+    archive.load()
+    stale.load()
+    let path = PublicNewsRowArchive.directory(for: file).appendingPathComponent("archive.sqlite3")
+    var connection: OpaquePointer?
+    XCTAssertEqual(sqlite3_open_v2(path.path, &connection, SQLITE_OPEN_READWRITE, nil), SQLITE_OK)
+    let database = try XCTUnwrap(connection)
+    defer { sqlite3_close_v2(database) }
+    XCTAssertEqual(sqlite3_exec(database, """
+      CREATE TRIGGER keep_second BEFORE UPDATE ON article WHEN old.id = 'https://example.com/second'
+      BEGIN SELECT RAISE(ABORT, 'unrelated row was rewritten'); END;
+      """, nil, nil, nil), SQLITE_OK)
+    archive.markRead(first.id)
+    XCTAssertFalse(archive.storageFailed)
+    XCTAssertEqual(archive.reminderUnreadCount, 1)
+    XCTAssertFalse(stale.setSaved(first.id, to: true))
+    XCTAssertEqual(stale.articles.first { $0.id == first.id }?.read, true)
+    XCTAssertTrue(stale.setSaved(first.id, to: true))
+    let final = try PublicNewsRowArchive.load(legacyURL: file).snapshot.articles
+    XCTAssertEqual(final.first { $0.id == first.id }?.saved, true)
+    XCTAssertEqual(final.first { $0.id == first.id }?.read, true)
+    XCTAssertEqual(final.first { $0.id == second.id }, second)
+  }
+
+  private func removeArchiveFixture(_ file: URL) {
+    try? FileManager.default.removeItem(at: PublicNewsRowArchive.directory(for: file))
+    try? FileManager.default.removeItem(at: file)
   }
 
   func testNewsPageWindowExtendsBothWaysAndKeepsTheExistingRowsWhenArrivalsPrepend() {
