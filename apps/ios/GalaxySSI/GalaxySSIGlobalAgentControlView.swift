@@ -89,6 +89,14 @@ struct GalaxySSIGlobalAgentControlView: View {
             )
           }
           autonomySection
+          GalaxySSISecurityNavigationRow(
+            title: t("attention_title", "Proactive attention"),
+            subtitle: t("attention_subtitle", "Public research topics and discoveries"),
+            systemImage: "scope",
+            tint: .galaxySSIAccent
+          ) {
+            GalaxySSIPublicAttentionSettingsView()
+          }
           worldSection
           intelligenceSection
           resourcesSection
@@ -813,9 +821,14 @@ struct GalaxySSIGlobalAgentInsightInboxView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: GalaxySSIStore
   @State private var statusMessage = ""
+  @State private var filter = PublicAttentionInboxFilter.all
+
+  private var savedKeys: Set<String> {
+    store.globalAgentSettings.publicAttention?.savedKeys ?? []
+  }
 
   private var items: [GlobalProactiveInboxItem] {
-    store.globalProactiveInboxItems(limit: 40)
+    store.globalProactiveInboxItems(limit: 500).filter { filter.includes($0, savedKeys: savedKeys) }
   }
 
   var body: some View {
@@ -832,6 +845,12 @@ struct GalaxySSIGlobalAgentInsightInboxView: View {
       )
       ScrollView {
         VStack(alignment: .leading, spacing: 12) {
+          Picker(t("attention_filter", "Filter discoveries"), selection: $filter) {
+            ForEach(PublicAttentionInboxFilter.allCases) { value in
+              Text(filterTitle(value)).tag(value)
+            }
+          }
+          .pickerStyle(.segmented)
           if !statusMessage.isEmpty {
             GalaxySSISecurityStatusRow(
               title: t("agent_global_feedback_saved", "Feedback saved. GalaxySSI will adapt future insights."),
@@ -844,7 +863,7 @@ struct GalaxySSIGlobalAgentInsightInboxView: View {
           if items.isEmpty {
             GalaxySSIGlobalAgentPlainRow(
               title: t("agent_global_insights_empty", "No recent GalaxySSI insights."),
-              subtitle: t("cc_global_pending_insights_subtitle", "Findings waiting for the right delivery moment"),
+              subtitle: filter == .all ? t("cc_global_pending_insights_subtitle", "Findings waiting for the right delivery moment") : "",
               systemImage: "sparkles",
               tint: .purple,
               badge: "0",
@@ -866,6 +885,14 @@ struct GalaxySSIGlobalAgentInsightInboxView: View {
                 helpfulTitle: t("agent_global_feedback_helpful", "Helpful"),
                 notRelevantTitle: t("agent_global_feedback_not_relevant", "Not relevant"),
                 tooFrequentTitle: t("agent_global_feedback_too_frequent", "Too frequent"),
+                saved: savedKeys.contains(item.key),
+                saveLabel: savedKeys.contains(item.key) ? t("attention_unsave", "Remove bookmark") : t("attention_bookmark", "Bookmark"),
+                markReadLabel: t("attention_mark_read", "Mark as read"),
+                onToggleSaved: {
+                  let keys = Set(store.globalProactiveInboxItems(limit: 500).map(\.key))
+                  store.updatePublicAttention { $0.toggleSaved(item.key, retaining: keys) }
+                },
+                onMarkRead: { _ = store.markGlobalProactiveInboxViewed(item) },
                 onOpen: openTopic,
                 onFeedback: recordFeedback
               )
@@ -879,10 +906,14 @@ struct GalaxySSIGlobalAgentInsightInboxView: View {
     }
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
-    .onAppear {
-      // Match Android: opening the inbox acknowledges the currently available findings,
-      // including cards that are below the initial viewport.
-      items.forEach { store.markGlobalProactiveInboxViewed($0) }
+  }
+
+  private func filterTitle(_ value: PublicAttentionInboxFilter) -> String {
+    switch value {
+    case .all: return t("attention_filter_all", "All")
+    case .important: return t("attention_filter_important", "Important")
+    case .unread: return t("attention_filter_unread", "Unread")
+    case .saved: return t("attention_filter_saved", "Saved")
     }
   }
 
@@ -966,6 +997,11 @@ private struct GalaxySSIGlobalInsightCard: View {
   var helpfulTitle: String
   var notRelevantTitle: String
   var tooFrequentTitle: String
+  var saved: Bool
+  var saveLabel: String
+  var markReadLabel: String
+  var onToggleSaved: () -> Void
+  var onMarkRead: () -> Void
   var onOpen: (GlobalProactiveInboxItem) -> Void
   var onFeedback: (GlobalProactiveInboxItem, GlobalAgentFeedbackKind) -> Void
 
@@ -999,6 +1035,18 @@ private struct GalaxySSIGlobalInsightCard: View {
             .fixedSize(horizontal: false, vertical: true)
         }
         Spacer(minLength: 0)
+        if item.isNew {
+          Button(action: onMarkRead) {
+            Image(systemName: "checkmark.circle").frame(width: 44, height: 44)
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel(markReadLabel)
+        }
+        Button(action: onToggleSaved) {
+          Image(systemName: saved ? "bookmark.fill" : "bookmark").frame(width: 44, height: 44)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(saveLabel)
       }
       Text(item.content.ifBlank(item.topic))
         .font(.system(size: 14))

@@ -29,7 +29,8 @@ extension GlobalAgentSettings {
       dailyDiscoveryTaskBudget: dailyDiscoveryTaskBudget,
       topicCooldownMillis: topicCooldownMillis,
       discoveryIntervalMillis: discoveryIntervalMillis,
-      monitorIntervalMillis: monitorIntervalMillis
+      monitorIntervalMillis: monitorIntervalMillis,
+      publicAttention: publicAttention
     )
   }
 }

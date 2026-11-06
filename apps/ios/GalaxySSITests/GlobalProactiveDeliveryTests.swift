@@ -2,6 +2,66 @@ import XCTest
 @testable import GalaxySSI
 
 final class GlobalProactiveDeliveryTests: XCTestCase {
+  func testAttentionCatalogAndPreferencesSurviveGlobalSettingsRoundTrip() throws {
+    XCTAssertEqual(PublicAttentionCatalog.defaults.count, 31)
+    XCTAssertEqual(Set(PublicAttentionCatalog.defaults.map(\.id)).count, 31)
+    XCTAssertEqual(PublicAttentionCatalog.defaults.filter { $0.group == .finance }.count, 15)
+    var preferences = PublicAttentionPreferences()
+    let definition = try XCTUnwrap(PublicAttentionCatalog.defaults.first)
+    var edited = definition
+    edited.enabled = false
+    edited.scope = "Central bank publications only"
+    preferences.setTopic(edited, relativeTo: definition)
+    let custom = PublicAttentionCatalog.Topic(id: UUID().uuidString, group: .custom, title: "Custom", scope: "Public releases")
+    preferences.setTopic(custom, relativeTo: nil)
+    preferences.toggleSaved("finding", retaining: ["finding"])
+    let settings = GlobalAgentSettings(publicAttention: preferences).normalized
+    let roundTrip = try JSONDecoder().decode(GlobalAgentSettings.self, from: JSONEncoder().encode(settings))
+    XCTAssertEqual(roundTrip.publicAttention, preferences)
+    XCTAssertEqual(roundTrip.publicAttention?.catalog.count, 32)
+    XCTAssertEqual(roundTrip.publicAttention?.topics[definition.id]?.scope, edited.scope)
+    XCTAssertEqual(roundTrip.publicAttention?.topics[definition.id]?.enabled, false)
+    XCTAssertEqual(roundTrip.publicAttention?.savedKeys, ["finding"])
+    XCTAssertNil(try JSONDecoder().decode(GlobalAgentSettings.self, from: Data("{}".utf8)).publicAttention)
+  }
+
+  func testPublicAttentionTaskLifecycleLeavesUnrelatedResearchAlone() throws {
+    var state = GlobalResearchExecutorState()
+    let privateTask = GlobalResearchTask(id: "private", sourceEventId: "private-event",
+      sourceConversationId: "private-chat", topic: "Private topic", question: "Private context",
+      depth: .quickFact, preferredSources: [], createdAtMillis: 1, updatedAtMillis: 1)
+    state.upsert(privateTask)
+    var settings = GlobalAgentSettings()
+    PublicAttentionResearchPolicy.reconcile(&state, settings: settings, nowMillis: 2)
+    XCTAssertEqual(state.tasks, [privateTask])
+    var preferences = PublicAttentionPreferences()
+    preferences.enabled = true
+    settings.publicAttention = preferences
+    PublicAttentionResearchPolicy.reconcile(&state, settings: settings, nowMillis: 3)
+    XCTAssertEqual(state.tasks.count, 32)
+
+    var tracked = try XCTUnwrap(state.task(id: "attention-research:macro"))
+    tracked.status = .running
+    tracked.result = "Previously observed public announcement"
+    tracked.lastResultFingerprint = "baseline"
+    state.upsert(tracked)
+    PublicAttentionResearchPolicy.reconcile(&state, settings: settings, nowMillis: 4)
+    XCTAssertEqual(state.task(id: tracked.id), tracked)
+
+    let topic = try XCTUnwrap(PublicAttentionCatalog.defaults.first)
+    preferences.setEnabled(false, topic: topic)
+    settings.publicAttention = preferences
+    PublicAttentionResearchPolicy.reconcile(&state, settings: settings, nowMillis: 5)
+    XCTAssertEqual(state.task(id: tracked.id)?.status, .paused)
+    XCTAssertEqual(state.task(id: tracked.id)?.result, tracked.result)
+    preferences.setEnabled(true, topic: topic)
+    settings.publicAttention = preferences
+    PublicAttentionResearchPolicy.reconcile(&state, settings: settings, nowMillis: 6)
+    XCTAssertEqual(state.task(id: tracked.id)?.status, .queued)
+    XCTAssertEqual(state.task(id: tracked.id)?.lastResultFingerprint, tracked.lastResultFingerprint)
+    XCTAssertEqual(state.task(id: privateTask.id), privateTask)
+  }
+
   func testDeliveryWakeKeepsOneSuccessorWhenResultsArriveDuringDelivery() {
     var state = GlobalProactiveDeliveryWake.State()
     XCTAssertTrue(state.request())
