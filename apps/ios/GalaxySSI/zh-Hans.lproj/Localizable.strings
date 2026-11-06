@@ -959,6 +959,8 @@
 "galaxyssi.health.backup.originals" = "%lld 份图片或 PDF 原件";
 "galaxyssi.health.backup.tables" = "%lld 份表格原件";
 "galaxyssi.health.backup.links" = "%lld 条测量来源关联";
+"galaxyssi.health.backup.secondary_links" = "%lld 条次要来源关联";
+"galaxyssi.health.backup.restore_source_links" = "次要来源关联：新增 %lld 条，已有 %lld 条，跳过 %lld 条";
 "galaxyssi.health.backup.incomplete" = "备份不完整：%lld 个原件或来源关联缺失";
 "galaxyssi.health.privacy.local" = "本机分析";
 "galaxyssi.health.privacy.imports" = "新导入";
