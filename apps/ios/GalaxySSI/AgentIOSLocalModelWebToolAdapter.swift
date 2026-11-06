@@ -8,6 +8,8 @@ struct AgentIOSLocalModelWebToolCompletion {
 enum AgentIOSLocalModelWebToolError: LocalizedError {
   case unavailable
   case incomplete(String)
+  case waitingForBrowserControl
+  case managedBrowserCancelled
 
   var errorDescription: String? {
     switch self {
@@ -15,6 +17,10 @@ enum AgentIOSLocalModelWebToolError: LocalizedError {
       return "The local read-only web tool registry is unavailable"
     case .incomplete(let message):
       return message
+    case .waitingForBrowserControl:
+      return "The member is waiting for browser control."
+    case .managedBrowserCancelled:
+      return "The managed browser member was cancelled."
     }
   }
 }
@@ -26,6 +32,7 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
   private let hasAttachments: Bool
   private let baseSystemPrompt: String
   private let taskID: String
+  private let beforeInference: (() throws -> Void)?
   private(set) var lastInference: LocalModelInferenceResult?
 
   init(
@@ -34,7 +41,8 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
     preferredProfileID: String,
     hasAttachments: Bool,
     baseSystemPrompt: String,
-    taskID: String
+    taskID: String,
+    beforeInference: (() throws -> Void)? = nil
   ) {
     self.catalog = catalog
     self.fallbackProfile = fallbackProfile
@@ -42,9 +50,11 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
     self.hasAttachments = hasAttachments
     self.baseSystemPrompt = baseSystemPrompt
     self.taskID = taskID
+    self.beforeInference = beforeInference
   }
 
   func complete(_ request: AgentModelRequest) async throws -> AgentModelResponse {
+    try beforeInference?()
     if request.cancellationToken.isCancellationRequested { throw CancellationError() }
     let inference = try await infer(
       systemPrompt: AgentIOSLocalModelWebToolProtocol.systemPrompt(
@@ -53,6 +63,7 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
       ),
       userPrompt: AgentIOSLocalModelWebToolProtocol.turnPrompt(request.messages)
     )
+    try beforeInference?()
     var response = try AgentIOSLocalModelWebToolProtocol.decode(inference.text, inference: inference)
     if response.toolCalls.isEmpty {
       let evidence = AgentIOSLocalModelWebToolProtocol.encodedEvidence(request.messages)
@@ -61,6 +72,7 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
         encodedToolResults: evidence
       )
       if validation.requiresRepair {
+        try beforeInference?()
         let repair = try await infer(
           systemPrompt: AgentIOSLocalModelWebToolProtocol.citationRepairSystemPrompt,
           userPrompt: AgentIOSWebEvidenceVerification.repairPrompt(
@@ -90,6 +102,13 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
   }
 
   private func infer(systemPrompt: String, userPrompt: String) async throws -> LocalModelInferenceResult {
+    if beforeInference != nil {
+      let result = try await LocalModelInferenceRuntime.shared.generateAsync(profile: fallbackProfile,
+        systemPrompt: systemPrompt, userPrompt: userPrompt, maximumTokens: 1_500, temperature: 0.1, taskId: taskID)
+      guard result.profileId == preferredProfileID else { throw AgentManagedBrowserContinuationStore.Failure.scopeChanged }
+      lastInference = result
+      return result
+    }
     let result = try await LocalModelCooperativeRuntime.shared.generateAsync(
       fallbackProfile: fallbackProfile,
       systemPrompt: systemPrompt,
@@ -166,7 +185,10 @@ enum AgentIOSLocalModelWebToolRunner {
     collaborationOwner: AgentCollaborationToolEvidenceScope? = nil,
     collaborationConversationDatabase: AgentConversationDatabase? = nil,
     collaborationOriginalsOnly: Bool = false,
-    nativeObservation: ((AgentMcpJSONObject, AgentNativeToolResult) -> AgentMcpJSONObject?)? = nil
+    nativeObservation: ((AgentMcpJSONObject, AgentNativeToolResult) -> AgentMcpJSONObject?)? = nil,
+    managedBrowser: AgentManagedBrowserToolExecution? = nil,
+    managedInput: AgentManagedBrowserLoopInput? = nil,
+    managedJournal: AgentModelLoopJournal? = nil
   ) async throws -> AgentIOSLocalModelWebToolCompletion {
     let owner = collaborationOwner ?? collaborationRecallScope
     let effectiveTurn = turnID.ifBlank(taskID)
@@ -176,19 +198,20 @@ enum AgentIOSLocalModelWebToolRunner {
         throw AgentIOSLocalModelWebToolError.incomplete("The collaboration browser owner does not match this turn.")
       }
     }
-    let webRegistry = try registry.subset {
-      AgentIOSLocalModelWebToolProtocol.toolIDs.contains($0.id) &&
-        (!readOnlyAnalysis || AgentScreenAnalysisToolPolicy.allows($0))
-    }
-    let scopedRecall = !readOnlyAnalysis && collaborationConversationDatabase != nil ? collaborationRecallScope : nil
-    if let scopedRecall, let collaborationConversationDatabase {
-      try webRegistry.registerExecutable(collaborationRecallTool(originalsOnly: collaborationOriginalsOnly) { input in
-        guard collaborationRecallIsAuthorized(scopedRecall, database: collaborationConversationDatabase),
-              AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: scopedRecall.runId)?.state == .running,
-              let result = try? AgentTeamExecutionHistoryStore.shared.recallCollaborationOriginal(input, scope: scopedRecall),
-              collaborationRecallIsAuthorized(scopedRecall, database: collaborationConversationDatabase) else { return nil }
-        return result
-      })
+    let webRegistry = try webToolRegistry(registry, readOnlyAnalysis: readOnlyAnalysis,
+      recallScope: collaborationRecallScope, database: collaborationConversationDatabase,
+      originalsOnly: collaborationOriginalsOnly)
+    if let managedBrowser, let managedInput {
+      guard !readOnlyAnalysis, owner == managedBrowser.binding.owner,
+            profile.id == managedBrowser.binding.modelID, managedInput.prompt == prompt,
+            managedInput.systemPrompt == baseSystemPrompt, managedInput.hasAttachments == hasAttachments,
+            managedJournal != nil else { throw AgentManagedBrowserContinuationStore.Failure.scopeChanged }
+      try webRegistry.registerExecutable(managedBrowser.executable())
+      guard managedInput.toolManifestHash == managedManifest(webRegistry) else {
+        throw AgentManagedBrowserContinuationStore.Failure.scopeChanged
+      }
+    } else if managedBrowser != nil || managedInput != nil || managedJournal != nil {
+      throw AgentManagedBrowserContinuationStore.Failure.invalidInput
     }
     let catalog = webRegistry.descriptors()
     guard !catalog.isEmpty else { throw AgentIOSLocalModelWebToolError.unavailable }
@@ -198,11 +221,12 @@ enum AgentIOSLocalModelWebToolRunner {
       preferredProfileID: profile.id,
       hasAttachments: hasAttachments,
       baseSystemPrompt: baseSystemPrompt,
-      taskID: taskID
+      taskID: taskID,
+      beforeInference: managedBrowser.map { execution in { try execution.validateCurrentOwner() } }
     )
     let permissions = Set(catalog.flatMap(\.requiredPermissions).filter(\.required).map(\.id))
     let consents = Set(catalog.flatMap(\.requiredConsents).filter(\.required).map(\.id))
-    let recoveryIdentity = AgentModelLoopRecoveryIdentity.sha256([
+    let recoveryIdentity = managedInput?.inputIdentity ?? AgentModelLoopRecoveryIdentity.sha256([
       "prompt": prompt,
       "profile_id": profile.id,
       "has_attachments": String(hasAttachments)
@@ -210,8 +234,9 @@ enum AgentIOSLocalModelWebToolRunner {
     let outcome = await AgentModelToolLoop(
       modelAdapter: session,
       toolRegistry: webRegistry,
-      journal: owner == nil ? EncryptedAgentModelLoopJournal() : InMemoryAgentModelLoopJournal(),
-      nativeObservation: nativeObservation
+      journal: managedJournal ?? (owner == nil ? EncryptedAgentModelLoopJournal() : InMemoryAgentModelLoopJournal()),
+      nativeObservation: nativeObservation,
+      browserHandoff: managedBrowser
     ).run(
       AgentModelToolLoopRequest(
         sessionId: sessionID.ifBlank(taskID),
@@ -219,7 +244,7 @@ enum AgentIOSLocalModelWebToolRunner {
         turnId: effectiveTurn,
         taskId: taskID,
         workspaceId: conversationID.ifBlank(taskID),
-        loopId: "local-web-\(recoveryIdentity)",
+        loopId: managedInput?.loopID ?? "local-web-\(recoveryIdentity)",
         messages: [.system(baseSystemPrompt), .user(prompt)],
         budget: AgentModelToolLoopBudget(
           maxRounds: 8,
@@ -236,15 +261,57 @@ enum AgentIOSLocalModelWebToolRunner {
         recoveryInputIdentity: recoveryIdentity,
         observationHistoryEnabled: true,
         observationHistorySource: owner?.ownershipDigest ?? "",
+        cancellationToken: managedBrowser == nil ? .none : AgentModelToolLoopCancellationToken { Task.isCancelled },
         collaborationOwner: owner
       )
     )
+    if outcome.status == .waitingForBrowserControl { throw AgentIOSLocalModelWebToolError.waitingForBrowserControl }
+    if managedBrowser != nil, outcome.status == .cancelled { throw AgentIOSLocalModelWebToolError.managedBrowserCancelled }
     guard outcome.status == .completed, !outcome.assistantText.isBlank else {
       throw AgentIOSLocalModelWebToolError.incomplete(
         outcome.error?.message ?? "The local model web loop did not complete"
       )
     }
     return AgentIOSLocalModelWebToolCompletion(text: outcome.assistantText, inference: session.lastInference)
+  }
+
+  static func prepareManagedInput(prompt: String, systemPrompt: String, hasAttachments: Bool,
+                                  registry: AgentNativeToolRegistry, binding: AgentManagedBrowserDispatchBinding,
+                                  database: AgentConversationDatabase) throws -> AgentManagedBrowserLoopInput {
+    let scoped = try webToolRegistry(registry, readOnlyAnalysis: false, recallScope: binding.owner,
+      database: database, originalsOnly: false)
+    try scoped.register(.init(descriptor: AgentManagedBrowserToolExecution.descriptor(),
+                              executorId: "ios.managed_browser_handoff"))
+    let identity = AgentMcpJSONCodec.sha256([
+      "dispatch": .string(binding.key), "profile": .string(binding.modelID), "prompt": .string(prompt),
+      "system": .string(systemPrompt), "attachments": .bool(hasAttachments)
+    ])
+    return AgentManagedBrowserLoopInput(loopID: "managed-browser-\(binding.key)", inputIdentity: identity,
+      toolManifestHash: managedManifest(scoped), systemPrompt: systemPrompt, prompt: prompt,
+      hasAttachments: hasAttachments)
+  }
+
+  private static func managedManifest(_ registry: AgentNativeToolRegistry) -> String {
+    AgentModelToolProtocolJSON.sha256(registry.catalogJson(additionalDescriptors: [AgentModelObservationHistory.descriptor]))
+  }
+
+  private static func webToolRegistry(_ registry: AgentNativeToolRegistry, readOnlyAnalysis: Bool,
+                                      recallScope: AgentCollaborationToolEvidenceScope?,
+                                      database: AgentConversationDatabase?, originalsOnly: Bool) throws -> AgentNativeToolRegistry {
+    let scoped = try registry.subset {
+      AgentIOSLocalModelWebToolProtocol.toolIDs.contains($0.id) &&
+        (!readOnlyAnalysis || AgentScreenAnalysisToolPolicy.allows($0))
+    }
+    if !readOnlyAnalysis, let recallScope, let database {
+      try scoped.registerExecutable(collaborationRecallTool(originalsOnly: originalsOnly) { input in
+        guard collaborationRecallIsAuthorized(recallScope, database: database),
+              AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: recallScope.runId)?.state == .running,
+              let result = try? AgentTeamExecutionHistoryStore.shared.recallCollaborationOriginal(input, scope: recallScope),
+              collaborationRecallIsAuthorized(recallScope, database: database) else { return nil }
+        return result
+      })
+    }
+    return scoped
   }
 }
 

@@ -389,6 +389,19 @@ final class AgentModelLoopCheckpoint {
     write(ModelRecord(binding: modelBinding(request), response: response), operation: "model:\(request.round)")
   }
 
+  func commitBrowserReturn(_ handoff: AgentManagedBrowserHandoff, round: Int) throws {
+    guard handoff.state == .returned, handoff.observation?.isValid == true else {
+      throw AgentModelLoopRecoveryError(code: "model_loop_browser_return_invalid")
+    }
+    let operation = "browser-return:\(round):\(AgentModelToolProtocolJSON.sha256(handoff.ticket.callID))"
+    let value = try AgentModelLoopCodec.encode(handoff)
+    if let saved = try records.read(operation) {
+      guard saved == value else { throw AgentModelLoopRecoveryError(code: "model_loop_browser_return_changed") }
+    } else {
+      try records.write(operation, data: value)
+    }
+  }
+
   func invocation(
     round: Int,
     call: AgentModelToolCall,

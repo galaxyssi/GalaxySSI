@@ -7,6 +7,7 @@ final class AgentModelToolLoop {
   private let idFactory: AgentModelToolLoopIdFactory
   private let journal: AgentModelLoopJournal?
   private let nativeObservation: ((AgentMcpJSONObject, AgentNativeToolResult) -> AgentMcpJSONObject?)?
+  private let browserHandoff: AgentManagedBrowserToolExecution?
   private let approvalLock = NSLock()
   private var pendingApprovals: [String: PendingApproval] = [:]
 
@@ -16,7 +17,8 @@ final class AgentModelToolLoop {
     clock: AgentModelToolLoopClock = .system,
     idFactory: AgentModelToolLoopIdFactory = .uuids,
     journal: AgentModelLoopJournal? = nil,
-    nativeObservation: ((AgentMcpJSONObject, AgentNativeToolResult) -> AgentMcpJSONObject?)? = nil
+    nativeObservation: ((AgentMcpJSONObject, AgentNativeToolResult) -> AgentMcpJSONObject?)? = nil,
+    browserHandoff: AgentManagedBrowserToolExecution? = nil
   ) {
     self.modelAdapter = modelAdapter
     self.toolRegistry = toolRegistry
@@ -24,6 +26,7 @@ final class AgentModelToolLoop {
     self.idFactory = idFactory
     self.journal = journal
     self.nativeObservation = nativeObservation
+    self.browserHandoff = browserHandoff
   }
 
   func run(_ request: AgentModelToolLoopRequest) async -> AgentModelToolLoopOutcome {
@@ -296,6 +299,17 @@ final class AgentModelToolLoop {
     _ state: LoopState,
     calls: [AgentModelToolCall]
   ) async -> ProcessResult {
+    if calls.count > 1 && calls.contains(where: { $0.toolId == AgentManagedBrowserToolExecution.toolID }) {
+      for call in calls {
+        if let terminal = terminalGuard(state) { return .terminal(terminal) }
+        guard consumeToolCallAttempt(state) else {
+          return .terminal(budgetExceeded(state, code: "max_tool_calls", message: "The phone tool-call budget was exhausted"))
+        }
+        appendSyntheticToolResult(state, call, code: "browser_handoff_requires_single_call",
+          message: "Request browser control in a turn with no other tool calls.")
+      }
+      return .continue
+    }
     var parallelCalls: [PreparedCall] = []
     var parallelPlans: [AgentNativeResourceLockPlan] = []
     var parallelWorkload: AgentConcurrencyWorkload?
@@ -350,6 +364,7 @@ final class AgentModelToolLoop {
     proposedCall: AgentModelToolCall
   ) -> ParallelCandidate? {
     guard state.toolCallAttempts < state.request.budget.maxToolCalls else { return nil }
+    guard proposedCall.toolId != AgentManagedBrowserToolExecution.toolID else { return nil }
     let call = boundWorkspaceCall(proposedCall, workspaceId: state.request.workspaceId)
     guard basicCallError(call) == nil,
           !state.rejectedProviderCallIDs.contains(call.callId),
@@ -714,7 +729,7 @@ final class AgentModelToolLoop {
         cancellationRequested: { state.request.cancellationToken.isCancellationRequested }
       )
     )
-    if let nativeObservation {
+    if let nativeObservation, attempt.prepared.call.toolId != AgentManagedBrowserToolExecution.toolID {
       result.metadata.removeValue(forKey: "galaxyssi_evidence_receipt")
       result.metadata.removeValue(forKey: "galaxyssi_evidence_recording")
       if let receipt = nativeObservation(attempt.prepared.call.arguments, result) {
@@ -823,13 +838,34 @@ final class AgentModelToolLoop {
       ) else {
         return .terminal(recoveryFailed(state))
       }
-      let result = invokeNativeTool(state, attempt: invocation)
+      let result: AgentNativeToolResult
+      if call.toolId == AgentManagedBrowserToolExecution.toolID, let browserHandoff,
+         let invocationCheckpoint = invocation.checkpoint, invocationCheckpoint.result == nil {
+        do {
+          if let output = try browserHandoff.restoreCommittedRequest(call: call, invocationID: invocation.invocationId) {
+            // The handoff was saved before the process could commit the native tool result.
+            result = toolRegistry.makeResult(call.toolId, input: call.arguments, context: invocation.context,
+              status: .succeeded, output: output, message: "Recovered a saved browser control request.",
+              replayed: true, originalInvocationId: invocation.invocationId)
+            state.checkpoint?.recordResult(result, invocation: invocationCheckpoint, eventSequence: state.eventSequence)
+          } else {
+            result = invokeNativeTool(state, attempt: invocation)
+          }
+        } catch {
+          return .terminal(recoveryFailed(state, error: error))
+        }
+      } else {
+        result = invokeNativeTool(state, attempt: invocation)
+      }
       finishInvocation(state, attempt: invocation, result: result)
       if state.checkpoint?.failure != nil { return .terminal(recoveryFailed(state)) }
 
       if result.status == .cancelled || state.request.cancellationToken.isCancellationRequested {
         appendToolResult(state, call, result: result, retryCount: attempt - 1)
         return .terminal(cancelled(state))
+      }
+      if call.toolId == AgentManagedBrowserToolExecution.toolID, result.isSuccess {
+        return resolveBrowserHandoff(state, call: call, result: result)
       }
 
       let mayRetry = !result.isSuccess &&
@@ -861,6 +897,35 @@ final class AgentModelToolLoop {
         ],
         publish: invocation.checkpoint?.result == nil
       )
+    }
+  }
+
+  private func resolveBrowserHandoff(_ state: LoopState, call: AgentModelToolCall,
+                                     result: AgentNativeToolResult) -> ProcessResult {
+    guard let browserHandoff, let checkpoint = state.checkpoint else {
+      return .terminal(recoveryFailed(state, error: AgentModelLoopRecoveryError(code: "model_loop_browser_owner_missing")))
+    }
+    do {
+      let handoff = try browserHandoff.resolve(call: call, result: result)
+      switch handoff.state {
+      case .awaitingUser:
+        return .terminal(outcome(state, status: .waitingForBrowserControl))
+      case .stopped:
+        return .terminal(cancelled(state))
+      case .returned:
+        try checkpoint.commitBrowserReturn(handoff, round: state.rounds)
+        guard let observation = handoff.observation else {
+          throw AgentModelLoopRecoveryError(code: "model_loop_browser_return_invalid")
+        }
+        let message = AgentModelToolResultContent(
+          callId: call.callId, toolId: call.toolId, status: AgentNativeToolResultStatus.succeeded.rawValue,
+          output: observation.toolOutput, message: "User returned browser control; task completion is unverified.")
+        state.observationHistory?.append(record: state.messages.count, arguments: call.arguments, result: message)
+        state.messages.append(.tool(message))
+        return .continue
+      }
+    } catch {
+      return .terminal(recoveryFailed(state, error: error))
     }
   }
 

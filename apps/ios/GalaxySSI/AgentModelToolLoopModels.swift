@@ -333,6 +333,7 @@ struct AgentModelToolApprovalHandle: Codable, Equatable {
 enum AgentModelToolLoopStatus: String, Codable, CaseIterable, Identifiable {
   case completed = "COMPLETED"
   case waitingForApproval = "WAITING_FOR_APPROVAL"
+  case waitingForBrowserControl = "WAITING_FOR_BROWSER_CONTROL"
   case budgetExceeded = "BUDGET_EXCEEDED"
   case loopDetected = "LOOP_DETECTED"
   case cancelled = "CANCELLED"
@@ -387,7 +388,7 @@ struct AgentModelToolLoopOutcome: Codable, Equatable {
   var error: AgentModelToolLoopError?
 
   var isTerminal: Bool {
-    status != .waitingForApproval
+    status != .waitingForApproval && status != .waitingForBrowserControl
   }
 
   enum CodingKeys: String, CodingKey {

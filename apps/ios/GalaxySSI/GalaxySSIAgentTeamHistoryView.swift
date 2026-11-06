@@ -518,6 +518,8 @@ struct GalaxySSIAgentTeamDetailView: View {
   @State private var mailboxLoadFailed = false
   @State private var mailboxRevision = 0
   @State private var recoveryRetry = AgentTeamRecoveryRetryState()
+  @State private var browserHandoff: AgentManagedBrowserPresentation?
+  @State private var browserRevision = 0
 
   private var canReadMailbox: Bool {
     guard let session = store.agentSession(id: snapshot.conversationId), session.id == snapshot.conversationId,
@@ -546,6 +548,12 @@ struct GalaxySSIAgentTeamDetailView: View {
             badge: GalaxySSIAgentTeamPresentation.stateLabel(snapshot.state, language: interfaceLanguage)
           )
           overview
+          ForEach(coordinator.managedBrowserRequests(runID: snapshot.supervisorRunId)) { request in
+            Button { browserHandoff = request } label: {
+              Label(t("galaxyssi.managed_browser.open", "Take browser control"), systemImage: "safari")
+            }
+          }
+          .id(browserRevision)
           if recoveryRetry.stalled {
             let removed = recoveryRetry.scopeMissing
             Text(removed
@@ -584,6 +592,12 @@ struct GalaxySSIAgentTeamDetailView: View {
     .onAppear(perform: refreshRecoveryRetry)
     .onReceive(NotificationCenter.default.publisher(for: AgentTeamRecoveryRetryLedger.changed)) { _ in
       refreshRecoveryRetry()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: AgentManagedBrowserContinuationStore.changed)) { event in
+      if event.object as? String == snapshot.supervisorRunId { browserRevision &+= 1 }
+    }
+    .sheet(item: $browserHandoff) { request in
+      GalaxySSIManagedBrowserHandoffView(request: request).environmentObject(coordinator)
     }
     .onChange(of: canReadMailbox) { _ in recentMessages = []; mailboxRevision &+= 1 }
     .onChange(of: store.profile.identityFingerprint) { _ in recentMessages = []; mailboxRevision &+= 1 }

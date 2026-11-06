@@ -1444,6 +1444,57 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(unchanged.owner.observedSequence, 3)
   }
 
+  func testManagedBrowserTeamRecoveryClassifiesSavedMembersWithoutRedispatchingAcceptedWork() {
+    var member = AgentTeamMemberSnapshot(agentId: "local-llm", status: .pending, instanceId: "member",
+      sourceMessageId: "original", dispatchCheckpoint: .notStarted)
+    XCTAssertEqual(AgentManagedBrowserTeamDispatch.MemberRecovery(member), .dispatch)
+    member.dispatchCheckpoint = .dispatching
+    XCTAssertEqual(AgentManagedBrowserTeamDispatch.MemberRecovery(member), .awaitOriginal)
+    member.dispatchCheckpoint = .accepted
+    member.status = .interrupted
+    XCTAssertEqual(AgentManagedBrowserTeamDispatch.MemberRecovery(member), .awaitOriginal)
+    member.status = .succeeded
+    member.replyContent = "Original output"
+    XCTAssertEqual(AgentManagedBrowserTeamDispatch.MemberRecovery(member), .reuse("Original output"))
+    member.status = .cancelled
+    XCTAssertEqual(AgentManagedBrowserTeamDispatch.MemberRecovery(member), .stop)
+  }
+
+  func testManagedBrowserReceiptUpdatesOnlyOriginalSavedMemberAndIsIdempotent() throws {
+    let suite = "managed-browser-receipt-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let owner = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "conversation",
+      turnId: "turn", memberId: "member", sourceId: "member-source")
+    let member = AgentTeamMemberSnapshot(agentId: "local-llm", status: .running, instanceId: owner.memberId,
+      sourceMessageId: owner.sourceId, dispatchCheckpoint: .accepted)
+    let sibling = AgentTeamMemberSnapshot(agentId: "other", deliveryMode: .respond, status: .pending,
+      instanceId: "sibling", sourceMessageId: "sibling-source", dispatchCheckpoint: .notStarted)
+    let team = AgentTeamExecutionSnapshot(supervisorRunId: owner.runId, teamId: "team", conversationId: owner.conversationId,
+      taskId: owner.turnId, primaryAgentId: sibling.agentId, state: .running, members: [member, sibling],
+      primaryInstanceId: sibling.memberId)
+    XCTAssertTrue(history.upsert(team))
+    let binding = try XCTUnwrap(AgentManagedBrowserDispatchBinding(owner: owner, team: team, profileID: "profile",
+      modelID: "model", hostContextDigest: "context"))
+    let receipt = AgentManagedBrowserMemberReceipt(id: UUID(), state: .completed, text: "Member result")
+    XCTAssertTrue(try history.commitManagedBrowserReceipt(receipt, binding: binding, now: 20))
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertTrue(try reopened.commitManagedBrowserReceipt(receipt, binding: binding, now: 21))
+    XCTAssertFalse(try reopened.commitManagedBrowserReceipt(.init(id: UUID(), state: .completed, text: "Changed result"),
+      binding: binding, now: 22))
+    let final = try XCTUnwrap(reopened.snapshot(supervisorRunId: owner.runId))
+    XCTAssertEqual(final.members[0].replyContent, receipt.text)
+    XCTAssertEqual(final.members[0].status, .succeeded)
+    XCTAssertEqual(final.members[0].updatedAtMillis, 20)
+    XCTAssertEqual(final.members[1], sibling)
+  }
+
   func testTeamRecoveryCursorCoversPendingTeamsExactlyOnce() throws {
     let suite = "team-recovery-page-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!

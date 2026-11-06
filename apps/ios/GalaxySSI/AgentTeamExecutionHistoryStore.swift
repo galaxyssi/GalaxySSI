@@ -273,6 +273,82 @@ final class AgentTeamExecutionHistoryStore {
     return updated
   }
 
+  func commitManagedBrowserReceipt(_ receipt: AgentManagedBrowserMemberReceipt,
+                                   binding: AgentManagedBrowserDispatchBinding, now: Int64) throws -> Bool {
+    let owner = binding.owner
+    let saved = try access { database -> Bool in
+      guard let team = try database.snapshots(runId: owner.runId).first,
+            binding.matches(team: team, profileID: binding.profileID, modelID: binding.modelID,
+                            hostContextDigest: binding.hostContextDigest),
+            let index = team.members.firstIndex(where: {
+              $0.memberId == owner.memberId && $0.sourceMessageId == owner.sourceId && $0.agentId == binding.agentID
+            }) else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let member = team.members[index]
+      let success = receipt.state == .completed
+      if member.status.isTerminal && member.status != .interrupted {
+        return success ? (member.status == .succeeded && member.replyContent == receipt.text) : member.status == .cancelled
+      }
+      guard var updated = AgentSavedTeamReplyPolicy.apply(to: team, source: owner.sourceId,
+        conversation: owner.conversationId, turn: owner.turnId, task: owner.sourceId, contact: binding.agentID,
+        content: receipt.text, success: success, now: now) else { return false }
+      if !success { updated.members[index].status = .cancelled }
+      try database.put(updated)
+      return true
+    }
+    if saved { notify(owner.runId) }
+    return saved
+  }
+
+  func reopenManagedBrowserMember(binding: AgentManagedBrowserDispatchBinding, now: Int64) throws -> Bool {
+    let owner = binding.owner
+    let changed = try access { database -> Bool in
+      guard var team = try database.snapshots(runId: owner.runId).first,
+            binding.matches(team: team, profileID: binding.profileID, modelID: binding.modelID,
+                            hostContextDigest: binding.hostContextDigest),
+            let index = team.members.firstIndex(where: {
+              $0.memberId == owner.memberId && $0.sourceMessageId == owner.sourceId && $0.agentId == binding.agentID
+            }) else { throw AgentTeamHistoryDatabase.Failure.stale }
+      if team.state == .running && !team.members[index].status.isTerminal { return false }
+      guard team.state == .interrupted, team.members[index].status == .interrupted else {
+        throw AgentTeamHistoryDatabase.Failure.stale
+      }
+      team.state = .running
+      team.members[index].status = .running
+      team.updatedAtMillis = max(now, team.updatedAtMillis)
+      try database.put(team)
+      return true
+    }
+    if changed { notify(owner.runId) }
+    return true
+  }
+
+  func reopenManagedBrowserTeam(_ input: AgentManagedBrowserTeamDispatch, outgoing: ChatMessage,
+                               profileID: String, now: Int64) throws -> AgentTeamExecutionSnapshot {
+    let team = try access { database -> AgentTeamExecutionSnapshot in
+      guard var team = try database.snapshots(runId: input.runID).first,
+            input.matches(team, outgoing: outgoing, profileID: profileID),
+            team.state == .running || team.state == .interrupted else {
+        throw AgentTeamHistoryDatabase.Failure.stale
+      }
+      var changed = false
+      if team.state == .interrupted {
+        team.state = .running
+        changed = true
+      }
+      for index in team.members.indices where team.members[index].dispatchCheckpoint == .notStarted &&
+        team.members[index].status == .interrupted {
+        team.members[index].status = .pending
+        changed = true
+      }
+      if changed {
+        team.updatedAtMillis = max(now, team.updatedAtMillis)
+        try database.put(team)
+      }
+      return team
+    }
+    return team
+  }
+
   func consumeOwnedReply(source: String, conversation: String, turn: String, task: String,
                          contact: String, content: String, richOutputJson: String,
                          terminal: Bool, success: Bool, now: Int64,

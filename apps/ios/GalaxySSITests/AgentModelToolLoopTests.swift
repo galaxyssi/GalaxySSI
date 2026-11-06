@@ -890,6 +890,93 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertEqual(resumed.messages.compactMap(\.toolResult).map(\.toolId), [Self.toolId])
   }
 
+  func testManagedBrowserReturnReopensOriginalLoopAndDoesNotRepeatHandoff() async throws {
+    let domain = "managed-browser-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+    defer { defaults.removePersistentDomain(forName: domain) }
+    let secrets = InMemorySecretStore()
+    let dispatch = AgentManagedBrowserContinuationStore(defaults: defaults, secrets: secrets, namespace: domain)
+    var request = self.request(loopId: "member-loop")
+    let owner = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: request.conversationId,
+      turnId: request.turnId, memberId: "member", sourceId: "original-source")
+    request.collaborationOwner = owner
+    let member = AgentTeamMemberSnapshot(agentId: "local-model", status: .running, instanceId: owner.memberId,
+      sourceMessageId: owner.sourceId, dispatchCheckpoint: .accepted)
+    let team = AgentTeamExecutionSnapshot(supervisorRunId: owner.runId, teamId: "team",
+      conversationId: owner.conversationId, taskId: owner.turnId, primaryAgentId: "other",
+      state: .running, members: [member])
+    let binding = try XCTUnwrap(AgentManagedBrowserDispatchBinding(owner: owner, team: team,
+      profileID: "profile", modelID: "model", hostContextDigest: "context"))
+    let input = AgentManagedBrowserLoopInput(loopID: request.loopId, inputIdentity: "immutable",
+      toolManifestHash: "pinned", systemPrompt: "", prompt: "Original member input", hasAttachments: false)
+    XCTAssertThrowsError(try dispatch.enroll(binding, input: input, legacyLoopExists: true))
+    try dispatch.enroll(binding, input: input, legacyLoopExists: false)
+    let call = AgentModelToolCall(callId: "handoff", toolId: AgentManagedBrowserToolExecution.toolID,
+      arguments: ["url": .string("https://example.test/")])
+    let initialAdapter = ScriptedModelAdapter(AgentModelResponse(toolCalls: [call]))
+    let ticket = try await dispatch.withLease(binding: binding, mode: .initial, control: .run) { lease, work in
+      guard case .continueLoop(let original) = work else { throw AgentManagedBrowserContinuationStore.Failure.notReady }
+      XCTAssertEqual(original, input)
+      let control = AgentManagedBrowserToolExecution(store: dispatch, binding: binding, lease: lease)
+      let registry = try AgentNativeToolRegistry().registerExecutable(control.executable())
+      let outcome = await AgentModelToolLoop(modelAdapter: initialAdapter, toolRegistry: registry,
+        journal: EncryptedAgentModelLoopJournal(defaults: defaults, secrets: secrets), browserHandoff: control).run(request)
+      XCTAssertEqual(outcome.status, .waitingForBrowserControl)
+      XCTAssertFalse(outcome.isTerminal)
+      XCTAssertEqual(initialAdapter.requests.count, 1)
+      let ticket = try XCTUnwrap(dispatch.awaitingHandoff(binding: binding)?.ticket)
+      let cookie = try XCTUnwrap(HTTPCookie(properties: [.name: "session", .value: "private", .domain: "example.test",
+        .path: "/", .secure: "TRUE"]))
+      let foreign = try XCTUnwrap(HTTPCookie(properties: [.name: "foreign", .value: "private", .domain: "elsewhere.test",
+        .path: "/", .secure: "TRUE"]))
+      try dispatch.saveCookies([cookie, foreign], ticket: ticket, binding: binding)
+      let cookieReload = AgentManagedBrowserContinuationStore(defaults: defaults, secrets: secrets, namespace: domain)
+      XCTAssertEqual(try cookieReload.cookies(ticket, binding: binding).map(\.name), ["session"])
+      let observation = AgentManagedBrowserHandoff.Observation(address: "https://example.test/returned",
+        title: "Returned page", text: "User-reviewed observation")
+      let stale = AgentManagedBrowserHandoff.Ticket(dispatchKey: ticket.dispatchKey, callID: ticket.callID, generation: UUID())
+      XCTAssertThrowsError(try dispatch.returnControl(stale, binding: binding, observation: observation))
+      try dispatch.returnControl(ticket, binding: binding, observation: observation)
+      do {
+        try await dispatch.withLease(binding: binding, mode: .recovery, control: .run) { _, _ in
+          XCTFail("Fast return cannot acquire the original process lease.")
+        }
+      } catch let error as AgentManagedBrowserContinuationStore.Failure {
+        XCTAssertEqual(error, .busy)
+      }
+      return ticket
+    }
+    let reopened = AgentManagedBrowserContinuationStore(defaults: defaults, secrets: secrets, namespace: domain)
+    XCTAssertEqual(try reopened.handoff(ticket, binding: binding).state, .returned)
+    let resumedAdapter = ScriptedModelAdapter(AgentModelResponse(assistantText: "Original member finished."))
+    let receipt = try await reopened.withLease(binding: binding, mode: .recovery, control: .run) { lease, work in
+      guard case .continueLoop = work else { throw AgentManagedBrowserContinuationStore.Failure.notReady }
+      let control = AgentManagedBrowserToolExecution(store: reopened, binding: binding, lease: lease)
+      let registry = try AgentNativeToolRegistry().registerExecutable(.init(
+        definition: .init(descriptor: try AgentManagedBrowserToolExecution.descriptor(),
+                          executorId: "ios.managed_browser_handoff"), executor: { _ in
+          XCTFail("Durable recovery must not invoke the handoff again.")
+          return .failure(code: "unexpected", message: "Handoff replayed")
+        }))
+      let outcome = await AgentModelToolLoop(modelAdapter: resumedAdapter, toolRegistry: registry,
+        journal: EncryptedAgentModelLoopJournal(defaults: defaults, secrets: secrets), browserHandoff: control).run(request)
+      XCTAssertEqual(outcome.status, .completed)
+      XCTAssertEqual(resumedAdapter.requests.map(\.round), [2])
+      XCTAssertEqual(resumedAdapter.requests.first?.messages.last?.toolResult?.output["business_success_verified"], .bool(false))
+      XCTAssertEqual(resumedAdapter.requests.first?.messages.last?.toolResult?.output["state"], .string("returned"))
+      XCTAssertNil(resumedAdapter.requests.first?.messages.last?.toolResult?.output["cookies"])
+      return try reopened.commit(.completed, text: outcome.assistantText, lease: lease, binding: binding)
+    }
+    try await dispatch.withLease(binding: binding, mode: .recovery, control: .run) { lease, work in
+      guard case .deliver(let pending) = work else { return XCTFail("A committed result must be delivered without inference.") }
+      XCTAssertEqual(pending, receipt)
+      try dispatch.acknowledge(pending, lease: lease, binding: binding)
+    }
+    try await dispatch.withLease(binding: binding, mode: .recovery, control: .run) { _, work in
+      guard case .alreadyDelivered = work else { return XCTFail("Acknowledged receipt must not be delivered twice.") }
+    }
+  }
+
   private func loop(
     adapter: AgentModelAdapter,
     registry: AgentNativeToolRegistry,

@@ -983,6 +983,10 @@
     A10000000000000000003275 /* AgentTeamHistoryDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003275 /* AgentTeamHistoryDatabase.swift */; };
     A10000000000000000001344 /* GalaxySSIAgentTeamHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001344 /* GalaxySSIAgentTeamHistoryView.swift */; };
     A10000000000000000000273 /* AgentTeamExecutionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000273 /* AgentTeamExecutionModels.swift */; };
+    A10000000000000000009B3B /* AgentManagedBrowserContinuationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B3B /* AgentManagedBrowserContinuationModels.swift */; };
+    A10000000000000000009B3C /* AgentManagedBrowserContinuationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B3C /* AgentManagedBrowserContinuationStore.swift */; };
+    A10000000000000000009B3D /* AgentManagedBrowserToolExecution.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B3D /* AgentManagedBrowserToolExecution.swift */; };
+    A10000000000000000009B3E /* GalaxySSIManagedBrowserHandoffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B3E /* GalaxySSIManagedBrowserHandoffView.swift */; };
     A10000000000000000009B34 /* AgentTeamRecoveryRetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B34 /* AgentTeamRecoveryRetry.swift */; };
     A10000000000000000000F41 /* AgentCollaborationNumericTrial.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000F41 /* AgentCollaborationNumericTrial.swift */; };
     A10000000000000000000274 /* AgentTeamExecutionRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000274 /* AgentTeamExecutionRuntime.swift */; };
@@ -2167,6 +2171,10 @@
     A20000000000000000003275 /* AgentTeamHistoryDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamHistoryDatabase.swift; sourceTree = "<group>"; };
     A20000000000000000001344 /* GalaxySSIAgentTeamHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentTeamHistoryView.swift; sourceTree = "<group>"; };
     A20000000000000000000273 /* AgentTeamExecutionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamExecutionModels.swift; sourceTree = "<group>"; };
+    A20000000000000000009B3B /* AgentManagedBrowserContinuationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentManagedBrowserContinuationModels.swift; sourceTree = "<group>"; };
+    A20000000000000000009B3C /* AgentManagedBrowserContinuationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentManagedBrowserContinuationStore.swift; sourceTree = "<group>"; };
+    A20000000000000000009B3D /* AgentManagedBrowserToolExecution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentManagedBrowserToolExecution.swift; sourceTree = "<group>"; };
+    A20000000000000000009B3E /* GalaxySSIManagedBrowserHandoffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIManagedBrowserHandoffView.swift; sourceTree = "<group>"; };
     A20000000000000000009B34 /* AgentTeamRecoveryRetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamRecoveryRetry.swift; sourceTree = "<group>"; };
     A20000000000000000000F41 /* AgentCollaborationNumericTrial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationNumericTrial.swift; sourceTree = "<group>"; };
     A20000000000000000000274 /* AgentTeamExecutionRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamExecutionRuntime.swift; sourceTree = "<group>"; };
@@ -2934,6 +2942,10 @@
         A20000000000000000003275 /* AgentTeamHistoryDatabase.swift */,
         A20000000000000000001344 /* GalaxySSIAgentTeamHistoryView.swift */,
         A20000000000000000000273 /* AgentTeamExecutionModels.swift */,
+        A20000000000000000009B3B /* AgentManagedBrowserContinuationModels.swift */,
+        A20000000000000000009B3C /* AgentManagedBrowserContinuationStore.swift */,
+        A20000000000000000009B3D /* AgentManagedBrowserToolExecution.swift */,
+        A20000000000000000009B3E /* GalaxySSIManagedBrowserHandoffView.swift */,
         A20000000000000000009B34 /* AgentTeamRecoveryRetry.swift */,
         A20000000000000000000F41 /* AgentCollaborationNumericTrial.swift */,
         A20000000000000000000274 /* AgentTeamExecutionRuntime.swift */,
@@ -4231,6 +4243,10 @@
         A10000000000000000002003 /* UserDefaultsAgentManagedResponseLedger.swift in Sources */,
         A10000000000000000003274 /* AgentManagedResponseDatabase.swift in Sources */,
         A10000000000000000000273 /* AgentTeamExecutionModels.swift in Sources */,
+        A10000000000000000009B3B /* AgentManagedBrowserContinuationModels.swift in Sources */,
+        A10000000000000000009B3C /* AgentManagedBrowserContinuationStore.swift in Sources */,
+        A10000000000000000009B3D /* AgentManagedBrowserToolExecution.swift in Sources */,
+        A10000000000000000009B3E /* GalaxySSIManagedBrowserHandoffView.swift in Sources */,
         A10000000000000000009B34 /* AgentTeamRecoveryRetry.swift in Sources */,
         A10000000000000000000F41 /* AgentCollaborationNumericTrial.swift in Sources */,
         A10000000000000000000274 /* AgentTeamExecutionRuntime.swift in Sources */,

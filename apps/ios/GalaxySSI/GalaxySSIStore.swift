@@ -1264,6 +1264,33 @@ final class GalaxySSIStore: ObservableObject {
     return saved
   }
 
+  func persistManagedBrowserPrimary(_ receipt: AgentManagedBrowserMemberReceipt,
+                                    binding: AgentManagedBrowserDispatchBinding,
+                                    dispatch: AgentManagedBrowserTeamDispatch) throws -> ChatMessage {
+    guard receipt.state == .completed, binding.deliveryMode == .respond,
+          binding.profileID == profile.identityFingerprint, binding.owner.runId == dispatch.runID,
+          binding.owner.conversationId == dispatch.conversationID, binding.owner.turnId == dispatch.turnID,
+          let original = persistedMessage(id: dispatch.outgoingID, contactId: dispatch.contactID),
+          original.isMine, original.conversationId == dispatch.conversationID,
+          original.turnId.ifBlank(original.id.uuidString) == dispatch.turnID else {
+      throw AgentManagedBrowserContinuationStore.Failure.scopeChanged
+    }
+    let message = ChatMessage(id: receipt.id, contactId: original.contactId, content: receipt.text, isMine: false,
+      deliveryStatus: .delivered, deliveryTrace: [DeliveryTraceEvent(stage: "managed_browser_member_result")],
+      conversationId: dispatch.conversationID, turnId: original.turnId, remoteMessageId: "managed-browser-" + binding.key)
+    let saved = try chatHistoryDatabase.persistTransportIncoming(message)
+    if !runtimePlaintextCleared, !messagesByContact[original.contactId, default: []].contains(where: { $0.id == saved.id }) {
+      let previous = suppressMessageDatabaseSync
+      suppressMessageDatabaseSync = true
+      messagesByContact[original.contactId, default: []].append(saved)
+      suppressMessageDatabaseSync = previous
+      recordAgentConversationActivity(conversationId: saved.conversationId, contactId: saved.contactId,
+        content: saved.content, at: saved.createdAt)
+      save()
+    }
+    return saved
+  }
+
   @discardableResult
   func appendSystem(_ content: String, to contactId: String, conversationId: String = "") -> ChatMessage {
     let resolvedConversationId = conversationId.ifBlank(activeConversationId(for: contactId))
