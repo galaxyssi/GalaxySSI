@@ -217,22 +217,35 @@ extension GalaxySSIStoreTests {
   }
 
   func testBrowserOperationObservationUsesExactRequestAndTurnAndExpires() throws {
-    let browser = AgentIOSURLSessionBrowserSessionStore(ttlMillis: 100)
+    let browser = AgentIOSURLSessionBrowserSessionStore(operationTTLMillis: 100, operationCapacity: 1)
     var context = AgentNativeToolInvocationContext(sessionId: "session", conversationId: "conversation", turnId: "turn",
       attributes: ["recovery_task_id": "task"])
     let scope = AgentIOSURLSessionBrowserSessionScope(context: context)
-    let session = try browser.create(scope: scope, resourceId: "create", currentURL: "", nowMillis: 10)
-    _ = try browser.navigate(browserId: session.browserId, scope: scope, currentURL: "https://example.test/",
-      nowMillis: 12, requestId: "navigate")
-    _ = try browser.close(browserId: session.browserId, scope: scope, nowMillis: 13, requestId: "close")
-    XCTAssertEqual(browser.observeOperation(requestId: "create", scope: scope, nowMillis: 15)?.string("operation"), "create")
-    XCTAssertEqual(browser.observeOperation(requestId: "navigate", scope: scope, nowMillis: 15)?.string("operation"), "navigate")
-    XCTAssertEqual(browser.observeOperation(requestId: "close", scope: scope, nowMillis: 15)?.string("operation"), "close")
-    XCTAssertNil(browser.observeOperation(requestId: "different", scope: scope, nowMillis: 15))
+    let inflight = try browser.beginOperation(requestId: "navigate", scope: scope, name: .navigate, nowMillis: 10)
+    let create = try browser.beginOperation(requestId: "create", scope: scope, name: .create, nowMillis: 12)
+    browser.finishOperation(create, nowMillis: 13)
+    let close = try browser.beginOperation(requestId: "close", scope: scope, name: .close, nowMillis: 14)
+    browser.finishOperation(close, nowMillis: 14)
+    XCTAssertNil(browser.observeOperation(requestId: "create", scope: scope, nowMillis: 15))
+    XCTAssertEqual(browser.observeOperation(requestId: "close", scope: scope, nowMillis: 15)?.string("state"), "completed")
+    XCTAssertEqual(browser.observeOperation(requestId: "navigate", scope: scope, nowMillis: 200)?.string("state"), "running")
+    XCTAssertNil(browser.observeOperation(requestId: "close", scope: scope, nowMillis: 200))
+    XCTAssertThrowsError(try browser.beginOperation(requestId: "navigate", scope: scope, name: .close, nowMillis: 200)) {
+      XCTAssertEqual($0 as? AgentIOSURLSessionBrowserSessionStoreError, .requestAlreadyDispatched)
+    }
     context.turnId = "other-turn"
     XCTAssertNil(browser.observeOperation(requestId: "navigate",
-      scope: AgentIOSURLSessionBrowserSessionScope(context: context), nowMillis: 15))
-    XCTAssertNil(browser.observeOperation(requestId: "close", scope: scope, nowMillis: 113))
+      scope: AgentIOSURLSessionBrowserSessionScope(context: context), nowMillis: 200))
+    browser.finishOperation(inflight, nowMillis: 200, errorCode: "web_media_timeout", outcomeUnknown: true)
+    let failed = try XCTUnwrap(browser.observeOperation(requestId: "navigate", scope: scope, nowMillis: 210))
+    XCTAssertEqual(failed.string("state"), "failed")
+    XCTAssertEqual(failed["outcome_unknown"], .bool(true))
+    XCTAssertNil(failed["executed"])
+    XCTAssertNil(browser.observeOperation(requestId: "navigate", scope: scope, nowMillis: 300))
+    let replacement = try browser.beginOperation(requestId: "navigate", scope: scope, name: .back, nowMillis: 301)
+    browser.finishOperation(inflight, nowMillis: 302)
+    XCTAssertEqual(browser.observeOperation(requestId: "navigate", scope: scope, nowMillis: 302)?.string("state"), "running")
+    browser.finishOperation(replacement, nowMillis: 303)
   }
 
   func testCollaboratorBrowserHandlesAndReceiptsCannotBeAdoptedByAnotherMemberOrParent() throws {
@@ -248,11 +261,12 @@ extension GalaxySSIStoreTests {
     let a = AgentIOSURLSessionBrowserSessionScope(context: first)
     let b = AgentIOSURLSessionBrowserSessionScope(context: second)
     let ordinary = AgentIOSURLSessionBrowserSessionScope(context: parent)
-    let aHandle = try browser.create(scope: a, resourceId: "same-request", currentURL: "", nowMillis: 10,
-      observation: ["source": .string("a")])
-    let bHandle = try browser.create(scope: b, resourceId: "same-request", currentURL: "", nowMillis: 11,
-      observation: ["source": .string("b")])
-    let legacy = try browser.create(scope: ordinary, resourceId: "legacy", currentURL: "", nowMillis: 12)
+    let aOperation = try browser.beginOperation(requestId: "same-request", scope: a, name: .create, nowMillis: 10)
+    let aHandle = try browser.create(scope: a, currentURL: "", nowMillis: 10)
+    browser.finishOperation(aOperation, nowMillis: 10)
+    _ = try browser.beginOperation(requestId: "same-request", scope: b, name: .create, nowMillis: 11)
+    let bHandle = try browser.create(scope: b, currentURL: "", nowMillis: 11)
+    let legacy = try browser.create(scope: ordinary, currentURL: "", nowMillis: 12)
     XCTAssertNotEqual(aHandle.browserId, bHandle.browserId)
     for foreign in [b, ordinary] {
       XCTAssertThrowsError(try browser.validate(browserId: aHandle.browserId, scope: foreign, nowMillis: 13))
@@ -261,10 +275,8 @@ extension GalaxySSIStoreTests {
     XCTAssertThrowsError(try browser.validate(browserId: legacy.browserId, scope: a, nowMillis: 13))
     XCTAssertNoThrow(try browser.validate(browserId: aHandle.browserId, scope: a, nowMillis: 13))
     XCTAssertNoThrow(try browser.validate(browserId: legacy.browserId, scope: ordinary, nowMillis: 13))
-    XCTAssertEqual(browser.observeOperation(requestId: "same-request", scope: a, nowMillis: 13)?
-      .object("observation")?["source"], .string("a"))
-    XCTAssertEqual(browser.observeOperation(requestId: "same-request", scope: b, nowMillis: 13)?
-      .object("observation")?["source"], .string("b"))
+    XCTAssertEqual(browser.observeOperation(requestId: "same-request", scope: a, nowMillis: 13)?.string("state"), "completed")
+    XCTAssertEqual(browser.observeOperation(requestId: "same-request", scope: b, nowMillis: 13)?.string("state"), "running")
     XCTAssertNil(browser.observeOperation(requestId: "same-request", scope: ordinary, nowMillis: 13))
     var forged = parent
     forged.attributes["collaboration_owner"] = owner.ownershipDigest
@@ -276,7 +288,7 @@ extension GalaxySSIStoreTests {
     var wrongTurn = first
     wrongTurn.turnId = "wrong"
     XCTAssertThrowsError(try browser.create(scope: AgentIOSURLSessionBrowserSessionScope(context: wrongTurn),
-      resourceId: "invalid", currentURL: "", nowMillis: 14))
+      currentURL: "", nowMillis: 14))
 
     let contexts = [parent, first, second]
     let entries = contexts.map { context in

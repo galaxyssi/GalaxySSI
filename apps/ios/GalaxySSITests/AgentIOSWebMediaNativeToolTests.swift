@@ -105,8 +105,9 @@ extension GalaxySSIStoreTests {
         case .browserSessionOperationStatus:
           return .success(output: [
             "request_id": input["request_id"] ?? .string("request"),
-            "operation": .string("navigate"), "observed_at_epoch_ms": .int(5_000),
-            "business_success_verified": .bool(false)
+            "operation": .string("navigate"), "state": .string("completed"), "observed_at_epoch_ms": .int(5_000),
+            "business_success_verified": .bool(false), "outcome_unknown": .bool(false),
+            "verification_required": .bool(true), "missing_receipt_means_not_executed": .bool(false)
           ])
         case .browserSessionClose:
           return AgentNativeToolExecutionResult.success(
@@ -839,6 +840,7 @@ extension GalaxySSIStoreTests {
     final class FakeURLSessionWebTransport: AgentIOSURLSessionWebTransporting {
       var requests: [AgentIOSURLSessionWebRequest] = []
       var responses: [AgentIOSURLSessionWebResponse]
+      var onNextRequest: (() -> Void)?
 
       init(responses: [AgentIOSURLSessionWebResponse]) {
         self.responses = responses
@@ -846,6 +848,9 @@ extension GalaxySSIStoreTests {
 
       func execute(_ request: AgentIOSURLSessionWebRequest) throws -> AgentIOSURLSessionWebResponse {
         requests.append(request)
+        let callback = onNextRequest
+        onNextRequest = nil
+        callback?()
         guard !responses.isEmpty else {
           throw AgentIOSURLSessionWebError.transportFailed("missing fake response")
         }
@@ -912,16 +917,39 @@ extension GalaxySSIStoreTests {
     )
     let browserId = try XCTUnwrap(created.output["browser_id"]?.stringValue)
     context.invocationId = "navigate"
+    let navigateDescriptor = try XCTUnwrap(definitions.first {
+      $0.id == AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate
+    }?.descriptor)
+    let navigationInput: AgentMcpJSONObject = [
+      "browser_id": .string(browserId), "url": .string("https://galaxyssi.example/second")
+    ]
+    let changedInput: AgentMcpJSONObject = [
+      "browser_id": .string(browserId), "url": .string("https://galaxyssi.example/changed")
+    ]
+    let duplicate = AgentNativeToolInvocation(descriptor: navigateDescriptor, input: changedInput, context: context,
+      startedAtEpochMillis: 1_000, deadlineEpochMillis: 5_000, nowMillis: { 1_000 },
+      cancellationRequested: { false }, progressReporter: { _, _ in })
+    var statusContext = context
+    statusContext.invocationId = "observe-running"
+    let runningContext = statusContext
+    transport.onNextRequest = {
+      let running = registry.invoke(AgentIOSWebMediaNativeToolCatalog.browserSessionOperationStatus,
+        input: ["request_id": .string("navigate")], context: runningContext, hooks: hooks)
+      XCTAssertEqual(running.output["state"], .string("running"))
+      XCTAssertEqual(running.output["next_action"], .string("observe_or_wait"))
+      let rejected = provider.invoke(operation: .browserSessionNavigate, input: changedInput, invocation: duplicate)
+      XCTAssertEqual(rejected.error?.code, "browser_request_id_reused")
+      XCTAssertEqual(rejected.error?.details["request_id"], .string("navigate"))
+    }
     let navigated = registry.invoke(
       AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate,
-      input: [
-        "browser_id": .string(browserId),
-        "url": .string("https://galaxyssi.example/second")
-      ],
+      input: navigationInput,
       context: context,
       hooks: hooks
     )
     let requestID = try XCTUnwrap(navigated.output["request_id"]?.stringValue)
+    let rejected = provider.invoke(operation: .browserSessionNavigate, input: changedInput, invocation: duplicate)
+    XCTAssertEqual(rejected.error?.code, "browser_request_id_reused")
     context.invocationId = "status"
     let status = registry.invoke(AgentIOSWebMediaNativeToolCatalog.browserSessionOperationStatus,
       input: ["request_id": .string(requestID)], context: context, hooks: hooks)
@@ -936,6 +964,15 @@ extension GalaxySSIStoreTests {
     context.invocationId = "no-previous-page"
     let noPrevious = registry.invoke(AgentIOSWebMediaNativeToolCatalog.browserSessionBack,
       input: ["browser_id": .string(browserId)], context: context, hooks: hooks)
+    context.invocationId = "status-rejected"
+    let preDispatchFailure = registry.invoke(AgentIOSWebMediaNativeToolCatalog.browserSessionOperationStatus,
+      input: ["request_id": .string("no-previous-page")], context: context, hooks: hooks)
+    context.invocationId = "missing-response"
+    let unobserved = registry.invoke(AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate,
+      input: navigationInput, context: context, hooks: hooks)
+    context.invocationId = "status-unobserved"
+    let uncertainFailure = registry.invoke(AgentIOSWebMediaNativeToolCatalog.browserSessionOperationStatus,
+      input: ["request_id": .string("missing-response")], context: context, hooks: hooks)
     context.invocationId = "close"
     let closed = registry.invoke(
       AgentIOSWebMediaNativeToolCatalog.browserSessionClose,
@@ -976,23 +1013,33 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(observation["links"], .array([.object([
       "url": .string("https://galaxyssi.example/public?page=2"), "title": .string("Next page")
     ])]))
-    XCTAssertEqual(status.output["observation"], .object(observation))
+    XCTAssertNil(status.output["observation"])
     XCTAssertEqual(status.output["operation"], .string("navigate"))
-    XCTAssertEqual(status.output["navigation_completed"], .bool(false))
-    XCTAssertEqual(foreign.error?.code, "browser_operation_not_found")
+    XCTAssertEqual(status.output["state"], .string("completed"))
+    XCTAssertEqual(status.output["business_success_verified"], .bool(false))
+    XCTAssertEqual(foreign.output["state"], .string("unknown"))
+    XCTAssertNil(foreign.output["operation"])
     XCTAssertTrue(back.isSuccess)
     XCTAssertEqual(back.output["current_url"], .string("https://galaxyssi.example/first"))
     XCTAssertEqual(back.output["history_count"], .int(1))
     XCTAssertEqual(back.output["revision"], .int(3))
     XCTAssertEqual(back.output["observation"]?.objectValue?.string("text"), "First, read again")
     XCTAssertEqual(noPrevious.error?.code, "browser_no_previous_page")
+    XCTAssertEqual(preDispatchFailure.output["state"], .string("failed"))
+    XCTAssertEqual(preDispatchFailure.output["executed"], .bool(false))
+    XCTAssertEqual(preDispatchFailure.output["outcome_unknown"], .bool(false))
+    XCTAssertEqual(unobserved.error?.details["request_id"], .string("missing-response"))
+    XCTAssertEqual(uncertainFailure.output["state"], .string("failed"))
+    XCTAssertEqual(uncertainFailure.output["outcome_unknown"], .bool(true))
+    XCTAssertNil(uncertainFailure.output["executed"])
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(uncertainFailure.output).contains("missing fake response"))
 
     XCTAssertTrue(closed.isSuccess)
     XCTAssertEqual(closed.output["browser_id"], .string(browserId))
     XCTAssertEqual(closed.output["closed"], .bool(true))
     XCTAssertEqual(afterClose.status, .failed)
     XCTAssertEqual(afterClose.error?.code, "tool_handle_not_found")
-    XCTAssertEqual(transport.requests.count, 3)
+    XCTAssertEqual(transport.requests.count, 4)
     XCTAssertTrue(transport.requests.allSatisfy(\.allowsPartialBody))
   }
 

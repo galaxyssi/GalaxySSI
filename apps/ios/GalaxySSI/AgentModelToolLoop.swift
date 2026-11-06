@@ -943,6 +943,7 @@ final class AgentModelToolLoop {
         }
       } else if result.isSuccess, !result.receipt.replayed,
                 call.toolId != AgentIOSLocalModelWebToolProtocol.collaborationRecallId,
+                call.toolId != AgentIOSWebMediaNativeToolCatalog.browserSessionOperationStatus,
                 !call.toolId.hasPrefix("galaxyssi.tools.") {
         state.uncertainMutations.removeAll()
       }

@@ -134,6 +134,32 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertNil(observations.last?.nativeResult)
   }
 
+  func testBrowserReceiptAloneDoesNotUnlockUncertainMutation() async throws {
+    var mutations = 0
+    let registry = try registry { _ in
+      mutations += 1
+      return .failure(code: "effect_outcome_unknown", message: "Uncertain.")
+    }
+    let observerID = AgentIOSWebMediaNativeToolCatalog.browserSessionOperationStatus
+    let observer = try descriptor(id: observerID, inputSchema: AgentNativeToolDescriptor.objectSchema(),
+      idempotency: .idempotent, effect: .readOnly, concurrency: .parallelReadOnly)
+    try registry.registerExecutable(.init(definition: .init(descriptor: observer, executorId: "test.browser_receipt"),
+      executor: { _ in .success(output: ["state": .string("completed"), "business_success_verified": .bool(false)]) }))
+    var input = request(loopId: "browser-receipt-is-not-verification")
+    input.observationHistoryEnabled = true
+    let outcome = await loop(adapter: ScriptedModelAdapter(
+      AgentModelResponse(toolCalls: [call("mutation")]),
+      AgentModelResponse(toolCalls: [.init(callId: "browser-status", toolId: observerID)]),
+      AgentModelResponse(toolCalls: [call("repeat-mutation")]),
+      AgentModelResponse(assistantText: "Needs separate verification.")
+    ), registry: registry).run(input)
+    let results = outcome.messages.compactMap(\.toolResult)
+    XCTAssertEqual(results.first(where: { $0.toolId == observerID })?.output.string("state"), "completed")
+    XCTAssertEqual(results.last?.error?.code, "effect_outcome_unknown")
+    XCTAssertNil(results.last?.nativeResult)
+    XCTAssertEqual(mutations, 1)
+  }
+
   func testNonIdempotentModelCallReceivesStableDerivedEffectKey() async throws {
     var capturedKeys: [String?] = []
     let registry = try registry(idempotency: .nonIdempotent) { invocation in

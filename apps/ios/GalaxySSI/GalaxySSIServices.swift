@@ -5783,7 +5783,8 @@ final class MessageCoordinator: ObservableObject {
             query.version == AgentPhoneNativeToolCatalog.version,
             query.input.string("request_id") == effect.invocationId,
             let output = localBrowserSessions.observeOperation(requestId: effect.invocationId,
-              scope: AgentIOSURLSessionBrowserSessionScope(context: context), nowMillis: started) else { return nil }
+              scope: AgentIOSURLSessionBrowserSessionScope(context: context), nowMillis: started),
+            ["completed", "failed"].contains(output.string("state")) else { return nil }
       let finished = AgentControlPlaneClock.nowMillis()
       let receipt = AgentNativeToolReceipt(invocationId: context.invocationId,
         startedAtEpochMillis: started, finishedAtEpochMillis: finished, durationMillis: max(0, finished - started),
