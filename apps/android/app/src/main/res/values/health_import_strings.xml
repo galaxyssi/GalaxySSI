@@ -79,6 +79,8 @@
     <string name="health_import_pdf_password">This PDF requires a password.</string>
     <string name="health_pdf_password_title">PDF password</string>
     <string name="health_pdf_unlock">Unlock PDF</string>
+    <string name="health_pdf_unlocking">Unlocking PDF</string>
+    <string name="health_pdf_saved_progress">%1$d of %2$d pages saved</string>
     <string name="health_pdf_password_wrong">That password did not unlock the PDF.</string>
     <string name="health_pdf_password_interrupted">Import paused. Unlock the PDF to continue from the saved page.</string>
     <string name="health_pdf_permission">This password does not allow extracting data from the PDF. Use an authorized owner password or enter the measurements manually.</string>

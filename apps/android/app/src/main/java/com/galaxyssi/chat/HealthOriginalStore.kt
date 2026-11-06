@@ -256,6 +256,13 @@ internal class HealthOriginalStore(
             .use { buildList { while (it.moveToNext()) add(decodeJob(it.getString(0), it.getString(1), it.getBlob(2))) } }
     }
 
+    fun protectedPdfRuns(): List<String> = helper.readableDatabase.rawQuery(
+        "SELECT id FROM jobs WHERE state=? ORDER BY created_at DESC,id DESC LIMIT 100",
+        arrayOf(HealthImportState.PROTECTED_RECOGNIZING.name),
+    ).use { rows -> buildList { while (rows.moveToNext()) add(rows.getString(0)) } }
+
+    internal val protectedPdfLeaseFile get() = File(root, ".protected-pdf.lock")
+
     @Synchronized fun updateJob(id: String, restartCancelled: Boolean = false, update: (HealthImportJob) -> HealthImportJob): HealthImportJob? {
         val db = helper.writableDatabase
         var reviewChanged = false

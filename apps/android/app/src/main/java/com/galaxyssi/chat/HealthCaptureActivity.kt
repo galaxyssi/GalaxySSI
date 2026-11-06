@@ -137,6 +137,7 @@ class HealthCaptureActivity : Activity() {
     override fun onStart() {
         super.onStart(); active = true
         contentResolver.registerContentObserver(HealthOriginalStore.changesUri(this), true, observer)
+        worker.execute { runCatching { HealthProtectedPdfImport.recoverInterrupted(originals) } }
         refresh()
         val entry = firstEntry
         firstEntry = null
@@ -221,7 +222,7 @@ class HealthCaptureActivity : Activity() {
                     "review" -> {
                         val job = originals.job(id)
                         val original = job?.originalId?.takeIf(String::isNotBlank)?.let(originals::original)
-                        val scanned = if (job == null) null else originals.page(id, number)
+                        val scanned = if (job == null || job.protectedReviewPending()) null else originals.page(id, number)
                         val suggestions = if (job == null || original == null || scanned == null) emptyList()
                             else HealthOcrCandidates.suggest(job, original, scanned)
                         val visible = suggestions.drop(offset).take(HEALTH_OCR_REVIEW_PAGE_SIZE)
@@ -253,7 +254,7 @@ class HealthCaptureActivity : Activity() {
         }
         val key = when (screen) {
             "capture" -> "capture|$mode|${data.pendingPhoto}|${data.jobs.joinToString { it.id }}"
-            "review" -> "review|$selectedId|$page|$candidateOffset|${data.page?.page}|${data.available}|${data.sourceContext.hashCode()}|" +
+            "review" -> "review|$selectedId|$page|$candidateOffset|${data.job?.state}|${data.job?.error}|${data.page?.page}|${data.available}|${data.sourceContext.hashCode()}|" +
                 data.review.joinToString { row -> row.saved?.let { "${it.id}:${it.revision}:${row.linked}" } ?:
                     "${row.version}:${row.link?.id}:${row.link?.revision}" }
             else -> ""
@@ -421,9 +422,9 @@ class HealthCaptureActivity : Activity() {
     }
     private fun renderReview(content: LinearLayout, data: CaptureSnapshot) {
         val job = data.job; val original = data.original; val scanned = data.page
-        if (job?.needsPdfPassword() == true) {
+        if (job?.protectedReviewPending() == true) {
             content.addView(ui.text(jobState(job)))
-            ui.add(content, ui.row(getString(R.string.health_pdf_unlock)) { retry(job) }, 8)
+            if (job.needsPdfPassword()) ui.add(content, ui.row(getString(R.string.health_pdf_unlock)) { retry(job) }, 8)
             ui.add(content, ui.row(getString(R.string.health_manual)) { manualEntry() }, 8)
             return
         }
@@ -844,8 +845,13 @@ class HealthCaptureActivity : Activity() {
             return
         }
         worker.execute {
-            originals.updateJob(job.id, restartCancelled = true) { it.copy(state = HealthImportState.QUEUED, error = "") }
-            HealthImportScheduler.enqueue(applicationContext, job.id, job.captureBatch.isNotBlank() && !job.captureSubmitted)
+            val queued = originals.updateJob(job.id, restartCancelled = true) {
+                if (it.state in setOf(HealthImportState.FAILED, HealthImportState.CANCELLED) && !it.needsPdfPassword())
+                    it.copy(state = HealthImportState.QUEUED, error = "") else it
+            }
+            if (queued?.state == HealthImportState.QUEUED) {
+                HealthImportScheduler.enqueue(applicationContext, job.id, queued.captureBatch.isNotBlank() && !queued.captureSubmitted)
+            }
         }
     }
     private fun manualEntry() {
@@ -889,6 +895,11 @@ class HealthCaptureActivity : Activity() {
         HealthImportState.COPYING -> if (job.totalBytes > 0) getString(R.string.health_import_copy_percent, (job.copiedBytes * 100 / job.totalBytes).coerceIn(0, 100))
             else getString(R.string.health_import_copying)
         HealthImportState.RECOGNIZING -> getString(R.string.health_import_recognizing, job.nextPage + 1, job.pageCount.coerceAtLeast(1))
+        HealthImportState.PROTECTED_RECOGNIZING -> when {
+            job.pageCount == 0 -> getString(R.string.health_pdf_unlocking)
+            job.nextPage >= job.pageCount -> getString(R.string.health_import_preparing)
+            else -> getString(R.string.health_import_recognizing, job.nextPage + 1, job.pageCount)
+        }
         HealthImportState.REVIEW -> getString(R.string.health_import_review_ready, job.nextPage)
         HealthImportState.TABLE_REVIEW -> getString(R.string.health_table_queue_ready)
         HealthImportState.ORIGINAL_ONLY -> getString(when {
@@ -898,7 +909,11 @@ class HealthCaptureActivity : Activity() {
         })
         HealthImportState.CANCELLED -> getString(R.string.health_import_cancelled)
         HealthImportState.CAPTURE_READY -> getString(R.string.health_photo_arrange)
-        HealthImportState.FAILED -> getString(failureText(job.error))
+        HealthImportState.FAILED -> getString(failureText(job.error)).let {
+            if (job.error == "pdf_password_interrupted" && job.nextPage > 0 && job.pageCount > 0)
+                "$it\n${getString(R.string.health_pdf_saved_progress, job.nextPage, job.pageCount)}"
+            else it
+        }
         }
     }
     private fun showFailure(code: String) { Toast.makeText(this, failureText(code), Toast.LENGTH_LONG).show() }

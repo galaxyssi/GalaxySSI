@@ -79,6 +79,8 @@
     <string name="health_import_pdf_password">此 PDF 需要密码。</string>
     <string name="health_pdf_password_title">PDF 密码</string>
     <string name="health_pdf_unlock">解锁 PDF</string>
+    <string name="health_pdf_unlocking">正在解锁 PDF</string>
+    <string name="health_pdf_saved_progress">已保存 %1$d / %2$d 页</string>
     <string name="health_pdf_password_wrong">密码不正确，未能解锁此 PDF。</string>
     <string name="health_pdf_password_interrupted">导入已暂停。解锁 PDF 后可从已保存的页面继续。</string>
     <string name="health_pdf_permission">此密码无权提取 PDF 数据。请使用获授权的所有者密码，或手动录入。</string>

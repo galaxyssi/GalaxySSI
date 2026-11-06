@@ -31,10 +31,18 @@ internal class HealthImportTaskView(
     fun bind(job: HealthImportJob, description: String) {
         name.text = job.name.ifBlank { context.getString(R.string.health_import_preparing) }
         status.text = description
-        val running = job.state in listOf(HealthImportState.QUEUED, HealthImportState.COPYING, HealthImportState.RECOGNIZING)
+        val protectedRun = job.state == HealthImportState.PROTECTED_RECOGNIZING
+        val running = protectedRun || job.state in listOf(HealthImportState.QUEUED, HealthImportState.COPYING, HealthImportState.RECOGNIZING)
         progress.visibility = if (running) View.VISIBLE else View.INVISIBLE
-        progress.isIndeterminate = !(job.state == HealthImportState.COPYING && job.totalBytes > 0)
-        if (!progress.isIndeterminate) { progress.max = 100; progress.progress = (job.copiedBytes * 100 / job.totalBytes).coerceIn(0, 100).toInt() }
+        val copying = job.state == HealthImportState.COPYING && job.totalBytes > 0
+        progress.isIndeterminate = !(copying || protectedRun && job.pageCount > 0)
+        if (copying) {
+            progress.max = 100
+            progress.progress = (job.copiedBytes * 100 / job.totalBytes).coerceIn(0, 100).toInt()
+        } else if (protectedRun && job.pageCount > 0) {
+            progress.max = job.pageCount
+            progress.progress = job.nextPage.coerceIn(0, job.pageCount)
+        }
         val nextKey = "${job.state}|${job.nextPage > 0}|${job.originalId}|${job.needsPdfPassword()}"
         if (nextKey == actionKey) return
         actionKey = nextKey; actions.removeAllViews()
@@ -42,7 +50,7 @@ internal class HealthImportTaskView(
         if (job.state in listOf(HealthImportState.CANCELLED, HealthImportState.FAILED))
             actions.addView(ui.row(context.getString(if (job.needsPdfPassword()) R.string.health_pdf_unlock else R.string.common_retry)) { retry(job) })
         if (job.needsPdfPassword()) actions.addView(ui.row(context.getString(R.string.health_manual), action = manual))
-        if (job.nextPage > 0 && !job.needsPdfPassword()) actions.addView(ui.row(context.getString(R.string.health_review_title)) { review(job) })
+        if (job.nextPage > 0 && !job.protectedReviewPending()) actions.addView(ui.row(context.getString(R.string.health_review_title)) { review(job) })
         if (job.state == HealthImportState.TABLE_REVIEW) actions.addView(ui.row(context.getString(R.string.health_table_title)) { review(job) })
         if (job.originalId.isNotBlank()) actions.addView(ui.row(context.getString(R.string.health_view_original)) { original(job) })
         if (job.captureBatch.isNotBlank()) actions.addView(ui.row(context.getString(if (job.captureSubmitted) R.string.health_photo_view_pages else R.string.health_photo_arrange)) { capture(job) })

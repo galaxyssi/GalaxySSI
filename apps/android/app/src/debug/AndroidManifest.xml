@@ -4,6 +4,7 @@
         <activity android:name=".ComposerEditingTestActivity" android:exported="false" />
         <service android:name=".HealthCropProcessFixture" android:process=":health_crop_fixture" android:exported="false" />
         <service android:name=".HealthRestoreProcessFixture" android:process=":health_restore_fixture" android:exported="false" />
+        <service android:name=".HealthProtectedPdfProcessFixture" android:process=":health_protected_pdf_fixture" android:exported="false" />
         <receiver
             android:name=".AgentNativeToolAuditReceiver"
             android:exported="true">
