@@ -87,7 +87,7 @@ final class AgentTranscriptEntryStoreTests: XCTestCase {
   }
 
   func testEncryptedRowCacheRequiresIdenticalCiphertextAndEvictsWithinBounds() {
-    var cache = GalaxySSIChatHistoryDatabase.RowCache(maximumRows: 2, maximumBytes: 8)
+    let cache = GalaxySSIChatHistoryDatabase.RowCache(maximumRows: 2, maximumBytes: 8)
     let message = ChatMessage(contactId: "fixture", content: "private", isMine: false)
     var decryptions = 0
     func decode() -> (message: ChatMessage, plaintextBytes: Int)? {
@@ -106,6 +106,37 @@ final class AgentTranscriptEntryStoreTests: XCTestCase {
     cache.clear()
     XCTAssertEqual(cache.read(id: "row-b", ciphertext: Data([1]), decode: decode), message)
     XCTAssertEqual(decryptions, 5)
+  }
+
+  func testRuntimeCacheReadsDoNotRefreshDeadlineAndClearingFencesAnInFlightLoad() {
+    var time: TimeInterval = 0
+    let cache = GalaxySSIRuntimeCache<String, String>(
+      maxCount: 2, maxCost: 32, sensitive: false, now: { time })
+    let revision = cache.revision
+    cache.insert("first", for: "row", cost: 5, revision: revision)
+    time = 599
+    XCTAssertEqual(cache.value(for: "row"), "first")
+    cache.insert("overwrite", for: "row", cost: 9, revision: revision)
+    time = 600
+    XCTAssertNil(cache.value(for: "row"))
+    cache.clear()
+    cache.insert("stale", for: "row", cost: 5, revision: revision)
+    XCTAssertNil(cache.value(for: "row"))
+    cache.insert("current", for: "row", cost: 7, revision: cache.revision)
+    XCTAssertEqual(cache.value(for: "row"), "current")
+  }
+
+  func testRuntimeCacheReleasesExpiredEntryWithoutAnotherRead() {
+    final class LifetimeProbe {
+      let release: XCTestExpectation
+      init(_ release: XCTestExpectation) { self.release = release }
+      deinit { release.fulfill() }
+    }
+    let released = expectation(description: "Idle expiration releases the retained entry")
+    let cache = GalaxySSIRuntimeCache<String, LifetimeProbe>(
+      lifetime: 0.05, maxCount: 1, maxCost: 1, sensitive: false)
+    cache.insert(LifetimeProbe(released), for: "row", cost: 1, revision: cache.revision)
+    withExtendedLifetime(cache) { wait(for: [released], timeout: 3) }
   }
   func testRetainsAndPagesEveryEntryWithoutCountLimits() throws {
     let store = makeStore()

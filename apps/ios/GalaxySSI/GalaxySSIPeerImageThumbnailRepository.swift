@@ -34,17 +34,7 @@ enum GalaxySSIPeerImageThumbnailPolicy {
 final class GalaxySSIPeerImageThumbnailRepository {
   static let shared = GalaxySSIPeerImageThumbnailRepository()
 
-  private final class Entry: NSObject {
-    var data: Data
-    var expiresAt: Date
-
-    init(data: Data, expiresAt: Date) {
-      self.data = data
-      self.expiresAt = expiresAt
-    }
-  }
-
-  private let cache = NSCache<NSString, Entry>()
+  private let cache = GalaxySSIRuntimeCache<String, Data>(maxCount: 96, maxCost: 24 * 1024 * 1024)
   private let queue = DispatchQueue(
     label: "com.galaxyssi.ios.peer-image-thumbnail",
     qos: .userInitiated,
@@ -64,8 +54,6 @@ final class GalaxySSIPeerImageThumbnailRepository {
   ) {
     self.cipher = cipher
     self.fileManager = fileManager
-    cache.totalCostLimit = 24 * 1024 * 1024
-    cache.countLimit = 96
     memoryWarningObserver = NotificationCenter.default.addObserver(
       forName: UIApplication.didReceiveMemoryWarningNotification,
       object: nil,
@@ -90,19 +78,19 @@ final class GalaxySSIPeerImageThumbnailRepository {
     let key = GalaxySSIPeerImageThumbnailPolicy.variant(block, maxPixelSize: maxPixelSize)
     lock.lock()
     let currentGeneration = generation
+    let cacheRevision = cache.revision
     if block.dataB64.isEmpty, let original = GalaxySSIPeerImageThumbnailPolicy.sourceURL(block),
        !fileManager.fileExists(atPath: original.path) {
-      cache.removeObject(forKey: key as NSString)
+      cache.remove(key)
       lock.unlock()
       deliver([completion], data: nil, generation: currentGeneration)
       return
     }
-    if let entry = cache.object(forKey: key as NSString), entry.expiresAt > Date() {
+    if let data = cache.value(for: key) {
       lock.unlock()
-      deliver([completion], data: entry.data, generation: currentGeneration)
+      deliver([completion], data: data, generation: currentGeneration)
       return
     }
-    cache.removeObject(forKey: key as NSString)
     if pending[key] != nil {
       pending[key]?.append(completion)
       lock.unlock()
@@ -121,11 +109,7 @@ final class GalaxySSIPeerImageThumbnailRepository {
       }
       let callbacks = pending.removeValue(forKey: key) ?? []
       if let data {
-        cache.setObject(
-          Entry(data: data, expiresAt: Date().addingTimeInterval(Self.memoryTTL)),
-          forKey: key as NSString,
-          cost: data.count
-        )
+        cache.insert(data, for: key, cost: data.count, revision: cacheRevision)
       }
       lock.unlock()
       deliver(callbacks, data: data, generation: currentGeneration)
@@ -135,7 +119,7 @@ final class GalaxySSIPeerImageThumbnailRepository {
   func clearMemoryCache() {
     lock.lock()
     generation &+= 1
-    cache.removeAllObjects()
+    cache.clear()
     pending.removeAll()
     lock.unlock()
   }
@@ -145,7 +129,7 @@ final class GalaxySSIPeerImageThumbnailRepository {
       guard let self else { return }
       for callback in callbacks {
         lock.lock()
-        let current = generation == expected
+        let current = generation == expected && !GalaxySSIRuntimePlaintextProtection.isBoundaryActive
         lock.unlock()
         guard current else { return }
         callback(data)
@@ -263,7 +247,6 @@ final class GalaxySSIPeerImageThumbnailRepository {
     }
   }
 
-  private static let memoryTTL: TimeInterval = 30
   private static let maximumStoredBytes = 100_000
   private static let legacyThumbnailFileName = ".peer-image-thumbnail-v1.saenc"
 }

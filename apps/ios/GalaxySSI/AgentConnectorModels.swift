@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 enum RetiredAgentModelPolicy {
@@ -63,6 +64,22 @@ struct AgentModelOption: Codable, Equatable, Identifiable {
 }
 
 struct AgentInvocationProfile: Codable, Equatable {
+  private static let metadataCache = GalaxySSIRuntimeCache<SHA256.Digest, AgentInvocationProfile>(
+    lifetime: 24 * 60 * 60, maxCount: 32, maxCost: 512 * 1024, sensitive: false)
+
+  static func clearMetadataCache() { metadataCache.clear() }
+
+  static func decodeMetadata(_ source: Data) -> Self {
+    func decode() -> Self { (try? JSONDecoder().decode(Self.self, from: source)) ?? Self() }
+    guard source.count <= 64 * 1024 else { return decode() }
+    let key = SHA256.hash(data: source)
+    let revision = metadataCache.revision
+    if let cached = metadataCache.value(for: key) { return cached }
+    let profile = decode()
+    metadataCache.insert(profile, for: key, cost: source.count, revision: revision)
+    return profile
+  }
+
   var defaultModelId: String
   var models: [AgentModelOption]
   var reasoningEfforts: [AgentModelReasoningEffort]
