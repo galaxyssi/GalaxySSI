@@ -159,7 +159,7 @@ final class AgentModelPlanningPromptTests: XCTestCase {
   func testCompactedPromptKeepsLatestReceiptWholeWithUserContextAndToolIDs() throws {
     let latest = AgentAction(id: "readback-failed", kind: .callNativeTool, target: "galaxyssi.fixture.00",
       risk: .low, status: .failed, description: "Read current output", result: "LATEST_FAILURE",
-      evidence: #"{"file":{"readable":false,"path":"outputs/a.txt"},"api_key":"DO_NOT_DISCLOSE"}"#)
+      evidence: #"{"output":{"file":{"readable":false,"path":"outputs/a.txt"}},"metadata":{"api_key":"DO_NOT_DISCLOSE"}}"#)
     var pending = latest
     pending.id = "still-running"
     pending.status = .running
@@ -191,7 +191,9 @@ final class AgentModelPlanningPromptTests: XCTestCase {
       XCTAssertTrue(prompt.hasSuffix(history.latest))
       XCTAssertEqual(prompt.components(separatedBy: "LATEST_FAILURE").count, 2)
       XCTAssertTrue(history.latest.contains(#""status":"FAILED""#))
-      XCTAssertTrue(history.latest.contains(#""observed_output_fields":["/file/path","/file/readable"]"#))
+      XCTAssertTrue(history.latest.contains(#""observed_output_fields":{"fields":{"/file/path":"string","/file/readable":"boolean"},"partial":false}"#))
+      XCTAssertFalse(history.latest.contains("/output/file/"))
+      XCTAssertFalse(history.latest.contains("/metadata/api_key"))
       XCTAssertFalse(history.latest.contains("NOT_A_FINAL_RECEIPT"))
       XCTAssertFalse(prompt.contains("DO_NOT_DISCLOSE"))
       XCTAssertTrue(prompt.contains("User goal: Verify the output file"))
