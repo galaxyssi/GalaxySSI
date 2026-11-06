@@ -62,4 +62,21 @@ class HealthReminderPolicyTest {
         assertEquals(at("2026-11-04T00:30:00Z"), HealthReminderPolicy.nextDaily(settings, now, ZoneId.of("Asia/Shanghai")))
         assertEquals(510, settings.minute)
     }
+    @Test fun pauseAndQuietHoursUseTheLaterBoundaryInTheActiveZone() {
+        val now = at("2026-11-04T23:00:00Z")
+        val quietEnd = at("2026-11-05T08:00:00Z")
+        val pauseEnd = quietEnd + HealthReminderPolicy.HOUR
+        val longerPause = settings.copy(pauseUntil = pauseEnd)
+        assertEquals(pauseEnd, HealthReminderPolicy.deliveryDeferredUntil(longerPause, now, utc))
+        assertEquals(quietEnd, HealthReminderPolicy.deliveryDeferredUntil(settings.copy(pauseUntil = now + 1), now, utc))
+        assertEquals(pauseEnd, HealthReminderPolicy.deliveryDeferredUntil(longerPause, now, ZoneId.of("Asia/Shanghai")))
+        assertNull(HealthReminderPolicy.deliveryDeferredUntil(longerPause, pauseEnd, utc))
+    }
+    @Test fun deliveryWindowNeverTreatsFutureOrExpiredTimestampsAsDue() {
+        val now = at("2026-11-04T23:00:00Z")
+        assertFalse(HealthReminderPolicy.deliveryDue(now + 1, now))
+        assertTrue(HealthReminderPolicy.deliveryDue(now, now))
+        assertTrue(HealthReminderPolicy.deliveryDue(now - HealthReminderPolicy.DAY + 1, now))
+        assertFalse(HealthReminderPolicy.deliveryDue(now - HealthReminderPolicy.DAY, now))
+    }
 }

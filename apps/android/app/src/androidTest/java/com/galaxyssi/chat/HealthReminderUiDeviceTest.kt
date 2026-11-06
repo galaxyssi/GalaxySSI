@@ -2,13 +2,18 @@ package com.galaxyssi.chat
 
 import android.app.KeyguardManager
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Rect
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Switch
+import android.widget.ScrollView
+import android.widget.TextView
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
+import java.io.File
 import java.time.ZoneId
 import java.util.UUID
 import java.util.concurrent.ExecutorService
@@ -94,5 +99,46 @@ class HealthReminderUiDeviceTest {
         scenario.onActivity { assertNull(find(it.window.decorView, "health-reminder-state-PENDING")) }
         scenario.moveToState(Lifecycle.State.RESUMED)
         wait(scenario, "health-reminder-state-PENDING")
+    }
+    @Test fun pauseAndResumeAreExplicitAndSaveRemainsVisibleWhileScrolling() = screen { scenario, store ->
+        click(scenario, "health-reminder-settings")
+        click(scenario, "health-reminder-pause")
+        wait(scenario, "health-reminder-paused-until")
+        assertEquals(0L, store.settings().pauseUntil)
+        scenario.onActivity { activity ->
+            val marker = requireNotNull(find(activity.window.decorView, "health-reminder-paused-until"))
+            val save = requireNotNull(find(activity.window.decorView, "health-reminder-save"))
+            val scroll = generateSequence(marker.parent) { it.parent }.filterIsInstance<ScrollView>().first()
+            assertFalse(generateSequence(save.parent) { it.parent }.any { it === scroll })
+            assertTrue(save.getGlobalVisibleRect(Rect()))
+            scroll.scrollTo(0, scroll.getChildAt(0).height)
+            assertTrue(save.getGlobalVisibleRect(Rect()))
+        }
+        screenshot()
+        click(scenario, "health-reminder-save")
+        wait(scenario, "health-reminder-settings")
+        assertTrue(store.settings().pauseUntil > System.currentTimeMillis())
+        click(scenario, "health-reminder-settings")
+        wait(scenario, "health-reminder-pause")
+        scenario.onActivity { activity ->
+            val button = find(activity.window.decorView, "health-reminder-pause") as TextView
+            assertEquals(activity.getString(R.string.health_reminder_resume_plan), button.text)
+        }
+        click(scenario, "health-reminder-pause")
+        assertTrue(store.settings().pauseUntil > System.currentTimeMillis())
+        click(scenario, "health-reminder-save")
+        wait(scenario, "health-reminder-settings")
+        assertEquals(0L, store.settings().pauseUntil)
+    }
+
+    private fun screenshot() {
+        if (InstrumentationRegistry.getArguments().getString("reminderDeliveryScreenshot") != "true") return
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.waitForIdleSync()
+        SystemClock.sleep(350)
+        val image = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+        try { File(context.cacheDir, "health-reminder-pause.png").outputStream().use {
+            check(image.compress(Bitmap.CompressFormat.PNG, 100, it))
+        } } finally { image.recycle() }
     }
 }

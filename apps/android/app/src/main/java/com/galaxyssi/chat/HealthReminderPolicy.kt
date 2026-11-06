@@ -105,4 +105,9 @@ internal object HealthReminderPolicy {
         }
         return null
     }
+
+    fun deliveryDeferredUntil(settings: HealthReminderSettings, now: Long, zone: ZoneId): Long? =
+        maxOf(settings.pauseUntil, quietUntil(settings, now, zone) ?: 0L).takeIf { it > now }
+
+    fun deliveryDue(at: Long, now: Long) = at > now - DAY && at <= now
 }

@@ -11,9 +11,8 @@ internal object HealthReportNotificationDelivery {
         post: (HealthReportReview) -> Boolean, cancel: (String) -> Unit
     ): Long? {
         val allowed = settings.reportReviews && settings.notifications && systemAllowed
-        val quietUntil = HealthReminderPolicy.quietUntil(settings, now, zone)
-        val deferUntil = maxOf(settings.pauseUntil, quietUntil ?: 0L)
-        val due = if (!allowed || deferUntil <= now) store.dueReportNotices(now) else emptyList()
+        val deferUntil = HealthReminderPolicy.deliveryDeferredUntil(settings, now, zone)
+        val due = if (!allowed || deferUntil == null) store.dueReportNotices(now) else emptyList()
         val ids = visible.keys + due.map { it.id }
         val reports = if (allowed && ids.isNotEmpty()) lookup(ids) else emptyMap()
         for ((id, privateOnLock) in visible) {
@@ -29,7 +28,7 @@ internal object HealthReportNotificationDelivery {
         }
         val next = store.nextReportNotice() ?: return null
         return when {
-            allowed -> maxOf(next, deferUntil, now + 1000L)
+            allowed -> maxOf(next, deferUntil ?: 0L, now + 1000L)
             next <= now -> now + 1000L
             else -> null
         }

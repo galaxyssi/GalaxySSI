@@ -29,8 +29,8 @@
     <string name="health_reminder_daily">每日记录提醒</string>
     <string name="health_reminder_time">提醒时间</string>
     <string name="health_reminder_target">记录类型</string>
-    <string name="health_reminder_pause">暂停 24 小时</string>
-    <string name="health_reminder_resume_plan">恢复每日计划</string>
+    <string name="health_reminder_pause">暂停健康提醒 24 小时</string>
+    <string name="health_reminder_resume_plan">恢复健康提醒</string>
     <string name="health_reminder_delivery">通知方式</string>
     <string name="health_reminder_notifications">系统通知</string>
     <string name="health_reminder_system_settings">Android 通知权限</string>

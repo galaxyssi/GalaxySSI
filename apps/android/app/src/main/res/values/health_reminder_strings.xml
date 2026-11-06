@@ -29,8 +29,8 @@
     <string name="health_reminder_daily">Daily record reminder</string>
     <string name="health_reminder_time">Reminder time</string>
     <string name="health_reminder_target">Record type</string>
-    <string name="health_reminder_pause">Pause for 24 hours</string>
-    <string name="health_reminder_resume_plan">Resume daily plan</string>
+    <string name="health_reminder_pause">Pause health reminders for 24 hours</string>
+    <string name="health_reminder_resume_plan">Resume health reminders</string>
     <string name="health_reminder_delivery">Delivery</string>
     <string name="health_reminder_notifications">System notifications</string>
     <string name="health_reminder_system_settings">Android notification permission</string>

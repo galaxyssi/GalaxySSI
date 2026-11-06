@@ -117,18 +117,29 @@ internal class HealthReminderStore(private val context: Context, private val nam
         }
     }.also { changed() }
 
-    fun pendingDelivery(now: Long): List<HealthReminderOccurrence> =
-        (now - HealthReminderPolicy.DAY).toString().let { cutoff ->
-            rows("state=${HealthReminderState.PENDING.ordinal} AND delivery=${HealthReminderDelivery.WAITING.ordinal} AND (due>? OR resume>?)",
-                arrayOf(cutoff, cutoff), 30)
+    fun pendingDelivery(now: Long): List<HealthReminderOccurrence> {
+        val cutoff = (now - HealthReminderPolicy.DAY).toString()
+        val upper = now.toString()
+        return rows("state=${HealthReminderState.PENDING.ordinal} AND delivery=${HealthReminderDelivery.WAITING.ordinal} " +
+            "AND due<=? AND resume<=? AND (due>? OR resume>?)", arrayOf(upper, upper, cutoff, cutoff), 30).filter {
+            it.state == HealthReminderState.PENDING && it.delivery == HealthReminderDelivery.WAITING &&
+                HealthReminderPolicy.deliveryDue(maxOf(it.dueAt, it.resumeAt), now)
         }
-    fun delivered(event: HealthReminderOccurrence, outcome: HealthReminderDelivery) {
+    }
+    fun nextFutureDelivery(now: Long): Long? = db.rawQuery(
+        "SELECT MIN(MAX(due,resume)) FROM reminders WHERE state=? AND delivery=? AND (due>? OR resume>?)",
+        arrayOf(HealthReminderState.PENDING.ordinal.toString(), HealthReminderDelivery.WAITING.ordinal.toString(),
+            now.toString(), now.toString()),
+    ).use { if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null }
+
+    fun delivered(event: HealthReminderOccurrence, outcome: HealthReminderDelivery): Boolean {
         val changed = transaction {
             val current = occurrence(event.day)
             if (current?.revision != event.revision || current.state != HealthReminderState.PENDING || current.delivery != HealthReminderDelivery.WAITING) false
             else { update(current.copy(delivery = outcome)); true }
         }
         if (changed) changed()
+        return changed
     }
     fun nextSnooze(): Long? = db.rawQuery("SELECT MIN(resume) FROM reminders WHERE state=${HealthReminderState.SNOOZED.ordinal}", null).use {
         if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null
@@ -223,7 +234,7 @@ internal class HealthReminderStore(private val context: Context, private val nam
             }
         }
     }.also { changed() }
-    fun sleepDelivered(expected: HealthSleepAlert, outcome: HealthReminderDelivery) {
+    fun sleepDelivered(expected: HealthSleepAlert, outcome: HealthReminderDelivery): Boolean {
         val dirty = transaction {
             val current = sleepAlert(expected.id)
             if (current?.revision != expected.revision || current.state != HealthReminderState.PENDING ||
@@ -231,6 +242,7 @@ internal class HealthReminderStore(private val context: Context, private val nam
             else { writeSleep(current.copy(delivery = outcome)); true }
         }
         if (dirty) changed()
+        return dirty
     }
     fun reportDisposition(id: String): HealthReportReviewDisposition = db.rawQuery(
         "SELECT payload FROM report_reviews WHERE id=?", arrayOf(id)
