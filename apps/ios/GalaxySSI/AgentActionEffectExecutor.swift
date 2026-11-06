@@ -42,6 +42,8 @@ struct AgentEffectRecoveryRecord: Codable, Equatable {
     guard descriptor.requiresEffectClaim,
           ["effect_outcome_unknown", "invalid_output", "missing_output_validation"].contains(result.error?.code ?? "") ||
           result.status == .verificationFailed ||
+          result.output["state_verified"] == .bool(false) ||
+          result.output["delivery_verified"] == .bool(false) ||
           result.output["outcome"]?.stringValue == "unknown" ||
           result.output["outcome"]?.stringValue == "unverified" ||
           result.output["outcome"]?.stringValue == "uncertain" else { return nil }
@@ -121,6 +123,33 @@ struct AgentEffectRecoveryRecord: Codable, Equatable {
   }
 
   var hasObservation: Bool { observation.map(verifies) ?? false }
+
+  func permitsFollowUp(_ actions: [AgentAction]) -> Bool {
+    hasObservation && !actions.contains(where: isSameEffect)
+  }
+
+  static func shortcutReviewIndex(
+    plan: AgentPlan?, actionId: String, effects: [AgentEffectRecoveryRecord]
+  ) -> Int? {
+    guard let plan, plan.executionMode != .planOnly,
+          plan.plannerProfile == "rule-based-direct-native-tool",
+          plan.actions.contains(where: {
+            $0.id == actionId && $0.kind == .callNativeTool && [.completed, .failed].contains($0.status)
+          }) else { return nil }
+    return effects.firstIndex {
+      $0.actionId == actionId && $0.query != nil && !$0.hasObservation
+    }
+  }
+
+  static func permitsReviewProvider(
+    _ snapshot: AgentPlannerModelSnapshot, localOnly: Bool, privateMode: Bool, connectorsAllowed: Bool
+  ) -> Bool {
+    if snapshot.localProfileId != nil {
+      return snapshot.route == nil && snapshot.pairedPhonePlanner == nil
+    }
+    return !localOnly && !privateMode && connectorsAllowed &&
+      (snapshot.route != nil || snapshot.pairedPhonePlanner != nil)
+  }
 }
 
 /// Durably claims legacy Agent actions before dispatching their external effects.

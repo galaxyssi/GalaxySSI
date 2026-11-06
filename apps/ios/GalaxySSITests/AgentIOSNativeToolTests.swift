@@ -31,6 +31,32 @@ extension GalaxySSIStoreTests {
     var sameEffect = action
     sameEffect.id = "new-action-id"
     XCTAssertTrue(record.isSameEffect(sameEffect))
+    XCTAssertFalse(record.permitsFollowUp([]))
+    let screen = AgentScreenContext(foregroundApp: "GalaxySSI")
+    let shortcut = AgentPlan(goal: "Set media volume", screen: screen, steps: [], actions: [action],
+      plannerProfile: "rule-based-direct-native-tool")
+    func reviewIndex(_ plan: AgentPlan, record: AgentEffectRecoveryRecord) -> Int? {
+      AgentEffectRecoveryRecord.shortcutReviewIndex(plan: plan, actionId: action.id, effects: [record])
+    }
+    XCTAssertEqual(reviewIndex(shortcut, record: record), 0)
+    var ineligible = shortcut
+    ineligible.executionMode = .planOnly
+    XCTAssertNil(reviewIndex(ineligible, record: record))
+    ineligible = shortcut
+    ineligible.plannerProfile = "guarded-model:test"
+    XCTAssertNil(reviewIndex(ineligible, record: record))
+    ineligible = shortcut
+    ineligible.actions[0].status = .waitingResponse
+    XCTAssertNil(reviewIndex(ineligible, record: record))
+
+    var accepted = native
+    accepted.status = .succeeded
+    accepted.error = nil
+    accepted.receipt.status = .succeeded
+    accepted.output = ["request_accepted": .bool(true), "state_verified": .bool(false)]
+    XCTAssertNotNil(AgentEffectRecoveryRecord.fromNativeResult(accepted, action: action, descriptor: descriptor))
+    accepted.output["state_verified"] = .bool(true)
+    XCTAssertNil(AgentEffectRecoveryRecord.fromNativeResult(accepted, action: action, descriptor: descriptor))
     let output: AgentMcpJSONObject = ["observed_at_epoch_ms": .int(21), "streams": .object(["media": .object([
       "stream": .string("media"), "current": .int(13), "scope": .string("app_visible_output_volume")
     ])])]
@@ -73,7 +99,9 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(record.verifies(observation(observedReceipt: invalid, observedOutput: staleOutput)))
     var unknownStream = action
     unknownStream.parameters["input_json"] = #"{"stream":"alarm","percent":40}"#
-    XCTAssertNil(AgentEffectRecoveryRecord.fromNativeResult(native, action: unknownStream, descriptor: descriptor)?.query)
+    let unsupported = try XCTUnwrap(AgentEffectRecoveryRecord.fromNativeResult(native, action: unknownStream, descriptor: descriptor))
+    XCTAssertNil(unsupported.query)
+    XCTAssertNil(reviewIndex(shortcut, record: unsupported))
     let verified = observation()
     record.observation = verified
     var task = AgentTaskRecord(taskId: "task", sessionId: "session", goal: "Set volume",
@@ -82,8 +110,35 @@ extension GalaxySSIStoreTests {
     let restored = try JSONDecoder().decode(AgentTaskRecord.self, from: JSONEncoder().encode(task))
     XCTAssertEqual(restored.effectRecovery, [record])
     XCTAssertTrue(restored.effectRecovery?.first?.hasObservation == true)
+    let recovered = try XCTUnwrap(restored.effectRecovery?.first)
+    XCTAssertNil(reviewIndex(shortcut, record: recovered))
+    XCTAssertFalse(recovered.permitsFollowUp([sameEffect]))
+    let additionalRead = AgentAction(id: "new-read", kind: .callNativeTool, target: query.toolId,
+      risk: .low, status: .proposed, description: "Read audio state", parameters: ["tool_id": query.toolId])
+    XCTAssertTrue(recovered.permitsFollowUp([additionalRead]))
     XCTAssertFalse(AgentTaskCenterPolicy.actions(restored).contains(.retry))
     XCTAssertTrue(AgentTaskCenterPolicy.actions(restored).contains(.inspectEffect))
+  }
+
+  func testShortcutRecoveryNeverSendsLocalOnlyOrPrivateEvidenceToAPairedPlanner() {
+    let route = AgentPairedPhonePlannerRoute(contactId: "desktop:codex", desktopId: "desktop",
+      clientRouteId: "route", modelId: "model", reasoningEffort: .automatic)
+    let paired = AgentPlannerModelSnapshot(settings: AgentModelPlannerSettings(), route: nil,
+      localProfileId: nil, selectedForPhoneTurn: true, pairedPhonePlanner: route)
+    func permits(_ snapshot: AgentPlannerModelSnapshot, localOnly: Bool = false,
+                 privateMode: Bool = false, connectorsAllowed: Bool = true) -> Bool {
+      AgentEffectRecoveryRecord.permitsReviewProvider(snapshot, localOnly: localOnly,
+        privateMode: privateMode, connectorsAllowed: connectorsAllowed)
+    }
+    XCTAssertTrue(permits(paired))
+    XCTAssertFalse(permits(paired, localOnly: true))
+    XCTAssertFalse(permits(paired, privateMode: true))
+    XCTAssertFalse(permits(paired, connectorsAllowed: false))
+    let local = AgentPlannerModelSnapshot(settings: AgentModelPlannerSettings(), route: nil, localProfileId: "local")
+    XCTAssertTrue(permits(local, localOnly: true, privateMode: true, connectorsAllowed: false))
+    var invalid = local
+    invalid.pairedPhonePlanner = route
+    XCTAssertFalse(permits(invalid, localOnly: true))
   }
 
   func testBrowserOperationObservationUsesExactRequestAndTurnAndExpires() throws {
