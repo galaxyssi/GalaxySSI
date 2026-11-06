@@ -538,6 +538,7 @@ final class MessageCoordinator: ObservableObject {
       }
       guard task.phase == .executing else { continue }
       var recoveredActions: [AgentAction] = []
+      var recoveredWorkspaceObservations: [AgentActionResult] = []
       var foundJournaledNode = false
       var journalRecoveryFailed = false
       for index in plan.actions.indices where plan.actions[index].status == .running {
@@ -574,6 +575,9 @@ final class MessageCoordinator: ObservableObject {
         case .observed(let observation):
           recovered.result = observation.result.message
           recovered.evidence = agentPlanNodeObservationPendingEvidence
+          if observation.verified, observation.result.actionId == action.id {
+            recoveredWorkspaceObservations.append(observation.result)
+          }
         case .pending:
           recovered.result = "The prior plan node dispatch has no durable observation."
           recovered.evidence = "agent_interrupted_execution"
@@ -618,7 +622,7 @@ final class MessageCoordinator: ObservableObject {
         "Native tools: recovered \(recoveredActions.count) interrupted plan node(s) without redispatch"
       )
       task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
-      store.upsertAgentTask(task)
+      store.upsertAgentTask(task, recoveredWorkspaceObservations: recoveredWorkspaceObservations)
       recoveredTaskCount += 1
     }
     return recoveredTaskCount

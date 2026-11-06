@@ -923,6 +923,7 @@
     A10000000000000000000181 /* AgentWorkspaceRuntimeMetadataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000181 /* AgentWorkspaceRuntimeMetadataModels.swift */; };
     A10000000000000000000182 /* AgentConnectorLateResponseReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000182 /* AgentConnectorLateResponseReducer.swift */; };
     A10000000000000000000183 /* AgentWorkspaceExecutionSnapshotReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000183 /* AgentWorkspaceExecutionSnapshotReducer.swift */; };
+    A10000000000000000009896 /* AgentWorkspaceToolCallProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009896 /* AgentWorkspaceToolCallProjection.swift */; };
     A10000000000000000000184 /* AgentWorkspaceCheckpointReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000184 /* AgentWorkspaceCheckpointReducer.swift */; };
     C10000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift */; };
     A10000000000000000000186 /* AgentActiveTurnPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000186 /* AgentActiveTurnPolicy.swift */; };
@@ -2070,6 +2071,7 @@
     A20000000000000000000181 /* AgentWorkspaceRuntimeMetadataModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceRuntimeMetadataModels.swift; sourceTree = "<group>"; };
     A20000000000000000000182 /* AgentConnectorLateResponseReducer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorLateResponseReducer.swift; sourceTree = "<group>"; };
     A20000000000000000000183 /* AgentWorkspaceExecutionSnapshotReducer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceExecutionSnapshotReducer.swift; sourceTree = "<group>"; };
+    A20000000000000000009896 /* AgentWorkspaceToolCallProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceToolCallProjection.swift; sourceTree = "<group>"; };
     A20000000000000000000184 /* AgentWorkspaceCheckpointReducer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceCheckpointReducer.swift; sourceTree = "<group>"; };
     C20000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceBoundsPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000186 /* AgentActiveTurnPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActiveTurnPolicy.swift; sourceTree = "<group>"; };
@@ -2813,6 +2815,7 @@
         A20000000000000000000181 /* AgentWorkspaceRuntimeMetadataModels.swift */,
         A20000000000000000000182 /* AgentConnectorLateResponseReducer.swift */,
         A20000000000000000000183 /* AgentWorkspaceExecutionSnapshotReducer.swift */,
+        A20000000000000000009896 /* AgentWorkspaceToolCallProjection.swift */,
         A20000000000000000000184 /* AgentWorkspaceCheckpointReducer.swift */,
         C20000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift */,
         A20000000000000000000186 /* AgentActiveTurnPolicy.swift */,
@@ -4073,6 +4076,7 @@
         A10000000000000000000181 /* AgentWorkspaceRuntimeMetadataModels.swift in Sources */,
         A10000000000000000000182 /* AgentConnectorLateResponseReducer.swift in Sources */,
         A10000000000000000000183 /* AgentWorkspaceExecutionSnapshotReducer.swift in Sources */,
+        A10000000000000000009896 /* AgentWorkspaceToolCallProjection.swift in Sources */,
         A10000000000000000000184 /* AgentWorkspaceCheckpointReducer.swift in Sources */,
         C10000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift in Sources */,
         A10000000000000000000186 /* AgentActiveTurnPolicy.swift in Sources */,
