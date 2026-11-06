@@ -35,7 +35,11 @@ class AgentDeviceStatusShortcutCoverageTest {
     @Test fun ordinaryDiscussionAndCompleteMutationsAreNotReclassified() {
         listOf("Explain battery chemistry", "How do memory cells work?", "What is cloud storage?",
             "Set media volume 30", "Turn on the flashlight", "Open wifi settings", "hello",
-            "Check this program for errors", "Show the diagram", "Read this paragraph")
+            "Check this program for errors", "Show the diagram", "Read this paragraph",
+            "Give me a plan for transferring a file when the phone battery is low.",
+            "Suggest ways to save power if the phone battery is low.",
+            "Explain how batteries age unless they are replaced regularly.",
+            "\u5982\u679c\u624b\u673a\u7535\u91cf\u4f4e\uff0c\u6709\u54ea\u4e9b\u7701\u7535\u65b9\u6cd5\uff1f")
             .forEach { assertFalse(it, AgentDeviceStatusShortcutCoverage.requiresReasoning(it)) }
     }
 

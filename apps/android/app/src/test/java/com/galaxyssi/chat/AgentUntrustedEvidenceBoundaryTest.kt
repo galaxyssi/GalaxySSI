@@ -28,7 +28,8 @@ class AgentUntrustedEvidenceBoundaryTest {
         )
         assertEquals(AgentTaskIntent.FILE, AgentTaskIntentClassifier.classify(goal, true).intent)
         assertFalse(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(goal))
-        assertFalse(AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal, true))
+        assertFalse(AgentCapability.TASK_EXECUTION in AgentTaskRequirementAnalyzer.analyze(goal).capabilities)
+        assertTrue(AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal, true))
     }
 
     @Test

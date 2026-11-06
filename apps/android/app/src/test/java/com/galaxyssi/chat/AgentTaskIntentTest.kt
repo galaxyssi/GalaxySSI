@@ -43,7 +43,7 @@ class AgentTaskIntentTest {
     }
 
     @Test
-    fun imageUnderstandingDoesNotBecomeAProjectExecutionTask() {
+    fun imageUnderstandingStaysInPhoneOwnedReasoningWithoutSelectingProjectExecution() {
         val goals = listOf(
             "Describe the image precisely.",
             "\u8be6\u7ec6\u63cf\u8ff0\u8fd9\u5f20\u56fe\u7247",
@@ -52,10 +52,9 @@ class AgentTaskIntentTest {
 
         goals.forEach { goal ->
             assertEquals(AgentTaskIntent.FILE, AgentTaskIntentClassifier.classify(goal, true).intent)
-            assertTrue(
-                goal,
-                !AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal, true)
-            )
+            assertFalse(goal, AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(goal))
+            assertFalse(goal, AgentCapability.TASK_EXECUTION in AgentTaskRequirementAnalyzer.analyze(goal).capabilities)
+            assertTrue(goal, AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal, true))
         }
     }
 
