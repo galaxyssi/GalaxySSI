@@ -83,12 +83,13 @@ struct GalaxySSIPublicNewsHeadline<Title: View, Detail: View>: View {
       Button { archive.markRead(article.id) } label: {
         Label(t("public_news_mark_read", "Mark as read"), systemImage: "checkmark.circle")
       }
-      .disabled(article.read)
+      .disabled(article.read || !archive.loaded)
       Button {
         if archive.markNotRelevant(article.id) { onDismissArticle?() }
       } label: {
         Label(t("agent_global_feedback_not_relevant", "Not relevant"), systemImage: "xmark.circle")
       }
+      .disabled(!archive.loaded)
     }
   }
 
