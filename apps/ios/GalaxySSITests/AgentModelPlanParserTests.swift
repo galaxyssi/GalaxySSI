@@ -293,6 +293,26 @@ final class AgentModelPlanParserTests: XCTestCase {
     ))
   }
 
+  func testFileAndVideoCompletionRequirementsRemainIndependent() throws {
+    let raw = """
+    {"completion_requirements":{"publication":"none","phone_linux":false,
+      "artifacts":[{"path":"demo.mp4","workspace_id":"workspace"}],
+      "file_artifacts":[{"path":"report.txt","workspace_id":"workspace:linux"}]},
+     "actions":[{"ref":"read","kind":"READ_SCREEN","parameters":{}}]}
+    """
+    let plan = try XCTUnwrap(AgentModelPlanParser.parse(
+      request: request(), raw: raw, settings: AgentModelPlannerSettings(), context: context()
+    ))
+    let requirements = try XCTUnwrap(plan.completionRequirements)
+    XCTAssertEqual(requirements.artifacts?.map(\.path), ["demo.mp4"])
+    XCTAssertEqual(requirements.fileArtifacts?.map(\.path), ["report.txt"])
+    XCTAssertEqual(try JSONDecoder().decode(AgentCompletionRequirements.self,
+      from: JSONEncoder().encode(requirements)), requirements)
+    XCTAssertNil(AgentModelPlanParser.parse(request: request(),
+      raw: raw.replacingOccurrences(of: "demo.mp4", with: "demo.txt"),
+      settings: AgentModelPlannerSettings(), context: context()))
+  }
+
   func testAgentModelPlanParserUsesMcpCallToolProvisionalRisk() throws {
     let callTool = try nativeToolDescriptor(id: AgentMcpNativeTools.callTool, risk: .low)
     let plan = try XCTUnwrap(AgentModelPlanParser.parse(

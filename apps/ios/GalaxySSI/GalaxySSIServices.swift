@@ -8424,6 +8424,15 @@ final class MessageCoordinator: ObservableObject {
       answerOnly && existingEvidence.isEmpty &&
       !AgentRollingPlanPolicy.isBatchBoundaryReason(replanReason)
     let fallbackPlan = AgentPlanFactory.actions(request: planRequest, [])
+    let artifactScope = AgentPlanContinuationScope(conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString))
+    let activeArtifactPlan = store.agentTask(id: artifactScope.turnId).flatMap {
+      $0.sessionId == artifactScope.conversationId ? $0.activePlan : nil
+    }
+    let artifactHistory = activeArtifactPlan.map { $0.actionHistory + $0.actions } ?? []
+    if !(completionRequirements?.fileArtifacts ?? []).isEmpty {
+      planningRequest.allowsDirectResponse = false
+    }
     for repairAttempt in 0...1 {
       let result = await AgentPlanningTiming.capture(
         taskId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
@@ -8452,7 +8461,10 @@ final class MessageCoordinator: ObservableObject {
         let priorMissing = completionRequirements == nil ? [] : existingEvidence
         let unsettled = scopedHistory.contains(where: AgentCompletionEvidencePolicy.hasUnverifiedOutcome)
           ? ["a settled result for every outstanding operation"] : []
-        let missing = Array(Set(priorMissing + proposedMissing + unsettled)).sorted()
+        let requestedArtifacts = (completionRequirements?.fileArtifacts ?? []) + (plan.completionRequirements?.fileArtifacts ?? [])
+        let artifactMissing = AgentArtifactCompletionEvidence.missing(requestedArtifacts, history: artifactHistory,
+          scope: artifactScope)
+        let missing = Array(Set(priorMissing + proposedMissing + unsettled + artifactMissing)).sorted()
         if missing.isEmpty {
           var completion = plan
           let scope = AgentPlanContinuationScope(conversationId: outgoing.conversationId,
@@ -8871,6 +8883,7 @@ final class MessageCoordinator: ObservableObject {
         var completed = updatedPlan.actions[planIndex]
         completed.status = result.success ? .completed : .failed
         completed.result = result.message
+        completed.artifactReceipt = AgentArtifactOperationReceipt.from(result)
         completed.evidence = result.metadata["native_tool_output"]
           ?? result.metadata["evidence"]
           ?? result.metadata["receipt"]
@@ -9283,6 +9296,7 @@ final class MessageCoordinator: ObservableObject {
     var completed = plan.actions[index]
     completed.status = result.success ? .completed : .failed
     completed.result = result.message
+    completed.artifactReceipt = AgentArtifactOperationReceipt.from(result)
     completed.evidence = result.metadata["native_tool_output"]
       ?? result.metadata["evidence"]
       ?? result.metadata["receipt"]
@@ -9530,6 +9544,27 @@ final class MessageCoordinator: ObservableObject {
     videos: [AgentRichBlock],
     verifiedArtifacts: [AgentVideoArtifactRequirement]
   ) {
+    let scope = AgentPlanContinuationScope(conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString))
+    let requested = (previousPlan.completionRequirements?.fileArtifacts ?? []) + (finalPlan.completionRequirements?.fileArtifacts ?? [])
+    var seen = Set<AgentArtifactRequirement>()
+    let requestedFiles = requested.filter { seen.insert($0).inserted }
+    let assessment = AgentArtifactCompletionEvidence.assess(requestedFiles,
+      history: previousPlan.actionHistory + previousPlan.actions, scope: scope)
+    let root = AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL()
+    guard assessment.missing.isEmpty, assessment.verified.allSatisfy({ receipt in
+      let url = AgentVerifiedArtifactSnapshot.url(root: root, digest: receipt.digest.lowercased(), path: receipt.path)
+      return (try? AgentDesktopArtifactActions.sha256(source: url)) == receipt.digest.lowercased()
+    }) else {
+      task.phase = .blocked
+      task.blocked = true
+      task.verification = localizedReply("galaxyssi.agent.artifact_evidence.stale",
+        fallback: "The requested files need fresh verification. Inspect and export again without repeating the original work.")
+      task.executionLog.append("Artifact completion blocked: verified export is missing or stale")
+      task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+      store.upsertAgentTask(task)
+      return
+    }
     let nextRevision = previousPlan.revision + 1
     var completedMarker = finalAction.withPlanRevision(nextRevision)
     completedMarker.status = .completed
@@ -9542,6 +9577,9 @@ final class MessageCoordinator: ObservableObject {
       ?? previousPlan.completionRequirements
     if !verifiedArtifacts.isEmpty {
       completedPlan.completionRequirements?.artifacts = verifiedArtifacts
+    }
+    if !requestedFiles.isEmpty {
+      completedPlan.completionRequirements?.fileArtifacts = requestedFiles
     }
     completedPlan.expectedResult = finalPlan.expectedResult
       .ifBlank(finalAction.result)
@@ -9560,6 +9598,9 @@ final class MessageCoordinator: ObservableObject {
       .ifBlank(task.result)
     task.verification = "Planning model verified the requested outcome after rolling execution"
     task.executionLog.append("Rolling plan: goal verified complete at revision \(completedPlan.revision)")
+    let files = AgentRuntimeArtifactUi.fileBlocks(verified: assessment.verified,
+      zh: LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage).hasPrefix("zh"))
+    let attachments = videos + files
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
     store.upsertAgentTask(task)
     store.appendDeliveryTrace(
@@ -9578,7 +9619,7 @@ final class MessageCoordinator: ObservableObject {
       detail: completedPlan.planId,
       conversationId: outgoing.conversationId,
       turnId: outgoing.turnId,
-      richOutputJson: videos.isEmpty ? "" : AgentRichContentCodec.encode(AgentRichContentCodec.fromText(task.result) + videos)
+      richOutputJson: attachments.isEmpty ? "" : AgentRichContentCodec.encode(AgentRichContentCodec.fromText(task.result) + attachments)
     )
   }
 

@@ -613,22 +613,26 @@ struct AgentCompletionRequirements: Codable, Equatable {
   var phoneLinux: Bool
   var reason: String
   var artifacts: [AgentVideoArtifactRequirement]?
+  var fileArtifacts: [AgentArtifactRequirement]?
 
   init(
     publication: AgentPublicationRequirement,
     phoneLinux: Bool,
     reason: String = "",
-    artifacts: [AgentVideoArtifactRequirement]? = nil
+    artifacts: [AgentVideoArtifactRequirement]? = nil,
+    fileArtifacts: [AgentArtifactRequirement]? = nil
   ) {
     self.publication = publication
     self.phoneLinux = phoneLinux
     self.reason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
     self.artifacts = artifacts
+    self.fileArtifacts = fileArtifacts
   }
 
   func changesOutcome(from previous: AgentCompletionRequirements) -> Bool {
     publication != previous.publication || phoneLinux != previous.phoneLinux ||
-      Set(artifacts ?? []) != Set(previous.artifacts ?? [])
+      Set(artifacts ?? []) != Set(previous.artifacts ?? []) ||
+      Set(fileArtifacts ?? []) != Set(previous.fileArtifacts ?? [])
   }
 
   func canReplace(_ previous: AgentCompletionRequirements?) -> Bool {
@@ -645,6 +649,7 @@ struct AgentCompletionRequirements: Codable, Equatable {
     case phoneLinux = "phone_linux"
     case reason
     case artifacts
+    case fileArtifacts = "file_artifacts"
   }
 }
 

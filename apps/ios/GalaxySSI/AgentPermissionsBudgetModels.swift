@@ -11,6 +11,7 @@ struct AgentAction: Codable, Equatable, Identifiable {
   var requiresConfirmation: Bool
   var result: String
   var evidence: String
+  var artifactReceipt: AgentArtifactOperationReceipt? = nil
 
   init(
     id: String,
@@ -47,6 +48,7 @@ struct AgentAction: Codable, Equatable, Identifiable {
     case requiresConfirmation = "requires_confirmation"
     case result
     case evidence
+    case artifactReceipt = "artifact_receipt"
   }
 
   init(from decoder: Decoder) throws {
@@ -63,6 +65,7 @@ struct AgentAction: Codable, Equatable, Identifiable {
       result: try container.decodeIfPresent(String.self, forKey: .result) ?? "",
       evidence: try container.decodeIfPresent(String.self, forKey: .evidence) ?? ""
     )
+    artifactReceipt = try container.decodeIfPresent(AgentArtifactOperationReceipt.self, forKey: .artifactReceipt)
   }
 }
 

@@ -148,11 +148,24 @@ enum AgentModelPlanParser {
       guard parsed.count == items.count, Set(parsed).count == parsed.count else { return nil }
       artifacts = parsed.isEmpty ? nil : parsed
     }
+    var fileArtifacts: [AgentArtifactRequirement] = []
+    if let value = object["file_artifacts"] {
+      guard let items = value.arrayValue, items.count <= 16 else { return nil }
+      for item in items {
+        guard let fields = item.objectValue, let path = fields["path"]?.stringValue,
+              fields["source_sha256"] == nil || fields["source_sha256"]?.stringValue != nil,
+              fields["workspace_id"] == nil || fields["workspace_id"]?.stringValue != nil,
+              let artifact = AgentArtifactRequirement(path: path, sourceSha256: fields.string("source_sha256"),
+                workspaceId: fields.string("workspace_id")), !fileArtifacts.contains(artifact) else { return nil }
+        fileArtifacts.append(artifact)
+      }
+    }
     return AgentCompletionRequirements(
       publication: publication,
       phoneLinux: phoneLinux,
       reason: reason,
-      artifacts: artifacts
+      artifacts: artifacts,
+      fileArtifacts: fileArtifacts.isEmpty ? nil : fileArtifacts
     )
   }
 
