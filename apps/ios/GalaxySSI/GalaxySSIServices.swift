@@ -9751,8 +9751,14 @@ final class MessageCoordinator: ObservableObject {
     let effects = task.effectRecovery ?? []
     let unresolvedEffect = effects.contains { !$0.hasObservation }
     let verifiedStep = result.success && !unresolvedEffect
-    let uncertainReply = localizedReply("galaxyssi.agent.effect_recovery.unavailable",
-      fallback: "The original effect is still unverified. Its affected state could not be confirmed; nothing was repeated.")
+    let output = result.metadata["native_tool_output"].flatMap {
+      try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data($0.utf8))
+    } ?? [:]
+    let uncertainReply = AgentIOSDeviceStateEvidence.unavailableAudioControl(output)
+      ? localizedReply("galaxyssi.agent.audio_control.unsupported",
+          fallback: "iOS does not let GalaxySSI change global audio volume or mute. No change was attempted.")
+      : localizedReply("galaxyssi.agent.effect_recovery.unavailable",
+          fallback: "The original effect is still unverified. Its affected state could not be confirmed; nothing was repeated.")
     let stepReply = unresolvedEffect ? uncertainReply : localizedNativeToolReply(result).ifBlank(result.message)
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(result.success ? "The requested phone action completed." : "The requested phone action could not be completed.")

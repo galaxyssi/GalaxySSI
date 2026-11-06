@@ -178,21 +178,31 @@ struct AgentIOSSystemNativeToolExecutor {
   }
 
   private func audioVolumeSet(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    let stream = boundedString(invocation.input["stream"]?.stringValue, limit: 32)
+    guard AgentIOSDeviceStateEvidence.acceptsAudioStream(stream) else {
+      return .failure(code: "audio_stream_unsupported", message: "Unknown audio stream.")
+    }
     let result = audioControlProvider.setVolume(
-      stream: boundedString(invocation.input["stream"]?.stringValue, limit: 32),
+      stream: stream,
       percent: Int(invocation.input["percent"]?.intValue ?? 50),
       nowMillis: max(0, nowMillis())
     )
-    return annotatedSystemResult(result, invocation: invocation)
+    return annotatedSystemResult(AgentIOSDeviceStateEvidence.normalize(result,
+      toolId: invocation.descriptor.id, input: invocation.input), invocation: invocation)
   }
 
   private func audioMuteSet(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    let stream = boundedString(invocation.input["stream"]?.stringValue, limit: 32)
+    guard AgentIOSDeviceStateEvidence.acceptsAudioStream(stream) else {
+      return .failure(code: "audio_stream_unsupported", message: "Unknown audio stream.")
+    }
     let result = audioControlProvider.setMute(
-      stream: boundedString(invocation.input["stream"]?.stringValue, limit: 32),
+      stream: stream,
       muted: invocation.input["muted"]?.boolValue ?? false,
       nowMillis: max(0, nowMillis())
     )
-    return annotatedSystemResult(result, invocation: invocation)
+    return annotatedSystemResult(AgentIOSDeviceStateEvidence.normalize(result,
+      toolId: invocation.descriptor.id, input: invocation.input), invocation: invocation)
   }
 
   private func telephonyStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {

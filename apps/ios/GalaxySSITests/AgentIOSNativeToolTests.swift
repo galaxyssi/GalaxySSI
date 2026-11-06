@@ -2,6 +2,75 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testDeviceStateEvidenceRequiresTypedReadbackForTheExactRequest() {
+    let tool = AgentIOSSystemNativeToolCatalog.audioVolumeSet
+    let input: AgentMcpJSONObject = ["stream": .string("media"), "percent": .int(50)]
+    let readback: AgentMcpJSONObject = [
+      "stream": .string("music"), "requested_percent": .int(50), "target_volume": .int(8),
+      "min": .int(0), "max": .int(15), "volume": .int(8), "state_verified": .bool(true),
+      "request_accepted": .bool(false), "dispatch_attempted": .bool(true), "observed_at_epoch_ms": .int(12),
+      "observation_scope": .string("native_audio_stream")
+    ]
+    func verifies(_ output: AgentMcpJSONObject) -> Bool {
+      AgentIOSDeviceStateEvidence.verified(tool, output: output, input: input)
+    }
+    XCTAssertTrue(verifies(readback), "Actual readback can verify a state even when dispatch raised an error.")
+    let invalidFields: [(String, AgentMcpJSONValue)] = [
+      ("volume", .int(3)), ("volume", .string("8")), ("volume", .null), ("min", .int(9)),
+      ("max", .int(30)), ("target_volume", .int(7)), ("requested_percent", .int(53)),
+      ("observed_at_epoch_ms", .int(0)), ("stream", .string("ring")),
+      ("state_verified", .bool(false)), ("global_volume_supported", .bool(false))
+    ]
+    for (field, falseEvidence) in invalidFields {
+      var changed = readback
+      changed[field] = falseEvidence
+      XCTAssertFalse(verifies(changed), field)
+    }
+    let legacy = AgentAction(id: "legacy", kind: .callNativeTool, target: tool, risk: .medium,
+      status: .completed, description: "Set media volume", parameters: ["tool_id": tool],
+      evidence: #"{"request_accepted":true,"requested_percent":50}"#)
+    XCTAssertTrue(AgentCompletionEvidencePolicy.hasUnverifiedOutcome(legacy))
+    var observed = legacy
+    observed.evidence = AgentMcpJSONCodec.stringify(readback)
+    XCTAssertFalse(AgentCompletionEvidencePolicy.hasUnverifiedOutcome(observed))
+    observed.parameters["input_json"] = #"{"stream":"media","percent":75}"#
+    XCTAssertTrue(AgentCompletionEvidencePolicy.hasUnverifiedOutcome(observed))
+  }
+
+  func testTorchReadbackSkipsSatisfiedStateAndNeverRetriesADispatch() {
+    let tool = AgentIOSHardwareNativeToolCatalog.flashlightSet
+    var current = true
+    var reads = 0
+    var writes = 0
+    func request(_ enabled: Bool, applied: Bool, throwsAfterDispatch: Bool = false) -> AgentMcpJSONObject {
+      AgentIOSDeviceStateEvidence.torchReadback(enabled: enabled, read: {
+        reads += 1
+        return current
+      }, write: { requested in
+        writes += 1
+        if applied { current = requested }
+        if throwsAfterDispatch { throw NSError(domain: "fixture", code: 1) }
+      }, nowMillis: { 23 }).output
+    }
+    let alreadyOn = request(true, applied: false)
+    XCTAssertTrue(AgentIOSDeviceStateEvidence.verified(tool, output: alreadyOn))
+    XCTAssertEqual(alreadyOn["dispatch_attempted"], .bool(false))
+    XCTAssertEqual(reads, 1)
+    XCTAssertEqual(writes, 0)
+    let ignored = request(false, applied: false)
+    XCTAssertEqual(ignored["request_accepted"], .bool(true))
+    XCTAssertEqual(ignored["observed_enabled"], .bool(true))
+    XCTAssertFalse(AgentIOSDeviceStateEvidence.verified(tool, output: ignored))
+    XCTAssertEqual(reads, 3)
+    XCTAssertEqual(writes, 1)
+    let applied = request(false, applied: true, throwsAfterDispatch: true)
+    XCTAssertEqual(applied["request_accepted"], .bool(false))
+    XCTAssertEqual(applied["observed_enabled"], .bool(false))
+    XCTAssertTrue(AgentIOSDeviceStateEvidence.verified(tool, output: applied))
+    XCTAssertEqual(reads, 5)
+    XCTAssertEqual(writes, 2)
+  }
+
   func testEffectRecoveryRequiresFreshHostReceiptForOriginalScopeAndSubject() throws {
     let tool = AgentIOSSystemNativeToolCatalog.audioVolumeSet
     let descriptor = try XCTUnwrap(AgentIOSSystemNativeToolCatalog.descriptors().first { $0.id == tool })
@@ -55,7 +124,12 @@ extension GalaxySSIStoreTests {
     accepted.receipt.status = .succeeded
     accepted.output = ["request_accepted": .bool(true), "state_verified": .bool(false)]
     XCTAssertNotNil(AgentEffectRecoveryRecord.fromNativeResult(accepted, action: action, descriptor: descriptor))
-    accepted.output["state_verified"] = .bool(true)
+    accepted.output = [
+      "stream": .string("music"), "state_verified": .bool(true), "requested_percent": .int(40),
+      "request_accepted": .bool(true), "dispatch_attempted": .bool(true), "observed_at_epoch_ms": .int(20),
+      "observation_scope": .string("native_audio_stream"), "min": .int(0), "max": .int(100),
+      "target_volume": .int(40), "volume": .int(40)
+    ]
     XCTAssertNil(AgentEffectRecoveryRecord.fromNativeResult(accepted, action: action, descriptor: descriptor))
     let output: AgentMcpJSONObject = ["observed_at_epoch_ms": .int(21), "streams": .object(["media": .object([
       "stream": .string("media"), "current": .int(13), "scope": .string("app_visible_output_volume")

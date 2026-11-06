@@ -420,6 +420,14 @@ enum AgentCompletionEvidencePolicy {
 
   static func hasUnverifiedOutcome(_ action: AgentAction) -> Bool {
     if [.proposed, .pendingConfirmation, .running, .waitingResponse].contains(action.status) { return true }
+    let id = toolId(action)
+    if AgentIOSDeviceStateEvidence.tools.contains(id), action.status == .completed {
+      let input = action.parameters["input_json"].flatMap { _ in AgentEffectRecoveryRecord.parseInput(action) }
+      if action.parameters["input_json"] != nil && input == nil { return true }
+      guard let output = AgentObservedOutputFields.output(decodeObject(action.evidence)),
+            AgentIOSDeviceStateEvidence.verified(id, output: output, input: input)
+      else { return true }
+    }
     return [action.evidence, action.result].contains { value in
       guard let decoded = decodeObject(value) else { return false }
       return isUnverifiedObservation(decoded) ||
@@ -504,7 +512,7 @@ enum AgentCompletionEvidencePolicy {
   }
 
   private static func hasVerifiedCompletionReceipt(_ action: AgentAction) -> Bool {
-    guard action.status == .completed else { return false }
+    guard action.status == .completed, !hasUnverifiedOutcome(action) else { return false }
     let id = toolId(action)
     guard terminalEvidenceTools.contains(id) else { return true }
     guard let output = decodeObject(action.evidence) else { return false }
