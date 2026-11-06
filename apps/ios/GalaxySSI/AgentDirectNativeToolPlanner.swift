@@ -1629,86 +1629,81 @@ enum AgentDirectNativeToolPlanner {
   }
 
   private static func supportedSystemAppHandoff(for command: String) -> SystemAppHandoff? {
-    guard let handoff = systemAppHandoff(for: AgentDeviceMutationShortcutCoverage.appCommand(command)),
+    guard let handoff = systemAppHandoff(for: command),
           AgentIOSNativeActionExecutor.supportsAppHandoff(handoff.bundleId) else { return nil }
     return handoff
   }
 
   static func isNamedSystemAppCommand(_ command: String) -> Bool {
-    systemAppHandoff(for: AgentDeviceMutationShortcutCoverage.appCommand(command)) != nil
+    systemAppHandoff(for: command) != nil
   }
 
-  private static func systemAppHandoff(for lower: String) -> SystemAppHandoff? {
-    if AgentLocalCommandText.matches(lower, [
-      "open gallery", "open photos", "open photo library",
-      "\u{6253}\u{5f00}\u{76f8}\u{518c}", "\u{6253}\u{5f00}\u{7167}\u{7247}"
-    ]) {
+  static func appHandoffMatches(_ command: String, package: String) -> Bool {
+    guard AgentIOSNativeActionExecutor.supportsAppHandoff(package) else { return false }
+    if let target = systemAppHandoff(for: command) {
+      return target.bundleId.caseInsensitiveCompare(package) == .orderedSame
+    }
+    return !AgentDeviceMutationShortcutCoverage.unresolvedStandaloneAppLaunch(command)
+  }
+
+  static func isUnsupportedExplicitAppHandoff(_ command: String) -> Bool {
+    AgentInstalledAppLaunchPolicy.target(command)?.explicitlyLocal == true &&
+      supportedSystemAppHandoff(for: command) == nil
+  }
+
+  private static func systemAppHandoff(for command: String) -> SystemAppHandoff? {
+    guard let name = AgentInstalledAppLaunchPolicy.target(command)?.name.lowercased() else { return nil }
+    switch name {
+    case "gallery", "photos", "photo library", "\u{76f8}\u{518c}", "\u{76f8}\u{518a}", "\u{7167}\u{7247}":
       return SystemAppHandoff(
         idPrefix: "open-photos",
         target: "Photos",
         bundleId: "com.apple.mobileslideshow"
       )
-    }
-    if AgentLocalCommandText.matches(lower, [
-      "open browser", "open safari", "launch safari", "\u{6253}\u{5f00}\u{6d4f}\u{89c8}\u{5668}", "\u{6253}\u{5f00}safari"
-    ]) {
+    case "browser", "safari", "\u{6d4f}\u{89c8}\u{5668}", "\u{700f}\u{89bd}\u{5668}":
       return SystemAppHandoff(
         idPrefix: "open-safari",
         target: "Safari",
         bundleId: "com.apple.mobilesafari"
       )
-    }
-    if AgentLocalCommandText.matches(lower, [
-      "open contacts", "open address book",
-      "\u{6253}\u{5f00}\u{901a}\u{8baf}\u{5f55}", "\u{6253}\u{5f00}\u{8054}\u{7cfb}\u{4eba}"
-    ]) {
+    case "contacts", "address book", "\u{901a}\u{8baf}\u{5f55}", "\u{901a}\u{8a0a}\u{9304}",
+         "\u{8054}\u{7cfb}\u{4eba}", "\u{806f}\u{7d61}\u{4eba}":
       return SystemAppHandoff(
         idPrefix: "open-contacts",
         target: "Contacts",
         bundleId: "com.apple.MobileAddressBook"
       )
-    }
-    if AgentLocalCommandText.matches(lower, ["open calendar", "\u{6253}\u{5f00}\u{65e5}\u{5386}"]) {
+    case "calendar", "\u{65e5}\u{5386}", "\u{65e5}\u{66c6}":
       return SystemAppHandoff(
         idPrefix: "open-calendar",
         target: "Calendar",
         bundleId: "com.apple.mobilecal"
       )
-    }
-    if AgentLocalCommandText.matches(lower, ["open maps", "\u{6253}\u{5f00}\u{5730}\u{56fe}", "\u{6253}\u{958b}\u{5730}\u{5716}"]) {
+    case "maps", "\u{5730}\u{56fe}", "\u{5730}\u{5716}":
       return SystemAppHandoff(idPrefix: "open-maps", target: "Maps", bundleId: "com.apple.maps")
-    }
-    if AgentLocalCommandText.matches(lower, ["open mail", "\u{6253}\u{5f00}\u{90ae}\u{4ef6}", "\u{6253}\u{958b}\u{90f5}\u{4ef6}"]) {
+    case "mail", "\u{90ae}\u{4ef6}", "\u{90f5}\u{4ef6}":
       return SystemAppHandoff(idPrefix: "open-mail", target: "Mail", bundleId: "com.apple.mobilemail")
-    }
-    if AgentLocalCommandText.matches(lower, [
-      "open files", "open file manager", "open documents", "\u{6253}\u{5f00}\u{6587}\u{4ef6}"
-    ]) {
+    case "files", "file manager", "documents", "\u{6587}\u{4ef6}", "\u{6a94}\u{6848}":
       return SystemAppHandoff(
         idPrefix: "open-files",
         target: "Files",
         bundleId: "com.apple.DocumentsApp"
       )
-    }
-    if AgentLocalCommandText.matches(lower, [
-      "open messages", "open sms", "\u{6253}\u{5f00}\u{4fe1}\u{606f}", "\u{6253}\u{5f00}\u{77ed}\u{4fe1}"
-    ]) {
+    case "messages", "sms", "\u{4fe1}\u{606f}", "\u{8a0a}\u{606f}", "\u{77ed}\u{4fe1}":
       return SystemAppHandoff(
         idPrefix: "open-messages",
         target: "Messages",
         bundleId: "com.apple.MobileSMS"
       )
-    }
-    if AgentLocalCommandText.matches(lower, [
-      "open phone", "open dialer", "\u{6253}\u{5f00}\u{7535}\u{8bdd}", "\u{6253}\u{5f00}\u{62e8}\u{53f7}\u{76d8}"
-    ]) {
+    case "phone", "dialer", "\u{7535}\u{8bdd}", "\u{96fb}\u{8a71}", "\u{62e8}\u{53f7}\u{76d8}":
       return SystemAppHandoff(
         idPrefix: "open-phone",
         target: "Phone",
         bundleId: "com.apple.mobilephone"
       )
+    default:
+      return nil
     }
-    return nil
   }
 
   private struct SystemAppHandoff {

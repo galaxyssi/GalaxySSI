@@ -496,6 +496,11 @@ enum AgentModelPlanParser {
       guard context.installedApps.contains(where: { $0.packageName == packageName }) else {
         return nil
       }
+      if AgentInstalledAppLaunchPolicy.target(request.goal)?.explicitlyLocal == true,
+         !AgentDirectNativeToolPlanner.appHandoffMatches(request.goal, package: packageName) {
+        throw AgentModelPlanRejection(field + ".package", "unavailable_app_handoff",
+          "Use the supported iOS bundle identifier for the exact requested app, or report that the app cannot be opened.")
+      }
       return ["package": packageName]
 
     case .openURL, .importWebKnowledge:
@@ -586,8 +591,7 @@ enum AgentModelPlanParser {
     let arguments = input.object("arguments") ?? [:]
     if toolId == AgentNativeToolAgentActionAdapter.defaultToolId(.openApp) {
       let package = (arguments["parameters"]?.objectValue ?? arguments).string("package")
-      guard AgentIOSNativeActionExecutor.supportsAppHandoff(package),
-            !AgentDeviceMutationShortcutCoverage.unresolvedStandaloneAppLaunch(request.goal) else {
+      guard AgentDirectNativeToolPlanner.appHandoffMatches(request.goal, package: package) else {
         throw AgentModelPlanRejection(field + ".arguments", "unavailable_app_handoff",
           "Use a supported, exact iOS bundle identifier for the requested app. Do not guess a package or open a different app.")
       }
