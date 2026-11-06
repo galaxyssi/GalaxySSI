@@ -17,6 +17,7 @@ extension AgentHomeView {
   }
 
   func resetAgentSessionPresentation() {
+    invalidateVoiceAppAnchor()
     cancelScreenPagePDFImport()
     agentScreenContextCapturedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     draft = ""
@@ -52,6 +53,7 @@ extension AgentHomeView {
   }
 
   func clearAgentRuntimePlaintextPresentation() {
+    invalidateVoiceAppAnchor()
     committedTurnProgress = AgentCommittedTurnProgress()
     cancelScreenPagePDFImport()
     draft.removeAll(keepingCapacity: false)
