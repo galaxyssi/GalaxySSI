@@ -8650,6 +8650,31 @@ final class MessageCoordinator: ObservableObject {
     let scopedHistory = snapshots.filter { !AgentDurablePlanHistoryPolicy.isPlannerControl($0) }
     planningRequest.executionHistory = AgentDurablePlanHistoryPolicy.plannerProjection(snapshots)
     planningRequest.ownedOperationContext = ownedOperation
+    let currentObservationDiagnostics = AgentCompletionEvidencePolicy.observationDiagnostics(
+      requirements: completionRequirements, history: observationHistory)
+    func boundedDiagnostics(_ diagnostics: [AgentMcpJSONObject], limit: Int) -> [AgentMcpJSONObject] {
+      var remaining = limit
+      var seen: Set<String> = []
+      var retained: [AgentMcpJSONObject] = []
+      for diagnostic in diagnostics {
+        var bounded = diagnostic
+        var row = AgentMcpJSONCodec.stringify(bounded)
+        var fields = bounded["fields"]?.arrayValue ?? []
+        while row.utf8.count + 1 > remaining, !fields.isEmpty {
+          fields.removeLast()
+          bounded["fields"] = .array(fields)
+          bounded["fields_partial"] = .bool(true)
+          row = AgentMcpJSONCodec.stringify(bounded)
+        }
+        guard row.utf8.count + 1 <= remaining, seen.insert(row).inserted else { continue }
+        remaining -= row.utf8.count + 1
+        retained.append(bounded)
+        if retained.count == 4 { break }
+      }
+      return retained
+    }
+    let repairDiagnostics = boundedDiagnostics(currentObservationDiagnostics, limit: 2_000)
+    planningRequest.observationRepairDiagnostics = repairDiagnostics.isEmpty ? nil : repairDiagnostics
     let answerOnly = AgentCompletionEvidencePolicy.isAnswerOnly(history: scopedHistory) {
       runtime.registry.lookup($0)?.descriptor
     }
@@ -8693,18 +8718,17 @@ final class MessageCoordinator: ObservableObject {
           answerOnly: answerOnly,
           observationHistory: observationHistory
         )
-        let priorMissing = completionRequirements == nil ? [] : existingEvidence
+        let retainedPriorRequirements = AgentCompletionEvidencePolicy.priorRequirementsAfterPointerRepair(
+          completionRequirements, candidate: plan.completionRequirements, diagnostics: currentObservationDiagnostics)
+        let priorMissing = retainedPriorRequirements == nil ? [] : AgentCompletionEvidencePolicy.missingEvidence(
+          requirements: retainedPriorRequirements, history: scopedHistory, answerOnly: answerOnly,
+          observationHistory: observationHistory)
         let unsettled = scopedHistory.contains(where: AgentCompletionEvidencePolicy.hasUnverifiedOutcome)
           ? ["a settled result for every outstanding operation"] : []
-        let diagnostics = AgentCompletionEvidencePolicy.observationDiagnostics(
-          requirements: completionRequirements, history: observationHistory) +
-          AgentCompletionEvidencePolicy.observationDiagnostics(
+        let diagnostics = currentObservationDiagnostics + AgentCompletionEvidencePolicy.observationDiagnostics(
             requirements: plan.completionRequirements, history: observationHistory)
-        var seenDiagnostics: Set<String> = []
-        let uniqueDiagnostics = diagnostics.filter {
-          seenDiagnostics.insert(AgentMcpJSONCodec.stringify($0)).inserted
-        }
-        let diagnosticText = uniqueDiagnostics.prefix(4).map { AgentMcpJSONCodec.stringify($0) }.joined(separator: "\n")
+        let diagnosticText = boundedDiagnostics(diagnostics, limit: 4_000)
+          .map { AgentMcpJSONCodec.stringify($0) }.joined(separator: "\n")
         let requestedArtifacts = (completionRequirements?.fileArtifacts ?? []) + (plan.completionRequirements?.fileArtifacts ?? [])
         let artifactMissing = AgentArtifactCompletionEvidence.missing(requestedArtifacts, history: artifactHistory,
           scope: artifactScope)

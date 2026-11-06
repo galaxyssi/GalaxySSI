@@ -1045,6 +1045,75 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(code([completed, observation]))
   }
 
+  func testObservedCompletionDiagnosticsSuggestPathsWithoutAcceptingThemOrEchoingValues() throws {
+    let tool = "galaxyssi.fixture.audio"
+    let evidence = #"{"tool_id":"galaxyssi.fixture.audio","status":"succeeded","metadata":{"max":"private-envelope"},"output":{"streams":{"media":{"name":"private-media","current":2,"max":15},"ring":{"name":"private-ring","current":3,"max":8}}}}"#
+    let receipt = AgentAction(id: "readback", kind: .callNativeTool, target: tool, risk: .low,
+      status: .completed, description: "Read audio", parameters: ["tool_id": tool], evidence: evidence)
+    var requirements = AgentCompletionRequirements(publication: .none, phoneLinux: false)
+    func diagnose(subject: String, expected: AgentMcpJSONObject) -> [AgentMcpJSONObject] {
+      requirements.outcomes = [AgentObservedCompletion(id: "volume", toolId: tool,
+        subject: [subject: "private-media"], checks: expected, afterToolId: "")]
+      return AgentCompletionEvidencePolicy.observationDiagnostics(requirements: requirements, history: [receipt])
+    }
+    func firstIssue(_ diagnostics: [AgentMcpJSONObject], code: String) throws -> AgentMcpJSONObject {
+      let diagnostic = try XCTUnwrap(diagnostics.first)
+      XCTAssertEqual(diagnostic.string("code"), code)
+      XCTAssertFalse(AgentMcpJSONCodec.stringify(diagnostic).contains("private-"))
+      return try XCTUnwrap(diagnostic["fields"]?.arrayValue?.first?.objectValue)
+    }
+    let missingSubject = try firstIssue(diagnose(subject: "/name", expected: ["/max": .int(15)]),
+      code: "subject_not_matched")
+    XCTAssertEqual(missingSubject.string("issue"), "field_missing_or_null")
+    XCTAssertEqual(missingSubject["alternative_paths"], .array([.string("/streams/media/name"), .string("/streams/ring/name")]))
+    let identity = "/streams/media/name"
+    let missingCheck = try firstIssue(diagnose(subject: identity, expected: ["/max": .int(15)]),
+      code: "checks_not_satisfied")
+    XCTAssertEqual(missingCheck["alternative_paths"], .array([.string("/streams/media/max"), .string("/streams/ring/max")]))
+    let prior = requirements
+    let priorDiagnostics = AgentCompletionEvidencePolicy.observationDiagnostics(requirements: prior, history: [receipt])
+    XCTAssertTrue(diagnose(subject: identity, expected: ["/streams/media/max": .int(15)]).isEmpty)
+    var corrected = requirements
+    corrected.reason = "Use the exact nested media field from the same receipt."
+    let repairedPrior = AgentCompletionEvidencePolicy.priorRequirementsAfterPointerRepair(
+      prior, candidate: corrected, diagnostics: priorDiagnostics)
+    XCTAssertEqual(repairedPrior?.outcomes, corrected.outcomes)
+    XCTAssertTrue(AgentCompletionEvidencePolicy.missingEvidence(requirements: repairedPrior, history: [receipt]).isEmpty)
+    corrected.outcomes?[0].checks = ["/streams/ring/max": .int(8)]
+    XCTAssertEqual(AgentCompletionEvidencePolicy.priorRequirementsAfterPointerRepair(
+      prior, candidate: corrected, diagnostics: priorDiagnostics), prior)
+    corrected.outcomes?[0].checks = ["/streams/media/max": .int(15)]
+    corrected.reason = ""
+    XCTAssertEqual(AgentCompletionEvidencePolicy.priorRequirementsAfterPointerRepair(
+      prior, candidate: corrected, diagnostics: priorDiagnostics), prior)
+    let mismatch = try firstIssue(diagnose(subject: identity, expected: ["/streams/media/current": .int(4)]),
+      code: "checks_not_satisfied")
+    XCTAssertEqual(mismatch.string("issue"), "value_mismatch")
+    XCTAssertNil(mismatch["alternative_paths"])
+    let wrongType = try firstIssue(diagnose(subject: identity, expected: ["/streams/media/current": .string("2")]),
+      code: "checks_not_satisfied")
+    XCTAssertEqual(wrongType.string("issue"), "type_mismatch")
+    XCTAssertEqual(wrongType.string("actual_type"), "number")
+    XCTAssertEqual(wrongType.string("expected_type"), "string")
+  }
+
+  func testReceiptFieldIndexPreservesArraysAndEscapedKeysAndReportsPartialResults() {
+    let output: AgentMcpJSONObject = [
+      "artifacts": .array([.object(["status": .string("private-state")]), .object(["status": .null])]),
+      "a/b~c": .bool(true),
+      "invalid key": .string("private-value")
+    ]
+    let index = AgentObservedOutputFields.index(output)
+    let types = Dictionary(uniqueKeysWithValues: index.fields.map { ($0.path, $0.type) })
+    XCTAssertEqual(types, ["/artifacts/0/status": "string", "/artifacts/1/status": "null", "/a~1b~0c": "boolean"])
+    XCTAssertEqual(AgentObservedOutputFields.value(at: "/a~1b~0c", in: output), .bool(true))
+    XCTAssertNil(AgentObservedOutputFields.value(at: "/artifacts/1/status", in: output))
+    XCTAssertTrue(index.partial)
+    let many = AgentObservedOutputFields.index(["rows": .array(Array(repeating: .bool(true), count: 120))])
+    XCTAssertEqual(many.fields.count, 96)
+    XCTAssertTrue(many.partial)
+  }
+
   func testAgentExecutionPresentationPolicyMatchesAndroidLocalAndRemoteLocations() {
     let desktop = AgentExecutionPresentationPolicy.local(
       routeKind: .desktopAgent,

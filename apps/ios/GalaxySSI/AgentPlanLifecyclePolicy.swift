@@ -591,6 +591,41 @@ enum AgentCompletionEvidencePolicy {
     return outcomes.compactMap { missingObservedOutcome($0, history: snapshots) }
   }
 
+  static func priorRequirementsAfterPointerRepair(
+    _ previous: AgentCompletionRequirements?,
+    candidate: AgentCompletionRequirements?,
+    diagnostics: [AgentMcpJSONObject]
+  ) -> AgentCompletionRequirements? {
+    guard var previous, let candidate, !candidate.reason.isBlank, candidate.canReplace(previous) else { return previous }
+    previous.outcomes = previous.outcomes?.map { old in
+      guard let replacement = candidate.outcomes?.first(where: { $0.id == old.id }),
+            replacement.toolId == old.toolId, replacement.afterToolId == old.afterToolId,
+            let diagnostic = diagnostics.first(where: { $0.string("outcome_id") == old.id }),
+            diagnostic["fields_partial"] == .bool(false),
+            let fields = diagnostic["fields"]?.arrayValue, !fields.isEmpty,
+            fields.allSatisfy({ $0.objectValue?.string("issue") == "field_missing_or_null" })
+      else { return old }
+      let alternatives = fields.compactMap(\.objectValue)
+      func preservesValues(_ prior: AgentMcpJSONObject, _ revised: AgentMcpJSONObject) -> Bool {
+        let unchanged = Set(prior.keys.filter { prior[$0] == revised[$0] })
+        var used = unchanged
+        for path in prior.keys.sorted() where !unchanged.contains(path) {
+          guard let field = alternatives.first(where: { $0.string("path") == path }),
+                let newPath = field["alternative_paths"]?.arrayValue?.compactMap(\.strictStringValue)
+                  .first(where: { !used.contains($0) && revised[$0] == prior[path] })
+          else { return false }
+          used.insert(newPath)
+        }
+        return true
+      }
+      guard preservesValues(old.subject.mapValues(AgentMcpJSONValue.string), replacement.subject.mapValues(AgentMcpJSONValue.string)),
+            preservesValues(old.checks, replacement.checks)
+      else { return old }
+      return replacement
+    }
+    return previous
+  }
+
   static func recordObservationEnvelope(_ result: AgentActionResult, action: inout AgentAction) {
     for key in ["native_tool_id", "native_tool_status", "native_tool_receipt_status"] {
       action.parameters["_galaxyssi_observed_" + key] = result.metadata[key]
@@ -600,7 +635,7 @@ enum AgentCompletionEvidencePolicy {
   private static func missingObservedOutcome(
     _ outcome: AgentObservedCompletion, history: [AgentAction]
   ) -> AgentMcpJSONObject? {
-    func failure(_ code: String, _ action: AgentAction? = nil, fields: [String] = []) -> AgentMcpJSONObject {
+    func failure(_ code: String, _ action: AgentAction? = nil, fields: [AgentMcpJSONObject] = []) -> AgentMcpJSONObject {
       let next: String
       switch code {
       case "required_action_not_observed":
@@ -610,7 +645,7 @@ enum AgentCompletionEvidencePolicy {
       case "required_action_rolled_back":
         next = "Inspect current state and the latest user goal; do not reapply the rolled-back effect without a current request."
       case "subject_not_matched", "checks_not_satisfied":
-        next = "Inspect actual receipt pointers; repair pointer errors without repeating a tool, otherwise observe the requested state again."
+        next = "Paths are relative to receipt output. Repair missing pointers from the existing receipt without repeating tools. Candidate paths are hints, not proof. For state mismatches, obtain a fresh read without weakening checks or repeating a mutation."
       default:
         next = "Obtain a fresh read-only observation of the requested subject; do not repeat mutations blindly."
       }
@@ -621,15 +656,15 @@ enum AgentCompletionEvidencePolicy {
         issue["action_id"] = .string(String(action.id.prefix(128)))
         issue["action_status"] = .string(action.status.rawValue)
       }
-      if !fields.isEmpty { issue["fields"] = .array(fields.sorted().prefix(8).map { .string($0) }) }
+      if !fields.isEmpty {
+        issue["fields"] = .array(fields.prefix(8).map { .object($0) })
+        issue["fields_partial"] = .bool(fields.count > 8)
+      }
       return issue
-    }
-    func output(_ receipt: AgentMcpJSONObject?) -> AgentMcpJSONObject? {
-      receipt?["output"]?.objectValue ?? receipt
     }
     func differentSubject(_ output: AgentMcpJSONObject?) -> Bool {
       outcome.subject.contains { path, expected in
-        guard let actual = value(at: path, in: output)?.stringValue else { return false }
+        guard let actual = AgentObservedOutputFields.value(at: path, in: output)?.stringValue else { return false }
         return actual != expected
       }
     }
@@ -650,7 +685,8 @@ enum AgentCompletionEvidencePolicy {
       guard let index = history.lastIndex(where: {
         $0.kind == .callNativeTool && !undispatched($0) && $0.status != .blocked &&
           toolId($0) == outcome.afterToolId &&
-          (outcome.afterToolId != outcome.toolId || !differentSubject(output(decodeObject($0.evidence))))
+          (outcome.afterToolId != outcome.toolId ||
+            !differentSubject(AgentObservedOutputFields.output(decodeObject($0.evidence))))
       }) else { return failure("required_action_not_observed") }
       let mutation = history[index]
       if mutation.status == .rolledBack {
@@ -669,7 +705,7 @@ enum AgentCompletionEvidencePolicy {
       let action = history[index]
       guard action.kind == .callNativeTool, !undispatched(action), toolId(action) == outcome.toolId else { continue }
       if index < latestMutation { stale = true; continue }
-      guard let raw = decodeObject(action.evidence), let observed = output(raw) else {
+      guard let raw = decodeObject(action.evidence), let observed = AgentObservedOutputFields.output(raw) else {
         return failure("invalid_receipt", action)
       }
       let wrapped = raw["output"]?.objectValue != nil
@@ -678,9 +714,8 @@ enum AgentCompletionEvidencePolicy {
       if tools.compactMap({ $0 }).contains(where: { $0 != outcome.toolId }) {
         return failure("receipt_tool_mismatch", action)
       }
-      let identityIssues: [String] = outcome.subject.compactMap { path, expected in
-        value(at: path, in: observed)?.stringValue == expected ? nil : path
-      }
+      let identityIssues = AgentObservedOutputFields.issues(expected: outcome.subject.mapValues(AgentMcpJSONValue.string),
+        in: observed, comparesIdentity: true)
       if !identityIssues.isEmpty {
         let mismatch = failure("subject_not_matched", action, fields: identityIssues)
         guard differentSubject(observed) else { return mismatch }
@@ -698,9 +733,7 @@ enum AgentCompletionEvidencePolicy {
       if hasUnverifiedOutcome(action) || isUnverifiedObservation(raw) || isUnverifiedObservation(observed) {
         return failure("state_unverified", action)
       }
-      let checkIssues: [String] = outcome.checks.compactMap { path, expected in
-        value(at: path, in: observed) == expected ? nil : path
-      }
+      let checkIssues = AgentObservedOutputFields.issues(expected: outcome.checks, in: observed, comparesIdentity: false)
       return checkIssues.isEmpty ? nil : failure("checks_not_satisfied", action, fields: checkIssues)
     }
     return latestMismatch ?? failure(stale ? "observation_stale" : "observation_missing")
@@ -715,9 +748,32 @@ enum AgentCompletionEvidencePolicy {
       ["unknown", "uncertain", "unverified"].contains(output.string("outcome").lowercased())
   }
 
-  private static func value(at pointer: String, in output: AgentMcpJSONObject?) -> AgentMcpJSONValue? {
-    guard let output, pointer.hasPrefix("/") else { return nil }
-    return pointer.dropFirst().split(separator: "/", omittingEmptySubsequences: false)
+}
+
+enum AgentObservedOutputFields {
+  struct Index {
+    var fields: [(path: String, type: String)] = []
+    var partial = false
+
+    func alternatives(for path: String) -> [String] {
+      let name = path.split(separator: "/").last
+      return Array(fields.lazy.filter { $0.path != path && $0.path.split(separator: "/").last == name }
+        .prefix(4).map(\.path))
+    }
+  }
+
+  static func output(_ receipt: AgentMcpJSONObject?) -> AgentMcpJSONObject? {
+    receipt?["output"]?.objectValue ?? receipt
+  }
+
+  static func isValidPointer(_ path: String) -> Bool {
+    path.utf8.count <= 512 &&
+      path.range(of: #"^(/(?:[A-Za-z0-9_.-]|~[01])+)+$"#, options: .regularExpression) != nil
+  }
+
+  static func value(at pointer: String, in output: AgentMcpJSONObject?) -> AgentMcpJSONValue? {
+    guard let output, isValidPointer(pointer) else { return nil }
+    let result = pointer.dropFirst().split(separator: "/", omittingEmptySubsequences: false)
       .reduce(Optional(AgentMcpJSONValue.object(output))) { value, segment in
         let key = segment.replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~")
         if let array = value?.arrayValue, let index = Int(key), String(index) == key, array.indices.contains(index) {
@@ -725,5 +781,73 @@ enum AgentCompletionEvidencePolicy {
         }
         return value?.objectValue?[key]
       }
+    return result == .null ? nil : result
+  }
+
+  static func index(_ output: AgentMcpJSONObject) -> Index {
+    var result = Index()
+    var visited = 0
+    func visit(_ value: AgentMcpJSONValue, path: String, depth: Int) {
+      guard depth <= 12, visited < 512, result.fields.count < 96 else { result.partial = true; return }
+      visited += 1
+      switch value {
+      case .object(let object):
+        for key in object.keys.sorted() {
+          guard visited < 512, result.fields.count < 96 else { result.partial = true; break }
+          visited += 1
+          let escaped = key.replacingOccurrences(of: "~", with: "~0").replacingOccurrences(of: "/", with: "~1")
+          let childPath = path + "/" + escaped
+          guard isValidPointer(childPath), let child = object[key] else { result.partial = true; continue }
+          visit(child, path: childPath, depth: depth + 1)
+        }
+      case .array(let array):
+        for (offset, child) in array.enumerated() {
+          guard visited < 512, result.fields.count < 96 else { result.partial = true; break }
+          let childPath = path + "/\(offset)"
+          guard isValidPointer(childPath) else { result.partial = true; break }
+          visit(child, path: childPath, depth: depth + 1)
+        }
+      default:
+        result.fields.append((path, scalarType(value)))
+      }
+    }
+    visit(.object(output), path: "", depth: 0)
+    return result
+  }
+
+  static func issues(
+    expected: AgentMcpJSONObject, in output: AgentMcpJSONObject, comparesIdentity: Bool
+  ) -> [AgentMcpJSONObject] {
+    var cachedIndex: Index?
+    return expected.keys.sorted().compactMap { path in
+      guard let target = expected[path] else { return nil }
+      let actual = value(at: path, in: output)
+      if comparesIdentity ? actual?.stringValue == target.strictStringValue : actual == target { return nil }
+      var issue: AgentMcpJSONObject = ["path": .string(path)]
+      if let actual {
+        let actualType = scalarType(actual)
+        let expectedType = scalarType(target)
+        issue["issue"] = .string(actualType == expectedType ? "value_mismatch" : "type_mismatch")
+        issue["actual_type"] = .string(actualType)
+        issue["expected_type"] = .string(expectedType)
+      } else {
+        if cachedIndex == nil { cachedIndex = index(output) }
+        issue["issue"] = .string("field_missing_or_null")
+        issue["alternative_paths"] = .array((cachedIndex?.alternatives(for: path) ?? []).map { .string($0) })
+        issue["index_partial"] = .bool(cachedIndex?.partial == true)
+      }
+      return issue
+    }
+  }
+
+  private static func scalarType(_ value: AgentMcpJSONValue) -> String {
+    switch value {
+    case .string: return "string"
+    case .int, .double: return "number"
+    case .bool: return "boolean"
+    case .null: return "null"
+    case .array: return "array"
+    case .object: return "object"
+    }
   }
 }

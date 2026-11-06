@@ -339,7 +339,7 @@ enum AgentModelPlanParser {
   }
 
   private static func validObservedPointer(_ path: String) -> Bool {
-    path.utf8.count <= 512 && path.range(of: #"^(/(?:[A-Za-z0-9_.-]|~[01])+)+$"#, options: .regularExpression) != nil
+    AgentObservedOutputFields.isValidPointer(path)
   }
 
   private static let dispatchOnlyFields: Set<String> = [

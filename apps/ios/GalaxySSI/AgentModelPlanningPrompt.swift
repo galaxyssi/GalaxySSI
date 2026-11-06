@@ -40,6 +40,7 @@ enum AgentModelPlanningPrompt {
     append(&prompt, "\n\n")
     if request.phoneOwnsExecution {
       append(&prompt, "For an ActionPlan, add the root field execution_location=phone. ")
+      append(&prompt, "observed_output_fields is a partial index of exact paths and types relative to receipt output, without an /output prefix. It contains no values and proves no outcome. Use the existing receipt to correct missing paths without rerunning tools.\n")
       appendPhoneCompletionStages(to: &prompt, request: request)
       append(&prompt, "For phone-control and phone status tasks, before executing list every requested deliverable under completion_requirements.results as {id,description,outcome_ids:[],artifact_paths:[],answer:\"\"}. Keep IDs across revisions, and leave evidence links and answers empty until observed. At completion link each result to verified outcomes or declared file/video paths, and include every evidence-grounded answer verbatim in the task-complete description. A successful tool call is not full-goal coverage. Use KiB/MiB/GiB for powers of 1024, KB/MB/GB for powers of 1000.\n\n")
       append(&prompt, "The model reasons; iOS owns execution. Never use a Desktop app, host shell, web timer, or cloud scheduler as a substitute for a phone operation. Decide from meaning and context, not exact command phrases. Use only listed CALL_NATIVE_TOOL actions and wait for their receipts. A one-time countdown is not a recurring alarm. For a new countdown use galaxyssi.agent_action.set.alarm with timer_operation=start and timer_seconds; omit operation_id. For inspection or cancellation reuse only a scoped operation_id from phone evidence. Never guess IDs or repeat an unsettled operation.\n\n")
@@ -735,9 +736,12 @@ enum AgentPlanningHistoryContext {
       remaining -= row.count
     }
     var lines: [(offset: Int, text: String)] = []
+    var additionalIndex = true
     for (offset, action) in observations + controls where offset != latest?.offset {
-      let line = renderedLine(action, settings: settings, limit: remaining, indexesFields: false)
+      let indexesFields = additionalIndex && action.kind == .callNativeTool && action.status == .completed
+      let line = renderedLine(action, settings: settings, limit: remaining, indexesFields: indexesFields)
       guard !line.isEmpty else { break }
+      if indexesFields && line.contains("\"observed_output_fields\":") { additionalIndex = false }
       lines.append((offset, line))
       remaining -= line.count
     }
@@ -756,12 +760,12 @@ enum AgentPlanningHistoryContext {
       "description": AgentPlannerObservation.sanitize(action.description, maximumCharacters: 180)
     ]
     var observation = ""
-    var fields: [String] = []
+    var fieldIndex: AgentObservedOutputFields.Index?
     if action.kind == .callNativeTool {
       object["tool_id"] = String((action.parameters["tool_id"] ?? action.target).prefix(256))
       let sources = AgentPlannerObservation.nativeSources(action)
       observation = AgentPlannerObservation.sanitize(sources.joined(separator: "\n"), maximumCharacters: 1_200)
-      if indexesFields { fields = AgentPlannerObservation.observedFields(sources) }
+      if indexesFields { fieldIndex = AgentPlannerObservation.observedFields(action.evidence) }
     } else if action.kind == .callConnector, settings.shareAgentOutputsWithPlanner {
       observation = AgentPlannerObservation.connectorOutput(action.result, maximumCharacters: 1_200)
     }
@@ -772,13 +776,26 @@ enum AgentPlanningHistoryContext {
       object["observation"] = AgentPlannerObservation.sanitize(current, maximumCharacters: max(current.count / 2, 32))
       line = jsonLine(object)
     }
-    for field in fields {
-      var indexed = object
-      indexed["observed_output_fields"] = ((object["observed_output_fields"] as? [String]) ?? []) + [field]
-      let candidate = jsonLine(indexed)
-      guard candidate.count <= limit else { break }
-      object = indexed
-      line = candidate
+    if let fieldIndex {
+      var fields: [String: String] = [:]
+      func indexedLine(_ fields: [String: String], partial: Bool) -> String {
+        var indexed = object
+        indexed["observed_output_fields"] = ["fields": fields, "partial": partial] as [String: Any]
+        return jsonLine(indexed)
+      }
+      let indexBudget = min(limit, line.count + 1_200)
+      for field in fieldIndex.fields {
+        var candidate = fields
+        candidate[field.path] = field.type
+        let indexed = indexedLine(candidate, partial: true)
+        guard indexed.count <= indexBudget else { break }
+        fields = candidate
+        line = indexed
+      }
+      if !fields.isEmpty, fields.count == fieldIndex.fields.count, !fieldIndex.partial {
+        let indexed = indexedLine(fields, partial: false)
+        if indexed.count <= indexBudget { line = indexed }
+      }
     }
     return line.count <= limit ? line : ""
   }
@@ -798,35 +815,11 @@ enum AgentPlannerObservation {
       .filter { !$0.isEmpty && seen.insert($0).inserted }
   }
 
-  static func observedFields(_ sources: [String]) -> [String] {
-    var paths: [String] = []
-    var seen = Set<String>()
-    var visited = 0
-    func visit(_ value: AgentMcpJSONValue, path: String, depth: Int) {
-      guard paths.count < 16, depth <= 12, visited < 128, path.utf8.count <= 120 else { return }
-      visited += 1
-      switch value {
-      case .object(let fields):
-        for key in fields.keys.sorted() where key.range(of: #"^[A-Za-z0-9_.-]+$"#, options: .regularExpression) != nil {
-          if let child = fields[key] { visit(child, path: path + "/" + key, depth: depth + 1) }
-          if paths.count == 16 || visited == 128 { break }
-        }
-      case .array(let items):
-        for (index, child) in items.prefix(16).enumerated() {
-          visit(child, path: path + "/\(index)", depth: depth + 1)
-        }
-      case .string(let text) where text.hasPrefix("[redacted"): break
-      case .null: break
-      default:
-        if !path.isEmpty && seen.insert(path).inserted { paths.append(path) }
-      }
-    }
-    for source in sources where source.utf8.count <= 64 * 1_024 {
-      if let value = try? JSONDecoder().decode(AgentMcpJSONValue.self, from: Data(source.utf8)) {
-        visit(value, path: "", depth: 0)
-      }
-    }
-    return paths
+  static func observedFields(_ evidence: String) -> AgentObservedOutputFields.Index? {
+    guard evidence.utf8.count <= 64 * 1_024,
+          let envelope = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(evidence.utf8)),
+          let output = AgentObservedOutputFields.output(envelope) else { return nil }
+    return AgentObservedOutputFields.index(output)
   }
 
   static func sanitize(_ value: String, maximumCharacters: Int) -> String {
