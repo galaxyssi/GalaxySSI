@@ -914,7 +914,8 @@ enum AgentPlannerObservation {
 
   static func nativeSources(_ action: AgentAction) -> [String] {
     var seen = Set<String>()
-    return [action.parameters[AgentNativeFailureObservation.actionParameter] ?? "", action.result, action.evidence]
+    return [action.parameters[AgentNativeFailureObservation.actionParameter] ?? "", action.result, action.evidence,
+      action.parameters[AgentSupervisedBrowserWait.requestReceiptKey] ?? ""]
       .map(AgentObservationRedaction.redact)
       .filter { !$0.isEmpty && seen.insert($0).inserted }
   }

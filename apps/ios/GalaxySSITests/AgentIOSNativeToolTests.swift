@@ -3,6 +3,59 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testSupervisedBrowserWaitBindsOriginalPlanActionMessageAndReceiptAcrossReload() throws {
+    let outgoing = ChatMessage(contactId: "agent", content: "Inspect the website", isMine: true,
+      conversationId: "conversation", turnId: "turn")
+    let scope = AgentPlanContinuationScope(conversationId: outgoing.conversationId, turnId: outgoing.turnId)
+    let action = scope.bind(AgentAction(id: "browser-action", kind: .callNativeTool,
+      target: AgentSupervisedBrowserWait.toolID, risk: .low, status: .proposed, description: "Browser handoff",
+      parameters: ["input_json": "{\"url\":\"https://example.test/login\"}"], requiresConfirmation: false))
+    var plan = AgentPlan(goal: outgoing.content, screen: .init(foregroundApp: "GalaxySSI", pageTitle: "Agent"),
+      steps: [], actions: [action], planId: "plan", revision: 3)
+    var task = AgentTaskRecord(taskId: outgoing.turnId, sessionId: outgoing.conversationId, goal: outgoing.content,
+      phase: .executing, routeKind: .localSystem, targetTitle: "Phone", risk: .low, blocked: false,
+      pendingAction: action, pendingActions: [action], activePlan: plan)
+    let wait = try XCTUnwrap(AgentSupervisedBrowserWait(task: task, outgoing: outgoing, action: action,
+      profileID: "profile", hostProcessID: "original-process"))
+    plan.actions[0].status = .waitingResponse
+    plan.actions[0].parameters[AgentSupervisedBrowserWait.requestReceiptKey] = AgentMcpJSONCodec.stringify(wait.requestReceipt)
+    task.activePlan = plan
+    task.supervisedBrowserWait = wait
+    task.phase = .waitingResponse
+    let restored = try JSONDecoder().decode(AgentTaskRecord.self, from: JSONEncoder().encode(task))
+    XCTAssertEqual(restored.supervisedBrowserWait, wait)
+    XCTAssertNotNil(wait.action(in: restored, outgoing: outgoing, profileID: "profile"))
+    XCTAssertNil(wait.action(in: restored, outgoing: outgoing, profileID: "other-profile"))
+    var wrong = outgoing
+    wrong.id = UUID()
+    XCTAssertNil(wait.action(in: restored, outgoing: wrong, profileID: "profile"))
+    var changed = restored
+    changed.activePlan?.revision = 4
+    XCTAssertNil(wait.action(in: changed, outgoing: outgoing, profileID: "profile"))
+    changed = restored
+    changed.pendingAction = nil
+    XCTAssertNil(wait.action(in: changed, outgoing: outgoing, profileID: "profile"))
+    changed = restored
+    changed.activePlan?.actions[0].parameters["input_json"] = "{\"url\":\"https://example.test/other\"}"
+    XCTAssertNil(wait.action(in: changed, outgoing: outgoing, profileID: "profile"))
+
+    let resolution = AgentSupervisedBrowserWait.Resolution.interrupted(.appProcessChanged)
+    XCTAssertTrue(wait.accepts(resolution))
+    var resolved = wait
+    resolved.resolution = resolution
+    XCTAssertFalse(resolved.accepts(.interrupted(.webContentProcessExited)))
+    XCTAssertEqual(resolved.requestReceipt, wait.requestReceipt)
+    XCTAssertEqual(resolution.output["user_returned_control"], .bool(false))
+    XCTAssertEqual(resolution.output["business_success_verified"], .bool(false))
+    task.pendingAction = nil
+    task.supervisedBrowserWait = resolved
+    task.activePlan?.actions[0].status = .failed
+    task.activePlan?.actions[0].parameters[AgentSupervisedBrowserWait.observationKey] =
+      AgentMcpJSONCodec.stringify(resolution.output)
+    XCTAssertNotNil(resolved.action(in: task, outgoing: outgoing, profileID: "profile"))
+    XCTAssertNil(wait.action(in: task, outgoing: outgoing, profileID: "profile"))
+  }
+
   func testSupervisedNativeFailureKeepsBoundedRedactedDiagnosticsSeparateFromOutput() throws {
     var native = nativeToolResult(status: .verificationFailed, invocationId: "verify-effect", idempotencyKey: "effect")
     native.output = ["outcome_state": .string("unknown"), "safe_value": .int(7)]
