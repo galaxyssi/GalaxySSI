@@ -293,6 +293,31 @@ final class PublicNewsFeedTests: XCTestCase {
     XCTAssertEqual(Array(arrivals[window.range]), Array(ids[38..<158]))
   }
 
+  func testExpandedNewsWaitsForIdleAndKeepsAnyPartiallyVisibleArticleOpen() {
+    let anchor = CGRect(x: 0, y: -17, width: 320, height: 70)
+    let above = CGRect(x: 0, y: -800, width: 320, height: 800)
+    let below = CGRect(x: 0, y: 600, width: 320, height: 800)
+    let partial = CGRect(x: 0, y: -799, width: 320, height: 800)
+    let offset = CGPoint(x: 0, y: 700)
+    var dwell = PublicNewsExpansionDwell()
+    XCTAssertFalse(dwell.shouldCollapse(offset: offset, moving: true, expandedFrame: above,
+      viewportHeight: 600, anchorFrame: anchor))
+    XCTAssertFalse(dwell.shouldCollapse(offset: offset, moving: false, expandedFrame: above,
+      viewportHeight: 600, anchorFrame: anchor))
+    XCTAssertFalse(dwell.shouldCollapse(offset: offset, moving: false, expandedFrame: partial,
+      viewportHeight: 600, anchorFrame: anchor))
+    XCTAssertTrue(dwell.shouldCollapse(offset: offset, moving: false, expandedFrame: above,
+      viewportHeight: 600, anchorFrame: anchor))
+    XCTAssertTrue(dwell.shouldCollapse(offset: offset, moving: false, expandedFrame: below,
+      viewportHeight: 600, anchorFrame: anchor))
+    XCTAssertFalse(dwell.shouldCollapse(offset: offset, moving: false, expandedFrame: nil,
+      viewportHeight: 600, anchorFrame: nil))
+    XCTAssertFalse(dwell.shouldCollapse(offset: offset, moving: false, expandedFrame: nil,
+      viewportHeight: 600, anchorFrame: anchor))
+    XCTAssertTrue(dwell.shouldCollapse(offset: offset, moving: false, expandedFrame: nil,
+      viewportHeight: 600, anchorFrame: anchor))
+  }
+
   func testRSSSkipsUnsafeLinksAndDuplicateAnchorsButKeepsOtherArticles() throws {
     let xml = """
       <rss version="2.0"><channel>
