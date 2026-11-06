@@ -1,6 +1,60 @@
 import SwiftUI
 import UIKit
 
+private struct PublicNewsRowFrames: PreferenceKey {
+  static var defaultValue: [String: CGRect] { [:] }
+
+  static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+    value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
+  }
+}
+
+private struct PublicNewsReadableFrames: PreferenceKey {
+  static var defaultValue: [String: CGRect] { [:] }
+
+  static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+    PublicNewsRowFrames.reduce(value: &value, nextValue: nextValue)
+  }
+}
+
+@MainActor
+private struct PublicNewsScrollAccess: UIViewRepresentable {
+  @MainActor
+  final class Handle {
+    weak var view: UIView?
+    var frames: [String: CGRect] = [:]
+    var readableFrames: [String: CGRect] = [:]
+
+    var scrollView: UIScrollView? {
+      var ancestor = view?.superview
+      while let current = ancestor {
+        if let scroll = current as? UIScrollView { return scroll }
+        ancestor = current.superview
+      }
+      return nil
+    }
+
+    func restoreOffset(_ delta: CGFloat) {
+      guard let scroll = scrollView else { return }
+      let minY = -scroll.adjustedContentInset.top
+      let maxY = max(minY, scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+      let y = min(maxY, max(minY, scroll.contentOffset.y + delta))
+      scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: y), animated: false)
+    }
+  }
+
+  let handle: Handle
+
+  func makeUIView(context: Context) -> UIView {
+    let view = UIView()
+    view.isUserInteractionEnabled = false
+    handle.view = view
+    return view
+  }
+
+  func updateUIView(_ uiView: UIView, context: Context) { handle.view = uiView }
+}
+
 enum PublicNewsHeaderLayout {
   static let actionWidth: CGFloat = 40
   static let sidePadding: CGFloat = 16
@@ -36,7 +90,11 @@ struct GalaxySSIPublicNewsView: View {
   @State private var speechCandidates: [String]?
   @State private var noDownloadedSpeechItems = false
   @State private var showBacklog = false
-  @State private var filter = Filter.all
+  @State private var timeline = PublicNewsTimeline()
+  @State private var scrollAccess = PublicNewsScrollAccess.Handle()
+  @State private var scrollRequest: ScrollRequest?
+  @State private var didRestoreTimeline = false
+  @State private var bookmarkChange: BookmarkChange?
   @State private var refreshRequest = 0
   @State private var showHighlights = false
   @State private var showScience = false
@@ -48,9 +106,25 @@ struct GalaxySSIPublicNewsView: View {
   @State private var selected: PublicNewsArticle?
   @State private var didOpenInitialArticle = false
   @SceneStorage("publicNews.showSearch") private var showSearch = false
+  @SceneStorage("publicNews.timelineFilter") private var savedFilter = "all"
+  @SceneStorage("publicNews.timelineTop") private var topKey = ""
+  @SceneStorage("publicNews.timelineOffset") private var topOffset = 0.0
+  @SceneStorage("publicNews.timelineExpanded") private var expandedKey = ""
 
-  private enum Filter: Hashable, CaseIterable { case all, unread, saved }
+  private typealias Filter = PublicNewsTimeline.Filter
   private enum SettingsAction { case read, search, highlights, backlog, refresh, science, translate }
+  private struct ScrollRequest: Equatable {
+    let id: String
+    var offset: CGFloat = 0
+    var forceProxy = false
+    var token = UUID()
+  }
+  private struct BookmarkChange: Equatable {
+    let id: String
+    let saved: Bool
+    var token = UUID()
+  }
+  private static let viewport = "public-news-viewport"
 
   private var headlineWorkerEnabled: Bool {
     scenePhase == .active && !showHeadlineTranslation &&
@@ -64,18 +138,21 @@ struct GalaxySSIPublicNewsView: View {
   }
 
   private var visibleArticles: [PublicNewsArticle] {
-    switch filter {
-    case .all: return archive.eligibleArticles
-    case .unread: return archive.eligibleArticles.filter { !$0.read }
-    case .saved: return archive.eligibleArticles.filter(\.saved)
-    }
+    let byID = Dictionary(archive.eligibleArticles.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    return timeline.visibleIDs.compactMap { byID[$0] }
+  }
+
+  private var canTrackReading: Bool {
+    scenePhase == .active && didRestoreTimeline && scrollRequest == nil && (archive.reminderUnreadCount ?? 0) > 0 &&
+      !showFeedMenu && !showNewsSettings && !showSearch && !showHighlights &&
+      !showBacklog && !showScience && !showHeadlineTranslation && selected == nil
   }
 
   var body: some View {
     let pageBackground = Color.galaxySSIPageBackground
     VStack(spacing: 0) {
       GalaxySSITopBar(
-        title: t("public_news_title", "Discoveries"),
+        title: t("public_news_title", "Following updates"),
         backgroundColor: pageBackground,
         leading: { GalaxySSIBackButton() },
         trailing: {
@@ -91,7 +168,7 @@ struct GalaxySSIPublicNewsView: View {
             .contentShape(Rectangle())
           }
           .buttonStyle(.plain)
-          .accessibilityLabel(t("public_news_actions", "News actions"))
+          .accessibilityLabel(t("public_news_actions", "Filter and settings"))
           .accessibilityIdentifier("public-news-menu")
         }
       )
@@ -111,47 +188,7 @@ struct GalaxySSIPublicNewsView: View {
       }
       if headlineWorkerEnabled, let message = headlineWorkerStatus { status(message) }
 
-      ScrollView {
-        LazyVStack(alignment: .leading, spacing: 0) {
-          if archive.storageFailed {
-            status(t("public_news_storage_failed", "The local news archive could not be accessed."))
-          }
-          if archive.refreshIncomplete {
-            status(t("public_news_refresh_incomplete", "Some publishers could not be refreshed."))
-          }
-          if visibleArticles.isEmpty && !archive.refreshing {
-            status(t("public_news_empty", "No articles"))
-          }
-          ForEach(visibleArticles) { article in
-            HStack(spacing: 8) {
-              GalaxySSIPublicNewsCover(article: article)
-              GalaxySSIPublicNewsHeadline(archive: archive, article: article, onOpen: {
-                selected = article
-                archive.markRead(article.id)
-              }) {
-                Text(article.displayTitle)
-                  .font(.body.weight(article.read ? .regular : .semibold))
-                  .foregroundColor(.galaxySSITextPrimary)
-                  .lineLimit(3)
-              } detail: {
-                GalaxySSIPublicNewsByline(article: article)
-              }
-              .padding(.vertical, 12)
-              GalaxySSIPublicNewsBookmark(archive: archive, article: article)
-            }
-            .padding(.leading, 12)
-            .background(Color.galaxySSISurface)
-            .onAppear { automaticHeadlines.visible(article.id, true, archive: archive) }
-            .onDisappear { automaticHeadlines.visible(article.id, false, archive: archive) }
-            Divider().padding(.leading, 12)
-          }
-        }
-        .padding(.horizontal, 12)
-      }
-      .overlay(alignment: .top) {
-        if archive.refreshing && archive.articles.isEmpty { ProgressView().padding() }
-      }
-      .refreshable { await archive.refresh(force: true, learnPublishers: publisherDiscovery) }
+      newsTimeline
     }
     .background(pageBackground.ignoresSafeArea())
     .accessibilityHidden(showFeedMenu)
@@ -176,13 +213,18 @@ struct GalaxySSIPublicNewsView: View {
       automaticHeadlines.configure(enabled: headlineWorkerEnabled, route: headlineTranslationRoute,
         archive: archive, store: store)
     }
-    .onChange(of: archive.articles) { _ in automaticHeadlines.wake() }
+    .onChange(of: archive.articles) { _ in
+      updateTimeline()
+      automaticHeadlines.wake()
+    }
+    .onChange(of: archive.notRelevantIDs) { _ in updateTimeline() }
     .onChange(of: headlineCloudRoutes) { _ in automaticHeadlines.wake() }
     .onDisappear { automaticHeadlines.suspend(archive: archive, store: store) }
     .onAppear {
+      archive.load()
+      updateTimeline()
       guard let initialArticleKey, !didOpenInitialArticle else { return }
       didOpenInitialArticle = true
-      archive.load()
       selected = archive.eligibleArticles.first { PublicNewsSpeechBookmark.key(for: $0.id) == initialArticleKey }
     }
     .task(id: refreshRequest) { await archive.refresh(force: refreshRequest != 0, learnPublishers: publisherDiscovery) }
@@ -216,6 +258,221 @@ struct GalaxySSIPublicNewsView: View {
     }
   }
 
+  private var newsTimeline: some View {
+    GeometryReader { viewport in
+      ScrollViewReader { proxy in
+        ScrollView {
+          LazyVStack(alignment: .leading, spacing: 0) {
+            Color.clear.frame(height: 0).id("public-news-list-start")
+            if archive.storageFailed {
+              status(t("public_news_storage_failed", "The local news archive could not be accessed."))
+            }
+            if archive.refreshIncomplete {
+              status(t("public_news_refresh_incomplete", "Some publishers could not be refreshed."))
+            }
+            if visibleArticles.isEmpty && !archive.refreshing {
+              status(t("public_news_empty", "No articles"))
+            }
+            ForEach(visibleArticles) { article in
+              timelineRow(article)
+                .background {
+                  GeometryReader { row in
+                    Color.clear.preference(key: PublicNewsRowFrames.self,
+                      value: [article.id: row.frame(in: .named(Self.viewport))])
+                  }
+                }
+                .id(article.id)
+            }
+          }
+          .padding(.horizontal, 12)
+          .background(PublicNewsScrollAccess(handle: scrollAccess))
+        }
+        .coordinateSpace(name: Self.viewport)
+        .onPreferenceChange(PublicNewsReadableFrames.self) { scrollAccess.readableFrames = $0 }
+        .onPreferenceChange(PublicNewsRowFrames.self) { frames in
+          scrollAccess.frames = frames
+          if let request = scrollRequest {
+            applyOffset(request, frames: frames, height: viewport.size.height)
+            return
+          }
+          guard didRestoreTimeline, let anchor = topRow(frames, height: viewport.size.height) else { return }
+          let key = PublicNewsSpeechBookmark.key(for: anchor.id)
+          let offset = Double(-anchor.frame.minY.rounded())
+          if topKey != key { topKey = key }
+          if topOffset != offset { topOffset = offset }
+        }
+        .task(id: scrollRequest) {
+          guard let request = scrollRequest else { return }
+          if !request.forceProxy, applyOffset(request, frames: scrollAccess.frames, height: viewport.size.height) { return }
+          proxy.scrollTo(request.id, anchor: .top)
+          // A removed row or a scroll clamped at the end may not report a new frame.
+          try? await Task.sleep(nanoseconds: 350_000_000)
+          if !Task.isCancelled, scrollRequest == request { scrollRequest = nil }
+        }
+        .task(id: canTrackReading ? timeline.filter : nil) {
+          guard canTrackReading else { return }
+          await trackReading()
+        }
+        .overlay(alignment: .top) {
+          if archive.refreshing && archive.articles.isEmpty { ProgressView().padding() }
+        }
+        .overlay(alignment: .bottom) {
+          VStack(spacing: 4) {
+            if !timeline.pendingIDs.isEmpty {
+              Button {
+                let anchor = topRow(scrollAccess.frames, height: viewport.size.height)
+                timeline.revealArrivals()
+                if let anchor {
+                  scrollRequest = .init(id: anchor.id, offset: -anchor.frame.minY, forceProxy: true)
+                }
+                refreshRequest += 1
+              } label: {
+                Label(String(format: t("public_news_new_arrivals", "%d new updates"), timeline.pendingIDs.count),
+                  systemImage: "arrow.up").frame(minHeight: 44)
+              }
+              .buttonStyle(.borderedProminent)
+            }
+            if let change = bookmarkChange {
+              HStack {
+                Text(change.saved ? t("public_news_bookmark_added", "Bookmark added") :
+                  t("public_news_bookmark_removed", "Bookmark removed"))
+                Button(t("public_news_bookmark_undo", "Undo")) {
+                  if archive.setSaved(change.id, to: !change.saved) { bookmarkChange = nil }
+                }
+                .frame(minHeight: 44)
+              }
+              .padding(.horizontal, 12)
+              .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            }
+          }
+          .padding(8)
+        }
+        .task(id: bookmarkChange) {
+          guard let change = bookmarkChange else { return }
+          try? await Task.sleep(nanoseconds: 4_000_000_000)
+          if !Task.isCancelled, bookmarkChange == change { bookmarkChange = nil }
+        }
+        .refreshable {
+          if !timeline.pendingIDs.isEmpty { timeline.revealArrivals() }
+          await archive.refresh(force: true, learnPublishers: publisherDiscovery)
+        }
+      }
+    }
+  }
+
+  private func topRow(_ frames: [String: CGRect], height: CGFloat) -> (id: String, frame: CGRect)? {
+    frames.filter { $0.value.maxY > 0 && $0.value.minY < height }
+      .min { $0.value.minY < $1.value.minY }.map { ($0.key, $0.value) }
+  }
+
+  private func trackReading() async {
+    var dwell = PublicNewsReadDwell()
+    var previousOffset: CGFloat?
+    while !Task.isCancelled {
+      try? await Task.sleep(nanoseconds: 250_000_000)
+      guard !Task.isCancelled, canTrackReading else { return }
+      guard let scroll = scrollAccess.scrollView else { continue }
+      let offset = scroll.contentOffset.y
+      let idle = previousOffset == offset && !scroll.isTracking && !scroll.isDragging && !scroll.isDecelerating
+      previousOffset = offset
+      let unread = Set(archive.eligibleArticles.lazy.filter { !$0.read }.map(\.id))
+      let height = scroll.bounds.height
+      let visible = Set(scrollAccess.readableFrames.compactMap { id, frame -> String? in
+        let visibleHeight = max(0, min(frame.maxY, height) - max(frame.minY, 0))
+        return unread.contains(id) && frame.height > 0 && visibleHeight >= frame.height * 0.85 ? id : nil
+      })
+      let ready = dwell.sample(idle ? visible : [], now: ProcessInfo.processInfo.systemUptime)
+      if !ready.isEmpty { archive.markRead(ready) }
+      if unread.isEmpty { return }
+    }
+  }
+
+  @discardableResult
+  private func applyOffset(_ request: ScrollRequest, frames: [String: CGRect], height: CGFloat) -> Bool {
+    guard let frame = frames[request.id], frame.maxY > 0, frame.minY < height else { return false }
+    scrollAccess.restoreOffset(frame.minY + min(request.offset, max(0, frame.height - 1)))
+    scrollRequest = nil
+    return true
+  }
+
+  private func updateTimeline() {
+    let articles = archive.eligibleArticles
+    if didRestoreTimeline {
+      timeline.reconcile(articles)
+    } else {
+      let keys = Set([topKey, expandedKey].filter { !$0.isEmpty })
+      let retained = Set(articles.filter { keys.contains(PublicNewsSpeechBookmark.key(for: $0.id)) }.map(\.id))
+      timeline.select(Filter(rawValue: savedFilter) ?? .all, articles: articles, retainingUnread: retained)
+      guard !articles.isEmpty else { return }
+      didRestoreTimeline = true
+      if let id = timeline.visibleIDs.first(where: { PublicNewsSpeechBookmark.key(for: $0) == topKey }) {
+        scrollRequest = .init(id: id, offset: CGFloat(topOffset))
+      }
+    }
+  }
+
+  private func selectFilter(_ filter: Filter) {
+    guard timeline.filter != filter else { return }
+    didRestoreTimeline = true
+    savedFilter = filter.rawValue
+    topKey = ""
+    topOffset = 0
+    expandedKey = ""
+    timeline.select(filter, articles: archive.eligibleArticles)
+    scrollRequest = .init(id: "public-news-list-start")
+  }
+
+  private func timelineRow(_ article: PublicNewsArticle) -> some View {
+    let key = PublicNewsSpeechBookmark.key(for: article.id)
+    let expanded = expandedKey == key
+    return VStack(alignment: .leading, spacing: 0) {
+      HStack(spacing: 8) {
+        GalaxySSIPublicNewsCover(article: article)
+        GalaxySSIPublicNewsHeadline(archive: archive, article: article, onOpen: {
+          expandedKey = expanded ? "" : key
+        }) {
+          Text(article.displayTitle)
+            .font(.body.weight(.semibold))
+            .foregroundColor(article.read ? .galaxySSITextSecondary : .galaxySSITextPrimary)
+            .lineLimit(3)
+        } detail: {
+          GalaxySSIPublicNewsByline(article: article)
+        }
+        .padding(.vertical, 12)
+        GalaxySSIPublicNewsBookmark(archive: archive, article: article) { saved in
+          bookmarkChange = .init(id: article.id, saved: saved)
+        }
+      }
+      .padding(.leading, 12)
+      .background {
+        GeometryReader { header in
+          Color.clear.preference(key: PublicNewsReadableFrames.self,
+            value: [article.id: header.frame(in: .named(Self.viewport))])
+        }
+      }
+      if expanded {
+        VStack(alignment: .leading, spacing: 8) {
+          if article.displayTitle != article.title {
+            Text(article.title).foregroundColor(.secondary).textSelection(.enabled)
+          }
+          if !article.summary.isEmpty { Text(article.summary).textSelection(.enabled) }
+          GalaxySSIPublicNewsBodyView(article: article, retainedArticleIDs: Set(archive.articles.map(\.id))) { cover in
+            archive.rememberCover(cover, articleID: article.id)
+          }
+          Button { selected = article } label: {
+            Label(t("public_news_open_article", "Open article"), systemImage: "doc.text")
+              .frame(minHeight: 44)
+          }
+        }
+        .padding(.horizontal, 12)
+      }
+      Divider().padding(.leading, 12)
+    }
+    .background(Color.galaxySSISurface)
+    .onAppear { automaticHeadlines.visible(article.id, true, archive: archive) }
+    .onDisappear { automaticHeadlines.visible(article.id, false, archive: archive) }
+  }
+
   private func status(_ text: String) -> some View {
     Text(text)
       .font(.callout)
@@ -238,7 +495,7 @@ struct GalaxySSIPublicNewsView: View {
   @ViewBuilder private var unreadHeaderCount: some View {
     if let count = archive.reminderUnreadCount, count > 0 {
       let label = String(format: t("public_news_header_unread", "%lld unread"), Int64(count))
-      let title = t("public_news_title", "Discoveries")
+      let title = t("public_news_title", "Following updates")
       let width = ceil((title as NSString).size(withAttributes: [
         .font: UIFont.boldSystemFont(ofSize: PublicNewsHeaderLayout.titleFontSize)
       ]).width) + 1
@@ -270,14 +527,14 @@ struct GalaxySSIPublicNewsView: View {
           VStack(spacing: 0) {
             ForEach(Filter.allCases, id: \.self) { option in
               let label = filterLabel(option)
-              feedMenuRow(label.title, icon: label.icon, selected: filter == option) {
-                filter = option
+              feedMenuRow(label.title, icon: label.icon, selected: timeline.filter == option) {
+                selectFilter(option)
                 showFeedMenu = false
               }
             }
             Rectangle().fill(Color.galaxySSISeparator).frame(height: 1)
               .padding(.horizontal, 16).padding(.vertical, 4)
-            feedMenuRow(t("public_news_settings", "News settings"), icon: "gearshape", selected: false) {
+            feedMenuRow(t("public_news_settings", "Following settings"), icon: "gearshape", selected: false) {
               showFeedMenu = false
               showNewsSettings = true
             }
@@ -317,9 +574,9 @@ struct GalaxySSIPublicNewsView: View {
 
   private func filterLabel(_ option: Filter) -> (title: String, icon: String) {
     switch option {
-    case .all: return (t("public_news_all", "All"), "list.bullet.rectangle")
-    case .unread: return (t("public_news_unread", "Unread"), "envelope")
-    case .saved: return (t("public_news_saved", "Saved"), "bookmark")
+    case .all: return (t("public_news_menu_all", "All updates"), "list.bullet.rectangle")
+    case .unread: return (t("public_news_menu_unread", "Unread only"), "envelope")
+    case .saved: return (t("public_news_menu_saved", "My saved items"), "bookmark")
     }
   }
 
@@ -370,7 +627,7 @@ struct GalaxySSIPublicNewsView: View {
             .disabled(archive.refreshing)
         }
       }
-      .navigationTitle(t("public_news_settings", "News settings"))
+      .navigationTitle(t("public_news_settings", "Following settings"))
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
@@ -420,7 +677,7 @@ struct GalaxySSIPublicNewsReader: View {
     let article = archive.articles.first { $0.id == original.id } ?? original
     return VStack(spacing: 0) {
       GalaxySSITopBar(
-        title: t("public_news_article", "Article"),
+        title: t("public_news_title", "Following updates"),
         leading: {
           Button { dismiss() } label: {
             Image(systemName: "xmark").frame(width: 40, height: 44)
@@ -504,9 +761,13 @@ struct GalaxySSIPublicNewsBookmark: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   let archive: PublicNewsArchive
   let article: PublicNewsArticle
+  var onChanged: ((Bool) -> Void)? = nil
 
   var body: some View {
-    Button { archive.toggleSaved(article.id) } label: {
+    Button {
+      let saved = !article.saved
+      if archive.setSaved(article.id, to: saved) { onChanged?(saved) }
+    } label: {
       Image(systemName: article.saved ? "bookmark.fill" : "bookmark")
         .frame(width: 44, height: 44)
     }

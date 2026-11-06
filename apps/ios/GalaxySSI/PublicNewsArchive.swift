@@ -122,8 +122,23 @@ final class PublicNewsArchive: ObservableObject {
     update(id) { $0.read = true }
   }
 
-  func toggleSaved(_ id: String) {
-    update(id) { $0.saved.toggle() }
+  func markRead(_ ids: Set<String>) {
+    var next = articles
+    var changed = false
+    for index in next.indices where !next[index].read && ids.contains(next[index].id) {
+      next[index].read = true
+      changed = true
+    }
+    if changed { save(next, refreshedAt: refreshedAt) }
+  }
+
+  @discardableResult
+  func setSaved(_ id: String, to saved: Bool) -> Bool {
+    guard let index = articles.firstIndex(where: { $0.id == id }),
+          articles[index].saved != saved else { return false }
+    var next = articles
+    next[index].saved = saved
+    return save(next, refreshedAt: refreshedAt)
   }
 
   func rememberCover(_ cover: URL, articleID: String) {

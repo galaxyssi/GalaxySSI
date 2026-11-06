@@ -6,7 +6,7 @@ import XCTest
 final class PublicNewsFeedTests: XCTestCase {
   @MainActor
   func testNewsFeedHeaderUsesPageColorsWithoutChangingTheSharedDefault() {
-    let feed = GalaxySSITopBar(title: "Discoveries", backgroundColor: .galaxySSIPageBackground,
+    let feed = GalaxySSITopBar(title: "Following updates", backgroundColor: .galaxySSIPageBackground,
       leading: { EmptyView() }, trailing: { EmptyView() })
     let reader = GalaxySSITopBar(title: "Article", leading: { EmptyView() }, trailing: { EmptyView() })
 
@@ -51,6 +51,62 @@ final class PublicNewsFeedTests: XCTestCase {
     XCTAssertEqual(dots.count, 5)
     XCTAssertEqual(dots.filter { $0.x == 0 }.map(\.y).sorted(), [-7, 0, 7])
     XCTAssertEqual(dots.filter { $0.y == 0 }.map(\.x).sorted(), [-7, 0, 7])
+  }
+
+  func testFollowingTimelineHonorsFilterBeforeLoadAndBuffersArrivalsWithoutMovingVisibleRows() {
+    let first = timelineArticle("first")
+    let second = timelineArticle("second")
+    let incoming = timelineArticle("incoming")
+    var alreadyRead = timelineArticle("already-read")
+    alreadyRead.read = true
+    var timeline = PublicNewsTimeline()
+    timeline.select(.unread, articles: [])
+    timeline.reconcile([first, alreadyRead, second])
+    XCTAssertEqual(timeline.visibleIDs, [first.id, second.id])
+    XCTAssertTrue(timeline.pendingIDs.isEmpty)
+
+    var opened = first
+    opened.read = true
+    timeline.reconcile([incoming, second, opened, alreadyRead])
+    XCTAssertEqual(timeline.visibleIDs, [first.id, second.id])
+    XCTAssertEqual(timeline.pendingIDs, [incoming.id])
+    timeline.revealArrivals()
+    XCTAssertEqual(timeline.visibleIDs, [incoming.id, first.id, second.id])
+    XCTAssertTrue(timeline.pendingIDs.isEmpty)
+
+    timeline.select(.unread, articles: [incoming, opened, second], retainingUnread: [first.id])
+    XCTAssertTrue(timeline.visibleIDs.contains(first.id))
+    timeline.select(.unread, articles: [incoming, opened, second])
+    XCTAssertFalse(timeline.visibleIDs.contains(first.id))
+  }
+
+  func testFollowingSavedFilterImmediatelyReflectsBookmarkChanges() {
+    var first = timelineArticle("first")
+    var second = timelineArticle("second")
+    first.saved = true
+    var timeline = PublicNewsTimeline()
+    timeline.select(.saved, articles: [first, second])
+    XCTAssertEqual(timeline.visibleIDs, [first.id])
+    first.saved = false
+    second.saved = true
+    timeline.reconcile([first, second])
+    XCTAssertEqual(timeline.visibleIDs, [second.id])
+    XCTAssertTrue(timeline.pendingIDs.isEmpty)
+  }
+
+  func testFollowingReadDwellResetsWhenScrollingOrLosingVisibility() {
+    var dwell = PublicNewsReadDwell()
+    XCTAssertTrue(dwell.sample(["first", "second"], now: 1).isEmpty)
+    XCTAssertTrue(dwell.sample(["first"], now: 2).isEmpty)
+    XCTAssertEqual(dwell.sample(["first", "second"], now: 3), ["first"])
+    XCTAssertTrue(dwell.sample([], now: 4).isEmpty)
+    XCTAssertTrue(dwell.sample(["second"], now: 5).isEmpty)
+    XCTAssertEqual(dwell.sample(["second"], now: 7), ["second"])
+  }
+
+  private func timelineArticle(_ slug: String) -> PublicNewsArticle {
+    PublicNewsArticle(url: URL(string: "https://example.com/\(slug)")!, title: slug,
+      summary: "", publisher: "Fixture", discoveredAt: .distantPast)
   }
 
   func testSpeechBookmarkResumesPausedAndInvalidatesOldParagraphCallbacks() throws {

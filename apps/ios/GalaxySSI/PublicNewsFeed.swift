@@ -21,6 +21,65 @@ struct PublicNewsArticle: Codable, Equatable, Identifiable {
   }
 }
 
+struct PublicNewsTimeline {
+  enum Filter: String, CaseIterable { case all, unread, saved }
+
+  private(set) var filter: Filter = .all
+  private(set) var visibleIDs: [String] = []
+  private(set) var pendingIDs: [String] = []
+  private var hasContent = false
+
+  mutating func select(_ filter: Filter, articles: [PublicNewsArticle], retainingUnread: Set<String> = []) {
+    self.filter = filter
+    visibleIDs = []
+    hasContent = false
+    reconcile(articles, retainingUnread: retainingUnread)
+  }
+
+  mutating func reconcile(_ articles: [PublicNewsArticle], retainingUnread: Set<String> = []) {
+    let matching = articles.filter {
+      switch filter {
+      case .all: return true
+      case .unread: return !$0.read || retainingUnread.contains($0.id)
+      case .saved: return $0.saved
+      }
+    }.map(\.id)
+    if !hasContent {
+      visibleIDs = matching
+      pendingIDs = []
+      hasContent = !matching.isEmpty
+      return
+    }
+    // Marking an open unread row read must not remove it under the reader.
+    let eligible = Set(filter == .unread ? articles.map(\.id) : matching)
+    visibleIDs.removeAll { !eligible.contains($0) }
+    let visible = Set(visibleIDs)
+    pendingIDs = matching.filter { !visible.contains($0) }
+    if filter == .saved { revealArrivals() }
+  }
+
+  mutating func revealArrivals() {
+    visibleIDs.insert(contentsOf: pendingIDs, at: 0)
+    pendingIDs = []
+  }
+}
+
+struct PublicNewsReadDwell {
+  private var visibleSince: [String: TimeInterval] = [:]
+
+  mutating func sample(_ visible: Set<String>, now: TimeInterval) -> Set<String> {
+    visibleSince = visibleSince.filter { visible.contains($0.key) }
+    var ready: Set<String> = []
+    for id in visible {
+      let firstSeen = visibleSince[id, default: now]
+      if now - firstSeen >= 2 { ready.insert(id) }
+      else { visibleSince[id] = firstSeen }
+    }
+    for id in ready { visibleSince.removeValue(forKey: id) }
+    return ready
+  }
+}
+
 struct PublicNewsSource {
   let publisher: String
   let url: URL

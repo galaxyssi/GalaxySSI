@@ -4645,7 +4645,7 @@
 "voice_reminders_untitled_event" = "日历日程";
 "voice_reminders_calendar_unavailable" = "无法读取日历";
 "voice_reminders_unread_news" = "未读动态：%lld";
-"voice_reminders_news_unavailable" = "无法读取发现";
+"voice_reminders_news_unavailable" = "无法读取关注动态";
 "voice_reminders_empty" = "暂无提醒";
 "galaxyssi.voice.activity" = "语音动态";
 "galaxyssi.voice.transcript" = "你说";
@@ -5579,9 +5579,9 @@
 "agent_global_insight_urgent" = "重要";
 "agent_global_insights_empty" = "暂无近期 GalaxySSI 洞察。";
 "agent_global_insights_title" = "GalaxySSI 洞察";
-"public_news_title" = "发现";
+"public_news_title" = "关注动态";
 "public_news_refresh" = "刷新新闻";
-"public_news_actions" = "新闻操作";
+"public_news_actions" = "筛选与设置";
 "public_news_search" = "搜索新闻";
 "public_news_highlights" = "精选";
 "public_news_highlight_interests" = "精选兴趣";
@@ -5625,7 +5625,15 @@
 "public_news_all" = "全部";
 "public_news_unread" = "未读";
 "public_news_header_unread" = "%lld 条未读";
-"public_news_settings" = "资讯设置";
+"public_news_settings" = "关注设置";
+"public_news_menu_all" = "全部内容";
+"public_news_menu_unread" = "只看未读";
+"public_news_menu_saved" = "我的收藏";
+"public_news_new_arrivals" = "%d 条新动态";
+"public_news_open_article" = "打开文章";
+"public_news_bookmark_added" = "已收藏";
+"public_news_bookmark_removed" = "已取消收藏";
+"public_news_bookmark_undo" = "撤销";
 "public_news_saved" = "已收藏";
 "public_news_storage_failed" = "无法访问本地新闻归档。";
 "public_news_refresh_incomplete" = "部分新闻来源暂时无法刷新。";

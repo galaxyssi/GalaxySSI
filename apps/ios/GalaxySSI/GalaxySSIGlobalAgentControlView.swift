@@ -827,7 +827,7 @@ struct GalaxySSIGlobalAgentInsightInboxView: View {
           NavigationLink(destination: GalaxySSIPublicNewsView()) {
             Image(systemName: "newspaper").frame(width: 40, height: 44)
           }
-          .accessibilityLabel(t("public_news_title", "Discoveries"))
+          .accessibilityLabel(t("public_news_title", "Following updates"))
         }
       )
       ScrollView {

@@ -587,7 +587,7 @@ struct GalaxySSIVoiceTabView: View {
           if count > 0 {
             NavigationLink(destination: GalaxySSIPublicNewsView()) {
               GalaxySSISecurityStatusRow(
-                title: t("public_news_title", "Discoveries"),
+                title: t("public_news_title", "Following updates"),
                 subtitle: String(format: t("voice_reminders_unread_news", "Unread updates: %lld"), Int64(count)),
                 systemImage: "newspaper",
                 tint: .blue,
@@ -597,7 +597,7 @@ struct GalaxySSIVoiceTabView: View {
             .buttonStyle(.plain)
           }
         } else {
-          Text(t("voice_reminders_news_unavailable", "Discoveries unavailable"))
+          Text(t("voice_reminders_news_unavailable", "Following updates unavailable"))
             .font(.footnote)
             .foregroundColor(.secondary)
         }
