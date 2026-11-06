@@ -35,6 +35,12 @@ final class AgentPhoneCapabilityStatusSnapshotProvider {
     return statuses
   }
 
+  func invalidate() {
+    lock.lock()
+    snapshot = nil
+    lock.unlock()
+  }
+
   private struct Snapshot {
     var createdAtMillis: Int64
     var statuses: [AgentPhoneCapabilityStatus]

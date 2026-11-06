@@ -2,10 +2,15 @@ import Foundation
 
 struct AgentNativeToolAvailabilityProvider {
   private let resolver: (AgentNativeToolInvocationContext?) -> AgentNativeToolAvailability
+  private let invalidator: () -> Void
 
-  init(_ resolver: @escaping (AgentNativeToolInvocationContext?) -> AgentNativeToolAvailability) {
+  init(invalidate: @escaping () -> Void = {},
+       _ resolver: @escaping (AgentNativeToolInvocationContext?) -> AgentNativeToolAvailability) {
     self.resolver = resolver
+    self.invalidator = invalidate
   }
+
+  func invalidate() { invalidator() }
 
   func current(_ context: AgentNativeToolInvocationContext? = nil) -> AgentNativeToolAvailability {
     resolver(context)

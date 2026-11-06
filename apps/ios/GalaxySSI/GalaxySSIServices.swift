@@ -713,6 +713,10 @@ final class MessageCoordinator: ObservableObject {
         task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
         store.upsertAgentTask(task)
         switch outcome.result {
+        case .recoveryRequired(let reason):
+          task.pendingPlanning = reference
+          blockModelPlanningRecovery(reason, task: &task)
+          continue
         case .directResponse(let response):
           _ = await completeModelDirectResponse(response, outgoing: outgoing, task: &task)
         case .plan(let plan):
@@ -5520,6 +5524,10 @@ final class MessageCoordinator: ObservableObject {
         completionRequirements: previousPlan?.completionRequirements
       )
     }
+    if case let .recoveryRequired(reason)? = modelOutcome {
+      blockModelPlanningRecovery(reason, task: &task)
+      return false
+    }
     let plan = modelOutcome?.actionPlan ?? ((task.effectRecovery ?? []).isEmpty ? fallbackPlan : nil)
     guard var resolvedPlan = plan else {
       return false
@@ -6108,11 +6116,15 @@ final class MessageCoordinator: ObservableObject {
         }
         throw AgentModelLoopRecoveryError(code: "phone_owned_planning_result_unavailable")
       }
+      let pendingRecovery = task.pendingPlanning
       task.phase = .executing
       task.pendingPlanning = nil
       task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
       store.upsertAgentTask(task)
       switch outcome {
+      case let .recoveryRequired(reason):
+        task.pendingPlanning = pendingRecovery
+        blockModelPlanningRecovery(reason, task: &task)
       case let .directResponse(response):
         _ = await completeModelDirectResponse(response, outgoing: outgoing, task: &task)
       case let .plan(plan):
@@ -6360,6 +6372,7 @@ final class MessageCoordinator: ObservableObject {
       guard let persisted = store.agentTask(id: task.taskId), persisted.phase == .planning,
             persisted.pendingPlanning == task.pendingPlanning else { return }
       task = persisted
+      let pendingRecovery = task.pendingPlanning
       task.phase = .executing
       task.pendingPlanning = nil
       task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
@@ -6368,6 +6381,10 @@ final class MessageCoordinator: ObservableObject {
         ? validatedLocalCollaborationRecall(collaborationRecallScope) : nil
       if let modelOutcome {
         switch modelOutcome {
+        case let .recoveryRequired(reason):
+          task.pendingPlanning = pendingRecovery
+          blockModelPlanningRecovery(reason, task: &task)
+          return
         case let .directResponse(response):
           if recall == nil || !hasTruncatedCollaborationDependencies {
             _ = await completeModelDirectResponse(response, outgoing: outgoing, task: &task)
@@ -9272,13 +9289,24 @@ final class MessageCoordinator: ObservableObject {
       )
     }
     guard !Task.isCancelled else { return nil }
-    if case .directResponse = result { return result }
+    switch result {
+    case .directResponse, .recoveryRequired: return result
+    case .plan: break
+    }
     guard case .plan(var resolvedPlan) = result, resolvedPlan.validation.valid, admission(resolvedPlan) == nil else { return nil }
     let scope = AgentPlanContinuationScope(conversationId: outgoing.conversationId,
       turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString))
     resolvedPlan.actions = resolvedPlan.actions.map(scope.bind)
     resolvedPlan.executionMode = executionMode
     return .plan(resolvedPlan)
+  }
+
+  private func blockModelPlanningRecovery(_ reason: String, task: inout AgentTaskRecord) {
+    task.phase = .blocked
+    task.blocked = true
+    task.verification = reason
+    task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+    store.upsertAgentTask(task)
   }
 
   private func completeModelDirectResponse(
@@ -10444,6 +10472,10 @@ final class MessageCoordinator: ObservableObject {
       task.executionLog.append("Rolling plan: waiting for model assessment for revision \(previousPlan.revision)")
       task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
       store.upsertAgentTask(task)
+      return false
+    }
+    if case let .recoveryRequired(reason) = outcome {
+      blockModelPlanningRecovery(reason, task: &task)
       return false
     }
     guard case let .plan(nextPlan) = outcome else {

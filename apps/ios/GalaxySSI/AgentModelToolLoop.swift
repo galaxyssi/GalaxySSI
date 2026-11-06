@@ -48,7 +48,8 @@ final class AgentModelToolLoop {
       ? AgentModelLoopRecoveryIdentity.sha256([
         "loop": AgentModelLoopScope(request: request).digest, "source": request.observationHistorySource
       ]) : nil
-    let historyManifest = toolRegistry.catalogJson(additionalDescriptors: [descriptor])
+    let historyManifest = toolRegistry.catalogJson(additionalDescriptors: [descriptor],
+      useRegisteredContracts: request.plannerRegisteredCatalog)
     let historyManifestSha256 = AgentModelToolProtocolJSON.sha256(historyManifest)
     let manifestJson: String
     let manifestSha256: String
@@ -61,7 +62,8 @@ final class AgentModelToolLoop {
       let enabled = try checkpoint?.observationHistoryEnabled(
         owner: owner, manifestSha256: historyManifestSha256) ?? (owner != nil)
       history = enabled ? owner.map { AgentModelObservationHistory(owner: $0) } : nil
-      manifestJson = enabled ? historyManifest : toolRegistry.catalogJson()
+      manifestJson = enabled ? historyManifest : toolRegistry.catalogJson(
+        useRegisteredContracts: request.plannerRegisteredCatalog)
       manifestSha256 = enabled ? historyManifestSha256 : AgentModelToolProtocolJSON.sha256(manifestJson)
       if let checkpoint {
         effectiveRequest.messages = try checkpoint.initial(
@@ -192,7 +194,9 @@ final class AgentModelToolLoop {
         remainingTokens: max(0, state.request.budget.maxTokens - state.totalTokens()),
         remainingTimeMillis: remainingTime(state),
         maxDepth: state.request.budget.maxDepth,
-        cancellationToken: state.request.cancellationToken
+        cancellationToken: state.request.cancellationToken,
+        loopId: state.request.loopId,
+        callerId: state.request.callerId
       )
       let recordedResponse = state.checkpoint?.response(modelRequest)
       if state.checkpoint?.failure != nil { return recoveryFailed(state) }

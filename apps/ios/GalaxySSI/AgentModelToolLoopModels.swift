@@ -15,6 +15,8 @@ struct AgentModelRequest {
   var remainingTimeMillis: Int64
   var maxDepth: Int
   var cancellationToken: AgentModelToolLoopCancellationToken
+  var loopId: String = ""
+  var callerId: String = ""
 }
 
 protocol AgentModelAdapter {
@@ -146,6 +148,7 @@ struct AgentModelToolLoopRequest {
   var grantedConsents: Set<String>
   var recoveryInputIdentity: String
   var observationHistoryEnabled: Bool
+  var plannerRegisteredCatalog = false
   var observationHistorySource: String
   var cancellationToken: AgentModelToolLoopCancellationToken
   var eventSink: AgentModelToolLoopEventSink

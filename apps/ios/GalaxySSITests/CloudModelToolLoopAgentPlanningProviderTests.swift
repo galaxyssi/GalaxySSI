@@ -10,7 +10,7 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
       toolRegistry: AgentNativeToolRegistry(),
       requestIdFactory: { "turn-1" },
       memoryTelemetryCapture: { _ in XCTFail("Fallback planning should not emit tool-loop memory telemetry.") }
-    ) { _, _ in
+    ) { _, _, _ in
       XCTFail("No tool loop should be created without safe native tools.")
       return RecordingPlanningToolLoopRunner(.completedPlan())
     }
@@ -58,7 +58,7 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
       fallbackProvider: fallback,
       toolRegistry: AgentNativeToolRegistry(),
       recoveryJournal: journal
-    ) { _, _ in
+    ) { _, _, _ in
       XCTFail("A missing live catalog must not replace a durable loop.")
       return RecordingPlanningToolLoopRunner(.completedPlan())
     }
@@ -67,7 +67,7 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
       _ = try await provider.rawPlan(invocation: source)
       XCTFail("Expected durable recovery to block fallback planning.")
     } catch let error as AgentModelPlanningProviderError {
-      XCTAssertEqual(error, .unavailable("model_loop_requires_recovery_not_fallback"))
+      XCTAssertEqual(error, .recoveryRequired("model_loop_requires_recovery_not_fallback"))
     }
     XCTAssertTrue(fallback.invocations.isEmpty)
   }
@@ -88,7 +88,7 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
       toolRegistry: registry,
       requestIdFactory: { "turn-1" },
       memoryTelemetryCapture: { telemetry.append($0) }
-    ) { catalog, registry in
+    ) { catalog, registry, _ in
       capturedCatalog = catalog
       capturedRegistry = registry
       return runner
@@ -147,7 +147,7 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
       fallbackProvider: fallback,
       toolRegistry: registry,
       requestIdFactory: { "turn-1" }
-    ) { _, _ in runner }
+    ) { _, _, _ in runner }
 
     let fallbackRaw = try await provider.rawPlan(invocation: invocation(
       nativeTools: [runtime],
@@ -171,7 +171,7 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
     let textProvider = RecordingPlanningProvider(raw: "repaired plan")
     let provider = CloudModelToolLoopAgentPlanningProvider(
       fallbackProvider: textProvider, toolRegistry: registry, requestIdFactory: { "fixture" }
-    ) { _, _ in runner }
+    ) { _, _, _ in runner }
     let source = invocation(nativeTools: [descriptor])
     _ = try await provider.rawPlan(invocation: source)
     let repair = try await provider.repairPlan(invocation: source)
@@ -189,7 +189,7 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
       fallbackProvider: RecordingPlanningProvider(raw: "fallback"),
       toolRegistry: registry,
       requestIdFactory: { ids.removeFirst() }
-    ) { _, _ in runner }
+    ) { _, _, _ in runner }
     let source = invocation(
       nativeTools: [descriptor],
       conversationId: "conversation-1",
@@ -231,7 +231,7 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
       fallbackProvider: RecordingPlanningProvider(raw: "fallback"),
       toolRegistry: registry,
       requestIdFactory: { "turn-1" }
-    ) { _, _ in runner }
+    ) { _, _, _ in runner }
 
     do {
       _ = try await provider.rawPlan(invocation: invocation(nativeTools: [descriptor]))
@@ -257,6 +257,114 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
     XCTAssertEqual(result.status, .succeeded)
     XCTAssertEqual(result.output["echo"], .string("hello"))
     XCTAssertNotNil(subset.executable(Self.echoToolId))
+  }
+
+  func testPlannerRefreshesRepairedToolsAndResumesCommittedSetupWithoutRepeatingIt() async throws {
+    let domain = "planner-catalog-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+    defer { defaults.removePersistentDomain(forName: domain) }
+    let secrets = InMemorySecretStore()
+    let store = GalaxySSIStore(defaults: defaults, secrets: secrets)
+    let contact = try store.addCloudModelContact(displayName: "Planner", provider: "OpenAI",
+      modelId: "fixture-model", endpoint: "https://api.openai.com/v1/chat/completions",
+      apiKey: "sk-fixture", apiStyle: .openAICompatible)
+    let setup = try nativeToolDescriptor(id: "phone.test.setup")
+    var read = try nativeToolDescriptor(id: Self.echoToolId)
+    read.effect = .readOnly
+    read.idempotency = .idempotent
+    var installed = false
+    var setupCalls = 0
+    var reads = 0
+    var probes = 0
+    let registry = try AgentNativeToolRegistry(nowMillis: { 100 })
+    try registry.registerExecutable(AgentNativeToolExecutableDefinition(
+      definition: .init(descriptor: setup, executorId: "setup"), executor: { _ in
+        installed = true
+        setupCalls += 1
+        return .success()
+      }))
+    try registry.registerExecutable(AgentNativeToolExecutableDefinition(
+      definition: .init(descriptor: read, executorId: "read", availabilityProvider: .init { _ in
+        probes += 1
+        return installed ? .available : .init(status: .unavailable, reason: "Missing dependency")
+      }), executor: { _ in
+        reads += 1
+        return .success()
+      }))
+    var original = invocation(nativeTools: [setup], conversationId: "catalog-owner", executionTurnId: "turn")
+    original.registeredNativeTools = [setup, read]
+    let firstSender = PlannerCatalogFixtureSender { request, catalog in
+      let ids = Set(catalog.map(\.id))
+      if request.round == 1 {
+        XCTAssertTrue(ids.contains(setup.id))
+        XCTAssertFalse(ids.contains(read.id))
+        return AgentModelResponse(toolCalls: [.init(callId: "install", toolId: setup.id)])
+      }
+      XCTAssertTrue(ids.contains(read.id))
+      throw AgentModelToolProtocolError(code: "interrupted", message: "Simulated interruption after setup.")
+    }
+    let first = CloudModelToolLoopAgentPlanningProvider(contact: contact, store: store, toolRegistry: registry,
+      nativeToolSender: firstSender, disclosureStore: InMemoryAgentDataDisclosureStore(),
+      journal: EncryptedAgentModelLoopJournal(defaults: defaults, secrets: secrets), memoryTelemetryCapture: { _ in })
+    do {
+      _ = try await first.rawPlan(invocation: original)
+      XCTFail("Expected interruption.")
+    } catch let error as AgentModelPlanningProviderError {
+      guard case .recoveryRequired = error else { return XCTFail("Expected recovery, got \(error)") }
+    }
+    XCTAssertEqual(setupCalls, 1)
+    var resumedProbeCount = 0
+    let resumedSender = PlannerCatalogFixtureSender { request, catalog in
+      XCTAssertTrue(catalog.contains { $0.id == read.id })
+      if request.round == 2 {
+        resumedProbeCount = probes
+        return AgentModelResponse(toolCalls: [.init(callId: "read", toolId: read.id)])
+      }
+      XCTAssertEqual(request.round, 3)
+      XCTAssertEqual(probes, resumedProbeCount + 1, "Only execution should recheck this read-only tool.")
+      return AgentModelResponse(assistantText: #"{"actions":[]}"#)
+    }
+    let resumed = CloudModelToolLoopAgentPlanningProvider(contact: contact, store: store, toolRegistry: registry,
+      nativeToolSender: resumedSender, disclosureStore: InMemoryAgentDataDisclosureStore(),
+      journal: EncryptedAgentModelLoopJournal(defaults: defaults, secrets: secrets), memoryTelemetryCapture: { _ in })
+    let result = try await resumed.rawPlan(invocation: original)
+    XCTAssertEqual(result, #"{"actions":[]}"#)
+    XCTAssertEqual(setupCalls, 1)
+    XCTAssertEqual(reads, 1)
+    var changed = original
+    changed.registeredNativeTools = [setup]
+    do {
+      _ = try await resumed.rawPlan(invocation: changed)
+      XCTFail("Changed registered tools must not replace a durable loop.")
+    } catch let error as AgentModelPlanningProviderError {
+      XCTAssertEqual(error, .recoveryRequired("planner_tool_contracts_changed"))
+    }
+  }
+
+  func testPreparedBindingCountsAsDurableAndLegacyInitialIsNotPromoted() async throws {
+    let journal = InMemoryAgentModelLoopJournal()
+    func request(_ id: String) -> AgentModelToolLoopRequest {
+      AgentModelToolLoopRequest(sessionId: "session", conversationId: "conversation", turnId: "turn",
+        taskId: "task", workspaceId: "workspace", loopId: id, messages: [.user("Goal")])
+    }
+    let prepared = request("prepared")
+    let owner = AgentModelLoopScope(request: prepared)
+    try await journal.withLease(scope: owner) { records in
+      let checkpoint = AgentModelLoopCheckpoint(records: records)
+      XCTAssertTrue(try checkpoint.plannerCatalogUsesContracts(scope: owner, fingerprint: "contract"))
+      XCTAssertNil(try records.read("initial"))
+      XCTAssertThrowsError(try checkpoint.plannerCatalogUsesContracts(scope: owner, fingerprint: "changed"))
+    }
+    XCTAssertTrue(try journal.hasRecords(scope: owner))
+
+    let legacy = request("legacy")
+    let legacyOwner = AgentModelLoopScope(request: legacy)
+    try await journal.withLease(scope: legacyOwner) { records in
+      let checkpoint = AgentModelLoopCheckpoint(records: records)
+      _ = try checkpoint.initial(request: legacy, manifestSha256: "old-available-only")
+      XCTAssertFalse(try checkpoint.plannerCatalogUsesContracts(scope: legacyOwner, fingerprint: "contract"))
+      XCTAssertNil(try records.read(AgentPlannerToolCatalogSession.operation))
+    }
   }
 
   private func invocation(
@@ -331,6 +439,15 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
   }
 
   private static let echoToolId = "phone.test.echo"
+}
+
+private struct PlannerCatalogFixtureSender: CloudModelNativeToolSending {
+  let respond: (AgentModelRequest, [AgentNativeToolDescriptor]) throws -> AgentModelResponse
+
+  func sendNativeToolTurn(contact: GalaxySSIContact, store: GalaxySSIStore,
+                          request: AgentModelRequest, catalog: [AgentNativeToolDescriptor]) async throws -> AgentModelResponse {
+    try respond(request, catalog)
+  }
 }
 
 private final class RecordingPlanningProvider: AgentModelPlanningProviding {
