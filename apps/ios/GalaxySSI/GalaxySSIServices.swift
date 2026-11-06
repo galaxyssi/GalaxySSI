@@ -7826,26 +7826,14 @@ final class MessageCoordinator: ObservableObject {
     planningRequest.allowsDirectResponse = planningRequest.allowsDirectResponse && answerOnly && existingEvidence.isEmpty &&
       !AgentRollingPlanPolicy.isBatchBoundaryReason(replanReason)
     let fallbackPlan = AgentPlanFactory.actions(request: planRequest, [])
-    for repairAttempt in 0...1 {
-      let result = await AgentPlanningTiming.capture(
-        taskId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
-      ) {
-        await planner.planOrRespond(
-          request: planningRequest,
-          settings: store.modelPlannerSettings,
-          safetySettings: store.agentSafetySettings,
-          fallbackPlan: fallbackPlan
-        )
-      }
-      if case .directResponse = result {
-        return result
-      }
-      guard case let .plan(plan) = result, plan.validation.valid else { return nil }
+    func admission(_ plan: AgentPlan) -> AgentModelPlanRejection? {
       if plan.actions.count == 1,
          let action = plan.actions.first,
          AgentRollingPlanPolicy.closesFromVerifiedEvidence(action),
          AgentRollingPlanPolicy.isBatchBoundaryReason(replanReason) {
-        guard executionMode != .planOnly else { return nil }
+        guard executionMode != .planOnly else {
+          return .init("actions", "completion_not_allowed", "Return a plan for review, not a completion marker.")
+        }
         let proposedMissing = AgentCompletionEvidencePolicy.missingEvidence(
           requirements: plan.completionRequirements,
           history: scopedHistory,
@@ -7855,58 +7843,38 @@ final class MessageCoordinator: ObservableObject {
         let unsettled = scopedHistory.contains(where: AgentCompletionEvidencePolicy.hasUnverifiedOutcome)
           ? ["a settled result for every outstanding operation"] : []
         let missing = Array(Set(priorMissing + proposedMissing + unsettled)).sorted()
-        if missing.isEmpty {
-          var completion = plan
-          let scope = AgentPlanContinuationScope(conversationId: outgoing.conversationId,
-            turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString))
-          completion.actions = completion.actions.map(scope.bind)
-          completion.executionMode = executionMode
-          return .plan(completion)
-        }
-        guard repairAttempt == 0 else { return nil }
-        planningRequest.planRequest.completionRequirements = plan.completionRequirements
-        let priorReason = planningRequest.parsingContext.replanReason
-          .trimmingCharacters(in: .whitespacesAndNewlines)
-        planningRequest.parsingContext.replanReason = String([
-          priorReason,
-          "Completion rejected. Declare or correct completion_requirements from the user's actual intent, including exclusions, and perform only genuinely missing work. Missing evidence: \(missing.joined(separator: "; "))."
-        ]
-          .filter { !$0.isEmpty }
-          .joined(separator: " ")
-          .prefix(500))
-        planningRequest.allowsDirectResponse = false
-        continue
+        return missing.isEmpty ? nil : .init("completion_requirements", "missing_completion_evidence",
+          "Declare or correct requirements from the user's actual intent and perform only missing work. Missing: \(missing.joined(separator: "; ")).")
       }
-      let actions = plan.actions.filter { $0.kind == .callNativeTool }
-      guard !actions.isEmpty, actions.count == plan.actions.count else { return nil }
+      let actions = plan.actions
+      if let index = actions.firstIndex(where: { $0.kind != .callNativeTool }) {
+        return .init("actions[\(index)].kind", "execution_tool_policy",
+          "This route accepts only advertised phone-native tool actions. Keep the selected route and permissions.")
+      }
       if let rejection = AgentPlanExecutionBatchPolicy.rejectionReason(
         actions: actions,
         workspaceId: outgoing.conversationId,
         descriptorFor: { runtime.registry.lookup($0)?.descriptor }
       ) {
-        guard repairAttempt == 0 else { return nil }
-        let priorReason = planningRequest.parsingContext.replanReason
-          .trimmingCharacters(in: .whitespacesAndNewlines)
-        planningRequest.parsingContext.replanReason = String([
-          priorReason,
-          "Runtime rejection: action_batch:\(rejection). Native actions must leave use_outputs_from empty; depends_on must reference earlier successful actions. Order conflicting resources and do not repeat the rejected graph."
-        ]
-          .filter { !$0.isEmpty }
-          .joined(separator: " ")
-          .prefix(500))
-        planningRequest.allowsDirectResponse = false
-        continue
+        return .init("actions", rejection,
+          "Leave use_outputs_from empty for native tools, reference earlier actions in depends_on, and explicitly order conflicting resource access.")
       }
-      var resolvedPlan = plan
-      let continuationScope = AgentPlanContinuationScope(
-        conversationId: outgoing.conversationId,
-        turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
-      )
-      resolvedPlan.actions = resolvedPlan.actions.map(continuationScope.bind)
-      resolvedPlan.executionMode = executionMode
-      return .plan(resolvedPlan)
+      return nil
     }
-    return nil
+    let result = await AgentPlanningTiming.capture(taskId: outgoing.turnId.ifBlank(outgoing.id.uuidString)) {
+      await planner.planOrRespond(
+        request: planningRequest, settings: store.modelPlannerSettings,
+        safetySettings: store.agentSafetySettings, fallbackPlan: fallbackPlan, admit: admission
+      )
+    }
+    guard !Task.isCancelled else { return nil }
+    if case .directResponse = result { return result }
+    guard case .plan(var resolvedPlan) = result, resolvedPlan.validation.valid, admission(resolvedPlan) == nil else { return nil }
+    let scope = AgentPlanContinuationScope(conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString))
+    resolvedPlan.actions = resolvedPlan.actions.map(scope.bind)
+    resolvedPlan.executionMode = executionMode
+    return .plan(resolvedPlan)
   }
 
   private func completeModelDirectResponse(

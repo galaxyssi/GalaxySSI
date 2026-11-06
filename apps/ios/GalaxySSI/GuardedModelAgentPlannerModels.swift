@@ -28,6 +28,13 @@ struct AgentModelPlanningInvocation: Codable, Equatable {
 
 protocol AgentModelPlanningProviding {
   func rawPlan(invocation: AgentModelPlanningInvocation) async throws -> String
+  func repairPlan(invocation: AgentModelPlanningInvocation) async throws -> String
+}
+
+extension AgentModelPlanningProviding {
+  func repairPlan(invocation: AgentModelPlanningInvocation) async throws -> String {
+    try await rawPlan(invocation: invocation)
+  }
 }
 
 enum AgentModelPlanningProviderError: LocalizedError, Equatable {

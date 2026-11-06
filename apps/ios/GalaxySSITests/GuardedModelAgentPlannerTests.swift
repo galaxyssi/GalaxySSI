@@ -133,6 +133,42 @@ final class GuardedModelAgentPlannerTests: XCTestCase {
     XCTAssertEqual(throwingProvider.invocations.count, 1)
     XCTAssertEqual(invalidPlan.plannerProfile, "rule-based-invalid-model-plan")
     XCTAssertEqual(invalidProvider.invocations.count, 1)
+    XCTAssertEqual(invalidProvider.repairs.count, 1)
+  }
+
+  func testRepairUsesStructuredFeedbackAndDoesNotResendRejectedModelText() async throws {
+    let provider = RecordingModelPlanningProvider(
+      raw: #"{"actions":[{"kind":"CALL_NATIVE_TOOL","parameters":{"tool_id":"invented-private-marker"}}]}"#,
+      repair: #"{"actions":[{"kind":"READ_SCREEN","description":"Read the visible context"}]}"#
+    )
+    let planner = GuardedModelAgentPlanner(provider: provider, modelProfile: "selected")
+    let result = await planner.planOrRespond(request: promptRequest(),
+      settings: AgentModelPlannerSettings(enabled: true), fallbackPlan: fallbackPlan())
+    XCTAssertEqual(result.actionPlan?.actions.first?.kind, .readScreen)
+    XCTAssertEqual(result.actionPlan?.plannerProfile, "guarded-model:selected")
+    XCTAssertEqual(provider.invocations.count, 1)
+    let repair = try XCTUnwrap(provider.repairs.first)
+    XCTAssertEqual(provider.repairs.count, 1)
+    XCTAssertEqual(repair.request, provider.invocations.first?.request)
+    XCTAssertTrue(repair.prompt.contains("actions[0].parameters.tool_id"))
+    XCTAssertTrue(repair.prompt.contains("native_tool_unavailable"))
+    XCTAssertFalse(repair.prompt.contains("invented-private-marker"))
+  }
+
+  func testRouteRejectionUsesSameRepairBudgetAndCannotBecomeDirectReply() async throws {
+    let provider = RecordingModelPlanningProvider(
+      raw: #"{"actions":[{"kind":"READ_SCREEN","description":"Read"}]}"#,
+      repair: #"{"disposition":"respond","final_response":"Claim success without execution"}"#
+    )
+    let planner = GuardedModelAgentPlanner(provider: provider)
+    let result = await planner.planOrRespond(request: promptRequest(allowsDirectResponse: true),
+      settings: AgentModelPlannerSettings(enabled: true), fallbackPlan: fallbackPlan()) { _ in
+        .init("actions[0].kind", "execution_tool_policy", "Only advertised tools are allowed.")
+      }
+    XCTAssertEqual(result.actionPlan?.plannerProfile, "rule-based-invalid-model-plan")
+    XCTAssertEqual(provider.invocations.count, 1)
+    XCTAssertEqual(provider.repairs.count, 1)
+    XCTAssertTrue(provider.repairs.first?.prompt.contains("execution_tool_policy") == true)
   }
 
   func testDirectResponseCodecAcceptsPlainAndFencedJSONResponses() {
@@ -381,10 +417,13 @@ private final class RecordingModelPlanningProvider: AgentModelPlanningProviding 
   var raw: String
   var error: AgentModelPlanningProviderError?
   var invocations: [AgentModelPlanningInvocation] = []
+  var repairedRaw: String?
+  var repairs: [AgentModelPlanningInvocation] = []
 
-  init(raw: String = "", error: AgentModelPlanningProviderError? = nil) {
+  init(raw: String = "", error: AgentModelPlanningProviderError? = nil, repair: String? = nil) {
     self.raw = raw
     self.error = error
+    self.repairedRaw = repair
   }
 
   func rawPlan(invocation: AgentModelPlanningInvocation) async throws -> String {
@@ -393,6 +432,12 @@ private final class RecordingModelPlanningProvider: AgentModelPlanningProviding 
       throw error
     }
     return raw
+  }
+
+  func repairPlan(invocation: AgentModelPlanningInvocation) async throws -> String {
+    repairs.append(invocation)
+    if let error { throw error }
+    return repairedRaw ?? raw
   }
 }
 

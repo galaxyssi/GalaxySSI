@@ -134,6 +134,11 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
     return text
   }
 
+  func repairPlan(invocation: AgentModelPlanningInvocation) async throws -> String {
+    // Repair is text-only on the same selected model; do not start a new native tool loop.
+    try await fallbackProvider.repairPlan(invocation: invocation)
+  }
+
   private func safeExecutableSelection(
     for invocation: AgentModelPlanningInvocation
   ) throws -> (registry: AgentNativeToolRegistry, catalog: [AgentNativeToolDescriptor])? {
