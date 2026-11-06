@@ -564,7 +564,7 @@ enum AgentPhoneNativeToolCatalog {
       version: version,
       title: title,
       description: id == workspaceExport
-        ? "Snapshot one file and verify its exported bytes. Use source=phone_linux only for the current Linux workspace; no program runs."
+        ? "Snapshot one file and verify its exported bytes. Small UTF-8 files include their exact text in artifacts[0].openability.details when text_complete is true; use bounded reads for larger files. Openability is not semantic verification. Use source=phone_linux only for the current Linux workspace; no program runs."
         : "Bounded operation inside GalaxySSI app-private Agent workspace storage.",
       location: .application,
       inputSchema: workspaceInputSchema(id),
@@ -904,9 +904,30 @@ enum AgentPhoneNativeToolCatalog {
 
   private static func workspaceOutputSchema(_ id: String) -> AgentMcpJSONObject {
     if id == workspaceExport {
+      let digest: AgentMcpJSONValue = .object(["type": .string("string"), "pattern": .string("^[0-9a-f]{64}$")])
+      let details = objectSchema(properties: [
+        "characters_read": .object(integerSchema(minimum: 0)),
+        "text_complete": .object(boolSchema()),
+        "text": .object(stringSchema(maxLength: Int64(AgentVerifiedArtifactSnapshot.maximumReviewCharacters)))
+      ], required: ["characters_read", "text_complete"])
+      let openability = objectSchema(properties: [
+        "status": .object(enumStringSchema(["verified", "unverified"])),
+        "sha256": digest,
+        "scope": .object(enumStringSchema(["byte_stream", "utf8_text_read"])),
+        "reason": .object(stringSchema(maxLength: 128)),
+        "details": .object(details)
+      ], required: ["status", "sha256", "scope"])
+      let artifact = objectSchema(properties: [
+        "relative_path": .object(stringSchema(minLength: 1, maxLength: 4_096)),
+        "artifact_kind": .object(enumStringSchema([AgentVerifiedArtifactSnapshot.kind])),
+        "file_count": .object(integerSchema(minimum: 1)),
+        "size_bytes": .object(integerSchema(minimum: 0)),
+        "sha256": digest,
+        "openability": .object(openability)
+      ], required: ["relative_path", "artifact_kind", "file_count", "size_bytes", "sha256", "openability"])
       return objectSchema(properties: [
         "artifact_workspace_id": .object(stringSchema(minLength: 1, maxLength: 256)),
-        "artifacts": .object(arraySchema(items: objectSchema(properties: [:], additionalProperties: true), minItems: 1, maxItems: 1))
+        "artifacts": .object(arraySchema(items: artifact, minItems: 1, maxItems: 1))
       ], required: ["artifact_workspace_id", "artifacts"])
     }
     if id == workspaceList {

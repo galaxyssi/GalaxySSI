@@ -343,13 +343,18 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
     descriptor: AgentNativeToolDescriptor,
     retryCount: Int = 0
   ) -> AgentActionResult {
-    let output = String(AgentMcpJSONCodec.stringify(result.output).prefix(maxOutputCharacters))
+    let serialized = AgentMcpJSONCodec.stringify(result.output)
+    let artifactExport = result.provenance.toolId == AgentPhoneNativeToolCatalog.workspaceExport
+    let output = artifactExport
+      ? (serialized.utf8.count <= AgentVerifiedArtifactSnapshot.maximumReceiptBytes ? serialized : "{}")
+      : String(serialized.prefix(maxOutputCharacters))
     let nativeMessage = modelVisibleMessage(result)
     let recovery = AgentEffectRecoveryRecord.fromNativeResult(result, action: action, descriptor: descriptor)
     var actionResult = AgentActionResult(
       actionId: action.id,
       success: result.isSuccess && recovery == nil,
-      message: recovery == nil ? (nativeMessage.nilIfEmpty ?? output) : "The original effect is not verified. Observe its affected state before deciding what to do next.",
+      message: recovery == nil ? (nativeMessage.nilIfEmpty ?? (artifactExport ? "Workspace export receipt" : output))
+        : "The original effect is not verified. Observe its affected state before deciding what to do next.",
       metadata: [
         "native_tool_id": result.provenance.toolId,
         "native_tool_version": result.provenance.toolVersion,
