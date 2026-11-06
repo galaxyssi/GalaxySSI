@@ -11,8 +11,8 @@ final class OpenAiCompatibleAgentModelToolProtocolAdapter: StrictAgentModelToolP
       .object([
         "type": .string("function"),
         "function": .object([
-          "name": .string(descriptor.id),
-          "description": .string(descriptor.description),
+          "name": .string(AgentModelToolWireNames.name(descriptor.id)),
+          "description": .string(AgentModelToolWireNames.description(descriptor)),
           "parameters": .object(descriptor.inputSchema)
         ])
       ])
@@ -46,7 +46,7 @@ final class OpenAiCompatibleAgentModelToolProtocolAdapter: StrictAgentModelToolP
               "id": .string(call.callId),
               "type": .string("function"),
               "function": .object([
-                "name": .string(call.toolId),
+                "name": .string(AgentModelToolWireNames.name(call.toolId)),
                 "arguments": .string(AgentMcpJSONCodec.stringify(call.arguments))
               ])
             ])

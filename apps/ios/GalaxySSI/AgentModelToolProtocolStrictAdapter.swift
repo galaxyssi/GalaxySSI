@@ -38,12 +38,18 @@ class StrictAgentModelToolProtocolAdapter: AgentModelToolProtocolAdapter {
 
   func checkedCatalog(_ catalog: [AgentNativeToolDescriptor]) throws -> [String: AgentNativeToolDescriptor] {
     var result: [String: AgentNativeToolDescriptor] = [:]
+    var nativeIDs: Set<String> = []
     for (index, descriptor) in catalog.enumerated() {
-      try checkedToolName(descriptor.id, path: "catalog[\(index)].id")
-      if result[descriptor.id] != nil {
+      let alias = try checkedNativeToolName(descriptor.id, path: "catalog[\(index)].id")
+      if !nativeIDs.insert(descriptor.id).inserted {
         throw protocolError("duplicate_tool", "Catalog contains duplicate tool \(descriptor.id)")
       }
-      result[descriptor.id] = descriptor
+      for name in [descriptor.id, alias] {
+        if let previous = result[name], previous.id != descriptor.id {
+          throw protocolError("ambiguous_tool_name", "Tool names do not resolve uniquely in this catalog.")
+        }
+        result[name] = descriptor
+      }
     }
     return result
   }
@@ -111,7 +117,7 @@ class StrictAgentModelToolProtocolAdapter: AgentModelToolProtocolAdapter {
 
   func checkedOutboundCall(_ call: AgentModelToolCall, path: String) throws {
     try checkedCallId(call.callId, path: "\(path).id")
-    try checkedToolName(call.toolId, path: "\(path).name")
+    _ = try checkedNativeToolName(call.toolId, path: "\(path).name")
     _ = try checkedArguments(call.arguments, path: "\(path).arguments")
   }
 
@@ -177,7 +183,7 @@ class StrictAgentModelToolProtocolAdapter: AgentModelToolProtocolAdapter {
 
   func boundedResult(_ result: AgentModelToolResultContent, path: String) throws -> BoundedAgentModelToolResult {
     try checkedCallId(result.callId, path: "\(path).tool_call_id")
-    try checkedToolName(result.toolId, path: "\(path).tool_id")
+    _ = try checkedNativeToolName(result.toolId, path: "\(path).tool_id")
     if result.status.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       throw protocolError("malformed_tool_result", "\(path).status must not be blank")
     }
@@ -269,6 +275,16 @@ class StrictAgentModelToolProtocolAdapter: AgentModelToolProtocolAdapter {
     if callId.count > limits.maxCallIdCharacters {
       throw protocolError("oversized_tool_call", "\(path) exceeds \(limits.maxCallIdCharacters) characters")
     }
+  }
+
+  private func checkedNativeToolName(_ name: String, path: String) throws -> String {
+    try checkedToolName(name, path: path)
+    guard AgentNativeToolDescriptor.isValidID(name) else {
+      throw protocolError("malformed_tool_call", "\(path) must be a native tool identifier")
+    }
+    let alias = AgentModelToolWireNames.name(name)
+    try checkedToolName(alias, path: "\(path).wire_name")
+    return alias
   }
 
   private func checkedToolName(_ name: String, path: String) throws {
