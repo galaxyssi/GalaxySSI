@@ -130,3 +130,10 @@ struct AgentManagedBrowserMemberReceipt: Codable, Equatable {
   let state: State
   let text: String
 }
+
+struct AgentManagedBrowserPresentation: Identifiable {
+  let binding: AgentManagedBrowserDispatchBinding
+  let handoff: AgentManagedBrowserHandoff
+
+  var id: UUID { handoff.id }
+}

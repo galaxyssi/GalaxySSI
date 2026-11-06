@@ -1,6 +1,7 @@
 import Foundation
 
 final class AgentManagedBrowserContinuationStore {
+  static let changed = Notification.Name("galaxyssi.managed-browser.changed")
   enum Failure: Error, Equatable {
     case unavailable, scopeChanged, legacyLoop, busy, invalidInput, notReady, staleTicket
   }
@@ -28,6 +29,7 @@ final class AgentManagedBrowserContinuationStore {
     var activeCallID: String?
     var receipt: AgentManagedBrowserMemberReceipt?
     var delivered = false
+    var deliveredReceiptID: UUID?
   }
 
   private static let lock = NSLock()
@@ -127,6 +129,18 @@ final class AgentManagedBrowserContinuationStore {
     }
   }
 
+  func pendingBindings(profileID: String, runID: String? = nil) -> [AgentManagedBrowserDispatchBinding] {
+    locked {
+      let prefix = namespace + "."
+      return GalaxySSIEncryptedUserDefaultsStore.storedKeys(defaults: defaults, prefix: prefix).sorted().compactMap {
+        let key = String($0.dropFirst(prefix.count))
+        guard let record = try? read(key), !record.delivered, record.binding.profileID == profileID,
+              runID == nil || record.binding.owner.runId == runID else { return nil }
+        return record.binding
+      }
+    }
+  }
+
   func returnControl(_ ticket: AgentManagedBrowserHandoff.Ticket, binding: AgentManagedBrowserDispatchBinding,
                      observation: AgentManagedBrowserHandoff.Observation) throws {
     try locked {
@@ -180,8 +194,14 @@ final class AgentManagedBrowserContinuationStore {
     try locked {
       try requireLease(lease, binding: binding)
       var record = try owned(binding)
+      if record.delivered {
+        guard record.deliveredReceiptID == receipt.id else { throw Failure.staleTicket }
+        return
+      }
       guard record.receipt == receipt else { throw Failure.staleTicket }
       record.delivered = true
+      record.deliveredReceiptID = receipt.id
+      record.receipt = nil
       record.input = nil
       record.handoffs.removeAll()
       record.activeCallID = nil
@@ -198,8 +218,7 @@ final class AgentManagedBrowserContinuationStore {
       return .settleCancellation
     }
     if mode == .recovery {
-      guard !record.handoffs.isEmpty,
-            record.handoffs.values.allSatisfy({ $0.state == .returned }) else { throw Failure.notReady }
+      guard record.handoffs.values.allSatisfy({ $0.state == .returned }) else { throw Failure.notReady }
     } else {
       guard record.handoffs.isEmpty else { throw Failure.notReady }
     }

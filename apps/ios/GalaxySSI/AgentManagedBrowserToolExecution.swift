@@ -6,6 +6,11 @@ struct AgentManagedBrowserToolExecution {
   let store: AgentManagedBrowserContinuationStore
   let binding: AgentManagedBrowserDispatchBinding
   let lease: AgentManagedBrowserContinuationStore.Lease
+  var currentOwner: () -> Bool = { true }
+
+  func validateCurrentOwner() throws {
+    guard currentOwner() else { throw AgentManagedBrowserContinuationStore.Failure.scopeChanged }
+  }
 
   static func descriptor() throws -> AgentNativeToolDescriptor {
     try AgentNativeToolDescriptor(id: toolID, version: "1.0.0", title: "Browser user handoff",
@@ -21,7 +26,7 @@ struct AgentManagedBrowserToolExecution {
     AgentNativeToolExecutableDefinition(
       definition: .init(descriptor: try Self.descriptor(), executorId: "ios.managed_browser_handoff")
     ) { invocation in
-      guard invocation.context.collaborationOwner == binding.owner,
+      guard currentOwner(), invocation.context.collaborationOwner == binding.owner,
             let callID = invocation.context.attributes["tool_call_id"],
             let address = invocation.input["url"]?.strictStringValue else {
         return .failure(code: "browser_owner_changed", message: "The handoff does not belong to this member.")
@@ -38,6 +43,7 @@ struct AgentManagedBrowserToolExecution {
   }
 
   func restoreCommittedRequest(call: AgentModelToolCall, invocationID: String) throws -> AgentMcpJSONObject? {
+    try validateCurrentOwner()
     guard call.toolId == Self.toolID, let address = call.arguments["url"]?.strictStringValue else {
       throw AgentManagedBrowserContinuationStore.Failure.invalidInput
     }
@@ -51,6 +57,7 @@ struct AgentManagedBrowserToolExecution {
   }
 
   func resolve(call: AgentModelToolCall, result: AgentNativeToolResult) throws -> AgentManagedBrowserHandoff {
+    try validateCurrentOwner()
     guard call.toolId == Self.toolID, result.isSuccess, let generation = UUID(uuidString: result.output.string("handoff_id")) else {
       throw AgentManagedBrowserContinuationStore.Failure.staleTicket
     }

@@ -6055,6 +6055,10 @@
 "galaxyssi.team.recovery.scope_removed" = "原协作组已不可用。";
 "galaxyssi.team.recovery.stalled" = "团队结果恢复连续失败，已暂停自动重试。";
 "galaxyssi.team.recovery.resume" = "继续恢复结果";
+"galaxyssi.managed_browser.open" = "接管浏览器";
+"galaxyssi.managed_browser.title" = "浏览器控制";
+"galaxyssi.managed_browser.return" = "交回控制";
+"galaxyssi.managed_browser.failed" = "无法交回浏览器控制。";
 "galaxyssi.team.recovery.missing" = "原智能体团队不可用，正在等待，不会重新派发";
 "galaxyssi.team.recovery.failed" = "原智能体团队未能成功完成任务。";
 "galaxyssi.team.reply_commit_failed" = "无法保存智能体团队回复，该回复不会显示为普通消息。";
