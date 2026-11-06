@@ -40,9 +40,10 @@ enum PublicNewsArticleBody {
 
   static func fetchHTML(_ url: URL) async throws -> String {
     guard supports(url) else { throw PublicNewsArticleBodyError.unsupportedSource }
-    let data = try await PublicScienceTransport.fetch(url, limit: 3_000_000)
-    guard let html = String(data: data, encoding: .utf8) else { throw PublicNewsArticleBodyError.incompleteSource }
-    return html
+    let resource = try await PublicScienceTransport.fetchResource(url, limit: 3_000_000)
+    let decoded = AgentIOSWebTextDecoder.decode(resource.body, contentType: resource.contentType)
+    guard decoded.lossless else { throw PublicNewsArticleBodyError.incompleteSource }
+    return decoded.text
   }
 
   @MainActor

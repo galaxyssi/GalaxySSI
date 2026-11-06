@@ -2,6 +2,35 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testWebTextDecoderHonorsTransportMetaAndByteOrderMark() {
+    let chineseBytes: [UInt8] = [0xD6, 0xD0, 0xCE, 0xC4]
+    let expected = "\u{4E2D}\u{6587}"
+    let html = Data(Array("<html><head><meta http-equiv='Content-Type' content='text/html; charset=gb18030'></head><p>".utf8)
+      + chineseBytes + Array("</p></html>".utf8))
+    let meta = AgentIOSWebTextDecoder.decode(html, contentType: "text/html")
+    XCTAssertTrue(meta.lossless)
+    XCTAssertTrue(meta.text.contains(expected))
+    XCTAssertEqual(meta.charset, "GB18030")
+
+    let cp1252 = AgentIOSWebTextDecoder.decode(Data([0x80]), contentType: "text/plain; charset=\"windows-1252\"")
+    XCTAssertTrue(cp1252.lossless)
+    XCTAssertEqual(cp1252.text, "\u{20AC}")
+
+    let bom = AgentIOSWebTextDecoder.decode(Data([0xFF, 0xFE, 0x41, 0x00]),
+      contentType: "text/html; charset=windows-1252")
+    XCTAssertTrue(bom.lossless)
+    XCTAssertEqual(bom.text, "A")
+    XCTAssertEqual(bom.charset, "UTF-16LE")
+  }
+
+  func testWebTextDecoderDoesNotReuseLossyCacheEntries() {
+    let damaged = AgentIOSWebTextDecoder.decode(Data([0xFF]), contentType: "text/plain")
+    XCTAssertFalse(damaged.lossless)
+    XCTAssertFalse(AgentIOSWebTextDecoder.reusable(content: damaged.text, metadata: [:]))
+    XCTAssertFalse(AgentIOSWebTextDecoder.reusable(content: "Some text", metadata: ["text_decoding_lossless": "false"]))
+    XCTAssertTrue(AgentIOSWebTextDecoder.reusable(content: "Clean legacy page", metadata: [:]))
+  }
+
   func testModelSelectedRoutingUsesExplicitOfficialDocumentationSource() {
     let selection = AgentIOSWebIntelligenceQueryRouting.select(
       query: "Android app process lifecycle and WorkManager official documentation",
