@@ -2,6 +2,77 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  @MainActor
+  func testVoiceAppContextBindsOneExactTurnAndExpiresWithoutRetargeting() throws {
+    var time: TimeInterval = 100
+    let contexts = VoiceAppContextStore(now: { time })
+    let article = PublicNewsSpeechBookmark.key(for: "article")
+    let first = try XCTUnwrap(contexts.capture(conversationID: "original", contactID: "peer",
+      articleID: article, surface: .news, playbackState: "playing"))
+    contexts.bind(first, conversationID: "wrong", turnID: "same-turn")
+    XCTAssertNil(contexts.context(conversationID: "wrong", turnID: "same-turn"))
+    contexts.bind(first, conversationID: "original", turnID: "same-turn")
+    contexts.bind(first, conversationID: "original", turnID: "reused")
+    XCTAssertNil(contexts.context(conversationID: "original", turnID: "reused"))
+    let second = try XCTUnwrap(contexts.capture(conversationID: "other", surface: .agent))
+    XCTAssertFalse(contexts.isForegroundOwner(first))
+    XCTAssertTrue(contexts.isForegroundOwner(second))
+    XCTAssertEqual(contexts.context(conversationID: "original", turnID: "same-turn")?.articleID, article)
+    XCTAssertNil(contexts.context(conversationID: "other", turnID: "same-turn"))
+    time = 701
+    XCTAssertNil(contexts.context(conversationID: "original", turnID: "same-turn"))
+    XCTAssertFalse(contexts.isForegroundOwner(second))
+  }
+
+  func testVoiceAppPlaybackRequiresConsentAndAnIdempotencyKey() throws {
+    let registry = try AgentNativeToolRegistry().registerExecutables(VoiceAppNativeTools.executables { _, _ in
+      .success(output: [:])
+    })
+    let id = VoiceAppNativeTools.Operation.playback.id
+    let input: AgentMcpJSONObject = ["operation": .string("pause")]
+    XCTAssertEqual(registry.authorize(id, input: input).code, "missing_consents")
+    let confirmed = AgentNativeToolInvocationContext(idempotencyKey: "request",
+      grantedConsents: [VoiceAppNativeTools.playbackConsent])
+    XCTAssertTrue(registry.authorize(id, input: input, context: confirmed).allowed)
+    XCTAssertFalse(registry.authorize(id, input: ["operation": .string("start_microphone")], context: confirmed).allowed)
+    let send = VoiceAppNativeTools.Operation.sendMessage.id
+    XCTAssertFalse(registry.authorize(send, input: ["contact_id": .string("peer"), "text": .string("Exact")],
+      context: confirmed).allowed)
+  }
+
+  @MainActor
+  func testVoiceNavigationAndObservedContactCannotEscapeTheForegroundOwner() throws {
+    let contexts = VoiceAppContextStore()
+    let owner = UUID()
+    var opened: [String] = []
+    contexts.installNavigation(owner: owner) { request in
+      opened.append(request.contactID)
+      return .success(output: [:])
+    }
+    let first = try XCTUnwrap(contexts.capture(conversationID: "first", surface: .contact))
+    contexts.bind(first, conversationID: "first", turnID: "turn")
+    XCTAssertFalse(contexts.hasObservedContact("peer", anchor: first))
+    contexts.recordObservedContacts(["peer"], anchor: first)
+    XCTAssertTrue(contexts.hasObservedContact("peer", anchor: first))
+    _ = contexts.navigate(.init(destination: .contact, conversationID: "first", contactID: "peer", message: ""), anchor: first)
+    XCTAssertEqual(opened, ["peer"])
+    let second = try XCTUnwrap(contexts.capture(conversationID: "second", surface: .agent))
+    XCTAssertFalse(contexts.hasObservedContact("peer", anchor: second))
+    _ = contexts.navigate(.init(destination: .contact, conversationID: "first", contactID: "peer", message: ""), anchor: first)
+    XCTAssertEqual(opened, ["peer"])
+    contexts.removeNavigation(owner: owner)
+    _ = contexts.navigate(.init(destination: .agent, conversationID: "second", contactID: "", message: ""), anchor: second)
+    XCTAssertEqual(opened, ["peer"])
+  }
+
+  func testPhoneAssistantDialTargetRejectsControlCodesAndNonTelephoneLinks() {
+    XCTAssertEqual(GalaxySSIPhoneDialTarget.url(for: "+1 (415) 555-0100")?.absoluteString, "tel:+14155550100")
+    for input in ["", "+", "*21*5550100#", "5550100,123", "5550100%23", "https://example.com",
+                  String(repeating: "1", count: 25)] {
+      XCTAssertNil(GalaxySSIPhoneDialTarget.url(for: input), input)
+    }
+  }
+
   func testScreenAnalysisAllowsOnlyExplicitLowRiskReadOnlyIdempotentTools() throws {
     let descriptors = AgentIOSWebIntelligenceNativeToolCatalog.definitions().map(\.descriptor)
     let read = try XCTUnwrap(descriptors.first { $0.id == AgentIOSWebIntelligenceNativeToolCatalog.search })

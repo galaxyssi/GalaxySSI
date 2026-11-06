@@ -120,12 +120,19 @@ extension AgentHomeView {
     }
   }
 
-  func addAttachment(url: URL) {
-    do {
-      let attachment = try GalaxySSIAttachmentPayloadBuilder.makeAttachment(from: url)
-      appendAttachment(attachment)
-    } catch {
-      attachmentError = error.localizedDescription
+  func receiveComposerFiles(_ urls: [URL]) {
+    guard let owner = fileAttachmentOwner, let request = fileAttachmentRequest,
+          owner == store.activeAgentConversationId else { return }
+    fileAttachmentOwner = nil
+    let target = contact
+    Task { @MainActor in
+      defer { if fileAttachmentRequest == request { fileAttachmentRequest = nil } }
+      let isCurrent = { fileAttachmentRequest == request && owner == store.activeAgentConversationId && scenePhase == .active }
+      await ComposerFileSelection.deliver(urls, isCurrent: isCurrent, onImage: appendAttachment, onDocument: { attachment in
+        if !(await coordinator.send("", to: target, attachments: [attachment])), isCurrent() {
+          attachmentError = coordinator.lastError.ifBlank(t("composer_attachment_send_failed", "Could not send the file."))
+        }
+      }, onFailure: { attachmentError = $0.localizedDescription })
     }
   }
 

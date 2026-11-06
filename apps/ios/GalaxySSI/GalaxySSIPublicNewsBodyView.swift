@@ -4,6 +4,8 @@ import SwiftUI
 struct GalaxySSIPublicNewsBodyView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scenePhase
+  @EnvironmentObject private var store: GalaxySSIStore
+  @ObservedObject private var playback = PublicNewsSpeechPlayback.shared
   let article: PublicNewsArticle
   let retainedArticleIDs: Set<String>
   let rememberCover: (URL) -> Void
@@ -42,7 +44,9 @@ struct GalaxySSIPublicNewsBodyView: View {
           Text(failureText(failure)).font(.callout).foregroundColor(.secondary)
         }
         if let checkpoint {
-          GalaxySSIPublicNewsDocumentView(checkpoint: checkpoint, articleURL: article.url, showChinese: showChinese)
+          speechControls(checkpoint)
+          GalaxySSIPublicNewsDocumentView(checkpoint: checkpoint, articleURL: article.url, showChinese: showChinese,
+            playFromParagraph: { index in play(checkpoint, paragraph: index) })
         }
       }
       .task(id: article.id) {
@@ -57,6 +61,35 @@ struct GalaxySSIPublicNewsBodyView: View {
       }
       .onChange(of: scenePhase) { if $0 != .active { request = nil } }
     }
+  }
+
+  private var speechItem: PublicNewsSpeechBookmark.Item {
+    .init(articleKey: PublicNewsSpeechBookmark.key(for: article.id), edition: showChinese ? .chinese : .original)
+  }
+
+  @ViewBuilder
+  private func speechControls(_ checkpoint: PublicNewsBodyCheckpoint) -> some View {
+    if playback.queue.current == speechItem {
+      GalaxySSIPublicNewsSpeechControls(playback: playback)
+      if playback.queue.phase == .failed {
+        Text(t("public_news_speech_failed", "Could not read the downloaded article."))
+          .font(.footnote)
+          .foregroundColor(.secondary)
+      }
+    } else {
+      Button { play(checkpoint, paragraph: 0) } label: {
+        Label(t("public_news_speech_read", "Read aloud"), systemImage: "speaker.wave.2")
+          .frame(minHeight: 44)
+      }
+      .disabled(!store.voiceSettings.textToSpeechEnabled || scenePhase != .active)
+    }
+  }
+
+  private func play(_ checkpoint: PublicNewsBodyCheckpoint, paragraph: Int) {
+    guard scenePhase == .active, let document = PublicNewsSpeechDocument(checkpoint: checkpoint, edition: speechItem.edition),
+          document.paragraphs.indices.contains(paragraph) else { return }
+    playback.play([speechItem], paragraph: paragraph, documentKey: document.key,
+      settings: store.voiceSettings, languagePolicy: store.languagePolicy)
   }
 
   @ViewBuilder

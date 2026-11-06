@@ -19,6 +19,9 @@ struct GalaxySSIHealthTableImportView: View {
   @State private var input: Input?
   @State private var mapping = GalaxySSIHealthTableImport.Mapping()
   @State private var rows: [GalaxySSIHealthTableImport.Row]?
+  @State private var reviewedMapping: GalaxySSIHealthTableImport.Mapping?
+  @State private var pickingDateOnlyTime = false
+  @State private var draftClock = Date(timeIntervalSince1970: 8 * 3600)
   @State private var batches: [GalaxySSIHealthTableImport.Batch] = []
   @State private var owned = false
   @State private var linkedRows: Set<Int> = []
@@ -122,7 +125,9 @@ struct GalaxySSIHealthTableImportView: View {
         retentionDefault = (try? records.load())?.keepsNewImportOriginals
       }
     }
-    .onChange(of: mapping) { _ in rows = nil; owned = false; linkedRows = [] }
+    .onChange(of: mapping) { value in
+      if reviewedMapping != value { rows = nil; reviewedMapping = nil; owned = false; linkedRows = [] }
+    }
     .fileImporter(isPresented: $choosing, allowedContentTypes: [.commaSeparatedText, .json,
       UTType(filenameExtension: "xlsx") ?? .spreadsheet]) { result in
       defer { fileRetention = nil }
@@ -147,6 +152,7 @@ struct GalaxySSIHealthTableImportView: View {
       }
       .navigationViewStyle(.stack)
     }
+    .sheet(isPresented: $pickingDateOnlyTime) { dateOnlyTimePicker }
   }
 
   private func workbookSection(_ workbook: WorkbookInput) -> some View {
@@ -182,18 +188,14 @@ struct GalaxySSIHealthTableImportView: View {
       column(t("date", "Measurement time"), $mapping.date, input)
       column(t("notes", "Notes (optional)"), $mapping.notes, input)
       Picker(t("date_style", "Date format"), selection: $mapping.dateStyle) {
-        Text("ISO 8601").tag(GalaxySSIHealthTableImport.DateStyle.iso)
-        Text("yyyy-MM-dd HH:mm:ss").tag(GalaxySSIHealthTableImport.DateStyle.localTime)
-        Text("yyyy-MM-dd").tag(GalaxySSIHealthTableImport.DateStyle.day)
-        if input.worksheet != nil {
-          Text(t("excel_date", "Excel date serial")).tag(GalaxySSIHealthTableImport.DateStyle.excel)
+        ForEach(GalaxySSIHealthTableImport.DateStyle.allCases.filter { $0 != .excel || input.worksheet != nil },
+                id: \.self) { style in
+          Text(style == .excel ? t("excel_date", "Excel date serial") : style.formatLabel).tag(style)
         }
       }
-      if mapping.dateStyle != .iso || input.worksheet != nil {
-        Picker(t("zone", "Time zone"), selection: $mapping.localZone) {
-          Text(TimeZone.current.identifier).tag(TimeZone.current)
-          if let utc = TimeZone(identifier: "Etc/UTC"), utc != .current { Text("UTC").tag(utc) }
-        }
+      Picker(t("zone", "Time zone"), selection: $mapping.localZone) {
+        Text(TimeZone.current.identifier).tag(TimeZone.current)
+        if let utc = TimeZone(identifier: "Etc/UTC"), utc != .current { Text("UTC").tag(utc) }
       }
       Group {
         if mapping.metric.units.count > 1 {
@@ -205,16 +207,21 @@ struct GalaxySSIHealthTableImportView: View {
         let unit = mapping.unitOverride ?? mapping.metric.unit
         Toggle(unit.isEmpty ? t("unitless", "The selected results are unitless") :
           String(format: t("unit", "The selected values use %@"), unit), isOn: $mapping.confirmedUnit)
-        if input.table.isoDates?.contains(where: { $0.contains(mapping.date) }) == true {
-          Toggle(t("date_only_time", "Set time for date-only cells"), isOn: Binding(
-            get: { mapping.dateOnlyMinute != nil }, set: { mapping.dateOnlyMinute = $0 ? 0 : nil }))
+        if mapping.date >= 0 {
+          Button {
+            draftClock = Date(timeIntervalSince1970: Double((mapping.dateOnlyMinute ?? 480) * 60))
+            pickingDateOnlyTime = true
+          } label: {
+            HStack {
+              Label(t("date_only_time", "Set time for date-only cells"), systemImage: "clock")
+              Spacer(minLength: 8)
+              if let minute = mapping.dateOnlyMinute {
+                Text(GalaxySSIHealthTableImport.DateOnlyDecision.clock(minute)).foregroundColor(.secondary)
+              }
+            }
+          }
           if mapping.dateOnlyMinute != nil {
-            Stepper(value: dateOnlyPart(hours: true), in: 0...23) {
-              Text(String(format: t("date_only_hour", "Hour: %02lld"), Int64((mapping.dateOnlyMinute ?? 0) / 60)))
-            }
-            Stepper(value: dateOnlyPart(hours: false), in: 0...59) {
-              Text(String(format: t("date_only_minute", "Minute: %02lld"), Int64((mapping.dateOnlyMinute ?? 0) % 60)))
-            }
+            Button(t("date_only_clear", "Clear selected time")) { mapping.dateOnlyMinute = nil }
           }
         }
       }
@@ -222,14 +229,33 @@ struct GalaxySSIHealthTableImportView: View {
     }
   }
 
-  private func dateOnlyPart(hours: Bool) -> Binding<Int> {
-    Binding(get: {
-      let time = mapping.dateOnlyMinute ?? 0
-      return hours ? time / 60 : time % 60
-    }, set: { value in
-      let time = mapping.dateOnlyMinute ?? 0
-      mapping.dateOnlyMinute = hours ? value * 60 + time % 60 : time / 60 * 60 + value
-    })
+  private var dateOnlyTimePicker: some View {
+    var clockCalendar = Calendar(identifier: .gregorian)
+    clockCalendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+    return NavigationView {
+      DatePicker(t("date_only_time", "Set time for date-only cells"), selection: $draftClock,
+                 displayedComponents: .hourAndMinute)
+        .datePickerStyle(.wheel)
+        .labelsHidden()
+        .environment(\.calendar, clockCalendar)
+        .environment(\.timeZone, clockCalendar.timeZone)
+        .navigationTitle(t("date_only_title", "Date-only time"))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+          ToolbarItem(placement: .cancellationAction) {
+            Button(t("close_source", "Close")) { pickingDateOnlyTime = false }
+          }
+          ToolbarItem(placement: .confirmationAction) {
+            Button(t("date_only_confirm", "Use this time")) {
+              guard scene == .active, input != nil else { return }
+              let parts = clockCalendar.dateComponents([.hour, .minute], from: draftClock)
+              if let hour = parts.hour, let minute = parts.minute { mapping.dateOnlyMinute = hour * 60 + minute }
+              pickingDateOnlyTime = false
+            }
+          }
+        }
+    }
+    .navigationViewStyle(.stack)
   }
 
   private func review(_ rows: [GalaxySSIHealthTableImport.Row]) -> some View {
@@ -253,6 +279,12 @@ struct GalaxySSIHealthTableImportView: View {
             Text(row.rawValue).lineLimit(2).foregroundColor(.secondary)
           }
           Text(t("source_time", "Source time") + ": " + row.rawDate).lineLimit(2).foregroundColor(.secondary)
+          if let decision = row.dateOnlyDecision {
+            Label(String(format: t("date_only_applied", "Confirmed date-only time: %@"), decision.clock),
+                  systemImage: "clock").foregroundColor(.secondary)
+          } else if row.needsDateOnlyTime {
+            Text(t("date_only_needed", "Choose a time for this date in column mapping.")).foregroundColor(.secondary)
+          }
           if row.duplicateTarget != nil {
             Toggle(t("link_duplicate", "Link this row to the existing measurement"), isOn: Binding(
               get: { linkedRows.contains(row.id) }, set: {
@@ -384,16 +416,20 @@ struct GalaxySSIHealthTableImportView: View {
   private func prepare() {
     guard scene == .active, let input else { return }
     rows = nil
+    reviewedMapping = nil
     linkedRows = []
     owned = false
     message = nil
     limit = 30
-    do { rows = try GalaxySSIHealthTableImport.preview(input.table, mapping: mapping, current: records.load().current) }
+    do {
+      rows = try GalaxySSIHealthTableImport.preview(input.table, mapping: mapping, current: records.load().current)
+      reviewedMapping = mapping
+    }
     catch { message = t("mapping_failed", "Select distinct columns and confirm the unit.") }
   }
 
   private func save() {
-    guard scene == .active, owned, let input, let rows else { return }
+    guard scene == .active, owned, reviewedMapping == mapping, let input, let rows else { return }
     do {
       let targets = Dictionary(rows.compactMap { row in
         linkedRows.contains(row.id) ? row.duplicateTarget.map { (row.id, $0) } : nil
@@ -449,6 +485,7 @@ struct GalaxySSIHealthTableImportView: View {
 
   private func clear() {
     input = nil; rows = nil; owned = false; mapping = .init()
+    reviewedMapping = nil; pickingDateOnlyTime = false
     workbook = nil; sheetID = ""; header = 0; headerChoices = []
     linkedRows = []
     openedReview = nil

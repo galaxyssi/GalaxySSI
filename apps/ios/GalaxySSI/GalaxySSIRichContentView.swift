@@ -7,6 +7,17 @@ import WebKit
 import UniformTypeIdentifiers
 import QuickLook
 
+private struct AgentRichHTMLPlaybackAllowedKey: EnvironmentKey {
+  static let defaultValue = true
+}
+
+extension EnvironmentValues {
+  var agentRichHTMLPlaybackAllowed: Bool {
+    get { self[AgentRichHTMLPlaybackAllowedKey.self] }
+    set { self[AgentRichHTMLPlaybackAllowedKey.self] = newValue }
+  }
+}
+
 struct GalaxySSIRichContentView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var coordinator: MessageCoordinator
@@ -487,6 +498,8 @@ private struct GalaxySSIRichBlockListView: View {
 
 private struct GalaxySSIRichBlockView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
+  @Environment(\.scenePhase) private var scenePhase
+  @Environment(\.agentRichHTMLPlaybackAllowed) private var allowsHTMLPlayback
   @EnvironmentObject private var coordinator: MessageCoordinator
 
   var block: AgentRichBlock
@@ -498,6 +511,7 @@ private struct GalaxySSIRichBlockView: View {
   var onArtifactCompress: (AgentRichBlock) -> Void
 
   @State private var expandedCode = false
+  @State private var showingHTMLSourcePreview = false
   @State private var expandedTable = false
   @State private var copiedCode = false
   @State private var formValues: [String: String] = [:]
@@ -648,6 +662,8 @@ private struct GalaxySSIRichBlockView: View {
 
   private var codeBlock: some View {
     let value = displayText
+    let canPreviewHTML = allowsHTMLPlayback && !isOutgoing && block.language == "html" &&
+      AgentVisualOutputPolicy.isDocumentSource(block.text) && AgentVisualOutputPolicy.isCompleteHTML(block.text)
     let lines = value.components(separatedBy: .newlines)
     let collapsed = !expandedCode && lines.count > Self.collapsedCodeLines
     let visibleText = collapsed ? lines.prefix(Self.collapsedCodeLines).joined(separator: "\n") : value
@@ -658,6 +674,18 @@ private struct GalaxySSIRichBlockView: View {
           .foregroundColor(.galaxySSITextSecondary)
           .lineLimit(1)
         Spacer(minLength: 8)
+        if canPreviewHTML {
+          Button {
+            showingHTMLSourcePreview.toggle()
+          } label: {
+            Image(systemName: showingHTMLSourcePreview ? "stop.fill" : "play.fill")
+              .font(.caption.weight(.semibold))
+              .frame(width: 36, height: 44)
+          }
+          .buttonStyle(.plain)
+          .foregroundColor(.galaxySSITextSecondary)
+          .accessibilityLabel(showingHTMLSourcePreview ? t("rich_output_stop", "Stop") : t("rich_output_play", "Play"))
+        }
         if copiedCode {
           Text(t("rich_output_copied", "Copied"))
             .font(.caption2.weight(.semibold))
@@ -678,6 +706,10 @@ private struct GalaxySSIRichBlockView: View {
       .padding(.horizontal, 10)
       .padding(.vertical, 6)
       .background(Color.galaxySSISearchBackground.opacity(isOutgoing ? 0.4 : 0.7))
+
+      if canPreviewHTML && showingHTMLSourcePreview && scenePhase == .active {
+        inlineHTMLPlayer(block.text)
+      }
 
       ScrollView(.horizontal, showsIndicators: true) {
         highlightedCodeText(visibleText)
@@ -707,6 +739,8 @@ private struct GalaxySSIRichBlockView: View {
         .stroke(Color.galaxySSISeparator, lineWidth: 0.5)
     )
     .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .onDisappear { showingHTMLSourcePreview = false }
+    .onChange(of: block.text) { _ in showingHTMLSourcePreview = false }
   }
 
   private var keyValueBlock: some View {
@@ -814,7 +848,6 @@ private struct GalaxySSIRichBlockView: View {
                 block: block,
                 onLoaded: { loadedData in
                   inlineImageSize = GalaxySSIImageResourceDecoder.galleryThumbnailSize(from: loadedData)
-                  if loadedData.count <= GalaxySSIImageClipboard.maximumBytes { loadedClipboardImageData = loadedData }
                 }
               ) {
                 GalaxySSIRichImageFailureView()
@@ -844,19 +877,31 @@ private struct GalaxySSIRichBlockView: View {
         .onTapGesture {
           guard transferProgress == nil else { return }
           guard let item = makeImageViewerItem(
-            data: data ?? (usesPeerThumbnailCache ? localImageData : nil),
-            url: url,
+            data: usesPeerThumbnailCache ? GalaxySSIPeerImageThumbnailRepository.shared.originalData(for: block) : data,
+            url: usesPeerThumbnailCache ? nil : url,
             id: "\(block.id)-image",
             title: block.title
           ) else { return }
           imageViewerItem = item
         }
         .contextMenu {
-          if let bytes = data ?? loadedClipboardImageData ?? (usesPeerThumbnailCache ? localImageData : nil) {
+          if usesPeerThumbnailCache && transferProgress == nil {
+            Button {
+              if let bytes = GalaxySSIPeerImageThumbnailRepository.shared.originalData(for: block) {
+                _ = GalaxySSIImageClipboard.copy(bytes)
+              }
+            } label: {
+              Label(t("clipboard_image_copy", "Copy image"), systemImage: "doc.on.doc")
+            }
+          } else if let bytes = data ?? loadedClipboardImageData {
             Button { _ = GalaxySSIImageClipboard.copy(bytes) } label: {
               Label(t("clipboard_image_copy", "Copy image"), systemImage: "doc.on.doc")
             }
           }
+        }
+        .onChange(of: usesPeerThumbnailCache ? GalaxySSIPeerImageThumbnailPolicy.cacheIdentity(block) : "") { _ in
+          inlineImageSize = nil
+          loadedClipboardImageData = nil
         }
         .onDisappear { loadedClipboardImageData = nil }
         .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
@@ -919,11 +964,7 @@ private struct GalaxySSIRichBlockView: View {
   }
 
   private var usesEncryptedPeerThumbnailCache: Bool {
-    block.type == .image &&
-      block.dataB64.isBlank &&
-      block.metadata["source"] == "peer_message" &&
-      block.metadata["storage"] == "attachment_aes_256_gcm" &&
-      !(block.metadata["encryption_purpose"] ?? "").isBlank
+    GalaxySSIPeerImageThumbnailPolicy.isPrivatePeerImage(block)
   }
 
   @ViewBuilder
@@ -945,17 +986,27 @@ private struct GalaxySSIRichBlockView: View {
         selectableText(block.title)
           .font(.subheadline.weight(.semibold))
       }
-      GalaxySSIInlineHTMLView(html: String(block.text.prefix(32_000)))
-        .frame(maxWidth: .infinity)
-        .frame(height: 280)
-        .background(Color.galaxySSISurface)
-        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+      if allowsHTMLPlayback && !isOutgoing && scenePhase == .active {
+        if block.uri.hasPrefix(AgentVisualOutputPolicy.localHTMLPrefix) {
+          GalaxySSIDeclaredHTMLArtifactPreview(block: block)
+        } else if AgentVisualOutputPolicy.isCompleteHTML(block.text) {
+          inlineHTMLPlayer(block.text)
+        }
+      }
       if !block.fallbackText.isEmpty {
         selectableText(block.fallbackText)
           .font(.caption)
           .foregroundColor(.galaxySSITextSecondary)
       }
     }
+  }
+
+  private func inlineHTMLPlayer(_ html: String) -> some View {
+    GalaxySSIInlineHTMLView(html: html)
+      .frame(maxWidth: .infinity)
+      .frame(height: 280)
+      .background(Color.galaxySSISurface)
+      .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
   }
 
   @ViewBuilder
@@ -1946,6 +1997,9 @@ private struct GalaxySSIRichBlockView: View {
   }
 
   private var mediaURL: URL? {
+    if block.uri.hasPrefix(AgentVisualOutputPolicy.localVideoPrefix) {
+      return coordinator.loadDeclaredRichVideoURL(block)
+    }
     guard let url = localArtifactFile ?? GalaxySSILocalFileResource.url(for: block) ?? URL(string: block.uri),
           ["http", "https", "file"].contains(url.scheme?.lowercased() ?? "") else {
       return nil
@@ -2482,6 +2536,38 @@ private struct GalaxySSIRichImageFailureView: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     GalaxySSILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+private struct GalaxySSIDeclaredHTMLArtifactPreview: View {
+  @EnvironmentObject private var coordinator: MessageCoordinator
+  @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
+  @State private var html: String?
+  @State private var failed = false
+  let block: AgentRichBlock
+
+  var body: some View {
+    Group {
+      if let html {
+        GalaxySSIInlineHTMLView(html: html)
+          .frame(maxWidth: .infinity)
+          .frame(height: 280)
+          .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+      } else if failed {
+        Text(GalaxySSILocalization.string("rich_output_html_unavailable",
+          fallback: "The saved animation is unavailable.", language: interfaceLanguage))
+          .font(.caption)
+          .foregroundColor(.galaxySSITextSecondary)
+      }
+    }
+    .task(id: block.uri) {
+      html = nil
+      failed = false
+      guard !Task.isCancelled else { return }
+      html = coordinator.loadDeclaredRichHTML(block)
+      failed = html == nil
+    }
+    .onDisappear { html = nil }
   }
 }
 

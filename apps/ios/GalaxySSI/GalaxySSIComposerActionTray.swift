@@ -207,6 +207,7 @@ struct GalaxySSIGrowingComposerEditor: View {
       GalaxySSIParagraphSelectingTextView(
         text: $text,
         focus: focus,
+        editingScope: attachmentScope,
         accessibilityIdentifier: accessibilityIdentifier,
         onBeginEditing: onTap,
         onImagePaste: onImageAttachment == nil ? nil : {
@@ -233,6 +234,35 @@ struct GalaxySSIGrowingComposerEditor: View {
 }
 
 enum GalaxySSIParagraphSelectionPolicy {
+  @MainActor
+  static func glyphOffset(at point: CGPoint, in textView: UITextView) -> Int? {
+    let layout = textView.layoutManager
+    let container = textView.textContainer
+    layout.ensureLayout(for: container)
+    guard layout.numberOfGlyphs > 0 else { return nil }
+    let inset = textView.textContainerInset
+    let local = CGPoint(x: point.x - inset.left, y: point.y - inset.top)
+    let index = layout.glyphIndex(for: local, in: container)
+    guard index < layout.numberOfGlyphs else { return nil }
+    let glyph = NSRange(location: index, length: 1)
+    guard layout.boundingRect(forGlyphRange: glyph, in: container).contains(local) else { return nil }
+    let range = layout.characterRange(forGlyphRange: glyph, actualGlyphRange: nil)
+    let text = (textView.text ?? "") as NSString
+    guard range.length > 0, NSMaxRange(range) <= text.length,
+          !text.substring(with: range).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+    return range.location
+  }
+
+  static func expansion(in text: String, glyphOffset: Int, nativeSelection: NSRange) -> NSRange? {
+    let length = (text as NSString).length
+    guard glyphOffset >= 0, glyphOffset < length, nativeSelection.location >= 0, nativeSelection.location <= length,
+          nativeSelection.length > 0, nativeSelection.length <= length - nativeSelection.location,
+          NSLocationInRange(glyphOffset, nativeSelection) else { return nil }
+    let paragraph = range(in: text, requestedUTF16Offset: glyphOffset)
+    return paragraph.length > nativeSelection.length &&
+      NSEqualRanges(NSIntersectionRange(paragraph, nativeSelection), nativeSelection) ? paragraph : nil
+  }
+
   static func range(in text: String, requestedUTF16Offset: Int) -> NSRange {
     let source = text as NSString
     guard source.length > 0 else { return NSRange(location: 0, length: 0) }
@@ -266,6 +296,7 @@ enum GalaxySSIParagraphSelectionPolicy {
 private struct GalaxySSIParagraphSelectingTextView: UIViewRepresentable {
   @Binding var text: String
   var focus: FocusState<Bool>.Binding
+  var editingScope: String
   var accessibilityIdentifier: String
   var onBeginEditing: () -> Void
   var onImagePaste: (() -> Void)?
@@ -296,16 +327,28 @@ private struct GalaxySSIParagraphSelectingTextView: UIViewRepresentable {
       action: #selector(Coordinator.selectParagraph(_:))
     )
     longPress.cancelsTouchesInView = false
+    longPress.delaysTouchesEnded = false
+    longPress.allowableMovement = 10
     longPress.delegate = context.coordinator
     textView.addGestureRecognizer(longPress)
+    let blankTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.showBlankTapMenu(_:)))
+    blankTap.cancelsTouchesInView = false
+    blankTap.delaysTouchesEnded = false
+    blankTap.delegate = context.coordinator
+    textView.addGestureRecognizer(blankTap)
+    context.coordinator.paragraphPress = longPress
     context.coordinator.textView = textView
     return textView
   }
 
   func updateUIView(_ textView: UITextView, context: Context) {
+    if context.coordinator.parent.editingScope != editingScope {
+      context.coordinator.cancelPendingEdits()
+    }
     context.coordinator.parent = self
     (textView as? GalaxySSIImagePastingTextView)?.onImagePaste = onImagePaste
     if textView.text != text {
+      context.coordinator.cancelPendingEdits()
       let selection = textView.selectedRange
       textView.text = text
       let textLength = (text as NSString).length
@@ -319,19 +362,33 @@ private struct GalaxySSIParagraphSelectingTextView: UIViewRepresentable {
     if focus.wrappedValue, !textView.isFirstResponder {
       textView.becomeFirstResponder()
     } else if !focus.wrappedValue, textView.isFirstResponder {
+      context.coordinator.cancelPendingEdits()
       textView.resignFirstResponder()
     }
+  }
+
+  static func dismantleUIView(_ textView: UITextView, coordinator: Coordinator) {
+    coordinator.cancelPendingEdits()
+    coordinator.textView = nil
+    textView.delegate = nil
   }
 
   final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
     var parent: GalaxySSIParagraphSelectingTextView
     weak var textView: UITextView?
+    weak var paragraphPress: UILongPressGestureRecognizer?
+    private var pressStart: CGPoint?
+    private var pressedGlyph: Int?
+    private var blankTapStart: CGPoint?
+    private var pendingEdit: DispatchWorkItem?
+    private var gestureGeneration: UInt64 = 0
 
     init(parent: GalaxySSIParagraphSelectingTextView) {
       self.parent = parent
     }
 
     func textViewDidChange(_ textView: UITextView) {
+      cancelPendingEdits()
       parent.text = textView.text
     }
 
@@ -341,7 +398,30 @@ private struct GalaxySSIParagraphSelectingTextView: UIViewRepresentable {
     }
 
     func textViewDidEndEditing(_ textView: UITextView) {
+      cancelPendingEdits()
       parent.focus.wrappedValue = false
+    }
+
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+      cancelPendingEdits()
+    }
+
+    func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+      guard let textView, textView.isFirstResponder, textView.markedTextRange == nil else { return false }
+      guard recognizer.numberOfTouches == 0 else {
+        cancelPendingEdits()
+        return false
+      }
+      let point = touch.location(in: textView)
+      let glyph = GalaxySSIParagraphSelectionPolicy.glyphOffset(at: point, in: textView)
+      cancelScheduledEdit()
+      if recognizer === paragraphPress {
+        pressStart = glyph == nil ? nil : point
+        pressedGlyph = glyph
+        return glyph != nil
+      }
+      blankTapStart = glyph == nil ? point : nil
+      return glyph == nil
     }
 
     func gestureRecognizer(
@@ -352,30 +432,86 @@ private struct GalaxySSIParagraphSelectingTextView: UIViewRepresentable {
     }
 
     @objc func selectParagraph(_ gesture: UILongPressGestureRecognizer) {
-      guard gesture.state == .began,
-            let textView,
-            textView.isFirstResponder,
-            let position = textView.closestPosition(to: gesture.location(in: textView)) else {
-        return
+      switch gesture.state {
+      case .began:
+        guard let pressedGlyph, let textView else { return }
+        let original = textView.text ?? ""
+        scheduleEdit(delay: 0.032) { [weak self, weak gesture] view in
+          guard let self, let gesture, self.stationary(gesture, in: view),
+                view.text == original,
+                let range = GalaxySSIParagraphSelectionPolicy.expansion(
+                  in: original, glyphOffset: pressedGlyph, nativeSelection: view.selectedRange) else { return }
+          view.selectedRange = range
+        }
+      case .changed:
+        if let textView, !stationary(gesture, in: textView) { cancelPendingEdits() }
+      case .ended, .cancelled, .failed:
+        cancelPendingEdits()
+      default:
+        break
       }
-      let offset = textView.offset(from: textView.beginningOfDocument, to: position)
-      let range = GalaxySSIParagraphSelectionPolicy.range(
-        in: textView.text,
-        requestedUTF16Offset: offset
-      )
-      guard range.length > 0 else { return }
+    }
 
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.032) { [weak textView] in
-        guard let textView, textView.isFirstResponder else { return }
-        textView.selectedRange = range
-        textView.scrollRangeToVisible(range)
-        let menuRect = textView.selectedTextRange.map { textView.firstRect(for: $0) }
-          ?? textView.bounds.insetBy(dx: 12, dy: 12)
-        UIMenuController.shared.showMenu(
-          from: textView,
-          rect: menuRect
-        )
+    @objc func showBlankTapMenu(_ gesture: UITapGestureRecognizer) {
+      guard gesture.state == .ended, let textView, let start = blankTapStart else { return }
+      blankTapStart = nil
+      let point = gesture.location(in: textView)
+      guard hypot(point.x - start.x, point.y - start.y) <= 10,
+            GalaxySSIParagraphSelectionPolicy.glyphOffset(at: point, in: textView) == nil else { return }
+      let original = textView.text ?? ""
+      scheduleEdit(delay: 0) { view in
+        guard view.text == original, view.selectedRange.length == 0,
+              let caret = view.selectedTextRange?.start else { return }
+        let rect = view.caretRect(for: caret)
+        guard !rect.isNull, !rect.isInfinite, view.bounds.intersects(rect) else { return }
+        if #available(iOS 16.0, *) {
+          let interaction: UIEditMenuInteraction
+          if let native = view.interactions.compactMap({ $0 as? UIEditMenuInteraction }).first {
+            interaction = native
+          } else {
+            interaction = UIEditMenuInteraction(delegate: nil)
+            view.addInteraction(interaction)
+          }
+          interaction.presentEditMenu(with: .init(identifier: nil, sourcePoint: CGPoint(x: rect.midX, y: rect.midY)))
+        } else {
+          UIMenuController.shared.showMenu(from: view, rect: rect)
+        }
       }
+    }
+
+    private func stationary(_ gesture: UILongPressGestureRecognizer, in view: UITextView) -> Bool {
+      guard let pressStart, gesture.numberOfTouches == 1,
+            gesture.state == .began || gesture.state == .changed else { return false }
+      let point = gesture.location(in: view)
+      return hypot(point.x - pressStart.x, point.y - pressStart.y) <= gesture.allowableMovement
+    }
+
+    private func scheduleEdit(delay: TimeInterval, _ apply: @escaping (UITextView) -> Void) {
+      pendingEdit?.cancel()
+      gestureGeneration &+= 1
+      let generation = gestureGeneration
+      let work = DispatchWorkItem { [weak self] in
+        guard let self, self.gestureGeneration == generation, let view = self.textView,
+              view.isFirstResponder, view.window != nil, view.markedTextRange == nil,
+              view.panGestureRecognizer.state != .began, view.panGestureRecognizer.state != .changed else { return }
+        self.pendingEdit = nil
+        apply(view)
+      }
+      pendingEdit = work
+      DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    func cancelPendingEdits() {
+      cancelScheduledEdit()
+      pressStart = nil
+      pressedGlyph = nil
+      blankTapStart = nil
+    }
+
+    private func cancelScheduledEdit() {
+      gestureGeneration &+= 1
+      pendingEdit?.cancel()
+      pendingEdit = nil
     }
   }
 }

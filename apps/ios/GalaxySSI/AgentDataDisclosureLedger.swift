@@ -450,6 +450,11 @@ struct AgentDataDisclosureStorePaths: Equatable {
 }
 
 enum AgentDataDisclosureLedger {
+  struct TextSummary {
+    let characters: Int
+    let kinds: Set<AgentDisclosedDataKind>
+  }
+
   static func beginCloudRequest(
     store: AgentDataDisclosureStore,
     destination: AgentDataDisclosureCloudDestination,
@@ -461,7 +466,8 @@ enum AgentDataDisclosureLedger {
     attachments: [AgentDataDisclosureAttachment] = [],
     conversationId: String = "",
     taskId: String = "",
-    turnId: String = ""
+    turnId: String = "",
+    textSummary: TextSummary? = nil
   ) -> AgentDisclosureTicket {
     let providerId = destination.providerId.ifBlank("custom")
     let contactId = destination.contactId.ifBlank(destination.galaxySSIId)
@@ -484,13 +490,13 @@ enum AgentDataDisclosureLedger {
       trust: localNetwork ? .privateConfigured : .cloudConfigured,
       protection: .tls,
       purpose: purpose,
-      dataKinds: AgentDataDisclosureClassifier.classifyText(
+      dataKinds: (textSummary?.kinds ?? AgentDataDisclosureClassifier.classifyText(
         text: text,
         includeHistory: historyCount > 1,
         includeSystemInstructions: systemInstructions,
         includeToolOutput: toolOutput
-      ).union(attachmentKinds),
-      textCharacters: text.count,
+      )).union(attachmentKinds),
+      textCharacters: textSummary?.characters ?? text.count,
       attachmentCount: attachments.count,
       attachmentBytes: attachments.reduce(Int64(0)) { $0 + max($1.sizeBytes, 0) },
       conversationIdHash: disclosureHash(conversationId),

@@ -59,6 +59,69 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testOriginalSearchMatchesOnlyCurrentConfirmedSourcesAndLocalDates() throws {
+    let zone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+    let iso = ISO8601DateFormatter()
+    let measured = try XCTUnwrap(iso.date(from: "2024-04-01T16:15:00Z"))
+    let imported = try XCTUnwrap(iso.date(from: "2024-05-03T08:00:00Z"))
+    let originals = (0..<37).map { index in
+      GalaxySSIHealthOriginalStore.Original(id: UUID(), name: index == 31 ? "Lab-report final.PDF" : "Scan \(index).pdf",
+        kind: .pdf, fileExtension: "pdf", importedAt: imported, bytes: 200, sha256: "digest-\(index)", acquisition: .uploaded)
+    }
+    func source(_ index: Int, digest: String? = nil) -> GalaxySSIHealthReportReview.Source {
+      let item = originals[index]
+      return .init(original: item.id, sha256: digest ?? item.sha256, page: 0, region: 0, fromOCR: true)
+    }
+    let reading = GalaxySSIHealthReading(revision: 2, metric: .glucose, measuredAt: measured, value: 6,
+                                        reportSource: source(31))
+    var old = reading
+    old.revision = 1
+    old.reportSource = source(33)
+    var deleted = GalaxySSIHealthReading(revision: 1, metric: .glucose, measuredAt: measured, value: 6,
+                                        reportSource: source(36))
+    var archive = GalaxySSIHealthRecords.Archive()
+    archive.revisions = [old, reading, deleted]
+    deleted.revision = 2
+    deleted.deleted = true
+    archive.revisions.append(deleted)
+    let target = GalaxySSIHealthReportReview.Target(record: reading.id, revision: reading.revision)
+    archive.reportEvidence = [
+      .init(target: target, source: source(32), excerpt: "confirmed"),
+      .init(target: target, source: source(34, digest: "wrong"), excerpt: "wrong digest"),
+      .init(target: target, source: source(35), excerpt: "removed"),
+      .init(target: .init(record: reading.id, revision: 1), source: source(30), excerpt: "old revision")
+    ]
+    var index = GalaxySSIHealthOriginalStore.Index()
+    for item in originals { try index.include(item) }
+    index.removals.pending.insert(originals[35].id)
+    archive.originalIndex = index
+    let metadata = try JSONEncoder().encode(archive)
+    func matches(_ query: String) throws -> Set<UUID> {
+      try GalaxySSIHealthDataFiles.OriginalQuery(query, timeZone: zone).matches(originals, metadata: metadata)
+    }
+    let linked = Set([originals[31].id, originals[32].id])
+    XCTAssertEqual(try matches("FINAL lab"), [originals[31].id])
+    XCTAssertEqual(try matches("GLU"), linked)
+    XCTAssertEqual(try matches("\u{8840}\u{7CD6}"), linked)
+    XCTAssertEqual(try matches("2024-04-02"), linked)
+    XCTAssertEqual(try matches("2024\u{5E74}4\u{6708}"), linked)
+    XCTAssertEqual(try matches("2024-04-01"), [])
+    XCTAssertEqual(try matches("2024-04-31"), [])
+    XCTAssertEqual(try matches("2024/05"), Set(originals.map(\.id)).subtracting([originals[35].id]))
+  }
+
+  func testOriginalSearchCancelsBeforeOpeningArchive() async throws {
+    let worker = Task {
+      withUnsafeCurrentTask { $0?.cancel() }
+      let reader = GalaxySSIHealthDataFiles.Reader(file: URL(fileURLWithPath: "/unreadable"),
+                                                  context: Data(), key: nil)
+      return try reader.search(.init("2024-04", timeZone: .current), in: [])
+    }
+    do { _ = try await worker.value; XCTFail("Expected cancellation") }
+    catch is CancellationError {}
+  }
+
+  @MainActor
   func testDataFilesAuthenticatesArchiveAndPersistsMeasurementExportStatus() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -2238,6 +2301,89 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertThrowsError(try analysis.recommendation(#"{"evidence":["e1"],"next_step":"review_sources","text":"extra"}"#))
   }
 
+  func testHealthFollowUpSendsOnlyScopedFactsAndPreviousVerifiedSelections() throws {
+    let now = Date()
+    let reading = GalaxySSIHealthReading(revision: 2, metric: .weight, measuredAt: now, value: 60, notes: "private notes")
+    let previous = GalaxySSIHealthReading(revision: 3, metric: .weight,
+      measuredAt: now.addingTimeInterval(-86_400), value: 58)
+    let scope = GalaxySSIHealthAnalysis.Scope(interval: DateInterval(start: now, duration: 86_400), metrics: [.weight])
+    let previousScope = GalaxySSIHealthAnalysis.Scope(
+      interval: DateInterval(start: now.addingTimeInterval(-86_400), end: now), metrics: [.weight])
+    let analysis = GalaxySSIHealthAnalysis(scope: scope, current: [reading, previous], calendar: .current)
+    let baseline = GalaxySSIHealthAnalysis(scope: previousScope, current: [reading, previous], calendar: .current)
+    let first = try GalaxySSIHealthFollowUp(analysis: analysis, baseline: baseline,
+      question: "  First question\r\nsecond line ", previous: nil)
+    let response = #"{"status":"PARTIAL","sections":[{"topic":"CHANGES","fact_ids":["e1"]}],"actions":["WEEKLY_REPORT"]}"#
+    let answer = try first.answer(response)
+    XCTAssertEqual(answer.status, .partial)
+    XCTAssertEqual(first.comparisons["e1"]?.delta, "2")
+    XCTAssertEqual(first.comparisons["e1"]?.evidence.readings.map(\.revision), [3])
+    XCTAssertFalse(baseline.isCurrent([reading]))
+
+    let next = try GalaxySSIHealthFollowUp(analysis: analysis, baseline: baseline, question: "Why?", previous: answer)
+    let data = String(decoding: next.payload, as: UTF8.self)
+    let packet = try XCTUnwrap(JSONSerialization.jsonObject(with: next.payload) as? [String: Any])
+    XCTAssertEqual(Set(packet.keys), ["question", "requestedDays", "facts", "allowed_topics", "allowed_actions", "previous_answer"])
+    XCTAssertEqual(packet["question"] as? String, "Why?")
+    XCTAssertEqual(packet["allowed_topics"] as? [String], ["CHANGES", "COVERAGE", "SOURCES"])
+    for privateValue in ["First question", "private notes", reading.id.uuidString, previous.id.uuidString, "measuredAt"] {
+      XCTAssertFalse(data.contains(privateValue))
+    }
+    let newAnalysis = GalaxySSIHealthAnalysis(scope: scope, current: [reading], calendar: .current)
+    let fresh = try GalaxySSIHealthFollowUp(analysis: newAnalysis, baseline: nil, question: "Why?", previous: answer)
+    XCTAssertFalse(String(decoding: fresh.payload, as: UTF8.self).contains("previous_answer"))
+    XCTAssertThrowsError(try fresh.answer(response))
+    XCTAssertEqual(GalaxySSIHealthFollowUp.question("  First\r\nsecond  "), "First\nsecond")
+    XCTAssertNil(GalaxySSIHealthFollowUp.question(String(repeating: "a", count: 601)))
+    XCTAssertNil(GalaxySSIHealthFollowUp.question("bad\u{0000}"))
+  }
+
+  func testHealthFollowUpRejectsInventedFactsProseAndAmbiguousJSON() throws {
+    let now = Date()
+    let scope = GalaxySSIHealthAnalysis.Scope(interval: DateInterval(start: now, duration: 86_400), metrics: [.weight])
+    let analysis = GalaxySSIHealthAnalysis(scope: scope,
+      current: [GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 60)], calendar: .current)
+    let packet = try GalaxySSIHealthFollowUp(analysis: analysis, baseline: nil, question: "What do I have?", previous: nil)
+    let valid = #"{"status":"ANSWERED","sections":[{"topic":"COVERAGE","fact_ids":["e1"]}],"actions":[]}"#
+    XCTAssertEqual(try packet.answer(valid).sections.first?.factIDs, ["e1"])
+    XCTAssertEqual(try packet.answer(#"{"status":"OUT_OF_SCOPE","sections":[],"actions":[]}"#).status, .outOfScope)
+    for invalid in [
+      valid.replacingOccurrences(of: "e1", with: "e9"),
+      valid.replacingOccurrences(of: #""e1""#, with: #""e1","e1""#),
+      valid.replacingOccurrences(of: #""topic":"COVERAGE""#, with: #""topic":"SOURCES","topic":"COVERAGE""#),
+      valid.replacingOccurrences(of: #""status":"ANSWERED""#, with: #""status":"ANSWERED","answer":"123""#),
+      valid.replacingOccurrences(of: "ANSWERED", with: "OUT_OF_SCOPE"),
+      valid.replacingOccurrences(of: "COVERAGE", with: "CHANGES"),
+      valid + " additional prose",
+    ] {
+      XCTAssertThrowsError(try packet.answer(invalid), invalid)
+    }
+  }
+
+  func testHealthFollowUpProviderOutputRejectsToolCallsAndUnsafeEndpoints() throws {
+    func output(_ json: String, _ style: GalaxySSICloudAPIStyle) throws -> String {
+      try GalaxySSIHealthFollowUpTransport.output(Data(json.utf8), style: style)
+    }
+    XCTAssertEqual(try output(#"{"choices":[{"finish_reason":"stop","message":{"content":"{}"}}]}"#, .openAICompatible), "{}")
+    XCTAssertEqual(try output(#"{"stop_reason":"end_turn","content":[{"type":"text","text":"{}"}]}"#, .anthropic), "{}")
+    XCTAssertEqual(try output(#"{"candidates":[{"finishReason":"STOP","content":{"parts":[{"text":"{}"}]}}]}"#, .gemini), "{}")
+    XCTAssertThrowsError(try output(#"{"choices":[{"finish_reason":"stop","message":{"content":"{}","tool_calls":[]}}]}"#, .openAICompatible))
+    XCTAssertThrowsError(try output(#"{"stop_reason":"end_turn","content":[{"type":"tool_use","text":"{}"}]}"#, .anthropic))
+    XCTAssertThrowsError(try output(#"{"candidates":[{"finishReason":"STOP","content":{"parts":[{"text":"{}","functionCall":{}}]}}]}"#, .gemini))
+    var model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: Date())
+    XCTAssertNotNil(GalaxySSIHealthFollowUpTransport.endpoint(for: model))
+    for endpoint in ["http://example.test", "https://example.test/?secret=x", "https://user@example.test", "https://example.test/#fragment"] {
+      model.endpoint = endpoint
+      XCTAssertNil(GalaxySSIHealthFollowUpTransport.endpoint(for: model))
+    }
+    model.apiStyle = .gemini
+    model.endpoint = "https://example.test/v1/models/fixture"
+    XCTAssertNil(GalaxySSIHealthFollowUpTransport.endpoint(for: model))
+    model.endpoint += ":generateContent"
+    XCTAssertNotNil(GalaxySSIHealthFollowUpTransport.endpoint(for: model))
+  }
+
   func testTrendKeepsCalendarGapsAndExactComponentCohorts() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
@@ -2456,6 +2602,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(row.id, 8)
     XCTAssertEqual(row.reading?.value, 61)
     XCTAssertEqual(row.reading?.measuredAt, ISO8601DateFormatter().date(from: "1904-01-02T12:00:00Z"))
+    XCTAssertEqual(row.excelDate1904, true)
+    XCTAssertNil(row.dateOnlyDecision)
     XCTAssertNil(GalaxySSIHealthXLSX.date(serial: 60, date1904: false, zone: utc))
     var damaged = data
     let cached = try XCTUnwrap(damaged.range(of: Data("<v>61</v>".utf8)))
@@ -2490,12 +2638,91 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let table = GalaxySSIHealthTableImport.Table(headers: ["Value", "Time"],
       rows: [["61", "2025-11-02T01:30:00-04:00"], ["62", "44500"]], rowNumbers: [4, 9],
       formulas: [[], []], date1904: false, isoDates: [[1], []])
-    let mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1,
+    var mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1,
       confirmedUnit: true, dateStyle: .excel, localZone: zone)
+    let unconfirmed = try GalaxySSIHealthTableImport.preview(table, mapping: mapping, current: [])
+    XCTAssertEqual(unconfirmed.map(\.status), [.ready, .missing])
+    XCTAssertEqual(unconfirmed.last?.needsDateOnlyTime, true)
+    mapping.dateOnlyMinute = 8 * 60 + 15
     let rows = try GalaxySSIHealthTableImport.preview(table, mapping: mapping, current: [])
     XCTAssertEqual(rows.map(\.status), [.ready, .ready])
     XCTAssertEqual(rows.first?.reading?.measuredAt, expected)
     XCTAssertEqual(rows.first?.rawDate, "2025-11-02T01:30:00-04:00")
+    XCTAssertNil(rows.first?.dateOnlyDecision)
+    XCTAssertEqual(rows.last?.dateOnlyDecision?.sourceDate, "44500")
+    XCTAssertEqual(rows.last?.dateOnlyDecision?.clock, "08:15")
+    XCTAssertEqual(rows.last?.excelDate1904, false)
+  }
+
+  func testTableDateOnlyFormatsRequireTimeAndKeepSourceOffsets() throws {
+    typealias Import = GalaxySSIHealthTableImport
+    let zone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+    let iso = ISO8601DateFormatter()
+    let formats: [(Import.DateStyle, String)] = [
+      (.iso, "2024-02-29"), (.day, "2024-02-29"), (.localMinute, "2024-02-29"), (.localTime, "2024-02-29"),
+      (.slashYearFirst, "2024/02/29"), (.slashDayFirst, "29/02/2024"), (.slashMonthFirst, "02/29/2024")
+    ]
+    var mapping = Import.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true, localZone: zone)
+    for (style, date) in formats {
+      let csv = Data("value,time\n61,\(date)\n".utf8)
+      let json = Data("[{\"value\":61,\"time\":\"\(date)\"}]".utf8)
+      for (data, isJSON) in [(csv, false), (json, true)] {
+        let table = try Import.parse(data, json: isJSON)
+        mapping.value = try XCTUnwrap(table.headers.firstIndex(of: "value"))
+        mapping.date = try XCTUnwrap(table.headers.firstIndex(of: "time"))
+        mapping.dateStyle = style
+        mapping.dateOnlyMinute = nil
+        let missing = try XCTUnwrap(Import.preview(table, mapping: mapping, current: []).first)
+        XCTAssertEqual(missing.status, .missing)
+        XCTAssertTrue(missing.needsDateOnlyTime)
+        mapping.dateOnlyMinute = 0
+        let ready = try XCTUnwrap(Import.preview(table, mapping: mapping, current: []).first)
+        XCTAssertEqual(ready.status, .ready)
+        XCTAssertEqual(ready.dateOnlyDecision?.sourceDate, date)
+        XCTAssertEqual(ready.dateOnlyDecision?.chosenMinute, 0)
+        XCTAssertEqual(ready.reading?.measuredAt, iso.date(from: "2024-02-29T05:00:00Z"))
+      }
+    }
+    mapping = Import.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true,
+                             localZone: zone, dateOnlyMinute: 90)
+    let table = Import.Table(headers: ["value", "time"], rows: [
+      ["61", "2024-02-29+08:00"], ["62", "2024-11-03"], ["63", "2024-02-30"], ["64", "2024-11-03T01:30:00-04:00"]
+    ])
+    let rows = try Import.preview(table, mapping: mapping, current: [])
+    XCTAssertEqual(rows.map(\.status), [.ready, .invalid, .invalid, .ready])
+    XCTAssertEqual(rows.first?.reading?.measuredAt, iso.date(from: "2024-02-28T17:30:00Z"))
+    XCTAssertEqual(rows.last?.reading?.measuredAt, iso.date(from: "2024-11-03T05:30:00Z"))
+    XCTAssertNil(rows.last?.dateOnlyDecision)
+    mapping.dateOnlyMinute = 150
+    let spring = Import.Table(headers: table.headers, rows: [["61", "2024-03-10"]])
+    XCTAssertEqual(try Import.preview(spring, mapping: mapping, current: []).first?.status, .invalid)
+  }
+
+  @MainActor
+  func testDateOnlyTableDecisionSurvivesEncryptedImportAndBatchUndo() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(),
+                                         isolatedFile: root.appendingPathComponent("records"))
+    let data = Data("value,time\n61,2024-02-29\n".utf8)
+    let utc = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+    var mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true, localZone: utc)
+    XCTAssertEqual(try records.importTable(data, name: "review.csv", json: false, mapping: mapping, expected: [.missing]), 0)
+    mapping.dateOnlyMinute = 495
+    XCTAssertEqual(try records.importTable(data, name: "review.csv", json: false, mapping: mapping,
+                                           expected: [.ready], retainOriginal: false), 1)
+    let archive = try records.load()
+    let batch = try XCTUnwrap(archive.tableBatches?.first)
+    let source = try XCTUnwrap(archive.current.first?.tableSource)
+    XCTAssertEqual(source.dateOnlyDecision?.sourceDate, "2024-02-29")
+    XCTAssertEqual(source.dateOnlyDecision?.clock, "08:15")
+    XCTAssertEqual(source.dateOnlyDecision?.resolvedTime, archive.current.first?.measuredAt)
+    XCTAssertTrue(batch.data.isEmpty)
+    XCTAssertThrowsError(try records.importTable(data, name: "review.csv", json: false,
+                                                 mapping: mapping, expected: [.ready]))
+    XCTAssertEqual(try records.undoTableBatch(batch.id), 1)
+    XCTAssertTrue(try records.load().current.isEmpty)
   }
 
   func testPaperEdgeSuggestionConvertsOriginAndRejectsClippedOrSmallRectangles() throws {

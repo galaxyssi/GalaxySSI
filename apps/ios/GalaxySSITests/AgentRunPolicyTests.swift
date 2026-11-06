@@ -5,6 +5,49 @@ import CryptoKit
 
 extension GalaxySSIStoreTests {
   @MainActor
+  func testCodexRetryClaimSurvivesRelaunchAndRetiresOnlyExactOldIdentity() throws {
+    let name = "codex-retry-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let journal = DesktopReplyRecoveryTestJournal()
+    let secrets = InMemorySecretStore()
+    let ledger = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    let source = ChatMessage(contactId: "hermes", content: "Outline a migration plan", isMine: true,
+      conversationId: "conversation", turnId: "turn")
+    let original = AgentDesktopReplyBinding(desktopId: "desktop", displayContactId: "hermes",
+      sourceId: source.id, contactId: "codex-contact", agentId: "codex",
+      identity: AgentTaskIdentity(clientRouteId: "route", conversationId: "conversation",
+                                  taskId: source.id.uuidString, turnId: "turn"))
+    var seed = try XCTUnwrap(AgentCodexReplaySeed(source: source, text: source.content, targetId: original.contactId,
+      executionMode: .planOnly, hasAttachments: false, voiceSessionId: "", lockedToOrigin: true,
+      invocation: ["model_id": "original-model", "reasoning_effort": "high"], transportContext: "original context"))
+    XCTAssertTrue(ledger.track(original, now: 1_000, codexReplay: seed))
+    let old = try XCTUnwrap(ledger.record(for: original))
+    XCTAssertEqual(seed.budget.next(failed: original.contactId, attemptId: original.sourceIdentity,
+      confirmedTimeout: true, alternatives: []), original.contactId)
+    let wire = UUID()
+    var next = original
+    next.identity.taskId = wire.uuidString
+    next.attemptSourceId = wire
+    XCTAssertTrue(ledger.scheduleCodexReplay(from: old, to: next, replay: seed, now: 181_000))
+    XCTAssertFalse(ledger.scheduleCodexReplay(from: old, to: next, replay: seed, now: 181_001))
+
+    let reopened = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    XCTAssertEqual(reopened.pending.map(\.binding), [next])
+    XCTAssertEqual(reopened.pending.first?.codexDispatchPending, true)
+    XCTAssertEqual(reopened.pending.first?.codexReplay?.invocation?["model_id"], "original-model")
+    XCTAssertEqual(reopened.pending.first?.binding.sourceId, source.id)
+    XCTAssertTrue(reopened.isSupersededCodexPayload(original.fields, desktopId: "desktop"))
+    XCTAssertFalse(reopened.isSupersededCodexPayload(original.fields, desktopId: "other"))
+    XCTAssertFalse(reopened.isSupersededCodexPayload(next.fields, desktopId: "desktop"))
+    XCTAssertTrue(reopened.markCodexReplayDispatched(next))
+    XCTAssertEqual(reopened.record(for: next)?.codexDispatchPending, false)
+    XCTAssertNil(AgentCodexReplaySeed(source: source, text: source.content, targetId: original.contactId,
+      executionMode: .autoComplete, hasAttachments: false, voiceSessionId: "", lockedToOrigin: false,
+      invocation: nil, transportContext: ""))
+  }
+
+  @MainActor
   func testResearchCheckpointsRecoverTerminalPacketsWithScopedRevisionAndDeletion() throws {
     let name = "research-checkpoint-\(UUID())"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
@@ -355,6 +398,48 @@ extension GalaxySSIStoreTests {
       hasDeliveredReply: false, hasActiveTask: true))
   }
 
+  func testDesktopRecoveryExcludesPersistedNonDesktopTransportEvenWithStaleDesktopIdentity() throws {
+    let pending = ChatMessage(contactId: "hermes", content: "Pending", isMine: true, deliveryStatus: .sent,
+      conversationId: "conversation", turnId: "turn")
+    let identity = AgentTaskIdentity(clientRouteId: "route", conversationId: pending.conversationId,
+      taskId: pending.id.uuidString, turnId: pending.turnId)
+    for stage in ["cloud_request", "peer_send_started", AgentDesktopReplyDiscoveryPolicy.localExecutionStarted,
+                  "local_model_reply", "delivered_local_estimate"] {
+      var source = pending
+      source.deliveryTrace = [.init(stage: stage), .init(stage: "queued")]
+      let restored = try JSONDecoder().decode(ChatMessage.self, from: JSONEncoder().encode(source))
+      XCTAssertFalse(AgentDesktopReplyDiscoveryPolicy.matchesSource(restored, identity: identity), stage)
+      XCTAssertFalse(AgentDesktopReplyDiscoveryPolicy.eligible(restored, identity: identity,
+        hasDeliveredReply: false, hasActiveTask: true), stage)
+      XCTAssertEqual(restored.deliveryStatus, .sent, stage)
+    }
+    var desktop = pending
+    desktop.deliveryTrace = [.init(stage: "phone_public_page_ready"), .init(stage: "mqtt_published")]
+    XCTAssertTrue(AgentDesktopReplyDiscoveryPolicy.matchesSource(desktop, identity: identity))
+    XCTAssertTrue(AgentDesktopReplyDiscoveryPolicy.eligible(desktop, identity: identity,
+      hasDeliveredReply: false, hasActiveTask: false))
+  }
+
+  func testDesktopRecoveryRequiresVerifiedDesktopAgentEndpoint() {
+    var contact = GalaxySSIContact.hermes()
+    contact.type = "agent"
+    contact.desktopId = "desktop"
+    contact.agentId = "codex"
+    contact.deliveryMode = .pcConnector
+    contact.trustState = .verified
+    XCTAssertTrue(AgentDesktopReplyDiscoveryPolicy.isDesktopEndpoint(contact))
+    for mode in [GalaxySSIDeliveryMode.cloudAPI, .local] {
+      contact.deliveryMode = mode
+      XCTAssertFalse(AgentDesktopReplyDiscoveryPolicy.isDesktopEndpoint(contact))
+    }
+    contact.deliveryMode = .link
+    contact.type = "person"
+    XCTAssertFalse(AgentDesktopReplyDiscoveryPolicy.isDesktopEndpoint(contact))
+    contact.type = "agent"
+    contact.trustState = .unverified
+    XCTAssertFalse(AgentDesktopReplyDiscoveryPolicy.isDesktopEndpoint(contact))
+  }
+
   @MainActor
   func testDesktopReplyDiscoveryCursorAndRetiredRequestsSurviveReopen() throws {
     let suite = "DesktopReplyDiscoveryTests-\(UUID().uuidString)"
@@ -543,6 +628,80 @@ extension GalaxySSIStoreTests {
   }
 
   @MainActor
+  func testAcceptedDesktopReplyRemainsPinnedAfterReopeningItsJournal() throws {
+    let suite = "DesktopAcceptedReply-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let journal = DesktopReplyRecoveryTestJournal()
+    let secrets = InMemorySecretStore()
+    let binding = desktopReplyJournalBinding()
+    let recovery = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    XCTAssertTrue(recovery.track(binding, now: 1_000))
+    var payload: [String: Any] = binding.fields
+    payload.merge(["type": "text", "task_status": "completed", "execution_generation": 2,
+      "status_sequence": 8, "message_id": "reply", "sha256": String(repeating: "a", count: 64)]) { _, new in new }
+    journal.rejectWrites = true
+    XCTAssertNil(recovery.acceptCompletedReply(payload, binding: binding, content: "Exact reply", now: 2_000))
+    XCTAssertNil(recovery.record(for: binding)?.acceptedReply)
+    journal.rejectWrites = false
+    let accepted = try XCTUnwrap(recovery.acceptCompletedReply(payload, binding: binding, content: "Exact reply", now: 2_000))
+    let reopened = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    XCTAssertEqual(reopened.record(for: binding), accepted)
+    XCTAssertTrue(reopened.acceptsFinal(payload, desktopId: binding.desktopId))
+    XCTAssertNil(reopened.acceptCompletedReply(payload, binding: binding, content: "Different reply", now: 2_001))
+    XCTAssertEqual(reopened.acceptCompletedReply(payload, binding: binding, content: "Exact reply", now: 2_001), accepted)
+    var foreign = payload
+    foreign["message_id"] = "replacement"
+    XCTAssertFalse(reopened.acceptsFinal(foreign, desktopId: binding.desktopId))
+    foreign = payload
+    foreign["execution_generation"] = 3
+    XCTAssertFalse(reopened.acceptsFinal(foreign, desktopId: binding.desktopId))
+    foreign = payload
+    foreign["task_status"] = "failed"
+    foreign["status_sequence"] = 9
+    XCTAssertFalse(reopened.acceptsFinal(foreign, desktopId: binding.desktopId))
+    XCTAssertFalse(accepted.accepts(status: "running", generation: 2, sequence: 10))
+    XCTAssertFalse(accepted.accepts(status: "failed", generation: 2, sequence: 10))
+    XCTAssertNil(accepted.expiryReason(now: 2_000 + 15 * 60_000))
+  }
+
+  @MainActor
+  func testDesktopCommitIsExactAndDoesNotReviveDeletedOrPausedWork() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let binding = desktopReplyJournalBinding()
+    let db = GalaxySSIChatHistoryDatabase(fileURL: root.appendingPathComponent("history.sqlite3"),
+      secrets: InMemorySecretStore())
+    let message = ChatMessage(contactId: binding.displayContactId, content: "Exact reply", isMine: false,
+      createdAt: Date(timeIntervalSince1970: 1_000), deliveryStatus: .delivered, conversationId: binding.identity.conversationId,
+      turnId: binding.identity.turnId, remoteMessageId: "reply")
+    XCTAssertTrue(db.upsert(message))
+    XCTAssertNil(db.commitDesktopReply(contactId: message.contactId, remoteMessageId: message.remoteMessageId,
+      conversationId: message.conversationId, turnId: "foreign"))
+    guard case .message(let saved)? = db.commitDesktopReply(contactId: message.contactId,
+      remoteMessageId: message.remoteMessageId, conversationId: message.conversationId, turnId: message.turnId)
+    else { return XCTFail("Expected the exact durable result") }
+    XCTAssertEqual(saved, message)
+    var task = AgentTaskRecord(taskId: binding.identity.taskId, sessionId: binding.identity.conversationId,
+      goal: "Goal", phase: .waitingResponse, routeKind: .desktopAgent, targetTitle: "Desktop", risk: .low, blocked: false)
+    let completed = GalaxySSIStore.desktopTaskCompletion(task, binding: binding, message: saved,
+      acceptedAt: 2_000, verification: "Committed")
+    XCTAssertEqual(completed?.phase, .completed)
+    XCTAssertEqual(completed?.result, "Exact reply")
+    XCTAssertEqual(completed?.updatedAtMillis, 2_000)
+    for phase in [AgentPhase.paused, .cancelled, .failed, .completed] {
+      task.phase = phase
+      XCTAssertNil(GalaxySSIStore.desktopTaskCompletion(task, binding: binding, message: saved,
+        acceptedAt: 2_001, verification: "Committed"))
+    }
+    XCTAssertNotNil(db.deleteMessage(id: saved.id, contactId: saved.contactId))
+    guard case .locallyDeleted? = db.commitDesktopReply(contactId: message.contactId,
+      remoteMessageId: message.remoteMessageId, conversationId: message.conversationId, turnId: message.turnId)
+    else { return XCTFail("Expected a deletion disposition, not a reply") }
+    XCTAssertNil(db.message(id: saved.id))
+  }
+
+  @MainActor
   func testDesktopReplyRecoveryOfflineProbesDoNotCreateRequestsAndRespectMinimumSilence() throws {
     let suite = "DesktopReplyOfflineTests-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -658,6 +817,45 @@ extension GalaxySSIStoreTests {
     ))
   }
 
+  func testSupervisedRecoveryPreservesOriginalBindingAndBoundsOnlyFailures() {
+    func step(_ id: String, status: AgentActionStatus, locked: Bool = false) -> AgentAction {
+      var action = AgentAction(id: id, kind: .callConnector, target: locked ? "original" : "auto",
+        risk: .low, status: status, description: "Supervisor", requiresConfirmation: false)
+      action.parameters = ["connector_task_mode": "phone_supervised_project_plan_v1"]
+      if locked {
+        action.parameters["manual_target_locked"] = "true"
+        action.parameters["connector_id"] = "cloud:original"
+        action.parameters["manual_model_id"] = "original-model"
+        action.parameters["agent_reasoning_effort"] = "high"
+      } else {
+        action.parameters["routing_fallback_ids"] = "cloud:other"
+        action.parameters["model_id"] = "other-model"
+      }
+      return action
+    }
+    let first = step("first", status: .failed, locked: true)
+    let current = step("current", status: .failed)
+    let restored = AgentSupervisorRecoveryPolicy.restoreBinding(current, history: [first])
+    XCTAssertEqual(restored.target, "original")
+    XCTAssertEqual(restored.parameters["manual_model_id"], "original-model")
+    XCTAssertEqual(restored.parameters["agent_reasoning_effort"], "high")
+    XCTAssertNil(restored.parameters["model_id"])
+    XCTAssertEqual(restored.parameters["routing_fallback_ids"], "")
+
+    var failure = AgentActionResult(actionId: current.id, success: false, message: "failure")
+    XCTAssertNil(AgentSupervisorRecoveryPolicy.stopReason(action: current, result: failure, history: [current]))
+    XCTAssertEqual(AgentSupervisorRecoveryPolicy.stopReason(action: current, result: failure, history: [first, current]),
+                   "supervisor_consecutive_failures")
+    let success = step("success", status: .completed)
+    XCTAssertNil(AgentSupervisorRecoveryPolicy.stopReason(action: current, result: failure, history: [first, success]))
+    failure.metadata = ["non_retriable": "true"]
+    XCTAssertEqual(AgentSupervisorRecoveryPolicy.stopReason(action: current, result: failure, history: []),
+                   "supervisor_failure_non_retriable")
+    failure.metadata = ["failure_kind": "invalid_supervised_project_plan", "structured_repair_attempts": "3"]
+    XCTAssertEqual(AgentSupervisorRecoveryPolicy.stopReason(action: current, result: failure, history: []),
+                   "supervisor_format_repair_exhausted")
+  }
+
   func testAgentRollingPlanPolicyPreservesTerminalAndSupervisedCompletionPaths() {
     let result = AgentActionResult(actionId: "action", success: true, message: "observed")
     var ruleBased = rollingPlan(action: rollingAction(status: .completed))
@@ -754,6 +952,26 @@ extension GalaxySSIStoreTests {
       )]
     ).isEmpty)
   }
+  func testObservedCompletionUsesLatestMatchingReceiptAndTypedFields() {
+    let tool = "galaxyssi.device.state"
+    func receipt(_ subject: String, _ state: String, status: AgentActionStatus = .completed) -> AgentAction {
+      let evidence = "{\"device\":\"\(subject)\",\"state\":\(state)}"
+      return AgentAction(id: UUID().uuidString, kind: .callNativeTool, target: tool, risk: .low,
+        status: status, description: "Observation", parameters: ["tool_id": tool],
+        requiresConfirmation: false, result: "", evidence: evidence)
+    }
+    var requirements = AgentCompletionRequirements(publication: .none, phoneLinux: false)
+    requirements.outcomes = [AgentObservedCompletion(id: "state", toolId: tool, subject: ["/device": "phone-1"],
+      checks: ["/state": .bool(true)], afterToolId: tool)]
+    let first = receipt("phone-1", "true")
+    let unrelated = receipt("phone-2", "false")
+    XCTAssertTrue(AgentCompletionEvidencePolicy.missingEvidence(requirements: requirements, history: [first, unrelated]).isEmpty)
+    for newer in [receipt("phone-1", "false"), receipt("phone-1", #""true""#), receipt("phone-1", "true", status: .failed)] {
+      XCTAssertFalse(AgentCompletionEvidencePolicy.missingEvidence(requirements: requirements, history: [first, newer]).isEmpty)
+    }
+    XCTAssertFalse(AgentCompletionRequirements(publication: .none, phoneLinux: false, reason: "Changed").canReplace(requirements))
+  }
+
   func testAgentExecutionPresentationPolicyMatchesAndroidLocalAndRemoteLocations() {
     let desktop = AgentExecutionPresentationPolicy.local(
       routeKind: .desktopAgent,
@@ -1238,6 +1456,111 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(encoded.contains(#""current_plan":"#) || encoded.contains(#""current_plan":{"#))
     XCTAssertTrue(encoded.contains(#""task_execution_mode":"AUTO_COMPLETE""#))
     XCTAssertTrue(encoded.contains(#""timestamp_millis":14"#))
+  }
+
+  func testRecordedExecutionProjectsLatestOwnedActionAndKeepsItsExactReceipt() throws {
+    let scope = AgentPlanContinuationScope(conversationId: "conversation", turnId: "turn")
+    let failed = scope.bind(AgentAction(id: "battery", kind: .callNativeTool, target: "battery.read", risk: .low,
+      status: .failed, description: "Read battery", evidence: #"{"outcome":"unverified"}"#))
+    var repaired = failed
+    repaired.status = .completed
+    repaired.evidence = ""
+    let foreign = AgentPlanContinuationScope(conversationId: "conversation", turnId: "other").bind(failed)
+    let pending = scope.bind(AgentAction(id: "volume", kind: .callNativeTool, target: "audio.read", risk: .low,
+      status: .pendingConfirmation, description: "Read volume"))
+    let running = scope.bind(AgentAction(id: "clock", kind: .callNativeTool, target: "clock.read", risk: .low,
+      status: .running, description: "Read clock"))
+    var task = AgentTaskRecord(taskId: "turn", sessionId: "conversation", goal: "Inspect phone", phase: .executing,
+      routeKind: .localSystem, targetTitle: "Phone", risk: .low, blocked: false)
+    task.activePlan = AgentPlan(goal: task.goal, screen: AgentScreenContext(foregroundApp: "GalaxySSI"),
+      steps: [], actions: [repaired, foreign, pending, running], actionHistory: [failed])
+    let result = AgentActionResult(actionId: repaired.id, success: true, message: "Battery read", metadata: [
+      "native_tool_output": #"{"percent":40,"charging":true}"#,
+      "started_at_millis": "80", "completed_at_millis": "100", "native_receipt_id": "retry"
+    ])
+    let projection = AgentRecordedExecutionEvidence.project(task: task, scope: scope, previous: [],
+      observations: [.init(action: repaired, result: result)], now: 101)
+    XCTAssertEqual(projection.calls.map(\.id), ["battery", "volume", "clock"])
+    XCTAssertEqual(projection.calls.map(\.status), [.succeeded, .pending, .running])
+    let observed = try XCTUnwrap(projection.calls.first)
+    XCTAssertEqual(observed.result["output"]?.objectValue?["percent"], .int(40))
+    XCTAssertEqual(observed.startedAtMillis, 80)
+    XCTAssertEqual(projection.calls[1].completedAtMillis, 0)
+    XCTAssertEqual(projection.calls[2].completedAtMillis, 0)
+
+    let historical = AgentActionResult(actionId: repaired.id, success: false, message: "Old failure",
+      metadata: ["started_at_millis": "50", "completed_at_millis": "75"])
+    let replay = AgentRecordedExecutionEvidence.project(task: task, scope: scope, previous: projection.calls,
+      observations: [.init(action: repaired, result: historical)], now: 110)
+    XCTAssertEqual(replay.calls, projection.calls)
+    let snapshotOnly = AgentRecordedExecutionEvidence.project(task: task, scope: scope, previous: projection.calls,
+      observations: [], now: 120)
+    XCTAssertEqual(snapshotOnly.calls, projection.calls)
+  }
+
+  func testRecordedExecutionPreservesRawDiagnosticsAndDoesNotFinalizeUnknownOutcomes() throws {
+    let scope = AgentPlanContinuationScope(conversationId: "conversation", turnId: "turn")
+    let action = scope.bind(AgentAction(id: "read", kind: .callNativeTool, target: "tool.read", risk: .low,
+      status: .failed, description: "Read", parameters: ["input_json": #"{"incomplete":"#]))
+    let task = AgentTaskRecord(taskId: "turn", sessionId: "conversation", goal: "Inspect phone", phase: .failed,
+      routeKind: .localSystem, targetTitle: "Phone", risk: .low, blocked: false, result: "Awaiting verification")
+    let result = AgentActionResult(actionId: action.id, success: false, message: "Read did not verify", metadata: [
+      "plan_node_outcome_unknown": "true", "native_tool_output": #"{"partial":"#,
+      "plan_node_journal_error": "observation_commit_failed"
+    ])
+    let outgoing = ChatMessage(contactId: "hermes", content: task.goal, isMine: true,
+      conversationId: scope.conversationId, turnId: scope.turnId)
+    let domain = "AgentRecordedExecutionEvidence.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+    defer { defaults.removePersistentDomain(forName: domain) }
+    let store = UserDefaultsAgentRecordedRunStore(defaults: defaults)
+    let events = UserDefaultsAgentRunEventStore(defaults: defaults)
+    store.recordNativeExecution([.init(action: action, result: result)], task: task, outgoing: outgoing,
+      status: .failed, events: events)
+    let run = try XCTUnwrap(store.runs().first)
+    XCTAssertEqual(run.status, .running)
+    XCTAssertEqual(run.completedAtMillis, 0)
+    let call = try XCTUnwrap(run.toolCalls.first)
+    XCTAssertEqual(call.status, .running)
+    XCTAssertEqual(call.arguments["raw_input"], .string(#"{"incomplete":"#))
+    XCTAssertEqual(call.result["raw_evidence"], .string(#"{"partial":"#))
+    XCTAssertEqual(call.result["outcome_unverified"], .bool(true))
+    XCTAssertEqual(call.result["error_code"], .string("observation_commit_failed"))
+    XCTAssertTrue(events.events(runId: run.runId).isEmpty)
+    var foreign = outgoing
+    foreign.conversationId = "other"
+    store.recordNativeExecution([.init(action: action, result: result)], task: task, outgoing: foreign,
+      status: .completed, events: events)
+    XCTAssertEqual(store.runs(), [run])
+  }
+
+  func testRecordedExecutionLifecycleRespectsPreDispatchCancellationAndCurrentAttempt() {
+    let scope = AgentPlanContinuationScope(conversationId: "conversation", turnId: "turn")
+    func event(_ type: AgentRunControlEventType, _ invocation: String = "", at: Int64,
+               status: String = "") -> AgentRunControlEvent {
+      AgentRunControlEvent(conversationId: scope.conversationId, messageId: scope.turnId, taskId: "task",
+        runId: "run", stepId: "read", toolCallId: invocation, agentId: "ios", deviceId: "phone", type: type,
+        sequence: at, timestampMillis: at, payload: ["tool_id": .string("tool.read"), "status": .string(status)],
+        turnId: scope.turnId)
+    }
+    let root = event(.planning, at: 1)
+    let staleFailure = event(.toolCompleted, "old", at: 15, status: "failed")
+    let nativeStart = event(.toolStarted, "retry", at: 20)
+    let nativeEnd = event(.toolCompleted, "retry", at: 30, status: "succeeded")
+    let success = AgentToolCallRecord(id: "read", toolName: "tool.read", status: .succeeded,
+      result: ["invocation_id": .string("retry")], startedAtMillis: 20, completedAtMillis: 30)
+    let cancellation = AgentToolCallRecord(id: "cancelled", toolName: "tool.read", status: .cancelled,
+      result: ["execution_started": .bool(false)], completedAtMillis: 40)
+    let pending = AgentToolCallRecord(id: "not-dispatched", toolName: "tool.read", status: .pending)
+    let missing = AgentRecordedExecutionEvidence.missingLifecycle(for: [success, cancellation, pending],
+      events: [root, staleFailure, nativeStart], scope: scope)
+    XCTAssertEqual(missing.map(\.type), [.toolCompleted, .toolCompleted])
+    XCTAssertEqual(missing.map(\.stepId), ["read", "cancelled"])
+    XCTAssertEqual(missing.last?.payload["status"], .string("cancelled"))
+    XCTAssertTrue(AgentRecordedExecutionEvidence.missingLifecycle(for: [success],
+      events: [root, staleFailure, nativeStart, nativeEnd], scope: scope).isEmpty)
+    XCTAssertTrue(AgentRecordedExecutionEvidence.missingLifecycle(for: [success], events: [root],
+      scope: .init(conversationId: scope.conversationId, turnId: "other")).isEmpty)
   }
 
   func testAgentNativeToolLifecycleRunControlAdapterMatchesAndroidTimelinePayload() {

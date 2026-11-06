@@ -294,6 +294,53 @@ enum AgentPlanLifecyclePolicy {
   private static let restoredConnectorEvidence = "restored_connector_terminal_result"
 }
 
+enum AgentSupervisorRecoveryPolicy {
+  static let maximumFormatRepairs = 3
+  static let maximumConsecutiveFailures = 2
+  private static let bindingKeys: Set<String> = [
+    "connector_id", "connector_kind", "connector_adapter_type", "connector_failure_domain",
+    "manual_target_locked", "manual_model_id", "agent_model_id", "agent_reasoning_effort", "model_id"
+  ]
+
+  static func isSupervisor(_ action: AgentAction) -> Bool {
+    action.kind == .callConnector &&
+      action.parameters["connector_task_mode"] == "phone_supervised_project_plan_v1"
+  }
+
+  static func restoreBinding(_ action: AgentAction, history: [AgentAction]) -> AgentAction {
+    guard isSupervisor(action) else { return action }
+    let original = history.first { isSupervisor($0) && $0.parameters["manual_target_locked"] == "true" }
+    guard let binding = original ?? (action.parameters["manual_target_locked"] == "true" ? action : nil)
+    else { return action }
+    var restored = action
+    restored.target = binding.target
+    for key in bindingKeys { restored.parameters[key] = binding.parameters[key] }
+    restored.parameters["manual_target_locked"] = "true"
+    restored.parameters["auto_reroute_on_failure"] = "false"
+    restored.parameters["routing_fallback_ids"] = ""
+    return restored
+  }
+
+  static func stopReason(action: AgentAction, result: AgentActionResult?, history: [AgentAction]) -> String? {
+    guard isSupervisor(action), let result, result.actionId == action.id, !result.success else { return nil }
+    if result.metadata["non_retriable"] == "true" || result.metadata["recovery_exhausted"] == "true" {
+      return "supervisor_failure_non_retriable"
+    }
+    if result.metadata["failure_kind"] == "invalid_supervised_project_plan",
+       (Int(result.metadata["structured_repair_attempts"] ?? "") ?? 0) >= maximumFormatRepairs {
+      return "supervisor_format_repair_exhausted"
+    }
+    var seen: Set<String> = [action.id]
+    var failures = 1
+    for step in history.reversed() where [.completed, .failed].contains(step.status) && seen.insert(step.id).inserted {
+      guard isSupervisor(step), step.status == .failed else { break }
+      failures += 1
+      if failures >= maximumConsecutiveFailures { return "supervisor_consecutive_failures" }
+    }
+    return nil
+  }
+}
+
 enum AgentRollingPlanPolicy {
   static let replanReasonPrefix = "rolling_batch_completed:"
 
@@ -349,6 +396,13 @@ enum AgentRollingPlanPolicy {
   }
 }
 
+struct AgentVerifiedWorkspaceVideo: Equatable, Sendable {
+  let workspaceId: String
+  let path: String
+  let sha256: String
+  let size: Int64
+}
+
 enum AgentCompletionEvidencePolicy {
   static func isAnswerOnly(
     history: [AgentAction],
@@ -383,6 +437,26 @@ enum AgentCompletionEvidencePolicy {
     }
     let completedTools = Set(history.filter(hasVerifiedCompletionReceipt).map(toolId))
     var missing: [String] = []
+    for outcome in requirements.outcomes ?? [] {
+      if let reason = missingObservedOutcome(outcome, history: history) {
+        missing.append("Observed outcome \(outcome.id): \(reason). Inspect the existing receipt or obtain a fresh read-only observation; do not blindly repeat a mutation.")
+      }
+    }
+    let timerTool = AgentNativeToolAgentActionAdapter.defaultToolId(.setAlarm)
+    if let timer = history.last(where: { action in
+      guard action.kind == .callNativeTool, toolId(action) == timerTool,
+            ![.proposed, .pendingConfirmation, .blocked].contains(action.status) else { return false }
+      let input = decodeObject(action.parameters["input_json"] ?? "")
+      let arguments = input?["parameters"]?.objectValue ?? input
+      return arguments?["timer_operation"] != nil || arguments?["timer_seconds"] != nil ||
+        decodeObject(action.evidence)?["metadata"]?.objectValue?.string("schedule") == "timer"
+    }) {
+      let metadata = decodeObject(timer.evidence)?["metadata"]?.objectValue
+      if timer.status != .completed || metadata?.string("completion_verified") != "true" ||
+          UUID(uuidString: metadata?.string("operation_id") ?? "") == nil {
+        missing.append("a verified phone timer receipt with the observed operation ID and current state")
+      }
+    }
     if requirements.phoneLinux && !completedTools.contains(runtimeExecute) {
       missing.append("a successful galaxyssi.runtime.execute receipt from the phone Linux guest")
     }
@@ -398,7 +472,37 @@ enum AgentCompletionEvidencePolicy {
     default:
       break
     }
+    for artifact in requirements.artifacts ?? [] where verifiedVideo(artifact, history: history) == nil {
+      missing.append("a verified MP4 export for \(artifact.path) in the current workspace")
+    }
     return missing
+  }
+
+  static func verifiedVideo(_ artifact: AgentVideoArtifactRequirement, history: [AgentAction]) -> AgentVerifiedWorkspaceVideo? {
+    for action in history.reversed() where action.kind == .callNativeTool &&
+      toolId(action) == AgentIOSMediaNativeToolCatalog.mediaFFmpegTranscode {
+      guard let output = decodeObject(action.evidence),
+            output.string("workspace_id") == artifact.workspaceId,
+            output.string("destination_path") == artifact.path else { continue }
+      guard action.status == .completed, output.string("mime_type") == "video/mp4",
+            let evidence = output["video_openability"]?.objectValue,
+            (evidence["duration_ms"]?.intValue ?? 0) > 0,
+            (evidence["decoded_frame_width"]?.intValue ?? 0) > 0,
+            (evidence["decoded_frame_height"]?.intValue ?? 0) > 0,
+            let size = output["size_bytes"]?.intValue, (16...268_435_456).contains(size),
+            let sha = output["sha256"]?.stringValue,
+            sha.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil else { return nil }
+      return AgentVerifiedWorkspaceVideo(workspaceId: artifact.workspaceId, path: artifact.path, sha256: sha, size: size)
+    }
+    return nil
+  }
+
+  static func compactVideoEvidence(toolId: String, output: String) -> String? {
+    guard toolId == AgentIOSMediaNativeToolCatalog.mediaFFmpegTranscode,
+          let object = decodeObject(output), object.string("mime_type") == "video/mp4",
+          object["video_openability"]?.objectValue != nil else { return nil }
+    let keys: Set<String> = ["workspace_id", "destination_path", "mime_type", "size_bytes", "sha256", "video_openability"]
+    return AgentMcpJSONCodec.stringify(object.filter { keys.contains($0.key) })
   }
 
   private static func hasVerifiedCompletionReceipt(_ action: AgentAction) -> Bool {
@@ -480,4 +584,62 @@ enum AgentCompletionEvidencePolicy {
     repositoryCommit,
     repositoryPush
   ])
+
+  private static func missingObservedOutcome(_ outcome: AgentObservedCompletion, history: [AgentAction]) -> String? {
+    func receipt(_ action: AgentAction) -> AgentMcpJSONObject? { decodeObject(action.evidence) }
+    func isDifferentSubject(_ output: AgentMcpJSONObject?) -> Bool {
+      outcome.subject.contains { path, expected in
+        guard case let .string(actual) = value(at: path, in: output) else { return false }
+        return actual != expected
+      }
+    }
+    func dispatched(_ action: AgentAction) -> Bool {
+      action.kind == .callNativeTool &&
+        ![.proposed, .pendingConfirmation, .blocked].contains(action.status)
+    }
+    let latestMutation: Int
+    if outcome.afterToolId.isEmpty {
+      latestMutation = -1
+    } else {
+      guard let index = history.lastIndex(where: {
+        dispatched($0) && toolId($0) == outcome.afterToolId &&
+          (outcome.afterToolId != outcome.toolId || !isDifferentSubject(receipt($0)))
+      }) else { return "required action has no receipt" }
+      guard history[index].status != .rolledBack, !hasUnverifiedOutcome(history[index]) else {
+        return "required action is unsettled or rolled back"
+      }
+      latestMutation = index
+    }
+    for index in history.indices.reversed() where index >= latestMutation {
+      let action = history[index]
+      guard dispatched(action), toolId(action) == outcome.toolId else { continue }
+      let output = receipt(action)
+      if isDifferentSubject(output) { continue }
+      guard let output, outcome.subject.allSatisfy({ value(at: $0.key, in: output) == .string($0.value) }) else {
+        return "latest receipt does not identify the requested subject"
+      }
+      let metadata = output["metadata"]?.objectValue
+      guard action.status == .completed, !hasUnverifiedOutcome(action),
+            output["state_verified"] != .bool(false), output["delivery_verified"] != .bool(false),
+            metadata?.string("business_success_verified") != "false",
+            metadata?.string("completion_verified") != "false" else {
+        return "latest matching receipt is not verified"
+      }
+      return outcome.checks.allSatisfy { value(at: $0.key, in: output) == $0.value }
+        ? nil : "latest matching receipt does not satisfy the required state"
+    }
+    return "no observation at or after the required action"
+  }
+
+  private static func value(at pointer: String, in output: AgentMcpJSONObject?) -> AgentMcpJSONValue? {
+    guard let output, pointer.hasPrefix("/") else { return nil }
+    return pointer.dropFirst().split(separator: "/", omittingEmptySubsequences: false)
+      .reduce(Optional(AgentMcpJSONValue.object(output))) { value, segment in
+        let key = segment.replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~")
+        if let array = value?.arrayValue, let index = Int(key), String(index) == key, array.indices.contains(index) {
+          return array[index]
+        }
+        return value?.objectValue?[key]
+      }
+  }
 }

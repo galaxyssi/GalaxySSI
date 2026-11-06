@@ -509,6 +509,9 @@ final class GalaxySSIAttachmentTests: XCTestCase {
 
     XCTAssertEqual(attachment.mimeType, "image/gif")
     XCTAssertEqual(attachment.data[10], 8)
+    let original = try? XCTUnwrap(attachment.applyingComposerImageQuality(.original))
+    XCTAssertEqual(original?.data, gif)
+    XCTAssertEqual(original?.composerImageQuality, .original)
   }
 
   func testAgentWorkspaceScopeMatchesAndroidStableIdsAndToolBinding() {
@@ -594,6 +597,52 @@ final class GalaxySSIAttachmentTests: XCTestCase {
       XCTAssertEqual(error as? AgentAttachmentWorkspaceStagingError, .invalidTurnId)
     }
     XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+  }
+
+  func testAttachmentWorkspaceRestoresSelectedImageQuality() throws {
+    let root = temporaryAttachmentRoot()
+    defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+    let input = GalaxySSIDraftAttachment(id: "selected-image", displayName: "picked.png",
+      mimeType: "image/png", data: Data([1, 2, 3]), composerImageQuality: .original)
+    let staged = try AgentAttachmentWorkspaceStager.stage(conversationId: "conversation", turnId: "turn",
+      attachments: [input], projectRoot: root)
+    XCTAssertEqual(staged.first?.imageQuality, .original)
+    let restored = AgentAttachmentWorkspaceStager.restore(conversationId: "conversation", turnId: "turn",
+      blocks: [.init(id: input.id, type: .image, title: input.displayName,
+                     mimeType: input.mimeType, metadata: ["source": "user_attachment"])],
+      projectRoot: root, matchExactIDs: true)
+    XCTAssertEqual(restored.first?.attachment.composerImageQuality, .original)
+    XCTAssertEqual(restored.first?.attachment.data, input.data)
+  }
+
+  @MainActor
+  func testComposerFilePickerSeparatesGenericImageAndDocumentAndStopsStaleSelection() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let image = root.appendingPathComponent("picture.bin")
+    let document = root.appendingPathComponent("document.pdf")
+    let png = UIGraphicsImageRenderer(size: CGSize(width: 10, height: 10)).pngData { context in
+      UIColor.red.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 10, height: 10))
+    }
+    try png.write(to: image)
+    let pdf = Data("%PDF-1.4\nfixture".utf8)
+    try pdf.write(to: document)
+    var current = true
+    var imageResults: [GalaxySSIDraftAttachment] = [], documents: [GalaxySSIDraftAttachment] = []
+    await ComposerFileSelection.deliver([image, document], isCurrent: { current }, onImage: {
+      imageResults.append($0)
+      current = false
+    }, onDocument: { documents.append($0) }, onFailure: { XCTFail("\($0)") })
+    XCTAssertEqual(imageResults.first?.mimeType, "image/png")
+    XCTAssertEqual(imageResults.first?.data, png)
+    XCTAssertEqual(imageResults.first?.requiresInitialComposerImageReview, true)
+    XCTAssertTrue(documents.isEmpty)
+    await ComposerFileSelection.deliver([document], isCurrent: { true }, onImage: {
+      _ in XCTFail("Document must not open image review")
+    }, onDocument: { documents.append($0) }, onFailure: { XCTFail("\($0)") })
+    XCTAssertEqual(documents.first?.data, pdf)
   }
 
   func testAgentAttachmentTransferProtocolMatchesAndroidRangesAndStableIdentity() throws {
@@ -790,7 +839,8 @@ final class GalaxySSIAttachmentTests: XCTestCase {
       id: "original-image",
       displayName: "original.png",
       mimeType: "image/png",
-      data: original
+      data: original,
+      composerImageQuality: .original
     )
     let store = AgentOutboundAttachmentTransferStore(
       rootURL: root,
@@ -813,6 +863,18 @@ final class GalaxySSIAttachmentTests: XCTestCase {
     XCTAssertEqual(prepared.originalSizeBytes, Int64(original.count))
     XCTAssertFalse(prepared.requiresValidatedNetwork)
     XCTAssertEqual(reconstructed, original)
+
+    let photo = UIGraphicsImageRenderer(size: CGSize(width: 96, height: 96)).pngData { context in
+      UIColor.blue.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 96, height: 96))
+    }
+    let compressed = GalaxySSIDraftAttachment(id: "compressed-image", displayName: "photo.png",
+      mimeType: "image/png", data: photo, composerImageQuality: .compressed)
+    let peer = try XCTUnwrap(store.prepare(scope: scope, attachments: [compressed],
+      mediaProfile: AgentMediaNetworkPolicy.profile(for: .constrained), preserveOriginalBytes: true).first)
+    XCTAssertEqual(peer.transportProfile, "peer-compressed")
+    XCTAssertLessThanOrEqual(peer.sizeBytes, Int64(ComposerImageQuality.contactCompressedBytes))
+    XCTAssertFalse(peer.requiresValidatedNetwork)
   }
 
   func testPeerAttachmentPlanBlocksMessageAndDefersLargeOrNonMediaChunks() throws {
@@ -972,6 +1034,8 @@ final class GalaxySSIAttachmentTests: XCTestCase {
     block.metadata["transfer_progress"] = "100"
     block.metadata["transfer_state"] = GalaxySSIPeerAttachmentTransferProgress.complete
     XCTAssertEqual(GalaxySSIPeerImageThumbnailPolicy.cacheIdentity(block), identity)
+    block.metadata["sha256"] = String(repeating: "b", count: 64)
+    XCTAssertNotEqual(GalaxySSIPeerImageThumbnailPolicy.cacheIdentity(block), identity)
 
     let source = UIGraphicsImageRenderer(size: CGSize(width: 640, height: 480)).image { context in
       UIColor.systemBlue.setFill()
@@ -1034,10 +1098,74 @@ final class GalaxySSIAttachmentTests: XCTestCase {
     wait(for: [loaded], timeout: 20)
     XCTAssertEqual(thumbnails.count, 2)
     XCTAssertTrue(thumbnails.allSatisfy(GalaxySSIImageResourceDecoder.canDecode))
-    let storedURL = root.appendingPathComponent(".peer-image-thumbnail-v1.saenc")
-    XCTAssertTrue(cipher.isEncryptedFile(storedURL))
-    let stored = try cipher.read(from: storedURL, purpose: "peer-thumbnail:\(transferID)")
-    XCTAssertTrue(GalaxySSIImageResourceDecoder.canDecode(stored))
+    for size in [504, 420] {
+      let variant = GalaxySSIPeerImageThumbnailPolicy.variant(block, maxPixelSize: size)
+      let storedURL = root.appendingPathComponent(".peer-image-thumbnail-v2-\(variant).saenc")
+      XCTAssertTrue(cipher.isEncryptedFile(storedURL))
+      let stored = try cipher.read(from: storedURL, purpose: "peer-thumbnail-v2:\(variant)")
+      XCTAssertTrue(GalaxySSIImageResourceDecoder.canDecode(stored))
+    }
+  }
+
+  func testPeerThumbnailsIsolateSharedDirectoryAndRepairCorruptVariants() throws {
+    let manager = FileManager.default
+    let root = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try manager.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? manager.removeItem(at: root) }
+    let cipher = GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let repository = GalaxySSIPeerImageThumbnailRepository(cipher: cipher)
+    func image(_ color: UIColor) throws -> Data {
+      try XCTUnwrap(UIGraphicsImageRenderer(size: CGSize(width: 100, height: 100)).image { context in
+        color.setFill()
+        context.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+      }.pngData())
+    }
+    func block(_ file: URL, bytes: Data) -> AgentRichBlock {
+      AgentRichBlock(id: file.lastPathComponent, type: .image, title: "photo.png", uri: file.absoluteString,
+        mimeType: "image/png", metadata: ["source": "peer_message", "storage": "app_private_file",
+          "sha256": AgentAttachmentTransferProtocol.sha256(bytes)])
+    }
+    func load(_ block: AgentRichBlock) throws -> Data {
+      let loaded = expectation(description: "Load \(block.id)")
+      var data: Data?
+      repository.load(block: block) { data = $0; loaded.fulfill() }
+      wait(for: [loaded], timeout: 10)
+      return try XCTUnwrap(data)
+    }
+    let red = try image(.red), blue = try image(.blue)
+    let firstFile = root.appendingPathComponent("first.png")
+    let secondFile = root.appendingPathComponent("second.png")
+    let legacy = root.appendingPathComponent(".peer-image-thumbnail-v1.saenc")
+    try red.write(to: firstFile)
+    try blue.write(to: secondFile)
+    try cipher.write(blue, to: legacy, purpose: "peer-thumbnail:image")
+    let first = block(firstFile, bytes: red), second = block(secondFile, bytes: blue)
+    let firstThumbnail = try load(first)
+    let secondThumbnail = try load(second)
+    XCTAssertNotEqual(firstThumbnail, secondThumbnail)
+    XCTAssertFalse(manager.fileExists(atPath: legacy.path))
+    let variant = GalaxySSIPeerImageThumbnailPolicy.variant(first, maxPixelSize: 512)
+    let cache = root.appendingPathComponent(".peer-image-thumbnail-v2-\(variant).saenc")
+    try cipher.write(Data("not an image".utf8), to: cache, purpose: "peer-thumbnail-v2:\(variant)")
+    repository.clearMemoryCache()
+    let rebuilt = try load(first)
+    XCTAssertEqual(try cipher.read(from: cache, purpose: "peer-thumbnail-v2:\(variant)"), rebuilt)
+    XCTAssertEqual(try Data(contentsOf: firstFile), red)
+    XCTAssertEqual(repository.originalData(for: second), blue)
+    try manager.removeItem(at: secondFile)
+    repository.clearMemoryCache()
+    XCTAssertEqual(try load(first), rebuilt)
+
+    let replaced = block(firstFile, bytes: blue)
+    try blue.write(to: firstFile, options: .atomic)
+    XCTAssertNotEqual(GalaxySSIPeerImageThumbnailPolicy.cacheIdentity(first),
+                      GalaxySSIPeerImageThumbnailPolicy.cacheIdentity(replaced))
+    XCTAssertNotEqual(try load(replaced), rebuilt)
+    let stale = expectation(description: "Purged memory hit is not delivered")
+    stale.isInverted = true
+    repository.load(block: replaced) { _ in stale.fulfill() }
+    repository.clearMemoryCache()
+    wait(for: [stale], timeout: 0.2)
   }
 
   func testIncomingPeerAttachmentAssemblesResumesAndResolvesDurably() throws {

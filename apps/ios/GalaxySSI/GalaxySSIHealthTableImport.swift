@@ -7,8 +7,37 @@ enum GalaxySSIHealthTableImport {
   private static let maximumColumns = 64
 
   enum Failure: Error { case malformed, limit, mapping, stale }
-  enum DateStyle: String, CaseIterable, Codable { case iso, localTime, day, excel }
+  enum DateStyle: String, CaseIterable, Codable {
+    case iso, localTime, day, excel, localMinute, slashYearFirst, slashDayFirst, slashMonthFirst
+
+    var formatLabel: String {
+      switch self {
+      case .iso: return "ISO 8601"
+      case .localTime: return "yyyy-MM-dd HH:mm:ss"
+      case .day: return "yyyy-MM-dd"
+      case .localMinute: return "yyyy-MM-dd HH:mm"
+      case .slashYearFirst: return "yyyy/MM/dd HH:mm"
+      case .slashDayFirst: return "dd/MM/yyyy HH:mm"
+      case .slashMonthFirst: return "MM/dd/yyyy HH:mm"
+      case .excel: return "Excel"
+      }
+    }
+  }
   enum Status: String { case ready, duplicate, missing, invalid }
+
+  struct DateOnlyDecision: Codable, Equatable {
+    let sourceDate: String
+    let chosenMinute: Int
+    let resolvedTime: Date
+
+    var clock: String {
+      Self.clock(chosenMinute)
+    }
+
+    static func clock(_ minute: Int) -> String {
+      String(format: "%02lld:%02lld", Int64(minute / 60), Int64(minute % 60))
+    }
+  }
 
   struct Source: Codable, Equatable {
     let batch: UUID
@@ -17,6 +46,8 @@ enum GalaxySSIHealthTableImport {
     var sheet: String?
     var worksheetPath: String?
     var columns: [String: Int]?
+    var dateOnlyDecision: DateOnlyDecision?
+    var excelDate1904: Bool?
   }
 
   struct EvidenceTarget: Codable, Equatable {
@@ -130,6 +161,14 @@ enum GalaxySSIHealthTableImport {
     let rawValue: String
     let rawDate: String
     var duplicateTarget: EvidenceTarget?
+    var needsDateOnlyTime = false
+    var dateOnlyDecision: DateOnlyDecision?
+    var excelDate1904: Bool?
+
+    func source(batch: UUID, sha256: String, table: Table, mapping: Mapping) -> Source {
+      .init(batch: batch, row: id, sha256: sha256, sheet: table.sheet, worksheetPath: table.sheetPath,
+            columns: mapping.sourceColumns, dateOnlyDecision: dateOnlyDecision, excelDate1904: excelDate1904)
+    }
   }
 
   static func parse(_ data: Data, json: Bool) throws -> Table {
@@ -146,40 +185,45 @@ enum GalaxySSIHealthTableImport {
     guard mapping.confirmedUnit, mapping.dateStyle != .excel || table.date1904 != nil,
           Set(used).count == used.count,
           used.allSatisfy({ table.headers.indices.contains($0) }) else { throw Failure.mapping }
-    let iso = ISO8601DateFormatter()
-    let fractional = ISO8601DateFormatter()
-    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    let local = DateFormatter()
-    local.locale = Locale(identifier: "en_US_POSIX")
-    local.calendar = Calendar(identifier: .gregorian)
-    local.timeZone = mapping.localZone
-    local.isLenient = false
-    local.dateFormat = mapping.dateStyle == .day ? "yyyy-MM-dd" : "yyyy-MM-dd HH:mm:ss"
     let now = Date()
     var accepted = current.filter { $0.metric == mapping.metric }
     return table.rows.enumerated().map { index, values in
       func cell(_ column: Int) -> String { values.indices.contains(column) ? values[column] : "" }
       func token(_ column: Int) -> String { cell(column).trimmingCharacters(in: .whitespacesAndNewlines) }
       let rawValue = token(mapping.value), rawDate = token(mapping.date)
-      func row(_ status: Status, _ reading: GalaxySSIHealthReading? = nil) -> Row {
-        Row(id: table.rowNumbers?[index] ?? index + 1, status: status, reading: reading, rawValue: rawValue, rawDate: rawDate)
+      func row(_ status: Status, _ reading: GalaxySSIHealthReading? = nil,
+               decision: DateOnlyDecision? = nil, excelDate1904: Bool? = nil, needsTime: Bool = false) -> Row {
+        Row(id: table.rowNumbers?[index] ?? index + 1, status: status, reading: reading, rawValue: rawValue,
+            rawDate: rawDate, needsDateOnlyTime: needsTime, dateOnlyDecision: decision, excelDate1904: excelDate1904)
       }
       if !mapping.useFormulaCache, let formulas = table.formulas?[index],
          used.contains(where: { formulas.contains($0) }) { return row(.invalid) }
       guard required.allSatisfy({ !token($0).isEmpty }) else { return row(.missing) }
-      let time: Date?
+      let parsed: GalaxySSIHealthXLSX.Timestamp
+      var excelDate1904: Bool?
       if table.isoDates?[index].contains(mapping.date) == true {
-        time = GalaxySSIHealthXLSX.isoDate(rawDate, zone: mapping.localZone, dateOnlyMinute: mapping.dateOnlyMinute)
-      } else if mapping.dateStyle == .iso {
-        time = fractional.date(from: rawDate) ?? iso.date(from: rawDate)
+        parsed = GalaxySSIHealthXLSX.isoTimestamp(rawDate, zone: mapping.localZone, chosenMinute: mapping.dateOnlyMinute)
       } else if mapping.dateStyle == .excel, let serial = number(rawDate), let date1904 = table.date1904 {
-        time = GalaxySSIHealthXLSX.date(serial: serial, date1904: date1904, zone: mapping.localZone)
-      } else if mapping.dateStyle != .excel, let parsed = local.date(from: rawDate), local.string(from: parsed) == rawDate {
-        time = parsed
-      } else { time = nil }
+        excelDate1904 = date1904
+        parsed = GalaxySSIHealthXLSX.excelTimestamp(serial: serial, date1904: date1904,
+          zone: mapping.localZone, chosenMinute: mapping.dateOnlyMinute)
+      } else {
+        parsed = textTimestamp(rawDate, mapping: mapping)
+      }
+      let time: Date
+      let decision: DateOnlyDecision?
+      switch parsed {
+      case .needsTime: return row(.missing, needsTime: true)
+      case .invalid: return row(.invalid)
+      case .resolved(let date, let usedDateOnlyTime):
+        time = date
+        decision = usedDateOnlyTime ? mapping.dateOnlyMinute.map {
+          .init(sourceDate: rawDate, chosenMinute: $0, resolvedTime: date)
+        } : nil
+      }
       let reported = GalaxySSIHealthReportedResult.parse(rawValue, metric: mapping.metric)
       let value = reported == nil ? number(rawValue) : nil
-      guard value != nil || reported != nil, let time, time <= now else { return row(.invalid) }
+      guard value != nil || reported != nil, time <= now else { return row(.invalid) }
       let lower = isPressure ? number(token(mapping.lower)) : nil
       let pulseText = isPressure ? token(mapping.pulse) : ""
       let pulse = number(pulseText)
@@ -189,7 +233,7 @@ enum GalaxySSIHealthTableImport {
         unitOverride: reported?.kind == .qualitative ? "" : mapping.unitOverride)
       guard reading.isValid else { return row(.invalid) }
       guard !accepted.contains(where: { $0.sameMeasurement(as: reading) }) else {
-        var duplicate = row(.duplicate, reading)
+        var duplicate = row(.duplicate, reading, decision: decision, excelDate1904: excelDate1904)
         let exact = current.filter { !$0.deleted && $0.revision > 0 && $0.measuredAt == reading.measuredAt &&
           $0.sameMeasurement(as: reading) }
         if exact.count == 1, let match = exact.first {
@@ -198,8 +242,42 @@ enum GalaxySSIHealthTableImport {
         return duplicate
       }
       accepted.append(reading)
-      return row(.ready, reading)
+      return row(.ready, reading, decision: decision, excelDate1904: excelDate1904)
     }
+  }
+
+  private static func textTimestamp(_ raw: String, mapping: Mapping) -> GalaxySSIHealthXLSX.Timestamp {
+    let style = mapping.dateStyle
+    if style == .excel { return .invalid }
+    let normalized: String
+    if style == .iso {
+      normalized = raw.replacingOccurrences(of: "t", with: "T").replacingOccurrences(of: "z", with: "Z")
+    } else {
+      let fields = raw.split(separator: " ", omittingEmptySubsequences: false)
+      guard let day = fields.first, fields.count <= 2 else { return .invalid }
+      let date: String
+      switch style {
+      case .slashYearFirst, .slashDayFirst, .slashMonthFirst:
+        let parts = day.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 3 else { return .invalid }
+        if style == .slashYearFirst { date = parts.joined(separator: "-") }
+        else if style == .slashDayFirst { date = "\(parts[2])-\(parts[1])-\(parts[0])" }
+        else { date = "\(parts[2])-\(parts[0])-\(parts[1])" }
+      default:
+        date = String(day)
+      }
+      guard date.utf8.count == 10, !date.contains("T") else { return .invalid }
+      if fields.count == 2 {
+        let clock = fields[1]
+        let width = style == .localTime ? 8 : 5
+        guard style != .day, clock.utf8.count == width,
+              clock.utf8.allSatisfy({ (48...57).contains($0) || $0 == 58 }) else { return .invalid }
+        normalized = date + "T" + clock
+      } else {
+        normalized = date
+      }
+    }
+    return GalaxySSIHealthXLSX.isoTimestamp(normalized, zone: mapping.localZone, chosenMinute: mapping.dateOnlyMinute)
   }
 
   static func digest(_ data: Data) -> String {

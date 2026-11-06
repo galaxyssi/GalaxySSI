@@ -2,6 +2,17 @@ import XCTest
 @testable import GalaxySSI
 
 final class CloudModelStreamProviderAdaptersTests: XCTestCase {
+  func testOpenAIAdapterKeepsProviderReasoningSeparateFromVisibleContent() {
+    let adapter = ModelStreamProviderAdapters.create(provider: .openAICompatible)
+    let frame = adapter.parse(data: #"{"choices":[{"delta":{"reasoning_content":"provider-only","content":"visible"}}]}"#,
+      eventName: nil)
+    XCTAssertEqual(frame.providerReasoningDelta, "provider-only")
+    XCTAssertEqual(frame.textDeltas, ["visible"])
+    let ordinary = ModelStreamEmissionState()
+    XCTAssertTrue(ordinary.recordProviderReasoning(frame.providerReasoningDelta))
+    XCTAssertNil(ordinary.providerReasoning)
+  }
+
   func testOpenAIReportedModelIsIndependentOfUsageAndRejectsConflicts() {
     let adapter = ModelStreamProviderAdapters.create(provider: .openAICompatible)
     let first = adapter.parse(data: "{\"model\":\"actual-model\",\"choices\":[]}", eventName: nil)
