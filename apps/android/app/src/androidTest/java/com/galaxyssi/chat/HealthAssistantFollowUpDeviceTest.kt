@@ -51,10 +51,11 @@ class HealthAssistantFollowUpDeviceTest {
             received += JSONObject(payload.toString())
             if (received.size > 1) return """{"status":"OUT_OF_SCOPE","sections":[],"actions":[]}"""
             val facts = payload.getJSONArray("facts")
-            val sleep = (0 until facts.length()).map { facts.getJSONObject(it) }
-                .single { it.getString("metric") == HealthMetric.SLEEP_DURATION.name }.getString("id")
+            val key = if (payload.optString("scope") == "filtered_trend") facts.getJSONObject(0).getString("id")
+                else (0 until facts.length()).map { facts.getJSONObject(it) }
+                    .single { it.getString("metric") == HealthMetric.SLEEP_DURATION.name }.getString("id")
             return JSONObject().put("status", "PARTIAL").put("sections", JSONArray(listOf("COVERAGE", "SOURCES").map {
-                JSONObject().put("topic", it).put("fact_ids", JSONArray(listOf(sleep)))
+                JSONObject().put("topic", it).put("fact_ids", JSONArray(listOf(key)))
             })).put("actions", JSONArray()).toString()
         }
     }
@@ -174,15 +175,62 @@ class HealthAssistantFollowUpDeviceTest {
         }
     }
 
+    @Test fun trendFollowUpDisclosesOnlyTheShownSummaryAndRejectsAChangedChart() = fixture { names ->
+        val record = saveSleep(names)
+        grant(names, true)
+        val spec = HealthTrendSpec(HealthMetric.SLEEP_DURATION, end.minusDays(5), end, zone, "h",
+            HealthTrendAggregation.MAXIMUM, HealthTrendSource(manualOnly = true))
+        val version = HealthRecordStore(context, names.records).use { it.metricVersion(spec.metric) }
+        val gateway = Gateway()
+        launch(names, gateway, HealthTrendAnalysisHandoff(spec, version)).use { scenario ->
+            click(scenario, "health-assistant-calculate")
+            awaitTag(scenario, "health-trend-analysis-delta-sleep_duration") {
+                (it as TextView).text == context.getString(R.string.health_trend_analysis_one_point)
+            }
+            edit(scenario, firstQuestion)
+            val payload = choose(scenario)
+            assertEquals("filtered_trend", payload.getString("scope"))
+            assertEquals("MAXIMUM", payload.getString("aggregation"))
+            assertEquals(6, payload.getInt("period_days"))
+            assertEquals(5, payload.getInt("missing_days"))
+            assertFalse(payload.toString().contains(record.id))
+            assertFalse(payload.toString().contains(record.draft.note))
+            assertFalse(payload.toString().contains(end.toString()))
+            dialogButton(android.R.id.button1)
+            awaitTag(scenario, "health-follow-up-turn-0") { views(it).any { row -> row.tag == "health-trend-analysis-source-sleep_duration-0" } }
+            assertEquals(payload.toString(), gateway.received.single().toString())
+            HealthPrivacyStore(context, names.privacy).use {
+                val event = it.page().entries.single { item -> item.scope.purpose == HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE }
+                assertEquals(HealthAccessOutcome.COMPLETE, event.outcome)
+                assertEquals(HealthAccessSource.MANUAL, event.scope.source)
+                assertEquals(spec.from, event.scope.from)
+                assertEquals(spec.until, event.scope.until)
+                assertEquals(destination, event.scope.destination)
+            }
+            edit(scenario, secondQuestion)
+            choose(scenario)
+            HealthRecordStore(context, names.records).use { assertTrue(it.delete(record.id, record.revision)) }
+            awaitTag(scenario, "health-assistant-status") {
+                (it as TextView).text == context.getString(R.string.health_trend_analysis_changed)
+            }
+            scenario.onActivity {
+                assertNull(it.window.decorView.findViewWithTag<View>("health-assistant-calculate"))
+                assertNull(it.window.decorView.findViewWithTag<View>("health-follow-up-input"))
+            }
+            assertEquals(1, gateway.received.size)
+        }
+    }
+
     private fun fixture(test: (HealthOverviewDatabases) -> Unit) {
         val names = HealthOverviewDatabases(UUID.randomUUID().toString())
         try { test(names) } finally { clearHealthOverviewFixture(context, names) }
     }
-    private fun launch(names: HealthOverviewDatabases, gateway: Gateway): ActivityScenario<HealthAssistantActivity> {
+    private fun launch(names: HealthOverviewDatabases, gateway: Gateway,
+                       trend: HealthTrendAnalysisHandoff? = null): ActivityScenario<HealthAssistantActivity> {
         assumeFalse("Visible consent tests require an unlocked Android 10+ display",
             Build.VERSION.SDK_INT < 29 || context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         return ActivityScenario.launch<HealthAssistantActivity>(Intent(context, HealthAssistantActivity::class.java)
-            .putExtra("health_assistant_test_id", names.fixture)).also {
+            .putExtra("health_assistant_test_id", names.fixture).apply { trend?.let { putHealthTrendAnalysis(it) } }).also {
             it.onActivity { activity -> activity.useFixtureGateway(gateway) }
         }
     }

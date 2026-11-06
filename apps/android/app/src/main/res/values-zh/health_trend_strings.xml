@@ -27,6 +27,17 @@
     <string name="health_trend_empty">暂无可绘制数值</string>
     <string name="health_trend_chart_description">趋势图：%1$d 条数值记录，覆盖 %2$d 天</string>
     <string name="health_trend_chart_title">%1$s趋势</string>
+    <string name="health_trend_explain">了解这组变化</string>
+    <string name="health_trend_explain_subtitle">让助手解释当前趋势和数据局限</string>
+    <string name="health_trend_analysis_scope">仅使用符合当前图表条件的已确认记录，不包含个人档案。</string>
+    <string name="health_trend_analysis_period">%1$s 至 %2$s · %3$s</string>
+    <string name="health_trend_analysis_source">数据来源：%1$s</string>
+    <string name="health_trend_analysis_unit">单位：%1$s · 聚合方式：%2$s</string>
+    <string name="health_trend_analysis_changed">记录或权限已变化。请返回趋势页，从当前图表重新进入。</string>
+    <string name="health_trend_analysis_delta">最后一个图表点减去第一个：%1$s</string>
+    <string name="health_trend_analysis_one_point">只有一个图表点，无法比较变化。</string>
+    <string name="health_trend_analysis_point">%1$s · %2$s</string>
+    <string name="health_trend_analysis_open_records">查看参与计算的原始记录</string>
     <string name="health_trend_chart_data">查看图表数据</string>
     <string name="health_trend_chart_data_dates">%1$s至%2$s</string>
     <string name="health_trend_chart_data_row">%1$s\n%2$s · %3$s：%4$s · %5$s</string>

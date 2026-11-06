@@ -59,3 +59,13 @@ internal fun Context.healthConnectTrendLabel(origin: String, metric: HealthMetri
     origin.isEmpty() -> getString(R.string.health_sources_platform_name)
     else -> getString(R.string.health_connect_platform_origin, origin)
 }
+
+internal fun Context.healthTrendSourceLabel(spec: HealthTrendSpec, name: String = "") = with(spec.source) {
+    when {
+        manualOnly -> getString(R.string.health_source_manual)
+        bluetoothGroup.isNotEmpty() -> healthBluetoothTrendLabel(bluetoothGroup, name)
+        platformOrigin.isNotEmpty() -> healthConnectTrendLabel(platformOrigin, spec.metric)
+        originalId.isNotEmpty() -> name.ifBlank { getString(R.string.health_trend_original_source, originalId.take(8)) }
+        else -> getString(R.string.health_trend_all_sources)
+    }
+}

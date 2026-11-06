@@ -27,6 +27,17 @@
     <string name="health_trend_empty">No plottable numeric values</string>
     <string name="health_trend_chart_description">Trend chart: %1$d numeric records across %2$d days</string>
     <string name="health_trend_chart_title">%1$s trend</string>
+    <string name="health_trend_explain">Understand this change</string>
+    <string name="health_trend_explain_subtitle">Health Assistant explains the selected trend and its data limits</string>
+    <string name="health_trend_analysis_scope">Only confirmed records matching this chart are used. Profile details are not included.</string>
+    <string name="health_trend_analysis_period">%1$s to %2$s · %3$s</string>
+    <string name="health_trend_analysis_source">Source: %1$s</string>
+    <string name="health_trend_analysis_unit">Unit: %1$s · Aggregation: %2$s</string>
+    <string name="health_trend_analysis_changed">Records or permissions changed. Return to the trend and open a current chart.</string>
+    <string name="health_trend_analysis_delta">Last plotted value minus first: %1$s</string>
+    <string name="health_trend_analysis_one_point">Only one plotted value. There is not enough data to compare a change.</string>
+    <string name="health_trend_analysis_point">%1$s · %2$s</string>
+    <string name="health_trend_analysis_open_records">View the records used for this value</string>
     <string name="health_trend_chart_data">Chart data</string>
     <string name="health_trend_chart_data_dates">%1$s to %2$s</string>
     <string name="health_trend_chart_data_row">%1$s\n%2$s · %3$s: %4$s · %5$s</string>

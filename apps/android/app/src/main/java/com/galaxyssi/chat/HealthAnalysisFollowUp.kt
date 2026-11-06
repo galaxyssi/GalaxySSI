@@ -27,14 +27,14 @@ internal class HealthFollowUpQuestion private constructor(val text: String, val 
 }
 
 internal object HealthAnalysisFollowUp {
-    private fun topics(preview: HealthAnalysisPreview) =
+    private fun topics(preview: HealthAnalysisInput) =
         HealthFollowUpTopic.entries.filter { it != HealthFollowUpTopic.CHANGES || preview.focus == HealthAnalysisFocus.CHANGES }
 
-    fun payload(preview: HealthAnalysisPreview, question: HealthFollowUpQuestion): JSONObject =
+    fun payload(preview: HealthAnalysisInput, question: HealthFollowUpQuestion): JSONObject =
         HealthAnalysis.payload(preview).put("question", question.text).put("allowed_topics", JSONArray(topics(preview).map { it.name }))
             .apply { question.previous?.let { put("previous_answer", it.json()) } }
 
-    fun decode(raw: String, preview: HealthAnalysisPreview): HealthFollowUpAnswer {
+    fun decode(raw: String, preview: HealthAnalysisInput): HealthFollowUpAnswer {
         if (raw.length > 4096) throw HealthAnalysisInvalidReply()
         try {
             val text = raw.trim().let { value ->
@@ -46,7 +46,7 @@ internal object HealthAnalysisFollowUp {
             val status = HealthFollowUpStatus.valueOf(root.get("status") as String)
             val entries = root.getJSONArray("sections")
             val allowed = topics(preview)
-            val facts = preview.facts.map { it.key }.toSet()
+            val facts = preview.factKeys.toSet()
             check(entries.length() <= allowed.size)
             val sections = (0 until entries.length()).map { index ->
                 val item = entries.getJSONObject(index)
@@ -59,6 +59,7 @@ internal object HealthAnalysisFollowUp {
             }
             check(sections.map { it.topic }.distinct().size == sections.size)
             val actions = strings(root.getJSONArray("actions"), 2).map(HealthAnalysisAction::valueOf)
+            check(actions.all { it in preview.allowedActions })
             check((sections.isEmpty() && actions.isEmpty()) == (status == HealthFollowUpStatus.OUT_OF_SCOPE))
             return HealthFollowUpAnswer(status, sections, actions)
         } catch (_: Exception) { throw HealthAnalysisInvalidReply() }

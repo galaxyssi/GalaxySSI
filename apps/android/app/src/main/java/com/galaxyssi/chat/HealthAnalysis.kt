@@ -15,9 +15,18 @@ internal val healthAnalysisProfileFields = HealthProfileField.entries.filter { i
 internal const val healthAnalysisBackgroundLimit = 30
 internal data class HealthAnalysisReference(val id: String, val revision: Int, val time: Long, val source: String, val baseline: Boolean)
 internal data class HealthAnalysisFact(val key: String, val stat: HealthWeeklyStat, val refs: List<HealthAnalysisReference>)
+internal sealed interface HealthAnalysisInput {
+    val focus: HealthAnalysisFocus
+    val policyVersion: String
+    val hasData: Boolean
+    val factKeys: List<String>
+    val allowedActions: List<HealthAnalysisAction>
+}
 internal data class HealthAnalysisPreview(val weekly: HealthWeeklySnapshot, val facts: List<HealthAnalysisFact>,
-    val focus: HealthAnalysisFocus, val policyVersion: String, val profile: HealthProfileContext? = null) {
-    val hasData get() = facts.any { it.stat.validDays > 0 }
+    override val focus: HealthAnalysisFocus, override val policyVersion: String, val profile: HealthProfileContext? = null) : HealthAnalysisInput {
+    override val hasData get() = facts.any { it.stat.validDays > 0 }
+    override val factKeys get() = facts.map { it.key }
+    override val allowedActions get() = HealthAnalysisAction.entries
 }
 internal data class HealthAnalysisPlan(val factKeys: List<String>, val actions: List<HealthAnalysisAction>)
 internal class HealthAnalysisInvalidReply : IllegalStateException()
@@ -81,17 +90,22 @@ internal object HealthAnalysis {
         return counted
     }
 
-    fun requireCurrent(context: Context, names: HealthOverviewDatabases, preview: HealthAnalysisPreview, online: Boolean) {
+    fun requireCurrent(context: Context, names: HealthOverviewDatabases, preview: HealthAnalysisInput, online: Boolean) {
         val policy = HealthPrivacyStore(context, names.privacy).use { it.policy() }
         if (!policy.metrics || (online && !policy.online)) throw HealthAccessBlocked()
-        if (preview.profile != null && !policy.profile) throw HealthAnalysisProfileBlocked()
+        if ((preview as? HealthAnalysisPreview)?.profile != null && !policy.profile) throw HealthAnalysisProfileBlocked()
         if (policy.version != preview.policyVersion) throw HealthWeeklyChanged()
-        HealthRecordStore(context, names.records).use { HealthWeeklyRepository.requireCurrent(it, preview.weekly.stamp) }
+        HealthRecordStore(context, names.records).use {
+            when (preview) {
+                is HealthAnalysisPreview -> HealthWeeklyRepository.requireCurrent(it, preview.weekly.stamp)
+                is HealthTrendAnalysisPreview -> HealthTrendAnalysis.requireCurrent(it, preview.handoff)
+            }
+        }
         if (!profileIsCurrent(context, names, preview)) throw HealthAnalysisProfileChanged()
     }
 
-    fun profileIsCurrent(context: Context, names: HealthOverviewDatabases, preview: HealthAnalysisPreview): Boolean =
-        preview.profile?.let { profile ->
+    fun profileIsCurrent(context: Context, names: HealthOverviewDatabases, preview: HealthAnalysisInput): Boolean =
+        (preview as? HealthAnalysisPreview)?.profile?.let { profile ->
             HealthProfileStore(context, names.profile, names.privacy).use { it.isCurrent(profile.stamp) }
         } ?: true
 
@@ -105,7 +119,12 @@ internal object HealthAnalysis {
         return page
     }
 
-    fun payload(preview: HealthAnalysisPreview): JSONObject {
+    fun payload(preview: HealthAnalysisInput): JSONObject = when (preview) {
+        is HealthAnalysisPreview -> weeklyPayload(preview)
+        is HealthTrendAnalysisPreview -> preview.payload()
+    }
+
+    private fun weeklyPayload(preview: HealthAnalysisPreview): JSONObject {
         val facts = JSONArray()
         preview.facts.forEach { fact ->
             val stat = fact.stat
@@ -128,10 +147,10 @@ internal object HealthAnalysis {
         }
         return JSONObject().put("focus", preview.focus.name).put("recent_days", 7)
             .put("baseline_days", if (preview.weekly.scope.hasBaseline) 14 else 0)
-            .put("facts", facts).put("allowed_actions", JSONArray(HealthAnalysisAction.entries.map { it.name }))
+            .put("facts", facts).put("allowed_actions", JSONArray(preview.allowedActions.map { it.name }))
     }
 
-    fun decodeReply(raw: String, preview: HealthAnalysisPreview): HealthAnalysisPlan {
+    fun decodeReply(raw: String, preview: HealthAnalysisInput): HealthAnalysisPlan {
         if (raw.length > 4096) throw HealthAnalysisInvalidReply()
         try {
             val text = raw.trim().let { value ->
@@ -146,26 +165,31 @@ internal object HealthAnalysis {
                 return (0 until array.length()).map { array.get(it) as String }.also { check(it.toSet().size == it.size) }
             }
             val keys = strings("fact_ids", 3)
-            check(keys.all { key -> preview.facts.any { it.key == key } })
-            return HealthAnalysisPlan(keys, strings("actions", 2).map(HealthAnalysisAction::valueOf))
+            check(keys.all { it in preview.factKeys })
+            val actions = strings("actions", 2).map(HealthAnalysisAction::valueOf)
+            check(actions.all { it in preview.allowedActions })
+            return HealthAnalysisPlan(keys, actions)
         } catch (_: Exception) { throw HealthAnalysisInvalidReply() }
     }
 
-    suspend fun explain(context: Context, names: HealthOverviewDatabases, preview: HealthAnalysisPreview, destination: String,
+    suspend fun explain(context: Context, names: HealthOverviewDatabases, preview: HealthAnalysisInput, destination: String,
         exchange: suspend (JSONObject, () -> Unit) -> String): HealthAnalysisPlan =
         online(context, names, preview, destination, payload(preview), exchange) { decodeReply(it, preview) }
 
-    suspend fun followUp(context: Context, names: HealthOverviewDatabases, preview: HealthAnalysisPreview, destination: String,
+    suspend fun followUp(context: Context, names: HealthOverviewDatabases, preview: HealthAnalysisInput, destination: String,
         question: HealthFollowUpQuestion, exchange: suspend (JSONObject, () -> Unit) -> String): HealthFollowUpAnswer =
         online(context, names, preview, destination, HealthAnalysisFollowUp.payload(preview, question), exchange) {
             HealthAnalysisFollowUp.decode(it, preview)
         }
 
-    private suspend fun <T> online(context: Context, names: HealthOverviewDatabases, preview: HealthAnalysisPreview,
+    private suspend fun <T> online(context: Context, names: HealthOverviewDatabases, preview: HealthAnalysisInput,
         destination: String, payload: JSONObject, exchange: suspend (JSONObject, () -> Unit) -> String, decode: (String) -> T): T {
         require(preview.hasData)
         val job = currentCoroutineContext()
-        val scope = HealthAccessScope.analysis(preview.weekly.scope, destination)
+        val scope = when (preview) {
+            is HealthAnalysisPreview -> HealthAccessScope.analysis(preview.weekly.scope, destination)
+            is HealthTrendAnalysisPreview -> HealthAccessScope.trend(HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE, preview.handoff.spec, destination)
+        }
         return HealthPrivacyStore(context, names.privacy).use { privacy ->
             privacy.trackOnlineAnalysis(scope, preview.policyVersion) {
                 val guard = {

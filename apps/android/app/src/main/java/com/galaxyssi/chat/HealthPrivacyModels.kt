@@ -105,14 +105,15 @@ internal data class HealthAccessScope(
                 j.takeUnless { it.isNull("drafts") }?.getLong("drafts"), j.takeUnless { it.isNull("basics") }?.getInt("basics"),
                 j.optBoolean("reportRecords"), j.takeUnless { it.isNull("baselineFrom") }?.getLong("baselineFrom"), j.optString("destination"))
         }
-        fun trend(purpose: HealthAccessPurpose, spec: HealthTrendSpec) = HealthAccessScope(purpose, setOf(spec.metric), spec.from, spec.until, spec.zone.id,
+        fun trend(purpose: HealthAccessPurpose, spec: HealthTrendSpec, destination: String = "") = HealthAccessScope(
+            purpose, setOf(spec.metric), spec.from, spec.until, spec.zone.id,
             source = when {
                 spec.source.manualOnly -> HealthAccessSource.MANUAL
                 spec.source.originalId.isNotEmpty() -> HealthAccessSource.ORIGINAL
                 spec.source.bluetoothGroup.isNotEmpty() -> HealthAccessSource.BLUETOOTH
                 spec.source.platformOrigin.isNotEmpty() -> HealthAccessSource.HEALTH_CONNECT
                 else -> HealthAccessSource.ALL
-            })
+            }, destination = destination)
         fun records(session: HealthRecordExportSession) = with(session.scope) {
             HealthAccessScope(HealthAccessPurpose.SAVE_RECORDS, metrics, from, until, zone, count = session.count,
                 source = if (originalId.isEmpty()) HealthAccessSource.ALL else HealthAccessSource.ORIGINAL,

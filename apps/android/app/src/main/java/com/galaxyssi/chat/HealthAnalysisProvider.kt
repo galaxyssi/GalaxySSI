@@ -156,7 +156,7 @@ internal object HealthAnalysisProvider : HealthAnalysisGateway {
                 call.enqueue(object : Callback {
                     override fun onFailure(call: Call, error: IOException) {
                         continuation.resumeWithException(error.cause?.takeIf {
-                            it is HealthAccessBlocked || it is HealthWeeklyChanged || it is HealthAnalysisNoModel ||
+                            it is HealthAccessBlocked || it is HealthWeeklyChanged || it is HealthTrendChangedException || it is HealthAnalysisNoModel ||
                                 it is HealthAnalysisProfileChanged || it is HealthAnalysisProfileBlocked
                         } ?: error)
                     }

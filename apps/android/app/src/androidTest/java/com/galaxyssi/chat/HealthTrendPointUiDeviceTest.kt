@@ -198,6 +198,77 @@ class HealthTrendPointUiDeviceTest {
         }
     }
 
+    @Test fun chartExplanationKeepsFilteredScopeAndOpensTheSameContributorCohort() = fixture { names ->
+        val (minimum, other) = HealthRecordStore(context, names.records).use { store ->
+            save(store, 0, "51")
+            val min = save(store, 1, "49")
+            val imported = save(store, 2, "30", evidence = HealthEvidence(id(), id(), "value", "a".repeat(64), 1, "Synthetic", confirmed = true))
+            store.save(HealthDraft(HealthMetric.WEIGHT, mapOf("weight" to "50"), "kg", time - 60_000L))
+            min to imported
+        }
+        val intent = Intent(context, HealthTrendActivity::class.java).putExtra("health_metric", HealthMetric.WEIGHT.name)
+            .putHealthNavigationFixture(names)
+        ActivityScenario.launch<HealthTrendActivity>(intent).use { scenario ->
+            lateinit var trend: HealthTrendActivity
+            scenario.onActivity { trend = it }
+            await(trend) { has(it, "health-trend-explain-command") }
+            choose(trend, "health-trend-source", 1)
+            await(trend) { has(it, "health-trend-explain-command") }
+            choose(trend, "health-trend-aggregation", HealthTrendAggregation.MINIMUM.ordinal)
+            await(trend) { has(it, "health-trend-explain-command") }
+            val assistant = open(HealthAssistantActivity::class.java) { tap(trend, "health-trend-explain-command") }
+            try {
+                val handoff = requireNotNull(assistant.intent.healthTrendAnalysisHandoff())
+                assertEquals(names, assistant.intent.healthNavigationDatabases())
+                assertTrue(handoff.spec.source.manualOnly)
+                assertEquals("kg", handoff.spec.unit)
+                assertEquals(HealthTrendAggregation.MINIMUM, handoff.spec.aggregation)
+                assertEquals(7L, handoff.spec.days)
+                await(assistant) { has(it, "health-trend-analysis-scope") && has(it, "health-assistant-calculate") }
+                instrumentation.runOnMainSync {
+                    val scope = assistant.window.decorView.findViewWithTag<View>("health-trend-analysis-scope")
+                    val text = descendants(scope).filterIsInstance<TextView>().joinToString { it.text }
+                    assertTrue(text.contains(handoff.spec.first.toString()) && text.contains(handoff.spec.last.toString()))
+                    assertTrue(text.contains(assistant.getString(R.string.health_source_manual)))
+                    assertTrue(text.contains(assistant.getString(R.string.health_trend_min)))
+                    assertFalse(has(assistant, "health-assistant-profile"))
+                    assertFalse(has(assistant, "health-trend-analysis-coverage"))
+                }
+                tap(assistant, "health-assistant-calculate")
+                await(assistant) { has(it, "health-trend-analysis-delta-weight") }
+                instrumentation.runOnMainSync {
+                    assertEquals(assistant.getString(R.string.health_trend_analysis_delta, "-1 kg"),
+                        text(assistant, "health-trend-analysis-delta-weight"))
+                    assertFalse(has(assistant, "health-assistant-action-WEEKLY_REPORT"))
+                }
+                if (InstrumentationRegistry.getArguments().getString("healthTrendExplanationScreenshot") == "true") {
+                    instrumentation.uiAutomation.waitForIdle(250, 3_000)
+                    val image = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+                    try {
+                        context.cacheDir.resolve("health-trend-explanation.png").outputStream().use {
+                            assertTrue(image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it))
+                        }
+                    } finally { image.recycle() }
+                }
+                val audit = open(HealthTrendRecordsActivity::class.java) { tap(assistant, "health-trend-analysis-source-weight-1") }
+                try {
+                    await(audit) { has(it, "health-trend-audit-result") }
+                    assertEquals(2, contributorCount(audit))
+                    instrumentation.runOnMainSync {
+                        assertTrue(has(audit, rowTag(minimum)))
+                        assertFalse(has(audit, rowTag(other)))
+                        assertTrue(text(audit, "health-trend-audit-result").contains("49 kg"))
+                    }
+                    val revision = open(HealthRecordRevisionActivity::class.java) { tap(audit, "health-trend-audit-extremum") }
+                    try {
+                        assertEquals(minimum.id, revision.intent.getStringExtra("health_record"))
+                        assertEquals(minimum.revision, revision.intent.getIntExtra("health_revision", 0))
+                    } finally { finish(revision) }
+                } finally { finish(audit) }
+            } finally { finish(assistant) }
+        }
+    }
+
     @Test fun sameNameBluetoothDevicesCanBeSelectedIndependentlyAndOnlyTheirRowsAreAudited() = fixture { names ->
         val date = day
         val (first, second, other) = HealthRecordStore(context, names.records).use { store ->
