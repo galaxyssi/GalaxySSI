@@ -41,6 +41,7 @@ final class UserDefaultsAgentRecordedRunStore: AgentRecordedRunStoring {
   static let defaultKey = "galaxyssi-ios-agent-recorded-runs-v1"
 
   private let defaults: UserDefaults
+  private let runEvents: UserDefaultsAgentRunEventStore
   private let key: String
   private let evalLifecycleObserver: ((AgentRecordedRun, AgentRecordedRun?) -> Void)?
   private let lock = NSRecursiveLock()
@@ -51,6 +52,7 @@ final class UserDefaultsAgentRecordedRunStore: AgentRecordedRunStoring {
     evalLifecycleObserver: ((AgentRecordedRun, AgentRecordedRun?) -> Void)? = nil
   ) {
     self.defaults = defaults
+    self.runEvents = UserDefaultsAgentRunEventStore(defaults: defaults)
     self.key = key
     self.evalLifecycleObserver = evalLifecycleObserver
   }
@@ -109,8 +111,9 @@ extension UserDefaultsAgentRecordedRunStore {
     task: AgentTaskRecord,
     outgoing: ChatMessage,
     status: AgentRecordedRunStatus,
-    events: AgentRunEventPersistence = UserDefaultsAgentRunEventStore()
+    events: AgentRunEventPersistence? = nil
   ) {
+    let events = events ?? runEvents
     let now = max(task.updatedAtMillis, Int64((Date().timeIntervalSince1970 * 1_000).rounded()))
     let runId = task.taskId.ifBlank(outgoing.turnId.ifBlank(outgoing.id.uuidString))
     let scope = AgentPlanContinuationScope(conversationId: outgoing.conversationId,

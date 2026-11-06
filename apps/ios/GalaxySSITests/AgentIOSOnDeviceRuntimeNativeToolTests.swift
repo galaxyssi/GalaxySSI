@@ -621,6 +621,30 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(result.error?.message, "Linux 1.3.9 or later is required (broker reports 1.3.8).")
   }
 
+  func testBrowserReadinessRequiresVisibleTextAndTLSInTheGuestReceipt() throws {
+    let readiness = AgentIOSBrowserRuntimeReadiness.self
+    let good = #"{"ok":true,"result":{"browser_ready":true,"tls_initialized":true,"verification":"chromium_local_page","website_verified":false,"goal_terminal":false}}"#
+    func probe(_ stdout: String, exit: Int64 = 0, truncated: Bool = false) -> AgentNativeToolExecutionResult {
+      readiness.interpret(["exit_code": .int(exit), "stdout": .string(stdout), "output_truncated": .bool(truncated)])
+    }
+    let verified = probe(good)
+    XCTAssertTrue(verified.isSuccess)
+    XCTAssertEqual(verified.output["website_verified"], .bool(false))
+    XCTAssertFalse(probe(good, exit: 1).isSuccess)
+    XCTAssertFalse(probe(good, truncated: true).isSuccess)
+    XCTAssertFalse(probe(good.replacingOccurrences(of: #""tls_initialized":true"#,
+      with: #""tls_initialized":false"#)).isSuccess)
+    XCTAssertFalse(probe(#"{"browser_ready":true}"#).isSuccess)
+    XCTAssertEqual(probe(#"{"ok":false,"error":{"code":"browser_launcher_path_missing"}}"#).error?.code,
+      "browser_launcher_path_missing")
+    XCTAssertEqual(probe(#"{"ok":false,"error":{"code":"browser_native_library_missing"}}"#).error?.code,
+      "browser_native_library_missing")
+    let script = try XCTUnwrap(readiness.source())
+    XCTAssertTrue(script.contains("command -v signalasi-browser"))
+    XCTAssertTrue(script.contains("browser-runtime-readiness.cjs"))
+    XCTAssertFalse(script.contains("--ignore-certificate-errors"))
+  }
+
   func testAgentIOSRuntimeBrokerClientSignsLoopbackStatusRequests() throws {
     final class StubTransport: AgentIOSRuntimeBrokerTransport {
       var capturedFrame = Data()

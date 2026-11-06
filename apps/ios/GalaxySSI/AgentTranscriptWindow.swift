@@ -22,6 +22,7 @@ final class AgentTranscriptWindow: ObservableObject {
   private var loader: Loader?
   private var work: Task<Void, Never>?
   private var refreshPending = false
+  private var refreshVersion = UUID()
   private var requestedLimit = 0
   private var prependAnchor: UUID?
 
@@ -47,6 +48,7 @@ final class AgentTranscriptWindow: ObservableObject {
 
   func requestRefresh() {
     guard snapshot.owner != nil else { return }
+    refreshVersion = UUID()
     refreshPending = true
     start()
   }
@@ -67,12 +69,19 @@ final class AgentTranscriptWindow: ObservableObject {
   private func start() {
     guard work == nil, refreshPending, let owner = snapshot.owner, let loader else { return }
     refreshPending = false
+    let version = refreshVersion
     let limit = requestedLimit
     let anchor = prependAnchor
     prependAnchor = nil
     work = Task { [weak self] in
       let page = await loader(owner.conversationID, limit)
       guard let self, !Task.isCancelled, self.owns(owner) else { return }
+      if version != self.refreshVersion {
+        self.prependAnchor = self.prependAnchor ?? anchor
+        self.work = nil
+        self.start()
+        return
+      }
       if let page, page.messages.allSatisfy({ $0.conversationId == owner.conversationID }) {
         let next = Snapshot(owner: owner, messages: page.messages, hasMore: page.hasMore,
                             loadedLimit: limit, prependAnchor: anchor, turnStartMillis: page.turnStartMillis)

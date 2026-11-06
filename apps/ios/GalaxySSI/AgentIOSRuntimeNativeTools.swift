@@ -245,7 +245,7 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
   private static func description(_ operation: AgentIOSOnDeviceRuntimeToolOperation) -> String {
     switch operation {
     case .status:
-      return "Reports iOS-local Linux backend, language, toolchain, and media-pack readiness."
+      return "Reports iOS-local Linux backend and pack state. Set verify_browser=true to check real Chromium rendering and offline TLS initialization. Installation is not proof of browser readiness."
     case .workspaceStatus:
       return "Reports the current conversation project size and durable recovery checkpoints without exposing host paths."
     case .workspaceRollback:
@@ -282,7 +282,9 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
     switch operation {
     case .installPack, .softwareInstall, .execute:
       return maxTimeoutMillis
-    case .status, .workspaceStatus, .workspaceRollback, .listPacks,
+    case .status:
+      return 150_000
+    case .workspaceStatus, .workspaceRollback, .listPacks,
          .softwareCatalog, .softwareSearch, .softwareInspect, .softwareRemove:
       return 30_000
     }
@@ -363,7 +365,9 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
 
   private static func inputSchema(_ operation: AgentIOSOnDeviceRuntimeToolOperation) -> AgentMcpJSONObject {
     switch operation {
-    case .status, .workspaceStatus, .listPacks, .softwareCatalog:
+    case .status:
+      return objectSchema(["verify_browser": boolSchema()])
+    case .workspaceStatus, .listPacks, .softwareCatalog:
       return objectSchema()
     case .workspaceRollback:
       return objectSchema([
@@ -405,6 +409,10 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
         "backend": stringSchema(maxLength: 64),
         "backend_ready": boolSchema(),
         "reason": stringSchema(maxLength: 2_048),
+        "browser_ready": boolSchema(),
+        "tls_initialized": boolSchema(),
+        "website_verified": boolSchema(),
+        "goal_terminal": boolSchema(),
         "linux_system": objectSchema(additionalProperties: true),
         "packs": arraySchema(itemSchema: objectSchema(additionalProperties: true), maxItems: 128),
         "languages": arraySchema(itemSchema: objectSchema(additionalProperties: true), maxItems: 128)
