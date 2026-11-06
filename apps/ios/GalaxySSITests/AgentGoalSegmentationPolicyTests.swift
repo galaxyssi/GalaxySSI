@@ -32,7 +32,7 @@ final class AgentGoalSegmentationPolicyTests: XCTestCase {
 
   func testDirectPlannerBuildsAnOrderedNativeToolSequence() throws {
     let request = AgentPlanRequest(
-      goal: "Set media volume 30 and then open Wi-Fi settings",
+      goal: "Open Wi-Fi settings and then set a five second timer",
       screen: AgentScreenContext(foregroundApp: "com.galaxyssi.chat", pageTitle: "GalaxySSI"),
       nativeTools: readyTools()
     )

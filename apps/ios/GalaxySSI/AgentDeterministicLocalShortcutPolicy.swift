@@ -93,6 +93,7 @@ enum AgentDeterministicLocalShortcutPolicy {
       hasAttachments: hasAttachments
     ).intent
     return !AgentDeviceStatusShortcutCoverage.requiresReasoning(goal) &&
+      !AgentDeviceMutationShortcutCoverage.requiresReasoning(goal) &&
       !requirements.complexReasoning &&
       requirements.executionHorizon == .interactive &&
       !requirements.capabilities.contains(.taskExecution) &&
@@ -100,6 +101,93 @@ enum AgentDeterministicLocalShortcutPolicy {
       !AgentExplicitMultiAgentIntentPolicy.matches(goal) &&
       !AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: goal) &&
       AgentGoalSegmentationPolicy.split(goal).count == 1
+  }
+}
+
+enum AgentDeviceMutationShortcutCoverage {
+  private static let flashlight = #"\b(?:flashlight|torch)\b"# + "|\u{624b}[\u{7535}\u{96fb}]\u{7b52}|[\u{95ea}\u{9583}]\u{5149}[\u{706f}\u{71c8}]"
+  private static let switchAction = #"\b(?:on|off|open|close|enable|disable)\b"# +
+    "|\u{6253}[\u{5f00}\u{958b}]|[\u{5f00}\u{958b}][\u{542f}\u{555f}]|[\u{5173}\u{95dc}][\u{95ed}\u{9589}\u{6389}]"
+  private static let volume = #"\bvolume\b"# + "|\u{97f3}\u{91cf}"
+  private static let volumeAction = #"\b(?:set|change|adjust|increase|decrease|raise|lower|turn|mute|unmute)\b|[0-9]"# +
+    "|[\u{8bbe}\u{8a2d}\u{8c03}\u{8abf}\u{6539}\u{964d}\u{63d0}]"
+  private static let mute = #"\b(?:mute|unmute|turn sound on)\b"# + "|\u{9759}\u{97f3}"
+  private static let camera = #"\b(?:open|launch|use) (?:the )?(?:phone )?camera\b|\b(?:take|capture|snap) (?:[a-z0-9]+ )?photos?\b"# +
+    "|\u{62cd}(?:\u{7167}|[^\n]{0,48}\u{7167}\u{7247})|\u{6253}[\u{5f00}\u{958b}][^\n]{0,24}(?:\u{76f8}[\u{673a}\u{6a5f}]|[\u{6444}\u{651d}]\u{50cf}[\u{5934}\u{982d}])"
+  private static let microphone = #"\b(?:record (?:audio|voice|sound|with microphone)|use microphone to record|start recording)\b"# +
+    "|[\u{5f55}\u{9304}]\u{97f3}|\u{5f55}\u{5236}\u{97f3}\u{9891}"
+  private static let advice = #"^(?:why|how|explain|describe|what happens)\b"# +
+    "|^(?:\u{4e3a}\u{4ec0}\u{4e48}|\u{5982}\u{4f55}|\u{89e3}\u{91ca})"
+
+  static func requiresReasoning(_ goal: String) -> Bool {
+    let text = commandText(goal)
+    let candidate = (matches(flashlight, text) && matches(switchAction, text)) ||
+      (matches(volume, text) && matches(volumeAction, text)) ||
+      matches(mute, text) || matches(camera, text) || matches(microphone, text) || isAppLaunch(text)
+    return candidate && !AgentDirectNativeToolPlanner.isCompleteDeviceMutationCommand(text)
+  }
+
+  static func requiresPhoneReasoning(_ goal: String) -> Bool {
+    let text = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal)
+    guard requiresReasoning(text), !matches(advice, commandText(text)),
+          !AgentDeviceStatusShortcutCoverage.hasExplicitDesktopTarget(text) else { return false }
+    let intent = AgentTaskIntentClassifier.classify(goal: text).intent
+    return intent != .desktopControl && intent != .code && !AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: text)
+  }
+
+  static func prohibitsMutation(_ goal: String) -> Bool {
+    let text = commandText(goal)
+    guard requiresReasoning(goal) else { return false }
+    if matches(advice, text) || text.hasSuffix("?") || text.hasSuffix("\u{ff1f}") { return true }
+    return matches(#"^(?:don't|do not|never)\b"# + "|^(?:\u{4e0d}\u{8981}|[\u{522b}\u{5225}])", text) &&
+      !matches(#"\b(?:instead|but|then)\b"# + "|\u{800c}\u{662f}|\u{7136}\u{540e}", text)
+  }
+
+  static func prohibitsCameraCapture(_ goal: String) -> Bool {
+    let text = commandText(goal)
+    return matches(#"^(?:open|launch) (?:the )?(?:phone )?camera(?: app)?(?: on (?:this|my|the) (?:phone|device|iphone))?$"#, text) ||
+      matches("^(?:\u{6253}[\u{5f00}\u{958b}]|\u{542f}\u{52a8}|\u{555f}\u{52d5})(?:\u{624b}[\u{673a}\u{6a5f}])?\u{76f8}[\u{673a}\u{6a5f}]$", text)
+  }
+
+  static func appCommand(_ goal: String) -> String {
+    let location = #"\s+on\s+(?:(?:my|this|the)\s+)?(?:phone|device|iphone)\s*$"#
+    return AgentLocalCommandText.sentence(goal)
+      .replacingOccurrences(of: location, with: "", options: .regularExpression)
+      .replacingOccurrences(of: #"\s+app$"#, with: "", options: .regularExpression)
+      .replacingOccurrences(of: #"^launch\s+"#, with: "open ", options: .regularExpression)
+  }
+
+  private static func isAppLaunch(_ text: String) -> Bool {
+    if AgentDirectNativeToolPlanner.isNamedSystemAppCommand(text) { return true }
+    let nonApp = #"^(?:open|launch)\s+(?:https?://|url\b|website\b|link\b|wifi\b|wi-fi\b|bluetooth\b|vpn\b|settings\b|file\b|folder\b|report\b|document\b)"#
+    guard !matches(nonApp, text) else { return false }
+    if matches(#"^(?:open|launch)\s+.+\b(?:app|on (?:my|this|the) (?:phone|device|iphone))\b"#, text) { return true }
+    if matches(#"\b(?:open|launch)\s+(?:photos|gallery|safari|browser|contacts|calendar|files|messages|dialer|calculator|maps|mail)\b"#, text) { return true }
+    if matches(#"^(?:open|launch)\s+[a-z][a-z0-9_-]*$"#, text) { return true }
+    return matches("^(?:\u{6253}[\u{5f00}\u{958b}]|\u{542f}\u{52a8}|\u{555f}\u{52d5}).*(?:app|\u{5e94}\u{7528}|\u{61c9}\u{7528}|\u{8ba1}\u{7b97}\u{5668}|\u{8a08}\u{7b97}\u{6a5f})$", text)
+  }
+
+  static func unresolvedStandaloneAppLaunch(_ goal: String) -> Bool {
+    let text = commandText(goal)
+    return isAppLaunch(text) && requiresReasoning(text) &&
+      !matches(#"\b(?:and|then|if|after|before|unless|but)\b|[;,]"# + "|[\u{ff0c}\u{ff1b}]|\u{7136}\u{540e}|\u{5982}\u{679c}", text)
+  }
+
+  private static func commandText(_ goal: String) -> String {
+    let text = AgentLocalCommandText.withoutPoliteness(AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal))
+      .lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+    return text.hasSuffix("?") || text.hasSuffix("\u{ff1f}") ? text : AgentLocalCommandText.sentence(text)
+  }
+
+  private static func matches(_ pattern: String, _ text: String) -> Bool {
+    text.range(of: pattern, options: .regularExpression) != nil
+  }
+}
+
+enum AgentPhoneShortcutRouting {
+  static func requiresPhoneReasoning(_ goal: String) -> Bool {
+    AgentDeviceStatusShortcutCoverage.requiresPhoneReasoning(goal) ||
+      AgentDeviceMutationShortcutCoverage.requiresPhoneReasoning(goal)
   }
 }
 

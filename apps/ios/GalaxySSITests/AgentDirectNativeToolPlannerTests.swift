@@ -2,6 +2,66 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testDeviceMutationShortcutMustCoverTheWholeCommand() throws {
+    let tools = AgentPhoneNativeToolCatalog.descriptors(capabilityStatuses: readyPhoneCapabilityStatuses()) +
+      AgentIOSHardwareNativeToolCatalog.descriptors().filter { $0.id == AgentIOSHardwareNativeToolCatalog.flashlightSet } +
+      AgentIOSVisibleCaptureNativeToolCatalog.definitions(provider: DirectPlannerVisibleCaptureProvider()).map(\.descriptor)
+    func request(_ goal: String) -> AgentPlanRequest {
+      AgentPlanRequest(goal: goal, screen: AgentScreenContext(foregroundApp: "com.galaxyssi.chat"), nativeTools: tools)
+    }
+    for goal in [
+      "Do not turn on the flashlight", "Why does turn on the flashlight fail?",
+      "If it is dark, turn on the flashlight", "Turn on the flashlight for 10 seconds",
+      "Set volume from 20 to 50", "Set volume to 150", "Set volume to -20", "Set volume to 0.5",
+      "Set media volume 30 and then open Wi-Fi settings", "Set volume 20 and notification volume 50",
+      "Set volume to 30?", "Mute media audio?", "Open camera", "Open camera and take three photos",
+      "Take a photo and then open Photos", "Record audio", "Record audio for zero seconds",
+      "Record audio for 31 seconds", "Record audio for 5 seconds at 16 kHz",
+      "Record audio for 5 seconds after the signal", "Record audio for 5 seconds and then open Photos",
+      "Open Calculatr on my phone", "Launch Calculator app on this device",
+      "Open Photos and select a PDF", "\u{4e0d}\u{8981}\u{5f55}\u{97f3}"
+    ] {
+      XCTAssertTrue(AgentDeviceMutationShortcutCoverage.requiresReasoning(goal), goal)
+      XCTAssertNil(AgentDirectNativeToolPlanner.action(for: request(goal)), goal)
+      XCTAssertNil(AgentDirectNativeToolPlanner.plan(request: request(goal)), goal)
+    }
+    let ring = try XCTUnwrap(AgentDirectNativeToolPlanner.action(for: request("Change ring volume to 50%")))
+    XCTAssertEqual(try inputObject(ring)["stream"] as? String, "ring")
+    XCTAssertEqual(try inputObject(ring)["percent"] as? Int, 50)
+    let flashlight = try XCTUnwrap(AgentDirectNativeToolPlanner.action(for: request("\u{8acb}\u{95dc}\u{9589}\u{624b}\u{96fb}\u{7b52}")))
+    XCTAssertEqual(try inputObject(flashlight)["enabled"] as? Bool, false)
+    for (command, duration) in [
+      ("Record audio for five seconds", 5), ("Record audio for 20 seconds and 5 seconds", 25),
+      ("\u{9304}\u{97f3}\u{534a}\u{5206}\u{9418}", 30)
+    ] {
+      let action = try XCTUnwrap(AgentDirectNativeToolPlanner.action(for: request(command)))
+      XCTAssertEqual(try inputObject(action)["max_duration_seconds"] as? Int, duration, command)
+    }
+    let handoff = try XCTUnwrap(AgentDirectNativeToolPlanner.action(for: request("Launch Safari app on this device")))
+    XCTAssertEqual(try inputParameters(handoff)["package"] as? String, "com.apple.mobilesafari")
+    let settings = AgentModelPlannerSettings()
+    for (goal, toolId, arguments, code) in [
+      ("Open Calculatr on my phone", AgentNativeToolAgentActionAdapter.defaultToolId(.openApp),
+        #"{"parameters":{"package":"com.apple.mobilesafari"}}"#, "unavailable_app_handoff"),
+      ("Record audio", AgentIOSVisibleCaptureNativeToolCatalog.microphoneRecord, "{}", "invalid_audio_duration"),
+      ("Open camera", AgentIOSVisibleCaptureNativeToolCatalog.cameraCapture, "{}", "photo_not_requested")
+    ] {
+      let raw = """
+      {"actions":[{"kind":"CALL_NATIVE_TOOL","parameters":{"tool_id":"\(toolId)","arguments":\(arguments)}}]}
+      """
+      guard case .failure(let rejection) = AgentModelPlanParser.parseWithDiagnostics(
+        request: request(goal), raw: raw, settings: settings) else { return XCTFail(goal) }
+      XCTAssertEqual(rejection.code, code, goal)
+    }
+    XCTAssertTrue(AgentPhoneShortcutRouting.requiresPhoneReasoning("Open Calculatr on my phone"))
+    XCTAssertFalse(AgentPhoneShortcutRouting.requiresPhoneReasoning("Open Photos on my desktop"))
+    XCTAssertTrue(AgentDeviceMutationShortcutCoverage.prohibitsMutation("Do not turn on the flashlight"))
+    XCTAssertTrue(AgentDeviceMutationShortcutCoverage.prohibitsMutation("Explain how to set volume to 50"))
+    for goal in ["Explain camera sensors", "What is audio?", "How do microphones work?", "Open website https://example.com"] {
+      XCTAssertFalse(AgentDeviceMutationShortcutCoverage.requiresReasoning(goal), goal)
+    }
+  }
+
   func testCompositeDeviceGoalsRequireWholeGoalPhonePlanning() {
     let tools = AgentPhoneNativeToolCatalog.descriptors(capabilityStatuses: readyPhoneCapabilityStatuses())
     func request(_ goal: String) -> AgentPlanRequest {

@@ -206,7 +206,6 @@ enum AgentIOSVisibleCaptureNativeToolCatalog {
   static let userVisibleCaptureConsent = "galaxyssi.consent.user_visible_capture"
   static let executorId = "galaxyssi.ios_visible_capture"
 
-  static let defaultAudioDurationSeconds = 5
   static let maxAudioDurationSeconds = 30
   static let maxUriCharacters = 4_096
   static let maxMimeTypeCharacters = 128
@@ -252,7 +251,7 @@ enum AgentIOSVisibleCaptureNativeToolCatalog {
             minimum: 1,
             maximum: Int64(maxAudioDurationSeconds)
           )
-        ]),
+        ], required: ["max_duration_seconds"]),
         timeoutMillis: Int64(maxAudioDurationSeconds + 15) * 1_000
       )
     ]
@@ -473,14 +472,12 @@ struct AgentIOSVisibleCaptureNativeToolExecutor {
         invocation: invocation
       )
     case AgentIOSVisibleCaptureNativeToolCatalog.microphoneRecord:
+      guard case .int(let seconds) = invocation.input["max_duration_seconds"],
+            (1...Int64(AgentIOSVisibleCaptureNativeToolCatalog.maxAudioDurationSeconds)).contains(seconds) else {
+        return .failure(code: "invalid_audio_duration", message: "Specify a recording duration from 1 to 30 seconds.")
+      }
       outcome = provider.recordAudio(
-        maxDurationSeconds: int(
-          invocation.input,
-          "max_duration_seconds",
-          defaultValue: AgentIOSVisibleCaptureNativeToolCatalog.defaultAudioDurationSeconds,
-          minimum: 1,
-          maximum: AgentIOSVisibleCaptureNativeToolCatalog.maxAudioDurationSeconds
-        ),
+        maxDurationSeconds: Int(seconds),
         invocation: invocation
       )
     default:
@@ -546,8 +543,4 @@ struct AgentIOSVisibleCaptureNativeToolExecutor {
     return allowedValues.contains(value) ? value : defaultValue
   }
 
-  private func int(_ input: AgentMcpJSONObject, _ key: String, defaultValue: Int, minimum: Int, maximum: Int) -> Int {
-    let value = Int(input[key]?.intValue ?? Int64(defaultValue))
-    return max(minimum, min(value, maximum))
-  }
 }

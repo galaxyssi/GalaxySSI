@@ -15,7 +15,8 @@ enum AgentDirectNativeToolPlanner {
   }
 
   static func plan(request: AgentPlanRequest) -> AgentPlan? {
-    guard !AgentDeviceStatusShortcutCoverage.requiresReasoning(request.goal) else { return nil }
+    guard !AgentDeviceStatusShortcutCoverage.requiresReasoning(request.goal),
+          !AgentDeviceMutationShortcutCoverage.requiresReasoning(request.goal) else { return nil }
     let segments = AgentGoalSegmentationPolicy.split(request.goal)
     if segments.count > 1 {
       var actions: [AgentAction] = []
@@ -54,7 +55,8 @@ enum AgentDirectNativeToolPlanner {
     let goal = AgentLocalCommandText.withoutPoliteness(request.goal)
     guard !goal.isEmpty else { return nil }
     let lower = goal.lowercased()
-    guard !AgentDeviceStatusShortcutCoverage.requiresReasoning(goal) else { return nil }
+    guard !AgentDeviceStatusShortcutCoverage.requiresReasoning(goal),
+          !AgentDeviceMutationShortcutCoverage.requiresReasoning(goal) else { return nil }
     let responseLanguage = responseLanguageCode(for: request)
     guard AgentTaskIntentClassifier.classify(goal: goal).intent != .desktopControl else {
       return nil
@@ -461,7 +463,7 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
-    if let handoff = systemAppHandoff(for: lower),
+    if let handoff = supportedSystemAppHandoff(for: lower),
        let descriptor = descriptor(AgentNativeToolAgentActionAdapter.defaultToolId(.openApp), in: request) {
       return nativeAction(
         descriptor: descriptor,
@@ -555,14 +557,14 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
-    if let percent = volumePercent(lower),
+    if let volume = volumeChange(lower),
        let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.audioVolumeSet, in: request) {
       return nativeAction(
         descriptor: descriptor,
         idPrefix: "set-volume",
         target: "Audio",
-        description: "Set media volume",
-        input: ["stream": .string("music"), "percent": .int(Int64(percent))],
+        description: "Set \(volume.stream) volume",
+        input: ["stream": .string(volume.stream), "percent": .int(Int64(volume.percent))],
         responseLanguage: responseLanguage
       )
     }
@@ -1360,28 +1362,62 @@ enum AgentDirectNativeToolPlanner {
       "turn sound on", "\u{53d6}\u{6d88}\u{9759}\u{97f3}", "\u{89e3}\u{9664}\u{9759}\u{97f3}"])
   }
 
-  private static func volumePercent(_ lower: String) -> Int? {
-    let pattern = "(?:(?:set (?:media )?volume(?: to)?|media volume)[ \\t]+|" +
-      "\u{628a}?\u{97f3}\u{91cf}\u{8bbe}\u{7f6e}(?:\u{4e3a}|\u{5230})?[ \\t]*)([0-9]{1,3})[ \\t]*[%\u{ff05}]?"
-    guard let groups = AgentLocalCommandText.captures(AgentLocalCommandText.sentence(lower), pattern),
-          let percent = Int(groups[0]), (0...100).contains(percent) else { return nil }
-    return percent
+  static func isCompleteDeviceMutationCommand(_ command: String) -> Bool {
+    guard !command.hasSuffix("?"), !command.hasSuffix("\u{ff1f}") else { return false }
+    return isFlashlightGoal(command) || volumeChange(command) != nil ||
+      isMuteGoal(command) || isCameraCaptureGoal(command) || audioDurationSeconds(for: command) != nil ||
+      supportedSystemAppHandoff(for: command) != nil
+  }
+
+  private static func volumeChange(_ lower: String) -> (stream: String, percent: Int)? {
+    let english = #"(?:set|change|adjust)\s+(?:(media|music|ring|ringer|alarm|notification|call|system)\s+)?volume\s+(?:to\s+)?([0-9]{1,3})\s*(?:%|percent)?"#
+    let chinese = "\u{628a}?(\u{5a92}[\u{4f53}\u{9ad4}]|\u{94c3}\u{58f0}|\u{9234}\u{8072}|\u{95f9}\u{949f}|\u{9b27}\u{9418}|\u{901a}\u{77e5}|\u{901a}[\u{8bdd}\u{8a71}])?" +
+      "\u{97f3}\u{91cf}(?:[\u{8bbe}\u{8a2d}]\u{7f6e}?[\u{4e3a}\u{70ba}\u{5230}]|[\u{8c03}\u{8abf}]\u{5230}|\u{6539}\u{6210})\\s*([0-9]{1,3})\\s*[%\u{ff05}]?"
+    let text = AgentLocalCommandText.sentence(lower)
+    guard let groups = AgentLocalCommandText.captures(text, english) ?? AgentLocalCommandText.captures(text, chinese),
+          let percent = Int(groups[1]), (0...100).contains(percent) else { return nil }
+    let stream: String
+    switch groups[0] {
+    case "ring", "ringer", "\u{94c3}\u{58f0}", "\u{9234}\u{8072}": stream = "ring"
+    case "alarm", "\u{95f9}\u{949f}", "\u{9b27}\u{9418}": stream = "alarm"
+    case "notification", "\u{901a}\u{77e5}": stream = "notification"
+    case "call", "\u{901a}\u{8bdd}", "\u{901a}\u{8a71}": stream = "voice_call"
+    case "system": stream = "system"
+    default: stream = "music"
+    }
+    return (stream, percent)
   }
 
   private static func isCameraCaptureGoal(_ lower: String) -> Bool {
     AgentLocalCommandText.matches(lower, [
-      "take photo", "take a photo", "capture photo", "snap photo", "open camera and take a photo",
+      "take photo", "take a photo", "take one photo", "capture photo", "snap photo", "open camera and take a photo",
       "open the camera and take a photo", "\u{62cd}\u{7167}", "\u{6253}\u{5f00}\u{76f8}\u{673a}\u{62cd}\u{7167}",
+      "\u{6253}\u{958b}\u{76f8}\u{6a5f}\u{62cd}\u{7167}",
+      "\u{62cd}\u{4e00}\u{5f20}\u{7167}\u{7247}", "\u{62cd}\u{4e00}\u{5f35}\u{7167}\u{7247}",
       "\u{6253}\u{5f00}\u{624b}\u{673a}\u{6444}\u{50cf}\u{5934}\u{62cd}\u{7167}"
     ])
   }
 
   private static func audioDurationSeconds(for lower: String) -> Int? {
-    let command = "(?:record audio|record voice|record sound|start recording|\u{5f55}\u{97f3}|\u{5f55}\u{5236}\u{97f3}\u{9891})"
+    let command = "(?:(?:record audio|record voice|record sound|record with microphone|use microphone to record|start recording)\\s+(?:for\\s+)?|(?:(?:\u{5f00}\u{59cb}|\u{958b}\u{59cb})?[\u{5f55}\u{9304}]\u{97f3}|\u{5f55}\u{5236}\u{97f3}\u{9891})[ \\t]*)"
     guard let match = AgentLocalCommandText.captures(AgentLocalCommandText.sentence(lower),
-      command + "(?:[ \\t]*(?:for[ \\t]+)?(\(durationPattern)))?") else { return nil }
-    if match[0].isEmpty { return AgentIOSVisibleCaptureNativeToolCatalog.defaultAudioDurationSeconds }
-    return parsedDuration(match[0]).map(clampAudioDuration)
+      command + "(.+)") else { return nil }
+    let expression = match[0].trimmingCharacters(in: .whitespaces)
+    if ["half a minute", "\u{534a}\u{5206}\u{949f}", "\u{534a}\u{5206}\u{9418}"].contains(expression) {
+      return 30
+    }
+    let separators = #"\s+and\s+"# + "|[\u{548c}\u{53c8}]"
+    let segments = expression.replacingOccurrences(of: separators, with: "\n", options: .regularExpression)
+      .components(separatedBy: "\n")
+    var total = 0
+    for segment in segments {
+      let duration = segment.trimmingCharacters(in: .whitespaces)
+      guard AgentLocalCommandText.captures(duration, durationPattern) != nil,
+            let seconds = parsedDuration(duration),
+            seconds <= AgentIOSVisibleCaptureNativeToolCatalog.maxAudioDurationSeconds - total else { return nil }
+      total += seconds
+    }
+    return total > 0 ? total : nil
   }
 
   private static func timerDurationSeconds(for lower: String) -> Int? {
@@ -1448,10 +1484,6 @@ enum AgentDirectNativeToolPlanner {
       return 60
     }
     return 1
-  }
-
-  private static func clampAudioDuration(_ seconds: Int) -> Int {
-    max(1, min(seconds, AgentIOSVisibleCaptureNativeToolCatalog.maxAudioDurationSeconds))
   }
 
   private static let spokenDurations: [(String, Int)] = [
@@ -1596,6 +1628,16 @@ enum AgentDirectNativeToolPlanner {
     var description: String
   }
 
+  private static func supportedSystemAppHandoff(for command: String) -> SystemAppHandoff? {
+    guard let handoff = systemAppHandoff(for: AgentDeviceMutationShortcutCoverage.appCommand(command)),
+          AgentIOSNativeActionExecutor.supportsAppHandoff(handoff.bundleId) else { return nil }
+    return handoff
+  }
+
+  static func isNamedSystemAppCommand(_ command: String) -> Bool {
+    systemAppHandoff(for: AgentDeviceMutationShortcutCoverage.appCommand(command)) != nil
+  }
+
   private static func systemAppHandoff(for lower: String) -> SystemAppHandoff? {
     if AgentLocalCommandText.matches(lower, [
       "open gallery", "open photos", "open photo library",
@@ -1632,6 +1674,12 @@ enum AgentDirectNativeToolPlanner {
         target: "Calendar",
         bundleId: "com.apple.mobilecal"
       )
+    }
+    if AgentLocalCommandText.matches(lower, ["open maps", "\u{6253}\u{5f00}\u{5730}\u{56fe}", "\u{6253}\u{958b}\u{5730}\u{5716}"]) {
+      return SystemAppHandoff(idPrefix: "open-maps", target: "Maps", bundleId: "com.apple.maps")
+    }
+    if AgentLocalCommandText.matches(lower, ["open mail", "\u{6253}\u{5f00}\u{90ae}\u{4ef6}", "\u{6253}\u{958b}\u{90f5}\u{4ef6}"]) {
+      return SystemAppHandoff(idPrefix: "open-mail", target: "Mail", bundleId: "com.apple.mobilemail")
     }
     if AgentLocalCommandText.matches(lower, [
       "open files", "open file manager", "open documents", "\u{6253}\u{5f00}\u{6587}\u{4ef6}"
@@ -1796,12 +1844,12 @@ enum AgentDirectNativeToolPlanner {
   private static let maximumTimerDurationSeconds = 24 * 60 * 60
 
   private static func isFlashlightGoal(_ lower: String) -> Bool {
-    let pattern = "(?:(?:turn|switch) (?:on|off) (?:the )?(?:flashlight|torch)|(?:turn|switch) (?:the )?(?:flashlight|torch) (?:on|off)|(?:enable|disable) (?:the )?(?:flashlight|torch)|(?:\u{6253}\u{5f00}|\u{5173}\u{95ed}|\u{5173}\u{6389})\u{624b}\u{7535}\u{7b52})"
+    let pattern = "(?:(?:turn|switch) (?:on|off) (?:the )?(?:flashlight|torch)|(?:turn|switch) (?:the )?(?:flashlight|torch) (?:on|off)|(?:enable|disable|open|close) (?:the )?(?:flashlight|torch)|(?:flashlight|torch) (?:on|off)|(?:\u{6253}[\u{5f00}\u{958b}]|\u{5f00}\u{542f}|\u{958b}\u{555f}|[\u{5173}\u{95dc}][\u{95ed}\u{9589}\u{6389}])(?:\u{624b}[\u{7535}\u{96fb}]\u{7b52}|[\u{95ea}\u{9583}]\u{5149}[\u{706f}\u{71c8}]))"
     return AgentLocalCommandText.captures(AgentLocalCommandText.sentence(lower), pattern) != nil
   }
 
   private static func isTurnOffGoal(_ lower: String) -> Bool {
-    containsAny(lower, [" off", "disable", "\u{5173}\u{95ed}", "\u{5173}\u{6389}"])
+    containsAny(lower, [" off", "disable", "close", "\u{5173}\u{95ed}", "\u{5173}\u{6389}", "\u{95dc}\u{9589}", "\u{95dc}\u{6389}"])
   }
 
   private static func containsAny(_ value: String, _ terms: [String]) -> Bool {

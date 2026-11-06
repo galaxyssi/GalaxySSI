@@ -40,6 +40,9 @@ enum AgentModelPlanningPrompt {
     append(&prompt, "\n\n")
     if request.phoneOwnsExecution {
       append(&prompt, "For an ActionPlan, add the root field execution_location=phone. ")
+      if AgentDeviceMutationShortcutCoverage.requiresReasoning(request.planRequest.goal) {
+        append(&prompt, "Preserve the entire device request: honor negation, conditions, exact recording duration, camera intent, and the requested app or audio stream. Do not guess missing inputs or run only one part. Opening Camera is not consent to take a photo. If iOS cannot satisfy the whole request, do not perform a substitute action.\n")
+      }
       append(&prompt, "observed_output_fields is a partial index of exact paths and types relative to receipt output, without an /output prefix. It contains no values and proves no outcome. Use the existing receipt to correct missing paths without rerunning tools.\n")
       appendPhoneCompletionStages(to: &prompt, request: request)
       append(&prompt, "For phone-control and phone status tasks, before executing list every requested deliverable under completion_requirements.results as {id,description,outcome_ids:[],artifact_paths:[],answer:\"\"}. Keep IDs across revisions, and leave evidence links and answers empty until observed. At completion link each result to verified outcomes or declared file/video paths, and include every evidence-grounded answer verbatim in the task-complete description. A successful tool call is not full-goal coverage. Use KiB/MiB/GiB for powers of 1024, KB/MB/GB for powers of 1000.\n\n")
