@@ -200,11 +200,13 @@ extension AgentRichContentCodec {
       if trimmed.hasPrefix("```") {
         flushParagraph()
         let language = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespacesAndNewlines)
+        let declaredHTML = language.caseInsensitiveCompare("galaxyssi-html") == .orderedSame
         index += 1
         var code: [String] = []
         while index < lines.count {
           let candidate = lines[index]
-          if candidate.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("```") {
+          let closing = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+          if declaredHTML ? closing == "```" : closing.hasPrefix("```") {
             break
           }
           code.append(candidate)
@@ -214,7 +216,9 @@ extension AgentRichContentCodec {
         let richBlocks = language.caseInsensitiveCompare("galaxyssi-rich") == .orderedSame
           ? galaxySSIRichBlocks(codeText)
           : []
-        if language.caseInsensitiveCompare("mermaid") == .orderedSame {
+        if declaredHTML, index < lines.count, AgentVisualOutputPolicy.isCompleteHTML(codeText) {
+          blocks.append(AgentRichBlock(id: markdownID(), type: .html, text: codeText, mimeType: "text/html"))
+        } else if language.caseInsensitiveCompare("mermaid") == .orderedSame {
           blocks.append(
             AgentRichBlock(
               id: markdownID(),
@@ -319,8 +323,7 @@ extension AgentRichContentCodec {
     } else {
       document = ["version": version, "blocks": [object]]
     }
-    guard let encoded = try? JSONSerialization.data(withJSONObject: document) else { return [] }
-    return decode(String(decoding: encoded, as: UTF8.self))
+    return (try? AgentVisualOutputPolicy.declaredBlocks(document)) ?? []
   }
 
   private static func markdownImageBlocks(_ text: String) -> [AgentRichBlock] {

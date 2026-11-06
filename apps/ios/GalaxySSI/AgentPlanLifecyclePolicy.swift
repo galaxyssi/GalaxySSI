@@ -396,6 +396,13 @@ enum AgentRollingPlanPolicy {
   }
 }
 
+struct AgentVerifiedWorkspaceVideo: Equatable, Sendable {
+  let workspaceId: String
+  let path: String
+  let sha256: String
+  let size: Int64
+}
+
 enum AgentCompletionEvidencePolicy {
   static func isAnswerOnly(
     history: [AgentAction],
@@ -443,7 +450,37 @@ enum AgentCompletionEvidencePolicy {
     default:
       break
     }
+    for artifact in requirements.artifacts ?? [] where verifiedVideo(artifact, history: history) == nil {
+      missing.append("a verified MP4 export for \(artifact.path) in the current workspace")
+    }
     return missing
+  }
+
+  static func verifiedVideo(_ artifact: AgentVideoArtifactRequirement, history: [AgentAction]) -> AgentVerifiedWorkspaceVideo? {
+    for action in history.reversed() where action.kind == .callNativeTool &&
+      toolId(action) == AgentIOSMediaNativeToolCatalog.mediaFFmpegTranscode {
+      guard let output = decodeObject(action.evidence),
+            output.string("workspace_id") == artifact.workspaceId,
+            output.string("destination_path") == artifact.path else { continue }
+      guard action.status == .completed, output.string("mime_type") == "video/mp4",
+            let evidence = output["video_openability"]?.objectValue,
+            (evidence["duration_ms"]?.intValue ?? 0) > 0,
+            (evidence["decoded_frame_width"]?.intValue ?? 0) > 0,
+            (evidence["decoded_frame_height"]?.intValue ?? 0) > 0,
+            let size = output["size_bytes"]?.intValue, (16...268_435_456).contains(size),
+            let sha = output["sha256"]?.stringValue,
+            sha.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil else { return nil }
+      return AgentVerifiedWorkspaceVideo(workspaceId: artifact.workspaceId, path: artifact.path, sha256: sha, size: size)
+    }
+    return nil
+  }
+
+  static func compactVideoEvidence(toolId: String, output: String) -> String? {
+    guard toolId == AgentIOSMediaNativeToolCatalog.mediaFFmpegTranscode,
+          let object = decodeObject(output), object.string("mime_type") == "video/mp4",
+          object["video_openability"]?.objectValue != nil else { return nil }
+    let keys: Set<String> = ["workspace_id", "destination_path", "mime_type", "size_bytes", "sha256", "video_openability"]
+    return AgentMcpJSONCodec.stringify(object.filter { keys.contains($0.key) })
   }
 
   private static func hasVerifiedCompletionReceipt(_ action: AgentAction) -> Bool {

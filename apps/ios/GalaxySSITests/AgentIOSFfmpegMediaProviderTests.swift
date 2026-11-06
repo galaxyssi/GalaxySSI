@@ -12,7 +12,8 @@ extension GalaxySSIStoreTests {
     try FileManager.default.createDirectory(at: source.deletingLastPathComponent(), withIntermediateDirectories: true)
     try Data("source-media".utf8).write(to: source)
 
-    let runtime = FakeIOSFfmpegRuntime(outputData: Data("converted-media".utf8))
+    let video = try XCTUnwrap(Data(base64Encoded: AgentRichContentMermaidTests.mp4Fixture))
+    let runtime = FakeIOSFfmpegRuntime(outputData: video)
     let provider = AgentIOSSignedFfmpegMediaProvider(
       runtime: runtime,
       projectRoot: root,
@@ -43,7 +44,8 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(result.output["source_path"], .string("inputs/turn/clip.mov"))
     XCTAssertEqual(result.output["destination_path"], .string("outputs/clip.mp4"))
     XCTAssertEqual(result.output["mime_type"], .string("video/mp4"))
-    XCTAssertEqual(result.output["sha256"], .string(GalaxySSIAttachmentPayloadBuilder.sha256(Data("converted-media".utf8))))
+    XCTAssertEqual(result.output["sha256"], .string(GalaxySSIAttachmentPayloadBuilder.sha256(video)))
+    XCTAssertEqual(result.output["video_openability"]?.objectValue?["decoded_frame_width"], .int(32))
     XCTAssertEqual(result.output["completed_at_epoch_ms"], .int(12_345))
     XCTAssertEqual(result.metadata["runtime_implementation"], .string("fake.ios.ffmpeg"))
     XCTAssertEqual(result.metadata["workspace_path_redacted"], .bool(true))
@@ -58,7 +60,8 @@ extension GalaxySSIStoreTests {
     }
     let pickedFile = pickedDirectory.appendingPathComponent("Picked Clip.MOV", isDirectory: false)
     try Data("picked-media".utf8).write(to: pickedFile)
-    let runtime = FakeIOSFfmpegRuntime(outputData: Data("converted-from-file-url".utf8))
+    let video = try XCTUnwrap(Data(base64Encoded: AgentRichContentMermaidTests.mp4Fixture))
+    let runtime = FakeIOSFfmpegRuntime(outputData: video)
     let provider = AgentIOSSignedFfmpegMediaProvider(runtime: runtime, projectRoot: root)
     let request = iosFfmpegMediaRequest(
       workspaceId: "workspace-2",
@@ -115,6 +118,11 @@ extension GalaxySSIStoreTests {
         request: iosFfmpegMediaRequest(workspaceId: workspaceId, sourcePath: "inputs/turn/clip.mov"),
         invocation: try mediaInvocation()
       )
+    let fakeVideoRuntime = FakeIOSFfmpegRuntime(outputData: Data("<html>Not video</html>".utf8))
+    let unverified = AgentIOSSignedFfmpegMediaProvider(runtime: fakeVideoRuntime, projectRoot: root)
+      .transcode(request: iosFfmpegMediaRequest(workspaceId: workspaceId, sourcePath: "inputs/turn/clip.mov"),
+                 invocation: try mediaInvocation())
+    XCTAssertEqual(unverified.error?.code, "ffmpeg_output_unverified")
 
     XCTAssertEqual(unavailable.error?.code, "ffmpeg_requires_setup")
     XCTAssertEqual(unavailable.error?.retryable, true)
