@@ -277,6 +277,9 @@ struct AgentRichBlock: Codable, Equatable, Identifiable {
   }
 
   func artifactIdentity() -> String {
+    if type == .video, uri.hasPrefix(AgentVisualOutputPolicy.localVideoPrefix) {
+      return "local-video:\(uri):\(metadata["relative_path"] ?? "")"
+    }
     guard isArtifactBlock else { return "" }
     let artifactName = fallbackText
       .replacingOccurrences(of: "\\", with: "/")
@@ -307,8 +310,11 @@ struct AgentRichBlock: Codable, Equatable, Identifiable {
   }
 
   private static func normalizedText(_ value: String, type: AgentRichBlockType) -> String {
+    if type == .html {
+      return AgentVisualOutputPolicy.isCompleteHTML(value) ? value : ""
+    }
     let limited = String(value.prefix(maximumBlockText))
-    if [.code, .diff, .json, .html, .mermaid].contains(type) {
+    if [.code, .diff, .json, .mermaid].contains(type) {
       return limited.trimmingCharacters(in: CharacterSet(charactersIn: "\r\n"))
     }
     return AgentMarkdownArtifactReferences.removingInternalLinks(limited)

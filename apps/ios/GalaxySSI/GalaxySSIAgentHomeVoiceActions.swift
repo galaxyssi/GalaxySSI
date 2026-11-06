@@ -7,10 +7,17 @@ struct AgentHomeVoiceRiskConfirmation: Identifiable {
   var risk: VoiceCommandRisk
   var correctionReview: VoiceTranscriptCorrectionReview?
   var sessionId: String
+  var appAnchor: VoiceAppCaptureAnchor?
 }
 
 extension AgentHomeView {
   func sendAgentVoiceTranscript(_ submission: GalaxySSIVoiceTranscriptSubmission) {
+    guard !voiceAppCaptureInvalidated else {
+      voiceAttachmentSnapshot.wipeSensitive()
+      voicePendingAttachments.wipeSensitive()
+      voiceTranscriptionPending = false
+      return
+    }
     let cleanTranscript = submission.text.trimmingCharacters(in: .whitespacesAndNewlines)
     let draftSnapshot = agentVoiceDraftSnapshot
     agentVoiceDraftSnapshot = nil
@@ -68,7 +75,8 @@ extension AgentHomeView {
         attachments: capturedAttachments,
         risk: risk,
         correctionReview: submission.correctionReview,
-        sessionId: sessionId
+        sessionId: sessionId,
+        appAnchor: voiceAppAnchor
       )
       return
     }
@@ -81,7 +89,7 @@ extension AgentHomeView {
     voiceTranscriptionPending = true
     voicePendingAttachments = capturedAttachments
     draft = cleanTranscript
-    sendAgentMessage(voiceAttachmentSnapshot: capturedAttachments)
+    sendAgentMessage(voiceAttachmentSnapshot: capturedAttachments, voiceAppAnchor: voiceAppAnchor)
   }
 
   func executeAgentVoiceRiskConfirmation(_ confirmation: AgentHomeVoiceRiskConfirmation) {
@@ -91,7 +99,7 @@ extension AgentHomeView {
     voiceTranscriptionPending = true
     voicePendingAttachments = confirmation.attachments
     draft = confirmation.transcript
-    sendAgentMessage(voiceAttachmentSnapshot: confirmation.attachments)
+    sendAgentMessage(voiceAttachmentSnapshot: confirmation.attachments, voiceAppAnchor: confirmation.appAnchor)
   }
 
   func editAgentVoiceRiskConfirmation(_ confirmation: AgentHomeVoiceRiskConfirmation) {
@@ -151,6 +159,8 @@ extension AgentHomeView {
   }
 
   func beginAgentVoiceCapture() {
+    invalidateVoiceAppAnchor()
+    voiceAppCaptureInvalidated = false
     voiceAttachmentSnapshot.removeAll()
     agentVoiceCaptureDictationOnly = !screenAssistantConversationID.isEmpty &&
       screenAssistantConversationID == store.activeAgentConversationId
@@ -166,9 +176,21 @@ extension AgentHomeView {
       ownerID: screenAssistantRunID
     )
     guard agentVoiceDraftSnapshot == nil else { return }
+    let playback = PublicNewsSpeechPlayback.shared
+    voiceAppAnchor = coordinator.voiceAppContexts.capture(
+      conversationID: store.activeAgentConversationId,
+      surface: .agent,
+      playbackState: playback.appControlState
+    )
     voiceAttachmentSnapshot = attachments
     let capturedIDs = Set(attachments.map(\.id))
     attachments.removeAll { capturedIDs.contains($0.id) }
+  }
+
+  func invalidateVoiceAppAnchor() {
+    if voiceAppAnchor != nil { voiceAppCaptureInvalidated = true }
+    coordinator.voiceAppContexts.invalidate(voiceAppAnchor)
+    voiceAppAnchor = nil
   }
 
   func restoreAgentVoiceAttachments(_ captured: [GalaxySSIDraftAttachment]? = nil) {

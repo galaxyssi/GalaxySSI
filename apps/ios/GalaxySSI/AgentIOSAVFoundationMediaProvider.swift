@@ -214,6 +214,39 @@ struct AgentIOSAVFoundationMediaProvider: AgentIOSMediaNativeToolProviding {
   }
 }
 
+enum AgentIOSMP4Openability {
+  struct Evidence {
+    let durationMillis: Int64
+    let frameWidth: Int
+    let frameHeight: Int
+  }
+
+  static func inspect(_ file: URL) -> Evidence? {
+    #if canImport(AVFoundation) && canImport(CoreGraphics)
+    guard file.isFileURL,
+          let handle = try? FileHandle(forReadingFrom: file) else { return nil }
+    defer { try? handle.close() }
+    guard let prefix = try? handle.read(upToCount: 32),
+          prefix.count >= 16, prefix[4..<8].elementsEqual("ftyp".utf8),
+          let brand = String(bytes: prefix[8..<12], encoding: .ascii), brand != "qt  " else { return nil }
+    let asset = AVURLAsset(url: file)
+    let seconds = CMTimeGetSeconds(asset.duration)
+    guard asset.isPlayable, seconds.isFinite, seconds > 0, seconds <= 86_400,
+          !asset.tracks(withMediaType: .video).isEmpty else { return nil }
+    let generator = AVAssetImageGenerator(asset: asset)
+    generator.appliesPreferredTrackTransform = true
+    generator.maximumSize = CGSize(width: 320, height: 320)
+    guard let frame = try? generator.copyCGImage(at: CMTime(seconds: min(1, seconds / 2), preferredTimescale: 600),
+                                                actualTime: nil),
+          frame.width > 0, frame.height > 0 else { return nil }
+    return Evidence(durationMillis: max(1, Int64((seconds * 1_000).rounded())),
+                    frameWidth: frame.width, frameHeight: frame.height)
+    #else
+    return nil
+    #endif
+  }
+}
+
 struct AgentIOSAVFoundationMediaMetadataInspector: AgentIOSMediaMetadataInspecting {
   var implementationId: String = "ios.avfoundation.imageio.metadata"
 

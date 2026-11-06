@@ -586,6 +586,80 @@ extension GalaxySSIStoreTests {
   }
 
   @MainActor
+  func testAcceptedDesktopReplyRemainsPinnedAfterReopeningItsJournal() throws {
+    let suite = "DesktopAcceptedReply-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let journal = DesktopReplyRecoveryTestJournal()
+    let secrets = InMemorySecretStore()
+    let binding = desktopReplyJournalBinding()
+    let recovery = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    XCTAssertTrue(recovery.track(binding, now: 1_000))
+    var payload: [String: Any] = binding.fields
+    payload.merge(["type": "text", "task_status": "completed", "execution_generation": 2,
+      "status_sequence": 8, "message_id": "reply", "sha256": String(repeating: "a", count: 64)]) { _, new in new }
+    journal.rejectWrites = true
+    XCTAssertNil(recovery.acceptCompletedReply(payload, binding: binding, content: "Exact reply", now: 2_000))
+    XCTAssertNil(recovery.record(for: binding)?.acceptedReply)
+    journal.rejectWrites = false
+    let accepted = try XCTUnwrap(recovery.acceptCompletedReply(payload, binding: binding, content: "Exact reply", now: 2_000))
+    let reopened = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    XCTAssertEqual(reopened.record(for: binding), accepted)
+    XCTAssertTrue(reopened.acceptsFinal(payload, desktopId: binding.desktopId))
+    XCTAssertNil(reopened.acceptCompletedReply(payload, binding: binding, content: "Different reply", now: 2_001))
+    XCTAssertEqual(reopened.acceptCompletedReply(payload, binding: binding, content: "Exact reply", now: 2_001), accepted)
+    var foreign = payload
+    foreign["message_id"] = "replacement"
+    XCTAssertFalse(reopened.acceptsFinal(foreign, desktopId: binding.desktopId))
+    foreign = payload
+    foreign["execution_generation"] = 3
+    XCTAssertFalse(reopened.acceptsFinal(foreign, desktopId: binding.desktopId))
+    foreign = payload
+    foreign["task_status"] = "failed"
+    foreign["status_sequence"] = 9
+    XCTAssertFalse(reopened.acceptsFinal(foreign, desktopId: binding.desktopId))
+    XCTAssertFalse(accepted.accepts(status: "running", generation: 2, sequence: 10))
+    XCTAssertFalse(accepted.accepts(status: "failed", generation: 2, sequence: 10))
+    XCTAssertNil(accepted.expiryReason(now: 2_000 + 15 * 60_000))
+  }
+
+  @MainActor
+  func testDesktopCommitIsExactAndDoesNotReviveDeletedOrPausedWork() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let binding = desktopReplyJournalBinding()
+    let db = GalaxySSIChatHistoryDatabase(fileURL: root.appendingPathComponent("history.sqlite3"),
+      secrets: InMemorySecretStore())
+    let message = ChatMessage(contactId: binding.displayContactId, content: "Exact reply", isMine: false,
+      createdAt: Date(timeIntervalSince1970: 1_000), deliveryStatus: .delivered, conversationId: binding.identity.conversationId,
+      turnId: binding.identity.turnId, remoteMessageId: "reply")
+    XCTAssertTrue(db.upsert(message))
+    XCTAssertNil(db.commitDesktopReply(contactId: message.contactId, remoteMessageId: message.remoteMessageId,
+      conversationId: message.conversationId, turnId: "foreign"))
+    guard case .message(let saved)? = db.commitDesktopReply(contactId: message.contactId,
+      remoteMessageId: message.remoteMessageId, conversationId: message.conversationId, turnId: message.turnId)
+    else { return XCTFail("Expected the exact durable result") }
+    XCTAssertEqual(saved, message)
+    var task = AgentTaskRecord(taskId: binding.identity.taskId, sessionId: binding.identity.conversationId,
+      goal: "Goal", phase: .waitingResponse, routeKind: .desktopAgent, targetTitle: "Desktop", risk: .low, blocked: false)
+    let completed = GalaxySSIStore.desktopTaskCompletion(task, binding: binding, message: saved,
+      acceptedAt: 2_000, verification: "Committed")
+    XCTAssertEqual(completed?.phase, .completed)
+    XCTAssertEqual(completed?.result, "Exact reply")
+    XCTAssertEqual(completed?.updatedAtMillis, 2_000)
+    for phase in [AgentPhase.paused, .cancelled, .failed, .completed] {
+      task.phase = phase
+      XCTAssertNil(GalaxySSIStore.desktopTaskCompletion(task, binding: binding, message: saved,
+        acceptedAt: 2_001, verification: "Committed"))
+    }
+    XCTAssertNotNil(db.deleteMessage(id: saved.id, contactId: saved.contactId))
+    guard case .locallyDeleted? = db.commitDesktopReply(contactId: message.contactId,
+      remoteMessageId: message.remoteMessageId, conversationId: message.conversationId, turnId: message.turnId)
+    else { return XCTFail("Expected a deletion disposition, not a reply") }
+    XCTAssertNil(db.message(id: saved.id))
+  }
+
+  @MainActor
   func testDesktopReplyRecoveryOfflineProbesDoNotCreateRequestsAndRespectMinimumSilence() throws {
     let suite = "DesktopReplyOfflineTests-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -699,6 +773,45 @@ extension GalaxySSIStoreTests {
         metadata: ["awaiting_response": "true"]
       )
     ))
+  }
+
+  func testSupervisedRecoveryPreservesOriginalBindingAndBoundsOnlyFailures() {
+    func step(_ id: String, status: AgentActionStatus, locked: Bool = false) -> AgentAction {
+      var action = AgentAction(id: id, kind: .callConnector, target: locked ? "original" : "auto",
+        risk: .low, status: status, description: "Supervisor", requiresConfirmation: false)
+      action.parameters = ["connector_task_mode": "phone_supervised_project_plan_v1"]
+      if locked {
+        action.parameters["manual_target_locked"] = "true"
+        action.parameters["connector_id"] = "cloud:original"
+        action.parameters["manual_model_id"] = "original-model"
+        action.parameters["agent_reasoning_effort"] = "high"
+      } else {
+        action.parameters["routing_fallback_ids"] = "cloud:other"
+        action.parameters["model_id"] = "other-model"
+      }
+      return action
+    }
+    let first = step("first", status: .failed, locked: true)
+    let current = step("current", status: .failed)
+    let restored = AgentSupervisorRecoveryPolicy.restoreBinding(current, history: [first])
+    XCTAssertEqual(restored.target, "original")
+    XCTAssertEqual(restored.parameters["manual_model_id"], "original-model")
+    XCTAssertEqual(restored.parameters["agent_reasoning_effort"], "high")
+    XCTAssertNil(restored.parameters["model_id"])
+    XCTAssertEqual(restored.parameters["routing_fallback_ids"], "")
+
+    var failure = AgentActionResult(actionId: current.id, success: false, message: "failure")
+    XCTAssertNil(AgentSupervisorRecoveryPolicy.stopReason(action: current, result: failure, history: [current]))
+    XCTAssertEqual(AgentSupervisorRecoveryPolicy.stopReason(action: current, result: failure, history: [first, current]),
+                   "supervisor_consecutive_failures")
+    let success = step("success", status: .completed)
+    XCTAssertNil(AgentSupervisorRecoveryPolicy.stopReason(action: current, result: failure, history: [first, success]))
+    failure.metadata = ["non_retriable": "true"]
+    XCTAssertEqual(AgentSupervisorRecoveryPolicy.stopReason(action: current, result: failure, history: []),
+                   "supervisor_failure_non_retriable")
+    failure.metadata = ["failure_kind": "invalid_supervised_project_plan", "structured_repair_attempts": "3"]
+    XCTAssertEqual(AgentSupervisorRecoveryPolicy.stopReason(action: current, result: failure, history: []),
+                   "supervisor_format_repair_exhausted")
   }
 
   func testAgentRollingPlanPolicyPreservesTerminalAndSupervisedCompletionPaths() {

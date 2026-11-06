@@ -451,7 +451,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         if calls.isEmpty {
           if CloudWebGrounding.containsInternalToolProtocol(rawRoundText),
              !finalRound,
-             progress.requestRepair("stream_internal_protocol") {
+             progress.requestFormatRepair("stream_internal_protocol") {
             prepared.appendInlineToolRepairPrompt(rawRoundText)
             continue
           }
@@ -568,7 +568,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
 
         if let invalidToolCall {
           let repairKey = "stream_tool_arguments:\(invalidToolCall.name.lowercased())"
-          if progress.requestRepair(repairKey) {
+          if progress.requestFormatRepair(repairKey) {
             prepared.appendToolArgumentRepairPrompt(invalidToolCall)
           } else {
             progress.requestFinalization()

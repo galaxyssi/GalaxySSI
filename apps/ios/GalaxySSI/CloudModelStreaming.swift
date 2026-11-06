@@ -1,5 +1,46 @@
 import Foundation
 
+struct AgentCloudDispatchReceipt: Codable, Equatable {
+  let sourceId: UUID
+  let contactId: String
+  let conversationId: String
+  let turnId: String
+  let providerId: String
+  let modelId: String
+
+  var requestId: String { turnId.ifBlank(sourceId.uuidString) }
+  var previewId: String { "agent-stream-preview-\(requestId)" }
+
+  var identity: AgentCloudDispatchIdentity {
+    AgentCloudDispatchIdentity(sourceMessageId: sourceId.uuidString, contactId: contactId,
+      conversationId: conversationId, turnId: requestId, taskId: requestId, actionId: "cloud-reply")
+  }
+
+  func matchesSource(_ message: ChatMessage) -> Bool {
+    message.id == sourceId && message.isMine && !message.isSystem && matchesTurn(message)
+  }
+
+  func matchesReply(_ message: ChatMessage) -> Bool {
+    !message.isMine && !message.isSystem && matchesTurn(message) &&
+      (message.remoteMessageId == requestId || message.remoteMessageId == previewId)
+  }
+
+  func isCommittedReply(_ message: ChatMessage) -> Bool {
+    matchesReply(message) && message.remoteMessageId == requestId &&
+      [.delivered, .read].contains(message.deliveryStatus) &&
+      message.deliveryTrace.contains { $0.stage == "cloud_reply_received" }
+  }
+
+  func isPartialReply(_ message: ChatMessage) -> Bool {
+    matchesReply(message) && message.deliveryStatus == .sent &&
+      message.deliveryTrace.contains { ["cloud_reply", "cloud_citation_preview"].contains($0.stage) }
+  }
+
+  private func matchesTurn(_ message: ChatMessage) -> Bool {
+    message.contactId == contactId && message.conversationId == conversationId && message.turnId == turnId
+  }
+}
+
 struct AgentCloudDispatchIdentity: Hashable {
   var sourceMessageId: String
   var contactId: String
@@ -98,6 +139,10 @@ final class AgentCloudDispatchRegistry {
   }
 
   var activeCount: Int { locked { active.count } }
+
+  func contains(_ identity: AgentCloudDispatchIdentity) -> Bool {
+    locked { active[identity] != nil }
+  }
 
   private func locked<T>(_ body: () -> T) -> T {
     lock.lock()

@@ -203,6 +203,8 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
       },
       onFormSubmit: onFormSubmit
     )
+    .environment(\.agentRichHTMLPlaybackAllowed,
+      [.delivered, .read, .local].contains(message.deliveryStatus))
     .environment(\.agentReplyParagraphSpeechAction, paragraphSpeechAction(message))
     .foregroundColor(.galaxySSITextPrimary)
   }

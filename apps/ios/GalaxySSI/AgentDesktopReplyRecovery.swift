@@ -243,6 +243,25 @@ struct AgentDesktopReplyBinding: Codable, Equatable {
   }
 }
 
+struct AgentDesktopAcceptedReply: Codable, Equatable {
+  let remoteMessageId: String
+  let receipt: AgentResultReceipt
+  let acceptedAt: Int64
+  let contentSHA256: String
+
+  func matches(_ binding: AgentDesktopReplyBinding, generation: Int64) -> Bool {
+    !remoteMessageId.isBlank && remoteMessageId.utf8.count <= 512 && acceptedAt > 0 &&
+      receipt.executionGeneration == generation && receipt.desktopId == binding.desktopId &&
+      binding.matches(receipt.payload) &&
+      AgentResultReceipt.fromPayload(receipt.payload, desktopId: binding.desktopId) == receipt &&
+      contentSHA256.utf8.count == 64 && contentSHA256.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
+  }
+
+  static func digest(_ content: String) -> String {
+    SHA256.hash(data: Data(content.utf8)).map { String(format: "%02x", $0) }.joined()
+  }
+}
+
 struct AgentDesktopReplyRecoveryRecord: Codable, Equatable {
   var binding: AgentDesktopReplyBinding
   var createdAt: Int64
@@ -264,7 +283,21 @@ struct AgentDesktopReplyRecoveryRecord: Codable, Equatable {
     )
   }
 
+  var acceptedReply: AgentDesktopAcceptedReply? = nil
+
+  func accepts(status: String, generation: Int64, sequence: Int64) -> Bool {
+    if let acceptedReply {
+      return generation == acceptedReply.receipt.executionGeneration && status == "completed" &&
+        sequence >= self.sequence
+    }
+    if generation != self.generation { return generation > self.generation }
+    guard sequence >= self.sequence else { return false }
+    if terminalObservedAt > 0 || sequence == self.sequence { return status == self.status }
+    return true
+  }
+
   func expiryReason(now: Int64) -> String? {
+    guard acceptedReply == nil else { return nil }
     if terminalObservedAt > 0 {
       return now >= terminalObservedAt && now - terminalObservedAt >= 15 * 60_000
         ? "desktop_result_unavailable" : nil
@@ -414,7 +447,8 @@ final class AgentDesktopReplyRecovery {
   @discardableResult
   func attachManifest(_ manifest: AgentDesktopResultManifest, to expected: AgentDesktopReplyRecoveryRecord) -> Bool {
     guard manifest.isValid, var current = records[expected.binding.key],
-          current.generation == expected.generation,
+          current.generation == expected.generation, current.status == expected.status,
+          current.acceptedReply.map({ $0.receipt.resultSHA256 == manifest.digest }) ?? true,
           current.resultManifest == nil || current.resultManifest == manifest else { return false }
     current.resultManifest = manifest
     var next = records
@@ -429,7 +463,43 @@ final class AgentDesktopReplyRecovery {
     if record.generation == 0 { return true }
     guard let generation = Self.integer(payload["execution_generation"], minimum: 1),
           let sequence = Self.integer(payload["status_sequence"], minimum: 0) else { return false }
-    return generation > record.generation || (generation == record.generation && sequence >= record.sequence)
+    let status = payload.string("task_status")
+    if let accepted = record.acceptedReply {
+      return status == "completed" && accepted.remoteMessageId == payload.string("message_id") &&
+        accepted.receipt == AgentResultReceipt.fromPayload(payload, desktopId: desktopId)
+    }
+    return record.accepts(status: status, generation: generation, sequence: sequence)
+  }
+
+  func acceptCompletedReply(_ payload: [String: Any], binding: AgentDesktopReplyBinding, content: String,
+                            now: Int64) -> AgentDesktopReplyRecoveryRecord? {
+    guard binding.managedSource == nil, binding.teamSource == nil, binding.matches(payload),
+          payload.string("type") == "text", payload.string("task_status") == "completed",
+          var current = records[binding.key],
+          let receipt = AgentResultReceipt.fromPayload(payload, desktopId: binding.desktopId),
+          let generation = Self.integer(payload["execution_generation"], minimum: 1),
+          let sequence = Self.integer(payload["status_sequence"], minimum: 0)
+    else { return nil }
+    let accepted = AgentDesktopAcceptedReply(remoteMessageId: payload.string("message_id"), receipt: receipt,
+      acceptedAt: now, contentSHA256: AgentDesktopAcceptedReply.digest(content))
+    guard accepted.matches(binding, generation: generation) else { return nil }
+    if let prior = current.acceptedReply {
+      return prior.receipt == receipt && prior.remoteMessageId == accepted.remoteMessageId &&
+        prior.contentSHA256 == accepted.contentSHA256 ? current : nil
+    }
+    guard current.accepts(status: "completed", generation: generation, sequence: sequence) else { return nil }
+    if current.generation != generation || current.resultManifest?.digest != receipt.resultSHA256 {
+      current.resultManifest = nil
+    }
+    if current.generation != generation { current.terminalObservedAt = 0 }
+    current.generation = generation
+    current.sequence = sequence
+    current.status = "completed"
+    current.terminalObservedAt = current.terminalObservedAt > 0 ? current.terminalObservedAt : now
+    current.acceptedReply = accepted
+    var next = records
+    next[binding.key] = current
+    return save(next) ? current : nil
   }
 
   @discardableResult
@@ -482,8 +552,7 @@ final class AgentDesktopReplyRecovery {
           let generation = Self.integer(items[0]["execution_generation"], minimum: 1),
           query.binding.managedSource == nil || query.binding.managedSource?.executionGeneration == generation,
           let sequence = Self.integer(items[0]["status_sequence"], minimum: 0),
-          generation > record.generation || (generation == record.generation && sequence >= record.sequence) else { return nil }
-    if generation == record.generation, record.terminalObservedAt > 0, !Self.terminalStatuses.contains(status) { return nil }
+          record.accepts(status: status, generation: generation, sequence: sequence) else { return nil }
     if generation > record.generation {
       record.terminalObservedAt = 0
       record.resultManifest = nil
@@ -540,8 +609,13 @@ final class AgentDesktopReplyRecovery {
     }
     guard decoded.version == 2, (decoded.supersededCodexBindings?.count ?? 0) <= 512,
       decoded.supersededCodexBindings?.allSatisfy(\.isValid) != false,
-      decoded.records.allSatisfy({ $0.key == $0.value.binding.key && $0.value.binding.isValid &&
-      $0.value.createdAt > 0 && ($0.value.resultManifest?.isValid ?? true) }) else {
+      decoded.records.allSatisfy({ entry in
+      let record = entry.value
+      return entry.key == record.binding.key && record.binding.isValid &&
+      record.createdAt > 0 && (record.resultManifest?.isValid ?? true) &&
+      (record.acceptedReply.map { accepted in
+        record.status == "completed" && accepted.matches(record.binding, generation: record.generation)
+      } ?? true) }) else {
       throw GalaxySSIError.invalidPayload("Invalid Desktop recovery journal")
     }
     return decoded

@@ -294,6 +294,53 @@ enum AgentPlanLifecyclePolicy {
   private static let restoredConnectorEvidence = "restored_connector_terminal_result"
 }
 
+enum AgentSupervisorRecoveryPolicy {
+  static let maximumFormatRepairs = 3
+  static let maximumConsecutiveFailures = 2
+  private static let bindingKeys: Set<String> = [
+    "connector_id", "connector_kind", "connector_adapter_type", "connector_failure_domain",
+    "manual_target_locked", "manual_model_id", "agent_model_id", "agent_reasoning_effort", "model_id"
+  ]
+
+  static func isSupervisor(_ action: AgentAction) -> Bool {
+    action.kind == .callConnector &&
+      action.parameters["connector_task_mode"] == "phone_supervised_project_plan_v1"
+  }
+
+  static func restoreBinding(_ action: AgentAction, history: [AgentAction]) -> AgentAction {
+    guard isSupervisor(action) else { return action }
+    let original = history.first { isSupervisor($0) && $0.parameters["manual_target_locked"] == "true" }
+    guard let binding = original ?? (action.parameters["manual_target_locked"] == "true" ? action : nil)
+    else { return action }
+    var restored = action
+    restored.target = binding.target
+    for key in bindingKeys { restored.parameters[key] = binding.parameters[key] }
+    restored.parameters["manual_target_locked"] = "true"
+    restored.parameters["auto_reroute_on_failure"] = "false"
+    restored.parameters["routing_fallback_ids"] = ""
+    return restored
+  }
+
+  static func stopReason(action: AgentAction, result: AgentActionResult?, history: [AgentAction]) -> String? {
+    guard isSupervisor(action), let result, result.actionId == action.id, !result.success else { return nil }
+    if result.metadata["non_retriable"] == "true" || result.metadata["recovery_exhausted"] == "true" {
+      return "supervisor_failure_non_retriable"
+    }
+    if result.metadata["failure_kind"] == "invalid_supervised_project_plan",
+       (Int(result.metadata["structured_repair_attempts"] ?? "") ?? 0) >= maximumFormatRepairs {
+      return "supervisor_format_repair_exhausted"
+    }
+    var seen: Set<String> = [action.id]
+    var failures = 1
+    for step in history.reversed() where [.completed, .failed].contains(step.status) && seen.insert(step.id).inserted {
+      guard isSupervisor(step), step.status == .failed else { break }
+      failures += 1
+      if failures >= maximumConsecutiveFailures { return "supervisor_consecutive_failures" }
+    }
+    return nil
+  }
+}
+
 enum AgentRollingPlanPolicy {
   static let replanReasonPrefix = "rolling_batch_completed:"
 
@@ -349,6 +396,13 @@ enum AgentRollingPlanPolicy {
   }
 }
 
+struct AgentVerifiedWorkspaceVideo: Equatable, Sendable {
+  let workspaceId: String
+  let path: String
+  let sha256: String
+  let size: Int64
+}
+
 enum AgentCompletionEvidencePolicy {
   static func isAnswerOnly(
     history: [AgentAction],
@@ -396,7 +450,37 @@ enum AgentCompletionEvidencePolicy {
     default:
       break
     }
+    for artifact in requirements.artifacts ?? [] where verifiedVideo(artifact, history: history) == nil {
+      missing.append("a verified MP4 export for \(artifact.path) in the current workspace")
+    }
     return missing
+  }
+
+  static func verifiedVideo(_ artifact: AgentVideoArtifactRequirement, history: [AgentAction]) -> AgentVerifiedWorkspaceVideo? {
+    for action in history.reversed() where action.kind == .callNativeTool &&
+      toolId(action) == AgentIOSMediaNativeToolCatalog.mediaFFmpegTranscode {
+      guard let output = decodeObject(action.evidence),
+            output.string("workspace_id") == artifact.workspaceId,
+            output.string("destination_path") == artifact.path else { continue }
+      guard action.status == .completed, output.string("mime_type") == "video/mp4",
+            let evidence = output["video_openability"]?.objectValue,
+            (evidence["duration_ms"]?.intValue ?? 0) > 0,
+            (evidence["decoded_frame_width"]?.intValue ?? 0) > 0,
+            (evidence["decoded_frame_height"]?.intValue ?? 0) > 0,
+            let size = output["size_bytes"]?.intValue, (16...268_435_456).contains(size),
+            let sha = output["sha256"]?.stringValue,
+            sha.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil else { return nil }
+      return AgentVerifiedWorkspaceVideo(workspaceId: artifact.workspaceId, path: artifact.path, sha256: sha, size: size)
+    }
+    return nil
+  }
+
+  static func compactVideoEvidence(toolId: String, output: String) -> String? {
+    guard toolId == AgentIOSMediaNativeToolCatalog.mediaFFmpegTranscode,
+          let object = decodeObject(output), object.string("mime_type") == "video/mp4",
+          object["video_openability"]?.objectValue != nil else { return nil }
+    let keys: Set<String> = ["workspace_id", "destination_path", "mime_type", "size_bytes", "sha256", "video_openability"]
+    return AgentMcpJSONCodec.stringify(object.filter { keys.contains($0.key) })
   }
 
   private static func hasVerifiedCompletionReceipt(_ action: AgentAction) -> Bool {

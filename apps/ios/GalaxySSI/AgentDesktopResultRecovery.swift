@@ -377,7 +377,7 @@ final class AgentDesktopResultRecovery {
           payload.string("task_status") == record.status,
           AgentDesktopReplyRecovery.integer(payload["execution_generation"], minimum: 1) == record.generation,
           let sequence = AgentDesktopReplyRecovery.integer(payload["status_sequence"], minimum: 0),
-          sequence >= record.sequence else { return nil }
+          sequence >= record.sequence || record.acceptedReply?.receipt.resultSHA256 == manifest.digest else { return nil }
     payload["desktop_id"] = record.binding.desktopId
     payload["result_recovery"] = ["sha256": manifest.digest]
     if payload.string("message_id").isEmpty { payload["message_id"] = "recovered:\(record.binding.key):\(manifest.digest)" }

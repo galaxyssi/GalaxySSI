@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import NaturalLanguage
 
@@ -41,7 +40,7 @@ struct PublicNewsBodyCheckpoint: Codable, Equatable {
 
 actor PublicNewsBodyStore {
   static let shared = PublicNewsBodyStore()
-  private let root: URL?
+  private nonisolated let root: URL?
 
   init(root: URL? = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
     .first?.appendingPathComponent("PublicNewsBodies", isDirectory: true)) {
@@ -49,9 +48,35 @@ actor PublicNewsBodyStore {
   }
 
   func load(_ articleID: String) -> PublicNewsBodyCheckpoint? {
-    guard let file = file(for: articleID), let data = try? Data(contentsOf: file), data.count <= 1_500_000,
+    guard let file = file(for: articleID), let saved = Self.loadValidated(file), saved.articleID == articleID else { return nil }
+    return saved
+  }
+
+  nonisolated func speechDocument(for item: PublicNewsSpeechBookmark.Item) -> PublicNewsSpeechDocument? {
+    guard PublicNewsSpeechBookmark.isKey(item.articleKey),
+          let root, let saved = Self.loadValidated(root.appendingPathComponent(item.articleKey).appendingPathExtension("json")),
+          PublicNewsSpeechBookmark.key(for: saved.articleID) == item.articleKey,
+          let url = URL(string: saved.articleID), PublicNewsArticleBody.supports(url) else { return nil }
+    return PublicNewsSpeechDocument(checkpoint: saved, edition: item.edition)
+  }
+
+  func speechItems(articleIDs: [String]) -> [PublicNewsSpeechBookmark.Item] {
+    var items: [PublicNewsSpeechBookmark.Item] = []
+    var seen = Set<String>()
+    for id in articleIDs {
+      if Task.isCancelled || items.count >= PublicNewsSpeechBookmark.maximumArticles { break }
+      let key = PublicNewsSpeechBookmark.key(for: id)
+      guard seen.insert(key).inserted else { continue }
+      let item = PublicNewsSpeechBookmark.Item(articleKey: key, edition: .original)
+      if speechDocument(for: item) != nil { items.append(item) }
+    }
+    return items
+  }
+
+  private static func loadValidated(_ file: URL) -> PublicNewsBodyCheckpoint? {
+    guard let data = try? Data(contentsOf: file), data.count <= 1_500_000,
           let saved = try? JSONDecoder().decode(PublicNewsBodyCheckpoint.self, from: data),
-          saved.articleID == articleID, saved.fingerprint == saved.source.fingerprint,
+          saved.fingerprint == saved.source.fingerprint,
           saved.segments == PublicNewsTranslation.segments(saved.source),
           saved.translated.count == saved.segments.count else { return nil }
     return saved
@@ -125,7 +150,7 @@ actor PublicNewsBodyStore {
   }
 
   private func file(for articleID: String) -> URL? {
-    let key = SHA256.hash(data: Data(articleID.utf8)).map { String(format: "%02x", $0) }.joined()
+    let key = PublicNewsSpeechBookmark.key(for: articleID)
     return root?.appendingPathComponent(key).appendingPathExtension("json")
   }
 }

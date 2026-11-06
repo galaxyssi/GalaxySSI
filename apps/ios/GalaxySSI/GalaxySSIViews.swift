@@ -280,6 +280,7 @@ final class GalaxySSIStartupHandoff: ObservableObject {
       store.restoreRuntimePlaintextAfterForeground()
       GalaxySSIRuntimePlaintextProtection.leaveRuntimeBoundary()
     } else {
+      runtime?.coordinator.voiceAppContexts.clear()
       store.clearRuntimePlaintextForBackground()
       GalaxySSIRuntimePlaintextProtection.enterRuntimeBoundary()
     }
@@ -340,8 +341,9 @@ private struct GalaxySSIRuntimeRoot: View {
         runtime.agentStartupRecovery.start(
           store: runtime.store,
           reconcileLocalTasks: {
+            let cloud = runtime.store.reconcileCloudDispatches()
             let planning = await runtime.coordinator.recoverInterruptedInitialPlanning()
-            return planning + runtime.coordinator.reconcileInterruptedLocalPlanNodes()
+            return cloud + planning + runtime.coordinator.reconcileInterruptedLocalPlanNodes()
           },
           completion: {
             runtime.coordinator.start()
@@ -1054,6 +1056,15 @@ struct ConversationView: View {
         conversationBackButton
         contactIdentityHeader
         Spacer(minLength: 8)
+        if contact.isCommunicable && ["person", "device"].contains(contact.type.lowercased()) {
+          Button {
+            coordinator.voiceAppContexts.openVoice(.init(surface: .contact, contactID: contact.id))
+          } label: {
+            Image(systemName: "waveform").frame(width: 44, height: 44)
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel(Text(t("voice_app_open_controls", "Voice controls")))
+        }
         if contact.deliveryMode == .cloudAPI {
           Button {
             cloudModelSwitchPresented = true

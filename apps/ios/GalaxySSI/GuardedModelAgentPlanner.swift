@@ -30,11 +30,21 @@ enum AgentModelDirectResponseCodec {
     guard let data = unwrapped.data(using: .utf8),
           let object = try? JSONSerialization.jsonObject(with: data),
           let json = object as? [String: Any],
-          Set(json.keys).isSubset(of: ["disposition", "final_response"]),
+          Set(json.keys).isSubset(of: ["disposition", "final_response", "presentation", "rich_output", "completion_requirements"]),
           let disposition = json["disposition"] as? String,
           disposition.caseInsensitiveCompare("respond") == .orderedSame,
           let response = json["final_response"] as? String else {
       return nil
+    }
+    if let requirements = json["completion_requirements"] {
+      guard let scope = requirements as? [String: Any],
+            scope["publication"] == nil || (scope["publication"] as? String) == "none",
+            scope["phone_linux"] == nil || (scope["phone_linux"] as? Bool) == false else { return nil }
+    }
+    if json["presentation"] != nil || json["rich_output"] != nil || json["completion_requirements"] != nil {
+      guard unwrapped.utf8.count <= AgentRichContentCodec.maximumSerializedSize,
+            response.isEmpty || answer(response) != nil else { return nil }
+      return unwrapped
     }
     return answer(response)
   }
