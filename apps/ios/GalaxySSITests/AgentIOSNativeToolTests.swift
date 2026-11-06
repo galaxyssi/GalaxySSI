@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 @testable import GalaxySSI
 
@@ -1275,7 +1276,7 @@ extension GalaxySSIStoreTests {
       AgentArtifactCompletionEvidence.missing([requirement ?? target], history: history, scope: scope)
     }
     let original = "Name,Total\r\n  A,7\r\n"
-    let initial = write(original)
+    let initial = run(catalog.workspaceCreateText, input: ["path": .string(target.path), "text": .string(original)])
     let source = run(catalog.workspaceSha256, input: ["path": .string(target.path)])
     let old = export("export-before-edit")
     XCTAssertEqual(old.status, .completed)
@@ -1300,6 +1301,21 @@ extension GalaxySSIStoreTests {
     let transform = try XCTUnwrap(AgentArtifactRequirement(path: target.path,
       sourceSha256: try XCTUnwrap(source.artifactReceipt?.inspection?.digest), workspaceId: workspace))
     XCTAssertTrue(missing([initial, source, old, changed, fresh], requirement: transform).isEmpty)
+    XCTAssertTrue(missing([initial, source, old], requirement: transform).first?
+      .contains("artifact_unchanged_from_declared_source") == true)
+    let prior = AgentCompletionRequirements(publication: .none, phoneLinux: false, fileArtifacts: [transform])
+    let correction = AgentCompletionRequirements(publication: .none, phoneLinux: false,
+      reason: "This was a new file; I used its output hash.", fileArtifacts: [target])
+    func corrected(_ history: [AgentAction], candidate: AgentCompletionRequirements? = nil) -> [AgentArtifactRequirement] {
+      AgentArtifactCompletionEvidence.combinedRequirements(prior: prior, candidate: candidate ?? correction,
+        history: history, scope: scope)
+    }
+    XCTAssertEqual(corrected([initial, source, old]), [target])
+    XCTAssertEqual(corrected([source, old]), [transform, target])
+    let unchangedWrite = write(original)
+    XCTAssertEqual(corrected([initial, source, old, unchangedWrite, export()]), [transform, target])
+    XCTAssertEqual(corrected([initial, source, old], candidate: .init(publication: .none, phoneLinux: false,
+      fileArtifacts: [target])), [transform, target])
     let deleted = run(catalog.workspaceDelete, input: ["path": .string(target.path)])
     let failedExport = export()
     XCTAssertEqual(failedExport.status, .failed)
@@ -1341,6 +1357,50 @@ extension GalaxySSIStoreTests {
     }
     XCTAssertFalse(AgentNativeJsonSchemaValidator.validateObject(
       schema: tool.outputSchema, object: ["relative_path": .string("review.csv")]).isValid)
+  }
+
+  func testWorkspaceExportInspectsRecognizedBinaryFormats() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let page = CGRect(x: 0, y: 0, width: 40, height: 60)
+    let pdf = UIGraphicsPDFRenderer(bounds: page).pdfData { $0.beginPage() }
+    let png = UIGraphicsImageRenderer(size: page.size).pngData { context in
+      context.cgContext.fill(page)
+    }
+    func zip(_ files: [(String, String)]) -> Data {
+      AgentRuntimeProjectArchiveBuilder.buildStoredZip(entries: files.map {
+        AgentRuntimeProjectArchiveEntry(path: $0.0, data: Data($0.1.utf8))
+      })
+    }
+    let archive = zip([("README.txt", "crc protected")])
+    var corrupt = archive
+    corrupt[30 + "README.txt".utf8.count] ^= 0x01
+    let docx = zip([
+      ("[Content_Types].xml", #"<Types><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#),
+      ("_rels/.rels", #"<Relationships><Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#),
+      ("word/document.xml", #"<w:document xmlns:w="urn:word"><w:body/></w:document>"#)
+    ])
+    let fixtures: [(String, Data, String, Bool)] = [
+      ("good.pdf", pdf, "pdf_document_open", true),
+      ("bad.pdf", png, "pdf_document_open", false),
+      ("good.png", png, "image_first_frame_decode", true),
+      ("bad.png", pdf, "image_first_frame_decode", false),
+      ("good.zip", archive, "archive_entries_read", true),
+      ("bad.zip", corrupt, "archive_entries_read", false),
+      ("good.docx", docx, "office_package_open", true),
+      ("bad.docx", archive, "office_package_open", false),
+      ("unrecognized.bin", archive, "byte_stream", true)
+    ]
+    for (path, bytes, scope, verified) in fixtures {
+      let artifact = try AgentVerifiedArtifactSnapshot.write(data: bytes, path: path, root: root)
+      let receipt = try XCTUnwrap(artifact["openability"]?.objectValue)
+      XCTAssertEqual(receipt.string("scope"), scope, path)
+      XCTAssertEqual(receipt.string("sha256"), artifact.string("sha256"), path)
+      XCTAssertEqual(receipt.string("status"), verified ? "verified" : "unverified", path)
+      let rich = AgentRuntimeArtifactUi.richOutput(output: ["artifacts": .array([.object(artifact)])],
+        responseText: "Prepared file.", preferredFileName: path, zh: false)
+      XCTAssertEqual(AgentRichContentCodec.decode(rich).contains { $0.type == .file }, verified, path)
+    }
   }
 
   func testArtifactEvidenceRejectsPendingParentOperationsAndAmbiguousWorkspace() throws {

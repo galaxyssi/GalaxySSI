@@ -63,17 +63,17 @@ extension AgentHomeView {
         return
       }
       do {
-        let file = try AgentRuntimeArtifactUi.resolve(
+        let data = try AgentRuntimeArtifactUi.readVerified(
           payload: payload,
           managedRoots: runtimeArtifactManagedRoots
         )
         if action.verb == "preview_runtime_artifact" {
           runtimeArtifactPreview = GalaxySSIRuntimeArtifactPreview(
             title: payload.displayName,
-            content: try AgentRuntimeArtifactUi.preview(file: file)
+            content: try AgentRuntimeArtifactUi.preview(data: data, path: payload.relativePath)
           )
         } else {
-          runtimeArtifactDocument = GalaxySSIRuntimeArtifactDocument(data: try Data(contentsOf: file))
+          runtimeArtifactDocument = GalaxySSIRuntimeArtifactDocument(data: data, contentType: payload.exportContentType)
           runtimeArtifactExportFilename = payload.displayName
           runtimeArtifactExportSourceURI = ""
           runtimeArtifactExportPresented = true

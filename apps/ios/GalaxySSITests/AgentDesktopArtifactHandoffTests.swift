@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import UniformTypeIdentifiers
 import XCTest
 @testable import GalaxySSI
 
@@ -386,8 +387,40 @@ final class AgentDesktopArtifactHandoffTests: XCTestCase {
 
     let payload = try XCTUnwrap(AgentRuntimeArtifactActionPayload.decode(file.actions[0].value))
     XCTAssertFalse(payload.encode().contains("host_path"))
-    XCTAssertEqual(try AgentRuntimeArtifactUi.resolve(payload: payload, managedRoots: [root]), source)
-    XCTAssertEqual(try AgentRuntimeArtifactUi.preview(file: source), "print(42)\n")
+    let data = try AgentRuntimeArtifactUi.readVerified(payload: payload, managedRoots: [root])
+    XCTAssertEqual(data, sourceData)
+    XCTAssertEqual(try AgentRuntimeArtifactUi.preview(data: data, path: payload.relativePath), "print(42)\n")
+  }
+
+  func testVerifiedDelimitedDeliveryPreservesTextAndUsesTheCapturedBytes() throws {
+    let root = temporaryDirectory("delimited-artifact")
+    let fixtures: [(String, String, String, UTType)] = [
+      ("report.csv", "Name,Total\r\n  A,7\r\n", "text/csv", .commaSeparatedText),
+      ("report.tsv", "Name\tTotal\n  A\t7\n", "text/tab-separated-values", .tabSeparatedText)
+    ]
+    for (path, text, mime, type) in fixtures {
+      let bytes = Data(text.utf8)
+      let artifact = try AgentVerifiedArtifactSnapshot.write(data: bytes, path: path, root: root)
+      let blocks = AgentRichContentCodec.decode(AgentRuntimeArtifactUi.richOutput(
+        artifact: artifact, responseText: "The report is ready.", preferredFileName: "", zh: false))
+      XCTAssertTrue(blocks.contains { $0.text == "The report is ready." })
+      let block = try XCTUnwrap(blocks.first { $0.type == .file })
+      XCTAssertEqual(block.mimeType, mime)
+      XCTAssertEqual(block.actions.map(\.verb), ["preview_runtime_artifact", "save_runtime_artifact"])
+      let payload = try XCTUnwrap(AgentRuntimeArtifactActionPayload.decode(block.actions[0].value))
+      XCTAssertEqual(payload.exportContentType, type)
+      let capture = try AgentRuntimeArtifactUi.readVerified(payload: payload, managedRoots: [root])
+      let snapshot = AgentVerifiedArtifactSnapshot.url(root: root, digest: payload.sha256, path: path)
+      try Data(repeating: 0, count: bytes.count).write(to: snapshot, options: .atomic)
+      XCTAssertEqual(capture, bytes)
+      XCTAssertEqual(try AgentRuntimeArtifactUi.preview(data: capture, path: path), text)
+      XCTAssertThrowsError(try AgentRuntimeArtifactUi.readVerified(payload: payload, managedRoots: [root]))
+      let outside = root.appendingPathComponent("outside")
+      try bytes.write(to: outside)
+      try FileManager.default.removeItem(at: snapshot)
+      try FileManager.default.createSymbolicLink(at: snapshot, withDestinationURL: outside)
+      XCTAssertThrowsError(try AgentRuntimeArtifactUi.readVerified(payload: payload, managedRoots: [root]))
+    }
   }
 
   func testArtifactActionsPreviewArchiveAndRejectUnsafeBytes() throws {
