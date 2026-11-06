@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import UniformTypeIdentifiers
 
 struct AgentRuntimeArtifactActionPayload: Codable, Equatable {
   var artifactReference: String
@@ -9,6 +10,14 @@ struct AgentRuntimeArtifactActionPayload: Codable, Equatable {
   var sha256: String
   var sizeBytes: Int64
   var kind: String
+
+  var exportContentType: UTType {
+    switch URL(fileURLWithPath: relativePath).pathExtension.lowercased() {
+    case "csv": return .commaSeparatedText
+    case "tsv": return .tabSeparatedText
+    default: return .data
+    }
+  }
 
   enum CodingKeys: String, CodingKey {
     case artifactReference = "artifact_reference"
@@ -85,8 +94,11 @@ enum AgentRuntimeArtifactUi {
   ) -> String {
     let artifacts = output["artifacts"]?.arrayValue ?? []
     let selected = artifacts.compactMap(\.objectValue).first { item in
-      item["relative_path"]?.stringValue == preferredFileName ||
-        item["artifact_kind"]?.stringValue == "project_archive"
+      if item.string("artifact_kind") == AgentVerifiedArtifactSnapshot.kind {
+        guard let readback = item["openability"]?.objectValue, readback.string("status") == "verified",
+              readback.string("sha256") == item.string("sha256") else { return false }
+      }
+      return item.string("relative_path") == preferredFileName || item.string("artifact_kind") == "project_archive"
     }
     guard let artifact = selected else {
       return ""
@@ -161,38 +173,30 @@ enum AgentRuntimeArtifactUi {
     return AgentRichContentCodec.encode(blocks)
   }
 
-  static func resolve(payload: AgentRuntimeArtifactActionPayload, managedRoots: [URL]) throws -> URL {
-    guard payload.sha256.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil else {
+  static func readVerified(payload: AgentRuntimeArtifactActionPayload, managedRoots: [URL]) throws -> Data {
+    guard AgentArtifactRequirement.validDigest(payload.sha256),
+          AgentArtifactRequirement.validPath(payload.relativePath) else {
       throw AgentDesktopArtifactActionError.invalid("Runtime artifact metadata is invalid")
     }
-    let relative = AgentWorkspaceFilePathPolicy.displayPath(payload.relativePath)
     for root in managedRoots.map(\.standardizedFileURL) {
-      let candidate = payload.kind == AgentVerifiedArtifactSnapshot.kind
-        ? AgentVerifiedArtifactSnapshot.url(root: root, digest: payload.sha256, path: relative).standardizedFileURL
-        : root.appendingPathComponent(relative, isDirectory: false).standardizedFileURL
-      guard candidate.path.hasPrefix(root.path + "/") else {
-        continue
+      let bytes: Data?
+      if payload.kind == AgentVerifiedArtifactSnapshot.kind {
+        bytes = try? AgentVerifiedArtifactSnapshot.verifiedBytes(path: payload.relativePath, digest: payload.sha256,
+          size: payload.sizeBytes, root: root)
+      } else {
+        bytes = try? AgentVerifiedArtifactSnapshot.verifiedFile(path: payload.relativePath, digest: payload.sha256,
+          size: payload.sizeBytes, root: root, limit: AgentRuntimeProjectResourceLimits().maxArtifactBytes)
       }
-      guard FileManager.default.fileExists(atPath: candidate.path) else {
-        continue
-      }
-      let fileSize = try candidate.resourceValues(forKeys: [.fileSizeKey]).fileSize.map { Int64($0) } ?? -1
-      guard fileSize == payload.sizeBytes else {
-        continue
-      }
-      let digest = try AgentDesktopArtifactActions.sha256(source: candidate)
-      if digest == payload.sha256 {
-        return candidate
-      }
+      if let bytes { return bytes }
     }
     throw AgentDesktopArtifactActionError.unavailable("Runtime artifact is unavailable")
   }
 
-  static func preview(file: URL, maximumBytes: Int = AgentDesktopArtifactActions.maximumTextPreviewBytes) throws -> String {
-    if file.pathExtension.lowercased() == "zip" {
-      return try AgentDesktopArtifactActions.archivePreview(source: file).joined(separator: "\n")
+  static func preview(data: Data, path: String, maximumBytes: Int = AgentDesktopArtifactActions.maximumTextPreviewBytes) throws -> String {
+    if language(for: path) == "zip" {
+      return try AgentDesktopArtifactActions.archivePreview(data: data).joined(separator: "\n")
     }
-    return try AgentDesktopArtifactActions.readTextPreview(source: file, maximumBytes: maximumBytes)
+    return try AgentDesktopArtifactActions.readTextPreview(data: data, maximumBytes: maximumBytes)
   }
 
   static func isCodeFile(_ url: URL) -> Bool {
@@ -255,6 +259,10 @@ enum AgentRuntimeArtifactUi {
       return "text/html"
     case "css":
       return "text/css"
+    case "csv":
+      return "text/csv"
+    case "tsv":
+      return "text/tab-separated-values"
     case "zip":
       return "application/zip"
     case "png":
@@ -262,7 +270,8 @@ enum AgentRuntimeArtifactUi {
     case "jpg", "jpeg":
       return "image/jpeg"
     default:
-      return "text/plain"
+      return UTType(filenameExtension: language(for: path))?.preferredMIMEType ??
+        (isPreviewable(path) ? "text/plain" : "application/octet-stream")
     }
   }
 
@@ -282,11 +291,13 @@ enum AgentRuntimeArtifactUi {
       return "JSON"
     case "md":
       return "Markdown"
+    case "csv", "tsv":
+      return language(for: path).uppercased()
     default:
       return "Source"
     }
   }
 
   private static let codeExtensions = Set(["py", "js", "ts", "java", "kt", "kts", "c", "h", "cpp", "hpp", "rs", "go", "sh"])
-  private static let previewExtensions = codeExtensions.union(["txt", "md", "json", "yaml", "yml", "xml", "html", "htm", "css", "toml", "ini", "zip"])
+  private static let previewExtensions = codeExtensions.union(["txt", "md", "json", "yaml", "yml", "xml", "html", "htm", "css", "toml", "ini", "zip", "csv", "tsv"])
 }

@@ -88,7 +88,7 @@ struct GalaxySSIAgentHomePresentationRoutes: ViewModifier {
       .fileExporter(
         isPresented: $runtimeArtifactExportPresented,
         document: runtimeArtifactDocument,
-        contentType: .data,
+        contentType: runtimeArtifactDocument?.contentType ?? .data,
         defaultFilename: runtimeArtifactExportFilename,
         onCompletion: onArtifactExport
       )

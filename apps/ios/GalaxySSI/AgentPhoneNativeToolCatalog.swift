@@ -913,7 +913,8 @@ enum AgentPhoneNativeToolCatalog {
       let openability = objectSchema(properties: [
         "status": .object(enumStringSchema(["verified", "unverified"])),
         "sha256": digest,
-        "scope": .object(enumStringSchema(["byte_stream", "utf8_text_read"])),
+        "scope": .object(enumStringSchema(["byte_stream", "utf8_text_read", "pdf_document_open",
+          "image_first_frame_decode", "office_package_open", "archive_entries_read"])),
         "reason": .object(stringSchema(maxLength: 128)),
         "details": .object(details)
       ], required: ["status", "sha256", "scope"])

@@ -12,6 +12,70 @@ enum AgentOfficeDocumentExtractionError: LocalizedError, Equatable {
 }
 
 enum AgentOfficeDocumentExtractor {
+  static func verifyOpenability(_ bytes: Data, extension ext: String) throws {
+    let main: String
+    let root: String
+    let mimeSuffix: String
+    let child: String
+    switch ext {
+    case "docx": (main, root, mimeSuffix, child) = ("word/document.xml", "document", "wordprocessingml.document", "body")
+    case "xlsx": (main, root, mimeSuffix, child) = ("xl/workbook.xml", "workbook", "spreadsheetml.sheet", "sheet")
+    case "pptx": (main, root, mimeSuffix, child) = ("ppt/presentation.xml", "presentation", "presentationml.presentation", "sldId")
+    default: throw AgentOfficeDocumentExtractionError.invalid("Unsupported Office format")
+    }
+    guard bytes.count <= 24 * 1_024 * 1_024 else {
+      throw AgentOfficeDocumentExtractionError.invalid("Office package exceeds the inspection limit")
+    }
+    let mime = "application/vnd.openxmlformats-officedocument.\(mimeSuffix).main+xml"
+    let types = OfficePackageXML(element: "Override") { $0["PartName"] == "/" + main && $0["ContentType"] == mime }
+    let relationships = OfficePackageXML(element: "Relationship") { attrs in
+      attrs["Type"]?.hasSuffix("/officeDocument") == true && attrs["TargetMode"] != "External" &&
+        (attrs["Target"] == main || attrs["Target"] == "/" + main)
+    }
+    let document = OfficePackageXML(element: child) { _ in true }
+    var hasContentPart = ext == "docx"
+    try AgentDesktopArtifactActions.verifyZip(data: bytes, requiredParts: ["[Content_Types].xml", "_rels/.rels", main]) {
+      path, data in
+      switch path {
+      case "[Content_Types].xml": try parseXML(data, delegate: types)
+      case "_rels/.rels": try parseXML(data, delegate: relationships)
+      case main: try parseXML(data, delegate: document)
+      default:
+        guard path.hasSuffix(".xml") || path.hasSuffix(".rels") else { return }
+        let part = OfficePackageXML()
+        try parseXML(data, delegate: part)
+        if ext == "xlsx", path.hasPrefix("xl/worksheets/sheet"), part.root == "worksheet" {
+          hasContentPart = true
+        } else if ext == "pptx", path.hasPrefix("ppt/slides/slide"), part.root == "sld" {
+          hasContentPart = true
+        }
+      }
+    }
+    guard types.root == "Types", types.matched, relationships.root == "Relationships", relationships.matched,
+          document.root == root, document.matched, hasContentPart else {
+      throw AgentOfficeDocumentExtractionError.invalid("Office package structure does not match its format")
+    }
+  }
+
+  private final class OfficePackageXML: NSObject, XMLParserDelegate {
+    let element: String
+    let predicate: ([String: String]) -> Bool
+    var root: String?
+    var matched = false
+
+    init(element: String = "", predicate: @escaping ([String: String]) -> Bool = { _ in false }) {
+      self.element = element
+      self.predicate = predicate
+    }
+
+    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
+                qualifiedName: String?, attributes attributeDict: [String: String]) {
+      let name = localName(elementName, qualifiedName)
+      if root == nil { root = name }
+      if name == element, predicate(attributeDict) { matched = true }
+    }
+  }
+
   static func readXlsxParts(_ bytes: Data) throws -> [String: Data] {
     try readEntries(bytes, verifyChecksum: true) { name in
       name == "xl/workbook.xml" || name == "xl/_rels/workbook.xml.rels" || name == "xl/sharedStrings.xml" ||

@@ -992,7 +992,7 @@ struct ConversationView: View {
     .fileExporter(
       isPresented: $runtimeArtifactExportPresented,
       document: runtimeArtifactDocument,
-      contentType: .data,
+      contentType: runtimeArtifactDocument?.contentType ?? .data,
       defaultFilename: runtimeArtifactExportFilename
     ) { result in
       if case .failure(let error) = result {
@@ -1421,17 +1421,17 @@ struct ConversationView: View {
       return
     }
     do {
-      let file = try AgentRuntimeArtifactUi.resolve(
+      let data = try AgentRuntimeArtifactUi.readVerified(
         payload: payload,
         managedRoots: runtimeArtifactManagedRoots
       )
       if action.verb == "preview_runtime_artifact" {
         runtimeArtifactPreview = GalaxySSIRuntimeArtifactPreview(
           title: payload.displayName,
-          content: try AgentRuntimeArtifactUi.preview(file: file)
+          content: try AgentRuntimeArtifactUi.preview(data: data, path: payload.relativePath)
         )
       } else {
-        runtimeArtifactDocument = GalaxySSIRuntimeArtifactDocument(data: try Data(contentsOf: file))
+        runtimeArtifactDocument = GalaxySSIRuntimeArtifactDocument(data: data, contentType: payload.exportContentType)
         runtimeArtifactExportFilename = payload.displayName
         runtimeArtifactExportPresented = true
       }
@@ -2028,17 +2028,20 @@ struct GalaxySSIRuntimeArtifactPreview: Identifiable {
 }
 
 struct GalaxySSIRuntimeArtifactDocument: FileDocument {
-  static var readableContentTypes: [UTType] { [.data] }
-  static var writableContentTypes: [UTType] { [.data] }
+  static var readableContentTypes: [UTType] { [.data, .commaSeparatedText, .tabSeparatedText] }
+  static var writableContentTypes: [UTType] { readableContentTypes }
 
   var data: Data
+  let contentType: UTType
 
-  init(data: Data = Data()) {
+  init(data: Data = Data(), contentType: UTType = .data) {
     self.data = data
+    self.contentType = contentType
   }
 
   init(configuration: ReadConfiguration) throws {
     data = configuration.file.regularFileContents ?? Data()
+    contentType = configuration.contentType
   }
 
   func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {

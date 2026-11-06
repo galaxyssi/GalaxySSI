@@ -8826,7 +8826,8 @@ final class MessageCoordinator: ObservableObject {
             requirements: plan.completionRequirements, history: observationHistory)
         let diagnosticText = boundedDiagnostics(diagnostics, limit: 4_000)
           .map { AgentMcpJSONCodec.stringify($0) }.joined(separator: "\n")
-        let requestedArtifacts = (completionRequirements?.fileArtifacts ?? []) + (plan.completionRequirements?.fileArtifacts ?? [])
+        let requestedArtifacts = AgentArtifactCompletionEvidence.combinedRequirements(prior: completionRequirements,
+          candidate: plan.completionRequirements, history: artifactHistory, scope: artifactScope)
         let artifactMissing = AgentArtifactCompletionEvidence.missing(requestedArtifacts, history: artifactHistory,
           scope: artifactScope)
         let resultMissing = AgentGoalResultEvidence.missing(plan.completionRequirements,
@@ -10106,6 +10107,15 @@ final class MessageCoordinator: ObservableObject {
     continuedPlan.replanCount = max(nextPlan.replanCount, previousPlan.replanCount + 1)
     continuedPlan.completionRequirements = nextPlan.completionRequirements
       ?? previousPlan.completionRequirements
+    if previousPlan.completionRequirements?.fileArtifacts != nil ||
+        nextPlan.completionRequirements?.fileArtifacts != nil {
+      let scope = AgentPlanContinuationScope(conversationId: outgoing.conversationId,
+        turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString))
+      var seen = Set<AgentArtifactRequirement>()
+      continuedPlan.completionRequirements?.fileArtifacts = AgentArtifactCompletionEvidence.combinedRequirements(
+        prior: previousPlan.completionRequirements, candidate: nextPlan.completionRequirements,
+        history: previousPlan.historyForReplan(), scope: scope).filter { seen.insert($0).inserted }
+    }
     continuedPlan.actionHistory = previousPlan.historyForNextRevision(nextRevision)
     continuedPlan.checkpoints = previousPlan.checkpoints
     continuedPlan.verificationResults = previousPlan.verificationResults
@@ -10162,15 +10172,16 @@ final class MessageCoordinator: ObservableObject {
       store.upsertAgentTask(task)
       return
     }
-    let requested = (previousPlan.completionRequirements?.fileArtifacts ?? []) + (finalPlan.completionRequirements?.fileArtifacts ?? [])
+    let requested = AgentArtifactCompletionEvidence.combinedRequirements(prior: previousPlan.completionRequirements,
+      candidate: finalPlan.completionRequirements, history: history, scope: scope)
     var seen = Set<AgentArtifactRequirement>()
     let requestedFiles = requested.filter { seen.insert($0).inserted }
     let assessment = AgentArtifactCompletionEvidence.assess(requestedFiles,
       history: history, scope: scope)
     let root = AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL()
     guard assessment.missing.isEmpty, assessment.verified.allSatisfy({ receipt in
-      let url = AgentVerifiedArtifactSnapshot.url(root: root, digest: receipt.digest.lowercased(), path: receipt.path)
-      return (try? AgentDesktopArtifactActions.sha256(source: url)) == receipt.digest.lowercased()
+      (try? AgentVerifiedArtifactSnapshot.verifiedBytes(path: receipt.path, digest: receipt.digest,
+        size: receipt.size, root: root)) != nil
     }) else {
       task.phase = .blocked
       task.blocked = true

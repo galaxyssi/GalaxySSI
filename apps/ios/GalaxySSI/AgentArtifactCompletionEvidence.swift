@@ -1,6 +1,8 @@
+import CoreGraphics
 import CryptoKit
 import Darwin
 import Foundation
+import ImageIO
 
 struct AgentArtifactRequirement: Codable, Equatable, Hashable {
   let path: String
@@ -85,6 +87,7 @@ struct AgentArtifactOperationReceipt: Codable, Equatable {
     let inspection: Inspection?
     if toolId == AgentPhoneNativeToolCatalog.workspaceExport,
        let item = result.output["artifacts"]?.arrayValue?.first?.objectValue,
+       item.string("artifact_kind") == AgentVerifiedArtifactSnapshot.kind,
        let readback = item["openability"]?.objectValue,
        readback.string("status") == "verified", readback.string("sha256") == item.string("sha256"),
        item.string("relative_path") == input.string("path"),
@@ -172,9 +175,11 @@ enum AgentArtifactCompletionEvidence {
         return failure("artifact_export_missing_stale_or_failed")
       }
       if !requirement.sourceSha256.isEmpty {
+        if inspection.digest.lowercased() == requirement.sourceSha256 {
+          return "artifact_unchanged_from_declared_source: \(requirement.path). source_sha256 is the observed pre-edit digest, not the output checksum. For a verified new file, clear the mistaken hash with an explicit completion_requirements.reason. Never change correct content merely to change its hash; a requested edit still needs proof."
+        }
         let previous = scoped.dropLast().filter { $0.receipt?.replayed != true }
-        guard inspection.digest.lowercased() != requirement.sourceSha256,
-              let change = previous.lastIndex(where: { !$0.isExport }),
+        guard let change = previous.lastIndex(where: { !$0.isExport }),
               let source = observations.last(where: {
                 $0.workspace == workspace && $0.verifiedInspection?.path == requirement.path &&
                   $0.indexBefore(previous[change], in: observations)
@@ -187,6 +192,39 @@ enum AgentArtifactCompletionEvidence {
       return nil
     }
     return (missing, verified)
+  }
+
+  static func combinedRequirements(prior: AgentCompletionRequirements?, candidate: AgentCompletionRequirements?,
+                                   history: [AgentAction], scope: AgentPlanContinuationScope) -> [AgentArtifactRequirement] {
+    let previous = prior?.fileArtifacts ?? []
+    let proposed = candidate?.fileArtifacts ?? []
+    guard candidate?.reason.isBlank == false, previous.contains(where: { !$0.sourceSha256.isEmpty }),
+          proposed.contains(where: { $0.sourceSha256.isEmpty }) else { return previous + proposed }
+    let observations = AgentDurablePlanHistoryPolicy.latestSnapshots(history.filter(scope.owns)).compactMap {
+      Observation(action: $0, scope: scope)
+    }
+    let retained = previous.filter { requirement in
+      guard !requirement.sourceSha256.isEmpty,
+            let correction = proposed.first(where: {
+              $0.path == requirement.path && $0.workspaceId == requirement.workspaceId && $0.sourceSha256.isEmpty
+            }),
+            let export = assess([correction], history: history, scope: scope).verified.first,
+            export.digest.lowercased() == requirement.sourceSha256 else { return true }
+      // A verified create-only operation can prove the claimed source was actually a new output.
+      let changes = observations.filter { !$0.isExport && $0.affects(requirement.path) }
+      guard changes.count == 1, let first = changes.first, first.action.status == .completed,
+            let receipt = first.receipt, receipt.succeeded, !receipt.replayed,
+            !first.linux, first.input.string("path") == requirement.path,
+            [AgentPhoneNativeToolCatalog.workspaceCreateText, AgentPhoneNativeToolCatalog.workspaceCreateBytes]
+              .contains(first.tool),
+            observations.filter({ $0.isExport && $0.affects(requirement.path) }).allSatisfy({ $0.workspace == first.workspace }),
+            !observations.contains(where: {
+              $0.indexBefore(first, in: observations) && $0.workspace == first.workspace &&
+                $0.verifiedInspection?.path == requirement.path
+            }) else { return true }
+      return false
+    }
+    return retained + proposed
   }
 
   private struct Observation: Equatable {
@@ -282,9 +320,7 @@ enum AgentVerifiedArtifactSnapshot {
     let destination = url(root: root, digest: digest, path: path)
     try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
     try data.write(to: destination, options: .atomic)
-    guard try AgentDesktopArtifactActions.sha256(source: destination) == digest else {
-      throw AgentRuntimeProjectWorkspaceError.invalid("Exported bytes could not be verified")
-    }
+    _ = try verifiedBytes(path: path, digest: digest, size: Int64(data.count), root: root)
     return ["relative_path": .string(path), "artifact_kind": .string(kind),
             "file_count": .int(1), "size_bytes": .int(Int64(data.count)), "sha256": .string(digest),
             "openability": .object(openability(data: data, path: path, digest: digest))]
@@ -293,7 +329,16 @@ enum AgentVerifiedArtifactSnapshot {
   private static func openability(data: Data, path: String, digest: String) -> AgentMcpJSONObject {
     var result: AgentMcpJSONObject = ["status": .string("verified"), "sha256": .string(digest),
                                       "scope": .string("byte_stream")]
-    guard textExtensions.contains(URL(fileURLWithPath: path).pathExtension.lowercased()) else { return result }
+    let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
+    if let format = binaryFormat(for: ext) {
+      result["scope"] = .string(format)
+      if !verifyBinary(data, extension: ext, format: format) {
+        result["status"] = .string("unverified")
+        result["reason"] = .string("format_open_failed")
+      }
+      return result
+    }
+    guard textExtensions.contains(ext) else { return result }
     result["scope"] = .string("utf8_text_read")
     guard let decoded = String(data: data, encoding: .utf8) else {
       result["status"] = .string("unverified")
@@ -310,6 +355,49 @@ enum AgentVerifiedArtifactSnapshot {
     result["details"] = .object(details)
     return result
   }
+
+  private static func binaryFormat(for ext: String) -> String? {
+    if ext == "pdf" { return "pdf_document_open" }
+    if ["png", "jpg", "jpeg", "webp", "gif", "bmp"].contains(ext) { return "image_first_frame_decode" }
+    if ["docx", "xlsx", "pptx"].contains(ext) { return "office_package_open" }
+    if ["zip", "jar", "apk", "aab"].contains(ext) { return "archive_entries_read" }
+    return nil
+  }
+
+  private static func verifyBinary(_ data: Data, extension ext: String, format: String) -> Bool {
+    switch format {
+    case "pdf_document_open":
+      guard let provider = CGDataProvider(data: data as CFData),
+            let pdf = CGPDFDocument(provider), !pdf.isEncrypted || pdf.isUnlocked,
+            let page = pdf.page(at: 1) else { return false }
+      let box = page.getBoxRect(.mediaBox)
+      return box.width.isFinite && box.height.isFinite && box.width > 0 && box.height > 0
+    case "image_first_frame_decode":
+      let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                      kCGImageSourceThumbnailMaxPixelSize: 1_024,
+                                      kCGImageSourceShouldCacheImmediately: true]
+      guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+            let type = CGImageSourceGetType(source),
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+            let width = properties[kCGImagePropertyPixelWidth] as? Int,
+            let height = properties[kCGImagePropertyPixelHeight] as? Int,
+            width > 0, height > 0, width <= 40_000, height <= 40_000, width * height <= 100_000_000,
+            let expectedType = imageTypes[ext], (type as String) == expectedType,
+            let frame = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
+            CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete else { return false }
+      return frame.width > 0 && frame.height > 0
+    case "office_package_open":
+      return (try? AgentOfficeDocumentExtractor.verifyOpenability(data, extension: ext)) != nil
+    case "archive_entries_read":
+      return (try? AgentDesktopArtifactActions.verifyZip(data: data)) != nil
+    default:
+      return false
+    }
+  }
+
+  private static let imageTypes = ["png": "public.png", "jpg": "public.jpeg", "jpeg": "public.jpeg",
+                                   "gif": "com.compuserve.gif", "webp": "org.webmproject.webp",
+                                   "bmp": "com.microsoft.bmp"]
 
   static func matchesReviewText(_ text: String, digest: String, size: Int64) -> Bool {
     text.utf16.count <= maximumReviewCharacters && Int64(text.utf8.count) == size &&
@@ -335,11 +423,36 @@ enum AgentVerifiedArtifactSnapshot {
 
   static func readLinuxFile(path: String, project: URL) throws -> Data {
     let parts = path.split(separator: "/").map(String.init)
-    let invalid = AgentRuntimeProjectWorkspaceError.invalid("The Linux artifact is not a bounded regular workspace file")
-    guard AgentArtifactRequirement.validPath(path), !parts.contains(".galaxyssi-runtime"), !parts.contains(".git")
-    else { throw invalid }
+    guard !parts.contains(".galaxyssi-runtime"), !parts.contains(".git") else {
+      throw AgentRuntimeProjectWorkspaceError.invalid("The Linux artifact path is reserved")
+    }
+    return try readRegularFile(path: path, root: project, limit: maximumBytes)
+  }
+
+  static func verifiedBytes(path: String, digest: String, size: Int64, root: URL) throws -> Data {
+    guard AgentArtifactRequirement.validPath(path), AgentArtifactRequirement.validDigest(digest) else {
+      throw AgentRuntimeProjectWorkspaceError.invalid("Invalid artifact metadata")
+    }
+    let name = URL(fileURLWithPath: path).lastPathComponent
+    return try verifiedFile(path: "\(folder)/\(digest.lowercased())/\(name)", digest: digest,
+                            size: size, root: root, limit: maximumBytes)
+  }
+
+  static func verifiedFile(path: String, digest: String, size: Int64, root: URL, limit: Int64) throws -> Data {
+    guard size >= 0, size <= limit else { throw AgentRuntimeProjectWorkspaceError.invalid("Invalid artifact size") }
+    let data = try readRegularFile(path: path, root: root, limit: size)
+    guard Int64(data.count) == size, sha256(data) == digest.lowercased() else {
+      throw AgentRuntimeProjectWorkspaceError.invalid("Exported bytes could not be verified")
+    }
+    return data
+  }
+
+  private static func readRegularFile(path: String, root: URL, limit: Int64) throws -> Data {
+    let invalid = AgentRuntimeProjectWorkspaceError.invalid("The artifact is not a bounded regular workspace file")
+    guard AgentArtifactRequirement.validPath(path) else { throw invalid }
+    let parts = path.split(separator: "/").map(String.init)
     // Open each component relative to its parent so a guest cannot swap in a symlink between validation and read.
-    var directory = open(project.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+    var directory = open(root.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
     guard directory >= 0 else { throw invalid }
     defer { close(directory) }
     for component in parts.dropLast() {
@@ -355,8 +468,8 @@ enum AgentVerifiedArtifactSnapshot {
     defer { try? handle.close() }
     var before = stat()
     guard fstat(fd, &before) == 0, (before.st_mode & mode_t(S_IFMT)) == mode_t(S_IFREG),
-          before.st_size >= 0, before.st_size <= maximumBytes else { throw invalid }
-    let data = try handle.read(upToCount: Int(maximumBytes) + 1) ?? Data()
+          before.st_size >= 0, before.st_size <= limit else { throw invalid }
+    let data = try handle.read(upToCount: Int(limit) + 1) ?? Data()
     var after = stat()
     guard fstat(fd, &after) == 0, Int64(data.count) == before.st_size, after.st_size == before.st_size,
           after.st_mtimespec.tv_sec == before.st_mtimespec.tv_sec,

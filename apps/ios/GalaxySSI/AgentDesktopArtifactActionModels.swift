@@ -22,7 +22,10 @@ enum AgentDesktopArtifactActions {
   static let maximumExtractedBytes: Int64 = 128 * 1_024 * 1_024
 
   static func readTextPreview(source: URL, maximumBytes: Int = maximumTextPreviewBytes) throws -> String {
-    let data = try Data(contentsOf: source)
+    try readTextPreview(data: Data(contentsOf: source), maximumBytes: maximumBytes)
+  }
+
+  static func readTextPreview(data: Data, maximumBytes: Int = maximumTextPreviewBytes) throws -> String {
     guard data.count <= maximumBytes else {
       throw AgentDesktopArtifactActionError.invalid("File is too large to preview")
     }
@@ -37,6 +40,23 @@ enum AgentDesktopArtifactActions {
 
   static func archivePreview(source: URL, maximumEntries: Int = maximumArchiveEntries) throws -> [String] {
     try inspectZip(source: source, maximumEntries: maximumEntries).map(\.displayText)
+  }
+
+  static func archivePreview(data: Data) throws -> [String] {
+    try inspectZip(data: data, maximumEntries: maximumArchiveEntries).map(\.displayText)
+  }
+
+  static func verifyZip(data: Data, requiredParts: Set<String> = [],
+                        validateEntry: (String, Data) throws -> Void = { _, _ in }) throws {
+    let entries = try inspectZip(data: data, maximumEntries: maximumArchiveEntries)
+    guard !entries.isEmpty, entries.reduce(Int64(0), { $0 + $1.sizeBytes }) <= maximumExtractedBytes,
+          requiredParts.isSubset(of: Set(entries.map(\.path))) else {
+      throw AgentDesktopArtifactActionError.unsafeArchive("Archive is over the expansion limit or missing required parts")
+    }
+    for entry in entries {
+      let bytes = try extract(entry, from: data)
+      try validateEntry(entry.path, bytes)
+    }
   }
 
   static func extractZip(source: URL, to destinationRoot: URL) throws -> [URL] {
@@ -99,7 +119,10 @@ enum AgentDesktopArtifactActions {
     guard source.pathExtension.lowercased() == "zip" else {
       throw AgentDesktopArtifactActionError.invalid("This archive format cannot be previewed")
     }
-    let data = try Data(contentsOf: source)
+    return try inspectZip(data: Data(contentsOf: source), maximumEntries: maximumEntries)
+  }
+
+  private static func inspectZip(data: Data, maximumEntries: Int) throws -> [StoredZipEntry] {
     guard let eocd = endOfCentralDirectoryOffset(in: data),
           let disk = data.uint16LE(at: eocd + 4),
           let centralDisk = data.uint16LE(at: eocd + 6),
@@ -121,7 +144,8 @@ enum AgentDesktopArtifactActions {
     }
     let directoryOffset = Int(centralOffset)
     let directorySize = Int(centralSize)
-    guard data.rangeFits(start: directoryOffset, length: directorySize) else {
+    guard data.rangeFits(start: directoryOffset, length: directorySize),
+          directoryOffset + directorySize <= eocd else {
       throw AgentDesktopArtifactActionError.unsafeArchive("ZIP central directory is truncated")
     }
 
@@ -164,9 +188,11 @@ enum AgentDesktopArtifactActions {
         guard Int64(uncompressedSize) <= maximumExtractedBytes else {
           throw AgentDesktopArtifactActionError.unsafeArchive("Archive entry exceeds the safety limit")
         }
-        let dataOffset = try localDataOffset(data, at: Int(localOffset))
+        let dataOffset = try localDataOffset(data, at: Int(localOffset),
+          expectedName: rawPath, flags: flags, method: method)
         let dataLength = Int(compressedSize)
-        guard data.rangeFits(start: dataOffset, length: dataLength) else {
+        guard data.rangeFits(start: dataOffset, length: dataLength),
+              dataOffset + dataLength <= directoryOffset else {
           throw AgentDesktopArtifactActionError.unsafeArchive("ZIP entry data is truncated")
         }
         entries.append(StoredZipEntry(
@@ -178,6 +204,9 @@ enum AgentDesktopArtifactActions {
         ))
       }
       cursor = next
+    }
+    guard cursor == directoryOffset + directorySize else {
+      throw AgentDesktopArtifactActionError.unsafeArchive("ZIP central directory size does not match its entries")
     }
     return entries
   }
@@ -193,7 +222,7 @@ enum AgentDesktopArtifactActions {
         content = try AgentMcpPackageInstaller.inflateDeflate(
           raw,
           expectedBytes: entry.sizeBytes,
-          maxBytes: Int(maximumExtractedBytes)
+          maxBytes: Int(entry.sizeBytes)
         )
       } catch {
         throw AgentDesktopArtifactActionError.unsafeArchive("ZIP entry could not be decompressed")
@@ -207,14 +236,19 @@ enum AgentDesktopArtifactActions {
     return content
   }
 
-  private static func localDataOffset(_ data: Data, at offset: Int) throws -> Int {
+  private static func localDataOffset(_ data: Data, at offset: Int, expectedName: String,
+                                      flags: UInt16, method: UInt16) throws -> Int {
     guard data.uint32LE(at: offset) == 0x04034b50,
+          data.uint16LE(at: offset + 6) == flags,
+          data.uint16LE(at: offset + 8) == method,
           let nameLength = data.uint16LE(at: offset + 26),
           let extraLength = data.uint16LE(at: offset + 28) else {
       throw AgentDesktopArtifactActionError.unsafeArchive("ZIP local entry is invalid")
     }
     let result = offset + 30 + Int(nameLength) + Int(extraLength)
-    guard result >= offset, result <= data.count else {
+    let nameStart = offset + 30
+    guard result >= offset, result <= data.count,
+          data[nameStart..<(nameStart + Int(nameLength))].elementsEqual(expectedName.utf8) else {
       throw AgentDesktopArtifactActionError.unsafeArchive("ZIP local entry is truncated")
     }
     return result
@@ -224,7 +258,8 @@ enum AgentDesktopArtifactActions {
     guard data.count >= 22 else { return nil }
     let lowerBound = max(0, data.count - 22 - 65_535)
     for offset in stride(from: data.count - 22, through: lowerBound, by: -1) {
-      if data.uint32LE(at: offset) == 0x06054b50 { return offset }
+      if data.uint32LE(at: offset) == 0x06054b50, let comment = data.uint16LE(at: offset + 20),
+         offset + 22 + Int(comment) == data.count { return offset }
     }
     return nil
   }
