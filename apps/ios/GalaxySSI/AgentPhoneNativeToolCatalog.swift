@@ -1136,10 +1136,10 @@ enum AgentPhoneNativeToolCatalog {
     if kind == .setAlarm {
       let fields: [String: AgentMcpJSONValue] = [
         "timer_operation": .object(["type": .string("string"),
-          "enum": .array(["start", "inspect", "cancel"].map(AgentMcpJSONValue.string))]),
+          "enum": .array(["start", "inspect", "pause", "resume", "cancel", "replace"].map(AgentMcpJSONValue.string))]),
         "timer_seconds": .object(actionNumberSchema(minimum: 1, maximum: 604_800)),
         "operation_id": .object(stringSchema(minLength: 1, maxLength: 64).merging([
-          "description": .string("Omit for a new timer. Inspect or cancel only a timer ID returned by iOS.")
+          "description": .string("Omit for a new timer. Use the timer ID returned by iOS in this conversation to inspect, pause, resume, cancel or replace it.")
         ]) { _, new in new }),
         "hour": .object(actionNumberSchema(minimum: 0, maximum: 23)),
         "minute": .object(actionNumberSchema(minimum: 0, maximum: 59)),
