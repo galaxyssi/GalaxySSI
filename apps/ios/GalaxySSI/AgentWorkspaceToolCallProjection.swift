@@ -67,7 +67,12 @@ enum AgentWorkspaceToolCallProjection {
     let message = result?.message ?? action.result
     let evidence = (metadata["native_tool_output"] ?? "").ifBlank(metadata["evidence"] ?? "")
       .ifBlank(metadata["receipt"] ?? "").ifBlank(action.evidence)
-    let output = decode(evidence)
+    let tool = (action.parameters["tool_id"] ?? "").ifBlank(action.parameters["connector_id"] ?? "")
+      .ifBlank(action.target).ifBlank(action.kind.rawValue.lowercased())
+    let isArtifactExport = tool == AgentPhoneNativeToolCatalog.workspaceExport
+    let output = decode(evidence).map {
+      isArtifactExport ? AgentVerifiedArtifactSnapshot.omittingReviewText(in: $0) : $0
+    }
     let statusName = (metadata["native_tool_status"] ?? "").ifBlank(metadata["native_status"] ?? "")
       .ifBlank(output?["status"]?.stringValue ?? "").lowercased()
     let unresolved = metadata["plan_node_outcome_unknown"] == "true" ||
@@ -88,7 +93,7 @@ enum AgentWorkspaceToolCallProjection {
       }
     }
     var fields = output ?? [:]
-    if output == nil && !evidence.isBlank && isTerminal(status) {
+    if output == nil && !isArtifactExport && !evidence.isBlank && isTerminal(status) {
       fields["raw_evidence"] = .string(String(evidence.prefix(2_048)))
     }
     if fields["message"] == nil && !message.isBlank { fields["message"] = .string(String(message.prefix(1_024))) }
@@ -107,8 +112,7 @@ enum AgentWorkspaceToolCallProjection {
       AgentMcpJSONCodec.stringify(["raw_evidence": .string(String(encoded.prefix(1_024))), "truncated": .bool(true)])
     return AgentWorkspaceToolCallRecord(
       id: id,
-      toolName: (action.parameters["tool_id"] ?? "").ifBlank(action.parameters["connector_id"] ?? "")
-        .ifBlank(action.target).ifBlank(action.kind.rawValue.lowercased()),
+      toolName: tool,
       status: status,
       argumentsJson: action.parameters["input_json"] ?? "",
       resultJson: boundedOutput,

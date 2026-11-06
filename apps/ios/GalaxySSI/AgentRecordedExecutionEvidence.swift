@@ -64,6 +64,10 @@ enum AgentRecordedExecutionEvidence {
     let raw = receipt == nil ? action.evidence :
       (metadata["native_tool_output"] ?? "").ifBlank(metadata["evidence"] ?? "").ifBlank(metadata["receipt"] ?? "")
     var evidence = jsonObject(raw, rawKey: "raw_evidence")
+    if tool == AgentPhoneNativeToolCatalog.workspaceExport {
+      evidence["raw_evidence"] = nil
+      evidence = AgentVerifiedArtifactSnapshot.omittingReviewText(in: evidence)
+    }
     let nativeStatus = (metadata["native_tool_status"] ?? "").ifBlank(metadata["native_status"] ?? "")
       .ifBlank(evidence["status"]?.stringValue ?? "").lowercased()
     let receiptID = (metadata["native_receipt_id"] ?? "").ifBlank(metadata["invocation_id"] ?? "")

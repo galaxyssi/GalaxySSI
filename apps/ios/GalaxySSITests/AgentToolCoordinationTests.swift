@@ -278,6 +278,30 @@ final class AgentToolCoordinationTests: XCTestCase {
     )
   }
 
+  func testKnownWorkspaceEditAndExportRequireAnOrderedSuccessfulDependency() {
+    let catalog = AgentPhoneNativeToolCatalog.self
+    let tools = catalog.workspaceExecutableDefinitions(store: AgentWorkspaceNativeToolExecutor())
+    let descriptors = Dictionary(uniqueKeysWithValues: tools.map { ($0.definition.descriptor.id, $0.definition.descriptor) })
+    let descriptorFor: (String) -> AgentNativeToolDescriptor? = { descriptors[$0] }
+    let write = action("write", kind: .callNativeTool, target: catalog.workspaceWriteText,
+      parameters: ["input_json": #"{"workspace_id":"current","path":"reports/expenses.csv","text":"total,50"}"#])
+    var export = action("export", kind: .callNativeTool, target: catalog.workspaceExport,
+      parameters: ["input_json": #"{"workspace_id":"current","path":"reports/expenses.csv"}"#])
+    XCTAssertFalse(AgentPlanExecutionBatchPolicy.accepts(actions: [write, export], descriptorFor: descriptorFor))
+    export.parameters["depends_on"] = write.id
+    XCTAssertTrue(AgentPlanExecutionBatchPolicy.accepts(actions: [write, export], descriptorFor: descriptorFor))
+    XCTAssertFalse(AgentPlanExecutionBatchPolicy.accepts(actions: [write, export, action("final")], descriptorFor: descriptorFor))
+    var plan = AgentPlan(goal: "Create and export CSV", screen: AgentScreenContext(foregroundApp: "GalaxySSI"),
+      steps: [], actions: [write, export], route: AgentRoute())
+    XCTAssertEqual(AgentPlanExecutionBatchPolicy.select(plan: plan, descriptorFor: descriptorFor).actions.map(\.id), ["write"])
+    plan.actions[0].status = .completed
+    XCTAssertEqual(AgentPlanExecutionBatchPolicy.select(plan: plan, descriptorFor: descriptorFor).actions.map(\.id), ["export"])
+    plan.actions[0].status = .failed
+    let blocked = AgentToolCoordination.blockActionsWithFailedDependencies(plan)
+    XCTAssertEqual(blocked.actions[1].status, .blocked)
+    XCTAssertTrue(AgentPlanExecutionBatchPolicy.select(plan: blocked, descriptorFor: descriptorFor).actions.isEmpty)
+  }
+
   func testAdaptiveConcurrencyPolicyRespondsToDevicePressure() {
     let healthy = AgentAdaptiveConcurrencySignals(
       logicalProcessorCount: 8,

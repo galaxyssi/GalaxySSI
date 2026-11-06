@@ -1262,6 +1262,7 @@ extension GalaxySSIStoreTests {
       let result = executor.execute(action: action, screen: AgentScreenContext(foregroundApp: "GalaxySSI"))
       action.status = result.success ? .completed : .failed
       action.artifactReceipt = AgentArtifactOperationReceipt.from(result)
+      action.evidence = result.metadata["native_tool_output"] ?? ""
       return action
     }
     func write(_ text: String) -> AgentAction {
@@ -1273,7 +1274,8 @@ extension GalaxySSIStoreTests {
     func missing(_ history: [AgentAction], requirement: AgentArtifactRequirement? = nil) -> [String] {
       AgentArtifactCompletionEvidence.missing([requirement ?? target], history: history, scope: scope)
     }
-    let initial = write("Original")
+    let original = "Name,Total\r\n  A,7\r\n"
+    let initial = write(original)
     let source = run(catalog.workspaceSha256, input: ["path": .string(target.path)])
     let old = export("export-before-edit")
     XCTAssertEqual(old.status, .completed)
@@ -1281,7 +1283,11 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(first.workspaceId, workspace)
     let snapshot = try XCTUnwrap(first.inspection)
     let file = AgentVerifiedArtifactSnapshot.url(root: root, digest: snapshot.digest, path: snapshot.path)
-    XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "Original")
+    XCTAssertEqual(try Data(contentsOf: file), Data(original.utf8))
+    let review = try XCTUnwrap(AgentPlannerObservation.artifactExport(old, scope: scope))
+    XCTAssertEqual(review.status, "complete")
+    XCTAssertEqual(AgentObservedOutputFields.value(at: "/artifacts/0/openability/details/text", in: review.output),
+      .string(original))
     XCTAssertTrue(missing([initial, source, old]).isEmpty)
     let changed = write("Edited")
     XCTAssertFalse(missing([initial, source, old, changed]).isEmpty)
@@ -1289,6 +1295,7 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(replay.artifactReceipt?.replayed == true)
     XCTAssertFalse(missing([initial, source, old, changed, replay]).isEmpty)
     let fresh = export()
+    XCTAssertEqual(try Data(contentsOf: file), Data(original.utf8))
     XCTAssertTrue(missing([initial, source, old, changed, replay, fresh]).isEmpty)
     let transform = try XCTUnwrap(AgentArtifactRequirement(path: target.path,
       sourceSha256: try XCTUnwrap(source.artifactReceipt?.inspection?.digest), workspaceId: workspace))
@@ -1299,6 +1306,41 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(missing([fresh, deleted, failedExport]).isEmpty)
     let restored = try JSONDecoder().decode(AgentAction.self, from: JSONEncoder().encode(fresh))
     XCTAssertTrue(missing([restored]).isEmpty)
+  }
+
+  func testWorkspaceExportSchemaValidatesFullTextAndRejectsInvalidUTF8Evidence() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let tool = try XCTUnwrap(AgentPhoneNativeToolCatalog.workspaceExecutableDefinitions(
+      store: AgentWorkspaceNativeToolExecutor(runtimeRoot: root)).first {
+        $0.definition.descriptor.id == AgentPhoneNativeToolCatalog.workspaceExport
+      }?.definition.descriptor)
+    let limit = AgentVerifiedArtifactSnapshot.maximumReviewCharacters
+    let exact = String(repeating: "a", count: limit)
+    let fixtures: [(Data, String, Bool?, String?)] = [
+      (Data(), "verified", true, ""),
+      (Data(exact.utf8), "verified", true, exact),
+      (Data((exact + "b").utf8), "verified", false, nil),
+      (Data(exact.utf8) + Data([0xC3, 0x28]), "unverified", nil, nil),
+      (Data([0xEF, 0xBB, 0xBF, 0x61]), "verified", true, "\u{FEFF}a")
+    ]
+    for (bytes, status, complete, text) in fixtures {
+      let artifact = try AgentVerifiedArtifactSnapshot.write(data: bytes, path: "nested/review.csv", root: root)
+      let output: AgentMcpJSONObject = [
+        "workspace_id": .string("scope"), "artifact_workspace_id": .string("scope"),
+        "artifacts": .array([.object(artifact)])
+      ]
+      XCTAssertTrue(AgentNativeJsonSchemaValidator.validateObject(schema: tool.outputSchema, object: output).isValid)
+      let inspection = try XCTUnwrap(artifact["openability"]?.objectValue)
+      XCTAssertEqual(inspection.string("status"), status)
+      XCTAssertEqual(inspection.string("sha256"), artifact.string("sha256"))
+      let details = inspection["details"]?.objectValue
+      XCTAssertEqual(details?["text_complete"]?.boolValue, complete)
+      XCTAssertEqual(details?["text"]?.strictStringValue, text)
+      if let text { XCTAssertEqual(Data(text.utf8), bytes) }
+    }
+    XCTAssertFalse(AgentNativeJsonSchemaValidator.validateObject(
+      schema: tool.outputSchema, object: ["relative_path": .string("review.csv")]).isValid)
   }
 
   func testArtifactEvidenceRejectsPendingParentOperationsAndAmbiguousWorkspace() throws {

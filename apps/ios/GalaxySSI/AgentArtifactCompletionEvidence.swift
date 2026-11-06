@@ -267,12 +267,18 @@ enum AgentVerifiedArtifactSnapshot {
   static let folder = "verified-exports"
   static let kind = "verified_snapshot"
   static let maximumBytes: Int64 = 32 * 1_024 * 1_024
+  static let maximumReviewCharacters = 8_192
+  static let maximumReceiptBytes = 64 * 1_024
+  private static let textExtensions: Set<String> = [
+    "txt", "md", "csv", "tsv", "html", "htm", "json", "xml", "svg", "py", "js", "ts",
+    "kt", "java", "c", "cpp", "h", "css", "yaml", "yml", "toml", "log", "sh"
+  ]
 
   static func write(data: Data, path: String, root: URL) throws -> AgentMcpJSONObject {
     guard AgentArtifactRequirement.validPath(path), Int64(data.count) <= maximumBytes else {
       throw AgentRuntimeProjectWorkspaceError.invalid("Artifact path or size is invalid")
     }
-    let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    let digest = sha256(data)
     let destination = url(root: root, digest: digest, path: path)
     try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
     try data.write(to: destination, options: .atomic)
@@ -281,7 +287,50 @@ enum AgentVerifiedArtifactSnapshot {
     }
     return ["relative_path": .string(path), "artifact_kind": .string(kind),
             "file_count": .int(1), "size_bytes": .int(Int64(data.count)), "sha256": .string(digest),
-            "openability": .object(["status": .string("verified"), "sha256": .string(digest)])]
+            "openability": .object(openability(data: data, path: path, digest: digest))]
+  }
+
+  private static func openability(data: Data, path: String, digest: String) -> AgentMcpJSONObject {
+    var result: AgentMcpJSONObject = ["status": .string("verified"), "sha256": .string(digest),
+                                      "scope": .string("byte_stream")]
+    guard textExtensions.contains(URL(fileURLWithPath: path).pathExtension.lowercased()) else { return result }
+    result["scope"] = .string("utf8_text_read")
+    guard let decoded = String(data: data, encoding: .utf8) else {
+      result["status"] = .string("unverified")
+      result["reason"] = .string("invalid_utf8")
+      return result
+    }
+    // Some decoders strip a UTF-8 BOM; only return text that round-trips to the snapshot bytes.
+    let text = decoded.utf8.count + 3 == data.count && data.starts(with: [0xEF, 0xBB, 0xBF])
+      ? "\u{FEFF}" + decoded : decoded
+    let count = text.utf16.count
+    let complete = count <= maximumReviewCharacters && text.utf8.elementsEqual(data)
+    var details: AgentMcpJSONObject = ["characters_read": .int(Int64(count)), "text_complete": .bool(complete)]
+    if complete { details["text"] = .string(text) }
+    result["details"] = .object(details)
+    return result
+  }
+
+  static func matchesReviewText(_ text: String, digest: String, size: Int64) -> Bool {
+    text.utf16.count <= maximumReviewCharacters && Int64(text.utf8.count) == size &&
+      sha256(Data(text.utf8)) == digest.lowercased()
+  }
+
+  static func omittingReviewText(in output: AgentMcpJSONObject) -> AgentMcpJSONObject {
+    var output = output
+    guard var artifact = output["artifacts"]?.arrayValue?.first?.objectValue,
+          var openability = artifact["openability"]?.objectValue,
+          var details = openability["details"]?.objectValue else { return output }
+    details["text"] = nil
+    details["text_complete"] = .bool(false)
+    openability["details"] = .object(details)
+    artifact["openability"] = .object(openability)
+    output["artifacts"] = .array([.object(artifact)])
+    return output
+  }
+
+  private static func sha256(_ data: Data) -> String {
+    SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
 
   static func readLinuxFile(path: String, project: URL) throws -> Data {
