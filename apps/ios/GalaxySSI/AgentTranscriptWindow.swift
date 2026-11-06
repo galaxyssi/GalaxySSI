@@ -3,7 +3,7 @@ import Foundation
 
 @MainActor
 final class AgentTranscriptWindow: ObservableObject {
-  struct Owner: Equatable {
+  struct Owner: Hashable {
     let conversationID: String
     let generation = UUID()
   }

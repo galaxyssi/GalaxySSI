@@ -405,7 +405,10 @@ struct AgentHomeView: View {
         olderTranscriptAnchor = transcriptWindow.snapshot.prependAnchor
         visibleAgentMessageLimit = limit
       }
-      .onChange(of: transcriptWindow.snapshot.messages) { _ in
+      .onChange(of: transcriptWindow.snapshot.messages) { rows in
+        if !rows.isEmpty && transcriptWindow.snapshot.prependAnchor == nil {
+          visibleAgentMessageLimit = transcriptWindow.snapshot.loadedLimit
+        }
         refreshVisibleAgentReplyReadState()
       }
       .onChange(of: agentScreenSnapshot) { snapshot in

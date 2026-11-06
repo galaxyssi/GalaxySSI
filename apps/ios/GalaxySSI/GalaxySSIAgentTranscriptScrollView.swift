@@ -3,6 +3,7 @@ import SwiftUI
 private let galaxySSIAgentTranscriptCoordinateSpace = "galaxyssi-agent-transcript"
 
 struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
+  @Binding var visibleMessageLimit: Int
   @Binding var olderTranscriptAnchor: UUID?
   @Binding var transcriptTopLoadTriggered: Bool
   @Binding var transcriptAutoFollow: Bool
@@ -22,17 +23,18 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
   var waitingForAgentReply: Bool
   var activeAgentPhase: AgentPhase?
   var activeAgentTasks: [AgentTaskRecord]
+  var pageSize: Int
   var reduceMotion: Bool
   var voiceTranscriptionPendingViewID: String
   var replyWaitingViewID: String
   var latestButtonTitle: String
-  var isCurrentWindow: () -> Bool
   var onLoadOlderTranscriptMessages: () -> Void
   var onMessagesChanged: () -> Void
   var onExecutionStateChanged: () -> Void
   private let content: Content
 
   init(
+    visibleMessageLimit: Binding<Int>,
     olderTranscriptAnchor: Binding<UUID?>,
     transcriptTopLoadTriggered: Binding<Bool>,
     transcriptAutoFollow: Binding<Bool>,
@@ -51,16 +53,17 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
     waitingForAgentReply: Bool,
     activeAgentPhase: AgentPhase?,
     activeAgentTasks: [AgentTaskRecord],
+    pageSize: Int,
     reduceMotion: Bool,
     voiceTranscriptionPendingViewID: String,
     replyWaitingViewID: String,
     latestButtonTitle: String,
-    isCurrentWindow: @escaping () -> Bool,
     onLoadOlderTranscriptMessages: @escaping () -> Void,
     onMessagesChanged: @escaping () -> Void,
     onExecutionStateChanged: @escaping () -> Void,
     @ViewBuilder content: () -> Content
   ) {
+    _visibleMessageLimit = visibleMessageLimit
     _olderTranscriptAnchor = olderTranscriptAnchor
     _transcriptTopLoadTriggered = transcriptTopLoadTriggered
     _transcriptAutoFollow = transcriptAutoFollow
@@ -79,11 +82,11 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
     self.waitingForAgentReply = waitingForAgentReply
     self.activeAgentPhase = activeAgentPhase
     self.activeAgentTasks = activeAgentTasks
+    self.pageSize = pageSize
     self.reduceMotion = reduceMotion
     self.voiceTranscriptionPendingViewID = voiceTranscriptionPendingViewID
     self.replyWaitingViewID = replyWaitingViewID
     self.latestButtonTitle = latestButtonTitle
-    self.isCurrentWindow = isCurrentWindow
     self.onLoadOlderTranscriptMessages = onLoadOlderTranscriptMessages
     self.onMessagesChanged = onMessagesChanged
     self.onExecutionStateChanged = onExecutionStateChanged
@@ -141,10 +144,9 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
             onLoadOlderTranscriptMessages()
           }
       )
-      .onChange(of: olderTranscriptAnchor) { anchor in
-        guard isCurrentWindow(), let anchor else { return }
+      .onChange(of: visibleMessageLimit) { _ in
+        guard let anchor = olderTranscriptAnchor else { return }
         DispatchQueue.main.async {
-          guard isCurrentWindow(), olderTranscriptAnchor == anchor else { return }
           withAnimation(reduceMotion ? nil : Animation.default) {
             proxy.scrollTo(anchor, anchor: .top)
           }
@@ -155,21 +157,27 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
         applyPendingSwipe(with: proxy)
       }
       .onChange(of: activeAgentConversationID) { _ in
+        visibleMessageLimit = pageSize
+        olderTranscriptAnchor = nil
+        transcriptTopLoadTriggered = false
+        transcriptAutoFollow = true
+        transcriptShowLatestButton = false
         DispatchQueue.main.async {
-          guard isCurrentWindow(), let last = messages.last else { return }
+          guard let last = messages.last else { return }
           withAnimation(reduceMotion ? nil : Animation.default) {
             proxy.scrollTo(last.id, anchor: .bottom)
           }
         }
       }
       .onAppear {
+        transcriptAutoFollow = true
+        transcriptShowLatestButton = false
         DispatchQueue.main.async {
-          guard isCurrentWindow(), let last = messages.last else { return }
+          guard let last = messages.last else { return }
           proxy.scrollTo(last.id, anchor: .bottom)
         }
       }
-      .onChange(of: messages.last?.id) { _ in
-        guard isCurrentWindow() else { return }
+      .onChange(of: messages.count) { _ in
         onMessagesChanged()
         if transcriptAutoFollow {
           if let waitingID = latestWaitingIndicatorID {
@@ -191,6 +199,17 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
       }
       .onChange(of: activeAgentPhase) { _ in
         onExecutionStateChanged()
+      }
+      .onChange(of: messages.last?.id) { id in
+        guard messages.count >= pageSize, let id else { return }
+        guard transcriptAutoFollow else { transcriptShowLatestButton = true; return }
+        withAnimation(reduceMotion ? nil : Animation.default) {
+          if let waiting = latestWaitingIndicatorID {
+            proxy.scrollTo(waiting, anchor: .bottom)
+          } else {
+            proxy.scrollTo(id, anchor: .bottom)
+          }
+        }
       }
       .onChange(of: activeAgentTasks) { _ in
         onExecutionStateChanged()
@@ -225,7 +244,6 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
       }
       .coordinateSpace(name: galaxySSIAgentTranscriptCoordinateSpace)
       .onPreferenceChange(AgentTranscriptScrollMetricsKey.self) { metrics in
-        guard isCurrentWindow() else { return }
         transcriptContentMinY = metrics.contentMinY
         let atTop = metrics.contentMinY >= -8
         let userIsAwayFromLatest = metrics.contentMaxY > metrics.viewportHeight + 56
@@ -250,7 +268,6 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
   }
 
   private func applyPendingSwipe(with proxy: ScrollViewProxy) {
-    guard isCurrentWindow() else { return }
     let direction = pendingAgentSwipeDirection
     pendingAgentSwipeDirection = ""
     guard direction == AgentIOSAgentSwipeDirection.up.rawValue ||
