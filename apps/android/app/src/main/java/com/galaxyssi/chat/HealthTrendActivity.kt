@@ -44,6 +44,7 @@ class HealthTrendActivity : Activity() {
     private var chartSnapshot: HealthTrendSummary? = null
     private var pointList: AlertDialog? = null
     private var pointListEntry: View? = null
+    private var explainEntry: View? = null
     private var observing = false; private var probing = false; private var probeAgain = false; private var probeSerial = 0
     private val observer = object : android.database.ContentObserver(main) { override fun onChange(selfChange: Boolean) = probeVersion() }
     private val privacyDatabase by lazy { if (names.fixture == null) healthPrivacyDatabaseName() else names.privacy }
@@ -88,7 +89,8 @@ class HealthTrendActivity : Activity() {
         if (observing) { contentResolver.unregisterContentObserver(observer); contentResolver.unregisterContentObserver(privacyObserver); observing = false }
         probeSerial++; probing = false; probeAgain = false; version = null; notice?.text = ""; notice = null; retry = null
         dialog?.dismiss(); dialog = null; chart?.clear(); chart = null; progress?.text = ""; progress = null
-        sourceName = ""; scroll = null; chartSnapshot = null; pointListEntry = null; if (::body.isInitialized) body.removeAllViews()
+        sourceName = ""; scroll = null; chartSnapshot = null; pointListEntry = null; explainEntry = null
+        if (::body.isInitialized) body.removeAllViews()
         super.onStop()
     }
     override fun onDestroy() { worker.shutdown(); super.onDestroy() }
@@ -136,6 +138,7 @@ class HealthTrendActivity : Activity() {
     }
     private fun render(summary: HealthTrendSummary?) {
         pointList?.dismiss(); pointList = null; pointListEntry = null
+        explainEntry = null
         chartSnapshot = summary?.takeIf { it.points.isNotEmpty() }
         version = summary?.version
         chart?.clear(); chart = null; body.removeAllViews()
@@ -170,13 +173,9 @@ class HealthTrendActivity : Activity() {
             }
         }, 16)
         ui.add(content, ui.text("$first \u2014 $last \u00b7 ${zone.id}", 12f, muted = true), 8)
-        ui.add(content, ui.row(getString(R.string.health_trend_source), when {
-            source.manualOnly -> getString(R.string.health_source_manual)
-            source.bluetoothGroup.isNotEmpty() -> healthBluetoothTrendLabel(source.bluetoothGroup, sourceName)
-            source.platformOrigin.isNotEmpty() -> healthConnectTrendLabel(source.platformOrigin, metric)
-            source.originalId.isBlank() -> getString(R.string.health_trend_all_sources)
-            else -> sourceName.ifBlank { getString(R.string.health_trend_original_source, source.originalId.take(8)) }
-        }) { chooseSources() }.apply { tag = "health-trend-source" }, 8)
+        ui.add(content, ui.row(getString(R.string.health_trend_source), healthTrendSourceLabel(spec(), sourceName)) {
+            chooseSources()
+        }.apply { tag = "health-trend-source" }, 8)
         ui.add(content, ui.row(getString(R.string.health_unit), unit.ifBlank { getString(R.string.health_unit_not_applicable) }) {
             choose(R.string.health_unit, metric.selectableUnits.map { it.ifBlank { getString(R.string.health_unit_not_applicable) } }) { index -> unit = metric.selectableUnits[index]; explicitUnit = true; load() }
         })
@@ -219,6 +218,12 @@ class HealthTrendActivity : Activity() {
                 .apply { tag = "health-trend-counts"; minimumHeight = ui.dp(48) }.also { ui.add(this, it, 12) }
         }, 12)
         summary?.let {
+            explainEntry = ui.card().apply {
+                tag = "health-trend-explain"
+                addView(ui.row(getString(R.string.health_trend_explain), getString(R.string.health_trend_explain_subtitle)) {
+                    openExplanation(it)
+                }.apply { tag = "health-trend-explain-command" })
+            }.also { card -> ui.add(content, card, 12) }
             val time = java.time.Instant.ofEpochMilli(it.calculatedAt).atZone(zone).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"))
             ui.add(content, ui.text(getString(R.string.health_trend_calculated, time), 12f, muted = true), 6)
             ui.add(content, ui.text(getString(R.string.health_trend_excluded, it.nonNumeric, it.otherUnits), 12f, muted = true), 6)
@@ -258,6 +263,7 @@ class HealthTrendActivity : Activity() {
         chartSnapshot = null
         pointList?.dismiss(); pointList = null
         pointListEntry?.visibility = View.GONE
+        explainEntry?.visibility = View.GONE
         val message = getString(reason)
         chart?.unavailable(message)
         notice?.text = message; notice?.visibility = View.VISIBLE; retry?.visibility = View.VISIBLE
@@ -292,6 +298,12 @@ class HealthTrendActivity : Activity() {
     private fun openRecord(id: String, revision: Int) {
         startActivity(Intent(this, HealthRecordRevisionActivity::class.java).putExtra("health_record", id)
             .putExtra("health_revision", revision).putHealthNavigationFixture(names))
+    }
+    private fun openExplanation(summary: HealthTrendSummary) {
+        if (!active || version != summary.version || spec() != summary.spec) return
+        val destination = Intent(this, HealthAssistantActivity::class.java)
+            .putHealthTrendAnalysis(HealthTrendAnalysisHandoff(summary.spec, summary.version)).putHealthNavigationFixture(names)
+        startActivity(destination)
     }
     private fun openPoint(point: HealthTrendPoint) {
         val snapshot = version ?: return

@@ -47,7 +47,8 @@ class HealthAssistantActivity : Activity() {
     private var profileCheck: Job? = null
     private var signal: CancellationSignal? = null
     private var dialog: AlertDialog? = null
-    private var preview: HealthAnalysisPreview? = null
+    private var preview: HealthAnalysisInput? = null
+    private var trend: HealthTrendAnalysisHandoff? = null
     private var plan: HealthAnalysisPlan? = null
     private var notice: Int? = null
     private var gateway: HealthAnalysisGateway = HealthAnalysisProvider
@@ -57,7 +58,7 @@ class HealthAssistantActivity : Activity() {
     private val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
             if (active && (preview != null || job?.isActive == true || dialog?.isShowing == true))
-                reset(R.string.health_assistant_changed)
+                reset(changedMessage())
         }
     }
     private val privacyObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
@@ -91,13 +92,18 @@ class HealthAssistantActivity : Activity() {
         super.onCreate(state)
         val fixture = if (BuildConfig.DEBUG) intent.getStringExtra("health_assistant_test_id")
             ?.takeIf(HealthProfilePolicy::uuid) else null
-        names = HealthOverviewDatabases(fixture)
+        names = fixture?.let(::HealthOverviewDatabases) ?: intent.healthNavigationDatabases()
+        if (intent.hasExtra(HEALTH_TREND_ANALYSIS_VERSION)) {
+            trend = intent.healthTrendAnalysisHandoff()
+            if (trend == null) { finish(); return }
+        }
         if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
         body = healthProfileBody(R.string.health_assistant_title) { finish() }
     }
 
     override fun onResume() {
         super.onResume()
+        if (!::body.isInitialized) return
         active = true
         contentResolver.registerContentObserver(HealthRecordStore.changes(this, names.records), false, observer)
         contentResolver.registerContentObserver(HealthPrivacyStore.changes(this, names.privacy), false, privacyObserver)
@@ -106,6 +112,7 @@ class HealthAssistantActivity : Activity() {
     }
 
     override fun onPause() {
+        if (!::body.isInitialized) { super.onPause(); return }
         active = false
         contentResolver.unregisterContentObserver(observer)
         contentResolver.unregisterContentObserver(privacyObserver)
@@ -144,27 +151,16 @@ class HealthAssistantActivity : Activity() {
     }
 
     private fun selection() = HealthWeeklyScope(end, zone, metrics, comparison = focus == HealthAnalysisFocus.CHANGES)
+    private fun changedMessage() = if (trend == null) R.string.health_assistant_changed else R.string.health_trend_analysis_changed
 
     private fun render(reveal: String? = null) {
         val content = healthProfileContent(body)
-        val scope = selection()
         content.addView(ui.text(getString(R.string.health_assistant_scope), 19f, bold = true))
-        ui.add(content, ui.profileRow(text.range(scope)) { chooseDate() }.apply { tag = "health-assistant-date" }, 8)
-        if (scope.hasBaseline) ui.add(content, ui.text(getString(R.string.health_assistant_baseline,
-            scope.baselineFirst, scope.baselineLast), 13f, muted = true), 4)
-        ui.add(content, ui.profileRow(getString(R.string.health_weekly_metrics),
-            healthWeeklyMetrics.filter { it in metrics }.joinToString(", ") { text.title(it) }) { chooseMetrics() }, 8)
-        ui.add(content, ui.profileRow(getString(R.string.health_assistant_question), getString(focusLabel(focus))) { chooseFocus() }, 6)
-        ui.add(content, ui.profileRow(getString(R.string.health_assistant_profile),
-            if (profileFields.isEmpty()) getString(R.string.health_assistant_profile_none)
-            else healthAnalysisProfileFields.filter { it in profileFields }.joinToString(", ") { getString(it.titleResource()) }
-        ) { chooseProfile() }.apply { tag = "health-assistant-profile" }, 6)
-        ui.add(content, ui.profileRow(getString(R.string.health_assistant_background),
-            if (background.isEmpty()) getString(R.string.health_assistant_profile_none)
-            else getString(R.string.health_assistant_background_count, background.size, healthAnalysisBackgroundLimit)
-        ) { chooseBackground() }.apply { tag = "health-assistant-background" }, 6)
-        ui.add(content, ui.text(getString(R.string.health_assistant_local_scope), 13f, muted = true), 8)
-        if (preview == null) ui.add(content, ui.command(R.string.health_assistant_calculate) { calculate() }.apply {
+        val trendScope = trend
+        if (trendScope == null) showWeeklyScope(content) else showTrendScope(content, trendScope.spec)
+        if (notice == R.string.health_trend_analysis_changed) {
+            ui.add(content, ui.command(R.string.health_trend_return) { finish() }, 12)
+        } else if (preview == null) ui.add(content, ui.command(R.string.health_assistant_calculate) { calculate() }.apply {
             tag = "health-assistant-calculate"
             isEnabled = notice != R.string.health_loading
         }, 12)
@@ -192,10 +188,66 @@ class HealthAssistantActivity : Activity() {
         }
     }
 
-    private fun showResult(content: LinearLayout, result: HealthAnalysisPreview) {
+    private fun showWeeklyScope(content: LinearLayout) {
+        val scope = selection()
+        ui.add(content, ui.profileRow(text.range(scope)) { chooseDate() }.apply { tag = "health-assistant-date" }, 8)
+        if (scope.hasBaseline) ui.add(content, ui.text(getString(R.string.health_assistant_baseline,
+            scope.baselineFirst, scope.baselineLast), 13f, muted = true), 4)
+        ui.add(content, ui.profileRow(getString(R.string.health_weekly_metrics),
+            healthWeeklyMetrics.filter { it in metrics }.joinToString(", ") { text.title(it) }) { chooseMetrics() }, 8)
+        ui.add(content, ui.profileRow(getString(R.string.health_assistant_question), getString(focusLabel(focus))) { chooseFocus() }, 6)
+        ui.add(content, ui.profileRow(getString(R.string.health_assistant_profile),
+            if (profileFields.isEmpty()) getString(R.string.health_assistant_profile_none)
+            else healthAnalysisProfileFields.filter { it in profileFields }.joinToString(", ") { getString(it.titleResource()) }
+        ) { chooseProfile() }.apply { tag = "health-assistant-profile" }, 6)
+        ui.add(content, ui.profileRow(getString(R.string.health_assistant_background),
+            if (background.isEmpty()) getString(R.string.health_assistant_profile_none)
+            else getString(R.string.health_assistant_background_count, background.size, healthAnalysisBackgroundLimit)
+        ) { chooseBackground() }.apply { tag = "health-assistant-background" }, 6)
+        ui.add(content, ui.text(getString(R.string.health_assistant_local_scope), 13f, muted = true), 8)
+    }
+
+    private fun showTrendScope(content: LinearLayout, spec: HealthTrendSpec) {
+        val unit = spec.unit.ifBlank { getString(R.string.health_unit_not_applicable) }
+        ui.add(content, ui.card().apply {
+            tag = "health-trend-analysis-scope"
+            addView(ui.text(getString(spec.metric.titleResource()), 16f, bold = true))
+            ui.add(this, ui.text(getString(R.string.health_trend_analysis_period, spec.first, spec.last, spec.zone.id)), 6)
+            ui.add(this, ui.text(getString(R.string.health_trend_analysis_source, healthTrendSourceLabel(spec))), 6)
+            ui.add(this, ui.text(getString(R.string.health_trend_analysis_unit, unit, getString(spec.aggregation.titleResource()))), 6)
+        }, 8)
+        ui.add(content, ui.text(getString(R.string.health_trend_analysis_scope), 13f, muted = true), 8)
+    }
+
+    private fun showResult(content: LinearLayout, result: HealthAnalysisInput) {
         ui.add(content, ui.text(getString(R.string.health_assistant_result), 18f, bold = true), 18)
         val priority = plan?.factKeys.orEmpty()
-        result.facts.sortedBy { priority.indexOf(it.key).takeIf { index -> index >= 0 } ?: Int.MAX_VALUE }.forEach { fact ->
+        val keys = result.factKeys.sortedBy { priority.indexOf(it).takeIf { index -> index >= 0 } ?: Int.MAX_VALUE }
+        when (result) {
+            is HealthAnalysisPreview -> showWeeklyResult(content, result, keys)
+            is HealthTrendAnalysisPreview -> {
+                showTrendCoverage(content, result)
+                showTrendFacts(content, result, keys, changes = true, sources = true)
+            }
+        }
+        ui.add(content, ui.text(getString(R.string.health_not_diagnosis), 13f, muted = true), 12)
+        val actions = plan?.actions ?: when {
+            result is HealthTrendAnalysisPreview -> listOf(HealthAnalysisAction.ADD_RECORD)
+            focus == HealthAnalysisFocus.CHANGES -> listOf(HealthAnalysisAction.WEEKLY_REPORT, HealthAnalysisAction.ADD_RECORD)
+            else -> listOf(HealthAnalysisAction.ADD_RECORD, HealthAnalysisAction.RECORD_REMINDER)
+        }
+        showActions(content, result, actions)
+        if (result.hasData && (names.fixture == null || gateway !== HealthAnalysisProvider)) {
+            ui.add(content, ui.command(R.string.health_assistant_online) {
+                chooseProvider(result)
+            }.apply { isEnabled = !onlineBusy() }, 14)
+            followUps.forEachIndexed { index, (question, answer) -> showFollowUp(content, result, index, question, answer) }
+            showComposer(content, result)
+        }
+    }
+
+    private fun showWeeklyResult(content: LinearLayout, result: HealthAnalysisPreview, keys: List<String>) {
+        keys.map(result.facts.associateBy { it.key }::getValue).forEach { fact ->
             val stat = fact.stat
             ui.add(content, ui.text(text.title(stat.metric), 16f, bold = true).apply { tag = "health-assistant-fact-${stat.metric.name}" }, 12)
             if (result.focus == HealthAnalysisFocus.CHANGES) ui.add(content, ui.text(text.summary(stat)), 4)
@@ -225,19 +277,48 @@ class HealthAssistantActivity : Activity() {
                 }
             }
         }
-        ui.add(content, ui.text(getString(R.string.health_not_diagnosis), 13f, muted = true), 12)
-        val actions = plan?.actions ?: when (focus) {
-            HealthAnalysisFocus.CHANGES -> listOf(HealthAnalysisAction.WEEKLY_REPORT, HealthAnalysisAction.ADD_RECORD)
-            else -> listOf(HealthAnalysisAction.ADD_RECORD, HealthAnalysisAction.RECORD_REMINDER)
+    }
+
+    private fun showTrendCoverage(content: LinearLayout, result: HealthTrendAnalysisPreview) {
+        val spec = result.handoff.spec
+        ui.add(content, ui.text(getString(R.string.health_trend_counts, result.numericRecords, result.numericDays,
+            result.recordedDays, spec.days - result.recordedDays), 14f).apply { tag = "health-trend-analysis-coverage" }, 8)
+        ui.add(content, ui.text(getString(R.string.health_trend_excluded, result.nonNumeric, result.otherUnits), 13f, muted = true), 6)
+    }
+
+    private fun showTrendFacts(content: LinearLayout, result: HealthTrendAnalysisPreview, keys: List<String>,
+                               changes: Boolean, sources: Boolean) {
+        val spec = result.handoff.spec
+        for (fact in keys.map(result.facts.associateBy { it.key }::getValue)) {
+            val field = fact.first.field
+            ui.add(content, ui.text(getString(healthFieldResource(field)), 16f, bold = true), 12)
+            val points = if (fact.delta == null) listOf(fact.first) else listOf(fact.first, fact.last)
+            if (changes) {
+                val delta = fact.delta
+                ui.add(content, ui.text(if (delta == null) getString(R.string.health_trend_analysis_one_point)
+                    else getString(R.string.health_trend_analysis_delta, trendValue(delta.toPlainString(), spec.unit)), 14f)
+                    .apply { tag = "health-trend-analysis-delta-$field" }, 4)
+            }
+            points.forEachIndexed { index, point ->
+                val date = if (point.first == point.last) point.first.toString()
+                    else getString(R.string.health_trend_chart_data_dates, point.first, point.last)
+                val value = trendValue(point.value.toPlainString(), spec.unit)
+                if (sources) ui.add(content, ui.profileRow(getString(R.string.health_trend_analysis_point, date, value),
+                    getString(R.string.health_trend_analysis_open_records)) {
+                    openTrendEvidence(result.handoff, point)
+                }.apply { tag = "health-trend-analysis-source-$field-$index" }, 4)
+                else if (changes) ui.add(content, ui.text(getString(R.string.health_trend_analysis_point, date, value)), 4)
+            }
         }
-        showActions(content, result, actions)
-        if (result.hasData && (names.fixture == null || gateway !== HealthAnalysisProvider)) {
-            ui.add(content, ui.command(R.string.health_assistant_online) {
-                chooseProvider(result)
-            }.apply { isEnabled = !onlineBusy() }, 14)
-            followUps.forEachIndexed { index, (question, answer) -> showFollowUp(content, result, index, question, answer) }
-            showComposer(content, result)
-        }
+    }
+
+    private fun trendValue(value: String, unit: String) = if (unit.isBlank()) value else "$value $unit"
+
+    private fun openTrendEvidence(handoff: HealthTrendAnalysisHandoff, point: HealthTrendPoint) {
+        startActivity(Intent(this, HealthTrendRecordsActivity::class.java)
+            .putHealthTrend(handoff.spec.copy(first = point.first, last = point.last)).putHealthNavigationFixture(names)
+            .putExtra("health_privacy_test_db", names.privacy).putExtra("health_numeric", true)
+            .putExtra("health_point_field", point.field).putExtra("health_version", handoff.version))
     }
 
     private fun showSources(content: LinearLayout, fact: HealthAnalysisFact, rowTag: String) {
@@ -251,14 +332,16 @@ class HealthAssistantActivity : Activity() {
         }
     }
 
-    private fun showActions(content: LinearLayout, result: HealthAnalysisPreview, actions: List<HealthAnalysisAction>) {
+    private fun showActions(content: LinearLayout, result: HealthAnalysisInput, actions: List<HealthAnalysisAction>) {
         actions.forEach { action ->
             val (label, intent) = when (action) {
                 HealthAnalysisAction.ADD_RECORD -> R.string.health_manual to
-                    Intent(this, HealthCenterActivity::class.java).putExtra("health_manual", true)
+                    Intent(this, HealthCenterActivity::class.java).putExtra("health_manual", true).apply {
+                        trend?.spec?.metric?.let { putExtra("health_metric", it.name) }
+                    }
                 HealthAnalysisAction.RECORD_REMINDER -> R.string.health_reminder_title to Intent(this, HealthReminderActivity::class.java)
                 HealthAnalysisAction.WEEKLY_REPORT -> R.string.health_weekly_title to Intent(this, HealthWeeklyActivity::class.java)
-                    .putHealthWeeklyHandoff(result.weekly.stamp).putHealthNavigationFixture(names)
+                    .putHealthWeeklyHandoff((result as HealthAnalysisPreview).weekly.stamp).putHealthNavigationFixture(names)
             }
             ui.add(content, ui.profileRow(getString(label)) {
                 if (names.fixture == null || action == HealthAnalysisAction.WEEKLY_REPORT) startActivity(intent)
@@ -266,7 +349,7 @@ class HealthAssistantActivity : Activity() {
         }
     }
 
-    private fun showFollowUp(content: LinearLayout, result: HealthAnalysisPreview, index: Int, question: String, answer: HealthFollowUpAnswer) {
+    private fun showFollowUp(content: LinearLayout, result: HealthAnalysisInput, index: Int, question: String, answer: HealthFollowUpAnswer) {
         val turn = ui.column().apply { tag = "health-follow-up-turn-$index" }
         turn.addView(ui.line().apply {
             gravity = Gravity.END
@@ -285,37 +368,15 @@ class HealthAssistantActivity : Activity() {
                 })
                 else -> Unit
             }
-            val facts = result.facts.associateBy { it.key }
-            val covered = answer.sections.firstOrNull { it.topic == HealthFollowUpTopic.COVERAGE }?.facts.orEmpty()
-            for (section in answer.sections.filter { it.topic != HealthFollowUpTopic.SOURCES }) {
-                val title = if (section.topic == HealthFollowUpTopic.CHANGES) R.string.health_follow_up_changes
-                    else R.string.health_follow_up_coverage
-                ui.add(this, ui.text(getString(title), 15f, bold = true), if (childCount > 0) 10 else 0)
-                for (key in section.facts) {
-                    val fact = facts.getValue(key)
-                    ui.add(this, ui.text(text.title(fact.stat.metric), 14f, bold = true), 8)
-                    if (section.topic == HealthFollowUpTopic.CHANGES) {
-                        ui.add(this, ui.text(text.summary(fact.stat), 15f), 4)
-                        if (fact.stat.metric == HealthMetric.SLEEP_DURATION) text.comparison(result.weekly).forEach {
-                            ui.add(this, ui.text(it, 14f), 4)
-                        }
-                    }
-                    if (section.topic == HealthFollowUpTopic.COVERAGE || key !in covered) {
-                        ui.add(this, ui.text(text.coverage(fact.stat), 13f, muted = true), 4)
-                    }
-                }
-            }
-            val cited = answer.sections.flatMap { it.facts }.distinct().map(facts::getValue)
-            if (cited.isNotEmpty()) {
-                ui.add(this, ui.text(getString(R.string.health_follow_up_sources), 15f, bold = true), if (childCount > 0) 12 else 0)
-                for (fact in cited) {
-                    if (cited.size > 1) ui.add(this, ui.text(text.title(fact.stat.metric), 14f, bold = true), 6)
-                    if (fact.refs.isEmpty()) {
-                        ui.add(this, ui.text(getString(R.string.health_follow_up_no_source), 13f, muted = true), 4)
-                    }
-                    showSources(this, fact, "health-follow-up-source")
-                }
-                ui.add(this, ui.text(getString(R.string.health_not_diagnosis), 13f, muted = true), 8)
+            if (result is HealthTrendAnalysisPreview) {
+                if (answer.sections.any { it.topic == HealthFollowUpTopic.COVERAGE }) showTrendCoverage(this, result)
+                val changes = answer.sections.firstOrNull { it.topic == HealthFollowUpTopic.CHANGES }?.facts.orEmpty()
+                val cited = answer.sections.flatMap { it.facts }.distinct()
+                showTrendFacts(this, result, changes, changes = true, sources = true)
+                showTrendFacts(this, result, cited - changes.toSet(), changes = false, sources = true)
+                if (cited.isNotEmpty()) ui.add(this, ui.text(getString(R.string.health_not_diagnosis), 13f, muted = true), 8)
+            } else if (result is HealthAnalysisPreview) {
+                showWeeklyFollowUpEvidence(this, result, answer)
             }
             if (answer.actions.isNotEmpty()) {
                 ui.add(this, ui.text(getString(R.string.health_follow_up_actions), 14f, bold = true), if (childCount > 0) 12 else 0)
@@ -325,9 +386,44 @@ class HealthAssistantActivity : Activity() {
         ui.add(content, turn, 18)
     }
 
+    private fun showWeeklyFollowUpEvidence(content: LinearLayout, result: HealthAnalysisPreview, answer: HealthFollowUpAnswer) {
+        val facts = result.facts.associateBy { it.key }
+        val covered = answer.sections.firstOrNull { it.topic == HealthFollowUpTopic.COVERAGE }?.facts.orEmpty()
+        for (section in answer.sections.filter { it.topic != HealthFollowUpTopic.SOURCES }) {
+            val title = if (section.topic == HealthFollowUpTopic.CHANGES) R.string.health_follow_up_changes
+                else R.string.health_follow_up_coverage
+            ui.add(content, ui.text(getString(title), 15f, bold = true), if (content.childCount > 0) 10 else 0)
+            for (key in section.facts) {
+                val fact = facts.getValue(key)
+                ui.add(content, ui.text(text.title(fact.stat.metric), 14f, bold = true), 8)
+                if (section.topic == HealthFollowUpTopic.CHANGES) {
+                    ui.add(content, ui.text(text.summary(fact.stat), 15f), 4)
+                    if (fact.stat.metric == HealthMetric.SLEEP_DURATION) text.comparison(result.weekly).forEach {
+                        ui.add(content, ui.text(it, 14f), 4)
+                    }
+                }
+                if (section.topic == HealthFollowUpTopic.COVERAGE || key !in covered) {
+                    ui.add(content, ui.text(text.coverage(fact.stat), 13f, muted = true), 4)
+                }
+            }
+        }
+        val cited = answer.sections.flatMap { it.facts }.distinct().map(facts::getValue)
+        if (cited.isNotEmpty()) {
+            ui.add(content, ui.text(getString(R.string.health_follow_up_sources), 15f, bold = true), if (content.childCount > 0) 12 else 0)
+            for (fact in cited) {
+                if (cited.size > 1) ui.add(content, ui.text(text.title(fact.stat.metric), 14f, bold = true), 6)
+                if (fact.refs.isEmpty()) {
+                    ui.add(content, ui.text(getString(R.string.health_follow_up_no_source), 13f, muted = true), 4)
+                }
+                showSources(content, fact, "health-follow-up-source")
+            }
+            ui.add(content, ui.text(getString(R.string.health_not_diagnosis), 13f, muted = true), 8)
+        }
+    }
+
     private fun onlineBusy() = notice == R.string.health_assistant_sending || notice == R.string.health_follow_up_checking
 
-    private fun showComposer(content: LinearLayout, result: HealthAnalysisPreview) {
+    private fun showComposer(content: LinearLayout, result: HealthAnalysisInput) {
         ui.add(content, ui.column().apply {
             tag = "health-follow-up-composer"
             background = ui.background(stroke = getColor(R.color.separator), radius = 8)
@@ -373,20 +469,24 @@ class HealthAssistantActivity : Activity() {
     }
 
     private fun calculate() {
-        val scope = selection()
+        val trendScope = trend
+        val scope = if (trendScope == null) selection() else null
         val question = focus
         val fields = profileFields
         val entries = background.mapValues { it.value.token }
         reset(R.string.health_loading)
         val cancel = CancellationSignal().also { signal = it }
-        work({ HealthAnalysis.prepare(applicationContext, names, scope, question, cancel, fields, entries) }) {
+        work({
+            if (trendScope != null) HealthTrendAnalysis.prepare(applicationContext, names, trendScope, cancel)
+            else HealthAnalysis.prepare(applicationContext, names, requireNotNull(scope), question, cancel, fields, entries)
+        }) {
             preview = it
             notice = if (it.hasData) null else R.string.health_assistant_no_data
             render()
         }
     }
 
-    private fun chooseProvider(result: HealthAnalysisPreview, question: HealthFollowUpQuestion? = null) {
+    private fun chooseProvider(result: HealthAnalysisInput, question: HealthFollowUpQuestion? = null) {
         if (onlineBusy()) return
         followUpStatus = question != null
         val reveal = if (question == null) null else "health-follow-up-composer"
@@ -405,7 +505,7 @@ class HealthAssistantActivity : Activity() {
         }
     }
 
-    private fun confirm(result: HealthAnalysisPreview, target: HealthAnalysisTarget, question: HealthFollowUpQuestion?) {
+    private fun confirm(result: HealthAnalysisInput, target: HealthAnalysisTarget, question: HealthFollowUpQuestion?) {
         if (preview !== result) return
         val payload = if (question == null) HealthAnalysis.payload(result) else HealthAnalysisFollowUp.payload(result, question)
         val disclosure = if (question == null) R.string.health_assistant_disclosure else R.string.health_follow_up_disclosure
@@ -457,6 +557,7 @@ class HealthAssistantActivity : Activity() {
                     is HealthAnalysisProfileChanged -> reset(R.string.health_assistant_profile_changed)
                     is HealthAnalysisProfileBlocked -> reset(R.string.health_assistant_profile_blocked)
                     is HealthWeeklyChanged -> reset(R.string.health_assistant_changed)
+                    is HealthTrendChangedException -> reset(R.string.health_trend_analysis_changed)
                     is HealthAccessBlocked -> reset(if (online) R.string.health_assistant_online_blocked else R.string.health_assistant_blocked)
                     else -> {
                         notice = when (failure) {
