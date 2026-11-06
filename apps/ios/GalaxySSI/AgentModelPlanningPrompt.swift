@@ -477,11 +477,15 @@ enum AgentModelPlanningPrompt {
   ) -> [AgentNativeToolDescriptor] {
     let allowsPhoneRuntimeTools = allowsPhoneRuntimeTools(for: request)
     let preferPhoneStatus = request.phoneOwnsExecution &&
-      AgentTaskIntentClassifier.classify(goal: request.planRequest.goal).intent == .phoneControl
+      (AgentDeviceStatusShortcutCoverage.requiresPhoneReasoning(request.planRequest.goal) ||
+        AgentTaskIntentClassifier.classify(goal: request.planRequest.goal).intent == .phoneControl)
     let phoneStatusTools: Set<String> = [
       AgentIOSHardwareNativeToolCatalog.deviceStatus, AgentIOSHardwareNativeToolCatalog.batteryStatus,
       AgentIOSHardwareNativeToolCatalog.powerStatus, AgentIOSHardwareNativeToolCatalog.memoryStatus,
-      AgentIOSHardwareNativeToolCatalog.storageStatus, AgentIOSHardwareNativeToolCatalog.networkStatus
+      AgentIOSHardwareNativeToolCatalog.storageStatus, AgentIOSHardwareNativeToolCatalog.networkStatus,
+      AgentIOSSystemNativeToolCatalog.audioStatus, AgentIOSSystemNativeToolCatalog.wifiStatus,
+      AgentIOSHardwareNativeToolCatalog.bluetoothStatus, AgentIOSHardwareNativeToolCatalog.nfcStatus,
+      AgentIOSSystemNativeToolCatalog.vpnStatus
     ]
     let priority = Dictionary(uniqueKeysWithValues: developmentToolPriority.enumerated().map { pair in
       (pair.element, pair.offset)

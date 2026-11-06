@@ -32,7 +32,7 @@ final class AgentGoalSegmentationPolicyTests: XCTestCase {
 
   func testDirectPlannerBuildsAnOrderedNativeToolSequence() throws {
     let request = AgentPlanRequest(
-      goal: "Read the current battery and then check phone storage",
+      goal: "Set media volume 30 and then open Wi-Fi settings",
       screen: AgentScreenContext(foregroundApp: "com.galaxyssi.chat", pageTitle: "GalaxySSI"),
       nativeTools: readyTools()
     )
@@ -55,7 +55,7 @@ final class AgentGoalSegmentationPolicyTests: XCTestCase {
     XCTAssertNil(AgentDirectNativeToolPlanner.shortcutPlan(request: request))
   }
 
-  func testCompoundPhoneOperationsBypassShortcutButStillPlanPerSegment() throws {
+  func testCompositeDeviceReadsCannotUseTheSegmentedShortcut() {
     let request = AgentPlanRequest(
       goal: "Read the current battery and then check phone storage",
       screen: AgentScreenContext(foregroundApp: "com.galaxyssi.chat", pageTitle: "GalaxySSI"),
@@ -63,7 +63,8 @@ final class AgentGoalSegmentationPolicyTests: XCTestCase {
     )
 
     XCTAssertNil(AgentDirectNativeToolPlanner.shortcutPlan(request: request))
-    XCTAssertEqual(try XCTUnwrap(AgentDirectNativeToolPlanner.plan(request: request)).actions.count, 2)
+    XCTAssertNil(AgentDirectNativeToolPlanner.plan(request: request))
+    XCTAssertTrue(AgentDeviceStatusShortcutCoverage.requiresPhoneReasoning(request.goal))
   }
 
   func testRepositoryAuditCannotBeHijackedByMemoryShortcut() {

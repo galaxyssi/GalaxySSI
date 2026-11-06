@@ -4121,6 +4121,10 @@ final class MessageCoordinator: ObservableObject {
       beginPendingAgentReply(for: outgoing)
     }
     var disclosureTicket: AgentDisclosureTicket?
+    let compositePhoneStatus = contact.id == "hermes" && !readOnlyAnalysis &&
+      AgentDeviceStatusShortcutCoverage.requiresPhoneReasoning(requestText)
+    let compositeDesktopStatus = AgentDeviceStatusShortcutCoverage.requiresReasoning(requestText) &&
+      AgentDeviceStatusShortcutCoverage.hasExplicitDesktopTarget(requestText)
     do {
       if contact.id == "hermes",
          let requestedPlan = requestedAgentPlan(
@@ -4183,7 +4187,7 @@ final class MessageCoordinator: ObservableObject {
           conversationId: outgoing.conversationId,
           runtimeTarget: localProfile.displayName
         )
-        if !readOnlyAnalysis, taskExecutionMode != .planOnly,
+        if !readOnlyAnalysis, !compositePhoneStatus, taskExecutionMode != .planOnly,
            effectiveAttachments.isEmpty,
            let commandResult = AgentLocalSkillCommandRouter.handle(
              displayText,
@@ -4257,6 +4261,7 @@ final class MessageCoordinator: ObservableObject {
           finishPendingAgentReply(for: outgoing)
           return true
         }
+        if compositePhoneStatus { throw compositePhoneStatusPlannerUnavailable() }
         let cloudImages = try CloudImagePayloadFactory.prepare(
           effectiveAttachments,
           taskId: outgoing.id.uuidString
@@ -4287,7 +4292,7 @@ final class MessageCoordinator: ObservableObject {
         conversationId: outgoing.conversationId,
         goal: requestText
       ) {
-        if !readOnlyAnalysis, effectiveAttachments.isEmpty, agentContact.connectorAgentId == "codex" {
+        if !readOnlyAnalysis, !compositeDesktopStatus, effectiveAttachments.isEmpty, agentContact.connectorAgentId == "codex" {
           let snapshot = try capturePairedPhonePlannerSnapshot(contact: agentContact, outgoing: outgoing)
           try await receivePhoneOwnedProviderReply(
             snapshot: snapshot,
@@ -4299,6 +4304,7 @@ final class MessageCoordinator: ObservableObject {
           finishPendingAgentReply(for: outgoing)
           return true
         }
+        if compositePhoneStatus { throw compositePhoneStatusPlannerUnavailable() }
         updateAgentExecutionTarget(
           conversationId: outgoing.conversationId,
           contactId: agentContact.id,
@@ -4403,6 +4409,7 @@ final class MessageCoordinator: ObservableObject {
       ) {
         throw unavailable
       }
+      if compositePhoneStatus { throw compositePhoneStatusPlannerUnavailable() }
       switch contact.deliveryMode {
       case .cloudAPI:
         let cloudImages = try CloudImagePayloadFactory.prepare(
@@ -5553,6 +5560,11 @@ final class MessageCoordinator: ObservableObject {
     )
   }
 
+  private func compositePhoneStatusPlannerUnavailable() -> GalaxySSIError {
+    .invalidPayload(localizedReply("galaxyssi.agent.composite_device.requires_planner",
+      fallback: "This request needs a planner that can use this iPhone's tools. No partial result was returned."))
+  }
+
   private func receivePhoneOwnedProviderReply(
     snapshot: AgentPlannerModelSnapshot,
     targetTitle: String,
@@ -5591,7 +5603,8 @@ final class MessageCoordinator: ObservableObject {
       turnId: turnId,
       executionMode: executionMode,
       hasAttachments: false,
-      allowsDirectResponse: executionMode != .planOnly,
+      allowsDirectResponse: executionMode != .planOnly &&
+        !AgentDeviceStatusShortcutCoverage.requiresPhoneReasoning(requestText),
       completionRequirements: nil,
       plannerConfigurationSha256: snapshot.configurationSha256,
       plannerSnapshot: snapshot
@@ -5616,6 +5629,9 @@ final class MessageCoordinator: ObservableObject {
       task = persisted
       try Task.checkCancellation()
       guard let outcome else {
+        if AgentDeviceStatusShortcutCoverage.requiresPhoneReasoning(requestText) {
+          throw compositePhoneStatusPlannerUnavailable()
+        }
         throw AgentModelLoopRecoveryError(code: "phone_owned_planning_result_unavailable")
       }
       task.phase = .executing
@@ -5718,7 +5734,9 @@ final class MessageCoordinator: ObservableObject {
         )
       )
       guard store.agentTask(id: task.taskId)?.phase == .executing else { return }
-      if !outgoing.readOnlyAnalysis, executionMode != .planOnly {
+      let compositePhoneStatus = !outgoing.readOnlyAnalysis &&
+        AgentDeviceStatusShortcutCoverage.requiresPhoneReasoning(requestText)
+      if !compositePhoneStatus, !outgoing.readOnlyAnalysis, executionMode != .planOnly {
         if handleDirectAgentScreenOverview(
           requestText: requestText,
           outgoing: outgoing,
@@ -5804,7 +5822,7 @@ final class MessageCoordinator: ObservableObject {
           return
         }
       }
-      if handleDirectLocalNativeAction(
+      if !compositePhoneStatus, handleDirectLocalNativeAction(
         requestText: requestText,
         hasAttachments: !attachments.isEmpty,
         outgoing: outgoing,
@@ -5813,7 +5831,7 @@ final class MessageCoordinator: ObservableObject {
       ) {
         return
       }
-      if !outgoing.readOnlyAnalysis, executionMode != .planOnly {
+      if !compositePhoneStatus, !outgoing.readOnlyAnalysis, executionMode != .planOnly {
         if handleMatchedLocalSkill(
           requestText: requestText,
           outgoing: outgoing,
@@ -5822,7 +5840,7 @@ final class MessageCoordinator: ObservableObject {
           return
         }
       }
-      let selectedLocal = useSelectedProvider && attachments.isEmpty && !outgoing.readOnlyAnalysis
+      let selectedLocal = useSelectedProvider && (attachments.isEmpty || compositePhoneStatus) && !outgoing.readOnlyAnalysis
       let planningConversation = initialPlanningConversation(
         requestText: requestText,
         outgoing: outgoing,
@@ -5839,7 +5857,7 @@ final class MessageCoordinator: ObservableObject {
         turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
         executionMode: executionMode,
         hasAttachments: !attachments.isEmpty,
-        allowsDirectResponse: executionMode != .planOnly && attachments.isEmpty,
+        allowsDirectResponse: executionMode != .planOnly && attachments.isEmpty && !compositePhoneStatus,
         completionRequirements: nil,
         plannerConfigurationSha256: plannerSnapshot?.configurationSha256
           ?? initialPlannerConfigurationSha256(conversationId: outgoing.conversationId),
@@ -5860,7 +5878,7 @@ final class MessageCoordinator: ObservableObject {
           attachments: attachments,
           outgoing: outgoing,
           executionMode: executionMode,
-          allowsDirectResponse: executionMode != .planOnly && attachments.isEmpty,
+          allowsDirectResponse: planningInput.allowsDirectResponse,
           conversationOverride: planningConversation,
           plannerSnapshotOverride: plannerSnapshot
         )
@@ -5895,6 +5913,7 @@ final class MessageCoordinator: ObservableObject {
           return
         }
       }
+      if compositePhoneStatus { throw compositePhoneStatusPlannerUnavailable() }
       if selectedLocal {
         throw AgentModelLoopRecoveryError(code: "selected_local_planning_result_unavailable")
       }
@@ -8546,7 +8565,9 @@ final class MessageCoordinator: ObservableObject {
     let ownedOperation = replanReason.isBlank && timerCheckpoint == nil && !(hasAttachmentsOverride ?? !attachments.isEmpty)
       ? ownedPriorPhoneOperation(request: requestText, outgoing: outgoing) : nil
     let selectedForPhoneTurn = plannerSnapshotOverride?.selectedForPhoneTurn == true
-    guard selectedForPhoneTurn || timerCheckpoint != nil || ownedOperation != nil ||
+    let compositePhoneStatus = !outgoing.readOnlyAnalysis &&
+      AgentDeviceStatusShortcutCoverage.requiresPhoneReasoning(requestText)
+    guard selectedForPhoneTurn || compositePhoneStatus || timerCheckpoint != nil || ownedOperation != nil ||
       !requirements.capabilities.isDisjoint(with: nativeIntentCapabilities) else {
       return nil
     }
@@ -8636,7 +8657,7 @@ final class MessageCoordinator: ObservableObject {
       requirements: completionRequirements, history: scopedHistory, answerOnly: answerOnly,
       observationHistory: observationHistory)
     let phoneIntent = AgentTaskIntentClassifier.classify(goal: requestText).intent == .phoneControl
-    let requiresRequestedResults = timerCheckpoint != nil ||
+    let requiresRequestedResults = compositePhoneStatus || timerCheckpoint != nil ||
       (phoneIntent && (requirements.capabilities.contains(.deviceControl) || requirements.capabilities.contains(.liveData))) ||
       AgentGoalResultEvidence.requiresDeclaration(for: observationHistory) ||
       !(completionRequirements?.results ?? []).isEmpty
