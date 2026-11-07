@@ -17,14 +17,16 @@ internal object HealthCarePlanTool {
         "kind" to AgentNativeJsonSchema.string(enumValues = HealthCareActionKind.entries.map { it.name }),
         "description" to text(1000), "rationale" to text(2000, "Reason for this action and any suggested time window."),
         "source_index" to AgentNativeJsonSchema.integer(minimum = 0, maximum = 7),
+        "applicability" to HealthCareApplicabilitySchema.schema,
         "due_from" to AgentNativeJsonSchema.string(maxLength = 40, description = "ISO-8601 date/time with offset, or empty when no justified window exists."),
         "due_until" to AgentNativeJsonSchema.string(maxLength = 40, description = "End of the justified review window, with offset; empty with due_from. Not a reminder authorization.")
-    ), required = setOf("kind", "description", "rationale", "source_index", "due_from", "due_until"), additionalProperties = false)
+    ), required = setOf("kind", "description", "rationale", "source_index", "due_from", "due_until", "applicability"), additionalProperties = false)
 
     fun definition(submit: (AgentNativeToolInvocationContext, AgentNativeJsonObject) -> HealthCarePlan) = AgentNativeToolDefinition(
-        descriptor = AgentNativeToolDescriptor(ID, "1.1.1", "Propose a health follow-up plan",
+        descriptor = AgentNativeToolDescriptor(ID, "1.2.0", "Propose a health follow-up plan",
             "Submit one final draft per approved health-discussion turn for user review in the Agent page. " +
-                "No action is confirmed or scheduled. Include uncertainties, evidence applicability and justified review windows. " +
+                "No action is confirmed or scheduled. Include per-action applicability checks, missing factors, source conflicts and justified review windows. " +
+                "Read the actual population/limitations passages; when applicability is unresolved, propose context clarification or clinician discussion, not an assumed eligible plan. " +
                 "Do not prescribe medication changes, manufacture an optimal numerical target, or delay urgent care. " +
                 "Use clinician discussion items when professional assessment is required. Do not claim citations are independently verified.",
             AgentNativeToolLocation.PHONE, AgentNativeJsonSchema.objectSchema(properties = mapOf(
@@ -40,7 +42,7 @@ internal object HealthCarePlanTool {
                 val plan = submit(call.context, call.input)
                 AgentNativeToolExecutionResult.success(mapOf("proposal_id" to plan.id, "state" to plan.state.name.lowercase(),
                     "action_count" to plan.actions.size, "scheduled" to false, "evidence_verified" to false,
-                    "retrieval_receipts" to plan.sources.count { it.evidence != null },
+                    "retrieval_receipts" to plan.sources.count { it.evidence != null }, "applicability_review_count" to plan.applicability.size,
                     "message" to "Draft retained for explicit user review. Native receipts verify retrieval and exact quotes, not medical applicability. No care action or reminder was performed."))
             } catch (_: HealthCareEvidenceMissing) {
                 AgentNativeToolExecutionResult.failure("health_evidence_missing",
@@ -48,7 +50,7 @@ internal object HealthCarePlanTool {
             } catch (_: HealthCareConflict) {
                 AgentNativeToolExecutionResult.failure("health_scope_changed", "Concern, approval or draft changed. Ask the user to review the current concern; do not retry stale data.")
             } catch (_: IllegalArgumentException) {
-                AgentNativeToolExecutionResult.failure("invalid_health_plan", "Use complete source-backed actions, valid source indices and paired ISO timestamps with offsets. No extra fields or past review windows.")
+                AgentNativeToolExecutionResult.failure("invalid_health_plan", "Use complete source-backed actions, per-action applicability (mode/checks/missing_information/conflicts), valid source indices and paired ISO timestamps with offsets. DISCUSSION_ONLY is only for CONTEXT/CLINICIAN_DISCUSSION. Do not supply actual patient values or verification flags. No extra fields or past review windows.")
             }
         })
 

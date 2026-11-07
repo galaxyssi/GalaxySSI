@@ -9,6 +9,7 @@ import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import android.widget.CheckBox
+import android.widget.TextView
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
@@ -38,13 +39,13 @@ class HealthCarePlanUiDeviceTest {
     }
     private fun worker(instance: Any) = instance.javaClass.getDeclaredField("worker").apply { isAccessible = true }.get(instance) as ExecutorService
     private fun clean(names: HealthOverviewDatabases) = listOf(names.care, names.records, names.privacy).forEach(context::deleteDatabase)
-    private fun capture() {
+    private fun capture(name: String = "health-plan-review-fixture.png") {
         if (InstrumentationRegistry.getArguments().getString("health_care_screenshot") != "true") return
         instrumentation.waitForIdleSync()
         instrumentation.uiAutomation.waitForIdle(500, 5000)
         SystemClock.sleep(500)
         instrumentation.uiAutomation.takeScreenshot()?.let { image -> try {
-            File(context.getExternalFilesDir(null), "health-plan-review-fixture.png").outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            File(context.getExternalFilesDir(null), name).outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
         } finally { image.recycle() } }
     }
     @Test fun agentPageReviewsOnlyExplicitlySelectedSteps() {
@@ -136,6 +137,39 @@ class HealthCarePlanUiDeviceTest {
                 HealthPrivacyStore(context, names.privacy).use { it.change(HealthPrivacyOption.CONFIRMED_METRICS, false, it.policy().version) }
                 await(scenario) { dialog(review(it)) == null && find(it, tag) == null }
                 HealthCareStore(context, names.care).use { assertEquals(plan, it.plan(plan.id)) }
+            }
+        } finally { workers.forEach { it.awaitTermination(10, TimeUnit.SECONDS) }; clean(names) }
+    }
+    @Test fun applicabilityGapsDisableOnlyTheAffectedActionAndShowSourceConflicts() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val names = HealthOverviewDatabases(UUID.randomUUID().toString()); val workers = mutableListOf<ExecutorService>()
+        try {
+            val plan = HealthCarePlanTestFixture.propose(context, names) { HealthCareApplicabilityTestFixture.input(it, true) }
+            val tag = "health-care-plan-${plan.id}"
+            ActivityScenario.launch<HealthCareActivity>(Intent(context, HealthCareActivity::class.java)
+                .putHealthNavigationFixture(names).putExtra("health_care_id", plan.grant.concernId)).use { scenario ->
+                await(scenario) { find(it, tag) != null }
+                scenario.onActivity { workers += worker(it); workers += worker(review(it)); find(it, tag)!!.performClick() }
+                await(scenario) { dialog(review(it))?.isShowing == true }
+                scenario.onActivity { activity ->
+                    val d = dialog(review(activity))!!
+                    val all = views(d.window!!.decorView)
+                    val checks = all.filterIsInstance<CheckBox>()
+                    assertFalse(checks[0].isEnabled); assertTrue(checks[1].isEnabled)
+                    val text = (all.single { it.tag == "health-plan-applicability-0" } as TextView).text.toString()
+                    assertTrue(text.contains(activity.getString(R.string.health_applicability_conflict)))
+                    assertTrue(text.contains(activity.getString(R.string.health_care_unknown)))
+                    assertTrue(text.contains(plan.applicability.getValue(plan.actions[0].id).conflicts.single().nextStep))
+                    assertFalse(d.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled)
+                    checks[1].performClick(); assertTrue(d.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled)
+                }
+                capture("health-plan-applicability-fixture.png")
+                scenario.onActivity { dialog(review(it))!!.getButton(AlertDialog.BUTTON_POSITIVE).performClick() }
+                await(scenario) { find(it, tag) == null }
+                HealthCareStore(context, names.care).use { store ->
+                    assertEquals(listOf(plan.actions[1].id), store.concern(plan.grant.concernId)!!.actions.map { it.id })
+                    assertNull(store.nextDue())
+                }
             }
         } finally { workers.forEach { it.awaitTermination(10, TimeUnit.SECONDS) }; clean(names) }
     }

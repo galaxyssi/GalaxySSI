@@ -7,7 +7,8 @@ import org.junit.Assert.*
 import org.junit.Test
 
 internal object HealthCarePlanTestFixture {
-    fun propose(context: android.content.Context, names: HealthOverviewDatabases): HealthCarePlan {
+    fun propose(context: android.content.Context, names: HealthOverviewDatabases,
+        transform: (AgentNativeJsonObject) -> AgentNativeJsonObject = { it }): HealthCarePlan {
         val now = System.currentTimeMillis()
         HealthRecordStore(context, names.records).use { it.save(HealthDraft(HealthMetric.GLUCOSE, mapOf("glucose" to "6.3"),
             "mmol/L", now - 1000, reference = "4-6")) }
@@ -26,13 +27,15 @@ internal object HealthCarePlanTestFixture {
             val evidence = HealthCareEvidence(UUID.randomUUID().toString(), grant, UUID.randomUUID().toString(), url,
                 "Synthetic health source", AgentWebIntelligenceText.citationId(url, hash), hash, quote, now, now)
             store.recordEvidence(listOf(evidence))
+            val applicability = mapOf("mode" to "DISCUSSION_ONLY", "checks" to emptyList<String>(),
+                "missing_information" to listOf("检测条件尚未确认"), "conflicts" to emptyList<String>())
             val input = mapOf("uncertainty" to "仅用于隔离测试，尚未确认检测条件。", "sources" to listOf(mapOf(
                 "title" to "合成测试依据", "url" to "https://example.test/health", "version" to "fixture-v1",
                 "applicability" to "隔离测试，不是医学建议。", "evidence_id" to evidence.id, "supporting_quote" to quote)), "actions" to listOf(mapOf("kind" to "CONTEXT",
                 "description" to "核对报告中的检测条件", "rationale" to "确认资料是否完整，仅用于界面测试。", "source_index" to 0,
-                "due_from" to "", "due_until" to ""), mapOf("kind" to "CLINICIAN_DISCUSSION", "description" to "整理下次讨论的问题",
-                "rationale" to "记录尚未明确的问题，仅用于界面测试。", "source_index" to 0, "due_from" to "", "due_until" to "")))
-            store.proposePlan(HealthCarePlanPolicy.parse(input, grant, bound, now))
+                "due_from" to "", "due_until" to "", "applicability" to applicability), mapOf("kind" to "CLINICIAN_DISCUSSION", "description" to "整理下次讨论的问题",
+                "rationale" to "记录尚未明确的问题，仅用于界面测试。", "source_index" to 0, "due_from" to "", "due_until" to "", "applicability" to applicability)))
+            store.proposePlan(HealthCarePlanPolicy.parse(transform(input), grant, bound, now))
         }
     }
 }

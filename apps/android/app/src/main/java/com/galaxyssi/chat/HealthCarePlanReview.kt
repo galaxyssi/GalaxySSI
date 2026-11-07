@@ -63,13 +63,16 @@ internal class HealthCarePlanReview(private val activity: Activity, private val 
         plan.actions.forEachIndexed { index, action ->
             ui.add(content, CheckBox(activity).apply {
                 text = action.description; minimumHeight = ui.dp(48); tag = "health-plan-action-$index"
-                isEnabled = snapshot.current && action.id in validActions
+                isEnabled = snapshot.current && action.id in validActions && HealthCareApplicabilityPolicy.canAccept(plan, snapshot.issue, action)
                 setOnCheckedChangeListener { _, checked ->
                     if (checked) selected += action.id else selected -= action.id
                     dialog?.getButton(AlertDialog.BUTTON_POSITIVE)?.isEnabled = selected.isNotEmpty()
                 }
             }, 12)
             ui.add(content, ui.text(action.rationale, 14f), 4)
+            ui.add(content, ui.text(HealthCareApplicabilityPresentation.text(activity, plan, snapshot.issue, action), 14f).apply {
+                tag = "health-plan-applicability-$index"
+            }, 8)
             ui.add(content, ui.text(action.source, 13f, muted = true), 4)
             action.dueFrom?.let {
                 ui.add(content, ui.text(activity.getString(R.string.health_care_plan_window, date(it), date(action.dueUntil!!)), 14f), 4)
@@ -77,8 +80,8 @@ internal class HealthCarePlanReview(private val activity: Activity, private val 
             if (action.id !in validActions) ui.add(content, ui.text(activity.getString(R.string.health_care_plan_window_expired), 14f), 4)
         }
         ui.add(content, ui.text(activity.getString(R.string.health_care_plan_sources), 15f, bold = true), 16)
-        plan.sources.forEach { source ->
-            ui.add(content, ui.profileRow(source.title, "${source.version}\n${source.applicability}") {
+        plan.sources.forEachIndexed { index, source ->
+            ui.add(content, ui.profileRow(activity.getString(R.string.health_applicability_source, index + 1, source.title), "${source.version}\n${source.applicability}") {
                 runCatching { activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(source.url))) }.onFailure { error() }
             }, 6)
             source.evidence?.let { evidence ->

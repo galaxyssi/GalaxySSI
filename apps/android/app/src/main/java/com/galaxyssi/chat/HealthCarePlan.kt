@@ -28,7 +28,8 @@ internal data class HealthCarePlanSource(val title: String, val url: String, val
 
 internal data class HealthCarePlan(val grant: HealthCareDiscussionGrant, val inputVersion: String, val createdAt: Long,
     val requestHash: String, val uncertainty: String, val sources: List<HealthCarePlanSource>, val actions: List<HealthCareAction>,
-    val state: HealthCarePlanState = HealthCarePlanState.PENDING, val selected: Set<String> = emptySet(), val resolvedAt: Long? = null) {
+    val state: HealthCarePlanState = HealthCarePlanState.PENDING, val selected: Set<String> = emptySet(), val resolvedAt: Long? = null,
+    val applicability: Map<String, HealthCareApplicability> = emptyMap()) {
     val id get() = grant.turnId
     init {
         require(inputVersion.isNotBlank() && createdAt > 0 && requestHash.matches(Regex("[a-f0-9]{64}")))
@@ -37,20 +38,24 @@ internal data class HealthCarePlan(val grant: HealthCareDiscussionGrant, val inp
             actions.map { it.id }.distinct().size == actions.size)
         require(actions.all { it.state == HealthCareActionState.PROPOSED && it.confirmedAt == null && it.outcome.isEmpty() })
         require(selected.all { id -> actions.any { it.id == id } })
+        require(applicability.keys.all { id -> actions.any { it.id == id } })
+        applicability.forEach { (id, review) -> HealthCareApplicabilityPolicy.validate(review, actions.single { it.id == id }, sources) }
         require(if (state == HealthCarePlanState.PENDING) resolvedAt == null && selected.isEmpty()
             else resolvedAt != null && resolvedAt >= createdAt && (state != HealthCarePlanState.ACCEPTED || selected.isNotEmpty()))
     }
     fun json() = JSONObject().put("grant", grant.json()).put("input_version", inputVersion).put("created_at", createdAt)
         .put("hash", requestHash).put("uncertainty", uncertainty).put("sources", JSONArray(sources.map { it.json() }))
         .put("actions", JSONArray(actions.map { it.json() })).put("state", state.name).put("selected", JSONArray(selected.sorted()))
-        .put("resolved_at", resolvedAt ?: JSONObject.NULL)
+        .put("resolved_at", resolvedAt ?: JSONObject.NULL).put("applicability", JSONObject(applicability.mapValues { it.value.json() }))
     companion object {
         fun from(j: JSONObject) = HealthCarePlan(HealthCareDiscussionGrant.from(j.getJSONObject("grant")), j.getString("input_version"),
             j.getLong("created_at"), j.getString("hash"), j.getString("uncertainty"), j.getJSONArray("sources").let { a ->
                 (0 until a.length()).map { HealthCarePlanSource.from(a.getJSONObject(it)) } }, j.getJSONArray("actions").let { a ->
                 (0 until a.length()).map { HealthCareAction.from(a.getJSONObject(it)) } }, HealthCarePlanState.valueOf(j.getString("state")),
             j.getJSONArray("selected").let { a -> (0 until a.length()).map { a.getString(it) }.toSet() },
-            if (j.isNull("resolved_at")) null else j.getLong("resolved_at"))
+            if (j.isNull("resolved_at")) null else j.getLong("resolved_at"), j.optJSONObject("applicability")?.let { a ->
+                a.keys().asSequence().associateWith { HealthCareApplicability.from(a.getJSONObject(it)) }
+            }.orEmpty())
     }
 }
 
@@ -65,9 +70,10 @@ internal object HealthCarePlanPolicy {
                 require(HealthProfilePolicy.uuid(value.evidenceId) && value.quote.length in 12..600)
             }
         } }
+        val reviews = linkedMapOf<String, HealthCareApplicability>()
         val actions = input.getJSONArray("actions").let { a -> (0 until a.length()).map { index ->
             val action = a.getJSONObject(index)
-            keys(action, setOf("kind", "description", "rationale", "source_index", "due_from", "due_until"))
+            keys(action, setOf("kind", "description", "rationale", "source_index", "due_from", "due_until", "applicability"))
             val sourceIndex = action.getInt("source_index")
             require(action.getDouble("source_index") == sourceIndex.toDouble())
             val source = requireNotNull(sources.getOrNull(sourceIndex)) { "Unknown plan source" }
@@ -76,9 +82,12 @@ internal object HealthCarePlanPolicy {
             HealthCareAction(UUID.nameUUIDFromBytes("${grant.turnId}:$index".toByteArray(Charsets.UTF_8)).toString(),
                 HealthCareActionKind.valueOf(action.getString("kind")), action.getString("description"), action.getString("rationale"),
                 "${source.title}\n${source.version}\n${source.url}", dueFrom = from, dueUntil = until,
-                evidenceId = source.evidenceId, supportingQuote = source.quote)
+                evidenceId = source.evidenceId, supportingQuote = source.quote).also {
+                    reviews[it.id] = HealthCareApplicability.from(action.getJSONObject("applicability"))
+                }
         } }
-        return HealthCarePlan(grant, issue.inputVersion, now, AgentNativeJsonCodec.sha256(request), input.getString("uncertainty"), sources, actions)
+        return HealthCarePlan(grant, issue.inputVersion, now, AgentNativeJsonCodec.sha256(request), input.getString("uncertainty"), sources, actions,
+            applicability = reviews)
     }
     private fun keys(j: JSONObject, expected: Set<String>) { require(j.keys().asSequence().toSet() == expected) }
     private fun date(value: String): Long? = if (value.isEmpty()) null else
@@ -94,6 +103,7 @@ internal object HealthCarePlanPolicy {
         require(plan.state == HealthCarePlanState.PENDING && selected.isNotEmpty() && now >= plan.createdAt)
         require(selected.all { id -> plan.actions.any { it.id == id } })
         val accepted = plan.actions.filter { it.id in selected }.map {
+            require(HealthCareApplicabilityPolicy.canAccept(plan, issue, it)) { "Review applicability, missing context or conflicting sources before adopting this action" }
             require(it.dueUntil == null || it.dueUntil >= now) { "The suggested review window has already ended" }
             it.copy(state = HealthCareActionState.CONFIRMED, confirmedAt = now, basis = HealthCareFollowUpPolicy.basis(issue))
         }
