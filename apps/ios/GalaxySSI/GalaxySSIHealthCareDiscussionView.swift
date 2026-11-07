@@ -79,6 +79,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
         }
         if readingTask != nil { ProgressView(t("reading_sources", "Reading public sources")) }
         if busy { Button(t("stop", "Cancel request"), role: .cancel) { clearRequest() } }
+        GalaxySSIHealthCareComparisonSection(records: records, id: concernID, metric: metric)
         GalaxySSIHealthCarePlansSection(records: records, concernID: concernID)
         GalaxySSIHealthCareFollowUpsSection(records: records, concernID: concernID, metric: metric)
       }

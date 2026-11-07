@@ -58,6 +58,8 @@ enum GalaxySSIHealthCare {
     var target: Target?
     var reviewNote: String?
     var adoptedActions: [GalaxySSIHealthCarePlan.AdoptedAction]?
+    var measurement: GalaxySSIHealthCareComparison.Sample?
+    var comparison: GalaxySSIHealthCareComparison.Pair?
   }
   struct Ledger: Codable {
     var current: [String: Concern] = [:]

@@ -436,15 +436,20 @@ struct GalaxySSIHealthRecords {
     for metric in GalaxySSIHealthMetric.allCases {
       let key = metric.rawValue
       let prior = ledger.current[key]
-      let assessed = GalaxySSIHealthCare.assess(readings[metric] ?? [], context: prior?.context)
+      let candidates = readings[metric] ?? []
+      let assessed = GalaxySSIHealthCare.assess(candidates, context: prior?.context)
       guard prior != nil || assessed?.signals.isEmpty == false else { continue }
       let next = assessed ?? .removed
+      let (sample, comparison) = GalaxySSIHealthCareComparison.reconcile(candidates, prior: prior)
       if let prior {
-        guard prior.assessment != next, prior.revision < Int.max else { continue }
+        guard prior.revision < Int.max,
+              prior.assessment != next || prior.measurement != sample || prior.comparison != comparison else { continue }
         var updated = prior
         updated.revision += 1
         updated.updatedAt = max(prior.updatedAt, now)
         updated.assessment = next
+        updated.measurement = sample
+        updated.comparison = comparison
         if updated.context?.record != next.record { updated.context = nil }
         if prior.stage != .paused && !(prior.stage == .closed && next.signals.isEmpty) {
           updated.stage = next.record == nil || next.signals.contains(.glucoseContext) || next.signals.contains(.notExact)
@@ -454,7 +459,8 @@ struct GalaxySSIHealthRecords {
       } else {
         guard try ledger.deletedInput[key] != GalaxySSIHealthCare.inputDigest(next) else { continue }
         ledger.publish(.init(id: UUID(), metric: metric, revision: 1, updatedAt: now, assessment: next,
-          stage: next.signals.contains(.guidelineReview) ? .evidence : .verify))
+          stage: next.signals.contains(.guidelineReview) ? .evidence : .verify,
+          measurement: sample, comparison: comparison))
       }
       changed = true
     }
@@ -502,7 +508,8 @@ struct GalaxySSIHealthRecords {
       onlinePermission: online, destinationID: destinationID, destinationDigest: destination,
       credentialDigest: credentialDigest, model: model, endpoint: endpoint,
       question: question, payload: try GalaxySSIHealthCareDiscussion.payload(concern: concern, question: question,
-        thread: thread, destination: destination), reviewedAt: now, proposesPlan: proposesPlan)
+        thread: thread, destination: destination), reviewedAt: now, proposesPlan: proposesPlan,
+      comparisonBasis: GalaxySSIHealthCareComparison.discussionBasis(concern))
   }
 
   func validateLocalCareDiscussionApproval(_ approval: GalaxySSIHealthCareDiscussion.Approval) throws {
@@ -532,7 +539,7 @@ struct GalaxySSIHealthRecords {
       archive.localCareEvidence = saved
     } else if !approval.evidence.isEmpty { throw Failure.permission }
     thread.turns.append(.init(id: approval.id, question: approval.question, destination: approval.destinationDigest,
-      planRequested: approval.proposesPlan ? true : nil))
+      planRequested: approval.proposesPlan ? true : nil, comparisonBasis: approval.comparisonBasis))
     archive.localCareDiscussions?[approval.concernID.uuidString] = thread
     try persist(archive)
   }
@@ -754,9 +761,12 @@ struct GalaxySSIHealthRecords {
                                         now: Date) throws -> GalaxySSIHealthCare.Concern {
     guard archive.localCareAllowed == true else { throw Failure.permission }
     guard let concern = archive.localCare?.current[metric.rawValue], concern.id == id,
-          concern.stage != .paused && concern.stage != .closed, concern.assessment.record != nil,
-          GalaxySSIHealthCare.assess(archive.current.filter { $0.metric == metric && $0.isValid && $0.measuredAt <= now },
-            context: concern.context) == concern.assessment else { throw Failure.stale }
+          concern.stage != .paused && concern.stage != .closed, concern.assessment.record != nil
+    else { throw Failure.stale }
+    let readings = archive.current.filter { $0.metric == metric && $0.isValid && $0.measuredAt <= now }
+    let (sample, comparison) = GalaxySSIHealthCareComparison.reconcile(readings, prior: concern)
+    guard GalaxySSIHealthCare.assess(readings, context: concern.context) == concern.assessment,
+          sample == concern.measurement, comparison == concern.comparison else { throw Failure.stale }
     return concern
   }
 
@@ -764,6 +774,7 @@ struct GalaxySSIHealthRecords {
       throws -> GalaxySSIHealthCareDiscussion.Thread {
     let concern = try currentDiscussionConcern(id: approval.concernID, metric: approval.metric, archive: archive, now: now)
     guard owner == approval.owner, approval.isCurrent(at: now), concern.revision == approval.concernRevision,
+          approval.comparisonBasis == GalaxySSIHealthCareComparison.discussionBasis(concern),
           archive.healthOnlinePermission == approval.onlinePermission,
           archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id == approval.carePermission,
           let thread = archive.localCareDiscussions?[concern.id.uuidString], thread.id == approval.threadID
@@ -827,7 +838,9 @@ struct GalaxySSIHealthRecords {
     guard var ledger = archive.localCare, var current = ledger.current[concern.metric.rawValue], current == concern,
           current.revision < Int.max else { throw Failure.stale }
     let readings = archive.current.filter { $0.metric == concern.metric && $0.isValid && $0.measuredAt <= now }
-    guard (GalaxySSIHealthCare.assess(readings, context: current.context) ?? .removed) == current.assessment
+    let (sample, comparison) = GalaxySSIHealthCareComparison.reconcile(readings, prior: current)
+    guard (GalaxySSIHealthCare.assess(readings, context: current.context) ?? .removed) == current.assessment,
+          sample == current.measurement, comparison == current.comparison
     else { throw Failure.stale }
     try change(&current, archive)
     guard current != concern else { return }

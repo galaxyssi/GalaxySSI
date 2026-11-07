@@ -191,6 +191,8 @@
     A10000000000000000009859 /* GalaxySSIHealthCareFollowUpDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009859 /* GalaxySSIHealthCareFollowUpDelivery.swift */; };
     A10000000000000000009860 /* GalaxySSIHealthCareFollowUpsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009860 /* GalaxySSIHealthCareFollowUpsView.swift */; };
     A10000000000000000009861 /* GalaxySSIHealthCareEvidence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009861 /* GalaxySSIHealthCareEvidence.swift */; };
+    A10000000000000000009862 /* GalaxySSIHealthCareComparison.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009862 /* GalaxySSIHealthCareComparison.swift */; };
+    A10000000000000000009863 /* GalaxySSIHealthCareComparisonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009863 /* GalaxySSIHealthCareComparisonView.swift */; };
     A10000000000000000009828 /* GalaxySSIHealthReportReview.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009828 /* GalaxySSIHealthReportReview.swift */; };
     E39090000000000000000001 /* GalaxySSIHealthOCRSourceContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = E39090000000000000000002 /* GalaxySSIHealthOCRSourceContext.swift */; };
     A10000000000000000009834 /* GalaxySSIHealthReviewReminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009834 /* GalaxySSIHealthReviewReminders.swift */; };
@@ -1405,6 +1407,8 @@
     A20000000000000000009859 /* GalaxySSIHealthCareFollowUpDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareFollowUpDelivery.swift; sourceTree = "<group>"; };
     A20000000000000000009860 /* GalaxySSIHealthCareFollowUpsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareFollowUpsView.swift; sourceTree = "<group>"; };
     A20000000000000000009861 /* GalaxySSIHealthCareEvidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareEvidence.swift; sourceTree = "<group>"; };
+    A20000000000000000009862 /* GalaxySSIHealthCareComparison.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareComparison.swift; sourceTree = "<group>"; };
+    A20000000000000000009863 /* GalaxySSIHealthCareComparisonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareComparisonView.swift; sourceTree = "<group>"; };
     A20000000000000000009828 /* GalaxySSIHealthReportReview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReportReview.swift; sourceTree = "<group>"; };
     E39090000000000000000002 /* GalaxySSIHealthOCRSourceContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthOCRSourceContext.swift; sourceTree = "<group>"; };
     A20000000000000000009834 /* GalaxySSIHealthReviewReminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReviewReminders.swift; sourceTree = "<group>"; };
@@ -3219,6 +3223,8 @@
         A20000000000000000009859 /* GalaxySSIHealthCareFollowUpDelivery.swift */,
         A20000000000000000009860 /* GalaxySSIHealthCareFollowUpsView.swift */,
         A20000000000000000009861 /* GalaxySSIHealthCareEvidence.swift */,
+        A20000000000000000009862 /* GalaxySSIHealthCareComparison.swift */,
+        A20000000000000000009863 /* GalaxySSIHealthCareComparisonView.swift */,
         A20000000000000000009828 /* GalaxySSIHealthReportReview.swift */,
         E39090000000000000000002 /* GalaxySSIHealthOCRSourceContext.swift */,
         A20000000000000000009834 /* GalaxySSIHealthReviewReminders.swift */,
@@ -4570,6 +4576,8 @@
         A10000000000000000009859 /* GalaxySSIHealthCareFollowUpDelivery.swift in Sources */,
         A10000000000000000009860 /* GalaxySSIHealthCareFollowUpsView.swift in Sources */,
         A10000000000000000009861 /* GalaxySSIHealthCareEvidence.swift in Sources */,
+        A10000000000000000009862 /* GalaxySSIHealthCareComparison.swift in Sources */,
+        A10000000000000000009863 /* GalaxySSIHealthCareComparisonView.swift in Sources */,
         A10000000000000000009828 /* GalaxySSIHealthReportReview.swift in Sources */,
         E39090000000000000000001 /* GalaxySSIHealthOCRSourceContext.swift in Sources */,
         A10000000000000000009834 /* GalaxySSIHealthReviewReminders.swift in Sources */,

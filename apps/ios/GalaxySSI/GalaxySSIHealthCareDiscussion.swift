@@ -12,6 +12,7 @@ enum GalaxySSIHealthCareDiscussion {
     var answer: String?
     var proposalID: UUID?
     var planRequested: Bool?
+    var comparisonBasis: String?
   }
 
   struct Thread: Codable, Identifiable, Equatable {
@@ -32,6 +33,7 @@ enum GalaxySSIHealthCareDiscussion {
     let baselineLow: Decimal?
     let baselineHigh: Decimal?
     let confirmedTarget: String?
+    let comparison: GalaxySSIHealthCareComparison.ModelComparison?
 
     init(_ concern: GalaxySSIHealthCare.Concern) {
       metric = concern.metric
@@ -45,6 +47,7 @@ enum GalaxySSIHealthCareDiscussion {
       baselineLow = concern.assessment.baseline?.low
       baselineHigh = concern.assessment.baseline?.high
       confirmedTarget = concern.target?.value
+      comparison = concern.comparison?.modelValue(currentContext: concern.context)
     }
   }
 
@@ -68,6 +71,7 @@ enum GalaxySSIHealthCareDiscussion {
     let reviewedAt: Date
     var proposesPlan = false
     var evidence: [GalaxySSIHealthCareEvidence.Receipt] = []
+    var comparisonBasis: String?
 
     func isCurrent(at now: Date) -> Bool {
       now >= reviewedAt && now.timeIntervalSince(reviewedAt) < GalaxySSIHealthCareDiscussion.approvalLifetime
@@ -114,7 +118,9 @@ enum GalaxySSIHealthCareDiscussion {
   static func payload(concern: GalaxySSIHealthCare.Concern, question: String, thread: Thread, destination: String) throws -> String {
     guard thread.concernID == concern.id, !question.isBlank, question.utf8.count <= 2_048
     else { throw GalaxySSIHealthRecords.Failure.invalid }
-    let recent = thread.turns.lazy.filter { $0.destination == destination && $0.answer != nil }.suffix(3)
+    let basis = GalaxySSIHealthCareComparison.discussionBasis(concern)
+    let recent = thread.turns.lazy.filter { $0.destination == destination && $0.comparisonBasis == basis &&
+      $0.answer != nil }.suffix(3)
     let previous = recent.compactMap { turn in
       turn.answer.map { Exchange(question: turn.question, answer: $0) }
     }
@@ -139,6 +145,8 @@ enum GalaxySSIHealthCareDiscussion {
       historical observations, and a confirmed individual target. Never infer a target from a reference interval.
       State missing measurement context and uncertainty. Do not diagnose, change medication, or claim to have accessed
       records or verified current external sources. Discuss possible questions for a clinician, not a saved care plan.
+      A subsequent result, a record correction and a history change are different events. Arithmetic changes do not establish
+      improvement, deterioration or stability. Explain comparison gaps and distinguish old and current confirmed context.
       Do not claim to schedule or perform any action.
       """ + (approval.proposesPlan
         ? "\nUse exactly one \(GalaxySSIHealthCarePlan.tool) call to propose a draft. Cite only supplied native_sources by " +

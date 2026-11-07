@@ -85,6 +85,7 @@ struct GalaxySSIHealthCareEntry: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   let records: GalaxySSIHealthRecords
   @State private var visible = false
+  @State private var comparisonAvailable = false
   @State private var revision = UUID()
 
   var body: some View {
@@ -93,7 +94,9 @@ struct GalaxySSIHealthCareEntry: View {
         NavigationLink {
           GalaxySSIHealthCareView(records: records)
         } label: {
-          Label(GalaxySSIHealthCareText.string("title", "Health Care", language: language), systemImage: "heart.text.square")
+          Label(comparisonAvailable
+            ? GalaxySSILocalization.string("galaxyssi.health.comparison.open", fallback: "Review a result comparison", language: language)
+            : GalaxySSIHealthCareText.string("title", "Health Care", language: language), systemImage: "heart.text.square")
             .font(.footnote.weight(.semibold))
             .frame(minHeight: 44)
         }
@@ -102,7 +105,7 @@ struct GalaxySSIHealthCareEntry: View {
       }
     }
     .onChange(of: scene) { phase in
-      if phase == .active { revision = UUID() } else { visible = false }
+      if phase == .active { revision = UUID() } else { visible = false; comparisonAvailable = false }
     }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) {
       if $0.object as? String == records.owner {
@@ -116,8 +119,10 @@ struct GalaxySSIHealthCareEntry: View {
         try await Task.sleep(nanoseconds: 220_000_000)
         try records.reconcileLocalCare()
         let concerns = try records.load().localCare?.current
-        visible = concerns?.values.contains(where: { [.verify, .evidence, .reassess].contains($0.stage) }) == true
-      } catch { if !Task.isCancelled { visible = false } }
+        let active = concerns?.values.filter { [.verify, .evidence, .reassess].contains($0.stage) } ?? []
+        visible = !active.isEmpty
+        comparisonAvailable = active.contains { $0.comparison != nil }
+      } catch { if !Task.isCancelled { visible = false; comparisonAvailable = false } }
     }
   }
 }
@@ -165,6 +170,7 @@ private struct GalaxySSIHealthCareDetail: View {
         Section(t("report_reference", "Report reference interval")) {
           Text(concern.assessment.reference.ifBlank(t("none", "Not recorded")))
         }
+        GalaxySSIHealthCareComparisonSection(records: records, id: id, metric: metric)
         Section(t("guideline", "Guideline criterion")) {
           if concern.assessment.guidelineVersion != nil {
             Link(t("ada", "ADA 2026: Diagnosis and Classification"), destination: GalaxySSIHealthCare.guidelineURL)
