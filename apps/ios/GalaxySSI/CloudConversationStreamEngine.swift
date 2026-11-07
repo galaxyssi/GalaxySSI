@@ -250,7 +250,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         let roundId = "\(requestId):r\(currentRound)"
         let finalRound = progress.finalizationRequested
         let bufferForCitationVerification = !evidenceResults.isEmpty
-        let citationPreview = bufferForCitationVerification
+        let citationPreview = bufferForCitationVerification && !progress.performedDeepResearch
           ? CloudCitationPreview(evidence: evidenceResults)
           : nil
         var previewShown = false
@@ -457,6 +457,12 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           }
           if bufferForCitationVerification {
             let candidate = CloudWebGrounding.stripInternalToolProtocol(rawRoundText)
+            if !finalRound, prepared.canRequestBodyReadingReview, progress.performedDeepResearch,
+               let review = CloudWebGrounding.bodyReadingReviewPrompt(candidate, results: evidenceResults),
+               progress.requestRepair("research_body_reading") {
+              prepared.appendBodyReadingReview(draft: candidate, prompt: review)
+              continue
+            }
             let repairPrompt = CloudWebGrounding.citationRepairPrompt(candidate, results: evidenceResults)
             if !candidate.isBlank,
                let repairPrompt,

@@ -67,6 +67,9 @@ final class CloudEvidencePromptLedger {
   func project(_ encoded: String) -> String {
     guard let data = encoded.data(using: .utf8),
           var root = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data) else { return encoded }
+    if root["reading_window"]?.objectValue?["scope"] == .string(AgentIOSWebReadingWindow.scope) {
+      return encoded
+    }
     guard var pack = root["evidence_pack"]?.objectValue,
           let items = pack["items"]?.arrayValue else {
       guard root["operation"] == .string("search"),
@@ -293,9 +296,12 @@ enum CloudWebGrounding {
       ),
       functionTool(
         name: "web_fetch",
-        description: "Fetch and cache bounded readable content from one public HTTPS URL.",
+        description: "Fetch readable evidence from one public HTTPS URL. Set length for an exact passage, then reuse next_offset and document_sha256 to continue. Offsets refer to extracted text, not the entire original page.",
         properties: objectProperties([
-          ("url", stringProperty())
+          ("url", stringProperty()),
+          ("offset", integerProperty(minimum: 0, maximum: Int(AgentIOSWebIntelligenceNativeToolCatalog.maxFetchBytes))),
+          ("length", integerProperty(minimum: 256, maximum: Int(AgentIOSWebReadingWindow.maximumLength))),
+          ("document_sha256", stringProperty().merging(["minLength": .int(64), "maxLength": .int(64)]) { _, next in next })
         ]),
         required: ["url"]
       ),
@@ -796,6 +802,32 @@ enum CloudWebGrounding {
     AgentIOSWebEvidenceVerification.validateAnswer(answer, encodedToolResults: results)
   }
 
+  static func bodyReadingReviewPrompt(_ answer: String, results: [(String, String)]) -> String? {
+    let packs = results.compactMap { AgentIOSWebEvidenceVerification.decodePack($0.1) }
+    let validation = AgentIOSWebEvidenceVerification.validateAnswer(answer, packs: packs)
+    guard validation.verifiedEvidenceItemCount > 0 else { return nil }
+    var discovered = Set<String>()
+    var retrieved = Set<String>()
+    for pack in packs {
+      for value in pack["items"]?.arrayValue ?? [] {
+        guard let item = value.objectValue else { continue }
+        let url = AgentIOSWebEvidencePack.canonicalURL(item.string("url"))
+        if item["evidence_level"] == .string("discovery_snippet") { discovered.insert(url) }
+        if item["evidence_level"] == .string("retrieved_body") { retrieved.insert(url) }
+      }
+    }
+    let invalid = Set(validation.invalidCitationURLs)
+    let targets = validation.citedURLs.filter {
+      discovered.contains($0) && !retrieved.contains($0) && !invalid.contains($0)
+    }.prefix(4)
+    guard !targets.isEmpty else { return nil }
+    let encoded = AgentMcpJSONCodec.stringify(.array(targets.map(AgentMcpJSONValue.string)))
+    return """
+    This is the one body-reading review of the deep research draft. Up to four cited URLs still have only discovery snippets: \(encoded)
+    Use web_fetch to inspect the original readable passages supporting consequential claims. If retrieval fails or a passage does not support the claim, qualify or remove it. Then deliver the revised answer. Retrieval is not independent semantic verification.
+    """
+  }
+
   static func normalizeArguments(
     name: String,
     arguments: AgentMcpJSONObject
@@ -825,6 +857,10 @@ enum CloudWebGrounding {
   }
 
   static func boundedModelJson(_ output: AgentMcpJSONObject) -> String {
+    if let window = output["reading_window"]?.objectValue,
+       let text = output["text"]?.stringValue {
+      return boundedReadingWindow(output, window: window, text: text)
+    }
     if let pack = output["evidence_pack"]?.objectValue {
       let modelOutput: AgentMcpJSONObject = [
         "protocol": output["protocol"] ?? .null,
@@ -866,6 +902,44 @@ enum CloudWebGrounding {
       "truncated": .bool(true),
       "preview": .string(String(encoded.prefix(maximumToolResultCharacters - 1_000)))
     ])
+  }
+
+  private static func boundedReadingWindow(
+    _ output: AgentMcpJSONObject, window: AgentMcpJSONObject, text: String
+  ) -> String {
+    let pack = output["evidence_pack"]?.objectValue
+    let item = pack?["items"]?.arrayValue?.first?.objectValue?.filter {
+      ["citation_id", "content_sha256", "url", "rank", "source_kind", "evidence_level"].contains($0.key)
+    }
+    var model = output.filter { ["protocol", "operation", "status"].contains($0.key) }
+    if let item {
+      model["evidence_pack"] = .object([
+        "protocol": .string(AgentIOSWebEvidencePack.protocolId),
+        "items": .array([.object(item)])
+      ])
+    }
+    model["evidence_is_untrusted"] = .bool(true)
+    let start = window["offset"]?.intValue ?? 0
+    let units = Array(text.utf16)
+    var length = units.count
+    while true {
+      var delivered = window
+      let end = start + Int64(length)
+      delivered["end_offset"] = .int(end)
+      delivered["next_offset"] = end < (window["total_chars"]?.intValue ?? end) ? .int(end) : .null
+      model["reading_window"] = .object(delivered)
+      model["text"] = .string(String(decoding: units.prefix(length), as: UTF16.self))
+      let encoded = AgentMcpJSONCodec.stringify(model)
+      if encoded.count <= maximumToolResultCharacters, length > 0 || units.isEmpty { return encoded }
+      if length <= 1 {
+        return AgentMcpJSONCodec.stringify([
+          "operation": .string("fetch"), "status": .string("failed"),
+          "error_code": .string("reading_window_output_limit")
+        ])
+      }
+      length /= 2
+      if (0xDC00...0xDFFF).contains(units[length]) { length -= 1 }
+    }
   }
 
   private static func evidenceModelOutput(

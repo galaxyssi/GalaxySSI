@@ -313,13 +313,19 @@ enum AgentIOSWebIntelligenceNativeToolCatalog {
         "use_cache": boolSchema()
       ], required: ["query"])
     case .fetch, .diff:
-      return objectSchema([
+      var properties: [String: AgentMcpJSONObject] = [
         "url": stringSchema(minLength: 8, maxLength: 4_096),
         "force": boolSchema(),
         "max_bytes": integerSchema(minimum: 1_024, maximum: maxFetchBytes),
         "timeout_ms": integerSchema(minimum: 1_000, maximum: 120_000),
         "cache_ttl_ms": integerSchema(minimum: 60_000, maximum: maxCacheTtlMillis)
-      ], required: ["url"])
+      ]
+      if operation == .fetch {
+        properties["offset"] = integerSchema(minimum: 0, maximum: maxFetchBytes)
+        properties["length"] = integerSchema(minimum: 256, maximum: AgentIOSWebReadingWindow.maximumLength)
+        properties["document_sha256"] = stringSchema(minLength: 64, maxLength: 64)
+      }
+      return objectSchema(properties, required: ["url"])
     case .crawl:
       return objectSchema([
         "url": stringSchema(minLength: 8, maxLength: 4_096),

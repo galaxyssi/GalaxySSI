@@ -42,7 +42,7 @@ enum AgentIOSWebEvidencePack {
     var attached = output
     attached["evidence_pack"] = .object(pack)
     attached["documents"] = .array(documents.map { .object(removingBody(from: $0)) })
-    attached.removeValue(forKey: "text")
+    if output["reading_window"] == nil { attached.removeValue(forKey: "text") }
     if let pages = output["pages"]?.arrayValue {
       attached["pages"] = .array(pages.map { value in
         guard let page = value.objectValue else { return value }

@@ -62,6 +62,12 @@ struct CloudConversationNonStreamingToolEngine {
           continue
         }
         let candidate = CloudWebGrounding.stripInternalToolProtocol(response.text)
+        if !finalRound, conversation.canRequestBodyReadingReview, progress.performedDeepResearch,
+           let review = CloudWebGrounding.bodyReadingReviewPrompt(candidate, results: evidence),
+           progress.requestRepair("research_body_reading") {
+          conversation.appendBodyReadingReview(draft: candidate, prompt: review)
+          continue
+        }
         if let repair = CloudWebGrounding.citationRepairPrompt(candidate, results: evidence),
            !candidate.isBlank,
            !finalRound,
