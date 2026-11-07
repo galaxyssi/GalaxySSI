@@ -216,12 +216,27 @@ struct AgentCollaborationGoalCheckpoint: Codable, Equatable {
 }
 
 struct AgentCollaborationAcceptedDelivery: Codable, Equatable {
+  struct Source: Codable, Equatable {
+    let profileID: String
+    let messageID: UUID
+    let contactID: String
+    let rosterDigest: String
+
+    static func rosterDigest(_ roster: AgentCollaborationRoster) -> String? {
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys]
+      guard let bytes = try? encoder.encode(roster) else { return nil }
+      return SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+    }
+  }
+
   let owner: AgentCollaborationToolEvidenceScope
   let assessmentDigest: String
   let goalDigest: String
   let criteriaDigest: String
   let reference: AgentCollaborationResearchReference
   let content: String
+  var source: Source? = nil
 }
 
 struct AgentCollaborationGoalWorkRun: Codable {

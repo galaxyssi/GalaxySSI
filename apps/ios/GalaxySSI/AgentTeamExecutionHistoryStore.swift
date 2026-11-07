@@ -2307,7 +2307,8 @@ final class AgentTeamExecutionHistoryStore {
       return response
   }
 
-  func prepareFinalGoalDelivery(_ raw: String, scope: AgentCollaborationToolEvidenceScope)
+  func prepareFinalGoalDelivery(_ raw: String, scope: AgentCollaborationToolEvidenceScope,
+                                source: AgentCollaborationAcceptedDelivery.Source? = nil)
     throws -> AgentCollaborationAcceptedDelivery {
     guard raw.utf8.count <= 131_072,
           let assessment = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8)),
@@ -2326,7 +2327,8 @@ final class AgentTeamExecutionHistoryStore {
       else { throw AgentTeamHistoryDatabase.Failure.stale }
       if let prior = try database.researchRecord(AgentCollaborationAcceptedDelivery.self,
         conversationId: scope.conversationId, key: key, revision: 0) {
-        guard checkpoint.phase == .accepted, prior.owner == scope, prior.assessmentDigest == digest, prior.reference == ref
+        guard checkpoint.phase == .accepted, prior.owner == scope, prior.assessmentDigest == digest,
+              prior.reference == ref, prior.source == source
         else { throw AgentTeamHistoryDatabase.Failure.stale }
         return prior
       }
@@ -2346,7 +2348,7 @@ final class AgentTeamExecutionHistoryStore {
       else { throw AgentTeamHistoryDatabase.Failure.stale }
       let receipt = AgentCollaborationAcceptedDelivery(owner: scope, assessmentDigest: digest,
         goalDigest: verified.string("goal_sha256"), criteriaDigest: verified.string("criteria_sha256"),
-        reference: ref, content: content)
+        reference: ref, content: content, source: source)
       let previousRevision = checkpoint.revision
       checkpoint.revision += 1
       checkpoint.phase = .accepted
@@ -2361,6 +2363,12 @@ final class AgentTeamExecutionHistoryStore {
   func acceptedGoalDelivery(scope: AgentCollaborationToolEvidenceScope) throws -> AgentCollaborationAcceptedDelivery? {
     try access { database in
       _ = try Self.activeGoalCoordinator(scope, database: database)
+      return try Self.acceptedGoalDelivery(scope: scope, database: database)
+    }
+  }
+
+  private static func acceptedGoalDelivery(scope: AgentCollaborationToolEvidenceScope, database: AgentTeamHistoryDatabase)
+    throws -> AgentCollaborationAcceptedDelivery? {
       guard let checkpoint = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first,
             checkpoint.phase == .accepted, checkpoint.conversationId == scope.conversationId,
             checkpoint.turnId == scope.turnId else { return nil }
@@ -2368,6 +2376,26 @@ final class AgentTeamExecutionHistoryStore {
         conversationId: scope.conversationId, key: "goal-final-delivery:" + scope.ownershipDigest, revision: 0),
             receipt.owner == scope else { throw AgentTeamHistoryDatabase.Failure.stale }
       return receipt
+  }
+
+  func acceptedGoalDeliveryRecoveryPage(after: String) throws
+    -> (deliveries: [AgentCollaborationAcceptedDelivery], next: String?) {
+    try access { database in
+      let page = try database.recoveryPage(after: after, limit: 8)
+      var deliveries: [AgentCollaborationAcceptedDelivery] = []
+      for team in page.teams where team.state == .running {
+        guard let primary = team.members.first(where: { $0.memberId == team.primaryMemberId && $0.deliveryMode == .respond &&
+          !$0.status.isTerminal && ($0.dispatchCheckpoint == .dispatching || $0.dispatchCheckpoint == .accepted) })
+        else { continue }
+        let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
+          turnId: team.taskId, memberId: primary.memberId, sourceId: primary.sourceMessageId)
+        guard try database.researchRecord(Bool.self, conversationId: team.conversationId,
+          key: "native-evidence-revoked", revision: 0) != true,
+              let receipt = try Self.acceptedGoalDelivery(scope: scope, database: database), receipt.source != nil
+        else { continue }
+        deliveries.append(receipt)
+      }
+      return (deliveries, page.next)
     }
   }
 

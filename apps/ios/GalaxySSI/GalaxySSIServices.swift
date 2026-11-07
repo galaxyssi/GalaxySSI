@@ -302,6 +302,7 @@ final class MessageCoordinator: ObservableObject {
   private var volatileTeamReplyOwners: [String: AgentTeamReplyOwner] = [:]
   private lazy var teamReplyOwnerProfile = store.profile.identityFingerprint
   private var researchPublicationRecoveryProfile: String?
+  private var recoveringAcceptedGoalDeliveries = false
   private var artifactDownloadRetryGate = AgentArtifactRequestRetryGate()
   private var artifactFetchRetryGate = AgentArtifactRequestRetryGate()
   private var liveConnectorMessageIds: [String: UUID] = [:]
@@ -858,6 +859,7 @@ final class MessageCoordinator: ObservableObject {
         guard let self else { return }
         self.continueForegroundCapturePermissions()
         self.recoverManagedBrowserMembers()
+        self.recoverAcceptedGoalDeliveries()
         self.pendingReplyRecoveryWake.request(isConnected: self.mqttClient.relationshipSubscriptionsReady)
       }
     }
@@ -966,6 +968,7 @@ final class MessageCoordinator: ObservableObject {
 
   func refreshAgentHomeState() {
     reconcileSavedTeamParents()
+    recoverAcceptedGoalDeliveries()
     recoverSavedResearchPublications()
     _ = requestCapabilityManifestRefresh()
     _ = reconcileStaleAgentConnectorReplies()
@@ -9269,6 +9272,81 @@ final class MessageCoordinator: ObservableObject {
     return scope
   }
 
+  private func recoverAcceptedGoalDeliveries() {
+    guard !recoveringAcceptedGoalDeliveries, UIApplication.shared.applicationState == .active else { return }
+    recoveringAcceptedGoalDeliveries = true
+    let profile = store.profile.identityFingerprint
+    Task { @MainActor [weak self] in
+      defer { self?.recoveringAcceptedGoalDeliveries = false }
+      var cursor = ""
+      while !Task.isCancelled {
+        let after = cursor
+        let page = await Task.detached(priority: .utility) {
+          try? AgentTeamExecutionHistoryStore.shared.acceptedGoalDeliveryRecoveryPage(after: after)
+        }.value
+        guard let self, let page, self.store.profile.identityFingerprint == profile,
+              UIApplication.shared.applicationState == .active else { return }
+        for delivery in page.deliveries {
+          guard !Task.isCancelled else { return }
+          self.recoverAcceptedGoalDelivery(delivery, profile: profile)
+        }
+        guard let next = page.next else { return }
+        cursor = next
+      }
+    }
+  }
+
+  private func recoverAcceptedGoalDelivery(_ receipt: AgentCollaborationAcceptedDelivery, profile: String) {
+    let scope = receipt.owner
+    let history = AgentTeamExecutionHistoryStore.shared
+    guard receipt.source?.profileID == profile,
+          let team = history.snapshot(supervisorRunId: scope.runId), team.state == .running,
+          team.conversationId == scope.conversationId, team.taskId == scope.turnId,
+          let coordinator = team.members.first(where: { $0.memberId == scope.memberId &&
+            $0.memberId == team.primaryMemberId && $0.sourceMessageId == scope.sourceId &&
+            $0.deliveryMode == .respond && !$0.status.isTerminal }),
+          let parent = store.agentTask(id: scope.turnId), !parent.blocked, parent.result.isBlank,
+          parent.phase == .executing || parent.phase == .waitingResponse,
+          parent.teamRecoveryRunId == nil || parent.teamRecoveryRunId == scope.runId,
+          let index = AgentSavedTeamReplyPolicy.pendingDispatchIndex(parent, saved: team),
+          let action = parent.activePlan?.actions[index], [.running, .waitingResponse].contains(action.status),
+          (try? history.acceptedGoalDelivery(scope: scope)) == receipt,
+          let saved = try? projectAcceptedGoalDelivery(receipt, detail: coordinator.agentId)
+    else { return }
+    if parent.phase == .executing {
+      guard let waiting = AgentSavedTeamReplyPolicy.reconcileRecoveryWait(parent, runId: scope.runId,
+        cancelled: false, verification: "collaboration_goal_delivery_recovered", now: AgentControlPlaneClock.nowMillis()),
+        store.replaceAgentTaskForRecovery(expected: parent, updated: waiting) else { return }
+    }
+    guard history.applyReply(supervisorRunId: scope.runId, source: scope.sourceId, conversation: scope.conversationId,
+      turn: scope.turnId, task: scope.sourceId, contact: coordinator.agentId, content: saved.content,
+      success: true, now: AgentControlPlaneClock.nowMillis()) != nil else { return }
+    finishPendingAgentReply(turnId: scope.turnId)
+    reconcileSavedTeamParents(runId: scope.runId)
+  }
+
+  private func projectAcceptedGoalDelivery(_ receipt: AgentCollaborationAcceptedDelivery, detail: String) throws -> ChatMessage {
+    let scope = receipt.owner
+    try Task.checkCancellation()
+    guard let source = receipt.source, let roster = liveGoalWorkRoster(scope, profileID: source.profileID),
+          AgentCollaborationAcceptedDelivery.Source.rosterDigest(roster) == source.rosterDigest,
+          let original = store.persistedMessage(id: source.messageID, contactId: source.contactID), original.isMine,
+          original.conversationId == scope.conversationId, original.turnId.ifBlank(original.id.uuidString) == scope.turnId
+    else { throw CancellationError() }
+    let alreadyVisible = store.messages(for: source.contactID).contains {
+      !$0.isMine && $0.remoteMessageId == scope.turnId && $0.conversationId == scope.conversationId
+    }
+    let saved = try store.persistTransportIncoming(receipt.content, from: source.contactID, remoteMessageId: scope.turnId,
+      conversationId: scope.conversationId, turnId: original.turnId, richOutputJson: "",
+      tracePrefix: "collaboration_final_delivery")
+    guard Data(saved.content.utf8) == Data(receipt.content.utf8) else { throw GalaxySSIError.unsupportedResponse }
+    if !original.deliveryTrace.contains(where: { $0.stage == "cloud_reply" }) {
+      store.appendDeliveryTrace(original.id, contactId: source.contactID, stage: "cloud_reply", detail: detail, status: .delivered)
+    }
+    if !alreadyVisible { onIncomingMessage?(saved) }
+    return saved
+  }
+
   private func reconcileSavedTeamParents(runId: String? = nil) {
     let history = AgentTeamExecutionHistoryStore.shared
     let snapshots = runId.map { id in history.snapshot(supervisorRunId: id).map { [$0] } ?? [] }
@@ -12252,7 +12330,17 @@ final class MessageCoordinator: ObservableObject {
     let goalScope = goalWorkHandler == nil ? nil : collaborationModelAudit
     let goalProfile = store.profile.identityFingerprint
     let goalRoster = goalScope.flatMap { liveGoalWorkRoster($0, profileID: goalProfile) }
+    let goalSource = goalRoster.flatMap { AgentCollaborationAcceptedDelivery.Source.rosterDigest($0) }.map {
+      AgentCollaborationAcceptedDelivery.Source(profileID: goalProfile, messageID: outgoing.id,
+        contactID: outgoing.contactId, rosterDigest: $0)
+    }
     let history = AgentTeamExecutionHistoryStore.shared
+    func originalGoalSourceExists(_ scope: AgentCollaborationToolEvidenceScope) -> Bool {
+      guard let goalSource, let original = store.persistedMessage(id: goalSource.messageID, contactId: goalSource.contactID)
+      else { return false }
+      return original.isMine && original.conversationId == scope.conversationId &&
+        original.turnId.ifBlank(original.id.uuidString) == scope.turnId
+    }
     func deferGoalDelivery(_ scope: AgentCollaborationToolEvidenceScope, reason: String) {
       guard var task = store.agentTask(id: scope.turnId), task.sessionId == scope.conversationId,
             liveGoalWorkRoster(scope, profileID: goalProfile) == goalRoster else { return }
@@ -12265,20 +12353,12 @@ final class MessageCoordinator: ObservableObject {
                              scope: AgentCollaborationToolEvidenceScope) throws {
       try Task.checkCancellation()
       guard goalRoster != nil, liveGoalWorkRoster(scope, profileID: goalProfile) == goalRoster,
-            receipt.owner == scope, requestId == scope.turnId,
-            let original = store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId),
-            original.isMine, original.conversationId == scope.conversationId,
-            original.turnId.ifBlank(original.id.uuidString) == scope.turnId else { throw CancellationError() }
-      let saved = try store.persistTransportIncoming(receipt.content, from: destinationId, remoteMessageId: requestId,
-        conversationId: scope.conversationId, turnId: outgoing.turnId, richOutputJson: "",
-        tracePrefix: "collaboration_final_delivery")
-      guard Data(saved.content.utf8) == Data(receipt.content.utf8) else { throw GalaxySSIError.unsupportedResponse }
-      store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId, stage: "cloud_reply",
-        detail: modelDetail, status: .delivered)
-      onIncomingMessage?(saved)
+            let goalSource, receipt.source == goalSource, receipt.owner == scope,
+            requestId == scope.turnId, destinationId == goalSource.contactID else { throw CancellationError() }
+      _ = try projectAcceptedGoalDelivery(receipt, detail: modelDetail)
     }
     if let goalScope {
-      guard goalRoster != nil else { throw CancellationError() }
+      guard requestId == goalScope.turnId, originalGoalSourceExists(goalScope) else { throw CancellationError() }
       if let prior = try history.acceptedGoalDelivery(scope: goalScope) {
         do { try deliverAcceptedGoal(prior, scope: goalScope); return true }
         catch is CancellationError { throw CancellationError() }
@@ -12377,8 +12457,9 @@ final class MessageCoordinator: ObservableObject {
       case .completed:
         if completed { continue }
         if let goalScope {
-          guard liveGoalWorkRoster(goalScope, profileID: goalProfile) == goalRoster else { throw CancellationError() }
-          if let receipt = try? history.prepareFinalGoalDelivery(accumulated, scope: goalScope) {
+          guard liveGoalWorkRoster(goalScope, profileID: goalProfile) == goalRoster,
+                originalGoalSourceExists(goalScope) else { throw CancellationError() }
+          if let receipt = try? history.prepareFinalGoalDelivery(accumulated, scope: goalScope, source: goalSource) {
             do { try deliverAcceptedGoal(receipt, scope: goalScope); return true }
             catch is CancellationError { throw CancellationError() }
             catch { deferGoalDelivery(goalScope, reason: "collaboration_goal_delivery_pending"); return false }

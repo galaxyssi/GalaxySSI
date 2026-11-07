@@ -2132,12 +2132,16 @@ extension GalaxySSIStoreTests {
     wrongDelivery["final_delivery"] = .object(ref(mapping))
     XCTAssertThrowsError(try open().prepareFinalGoalDelivery(AgentMcpJSONCodec.stringify(wrongDelivery), scope: scope(0)))
     XCTAssertThrowsError(try open().prepareFinalGoalDelivery(proposed, scope: scope(1)))
-    let accepted = try open().prepareFinalGoalDelivery(proposed, scope: scope(0))
+    let source = AgentCollaborationAcceptedDelivery.Source(profileID: "original-profile", messageID: UUID(),
+      contactID: "original-contact", rosterDigest: "original-roster")
+    let accepted = try open().prepareFinalGoalDelivery(proposed, scope: scope(0), source: source)
     XCTAssertEqual(accepted.reference, delivery)
     XCTAssertEqual(accepted.content, "Observed value 42")
     XCTAssertEqual(try open().acceptedGoalDelivery(scope: scope(0)), accepted)
-    XCTAssertEqual(try open().prepareFinalGoalDelivery(proposed, scope: scope(0)), accepted)
-    XCTAssertThrowsError(try open().prepareFinalGoalDelivery(proposed + "\n", scope: scope(0)))
+    XCTAssertEqual(try open().prepareFinalGoalDelivery(proposed, scope: scope(0), source: source), accepted)
+    XCTAssertThrowsError(try open().prepareFinalGoalDelivery(proposed, scope: scope(0)))
+    XCTAssertThrowsError(try open().prepareFinalGoalDelivery(proposed + "\n", scope: scope(0), source: source))
+    XCTAssertEqual(try open().acceptedGoalDeliveryRecoveryPage(after: "").deliveries, [accepted])
     XCTAssertEqual(open().goalCheckpoint(runId: team.supervisorRunId, conversationId: team.conversationId,
       turnId: team.taskId)?.phase, .accepted)
     artifact.objectId = delivery.objectId
@@ -2147,6 +2151,11 @@ extension GalaxySSIStoreTests {
     XCTAssertThrowsError(try history.recallCollaborationOriginal(read, scope: scope(1)))
     XCTAssertThrowsError(try open().publishCollaborationMilestone(request, scope: scope(0)))
     XCTAssertEqual(try open().acceptedGoalDelivery(scope: scope(0))?.content, "Observed value 42")
+    let coordinator = scope(0)
+    XCTAssertNotNil(open().applyReply(supervisorRunId: coordinator.runId, source: coordinator.sourceId,
+      conversation: coordinator.conversationId, turn: coordinator.turnId, task: coordinator.sourceId,
+      contact: team.members[0].agentId, content: accepted.content, success: true, now: 10))
+    XCTAssertTrue(try open().acceptedGoalDeliveryRecoveryPage(after: "").deliveries.isEmpty)
   }
 
   func testScopedCoordinatorCanEstablishOnlyAnOpenImmutableGoalContract() throws {

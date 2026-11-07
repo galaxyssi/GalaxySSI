@@ -1342,20 +1342,7 @@ enum AgentSavedTeamReplyPolicy {
             (parent.phase == .paused && parent.teamRecoveryRunId == saved.supervisorRunId),
           parent.taskId == saved.taskId, parent.sessionId == saved.conversationId,
           saved.createdAtMillis >= parent.createdAtMillis,
-          var plan = parent.activePlan else { return nil }
-    let matchingIndices = plan.actions.indices.filter { index in
-      plan.actions[index].kind == .callConnector &&
-        AgentTeamDispatchSpecCodec.decode(plan.actions[index].parameters[agentTeamSpecParameter] ?? "")?.supervisorRunId == saved.supervisorRunId
-    }
-    guard matchingIndices.count == 1, let index = matchingIndices.first,
-          plan.actions[index].status != .completed,
-          let spec = AgentTeamDispatchSpecCodec.decode(plan.actions[index].parameters[agentTeamSpecParameter] ?? ""),
-          spec.supervisorRunId == saved.supervisorRunId, spec.definition.teamId == saved.teamId,
-          spec.definition.primaryMemberId == saved.primaryMemberId,
-          spec.definition.members.count == saved.members.count,
-          spec.definition.members.allSatisfy({ expected in
-            saved.members.contains { $0.memberId == expected.memberId && $0.agentId == expected.agentId }
-          }) else { return nil }
+          var plan = parent.activePlan, let index = pendingDispatchIndex(parent, saved: saved) else { return nil }
     let success = saved.hasSuccessfulOutput
     var result = parent
     result.phase = saved.state == .cancelled ? .cancelled : (success ? .completed : .failed)
@@ -1377,6 +1364,25 @@ enum AgentSavedTeamReplyPolicy {
     result.planContext = AgentTaskPlanContext(plan: plan)
     result.updatedAtMillis = max(now, parent.updatedAtMillis)
     return result
+  }
+
+  static func pendingDispatchIndex(_ parent: AgentTaskRecord, saved: AgentTeamExecutionSnapshot) -> Int? {
+    guard parent.taskId == saved.taskId, parent.sessionId == saved.conversationId,
+          saved.createdAtMillis >= parent.createdAtMillis, let plan = parent.activePlan else { return nil }
+    let matchingIndices = plan.actions.indices.filter { index in
+      plan.actions[index].kind == .callConnector &&
+        AgentTeamDispatchSpecCodec.decode(plan.actions[index].parameters[agentTeamSpecParameter] ?? "")?.supervisorRunId == saved.supervisorRunId
+    }
+    guard matchingIndices.count == 1, let index = matchingIndices.first,
+          plan.actions[index].status != .completed,
+          let spec = AgentTeamDispatchSpecCodec.decode(plan.actions[index].parameters[agentTeamSpecParameter] ?? ""),
+          spec.supervisorRunId == saved.supervisorRunId, spec.definition.teamId == saved.teamId,
+          spec.definition.primaryMemberId == saved.primaryMemberId,
+          spec.definition.members.count == saved.members.count,
+          spec.definition.members.allSatisfy({ expected in
+            saved.members.contains { $0.memberId == expected.memberId && $0.agentId == expected.agentId }
+          }) else { return nil }
+    return index
   }
 
   static func apply(to saved: AgentTeamExecutionSnapshot, source: String, conversation: String,
