@@ -2189,6 +2189,27 @@ extension GalaxySSIStoreTests {
     XCTAssertThrowsError(try history.reserveGoalContinuation(after: raw, scope: scope(1)))
     XCTAssertEqual(try history.reserveGoalContinuation(after: raw, scope: scope(0))?["status"], .string("contract_missing"))
     XCTAssertNil(try open().reserveGoalContinuation(after: "The same goal, different model prose.", scope: scope(0)))
+    var cloud = GalaxySSIContact.hermes()
+    cloud.id = team.members[0].agentId
+    cloud.deliveryMode = .cloudAPI
+    cloud.cloudProvider = "Custom"
+    cloud.selectedCloudModelId = "fixture-model"
+    cloud.cloudModels = [.init(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "fixture-model",
+      endpoint: "https://example.invalid/v1/chat/completions", apiStyle: .openAICompatible,
+      keychainAccount: "fixture-key", updatedAt: Date(timeIntervalSince1970: 1))]
+    let source = AgentCollaborationAcceptedDelivery.Source(profileID: "profile", messageID: UUID(),
+      contactID: "hermes", rosterDigest: "roster")
+    let route = try XCTUnwrap(AgentManualCloudBinding(contact: cloud, hadAttachments: false))
+    let coordinatorRecovery = AgentCollaborationCoordinatorRecovery(owner: scope(0), source: source, route: route,
+      originalPrompt: "Original scoped coordinator prompt", process: "previous-process")
+    let rewritten = AgentCollaborationCoordinatorRecovery(owner: scope(0), source: source, route: route,
+      originalPrompt: "Changed prompt", process: "previous-process")
+    try history.saveGoalCoordinatorRecovery(coordinatorRecovery)
+    XCTAssertThrowsError(try open().saveGoalCoordinatorRecovery(rewritten))
+    XCTAssertEqual(try open().acceptedGoalDeliveryRecoveryPage(after: "").coordinators, [coordinatorRecovery])
+    XCTAssertNil(try open().claimGoalCoordinatorRecovery(rewritten))
+    XCTAssertEqual(try open().claimGoalCoordinatorRecovery(coordinatorRecovery)?["revision"], .int(0))
+    XCTAssertNil(try open().claimGoalCoordinatorRecovery(coordinatorRecovery))
     let check: AgentMcpJSONObject = ["mode": .string("validate_assessment"), "artifact": .string(raw)]
     XCTAssertTrue(AgentDesktopCollaborationPublicationWire.accepts(phase: mode, input: request))
     XCTAssertFalse(AgentDesktopCollaborationPublicationWire.permits(phase: mode, observer: true))
@@ -2281,6 +2302,10 @@ extension GalaxySSIStoreTests {
     let advanced = try open().reserveGoalContinuation(after: raw, scope: scope(0))
     XCTAssertEqual(advanced?["work_counts"]?.objectValue?["succeeded"], .int(1))
     XCTAssertNil(try open().reserveGoalContinuation(after: raw, scope: scope(0)))
+    let resumed = try open().claimGoalCoordinatorRecovery(coordinatorRecovery)
+    XCTAssertEqual(resumed?["revision"], .int(3))
+    XCTAssertEqual(resumed?["recent_work"]?.arrayValue?.first?.objectValue?["status"], .string("succeeded"))
+    XCTAssertNil(try open().claimGoalCoordinatorRecovery(coordinatorRecovery))
     XCTAssertEqual(try open().readyGoalWork(scope: scope(0), excluding: [], limit: 3, now: 13), ["verify"])
     XCTAssertThrowsError(try reopened.finishGoalWork(started.run, output: "Replace", interrupted: false, now: 13))
     let next = try reopened.claimGoalWork(verify, scope: scope(0), now: 14)

@@ -2423,11 +2423,61 @@ final class AgentTeamExecutionHistoryStore {
       return receipt
   }
 
+  func saveGoalCoordinatorRecovery(_ binding: AgentCollaborationCoordinatorRecovery) throws {
+    let scope = binding.owner
+    guard !binding.originalPrompt.isBlank, binding.originalPrompt.utf8.count <= 131_072,
+          !binding.route.hadAttachments else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    try access { database in
+      let team = try Self.activeGoalCoordinator(scope, database: database)
+      guard team.members.contains(where: { $0.memberId == scope.memberId && $0.agentId == binding.route.contactId })
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let key = "goal-coordinator-recovery:" + scope.ownershipDigest
+      if let prior = try database.researchRecord(AgentCollaborationCoordinatorRecovery.self,
+        conversationId: scope.conversationId, key: key, revision: 0) {
+        guard prior == binding else { throw AgentTeamHistoryDatabase.Failure.stale }
+        return
+      }
+      try database.insertResearchRecord(binding, conversationId: scope.conversationId, key: key, revision: 0)
+    }
+  }
+
+  func claimGoalCoordinatorRecovery(_ binding: AgentCollaborationCoordinatorRecovery) throws -> AgentMcpJSONObject? {
+    let scope = binding.owner
+    return try access { database in
+      _ = try Self.activeGoalCoordinator(scope, database: database)
+      let saved = try database.researchRecord(AgentCollaborationCoordinatorRecovery.self,
+        conversationId: scope.conversationId, key: "goal-coordinator-recovery:" + scope.ownershipDigest, revision: 0)
+      guard saved == binding, binding.process != AgentCollaborationGoalWorkRun.processID else { return nil }
+      let checkpoint = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first
+      if let checkpoint {
+        guard checkpoint.phase == .working, checkpoint.conversationId == scope.conversationId,
+              checkpoint.turnId == scope.turnId else { return nil }
+      }
+      var results: [AgentMcpJSONValue] = []
+      for work in checkpoint?.liveGraph?.work ?? [] {
+        let run = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
+          conversationId: scope.conversationId, key: Self.goalWorkKey(work.id, scope: scope), revision: 0)
+        guard run == nil || run?.owner == scope else { throw AgentTeamHistoryDatabase.Failure.stale }
+        results.append(.object(["work_id": .string(work.id), "status": .string(run?.state.rawValue ?? "unclaimed"),
+          "output_sha256": run?.outputHash.map(AgentMcpJSONValue.string) ?? .null]))
+      }
+      let revision = checkpoint?.revision ?? 0
+      let state: AgentMcpJSONObject = ["revision": .int(revision), "work": .array(results)]
+      let key = "goal-coordinator-attempt:" + scope.ownershipDigest + ":" + AgentMcpJSONCodec.sha256(state)
+      guard try database.researchRecord(Bool.self, conversationId: scope.conversationId, key: key, revision: 0) == nil
+      else { return nil }
+      try database.insertResearchRecord(true, conversationId: scope.conversationId, key: key, revision: 0)
+      return ["revision": .int(revision), "work_count": .int(Int64(results.count)),
+        "recent_work": .array(Array(results.suffix(24)))]
+    }
+  }
+
   func acceptedGoalDeliveryRecoveryPage(after: String) throws
-    -> (deliveries: [AgentCollaborationAcceptedDelivery], next: String?) {
+    -> (deliveries: [AgentCollaborationAcceptedDelivery], coordinators: [AgentCollaborationCoordinatorRecovery], next: String?) {
     try access { database in
       let page = try database.recoveryPage(after: after, limit: 8)
       var deliveries: [AgentCollaborationAcceptedDelivery] = []
+      var coordinators: [AgentCollaborationCoordinatorRecovery] = []
       for team in page.teams where team.state == .running {
         guard let primary = team.members.first(where: { $0.memberId == team.primaryMemberId && $0.deliveryMode == .respond &&
           !$0.status.isTerminal && ($0.dispatchCheckpoint == .dispatching || $0.dispatchCheckpoint == .accepted) })
@@ -2435,12 +2485,16 @@ final class AgentTeamExecutionHistoryStore {
         let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
           turnId: team.taskId, memberId: primary.memberId, sourceId: primary.sourceMessageId)
         guard try database.researchRecord(Bool.self, conversationId: team.conversationId,
-          key: "native-evidence-revoked", revision: 0) != true,
-              let receipt = try Self.acceptedGoalDelivery(scope: scope, database: database), receipt.source != nil
-        else { continue }
-        deliveries.append(receipt)
+          key: "native-evidence-revoked", revision: 0) != true else { continue }
+        if let receipt = try Self.acceptedGoalDelivery(scope: scope, database: database) {
+          if receipt.source != nil { deliveries.append(receipt) }
+        } else if let binding = try database.researchRecord(AgentCollaborationCoordinatorRecovery.self,
+          conversationId: scope.conversationId, key: "goal-coordinator-recovery:" + scope.ownershipDigest, revision: 0),
+                  binding.owner == scope, binding.process != AgentCollaborationGoalWorkRun.processID {
+          coordinators.append(binding)
+        }
       }
-      return (deliveries, page.next)
+      return (deliveries, coordinators, page.next)
     }
   }
 

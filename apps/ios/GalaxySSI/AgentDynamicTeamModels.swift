@@ -239,6 +239,14 @@ struct AgentCollaborationAcceptedDelivery: Codable, Equatable {
   var source: Source? = nil
 }
 
+struct AgentCollaborationCoordinatorRecovery: Codable, Equatable {
+  let owner: AgentCollaborationToolEvidenceScope
+  let source: AgentCollaborationAcceptedDelivery.Source
+  let route: AgentManualCloudBinding
+  let originalPrompt: String
+  let process: String
+}
+
 struct AgentCollaborationGoalWorkRun: Codable {
   enum State: String, Codable { case running, succeeded, failed, interrupted }
   struct Target: Codable, Equatable {
