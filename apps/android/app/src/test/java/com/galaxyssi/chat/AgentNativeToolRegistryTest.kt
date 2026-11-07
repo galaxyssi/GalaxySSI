@@ -10,6 +10,21 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class AgentNativeToolRegistryTest {
+    @Test fun scopedAuthorizationSurvivesSubsetAndRejectsBeforeExecutorOrReplay() {
+        var permitted = true
+        val calls = AtomicInteger()
+        val definition = AgentNativeToolDefinition(descriptor = descriptor(id = "phone.test.scoped"),
+            executor = AgentNativeToolExecutor { calls.incrementAndGet(); AgentNativeToolExecutionResult.success() })
+        val registry = AgentNativeToolRegistry(invocationAuthorization = { _, _ -> if (permitted) null else "Approval revoked" })
+            .register(definition)
+        val scope = AgentNativeToolInvocationContext(conversationId = "health-fixture", turnId = "turn-fixture")
+        assertEquals(AgentNativeToolResultStatus.SUCCEEDED, registry.invoke("phone.test.scoped", emptyMap(), scope).status)
+        permitted = false
+        val result = registry.subset { true }.invoke("phone.test.scoped", emptyMap(), scope)
+        assertEquals(AgentNativeToolResultStatus.REJECTED, result.status)
+        assertEquals("scope_confirmation_required", result.error?.code)
+        assertEquals(1, calls.get())
+    }
     @Test
     fun canonicalDigestMatchesDesktopConfirmationContract() {
         val value = mapOf(

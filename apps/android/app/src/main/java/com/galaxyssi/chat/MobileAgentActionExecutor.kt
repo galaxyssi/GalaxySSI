@@ -51,7 +51,10 @@ interface AgentActionExecutor {
 class AndroidAgentActionExecutor(private val context: Context) : AgentActionExecutor {
     internal val resourceHealth = AgentResourceHealthStore(context)
     internal val observationContextStore = AgentObservationContextStore(context)
-    override fun execute(action: AgentAction, screen: ScreenContext): AgentActionResult = when (action.kind) {
+    override fun execute(action: AgentAction, screen: ScreenContext): AgentActionResult =
+        HealthCareDiscussion.actionRejection(context, action)?.let {
+            AgentActionResult(action.id, false, it, metadata = mapOf("non_retriable" to "true"))
+        } ?: when (action.kind) {
         AgentActionKind.READ_SCREEN -> readScreenContext(action, screen)
         AgentActionKind.SAVE_SCREEN_KNOWLEDGE -> saveScreenKnowledge(action, screen)
         AgentActionKind.DRAFT_PLAN -> AgentActionResult(
