@@ -100,7 +100,8 @@ enum AgentTaskCenterPolicy {
   static func resumable(_ task: AgentTaskRecord) -> Bool {
     if let wait = task.capturePermission { return task.phase == .paused && !wait.dispatched }
     return task.phase == .paused &&
-      (task.pendingAction != nil || !task.pendingActions.isEmpty)
+      (task.pendingAction != nil || !task.pendingActions.isEmpty ||
+        (task.activePlan?.executionMode != .planOnly && !(task.effectRecovery ?? []).isEmpty))
   }
 
   static func pauseable(_ task: AgentTaskRecord) -> Bool {

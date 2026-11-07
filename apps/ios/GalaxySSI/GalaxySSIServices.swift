@@ -596,6 +596,7 @@ final class MessageCoordinator: ObservableObject {
       guard task.phase == .executing else { continue }
       var recoveredActions: [AgentAction] = []
       var recoveredWorkspaceObservations: [AgentActionResult] = []
+      var recoveredEffectIDs = Set<String>()
       var foundJournaledNode = false
       var journalRecoveryFailed = false
       for index in plan.actions.indices where plan.actions[index].status == .running {
@@ -627,6 +628,22 @@ final class MessageCoordinator: ObservableObject {
         }
         foundJournaledNode = true
         var recovered = action
+        let toolId = action.parameters["tool_id"] ?? action.target
+        if action.kind == .callNativeTool, let result = AgentEffectRecoveryRecord.restoredResult(claim, action: action,
+          requiresEffectClaim: localNativeToolRuntime?.registry.lookup(toolId)?.descriptor.requiresEffectClaim != false) {
+          rememberUnverifiedEffect(result, action: action, outgoing: outgoing, task: &task)
+          if task.effectRecovery?.contains(where: { $0.actionId == action.id }) == true {
+            recovered.status = .failed
+            recovered.result = result.message
+            recovered.evidence = result.metadata["native_tool_output"] ?? result.metadata["evidence"] ??
+              agentPlanNodeObservationPendingEvidence
+            AgentCompletionEvidencePolicy.recordObservationEnvelope(result, action: &recovered)
+            plan.actions[index] = recovered
+            recoveredEffectIDs.insert(action.id)
+            task.lastNativeActionResult = result
+            continue
+          }
+        }
         recovered.status = .proposed
         switch claim {
         case .observed(let observation):
@@ -667,14 +684,15 @@ final class MessageCoordinator: ObservableObject {
       }
       task.activePlan = plan
       task.planContext = AgentTaskPlanContext(plan: plan)
-      let recoveredIds = Set(recoveredActions.map(\.id))
+      let recoveredIds = Set(recoveredActions.map(\.id)).union(recoveredEffectIDs)
       task.pendingActions = recoveredActions + task.pendingActions.filter {
         !recoveredIds.contains($0.id)
       }
       task.pendingAction = recoveredActions.first
       task.phase = .paused
       task.result = ""
-      task.verification = "Recovered durable plan-node observations after interruption"
+      task.verification = recoveredEffectIDs.isEmpty ? "Recovered durable plan-node observations after interruption" :
+        "Recovered uncertain outcomes. Inspect their original effects before resuming."
       task.executionLog.append(
         "Native tools: recovered \(recoveredActions.count) interrupted plan node(s) without redispatch"
       )
@@ -5405,15 +5423,16 @@ final class MessageCoordinator: ObservableObject {
           let outgoing = localOutgoingMessage(for: task) else {
       return false
     }
-    if let index = task.effectRecovery?.firstIndex(where: { !$0.hasObservation }) {
-      guard inspectLocalEffect(index, outgoing: outgoing, task: &task, registry: runtime.registry) else { return false }
-      if task.activePlan?.plannerProfile == "rule-based-direct-native-tool" {
-        _ = await continueObservedShortcutReview(task: &task, outgoing: outgoing)
+    if let plan = task.activePlan {
+      let previousEffects = task.effectRecovery
+      recoverEarlierNativeOutcomes(plan: plan, task: &task, outgoing: outgoing)
+      if task.effectRecovery != previousEffects {
+        task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+        store.upsertAgentTask(task)
       }
-      return true
     }
-    if !(task.effectRecovery ?? []).isEmpty, task.activePlan?.plannerProfile == "rule-based-direct-native-tool" {
-      return await continueObservedShortcutReview(task: &task, outgoing: outgoing)
+    if !(task.effectRecovery ?? []).isEmpty {
+      return await reviewUnverifiedNativeOutcomes(taskId: taskId, outgoing: outgoing)
     }
     let previousPlan = task.activePlan
     let continuationScope = previousPlan.flatMap {
@@ -5636,18 +5655,16 @@ final class MessageCoordinator: ObservableObject {
   private func rememberUnverifiedEffect(
     _ result: AgentActionResult, action: AgentAction, outgoing: ChatMessage, task: inout AgentTaskRecord
   ) {
+    let scope = AgentNativeEffectScope(sessionId: task.sessionId, conversationId: outgoing.conversationId,
+      taskId: task.taskId, turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString))
+    let now = AgentControlPlaneClock.nowMillis()
     let effect: AgentEffectRecoveryRecord
-    if let native = AgentEffectRecoveryRecord.fromActionResult(result) {
+    if let native = AgentEffectRecoveryRecord.forScopedAction(result, action: action, scope: scope, now: now) {
       effect = native
-    } else if result.metadata["error_code"] == "effect_outcome_unknown" ||
-                result.metadata["plan_node_outcome_unknown"] == "true" {
-      // An old or interrupted journal entry without a host query must not invent one.
-      effect = AgentEffectRecoveryRecord(scope: AgentNativeEffectScope(sessionId: task.sessionId,
-        conversationId: outgoing.conversationId, taskId: task.taskId,
-        turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)),
-        actionId: action.id, toolId: action.parameters["tool_id"] ?? action.target,
-        version: "", inputDigest: "", invocationId: result.metadata["original_invocation_id"] ?? action.id,
-        uncertainAt: AgentControlPlaneClock.nowMillis(), query: nil)
+    } else if action.kind != .callNativeTool, result.metadata["error_code"] == "effect_outcome_unknown" ||
+      result.metadata["plan_node_outcome_unknown"] == "true" {
+      effect = .init(scope: scope, actionId: action.id, toolId: action.parameters["tool_id"] ?? action.target,
+        version: "", inputDigest: "", invocationId: action.id, uncertainAt: now, query: nil)
     } else { return }
     var effects = task.effectRecovery ?? []
     guard !effects.contains(where: { $0.invocationId == effect.invocationId && $0.toolId == effect.toolId }) else { return }
@@ -5728,7 +5745,7 @@ final class MessageCoordinator: ObservableObject {
     return snapshot
   }
 
-  private func continueObservedShortcutReview(task: inout AgentTaskRecord, outgoing: ChatMessage) async -> Bool {
+  private func continueObservedNativeOutcomeReview(task: inout AgentTaskRecord, outgoing: ChatMessage) async -> Bool {
     let effects = task.effectRecovery ?? []
     guard !effects.isEmpty, effects.allSatisfy({
       $0.hasObservation && $0.matches(taskId: task.taskId, sessionId: task.sessionId, outgoing: outgoing)
@@ -5736,20 +5753,95 @@ final class MessageCoordinator: ObservableObject {
     task.plannerSnapshot = snapshot
     task.phase = .waitingResponse
     task.blocked = false
-    task.executionLog.append("Shortcut recovery: committed readback before planner review")
+    task.executionLog.append("Native outcome recovery: committed scoped readback before planner review")
     task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
     store.upsertAgentTask(task)
     await continueRollingNativePlan(taskId: task.taskId, outgoing: outgoing)
     return true
   }
 
-  private func reviewUnverifiedShortcut(taskId: String, outgoing: ChatMessage, actionId: String) async {
-    guard var task = store.agentTask(id: taskId), [.failed, .blocked].contains(task.phase),
-          let runtime = localNativeToolRuntime,
-          let index = AgentEffectRecoveryRecord.shortcutReviewIndex(plan: task.activePlan,
-            actionId: actionId, effects: task.effectRecovery ?? []),
-          inspectLocalEffect(index, outgoing: outgoing, task: &task, registry: runtime.registry) else { return }
-    _ = await continueObservedShortcutReview(task: &task, outgoing: outgoing)
+  private func reviewUnverifiedNativeOutcomes(
+    taskId: String, outgoing: ChatMessage, expectedPlan: AgentPlan? = nil,
+    receipts: [AgentActionResult] = [], resumingPaused: Bool = false
+  ) async -> Bool {
+    guard var task = store.agentTask(id: taskId),
+          [.failed, .blocked].contains(task.phase) || (task.phase == .paused && resumingPaused),
+          !store.agentSafetySettings.executionPaused, store.agentSafetySettings.taskExecutionMode != .planOnly,
+          !PhoneExecutionAuthority.isCancelled(taskId: taskId),
+          let session = store.agentSession(id: outgoing.conversationId), session.status == .active, !session.trackingPaused,
+          let runtime = localNativeToolRuntime, let plan = task.activePlan,
+          expectedPlan.map({ $0.planId == plan.planId && $0.revision == plan.revision }) != false,
+          let effects = task.effectRecovery,
+          let ids = AgentEffectRecoveryRecord.reviewableEffects(plan: plan, effects: effects,
+            taskId: taskId, sessionId: task.sessionId, outgoing: outgoing) else { return false }
+    task.phase = .blocked
+    task.blocked = true
+    task.localOperationProcessId = AgentOwnedOperationContext.processId
+    var observed = false
+    for id in ids {
+      guard !Task.isCancelled, let index = task.effectRecovery?.firstIndex(where: { $0.actionId == id }) else { return false }
+      if inspectLocalEffect(index, outgoing: outgoing, task: &task, registry: runtime.registry) { observed = true }
+    }
+    guard !Task.isCancelled, (task.effectRecovery ?? []).allSatisfy(\.hasObservation) else {
+      task.verification = localizedReply("galaxyssi.agent.effect_recovery.unavailable",
+        fallback: "The original effect is still unverified. Its affected state could not be confirmed; nothing was repeated.")
+      task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+      store.upsertAgentTask(task)
+      return observed
+    }
+    if let effect = effects.first {
+      task.lastNativeActionResult = recoveryReviewReceipt(effect, plan: plan, task: task, outgoing: outgoing,
+        receipts: receipts)
+    }
+    let reviewed = await continueObservedNativeOutcomeReview(task: &task, outgoing: outgoing)
+    return reviewed || observed
+  }
+
+  private func recoveryReviewReceipt(_ effect: AgentEffectRecoveryRecord, plan: AgentPlan, task: AgentTaskRecord,
+                                     outgoing: ChatMessage, receipts: [AgentActionResult]) -> AgentActionResult {
+    if let result = receipts.first(where: { $0.actionId == effect.actionId }) { return result }
+    if let result = task.lastNativeActionResult, result.actionId == effect.actionId { return result }
+    let scope = AgentPlanContinuationScope(conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString))
+    if let original = plan.executionSnapshots(in: scope).first(where: { $0.id == effect.actionId }),
+       let result = exactNativeNodeReceipt(original, plan: plan, task: task, scope: scope) {
+      return result
+    }
+    return .init(actionId: effect.actionId, success: false, message: "Review the original uncertain effect.",
+      metadata: ["error_code": "effect_outcome_unknown"])
+  }
+
+  private func exactNativeNodeReceipt(_ action: AgentAction, plan: AgentPlan, task: AgentTaskRecord,
+                                      scope: AgentPlanContinuationScope) -> AgentActionResult? {
+    var original = action
+    for key in ["native_tool_id", "native_tool_status", "native_tool_receipt_status"] {
+      original.parameters.removeValue(forKey: "_galaxyssi_observed_" + key)
+    }
+    guard let key = AgentPlanNodeKey.make(sessionId: task.sessionId, plan: plan, action: original,
+      conversationId: scope.conversationId, turnId: scope.turnId),
+      let observation = try? localPlanNodeJournal.read(key), observation.verified,
+      observation.result.actionId == original.id else { return nil }
+    return observation.result
+  }
+
+  private func recoverEarlierNativeOutcomes(plan: AgentPlan, task: inout AgentTaskRecord, outgoing: ChatMessage) {
+    let scope = AgentPlanContinuationScope(conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString))
+    guard task.taskId == scope.turnId, task.sessionId == scope.conversationId, !outgoing.readOnlyAnalysis else { return }
+    for action in plan.executionSnapshots(in: scope) {
+      guard task.effectRecovery?.contains(where: { $0.actionId == action.id }) != true,
+            AgentEffectRecoveryRecord.terminalNeedsRecovery(action, requiresEffectClaim:
+              localNativeToolRuntime?.registry.lookup(action.parameters["tool_id"] ?? action.target)?.descriptor.requiresEffectClaim != false)
+      else { continue }
+      if let receipt = exactNativeNodeReceipt(action, plan: plan, task: task, scope: scope) {
+        rememberUnverifiedEffect(receipt, action: action, outgoing: outgoing, task: &task)
+      }
+      if task.effectRecovery?.contains(where: { $0.actionId == action.id }) != true {
+        let uncertain = AgentActionResult(actionId: action.id, success: false, message: action.result,
+          metadata: ["plan_node_outcome_unknown": "true"])
+        rememberUnverifiedEffect(uncertain, action: action, outgoing: outgoing, task: &task)
+      }
+    }
   }
 
   private func observeLocalEffect(
@@ -5876,6 +5968,26 @@ final class MessageCoordinator: ObservableObject {
       return executeLocalNativeActionAndAdvance(action: action, outgoing: outgoing, task: &task)
     }
     guard task.teamRecoveryRunId == nil else { return false }
+    if let plan = task.activePlan, let outgoing = localOutgoingMessage(for: task) {
+      let previousEffects = task.effectRecovery
+      recoverEarlierNativeOutcomes(plan: plan, task: &task, outgoing: outgoing)
+      if task.effectRecovery != previousEffects {
+        task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+        store.upsertAgentTask(task)
+      }
+    }
+    if !(task.effectRecovery ?? []).isEmpty {
+      guard !automatic, !store.agentSafetySettings.executionPaused,
+            !PhoneExecutionAuthority.isCancelled(taskId: taskId),
+            let outgoing = localOutgoingMessage(for: task), let plan = task.activePlan,
+            AgentEffectRecoveryRecord.reviewableEffects(plan: plan, effects: task.effectRecovery ?? [],
+              taskId: taskId, sessionId: task.sessionId, outgoing: outgoing) != nil else { return false }
+      Task { @MainActor [weak self] in
+        _ = await self?.reviewUnverifiedNativeOutcomes(taskId: taskId, outgoing: outgoing, expectedPlan: plan,
+          resumingPaused: true)
+      }
+      return true
+    }
     if automatic {
       guard store.agentSafetySettings.taskExecutionMode == .autoComplete,
             AgentSavedTeamReplyPolicy.canContinueAutomatically(task) else { return false }
@@ -10054,7 +10166,8 @@ final class MessageCoordinator: ObservableObject {
         }
       }
       observations.append(.init(action: executionAction, result: result))
-      if result.success {
+      let uncertain = task.effectRecovery?.contains(where: { $0.actionId == action.id && !$0.hasObservation }) == true
+      if result.success && !uncertain {
         task.lastCompletedNativeAction = action
         task.nativeRollbackAction = AgentExecutionContinuity
           .checkpointBefore(action: action, screen: screen, planRevision: plan.revision)
@@ -10078,6 +10191,27 @@ final class MessageCoordinator: ObservableObject {
     task.lastNativeActionResult = results.last
     task.result = recordLocalNativeBatchSummary(task.nativeActionResults)
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    recoverEarlierNativeOutcomes(plan: updatedPlan, task: &task, outgoing: outgoing)
+
+    if let effects = task.effectRecovery, effects.contains(where: { !$0.hasObservation }) {
+      let unresolved = Set(effects.filter { !$0.hasObservation }.map(\.actionId))
+      task.phase = .blocked
+      task.blocked = true
+      task.pendingActions.removeAll { unresolved.contains($0.id) }
+      task.pendingAction = task.pendingActions.first
+      task.verification = localizedReply("galaxyssi.agent.effect_recovery.unavailable",
+        fallback: "The original effect is still unverified. Its affected state could not be confirmed; nothing was repeated.")
+      task.result = task.verification
+      task.executionLog.append("Native batch: readback required before execution can continue")
+      store.upsertAgentTask(task)
+      localRecordedRunStore.recordNativeExecution(observations, task: task, outgoing: outgoing, status: .running)
+      let plan = updatedPlan
+      Task { @MainActor [weak self] in
+        _ = await self?.reviewUnverifiedNativeOutcomes(taskId: taskId, outgoing: outgoing, expectedPlan: plan,
+          receipts: results)
+      }
+      return
+    }
 
     if let failed = failedActions.first {
       task.phase = .failed
@@ -10567,6 +10701,7 @@ final class MessageCoordinator: ObservableObject {
     task.lastNativeActionResult = result
     rememberUnverifiedEffect(result, action: action, outgoing: outgoing, task: &task)
     updateActiveNativePlan(action: boundAction, result: result, task: &task)
+    if let plan = task.activePlan { recoverEarlierNativeOutcomes(plan: plan, task: &task, outgoing: outgoing) }
     let effects = task.effectRecovery ?? []
     let unresolvedEffect = effects.contains { !$0.hasObservation }
     let verifiedStep = result.success && !unresolvedEffect
@@ -10582,8 +10717,7 @@ final class MessageCoordinator: ObservableObject {
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(result.success ? "The requested phone action completed." : "The requested phone action could not be completed.")
     let reply = recordLocalNativeActionResult(stepReply, task: &task)
-    let shouldReviewShortcut = !hasRemainingActions && result.metadata["awaiting_response"] != "true" &&
-      AgentEffectRecoveryRecord.shortcutReviewIndex(plan: task.activePlan, actionId: action.id, effects: effects) != nil
+    let shouldReviewOutcome = unresolvedEffect && result.metadata["awaiting_response"] != "true"
     let rollingBatchBoundary = !unresolvedEffect && !hasRemainingActions && AgentRollingPlanPolicy.shouldRequestNextBatch(
       plan: task.activePlan,
       result: result
@@ -10650,11 +10784,12 @@ final class MessageCoordinator: ObservableObject {
         richOutputJson: richOutput
       )
     }
-    if shouldReviewShortcut {
+    if shouldReviewOutcome {
       let taskId = task.taskId
-      let actionId = action.id
+      let plan = task.activePlan
       Task { @MainActor [weak self] in
-        await self?.reviewUnverifiedShortcut(taskId: taskId, outgoing: outgoing, actionId: actionId)
+        _ = await self?.reviewUnverifiedNativeOutcomes(taskId: taskId, outgoing: outgoing, expectedPlan: plan,
+          receipts: [result])
       }
     } else if rollingBatchBoundary {
       let taskId = task.taskId
