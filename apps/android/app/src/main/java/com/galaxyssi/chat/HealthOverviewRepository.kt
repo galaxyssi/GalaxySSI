@@ -7,6 +7,7 @@ import java.time.ZoneId
 
 internal data class HealthOverviewDatabases(val fixture: String? = null) {
     val records get() = fixture?.let { "health-overview-records-$it.db" } ?: "health_records_v1.db"
+    val care get() = fixture?.let { "health-care-test-$it.db" } ?: HealthCareStore.DEFAULT_DB
     val originals get() = fixture?.let { "health-overview-originals-$it.db" } ?: "health_originals_v1.db"
     val reminders get() = fixture?.let { "health-reminder-test-$it.db" } ?: HealthReminderStore.DEFAULT_DB
     val privacy get() = fixture?.let { "health-privacy-test-$it.db" } ?: HealthPrivacyStore.DEFAULT_DB
