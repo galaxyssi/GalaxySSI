@@ -103,6 +103,14 @@ final class AgentIOSLocalModelWebToolProtocolTests: XCTestCase {
     XCTAssertNil(try reopened.claimGoalCoordinatorRecovery(changed))
     XCTAssertEqual(try reopened.claimGoalCoordinatorRecovery(binding)?["revision"], .int(0))
     XCTAssertNil(try reopened.claimGoalCoordinatorRecovery(binding))
+    XCTAssertNotNil(try history.reserveGoalContinuation(after: "", scope: scope, scheduleRetry: true, now: 10))
+    XCTAssertNil(try history.reserveGoalContinuation(after: "", scope: scope, scheduleRetry: true, now: 11))
+    XCTAssertEqual(try reopened.goalCoordinatorRetryAt(scope), 30_011)
+    XCTAssertNil(try reopened.claimGoalCoordinatorRecovery(binding, now: 30_010))
+    XCTAssertEqual(try reopened.claimGoalCoordinatorRecovery(binding, now: 30_011)?["revision"], .int(0))
+    XCTAssertEqual(try history.goalCoordinatorRetryAt(scope), 90_011)
+    XCTAssertNil(try history.claimGoalCoordinatorRecovery(binding, now: 30_011))
+    XCTAssertEqual(AgentCollaborationCoordinatorRetry.schedule(after: 100, now: 11).retryAt, 900_011)
     var foreign = scope
     foreign.sourceId = "foreign"
     XCTAssertThrowsError(try AgentIOSLocalModelWebToolRunner.GoalCoordinator(scope: foreign, roster: roster,

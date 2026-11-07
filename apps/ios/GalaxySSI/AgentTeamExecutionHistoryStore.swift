@@ -2681,7 +2681,31 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
-  func reserveGoalContinuation(after raw: String, scope: AgentCollaborationToolEvidenceScope)
+  private static func goalCoordinatorRetryKey(_ scope: AgentCollaborationToolEvidenceScope) -> String {
+    "goal-coordinator-retry:" + scope.ownershipDigest
+  }
+
+  private static func goalCoordinatorRetry(_ scope: AgentCollaborationToolEvidenceScope,
+      database: AgentTeamHistoryDatabase) throws -> AgentCollaborationCoordinatorRetry? {
+    try database.researchRecord(AgentCollaborationCoordinatorRetry.self, conversationId: scope.conversationId,
+      key: goalCoordinatorRetryKey(scope), revision: 0)
+  }
+
+  private static func replaceGoalCoordinatorRetry(_ retry: AgentCollaborationCoordinatorRetry?,
+      scope: AgentCollaborationToolEvidenceScope, database: AgentTeamHistoryDatabase) throws {
+    let key = goalCoordinatorRetryKey(scope)
+    try database.removeResearchRecord(conversationId: scope.conversationId, key: key)
+    if let retry {
+      try database.insertResearchRecord(retry, conversationId: scope.conversationId, key: key, revision: 0)
+    }
+  }
+
+  func goalCoordinatorRetryAt(_ scope: AgentCollaborationToolEvidenceScope) throws -> Int64? {
+    try access { try Self.goalCoordinatorRetry(scope, database: $0)?.retryAt }
+  }
+
+  func reserveGoalContinuation(after raw: String, scope: AgentCollaborationToolEvidenceScope,
+                               scheduleRetry: Bool = false, now: Int64 = AgentControlPlaneClock.nowMillis())
     throws -> AgentMcpJSONObject? {
     typealias Policy = AgentCollaborationGoalAssessmentPolicy
     let assessment = raw.utf8.count <= 131_072
@@ -2740,14 +2764,24 @@ final class AgentTeamExecutionHistoryStore {
         }
         if counts["unclaimed", default: 0] == 0, counts["running", default: 0] == 0,
            case .waiting = Policy.evaluate(raw, preserving: checkpoint.contract, authorizedMembers: [],
-             completedWork: [], checkedBlockers: checked) { return nil }
+             completedWork: [], checkedBlockers: checked) {
+          if scheduleRetry { try Self.replaceGoalCoordinatorRetry(.verifiedWaiting, scope: scope, database: database) }
+          return nil
+        }
       }
       let revision = checkpoint?.revision ?? 0
       let digest = AgentMcpJSONCodec.sha256(["revision": .int(revision), "work": .array(states)])
       let key = "goal-continuation:" + scope.ownershipDigest + ":" + digest
-      guard try database.researchRecord(Bool.self, conversationId: scope.conversationId, key: key, revision: 0) == nil
-      else { return nil }
+      if try database.researchRecord(Bool.self, conversationId: scope.conversationId, key: key, revision: 0) != nil {
+        if scheduleRetry, try Self.goalCoordinatorRetry(scope, database: database) == nil,
+           try database.researchRecord(AgentCollaborationCoordinatorRecovery.self,
+             conversationId: scope.conversationId, key: "goal-coordinator-recovery:" + scope.ownershipDigest, revision: 0) != nil {
+          try Self.replaceGoalCoordinatorRetry(.schedule(after: 0, now: now), scope: scope, database: database)
+        }
+        return nil
+      }
       try database.insertResearchRecord(true, conversationId: scope.conversationId, key: key, revision: 0)
+      if scheduleRetry { try Self.replaceGoalCoordinatorRetry(nil, scope: scope, database: database) }
       let reason = checkpoint == nil ? "contract_missing" :
         (assessment?.decision == .achieved ? "final_delivery_not_verified" : "goal_unfinished")
       return ["status": .string(reason), "revision": .int(revision), "work_counts": .object(counts.mapValues(AgentMcpJSONValue.int)),
@@ -2845,7 +2879,8 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
-  func claimGoalCoordinatorRecovery(_ binding: AgentCollaborationCoordinatorRecovery) throws -> AgentMcpJSONObject? {
+  func claimGoalCoordinatorRecovery(_ binding: AgentCollaborationCoordinatorRecovery,
+                                    now: Int64 = AgentControlPlaneClock.nowMillis()) throws -> AgentMcpJSONObject? {
     let scope = binding.owner
     return try access { database in
       let team = try Self.activeGoalCoordinator(scope, database: database)
@@ -2854,7 +2889,11 @@ final class AgentTeamExecutionHistoryStore {
       else { return nil }
       let saved = try database.researchRecord(AgentCollaborationCoordinatorRecovery.self,
         conversationId: scope.conversationId, key: "goal-coordinator-recovery:" + scope.ownershipDigest, revision: 0)
-      guard saved == binding, binding.process != AgentCollaborationGoalWorkRun.processID else { return nil }
+      guard saved == binding else { return nil }
+      let retry = try Self.goalCoordinatorRetry(scope, database: database)
+      if let retry {
+        guard let due = retry.retryAt, now >= due else { return nil }
+      } else if binding.process == AgentCollaborationGoalWorkRun.processID { return nil }
       let checkpoint = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first
       if let checkpoint {
         guard checkpoint.phase == .working, checkpoint.conversationId == scope.conversationId,
@@ -2870,10 +2909,14 @@ final class AgentTeamExecutionHistoryStore {
       }
       let revision = checkpoint?.revision ?? 0
       let state: AgentMcpJSONObject = ["revision": .int(revision), "work": .array(results)]
-      let key = "goal-coordinator-attempt:" + scope.ownershipDigest + ":" + AgentMcpJSONCodec.sha256(state)
-      guard try database.researchRecord(Bool.self, conversationId: scope.conversationId, key: key, revision: 0) == nil
-      else { return nil }
-      try database.insertResearchRecord(true, conversationId: scope.conversationId, key: key, revision: 0)
+      if let retry {
+        try Self.replaceGoalCoordinatorRetry(.schedule(after: retry.stalled, now: now), scope: scope, database: database)
+      } else {
+        let key = "goal-coordinator-attempt:" + scope.ownershipDigest + ":" + AgentMcpJSONCodec.sha256(state)
+        guard try database.researchRecord(Bool.self, conversationId: scope.conversationId, key: key, revision: 0) == nil
+        else { return nil }
+        try database.insertResearchRecord(true, conversationId: scope.conversationId, key: key, revision: 0)
+      }
       return ["revision": .int(revision), "work_count": .int(Int64(results.count)),
         "recent_work": .array(Array(results.suffix(24)))]
     }
@@ -2897,9 +2940,11 @@ final class AgentTeamExecutionHistoryStore {
           if receipt.source != nil { deliveries.append(receipt) }
         } else if let binding = try database.researchRecord(AgentCollaborationCoordinatorRecovery.self,
           conversationId: scope.conversationId, key: "goal-coordinator-recovery:" + scope.ownershipDigest, revision: 0),
-                  binding.owner == scope, binding.resourceID == primary.agentId,
-                  binding.process != AgentCollaborationGoalWorkRun.processID {
-          coordinators.append(binding)
+                  binding.owner == scope, binding.resourceID == primary.agentId {
+          let retry = try Self.goalCoordinatorRetry(scope, database: database)
+          if retry?.retryAt != nil || (retry == nil && binding.process != AgentCollaborationGoalWorkRun.processID) {
+            coordinators.append(binding)
+          }
         }
       }
       return (deliveries, coordinators, page.next)

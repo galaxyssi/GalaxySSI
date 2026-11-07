@@ -271,6 +271,19 @@ struct AgentCollaborationCoordinatorRecovery: Codable, Equatable {
   }
 }
 
+struct AgentCollaborationCoordinatorRetry: Codable, Equatable {
+  let stalled: Int
+  let retryAt: Int64?
+
+  static let verifiedWaiting = Self(stalled: 0, retryAt: nil)
+
+  static func schedule(after attempts: Int, now: Int64) -> Self {
+    let prior = min(5, max(0, attempts))
+    let delay = min(Int64(900_000), Int64(30_000) << prior)
+    return .init(stalled: prior + 1, retryAt: min(now, Int64.max - delay) + delay)
+  }
+}
+
 struct AgentCollaborationGoalWorkRun: Codable {
   enum State: String, Codable { case running, succeeded, failed, interrupted }
   struct Target: Codable, Equatable {

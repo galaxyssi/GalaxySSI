@@ -305,6 +305,9 @@ final class MessageCoordinator: ObservableObject {
   private var recoveringAcceptedGoalDeliveries = false
   private var recoveringGoalCoordinatorRun: String?
   private var resumedGoalCoordinatorRuns: Set<String> = []
+  private var attemptedGoalCoordinatorRetries: [String: Int64] = [:]
+  private var goalCoordinatorWake: Task<Void, Never>?
+  private var goalCoordinatorWakeAt: Int64?
   private var reconciledRecruitDirectories: Set<String> = []
   private var artifactDownloadRetryGate = AgentArtifactRequestRetryGate()
   private var artifactFetchRetryGate = AgentArtifactRequestRetryGate()
@@ -8849,7 +8852,7 @@ final class MessageCoordinator: ObservableObject {
       }
       _ = await drainReadyGoalWork(scope, roster: roster, outgoing: outgoing, profileID: profileID, targets: targets)
       try requireLiveScope()
-      guard let saved = try? history.reserveGoalContinuation(after: candidate, scope: scope)
+      guard let saved = reserveLiveGoalContinuation(after: candidate, scope: scope)
       else { return try leaveWaiting("collaboration_goal_evidence_required") }
       feedback = "\n\nContinue from this host state. Read saved work with work_result, cite reviewed originals, and " +
         "never repeat a claimed assignment. If resource resolution has an available alternative, plan feasible work. " +
@@ -9467,6 +9470,29 @@ final class MessageCoordinator: ObservableObject {
     return scope
   }
 
+  private func reserveLiveGoalContinuation(after raw: String, scope: AgentCollaborationToolEvidenceScope) -> AgentMcpJSONObject? {
+    let history = AgentTeamExecutionHistoryStore.shared
+    let feedback = try? history.reserveGoalContinuation(after: raw, scope: scope, scheduleRetry: true)
+    if feedback == nil, let due = try? history.goalCoordinatorRetryAt(scope) {
+      scheduleGoalCoordinatorWake(at: due)
+    }
+    return feedback
+  }
+
+  private func scheduleGoalCoordinatorWake(at due: Int64) {
+    if let current = goalCoordinatorWakeAt, current <= due { return }
+    goalCoordinatorWake?.cancel()
+    goalCoordinatorWakeAt = due
+    goalCoordinatorWake = Task { @MainActor [weak self] in
+      let delay = max(0, min(900_000, due - AgentControlPlaneClock.nowMillis()))
+      do { try await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000) } catch { return }
+      guard let self, !Task.isCancelled, self.goalCoordinatorWakeAt == due else { return }
+      self.goalCoordinatorWakeAt = nil
+      self.goalCoordinatorWake = nil
+      self.recoverAcceptedGoalDeliveries()
+    }
+  }
+
   private func recoverAcceptedGoalDeliveries() {
     guard !recoveringAcceptedGoalDeliveries, UIApplication.shared.applicationState == .active else { return }
     recoveringAcceptedGoalDeliveries = true
@@ -9500,7 +9526,6 @@ final class MessageCoordinator: ObservableObject {
     let history = AgentTeamExecutionHistoryStore.shared
     guard recoveringGoalCoordinatorRun == nil, !liveManagedBrowserTeams.contains(scope.runId),
           binding.source.profileID == profile, let resourceID = binding.resourceID,
-          !resumedGoalCoordinatorRuns.contains(recoveryKey),
           let roster = liveGoalWorkRoster(scope, profileID: profile),
           AgentCollaborationAcceptedDelivery.Source.rosterDigest(roster) == binding.source.rosterDigest,
           let parent = store.agentTask(id: scope.turnId), parent.result.isBlank,
@@ -9515,15 +9540,27 @@ final class MessageCoordinator: ObservableObject {
           outgoing.isMine, !outgoing.readOnlyAnalysis, outgoing.conversationId == scope.conversationId,
           outgoing.turnId.ifBlank(outgoing.id.uuidString) == scope.turnId
     else { return }
+    let due = try? history.goalCoordinatorRetryAt(scope)
+    if let due {
+      guard attemptedGoalCoordinatorRetries[recoveryKey] != due else { return }
+      if due > AgentControlPlaneClock.nowMillis() {
+        scheduleGoalCoordinatorWake(at: due)
+        return
+      }
+    } else if resumedGoalCoordinatorRuns.contains(recoveryKey) { return }
     let targets = Dictionary(uniqueKeysWithValues: AgentCallableTargetCatalog.build(
       contacts: store.visibleContacts, apiKey: { store.apiKey(for: $0) }).map { ($0.id, $0) })
     guard let target = targets[primary.agentId], target.status == .available else { return }
     let slot: String?
     if let route = binding.route {
       guard target.kind == .model,
-            route.resolve(contact: store.contact(id: route.contactId), apiKey: { store.apiKey(for: $0) }) != nil,
-            let acquired = try? acquireAgentSlot(target: target, sourceMessageId: scope.sourceId + ":goal-recovery")
+            route.resolve(contact: store.contact(id: route.contactId), apiKey: { store.apiKey(for: $0) }) != nil
       else { return }
+      guard let acquired = try? acquireAgentSlot(target: target, sourceMessageId: scope.sourceId + ":goal-recovery")
+      else {
+        if due != nil { scheduleGoalCoordinatorWake(at: AgentControlPlaneClock.nowMillis() + 5_000) }
+        return
+      }
       slot = acquired
     } else if let local = binding.local {
       let configured = primary.context["_galaxyssi_member_model_id"] ?? ""
@@ -9531,9 +9568,18 @@ final class MessageCoordinator: ObservableObject {
             LocalModelRuntimeCatalog.profiles().contains(local), LocalModelRuntimeSettings.isProfileEnabled(local),
             LocalModelInferenceRuntime.shared.ready(profile: local),
             AgentCollaborationCoordinatorRecovery.messageDigest(outgoing) == binding.localSourceDigest else { return }
+      if due != nil {
+        guard let probe = try? acquireAgentSlot(target: target, sourceMessageId: scope.sourceId + ":goal-recovery")
+        else {
+          scheduleGoalCoordinatorWake(at: AgentControlPlaneClock.nowMillis() + 5_000)
+          return
+        }
+        UserDefaultsAgentGlobalRunSlotStore.shared.release(ownerId: probe)
+      }
       slot = nil
     } else { return }
-    resumedGoalCoordinatorRuns.insert(recoveryKey)
+    if let due { attemptedGoalCoordinatorRetries[recoveryKey] = due }
+    else { resumedGoalCoordinatorRuns.insert(recoveryKey) }
     recoveringGoalCoordinatorRun = scope.runId
     Task { @MainActor [weak self] in
       defer {
@@ -12743,7 +12789,7 @@ final class MessageCoordinator: ObservableObject {
             }
             guard !Task.isCancelled, self.liveGoalWorkRoster(scope, profileID: goalProfile) == goalRoster,
                   originalGoalSourceExists(scope) else { return nil }
-            return try? history.reserveGoalContinuation(after: raw, scope: scope)
+            return self.reserveLiveGoalContinuation(after: raw, scope: scope)
           }
         })
     } else {
