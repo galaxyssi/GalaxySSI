@@ -903,6 +903,7 @@ struct AgentCollaborationResearchRevision: Codable {
   var draft: AgentCollaborationResearchDraft
   var frozenCloudReads: [AgentCollaborationFrozenCloudRead]? = nil
   var frozenNativeReads: [AgentCollaborationFrozenCloudRead]? = nil
+  var frozenDesktopReads: [AgentDesktopToolEvidenceWire.FrozenRead]? = nil
   var declaredExpectedUtilities: [String: Double]? = nil
   var expectedInformationGainBits: [String: Double]? = nil
   var hypothesisFeedback: AgentMcpJSONObject? = nil

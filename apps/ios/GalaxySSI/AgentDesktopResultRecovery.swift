@@ -16,6 +16,49 @@ enum AgentDesktopToolEvidenceWire {
     let pageCount: Int
   }
 
+  struct AcceptanceArchive: Codable, Equatable {
+    let receipt: ArchiveReceipt
+    let binding: AgentDesktopReplyBinding
+    let itemType: String
+    let tool: String
+    let returnedOutput: Bool
+
+    init?(receipt: ArchiveReceipt, binding: AgentDesktopReplyBinding, original: Data) {
+      guard let root = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: original),
+            let item = root["observation"]?.objectValue?["item"]?.objectValue else { return nil }
+      let itemType = item.string("type")
+      let tool = item.string("tool").ifBlank(itemType)
+      let toolName = tool.lowercased()
+      let failed = ["failed", "error", "cancelled", "canceled", "declined"].contains(item.string("status").lowercased()) ||
+        AgentCollaborationCloudToolEvidence.reportsFailure(AgentMcpJSONCodec.stringify(item)) ||
+        item["result"]?.objectValue?["isError"] == .bool(true)
+      let hasOutput: Bool
+      switch itemType {
+      case "commandExecution":
+        hasOutput = item["exitCode"] == .int(0) && !item.string("aggregatedOutput").isBlank
+      case "mcpToolCall":
+        hasOutput = item["result"]?.objectValue?.isEmpty == false
+      case "dynamicToolCall":
+        hasOutput = item["success"] == .bool(true) && item["contentItems"]?.arrayValue?.isEmpty == false
+      case "webSearch":
+        hasOutput = item["results"]?.arrayValue?.isEmpty == false
+      default:
+        hasOutput = false
+      }
+      self.receipt = receipt
+      self.binding = binding
+      self.itemType = itemType
+      self.tool = tool
+      self.returnedOutput = !failed && hasOutput && !toolName.contains("collaboration") && !toolName.contains("recall")
+    }
+  }
+
+  struct FrozenRead: Codable {
+    let evidenceId: String
+    let sha256: String
+    let totalBytes: Int
+  }
+
   struct ImportCursor: Codable, Equatable {
     var sequence: Int64 = 0
     var archiveFinal = false

@@ -618,6 +618,9 @@ final class AgentTeamExecutionHistoryStore {
         expectedHash: input["sha256"]?.stringValue)
     }
     if mode == "problems" { return try recallCloudProblems(input, scope: scope) }
+    if mode == "desktop_evidence" || mode == "desktop_evidence_list" {
+      return try recallDesktopAcceptanceEvidence(input, scope: scope)
+    }
     let hash = input.string("sha256")
     let workspace = mode == "workspace" || mode == "acceptance_record"
     let idKey = workspace ? "object_id" : "evidence_id"
@@ -880,14 +883,133 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   private static func cloudReadCoverageKey(scope: AgentCollaborationToolEvidenceScope, id: String,
-                                           hash: String, native: Bool = false) -> String {
+                                           hash: String, native: Bool = false, desktop: Bool = false) -> String {
     var fields: AgentMcpJSONObject = [
       "run": .string(scope.runId), "group": .string(scope.conversationId), "turn": .string(scope.turnId),
       "member": .string(scope.memberId), "source": .string(scope.sourceId),
       "evidence": .string(id), "sha256": .string(hash)
     ]
     if native { fields["origin"] = .string("ios_native_tool") }
+    if desktop { fields["origin"] = .string("desktop_codex_tool") }
     return "cloud-read-coverage:" + AgentMcpJSONCodec.sha256(fields)
+  }
+
+  private static func desktopAcceptancePrefix(runID: String, turnID: String) -> String {
+    "desktop-acceptance:" + AgentMcpJSONCodec.sha256(["run": .string(runID), "turn": .string(turnID)]) + ":"
+  }
+
+  private static func desktopAcceptanceArchive(id: String, scope: AgentCollaborationToolEvidenceScope,
+      team: AgentTeamExecutionSnapshot, database: AgentTeamHistoryDatabase) throws -> AgentDesktopToolEvidenceWire.AcceptanceArchive? {
+    let prefix = desktopAcceptancePrefix(runID: scope.runId, turnID: scope.turnId)
+    guard let archive = try database.researchRecord(AgentDesktopToolEvidenceWire.AcceptanceArchive.self,
+      conversationId: scope.conversationId, key: prefix + id, revision: 0),
+          archive.receipt.archiveId == id, archive.receipt.desktopId == archive.binding.desktopId,
+          archive.binding.identity.conversationId == scope.conversationId, archive.binding.identity.turnId == scope.turnId,
+          archive.binding.agentId == "codex", archive.binding.teamSource?.supervisorRunId == scope.runId,
+          let owner = try database.replyOwner(source: archive.binding.sourceIdentity, conversation: scope.conversationId,
+            turn: scope.turnId, contact: archive.binding.contactId),
+          owner.supervisorRunId == scope.runId, owner.memberId == archive.binding.teamSource?.memberId,
+          owner.deliveryMode == .observe, owner.observedGeneration == archive.receipt.generation,
+          team.members.contains(where: { $0.memberId == owner.memberId && $0.sourceMessageId == owner.sourceMessageId &&
+            $0.agentId == archive.binding.contactId && $0.status == .succeeded }),
+          archive.receipt.totalBytes > 0, archive.receipt.totalBytes <= AgentDesktopToolEvidenceWire.maximumOriginalBytes,
+          archive.receipt.pageCount == (archive.receipt.totalBytes - 1) / AgentDesktopToolEvidenceWire.maximumPageBytes + 1,
+          try database.researchRecord(AgentDesktopToolEvidenceWire.ArchiveReceipt.self,
+            conversationId: scope.conversationId, key: "desktop-evidence:" + id, revision: 0) == archive.receipt
+    else { return nil }
+    return archive
+  }
+
+  private static func desktopAcceptancePage(_ archive: AgentDesktopToolEvidenceWire.AcceptanceArchive,
+      index: Int, conversation: String, database: AgentTeamHistoryDatabase) throws -> Data {
+    let receipt = archive.receipt, width = AgentDesktopToolEvidenceWire.maximumPageBytes
+    guard (0..<receipt.pageCount).contains(index),
+          let data = try database.researchRecord(Data.self, conversationId: conversation,
+            key: "desktop-evidence:" + receipt.archiveId, revision: Int64(index + 1)),
+          data.count == min(width, receipt.totalBytes - index * width)
+    else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    return data
+  }
+
+  private func recallDesktopAcceptanceEvidence(_ input: AgentMcpJSONObject,
+      scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+    let listing = input.string("mode") == "desktop_evidence_list"
+    func validDigest(_ value: String) -> Bool {
+      value.utf8.count == 64 && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
+    }
+    let cursor = input.string("cursor"), id = input.string("evidence_id"), hash = input.string("sha256")
+    let width = AgentDesktopToolEvidenceWire.maximumPageBytes
+    guard listing ? (Set(input.keys).isSubset(of: ["mode", "cursor"]) && (cursor.isEmpty || validDigest(cursor))) :
+      (Set(input.keys).isSubset(of: ["mode", "evidence_id", "sha256", "offset"]) && validDigest(id) && validDigest(hash)),
+      case .int(let offset) = input["offset"] ?? .int(0), offset >= 0, offset % Int64(width) == 0
+    else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    return try access { database in
+      guard let team = try database.snapshots(runId: scope.runId).first, team.state == .running,
+            team.conversationId == scope.conversationId, team.taskId == scope.turnId,
+            team.members.contains(where: { $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId &&
+              $0.deliveryMode != .ignore && !$0.status.isTerminal &&
+              ($0.dispatchCheckpoint == .dispatching || $0.dispatchCheckpoint == .accepted) }),
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true else { throw AgentTeamHistoryDatabase.Failure.stale }
+      func reference(_ archive: AgentDesktopToolEvidenceWire.AcceptanceArchive) -> AgentMcpJSONObject {
+        ["evidence_id": .string(archive.receipt.archiveId), "sha256": .string(archive.receipt.sha256),
+         "origin": .string("desktop_codex_tool"), "tool": .string(archive.tool),
+         "status": .string(archive.returnedOutput ? "returned" : "not_supporting"),
+         "total_bytes": .int(Int64(archive.receipt.totalBytes))]
+      }
+      if listing {
+        let prefix = Self.desktopAcceptancePrefix(runID: scope.runId, turnID: scope.turnId)
+        let keys = try database.milestoneKeys(conversationId: scope.conversationId, prefix: prefix,
+          after: cursor.isEmpty ? "" : prefix + cursor)
+        let entries: [AgentMcpJSONValue] = try keys.prefix(32).compactMap { key in
+          let id = String(key.dropFirst(prefix.count))
+          return try Self.desktopAcceptanceArchive(id: id, scope: scope, team: team, database: database).map { .object(reference($0)) }
+        }
+        let next = keys.count > 32 ? keys.prefix(32).last.map { String($0.dropFirst(prefix.count)) } : nil
+        return ["entries": .array(entries), "next_cursor": next.map(AgentMcpJSONValue.string) ?? .null,
+          "trust": .string("execution_observed_not_claim_verified")]
+      }
+      guard let archive = try Self.desktopAcceptanceArchive(id: id, scope: scope, team: team, database: database),
+            archive.receipt.sha256 == hash, offset < Int64(archive.receipt.totalBytes)
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let data = try Self.desktopAcceptancePage(archive, index: Int(offset) / width,
+        conversation: scope.conversationId, database: database)
+      let next = offset + Int64(data.count)
+      let key = Self.cloudReadCoverageKey(scope: scope, id: id, hash: hash, desktop: true)
+      var coverage = try database.researchRecord(AgentCollaborationReadCoverage.self,
+        conversationId: scope.conversationId, key: key, revision: 0) ?? .init()
+      let previous = coverage
+      coverage.include(start: offset, end: next)
+      if coverage != previous {
+        try database.insertResearchRecord(coverage, conversationId: scope.conversationId, key: key, revision: 0, replaceCoverage: true)
+      }
+      return ["source_reference": .object(reference(archive)), "data_b64": .string(data.base64EncodedString()),
+        "offset": .int(offset), "next_offset": next < Int64(archive.receipt.totalBytes) ? .int(next) : .null,
+        "host_read_coverage": .object(["complete": .bool(coverage.contiguousEnd == Int64(archive.receipt.totalBytes)),
+          "total_bytes": .int(Int64(archive.receipt.totalBytes))]), "trust": .string("untrusted_group_evidence")]
+    }
+  }
+
+  private static func freezeDesktopAcceptanceReads(_ references: [AgentMcpJSONObject], scope: AgentCollaborationToolEvidenceScope,
+      team: AgentTeamExecutionSnapshot, database: AgentTeamHistoryDatabase) throws -> [AgentDesktopToolEvidenceWire.FrozenRead] {
+    var remaining = 2 * AgentDesktopToolEvidenceWire.maximumOriginalBytes
+    return try references.map { citation in
+      let id = citation.string("evidence_id"), digest = citation.string("sha256")
+      guard let archive = try desktopAcceptanceArchive(id: id, scope: scope, team: team, database: database),
+            archive.receipt.sha256 == digest,
+            archive.receipt.totalBytes <= remaining,
+            let coverage = try database.researchRecord(AgentCollaborationReadCoverage.self,
+              conversationId: scope.conversationId, key: cloudReadCoverageKey(scope: scope, id: id, hash: digest, desktop: true), revision: 0),
+            coverage.contiguousEnd == Int64(archive.receipt.totalBytes) else { throw AgentTeamHistoryDatabase.Failure.stale }
+      var hash = SHA256()
+      for index in 0..<archive.receipt.pageCount {
+        hash.update(data: try desktopAcceptancePage(archive, index: index, conversation: scope.conversationId, database: database))
+      }
+      guard hash.finalize().map({ String(format: "%02x", $0) }).joined() == digest
+      else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      remaining -= archive.receipt.totalBytes
+      return .init(evidenceId: id, sha256: digest, totalBytes: archive.receipt.totalBytes)
+    }
   }
 
   private static func nativeAcceptanceOriginal(id: String, scope: AgentCollaborationToolEvidenceScope,
@@ -912,10 +1034,10 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   private static func acceptanceCitations(_ references: [AgentMcpJSONObject])
-    throws -> (cloud: [AgentMcpJSONObject], native: [AgentMcpJSONObject]) {
+    throws -> (cloud: [AgentMcpJSONObject], native: [AgentMcpJSONObject], desktop: [AgentMcpJSONObject]) {
     guard references.count <= 32, Set(references.map { $0.string("evidence_id") }).count == references.count
     else { throw AgentTeamHistoryDatabase.Failure.corrupt }
-    var cloud: [AgentMcpJSONObject] = [], native: [AgentMcpJSONObject] = []
+    var cloud: [AgentMcpJSONObject] = [], native: [AgentMcpJSONObject] = [], desktop: [AgentMcpJSONObject] = []
     for var reference in references {
       let origin = reference.removeValue(forKey: "origin") ?? .string("ios_cloud_tool")
       guard Set(reference.keys) == ["evidence_id", "sha256"],
@@ -925,10 +1047,11 @@ final class AgentTeamExecutionHistoryStore {
       switch origin {
       case .string("ios_cloud_tool"): cloud.append(reference)
       case .string("ios_native_tool"): native.append(reference)
+      case .string("desktop_codex_tool"): desktop.append(reference)
       default: throw AgentTeamHistoryDatabase.Failure.corrupt
       }
     }
-    return (cloud, native)
+    return (cloud, native, desktop)
   }
 
   private static func freezeNativeAcceptanceReads(_ references: [AgentMcpJSONObject], scope: AgentCollaborationToolEvidenceScope,
@@ -1053,6 +1176,7 @@ final class AgentTeamExecutionHistoryStore {
         let references = draft.observations ?? []
         var frozenReads: [AgentCollaborationFrozenCloudRead]? = nil
         var frozenNativeReads: [AgentCollaborationFrozenCloudRead]? = nil
+        var frozenDesktopReads: [AgentDesktopToolEvidenceWire.FrozenRead]? = nil
         var expectedUtilities: [String: Double]? = nil
         var expectedInformation: [String: Double]? = nil
         var hypothesisFeedback: AgentMcpJSONObject? = nil
@@ -1079,6 +1203,9 @@ final class AgentTeamExecutionHistoryStore {
             }
             if !citations.native.isEmpty {
               frozenNativeReads = try Self.freezeNativeAcceptanceReads(citations.native, scope: scope, team: snapshot, database: database)
+            }
+            if !citations.desktop.isEmpty {
+              frozenDesktopReads = try Self.freezeDesktopAcceptanceReads(citations.desktop, scope: scope, team: snapshot, database: database)
             }
           }
         } else if draft.kind == .workflowMethod {
@@ -1399,7 +1526,8 @@ final class AgentTeamExecutionHistoryStore {
         var revision = AgentCollaborationResearchRevision(reference: .init(objectId: objectId,
           revision: draft.baseRevision + 1, sha256: ""), previousHash: head?.reference.sha256,
           runId: runId, turnId: turnId, authorId: memberId, sourceId: sourceId, draft: draft,
-          frozenCloudReads: frozenReads, frozenNativeReads: frozenNativeReads, declaredExpectedUtilities: expectedUtilities,
+          frozenCloudReads: frozenReads, frozenNativeReads: frozenNativeReads, frozenDesktopReads: frozenDesktopReads,
+          declaredExpectedUtilities: expectedUtilities,
           expectedInformationGainBits: expectedInformation,
           hypothesisFeedback: hypothesisFeedback,
           carriedHypothesisPosterior: carriedPosterior,
@@ -1841,7 +1969,12 @@ final class AgentTeamExecutionHistoryStore {
                   pair.0.totalCharacters > 0
               }
             }
-            guard matches(revision.frozenCloudReads, split.cloud), matches(revision.frozenNativeReads, split.native)
+            let desktop = revision.frozenDesktopReads ?? []
+            guard matches(revision.frozenCloudReads, split.cloud), matches(revision.frozenNativeReads, split.native),
+                  desktop.count == split.desktop.count, zip(desktop, split.desktop).allSatisfy({ pair in
+                    pair.0.evidenceId == pair.1.string("evidence_id") &&
+                      pair.0.sha256 == pair.1.string("sha256") && pair.0.totalBytes > 0
+                  })
             else { throw AgentTeamHistoryDatabase.Failure.corrupt }
             return revision
           }
@@ -1904,7 +2037,7 @@ final class AgentTeamExecutionHistoryStore {
   func archiveDesktopToolEvidence(request: AgentDesktopToolEvidenceWire.Request,
                                   descriptor: AgentDesktopToolEvidenceWire.Descriptor,
                                   pages: [Data]) throws -> AgentDesktopToolEvidenceWire.ArchiveReceipt {
-    guard request.verifyOriginal(pages, descriptor: descriptor) != nil,
+    guard let original = request.verifyOriginal(pages, descriptor: descriptor),
           let source = request.binding.teamSource else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     let binding = request.binding
     let conversation = binding.identity.conversationId
@@ -1912,6 +2045,8 @@ final class AgentTeamExecutionHistoryStore {
     let receipt = AgentDesktopToolEvidenceWire.ArchiveReceipt(archiveId: id, desktopId: binding.desktopId,
       evidenceId: descriptor.evidenceId, sha256: descriptor.sha256, generation: request.generation,
       totalBytes: descriptor.totalBytes, pageCount: descriptor.pageCount)
+    guard let acceptance = AgentDesktopToolEvidenceWire.AcceptanceArchive(receipt: receipt, binding: binding, original: original)
+    else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     return try access { database in
       guard let owner = try database.replyOwner(source: binding.sourceIdentity, conversation: conversation,
               turn: binding.identity.turnId, contact: binding.contactId),
@@ -1920,11 +2055,20 @@ final class AgentTeamExecutionHistoryStore {
             let team = try database.snapshots(runId: owner.supervisorRunId).first,
             team.conversationId == conversation, team.taskId == binding.identity.turnId,
             team.state != .cancelled,
+            try database.researchRecord(Bool.self, conversationId: conversation,
+              key: "native-evidence-revoked", revision: 0) != true,
             team.members.contains(where: { $0.memberId == owner.memberId &&
               $0.sourceMessageId == owner.sourceMessageId && $0.status == .succeeded }) else {
         throw AgentTeamHistoryDatabase.Failure.stale
       }
       let key = "desktop-evidence:" + id
+      let index = Self.desktopAcceptancePrefix(runID: team.supervisorRunId, turnID: team.taskId) + id
+      if let prior = try database.researchRecord(AgentDesktopToolEvidenceWire.AcceptanceArchive.self,
+        conversationId: conversation, key: index, revision: 0) {
+        guard prior == acceptance else { throw AgentTeamHistoryDatabase.Failure.stale }
+      } else {
+        try database.insertResearchRecord(acceptance, conversationId: conversation, key: index, revision: 0)
+      }
       if let prior = try database.researchRecord(AgentDesktopToolEvidenceWire.ArchiveReceipt.self,
         conversationId: conversation, key: key, revision: 0) {
         guard prior == receipt else { throw AgentTeamHistoryDatabase.Failure.stale }
@@ -2444,6 +2588,14 @@ final class AgentTeamExecutionHistoryStore {
                 team: team, database: database), Self.nativeObservationSupportsAcceptance(original) else { return nil }
               observed.insert(read.evidenceId)
               originals[read.evidenceId] = .init(origin: "ios_native_tool", tool: original.result.provenance.toolId,
+                status: "returned", kind: "tool_output_recorded")
+            }
+            let desktop = try Self.freezeDesktopAcceptanceReads(citations.desktop, scope: evidenceScope, team: team, database: database)
+            for read in desktop {
+              guard let original = try Self.desktopAcceptanceArchive(id: read.evidenceId, scope: evidenceScope,
+                team: team, database: database), original.returnedOutput else { return nil }
+              observed.insert(read.evidenceId)
+              originals[read.evidenceId] = .init(origin: "desktop_codex_tool", tool: original.tool,
                 status: "returned", kind: "tool_output_recorded")
             }
           }
