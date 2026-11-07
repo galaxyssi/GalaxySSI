@@ -8585,7 +8585,7 @@ final class MessageCoordinator: ObservableObject {
       guard let roster = liveGoalWorkRoster(scope, profileID: profile),
             let digest = AgentCollaborationAcceptedDelivery.Source.rosterDigest(roster),
             let original = store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId),
-            original.isMine, original.conversationId == scope.conversationId,
+            original.isMine, !original.readOnlyAnalysis, original.conversationId == scope.conversationId,
             original.turnId.ifBlank(original.id.uuidString) == scope.turnId else { throw CancellationError() }
       let source = AgentCollaborationAcceptedDelivery.Source(profileID: profile, messageID: outgoing.id,
         contactID: outgoing.contactId, rosterDigest: digest)
@@ -8593,7 +8593,8 @@ final class MessageCoordinator: ObservableObject {
         CloudCoordinatorAttachmentRecovery.capture(attachments, images: images, outgoing: original, turns: turns)
       if attachments.isEmpty || manifest != nil {
         try AgentTeamExecutionHistoryStore.shared.saveGoalCoordinatorRecovery(.init(owner: scope, source: source,
-          route: route, originalPrompt: prompt, process: AgentCollaborationGoalWorkRun.processID, attachments: manifest))
+          route: route, originalPrompt: prompt, process: AgentCollaborationGoalWorkRun.processID, attachments: manifest,
+          cloudSourceDigest: AgentCollaborationCoordinatorRecovery.messageDigest(original)))
       }
     }
     let detail = cloudContact.selectedCloudModel?.modelId ?? cloudContact.cloudProvider.ifBlank(cloudContact.id)
@@ -8768,9 +8769,7 @@ final class MessageCoordinator: ObservableObject {
       guard (!recovering || UIApplication.shared.applicationState == .active),
             liveGoalWorkRoster(scope, profileID: profileID) == roster,
             let original = store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId),
-            original.isMine, !original.readOnlyAnalysis, original.conversationId == scope.conversationId,
-            original.turnId.ifBlank(original.id.uuidString) == scope.turnId,
-            AgentCollaborationCoordinatorRecovery.messageDigest(original) == binding.localSourceDigest
+            binding.matchesOriginal(original)
       else { throw CancellationError() }
     }
     func leaveWaiting(_ reason: String) throws -> Bool {
@@ -9537,8 +9536,7 @@ final class MessageCoordinator: ObservableObject {
           let primary = spec.definition.members.first(where: { $0.memberId == scope.memberId &&
             $0.agentId == resourceID && $0.deliveryMode == .respond }),
           let outgoing = store.persistedMessage(id: binding.source.messageID, contactId: binding.source.contactID),
-          outgoing.isMine, !outgoing.readOnlyAnalysis, outgoing.conversationId == scope.conversationId,
-          outgoing.turnId.ifBlank(outgoing.id.uuidString) == scope.turnId
+          binding.matchesOriginal(outgoing)
     else { return }
     let due = try? history.goalCoordinatorRetryAt(scope)
     if let due {
@@ -9566,8 +9564,7 @@ final class MessageCoordinator: ObservableObject {
       let configured = primary.context["_galaxyssi_member_model_id"] ?? ""
       guard configured.isBlank || configured == local.id,
             LocalModelRuntimeCatalog.profiles().contains(local), LocalModelRuntimeSettings.isProfileEnabled(local),
-            LocalModelInferenceRuntime.shared.ready(profile: local),
-            AgentCollaborationCoordinatorRecovery.messageDigest(outgoing) == binding.localSourceDigest else { return }
+            LocalModelInferenceRuntime.shared.ready(profile: local) else { return }
       if due != nil {
         guard let probe = try? acquireAgentSlot(target: target, sourceMessageId: scope.sourceId + ":goal-recovery")
         else {
@@ -9591,10 +9588,12 @@ final class MessageCoordinator: ObservableObject {
             self.liveGoalWorkRoster(scope, profileID: profile) == roster,
             self.store.agentTask(id: scope.turnId) == parent else { return }
       func canResume() -> Bool {
-        !Task.isCancelled && UIApplication.shared.applicationState == .active &&
-          self.liveGoalWorkRoster(scope, profileID: profile) == roster &&
-          self.store.agentTask(id: scope.turnId) == parent &&
-          self.store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId)?.isMine == true
+        guard !Task.isCancelled, UIApplication.shared.applicationState == .active,
+              self.liveGoalWorkRoster(scope, profileID: profile) == roster,
+              self.store.agentTask(id: scope.turnId) == parent,
+              let current = self.store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId)
+        else { return false }
+        return binding.matchesOriginal(current)
       }
       do {
         let delivered: Bool

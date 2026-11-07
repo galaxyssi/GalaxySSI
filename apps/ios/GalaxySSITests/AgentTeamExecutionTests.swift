@@ -2278,13 +2278,24 @@ extension GalaxySSIStoreTests {
     cloud.cloudModels = [.init(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "fixture-model",
       endpoint: "https://example.invalid/v1/chat/completions", apiStyle: .openAICompatible,
       keychainAccount: "fixture-key", updatedAt: Date(timeIntervalSince1970: 1))]
-    let source = AgentCollaborationAcceptedDelivery.Source(profileID: "profile", messageID: UUID(),
-      contactID: "hermes", rosterDigest: "roster")
+    let original = ChatMessage(contactId: "hermes", content: "Original request", isMine: true,
+      conversationId: scope(0).conversationId, turnId: scope(0).turnId)
+    let source = AgentCollaborationAcceptedDelivery.Source(profileID: "profile", messageID: original.id,
+      contactID: original.contactId, rosterDigest: "roster")
     let route = try XCTUnwrap(AgentManualCloudBinding(contact: cloud, hadAttachments: false))
+    let digest = AgentCollaborationCoordinatorRecovery.messageDigest(original)
     let coordinatorRecovery = AgentCollaborationCoordinatorRecovery(owner: scope(0), source: source, route: route,
-      originalPrompt: "Original scoped coordinator prompt", process: "previous-process")
+      originalPrompt: "Original scoped coordinator prompt", process: "previous-process", cloudSourceDigest: digest)
     let rewritten = AgentCollaborationCoordinatorRecovery(owner: scope(0), source: source, route: route,
-      originalPrompt: "Changed prompt", process: "previous-process")
+      originalPrompt: "Changed prompt", process: "previous-process", cloudSourceDigest: digest)
+    var edited = original
+    edited.content = "Edited request with the same message ID"
+    var unpinned = coordinatorRecovery
+    unpinned.cloudSourceDigest = nil
+    XCTAssertTrue(coordinatorRecovery.matchesOriginal(original))
+    XCTAssertFalse(coordinatorRecovery.matchesOriginal(edited))
+    XCTAssertFalse(unpinned.matchesOriginal(original))
+    XCTAssertThrowsError(try history.saveGoalCoordinatorRecovery(unpinned))
     try history.saveGoalCoordinatorRecovery(coordinatorRecovery)
     XCTAssertThrowsError(try open().saveGoalCoordinatorRecovery(rewritten))
     XCTAssertEqual(try open().acceptedGoalDeliveryRecoveryPage(after: "").coordinators, [coordinatorRecovery])

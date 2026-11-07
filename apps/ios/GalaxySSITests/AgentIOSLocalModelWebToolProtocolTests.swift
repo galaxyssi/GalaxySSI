@@ -93,7 +93,8 @@ final class AgentIOSLocalModelWebToolProtocolTests: XCTestCase {
       localSourceDigest: AgentCollaborationCoordinatorRecovery.messageDigest(original))
     var edited = original
     edited.content = "Edited request"
-    XCTAssertNotEqual(AgentCollaborationCoordinatorRecovery.messageDigest(edited), binding.localSourceDigest)
+    XCTAssertTrue(binding.matchesOriginal(original))
+    XCTAssertFalse(binding.matchesOriginal(edited))
     try history.saveGoalCoordinatorRecovery(binding)
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets, fileURL: root.appendingPathComponent("team.sqlite"))
     XCTAssertEqual(try reopened.acceptedGoalDeliveryRecoveryPage(after: "").coordinators, [binding])

@@ -250,15 +250,16 @@ struct AgentCollaborationCoordinatorRecovery: Codable, Equatable {
   var attachments: CloudCoordinatorAttachmentRecovery? = nil
   var local: LocalModelRuntimeProfile? = nil
   var localSourceDigest: String? = nil
+  var cloudSourceDigest: String? = nil
 
   var resourceID: String? {
     switch (route, local) {
     case (.some(let cloud), nil):
-      guard localSourceDigest == nil,
+      guard localSourceDigest == nil, cloudSourceDigest?.count == 64,
             cloud.hadAttachments ? attachments?.isValid == true : attachments == nil else { return nil }
       return cloud.contactId
     case (nil, .some(let profile)):
-      guard !profile.id.isBlank, profile.supportsIOSRuntime, localSourceDigest?.count == 64,
+      guard cloudSourceDigest == nil, !profile.id.isBlank, profile.supportsIOSRuntime, localSourceDigest?.count == 64,
             attachments.map({ $0.isValid && $0.entries.allSatisfy { $0.transportDigest == nil } }) != false
       else { return nil }
       return "local-llm"
@@ -268,6 +269,13 @@ struct AgentCollaborationCoordinatorRecovery: Codable, Equatable {
 
   static func messageDigest(_ message: ChatMessage) -> String {
     AgentModelLoopRecoveryIdentity.sha256(["content": message.content, "rich": message.richOutputJson])
+  }
+
+  func matchesOriginal(_ message: ChatMessage) -> Bool {
+    message.id == source.messageID && message.contactId == source.contactID &&
+      message.isMine && !message.readOnlyAnalysis && message.conversationId == owner.conversationId &&
+      message.turnId.ifBlank(message.id.uuidString) == owner.turnId &&
+      Self.messageDigest(message) == (localSourceDigest ?? cloudSourceDigest)
   }
 }
 
