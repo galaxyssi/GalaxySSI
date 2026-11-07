@@ -2753,7 +2753,7 @@ final class MessageCoordinator: ObservableObject {
           AgentRemoteOutcomePolicy.validGeneration(generation),
           let arguments = payload["arguments"] as? [String: Any],
           let bytes = try? JSONSerialization.data(withJSONObject: arguments, options: [.withoutEscapingSlashes]),
-          bytes.count <= (publishing ? 131_072 : 4_096),
+          bytes.count <= (publishing ? 131_072 : (testing && phase == "start" ? 72 * 1_024 : 4_096)),
           let input = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: bytes),
           !publishing || publication.accepts(phase: phase, input: input),
           let identity = taskIdentityStore.identity(contactId: contact, sourceMessageId: source),
@@ -2943,14 +2943,33 @@ final class MessageCoordinator: ObservableObject {
     func finish(_ result: AgentMcpJSONObject) {
       _ = try? history.updateSavedToolExecution(.finish(executionID: record.executionID, result: result), scope: scope)
     }
-    guard let prepared = try? history.prepareSavedToolTest(record.plan, timeoutMillis: record.timeoutMillis, scope: scope.assignment),
-          let registry = localNativeToolRuntime?.registry else {
+    func rejectBeforeRuntime(_ input: AgentMcpJSONObject, code: String) {
+      guard isAuthorized() else { return }
+      let evidence = try? history.recordSavedToolRejection(.init(scope: scope.assignment, invocationId: key,
+        input: input, code: code, rejectedAt: AgentControlPlaneClock.nowMillis()))
+      finish(["native_status": .string("rejected"), "passed": .null, "runtime_invoked": .bool(false),
+        "execution_mode": input["mode"] ?? .null,
+        "galaxyssi_evidence_receipt": evidence.map(AgentMcpJSONValue.object) ?? .null,
+        "error": .object(["code": .string(code)])])
+    }
+    let prepared: AgentCollaborationSavedToolTest.Prepared
+    do {
+      prepared = try history.prepareSavedToolExecution(test: record.plan, release: record.release, channel: record.channel,
+        parameters: record.parameters, timeoutMillis: record.timeoutMillis, scope: scope.assignment)
+    } catch let rejection as AgentCollaborationSavedToolExecution.PreflightRejected {
+      rejectBeforeRuntime(rejection.input, code: rejection.code)
+      return
+    } catch {
       finish(["native_status": .string("unavailable"), "passed": .null])
+      return
+    }
+    guard let registry = localNativeToolRuntime?.registry else {
+      rejectBeforeRuntime(prepared.evidenceInput, code: "local_runtime_unavailable")
       return
     }
     let toolId = AgentIOSOnDeviceRuntimeNativeToolCatalog.execute
     guard AgentCollaborationSavedToolExecution.permitsDirectRuntime(source: prepared.originalSource, key: key) else {
-      finish(["native_status": .string("rejected"), "passed": .null, "reason": .string("requires_local_confirmation")])
+      rejectBeforeRuntime(prepared.evidenceInput, code: "requires_local_confirmation")
       return
     }
     guard isAuthorized() else { return }
@@ -2986,6 +3005,7 @@ final class MessageCoordinator: ObservableObject {
       sourceId: assignment.sourceId, input: prepared.evidenceInput, result: result, evaluation: evaluation))
     let verdict = receipt != nil && evaluation["checks"] != nil ? evaluation["passed"] ?? .null : .null
     finish(["native_status": .string(result.status.rawValue), "passed": verdict,
+      "execution_mode": .string(record.plan == nil ? "run" : "test"),
       "native_receipt": result.toJSONObject()["receipt"] ?? .null,
       "galaxyssi_evidence_receipt": receipt.map(AgentMcpJSONValue.object) ?? .null,
       "error": result.error.map { .object(["code": .string($0.code), "details_in_original_evidence": .bool(receipt != nil)]) } ?? .null])
