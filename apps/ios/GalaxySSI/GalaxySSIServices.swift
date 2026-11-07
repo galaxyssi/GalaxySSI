@@ -4741,7 +4741,7 @@ final class MessageCoordinator: ObservableObject {
               outgoing.id,
               contactId: agentContact.id,
               stage: "phone_public_page_source_archived",
-              detail: "Downloads/\(archiveName)",
+              detail: archiveName,
               status: .delivered
             )
           }

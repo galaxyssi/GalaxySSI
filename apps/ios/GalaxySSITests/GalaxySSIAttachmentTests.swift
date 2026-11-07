@@ -3,6 +3,33 @@ import UIKit
 @testable import GalaxySSI
 
 final class GalaxySSIAttachmentTests: XCTestCase {
+  func testDownloadsRetainSameNamedFilesPrivatelyWithoutOverwriting() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let privateDirectory = GalaxySSIPrivateChatFiles.directory("Downloads", applicationSupport: root)
+    let staged = root.appendingPathComponent("staging")
+    let a = Data("first".utf8)
+    let b = Data("second".utf8)
+    try a.write(to: staged)
+    let first = try AgentIOSDownloadFilePolicy.retainDownload(staged, in: privateDirectory, id: 1, fileName: "report.pdf")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: staged.path))
+    try b.write(to: staged)
+    let second = try AgentIOSDownloadFilePolicy.retainDownload(staged, in: privateDirectory, id: 2, fileName: "report.pdf")
+    XCTAssertNotEqual(first, second)
+    XCTAssertTrue(GalaxySSIPrivateChatFiles.contains(first, in: privateDirectory))
+    XCTAssertTrue(GalaxySSIPrivateChatFiles.contains(second, in: privateDirectory))
+    XCTAssertEqual(try Data(contentsOf: first), a)
+    XCTAssertEqual(try Data(contentsOf: second), b)
+    XCTAssertEqual(AgentIOSDownloadFilePolicy.relativePath(for: first.lastPathComponent), "app_private/report.pdf")
+    try a.write(to: staged)
+    XCTAssertThrowsError(try AgentIOSDownloadFilePolicy.retainDownload(staged, in: privateDirectory,
+      id: 3, fileName: "../escape.pdf"))
+    let symlink = privateDirectory.appendingPathComponent("escape.pdf")
+    try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: staged)
+    XCTAssertFalse(GalaxySSIPrivateChatFiles.contains(symlink, in: privateDirectory))
+  }
+
   @MainActor
   func testImageClipboardPreservesEncodedBytesAndDoesNotCopyAPath() throws {
     let clipboard = UIPasteboard.general.items
@@ -33,14 +60,14 @@ final class GalaxySSIAttachmentTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: root) }
     let id = UUID()
     let pdf = screenPagePDF(["Original article"])
-    let saved = try AgentIOSScreenPagePDFDownloads.save(pdf: pdf, captureID: id, documents: root)
-    XCTAssertEqual(saved.deletingLastPathComponent().lastPathComponent, "Downloads")
+    let saved = try AgentIOSScreenPagePDFDownloads.save(pdf: pdf, captureID: id, applicationSupport: root)
+    XCTAssertEqual(saved.deletingLastPathComponent(), GalaxySSIPrivateChatFiles.directory("ScreenPagePDFs", applicationSupport: root))
     XCTAssertEqual(saved.lastPathComponent, "article-\(id.uuidString.lowercased()).pdf")
     XCTAssertEqual(try Data(contentsOf: saved), pdf)
-    XCTAssertEqual(try AgentIOSScreenPagePDFDownloads.save(pdf: pdf, captureID: id, documents: root), saved)
+    XCTAssertEqual(try AgentIOSScreenPagePDFDownloads.save(pdf: pdf, captureID: id, applicationSupport: root), saved)
     XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: saved.deletingLastPathComponent().path),
       [saved.lastPathComponent])
-    XCTAssertThrowsError(try AgentIOSScreenPagePDFDownloads.save(pdf: Data(), captureID: id, documents: root))
+    XCTAssertThrowsError(try AgentIOSScreenPagePDFDownloads.save(pdf: Data(), captureID: id, applicationSupport: root))
     XCTAssertEqual(try Data(contentsOf: saved), pdf)
   }
 

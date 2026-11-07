@@ -44,20 +44,18 @@ final class AgentIOSDownloadCompletionCoordinator {
     let name = completion.title.ifBlank(completion.localFileURL?.lastPathComponent ?? "Download")
     let succeeded = completion.succeeded
     let content: String
-    let fileName = completion.localFileURL?.lastPathComponent ?? name
-    let relativePath = AgentIOSDownloadFilePolicy.relativePath(for: fileName)
     let richOutput: String
     if succeeded {
       content = String(
         format: localized(
           "galaxyssi.agent.download.complete",
-          "Download complete: %@\nSaved in Download/GalaxySSI.",
+          "Download complete: %@",
           language: language
         ),
         name
       )
       richOutput = AgentRichContentCodec.encode([
-        fileBlock(for: completion, name: name, relativePath: relativePath)
+        fileBlock(for: completion, name: name)
       ])
     } else {
       let reason = completion.reason == 0 ? "" : " (\(completion.reason))"
@@ -95,9 +93,7 @@ final class AgentIOSDownloadCompletionCoordinator {
       : (zh ? "\u{4E0B}\u{8F7D}\u{5931}\u{8D25}" : "Download failed")
     let reason = completion.reason == 0 ? "" : " (\(completion.reason))"
     let body = completion.succeeded
-      ? (zh
-        ? "\(name) \u{5DF2}\u{4FDD}\u{5B58}\u{5230} Download/GalaxySSI\u{3002}"
-        : "\(name) was saved to Download/GalaxySSI.")
+      ? name
       : (zh
         ? "\(name) \u{4E0B}\u{8F7D}\u{5931}\u{8D25}\(reason)\u{3002}"
         : "\(name) failed to download\(reason).")
@@ -155,24 +151,24 @@ final class AgentIOSDownloadCompletionCoordinator {
 
   private func fileBlock(
     for completion: AgentIOSDownloadCompletion,
-    name: String,
-    relativePath: String
+    name: String
   ) -> AgentRichBlock {
     let fileURL = completion.localFileURL
+    let isPrivate = fileURL.map(AgentIOSDownloadFilePolicy.isPrivate) == true
     return AgentRichBlock(
       id: "ios-download:\(completion.id)",
       type: .file,
       title: name,
-      text: relativePath,
+      text: "",
       uri: fileURL?.absoluteString ?? "",
       mimeType: completion.mediaType,
       fallbackText: name,
       metadata: [
         "download_id": String(completion.id),
         "local_download": "true",
-        "relative_path": relativePath,
         "size": humanSize(completion.bytesDownloaded),
-        "saved_to_downloads": "true",
+        "saved_to_downloads": isPrivate ? "false" : "true",
+        "storage": isPrivate ? "app_private" : "ios_documents",
         "size_bytes": String(max(0, completion.bytesDownloaded)),
         "source": "ios_system_download",
         "total_bytes": String(max(0, completion.totalBytes))

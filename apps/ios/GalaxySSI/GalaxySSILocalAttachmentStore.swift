@@ -1,5 +1,21 @@
 import Foundation
 
+enum GalaxySSIPrivateChatFiles {
+  static func directory(_ category: String, applicationSupport: URL? = nil) -> URL {
+    let root = applicationSupport ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+      ?? URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).appendingPathComponent("Library/Application Support", isDirectory: true)
+    return root.appendingPathComponent("GalaxySSIChatFiles", isDirectory: true)
+      .appendingPathComponent(category, isDirectory: true)
+  }
+
+  static func contains(_ file: URL, in directory: URL) -> Bool {
+    guard file.isFileURL, directory.isFileURL else { return false }
+    let root = directory.resolvingSymlinksInPath().standardizedFileURL.path
+    let path = file.resolvingSymlinksInPath().standardizedFileURL.path
+    return path.hasPrefix(root + "/")
+  }
+}
+
 protocol GalaxySSILocalAttachmentStoring: AnyObject {
   func isEncryptedFile(_ url: URL) -> Bool
   func write(_ plaintext: Data, to url: URL, purpose: String) throws

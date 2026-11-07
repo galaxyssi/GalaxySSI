@@ -203,7 +203,7 @@ struct GalaxySSIRichContentView: View {
   fileprivate func exportArtifact(_ block: AgentRichBlock) {
     guard let file = coordinator.desktopArtifactStore.localFile(for: block)
       ?? GalaxySSILocalFileResource.url(for: block),
-      let data = try? Data(contentsOf: file) else {
+      let data = try? Data(contentsOf: file, options: [.mappedIfSafe]) else {
       return
     }
     artifactExportSourceURI = block.metadata["artifact_source_uri"] ?? block.uri
@@ -309,11 +309,24 @@ private struct GalaxySSIActivitySheet: UIViewControllerRepresentable {
 }
 
 private enum GalaxySSILocalFileResource {
+  static func canExportPrivateAttachment(_ block: AgentRichBlock) -> Bool {
+    guard ["app_private_file", "attachment_aes_256_gcm"].contains(block.metadata["storage"] ?? ""),
+          let file = URL(string: block.uri), file.isFileURL,
+          let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first,
+          (try? file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { return false }
+    return [AgentRichContentMaterializer.defaultDirectoryName, AgentIncomingAttachmentTransferStore.defaultDirectoryName]
+      .contains { GalaxySSIPrivateChatFiles.contains(file, in: support.appendingPathComponent($0, isDirectory: true)) }
+  }
+
   static func url(for block: AgentRichBlock) -> URL? {
     guard let url = URL(string: block.uri),
           url.isFileURL,
           FileManager.default.fileExists(atPath: url.path) else {
       return nil
+    }
+    if block.metadata["local_download"] == "true" {
+      guard AgentIOSDownloadFilePolicy.isRetained(url),
+            (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { return nil }
     }
     if block.metadata["storage"] == "attachment_aes_256_gcm",
        let purpose = block.metadata["encryption_purpose"],
@@ -1510,6 +1523,16 @@ private struct GalaxySSIRichBlockView: View {
             .frame(maxWidth: .infinity, minHeight: 38)
         }
         .buttonStyle(.borderedProminent)
+        if GalaxySSILocalFileResource.canExportPrivateAttachment(block) {
+          Button {
+            onArtifactSave(block)
+          } label: {
+            Label(t("rich_output_save", "Save to Files"), systemImage: "square.and.arrow.down")
+              .font(.caption.weight(.semibold))
+              .frame(maxWidth: .infinity, minHeight: 38)
+          }
+          .buttonStyle(.bordered)
+        }
       }
       if !block.actions.isEmpty {
         resourceActionButtons(block.actions)
@@ -1697,8 +1720,7 @@ private struct GalaxySSIRichBlockView: View {
   }
 
   private var isLocalDownload: Bool {
-    block.metadata["local_download"] == "true" &&
-      block.metadata["saved_to_downloads"] == "true"
+    block.metadata["local_download"] == "true"
   }
 
   @ViewBuilder
@@ -2126,7 +2148,8 @@ private struct GalaxySSIRichBlockView: View {
       url: primaryURL,
       id: "\(block.id)-primary",
       title: block.title,
-      onSave: isDesktopArtifact ? { onArtifactSave(block) } : nil
+      onSave: isDesktopArtifact || GalaxySSILocalFileResource.canExportPrivateAttachment(block)
+        ? { onArtifactSave(block) } : nil
     ) {
       items.append(primary)
     } else if block.uri.hasPrefix("galaxyssi-artifact://blob/") {
