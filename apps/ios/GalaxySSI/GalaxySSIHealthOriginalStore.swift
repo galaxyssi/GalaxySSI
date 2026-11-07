@@ -178,7 +178,27 @@ struct GalaxySSIHealthOriginalStore {
     NotificationCenter.default.post(name: Self.indexChanged, object: owner)
   }
 
-  private func store(_ data: Data, name: String, acquisition: Acquisition, lease: RestoreLease) throws {
+  func storePhotoCapturePage(_ data: Data, name: String, acquisition: Acquisition,
+                             mode: GalaxySSIHealthPhotoDraft.Mode, expected: UUID?, replacing page: UUID?,
+                             hints: [GalaxySSIHealthPhotoDraft.Hint]) throws {
+    try withRestoreLease { lease in
+      try reconcileRestores(lease: lease)
+      try store(data, name: name, acquisition: acquisition, lease: lease, draftVersion: expected,
+        updateDraft: { archive, original in
+          guard archive.photoCaptureDraft?.version == expected else { throw GalaxySSIHealthRecords.Failure.stale }
+          var batch = archive.photoCaptureDraft ?? .init(mode: mode)
+          guard batch.mode == mode else { throw GalaxySSIHealthRecords.Failure.stale }
+          try batch.install(original, hints: hints, replacing: page)
+          archive.photoCaptureDraft = batch
+        })
+    }
+    NotificationCenter.default.post(name: Self.indexChanged, object: owner)
+    NotificationCenter.default.post(name: GalaxySSIHealthRecords.recordsChanged, object: owner)
+  }
+
+  private func store(_ data: Data, name: String, acquisition: Acquisition, lease: RestoreLease,
+                     draftVersion: UUID? = nil,
+                     updateDraft: ((inout GalaxySSIHealthRecords.Archive, Original) throws -> Void)? = nil) throws {
     guard !data.isEmpty, data.count <= Self.maximumFileBytes else { throw Failure.limit }
     let (kind, fileExtension) = try Self.format(of: data)
     let listing = try list(lease: lease)
@@ -186,7 +206,15 @@ struct GalaxySSIHealthOriginalStore {
     let indexed = listing.originals + listing.unavailableOriginals
     let item: Original
     if let existing = indexed.first(where: { $0.sha256 == digest }) {
-      if (try? read(existing, lease: lease)) != nil { return }
+      if (try? read(existing, lease: lease)) != nil {
+        if let updateDraft {
+          let records = indexRecords
+          var archive = try records.load()
+          try updateDraft(&archive, existing)
+          try records.persistPhotoCaptureDraft(archive, expected: draftVersion)
+        }
+        return
+      }
       item = existing
     } else {
       guard listing.originals.count + listing.unavailable < 500,
@@ -196,7 +224,8 @@ struct GalaxySSIHealthOriginalStore {
                       importedAt: Date(), bytes: data.count, sha256: digest, acquisition: acquisition)
     }
     let records = indexRecords
-    let archive = try records.load()
+    var archive = try records.load()
+    try updateDraft?(&archive, item)
     let receipt = UUID()
     do {
       try stageRestore([(item, data)], receipt: receipt, lease: lease)

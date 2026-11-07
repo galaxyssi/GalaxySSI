@@ -32,6 +32,7 @@ enum GalaxySSIHealthRecognitionJobs {
     var phase = Phase.queued
     var run: UUID?
     var pages: [Page] = []
+    var captureSource: GalaxySSIHealthPhotoDraft.Source?
   }
 
   static func validDigest(_ hash: String) -> Bool {
@@ -66,6 +67,7 @@ struct GalaxySSIHealthRecognitionJobsView: View {
   @Environment(\.timeZone) private var timeZone
   let records: GalaxySSIHealthRecords
   let store: GalaxySSIHealthOriginalStore
+  var automaticPhotoBatch: UUID? = nil
   @State private var jobs: [GalaxySSIHealthRecognitionJobs.Job] = []
   @State private var originals: [GalaxySSIHealthOriginalStore.Original] = []
   @State private var task: Task<Void, Never>?
@@ -88,6 +90,10 @@ struct GalaxySSIHealthRecognitionJobsView: View {
             } label: {
               VStack(alignment: .leading, spacing: 4) {
                 Text(job.original.name)
+                if let capture = job.captureSource {
+                  Text(String(format: t("document_order", "Document page %lld"), Int64(capture.order)))
+                    .font(.caption).foregroundColor(.secondary)
+                }
                 Text(phase(job)).foregroundColor(.secondary)
               }
             }
@@ -105,7 +111,10 @@ struct GalaxySSIHealthRecognitionJobsView: View {
     }
     .navigationTitle(t("title", "Local Report Recognition"))
     .navigationBarTitleDisplayMode(.inline)
-    .onAppear(perform: reload)
+    .onAppear {
+      reload()
+      runNextPhotoInBatch()
+    }
     .onDisappear { if task != nil { stop(cancelled: false) } }
     .onChange(of: scene) {
       if $0 == .active { reload() }
@@ -186,7 +195,7 @@ struct GalaxySSIHealthRecognitionJobsView: View {
           NavigationLink {
             GalaxySSIHealthReportItemEditor(records: records, source: .init(original: job.original.id,
               sha256: job.original.sha256, page: page.index, region: line.ordinal, fromOCR: page.fromOCR,
-              evidenceKey: line.id), excerpt: line.text, sourceContext: sourceContext)
+              evidenceKey: line.id, captureSource: job.captureSource), excerpt: line.text, sourceContext: sourceContext)
           } label: { Text(line.text) }
         }
         NavigationLink {
@@ -217,7 +226,15 @@ struct GalaxySSIHealthRecognitionJobsView: View {
     guard scene == .active, task == nil else { return }
     do {
       let bytes: Data
-      do { bytes = try store.read(job.original) }
+      do {
+        let original = try store.read(job.original)
+        if let revision = job.captureSource?.cropRevision {
+          guard let crop = try store.readCrop(for: job.original), crop.metadata.revision == revision else {
+            throw GalaxySSIHealthRecords.Failure.stale
+          }
+          bytes = crop.png
+        } else { bytes = original }
+      }
       catch { missingSource = job.id; throw error }
       let run = try records.beginRecognitionJob(id: job.id, expected: job.version)
       activeID = job.id; activeRun = run
@@ -236,6 +253,10 @@ struct GalaxySSIHealthRecognitionJobsView: View {
               missingSource = job.id
               throw GalaxySSIHealthRecords.Failure.stale
             }
+            if let revision = job.captureSource?.cropRevision,
+               try store.readCrop(for: job.original)?.metadata.revision != revision {
+              throw GalaxySSIHealthRecords.Failure.stale
+            }
             try records.commitRecognitionPage(id: job.id, run: run, page: page)
             reload()
           }
@@ -245,9 +266,21 @@ struct GalaxySSIHealthRecognitionJobsView: View {
             failed = !(error is CancellationError)
           }
         }
-        if activeRun == run { activeID = nil; activeRun = nil; task = nil; reload() }
+        if activeRun == run {
+          activeID = nil; activeRun = nil; task = nil; reload()
+          if jobs.first(where: { $0.id == job.id })?.phase == .completed {
+            runNextPhotoInBatch()
+          }
+        }
       }
     } catch { failed = true }
+  }
+
+  private func runNextPhotoInBatch() {
+    guard scene == .active, task == nil, let automaticPhotoBatch,
+          let next = jobs.filter({ $0.captureSource?.batchID == automaticPhotoBatch && $0.phase == .queued })
+            .min(by: { ($0.captureSource?.order ?? 0) < ($1.captureSource?.order ?? 0) }) else { return }
+    run(next)
   }
 
   private func stop(cancelled: Bool) {

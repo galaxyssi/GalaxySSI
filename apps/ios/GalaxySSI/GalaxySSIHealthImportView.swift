@@ -28,6 +28,11 @@ struct GalaxySSIHealthImportView: View {
   var body: some View {
     List {
       Section(t("report", "Report originals")) {
+        NavigationLink {
+          GalaxySSIHealthPhotoCaptureView(records: records, originals: store)
+        } label: {
+          Label(t("photo_collection", "Capture or collect photos"), systemImage: "camera")
+        }
         GalaxySSIHealthImportRetentionPicker(currentDefault: retentionDefault, choice: $retentionChoice)
         Button {
           guard let retain = beginImport() else { return }

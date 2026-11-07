@@ -9,6 +9,7 @@ enum GalaxySSIHealthReportReview {
     let region: Int
     let fromOCR: Bool
     var evidenceKey: String?
+    var captureSource: GalaxySSIHealthPhotoDraft.Source?
 
     var regionIdentity: String { evidenceKey ?? "legacy:\(region)" }
 

@@ -909,6 +909,60 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testHealthPhotoDraftSubmitsOnlyVerifiedPagesInFinalOrder() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let secrets = HealthFixtureSecrets()
+    let file = root.appendingPathComponent("records")
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets,
+      fixtureDirectory: root, restoreRecordsFile: file)
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    func photo(_ color: UIColor) -> Data {
+      UIGraphicsImageRenderer(size: CGSize(width: 48, height: 48)).pngData { renderer in
+        renderer.cgContext.setFillColor(color.cgColor)
+        renderer.cgContext.fill(CGRect(x: 0, y: 0, width: 48, height: 48))
+      }
+    }
+    let firstBytes = photo(.black)
+    let secondBytes = photo(.white)
+    let replacement = photo(.red)
+    let hints = try GalaxySSIHealthPhotoDraft.inspect(firstBytes)
+    XCTAssertTrue(hints.contains(.small) && hints.contains(.dark))
+    try store.storePhotoCapturePage(firstBytes, name: "first.png", acquisition: .camera, mode: .report,
+      expected: nil, replacing: nil, hints: hints)
+    let initial = try XCTUnwrap(records.load().photoCaptureDraft)
+    let firstPage = try XCTUnwrap(initial.pages.first)
+    XCTAssertThrowsError(try store.storePhotoCapturePage(secondBytes, name: "stale.png", acquisition: .uploaded,
+      mode: .report, expected: nil, replacing: nil, hints: []))
+    try store.storePhotoCapturePage(secondBytes, name: "second.png", acquisition: .uploaded, mode: .report,
+      expected: initial.version, replacing: nil, hints: [])
+    let added = try XCTUnwrap(records.load().photoCaptureDraft)
+    let second = try XCTUnwrap(added.pages.last)
+    try records.editPhotoCaptureDraft(expected: added.version, page: second.id, offset: -1)
+    let moved = try XCTUnwrap(records.load().photoCaptureDraft)
+    try store.storePhotoCapturePage(replacement, name: "replacement.png", acquisition: .camera, mode: .report,
+      expected: moved.version, replacing: firstPage.id, hints: [])
+    let prepared = try XCTUnwrap(records.load().photoCaptureDraft)
+    XCTAssertEqual(prepared.pages.map(\.id), [second.id, firstPage.id])
+    XCTAssertEqual(try store.read(firstPage.original), firstBytes)
+    XCTAssertTrue(try records.load().recognitionJobs?.isEmpty ?? true)
+
+    try FileManager.default.removeItem(at: root.appendingPathComponent(second.original.id.uuidString))
+    XCTAssertThrowsError(try records.submitPhotoCaptureDraft(expected: prepared.version, originals: store))
+    XCTAssertEqual(try records.load().photoCaptureDraft?.version, prepared.version)
+    XCTAssertTrue(try records.load().recognitionJobs?.isEmpty ?? true)
+    try store.repairRecognitionOriginal(second.original, data: secondBytes)
+    try records.submitPhotoCaptureDraft(expected: prepared.version, originals: store)
+    let archive = try records.load()
+    XCTAssertNil(archive.photoCaptureDraft)
+    XCTAssertEqual(archive.recognitionJobs?.compactMap { $0.captureSource?.order }, [1, 2])
+    XCTAssertEqual(archive.recognitionJobs?.map(\.original.id), prepared.pages.map(\.original.id))
+    XCTAssertTrue(archive.current.isEmpty)
+    XCTAssertThrowsError(try records.submitPhotoCaptureDraft(expected: prepared.version, originals: store))
+  }
+
+  @MainActor
   func testRecognitionCheckpointResumesAndCancellationRejectsLatePages() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }
