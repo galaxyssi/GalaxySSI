@@ -133,14 +133,12 @@ struct AgentIOSScreenPagePDFResult {
 }
 
 enum AgentIOSScreenPagePDFDownloads {
-  static func save(pdf: Data, captureID: UUID, documents: URL? = nil) throws -> URL {
+  static func save(pdf: Data, captureID: UUID, applicationSupport: URL? = nil) throws -> URL {
     try Task.checkCancellation()
     guard pdf.starts(with: Data("%PDF-".utf8)) else {
       throw AgentIOSScreenPagePDFError.invalidDocument
     }
-    let root = try documents ?? FileManager.default.url(for: .documentDirectory,
-      in: .userDomainMask, appropriateFor: nil, create: true)
-    let directory = root.appendingPathComponent("Downloads", isDirectory: true)
+    let directory = GalaxySSIPrivateChatFiles.directory("ScreenPagePDFs", applicationSupport: applicationSupport)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let target = directory.appendingPathComponent("article-\(captureID.uuidString.lowercased()).pdf")
     try Task.checkCancellation()

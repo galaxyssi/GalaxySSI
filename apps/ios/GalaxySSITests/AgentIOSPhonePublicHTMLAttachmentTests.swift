@@ -48,12 +48,12 @@ final class AgentIOSPhonePublicHTMLAttachmentTests: XCTestCase {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     let source = Data("<html><script>throw 1</script><p>Original</p></html>".utf8)
-    let file = try AgentIOSOriginalHTMLSourceArchive.save(source, documents: root)
+    let file = try AgentIOSOriginalHTMLSourceArchive.save(source, applicationSupport: root)
     XCTAssertEqual(file.pathExtension, "txt")
-    XCTAssertEqual(file.deletingLastPathComponent().lastPathComponent, "Downloads")
+    XCTAssertEqual(file.deletingLastPathComponent(), GalaxySSIPrivateChatFiles.directory("OriginalWebSources", applicationSupport: root))
     XCTAssertEqual(try Data(contentsOf: file), source)
-    XCTAssertEqual(try AgentIOSOriginalHTMLSourceArchive.save(source, documents: root), file)
-    XCTAssertThrowsError(try AgentIOSOriginalHTMLSourceArchive.save(Data(), documents: root))
+    XCTAssertEqual(try AgentIOSOriginalHTMLSourceArchive.save(source, applicationSupport: root), file)
+    XCTAssertThrowsError(try AgentIOSOriginalHTMLSourceArchive.save(Data(), applicationSupport: root))
   }
 
   func testSeparatesASCIIURLFromAdjacentChineseInstruction() {
