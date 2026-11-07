@@ -269,6 +269,23 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(result.goal.contains(first.id.uuidString.lowercased()))
   }
 
+  func testIndependentFollowupSelectsExactRespondentWithoutReusingResearchStages() throws {
+    let coordinator = AgentCollaborationRoster.Member(name: "Lead", resourceId: "codex")
+    let reviewer = AgentCollaborationRoster.Member(name: "Reviewer", resourceId: "another",
+      modelId: "selected-model", mentionOnly: true)
+    let original = AgentCollaborationRoster(members: [coordinator, reviewer], coordinatorId: coordinator.id,
+      independentReview: true, workflow: .research)
+    let implicit = try XCTUnwrap(AgentTeamPlanCompiler.followupRoster(original, mentioned: []))
+    XCTAssertEqual(implicit.members.map(\.id), [coordinator.id])
+    let explicit = try XCTUnwrap(AgentTeamPlanCompiler.followupRoster(original, mentioned: [reviewer.id]))
+    XCTAssertEqual(explicit.coordinatorId, reviewer.id)
+    XCTAssertEqual(explicit.members.map(\.modelId), [reviewer.modelId])
+    XCTAssertEqual(explicit.workflow, .parallel)
+    XCTAssertFalse(explicit.independentReview)
+    XCTAssertEqual(original.workflow, .research)
+    XCTAssertNil(AgentTeamPlanCompiler.followupRoster(original, mentioned: [UUID()]))
+  }
+
   func testResourceObservationUsesOnlyTheSelectedRuntimePool() throws {
     var registration = teamRegistration(teamTarget("codex"))
     registration.maxParallelRuns = 2
@@ -349,7 +366,7 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(spec.definition.members.last?.dependsOnAgentIds, [reviewerId])
     registration.maxParallelRuns = 1
     XCTAssertNil(AgentTeamPlanCompiler.compileCollaboration(plan: plan,
-      roster: roster, targets: [target], registrations: [registration]))
+      roster: roster, mentionedMemberIds: [reviewer.id], targets: [target], registrations: [registration]))
     XCTAssertNil(AgentTeamPlanCompiler.compileCollaboration(plan: plan,
       roster: roster, mentionedMemberIds: [UUID()], targets: [target], registrations: [registration]))
   }
