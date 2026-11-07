@@ -694,24 +694,20 @@ final class AgentTeamExecutionHistoryStore {
           "content_utf8_sha256": .string(hash)
         ])
       }
-      if let native = try database.researchRecord(AgentCollaborationNativeToolObservation.self,
+      if let native = try database.researchRecord(AgentCollaborationNativeReleaseHistory.Original.self,
         conversationId: scope.conversationId, key: "native-evidence:" + id, revision: 0) {
-        let sameRun = native.runId == scope.runId && native.turnId == scope.turnId
-        let own = sameRun && native.memberId == scope.memberId && native.sourceId == scope.sourceId
-        let dependency = sameRun && reader.dispatchDependencyMemberIds?.contains(native.memberId) == true &&
-          team.members.contains { $0.memberId == native.memberId && $0.sourceMessageId == native.sourceId &&
+        let originalScope = native.scope
+        let sameRun = originalScope.runId == scope.runId && originalScope.turnId == scope.turnId
+        let own = sameRun && originalScope.memberId == scope.memberId && originalScope.sourceId == scope.sourceId
+        let dependency = sameRun && reader.dispatchDependencyMemberIds?.contains(originalScope.memberId) == true &&
+          team.members.contains { $0.memberId == originalScope.memberId && $0.sourceMessageId == originalScope.sourceId &&
             $0.deliveryMode != .ignore && $0.status.isTerminal }
-        guard native.conversationId == scope.conversationId, own || dependency || native.turnId != scope.turnId,
-              Self.nativeObservationId(native, hash: hash) == id else {
+        guard originalScope.conversationId == scope.conversationId, own || dependency || originalScope.turnId != scope.turnId,
+              Self.nativeOriginalId(native, hash: hash) == id else {
           throw AgentTeamHistoryDatabase.Failure.stale
         }
         let key = "native-read-coverage:" + Self.readCoverageDigest(scope: scope, id: id, hash: hash)
-        return try evidencePage(encoder.encode(native), source: [
-          "evidence_id": .string(id), "sha256": .string(hash), "origin": .string("ios_native_tool"),
-          "tool": .string(native.result.provenance.toolId), "status": .string(native.result.status.rawValue),
-          "tool_version": .string(native.result.provenance.toolVersion),
-          "replayed": .bool(native.result.receipt.replayed)
-        ], key: key)
+        return try evidencePage(encoder.encode(native), source: native.sourceReference(id: id, hash: hash), key: key)
       }
       guard evidenceRead == .local, let record = try database.cloudEvidence(id: id, conversationId: scope.conversationId),
             record.scope.conversationId == scope.conversationId,
@@ -820,14 +816,13 @@ final class AgentTeamExecutionHistoryStore {
         guard History.validDigest(id),
               let original = try database.researchRecord(History.Original.self, conversationId: scope.conversationId,
                 key: key, revision: 0) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
-        let saved = original.observation
+        let saved = original.scope
         guard saved.conversationId == scope.conversationId,
               visible(run: saved.runId, turn: saved.turnId, member: saved.memberId, source: saved.sourceId),
-              saved.input["mode"] == .string("run"),
-              saved.input["tool_release"]?.objectValue == History.fields(reference) else { continue }
+              original.input["mode"] == .string("run"),
+              original.input["tool_release"]?.objectValue == History.fields(reference) else { continue }
         let hash = try SHA256.hash(data: encoder.encode(original)).map { String(format: "%02x", $0) }.joined()
-        guard id == AgentMcpJSONCodec.sha256(["run": .string(saved.runId), "source": .string(saved.sourceId),
-          "invocation": .string(saved.result.receipt.invocationId), "sha256": .string(hash)])
+        guard id == Self.nativeOriginalId(original, hash: hash)
         else { throw AgentTeamHistoryDatabase.Failure.corrupt }
         if let record = History.describe(original, release: reference, evidenceID: id, hash: hash) {
           records.append(.object(record))
@@ -1540,7 +1535,7 @@ final class AgentTeamExecutionHistoryStore {
     encoder.outputFormatting = [.sortedKeys]
     let bytes = try encoder.encode(original)
     let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
-    guard digest == hash, nativeObservationId(original, hash: hash) == id,
+    guard digest == hash, nativeOriginalId(.execution(original), hash: hash) == id,
           coverage.contiguousEnd == Int64(String(decoding: bytes, as: UTF8.self).count)
     else { throw AgentTeamHistoryDatabase.Failure.stale }
     let plan = try exact(planRef)
@@ -1998,6 +1993,7 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   func prepareSavedToolExecution(test: AgentCollaborationResearchReference?, release: AgentCollaborationResearchReference?,
+                                 channel: AgentCollaborationResearchReference? = nil,
                                  parameters: AgentMcpJSONObject?, timeoutMillis: Int64,
                                  scope: AgentCollaborationToolEvidenceScope) throws -> AgentCollaborationSavedToolTest.Prepared {
     try access { database in
@@ -2016,16 +2012,44 @@ final class AgentTeamExecutionHistoryStore {
         else { throw AgentTeamHistoryDatabase.Failure.stale }
         return record
       }
-      if let release, let parameters, test == nil {
-        let saved = try current(release)
-        guard let planRef = AgentCollaborationSavedToolTest.reference(saved.testedToolRelease?["tool_test_plan"]),
-              let toolRef = AgentCollaborationSavedToolTest.reference(saved.testedToolRelease?["executable_tool"]),
-              let prepared = AgentCollaborationSavedToolTest.prepareRun(release: saved,
-                plan: try current(planRef), tool: try current(toolRef), parameters: parameters, timeoutMillis: timeoutMillis)
+      if let parameters, test == nil {
+        let selected: AgentCollaborationCapabilitySelection?
+        if let channel, release == nil {
+          guard let exact = try AgentCollaborationCapabilitySelection.resolve(channel, current: { try current($0) })
+          else { throw AgentTeamHistoryDatabase.Failure.stale }
+          selected = exact
+        } else {
+          guard channel == nil, release != nil else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+          selected = nil
+        }
+        guard let releaseRef = selected?.implementation ?? release else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        let saved = try current(releaseRef)
+        guard saved.draft.kind == .toolRelease,
+              saved.testedToolRelease?["state"] == .string("eligible_for_scoped_tool_execution"),
+              let planRef = AgentCollaborationSavedToolTest.reference(saved.testedToolRelease?["tool_test_plan"]),
+              let toolRef = AgentCollaborationSavedToolTest.reference(saved.testedToolRelease?["executable_tool"])
         else { throw AgentTeamHistoryDatabase.Failure.stale }
+        let plan = try current(planRef)
+        let tool = try current(toolRef)
+        var channelEvidence: AgentMcpJSONObject = [:]
+        if let channel, let selected {
+          channelEvidence["capability_channel"] = .object(AgentCollaborationSavedToolTest.fields(channel))
+          channelEvidence["protected_suite"] = .object(AgentCollaborationSavedToolTest.fields(selected.suite))
+          channelEvidence["newer_capabilities_require_revalidation"] = .bool(selected.requiresRevalidation)
+        }
+        guard var prepared = AgentCollaborationSavedToolTest.prepareRun(release: saved,
+          plan: plan, tool: tool, parameters: parameters, timeoutMillis: timeoutMillis) else {
+          let input: AgentMcpJSONObject = ["mode": .string("run"),
+            "tool_release": .object(AgentCollaborationSavedToolTest.fields(releaseRef)),
+            "parameters": .object(parameters), "timeout_ms": .int(timeoutMillis)]
+          throw AgentCollaborationSavedToolExecution.PreflightRejected(
+            input: input.merging(channelEvidence) { current, _ in current }, code: "saved_tool_run_preflight_rejected")
+        }
+        prepared.evidenceInput.merge(channelEvidence) { current, _ in current }
         return prepared
       }
-      guard let reference = test, release == nil, parameters == nil else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      guard let reference = test, release == nil, channel == nil, parameters == nil
+      else { throw AgentTeamHistoryDatabase.Failure.corrupt }
       let plan = try current(reference)
       guard plan.draft.kind == .toolTestPlan,
             let test = plan.draft.body["tool_test_plan"]?.objectValue,
@@ -2037,40 +2061,53 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   func recordNativeObservation(_ observation: AgentCollaborationNativeToolObservation) throws -> AgentMcpJSONObject {
+    try recordNativeOriginal(.execution(observation))
+  }
+
+  func recordSavedToolRejection(_ rejection: AgentCollaborationSavedToolRejection) throws -> AgentMcpJSONObject {
+    try recordNativeOriginal(.rejection(rejection))
+  }
+
+  private func recordNativeOriginal(_ original: AgentCollaborationNativeReleaseHistory.Original) throws -> AgentMcpJSONObject {
+    let scope = original.scope
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
-    let encoded = try encoder.encode(observation)
-    guard !observation.result.receipt.invocationId.isBlank, encoded.count <= 256_000 else {
+    let encoded = try encoder.encode(original)
+    guard !original.invocationID.isBlank, encoded.count <= 256_000 else {
       throw AgentTeamHistoryDatabase.Failure.corrupt
     }
     let hash = SHA256.hash(data: encoded).map { String(format: "%02x", $0) }.joined()
-    let id = Self.nativeObservationId(observation, hash: hash)
+    let id = Self.nativeOriginalId(original, hash: hash)
     return try access { database in
-      guard try database.researchRecord(Bool.self, conversationId: observation.conversationId,
+      guard try database.researchRecord(Bool.self, conversationId: scope.conversationId,
         key: "native-evidence-revoked", revision: 0) != true,
-        let team = try database.snapshots(runId: observation.runId).first,
-        team.conversationId == observation.conversationId, team.taskId == observation.turnId,
+        let team = try database.snapshots(runId: scope.runId).first,
+        team.conversationId == scope.conversationId, team.taskId == scope.turnId,
         !team.state.isTerminal, team.members.contains(where: {
-          $0.memberId == observation.memberId && $0.sourceMessageId == observation.sourceId && !$0.status.isTerminal
+          $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal
         }) else { throw AgentTeamHistoryDatabase.Failure.stale }
       let key = "native-evidence:" + id
-      if let prior = try database.researchRecord(AgentCollaborationNativeToolObservation.self,
-        conversationId: observation.conversationId, key: key, revision: 0) {
+      if let prior = try database.researchRecord(AgentCollaborationNativeReleaseHistory.Original.self,
+        conversationId: scope.conversationId, key: key, revision: 0) {
         guard try encoder.encode(prior) == encoded else { throw AgentTeamHistoryDatabase.Failure.stale }
       } else {
-        try database.insertResearchRecord(observation, conversationId: observation.conversationId, key: key, revision: 0)
+        try database.insertResearchRecord(original, conversationId: scope.conversationId, key: key, revision: 0)
       }
-      return [
-        "evidence_id": .string(id), "sha256": .string(hash), "origin": .string("ios_native_tool"),
-        "trust": .string("execution_observed_not_claim_verified")
-      ]
+      let trust: String
+      switch original {
+      case .execution: trust = "execution_observed_not_claim_verified"
+      case .rejection: trust = "preflight_rejected_no_execution"
+      }
+      return ["evidence_id": .string(id), "sha256": .string(hash),
+        "origin": original.sourceReference(id: id, hash: hash)["origin"] ?? .null, "trust": .string(trust)]
     }
   }
 
-  private static func nativeObservationId(_ observation: AgentCollaborationNativeToolObservation, hash: String) -> String {
-    AgentMcpJSONCodec.sha256([
-      "run": .string(observation.runId), "source": .string(observation.sourceId),
-      "invocation": .string(observation.result.receipt.invocationId), "sha256": .string(hash)
+  private static func nativeOriginalId(_ original: AgentCollaborationNativeReleaseHistory.Original, hash: String) -> String {
+    let scope = original.scope
+    return AgentMcpJSONCodec.sha256([
+      "run": .string(scope.runId), "source": .string(scope.sourceId),
+      "invocation": .string(original.invocationID), "sha256": .string(hash)
     ])
   }
 

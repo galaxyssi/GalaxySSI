@@ -6,6 +6,11 @@ enum AgentCollaborationSavedToolExecution {
   static let responseType = "collaboration_tool_test_result"
   static let processID = UUID().uuidString
 
+  struct PreflightRejected: Error {
+    let input: AgentMcpJSONObject
+    let code: String
+  }
+
   static func permitsDirectRuntime(source: String, key: String) -> Bool {
     let toolId = AgentIOSOnDeviceRuntimeNativeToolCatalog.execute
     let action = AgentAction(id: key, kind: .callNativeTool, target: toolId, risk: .medium,
@@ -20,6 +25,7 @@ enum AgentCollaborationSavedToolExecution {
     let executionID: String
     let plan: AgentCollaborationResearchReference?
     let release: AgentCollaborationResearchReference?
+    let channel: AgentCollaborationResearchReference?
     let parameters: AgentMcpJSONObject?
     let timeoutMillis: Int64?
     let inputHash: String
@@ -40,20 +46,26 @@ enum AgentCollaborationSavedToolExecution {
            reference.revision <= Int64(Int32.max) {
           plan = reference
           release = nil
+          channel = nil
           parameters = nil
-        } else if Set(input.keys) == ["mode", "execution_id", "tool_release", "parameters", "timeout_ms"],
-                  let reference = AgentCollaborationSavedToolTest.reference(input["tool_release"]),
-                  reference.revision <= Int64(Int32.max), let values = input["parameters"]?.objectValue,
-                  AgentMcpJSONCodec.stringify(values).utf8.count <= 64 * 1_024 {
+        } else {
+          let selectors = Set(input.keys).intersection(["tool_release", "capability_channel"])
+          guard selectors.count == 1, let selector = selectors.first,
+                Set(input.keys) == ["mode", "execution_id", selector, "parameters", "timeout_ms"],
+                let reference = AgentCollaborationSavedToolTest.reference(input[selector]),
+                reference.revision <= Int64(Int32.max), let values = input["parameters"]?.objectValue,
+                AgentMcpJSONCodec.stringify(values).utf8.count <= 64 * 1_024 else { return nil }
           plan = nil
-          release = reference
+          release = selector == "tool_release" ? reference : nil
+          channel = selector == "capability_channel" ? reference : nil
           parameters = values
-        } else { return nil }
+        }
         timeoutMillis = timeout
       case .status, .cancel:
         guard Set(input.keys) == ["mode", "execution_id"] else { return nil }
         plan = nil
         release = nil
+        channel = nil
         parameters = nil
         timeoutMillis = nil
       }
@@ -93,6 +105,7 @@ enum AgentCollaborationSavedToolExecution {
     let inputHash: String
     let plan: AgentCollaborationResearchReference?
     var release: AgentCollaborationResearchReference? = nil
+    var channel: AgentCollaborationResearchReference? = nil
     var parameters: AgentMcpJSONObject? = nil
     let timeoutMillis: Int64
     let ownerProcess: String
@@ -153,7 +166,7 @@ enum AgentCollaborationSavedToolExecution {
     case .request(let request):
       switch request.mode {
       case .start:
-        guard request.plan != nil || (request.release != nil && request.parameters != nil),
+        guard request.plan != nil || ((request.release != nil || request.channel != nil) && request.parameters != nil),
               let timeoutMillis = request.timeoutMillis else {
           throw AgentTeamHistoryDatabase.Failure.corrupt
         }
@@ -163,7 +176,7 @@ enum AgentCollaborationSavedToolExecution {
         }
         guard allowAdmission else { return Outcome(record: nil, busy: true) }
         return Outcome(record: Record(scope: scope, executionID: request.executionID, inputHash: request.inputHash,
-          plan: request.plan, release: request.release, parameters: request.parameters,
+          plan: request.plan, release: request.release, channel: request.channel, parameters: request.parameters,
           timeoutMillis: timeoutMillis, ownerProcess: process, state: .queued, updatedAt: now), shouldLaunch: true)
       case .status:
         return Outcome(record: current)

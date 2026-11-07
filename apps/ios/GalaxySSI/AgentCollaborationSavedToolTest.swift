@@ -7,7 +7,7 @@ enum AgentCollaborationSavedToolTest {
 
   struct Prepared {
     let runtimeInput: AgentMcpJSONObject
-    let evidenceInput: AgentMcpJSONObject
+    var evidenceInput: AgentMcpJSONObject
     let originalSource: String
     fileprivate let cases: [AgentMcpJSONObject]
     fileprivate var expectedRuntime: AgentMcpJSONObject? = nil
@@ -234,7 +234,7 @@ enum AgentCollaborationSavedToolTest {
     return program
   }
 
-  private static func fields(_ ref: AgentCollaborationResearchReference) -> AgentMcpJSONObject {
+  static func fields(_ ref: AgentCollaborationResearchReference) -> AgentMcpJSONObject {
     ["object_id": .string(ref.objectId), "revision": .int(ref.revision), "sha256": .string(ref.sha256)]
   }
 

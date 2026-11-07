@@ -1364,6 +1364,16 @@ extension GalaxySSIStoreTests {
     XCTAssertThrowsError(try reopened.updateSavedToolExecution(.request(changedRun), scope: scope(), process: "b", now: 15))
     runInput["source"] = .string("untrusted override")
     XCTAssertNil(Execution.Request(phase: "start", input: runInput))
+    runInput["source"] = nil
+    runInput["execution_id"] = .string("channel-run")
+    runInput["capability_channel"] = selection
+    XCTAssertNil(Execution.Request(phase: "start", input: runInput))
+    runInput["tool_release"] = nil
+    let channel = try XCTUnwrap(Execution.Request(phase: "start", input: runInput))
+    let channelAdmission = try reopened.updateSavedToolExecution(.request(channel), scope: scope(), process: "b", now: 16)
+    XCTAssertNotNil(channelAdmission.record?.channel)
+    XCTAssertNil(channelAdmission.record?.release)
+    XCTAssertFalse(try reopened.updateSavedToolExecution(.request(channel), scope: scope(), process: "b", now: 17).shouldLaunch)
     reopened.removeResearchObjects(conversationId: assignment.conversationId)
     XCTAssertThrowsError(try reopened.updateSavedToolExecution(.request(original), scope: scope(), process: "b", now: 14))
   }
@@ -1508,8 +1518,31 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(runnable.evidenceInput["parameters"], .object(["value": .int(42)]))
     XCTAssertEqual(runnable.runtimeInput["network_enabled"], .bool(false))
     XCTAssertTrue(runnable.runtimeInput.string("source").contains("runtime != payload['expected_runtime']"))
-    XCTAssertThrowsError(try history.prepareSavedToolExecution(test: nil, release: releaseRef,
-      parameters: ["value": .string("42")], timeoutMillis: 1_000, scope: reader))
+    var rejectionEvidence: AgentMcpJSONObject?
+    do {
+      _ = try history.prepareSavedToolExecution(test: nil, release: releaseRef,
+        parameters: ["value": .string("42")], timeoutMillis: 1_000, scope: reader)
+      XCTFail("A rejected schema must not produce a runtime invocation")
+    } catch let rejection as AgentCollaborationSavedToolExecution.PreflightRejected {
+      XCTAssertEqual(rejection.code, "saved_tool_run_preflight_rejected")
+      rejectionEvidence = try history.recordSavedToolRejection(.init(scope: reader, invocationId: "preflight",
+        input: rejection.input, code: rejection.code, rejectedAt: 42))
+    }
+    let savedRejection = try XCTUnwrap(rejectionEvidence)
+    let rejectionSelector: AgentMcpJSONObject = ["mode": .string("evidence"),
+      "evidence_id": savedRejection["evidence_id"] ?? .null, "sha256": savedRejection["sha256"] ?? .null]
+    let preview = try history.recallCollaborationOriginal(rejectionSelector, scope: reader, evidenceRead: .desktopPreview)
+    XCTAssertEqual(preview["source_reference"]?.objectValue?["runtime_invoked"], .bool(false))
+    let originalRejection = try JSONDecoder().decode(AgentCollaborationSavedToolRejection.self,
+      from: Data(preview.string("content").utf8))
+    XCTAssertEqual(originalRejection.input["parameters"], .object(["value": .string("42")]))
+    var historyInput = AgentCollaborationNativeReleaseHistory.fields(releaseRef)
+    historyInput["mode"] = .string("method_history")
+    let page = try history.recallCollaborationOriginal(historyInput, scope: reader)
+    let rejected = try XCTUnwrap(page["records"]?.arrayValue?.first?.objectValue)
+    XCTAssertEqual(rejected["evidence_id"], savedRejection["evidence_id"])
+    XCTAssertEqual(rejected["native_invocation_id"], .null)
+    XCTAssertEqual(rejected["runtime_report_available"], .bool(false))
     history.removeResearchObjects(conversationId: reader.conversationId)
     XCTAssertThrowsError(try history.prepareSavedToolTest(reference, timeoutMillis: 1_000, scope: reader))
   }

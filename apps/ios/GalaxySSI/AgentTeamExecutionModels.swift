@@ -11,6 +11,17 @@ struct AgentCollaborationNativeToolObservation: Codable {
   var evaluation: AgentMcpJSONObject? = nil
 }
 
+struct AgentCollaborationSavedToolRejection: Codable {
+  private(set) var recordKind = "saved_tool_preflight_rejection"
+  let scope: AgentCollaborationToolEvidenceScope
+  let invocationId: String
+  let input: AgentMcpJSONObject
+  let code: String
+  let rejectedAt: Int64
+
+  private enum CodingKeys: String, CodingKey { case recordKind, scope, invocationId, input, code, rejectedAt }
+}
+
 struct AgentCollaborationToolEvidenceScope: Codable, Equatable {
   var runId: String
   var conversationId: String
@@ -47,22 +58,69 @@ enum AgentCollaborationNativeReleaseHistory {
     let testedToolRelease: AgentMcpJSONObject?
   }
 
-  struct Original: Codable {
-    let observation: AgentCollaborationNativeToolObservation
-    let evaluation: AgentMcpJSONObject?
-    private enum Key: String, CodingKey { case evaluation }
+  enum Original: Codable {
+    case execution(AgentCollaborationNativeToolObservation)
+    case rejection(AgentCollaborationSavedToolRejection)
+    private enum Key: String, CodingKey { case recordKind }
 
     init(from decoder: Decoder) throws {
-      observation = try AgentCollaborationNativeToolObservation(from: decoder)
-      evaluation = try decoder.container(keyedBy: Key.self).decodeIfPresent(AgentMcpJSONObject.self, forKey: .evaluation)
+      let kind = try decoder.container(keyedBy: Key.self).decodeIfPresent(String.self, forKey: .recordKind)
+      if kind == "saved_tool_preflight_rejection" {
+        self = .rejection(try AgentCollaborationSavedToolRejection(from: decoder))
+      } else if kind == nil {
+        self = .execution(try AgentCollaborationNativeToolObservation(from: decoder))
+      } else {
+        throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown native evidence kind"))
+      }
     }
 
     func encode(to encoder: Encoder) throws {
-      try observation.encode(to: encoder)
-      if let evaluation {
-        var values = encoder.container(keyedBy: Key.self)
-        try values.encode(evaluation, forKey: .evaluation)
+      switch self {
+      case .execution(let value): try value.encode(to: encoder)
+      case .rejection(let value): try value.encode(to: encoder)
       }
+    }
+
+    var scope: AgentCollaborationToolEvidenceScope {
+      switch self {
+      case .execution(let value):
+        return .init(runId: value.runId, conversationId: value.conversationId, turnId: value.turnId,
+          memberId: value.memberId, sourceId: value.sourceId)
+      case .rejection(let value): return value.scope
+      }
+    }
+
+    var input: AgentMcpJSONObject {
+      switch self {
+      case .execution(let value): return value.input
+      case .rejection(let value): return value.input
+      }
+    }
+
+    var invocationID: String {
+      switch self {
+      case .execution(let value): return value.result.receipt.invocationId
+      case .rejection(let value): return value.invocationId
+      }
+    }
+
+    func sourceReference(id: String, hash: String) -> AgentMcpJSONObject {
+      var result: AgentMcpJSONObject = ["evidence_id": .string(id), "sha256": .string(hash)]
+      switch self {
+      case .execution(let value):
+        result["origin"] = .string("ios_native_tool")
+        result["tool"] = .string(value.result.provenance.toolId)
+        result["status"] = .string(value.result.status.rawValue)
+        result["tool_version"] = .string(value.result.provenance.toolVersion)
+        result["replayed"] = .bool(value.result.receipt.replayed)
+        result["original_invocation_id"] = value.result.receipt.originalInvocationId.map(AgentMcpJSONValue.string) ?? .null
+      case .rejection(let value):
+        result["origin"] = .string("ios_saved_tool_preflight")
+        result["status"] = .string("rejected")
+        result["code"] = .string(value.code)
+        result["runtime_invoked"] = .bool(false)
+      }
+      return result
     }
   }
 
@@ -91,12 +149,29 @@ enum AgentCollaborationNativeReleaseHistory {
 
   static func describe(_ original: Original, release: AgentCollaborationResearchReference,
                        evidenceID: String, hash: String) -> AgentMcpJSONObject? {
-    let saved = original.observation
+    guard original.input["mode"] == .string("run"),
+          original.input["tool_release"]?.objectValue == fields(release) else { return nil }
+    if case .rejection(let rejected) = original {
+      var entry = original.sourceReference(id: evidenceID, hash: hash)
+      entry["read_original"] = .object(["mode": .string("evidence"), "evidence_id": .string(evidenceID), "sha256": .string(hash)])
+      entry["release_binding"] = .string(rejected.input["capability_channel"] == nil ? "requested_release" : "resolved_channel_release")
+      entry["parameters_sha256"] = rejected.input["parameters"]?.objectValue.map { .string(AgentMcpJSONCodec.sha256($0)) } ?? .null
+      entry["native_status"] = .string("rejected")
+      entry["runtime_report_available"] = .bool(false)
+      entry["runtime_reported_passed"] = .null
+      entry["native_invocation_id"] = .null
+      entry["run_id"] = .string(rejected.scope.runId)
+      entry["turn_id"] = .string(rejected.scope.turnId)
+      entry["member_id"] = .string(rejected.scope.memberId)
+      entry["quality_effect"] = .null
+      return entry
+    }
+    guard case .execution(let saved) = original else { return nil }
     guard saved.result.provenance.toolId == AgentIOSOnDeviceRuntimeNativeToolCatalog.execute,
           saved.input["mode"] == .string("run"),
           let selected = saved.input["tool_release"]?.objectValue, selected == fields(release) else { return nil }
     let receipt = saved.result.receipt
-    let runtime = original.evaluation?["runtime"]?.objectValue
+    let runtime = saved.evaluation?["runtime"]?.objectValue
     let originalSelector: AgentMcpJSONObject = [
       "mode": .string("evidence"), "evidence_id": .string(evidenceID), "sha256": .string(hash)
     ]
@@ -106,7 +181,7 @@ enum AgentCollaborationNativeReleaseHistory {
         saved.input["capability_channel"] == nil ? "requested_release" : "runtime_resolved_channel_release"),
       "parameters_sha256": saved.input["parameters"]?.objectValue.map { .string(AgentMcpJSONCodec.sha256($0)) } ?? .null,
       "native_status": .string(saved.result.status.rawValue), "runtime_report_available": .bool(runtime != nil),
-      "runtime_reported_passed": original.evaluation?["passed"] ?? .null, "replayed": .bool(receipt.replayed),
+      "runtime_reported_passed": runtime == nil ? .null : (saved.evaluation?["passed"] ?? .null), "replayed": .bool(receipt.replayed),
       "native_invocation_id": .string(receipt.invocationId),
       "original_invocation_id": receipt.originalInvocationId.map(AgentMcpJSONValue.string) ?? .null,
       "run_id": .string(saved.runId), "turn_id": .string(saved.turnId), "member_id": .string(saved.memberId),
