@@ -2432,7 +2432,8 @@ final class MessageCoordinator: ObservableObject {
     desktopControlSnapshots[link.desktopId] = snapshot
     if request.resetsSurfaceState { desktopControlFrameUpdates.send(link.desktopId) }
 
-    if request.durable {
+    let transient = MqttTransientControlPolicy.includes(payload.string("type"))
+    if request.durable && !transient {
       deliveryStore.enqueue(
         messageId: wire.messageId,
         topic: link.routes.controlTopic,
@@ -2440,7 +2441,9 @@ final class MessageCoordinator: ObservableObject {
       )
       deliveryStore.markAttempt(messageId: wire.messageId)
     }
-    let result = await mqttClient.publish(topic: link.routes.controlTopic, payload: wire.wireData)
+    let result = transient
+      ? await mqttClient.publishTransientControl(topic: link.routes.controlTopic, payload: wire.wireData, link: link)
+      : await mqttClient.publish(topic: link.routes.controlTopic, payload: wire.wireData)
     if result.accepted {
       return true
     }
@@ -2835,7 +2838,7 @@ final class MessageCoordinator: ObservableObject {
     guard AgentControlPlaneClock.nowMillis() < expiry,
           let object = try? JSONSerialization.jsonObject(with: Data(AgentMcpJSONCodec.stringify(response).utf8)) as? [String: Any],
           let wire = try? linkWirePayload(object, link: link) else { return }
-    _ = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
+    _ = await mqttClient.publishTransientControl(topic: link.routes.upTopic, payload: wire.wireData, link: link)
   }
 
   private func discoverTeamObserverReplies(now: Int64) {
@@ -2963,7 +2966,7 @@ final class MessageCoordinator: ObservableObject {
       return false
     }
     managedDesktopProbes += 1
-    let published = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
+    let published = await mqttClient.publishTransientControl(topic: link.routes.upTopic, payload: wire.wireData, link: link)
     if published == .failed, !Task.isCancelled, profile == store.profile.identityFingerprint {
       teamRecoveryRetries.failure(run: run, profile: profile, progress: progress, now: now)
     }
@@ -3137,7 +3140,7 @@ final class MessageCoordinator: ObservableObject {
       desktopEvidenceRequests.removeValue(forKey: request.nonce)
       signal.finish()
     }
-    guard await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData) == .published else { return nil }
+    guard await mqttClient.publishTransientControl(topic: link.routes.upTopic, payload: wire.wireData, link: link) == .published else { return nil }
     for await response in responses { return response }
     return nil
   }
@@ -3354,7 +3357,7 @@ final class MessageCoordinator: ObservableObject {
               $0.routes.clientRouteId == binding.identity.clientRouteId }),
             let wire = try? linkWirePayload(payload, link: link) else { continue }
       published += 1
-      _ = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
+      _ = await mqttClient.publishTransientControl(topic: link.routes.upTopic, payload: wire.wireData, link: link)
     }
   }
 
@@ -13175,7 +13178,7 @@ final class MessageCoordinator: ObservableObject {
       guard let wire = try? linkWirePayload(payload, link: link) else {
         continue
       }
-      _ = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
+      _ = await mqttClient.publishTransientControl(topic: link.routes.upTopic, payload: wire.wireData, link: link)
     }
   }
 

@@ -116,6 +116,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     var acknowledgementGroup: MqttPublishAckGroup? = nil
     var fragmentIndex: Int = 0
     var pathCompletion: MqttPhysicalCompletion? = nil
+    var transientPriority = false
   }
   private struct InFlightTiming {
     var attemptId: String
@@ -186,6 +187,10 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     await withCheckedContinuation { continuation in
       queue.async {
         self.checkTransportOnDemand()
+        if publication.transientPriority != nil {
+          continuation.resume(returning: self.sendSealedTransient(publication))
+          return
+        }
         guard self.hasLiveTransport(), self.authorizes(publication), publication.payload.count <= MqttRouteProtocol.packetBytes,
               self.pendingPacketPublishes.count + self.inFlightPublishes.count < 4_096,
               self.pendingPacketPublishes.reduce(0, { $0 + $1.payload.count }) +
@@ -363,6 +368,66 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
         continuation.resume(returning: submitted ? .published : .queued)
       }
     }
+  }
+
+  func publishTransientControl(topic: String, payload: Data, link: ServerLink) async -> MqttPublishResult {
+    await withCheckedContinuation { continuation in
+      queue.async {
+        self.checkTransportOnDemand()
+        let receiveTopics = link.routes.receiveWindow
+        let current: () -> Bool = { [weak self] in
+          self?.serverLinks.contains { $0.paired && $0.desktopId == link.desktopId &&
+            $0.desktopFingerprint == link.desktopFingerprint &&
+            $0.routes.clientRouteId == link.routes.clientRouteId && $0.routes.linkSecret == link.routes.linkSecret &&
+            $0.routes.receiveWindow == receiveTopics && $0.routes.sendWindow.contains(topic) } == true
+        }
+        guard link.paired, current(), self.hasLiveTransport() else {
+          continuation.resume(returning: .failed)
+          return
+        }
+        var gate = MqttPathPublication(topic: topic, payload: Data(), generation: self.connectionGeneration,
+          receiveTopics: receiveTopics, secretFingerprint: MqttRouteProtocol.digest(Data(link.routes.linkSecret.utf8)),
+          configurationID: self.configurationID, authorized: current)
+        if payload.count <= GalaxySSIMqttWireChunking.defaultDirectLimitBytes {
+          guard let sealed = try? GalaxySSILinkProtocol.sealWirePacket(payload, secret: link.routes.linkSecret),
+                let bytes = try? MqttDeliveryDispatch.packetBytes(topic: topic, payloadBytes: sealed.count) else {
+            continuation.resume(returning: .failed)
+            return
+          }
+          gate.payload = sealed
+          gate.transientPriority = MqttTransientControlPolicy.traffic(packetBytes: bytes) == .control
+          continuation.resume(returning: self.sendSealedTransient(gate))
+          return
+        }
+        // Large fragmented replies keep the existing single-path packet format.
+        var submitted = false
+        let accepted = self.authorizes(gate) && self.sendWirePayload(topic: topic, payload: payload,
+          secret: link.routes.linkSecret, pathGate: gate, trackPeerReceipt: false, physicallySubmitted: { submitted = $0 })
+        continuation.resume(returning: accepted ? (submitted ? .published : .queued) : .failed)
+      }
+    }
+  }
+
+  private func sendSealedTransient(_ publication: MqttPathPublication) -> MqttPublishResult {
+    guard let priority = publication.transientPriority, publication.durableMessageID.isEmpty,
+          hasLiveTransport(), authorizes(publication),
+          (try? MqttDeliveryDispatch.packetBytes(topic: publication.topic, payloadBytes: publication.payload.count)) != nil,
+          mqttInflightPacketIds.count < Self.maximumMqttInflight + (priority ? MqttTransientControlPolicy.reservedPackets : 0)
+    else { return .failed }
+    let id = UUID().uuidString
+    let packet = PendingPublish(topic: publication.topic, payload: publication.payload, transferId: nil,
+      relationshipBound: true, brokerAckTimeoutSeconds: MqttBrokerAckTimeoutPolicy.timeoutSeconds(wirePayloadBytes: publication.payload.count),
+      attemptId: id, logicalMessageId: "", durableMessageId: "", enqueuedAtMillis: Self.nowMillis(),
+      pathGate: publication, pathCompletion: publication.transientCompleted.map(MqttPhysicalCompletion.init), transientPriority: priority)
+    pendingPacketPublishes.append(packet)
+    pumpPendingPublishes()
+    guard inFlightPublishes.values.contains(where: { $0.attemptId == id }) else {
+      pendingPacketPublishes.removeAll { $0.attemptId == id }
+      finishPhysical(packet, acknowledged: false)
+      return .failed
+    }
+    scheduleBrokerAckWatchdog()
+    return .published
   }
 
   func publishDurable(
@@ -575,11 +640,12 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     brokerAcknowledged: (() -> Void)? = nil,
     durableBrokerAcknowledged: ((@escaping () -> Void) -> Void)? = nil,
     pathGate: MqttPathPublication? = nil,
+    trackPeerReceipt: Bool = true,
     admissionDeferred: (() -> Void)? = nil,
     physicallySubmitted: ((Bool) -> Void)? = nil
   ) -> Bool {
     let wirePayload = String(decoding: payload, as: UTF8.self)
-    let logicalMessageId = Self.logicalMessageId(payload)
+    let logicalMessageId = trackPeerReceipt ? Self.logicalMessageId(payload) : ""
     let enqueuedAtMillis = Self.nowMillis()
     guard let packets = try? GalaxySSIMqttWireChunking.encode(wirePayload: wirePayload) else {
       return false
@@ -644,8 +710,11 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
       if invalid { finishPhysical(pending, acknowledged: false) }
       return invalid
     }
-    while mqttInflightPacketIds.count < Self.maximumMqttInflight {
-      guard let index = pendingPacketPublishes.firstIndex(where: { canSend($0) }) else {
+    while mqttInflightPacketIds.count < Self.maximumMqttInflight + MqttTransientControlPolicy.reservedPackets {
+      let priority = pendingPacketPublishes.firstIndex(where: { $0.transientPriority && canSend($0) })
+      let ordinary = mqttInflightPacketIds.count < Self.maximumMqttInflight
+        ? pendingPacketPublishes.firstIndex(where: { canSend($0) }) : nil
+      guard let index = priority ?? ordinary else {
         break
       }
       let pending = pendingPacketPublishes.remove(at: index)

@@ -170,6 +170,13 @@ final class MqttPeerRouteSession {
     !verifiedGenerations(readyGenerations).isEmpty
   }
 
+  func publicationEpoch() -> String? {
+    lock.lock()
+    defer { lock.unlock() }
+    guard active, binding.enabled, let local, let remote, local.expiresAt > wall() else { return nil }
+    return local.resumeId + ":" + remote.resumeId
+  }
+
   func verifiedGenerations(_ generations: [String: Int64]) -> [String: Int64] {
     lock.lock()
     defer { lock.unlock() }

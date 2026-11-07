@@ -313,6 +313,30 @@ final class MqttPeerRoutes {
       return recovered
     }
   }
+
+  func publishTransientControl(topic: String, wire: Data, secret: String) async -> MqttPublishResult {
+    let descriptor: (MqttPathPublication, String, [String: Int64], (String, Int64) -> Bool)? = locked {
+      guard let scope = outgoing[topic], let peer = peers[scope], peer.binding.secret == secret else { return nil }
+      guard ready(peer), let epoch = peer.session.publicationEpoch() else { request(scope); return nil }
+      let binding = peer.binding
+      let eligible = peer.session.verifiedGenerations(generations(binding))
+      let configuration = snapshots.mapValues(\.configurationID)
+      guard !eligible.isEmpty, let sealed = try? GalaxySSILinkProtocol.sealWirePacket(wire, secret: secret) else { return nil }
+      let publication = MqttPathPublication(topic: topic, payload: sealed, generation: 0,
+        receiveTopics: binding.receiveTopics, secretFingerprint: binding.secretFingerprint)
+      let fenced: (String, Int64) -> Bool = { [weak self, weak peer] broker, generation in
+        guard let self, let peer else { return false }
+        return self.locked {
+          self.current(peer, binding: binding) && peer.session.publicationEpoch() == epoch &&
+            self.snapshots[broker]?.configurationID == configuration[broker] &&
+            peer.session.verifiedGenerations(self.generations(binding))[broker] == generation
+        }
+      }
+      return (publication, scope, eligible, fenced)
+    }
+    guard let (publication, scope, eligible, fenced) = descriptor else { return .failed }
+    return await pool.publishTransientControl(publication, peer: scope, eligible: eligible, now: now, authorized: fenced)
+  }
   func blockedReason(topic: String) -> String {
     locked {
       guard let scope = outgoing[topic], let peer = peers[scope] else { return "missing_binding" }

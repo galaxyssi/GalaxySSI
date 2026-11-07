@@ -107,6 +107,32 @@ final class GalaxySSIMqttBrokerPool {
     return result
   }
 
+  func publishTransientControl(_ sealed: MqttPathPublication, peer: String, eligible: [String: Int64],
+                               now: () -> Int64, authorized: @escaping (String, Int64) -> Bool) async -> MqttPublishResult {
+    guard let bytes = try? MqttDeliveryDispatch.packetBytes(topic: sealed.topic, payloadBytes: sealed.payload.count) else { return .failed }
+    let traffic = MqttTransientControlPolicy.traffic(packetBytes: bytes)
+    let digest = MqttRouteProtocol.digest(sealed.payload)
+    let planned = policy.plan(peer: peer, messageID: digest, traffic: traffic, wireBytes: bytes,
+      receiveTopics: sealed.receiveTopics, now: now(), eligible: eligible).filter { $0.delayMillis == 0 }
+    var result: MqttPublishResult = .failed
+    for path in (traffic == .control ? planned : Array(planned.prefix(1))) {
+      guard authorized(path.brokerID, path.generation) else { continue }
+      let attempt = UUID().uuidString
+      guard policy.reserve(attemptID: attempt, attempt: .init(peer: peer, messageID: digest, contentHash: digest,
+        brokerID: path.brokerID, generation: path.generation, wireBytes: bytes, traffic: traffic, startedAt: now()))
+      else { continue }
+      var packet = sealed
+      packet.generation = path.generation
+      packet.transientPriority = traffic == .control
+      packet.authorized = { authorized(path.brokerID, path.generation) }
+      packet.transientCompleted = { [policy] _ in policy.discardAttempt(attempt) }
+      let copy = await publish(packet, brokerID: path.brokerID)
+      if !copy.accepted { policy.discardAttempt(attempt) }
+      else if !result.accepted { result = copy }
+    }
+    return result
+  }
+
   func publishSealed(_ publication: MqttSealedPathPublication) async -> MqttPublishResult {
     let broker = publication.publication.frame.attempt.brokerID
     let selected: (MqttBrokerPathTransport, MqttSealedPathPublication)? = await withCheckedContinuation { continuation in

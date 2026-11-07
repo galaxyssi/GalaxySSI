@@ -2,6 +2,68 @@ import XCTest
 @testable import GalaxySSI
 
 final class MqttPeerRoutesTests: XCTestCase {
+  func testTransientControlUsesConfirmedPathsAndSharedReserveWithoutBusinessReceipts() async throws {
+    let f = try PeerRoutesFixture()
+    await f.start()
+    await f.startSecondPath()
+    let topic = f.binding.sendTopic
+    let wire = Data(#"{"type":"connector_status_request","nonce":"one"}"#.utf8)
+    func send(_ payload: Data? = nil, secret: String? = nil) async -> MqttPublishResult {
+      await f.routes.publishTransientControl(topic: topic, wire: payload ?? wire, secret: secret ?? f.binding.secret)
+    }
+    let unconfirmed = await send()
+    XCTAssertEqual(unconfirmed, .failed)
+    try await f.handshake(twoPaths: true)
+    let wrongSecret = await send(secret: Data(repeating: 9, count: 32).base64URLEncodedString())
+    XCTAssertEqual(wrongSecret, .failed)
+    for index in 0..<10 {
+      XCTAssertTrue(f.pool.policy.reserve(attemptID: "ordinary-\(index)", attempt: .init(peer: "other",
+        messageID: "m-\(index)", contentHash: String(repeating: "f", count: 64), brokerID: "emqx", generation: 1,
+        wireBytes: 128, traffic: .message, startedAt: f.time)))
+    }
+    let admitted = await send()
+    XCTAssertTrue(admitted.accepted)
+    let first = try XCTUnwrap(f.path.publications.last)
+    let second = try XCTUnwrap(f.secondPath.publications.last)
+    XCTAssertEqual(first.transientPriority, true)
+    XCTAssertEqual(second.transientPriority, true)
+    XCTAssertEqual(first.payload, second.payload)
+    XCTAssertEqual(try GalaxySSILinkProtocol.openWirePacket(first.payload, secret: f.binding.secret), wire)
+    XCTAssertTrue(first.durableMessageID.isEmpty && second.durableMessageID.isEmpty)
+    XCTAssertNil(first.brokerAcknowledged)
+    XCTAssertNil(second.brokerAcknowledged)
+    first.transientCompleted?(true)
+    second.transientCompleted?(true)
+    for index in 0..<10 { f.pool.policy.discardAttempt("ordinary-\(index)") }
+    let counts = [f.path.publications.count, f.secondPath.publications.count]
+    let large = await send(Data(repeating: 0x61, count: 80_000))
+    XCTAssertTrue(large.accepted)
+    XCTAssertEqual(f.path.publications.count + f.secondPath.publications.count - counts.reduce(0, +), 1)
+    let ordinary = f.path.publications.count > counts[0] ? f.path.publications.last : f.secondPath.publications.last
+    XCTAssertEqual(ordinary?.transientPriority, false)
+    ordinary?.transientCompleted?(true)
+    f.secondPath.invalidateBeforePublish = true
+    let surviving = await send()
+    XCTAssertTrue(surviving.accepted)
+    f.time += 301_000
+    let expired = await send()
+    XCTAssertEqual(expired, .failed)
+    try f.routes.replace([])
+    XCTAssertFalse(first.authorized?() ?? true)
+    XCTAssertFalse(second.authorized?() ?? true)
+    let revoked = await send()
+    XCTAssertEqual(revoked, .failed)
+  }
+
+  func testTransientControlClassificationDoesNotIncludeDurableActionsOrReceipts() {
+    XCTAssertTrue(MqttTransientControlPolicy.includes("agent_task_result_page_request"))
+    XCTAssertTrue(MqttTransientControlPolicy.includes("collaboration_publish_result"))
+    XCTAssertFalse(MqttTransientControlPolicy.includes("desktop_control_action"))
+    XCTAssertFalse(MqttTransientControlPolicy.includes("agent_task_result_received"))
+    XCTAssertEqual(MqttTransientControlPolicy.traffic(packetBytes: 65_536), .control)
+    XCTAssertEqual(MqttTransientControlPolicy.traffic(packetBytes: 65_537), .message)
+  }
+
   @MainActor
   func testApplicationPeerMappingSeparatesApprovalFromSubscription() throws {
     let (contact, request) = try applicationPeerRecords()
@@ -799,6 +861,7 @@ private final class PeerRoutesFixture {
   let persistence: MqttRouteState
   let pool: GalaxySSIMqttBrokerPool
   let path: FakeMqttBrokerPath
+  let secondPath: FakeMqttBrokerPath
   var binding: MqttPeerBinding
   var time: Int64 = 1000
   var readyEvents: [String] = []
@@ -827,7 +890,9 @@ private final class PeerRoutesFixture {
     self.pool = pool
     let path = created["emqx"]!
     self.path = path
+    secondPath = created["hivemq"]!
     path.currentSecretFingerprint = binding.secretFingerprint
+    secondPath.currentSecretFingerprint = binding.secretFingerprint
     pool.onPathState = { [weak self] in self?.routes.synchronize($0) }
     try routes.replace([binding])
   }
@@ -836,6 +901,11 @@ private final class PeerRoutesFixture {
     pool.connect(.init(clientID: "routes", serverLinks: [], phoneRoutes: [], rendezvousSecrets: [:], rendezvousExpirations: [:]))
     _ = await pool.readyGenerations(for: binding.receiveTopics)
     await emit(topics: binding.receiveTopics)
+  }
+
+  func startSecondPath() async {
+    secondPath.emit(.init(brokerID: "hivemq", generation: 1, connected: true, subscriptions: binding.receiveTopics))
+    _ = await pool.readyGenerations(for: binding.receiveTopics)
   }
   func emit(topics: Set<String>, generation: Int64 = 1) async {
     snapshot.generation = generation
@@ -850,21 +920,27 @@ private final class PeerRoutesFixture {
       secretFingerprint: binding.secretFingerprint, payload: try GalaxySSILinkProtocol.jsonData(payload),
       configurationID: snapshot.configurationID)
   }
-  func remote() -> MqttRouteAdvertisement {
+  func remote(twoPaths: Bool = false) -> MqttRouteAdvertisement {
     MqttRouteAdvertisement(sender: binding.receiver, receiver: binding.sender, epoch: 2000,
       resumeId: String(repeating: "c", count: 32), issuedAt: time, expiresAt: time + 300_000,
-      receiveBrokers: ["emqx"], packetBytes: 1_048_576)
+      receiveBrokers: twoPaths ? ["emqx", "hivemq"] : ["emqx"], packetBytes: 1_048_576)
   }
   func local() throws -> MqttRouteAdvertisement {
     let packet = try XCTUnwrap(path.publications.last)
     let object = try XCTUnwrap(JSONSerialization.jsonObject(with: packet.payload) as? [String: Any])
     return try MqttRouteAdvertisement.parseVerified(object, sender: binding.sender, receiver: binding.receiver, now: time)
   }
-  func handshake() async throws {
+  func handshake(twoPaths: Bool = false) async throws {
     await routes.maintenance()
     let ours = try local()
-    _ = try await routes.receive(ingress(["type": "link_resume_ack", "advertisement": remote().wire(),
-      "acknowledged_route_epoch": ours.epoch, "acknowledged_resume_id": ours.resumeId, "acknowledged_digest": try ours.digest()]))
+    let packet = try ingress(["type": "link_resume_ack", "advertisement": remote(twoPaths: twoPaths).wire(),
+      "acknowledged_route_epoch": ours.epoch, "acknowledged_resume_id": ours.resumeId, "acknowledged_digest": try ours.digest()])
+    _ = try await routes.receive(packet)
+    if twoPaths {
+      var second = packet
+      second.brokerID = "hivemq"
+      _ = try await routes.receive(second)
+    }
   }
   func prepare() throws -> MqttDeliveryDispatch.Delivery? {
     try routes.prepareDelivery(topic: binding.sendTopic,

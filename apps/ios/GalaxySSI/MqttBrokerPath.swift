@@ -53,6 +53,23 @@ struct MqttPathPublication {
   var brokerAcknowledged: (() -> Void)? = nil
   var configurationID = ""
   var authorized: (() -> Bool)? = nil
+  var transientPriority: Bool? = nil
+  var transientCompleted: ((Bool) -> Void)? = nil
+}
+
+enum MqttTransientControlPolicy {
+  static let reservedPackets = 2
+  private static let types: Set<String> = [
+    "connector_status_request", "agent_task_recovery_request", "agent_task_result_page_request",
+    "evolution_task_list_request", "desktop_control_authorizations_request", "agent_task_evidence_request",
+    "collaboration_recall_result", "collaboration_publish_result", "collaboration_tool_test_result"
+  ]
+
+  static func includes(_ type: String) -> Bool { types.contains(type) }
+
+  static func traffic(packetBytes: Int) -> MqttMultipathPolicy.Traffic {
+    packetBytes <= MqttBrokerAckTimeoutPolicy.smallPacketBytes ? .control : .message
+  }
 }
 
 protocol MqttBrokerPathTransport: AnyObject {
