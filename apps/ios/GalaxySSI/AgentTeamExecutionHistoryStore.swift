@@ -1107,6 +1107,7 @@ final class AgentTeamExecutionHistoryStore {
         var trialAuthors: [String]? = nil
         var numericReplay: AgentMcpJSONObject? = nil
         var testedToolRelease: AgentMcpJSONObject? = nil
+        var workflowComparison: AgentCollaborationExperimentPlanIntake.WorkflowComparison? = nil
         if draft.kind == .acceptanceReview {
           let parents = draft.parents.map { AgentCollaborationDocumentaryAcceptance.Reference(
             objectId: $0.objectId, revision: $0.revision, sha256: $0.sha256) }
@@ -1120,10 +1121,18 @@ final class AgentTeamExecutionHistoryStore {
         } else if draft.kind == .workflowMethod {
           guard references.isEmpty, draft.objectId?.isBlank != false, draft.baseRevision == 0,
                 let method = draft.body["workflow_method"]?.objectValue,
-                method["previous_method"] == nil, method["feedback"] == nil,
                 AgentCollaborationWorkflowIntake.validates(method) else {
             throw AgentTeamHistoryDatabase.Failure.corrupt
           }
+          let valid = try AgentCollaborationWorkflowIntake.validatesLineage(method, parents: draft.parents) { ref in
+            guard !revisedInBatch.contains(ref.objectId),
+                  let saved = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                    conversationId: conversationId, key: "object:" + ref.objectId),
+                  saved.reference == ref, saved.turnId != turnId || (saved.runId == runId && saved.authorId == memberId)
+            else { return nil }
+            return saved
+          }
+          guard valid else { throw AgentTeamHistoryDatabase.Failure.stale }
         } else if draft.kind == .executableTool || draft.kind == .toolTestPlan {
           guard references.isEmpty, draft.objectId?.isBlank != false, draft.baseRevision == 0,
                 let spec = draft.body[draft.kind.rawValue]?.objectValue else {
@@ -1282,7 +1291,8 @@ final class AgentTeamExecutionHistoryStore {
                   record.turnId != turnId || (record.runId == runId && record.authorId == memberId) else { return nil }
             return record
           }
-          guard try AgentCollaborationExperimentPlanIntake.validates(draft, current: current)
+          guard try AgentCollaborationExperimentPlanIntake.validates(draft,
+            freezeComparison: { workflowComparison = $0 }, current: current)
           else { throw AgentTeamHistoryDatabase.Failure.stale }
           if let ref = AgentCollaborationExperimentPlanIntake.reference(draft.body["experiment_plan"]?.objectValue?["retention_suite"]) {
             retentionBank = try current(ref)?.retentionBank
@@ -1470,6 +1480,7 @@ final class AgentTeamExecutionHistoryStore {
             ? AgentControlPlaneClock.nowMillis() : nil,
           measuredCases: measuredCases, trialAuthors: trialAuthors, numericReplay: numericReplay,
           testedToolRelease: testedToolRelease)
+        revision.workflowComparison = workflowComparison
         let bytes = try encoder.encode(revision)
         // Reserve space for the SHA-256 field populated after the digest.
         guard bytes.count <= revision.storageBytesLimit - 64 else { throw AgentTeamHistoryDatabase.Failure.corrupt }

@@ -177,6 +177,10 @@ enum AgentCollaborationRuleTopics {
     falsifier, dimensions, roles, inputs and steps. Steps declare id, role, stage, assignment, depends_on, dependency_policy,
     independent_review and optional review_targets. Dependencies must be acyclic, review targets must be dependencies, and
     the reviewed role must differ from the reviewer. Steps cannot override tools, models or permissions.
+    Publish a new method with previous_method and exact feedback parents; keep the same domain.
+    For comparison, link exact workflow_method parents from both innovations. Register experiment_plan.workflow_comparison
+    with dataset, controlled_conditions, quality_oracle, cost_accounting and selection_bias. Include a quality regression case.
+    Each measurement must identify its actual variant's workflow_sha256 and the registered dataset_sha256.
     """)
   ]
 

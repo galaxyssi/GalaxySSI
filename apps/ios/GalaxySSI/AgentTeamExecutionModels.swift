@@ -842,11 +842,51 @@ enum AgentCollaborationForecastIntake {
 }
 
 enum AgentCollaborationExperimentPlanIntake {
+  struct WorkflowComparison: Codable, Equatable {
+    let baseline: AgentCollaborationResearchReference
+    let candidate: AgentCollaborationResearchReference
+    let dataset: AgentCollaborationResearchReference
+
+    func matches(_ sample: AgentMcpJSONObject) -> Bool {
+      let method = sample.string("variant") == "baseline" ? baseline : candidate
+      return sample["workflow_sha256"] == .string(method.sha256) && sample["dataset_sha256"] == .string(dataset.sha256)
+    }
+  }
+
+  private static func bindWorkflowComparison(
+    _ spec: AgentMcpJSONObject, draft: AgentCollaborationResearchDraft,
+    baseline: AgentCollaborationResearchRevision, candidate: AgentCollaborationResearchRevision,
+    current: (AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision?
+  ) rethrows -> WorkflowComparison? {
+    guard baseline.draft.kind == .innovation, candidate.draft.kind == .innovation,
+          let old = reference(baseline.draft.body["innovation"]?.objectValue?["workflow_method"]),
+          let next = reference(candidate.draft.body["innovation"]?.objectValue?["workflow_method"]),
+          old != next, baseline.draft.parents.contains(old), candidate.draft.parents.contains(next),
+          let savedOld = try current(old), savedOld.reference == old, savedOld.draft.kind == .workflowMethod,
+          let savedNext = try current(next), savedNext.reference == next, savedNext.draft.kind == .workflowMethod,
+          let oldMethod = savedOld.draft.body["workflow_method"]?.objectValue,
+          let nextMethod = savedNext.draft.body["workflow_method"]?.objectValue,
+          let domain = oldMethod["domain"]?.strictStringValue, !domain.isBlank, nextMethod["domain"] == .string(domain),
+          let comparison = spec["workflow_comparison"]?.objectValue,
+          Set(comparison.keys) == ["dataset", "controlled_conditions", "quality_oracle", "cost_accounting", "selection_bias"],
+          hasText(comparison, ["controlled_conditions", "quality_oracle", "cost_accounting", "selection_bias"]),
+          let dataset = reference(comparison["dataset"]), draft.parents.contains(dataset),
+          let savedDataset = try current(dataset), savedDataset.reference == dataset, savedDataset.draft.kind == .artifact,
+          let cases = spec["cases"]?.arrayValue,
+          cases.contains(where: { $0.objectValue?["purpose"] == .string("regression") }),
+          cases.allSatisfy({ value in
+            guard let item = value.objectValue else { return false }
+            return item["dataset"] == nil || reference(item["dataset"]) == dataset
+          }) else { return nil }
+    return WorkflowComparison(baseline: old, candidate: next, dataset: dataset)
+  }
+
   static func validates(_ draft: AgentCollaborationResearchDraft,
+                        freezeComparison: (WorkflowComparison) -> Void = { _ in },
                         current: (AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision?) rethrows -> Bool {
     guard draft.kind == .experimentPlan, draft.objectId?.isBlank != false, draft.baseRevision == 0,
           let spec = draft.body["experiment_plan"]?.objectValue,
-          ["transfer_study", "team_comparison", "workflow_comparison"].allSatisfy({ spec[$0] == nil }),
+          ["transfer_study", "team_comparison"].allSatisfy({ spec[$0] == nil }),
           hasText(spec, ["method", "environment", "budget_unit", "prediction_id"]),
           let pointer = spec["report_pointer"]?.stringValue, pointer.isEmpty || pointer.hasPrefix("/"),
           let limit = number(spec["budget_limit"]), limit > 0,
@@ -872,6 +912,13 @@ enum AgentCollaborationExperimentPlanIntake {
         guard let dataset = reference(item["dataset"]), draft.parents.contains(dataset),
               try current(dataset)?.draft.kind == .artifact else { return false }
       }
+    }
+    if spec["workflow_comparison"] != nil ||
+        savedIdea.draft.body["innovation"]?.objectValue?["workflow_method"] != nil ||
+        savedBaseline.draft.body["innovation"]?.objectValue?["workflow_method"] != nil {
+      guard let binding = try bindWorkflowComparison(spec, draft: draft, baseline: savedBaseline,
+        candidate: savedIdea, current: current) else { return false }
+      freezeComparison(binding)
     }
     return true
   }
@@ -924,6 +971,7 @@ enum AgentCollaborationExperimentPlanIntake {
     guard Set(protected.map(\.id)).count == protected.count else { return nil }
     let anchors = Dictionary(uniqueKeysWithValues: protected.map { ($0.id, $0) })
     let definitions = Dictionary(uniqueKeysWithValues: cases.compactMap(\.objectValue).map { ($0.string("id"), $0) })
+    guard (spec["workflow_comparison"] == nil) == (plan.workflowComparison == nil) else { return nil }
     struct Sample: Hashable { var variant: String; var repetition: Int64 }
     var values: [String: [Sample: Double]] = [:]
     for report in reports {
@@ -937,6 +985,7 @@ enum AgentCollaborationExperimentPlanIntake {
               ["baseline", "candidate"].contains(sample.string("variant")),
               sample.string("variant_sha256") == (sample.string("variant") == "baseline" ? baseline.sha256 : idea.sha256),
               sample.string("metric") == item.string("metric"),
+              plan.workflowComparison?.matches(sample) != false,
               item["dataset"] == nil || sample.string("dataset_sha256") == reference(item["dataset"])?.sha256,
               case .int(let repeatIndex)? = sample["repetition"], repeatIndex > 0,
               case .int(let count)? = item["repetitions"], repeatIndex <= count,
@@ -997,6 +1046,28 @@ struct AgentCollaborationMeasuredCase: Codable, Equatable {
 }
 
 enum AgentCollaborationWorkflowIntake {
+  static func validatesLineage(
+    _ method: AgentMcpJSONObject, parents: [AgentCollaborationResearchReference],
+    current: (AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision?
+  ) rethrows -> Bool {
+    guard method["previous_method"] != nil else { return method["feedback"] == nil }
+    let reference = AgentCollaborationExperimentPlanIntake.reference
+    guard let prior = reference(method["previous_method"]), parents.contains(prior),
+          let saved = try current(prior), saved.reference == prior, saved.draft.kind == .workflowMethod,
+          let domain = method["domain"]?.strictStringValue, !domain.isBlank,
+          saved.draft.body["workflow_method"]?.objectValue?["domain"] == .string(domain),
+          let feedback = method["feedback"]?.arrayValue, (1...32).contains(feedback.count)
+    else { return false }
+    var seen = Set<String>()
+    for entry in feedback {
+      guard let exact = reference(entry), exact != prior, seen.insert(exact.objectId).inserted, parents.contains(exact),
+            let record = try current(exact), record.reference == exact,
+            [.artifact, .experimentResult, .failureExperience, .predictionOutcome].contains(record.draft.kind)
+      else { return false }
+    }
+    return true
+  }
+
   static func validates(_ method: AgentMcpJSONObject) -> Bool {
     guard ["purpose", "domain", "bottleneck", "change_rationale", "applies_when", "avoid_when", "risks",
            "expected_gain", "falsifier"].allSatisfy({ method[$0]?.stringValue?.isBlank == false }),
@@ -1090,6 +1161,7 @@ struct AgentCollaborationResearchRevision: Codable {
   var trialAuthors: [String]? = nil
   var numericReplay: AgentMcpJSONObject? = nil
   var testedToolRelease: AgentMcpJSONObject? = nil
+  var workflowComparison: AgentCollaborationExperimentPlanIntake.WorkflowComparison? = nil
 
   var storageBytesLimit: Int {
     draft.kind == .numericModelTrial && numericReplay != nil

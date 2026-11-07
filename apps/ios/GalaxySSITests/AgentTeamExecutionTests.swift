@@ -814,6 +814,78 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(try reopened.committedResearchRevisions(scope: scope)?.count, 1)
   }
 
+  func testControlledWorkflowComparisonRejectsMismatchedVersionsAndPreservesQualityFailures() throws {
+    typealias Intake = AgentCollaborationExperimentPlanIntake
+    func ref(_ id: String) -> AgentCollaborationResearchReference { .init(objectId: id, revision: 1, sha256: id) }
+    func wire(_ id: String) -> AgentMcpJSONValue {
+      .object(["object_id": .string(id), "revision": .int(1), "sha256": .string(id)])
+    }
+    func record(_ id: String, _ kind: AgentCollaborationResearchDraft.Kind, _ body: AgentMcpJSONObject,
+                parents: [AgentCollaborationResearchReference] = []) -> AgentCollaborationResearchRevision {
+      .init(reference: ref(id), previousHash: nil, runId: "run", turnId: "turn", authorId: "author", sourceId: "source",
+        draft: .init(id: id, objectId: nil, baseRevision: 0, kind: kind, title: id, body: body, parents: parents))
+    }
+    let records = [
+      "dataset": record("dataset", .artifact, [:]),
+      "before": record("before", .workflowMethod, ["workflow_method": .object(["domain": .string("fixture")])]),
+      "after": record("after", .workflowMethod, ["workflow_method": .object(["domain": .string("fixture")])]),
+      "baseline": record("baseline", .innovation,
+        ["innovation": .object(["workflow_method": wire("before")])], parents: [ref("before")]),
+      "candidate": record("candidate", .innovation, ["innovation": .object([
+        "workflow_method": wire("after"), "predictions": .array([.object(["id": .string("prediction")])])
+      ])], parents: [ref("after")])
+    ]
+    func exact(_ reference: AgentCollaborationResearchReference) -> AgentCollaborationResearchRevision? {
+      records[reference.objectId].flatMap { $0.reference == reference ? $0 : nil }
+    }
+    func planCase(_ id: String, purpose: String, direction: String) -> AgentMcpJSONValue {
+      .object(["id": .string(id), "purpose": .string(purpose), "metric": .string(id),
+        "direction": .string(direction), "prediction": .string("Check"),
+        "repetitions": .int(1), "minimum_gain": .int(0), "tolerance": .int(0), "dataset": wire("dataset")])
+    }
+    var spec: AgentMcpJSONObject = [
+      "innovation": wire("candidate"), "baseline": wire("baseline"), "method": .string("A/B"),
+      "environment": .string("fixture"), "budget_unit": .string("calls"), "budget_limit": .int(1),
+      "prediction_id": .string("prediction"), "report_pointer": .string(""),
+      "source": .object(["origin": .string("ios_cloud_tool"), "tool": .string("fixture_measure")]),
+      "cases": .array([planCase("time", purpose: "target", direction: "minimize"),
+                       planCase("quality", purpose: "regression", direction: "maximize")])
+    ]
+    func plan(_ spec: AgentMcpJSONObject) -> AgentCollaborationResearchRevision {
+      record("plan", .experimentPlan, ["experiment_plan": .object(spec)],
+        parents: [ref("baseline"), ref("candidate"), ref("dataset")])
+    }
+    XCTAssertFalse(Intake.validates(plan(spec).draft, current: exact))
+    spec["workflow_comparison"] = .object(["dataset": wire("dataset"), "controlled_conditions": .string("Same inputs"),
+      "quality_oracle": .string("Exact expected results"), "cost_accounting": .string("Calls"), "selection_bias": .string("Fixed cases")])
+    var registered = plan(spec)
+    var comparison: Intake.WorkflowComparison?
+    XCTAssertTrue(Intake.validates(registered.draft, freezeComparison: { comparison = $0 }, current: exact))
+    registered.workflowComparison = try XCTUnwrap(comparison)
+    func sample(_ id: String, variant: String, score: Int64, wrong: Bool = false) -> AgentMcpJSONValue {
+      let baseline = variant == "baseline"
+      return .object(["case_id": .string(id), "metric": .string(id), "variant": .string(variant),
+        "variant_sha256": .string(variant), "workflow_sha256": .string(wrong || baseline ? "before" : "after"),
+        "dataset_sha256": .string("dataset"), "value": .int(score), "repetition": .int(1), "budget_used": .int(1)])
+    }
+    var report: AgentMcpJSONObject = ["format": .string("galaxyssi.experiment-measurements.v1"),
+      "plan_sha256": .string("plan"), "environment": .string("fixture"), "budget_unit": .string("calls"),
+      "measurements": .array([sample("time", variant: "baseline", score: 4), sample("time", variant: "candidate", score: 2),
+        sample("quality", variant: "baseline", score: 5), sample("quality", variant: "candidate", score: 4)])]
+    let measured = try XCTUnwrap(Intake.measure([report], plan: registered))
+    XCTAssertEqual(measured.first { $0.id == "time" }?.state, "passed")
+    XCTAssertEqual(measured.first { $0.id == "quality" }?.state, "not_met")
+    XCTAssertFalse(AgentCollaborationMeasuredCase.supportsRetention(measured))
+    var samples = try XCTUnwrap(report["measurements"]?.arrayValue)
+    samples[1] = sample("time", variant: "candidate", score: 2, wrong: true)
+    report["measurements"] = .array(samples)
+    XCTAssertNil(Intake.measure([report], plan: registered))
+    let revision: AgentMcpJSONObject = ["domain": .string("fixture"), "previous_method": wire("before"),
+      "feedback": .array([wire("dataset")])]
+    XCTAssertTrue(AgentCollaborationWorkflowIntake.validatesLineage(revision, parents: [ref("before"), ref("dataset")], current: exact))
+    XCTAssertFalse(AgentCollaborationWorkflowIntake.validatesLineage(revision, parents: [ref("before")], current: exact))
+  }
+
   func testExperimentRegistrationRequiresMeasurableTargetAndUniqueCases() {
     var item: AgentMcpJSONObject = ["id": .string("target"), "metric": .string("accuracy"),
       "prediction": .string("Improves"), "purpose": .string("target"), "direction": .string("maximize"),
