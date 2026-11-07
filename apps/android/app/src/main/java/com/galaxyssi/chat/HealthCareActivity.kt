@@ -146,6 +146,10 @@ class HealthCareActivity : Activity() {
         if (value.metric == HealthMetric.GLUCOSE && value.assessment.record != null) {
             ui.add(content, ui.command(R.string.health_care_context) { context(value) }.apply { tag = "health-care-context" }, 12)
         }
+        HealthCareComparisonPresentation.details(this, value)?.let { comparison ->
+            heading(content, R.string.health_care_comparison_title)
+            ui.add(content, ui.text(comparison, 15f).apply { tag = "health-care-comparison" }, 8)
+        }
         heading(content, R.string.health_care_evidence)
         basis(content, R.string.health_care_reference, value.assessment.reportReference.ifBlank { getString(R.string.health_care_reference_missing) })
         basis(content, R.string.health_care_guideline, value.assessment.guideline?.let { "${it.title}\n${it.applicability}\n${it.statement}" }

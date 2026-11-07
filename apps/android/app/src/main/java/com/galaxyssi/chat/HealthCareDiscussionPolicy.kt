@@ -44,8 +44,12 @@ internal object HealthCareDiscussionPolicy {
 
     fun snapshot(value: HealthCareConcern): String = JSONObject()
         .put("metric", value.metric.name).put("revision", value.revision).put("stage", value.stage.name)
-        .put("assessment", value.assessment.json()).put("confirmed_context", value.context?.json() ?: JSONObject.NULL)
+        .put("assessment", value.assessment.json().apply {
+            remove("comparison"); if (value.assessment.comparison != null) remove("sample")
+            else value.assessment.sample?.let { put("sample", it.modelJson()) }
+        }).put("confirmed_context", value.context?.json() ?: JSONObject.NULL)
         .put("individual_target", value.target?.json() ?: JSONObject.NULL)
+        .put("result_comparison", HealthCareComparisonPolicy.handoff(value.assessment, value.context) ?: JSONObject.NULL)
         .put("actions", org.json.JSONArray(value.actions.map { it.json() })).toString(2)
 
     fun prompt(question: String, snapshot: String): String = """
@@ -54,6 +58,13 @@ internal object HealthCareDiscussionPolicy {
         guideline criteria, descriptive personal baseline and an explicitly confirmed individualized target.
         Never infer an ideal value from the midpoint of a reference interval. Check units, specimen, dates,
         fasting state and missing context before interpreting. Do not diagnose from a single measurement.
+        When result_comparison is present, compare the exact before/after records, units, collection conditions,
+        source changes and prior action outcomes. Arithmetic change is not clinical improvement or worsening.
+        A corrected record or changed history is not a new follow-up measurement. Explain any comparability gaps.
+        Determine whether evidence supports improvement, no clear improvement, worsening, or insufficient comparison;
+        state uncertainty instead of forcing a category. Propose the next justified step using applicable sources.
+        One in-range value cannot establish stability, close follow-up or authorize maintenance. Review against an
+        explicitly confirmed individual target when applicable; do not replace it with a report midpoint.
         Use public web research when needed; use generic clinical terms, not identifying patient information.
         Cite authoritative sources with version/date and applicability; do not present an unread or bundled
         source as freshly verified. Explain uncertainty, appropriate next steps and urgent warning signs when

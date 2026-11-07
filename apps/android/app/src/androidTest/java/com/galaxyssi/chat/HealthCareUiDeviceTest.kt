@@ -37,9 +37,14 @@ class HealthCareUiDeviceTest {
     private fun seed(names: HealthOverviewDatabases) {
         HealthRecordStore(context, names.records).use {
             it.save(HealthDraft(HealthMetric.GLUCOSE, mapOf("glucose" to "6.3"), "mmol/L",
-                System.currentTimeMillis() - 1000, reference = "4-6"))
+                System.currentTimeMillis() - 86_400_000, reference = "4-6"))
         }
         HealthCareStore(context, names.care).use { it.configure(true, "") }
+        HealthCareEngine.evaluate(context, names)
+        HealthRecordStore(context, names.records).use {
+            it.save(HealthDraft(HealthMetric.GLUCOSE, mapOf("glucose" to "5.4"), "mmol/L",
+                System.currentTimeMillis() - 1000, reference = "4-6"))
+        }
         HealthCareEngine.evaluate(context, names)
     }
     private fun clean(names: HealthOverviewDatabases) {
@@ -73,6 +78,9 @@ class HealthCareUiDeviceTest {
                 scenario.onActivity { activity ->
                     val labels = views(activity.window.decorView).filterIsInstance<TextView>().map { it.text.toString() }
                     assertNotNull(find(activity, "health-care-discuss"))
+                    val comparison = (find(activity, "health-care-comparison") as TextView).text.toString()
+                    assertTrue(comparison.contains("6.3")); assertTrue(comparison.contains("5.4"))
+                    assertTrue(comparison.contains(activity.getString(R.string.health_care_comparison_not_clinical)))
                     listOf(R.string.health_care_reference, R.string.health_care_guideline, R.string.health_care_baseline,
                         R.string.health_care_target, R.string.health_care_no_target).forEach { assertTrue(labels.contains(activity.getString(it))) }
                 }
@@ -117,6 +125,8 @@ class HealthCareUiDeviceTest {
                 }
                 await(scenario) { find(it, "agent-health-care-concern") != null }
                 scenario.onActivity { activity ->
+                    val label = views(find(activity, "agent-health-care-concern")!!).filterIsInstance<TextView>().joinToString { it.text.toString() }
+                    assertTrue(label.contains("6.3")); assertTrue(label.contains("5.4"))
                     activity.healthCareSurface!!.showForAgent(false)
                     assertNull(find(activity, "agent-health-care-concern"))
                     activity.healthCareSurface!!.showForAgent(true)
