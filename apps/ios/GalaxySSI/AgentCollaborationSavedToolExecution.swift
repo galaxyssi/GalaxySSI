@@ -172,7 +172,15 @@ enum AgentCollaborationSavedToolExecution {
       guard var record = current, record.state == .running || record.state == .cancelling else {
         return Outcome(record: current)
       }
-      record.state = .finished
+      let code = result["error"]?.objectValue?["code"]?.stringValue
+      switch code {
+      case "runtime_execution_cancelled", "cancelled":
+        record.state = .cancelled
+      case "runtime_cancellation_unconfirmed", "runtime_execution_outcome_unknown", "effect_outcome_unknown":
+        record.state = .interrupted
+      default:
+        record.state = .finished
+      }
       record.updatedAt = max(record.updatedAt, now)
       record.result = result
       return Outcome(record: record)

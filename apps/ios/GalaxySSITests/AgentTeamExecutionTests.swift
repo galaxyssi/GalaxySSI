@@ -1111,6 +1111,18 @@ extension GalaxySSIStoreTests {
       scope: scope(), process: "b", now: 11)
     XCTAssertTrue(cancelling.shouldCancel)
     XCTAssertEqual(cancelling.response["status"], .string("cancelling"))
+    let pending = try XCTUnwrap(cancelling.record)
+    let outcomes: [(String, Execution.Record.State)] = [
+      ("runtime_execution_cancelled", .cancelled), ("runtime_cancellation_unconfirmed", .interrupted),
+      ("runtime_execution_outcome_unknown", .interrupted)
+    ]
+    for (code, state) in outcomes {
+      let output: AgentMcpJSONObject = ["error": .object(["code": .string(code)])]
+      let terminal = try Execution.apply(.finish(executionID: "running", result: output),
+        scope: scope(), existing: pending, process: "b", now: 12)
+      XCTAssertEqual(terminal.record?.state, state)
+      XCTAssertEqual(terminal.record?.result, output)
+    }
     let result: AgentMcpJSONObject = ["native_status": .string("cancelled"), "passed": .null]
     _ = try reopened.updateSavedToolExecution(.finish(executionID: "running", result: result), scope: scope(), process: "b", now: 12)
     let restored = try open().updateSavedToolExecution(.request(query("running", "status")), scope: scope(), process: "c", now: 13)
