@@ -64,6 +64,7 @@ internal object HealthCareWork {
 class HealthCareWorker(context: Context, parameters: WorkerParameters) : Worker(context, parameters) {
     override fun doWork(): Result = try {
         HealthCareEngine.evaluate(applicationContext, cancelled = { isStopped })
+        HealthReminderWork.sourceRemindersChanged(applicationContext)
         Result.success()
     } catch (_: HealthCareConflict) {
         Result.retry()

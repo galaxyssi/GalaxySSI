@@ -1,0 +1,18 @@
+<resources>
+    <string name="health_care_followup_title">跟进这项计划</string>
+    <string name="health_care_followup_notice">有一项已确认的健康行动待查看</string>
+    <string name="health_care_followup_time_notice">提醒时间与建议的医学复查窗口分开保存。本功能不提供紧急情况监护。</string>
+    <string name="health_care_followup_schedule">安排或延期提醒</string>
+    <string name="health_care_followup_future_time">请选择未来的提醒时间。</string>
+    <string name="health_care_followup_cancel">取消提醒</string>
+    <string name="health_care_followup_complete">记录行动结果</string>
+    <string name="health_care_followup_outcome_hint">完成了什么？还有哪些需要跟进？</string>
+    <string name="health_care_followup_outcome_notice">记录你报告的行动结果，并进入重新评估；不代表指标已正常，也不能代替检查报告。</string>
+    <string name="health_care_followup_scheduled">已安排提醒：%1$s</string>
+    <string name="health_care_followup_delivered">通知已投递：%1$s · 不代表已读</string>
+    <string name="health_care_followup_cancelled">提醒已取消，重新安排前请核对计划（%1$s）</string>
+    <string name="health_care_followup_in_app">目前仅在 App 内显示，点击提醒设置开启系统通知。</string>
+    <string name="health_care_followup_stale">请先核对最新资料和跟踪授权，再安排提醒。</string>
+    <string name="health_care_followup_confirm_time">在 %1$s 提醒我。免打扰时段、暂停提醒或 Android 后台调度可能延后通知。</string>
+    <string name="health_care_followup_outside">此时间不在建议的复查窗口内，不会改变原有医学建议。</string>
+</resources>

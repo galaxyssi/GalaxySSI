@@ -86,7 +86,7 @@ internal object HealthCarePlanPolicy {
         require(selected.all { id -> plan.actions.any { it.id == id } })
         val accepted = plan.actions.filter { it.id in selected }.map {
             require(it.dueUntil == null || it.dueUntil >= now) { "The suggested review window has already ended" }
-            it.copy(state = HealthCareActionState.CONFIRMED, confirmedAt = now)
+            it.copy(state = HealthCareActionState.CONFIRMED, confirmedAt = now, basis = HealthCareFollowUpPolicy.basis(issue))
         }
         require(issue.actions.none { it.id in selected })
         return issue.copy(actions = issue.actions + accepted, stage = if (accepted.any { it.kind == HealthCareActionKind.RECHECK })

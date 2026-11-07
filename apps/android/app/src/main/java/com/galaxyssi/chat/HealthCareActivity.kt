@@ -28,6 +28,7 @@ class HealthCareActivity : Activity() {
     private val names by lazy { intent.healthNavigationDatabases() }
     private val store by lazy { HealthCareStore(applicationContext, names.care) }
     private val planReview by lazy { HealthCarePlanReview(this, names) }
+    private val actionReview by lazy { HealthCareActionReview(this, names) }
     private lateinit var body: LinearLayout
     private var active = false
     private var generation = 0
@@ -38,7 +39,7 @@ class HealthCareActivity : Activity() {
     private var selected: String? = null
     private var cursor: HealthCareCursor? = null
     private val observer = object : ContentObserver(main) {
-        override fun onChange(selfChange: Boolean) { planReview.clear(); generation++; load() }
+        override fun onChange(selfChange: Boolean) { planReview.clear(); actionReview.clear(); generation++; load() }
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,10 +55,10 @@ class HealthCareActivity : Activity() {
         load()
     }
     override fun onStop() {
-        active = false; generation++; dialog?.dismiss(); dialog = null; planReview.clear(); body.removeAllViews()
+        active = false; generation++; dialog?.dismiss(); dialog = null; planReview.clear(); actionReview.clear(); body.removeAllViews()
         contentResolver.unregisterContentObserver(observer); super.onStop()
     }
-    override fun onDestroy() { planReview.destroy(); worker.execute { store.close() }; worker.shutdown(); super.onDestroy() }
+    override fun onDestroy() { planReview.destroy(); actionReview.destroy(); worker.execute { store.close() }; worker.shutdown(); super.onDestroy() }
     @Deprecated("Uses the existing native health navigation contract")
     override fun onBackPressed() = back()
     private fun back() { if (selected == null) finish() else { selected = null; cursor = null; generation++; load() } }
@@ -168,10 +169,15 @@ class HealthCareActivity : Activity() {
             ui.add(content, ui.text(action.source, 13f, muted = true), 4)
             ui.add(content, ui.text(getString(action.state.titleResource()), 13f, muted = true), 4)
             action.dueFrom?.let { from -> ui.add(content, ui.text("${date(from)} - ${date(action.dueUntil!!)}", 14f), 4) }
+            if (action.state in setOf(HealthCareActionState.CONFIRMED, HealthCareActionState.DONE)) {
+                ui.add(content, ui.profileRow(getString(R.string.health_care_followup_title)) { actionReview.show(value.id, action.id) }
+                    .apply { tag = "health-care-followup-${action.id}" }, 8)
+            }
             if (action.state == HealthCareActionState.PROPOSED) {
                 ui.add(content, ui.command(R.string.health_care_confirm_action) { mutate {
                     store.update(value.id, value.revision, "action_confirmed") { current -> current.copy(actions = current.actions.map {
-                        if (it.id == action.id) it.copy(state = HealthCareActionState.CONFIRMED, confirmedAt = System.currentTimeMillis()) else it
+                        if (it.id == action.id) it.copy(state = HealthCareActionState.CONFIRMED, confirmedAt = System.currentTimeMillis(),
+                            basis = HealthCareFollowUpPolicy.basis(current)) else it
                     }, stage = HealthCareStage.WAITING_RESULTS) }
                 } }, 8)
                 ui.add(content, ui.profileRow(getString(R.string.health_care_decline_action)) { mutate {
