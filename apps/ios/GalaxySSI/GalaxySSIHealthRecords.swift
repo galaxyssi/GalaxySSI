@@ -552,6 +552,7 @@ struct GalaxySSIHealthRecords {
     let credentialDigest = SHA256.hash(data: Data(credential.utf8))
     let destination = GalaxySSIHealthCareDiscussion.destination(contactID: destinationID, model: model, endpoint: endpoint,
       credential: credentialDigest)
+    let history = try allowsHistory ? localCareDiscussionInitialHistory(concern, permission: care, now: now) : nil
     return .init(id: UUID(), owner: owner, threadID: thread.id, priorTurnID: thread.turns.last?.id,
       concernID: id, metric: metric, concernRevision: concern.revision, carePermission: care,
       onlinePermission: online, destinationID: destinationID, destinationDigest: destination,
@@ -559,7 +560,16 @@ struct GalaxySSIHealthRecords {
       question: question, payload: try GalaxySSIHealthCareDiscussion.payload(concern: concern, question: question,
         thread: thread, destination: destination), reviewedAt: now, proposesPlan: proposesPlan,
       comparisonBasis: GalaxySSIHealthCareComparison.discussionBasis(concern),
-      historyVersion: allowsHistory ? concern.historyVersion : nil)
+      historyVersion: allowsHistory ? concern.historyVersion : nil, initialHistory: history)
+  }
+
+  private func localCareDiscussionInitialHistory(_ concern: GalaxySSIHealthCare.Concern, permission: UUID,
+                                                 now: Date) throws -> GalaxySSIHealthCareHistoryTool.Output {
+    guard let version = concern.historyVersion else { throw Failure.stale }
+    let binding = GalaxySSIHealthCareSeries.Binding(concern: concern.id, revision: concern.revision,
+      historyVersion: version, permission: permission)
+    let page = try localCareMeasurementPage(id: concern.id, metric: concern.metric, expected: binding, now: now)
+    return try GalaxySSIHealthCareHistoryTool.output(page, metric: concern.metric, after: nil)
   }
 
   func validateLocalCareDiscussionApproval(_ approval: GalaxySSIHealthCareDiscussion.Approval) throws {
@@ -579,6 +589,10 @@ struct GalaxySSIHealthRecords {
             endpoint: approval.endpoint, credential: approval.credentialDigest) == approval.destinationDigest,
           try GalaxySSIHealthCareDiscussion.payload(concern: concern, question: approval.question, thread: thread,
             destination: approval.destinationDigest) == approval.payload else { throw Failure.stale }
+    if approval.historyVersion != nil {
+      guard try localCareDiscussionInitialHistory(concern, permission: approval.carePermission, now: now) ==
+        approval.initialHistory else { throw Failure.stale }
+    } else if approval.initialHistory != nil { throw Failure.permission }
     if approval.proposesPlan {
       let evidence = approval.evidence
       guard (1...3).contains(evidence.count), Set(evidence.map(\.id)).count == evidence.count,
@@ -607,7 +621,8 @@ struct GalaxySSIHealthRecords {
                                       after: GalaxySSIHealthCareSeries.Cursor?, now: Date = Date()) throws
     -> GalaxySSIHealthCareSeries.Page {
     try validateLocalCareDiscussionTurn(approval, now: now)
-    guard let version = approval.historyVersion else { throw Failure.permission }
+    guard let version = approval.historyVersion, approval.initialHistory?.next != nil, let after
+    else { throw Failure.permission }
     return try localCareMeasurementPage(id: approval.concernID, metric: approval.metric,
       expected: .init(concern: approval.concernID, revision: approval.concernRevision,
         historyVersion: version, permission: approval.carePermission), after: after, now: now)

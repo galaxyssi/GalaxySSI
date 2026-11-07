@@ -8,10 +8,11 @@ import XCTest
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   func testHealthHistoryProviderContinuationsPreserveCallAndRemoveSpentTool() throws {
     typealias Tool = GalaxySSIHealthCareHistoryTool
-    let args = ["input_version": "fixture-version"]
+    let id = UUID()
+    let args: [String: Any] = ["input_version": "fixture-version", "before_time": 42, "before_id": id.uuidString]
     let function = Tool.function
     let openAI: [String: Any] = ["id": "call_1", "type": "function",
-      "function": ["name": function, "arguments": String(decoding: try JSONEncoder().encode(args), as: UTF8.self)]]
+      "function": ["name": function, "arguments": String(decoding: try JSONSerialization.data(withJSONObject: args), as: UTF8.self)]]
     let anthropic: [String: Any] = ["id": "call_1", "type": "tool_use", "name": function, "input": args]
     let gemini: [String: Any] = ["functionCall": ["name": function, "args": args] as [String: Any],
       "thoughtSignature": "fixture-signature"]
@@ -22,7 +23,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     ]
     for (style, reply, channel, resultKey) in cases {
       let call = try XCTUnwrap(Tool.call(JSONSerialization.data(withJSONObject: reply), style: style, proposesPlan: true))
-      XCTAssertNil(try Tool.cursor(call.arguments, version: "fixture-version"))
+      XCTAssertEqual(try Tool.cursor(call.arguments, version: "fixture-version"), .init(beforeTime: 42, beforeID: id))
       XCTAssertThrowsError(try Tool.cursor(call.arguments, version: "stale-version"))
       var body: [String: Any] = [channel: [["role": "user"]]]
       Tool.configure(&body, style: style, proposesPlan: true, historyAvailable: true)
@@ -626,6 +627,10 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let reading = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-300),
       value: 110, notes: "Private note excluded", unitOverride: "mg/dL", referenceInterval: "70 - 99")
     try records.write(reading)
+    for index in 1...30 {
+      try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(Double(-300 - index)),
+        value: 110, unitOverride: "mg/dL", referenceInterval: "70 - 99"))
+    }
     try records.setPrivacy(.localCare, enabled: true)
     try records.reconcileLocalCare(now: now)
     let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
@@ -659,17 +664,26 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     try records.finishLocalCareDiscussionTurn(approved, answer: "Fixture scoped response", now: now)
     XCTAssertTrue(try review().payload.contains("Fixture scoped response"))
     XCTAssertFalse(try review("provider-b").payload.contains("Fixture scoped response"))
+    let history = try review(history: true)
+    let preview = try history.providerPayload()
+    XCTAssertTrue(preview.contains(reading.id.uuidString.lowercased()))
+    XCTAssertFalse(preview.contains(reading.notes))
+    let cursor = try XCTUnwrap(history.initialHistory?.next)
+    XCTAssertThrowsError(try records.readLocalCareDiscussionHistory(history, after: cursor, now: now))
+    try records.beginLocalCareDiscussionTurn(history, now: now)
+    XCTAssertThrowsError(try records.readLocalCareDiscussionHistory(history, after: nil, now: now))
+    let page = try records.readLocalCareDiscussionHistory(history, after: cursor, now: now)
+    XCTAssertEqual(page.binding.historyVersion, history.historyVersion)
+    XCTAssertFalse(page.rows.isEmpty)
+    XCTAssertFalse(page.rows.map(\.id).contains(reading.id))
+    try records.finishLocalCareDiscussionTurn(history, answer: "History-derived private response", now: now)
+    XCTAssertFalse(try review().providerPayload().contains("History-derived private response"))
     let stale = try review(history: true)
     XCTAssertNotNil(stale.historyVersion)
-    XCTAssertFalse(stale.payload.contains(reading.id.uuidString.lowercased()))
-    XCTAssertThrowsError(try records.readLocalCareDiscussionHistory(stale, after: nil, now: now))
     try records.beginLocalCareDiscussionTurn(stale, now: now)
-    let page = try records.readLocalCareDiscussionHistory(stale, after: nil, now: now)
-    XCTAssertEqual(page.binding.historyVersion, stale.historyVersion)
-    XCTAssertEqual(page.rows.map(\.id), [reading.id])
     try records.setHealthOnlinePermission(false)
     try records.setHealthOnlinePermission(true)
-    XCTAssertThrowsError(try records.readLocalCareDiscussionHistory(stale, after: nil, now: now))
+    XCTAssertThrowsError(try records.readLocalCareDiscussionHistory(stale, after: cursor, now: now))
     let updatedApproval = try review()
     try records.setLocalCareContext(concern, applicability: .excluded, now: now)
     XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(updatedApproval, now: now))

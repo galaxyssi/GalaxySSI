@@ -185,7 +185,7 @@
 "galaxyssi.health.care.series_recent" = "最近测量";
 "galaxyssi.health.care.series_changed" = "测量历史或授权已变化。";
 "galaxyssi.health.discussion.allow_history" = "允许此模型读取测量历史";
-"galaxyssi.health.discussion.history_scope" = "仅本次请求：最多读取此关注项的四页测量，每页最多 30 条。";
+"galaxyssi.health.discussion.history_scope" = "仅本次请求：发送此关注项的最近一页测量，另可读取最多四页较早记录，每页最多 30 条。";
 "galaxyssi.health.care.more" = "显示更多";
 "galaxyssi.health.care.remove" = "删除关注项";
 "galaxyssi.health.care.stage.verify" = "核对背景";

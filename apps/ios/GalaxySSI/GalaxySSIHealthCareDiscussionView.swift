@@ -99,7 +99,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
     }
     .onChange(of: store.profile.identityFingerprint) { _ in clearSensitive() }
     .onChange(of: models) { _ in validateVisibleApprovals() }
-    .onChange(of: provider) { _ in approval = nil }
+    .onChange(of: provider) { _ in approval = nil; allowsHistory = false }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) {
       if $0.object as? String == records.owner {
         validateVisibleApprovals()
@@ -115,7 +115,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
               Text(review.endpoint.absoluteString).font(.footnote).textSelection(.enabled)
               if review.proposesPlan { Text(t("request_plan", "Request a draft plan")) }
               if review.historyVersion != nil {
-                Text(t("history_scope", "For this request only: up to four pages of this concern's measurements, 30 per page."))
+                Text(t("history_scope", "For this request only: the recent page and up to four older pages for this concern, 30 measurements per page."))
               }
             }
             Section(t("data", "Data included in this request")) {
@@ -207,6 +207,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
     guard approval?.id == review.id, task == nil, let (contact, key) = currentRoute(review)
     else { approval = nil; failed = true; return }
     approval = nil
+    allowsHistory = false
     let ledger = coordinator.healthDisclosureStore
     do {
       let sentPayload = try review.providerPayload()
@@ -250,8 +251,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
   private func receive(_ review: GalaxySSIHealthCareDiscussion.Approval, request: URLRequest) async throws -> Data {
     typealias Tool = GalaxySSIHealthCareHistoryTool
     var request = request
-    var expected: GalaxySSIHealthCareSeries.Cursor?
-    var canRead = review.historyVersion != nil
+    var expected = review.initialHistory?.next
     var count = 0
     while true {
       try Task.checkCancellation()
@@ -263,14 +263,14 @@ struct GalaxySSIHealthCareDiscussionView: View {
       try records.validateLocalCareDiscussionTurn(review)
       guard let version = review.historyVersion,
             let call = try Tool.call(bytes, style: review.model.apiStyle, proposesPlan: review.proposesPlan) else { return bytes }
-      guard canRead, count < Tool.maximumPages else { throw GalaxySSIHealthRecords.Failure.permission }
+      guard expected != nil, count < Tool.maximumPages else { throw GalaxySSIHealthRecords.Failure.permission }
       let after = try Tool.cursor(call.arguments, version: version)
       guard after == expected else { throw GalaxySSIHealthRecords.Failure.stale }
       let page = try records.readLocalCareDiscussionHistory(review, after: after)
       let output = try Tool.output(page, metric: review.metric, after: after)
       count += 1
       expected = output.next
-      canRead = expected != nil && count < Tool.maximumPages
+      let canRead = expected != nil && count < Tool.maximumPages
       request = try Tool.continuing(request, with: call, output: output, style: review.model.apiStyle,
         proposesPlan: review.proposesPlan, historyAvailable: canRead)
     }
