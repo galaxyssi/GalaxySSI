@@ -226,6 +226,13 @@ struct AgentCollaborationGoalWorkRun: Codable {
     let contactID: String
     let agentID: String
 
+    var recoveryBinding: AgentDesktopReplyBinding? {
+      guard let source = UUID(uuidString: dispatchID), source.uuidString == dispatchID else { return nil }
+      return AgentDesktopReplyBinding(desktopId: desktopID, displayContactId: contactID, sourceId: source,
+        contactId: contactID, agentId: agentID, identity: .init(clientRouteId: routeID,
+          conversationId: owner.conversationId, taskId: dispatchID, turnId: owner.turnId), goalWork: true)
+    }
+
     func matches(_ payload: [String: Any], desktop: String, fingerprint: String, route: String, profile: String) -> Bool {
       let observed = AgentTeamReplyObservation(payload: payload)
       return desktop == desktopID && fingerprint == desktopFingerprint && route == routeID && profile == profileID &&
@@ -250,6 +257,7 @@ struct AgentCollaborationGoalWorkRun: Codable {
   var output: String? = nil
   var outputHash: String? = nil
   var truncated: Bool? = nil
+  var desktopArchiveDigest: String? = nil
 
   func visibleState(now: Int64) -> State {
     guard state == .running, process != Self.processID || now >= startedAt + Self.leaseMillis

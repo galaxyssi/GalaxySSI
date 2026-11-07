@@ -2147,8 +2147,20 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(binding.matches(packet, desktop: "desktop", fingerprint: "fingerprint", route: "route", profile: "profile"))
     let secondOpen = open()
     XCTAssertEqual(try secondOpen.desktopGoalWorkBinding(dispatchID: dispatch.dispatchID, conversationID: team.conversationId), binding)
-    try secondOpen.finishDesktopGoalWork(binding, output: "Original result", now: 22 + AgentCollaborationGoalWorkRun.leaseMillis)
-    try secondOpen.finishDesktopGoalWork(binding, output: "Do not replace", now: 23 + AgentCollaborationGoalWorkRun.leaseMillis)
+    let recovery = try XCTUnwrap(binding.recoveryBinding)
+    XCTAssertTrue(recovery.isValid)
+    XCTAssertEqual(recovery.sourceIdentity, dispatch.dispatchID)
+    var transcriptBinding = recovery
+    transcriptBinding.goalWork = nil
+    XCTAssertNotEqual(recovery.key, transcriptBinding.key)
+    let digest = String(repeating: "a", count: 64)
+    XCTAssertTrue(try secondOpen.finishDesktopGoalWork(binding, output: "Original result",
+      archiveDigest: digest, now: 22 + AgentCollaborationGoalWorkRun.leaseMillis))
+    XCTAssertTrue(try open().finishDesktopGoalWork(binding, output: "Do not replace", archiveDigest: digest))
+    XCTAssertFalse(try secondOpen.finishDesktopGoalWork(binding, output: "Wrong archive",
+      archiveDigest: String(repeating: "b", count: 64)))
+    XCTAssertFalse(try secondOpen.finishDesktopGoalWork(binding, output: "Late inline result"))
+    XCTAssertEqual(try secondOpen.goalWork("desktop", scope: scope(0)).1?.desktopArchiveDigest, digest)
     XCTAssertEqual(try secondOpen.goalWork("desktop", scope: scope(0)).1?.output, "Original result")
     reopened.removeResearchObjects(conversationId: team.conversationId)
     XCTAssertThrowsError(try reopened.publishCollaborationMilestone(first, scope: scope(0)))

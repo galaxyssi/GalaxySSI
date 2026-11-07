@@ -1971,9 +1971,11 @@ final class AgentTeamExecutionHistoryStore {
       conversationId: conversationID, key: Self.desktopGoalWorkKey(dispatchID), revision: 0) }
   }
 
+  @discardableResult
   func finishDesktopGoalWork(_ binding: AgentCollaborationGoalWorkRun.DesktopBinding, output: String?,
-                             now: Int64 = AgentControlPlaneClock.nowMillis()) throws {
-    try access { database in
+                             archiveDigest: String? = nil,
+                             now: Int64 = AgentControlPlaneClock.nowMillis()) throws -> Bool {
+    let committed = try access { database in
       _ = try Self.activeGoalCoordinator(binding.owner, database: database)
       let key = Self.goalWorkKey(binding.workID, scope: binding.owner)
       guard try database.researchRecord(AgentCollaborationGoalWorkRun.DesktopBinding.self,
@@ -1981,10 +1983,13 @@ final class AgentTeamExecutionHistoryStore {
             var run = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
               conversationId: binding.owner.conversationId, key: key, revision: 0),
             run.owner == binding.owner, run.dispatchID == binding.dispatchID else { throw AgentTeamHistoryDatabase.Failure.stale }
-      guard run.state == .running else { return }
+      guard run.state == .running else { return archiveDigest != nil && run.desktopArchiveDigest == archiveDigest }
+      run.desktopArchiveDigest = archiveDigest
       _ = try Self.persistGoalWorkOutcome(&run, key: key, output: output, interrupted: false, now: now, database: database)
+      return true
     }
-    notify(binding.owner.runId)
+    if committed { notify(binding.owner.runId) }
+    return committed
   }
 
   func goalWork(_ workID: String, scope: AgentCollaborationToolEvidenceScope)

@@ -475,6 +475,30 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(recovery.acceptsFinal(item, desktopId: "desktop"))
   }
 
+  func testDesktopGoalWorkRecoveryAcceptsOnlyOriginalGeneration() throws {
+    let name = "desktop-goal-recovery-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let recovery = AgentDesktopReplyRecovery(defaults: defaults, secrets: InMemorySecretStore(),
+      journal: DesktopReplyRecoveryTestJournal())
+    let source = UUID()
+    let binding = AgentDesktopReplyBinding(desktopId: "desktop", displayContactId: "agent",
+      sourceId: source, contactId: "agent", agentId: "codex", identity: .init(clientRouteId: "route",
+        conversationId: "conversation", taskId: source.uuidString, turnId: "turn"), goalWork: true)
+    XCTAssertTrue(recovery.track(binding, now: 1_000))
+    let request = try XCTUnwrap(recovery.request(binding, online: true, now: 1_000))
+    var item: [String: Any] = binding.fields
+    item.merge(["status": "completed", "remote_run_id": "run", "execution_generation": 2,
+      "status_sequence": 4]) { _, new in new }
+    var result: [String: Any] = ["type": "agent_task_recovery_result", "request_id": request["request_id"]!,
+      "client_route_id": "route", "items": [item]]
+    XCTAssertNil(recovery.receive(result, authenticatedDesktopId: "desktop", now: 2_000))
+    item["execution_generation"] = 1
+    result["items"] = [item]
+    XCTAssertNil(recovery.receive(result, authenticatedDesktopId: "foreign", now: 2_000))
+    XCTAssertEqual(recovery.receive(result, authenticatedDesktopId: "desktop", now: 2_000)?.generation, 1)
+  }
+
   func testOrdinaryDesktopBindingKeepsLegacyKeyAlgorithm() throws {
     let binding = desktopReplyJournalBinding()
     let originalValues = [binding.desktopId, binding.displayContactId] + binding.fields.keys.sorted().map { binding.fields[$0]! }
