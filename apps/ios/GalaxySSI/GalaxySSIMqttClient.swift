@@ -2,6 +2,7 @@ import CryptoKit
 import Foundation
 import Network
 import SwiftUI
+import os
 
 enum MqttPublishResult: Equatable {
   case published
@@ -87,6 +88,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   var onAuthenticatedIngress: ((MqttAuthenticatedIngress) -> Void)?
 
   private static let reconnectDelays: [TimeInterval] = [2, 5, 10, 20, 30]
+  private static let admissionLog = Logger(subsystem: "com.galaxyssi.chat.ios", category: "mqtt-admission")
   private static let maximumMqttInflight = 12
   private static let maximumFragmentInflight = 8
   private static let maximumFragmentInflightPerTransfer = 4
@@ -378,7 +380,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
         let current: () -> Bool = { [weak self] in
           self?.serverLinks.contains { $0.paired && $0.desktopId == link.desktopId &&
             $0.desktopFingerprint == link.desktopFingerprint &&
-            $0.routes.clientRouteId == link.routes.clientRouteId && $0.routes.linkSecret == link.routes.linkSecret &&
+              $0.routes == link.routes &&
             $0.routes.receiveWindow == receiveTopics && $0.routes.sendWindow.contains(topic) } == true
         }
         guard link.paired, current(), self.hasLiveTransport() else {
@@ -410,15 +412,26 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
 
   private func sendSealedTransient(_ publication: MqttPathPublication) -> MqttPublishResult {
     guard let priority = publication.transientPriority, publication.durableMessageID.isEmpty,
-          hasLiveTransport(), authorizes(publication),
-          (try? MqttDeliveryDispatch.packetBytes(topic: publication.topic, payloadBytes: publication.payload.count)) != nil,
-          mqttInflightPacketIds.count < Self.maximumMqttInflight + (priority ? MqttTransientControlPolicy.reservedPackets : 0)
-    else { return .failed }
+          (try? MqttDeliveryDispatch.packetBytes(topic: publication.topic, payloadBytes: publication.payload.count)) != nil
+    else {
+      Self.admissionLog.debug("Transient MQTT send deferred: invalid_packet")
+      return .failed
+    }
+    guard hasLiveTransport(), authorizes(publication) else {
+      Self.admissionLog.debug("Transient MQTT send deferred: path_unavailable")
+      return .failed
+    }
+    guard MqttTransientControlPolicy.admits(inflight: mqttInflightPacketIds.count,
+      totalLimit: Self.maximumMqttInflight, priority: priority) else {
+      Self.admissionLog.debug("Transient MQTT send deferred: inflight_packet_limit")
+      return .failed
+    }
     let id = UUID().uuidString
     let packet = PendingPublish(topic: publication.topic, payload: publication.payload, transferId: nil,
       relationshipBound: true, brokerAckTimeoutSeconds: MqttBrokerAckTimeoutPolicy.timeoutSeconds(wirePayloadBytes: publication.payload.count),
       attemptId: id, logicalMessageId: "", durableMessageId: "", enqueuedAtMillis: Self.nowMillis(),
-      pathGate: publication, pathCompletion: publication.transientCompleted.map(MqttPhysicalCompletion.init), transientPriority: priority)
+      brokerAcknowledged: publication.brokerAcknowledged, pathGate: publication,
+      pathCompletion: publication.transientCompleted.map(MqttPhysicalCompletion.init), transientPriority: priority)
     pendingPacketPublishes.append(packet)
     pumpPendingPublishes()
     guard inFlightPublishes.values.contains(where: { $0.attemptId == id }) else {
@@ -475,18 +488,48 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   func publishTransportReceipt(
     topic: String,
     payload: Data,
+    routes: GalaxySSILinkRoutes,
+    desktopId: String?,
     brokerAcknowledged: @escaping () -> Void
   ) async -> MqttPublishResult {
     await withCheckedContinuation { continuation in
       queue.async {
+        self.checkTransportOnDemand()
+        let receiveTopics = routes.receiveWindow
+        let current: () -> Bool = { [weak self] in
+          guard let self, routes.sendWindow.contains(topic), routes.receiveWindow == receiveTopics else { return false }
+          if let desktopId {
+            return self.serverLinks.contains { $0.paired && $0.desktopId == desktopId && $0.routes == routes }
+          }
+          return self.phoneRoutes.contains(routes)
+        }
+        var gate = MqttPathPublication(topic: topic, payload: Data(), generation: self.connectionGeneration,
+          receiveTopics: receiveTopics, secretFingerprint: MqttRouteProtocol.digest(Data(routes.linkSecret.utf8)),
+          brokerAcknowledged: brokerAcknowledged, configurationID: self.configurationID, authorized: current)
+        guard self.hasLiveTransport(), self.authorizes(gate) else {
+          continuation.resume(returning: .failed)
+          return
+        }
+        if payload.count <= GalaxySSIMqttWireChunking.defaultDirectLimitBytes {
+          guard let sealed = try? GalaxySSILinkProtocol.sealWirePacket(payload, secret: routes.linkSecret),
+                let bytes = try? MqttDeliveryDispatch.packetBytes(topic: topic, payloadBytes: sealed.count) else {
+            continuation.resume(returning: .failed)
+            return
+          }
+          gate.payload = sealed
+          gate.transientPriority = MqttTransientControlPolicy.traffic(packetBytes: bytes, receipt: true) == .receipt
+          continuation.resume(returning: self.sendSealedTransient(gate))
+          return
+        }
+        // The receipt journal, not the socket, retries after a route or generation change.
         var submitted = false
-        guard !self.intentionallyDisconnected,
-              let secret = self.relationshipSecret(forSendingTopic: topic),
-              self.sendWirePayload(
+        guard self.sendWirePayload(
                 topic: topic,
                 payload: payload,
-                secret: secret,
+                secret: routes.linkSecret,
                 brokerAcknowledged: brokerAcknowledged,
+                pathGate: gate,
+                trackPeerReceipt: false,
                 physicallySubmitted: { submitted = $0 }
               ) else {
           continuation.resume(returning: .failed)
@@ -710,9 +753,10 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
       if invalid { finishPhysical(pending, acknowledged: false) }
       return invalid
     }
-    while mqttInflightPacketIds.count < Self.maximumMqttInflight + MqttTransientControlPolicy.reservedPackets {
+    while mqttInflightPacketIds.count < Self.maximumMqttInflight {
       let priority = pendingPacketPublishes.firstIndex(where: { $0.transientPriority && canSend($0) })
-      let ordinary = mqttInflightPacketIds.count < Self.maximumMqttInflight
+      let ordinary = MqttTransientControlPolicy.admits(inflight: mqttInflightPacketIds.count,
+        totalLimit: Self.maximumMqttInflight, priority: false)
         ? pendingPacketPublishes.firstIndex(where: { canSend($0) }) : nil
       guard let index = priority ?? ordinary else {
         break

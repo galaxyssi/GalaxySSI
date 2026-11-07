@@ -67,8 +67,13 @@ enum MqttTransientControlPolicy {
 
   static func includes(_ type: String) -> Bool { types.contains(type) }
 
-  static func traffic(packetBytes: Int) -> MqttMultipathPolicy.Traffic {
-    packetBytes <= MqttBrokerAckTimeoutPolicy.smallPacketBytes ? .control : .message
+  static func traffic(packetBytes: Int, receipt: Bool = false) -> MqttMultipathPolicy.Traffic {
+    guard (1...MqttBrokerAckTimeoutPolicy.smallPacketBytes).contains(packetBytes) else { return .message }
+    return receipt ? .receipt : .control
+  }
+
+  static func admits(inflight: Int, totalLimit: Int, priority: Bool) -> Bool {
+    inflight < (priority ? totalLimit : totalLimit - reservedPackets)
   }
 }
 

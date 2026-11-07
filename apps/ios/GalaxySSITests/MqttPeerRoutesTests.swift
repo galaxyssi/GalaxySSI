@@ -62,6 +62,17 @@ final class MqttPeerRoutesTests: XCTestCase {
     XCTAssertFalse(MqttTransientControlPolicy.includes("agent_task_result_received"))
     XCTAssertEqual(MqttTransientControlPolicy.traffic(packetBytes: 65_536), .control)
     XCTAssertEqual(MqttTransientControlPolicy.traffic(packetBytes: 65_537), .message)
+    XCTAssertEqual(MqttTransientControlPolicy.traffic(packetBytes: 65_536, receipt: true), .receipt)
+    XCTAssertEqual(MqttTransientControlPolicy.traffic(packetBytes: 65_537, receipt: true), .message)
+  }
+
+  func testNativeTransientAdmissionSharesTheExistingPacketCeiling() {
+    let policy = MqttTransientControlPolicy.self
+    XCTAssertTrue(policy.admits(inflight: 9, totalLimit: 12, priority: false))
+    XCTAssertFalse(policy.admits(inflight: 10, totalLimit: 12, priority: false))
+    XCTAssertTrue(policy.admits(inflight: 10, totalLimit: 12, priority: true))
+    XCTAssertTrue(policy.admits(inflight: 11, totalLimit: 12, priority: true))
+    XCTAssertFalse(policy.admits(inflight: 12, totalLimit: 12, priority: true))
   }
 
   @MainActor

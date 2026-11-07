@@ -56,7 +56,8 @@ final class MqttBrokerPoolTests: XCTestCase {
     let durable = await client.publishDurable(topic: routes.upTopic, payload: payload, messageId: "later") { _ in
       XCTFail("Stopped transport cannot acknowledge")
     }
-    let receipt = await client.publishTransportReceipt(topic: routes.upTopic, payload: payload) {
+    let receipt = await client.publishTransportReceipt(topic: routes.upTopic, payload: payload,
+      routes: routes, desktopId: nil) {
       XCTFail("Stopped transport cannot acknowledge")
     }
     let pairing = await client.publishPairing(topic: routes.upTopic, secret: secret, payload: payload)
