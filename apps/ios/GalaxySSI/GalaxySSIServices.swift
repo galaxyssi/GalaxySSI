@@ -2726,7 +2726,7 @@ final class MessageCoordinator: ObservableObject {
     guard link.paired, payload.string("client_route_id") == link.routes.clientRouteId,
           !GalaxySSITransportPrivacyPolicy.isLocalOnly(payload),
           payload.string("agent_id") == "codex", payload.string("contract") == contract,
-          publishing || phase == "read", payload["delivery"] == nil,
+          publishing || ["read", "confirm"].contains(phase),
           (1...128).contains(requestId.utf8.count),
           let expiry = AgentTeamReplyObservation.integer(payload["expires_at"]),
           expiry > now, expiry - now <= 60_000,
@@ -2736,6 +2736,7 @@ final class MessageCoordinator: ObservableObject {
           let bytes = try? JSONSerialization.data(withJSONObject: arguments, options: [.withoutEscapingSlashes]),
           bytes.count <= (publishing ? 131_072 : 4_096),
           let input = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: bytes),
+          payload["delivery"] == nil ? phase != "confirm" : (!publishing && phase == "confirm"),
           !publishing || publication.accepts(phase: phase, input: input),
           let identity = taskIdentityStore.identity(contactId: contact, sourceMessageId: source),
           identity.taskId == source, taskIdentityStore.matchesRegistered(payload: payload),
@@ -2760,19 +2761,25 @@ final class MessageCoordinator: ObservableObject {
           parent.phase == .executing || parent.phase == .waitingResponse
     else { return }
 
+    let delivery = (payload["delivery"] as? [String: String])?.mapValues(AgentMcpJSONValue.string)
+    guard phase != "confirm" || AgentDesktopCollaborationEvidenceDelivery.acceptsConfirmation(input, delivery: delivery)
+    else { return }
     let history = AgentTeamExecutionHistoryStore.shared
     let scope = AgentCollaborationToolEvidenceScope(runId: context.team.supervisorRunId,
       conversationId: identity.conversationId, turnId: identity.turnId, memberId: context.member.memberId, sourceId: source)
     guard desktopCollaborationResponseReplay.begin(desktopId: link.desktopId) else { return }
     defer { desktopCollaborationResponseReplay.end(desktopId: link.desktopId) }
     let key = AgentMcpJSONCodec.sha256(["desktop": .string(link.desktopId), "request": .string(requestId)])
-    let fingerprint = AgentMcpJSONCodec.sha256([
+    let assignment: AgentMcpJSONObject = [
       "profile": .string(store.profile.identityFingerprint), "pair": .string(link.desktopFingerprint),
       "route": .string(identity.clientRouteId), "contact": .string(contact), "run": .string(scope.runId),
       "group": .string(scope.conversationId), "turn": .string(scope.turnId), "member": .string(scope.memberId),
-      "source": .string(scope.sourceId), "generation": .int(generation), "expires_at": .int(expiry),
-      "contract": .string(contract), "phase": .string(phase), "arguments": .object(input)
-    ])
+      "source": .string(scope.sourceId), "generation": .int(generation),
+      "contract": .string(contract), "arguments": .object(input)
+    ]
+    let fingerprint = AgentMcpJSONCodec.sha256(assignment.merging([
+      "expires_at": .int(expiry), "phase": .string(phase), "delivery": delivery.map(AgentMcpJSONValue.object) ?? .null
+    ]) { current, _ in current })
     let cached: AgentMcpJSONObject?
     switch desktopCollaborationResponseReplay.lookup(key: key, fingerprint: fingerprint, now: now) {
     case .identityMismatch: return
@@ -2816,6 +2823,21 @@ final class MessageCoordinator: ObservableObject {
           result = page
         }
       }
+    }
+    if cached == nil, !publishing, result["success"] != .bool(true),
+       [AgentCollaborationSourceAccess.mode, "workspace"].contains(input.string("mode")),
+       var page = try? history.recallCollaborationOriginal(input, scope: scope, generation: generation) {
+      page["success"] = .bool(true)
+      page["status"] = .string("returned")
+      result = page
+    }
+    if cached == nil, !publishing, input["mode"] == .string("evidence"),
+       let page = try? AgentDesktopCollaborationEvidenceDelivery.exchange(input: input, confirmation: delivery,
+         binding: AgentMcpJSONCodec.sha256(assignment), expiresAt: expiry, now: now,
+         replay: &desktopCollaborationResponseReplay, read: { recordCoverage in
+           try history.recallCollaborationOriginal(input, scope: scope, recordEvidenceCoverage: recordCoverage)
+         }) {
+      result = page
     }
     if cached == nil {
       desktopCollaborationResponseReplay.remember(result, key: key, fingerprint: fingerprint,

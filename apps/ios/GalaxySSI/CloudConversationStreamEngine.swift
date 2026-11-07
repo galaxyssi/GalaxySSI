@@ -240,6 +240,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       let publishName = CloudModelStreamMutableConversation.collaborationPublishName
       var publishedMilestones = Set<String>()
       var evidenceResults: [(String, String)] = []
+      var visitedSourceAccessPages = Set<String>()
       let evidencePromptLedger = CloudEvidencePromptLedger(query: turns.last?.content ?? "")
       let progress = CloudWebToolLoopProgress()
       var round = 0
@@ -580,7 +581,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         let preparedCalls = parsedCalls.compactMap { item -> AssembledToolCall? in
           let (call, arguments) = item
           if call.name == publishName { return call }
-          guard progress.cached(toolName: call.name, arguments: arguments) == nil else { return nil }
+          guard AgentCollaborationSourceAccess.matches(tool: call.name, input: arguments) ||
+                progress.cached(toolName: call.name, arguments: arguments) == nil else { return nil }
           let key = progress.semanticKey(toolName: call.name, arguments: arguments)
           return freshKeys.insert(key).inserted ? call : nil
         }
@@ -665,6 +667,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
 
         var madeProgress = false
         var publicationResults: [String: String] = [:]
+        var sourceAccessResults: [String: String] = [:]
         for outcome in outcomes {
           guard let output = outcome.output,
                 let arguments = try? CloudModelStreamJSON.mcpObject(from: outcome.call.argumentsJson) else {
@@ -681,6 +684,13 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                progress.requestRepair("collaboration_assessment_preflight") { madeProgress = true }
             continue
           }
+          if AgentCollaborationSourceAccess.matches(tool: outcome.call.name, input: arguments) {
+            let key = progress.semanticKey(toolName: outcome.call.name, arguments: arguments)
+            sourceAccessResults[key] = output
+            if let page = try? CloudModelStreamJSON.mcpObject(from: output), page["status"] == .string("returned"),
+               visitedSourceAccessPages.insert(key).inserted { madeProgress = true }
+            continue
+          }
           if progress.record(toolName: outcome.call.name, arguments: arguments, output: output) {
             madeProgress = true
             if outcome.call.name.lowercased() != CloudImageAnnotationPlan.toolName &&
@@ -692,6 +702,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         let results = parsedCalls.compactMap { item -> (AssembledToolCall, String)? in
           let (call, arguments) = item
           if call.name == publishName, let output = publicationResults[call.callId] { return (call, output) }
+          if AgentCollaborationSourceAccess.matches(tool: call.name, input: arguments) {
+            let key = progress.semanticKey(toolName: call.name, arguments: arguments)
+            return sourceAccessResults[key].map { (call, $0) }
+          }
           guard let output = progress.cached(toolName: call.name, arguments: arguments) else { return nil }
           CloudImageAnnotationSession.selectResult(output, requestId: requestId)
           return (call, output)
@@ -707,6 +721,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           if call.name == publishName { return (call, output) }
           if let arguments = try? CloudModelStreamJSON.mcpObject(from: call.argumentsJson),
              CloudWebToolLoopProgress.isRuleRecall(toolName: call.name, arguments: arguments) {
+            return (call, output)
+          }
+          if let arguments = try? CloudModelStreamJSON.mcpObject(from: call.argumentsJson),
+             AgentCollaborationSourceAccess.matches(tool: call.name, input: arguments) {
             return (call, output)
           }
           return (call, projectionByOriginal[output] ?? evidencePromptLedger.project(output))
