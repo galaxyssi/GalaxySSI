@@ -419,23 +419,27 @@ final class AgentTeamHistoryDatabase {
     }
   }
 
-  func researchObjectKeys(conversationId: String, after: String, limit: Int) throws -> [String] {
+  func researchObjectHeads(conversationId: String, after: String, limit: Int)
+    throws -> [AgentCollaborationCapabilityPage.Row] {
     let statement = try prepare("""
-      SELECT DISTINCT record_key FROM collaboration_research_records
+      SELECT record_key, MAX(revision) FROM collaboration_research_records
       WHERE namespace=? AND group_key=? AND record_key>? AND record_key<'object;'
-      ORDER BY record_key LIMIT ?
+      GROUP BY record_key ORDER BY record_key LIMIT ?
       """)
     defer { sqlite3_finalize(statement) }
     bind(namespace, at: 1, to: statement)
     bind(Self.digest(conversationId), at: 2, to: statement)
     bind("object:" + after, at: 3, to: statement)
     sqlite3_bind_int64(statement, 4, Int64(limit))
-    var keys: [String] = []
+    var rows: [AgentCollaborationCapabilityPage.Row] = []
     while true {
       let status = sqlite3_step(statement)
-      if status == SQLITE_DONE { return keys }
+      if status == SQLITE_DONE { return rows }
       guard status == SQLITE_ROW, let key = sqlite3_column_text(statement, 0) else { throw Failure.corrupt }
-      keys.append(String(cString: key))
+      let recordKey = String(cString: key)
+      let revision = sqlite3_column_int64(statement, 1)
+      guard recordKey.hasPrefix("object:"), revision > 0 else { throw Failure.corrupt }
+      rows.append(.init(objectID: String(recordKey.dropFirst("object:".count)), revision: revision))
     }
   }
 
