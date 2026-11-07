@@ -1960,6 +1960,7 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   func claimGoalWork(_ work: AgentCollaborationLiveGraph.Work, scope: AgentCollaborationToolEvidenceScope,
+                     target: AgentCollaborationGoalWorkRun.Target? = nil,
                      now: Int64 = AgentControlPlaneClock.nowMillis())
     throws -> (run: AgentCollaborationGoalWorkRun, claimed: Bool, dependencies: [AgentMcpJSONObject]) {
     try access { database in
@@ -1974,7 +1975,10 @@ final class AgentTeamExecutionHistoryStore {
             let checkpoint = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first,
             checkpoint.phase == .working, checkpoint.conversationId == scope.conversationId,
             checkpoint.turnId == scope.turnId, checkpoint.liveGraph?.work.contains(work) == true,
-            team.members.contains(where: { $0.memberId == work.member && $0.deliveryMode != .ignore })
+            team.members.contains(where: { $0.memberId == work.member && $0.deliveryMode != .ignore &&
+              (target == nil || target?.resourceID == $0.agentId) }),
+            target.map({ !$0.modelID.isBlank && $0.modelID.utf8.count <= 1_024 &&
+              ($0.kind == .local) == ($0.resourceID == "local-llm") }) ?? true
       else { throw AgentTeamHistoryDatabase.Failure.stale }
       var dependencies: [AgentMcpJSONObject] = []
       for dependency in work.depends_on {
@@ -1990,7 +1994,7 @@ final class AgentTeamExecutionHistoryStore {
                 <= 64 * 1_024 else { throw AgentTeamHistoryDatabase.Failure.corrupt }
       }
       let run = AgentCollaborationGoalWorkRun(workID: work.id, dispatchID: UUID().uuidString, owner: scope,
-        memberID: work.member, process: AgentCollaborationGoalWorkRun.processID, startedAt: now, state: .running)
+        memberID: work.member, process: AgentCollaborationGoalWorkRun.processID, startedAt: now, target: target, state: .running)
       try database.insertResearchRecord(run, conversationId: scope.conversationId, key: key, revision: 0)
       return (run, true, dependencies)
     }

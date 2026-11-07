@@ -205,6 +205,16 @@ struct AgentCollaborationGoalCheckpoint: Codable, Equatable {
 
 struct AgentCollaborationGoalWorkRun: Codable {
   enum State: String, Codable { case running, succeeded, failed, interrupted }
+  struct Target: Codable, Equatable {
+    enum Kind: String, Codable { case cloud, local }
+    let kind: Kind
+    let resourceID: String
+    let modelID: String
+
+    var fields: AgentMcpJSONObject {
+      ["kind": .string(kind.rawValue), "resource_id": .string(resourceID), "model_id": .string(modelID)]
+    }
+  }
   static let processID = UUID().uuidString
   static let leaseMillis: Int64 = 300_000
 
@@ -214,6 +224,7 @@ struct AgentCollaborationGoalWorkRun: Codable {
   let memberID: String
   let process: String
   let startedAt: Int64
+  var target: Target? = nil
   var state: State
   var finishedAt: Int64? = nil
   var output: String? = nil
@@ -230,6 +241,7 @@ struct AgentCollaborationGoalWorkRun: Codable {
     let status = visibleState(now: now)
     return ["success": .bool(true), "status": .string(status.rawValue), "work_id": .string(workID),
       "dispatch_id": .string(dispatchID), "member_id": .string(memberID),
+      "target": target.map { .object($0.fields) } ?? .null,
       "started_at": .int(startedAt), "finished_at": finishedAt.map(AgentMcpJSONValue.int) ?? .null,
       "output": output.map(AgentMcpJSONValue.string) ?? .null, "output_sha256": outputHash.map(AgentMcpJSONValue.string) ?? .null,
       "output_truncated": .bool(truncated ?? false), "goal_accepted": .bool(false), "automatically_reexecuted": .bool(false)]

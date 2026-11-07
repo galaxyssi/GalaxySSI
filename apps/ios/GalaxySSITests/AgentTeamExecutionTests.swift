@@ -2105,15 +2105,20 @@ extension GalaxySSIStoreTests {
     let verify = try XCTUnwrap(latest.liveGraph?.work.last)
     XCTAssertThrowsError(try reopened.claimGoalWork(verify, scope: scope(0), now: 10))
     XCTAssertThrowsError(try reopened.claimGoalWork(measure, scope: scope(1), now: 10))
-    let started = try reopened.claimGoalWork(measure, scope: scope(0), now: 10)
+    let worker = AgentCollaborationGoalWorkRun.Target(kind: .cloud, resourceID: team.members[1].agentId, modelID: "selected-model")
+    let wrongWorker = AgentCollaborationGoalWorkRun.Target(kind: .local, resourceID: "local-llm", modelID: "installed")
+    XCTAssertThrowsError(try reopened.claimGoalWork(measure, scope: scope(0), target: wrongWorker, now: 10))
+    let started = try reopened.claimGoalWork(measure, scope: scope(0), target: worker, now: 10)
     XCTAssertTrue(started.claimed)
-    let duplicate = try open().claimGoalWork(measure, scope: scope(0), now: 11)
+    let duplicate = try open().claimGoalWork(measure, scope: scope(0), target: wrongWorker, now: 11)
     XCTAssertFalse(duplicate.claimed)
     XCTAssertEqual(duplicate.run.dispatchID, started.run.dispatchID)
+    XCTAssertEqual(duplicate.run.target, worker)
     XCTAssertThrowsError(try reopened.claimGoalWork(verify, scope: scope(0), now: 11))
     let finished = try reopened.finishGoalWork(started.run, output: "Observed value", interrupted: false, now: 12)
     XCTAssertEqual(finished["status"], .string("succeeded"))
     XCTAssertEqual(finished["goal_accepted"], .bool(false))
+    XCTAssertEqual(finished["target"], .object(worker.fields))
     XCTAssertThrowsError(try reopened.finishGoalWork(started.run, output: "Replace", interrupted: false, now: 13))
     let next = try reopened.claimGoalWork(verify, scope: scope(0), now: 14)
     XCTAssertTrue(next.claimed)
@@ -2126,6 +2131,20 @@ extension GalaxySSIStoreTests {
     reopened.removeResearchObjects(conversationId: team.conversationId)
     XCTAssertThrowsError(try reopened.publishCollaborationMilestone(first, scope: scope(0)))
     XCTAssertThrowsError(try reopened.publishCollaborationMilestone(request, scope: scope(0)))
+  }
+
+  func testCancelledLocalGoalWorkDoesNotStartQueuedInference() async {
+    let cancellation = AgentModelToolLoopCancellationSource()
+    cancellation.cancel()
+    do {
+      _ = try await LocalModelInferenceRuntime.shared.generateAsync(profile: LocalModelRuntimeSettings.selectedProfile(),
+        systemPrompt: "", userPrompt: "Must not execute", cancellation: cancellation.token)
+      XCTFail("Cancelled work must not start inference")
+    } catch is CancellationError {
+      return
+    } catch {
+      XCTFail("Expected cancellation before model preflight, got \(error)")
+    }
   }
 
   func testSavedTeamFailureDistinguishesObserverFromPrimary() throws {

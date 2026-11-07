@@ -8106,7 +8106,7 @@ final class MessageCoordinator: ObservableObject {
                 collaborationModelAudit: audit,
                 goalWorkHandler: audit.map { scope in
                   { arguments in
-                    await self.runAdmittedCloudGoalWork(arguments, scope: scope, outgoing: outgoing,
+                    await self.runAdmittedGoalWork(arguments, scope: scope, outgoing: outgoing,
                       profileID: profileIdentity, targets: targetsById)
                   }
                 }
@@ -8583,7 +8583,7 @@ final class MessageCoordinator: ObservableObject {
     return result
   }
 
-  private func runAdmittedCloudGoalWork(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope,
+  private func runAdmittedGoalWork(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope,
                                       outgoing: ChatMessage, profileID: String,
                                       targets: [String: AgentCallableTarget]) async -> AgentMcpJSONObject {
     func unavailable(_ status: String) -> AgentMcpJSONObject { ["success": .bool(false), "status": .string(status)] }
@@ -8610,14 +8610,33 @@ final class MessageCoordinator: ObservableObject {
           let assigned = team.members.first(where: { $0.memberId == work.member && $0.deliveryMode == .observe }),
           let person = UUID(uuidString: AgentTeamProgressPolicy.stableCollaborationMemberId(work.member)),
           let configured = roster.members.first(where: { $0.id == person && $0.resourceId == assigned.agentId }),
-          let target = targets[assigned.agentId], target.kind == .model, target.status == .available,
-          var contact = store.contact(id: assigned.agentId), contact.deliveryMode == .cloudAPI,
-          let model = configured.modelId.isBlank ? contact.selectedCloudModel :
-            contact.cloudModels.first(where: { $0.id == configured.modelId })
-    else {
-      return unavailable("work_requires_cloud_specialist")
+          let target = targets[assigned.agentId], target.status == .available else {
+      return unavailable("work_specialist_unavailable")
     }
-    contact.selectedCloudModelId = model.modelId
+    enum Route {
+      case cloud(GalaxySSIContact)
+      case local(LocalModelRuntimeProfile)
+    }
+    let route: Route
+    let identity: AgentCollaborationGoalWorkRun.Target
+    if target.id == "local-llm" {
+      let profile = configured.modelId.isBlank ? LocalModelRuntimeSettings.selectedProfile() :
+        LocalModelRuntimeCatalog.profiles().first(where: { $0.id == configured.modelId })
+      guard let profile, LocalModelInferenceRuntime.shared.ready(profile: profile) else {
+        return unavailable("work_local_model_unavailable")
+      }
+      route = .local(profile)
+      identity = .init(kind: .local, resourceID: target.id, modelID: profile.id)
+    } else {
+      guard target.kind == .model, var contact = store.contact(id: assigned.agentId), contact.deliveryMode == .cloudAPI,
+            let model = configured.modelId.isBlank ? contact.selectedCloudModel :
+              contact.cloudModels.first(where: { $0.id == configured.modelId }) else {
+        return unavailable("work_specialist_unsupported")
+      }
+      contact.selectedCloudModelId = model.modelId
+      route = .cloud(contact)
+      identity = .init(kind: .cloud, resourceID: target.id, modelID: model.modelId)
+    }
     // Acquire the existing resource slot before persisting a claim so a busy provider does not consume the work.
     let slot: String
     do {
@@ -8625,7 +8644,9 @@ final class MessageCoordinator: ObservableObject {
     } catch { return unavailable("work_capacity_unavailable") }
     defer { UserDefaultsAgentGlobalRunSlotStore.shared.release(ownerId: slot) }
     guard !Task.isCancelled, liveRoster() == roster,
-          let claim = try? history.claimGoalWork(work, scope: scope) else { return unavailable("work_not_ready") }
+          let claim = try? history.claimGoalWork(work, scope: scope, target: identity) else {
+      return unavailable("work_not_ready")
+    }
     guard claim.claimed else { return claim.run.receipt(now: AgentControlPlaneClock.nowMillis()) }
     let dependencies = AgentMcpJSONCodec.stringify(["dependencies": .array(claim.dependencies.map(AgentMcpJSONValue.object))])
     let prompt = """
@@ -8636,11 +8657,15 @@ final class MessageCoordinator: ObservableObject {
       """
     var output: String?
     var interrupted = false
+    let cancellation = AgentModelToolLoopCancellationSource()
     let monitor = Task { @MainActor in
       while !Task.isCancelled {
         guard liveRoster() == roster,
               AgentControlPlaneClock.nowMillis() < claim.run.startedAt + AgentCollaborationGoalWorkRun.leaseMillis else {
-          await cloudStreamEngine.cancel(requestId: claim.run.dispatchID, reason: .sessionChanged)
+          cancellation.cancel()
+          if case .cloud = route {
+            await cloudStreamEngine.cancel(requestId: claim.run.dispatchID, reason: .sessionChanged)
+          }
           return
         }
         do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
@@ -8648,9 +8673,23 @@ final class MessageCoordinator: ObservableObject {
     }
     defer { monitor.cancel() }
     do {
-      output = try await hiddenCloudTeamReply(contact: contact, requestText: prompt, attachments: [],
-        outgoing: outgoing, requestId: claim.run.dispatchID, isolateGoalWork: true)
-    } catch { interrupted = Task.isCancelled || error is CancellationError }
+      switch route {
+      case .cloud(let contact):
+        output = try await hiddenCloudTeamReply(contact: contact, requestText: prompt, attachments: [],
+          outgoing: outgoing, requestId: claim.run.dispatchID, isolateGoalWork: true)
+      case .local(let profile):
+        output = try await withTaskCancellationHandler(operation: {
+          try Task.checkCancellation()
+          return try await LocalModelInferenceRuntime.shared.generateAsync(profile: profile,
+            systemPrompt: localModelSystemPrompt, userPrompt: prompt, taskId: claim.run.dispatchID,
+            cancellation: cancellation.token).text
+        }, onCancel: { cancellation.cancel() })
+      }
+    } catch { interrupted = Task.isCancelled || error is CancellationError || cancellation.token.isCancellationRequested }
+    if Task.isCancelled || cancellation.token.isCancellationRequested {
+      interrupted = true
+      output = nil
+    }
     guard liveRoster() == roster else { return unavailable("work_scope_unavailable") }
     guard var receipt = try? history.finishGoalWork(claim.run, output: output, interrupted: interrupted)
     else { return unavailable("work_outcome_unconfirmed") }
