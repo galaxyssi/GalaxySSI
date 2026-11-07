@@ -11,6 +11,19 @@ final class MqttMultipathPolicy {
     let expiresAt: Int64
   }
   struct Dispatch: Equatable { let brokerID: String; let generation: Int64; let delayMillis: Int64 }
+  enum ReservationRefusal: String, CaseIterable, Equatable {
+    case invalidAttempt = "invalid_attempt"
+    case pathUnavailable = "path_unavailable"
+    case pathPacketLimit = "path_packet_limit"
+    case duplicateAttempt = "duplicate_attempt"
+    case trackingLimit = "tracking_limit"
+    case messageContentConflict = "message_content_conflict"
+    case inflightPacketLimit = "inflight_packet_limit"
+    case inflightByteLimit = "inflight_byte_limit"
+    case peerByteLimit = "peer_byte_limit"
+
+    var code: String { "attempt_" + rawValue }
+  }
   struct Attempt {
     let peer: String
     let messageID: String
@@ -172,22 +185,35 @@ final class MqttMultipathPolicy {
 
   @discardableResult
   func reserve(attemptID: String, attempt: Attempt) -> Bool {
+    reserveReason(attemptID: attemptID, attempt: attempt) == nil
+  }
+
+  // A refusal never consumes capacity; evaluation and reservation are atomic.
+  func reserveReason(attemptID: String, attempt: Attempt) -> ReservationRefusal? {
     locked {
       let priority = [Traffic.control, .receipt, .final].contains(attempt.traffic)
       let reserveBytes = priority ? 0 : 2 * 65_536
       guard !attemptID.isEmpty, !attempt.peer.isEmpty, !attempt.messageID.isEmpty, attempt.startedAt >= 0,
-            MqttRouteProtocol.hex(attempt.contentHash, count: 64), (1...MqttRouteProtocol.packetBytes).contains(attempt.wireBytes),
-            let path = paths[attempt.brokerID], path.connected, path.generation == attempt.generation,
-            attempt.wireBytes <= path.packetBytes, attempts[attemptID] == nil, attempts.count < (priority ? 4096 : 4094),
-            !attempts.values.contains(where: { $0.peer == attempt.peer && $0.messageID == attempt.messageID && $0.contentHash != attempt.contentHash }) else { return false }
+            MqttRouteProtocol.hex(attempt.contentHash, count: 64), (1...MqttRouteProtocol.packetBytes).contains(attempt.wireBytes)
+      else { return .invalidAttempt }
+      guard let path = paths[attempt.brokerID], path.connected, path.generation == attempt.generation
+      else { return .pathUnavailable }
+      guard attempt.wireBytes <= path.packetBytes else { return .pathPacketLimit }
+      guard attempts[attemptID] == nil else { return .duplicateAttempt }
+      guard attempts.count < (priority ? 4096 : 4094) else { return .trackingLimit }
+      guard !attempts.values.contains(where: {
+        $0.peer == attempt.peer && $0.messageID == attempt.messageID && $0.contentHash != attempt.contentHash
+      }) else { return .messageContentConflict }
       let active = attempts.values.filter(\.slotHeld)
-      guard active.count < (priority ? 12 : 10), active.reduce(0, { $0 + $1.wireBytes }) + attempt.wireBytes <= 8_388_608 - reserveBytes,
-            active.filter({ $0.peer == attempt.peer }).reduce(0, { $0 + $1.wireBytes }) + attempt.wireBytes <= 2_097_152 - reserveBytes else { return false }
+      guard active.count < (priority ? 12 : 10) else { return .inflightPacketLimit }
+      guard active.reduce(0, { $0 + $1.wireBytes }) + attempt.wireBytes <= 8_388_608 - reserveBytes else { return .inflightByteLimit }
+      guard active.filter({ $0.peer == attempt.peer }).reduce(0, { $0 + $1.wireBytes }) + attempt.wireBytes <= 2_097_152 - reserveBytes
+      else { return .peerByteLimit }
       var clean = attempt
       clean.slotHeld = true
       clean.peerAccepted = false
       attempts[attemptID] = clean
-      return true
+      return nil
     }
   }
 

@@ -137,6 +137,32 @@ struct AgentDesktopCollaborationResponseReplay {
   }
 }
 
+struct AgentDesktopCollaborationCiphertextReplay {
+  private var expirations: [String: Int64] = [:]
+  private let maximumEntries = 256
+
+  static func key(wire: Data, profile: String, pair: String, route: String, secretFingerprint: String) -> String {
+    AgentMcpJSONCodec.sha256(["wire": .string(MqttRouteProtocol.digest(wire)), "profile": .string(profile),
+      "pair": .string(pair), "route": .string(route), "secret_fingerprint": .string(secretFingerprint)])
+  }
+
+  func contains(_ key: String, now: Int64) -> Bool {
+    expirations[key].map { $0 > now } ?? false
+  }
+
+  // Only call after Signal authentication on the bound Desktop route.
+  mutating func remember(_ key: String, now: Int64, expiresAt: Int64) {
+    guard now >= 0, expiresAt > now, expiresAt - now <= 60_000 else { return }
+    expirations = expirations.filter { $0.value > now }
+    guard expirations[key] == nil else { return }
+    if expirations.count >= maximumEntries,
+       let oldest = expirations.min(by: { $0.value < $1.value }) {
+      expirations.removeValue(forKey: oldest.key)
+    }
+    expirations[key] = expiresAt
+  }
+}
+
 enum AgentDesktopCollaborationArchiveRecall {
   static let requestType = "collaboration_recall_request"
   static let responseType = "collaboration_recall_result"

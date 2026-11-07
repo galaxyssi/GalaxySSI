@@ -431,6 +431,26 @@ extension GalaxySSIStoreTests {
     }
   }
 
+  func testDesktopCollaborationCiphertextReplayIsExactScopedAndExpiring() {
+    typealias Replay = AgentDesktopCollaborationCiphertextReplay
+    func key(_ wire: String = "sealed", profile: String = "phone", pair: String = "desktop",
+             route: String = "route", secret: String = "secret") -> String {
+      Replay.key(wire: Data(wire.utf8), profile: profile, pair: pair, route: route, secretFingerprint: secret)
+    }
+    var replay = Replay()
+    let exact = key()
+    replay.remember(exact, now: 1_000, expiresAt: 61_001)
+    XCTAssertFalse(replay.contains(exact, now: 1_000))
+    replay.remember(exact, now: 1_000, expiresAt: 2_000)
+    replay.remember(exact, now: 1_500, expiresAt: 3_000)
+    XCTAssertTrue(replay.contains(exact, now: 1_999))
+    for other in [key("fresh encryption"), key(profile: "other"), key(pair: "other"),
+                  key(route: "other"), key(secret: "rotated")] {
+      XCTAssertFalse(replay.contains(other, now: 1_999))
+    }
+    XCTAssertFalse(replay.contains(exact, now: 2_000))
+  }
+
   func testDesktopMilestonePhaseCannotSwitchReadIntoPublication() {
     let wire = AgentDesktopCollaborationPublicationWire.self
     XCTAssertTrue(wire.accepts(phase: "publish", input: ["mode": .string("publish")]))

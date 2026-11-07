@@ -3763,6 +3763,7 @@
 "protocol_event_decrypt_failure" = "Signal 解密失败";
 "protocol_event_chunk_duplicate" = "已拒绝冲突的重复分片";
 "protocol_event_fragment_rejected" = "已拒绝分片传输";
+"protocol_event_publish_admission_refused" = "发送未获准入";
 "protocol_badge_online" = "在线";
 "cc_service_link_connected" = "GalaxySSI Link 安全会话已连接";
 "cc_service_link_offline" = "GalaxySSI Link 离线或等待已配对端点";
