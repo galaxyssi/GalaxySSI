@@ -483,7 +483,9 @@ final class AgentTeamExecutionHistoryStore {
       "round": .int(Int64(evidence.round)), "call": .string(evidence.call.callId), "index": .int(Int64(evidence.call.index))
     ])
     return try access { database in
-      guard let team = try database.snapshots(runId: scope.runId).first,
+      guard try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true,
+            let team = try database.snapshots(runId: scope.runId).first,
             team.conversationId == scope.conversationId, team.taskId == scope.turnId,
             !team.state.isTerminal,
             team.members.contains(where: { $0.memberId == scope.memberId &&
