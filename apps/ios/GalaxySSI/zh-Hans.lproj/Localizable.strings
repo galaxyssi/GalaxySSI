@@ -662,6 +662,14 @@
 "galaxyssi.health.trend.manual" = "来源：手动测量";
 "galaxyssi.health.trend.bluetooth" = "来源：蓝牙血压计";
 "galaxyssi.health.trend.sources" = "每日来源记录";
+"galaxyssi.health.trend.explain" = "解释此趋势";
+"galaxyssi.health.assistant.trend_min" = "最小值";
+"galaxyssi.health.assistant.trend_max" = "最大值";
+"galaxyssi.health.assistant.trend_mean" = "平均值";
+"galaxyssi.health.assistant.trend_missing" = "缺少记录的天数：%lld；非数值记录：%lld；其他单位记录：%lld";
+"galaxyssi.health.assistant.trend_delta" = "首末变化：%@";
+"galaxyssi.health.assistant.trend_first" = "首个数据点";
+"galaxyssi.health.assistant.trend_last" = "末个数据点";
 "galaxyssi.health.trend.bluetooth_filter" = "蓝牙设备";
 "galaxyssi.health.trend.all_devices" = "不按设备筛选";
 "galaxyssi.health.trend.device_unavailable" = "所选设备不可用";

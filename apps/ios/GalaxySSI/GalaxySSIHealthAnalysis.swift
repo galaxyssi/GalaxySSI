@@ -1,5 +1,107 @@
 import Foundation
 
+struct GalaxySSIHealthTrendAnalysis: Identifiable {
+  struct Spec {
+    let metric: GalaxySSIHealthMetric
+    let component: GalaxySSIHealthTrend.Component
+    let unit: String
+    let source: GalaxySSIHealthTrend.Source
+    let device: UUID?
+    let origin: GalaxySSIHealthTrend.HealthOrigin
+    let aggregation: GalaxySSIHealthTrend.Aggregation
+    let through: Date
+    let days: Int
+    let calendar: Calendar
+
+    var interval: DateInterval {
+      let day = calendar.startOfDay(for: through)
+      let start = calendar.date(byAdding: .day, value: 1 - days, to: day) ?? day
+      let end = calendar.date(byAdding: .day, value: 1, to: day) ?? through
+      return DateInterval(start: start, end: end)
+    }
+
+    func cohort(_ current: [GalaxySSIHealthReading]) -> [GalaxySSIHealthReading] {
+      let window = interval
+      return GalaxySSIHealthTrendDevice.matching(current, device: device).filter {
+        !$0.deleted && $0.metric == metric && $0.measuredAt >= window.start && $0.measuredAt < window.end &&
+          source.includes($0) && (origin == .all || GalaxySSIHealthTrend.HealthOrigin.recorded(in: $0) == origin)
+      }
+    }
+
+    func chart(_ current: [GalaxySSIHealthReading]) -> GalaxySSIHealthTrend {
+      GalaxySSIHealthTrend(current: cohort(current), metric: metric, component: component, now: through,
+        dayCount: days, calendar: calendar, unit: unit)
+    }
+
+    func versions(_ current: [GalaxySSIHealthReading]) -> [String] {
+      cohort(current).map { "\($0.id):\($0.revision)" }.sorted()
+    }
+  }
+
+  struct Fact: Encodable {
+    struct Bucket: Encodable {
+      let index: Int
+      let value: String
+      let recordCount: Int
+    }
+    let aggregation: String
+    let pointCount: Int
+    let recordedDays: Int
+    let missingDays: Int
+    let excludedNonNumeric: Int
+    let excludedOtherUnits: Int
+    let first: Bucket
+    let last: Bucket?
+    let delta: String?
+  }
+
+  let id = UUID()
+  let spec: Spec
+  let versions: [String]
+  let sourceTitle: String
+
+  func result(_ current: [GalaxySSIHealthReading]) -> (fact: Fact, evidence: GalaxySSIHealthAnalysis.Evidence,
+    first: GalaxySSIHealthAnalysis.Evidence, last: GalaxySSIHealthAnalysis.Evidence?)? {
+    guard spec.versions(current) == versions else { return nil }
+    let chart = spec.chart(current)
+    let plotted = chart.points.compactMap { point in
+      point.value(spec.aggregation, component: spec.component).map { (point, $0) }
+    }
+    guard let (firstPoint, firstValue) = plotted.first, let (lastPoint, lastValue) = plotted.last else { return nil }
+    let readings = plotted.flatMap { $0.0.readings }
+    let cohort = spec.cohort(current).filter { $0.measuredAt <= spec.through }
+    let recordedDays = Set(cohort.map { spec.calendar.startOfDay(for: $0.measuredAt) }).count
+    let numeric = cohort.filter { spec.component.value(in: $0) != nil }
+    let difference = lastValue - firstValue
+    let values = plotted.map { $0.1 }
+    let mean = values.reduce(Decimal.zero) { $0 + $1 / Decimal(values.count) }
+    func exact(_ value: Decimal) -> String { NSDecimalNumber(decimal: value).stringValue }
+    func bucket(_ point: GalaxySSIHealthTrend.Point, _ value: Decimal) -> Fact.Bucket {
+      .init(index: point.id + 1, value: exact(value), recordCount: point.readings.count)
+    }
+    func evidence(_ rows: [GalaxySSIHealthReading], days: Int, minimum: Decimal?, maximum: Decimal?,
+                  average: Decimal?) -> GalaxySSIHealthAnalysis.Evidence {
+      let component = spec.metric == .bloodPressure && spec.component == .value ? "systolic" : spec.component.rawValue
+      return .init(metric: spec.metric, aggregate: .init(id: "e1", metric: spec.metric.rawValue, component: component,
+        unit: spec.unit, count: rows.count, observedDays: days, minimum: minimum.map(exact), maximum: maximum.map(exact),
+        mean: average.map(exact)), readings: rows)
+    }
+    func sources(_ point: GalaxySSIHealthTrend.Point, value: Decimal) -> GalaxySSIHealthAnalysis.Evidence {
+      let leading = point.extremum(spec.aggregation, component: spec.component)
+      let rows = leading.map { first in [first] + point.readings.filter { $0.id != first.id } } ?? point.readings
+      return evidence(rows, days: 1, minimum: value, maximum: value, average: value)
+    }
+    let fact = Fact(aggregation: spec.aggregation.rawValue, pointCount: plotted.count, recordedDays: recordedDays,
+      missingDays: spec.days - recordedDays, excludedNonNumeric: cohort.count - numeric.count,
+      excludedOtherUnits: numeric.filter { spec.component != .pulse && $0.unit != spec.unit }.count,
+      first: bucket(firstPoint, firstValue), last: plotted.count > 1 ? bucket(lastPoint, lastValue) : nil,
+      delta: plotted.count > 1 && !difference.isNaN ? exact(difference) : nil)
+    return (fact, evidence(readings, days: plotted.count, minimum: values.min(), maximum: values.max(),
+      average: mean.isNaN ? nil : mean), sources(firstPoint, value: firstValue),
+      plotted.count > 1 ? sources(lastPoint, value: lastValue) : nil)
+  }
+}
+
 struct GalaxySSIHealthAnalysis {
   struct Aggregate: Identifiable, Codable {
     let id: String
@@ -87,9 +189,14 @@ struct GalaxySSIHealthAnalysis {
   let evidence: [Evidence]
   let versions: [String]
   let requestedDays: Int
+  let trend: GalaxySSIHealthTrendAnalysis?
+  let trendFact: GalaxySSIHealthTrendAnalysis.Fact?
+  let trendFirst: Evidence?
+  let trendLast: Evidence?
 
   init(scope: Scope, current: [GalaxySSIHealthReading], calendar: Calendar) {
     self.scope = scope
+    trend = nil; trendFact = nil; trendFirst = nil; trendLast = nil
     let scoped = scope.readings(in: current)
     versions = Self.stamps(scoped)
     requestedDays = max(1, calendar.dateComponents([.day], from: scope.interval.start, to: scope.interval.end).day ?? 1)
@@ -125,16 +232,31 @@ struct GalaxySSIHealthAnalysis {
     self.evidence = evidence
   }
 
+  init?(trend: GalaxySSIHealthTrendAnalysis, current: [GalaxySSIHealthReading]) {
+    guard let result = trend.result(current) else { return nil }
+    self.trend = trend
+    scope = .init(interval: trend.spec.interval, metrics: [trend.spec.metric])
+    versions = trend.versions
+    requestedDays = trend.spec.days
+    evidence = [result.evidence]
+    trendFact = result.fact
+    trendFirst = result.first
+    trendLast = result.last
+  }
+
   func isCurrent(_ current: [GalaxySSIHealthReading]) -> Bool {
-    Self.stamps(scope.readings(in: current)) == versions
+    if let trend { return trend.spec.versions(current) == versions }
+    return Self.stamps(scope.readings(in: current)) == versions
   }
 
   func requestJSON() throws -> Data {
     struct Packet: Encodable {
       let requestedDays: Int
       let aggregates: [Aggregate]
+      let filteredTrend: GalaxySSIHealthTrendAnalysis.Fact?
     }
-    return try JSONEncoder().encode(Packet(requestedDays: requestedDays, aggregates: evidence.map(\.aggregate)))
+    return try JSONEncoder().encode(Packet(requestedDays: requestedDays, aggregates: evidence.map(\.aggregate),
+      filteredTrend: trendFact))
   }
 
   func recommendation(_ output: String) throws -> Recommendation {

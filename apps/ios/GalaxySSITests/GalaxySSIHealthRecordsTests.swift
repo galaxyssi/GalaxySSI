@@ -2600,6 +2600,53 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(trend.maximum, 69)
   }
 
+  func testFilteredTrendExplanationUsesChartBucketsAndKeepsRawSourcesLocal() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+    let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 11, day: 5, hour: 12)))
+    let start = try XCTUnwrap(calendar.date(byAdding: .day, value: -2, to: now))
+    let first = GalaxySSIHealthReading(revision: 2, metric: .glucose, measuredAt: start, value: 110,
+      notes: "Private source note", unitOverride: "mg/dL")
+    let high = GalaxySSIHealthReading(revision: 1, metric: .glucose, measuredAt: start, value: 130, unitOverride: "mg/dL")
+    let last = GalaxySSIHealthReading(revision: 3, metric: .glucose, measuredAt: now, value: 125, unitOverride: "mg/dL")
+    let otherUnit = GalaxySSIHealthReading(revision: 1, metric: .glucose, measuredAt: now, value: 4)
+    let unrelated = GalaxySSIHealthReading(revision: 1, metric: .weight, measuredAt: now, value: 72)
+    let current = [first, high, last, otherUnit, unrelated]
+    let spec = GalaxySSIHealthTrendAnalysis.Spec(metric: .glucose, component: .value, unit: "mg/dL",
+      source: .manual, device: nil, origin: .all, aggregation: .min, through: now, days: 3, calendar: calendar)
+    let scope = GalaxySSIHealthTrendAnalysis(spec: spec, versions: spec.versions(current), sourceTitle: "Manual fixture")
+    let analysis = try XCTUnwrap(GalaxySSIHealthAnalysis(trend: scope, current: current))
+    let fact = try XCTUnwrap(analysis.trendFact)
+    XCTAssertEqual(fact.first.index, 1)
+    XCTAssertEqual(fact.first.value, "110")
+    XCTAssertEqual(fact.first.recordCount, 2)
+    XCTAssertEqual(fact.last?.index, 3)
+    XCTAssertEqual(fact.delta, "15")
+    XCTAssertEqual(fact.missingDays, 1)
+    XCTAssertEqual(fact.excludedOtherUnits, 1)
+    XCTAssertEqual(analysis.trendFirst?.readings.first?.revision, 2)
+    XCTAssertEqual(analysis.trendFirst?.readings.first?.id, first.id)
+    let summary = try analysis.requestJSON()
+    let followUp = try GalaxySSIHealthFollowUp(analysis: analysis, baseline: nil, question: "What changed?", previous: nil)
+    for payload in [summary, followUp.payload] {
+      let json = String(decoding: payload, as: UTF8.self)
+      XCTAssertTrue(json.contains("filteredTrend"))
+      for privateValue in [first.id.uuidString, first.notes, scope.sourceTitle, "Asia/Shanghai", "2026-11"] {
+        XCTAssertFalse(json.contains(privateValue))
+      }
+    }
+    XCTAssertNoThrow(try followUp.answer(#"{"status":"ANSWERED","sections":[{"topic":"CHANGES","fact_ids":["e1"]}],"actions":[]}"#))
+    XCTAssertThrowsError(try followUp.answer(#"{"status":"ANSWERED","sections":[],"actions":["WEEKLY_REPORT"]}"#))
+    var edited = first
+    edited.revision += 1
+    XCTAssertFalse(analysis.isCurrent([edited, high, last, otherUnit, unrelated]))
+    XCTAssertNil(GalaxySSIHealthAnalysis(trend: scope, current: [edited, high, last, otherUnit, unrelated]))
+    XCTAssertTrue(analysis.isCurrent([first, high, last, otherUnit]))
+    let newSameDay = GalaxySSIHealthReading(revision: 1, metric: .glucose, measuredAt: now.addingTimeInterval(120),
+      value: 105, unitOverride: "mg/dL")
+    XCTAssertFalse(analysis.isCurrent(current + [newSameDay]))
+  }
+
   func testHealthCatalogRefreshAnchorsToSurvivingVisibleRecord() throws {
     let anchor = try XCTUnwrap(GalaxySSIHealthCatalogAnchor.restoration(
       visible: [29, 30], updated: [100, 101] + Array(0..<29) + [30, 31], limit: 30))

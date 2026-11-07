@@ -97,7 +97,7 @@ struct GalaxySSIHealthMetricCatalogView: View {
           List {
             if scene == .active, let current {
               NavigationLink {
-                GalaxySSIHealthTrendView(records: records, fixedMetric: metric)
+                GalaxySSIHealthTrendView(records: records, fixedMetric: metric, recordMeasurement: add)
               } label: {
                 Label(t("trend", "Measurement trends"), systemImage: "chart.xyaxis.line")
               }
