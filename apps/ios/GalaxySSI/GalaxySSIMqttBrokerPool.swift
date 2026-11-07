@@ -137,7 +137,9 @@ final class GalaxySSIMqttBrokerPool {
         relay.complete(publication.frame.attempt, acknowledged: acknowledged)
       })
       return await self.publishSealed(packet).accepted
-    }, brokerCompleted: brokerCompleted, now: now)
+    }, brokerCompleted: brokerCompleted, admissionRefused: { refusal in
+      GalaxySSILinkTransportDiagnostics.runtimeLedger().record(kind: .publishAdmissionRefused, detailCode: refusal.code)
+    }, now: now)
     relay.bind(dispatcher)
     return dispatcher
   }
