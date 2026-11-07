@@ -9,6 +9,11 @@ enum GalaxySSIHealthCareSeries {
     let beforeTime: Int64
     let beforeID: UUID
 
+    init(beforeTime: Int64, beforeID: UUID) {
+      self.beforeTime = beforeTime
+      self.beforeID = beforeID
+    }
+
     init?(_ reading: GalaxySSIHealthReading) {
       guard let time = Int64(exactly: (reading.measuredAt.timeIntervalSince1970 * 1_000).rounded(.down)) else { return nil }
       beforeTime = time

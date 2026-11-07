@@ -6,6 +6,51 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  func testHealthHistoryProviderContinuationsPreserveCallAndRemoveSpentTool() throws {
+    typealias Tool = GalaxySSIHealthCareHistoryTool
+    let args = ["input_version": "fixture-version"]
+    let function = Tool.function
+    let openAI: [String: Any] = ["id": "call_1", "type": "function",
+      "function": ["name": function, "arguments": String(decoding: try JSONEncoder().encode(args), as: UTF8.self)]]
+    let anthropic: [String: Any] = ["id": "call_1", "type": "tool_use", "name": function, "input": args]
+    let gemini: [String: Any] = ["functionCall": ["name": function, "args": args] as [String: Any],
+      "thoughtSignature": "fixture-signature"]
+    let cases: [(GalaxySSICloudAPIStyle, [String: Any], String, String)] = [
+      (.openAICompatible, ["choices": [["finish_reason": "tool_calls", "message": ["tool_calls": [openAI]]] as [String: Any]]], "messages", "tool_call_id"),
+      (.anthropic, ["stop_reason": "tool_use", "content": [anthropic]], "messages", "tool_use_id"),
+      (.gemini, ["candidates": [["finishReason": "STOP", "content": ["parts": [gemini]]] as [String: Any]]], "contents", "functionResponse")
+    ]
+    for (style, reply, channel, resultKey) in cases {
+      let call = try XCTUnwrap(Tool.call(JSONSerialization.data(withJSONObject: reply), style: style, proposesPlan: true))
+      XCTAssertNil(try Tool.cursor(call.arguments, version: "fixture-version"))
+      XCTAssertThrowsError(try Tool.cursor(call.arguments, version: "stale-version"))
+      var body: [String: Any] = [channel: [["role": "user"]]]
+      Tool.configure(&body, style: style, proposesPlan: true, historyAvailable: true)
+      var request = URLRequest(url: try XCTUnwrap(URL(string: "https://example.test")))
+      request.httpBody = try JSONSerialization.data(withJSONObject: body)
+      let next = try Tool.continuing(request, with: call, output: .init(payload: ["done": .bool(true)], next: nil),
+        style: style, proposesPlan: true, historyAvailable: false)
+      let nextBody = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(next.httpBody)) as? [String: Any])
+      let messages = try XCTUnwrap(nextBody[channel] as? [[String: Any]])
+      XCTAssertEqual(messages.count, 3)
+      let result = try JSONSerialization.data(withJSONObject: XCTUnwrap(messages.last))
+      XCTAssertTrue(String(decoding: result, as: UTF8.self).contains(resultKey))
+      let declared = try JSONSerialization.data(withJSONObject: XCTUnwrap(nextBody["tools"]))
+      XCTAssertFalse(String(decoding: declared, as: UTF8.self).contains(function))
+      XCTAssertTrue(String(decoding: declared, as: UTF8.self).contains(GalaxySSIHealthCarePlan.tool))
+      if style == .gemini {
+        let previous = try JSONSerialization.data(withJSONObject: messages[1])
+        XCTAssertTrue(String(decoding: previous, as: UTF8.self).contains("fixture-signature"))
+      }
+    }
+    let parallel: [String: Any] = ["choices": [["finish_reason": "tool_calls",
+      "message": ["tool_calls": [openAI, openAI]]] as [String: Any]]]
+    XCTAssertThrowsError(try Tool.call(JSONSerialization.data(withJSONObject: parallel),
+      style: .openAICompatible, proposesPlan: true))
+    XCTAssertThrowsError(try Tool.cursor(["input_version": .string("fixture-version"), "before_time": .int(1)],
+      version: "fixture-version"))
+  }
+
   @MainActor
   func testLocalCareMeasurementPagesAreContiguousAndOldEditsInvalidateReview() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -29,6 +74,20 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(first.rows.count, 30)
     XCTAssertEqual(first.rows.map(\.id) + second.rows.map(\.id), all.map(\.id))
     XCTAssertNil(second.next)
+    let full = try GalaxySSIHealthCareHistoryTool.output(first, metric: .glucose, after: nil)
+    let smaller = try GalaxySSIHealthCareHistoryTool.output(first, metric: .glucose, after: nil,
+      budget: AgentMcpJSONCodec.stringify(full.payload).utf8.count - 1)
+    let samples = try XCTUnwrap(smaller.payload["history"]?.objectValue?["samples"]?.arrayValue)
+    let delivered = samples.count
+    let resume = try XCTUnwrap(smaller.next)
+    XCTAssertEqual(samples.compactMap { $0.objectValue?["record"]?.objectValue?.string("id") },
+      first.rows.prefix(delivered).map { $0.id.uuidString.lowercased() })
+    XCTAssertEqual(resume.beforeID, first.rows.prefix(delivered).last?.id)
+    let remainder = try records.localCareMeasurementPage(id: concern.id, metric: .glucose,
+      expected: first.binding, after: resume, now: now)
+    XCTAssertEqual(samples.count + remainder.rows.count, all.count)
+    XCTAssertEqual(remainder.rows.map(\.id), all.dropFirst(delivered).map(\.id))
+    XCTAssertThrowsError(try GalaxySSIHealthCareHistoryTool.output(first, metric: .glucose, after: nil, budget: 1))
     XCTAssertThrowsError(try records.localCareMeasurementPage(id: concern.id, metric: .weight,
       expected: first.binding, after: next, now: now))
     var oldest = try XCTUnwrap(all.last)
@@ -576,9 +635,9 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(try reopened.openLocalCareDiscussion(id: concern.id, metric: .glucose).id, thread.id)
     let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
       endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
-    func review(_ provider: String = "provider-a") throws -> GalaxySSIHealthCareDiscussion.Approval {
+    func review(_ provider: String = "provider-a", history: Bool = false) throws -> GalaxySSIHealthCareDiscussion.Approval {
       try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Explain this reading",
-        destinationID: provider, model: model, credential: "fixture-api-key", now: now)
+        destinationID: provider, model: model, credential: "fixture-api-key", allowsHistory: history, now: now)
     }
     XCTAssertThrowsError(try review())
     try records.setHealthOnlinePermission(true)
@@ -596,13 +655,21 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(approved, now: now.addingTimeInterval(601)))
     try records.beginLocalCareDiscussionTurn(approved, now: now)
     XCTAssertThrowsError(try reopened.beginLocalCareDiscussionTurn(approved, now: now))
+    XCTAssertThrowsError(try records.readLocalCareDiscussionHistory(approved, after: nil, now: now))
     try records.finishLocalCareDiscussionTurn(approved, answer: "Fixture scoped response", now: now)
     XCTAssertTrue(try review().payload.contains("Fixture scoped response"))
     XCTAssertFalse(try review("provider-b").payload.contains("Fixture scoped response"))
-    let stale = try review()
+    let stale = try review(history: true)
+    XCTAssertNotNil(stale.historyVersion)
+    XCTAssertFalse(stale.payload.contains(reading.id.uuidString.lowercased()))
+    XCTAssertThrowsError(try records.readLocalCareDiscussionHistory(stale, after: nil, now: now))
+    try records.beginLocalCareDiscussionTurn(stale, now: now)
+    let page = try records.readLocalCareDiscussionHistory(stale, after: nil, now: now)
+    XCTAssertEqual(page.binding.historyVersion, stale.historyVersion)
+    XCTAssertEqual(page.rows.map(\.id), [reading.id])
     try records.setHealthOnlinePermission(false)
     try records.setHealthOnlinePermission(true)
-    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(stale, now: now))
+    XCTAssertThrowsError(try records.readLocalCareDiscussionHistory(stale, after: nil, now: now))
     let updatedApproval = try review()
     try records.setLocalCareContext(concern, applicability: .excluded, now: now)
     XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(updatedApproval, now: now))
