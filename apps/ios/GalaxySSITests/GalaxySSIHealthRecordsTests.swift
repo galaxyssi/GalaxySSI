@@ -934,7 +934,10 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     try records.commitRecognitionPage(id: job.id, run: run, page: first)
     let saved = try XCTUnwrap(records.load().recognitionJobs?.first)
     XCTAssertThrowsError(try records.beginRecognitionJob(id: job.id, expected: job.version))
-    let resumed = try records.beginRecognitionJob(id: job.id, expected: saved.version)
+    XCTAssertThrowsError(try records.beginRecognitionJob(id: job.id, expected: saved.version))
+    try records.reconcileAbandonedRecognitionJobs(process: UUID())
+    let interrupted = try XCTUnwrap(records.load().recognitionJobs?.first)
+    let resumed = try records.beginRecognitionJob(id: job.id, expected: interrupted.version)
     XCTAssertThrowsError(try records.commitRecognitionPage(id: job.id, run: run, page: second))
     try records.finishRecognitionJob(id: job.id, run: resumed, phase: .cancelled)
     XCTAssertThrowsError(try records.commitRecognitionPage(id: job.id, run: resumed, page: second))
@@ -1217,6 +1220,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertThrowsError(try GalaxySSIHealthPDFText.read(pdf, page: 0, password: "fixture-reader")) {
       guard case GalaxySSIHealthPDFText.Failure.extractionRestricted = $0 else { return XCTFail("Expected restricted extraction") }
     }
+    XCTAssertThrowsError(try GalaxySSIHealthRecognitionJobs.pdfPageCount(pdf, password: "fixture-reader"))
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
@@ -1224,6 +1228,60 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     try store.store(pdf, name: "protected.pdf")
     let original = try XCTUnwrap(store.list().originals.first)
     XCTAssertEqual(try store.read(original), pdf)
+  }
+
+  @MainActor
+  func testProtectedRecognitionQueueResumesOnlyAfterUnlockAndHidesPartialResults() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let archive = root.appendingPathComponent("archive")
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: archive)
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: root)
+    let bytes = NSMutableData()
+    let consumer = try XCTUnwrap(CGDataConsumer(data: bytes as CFMutableData))
+    let password = "fixture-queue-password"
+    var bounds = CGRect(x: 0, y: 0, width: 200, height: 120)
+    let context = try XCTUnwrap(CGContext(consumer: consumer, mediaBox: &bounds, [
+      kCGPDFContextUserPassword as String: password, kCGPDFContextAllowsCopying as String: true
+    ] as CFDictionary))
+    for _ in 0..<2 { context.beginPDFPage(nil); context.endPDFPage() }
+    context.closePDF()
+    let pdf = bytes as Data
+    try store.store(pdf, name: "queue-protected.pdf")
+    let original = try XCTUnwrap(store.list().originals.first)
+    XCTAssertEqual(try store.read(original), pdf)
+    XCTAssertThrowsError(try GalaxySSIHealthRecognitionJobs.pdfPageCount(pdf))
+    XCTAssertThrowsError(try GalaxySSIHealthRecognitionJobs.pdfPageCount(pdf, password: "wrong"))
+    let count = try GalaxySSIHealthRecognitionJobs.pdfPageCount(pdf, password: password)
+    XCTAssertEqual(count, 2)
+    let job = try records.enqueueRecognition(original: original, pageCount: count, requiresPDFPassword: true)
+    XCTAssertThrowsError(try records.beginRecognitionJob(id: job.id, expected: job.version))
+    let run = try records.beginRecognitionJob(id: job.id, expected: job.version, unlockedProtectedPDF: true)
+    let first = GalaxySSIHealthRecognitionJobs.Page(index: 0, fromOCR: false, lines: [])
+    let second = GalaxySSIHealthRecognitionJobs.Page(index: 1, fromOCR: false, lines: [])
+    try records.commitRecognitionPage(id: job.id, run: run, page: first)
+    try records.reconcileAbandonedRecognitionJobs()
+    let running = try XCTUnwrap(records.load().recognitionJobs?.first)
+    XCTAssertEqual(running.phase, .running)
+    XCTAssertTrue(running.reviewPages.isEmpty)
+    XCTAssertThrowsError(try records.beginRecognitionJob(id: job.id, expected: running.version, unlockedProtectedPDF: true))
+    let reopened = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: archive)
+    try reopened.reconcileAbandonedRecognitionJobs(process: UUID())
+    let interrupted = try XCTUnwrap(reopened.load().recognitionJobs?.first)
+    XCTAssertEqual(interrupted.phase, .interrupted)
+    XCTAssertEqual(interrupted.pages, [first])
+    XCTAssertTrue(interrupted.reviewPages.isEmpty)
+    XCTAssertThrowsError(try reopened.beginRecognitionJob(id: job.id, expected: interrupted.version))
+    XCTAssertThrowsError(try reopened.commitRecognitionPage(id: job.id, run: run, page: second))
+    XCTAssertEqual(try GalaxySSIHealthRecognitionJobs.pdfPageCount(store.read(original), password: password), count)
+    let resumed = try reopened.beginRecognitionJob(id: job.id, expected: interrupted.version, unlockedProtectedPDF: true)
+    try reopened.commitRecognitionPage(id: job.id, run: resumed, page: second)
+    let completed = try XCTUnwrap(reopened.load().recognitionJobs?.first)
+    XCTAssertEqual(completed.reviewPages, [first, second])
+    XCTAssertTrue(try reopened.load().current.isEmpty)
+    XCTAssertFalse(String(decoding: try JSONEncoder().encode(completed), as: UTF8.self).contains(password))
   }
 
   @MainActor
