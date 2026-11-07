@@ -2128,6 +2128,28 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(expired.run.visibleState(now: 14 + AgentCollaborationGoalWorkRun.leaseMillis), .interrupted)
     XCTAssertThrowsError(try reopened.finishGoalWork(next.run, output: "Late", interrupted: false,
       now: 14 + AgentCollaborationGoalWorkRun.leaseMillis))
+    let desktopRequest = work("batch-3", id: "desktop", member: scope(1).memberId, expected: 3)
+    _ = try reopened.publishCollaborationMilestone(desktopRequest, scope: scope(0))
+    let desktopWork = try reopened.goalWork("desktop", scope: scope(0)).0
+    let desktopTarget = AgentCollaborationGoalWorkRun.Target(kind: .desktop, resourceID: team.members[1].agentId,
+      modelID: "codex-model")
+    let dispatch = try reopened.claimGoalWork(desktopWork, scope: scope(0), target: desktopTarget, now: 20).run
+    let binding = AgentCollaborationGoalWorkRun.DesktopBinding(owner: scope(0), workID: dispatch.workID,
+      dispatchID: dispatch.dispatchID, profileID: "profile", desktopID: "desktop", desktopFingerprint: "fingerprint",
+      routeID: "route", contactID: desktopTarget.resourceID, agentID: "codex")
+    try reopened.bindDesktopGoalWork(binding, now: 21)
+    var packet: [String: Any] = ["client_route_id": "route", "contact_id": desktopTarget.resourceID,
+      "source_message_id": dispatch.dispatchID, "task_id": dispatch.dispatchID, "agent_id": "codex",
+      "conversation_id": team.conversationId, "turn_id": team.taskId, "execution_generation": 1]
+    XCTAssertTrue(binding.matches(packet, desktop: "desktop", fingerprint: "fingerprint", route: "route", profile: "profile"))
+    XCTAssertFalse(binding.matches(packet, desktop: "desktop", fingerprint: "changed", route: "route", profile: "profile"))
+    packet["execution_generation"] = 2
+    XCTAssertFalse(binding.matches(packet, desktop: "desktop", fingerprint: "fingerprint", route: "route", profile: "profile"))
+    let secondOpen = open()
+    XCTAssertEqual(try secondOpen.desktopGoalWorkBinding(dispatchID: dispatch.dispatchID, conversationID: team.conversationId), binding)
+    try secondOpen.finishDesktopGoalWork(binding, output: "Original result", now: 22 + AgentCollaborationGoalWorkRun.leaseMillis)
+    try secondOpen.finishDesktopGoalWork(binding, output: "Do not replace", now: 23 + AgentCollaborationGoalWorkRun.leaseMillis)
+    XCTAssertEqual(try secondOpen.goalWork("desktop", scope: scope(0)).1?.output, "Original result")
     reopened.removeResearchObjects(conversationId: team.conversationId)
     XCTAssertThrowsError(try reopened.publishCollaborationMilestone(first, scope: scope(0)))
     XCTAssertThrowsError(try reopened.publishCollaborationMilestone(request, scope: scope(0)))

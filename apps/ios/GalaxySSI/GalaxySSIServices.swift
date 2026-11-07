@@ -8616,6 +8616,7 @@ final class MessageCoordinator: ObservableObject {
     enum Route {
       case cloud(GalaxySSIContact)
       case local(LocalModelRuntimeProfile)
+      case desktop(GalaxySSIContact, ServerLink, [String: String]?)
     }
     let route: Route
     let identity: AgentCollaborationGoalWorkRun.Target
@@ -8627,6 +8628,28 @@ final class MessageCoordinator: ObservableObject {
       }
       route = .local(profile)
       identity = .init(kind: .local, resourceID: target.id, modelID: profile.id)
+    } else if target.kind == .agent {
+      guard GalaxySSISignalEngine.isAvailable, AgentConnectorRouteSelector.isDeliverable(target),
+            let contact = store.contact(id: assigned.agentId), contact.trustState == .verified,
+            contact.deliveryMode.isGalaxySSILinkFamily, contact.connectorAgentId == "codex",
+            let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == contact.desktopId }),
+            !link.desktopFingerprint.isBlank else { return unavailable("work_desktop_unavailable") }
+      let invocation: [String: String]?
+      if let effort = configured.reasoningEffort {
+        guard let requested = AgentCollaborationReasoningSelection.invocation(model: configured.modelId, effort: effort,
+          adapter: contact.connectorAdapterName, profile: contact.connectorInvocationProfile)
+        else { return unavailable("work_desktop_model_unavailable") }
+        invocation = requested
+      } else if !configured.modelId.isBlank {
+        guard contact.connectorInvocationProfile.models.contains(where: { $0.id == configured.modelId }),
+              let requested = AgentInvocationRequestJsonCodec.encode(modelId: configured.modelId, reasoningEffort: .automatic)
+        else { return unavailable("work_desktop_model_unavailable") }
+        invocation = requested
+      } else {
+        invocation = nil
+      }
+      route = .desktop(contact, link, invocation)
+      identity = .init(kind: .desktop, resourceID: target.id, modelID: configured.modelId.ifBlank("connector-default"))
     } else {
       guard target.kind == .model, var contact = store.contact(id: assigned.agentId), contact.deliveryMode == .cloudAPI,
             let model = configured.modelId.isBlank ? contact.selectedCloudModel :
@@ -8655,6 +8678,19 @@ final class MessageCoordinator: ObservableObject {
       Assignment: \(work.assignment)
       Dependency results: \(dependencies)
       """
+    if case .desktop(let contact, let link, let invocation) = route {
+      let sent = await publishDesktopGoalWork(claim.run, contact: contact, link: link, invocation: invocation,
+        profileID: profileID, text: prompt)
+      if !sent {
+        var receipt = (try? history.finishGoalWork(claim.run, output: nil, interrupted: false))
+          ?? unavailable("work_outcome_unconfirmed")
+        receipt["new_execution"] = .bool(true)
+        return receipt
+      }
+      var receipt = await waitForDesktopGoalWork(claim.run, live: { liveRoster() == roster })
+      receipt["new_execution"] = .bool(true)
+      return receipt
+    }
     var output: String?
     var interrupted = false
     let cancellation = AgentModelToolLoopCancellationSource()
@@ -8684,6 +8720,8 @@ final class MessageCoordinator: ObservableObject {
             systemPrompt: localModelSystemPrompt, userPrompt: prompt, taskId: claim.run.dispatchID,
             cancellation: cancellation.token).text
         }, onCancel: { cancellation.cancel() })
+      case .desktop:
+        throw GalaxySSIError.transportUnavailable
       }
     } catch { interrupted = Task.isCancelled || error is CancellationError || cancellation.token.isCancellationRequested }
     if Task.isCancelled || cancellation.token.isCancellationRequested {
@@ -8695,6 +8733,77 @@ final class MessageCoordinator: ObservableObject {
     else { return unavailable("work_outcome_unconfirmed") }
     receipt["new_execution"] = .bool(true)
     return receipt
+  }
+
+  private func publishDesktopGoalWork(_ claim: AgentCollaborationGoalWorkRun, contact: GalaxySSIContact, link: ServerLink,
+                                      invocation: [String: String]?, profileID: String, text: String) async -> Bool {
+    guard !Task.isCancelled, store.profile.identityFingerprint == profileID else { return false }
+    let scope = claim.owner
+    let source = claim.dispatchID
+    let identity = AgentTaskIdentity(clientRouteId: link.routes.clientRouteId, conversationId: scope.conversationId,
+      taskId: source, turnId: scope.turnId)
+    let binding = AgentCollaborationGoalWorkRun.DesktopBinding(owner: scope, workID: claim.workID,
+      dispatchID: source, profileID: profileID, desktopID: link.desktopId, desktopFingerprint: link.desktopFingerprint,
+      routeID: link.routes.clientRouteId, contactID: contact.id, agentID: contact.connectorAgentId)
+    let ticket = AgentDataDisclosureLedger.beginDesktopRequest(store: disclosureStore, contactId: contact.id,
+      desktopId: link.desktopId, providerId: contact.galaxySSIId, title: contact.displayName, text: text,
+      attachments: [], conversationId: scope.conversationId, taskId: source, turnId: scope.turnId)
+    guard ticket.allowed else { return false }
+    let sent: Bool
+    do {
+      try AgentTeamExecutionHistoryStore.shared.bindDesktopGoalWork(binding)
+      guard taskIdentityStore.register(contactId: contact.id, sourceMessageId: source, identity: identity)
+      else { throw GalaxySSIError.transportUnavailable }
+      let now = AgentControlPlaneClock.nowMillis()
+      var payload: [String: Any] = [
+        "type": "text", "message_id": source, "client_message_id": source, "source_message_id": source,
+        "content": text, "contact_id": contact.id, "agent_id": contact.connectorAgentId,
+        "task_id": source, "sender": store.profile.galaxySSIId, "desktop_id": link.desktopId,
+        "conversation_id": scope.conversationId, "turn_id": scope.turnId, "client_route_id": link.routes.clientRouteId,
+        "execution_mode": AgentTaskExecutionMode.planOnly.rawValue, "time": now, "client_sent_at_ms": now,
+        "_galaxyssi_conversation_id": scope.conversationId, "_galaxyssi_turn_id": scope.turnId,
+        "_galaxyssi_task_id": source, "_galaxyssi_task_execution_mode": AgentTaskExecutionMode.planOnly.rawValue,
+        "_galaxyssi_long_term_write_allowed": "false", "_galaxyssi_conversation_has_attachments": "false"
+      ]
+      payload["agent_invocation"] = invocation
+      let wire = try linkWirePayload(payload, link: link)
+      sent = await mqttClient.publishConnectedGoalWork(topic: link.routes.upTopic, payload: wire.wireData)
+    } catch { sent = false }
+    AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: sent ? .sent : .failed)
+    return sent
+  }
+
+  private func waitForDesktopGoalWork(_ run: AgentCollaborationGoalWorkRun, live: @escaping () -> Bool) async -> AgentMcpJSONObject {
+    let history = AgentTeamExecutionHistoryStore.shared
+    var signal: AsyncStream<Void>.Continuation?
+    let updates = AsyncStream<Void>(bufferingPolicy: .bufferingNewest(1)) { signal = $0 }
+    guard let signal else { return ["success": .bool(false), "status": .string("work_outcome_unconfirmed")] }
+    let center = NotificationCenter.default
+    let observer = center.addObserver(forName: .galaxySSIAgentTeamExecutionHistoryDidUpdate,
+      object: nil, queue: nil) { notification in
+      if notification.object as? String == run.owner.runId { signal.yield(()) }
+    }
+    let monitor = Task { @MainActor in
+      while !Task.isCancelled {
+        guard live(), AgentControlPlaneClock.nowMillis() < run.startedAt + AgentCollaborationGoalWorkRun.leaseMillis
+        else { signal.yield(()); signal.finish(); return }
+        do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
+      }
+    }
+    defer {
+      center.removeObserver(observer)
+      monitor.cancel()
+      signal.finish()
+    }
+    signal.yield(())
+    for await _ in updates {
+      guard live(), !Task.isCancelled else { break }
+      let now = AgentControlPlaneClock.nowMillis()
+      guard let (_, latest) = try? history.goalWork(run.workID, scope: run.owner), let latest
+      else { break }
+      if latest.visibleState(now: now) != .running { return latest.receipt(now: now) }
+    }
+    return ["success": .bool(false), "status": .string("work_outcome_unconfirmed"), "work_id": .string(run.workID)]
   }
 
   private func managedBrowserContextDigest(_ team: AgentTeamExecutionSnapshot) -> String {
@@ -9120,6 +9229,36 @@ final class MessageCoordinator: ObservableObject {
     if terminal { UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: source) }
     else { UserDefaultsAgentGlobalRunSlotStore.shared.touch(sourceMessageId: source, nowMillis: AgentControlPlaneClock.nowMillis()) }
     if !messageId.isEmpty { deliveryStore.completeIncoming(messageId: messageId) }
+    return true
+  }
+
+  private func handleDesktopGoalWorkReply(_ payload: [String: Any], link: ServerLink) -> Bool {
+    guard ["text", "agent_task_event"].contains(payload.string("type")),
+          let binding = try? AgentTeamExecutionHistoryStore.shared.desktopGoalWorkBinding(
+            dispatchID: payload.string("source_message_id"), conversationID: payload.string("conversation_id"))
+    else { return false }
+    guard link.paired, binding.matches(payload, desktop: link.desktopId, fingerprint: link.desktopFingerprint,
+            route: link.routes.clientRouteId, profile: store.profile.identityFingerprint),
+          taskIdentityStore.matchesRegistered(payload: payload),
+          let contact = store.contact(id: binding.contactID), contact.trustState == .verified,
+          contact.desktopId == binding.desktopID, contact.connectorAgentId == binding.agentID,
+          let session = store.agentSession(id: binding.owner.conversationId), !session.privateMode,
+          !session.trackingPaused, session.mergedIntoConversationId.isBlank, let roster = session.collaborationRoster,
+          let person = UUID(uuidString: AgentTeamProgressPolicy.stableCollaborationMemberId(binding.owner.memberId)),
+          roster.coordinatorId == person,
+          let (work, _) = try? AgentTeamExecutionHistoryStore.shared.goalWork(binding.workID, scope: binding.owner),
+          let worker = UUID(uuidString: AgentTeamProgressPolicy.stableCollaborationMemberId(work.member)),
+          roster.members.contains(where: { $0.id == worker && $0.resourceId == binding.contactID }),
+          let task = store.agentTask(id: binding.owner.turnId), !task.blocked,
+          task.phase == .executing || task.phase == .waitingResponse,
+          !PhoneExecutionAuthority.isCancelled(taskId: task.taskId) else { return true }
+    let status = payload.string("task_status")
+    if payload.string("type") == "text", let succeeded = AgentRemoteTaskStatusPolicy.finalResponseSuccess(status) {
+      let content = payload.string("content").ifBlank(payload.string("text"))
+      if !succeeded || !content.isBlank {
+        try? AgentTeamExecutionHistoryStore.shared.finishDesktopGoalWork(binding, output: succeeded ? content : nil)
+      }
+    }
     return true
   }
 
@@ -14379,6 +14518,10 @@ final class MessageCoordinator: ObservableObject {
       if !messageId.isEmpty {
         deliveryStore.completeIncoming(messageId: messageId)
       }
+      return
+    }
+    if object.string("scheme") == "signal", let link, handleDesktopGoalWorkReply(appPayload, link: link) {
+      if !messageId.isEmpty { deliveryStore.completeIncoming(messageId: messageId) }
       return
     }
     if object.string("scheme") == "signal", handleTeamObserverReply(appPayload, link: link, messageId: messageId) { return }

@@ -206,13 +206,33 @@ struct AgentCollaborationGoalCheckpoint: Codable, Equatable {
 struct AgentCollaborationGoalWorkRun: Codable {
   enum State: String, Codable { case running, succeeded, failed, interrupted }
   struct Target: Codable, Equatable {
-    enum Kind: String, Codable { case cloud, local }
+    enum Kind: String, Codable { case cloud, local, desktop }
     let kind: Kind
     let resourceID: String
     let modelID: String
 
     var fields: AgentMcpJSONObject {
       ["kind": .string(kind.rawValue), "resource_id": .string(resourceID), "model_id": .string(modelID)]
+    }
+  }
+  struct DesktopBinding: Codable, Equatable {
+    let owner: AgentCollaborationToolEvidenceScope
+    let workID: String
+    let dispatchID: String
+    let profileID: String
+    let desktopID: String
+    let desktopFingerprint: String
+    let routeID: String
+    let contactID: String
+    let agentID: String
+
+    func matches(_ payload: [String: Any], desktop: String, fingerprint: String, route: String, profile: String) -> Bool {
+      let observed = AgentTeamReplyObservation(payload: payload)
+      return desktop == desktopID && fingerprint == desktopFingerprint && route == routeID && profile == profileID &&
+        payload.string("client_route_id") == routeID && payload.string("contact_id") == contactID &&
+        payload.string("agent_id") == agentID && payload.string("source_message_id") == dispatchID &&
+        payload.string("task_id") == dispatchID && payload.string("conversation_id") == owner.conversationId &&
+        payload.string("turn_id") == owner.turnId && observed.valid && observed.generation == 1
     }
   }
   static let processID = UUID().uuidString

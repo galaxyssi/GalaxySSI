@@ -384,7 +384,7 @@ struct CloudModelStreamMutableConversation {
       "name": Self.collaborationPublishName,
       "description": assessmentOnly
         ? "Use validate_assessment with artifact containing the exact goal-assessment JSON to check its structure. As coordinator, use establish_contract with a continue assessment, open criteria without evidence, and empty work and blockers. Use append_work with a unique milestone_id, expected_revision, and a galaxyssi.work-expansion.v1 JSON artifact. Retry identical requests after an uncertain response. Admission does not dispatch work or accept the goal." +
-          (canRunGoalWork ? " Use run_work with an admitted work_id assigned to a cloud or installed local-model specialist once its dependencies are satisfied. The same ID returns its saved outcome and is never automatically reexecuted." : "")
+          (canRunGoalWork ? " Use run_work with an admitted work_id assigned to a cloud, installed local model, or paired Desktop Codex specialist once its dependencies are satisfied. Desktop work is plan-only. The same ID returns its saved outcome and is never automatically reexecuted." : "")
         : "Use status to check availability. Publish interim research with milestone_id and an artifact JSON string. Retry identical bytes, or use receipt with milestone_id and artifact_sha256. Use list with next_cursor to recover saved IDs, then cite them in milestones in your final artifact. Use validate_assessment with artifact to check goal-assessment structure without publishing. Receipts do not verify evidence or complete the assignment."
     ], schema: schema)
   }

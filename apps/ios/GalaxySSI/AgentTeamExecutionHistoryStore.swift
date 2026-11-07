@@ -1944,6 +1944,49 @@ final class AgentTeamExecutionHistoryStore {
     "goal-work:" + AgentMcpJSONCodec.sha256(["run": .string(scope.runId), "turn": .string(scope.turnId), "work": .string(workID)])
   }
 
+  private static func desktopGoalWorkKey(_ dispatchID: String) -> String { "goal-work-desktop:" + dispatchID }
+
+  func bindDesktopGoalWork(_ binding: AgentCollaborationGoalWorkRun.DesktopBinding,
+                           now: Int64 = AgentControlPlaneClock.nowMillis()) throws {
+    try access { database in
+      _ = try Self.activeGoalCoordinator(binding.owner, database: database)
+      guard UUID(uuidString: binding.dispatchID) != nil, !binding.routeID.isBlank,
+            !binding.desktopID.isBlank, !binding.desktopFingerprint.isBlank, !binding.profileID.isBlank,
+            !binding.contactID.isBlank, binding.agentID == "codex",
+            let run = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
+              conversationId: binding.owner.conversationId, key: Self.goalWorkKey(binding.workID, scope: binding.owner), revision: 0),
+            run.owner == binding.owner, run.dispatchID == binding.dispatchID,
+            run.target?.kind == .desktop, run.target?.resourceID == binding.contactID,
+            run.visibleState(now: now) == .running
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      try database.insertResearchRecord(binding, conversationId: binding.owner.conversationId,
+        key: Self.desktopGoalWorkKey(binding.dispatchID), revision: 0)
+    }
+  }
+
+  func desktopGoalWorkBinding(dispatchID: String, conversationID: String)
+    throws -> AgentCollaborationGoalWorkRun.DesktopBinding? {
+    guard UUID(uuidString: dispatchID) != nil, !conversationID.isBlank else { return nil }
+    return try access { try $0.researchRecord(AgentCollaborationGoalWorkRun.DesktopBinding.self,
+      conversationId: conversationID, key: Self.desktopGoalWorkKey(dispatchID), revision: 0) }
+  }
+
+  func finishDesktopGoalWork(_ binding: AgentCollaborationGoalWorkRun.DesktopBinding, output: String?,
+                             now: Int64 = AgentControlPlaneClock.nowMillis()) throws {
+    try access { database in
+      _ = try Self.activeGoalCoordinator(binding.owner, database: database)
+      let key = Self.goalWorkKey(binding.workID, scope: binding.owner)
+      guard try database.researchRecord(AgentCollaborationGoalWorkRun.DesktopBinding.self,
+              conversationId: binding.owner.conversationId, key: Self.desktopGoalWorkKey(binding.dispatchID), revision: 0) == binding,
+            var run = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
+              conversationId: binding.owner.conversationId, key: key, revision: 0),
+            run.owner == binding.owner, run.dispatchID == binding.dispatchID else { throw AgentTeamHistoryDatabase.Failure.stale }
+      guard run.state == .running else { return }
+      _ = try Self.persistGoalWorkOutcome(&run, key: key, output: output, interrupted: false, now: now, database: database)
+    }
+    notify(binding.owner.runId)
+  }
+
   func goalWork(_ workID: String, scope: AgentCollaborationToolEvidenceScope)
     throws -> (AgentCollaborationLiveGraph.Work, AgentCollaborationGoalWorkRun?) {
     try access { database in
@@ -2009,6 +2052,12 @@ final class AgentTeamExecutionHistoryStore {
         conversationId: claim.owner.conversationId, key: key, revision: 0),
         run.owner == claim.owner, run.dispatchID == claim.dispatchID, run.process == AgentCollaborationGoalWorkRun.processID,
         run.visibleState(now: now) == .running else { throw AgentTeamHistoryDatabase.Failure.stale }
+      return try Self.persistGoalWorkOutcome(&run, key: key, output: output, interrupted: interrupted, now: now, database: database)
+    }
+  }
+
+  private static func persistGoalWorkOutcome(_ run: inout AgentCollaborationGoalWorkRun, key: String, output: String?,
+    interrupted: Bool, now: Int64, database: AgentTeamHistoryDatabase) throws -> AgentMcpJSONObject {
       run.state = interrupted ? .interrupted : (output == nil ? .failed : .succeeded)
       run.finishedAt = max(now, run.startedAt)
       if let output, !interrupted {
@@ -2019,7 +2068,6 @@ final class AgentTeamExecutionHistoryStore {
       try database.removeResearchRecord(conversationId: run.owner.conversationId, key: key)
       try database.insertResearchRecord(run, conversationId: run.owner.conversationId, key: key, revision: 0)
       return run.receipt(now: now)
-    }
   }
 
   private func admitCollaborationWork(_ input: AgentMcpJSONObject,
