@@ -148,6 +148,11 @@ private struct GalaxySSIHealthCareDetail: View {
     List {
       if scene == .active, let concern {
         Section(t("attention", "Needs attention")) {
+          if concern.stage != .paused, concern.stage != .closed, concern.assessment.record != nil {
+            NavigationLink(t("discuss", "Discuss this concern")) {
+              GalaxySSIHealthCareDiscussionView(records: records, concernID: concern.id, metric: metric)
+            }
+          }
           Text(GalaxySSIHealthCareText.stage(concern.stage, language: language))
           ForEach(concern.assessment.signals, id: \.rawValue) { signal in
             Text(GalaxySSIHealthCareText.signal(signal, language: language))

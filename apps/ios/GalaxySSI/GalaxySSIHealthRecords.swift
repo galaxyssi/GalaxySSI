@@ -176,6 +176,7 @@ struct GalaxySSIHealthRecords {
     var localCareAllowed: Bool?
     var localCare: GalaxySSIHealthCare.Ledger?
     var localCareLastEvaluatedAt: Date?
+    var localCareDiscussions: [String: GalaxySSIHealthCareDiscussion.Thread]?
 
     var keepsNewImportOriginals: Bool { retainImportOriginals ?? true }
 
@@ -465,6 +466,100 @@ struct GalaxySSIHealthRecords {
     guard archive.localCareAllowed == true else { throw Failure.permission }
     let history = archive.localCare?.history[id.uuidString] ?? []
     return Array(history.reversed().lazy.filter { $0.revision < revision }.prefix(30))
+  }
+
+  func openLocalCareDiscussion(id: UUID, metric: GalaxySSIHealthMetric) throws -> GalaxySSIHealthCareDiscussion.Thread {
+    var archive = try load()
+    _ = try currentDiscussionConcern(id: id, metric: metric, archive: archive, now: Date())
+    let key = id.uuidString
+    var threads = archive.localCareDiscussions ?? [:]
+    if let existing = threads[key] { return existing }
+    let thread = GalaxySSIHealthCareDiscussion.Thread(concernID: id)
+    threads[key] = thread
+    archive.localCareDiscussions = threads
+    try persist(archive)
+    return thread
+  }
+
+  func prepareLocalCareDiscussion(id: UUID, metric: GalaxySSIHealthMetric, question: String,
+      destinationID: String, model: CloudModelConfig, credential: String, now: Date = Date())
+      throws -> GalaxySSIHealthCareDiscussion.Approval {
+    let archive = try load()
+    let concern = try currentDiscussionConcern(id: id, metric: metric, archive: archive, now: now)
+    guard let care = archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id,
+          let online = archive.healthOnlinePermission, let thread = archive.localCareDiscussions?[id.uuidString],
+          thread.turns.count < GalaxySSIHealthCareDiscussion.maximumTurns,
+          let endpoint = GalaxySSIHealthCareDiscussion.endpoint(for: model),
+          CloudModelCredentialPolicy.isStoredCredential(credential) else { throw Failure.permission }
+    let credentialDigest = SHA256.hash(data: Data(credential.utf8))
+    let destination = GalaxySSIHealthCareDiscussion.destination(contactID: destinationID, model: model, endpoint: endpoint,
+      credential: credentialDigest)
+    return .init(id: UUID(), owner: owner, threadID: thread.id, priorTurnID: thread.turns.last?.id,
+      concernID: id, metric: metric, concernRevision: concern.revision, carePermission: care,
+      onlinePermission: online, destinationID: destinationID, destinationDigest: destination,
+      credentialDigest: credentialDigest, model: model, endpoint: endpoint,
+      question: question, payload: try GalaxySSIHealthCareDiscussion.payload(concern: concern, question: question,
+        thread: thread, destination: destination), reviewedAt: now)
+  }
+
+  func validateLocalCareDiscussionApproval(_ approval: GalaxySSIHealthCareDiscussion.Approval) throws {
+    let archive = try load()
+    let thread = try checkedDiscussion(approval, archive: archive, now: Date())
+    guard thread.turns.last?.id == approval.priorTurnID else { throw Failure.stale }
+  }
+
+  func beginLocalCareDiscussionTurn(_ approval: GalaxySSIHealthCareDiscussion.Approval, now: Date = Date()) throws {
+    var archive = try load()
+    var thread = try checkedDiscussion(approval, archive: archive, now: now)
+    guard thread.turns.last?.id == approval.priorTurnID,
+          !thread.turns.contains(where: { $0.id == approval.id }),
+          thread.turns.count < GalaxySSIHealthCareDiscussion.maximumTurns,
+          let concern = archive.localCare?.current[approval.metric.rawValue],
+          GalaxySSIHealthCareDiscussion.destination(contactID: approval.destinationID, model: approval.model,
+            endpoint: approval.endpoint, credential: approval.credentialDigest) == approval.destinationDigest,
+          try GalaxySSIHealthCareDiscussion.payload(concern: concern, question: approval.question, thread: thread,
+            destination: approval.destinationDigest) == approval.payload else { throw Failure.stale }
+    thread.turns.append(.init(id: approval.id, question: approval.question, destination: approval.destinationDigest))
+    archive.localCareDiscussions?[approval.concernID.uuidString] = thread
+    try persist(archive)
+  }
+
+  func validateLocalCareDiscussionTurn(_ approval: GalaxySSIHealthCareDiscussion.Approval, now: Date = Date()) throws {
+    let thread = try checkedDiscussion(approval, archive: load(), now: now)
+    guard thread.turns.last?.id == approval.id, thread.turns.last?.answer == nil else { throw Failure.stale }
+  }
+
+  func finishLocalCareDiscussionTurn(_ approval: GalaxySSIHealthCareDiscussion.Approval, answer: String,
+                                     now: Date = Date()) throws {
+    guard !answer.isBlank, answer.utf8.count <= 6_144 else { throw Failure.invalid }
+    var archive = try load()
+    var thread = try checkedDiscussion(approval, archive: archive, now: now)
+    guard let index = thread.turns.indices.last, thread.turns[index].id == approval.id,
+          thread.turns[index].answer == nil else { throw Failure.stale }
+    thread.turns[index].answer = answer
+    archive.localCareDiscussions?[approval.concernID.uuidString] = thread
+    try persist(archive)
+  }
+
+  private func currentDiscussionConcern(id: UUID, metric: GalaxySSIHealthMetric, archive: Archive,
+                                        now: Date) throws -> GalaxySSIHealthCare.Concern {
+    guard archive.localCareAllowed == true else { throw Failure.permission }
+    guard let concern = archive.localCare?.current[metric.rawValue], concern.id == id,
+          concern.stage != .paused && concern.stage != .closed, concern.assessment.record != nil,
+          GalaxySSIHealthCare.assess(archive.current.filter { $0.metric == metric && $0.isValid && $0.measuredAt <= now },
+            context: concern.context) == concern.assessment else { throw Failure.stale }
+    return concern
+  }
+
+  private func checkedDiscussion(_ approval: GalaxySSIHealthCareDiscussion.Approval, archive: Archive, now: Date)
+      throws -> GalaxySSIHealthCareDiscussion.Thread {
+    let concern = try currentDiscussionConcern(id: approval.concernID, metric: approval.metric, archive: archive, now: now)
+    guard owner == approval.owner, approval.isCurrent(at: now), concern.revision == approval.concernRevision,
+          archive.healthOnlinePermission == approval.onlinePermission,
+          archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id == approval.carePermission,
+          let thread = archive.localCareDiscussions?[concern.id.uuidString], thread.id == approval.threadID
+    else { throw Failure.permission }
+    return thread
   }
 
   func setLocalCareContext(_ concern: GalaxySSIHealthCare.Concern,
