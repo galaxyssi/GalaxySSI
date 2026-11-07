@@ -4,6 +4,25 @@ import CryptoKit
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testDesktopEvidenceTraceCorrelatesWithoutLoggingRawRequestID() {
+    XCTAssertEqual(AgentDesktopEvidenceQueryTrace.token("nonce"), "78377b525757b494")
+    XCTAssertEqual(AgentDesktopEvidenceQueryTrace.token(""), "unavailable")
+    XCTAssertEqual(AgentDesktopEvidenceQueryTrace.token(String(repeating: "x", count: 129)), "unavailable")
+  }
+
+  func testDesktopEvidenceLateTraceIsBoundedScopedAndOneShot() {
+    var late = AgentDesktopEvidenceQueryTrace.LateQueries()
+    for index in 0...64 {
+      late.remember(String(index), desktop: "desktop", route: "route", started: 1_000, now: 9_000 + Int64(index))
+    }
+    XCTAssertNil(late.consume("0", desktop: "desktop", route: "route", now: 10_000))
+    XCTAssertNil(late.consume("64", desktop: "other", route: "route", now: 10_000))
+    XCTAssertNil(late.consume("64", desktop: "desktop", route: "rotated", now: 10_000))
+    XCTAssertEqual(late.consume("64", desktop: "desktop", route: "route", now: 10_000), 1_000)
+    XCTAssertNil(late.consume("64", desktop: "desktop", route: "route", now: 10_001))
+    XCTAssertNil(late.consume("63", desktop: "desktop", route: "route", now: 69_063))
+  }
+
   func testDesktopReceiptRecoverySkipsCancelledOrMissingAgentSessions() {
     XCTAssertFalse(AgentDesktopReplyDiscoveryPolicy.mayRecover(
       conversationID: "ios-agent-deleted", savedSessionExists: false, taskCancelled: false))
