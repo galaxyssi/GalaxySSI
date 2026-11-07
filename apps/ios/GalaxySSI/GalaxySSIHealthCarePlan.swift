@@ -30,6 +30,7 @@ enum GalaxySSIHealthCarePlan {
     let sourceIndex: Int
     let dueFrom: Date?
     let dueUntil: Date?
+    var applicability: GalaxySSIHealthCareApplicability.Review?
   }
   struct Draft: Codable, Equatable {
     let uncertainty: String
@@ -84,7 +85,8 @@ enum GalaxySSIHealthCarePlan {
         "quote": string(600, description: "Short original-language passage copied from the provided excerpt.")])),
       "actions": array(object(["kind": ["type": "string", "enum": Kind.allCases.map(\.rawValue)],
         "description": string(1_000), "rationale": string(2_000, description: "Justify the step and any review window."),
-        "source_index": ["type": "integer", "minimum": 0, "maximum": 7], "due_from": date, "due_until": date]))
+        "source_index": ["type": "integer", "minimum": 0, "maximum": 7], "due_from": date, "due_until": date,
+        "applicability": GalaxySSIHealthCareApplicability.schema]))
     ])
   }
 
@@ -128,8 +130,9 @@ enum GalaxySSIHealthCarePlan {
     }
     let actions = try rawActions.enumerated().map { index, row -> Action in
       guard let item = row.objectValue,
-            Set(item.keys) == ["kind", "description", "rationale", "source_index", "due_from", "due_until"],
+            Set(item.keys) == ["kind", "description", "rationale", "source_index", "due_from", "due_until", "applicability"],
             let kind = item["kind"]?.strictStringValue.flatMap(Kind.init(rawValue:)),
+            let review = item["applicability"]?.objectValue,
             case .int(let source)? = item["source_index"], source >= 0, source < Int64(sources.count)
       else { throw invalid }
       let from = try date(item, "due_from"), until = try date(item, "due_until")
@@ -137,7 +140,8 @@ enum GalaxySSIHealthCarePlan {
         guard from <= until, until >= now else { throw invalid }
       } else if from != nil || until != nil { throw invalid }
       return try .init(id: index, kind: kind, description: text(item, "description", max: 1_000),
-        rationale: text(item, "rationale", max: 2_000), sourceIndex: Int(source), dueFrom: from, dueUntil: until)
+        rationale: text(item, "rationale", max: 2_000), sourceIndex: Int(source), dueFrom: from, dueUntil: until,
+        applicability: GalaxySSIHealthCareApplicability.parse(review, kind: kind, sourceCount: sources.count))
     }
     return try .init(uncertainty: text(args, "uncertainty", max: 2_000), sources: sources, actions: actions)
   }

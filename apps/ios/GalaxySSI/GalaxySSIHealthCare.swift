@@ -21,6 +21,7 @@ enum GalaxySSIHealthCare {
     enum Applicability: String, Codable, Hashable, CaseIterable { case unknown, applicable, excluded }
     let record: Record
     let applicability: Applicability
+    var facts: GalaxySSIHealthCareApplicability.Facts?
   }
   struct Baseline: Codable, Equatable {
     let records: [Record]

@@ -145,7 +145,6 @@ private struct GalaxySSIHealthCareDetail: View {
   @State private var targetSource = ""
   @State private var rationale = ""
   @State private var confirmedBy = ""
-  @State private var context = GalaxySSIHealthCare.Context.Applicability.unknown
   @State private var failed = false
   @State private var confirmingDelete = false
 
@@ -176,16 +175,9 @@ private struct GalaxySSIHealthCareDetail: View {
             Link(t("ada", "ADA 2026: Diagnosis and Classification"), destination: GalaxySSIHealthCare.guidelineURL)
             Text(t("ada_threshold", "Lower fasting plasma glucose screening threshold: 100 mg/dL (5.6 mmol/L)."))
           } else { Text(t("none", "Not recorded")) }
-          if metric == .glucose, measurement != nil {
-            Picker(t("context", "Measurement context"), selection: $context) {
-              Text(t("context_unknown", "Not confirmed")).tag(GalaxySSIHealthCare.Context.Applicability.unknown)
-              Text(t("context_fasting", "Adult, not pregnant, no known diabetes; laboratory plasma after at least 8 hours without calories"))
-                .tag(GalaxySSIHealthCare.Context.Applicability.applicable)
-              Text(t("context_excluded", "This screening context does not apply"))
-                .tag(GalaxySSIHealthCare.Context.Applicability.excluded)
-            }
-            Button(t("save_context", "Confirm measurement context")) {
-              perform { try records.setLocalCareContext(concern, applicability: context) }
+          if measurement != nil {
+            NavigationLink(t("save_context", "Confirm measurement context")) {
+              GalaxySSIHealthCareContextEditor(records: records, concern: concern)
             }
           }
         }
@@ -259,11 +251,10 @@ private struct GalaxySSIHealthCareDetail: View {
     guard scene == .active, let archive = try? records.load(), archive.localCareAllowed == true,
           let current = archive.localCare?.current[metric.rawValue], current.id == id else {
       concern = nil; history = []; measurement = nil; reason = ""; targetValue = ""; targetSource = ""
-      rationale = ""; confirmedBy = ""; confirmingDelete = false; context = .unknown
+      rationale = ""; confirmedBy = ""; confirmingDelete = false
       return
     }
     concern = current
-    context = current.context?.applicability ?? .unknown
     measurement = archive.current.first { GalaxySSIHealthCare.Record($0) == current.assessment.record }
     loadHistory(append: false)
   }

@@ -137,9 +137,14 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
       {"uncertainty":"Context unconfirmed","sources":[{"title":"Fixture source","url":"\(source.url.absoluteString)",
       "version":"2026","applicability":"Applicability needs review","evidence_id":"\(approval.evidence[0].id.uuidString)",
       "quote":"\(quote)"}],"actions":[
-      {"kind":"CONTEXT","description":"Clarify context","rationale":"Missing context","source_index":0,"due_from":"","due_until":""},
+      {"kind":"CONTEXT","description":"Clarify context","rationale":"Missing context","source_index":0,"due_from":"","due_until":"",
+      "applicability":{"mode":"DISCUSSION_ONLY","checks":[],"missing_information":[],"conflicts":[]}},
       {"kind":"RECHECK","description":"Discuss a recheck","rationale":"Timing needs professional review","source_index":0,
-      "due_from":"","due_until":""}]}
+      "due_from":"","due_until":"","applicability":{"mode":"INDIVIDUALIZED","checks":[
+      {"field":"unit","operator":"EQUALS","expected":"mg/dL","source_index":0}],"missing_information":[],"conflicts":[]}},
+      {"kind":"LIFESTYLE","description":"Review an option","rationale":"Adult applicability only","source_index":0,
+      "due_from":"","due_until":"","applicability":{"mode":"INDIVIDUALIZED","checks":[
+      {"field":"adult","operator":"EQUALS","expected":"YES","source_index":0}],"missing_information":[],"conflicts":[]}}]}
       """
     let arguments = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
     let call: AgentMcpJSONObject = ["type": .string("function"), "function": .object([
@@ -171,6 +176,32 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let twoPassages = try GalaxySSIHealthCarePlan.parse(distinctPassages, evidence: approval.evidence, now: now)
     XCTAssertEqual(twoPassages.sources.map { $0.provenance?.quote }, [quote, alternative])
     XCTAssertEqual(twoPassages.sources[twoPassages.actions[1].sourceIndex].provenance?.quote, alternative)
+    let policy = GalaxySSIHealthCareApplicability.self
+    XCTAssertEqual(policy.status(twoPassages.actions[2].applicability, concern: concern), .needsContext)
+    XCTAssertTrue(policy.canAdopt(twoPassages.actions[0], concern: concern))
+    XCTAssertFalse(policy.canAdopt(twoPassages.actions[2], concern: concern))
+    var confirmed = concern
+    let activeRecord = try XCTUnwrap(confirmed.assessment.record)
+    confirmed.context = .init(record: activeRecord, applicability: .unknown, facts: .init(adult: .no))
+    XCTAssertEqual(policy.status(twoPassages.actions[2].applicability, concern: confirmed), .mismatch)
+    confirmed.context = .init(record: activeRecord, applicability: .unknown, facts: .init(adult: .yes))
+    XCTAssertTrue(policy.canAdopt(twoPassages.actions[2], concern: confirmed))
+    confirmed.context = .init(record: .init(.init(metric: .glucose)), applicability: .unknown, facts: .init(adult: .yes))
+    XCTAssertEqual(policy.status(twoPassages.actions[2].applicability, concern: confirmed), .needsContext)
+    let unit = try XCTUnwrap(twoPassages.actions[1].applicability?.checks.first)
+    let differentUnit = policy.result(.init(field: unit.field, comparison: unit.comparison, expected: "mmol/L",
+      sourceIndex: unit.sourceIndex), concern: concern)
+    XCTAssertEqual(differentUnit, .mismatch)
+    var conflictArgs = distinctPassages
+    var conflicted = actions
+    var review = try XCTUnwrap(conflicted[1]["applicability"]?.objectValue)
+    review["conflicts"] = .array([.object(["source_indices": .array([.int(0), .int(1)]),
+      "detail": .string("Populations differ"), "next_step": .string("Clarify with clinician")])])
+    conflicted[1]["applicability"] = .object(review)
+    conflictArgs["actions"] = .array(conflicted.map(AgentMcpJSONValue.object))
+    let conflict = try GalaxySSIHealthCarePlan.parse(conflictArgs, evidence: approval.evidence, now: now)
+    XCTAssertEqual(policy.status(conflict.actions[1].applicability, concern: concern), .conflict)
+    XCTAssertFalse(policy.canAdopt(conflict.actions[1], concern: concern))
     let acceptedArguments = distinctPassages
     distinctPassages["sources"] = .array([.object(originalSource), .object(duplicateSource)])
     XCTAssertThrowsError(try GalaxySSIHealthCarePlan.parse(distinctPassages, evidence: approval.evidence, now: now))
@@ -186,6 +217,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(draft.draft.sources.first?.provenance?.quote, quote)
     XCTAssertTrue(draft.selected.isEmpty)
     XCTAssertThrowsError(try reopened.resolveLocalCarePlan(draft, selected: [], now: now))
+    XCTAssertThrowsError(try reopened.resolveLocalCarePlan(draft, selected: [1, 2], now: now))
+    XCTAssertNil(try reopened.load().localCare?.current["glucose"]?.adoptedActions)
     try reopened.resolveLocalCarePlan(draft, selected: [1], now: now)
     let updated = try XCTUnwrap(reopened.load().localCare?.current["glucose"])
     XCTAssertEqual(updated.stage, .waitingResults)

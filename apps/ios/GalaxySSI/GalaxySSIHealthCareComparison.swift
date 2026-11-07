@@ -75,7 +75,10 @@ enum GalaxySSIHealthCareComparison {
         if newContext == nil || newContext == .unknown || oldContext == nil || oldContext == .unknown {
           gaps.append(.contextUnconfirmed)
         }
-        if let newContext, let oldContext, newContext != oldContext { gaps.append(.contextDiffers) }
+        if let newContext, let oldContext, newContext != oldContext ||
+          (currentContext?.record == after.record && currentContext?.facts != previousContext?.facts) {
+          gaps.append(.contextDiffers)
+        }
       }
       return gaps
     }
@@ -102,6 +105,8 @@ enum GalaxySSIHealthCareComparison {
       return .init(kind: kind, before: priorStillLive ? before.modelSample : nil, after: after.modelSample,
         previousContext: priorStillLive ? previousContext?.applicability : nil,
         currentContext: currentContext?.record == after.record ? currentContext?.applicability : nil,
+        previousFacts: priorStillLive ? previousContext?.facts : nil,
+        currentFacts: currentContext?.record == after.record ? currentContext?.facts : nil,
         arithmeticOnly: changes, gaps: gaps(currentContext: currentContext))
     }
   }
@@ -125,6 +130,8 @@ enum GalaxySSIHealthCareComparison {
     let after: ModelSample
     let previousContext: GalaxySSIHealthCare.Context.Applicability?
     let currentContext: GalaxySSIHealthCare.Context.Applicability?
+    let previousFacts: GalaxySSIHealthCareApplicability.Facts?
+    let currentFacts: GalaxySSIHealthCareApplicability.Facts?
     let arithmeticOnly: [Change]
     let gaps: [Gap]
     let clinicalDirectionVerified = false
@@ -166,6 +173,8 @@ enum GalaxySSIHealthCareComparison {
     return AgentModelLoopRecoveryIdentity.sha256(["current": key(concern.measurement?.record),
       "before": key(comparison?.before.record), "kind": comparison?.kind.rawValue ?? "",
       "old_context": comparison?.previousContext?.applicability.rawValue ?? "",
-      "new_context": concern.context?.applicability.rawValue ?? ""])
+      "new_context": concern.context?.applicability.rawValue ?? "",
+      "old_facts": comparison?.previousContext?.facts?.signature ?? "",
+      "new_facts": concern.context?.facts?.signature ?? ""])
   }
 }
