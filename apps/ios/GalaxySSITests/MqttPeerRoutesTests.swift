@@ -52,6 +52,18 @@ final class MqttPeerRoutesTests: XCTestCase {
   }
 
   @MainActor
+  func testComposerDocumentRouteRejectsContactReplacementAndRevocation() throws {
+    var (contact, _) = try applicationPeerRecords()
+    let original = try XCTUnwrap(ComposerPeerDocumentRoute(contact: contact, links: []))
+    contact.displayName = "Renamed contact"
+    XCTAssertEqual(ComposerPeerDocumentRoute(contact: contact, links: []), original)
+    contact.linkClientRouteId = try GalaxySSILinkProtocol.newRouteId()
+    XCTAssertNotEqual(ComposerPeerDocumentRoute(contact: contact, links: []), original)
+    contact.trustState = .unverified
+    XCTAssertNil(ComposerPeerDocumentRoute(contact: contact, links: []))
+  }
+
+  @MainActor
   func testApplicationPeerMappingChecksDesktopPairingAndPinnedFingerprint() throws {
     let (contact, _) = try applicationPeerRecords()
     let routes = try XCTUnwrap(contact.opaquePhoneRoutes)
