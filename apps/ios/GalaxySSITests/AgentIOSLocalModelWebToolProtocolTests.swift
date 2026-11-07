@@ -48,6 +48,9 @@ final class AgentIOSLocalModelWebToolProtocolTests: XCTestCase {
     XCTAssertTrue(database.upsert(conversation))
     XCTAssertFalse(AgentIOSLocalModelWebToolRunner.collaborationRecallIsAuthorized(scope, database: database))
     conversation.trackingPaused = false
+    conversation.collaborationRoster?.members[1].resourceId = "cloud"
+    XCTAssertTrue(database.upsert(conversation))
+    XCTAssertFalse(AgentIOSLocalModelWebToolRunner.collaborationRecallIsAuthorized(scope, database: database))
     conversation.collaborationRoster = .init(members: [leader], coordinatorId: leader.id)
     XCTAssertTrue(database.upsert(conversation))
     XCTAssertFalse(AgentIOSLocalModelWebToolRunner.collaborationRecallIsAuthorized(scope, database: database))
@@ -174,10 +177,13 @@ final class AgentIOSLocalModelWebToolProtocolTests: XCTestCase {
     }
     func cloud(_ owner: AgentCollaborationToolEvidenceScope) -> AgentMcpJSONObject? {
       CloudConversationStreamEngine.scopedCollaborationRecall(input, scope: owner, allowsResearch: true,
-        session: database.read(owner.conversationId), history: history)
+        session: database.read(owner.conversationId),
+        resourceID: owner == removed ? former.resourceId : successor.resourceId, history: history)
     }
     XCTAssertNil(CloudConversationStreamEngine.scopedCollaborationRecall(input, scope: removed, allowsResearch: false,
-      session: database.read(removed.conversationId), history: history))
+      session: database.read(removed.conversationId), resourceID: former.resourceId, history: history))
+    XCTAssertNil(CloudConversationStreamEngine.scopedCollaborationRecall(input, scope: removed, allowsResearch: true,
+      session: database.read(removed.conversationId), resourceID: successor.resourceId, history: history))
     let registry = try nativeRegistry(removed)
     let before = try XCTUnwrap(cloud(removed))
     XCTAssertTrue(before.string("content").contains("Exact workflow fixture"))

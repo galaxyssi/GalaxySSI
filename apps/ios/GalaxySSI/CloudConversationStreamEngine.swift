@@ -275,8 +275,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         var roundFailure: ModelStreamFailed?
         var observedUsage: ModelUsage?
         var reportedModel: String?
-        var audit = await beginCollaborationAudit(scope: collaborationModelAudit, round: currentRound,
-          request: roundRequest, route: .streaming, store: store)
+        var audit = try await beginCollaborationAudit(scope: collaborationModelAudit, round: currentRound,
+          request: roundRequest, route: .streaming, contact: contact, store: store)
         func finishAudit() {
           guard let admission = audit else { return }
           audit = nil
@@ -374,8 +374,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             )))
           }
           if !emittedText && failure.error.code == "STREAM_UNSUPPORTED" {
-            let fallbackAudit = await beginCollaborationAudit(scope: collaborationModelAudit, round: currentRound,
-              request: roundRequest, route: .compatibility, store: store)
+            let fallbackAudit = try await beginCollaborationAudit(scope: collaborationModelAudit, round: currentRound,
+              request: roundRequest, route: .compatibility, contact: contact, store: store)
             await emitLegacyConversation(
               contact: contact,
               store: store,
@@ -634,7 +634,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             { arguments in
               await MainActor.run {
                 Self.scopedCollaborationRecall(arguments, scope: scope, allowsResearch: collaborationEvidence != nil,
-                  session: store.agentSession(id: scope.conversationId), history: .shared)
+                  session: store.agentSession(id: scope.conversationId), resourceID: contact.id, history: .shared)
               }
             }
           },
@@ -652,8 +652,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                 }
                 guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
                       let roster = session.collaborationRoster,
-                      let member = scope.memberId.split(separator: ":").first,
-                      let memberId = UUID(uuidString: String(member)), roster.members.contains(where: { $0.id == memberId }),
+                      scope.rosterMember(in: roster)?.resourceId == contact.id,
                       session.mergedIntoConversationId.isBlank, !session.privateMode, !session.trackingPaused else { return nil }
                 if needsCoordinator {
                   guard collaborationEvidence == nil, collaborationModelAudit == scope, roster.coordinatorId == memberId,
@@ -677,7 +676,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
               finishedAtMillis: outcome.finishedAtMillis)
             let receipt = await MainActor.run { () -> AgentMcpJSONObject? in
               guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
-                    session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank,
+                    let roster = session.collaborationRoster, scope.rosterMember(in: roster)?.resourceId == contact.id,
+                    session.mergedIntoConversationId.isBlank,
                     !session.privateMode, !session.trackingPaused else { return nil }
               return try? AgentTeamExecutionHistoryStore.shared.recordCloudEvidence(evidence)
             }
@@ -822,17 +822,23 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
 
   private func beginCollaborationAudit(scope: AgentCollaborationToolEvidenceScope?, round: Int,
     request: ModelStreamRequest, route: AgentCollaborationModelAdmission.Route,
-    store: GalaxySSIStore) async -> AgentCollaborationModelAdmission? {
+    contact: GalaxySSIContact, store: GalaxySSIStore) async throws -> AgentCollaborationModelAdmission? {
     guard let scope else { return nil }
     let candidate = AgentCollaborationModelAdmission(id: UUID(), scope: scope, round: round,
       provider: request.provider,
       requestedModel: route == .streaming ? (try? CloudModelStreamJSON.object(from: request.bodyJson))?["model"] as? String : nil,
       startedAtMillis: AgentControlPlaneClock.nowMillis(), route: route)
-    return await MainActor.run {
+    return try await MainActor.run {
       guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
-            session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank,
+            let roster = session.collaborationRoster, let member = scope.rosterMember(in: roster),
+            member.resourceId == contact.id, (member.modelId.isBlank || member.modelId == contact.selectedCloudModel?.id),
+            session.mergedIntoConversationId.isBlank,
             !session.privateMode, !session.trackingPaused,
-            (try? AgentTeamExecutionHistoryStore.shared.admitCollaborationModelCall(candidate)) != nil else { return nil }
+            (try? AgentTeamExecutionHistoryStore.shared.admitCollaborationModelCall(candidate)) != nil else {
+        throw GalaxySSIError.invalidPayload(GalaxySSILocalization.string("galaxyssi.collaboration.member_binding_invalid",
+          fallback: "A collaboration member or its assigned model changed. Check the group settings and try again.",
+          language: store.languagePolicy.interfaceLanguage))
+      }
       return candidate
     }
   }
@@ -907,14 +913,13 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
 
   static func scopedCollaborationRecall(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope,
                                         allowsResearch: Bool, session: AgentConversation?,
+                                        resourceID: String,
                                         history: AgentTeamExecutionHistoryStore) -> AgentMcpJSONObject? {
     let originalModes = ["goal", "dependency", "acceptance_record", "native_evidence", "desktop_evidence", "desktop_evidence_list"]
     guard allowsResearch || originalModes.contains(input.string("mode")),
           let session, session.id == scope.conversationId,
           let roster = session.collaborationRoster,
-          let member = scope.memberId.split(separator: ":").first,
-          let memberId = UUID(uuidString: String(member)),
-          roster.members.contains(where: { $0.id == memberId }),
+          scope.rosterMember(in: roster)?.resourceId == resourceID,
           session.mergedIntoConversationId.isBlank,
           !session.privateMode, !session.trackingPaused else { return nil }
     return try? history.recallCollaborationOriginal(input, scope: scope)

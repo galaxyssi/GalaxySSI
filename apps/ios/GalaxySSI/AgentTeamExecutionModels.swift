@@ -29,6 +29,10 @@ struct AgentCollaborationToolEvidenceScope: Codable, Equatable {
   var memberId: String
   var sourceId: String
 
+  func rosterMember(in roster: AgentCollaborationRoster) -> AgentCollaborationRoster.Member? {
+    AgentCollaborationMemberIdentity(nodeID: memberId)?.member(in: roster)
+  }
+
   var ownershipDigest: String {
     AgentMcpJSONCodec.sha256([
       "run": .string(runId), "conversation": .string(conversationId), "turn": .string(turnId),
@@ -188,6 +192,28 @@ enum AgentCollaborationNativeReleaseHistory {
       "started_at": .int(receipt.startedAtEpochMillis), "finished_at": .int(receipt.finishedAtEpochMillis),
       "quality_effect": .null
     ]
+  }
+}
+
+struct AgentCollaborationMemberIdentity: Equatable {
+  static let contextKey = "_galaxyssi_roster_member_id"
+  let nodeID: String
+  let personID: UUID
+
+  init?(nodeID: String, declaredPersonID: String? = nil) {
+    let parts = nodeID.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+    guard let first = parts.first, let id = UUID(uuidString: String(first)),
+          parts.count == 1 || ["revise", "recheck"].contains(String(parts[1])) else { return nil }
+    if let declaredPersonID, !declaredPersonID.isBlank {
+      guard UUID(uuidString: declaredPersonID) == id else { return nil }
+    }
+    self.nodeID = nodeID
+    personID = id
+  }
+
+  func member(in roster: AgentCollaborationRoster) -> AgentCollaborationRoster.Member? {
+    let matches = roster.members.filter { $0.id == personID }
+    return matches.count == 1 ? matches.first : nil
   }
 }
 
@@ -1257,12 +1283,7 @@ struct AgentTeamProgressProjection: Codable, Equatable {
 
 enum AgentTeamProgressPolicy {
   static func stableCollaborationMemberId(_ memberId: String) -> String {
-    let parts = memberId.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
-    if let first = parts.first, let rosterId = UUID(uuidString: String(first)),
-       parts.count == 1 || ["revise", "recheck"].contains(String(parts[1])) {
-      return rosterId.uuidString.lowercased()
-    }
-    return memberId
+    AgentCollaborationMemberIdentity(nodeID: memberId)?.personID.uuidString.lowercased() ?? memberId
   }
 
   static func currentCollaborationMembers(_ snapshot: AgentTeamExecutionSnapshot) -> [AgentTeamMemberSnapshot] {
