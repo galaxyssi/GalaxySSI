@@ -45,6 +45,24 @@ class HealthCareEvidenceDeviceTest {
         }
         assertNull(store.plan(plan.id)); assertTrue(store.concern(plan.grant.concernId)!!.actions.isEmpty())
     }
+    @Test fun samePageDifferentPassagesStayBoundToTheirOwnAction(): Unit = fixture { names, store, plan ->
+        removePlan(names, plan.id)
+        val first = plan.sources.single()
+        val original = first.evidence!!
+        val quote = "Synthetic second passage: record unresolved questions for the next clinician discussion."
+        val secondRead = original.copy(id = UUID.randomUUID().toString(), invocationId = UUID.randomUUID().toString(), excerpt = quote)
+        store.recordEvidence(listOf(secondRead))
+        val second = first.copy(evidenceId = secondRead.id, quote = quote, evidence = null)
+        val proposal = store.proposePlan(plan.copy(sources = listOf(first, second), actions = listOf(
+            plan.actions.first(), plan.actions.last().copy(evidenceId = secondRead.id, supportingQuote = quote))))
+        assertEquals(2, proposal.sources.size)
+        assertEquals(secondRead, proposal.sources.last().evidence)
+        val accepted = store.resolvePlan(proposal.id, proposal.actions.map { it.id }.toSet(), proposal.grant.revision,
+            HealthPrivacyStore(context, names.privacy).use { it.policy() }, proposal.inputVersion, System.currentTimeMillis())
+        assertEquals(original.id, accepted.actions.first().evidenceId)
+        assertEquals(secondRead.id, accepted.actions.last().evidenceId)
+        assertEquals(quote, accepted.actions.last().supportingQuote)
+    }
     @Test fun anotherTurnCannotReuseAnEarlierRead(): Unit = fixture { names, store, plan ->
         val grant = plan.grant.copy(turnId = UUID.randomUUID().toString())
         store.approveDiscussion(grant)

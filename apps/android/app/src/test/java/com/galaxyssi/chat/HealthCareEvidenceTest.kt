@@ -72,6 +72,44 @@ class HealthCareEvidenceTest {
         assertEquals(proof.id, entry.getString("health_evidence_id")); assertEquals(url, entry.getString("url"))
         assertTrue(entry.getString("excerpt").contains("confirm report conditions"))
         assertTrue(result.length <= 1500)
+        val again = AgentWebObservation.compact(result, 1500)!!
+        assertEquals(proof.id, JSONObject(again).getJSONObject("evidence_pack").getJSONArray("items")
+            .getJSONObject(0).getString("health_evidence_id"))
+    }
+    @Test fun repeatedCompactionRetainsReceiptAndUsefulBodyWithinBudget() {
+        val text = "Synthetic introduction. ".repeat(35) + "Confirm the laboratory conditions before interpreting results."
+        val value = output(item + ("excerpt" to text))
+        val proof = read(value).single()
+        var compact = JSONObject(value + ("health_evidence" to listOf(proof.output()))).toString()
+        repeat(3) {
+            compact = AgentWebObservation.compact(compact, 4000)!!
+            val entry = JSONObject(compact).getJSONObject("evidence_pack").getJSONArray("items").getJSONObject(0)
+            assertEquals(proof.id, entry.getString("health_evidence_id"))
+            assertEquals(text, entry.getString("excerpt"))
+            assertTrue(compact.length <= 4000)
+        }
+    }
+    @Test fun healthBodyIsBudgetedWithoutCuttingJsonOrInventingMissingWords() {
+        val text = "Synthetic guideline with quoted text: \"context\". ".repeat(100)
+        val value = output(item + ("excerpt" to text))
+        val proof = read(value).single()
+        val result = AgentWebObservation.compact(JSONObject(value + ("health_evidence" to listOf(proof.output()))).toString(), 1800)!!
+        val root = JSONObject(result)
+        val entry = root.getJSONObject("evidence_pack").getJSONArray("items").getJSONObject(0)
+        assertEquals(proof.id, entry.getString("health_evidence_id"))
+        assertTrue(entry.getString("excerpt").length > 500)
+        assertTrue(text.startsWith(entry.getString("excerpt")))
+        assertTrue(root.getBoolean("truncated")); assertTrue(entry.getBoolean("excerpt_truncated"))
+        assertTrue(result.length <= 1800)
+    }
+    @Test fun onePageMaySupportDifferentQuotesAndReadingWindows() {
+        val source = HealthCarePlanSource("Synthetic guidance", url, "unknown", "Synthetic only", UUID.randomUUID().toString(), body)
+        val action = HealthCareAction(UUID.randomUUID().toString(), HealthCareActionKind.CONTEXT, "Check context", "Incomplete", url)
+        fun plan(sources: List<HealthCarePlanSource>) = HealthCarePlan(grant, "version", now, "a".repeat(64),
+            "Synthetic only", sources, listOf(action))
+        assertEquals(2, plan(listOf(source, source.copy(evidenceId = UUID.randomUUID().toString()))).sources.size)
+        assertEquals(2, plan(listOf(source, source.copy(quote = "confirm report conditions before discussing uncertain results."))).sources.size)
+        assertTrue(runCatching { plan(listOf(source, source)) }.isFailure)
     }
     @Test fun olderSourcesAndActionsRemainReadableWithoutInventingProof() {
         val source = HealthCarePlanSource.from(JSONObject().put("title", "Legacy").put("url", url)

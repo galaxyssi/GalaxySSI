@@ -33,7 +33,8 @@ internal data class HealthCarePlan(val grant: HealthCareDiscussionGrant, val inp
     init {
         require(inputVersion.isNotBlank() && createdAt > 0 && requestHash.matches(Regex("[a-f0-9]{64}")))
         require(uncertainty.isNotBlank() && uncertainty.length <= 2000 && sources.size in 1..8 && actions.size in 1..8)
-        require(sources.map { it.url }.distinct().size == sources.size && actions.map { it.id }.distinct().size == actions.size)
+        require(sources.map { Triple(it.url, it.evidenceId, it.quote) }.distinct().size == sources.size &&
+            actions.map { it.id }.distinct().size == actions.size)
         require(actions.all { it.state == HealthCareActionState.PROPOSED && it.confirmedAt == null && it.outcome.isEmpty() })
         require(selected.all { id -> actions.any { it.id == id } })
         require(if (state == HealthCarePlanState.PENDING) resolvedAt == null && selected.isEmpty()

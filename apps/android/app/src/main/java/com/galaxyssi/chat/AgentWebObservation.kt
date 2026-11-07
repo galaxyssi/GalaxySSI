@@ -37,16 +37,21 @@ internal object AgentWebObservation {
             if (failures.length() > 0) root.put("receipts", failures)
         }
         val budget = maximumCharacters.coerceAtLeast(1)
+        var contentTruncated = false
         for (index in 0 until items.length()) {
             val item = items.optJSONObject(index) ?: continue
             val compact = JSONObject()
             listOf("title", "url", "citation_id", "published_at", "evidence_level", "media_evidence_level").forEach { key ->
                 item.optString(key).takeIf(String::isNotBlank)?.let { compact.put(key, it) }
             }
+            // Observations may pass through the executor and planner compactor more than once.
+            item.optString("health_evidence_id").takeIf(HealthProfilePolicy::uuid)
+                ?.let { compact.put("health_evidence_id", it) }
             for (h in 0 until (health?.length() ?: 0)) {
                 val read = health?.optJSONObject(h) ?: continue
                 if (read.optString("citation_id") == item.optString("citation_id") && read.optString("url") == item.optString("url")) {
-                    compact.put("health_evidence_id", read.optString("evidence_id"))
+                    read.optString("evidence_id").takeIf(HealthProfilePolicy::uuid)
+                        ?.let { compact.put("health_evidence_id", it) }
                     break
                 }
             }
@@ -56,13 +61,36 @@ internal object AgentWebObservation {
             listOf("image_url", "thumbnail_url").forEach { key ->
                 item.optString(key).takeIf(String::isNotBlank)?.let { compact.put(key, it) }
             }
-            listOf("excerpt", "content").forEach { key ->
-                item.optString(key).takeIf(String::isNotBlank)?.let { compact.put(key, it.take(500)) }
-            }
             result.put(compact)
+            if (compact.has("health_evidence_id")) {
+                val text = item.optString("excerpt").ifBlank { item.optString("content") }
+                val inheritedTruncation = item.optBoolean("excerpt_truncated")
+                compact.put("excerpt_truncated", false)
+                // Fit an exact contiguous passage, accounting for JSON escaping, inside the same budget.
+                var low = 0
+                var high = minOf(text.length, 8000)
+                while (low < high) {
+                    val middle = (low + high + 1) / 2
+                    compact.put("excerpt", text.take(middle))
+                    if (root.toString().length <= budget) low = middle else high = middle - 1
+                }
+                if (low > 0 && low < text.length && text[low - 1].isHighSurrogate()) low--
+                compact.put("excerpt", text.take(low))
+                val truncated = inheritedTruncation || low < text.length
+                compact.put("excerpt_truncated", truncated)
+                contentTruncated = contentTruncated || truncated
+            } else {
+                listOf("excerpt", "content").forEach { key ->
+                    item.optString(key).takeIf(String::isNotBlank)?.let {
+                        compact.put(key, it.take(500))
+                        contentTruncated = contentTruncated || it.length > 500
+                    }
+                }
+            }
             if (root.toString().length > budget) {
                 compact.remove("excerpt")
                 compact.remove("content")
+                contentTruncated = true
                 if (root.toString().length > budget) {
                     result.remove(result.length() - 1)
                     break
@@ -83,7 +111,7 @@ internal object AgentWebObservation {
                 if (root.toString().length > budget) { documentResults.remove(documentResults.length() - 1); break }
             }
         }
-        root.put("truncated", source.optBoolean("truncated") ||
+        root.put("truncated", source.optBoolean("truncated") || contentTruncated ||
             result.length() < items.length() || source.toString().length > budget)
         if (root.toString().length <= budget) return root.toString()
         if (!preserveReceipt) root.remove("_observation_receipt")
