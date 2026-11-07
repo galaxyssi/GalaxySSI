@@ -65,6 +65,30 @@ final class GalaxySSILinkProtocolTests: XCTestCase {
     XCTAssertEqual(try store.records(now: 5_004).first?.pendingAction, .cancelled)
   }
 
+  func testOutgoingReminderPanelKeepsExactSelectionAndClosesOnTerminalStateOrExpiry() {
+    func reminder(_ id: String, peer: String = "peer", outgoing: Bool = true) -> GalaxySSIContactReminder {
+      GalaxySSIContactReminder(id: id, peerID: peer, outgoing: outgoing, createdAt: 1_000,
+        expiresAt: 3_000, historyID: nil, status: .queued, pendingAction: nil)
+    }
+    let selection = GalaxySSIContactReminderPanelSelection(owner: "account", id: "selected", peerID: "peer")
+    var selected = reminder("selected")
+    var older = reminder("older")
+    older.status = .acknowledged
+    XCTAssertEqual(selection.resolve(in: [older, selected], owner: "account", now: 2_999), selected)
+    XCTAssertNil(selection.resolve(in: [older], owner: "account", now: 2_999))
+    XCTAssertNil(selection.resolve(in: [selected], owner: "different", now: 2_999))
+    XCTAssertNil(selection.resolve(in: [reminder("selected", peer: "different")], owner: "account", now: 2_999))
+    XCTAssertNil(selection.resolve(in: [reminder("selected", outgoing: false)], owner: "account", now: 2_999))
+    XCTAssertNil(selection.resolve(in: [selected], owner: "account", now: 3_000))
+    selected.status = .muted
+    XCTAssertEqual(selection.resolve(in: [selected], owner: "account", now: 2_999), selected)
+    let terminal: [GalaxySSIContactReminderStatus] = [.acknowledged, .dismissed, .cancelled, .disabled, .expired, .failed]
+    for status in terminal {
+      selected.status = status
+      XCTAssertNil(selection.resolve(in: [selected, older], owner: "account", now: 2_999))
+    }
+  }
+
   func testValidatesAndroidCompatibleOpaquePairingQRCode() throws {
     let secret = Data(repeating: 7, count: 32).base64URLEncodedString()
     let qr = pairingQR(secret: secret, createdAt: Date())

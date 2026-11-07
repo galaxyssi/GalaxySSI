@@ -19,13 +19,29 @@ struct GalaxySSIContactReminderOverlay: ViewModifier {
     return rows.first { $0.id == preferredID } ?? rows.first
   }
 
+  private var presented: GalaxySSIContactReminder? {
+    guard phase == .active else { return nil }
+    let incoming = active
+    if let incoming, incoming.id == preferredID { return incoming }
+    guard let outgoing = coordinator.outgoingContactReminderPanel?.resolve(in: coordinator.contactReminders,
+      owner: store.profile.identityFingerprint, now: AgentControlPlaneClock.nowMillis()),
+      !collapsed.contains(outgoing.id),
+      store.contact(id: outgoing.peerID)?.isCommunicable == true else { return incoming }
+    if let incoming, incoming.createdAt > outgoing.createdAt { return incoming }
+    return outgoing
+  }
+
   func body(content: Content) -> some View {
     content
       .overlay(alignment: .top) {
-        if let reminder = active {
+        if let reminder = presented {
           panel(reminder)
             .padding(.horizontal, 12)
             .padding(.top, 8)
+            .privacySensitive()
+            .task(id: reminder.id) { [owner = store.profile.identityFingerprint] in
+              await observePanelDeadline(reminder, owner: owner)
+            }
         }
       }
       .onAppear(perform: consumeNotificationAction)
@@ -48,12 +64,13 @@ struct GalaxySSIContactReminderOverlay: ViewModifier {
 
   private func panel(_ reminder: GalaxySSIContactReminder) -> some View {
     VStack(alignment: .leading, spacing: 10) {
-      Label(t("galaxyssi.contact_reminder.title", "Contact reminder"), systemImage: "bell.badge")
-        .font(.headline)
-      Text(store.contact(id: reminder.peerID)?.displayName ?? "")
-        .font(.subheadline)
-        .foregroundColor(.galaxySSITextSecondary)
-        .lineLimit(2)
+      panelHeader(reminder)
+      if reminder.outgoing || reminder.status == .quiet || reminder.status == .muted {
+        Text(t(reminder.status.localizationKey, reminder.status.defaultTitle))
+          .font(.footnote)
+          .foregroundColor(.galaxySSITextSecondary)
+          .accessibilityIdentifier("ios.contact-reminder.status")
+      }
       if textSize.isAccessibilitySize {
         VStack(spacing: 6) { actions(reminder) }
       } else {
@@ -73,17 +90,41 @@ struct GalaxySSIContactReminderOverlay: ViewModifier {
     })
   }
 
+  private func panelHeader(_ reminder: GalaxySSIContactReminder) -> some View {
+    HStack(spacing: 10) {
+      GalaxySSILogoView(size: 40)
+        .accessibilityHidden(true)
+      VStack(alignment: .leading, spacing: 2) {
+        Text((store.contact(id: reminder.peerID)?.displayName ?? "")
+          .ifBlank(t("galaxyssi.contact_reminder.title", "Contact reminder")))
+          .font(.headline)
+          .lineLimit(textSize.isAccessibilitySize ? 2 : 1)
+          .accessibilityIdentifier("ios.contact-reminder.header.title")
+        Text(t("galaxyssi.contact_reminder.subtitle", "GalaxySSI / Contact reminder"))
+          .font(.caption)
+          .foregroundColor(.galaxySSITextSecondary)
+          .accessibilityIdentifier("ios.contact-reminder.header.subtitle")
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+  }
+
   @ViewBuilder
   private func actions(_ reminder: GalaxySSIContactReminder) -> some View {
-    action(reminder, .muted, "mute", "Mute", icon: "speaker.slash")
-      .disabled(reminder.status == .muted)
-    action(reminder, .dismissed, "ignore", "Ignore", icon: "xmark")
-    action(reminder, .acknowledged, "got_it", "Got it", icon: "checkmark")
+    if reminder.outgoing {
+      action(reminder, .cancelled, "cancel", "Cancel reminder", icon: "xmark")
+    } else {
+      action(reminder, .muted, "mute", "Mute", icon: "speaker.slash")
+        .disabled(reminder.status == .muted)
+      action(reminder, .dismissed, "ignore", "Ignore", icon: "xmark")
+      action(reminder, .acknowledged, "got_it", "Got it", icon: "checkmark")
+    }
   }
 
   private func action(_ reminder: GalaxySSIContactReminder, _ action: GalaxySSIContactReminderAction,
                       _ key: String, _ fallback: String, icon: String) -> some View {
     Button {
+      guard presented?.id == reminder.id else { return }
       coordinator.actOnContactReminder(id: reminder.id, action: action)
     } label: {
       Label(t("galaxyssi.contact_reminder." + key, fallback), systemImage: icon)
@@ -95,8 +136,26 @@ struct GalaxySSIContactReminderOverlay: ViewModifier {
   }
 
   private func collapse(_ reminder: GalaxySSIContactReminder) {
+    guard presented?.id == reminder.id else { return }
+    if reminder.outgoing {
+      coordinator.outgoingContactReminderPanel = nil
+      return
+    }
     if reminder.status == .muted || coordinator.actOnContactReminder(id: reminder.id, action: .muted) {
       collapsed.insert(reminder.id)
+    }
+  }
+
+  private func observePanelDeadline(_ reminder: GalaxySSIContactReminder, owner: String) async {
+    while !Task.isCancelled {
+      let now = AgentControlPlaneClock.nowMillis()
+      if now >= reminder.expiresAt {
+        if owner == store.profile.identityFingerprint { collapsed.insert(reminder.id) }
+        return
+      }
+      let wait = min(reminder.expiresAt - now, GalaxySSIContactReminderEnvelope.lifetime)
+      do { try await Task.sleep(nanoseconds: UInt64(wait) * 1_000_000) }
+      catch { return }
     }
   }
 

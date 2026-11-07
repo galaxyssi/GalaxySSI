@@ -847,25 +847,6 @@ struct ConversationView: View {
           .padding(.horizontal, 14)
           .padding(.top, 8)
         }
-        if let reminder = coordinator.contactReminders.last(where: {
-          $0.peerID == contact.id && $0.outgoing && !$0.status.terminal
-        }) {
-          HStack {
-            Label(t(reminder.status.localizationKey, reminder.status.defaultTitle), systemImage: "bell.badge")
-              .foregroundColor(.galaxySSITextSecondary)
-            Spacer()
-            Button {
-              coordinator.actOnContactReminder(id: reminder.id, action: .cancelled)
-            } label: {
-              Label(t("galaxyssi.contact_reminder.cancel", "Cancel reminder"), systemImage: "xmark")
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("ios.chat.contact-reminder.cancel")
-          }
-          .font(.footnote)
-          .padding(.horizontal, 14)
-          .padding(.top, 6)
-        }
         GalaxySSIConversationComposer(
           draft: $draft,
           attachments: $attachments,

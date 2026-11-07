@@ -71,6 +71,7 @@ extension MessageCoordinator {
         Task { @MainActor [weak self] in await self?.recoverPhoneContactSessionIfNeeded(contactId: current.id) }
       }
       refreshContactReminderPresentation(now: now)
+      outgoingContactReminderPanel = .init(owner: store.profile.identityFingerprint, id: record.id, peerID: record.peerID)
       return true
     } catch { return false }
   }
@@ -138,6 +139,10 @@ extension MessageCoordinator {
     contactReminderExpiryTask = nil
     let previous = contactReminders
     contactReminders = (try? contactReminderStore.records(now: now)) ?? []
+    if let selection = outgoingContactReminderPanel,
+       selection.resolve(in: contactReminders, owner: store.profile.identityFingerprint, now: now) == nil {
+      outgoingContactReminderPanel = nil
+    }
     let presentableIDs = Set(contactReminders.filter { !$0.outgoing && !$0.status.terminal && $0.status != .muted }.map(\.id))
     for record in previous where !record.outgoing && !presentableIDs.contains(record.id) {
       GalaxySSIContactReminderNotification.remove(record.id)
