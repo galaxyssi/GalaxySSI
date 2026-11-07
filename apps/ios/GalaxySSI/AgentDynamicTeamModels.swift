@@ -156,6 +156,10 @@ enum AgentCollaborationRuleTopics {
     and an object input_schema using the existing Skill parameter contract. tool_test_plan binds the exact executable_tool parent
     and matching environment. Include purpose, coverage_gaps, oracle_basis and distinct cases with id, purpose, reason, input
     and expected (explicit null is allowed). Include target and regression cases. Registration neither executes nor releases code.
+    To release, a different member must inspect the exact saved source, test plan and full original native test evidence.
+    Publish tool_release with the exact tool_test_plan parent, observation {evidence_id,sha256}, review, applies_when,
+    avoid_when, limitations, authorization_boundary and unresolved: []. Include that same observation in observations.
+    The host checks full evidence reads and re-evaluates all cases. Release does not grant permissions or certify safety.
     """),
     Topic(id: "workflows", purpose: "Register workflow roles, steps and review conditions", prerequisites: ["foundation"], contract: """
     workflow_method includes purpose, domain, bottleneck, change_rationale, applies_when, avoid_when, risks, expected_gain,

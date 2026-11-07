@@ -138,6 +138,7 @@ struct AgentCollaborationResearchDraft: Codable {
     case transferStudy = "transfer_study"
     case executableTool = "executable_tool"
     case toolTestPlan = "tool_test_plan"
+    case toolRelease = "tool_release"
     case environmentModel = "task_environment_model"
     case actionForecast = "action_forecast"
     case predictionOutcome = "prediction_outcome"
@@ -911,6 +912,7 @@ struct AgentCollaborationResearchRevision: Codable {
   var measuredCases: [AgentCollaborationMeasuredCase]? = nil
   var trialAuthors: [String]? = nil
   var numericReplay: AgentMcpJSONObject? = nil
+  var testedToolRelease: AgentMcpJSONObject? = nil
 
   var storageBytesLimit: Int {
     draft.kind == .numericModelTrial && numericReplay != nil

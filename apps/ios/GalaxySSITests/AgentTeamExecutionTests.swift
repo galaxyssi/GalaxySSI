@@ -1311,7 +1311,8 @@ extension GalaxySSIStoreTests {
         "runtime": .object(runtime), "environment_matches": .bool(true), "results": .array(rows)])
       let output: AgentMcpJSONObject = ["exit_code": .int(0), "stdout": .string(stdout), "output_truncated": .bool(truncated)]
       return .init(status: .succeeded, output: output, message: "", receipt: .init(invocationId: "fixture",
-        startedAtEpochMillis: 1, finishedAtEpochMillis: 2, durationMillis: 1, status: .succeeded,
+        startedAtEpochMillis: AgentControlPlaneClock.nowMillis(),
+        finishedAtEpochMillis: AgentControlPlaneClock.nowMillis(), durationMillis: 1, status: .succeeded,
         inputSha256: AgentMcpJSONCodec.sha256(prepared.runtimeInput), outputSha256: AgentMcpJSONCodec.sha256(output)),
         provenance: .init(toolId: AgentIOSOnDeviceRuntimeNativeToolCatalog.execute,
           toolVersion: "1", location: .application, executorId: "fixture", contractVersion: "1"))
@@ -1334,6 +1335,48 @@ extension GalaxySSIStoreTests {
     var stale = reference
     stale.sha256 = String(repeating: "0", count: 64)
     XCTAssertThrowsError(try history.prepareSavedToolTest(stale, timeoutMillis: 1_000, scope: reader))
+
+    let original = AgentCollaborationNativeToolObservation(runId: reader.runId, conversationId: reader.conversationId,
+      turnId: reader.turnId, memberId: reader.memberId, sourceId: reader.sourceId,
+      input: prepared.evidenceInput, result: report(rows))
+    let evidence = try history.recordNativeObservation(original)
+    let citation = ["evidence_id": try XCTUnwrap(evidence["evidence_id"]),
+                    "sha256": try XCTUnwrap(evidence["sha256"])]
+    var review = durableTeamSnapshot("release-review")
+    review.taskId = "review-turn"
+    let reviewer = AgentCollaborationToolEvidenceScope(runId: review.supervisorRunId, conversationId: review.conversationId,
+      turnId: review.taskId, memberId: review.members[1].memberId, sourceId: review.members[1].sourceMessageId)
+    let release = AgentCollaborationResearchDraft(id: "release", objectId: nil, baseRevision: 0, kind: .toolRelease,
+      title: "Reviewed tool", body: ["tool_release": .object([
+        "tool_test_plan": .object(["object_id": .string(reference.objectId), "revision": .int(reference.revision),
+          "sha256": .string(reference.sha256)]), "observation": .object(citation),
+        "review": .string("Reviewed source and oracle"), "applies_when": .string("Known input"),
+        "avoid_when": .string("Other domains"), "limitations": .string("Two checked cases"),
+        "authorization_boundary": .string("No new permissions"), "unresolved": .array([])
+      ])], parents: [reference], observations: [citation])
+    func publishRelease() throws -> AgentCollaborationResearchPublication {
+      try history.publishResearchObjects([release], runId: reviewer.runId, conversationId: reviewer.conversationId,
+        turnId: reviewer.turnId, memberId: reviewer.memberId, sourceId: reviewer.sourceId)
+    }
+    review.members[1].status = .succeeded
+    XCTAssertTrue(history.upsert(review))
+    XCTAssertThrowsError(try publishRelease())
+    review.members[1].status = .running
+    review.updatedAtMillis += 1
+    XCTAssertTrue(history.upsert(review))
+    var offset: Int64 = 0
+    for _ in 0..<16 {
+      let page = try history.recallCollaborationOriginal(citation.merging([
+        "mode": .string("evidence"), "offset": .int(offset)
+      ]) { _, new in new }, scope: reviewer)
+      guard let next = page["next_offset"]?.intValue else { break }
+      XCTAssertGreaterThan(next, offset)
+      offset = next
+    }
+    review.members[1].status = .succeeded
+    review.updatedAtMillis += 1
+    XCTAssertTrue(history.upsert(review))
+    XCTAssertEqual(try publishRelease().references.count, 1)
     history.removeResearchObjects(conversationId: reader.conversationId)
     XCTAssertThrowsError(try history.prepareSavedToolTest(reference, timeoutMillis: 1_000, scope: reader))
   }

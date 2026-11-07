@@ -95,6 +95,46 @@ enum AgentCollaborationSavedToolTest {
     return .init(objectId: id, revision: revision, sha256: hash)
   }
 
+  static func release(
+    _ draft: AgentCollaborationResearchDraft,
+    plan: AgentCollaborationResearchRevision,
+    tool: AgentCollaborationResearchRevision,
+    original: AgentCollaborationNativeToolObservation,
+    authorResource: String,
+    reviewerResource: String
+  ) -> AgentMcpJSONObject? {
+    guard draft.kind == .toolRelease,
+          draft.objectId?.isBlank != false, draft.baseRevision == 0,
+          let spec = draft.body["tool_release"]?.objectValue,
+          Set(spec.keys) == ["tool_test_plan", "observation", "review", "applies_when", "avoid_when",
+                             "limitations", "authorization_boundary", "unresolved"],
+          ["review", "applies_when", "avoid_when", "limitations", "authorization_boundary"].allSatisfy({
+            guard let text = spec[$0]?.strictStringValue else { return false }
+            return !text.isBlank && text.utf8.count <= 8_192
+          }),
+          spec["unresolved"] == .array([]),
+          !authorResource.isBlank, !reviewerResource.isBlank, authorResource != reviewerResource,
+          reference(spec["tool_test_plan"]) == plan.reference, draft.parents.contains(plan.reference),
+          let observation = spec["observation"]?.objectValue,
+          draft.observations == [observation],
+          let registered = plan.registeredAtMillis,
+          original.result.receipt.startedAtEpochMillis >= registered,
+          original.result.receipt.finishedAtEpochMillis >= original.result.receipt.startedAtEpochMillis,
+          !original.result.receipt.replayed,
+          case .int(let timeout)? = original.input["timeout_ms"],
+          let prepared = prepare(plan: plan, tool: tool, timeoutMillis: timeout),
+          original.input == prepared.evidenceInput else { return nil }
+    let evaluation = prepared.evaluate(original.result)
+    guard evaluation["passed"] == .bool(true), let runtime = evaluation["runtime"]?.objectValue else { return nil }
+    return [
+      "state": .string("eligible_for_scoped_tool_execution"),
+      "executable_tool": .object(fields(tool.reference)), "tool_test_plan": .object(fields(plan.reference)),
+      "observation": .object(observation), "source_sha256": .string(digest(prepared.originalSource)),
+      "tested_runtime": .object(runtime), "grants_permissions": .bool(false),
+      "security_certified": .bool(false), "general_correctness_proven": .bool(false)
+    ]
+  }
+
   static func prepare(plan: AgentCollaborationResearchRevision, tool: AgentCollaborationResearchRevision,
                       timeoutMillis: Int64) -> Prepared? {
     guard (100...AgentIOSOnDeviceRuntimeNativeToolCatalog.maxTimeoutMillis).contains(timeoutMillis),
