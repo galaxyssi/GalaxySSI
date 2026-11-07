@@ -31,6 +31,91 @@ struct AgentCollaborationToolEvidenceScope: Codable, Equatable {
   }
 }
 
+enum AgentCollaborationNativeReleaseHistory {
+  static let mode = "method_history"
+  static let prefix = "native-evidence:"
+  static let pageSize = 20
+
+  struct Release: Decodable {
+    struct Draft: Decodable { let kind: String }
+    let reference: AgentCollaborationResearchReference
+    let runId: String
+    let turnId: String
+    let authorId: String
+    let sourceId: String
+    let draft: Draft
+    let testedToolRelease: AgentMcpJSONObject?
+  }
+
+  struct Original: Codable {
+    let observation: AgentCollaborationNativeToolObservation
+    let evaluation: AgentMcpJSONObject?
+    private enum Key: String, CodingKey { case evaluation }
+
+    init(from decoder: Decoder) throws {
+      observation = try AgentCollaborationNativeToolObservation(from: decoder)
+      evaluation = try decoder.container(keyedBy: Key.self).decodeIfPresent(AgentMcpJSONObject.self, forKey: .evaluation)
+    }
+
+    func encode(to encoder: Encoder) throws {
+      try observation.encode(to: encoder)
+      if let evaluation {
+        var values = encoder.container(keyedBy: Key.self)
+        try values.encode(evaluation, forKey: .evaluation)
+      }
+    }
+  }
+
+  static func validDigest(_ value: String) -> Bool {
+    value.utf8.count == 64 && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
+  }
+
+  static func fields(_ ref: AgentCollaborationResearchReference) -> AgentMcpJSONObject {
+    ["object_id": .string(ref.objectId), "revision": .int(ref.revision), "sha256": .string(ref.sha256)]
+  }
+
+  static func reference(_ value: AgentMcpJSONObject) -> AgentCollaborationResearchReference? {
+    guard let id = value["object_id"]?.strictStringValue, let hash = value["sha256"]?.strictStringValue,
+          validDigest(id), validDigest(hash), case .int(let revision)? = value["revision"],
+          (1...Int64(Int32.max)).contains(revision) else { return nil }
+    return .init(objectId: id, revision: revision, sha256: hash)
+  }
+
+  static func cursor(after id: String, release: AgentCollaborationResearchReference,
+                     reader: AgentCollaborationToolEvidenceScope, dependencies: [String]) -> String {
+    id + "." + AgentMcpJSONCodec.sha256([
+      "after": .string(id), "release": .object(fields(release)), "reader": .string(reader.ownershipDigest),
+      "dependencies": .array(dependencies.sorted().map(AgentMcpJSONValue.string))
+    ])
+  }
+
+  static func describe(_ original: Original, release: AgentCollaborationResearchReference,
+                       evidenceID: String, hash: String) -> AgentMcpJSONObject? {
+    let saved = original.observation
+    guard saved.result.provenance.toolId == AgentIOSOnDeviceRuntimeNativeToolCatalog.execute,
+          saved.input["mode"] == .string("run"),
+          let selected = saved.input["tool_release"]?.objectValue, selected == fields(release) else { return nil }
+    let receipt = saved.result.receipt
+    let runtime = original.evaluation?["runtime"]?.objectValue
+    let originalSelector: AgentMcpJSONObject = [
+      "mode": .string("evidence"), "evidence_id": .string(evidenceID), "sha256": .string(hash)
+    ]
+    return [
+      "evidence_id": .string(evidenceID), "sha256": .string(hash), "origin": .string("ios_native_tool"),
+      "read_original": .object(originalSelector), "release_binding": .string(
+        saved.input["capability_channel"] == nil ? "requested_release" : "runtime_resolved_channel_release"),
+      "parameters_sha256": saved.input["parameters"]?.objectValue.map { .string(AgentMcpJSONCodec.sha256($0)) } ?? .null,
+      "native_status": .string(saved.result.status.rawValue), "runtime_report_available": .bool(runtime != nil),
+      "runtime_reported_passed": original.evaluation?["passed"] ?? .null, "replayed": .bool(receipt.replayed),
+      "native_invocation_id": .string(receipt.invocationId),
+      "original_invocation_id": receipt.originalInvocationId.map(AgentMcpJSONValue.string) ?? .null,
+      "run_id": .string(saved.runId), "turn_id": .string(saved.turnId), "member_id": .string(saved.memberId),
+      "started_at": .int(receipt.startedAtEpochMillis), "finished_at": .int(receipt.finishedAtEpochMillis),
+      "quality_effect": .null
+    ]
+  }
+}
+
 struct AgentCollaborationModelAdmission: Codable, Equatable {
   enum Route: String, Codable { case streaming, compatibility }
   let id: UUID
