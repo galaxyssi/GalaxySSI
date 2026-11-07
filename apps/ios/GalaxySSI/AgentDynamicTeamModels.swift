@@ -245,6 +245,7 @@ struct AgentCollaborationCoordinatorRecovery: Codable, Equatable {
   let route: AgentManualCloudBinding
   let originalPrompt: String
   let process: String
+  var attachments: CloudCoordinatorAttachmentRecovery? = nil
 }
 
 struct AgentCollaborationGoalWorkRun: Codable {

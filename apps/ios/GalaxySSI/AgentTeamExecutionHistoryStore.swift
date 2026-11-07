@@ -2567,7 +2567,8 @@ final class AgentTeamExecutionHistoryStore {
   func saveGoalCoordinatorRecovery(_ binding: AgentCollaborationCoordinatorRecovery) throws {
     let scope = binding.owner
     guard !binding.originalPrompt.isBlank, binding.originalPrompt.utf8.count <= 131_072,
-          !binding.route.hadAttachments else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+          binding.route.hadAttachments ? binding.attachments?.isValid == true : binding.attachments == nil
+    else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     try access { database in
       let team = try Self.activeGoalCoordinator(scope, database: database)
       guard team.members.contains(where: { $0.memberId == scope.memberId && $0.agentId == binding.route.contactId })

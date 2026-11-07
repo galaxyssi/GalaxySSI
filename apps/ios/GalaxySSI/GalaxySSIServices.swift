@@ -8557,8 +8557,8 @@ final class MessageCoordinator: ObservableObject {
     if let index = turns.firstIndex(where: { $0.id == outgoing.id }) {
       turns[index].content = prompt
     }
-    if let scope = collaborationModelAudit, goalWorkHandler != nil, attachments.isEmpty, prompt.utf8.count <= 131_072,
-       let route = AgentManualCloudBinding(contact: cloudContact, hadAttachments: false) {
+    if let scope = collaborationModelAudit, goalWorkHandler != nil, prompt.utf8.count <= 131_072,
+       let route = AgentManualCloudBinding(contact: cloudContact, hadAttachments: !attachments.isEmpty) {
       let profile = store.profile.identityFingerprint
       guard let roster = liveGoalWorkRoster(scope, profileID: profile),
             let digest = AgentCollaborationAcceptedDelivery.Source.rosterDigest(roster),
@@ -8567,8 +8567,12 @@ final class MessageCoordinator: ObservableObject {
             original.turnId.ifBlank(original.id.uuidString) == scope.turnId else { throw CancellationError() }
       let source = AgentCollaborationAcceptedDelivery.Source(profileID: profile, messageID: outgoing.id,
         contactID: outgoing.contactId, rosterDigest: digest)
-      try AgentTeamExecutionHistoryStore.shared.saveGoalCoordinatorRecovery(.init(owner: scope, source: source,
-        route: route, originalPrompt: prompt, process: AgentCollaborationGoalWorkRun.processID))
+      let manifest = attachments.isEmpty ? nil :
+        CloudCoordinatorAttachmentRecovery.capture(attachments, images: images, outgoing: original, turns: turns)
+      if attachments.isEmpty || manifest != nil {
+        try AgentTeamExecutionHistoryStore.shared.saveGoalCoordinatorRecovery(.init(owner: scope, source: source,
+          route: route, originalPrompt: prompt, process: AgentCollaborationGoalWorkRun.processID, attachments: manifest))
+      }
     }
     let detail = cloudContact.selectedCloudModel?.modelId ?? cloudContact.cloudProvider.ifBlank(cloudContact.id)
     return try await receiveCloudStreamReply(
@@ -9364,10 +9368,6 @@ final class MessageCoordinator: ObservableObject {
       contacts: store.visibleContacts, apiKey: { store.apiKey(for: $0) }).map { ($0.id, $0) })
     guard let target = targets[primary.agentId], target.kind == .model, target.status == .available,
           let slot = try? acquireAgentSlot(target: target, sourceMessageId: scope.sourceId + ":goal-recovery") else { return }
-    guard let progress = try? history.claimGoalCoordinatorRecovery(binding) else {
-      UserDefaultsAgentGlobalRunSlotStore.shared.release(ownerId: slot)
-      return
-    }
     resumedGoalCoordinatorRuns.insert(recoveryKey)
     recoveringGoalCoordinatorRun = scope.runId
     Task { @MainActor [weak self] in
@@ -9378,15 +9378,32 @@ final class MessageCoordinator: ObservableObject {
       }
       guard let self, !Task.isCancelled, UIApplication.shared.applicationState == .active,
             self.liveGoalWorkRoster(scope, profileID: profile) == roster,
+            self.store.agentTask(id: scope.turnId) == parent else { return }
+      let images: [CloudImagePayload]
+      if let manifest = binding.attachments {
+        guard let originals = self.goalRecoveryAttachmentSources(manifest, conversationID: scope.conversationId),
+              let restored = await Task.detached(priority: .utility, operation: {
+                manifest.restore(messages: originals, conversationID: scope.conversationId, taskID: outgoing.id.uuidString)
+              }).value,
+              self.goalRecoveryAttachmentSources(manifest, conversationID: scope.conversationId) != nil else { return }
+        images = restored
+      } else {
+        guard !binding.route.hadAttachments else { return }
+        images = []
+      }
+      guard !Task.isCancelled, UIApplication.shared.applicationState == .active,
+            self.liveGoalWorkRoster(scope, profileID: profile) == roster,
             self.store.agentTask(id: scope.turnId) == parent,
+            self.store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId)?.isMine == true,
             let contact = binding.route.resolve(contact: self.store.contact(id: binding.route.contactId),
-              apiKey: { self.store.apiKey(for: $0) }) else { return }
+              apiKey: { self.store.apiKey(for: $0) }),
+            let progress = try? history.claimGoalCoordinatorRecovery(binding) else { return }
       var turn = outgoing
       turn.content = binding.originalPrompt + "\n\nResume the original collaboration goal from saved work. " +
         "Use goal, criteria and source recall, and retrieve exact work outputs by work ID. Do not rerun claimed work. " +
         "Host checkpoint: " + AgentMcpJSONCodec.stringify(progress)
       do {
-        let delivered = try await self.receiveCloudStreamReply(contact: contact, turns: [turn], images: [],
+        let delivered = try await self.receiveCloudStreamReply(contact: contact, turns: [turn], images: images,
           outgoing: outgoing, modelDetail: binding.route.modelId, displayContactId: outgoing.contactId,
           collaborationModelAudit: scope, goalWorkHandler: { arguments in
             await self.handleGoalWorkRequest(arguments, scope: scope, outgoing: outgoing, profileID: profile, targets: targets)
@@ -9411,6 +9428,17 @@ final class MessageCoordinator: ObservableObject {
         _ = self.store.replaceAgentTaskForRecovery(expected: expected, updated: current)
       }
     }
+  }
+
+  private func goalRecoveryAttachmentSources(_ manifest: CloudCoordinatorAttachmentRecovery,
+                                             conversationID: String) -> [UUID: ChatMessage]? {
+    var messages: [UUID: ChatMessage] = [:]
+    for entry in manifest.entries {
+      guard let message = messages[entry.messageID] ?? store.persistedMessage(id: entry.messageID, contactId: entry.contactID),
+            manifest.matches(message, entry: entry, conversationID: conversationID) else { return nil }
+      messages[entry.messageID] = message
+    }
+    return messages
   }
 
   private func recoverAcceptedGoalDelivery(_ receipt: AgentCollaborationAcceptedDelivery, profile: String) {

@@ -33,6 +33,113 @@ struct CloudImagePayload: Equatable {
   }
 }
 
+struct CloudCoordinatorAttachmentRecovery: Codable, Equatable {
+  struct Entry: Codable, Equatable {
+    let messageID: UUID
+    let contactID: String
+    let turnID: String
+    let richDigest: String
+    let attachmentID: String
+    let name: String
+    let mime: String
+    let size: Int
+    let originalDigest: String
+    let quality: ComposerImageQuality?
+    let historicalTurn: String?
+    let transportDigest: String?
+  }
+
+  let entries: [Entry]
+
+  var isValid: Bool {
+    (1...GalaxySSIAttachmentPayloadBuilder.maximumAttachmentCount).contains(entries.count) &&
+      Set(entries.map(\.attachmentID)).count == entries.count && entries.allSatisfy {
+        !$0.attachmentID.isBlank && !$0.turnID.isBlank && !$0.contactID.isBlank &&
+          (1...GalaxySSIAttachmentPayloadBuilder.maximumAttachmentBytes).contains($0.size) &&
+          ($0.historicalTurn == nil || $0.historicalTurn == $0.turnID)
+      }
+  }
+
+  static func capture(_ attachments: [GalaxySSIDraftAttachment], images: [CloudImagePayload],
+                      outgoing: ChatMessage, turns: [ChatMessage]) -> Self? {
+    guard (1...GalaxySSIAttachmentPayloadBuilder.maximumAttachmentCount).contains(attachments.count),
+          Set(attachments.map(\.id)).count == attachments.count else { return nil }
+    var imageIndex = 0
+    var entries: [Entry] = []
+    for attachment in attachments {
+      let sourceTurn = attachment.historicalSourceTurnId
+      let candidates = ([outgoing] + turns.filter { $0.id != outgoing.id }).filter { message in
+        message.isMine && !message.isSystem && message.conversationId == outgoing.conversationId &&
+          (sourceTurn == nil || message.turnId.ifBlank(message.id.uuidString) == sourceTurn) &&
+          block(for: attachment.id, in: message) != nil
+      }
+      let source = candidates.first(where: { $0.id == outgoing.id }) ?? (candidates.count == 1 ? candidates.first : nil)
+      guard let source, !attachment.data.isEmpty, let block = block(for: attachment.id, in: source),
+            block.mimeType.lowercased() == attachment.mimeType.lowercased(),
+            block.metadata["size_bytes"] == String(attachment.data.count) else { return nil }
+      let transport: String?
+      if attachment.isImage {
+        guard images.indices.contains(imageIndex), images[imageIndex].originalData == attachment.data else { return nil }
+        transport = transportFingerprint(images[imageIndex])
+        imageIndex += 1
+      } else { transport = nil }
+      entries.append(.init(messageID: source.id, contactID: source.contactId,
+        turnID: source.turnId.ifBlank(source.id.uuidString), richDigest: digest(Data(source.richOutputJson.utf8)),
+        attachmentID: attachment.id, name: attachment.displayName, mime: attachment.mimeType, size: attachment.data.count,
+        originalDigest: digest(attachment.data), quality: attachment.composerImageQuality,
+        historicalTurn: sourceTurn, transportDigest: transport))
+    }
+    let manifest = Self(entries: entries)
+    return imageIndex == images.count && manifest.isValid ? manifest : nil
+  }
+
+  func matches(_ message: ChatMessage, entry: Entry, conversationID: String) -> Bool {
+    message.id == entry.messageID && message.contactId == entry.contactID && message.isMine && !message.isSystem &&
+      message.conversationId == conversationID && message.turnId.ifBlank(message.id.uuidString) == entry.turnID &&
+      Self.digest(Data(message.richOutputJson.utf8)) == entry.richDigest
+  }
+
+  func restore(messages: [UUID: ChatMessage], conversationID: String, taskID: String,
+               workspace: (String, String, [AgentRichBlock]) -> [AgentRestoredAttachment] = {
+                 AgentAttachmentWorkspaceStager.restore(conversationId: $0, turnId: $1, blocks: $2, matchExactIDs: true)
+               }) -> [CloudImagePayload]? {
+    guard isValid else { return nil }
+    var attachments: [GalaxySSIDraftAttachment] = []
+    defer { attachments.wipeSensitive() }
+    for entry in entries {
+      guard !Task.isCancelled, let message = messages[entry.messageID],
+            matches(message, entry: entry, conversationID: conversationID),
+            let block = Self.block(for: entry.attachmentID, in: message) else { return nil }
+      let inline = block.dataB64.utf8.count <= ((GalaxySSIAttachmentPayloadBuilder.maximumInlineBytes + 2) / 3) * 4
+        ? Data(base64Encoded: block.dataB64) : nil
+      let exactInline = inline.flatMap { $0.count == entry.size && Self.digest($0) == entry.originalDigest ? $0 : nil }
+      let data = exactInline ??
+        workspace(conversationID, entry.turnID, [block]).first(where: { $0.attachment.id == entry.attachmentID })?.attachment.data
+      guard let data, data.count == entry.size, Self.digest(data) == entry.originalDigest else { return nil }
+      attachments.append(.init(id: entry.attachmentID, displayName: entry.name, mimeType: entry.mime, data: data,
+        historicalSourceTurnId: entry.historicalTurn, composerImageQuality: entry.quality))
+    }
+    guard let images = try? CloudImagePayloadFactory.prepare(attachments, taskId: taskID),
+          images.map(Self.transportFingerprint) == entries.compactMap(\.transportDigest) else { return nil }
+    return images
+  }
+
+  private static func block(for id: String, in message: ChatMessage) -> AgentRichBlock? {
+    let matches = AgentRichContentCodec.decode(message.richOutputJson).filter {
+      $0.id == id && $0.metadata["source"] == "user_attachment" && [.image, .file, .audio, .video].contains($0.type)
+    }
+    return matches.count == 1 ? matches.first : nil
+  }
+
+  private static func transportFingerprint(_ image: CloudImagePayload) -> String {
+    AgentMcpJSONCodec.sha256(["bytes": .string(digest(image.data)), "name": .string(image.displayName),
+      "mime": .string(image.mimeType), "original": .bool(image.sendsOriginal),
+      "historical_turn": image.historicalSourceTurnId.map(AgentMcpJSONValue.string) ?? .null])
+  }
+
+  private static func digest(_ data: Data) -> String { GalaxySSIAttachmentPayloadBuilder.sha256(data) }
+}
+
 enum CloudImagePayloadError: LocalizedError, Equatable {
   case invalidPayload(String)
   case preparationFailed(String)

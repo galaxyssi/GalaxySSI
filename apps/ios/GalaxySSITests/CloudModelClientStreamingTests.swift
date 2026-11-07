@@ -2,6 +2,29 @@ import XCTest
 @testable import GalaxySSI
 
 final class CloudModelClientStreamingTests: XCTestCase {
+  func testCoordinatorAttachmentRecoveryPinsOriginalMessageAndTransportBytes() throws {
+    let data = Data([1, 2, 3, 4])
+    let attachment = GalaxySSIDraftAttachment(id: "photo", displayName: "photo.png", mimeType: "image/png",
+      data: data, historicalSourceTurnId: "prior-turn", composerImageQuality: .original)
+    let block = AgentRichBlock(id: attachment.id, type: .image, title: attachment.displayName,
+      dataB64: data.base64EncodedString(), mimeType: attachment.mimeType,
+      metadata: ["source": "user_attachment", "size_bytes": String(data.count)])
+    var prior = ChatMessage(contactId: "hermes", content: "Earlier attachment", isMine: true,
+      conversationId: "group", turnId: "prior-turn", richOutputJson: AgentRichContentCodec.encode([block]))
+    let outgoing = ChatMessage(contactId: "hermes", content: "Continue the original work", isMine: true,
+      conversationId: "group", turnId: "current-turn")
+    let images = try CloudImagePayloadFactory.prepare([attachment], taskId: outgoing.id.uuidString)
+    let manifest = try XCTUnwrap(CloudCoordinatorAttachmentRecovery.capture([attachment], images: images,
+      outgoing: outgoing, turns: [prior, outgoing]))
+    let copy = try JSONDecoder().decode(CloudCoordinatorAttachmentRecovery.self, from: JSONEncoder().encode(manifest))
+    XCTAssertEqual(copy.entries.first?.messageID, prior.id)
+    XCTAssertEqual(copy.restore(messages: [prior.id: prior], conversationID: "group", taskID: outgoing.id.uuidString), images)
+    XCTAssertNil(copy.restore(messages: [:], conversationID: "group", taskID: outgoing.id.uuidString))
+    XCTAssertNil(copy.restore(messages: [prior.id: prior], conversationID: "different-group", taskID: outgoing.id.uuidString))
+    prior.richOutputJson = ""
+    XCTAssertNil(copy.restore(messages: [prior.id: prior], conversationID: "group", taskID: outgoing.id.uuidString))
+  }
+
   func testHistoricalImageSurvivesToolContinuationAndNonStreamingFallback() throws {
     let bytes = Data([1, 2, 3, 4])
     let image = try CloudImagePayload(displayName: "history.png", mimeType: "image/png", data: bytes,
