@@ -902,6 +902,7 @@ struct AgentCollaborationResearchRevision: Codable {
   var sourceId: String
   var draft: AgentCollaborationResearchDraft
   var frozenCloudReads: [AgentCollaborationFrozenCloudRead]? = nil
+  var frozenNativeReads: [AgentCollaborationFrozenCloudRead]? = nil
   var declaredExpectedUtilities: [String: Double]? = nil
   var expectedInformationGainBits: [String: Double]? = nil
   var hypothesisFeedback: AgentMcpJSONObject? = nil

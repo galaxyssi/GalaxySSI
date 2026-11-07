@@ -2041,7 +2041,8 @@ extension GalaxySSIStoreTests {
     }
     let initial = """
       {"format":"galaxyssi.goal-assessment.v1","summary":"Pinned","decision":"continue","work":[],"blockers":[],
-       "criteria":[{"id":"value","requirement":"Document the value","verification":"documentary","status":"open","evidence":[]}]}
+       "criteria":[{"id":"value","requirement":"Document the value","verification":"documentary","status":"open","evidence":[],
+         "required_observations":[{"origin":"ios_native_tool","tool":"fixture.sensor"}]}]}
       """
     let pinned = try history.publishCollaborationMilestone(
       ["mode": .string("establish_contract"), "artifact": .string(initial)], scope: scope(0))
@@ -2056,14 +2057,32 @@ extension GalaxySSIStoreTests {
     XCTAssertThrowsError(try history.recallCollaborationOriginal(read, scope: scope(1)))
     read["mode"] = .string("acceptance_record")
     XCTAssertTrue(try history.recallCollaborationOriginal(read, scope: scope(1)).string("content").contains("Observed value 42"))
-    let review = try publish(.init(id: "review", objectId: nil, baseRevision: 0, kind: .acceptanceReview,
+    let nativeAuthor = scope(2)
+    let toolResult = AgentNativeToolResult(status: .succeeded, output: ["value": .int(42)], message: "",
+      receipt: .init(invocationId: "fixture-invocation", startedAtEpochMillis: 1, finishedAtEpochMillis: 2,
+        durationMillis: 1, status: .succeeded, inputSha256: "input", outputSha256: "output"),
+      provenance: .init(toolId: "fixture.sensor", toolVersion: "1", location: .phone, executorId: "fixture", contractVersion: "1"))
+    let observed = try history.recordNativeObservation(.init(runId: nativeAuthor.runId, conversationId: nativeAuthor.conversationId,
+      turnId: nativeAuthor.turnId, memberId: nativeAuthor.memberId, sourceId: nativeAuthor.sourceId, input: [:], result: toolResult))
+    let citation: AgentMcpJSONObject = ["origin": .string("ios_native_tool"),
+      "evidence_id": observed["evidence_id"] ?? .null, "sha256": observed["sha256"] ?? .null]
+    let reviewDraft = AgentCollaborationResearchDraft(id: "review", objectId: nil, baseRevision: 0, kind: .acceptanceReview,
       title: "Independent review", body: ["acceptance_review": .object([
         "criterion_id": .string("value"), "requirement": .string("Document the value"), "target": .object(ref(delivery)),
         "verdict": .string("supported"), "rationale": .string("Reviewed the exact delivery"), "unresolved": .array([])
-      ])], parents: [delivery]), author: 1, id: "review-v1")
+      ])], parents: [delivery], observations: [citation])
+    XCTAssertThrowsError(try publish(reviewDraft, author: 1, id: "review-v1"))
+    var observationQuery = citation
+    observationQuery.removeValue(forKey: "origin")
+    observationQuery["mode"] = .string("native_evidence")
+    let observationPage = try open().recallCollaborationOriginal(observationQuery, scope: scope(1))
+    XCTAssertEqual(observationPage["host_read_coverage"]?.objectValue?["complete"], .bool(true))
+    XCTAssertEqual(observationPage["source_reference"]?.objectValue?["origin"], .string("ios_native_tool"))
+    let review = try publish(reviewDraft, author: 1, id: "review-v1")
     let criterion: AgentMcpJSONObject = ["id": .string("value"), "requirement": .string("Document the value"),
       "verification": .string("documentary"), "status": .string("met"), "evidence_kind": .string("observed"),
-      "evidence": .array([.string(delivery.sha256), .string(review.sha256)]),
+      "evidence": .array([.string(delivery.sha256), .string(review.sha256), citation["evidence_id"] ?? .null]),
+      "required_observations": .array([.object(["origin": .string("ios_native_tool"), "tool": .string("fixture.sensor")])]),
       "delivery": .object(ref(delivery)), "review": .object(ref(review))]
     let assessment: AgentMcpJSONObject = ["format": .string("galaxyssi.goal-assessment.v1"), "summary": .string("Reviewed"),
       "decision": .string("achieved"), "work": .array([]), "blockers": .array([]), "criteria": .array([.object(criterion)])]

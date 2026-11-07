@@ -117,6 +117,8 @@ enum AgentCollaborationRuleTopics {
     For acceptance_review, cite exactly one current delivery in parents. In body.acceptance_review include criterion_id,
     requirement, target (the exact parent), verdict (supported, refuted, or not_tested), rationale and unresolved.
     The reviewer must be independent of the delivery author; cite completely read original observations in observations.
+    For iOS native tool observations, use native_evidence with the exact evidence_id and sha256. After reading every page,
+    cite {origin:"ios_native_tool",evidence_id,sha256}. Do not cite recall itself, failed actions or replay receipts as new evidence.
     For original-goal coverage, read the host goal source and copy its hashes and source IDs. Publish an artifact with
     body.semantic_goal_mapping containing format galaxyssi.semantic-goal-mapping.v1, goal_sha256, criteria_sha256 and
     segments (id, coverage_kind, criterion_ids, rationale). Map all outcome, constraint and context segments exactly once.

@@ -626,7 +626,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           collaborationRecall: collaborationRecallScope.map { scope in
             { arguments in
               await MainActor.run {
-                guard collaborationEvidence != nil || ["goal", "dependency", "acceptance_record"].contains(arguments.string("mode")) else {
+                guard collaborationEvidence != nil || ["goal", "dependency", "acceptance_record", "native_evidence"].contains(arguments.string("mode")) else {
                   return nil
                 }
                 guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,

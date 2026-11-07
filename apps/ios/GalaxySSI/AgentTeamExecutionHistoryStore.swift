@@ -624,7 +624,7 @@ final class AgentTeamExecutionHistoryStore {
     let id = input.string(idKey)
     var allowed: Set<String> = ["mode", "sha256", "offset", idKey]
     if workspace { allowed.insert("revision") }
-    guard (workspace || mode == "evidence"), Set(input.keys).isSubset(of: allowed),
+    guard (workspace || mode == "evidence" || mode == "native_evidence"), Set(input.keys).isSubset(of: allowed),
           [id, hash].allSatisfy({ $0.utf8.count == 64 &&
             $0.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) } }),
           case .int(let offset) = input["offset"] ?? .int(0), offset >= 0 else {
@@ -667,17 +667,33 @@ final class AgentTeamExecutionHistoryStore {
         }
         return (try page(encoder.encode(record)), nil, nil)
       }
-      guard let record = try database.cloudEvidence(id: id, conversationId: scope.conversationId),
-            record.scope.conversationId == scope.conversationId,
-            record.scope.turnId != scope.turnId || record.scope == scope else {
-        throw AgentTeamHistoryDatabase.Failure.stale
+      let data: Data, origin: String, tool: String, succeeded: Bool
+      if mode == "native_evidence" {
+        guard team.state == .running, team.members.contains(where: { $0.memberId == scope.memberId &&
+          $0.sourceMessageId == scope.sourceId && $0.deliveryMode != .ignore && !$0.status.isTerminal &&
+          ($0.dispatchCheckpoint == .dispatching || $0.dispatchCheckpoint == .accepted) }),
+              let record = try Self.nativeAcceptanceOriginal(id: id, scope: scope, team: team, database: database)
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        data = try encoder.encode(record)
+        origin = "ios_native_tool"
+        tool = record.result.provenance.toolId
+        succeeded = Self.nativeObservationSupportsAcceptance(record)
+      } else {
+        guard let record = try database.cloudEvidence(id: id, conversationId: scope.conversationId),
+              record.scope.conversationId == scope.conversationId,
+              record.scope.turnId != scope.turnId || record.scope == scope else {
+          throw AgentTeamHistoryDatabase.Failure.stale
+        }
+        data = try encoder.encode(record)
+        origin = "ios_cloud_tool"
+        tool = record.call.name
+        succeeded = !record.observedFailure
       }
-      let data = try encoder.encode(record)
       guard SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == hash else {
         throw AgentTeamHistoryDatabase.Failure.corrupt
       }
       let slice = try page(data)
-      let key = Self.cloudReadCoverageKey(scope: scope, id: id, hash: hash)
+      let key = Self.cloudReadCoverageKey(scope: scope, id: id, hash: hash, native: mode == "native_evidence")
       let previous = try database.researchRecord(AgentCollaborationReadCoverage.self,
         conversationId: scope.conversationId, key: key, revision: 0) ?? AgentCollaborationReadCoverage()
       var coverage = previous
@@ -688,8 +704,8 @@ final class AgentTeamExecutionHistoryStore {
       }
       let complete = coverage.contiguousEnd == slice.total
       return (slice, [
-        "evidence_id": .string(id), "sha256": .string(hash), "origin": .string("ios_cloud_tool"),
-        "tool": .string(record.call.name), "status": .string(record.observedFailure ? "failed" : "succeeded")
+        "evidence_id": .string(id), "sha256": .string(hash), "origin": .string(origin),
+        "tool": .string(tool), "status": .string(succeeded ? "succeeded" : "failed")
       ], [
         "complete": .bool(complete), "total_characters": .int(slice.total),
         "first_missing_offset": complete ? .null : .int(coverage.contiguousEnd),
@@ -863,12 +879,76 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
-  private static func cloudReadCoverageKey(scope: AgentCollaborationToolEvidenceScope, id: String, hash: String) -> String {
-    "cloud-read-coverage:" + AgentMcpJSONCodec.sha256([
+  private static func cloudReadCoverageKey(scope: AgentCollaborationToolEvidenceScope, id: String,
+                                           hash: String, native: Bool = false) -> String {
+    var fields: AgentMcpJSONObject = [
       "run": .string(scope.runId), "group": .string(scope.conversationId), "turn": .string(scope.turnId),
       "member": .string(scope.memberId), "source": .string(scope.sourceId),
       "evidence": .string(id), "sha256": .string(hash)
-    ])
+    ]
+    if native { fields["origin"] = .string("ios_native_tool") }
+    return "cloud-read-coverage:" + AgentMcpJSONCodec.sha256(fields)
+  }
+
+  private static func nativeAcceptanceOriginal(id: String, scope: AgentCollaborationToolEvidenceScope,
+      team: AgentTeamExecutionSnapshot, database: AgentTeamHistoryDatabase) throws -> AgentCollaborationNativeToolObservation? {
+    guard let record = try database.researchRecord(AgentCollaborationNativeToolObservation.self,
+      conversationId: scope.conversationId, key: "native-evidence:" + id, revision: 0),
+          record.runId == scope.runId, record.conversationId == scope.conversationId, record.turnId == scope.turnId,
+          team.supervisorRunId == scope.runId, team.conversationId == scope.conversationId, team.taskId == scope.turnId,
+          team.members.contains(where: { $0.memberId == record.memberId && $0.sourceMessageId == record.sourceId &&
+            $0.deliveryMode != .ignore }),
+          [.phone, .application].contains(record.result.provenance.location),
+          !record.result.provenance.toolId.isBlank,
+          record.result.provenance.toolId != AgentIOSLocalModelWebToolRunner.collaborationRecallId
+    else { return nil }
+    return record
+  }
+
+  private static func nativeObservationSupportsAcceptance(_ record: AgentCollaborationNativeToolObservation) -> Bool {
+    record.result.isSuccess && record.result.receipt.status == .succeeded && !record.result.receipt.replayed &&
+      !record.result.output.isEmpty &&
+      !AgentCollaborationCloudToolEvidence.reportsFailure(AgentMcpJSONCodec.stringify(record.result.output))
+  }
+
+  private static func acceptanceCitations(_ references: [AgentMcpJSONObject])
+    throws -> (cloud: [AgentMcpJSONObject], native: [AgentMcpJSONObject]) {
+    guard references.count <= 32, Set(references.map { $0.string("evidence_id") }).count == references.count
+    else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    var cloud: [AgentMcpJSONObject] = [], native: [AgentMcpJSONObject] = []
+    for var reference in references {
+      let origin = reference.removeValue(forKey: "origin") ?? .string("ios_cloud_tool")
+      guard Set(reference.keys) == ["evidence_id", "sha256"],
+            [reference.string("evidence_id"), reference.string("sha256")].allSatisfy({ $0.utf8.count == 64 &&
+              $0.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) } })
+      else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      switch origin {
+      case .string("ios_cloud_tool"): cloud.append(reference)
+      case .string("ios_native_tool"): native.append(reference)
+      default: throw AgentTeamHistoryDatabase.Failure.corrupt
+      }
+    }
+    return (cloud, native)
+  }
+
+  private static func freezeNativeAcceptanceReads(_ references: [AgentMcpJSONObject], scope: AgentCollaborationToolEvidenceScope,
+      team: AgentTeamExecutionSnapshot, database: AgentTeamHistoryDatabase) throws -> [AgentCollaborationFrozenCloudRead] {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    return try references.map { reference in
+      let id = reference.string("evidence_id"), digest = reference.string("sha256")
+      guard let record = try nativeAcceptanceOriginal(id: id, scope: scope, team: team, database: database)
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let bytes = try encoder.encode(record)
+      let actual = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+      let total = Int64(String(decoding: bytes, as: UTF8.self).count)
+      let key = cloudReadCoverageKey(scope: scope, id: id, hash: digest, native: true)
+      guard actual == digest,
+            let coverage = try database.researchRecord(AgentCollaborationReadCoverage.self,
+              conversationId: scope.conversationId, key: key, revision: 0), coverage.contiguousEnd == total
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      return .init(evidenceId: id, sha256: digest, totalCharacters: total)
+    }
   }
 
   private static func freezeCloudReads(_ references: [AgentMcpJSONObject], scope: AgentCollaborationToolEvidenceScope,
@@ -972,6 +1052,7 @@ final class AgentTeamExecutionHistoryStore {
         }
         let references = draft.observations ?? []
         var frozenReads: [AgentCollaborationFrozenCloudRead]? = nil
+        var frozenNativeReads: [AgentCollaborationFrozenCloudRead]? = nil
         var expectedUtilities: [String: Double]? = nil
         var expectedInformation: [String: Double]? = nil
         var hypothesisFeedback: AgentMcpJSONObject? = nil
@@ -992,7 +1073,13 @@ final class AgentTeamExecutionHistoryStore {
           if !references.isEmpty {
             let scope = AgentCollaborationToolEvidenceScope(runId: runId, conversationId: conversationId,
               turnId: turnId, memberId: memberId, sourceId: sourceId)
-            frozenReads = try Self.freezeCloudReads(references, scope: scope, database: database)
+            let citations = try Self.acceptanceCitations(references)
+            if !citations.cloud.isEmpty {
+              frozenReads = try Self.freezeCloudReads(citations.cloud, scope: scope, database: database)
+            }
+            if !citations.native.isEmpty {
+              frozenNativeReads = try Self.freezeNativeAcceptanceReads(citations.native, scope: scope, team: snapshot, database: database)
+            }
           }
         } else if draft.kind == .workflowMethod {
           guard references.isEmpty, draft.objectId?.isBlank != false, draft.baseRevision == 0,
@@ -1312,7 +1399,7 @@ final class AgentTeamExecutionHistoryStore {
         var revision = AgentCollaborationResearchRevision(reference: .init(objectId: objectId,
           revision: draft.baseRevision + 1, sha256: ""), previousHash: head?.reference.sha256,
           runId: runId, turnId: turnId, authorId: memberId, sourceId: sourceId, draft: draft,
-          frozenCloudReads: frozenReads, declaredExpectedUtilities: expectedUtilities,
+          frozenCloudReads: frozenReads, frozenNativeReads: frozenNativeReads, declaredExpectedUtilities: expectedUtilities,
           expectedInformationGainBits: expectedInformation,
           hypothesisFeedback: hypothesisFeedback,
           carriedHypothesisPosterior: carriedPosterior,
@@ -1745,7 +1832,20 @@ final class AgentTeamExecutionHistoryStore {
           throw AgentTeamHistoryDatabase.Failure.corrupt
         }
         if let citations = revision.draft.observations, !citations.isEmpty {
-          guard [.acceptanceReview, .environmentModel, .teamExchange, .failureExperience, .innovationOpportunity,
+          if revision.draft.kind == .acceptanceReview {
+            let split = try Self.acceptanceCitations(citations)
+            func matches(_ reads: [AgentCollaborationFrozenCloudRead]?, _ expected: [AgentMcpJSONObject]) -> Bool {
+              let reads = reads ?? []
+              return reads.count == expected.count && zip(reads, expected).allSatisfy { pair in
+                pair.0.evidenceId == pair.1.string("evidence_id") && pair.0.sha256 == pair.1.string("sha256") &&
+                  pair.0.totalCharacters > 0
+              }
+            }
+            guard matches(revision.frozenCloudReads, split.cloud), matches(revision.frozenNativeReads, split.native)
+            else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+            return revision
+          }
+          guard [.environmentModel, .teamExchange, .failureExperience, .innovationOpportunity,
                  .experimentResult, .predictionOutcome, .capabilityLesson].contains(revision.draft.kind),
                 let reads = revision.frozenCloudReads,
                 reads.count == citations.count,
@@ -2323,7 +2423,8 @@ final class AgentTeamExecutionHistoryStore {
           if revision == nil, currentAssignment {
             let evidenceScope = AgentCollaborationToolEvidenceScope(runId: scope.runId,
               conversationId: scope.conversationId, turnId: scope.turnId, memberId: saved.authorId, sourceId: saved.sourceId)
-            let reads = try Self.freezeCloudReads(saved.draft.observations ?? [], scope: evidenceScope, database: database)
+            let citations = try Self.acceptanceCitations(saved.draft.observations ?? [])
+            let reads = try Self.freezeCloudReads(citations.cloud, scope: evidenceScope, database: database)
             for read in reads {
               guard let original = try database.cloudEvidence(id: read.evidenceId, conversationId: scope.conversationId),
                     original.scope.runId == scope.runId, original.scope.turnId == scope.turnId,
@@ -2335,6 +2436,14 @@ final class AgentTeamExecutionHistoryStore {
               else { return nil }
               observed.insert(read.evidenceId)
               originals[read.evidenceId] = .init(origin: "ios_cloud_tool", tool: original.call.name,
+                status: "returned", kind: "tool_output_recorded")
+            }
+            let native = try Self.freezeNativeAcceptanceReads(citations.native, scope: evidenceScope, team: team, database: database)
+            for read in native {
+              guard let original = try Self.nativeAcceptanceOriginal(id: read.evidenceId, scope: evidenceScope,
+                team: team, database: database), Self.nativeObservationSupportsAcceptance(original) else { return nil }
+              observed.insert(read.evidenceId)
+              originals[read.evidenceId] = .init(origin: "ios_native_tool", tool: original.result.provenance.toolId,
                 status: "returned", kind: "tool_output_recorded")
             }
           }

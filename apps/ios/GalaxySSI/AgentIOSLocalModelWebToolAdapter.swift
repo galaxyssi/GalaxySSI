@@ -131,8 +131,8 @@ enum AgentIOSLocalModelWebToolRunner {
   static func collaborationRecallTool(originalsOnly: Bool = false,
                                       read: @escaping (AgentMcpJSONObject) -> AgentMcpJSONObject?)
     throws -> AgentNativeToolExecutableDefinition {
-    let modes = originalsOnly ? ["goal", "dependency"] :
-      ["goal", "dependency", "workspace", "evidence", "capabilities", "problems", "evolution_rules"]
+    let modes = originalsOnly ? ["goal", "dependency", "native_evidence"] :
+      ["goal", "dependency", "workspace", "evidence", "native_evidence", "capabilities", "problems", "evolution_rules"]
     let descriptor = try AgentNativeToolDescriptor(id: collaborationRecallId, version: "1.1.0",
       title: "Collaboration originals",
       description: originalsOnly
