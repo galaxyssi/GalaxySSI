@@ -43,6 +43,32 @@ enum GalaxySSIHealthRecordingReminders {
       return calendar.nextDate(after: date, matching: DateComponents(hour: quietEnd, minute: 0),
                                matchingPolicy: .nextTime) ?? date
     }
+
+    func nextDelivery(_ date: Date, calendar: Calendar) -> Date {
+      quietEndAfter(max(date, pausedUntil ?? .distantPast), calendar: calendar)
+    }
+  }
+
+  static func sharedDelivery(_ date: Date, settings: Settings?, calendar: Calendar,
+                             local: (Date) -> Date) -> Date? {
+    var next = date
+    // A pair of quiet windows can cover the entire day.
+    for _ in 0..<8 {
+      let candidate = local(settings?.nextDelivery(next, calendar: calendar) ?? next)
+      if candidate == next { return next }
+      guard candidate > next else { return nil }
+      next = candidate
+    }
+    return nil
+  }
+
+  static func calendarTriggerDate(_ due: Date) -> DateComponents {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    var date = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: due.roundedUpToSecond)
+    date.calendar = calendar
+    date.timeZone = calendar.timeZone
+    return date
   }
 
   struct Occurrence: Codable, Equatable, Identifiable {
@@ -84,10 +110,20 @@ enum GalaxySSIHealthRecordingReminders {
         if let item, item.completedAt != nil || item.disabled { return nil }
         let target = item?.snoozedUntil ?? item?.scheduledAt ?? due
         guard target >= effectiveAt, target >= (settings.pausedUntil ?? .distantPast) else { return nil }
-        let allowed = settings.quietEndAfter(target, calendar: calendar)
+        let allowed = settings.nextDelivery(target, calendar: calendar)
         guard allowed > now, allowed < end else { return nil }
         return (key, allowed)
       }
+    }
+
+    func keepsDelivered(at now: Date, calendar: Calendar) -> Set<String> {
+      guard settings.enabled, settings.notifications, settings.nextDelivery(now, calendar: calendar) == now
+      else { return [] }
+      let today = Self.key(now, calendar: calendar)
+      return Set(history.filter {
+        $0.day == today && !$0.disabled && $0.completedAt == nil &&
+          max($0.scheduledAt, $0.snoozedUntil ?? .distantPast) <= now
+      }.map(\.day))
     }
 
     private static func due(on day: Date, settings: Settings, calendar: Calendar) -> Date? {
@@ -105,4 +141,8 @@ enum GalaxySSIHealthRecordingReminders {
     prefix + SHA256.hash(data: Data((owner + ":" + day).utf8))
       .map { String(format: "%02x", $0) }.joined()
   }
+}
+
+private extension Date {
+  var roundedUpToSecond: Date { Date(timeIntervalSince1970: timeIntervalSince1970.rounded(.up)) }
 }

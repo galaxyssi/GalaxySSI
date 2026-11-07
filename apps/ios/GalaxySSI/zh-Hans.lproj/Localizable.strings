@@ -396,6 +396,8 @@
 "galaxyssi.health.trend.title" = "测量趋势";
 "galaxyssi.health.recording_reminder.title" = "健康记录提醒";
 "galaxyssi.health.recording_reminder.preferences" = "记录偏好";
+"galaxyssi.health.recording_reminder.delivery" = "健康通知发送设置";
+"galaxyssi.health.recording_reminder.paused_until" = "暂停至";
 "galaxyssi.health.recording_reminder.enabled" = "每日记录计划";
 "galaxyssi.health.recording_reminder.category" = "测量指标";
 "galaxyssi.health.recording_reminder.time" = "每日时间";

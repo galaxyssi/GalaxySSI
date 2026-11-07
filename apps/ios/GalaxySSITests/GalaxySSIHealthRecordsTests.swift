@@ -584,6 +584,20 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let episode = try XCTUnwrap(ledger.episodes.first)
     XCTAssertEqual(episode.latest.decrease, 45)
     XCTAssertEqual(episode.latest.days.filter { $0.minutes == nil }.count, 2)
+    var notifications = ledger.preferences
+    notifications.notifications = true
+    let resume = try XCTUnwrap(calendar.date(bySettingHour: 7, minute: 0, second: 0, of: now))
+    let morning = try XCTUnwrap(calendar.date(bySettingHour: 10, minute: 0, second: 0, of: now))
+    let global = GalaxySSIHealthRecordingReminders.Settings(quietStart: 22, quietEnd: 10, pausedUntil: resume)
+    XCTAssertEqual(GalaxySSIHealthSleepReminder.deliveryDate(now.addingTimeInterval(-60), episode: episode,
+      preferences: notifications, settings: global, calendar: calendar), morning)
+    var snoozed = episode
+    snoozed.snoozedUntil = morning.addingTimeInterval(3_600)
+    XCTAssertEqual(GalaxySSIHealthSleepReminder.deliveryDate(now, episode: snoozed,
+      preferences: notifications, settings: global, calendar: calendar), snoozed.snoozedUntil)
+    snoozed.completed = true
+    XCTAssertNil(GalaxySSIHealthSleepReminder.deliveryDate(now, episode: snoozed,
+      preferences: notifications, settings: global, calendar: calendar))
     ledger.reconcile(current: readings, allowed: true, now: now.addingTimeInterval(60), calendar: calendar)
     XCTAssertEqual(ledger.episodes, [episode])
     ledger.reconcile(current: Array(readings.dropFirst(2)), allowed: true, now: now, calendar: calendar)
@@ -768,6 +782,14 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     state.deliveries = adopted.tickets
     ticket = try XCTUnwrap(adopted.tickets[job.key])
     XCTAssertTrue(ticket.submitted)
+    let rolledBack = ticket.due.addingTimeInterval(-60)
+    let globalPause = GalaxySSIHealthRecordingReminders.Settings(pausedUntil: later.addingTimeInterval(1_800))
+    let rearmed = GalaxySSIHealthReviewDelivery.plan(jobs: [job], state: state, now: rolledBack,
+      calendar: calendar, permitted: true, scheduled: [], delivered: [ticket.token], settings: globalPause)
+    XCTAssertEqual(rearmed.pending.first?.due, globalPause.pausedUntil)
+    XCTAssertNotEqual(rearmed.pending.first?.token, ticket.token)
+    XCTAssertTrue(rearmed.keepDelivered.isEmpty)
+    XCTAssertNil(GalaxySSIHealthReviewDelivery.target(for: ticket.token, jobs: [job], state: state, now: rolledBack))
     let dismissed = GalaxySSIHealthReviewDelivery.plan(jobs: [job], state: state, now: later,
       calendar: calendar, permitted: true, scheduled: [], delivered: [])
     XCTAssertTrue(dismissed.pending.isEmpty)
@@ -1243,6 +1265,14 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let ledger = try records.loadRecordingReminders(at: later, calendar: calendar)
     let first = try XCTUnwrap(ledger.history.first)
     XCTAssertEqual(ledger.history.count, 1)
+    XCTAssertEqual(ledger.keepsDelivered(at: later, calendar: calendar), [first.day])
+    let beforeDue = first.scheduledAt.addingTimeInterval(-60)
+    XCTAssertTrue(ledger.keepsDelivered(at: beforeDue, calendar: calendar).isEmpty)
+    XCTAssertEqual(ledger.upcoming(at: beforeDue, calendar: calendar).first?.1, first.scheduledAt)
+    var paused = ledger
+    paused.settings.pausedUntil = later.addingTimeInterval(3_600)
+    XCTAssertTrue(paused.keepsDelivered(at: later, calendar: calendar).isEmpty)
+    XCTAssertEqual(paused.history, ledger.history)
     try records.updateRecordingReminder(first, complete: false, at: later, calendar: calendar)
     XCTAssertThrowsError(try records.updateRecordingReminder(first, complete: true, at: later, calendar: calendar))
     let refreshed = try records.loadRecordingReminders(at: later, calendar: calendar)

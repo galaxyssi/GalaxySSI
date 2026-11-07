@@ -38,24 +38,25 @@ enum GalaxySSIHealthSyncDelivery {
   }
 
   static func dueAfter(_ date: Date, settings: GalaxySSIHealthRecordingReminders.Settings, calendar: Calendar) -> Date {
-    settings.quietEndAfter(max(date, settings.pausedUntil ?? .distantPast), calendar: calendar)
+    settings.nextDelivery(date, calendar: calendar)
   }
 
   static func plan(state: State, selected: Set<Scope>, incidents: [Incident],
                    settings: GalaxySSIHealthRecordingReminders.Settings, now: Date, calendar: Calendar,
                    permitted: Bool, scheduled: Set<UUID>, delivered: Set<UUID>) -> Plan {
     guard state.enabled, permitted else { return Plan() }
-    let paused = (settings.pausedUntil ?? .distantPast) > now
+    let deferred = dueAfter(now, settings: settings, calendar: calendar) > now
     var plan = Plan()
     for incident in incidents where selected.contains(incident.scope) && !incident.handled {
       guard var receipt = state.receipts[incident.scope], receipt.incident == incident.id else { continue }
-      let visible = delivered.contains(receipt.token)
+      let visible = delivered.contains(receipt.token) && (receipt.due ?? .distantFuture) <= now
       let pending = scheduled.contains(receipt.token)
       if visible || (receipt.submitted && !pending && (receipt.due ?? .distantFuture) <= now) {
         receipt.submitted = true
-        if visible && !paused { plan.keepDelivered.insert(receipt.token) }
+        if visible && !deferred { plan.keepDelivered.insert(receipt.token) }
       } else {
-        if let due = receipt.due, (pending || due > now), dueAfter(due, settings: settings, calendar: calendar) == due {
+        if let due = receipt.due, !delivered.contains(receipt.token),
+           (pending || due > now), dueAfter(due, settings: settings, calendar: calendar) == due {
           if pending { receipt.submitted = true }
         } else {
           receipt = Receipt(incident: incident.id,
@@ -72,6 +73,7 @@ enum GalaxySSIHealthSyncDelivery {
                      settings: GalaxySSIHealthRecordingReminders.Settings, now: Date) -> Scope? {
     guard state.enabled, (settings.pausedUntil ?? .distantPast) <= now,
           let match = state.receipts.first(where: { $0.value.token == token }),
+          let due = match.value.due, due <= now,
           selected.contains(match.key),
           incidents.contains(where: { $0.scope == match.key && $0.id == match.value.incident && !$0.handled })
     else { return nil }
@@ -83,7 +85,8 @@ enum GalaxySSIHealthSyncDelivery {
     let content = UNMutableNotificationContent()
     content.title = title
     content.body = body
-    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, due.timeIntervalSince(now)), repeats: false)
+    let trigger = UNCalendarNotificationTrigger(dateMatching:
+      GalaxySSIHealthRecordingReminders.calendarTriggerDate(max(due, now.addingTimeInterval(1))), repeats: false)
     return UNNotificationRequest(identifier: receipt.identifier, content: content, trigger: trigger)
   }
 }
@@ -146,6 +149,9 @@ struct GalaxySSIHealthSyncNotificationLifecycle: ViewModifier {
     let delivered = await center.deliveredNotifications()
     guard scene == .active, !Task.isCancelled, records.owner == store.profile.identityFingerprint else { return }
     let pendingIDs = Set(pending.compactMap { GalaxySSIHealthSyncDelivery.token($0.identifier) })
+    let calendarPendingIDs = Set(pending.compactMap { request in
+      request.trigger is UNCalendarNotificationTrigger ? GalaxySSIHealthSyncDelivery.token(request.identifier) : nil
+    })
     let deliveredIDs = Set(delivered.compactMap { GalaxySSIHealthSyncDelivery.token($0.request.identifier) })
     guard let plan = try? records.reconcileSyncDelivery(now: Date(), calendar: .current,
       permitted: GalaxySSIHealthSyncDelivery.permitted(settings.authorizationStatus),
@@ -157,7 +163,7 @@ struct GalaxySSIHealthSyncNotificationLifecycle: ViewModifier {
     center.removeDeliveredNotifications(withIdentifiers: deliveredIDs.subtracting(plan.keepDelivered).map {
       GalaxySSIHealthSyncDelivery.prefix + $0.uuidString
     })
-    for receipt in plan.pending where !pendingIDs.contains(receipt.token) && !deliveredIDs.contains(receipt.token) {
+    for receipt in plan.pending where !calendarPendingIDs.contains(receipt.token) && !deliveredIDs.contains(receipt.token) {
       guard scene == .active, !Task.isCancelled, records.owner == store.profile.identityFingerprint else { return }
       guard let request = GalaxySSIHealthSyncDelivery.request(receipt, title: t("title", "GalaxySSI reminder"),
         body: t("body", "Open GalaxySSI to review."), now: Date()) else { continue }

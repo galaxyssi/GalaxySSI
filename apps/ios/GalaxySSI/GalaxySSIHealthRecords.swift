@@ -1025,7 +1025,7 @@ struct GalaxySSIHealthRecords {
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
   }
 
-  func updateSleepEpisode(version: UUID, completion: Bool = false, snooze: Date? = nil, delivered: Date? = nil) throws {
+  func updateSleepEpisode(version: UUID, completion: Bool = false, snooze: Date? = nil) throws {
     var archive = try load()
     guard archive.derivesOverview == true, var ledger = archive.sleepReminders, ledger.preferences.enabled,
           let index = ledger.episodes.firstIndex(where: { $0.version == version && !$0.closed }),
@@ -1034,11 +1034,28 @@ struct GalaxySSIHealthRecords {
     if let snooze {
       ledger.episodes[index].snoozedUntil = snooze
       ledger.episodes[index].deliveredAt = nil
+      ledger.episodes[index].notificationDue = nil
     }
-    if let delivered { ledger.episodes[index].deliveredAt = delivered }
     ledger.episodes[index].version = UUID()
     archive.sleepReminders = ledger
     try persist(archive)
+    NotificationCenter.default.post(name: GalaxySSIHealthSleepReminder.changed, object: owner)
+  }
+
+  func saveSleepDelivery(_ episode: GalaxySSIHealthSleepReminder.Episode,
+                         preferences: GalaxySSIHealthSleepReminder.Preferences,
+                         settings: GalaxySSIHealthRecordingReminders.Settings?,
+                         due: Date?, delivered: Date?) throws {
+    var archive = try load()
+    guard archive.derivesOverview == true, archive.recordingReminders?.settings == settings,
+          var ledger = archive.sleepReminders, ledger.preferences == preferences,
+          let index = ledger.episodes.firstIndex(of: episode), !episode.closed, !episode.completed
+    else { throw Failure.stale }
+    ledger.episodes[index].notificationDue = due
+    ledger.episodes[index].deliveredAt = delivered
+    guard ledger.episodes[index] != episode else { return }
+    archive.sleepReminders = ledger
+    try persist(archive, notify: false)
   }
 
   func commitRestore(_ archive: Archive, receipt: UUID, originals: [GalaxySSIHealthOriginalStore.Original] = [],
@@ -1156,7 +1173,8 @@ struct GalaxySSIHealthRecords {
     }
     let plan = GalaxySSIHealthReviewDelivery.plan(
       jobs: jobs, state: state, now: now,
-      calendar: calendar, permitted: permitted, scheduled: scheduled, delivered: delivered)
+      calendar: calendar, permitted: permitted, scheduled: scheduled, delivered: delivered,
+      settings: archive.recordingReminders?.settings)
     if plan.tickets != before {
       state.deliveries = plan.tickets
       archive.reviewReminderState = state
@@ -1174,7 +1192,8 @@ struct GalaxySSIHealthRecords {
     state.enabled, state.notificationPreferences?.enabled == true,
     GalaxySSIHealthReviewDelivery.action(for: job, state: state) != .handled,
     GalaxySSIHealthReviewDelivery.cycle(for: job, state: state) == ticket.cycle,
-    state.notificationPreferences?.nextAllowed(ticket.due, calendar: calendar) == ticket.due
+    state.notificationPreferences?.deliveryDate(ticket.due, settings: archive.recordingReminders?.settings,
+      calendar: calendar) == ticket.due
     else { throw Failure.stale }
     if state.deliveries?[key]?.submitted == true { return }
     state.deliveries?[key]?.submitted = true
