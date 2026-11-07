@@ -19,12 +19,15 @@ struct AgentTeamDispatchSpec: Codable, Equatable {
 }
 
 struct AgentOutboundTeamContext: Equatable {
+  static let workspaceResultContract = "galaxyssi.collaboration-workspace.v1"
+
   var teamId: String
   var supervisorRunId: String
   var primaryInstanceId: String
   var member: AgentTeamMember
   var sourceMessageId: String
   var executionPolicyPrompt: String
+  var isManagedCollaboration: Bool
 
   init(
     teamId: String,
@@ -32,7 +35,8 @@ struct AgentOutboundTeamContext: Equatable {
     primaryInstanceId: String,
     member: AgentTeamMember,
     sourceMessageId: String,
-    executionPolicyPrompt: String = ""
+    executionPolicyPrompt: String = "",
+    isManagedCollaboration: Bool = false
   ) {
     self.teamId = teamId
     self.supervisorRunId = supervisorRunId
@@ -40,6 +44,7 @@ struct AgentOutboundTeamContext: Equatable {
     self.member = member
     self.sourceMessageId = sourceMessageId
     self.executionPolicyPrompt = AgentExecutionPolicyPrompt.bounded(executionPolicyPrompt)
+    self.isManagedCollaboration = isManagedCollaboration
   }
 
   var runId: String {
@@ -53,7 +58,7 @@ struct AgentOutboundTeamContext: Equatable {
       )
   }
 
-  func apply(to payload: inout [String: Any]) {
+  func apply(to payload: inout [String: Any], workspaceRoster: AgentCollaborationRoster? = nil) {
     payload["agent_instance_id"] = member.memberId
     payload["team_id"] = teamId
     payload["agent_team_message"] = true
@@ -62,6 +67,30 @@ struct AgentOutboundTeamContext: Equatable {
     if !executionPolicyPrompt.isEmpty {
       payload[AgentExecutionPolicyPrompt.wireKey] = executionPolicyPrompt
     }
+    payload.removeValue(forKey: "result_contract")
+    if let workspaceRoster, admitsWorkspaceResult(roster: workspaceRoster) {
+      payload["result_contract"] = Self.workspaceResultContract
+    }
+  }
+
+  private func admitsWorkspaceResult(roster: AgentCollaborationRoster) -> Bool {
+    let rosterId = AgentTeamProgressPolicy.stableCollaborationMemberId(member.memberId)
+    return isManagedCollaboration && member.deliveryMode != .ignore &&
+      member.context["_galaxyssi_selection_source"] == "collaboration_roster" &&
+      member.context["_galaxyssi_roster_member_id"] == rosterId &&
+      Self.validWireId(teamId, maximum: 128) && Self.validWireId(member.memberId, maximum: 96) &&
+      roster.isValid && roster.members.contains {
+        $0.id.uuidString.lowercased() == rosterId && $0.resourceId == member.agentId
+      }
+  }
+
+  private static func validWireId(_ id: String, maximum: Int) -> Bool {
+    let bytes = id.utf8
+    func alphanumeric(_ byte: UInt8) -> Bool {
+      (48...57).contains(byte) || (65...90).contains(byte) || (97...122).contains(byte)
+    }
+    guard let first = bytes.first, bytes.count <= maximum, alphanumeric(first) else { return false }
+    return bytes.dropFirst().allSatisfy { alphanumeric($0) || [45, 46, 58, 95].contains($0) }
   }
 }
 

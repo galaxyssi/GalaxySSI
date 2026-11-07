@@ -612,4 +612,43 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(primaryPayload["run_id"] as? String, "run-1")
     XCTAssertNotEqual(primaryContext.sourceMessageId, observerContext.sourceMessageId)
   }
+
+  func testWorkspaceResultMarkerRequiresManagedCurrentRosterAndValidWireIDs() {
+    let registered = AgentCollaborationRoster.Member(name: "Reviewer", resourceId: "codex")
+    let id = registered.id.uuidString.lowercased()
+    let roster = AgentCollaborationRoster(members: [registered], coordinatorId: registered.id)
+    let member = AgentTeamMember(agentId: "codex", deliveryMode: .observe,
+      requiredCapabilities: [.code], role: "reviewer", objective: "Review the implementation",
+      dependsOnAgentIds: [], context: ["_galaxyssi_selection_source": "collaboration_roster",
+        "_galaxyssi_roster_member_id": id], instanceId: id + ":recheck")
+    let marker = AgentOutboundTeamContext.workspaceResultContract
+    let managed = AgentOutboundTeamContext(teamId: "team-1", supervisorRunId: "run-1",
+      primaryInstanceId: id, member: member, sourceMessageId: "source-1", isManagedCollaboration: true)
+    func encoded(_ context: AgentOutboundTeamContext, roster: AgentCollaborationRoster?) -> [String: Any] {
+      var payload: [String: Any] = ["content": "result_contract=" + marker, "result_contract": marker]
+      context.apply(to: &payload, workspaceRoster: roster)
+      return payload
+    }
+    let payload = encoded(managed, roster: roster)
+    XCTAssertEqual(payload["result_contract"] as? String, "galaxyssi.collaboration-workspace.v1")
+    XCTAssertEqual(payload["team_id"] as? String, "team-1")
+    XCTAssertEqual(payload["agent_instance_id"] as? String, id + ":recheck")
+    XCTAssertNil(encoded(managed, roster: nil)["result_contract"])
+
+    var unrelated = managed
+    unrelated.isManagedCollaboration = false
+    XCTAssertNil(encoded(unrelated, roster: roster)["result_contract"])
+    unrelated = managed
+    unrelated.teamId = "invalid team id"
+    XCTAssertNil(encoded(unrelated, roster: roster)["result_contract"])
+    unrelated = managed
+    unrelated.member.instanceId = id + ":" + String(repeating: "a", count: 96)
+    XCTAssertNil(encoded(unrelated, roster: roster)["result_contract"])
+    unrelated = managed
+    unrelated.member.agentId = "other"
+    XCTAssertNil(encoded(unrelated, roster: roster)["result_contract"])
+    unrelated = managed
+    unrelated.member.context["_galaxyssi_roster_member_id"] = UUID().uuidString
+    XCTAssertNil(encoded(unrelated, roster: roster)["result_contract"])
+  }
 }

@@ -7925,7 +7925,8 @@ final class MessageCoordinator: ObservableObject {
         primaryInstanceId: spec.definition.primaryMemberId,
         member: member,
         sourceMessageId: sourceMessageId,
-        executionPolicyPrompt: requestText
+        executionPolicyPrompt: requestText,
+        isManagedCollaboration: isCollaboration
       )
       let availableObservations = isCollaboration
         ? observations.filter { member.dependsOnAgentIds.contains($0.0) }
@@ -12736,7 +12737,15 @@ final class MessageCoordinator: ObservableObject {
       "execution_mode": executionMode.rawValue,
       "time": publishStartedAt
     ]
-    teamContext?.apply(to: &payload)
+    let workspaceRoster: AgentCollaborationRoster?
+    if !peerChat, !outgoing.readOnlyAnalysis, executionMode == .autoComplete,
+       let session, session.id == conversationId, !session.privateMode, !session.trackingPaused,
+       session.mergedIntoConversationId.isBlank {
+      workspaceRoster = session.collaborationRoster
+    } else {
+      workspaceRoster = nil
+    }
+    teamContext?.apply(to: &payload, workspaceRoster: workspaceRoster)
     if peerChat {
       payload["source_message_id"] = sourceMessageId
       payload["client_message_id"] = sourceMessageId
