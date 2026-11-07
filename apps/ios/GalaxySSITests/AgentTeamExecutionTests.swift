@@ -2475,6 +2475,16 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(try open().acceptedGoalDeliveryRecoveryPage(after: "").deliveries.isEmpty)
   }
 
+  func testSavedMemberDecodingPreservesRecruitmentProvenance() throws {
+    var team = durableTeamSnapshot("provenance")
+    team.members[1].recruitmentTemplateID = UUID()
+    let restored = try JSONDecoder().decode(AgentTeamExecutionSnapshot.self, from: JSONEncoder().encode(team))
+    XCTAssertEqual(restored.members[1].recruitmentTemplateID, team.members[1].recruitmentTemplateID)
+    XCTAssertEqual(restored.reviewIdentity(restored.members[1].memberId),
+      team.members[1].recruitmentTemplateID?.uuidString.lowercased())
+    XCTAssertNil(restored.members[0].recruitmentTemplateID)
+  }
+
   func testRecruitDirectoryProjectionUsesStableIdentityAndDoesNotRestoreDeletedMembers() throws {
     typealias Graph = AgentCollaborationLiveGraph
     let lead = AgentCollaborationRoster.Member(name: "Lead", resourceId: "lead")
@@ -2841,6 +2851,87 @@ extension GalaxySSIStoreTests {
     } catch {
       XCTFail("Expected cancellation before model preflight, got \(error)")
     }
+  }
+
+  func testNativeReleaseHistoryPagesOnlyVisibleExactVersionAndPreservesOriginalReceipts() throws {
+    typealias History = AgentCollaborationNativeReleaseHistory
+    let suite = "native-release-history-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite")
+    func open() -> AgentTeamExecutionHistoryStore {
+      AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+        executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    }
+    let history = open()
+    let team = durableTeamSnapshot("history-reader")
+    XCTAssertTrue(history.upsert(team))
+    func scope(member index: Int) -> AgentCollaborationToolEvidenceScope {
+      let member = team.members[index]
+      return .init(runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
+        memberId: member.memberId, sourceId: member.sourceMessageId)
+    }
+    let reader = scope(member: 0)
+    let other = scope(member: 1)
+    let release = AgentCollaborationResearchReference(objectId: String(repeating: "a", count: 64),
+      revision: 2, sha256: String(repeating: "b", count: 64))
+    let earlier = AgentCollaborationResearchReference(objectId: release.objectId,
+      revision: 1, sha256: String(repeating: "c", count: 64))
+    let database = try AgentTeamHistoryDatabase(fileURL: file,
+      storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    for version in [release, earlier] {
+      let saved: AgentMcpJSONObject = ["reference": .object(History.fields(version)), "runId": .string("older"),
+        "turnId": .string("older-turn"), "authorId": .string("author"), "sourceId": .string("older-source"),
+        "draft": .object(["kind": .string("tool_release")]),
+        "testedToolRelease": .object(["state": .string("eligible_for_scoped_tool_execution")])]
+      try database.insertResearchRecord(saved, conversationId: reader.conversationId,
+        key: "object:" + version.objectId, revision: version.revision)
+    }
+    func record(_ id: String, ref: AgentCollaborationResearchReference,
+                owner: AgentCollaborationToolEvidenceScope, replayed: Bool = false,
+                status: AgentNativeToolResultStatus = .succeeded) throws -> AgentMcpJSONObject {
+      let result = AgentNativeToolResult(status: status, output: ["stdout": .string("private output")], message: "",
+        receipt: .init(invocationId: id, startedAtEpochMillis: 1, finishedAtEpochMillis: 2,
+          durationMillis: 1, status: status, inputSha256: "input", outputSha256: "output",
+          replayed: replayed, originalInvocationId: replayed ? "initial" : nil),
+        provenance: .init(toolId: AgentIOSOnDeviceRuntimeNativeToolCatalog.execute, toolVersion: "1",
+          location: .phone, executorId: "test", contractVersion: "1"))
+      return try history.recordNativeObservation(.init(runId: owner.runId, conversationId: owner.conversationId,
+        turnId: owner.turnId, memberId: owner.memberId, sourceId: owner.sourceId,
+        input: ["mode": .string("run"), "tool_release": .object(History.fields(ref)),
+          "parameters": .object(["value": .string("private input")])], result: result))
+    }
+    for i in 0..<21 { _ = try record("unrelated-\(i)", ref: earlier, owner: reader) }
+    _ = try record("hidden", ref: release, owner: other)
+    let initial = try record("initial", ref: release, owner: reader)
+    let replay = try record("replay", ref: release, owner: reader, replayed: true)
+    let failed = try record("failed", ref: release, owner: reader, status: .failed)
+    var query = History.fields(release)
+    query["mode"] = .string(History.mode)
+    let reopened = open()
+    let first = try reopened.recallCollaborationOriginal(query, scope: reader)
+    let cursor = try XCTUnwrap(first["next_cursor"]?.strictStringValue)
+    query["cursor"] = .string(cursor)
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(query, scope: other))
+    var wrongVersion = query.merging(History.fields(earlier)) { _, new in new }
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(wrongVersion, scope: reader))
+    wrongVersion["cursor"] = nil
+    wrongVersion["sha256"] = .string(release.sha256)
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(wrongVersion, scope: reader))
+    let second = try reopened.recallCollaborationOriginal(query, scope: reader)
+    XCTAssertEqual(second["next_cursor"], .null)
+    let records = ((first["records"]?.arrayValue ?? []) + (second["records"]?.arrayValue ?? [])).compactMap(\.objectValue)
+    XCTAssertEqual(Set(records.map { $0.string("evidence_id") }), Set([initial, replay, failed].map { $0.string("evidence_id") }))
+    let replayRow = try XCTUnwrap(records.first(where: { $0["replayed"] == .bool(true) }))
+    XCTAssertEqual(replayRow["original_invocation_id"], .string("initial"))
+    XCTAssertEqual(replayRow["read_original"]?.objectValue?["sha256"], replay["sha256"])
+    XCTAssertEqual(records.first(where: { $0["evidence_id"] == failed["evidence_id"] })?["native_status"], .string("failed"))
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(second).contains("private input"))
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(first).contains("private output"))
+    reopened.removeResearchObjects(conversationId: reader.conversationId)
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(query, scope: reader))
   }
 
   func testSavedTeamFailureDistinguishesObserverFromPrimary() throws {

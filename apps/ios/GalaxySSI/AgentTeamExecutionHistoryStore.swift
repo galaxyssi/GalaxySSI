@@ -589,6 +589,7 @@ final class AgentTeamExecutionHistoryStore {
                                    scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
     if mode == "dependency" { return try recallDependencyOriginal(input, scope: scope) }
+    if mode == AgentCollaborationNativeReleaseHistory.mode { return try recallNativeReleaseHistory(input, scope: scope) }
     if mode == "capabilities" { return try recallCapabilities(input, scope: scope) }
     if mode == "evolution_rules" {
       guard Set(input.keys).isSubset(of: ["mode", "topic", "offset"]),
@@ -764,6 +765,84 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
+  private func recallNativeReleaseHistory(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope)
+    throws -> AgentMcpJSONObject {
+    typealias History = AgentCollaborationNativeReleaseHistory
+    guard Set(input.keys).isSubset(of: ["mode", "object_id", "revision", "sha256", "cursor"]),
+          let reference = History.reference(input), case .string(let cursor) = input["cursor"] ?? .string(""),
+          cursor.utf8.count <= 129 else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    return try access { database in
+      guard let team = try database.snapshots(runId: scope.runId).first,
+            team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
+            let reader = team.members.first(where: { $0.memberId == scope.memberId &&
+              $0.sourceMessageId == scope.sourceId && $0.deliveryMode != .ignore && !$0.status.isTerminal }),
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true,
+            let release = try database.researchRecord(History.Release.self, conversationId: scope.conversationId,
+              key: "object:" + reference.objectId, revision: reference.revision),
+            release.reference == reference, release.draft.kind == "tool_release",
+            release.testedToolRelease?["state"] == .string("eligible_for_scoped_tool_execution")
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let dependencies = reader.dispatchDependencyMemberIds ?? []
+      func visible(run: String, turn: String, member: String, source: String) -> Bool {
+        if turn != scope.turnId { return true }
+        guard run == scope.runId else { return false }
+        if member == scope.memberId && source == scope.sourceId { return true }
+        return dependencies.contains(member) && team.members.contains {
+          $0.memberId == member && $0.sourceMessageId == source && $0.deliveryMode != .ignore && $0.status.isTerminal
+        }
+      }
+      guard visible(run: release.runId, turn: release.turnId, member: release.authorId, source: release.sourceId)
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let after: String
+      if cursor.isEmpty {
+        after = ""
+      } else {
+        let id = String(cursor.prefix(64))
+        guard History.validDigest(id), cursor == History.cursor(after: id, release: reference, reader: scope,
+          dependencies: dependencies) else { throw AgentTeamHistoryDatabase.Failure.stale }
+        after = History.prefix + id
+      }
+      let keys = try database.milestoneKeys(conversationId: scope.conversationId, prefix: History.prefix, after: after)
+      let page = keys.prefix(History.pageSize)
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys]
+      var records: [AgentMcpJSONValue] = []
+      for key in page {
+        let id = String(key.dropFirst(History.prefix.count))
+        guard History.validDigest(id),
+              let original = try database.researchRecord(History.Original.self, conversationId: scope.conversationId,
+                key: key, revision: 0) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        let saved = original.observation
+        guard saved.conversationId == scope.conversationId,
+              visible(run: saved.runId, turn: saved.turnId, member: saved.memberId, source: saved.sourceId),
+              saved.input["mode"] == .string("run"),
+              saved.input["tool_release"]?.objectValue == History.fields(reference) else { continue }
+        let hash = try SHA256.hash(data: encoder.encode(original)).map { String(format: "%02x", $0) }.joined()
+        guard id == AgentMcpJSONCodec.sha256(["run": .string(saved.runId), "source": .string(saved.sourceId),
+          "invocation": .string(saved.result.receipt.invocationId), "sha256": .string(hash)])
+        else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        if let record = History.describe(original, release: reference, evidenceID: id, hash: hash) {
+          records.append(.object(record))
+        }
+      }
+      let next = keys.count > page.count ? page.last.map {
+        History.cursor(after: String($0.dropFirst(History.prefix.count)), release: reference,
+          reader: scope, dependencies: dependencies)
+      } : nil
+      return [
+        "method": .object(History.fields(reference)), "records": .array(records),
+        "record_kind": .string("original_native_tool_observation"), "next_cursor": next.map(AgentMcpJSONValue.string) ?? .null,
+        "scan_complete": .bool(next == nil), "snapshot": .bool(false),
+        "coverage": .string("visible_saved_native_observations_live_scan"),
+        "quality_effect": .null, "causal_contribution": .null,
+        "trust": .string("host_execution_observations_not_method_effectiveness"),
+        "guidance": .string("Follow next_cursor even after an empty page. Read the original for full input and outcome. " +
+          "A replay is not a new execution. Success does not establish correctness or quality gain.")
+      ]
+    }
+  }
+
   func initialCollaborationCapabilities(scope: AgentCollaborationToolEvidenceScope) throws -> [AgentMcpJSONValue] {
     try recallCapabilities([:], scope: scope, pinInitial: true)["capabilities"]?.arrayValue ?? []
   }
@@ -848,6 +927,11 @@ final class AgentTeamExecutionHistoryStore {
         var entry: AgentMcpJSONObject = ["object_id": .string(head.reference.objectId), "revision": .int(head.reference.revision),
           "sha256": .string(head.reference.sha256), "kind": .string(kind), "title": .string(head.draft.title),
           "state": .string(state)]
+        if kind == "tool_release" && state == "eligible_for_scoped_tool_execution" {
+          var usage = AgentCollaborationNativeReleaseHistory.fields(head.reference)
+          usage["mode"] = .string(AgentCollaborationNativeReleaseHistory.mode)
+          entry["usage_recall"] = .object(usage)
+        }
         if pinInitial {
           entry.removeValue(forKey: "title")
           ranked.append((score, entry))
