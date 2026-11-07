@@ -132,7 +132,7 @@ enum AgentIOSLocalModelWebToolRunner {
                                       read: @escaping (AgentMcpJSONObject) -> AgentMcpJSONObject?)
     throws -> AgentNativeToolExecutableDefinition {
     let modes = originalsOnly ? ["goal", "dependency"] :
-      ["goal", "dependency", "workspace", "evidence", "capabilities", "problems", "evolution_rules"]
+      ["goal", "dependency", "workspace", "evidence", "capabilities", "method_history", "problems", "evolution_rules"]
     let descriptor = try AgentNativeToolDescriptor(id: collaborationRecallId, version: "1.1.0",
       title: "Collaboration originals",
       description: originalsOnly
