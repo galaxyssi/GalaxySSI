@@ -4111,30 +4111,27 @@ final class MessageCoordinator: ObservableObject {
     ).mode
     let collaborationPlan: AgentPlan?
     let collaborationFollowup: String?
-    if let session = groupSession,
-       let roster = session.collaborationRoster {
-      let background = AgentTeamExecutionHistoryStore.shared.recoverable(conversationId: session.id)
+    let background = groupSession.flatMap { session in
+      AgentTeamExecutionHistoryStore.shared.recoverable(conversationId: session.id)
         .first { [.running, .waitingResponse, .interrupted].contains($0.state) }
-      let mentioned = groupMentions?.memberIds ?? []
-      let dispatchRoster = background == nil ? roster : AgentTeamPlanCompiler.followupRoster(roster, mentioned: mentioned)
-      guard !session.privateMode, !session.trackingPaused, !readOnlyAnalysis, taskExecutionMode == .autoComplete,
-            !requestText.isBlank,
-            let dispatchRoster,
-            let first = dispatchRoster.members.first(where: { $0.id == dispatchRoster.coordinatorId }),
+    }
+    if let session = groupSession, let roster = session.collaborationRoster, let background {
+      guard session.mergedIntoConversationId.isBlank, !session.privateMode, !session.trackingPaused,
+            !readOnlyAnalysis, taskExecutionMode == .autoComplete, !requestText.isBlank,
+            let context = AgentTeamPlanCompiler.followupContext(background, conversation: session.id),
+            let selected = AgentTeamPlanCompiler.followupRoster(roster, mentioned: groupMentions?.memberIds ?? []),
+            let first = selected.members.first(where: { $0.id == selected.coordinatorId }),
             let plan = requestedAgentPlan(goal: requestText,
               requestedMembers: [AgentRequestedMember(agentId: first.resourceId, displayName: first.name)],
-              targets: callableTargets, roster: dispatchRoster, mentionedMemberIds: background == nil ? mentioned : []),
-            let spec = plan.actions.first.flatMap({
-              AgentTeamDispatchSpecCodec.decode($0.parameters[agentTeamSpecParameter] ?? "")
-            }), spec.definition.members.allSatisfy({ member in
-              let modelId = member.context["_galaxyssi_member_model_id"] ?? ""
-              guard !modelId.isEmpty else { return true }
-              guard let target = store.contact(id: member.agentId), target.isCommunicable else { return false }
+              targets: callableTargets, roster: selected),
+            selected.members.allSatisfy({ entry in
+              guard !entry.modelId.isBlank else { return true }
+              guard let target = store.contact(id: entry.resourceId), target.isCommunicable else { return false }
               if target.deliveryMode.isGalaxySSILinkFamily {
                 return target.connectorAdapterName == "codex-app-server-or-cli" &&
-                  target.connectorInvocationProfile.models.contains(where: { $0.id == modelId })
+                  target.connectorInvocationProfile.models.contains(where: { $0.id == entry.modelId })
               }
-              guard let model = target.cloudModels.first(where: { $0.id == modelId }) else { return false }
+              guard let model = target.cloudModels.first(where: { $0.id == entry.modelId }) else { return false }
               return !(store.apiKey(for: model) ?? "").isEmpty
             }) else {
         lastError = GalaxySSILocalization.string("galaxyssi.collaboration.execution_unavailable",
@@ -4142,16 +4139,44 @@ final class MessageCoordinator: ObservableObject {
           language: store.languagePolicy.interfaceLanguage)
         return false
       }
-      let admitted = background == nil ? pendingCollaborationConversations.insert(session.id).inserted
-        : pendingCollaborationFollowups.insert(session.id).inserted
-      guard admitted else {
+      guard pendingCollaborationFollowups.insert(session.id).inserted else {
         lastError = GalaxySSILocalization.string("galaxyssi.collaboration.execution_busy",
           fallback: "This collaboration group is still dispatching its previous request.",
           language: store.languagePolicy.interfaceLanguage)
         return false
       }
       collaborationPlan = plan
-      collaborationFollowup = background.flatMap { AgentTeamPlanCompiler.followupContext($0, conversation: session.id) }
+      collaborationFollowup = context
+    } else if let session = groupSession,
+       let roster = session.collaborationRoster {
+      guard !session.privateMode, !session.trackingPaused, !readOnlyAnalysis, taskExecutionMode == .autoComplete,
+            !requestText.isBlank,
+            let first = roster.members.first(where: { $0.id == roster.coordinatorId }),
+            let plan = requestedAgentPlan(goal: requestText,
+              requestedMembers: [AgentRequestedMember(agentId: first.resourceId, displayName: first.name)],
+              targets: callableTargets, roster: roster, mentionedMemberIds: groupMentions?.memberIds ?? []),
+            let spec = plan.actions.first.flatMap({
+              AgentTeamDispatchSpecCodec.decode($0.parameters[agentTeamSpecParameter] ?? "")
+            }), spec.definition.members.allSatisfy({ member in
+              let modelId = member.context["_galaxyssi_member_model_id"] ?? ""
+              guard !modelId.isEmpty else { return true }
+              guard let target = store.contact(id: member.agentId),
+                    let model = target.cloudModels.first(where: { $0.id == modelId }) else { return false }
+              return !(store.apiKey(for: model) ?? "").isEmpty
+            }) else {
+        lastError = GalaxySSILocalization.string("galaxyssi.collaboration.execution_unavailable",
+          fallback: "The group cannot run with its current members or session settings. Your draft has not been sent.",
+          language: store.languagePolicy.interfaceLanguage)
+        return false
+      }
+      guard pendingCollaborationConversations.insert(session.id).inserted else {
+        lastError = GalaxySSILocalization.string("galaxyssi.collaboration.execution_busy",
+          fallback: "This collaboration group is still dispatching its previous request.",
+          language: store.languagePolicy.interfaceLanguage)
+        return false
+      }
+      collaborationPlan = plan
+      collaborationFollowup = nil
     } else {
       collaborationPlan = nil
       collaborationFollowup = nil
