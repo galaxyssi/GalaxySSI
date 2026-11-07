@@ -5400,6 +5400,7 @@ final class MessageCoordinator: ObservableObject {
   func replanLocalNativeAction(taskId: String) async -> Bool {
     guard var task = store.agentTask(id: taskId),
           [.failed, .blocked].contains(task.phase),
+          !AgentBlockedOutcomePolicy.isWaiting(task) || AgentBlockedOutcomePolicy.canResume(task),
           AgentTaskCenterPolicy.isReusableGoal(task.goal),
           let runtime = localNativeToolRuntime,
           let outgoing = localOutgoingMessage(for: task) else {
@@ -5944,7 +5945,8 @@ final class MessageCoordinator: ObservableObject {
   @discardableResult
   func cancelLocalAgentTask(taskId: String, emitReply: Bool = true) -> Bool {
     guard let task = store.agentTask(id: taskId),
-          AgentTaskCenterPolicy.canRequestCancellation(task.phase) else {
+          AgentTaskCenterPolicy.canRequestCancellation(task.phase) ||
+            AgentTaskCenterPolicy.cancellable(task) else {
       return false
     }
     let timestamp = max(task.updatedAtMillis, Int64(Date().timeIntervalSince1970 * 1_000))
@@ -6588,6 +6590,14 @@ final class MessageCoordinator: ObservableObject {
   ) async -> Bool {
     let localTaskID = localTask.taskId
     var success = false
+    if AgentBlockedOutcomePolicy.isWaiting(localTask), [.resume, .retry, .replan].contains(command) {
+      if AgentBlockedOutcomePolicy.canResume(localTask),
+         AgentBlockedOutcomePolicy.ownedScope(localTask)?.conversationId == source.conversationId,
+         outgoing.conversationId == source.conversationId {
+        success = await replanLocalNativeAction(taskId: localTaskID)
+      }
+      return await appendAgentTaskControlReply(command: command, success: success, taskID: localTaskID, outgoing: outgoing)
+    }
     switch command {
     case .approve:
       guard localTask.phase == .waitingConfirmation,
@@ -11171,8 +11181,12 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func localOutgoingMessage(for task: AgentTaskRecord) -> ChatMessage? {
-    store.messages(for: "hermes").first { message in
-      message.isMine && (
+    let outcomeScope = AgentBlockedOutcomePolicy.ownedScope(task)
+    if AgentBlockedOutcomePolicy.isWaiting(task), outcomeScope == nil { return nil }
+    return store.messages(for: "hermes").first { message in
+      message.isMine && (outcomeScope.map {
+        $0.conversationId == message.conversationId && $0.turnId == message.turnId.ifBlank(message.id.uuidString)
+      } ?? true) && (
         message.turnId == task.taskId ||
           message.id.uuidString == task.taskId
       )

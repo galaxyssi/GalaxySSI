@@ -134,6 +134,64 @@ enum AgentRunTimelineContract {
   }
 }
 
+enum AgentBlockedOutcomePolicy {
+  static func isWaiting(_ task: AgentTaskRecord) -> Bool {
+    task.phase == .blocked && !(task.effectRecovery ?? []).isEmpty
+  }
+
+  static func reason(_ task: AgentTaskRecord) -> String {
+    guard task.phase == .blocked else { return "" }
+    if let review = task.activePlan?.safetyReview, review.blocked, !review.reason.isBlank {
+      return String(review.reason.prefix(600))
+    }
+    let failure = task.lastNativeActionResult.flatMap { $0.success ? nil : $0.message } ?? ""
+    return String(task.verification.ifBlank(failure).ifBlank(task.result).prefix(600))
+  }
+
+  static func ownedScope(_ task: AgentTaskRecord) -> AgentPlanContinuationScope? {
+    guard isWaiting(task), !task.taskId.isBlank, !task.sessionId.isBlank,
+          let effects = task.effectRecovery, let owner = effects.first?.scope,
+          !owner.turnId.isBlank, effects.allSatisfy({ $0.scope == owner }),
+          owner.collaborationOwnerDigest == nil, owner.taskId == task.taskId,
+          owner.sessionId == task.sessionId, owner.conversationId == task.sessionId else { return nil }
+    let scope = AgentPlanContinuationScope(conversationId: owner.conversationId, turnId: owner.turnId)
+    if let plan = task.activePlan {
+      guard AgentPlanContinuationScope.resolve(plan: plan, activeConversationId: owner.conversationId,
+        activeTurnId: owner.turnId, sessionId: owner.sessionId) == scope else { return nil }
+    }
+    return scope
+  }
+
+  static func canResume(_ task: AgentTaskRecord) -> Bool {
+    task.routeKind == .localSystem && task.activePlan?.safetyReview.blocked == false &&
+      ownedScope(task) != nil && AgentTaskCenterPolicy.isReusableGoal(task.goal)
+  }
+
+  static func waitEvent(task: AgentTaskRecord, runId: String, scope: AgentPlanContinuationScope,
+                        root: AgentRunControlEvent?) -> AgentRunControlEvent? {
+    guard task.routeKind == .localSystem, !runId.isBlank, task.updatedAtMillis > 0,
+          ownedScope(task) == scope else { return nil }
+    let root = root ?? AgentRunControlEvent(conversationId: scope.conversationId,
+      messageId: scope.turnId, taskId: task.taskId, runId: runId, agentId: "galaxyssi-mobile",
+      deviceId: "local", type: .waitingForUser, sequence: 0, turnId: scope.turnId)
+    guard root.runId == runId, root.taskId == task.taskId,
+          root.conversationId == scope.conversationId, root.turnId == scope.turnId else { return nil }
+    let detail = reason(task)
+    let revision = Int64(task.activePlan?.revision ?? 0)
+    let key = "outcome-wait:" + AgentMcpJSONCodec.sha256([
+      "run": .string(runId), "session": .string(task.sessionId), "turn": .string(scope.turnId),
+      "plan": .string(task.activePlan?.planId ?? ""), "revision": .int(revision),
+      "at": .int(task.updatedAtMillis), "reason": .string(detail), "device": .string(root.deviceId)
+    ])
+    return AgentRunControlEvent(eventId: key, conversationId: root.conversationId,
+      messageId: root.messageId, taskId: root.taskId, runId: root.runId, agentId: root.agentId,
+      deviceId: root.deviceId, type: .waitingForUser, sequence: 0, timestampMillis: task.updatedAtMillis,
+      payload: ["timeline_contract": .string(AgentRunTimelineContract.version), "timeline_kind": .string("other"),
+        "loop_outcome_wait": .bool(true), "loop_reason": .string(detail), "plan_revision": .int(revision)],
+      idempotencyKey: key, clientRouteId: root.clientRouteId, goalId: root.goalId, turnId: root.turnId)
+  }
+}
+
 enum AgentExecutionLoopTimelinePolicy {
   static func actionsForPhase(_ phase: AgentPhase) -> [AgentExecutionLoopTimelineAction] {
     switch phase {

@@ -27,6 +27,12 @@ extension AgentHomeView {
   }
 
   func agentTimelineActions(for task: AgentTaskRecord) -> [AgentExecutionLoopTimelineAction] {
+    if AgentBlockedOutcomePolicy.isWaiting(task) {
+      var actions: [AgentExecutionLoopTimelineAction] = []
+      if AgentBlockedOutcomePolicy.canResume(task) { actions.append(.resume) }
+      if AgentTaskCenterPolicy.cancellable(task) { actions.append(.cancel) }
+      return actions
+    }
     let actions: [AgentExecutionLoopTimelineAction] = task.capturePermission != nil && task.phase == .waitingResponse
       ? [.pause, .cancel] : AgentExecutionLoopTimelinePolicy.actionsForPhase(task.phase)
     return actions.filter { action in
@@ -68,7 +74,11 @@ extension AgentHomeView {
         : t("galaxyssi.agent.task_control.pause_failed", "This task could not be paused")
       resumePendingAgentDeliveryAfterTaskAction()
     case .resume:
-      resumeActiveAgentTask(task)
+      if AgentBlockedOutcomePolicy.isWaiting(currentTask) {
+        retryAgentTask(currentTask, mode: .replan)
+      } else {
+        resumeActiveAgentTask(currentTask)
+      }
     case .cancel:
       cancelActiveAgentTask(task)
     case .retry:

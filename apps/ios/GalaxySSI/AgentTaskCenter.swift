@@ -72,7 +72,8 @@ enum AgentTaskCenterPolicy {
     if terminalPhases.contains(task.phase), isReusableGoal(task.goal) {
       if (task.effectRecovery ?? []).isEmpty {
         actions.append(.retry)
-      } else if [.failed, .blocked].contains(task.phase) {
+      } else if [.failed, .blocked].contains(task.phase),
+                !AgentBlockedOutcomePolicy.isWaiting(task) || AgentBlockedOutcomePolicy.canResume(task) {
         actions.append(.inspectEffect)
       }
     }
@@ -81,14 +82,15 @@ enum AgentTaskCenterPolicy {
     }
     actions.append(.copy)
     actions.append(.viewLog)
-    if terminalPhases.contains(task.phase) {
+    if terminalPhases.contains(task.phase), !AgentBlockedOutcomePolicy.isWaiting(task) {
       actions.append(.delete)
     }
     return actions
   }
 
   static func cancellable(_ task: AgentTaskRecord) -> Bool {
-    canRequestCancellation(task.phase) &&
+    if AgentBlockedOutcomePolicy.isWaiting(task) { return task.routeKind == .localSystem }
+    return canRequestCancellation(task.phase) &&
       (task.pendingPlanning != nil || task.pendingAction != nil || !task.pendingActions.isEmpty ||
         (task.routeKind == .localSystem && [.waitingResponse, .paused].contains(task.phase)))
   }
@@ -115,7 +117,7 @@ enum AgentTaskCenterPolicy {
   }
 
   static func rollbackAvailable(_ task: AgentTaskRecord) -> Bool {
-    terminalPhases.contains(task.phase) && task.nativeRollbackAction != nil &&
+    terminalPhases.contains(task.phase) && !AgentBlockedOutcomePolicy.isWaiting(task) && task.nativeRollbackAction != nil &&
       (task.effectRecovery ?? []).allSatisfy(\.hasObservation)
   }
 

@@ -62,7 +62,8 @@ extension GalaxySSIStore {
 
   func interruptedLocalWorkspaceCancellations() -> [AgentTaskRecord] {
     // The workspace is committed first; a crash can leave the task record at its old phase.
-    let candidates = agentTaskRecords.filter { AgentTaskCenterPolicy.canRequestCancellation($0.phase) }
+    let candidates = agentTaskRecords.filter { AgentTaskCenterPolicy.canRequestCancellation($0.phase) ||
+      AgentTaskCenterPolicy.cancellable($0) }
     guard !candidates.isEmpty else { return [] }
     let cancelled = Dictionary(uniqueKeysWithValues: agentWorkspaceStore.list().lazy
       .filter { $0.status == .cancelled && $0.cancellationRequested }.map { ($0.workspaceId, $0) })
@@ -135,10 +136,17 @@ extension GalaxySSIStore {
       if base.status == .failed && status != .failed && status != .cancelled && previous?.phase == .failed {
         base.status = status
       }
-      let snapshot = AgentWorkspaceExecutionSnapshot(status: status, resultJson: base.resultJson, toolCalls: calls)
+      let reason = AgentBlockedOutcomePolicy.reason(task)
+      if status != .blocked, let previous, previous.phase == .blocked,
+         base.errorMessage == AgentBlockedOutcomePolicy.reason(previous) {
+        base.errorMessage = ""
+      }
+      let snapshot = AgentWorkspaceExecutionSnapshot(status: status, resultJson: base.resultJson,
+        errorMessage: reason, toolCalls: calls)
       var next = AgentWorkspaceExecutionSnapshotReducer.apply(snapshot: snapshot, to: base,
         observedAtMillis: task.updatedAtMillis).workspace
       if let existing, next.status == existing.status && next.toolCalls == existing.toolCalls &&
+        next.errorMessage == existing.errorMessage &&
         next.cancellationRequested == existing.cancellationRequested { return }
       if next.eventJournal.last?.kind == AgentTaskEventKinds.snapshot {
         next.eventJournal[next.eventJournal.count - 1].kind = AgentTaskEventKinds.localToolProjection

@@ -126,7 +126,8 @@ extension UserDefaultsAgentRecordedRunStore {
     else { return }
     let projection = AgentRecordedExecutionEvidence.project(task: task, scope: scope,
       previous: previous?.toolCalls ?? [], observations: observations, now: now)
-    guard !projection.calls.isEmpty else { return }
+    guard !projection.calls.isEmpty || AgentBlockedOutcomePolicy.ownedScope(task) == scope ||
+      (status == .cancelled && previous?.finalOutput["outcome_unverified"] == .bool(true)) else { return }
     var run = previous
       ?? AgentRecordedRun(
         runId: runId,
@@ -142,10 +143,23 @@ extension UserDefaultsAgentRecordedRunStore {
     run.status = unresolved && status != .cancelled ? .running : status
     run.completedAtMillis = run.status == .running ? 0 :
       (previous?.status == run.status ? previous?.completedAtMillis ?? now : now)
-    let missing = AgentRecordedExecutionEvidence.missingLifecycle(for: projection.calls,
-      events: events.events(runId: runId), scope: scope)
-    if !missing.isEmpty { _ = events.appendNextAll(missing) }
+    let history = events.events(runId: runId)
+    var missing: [AgentRunControlEvent]
+    if AgentBlockedOutcomePolicy.isWaiting(task), status != .cancelled {
+      run.status = .running
+      run.completedAtMillis = 0
+      run.finalOutput["outcome_unverified"] = .bool(true)
+      if let event = AgentBlockedOutcomePolicy.waitEvent(task: task, runId: runId, scope: scope, root: history.first),
+         !history.contains(where: { $0.eventId == event.eventId }) {
+        let scopedHistory = history.isEmpty ? [event] : history
+        missing = AgentRecordedExecutionEvidence.missingLifecycle(for: projection.calls, events: scopedHistory,
+          scope: scope) + [event]
+      } else { missing = [] }
+    } else {
+      missing = AgentRecordedExecutionEvidence.missingLifecycle(for: projection.calls, events: history, scope: scope)
+    }
     if previous != run { upsert(run) }
+    if !missing.isEmpty { _ = events.appendNextAll(missing) }
   }
 
   func recordSkillExecution(

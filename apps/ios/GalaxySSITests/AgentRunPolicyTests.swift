@@ -1786,6 +1786,63 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(store.runs(), [run])
   }
 
+  func testBlockedNativeOutcomeRetainsRunAndAppendsOneScopedWait() async throws {
+    let scope = AgentPlanContinuationScope(conversationId: "conversation", turnId: "turn")
+    let action = scope.bind(AgentAction(id: "write", kind: .callNativeTool, target: "tool.write",
+      risk: .low, status: .failed, description: "Change state"))
+    var task = AgentTaskRecord(taskId: "turn", sessionId: "conversation", goal: "Change state",
+      phase: .blocked, routeKind: .localSystem, targetTitle: "Phone", risk: .low, blocked: true,
+      verification: "Affected state could not be verified", updatedAtMillis: 20)
+    task.activePlan = AgentPlan(goal: task.goal, screen: AgentScreenContext(foregroundApp: "GalaxySSI"),
+      steps: [], actions: [action], planId: "plan")
+    task.effectRecovery = [.init(scope: .init(sessionId: "conversation", conversationId: "conversation",
+      taskId: "turn", turnId: "turn"), actionId: action.id, toolId: action.target, version: "1",
+      inputDigest: "digest", invocationId: "invocation", uncertainAt: 20, query: nil, observation: nil)]
+    let outgoing = ChatMessage(contactId: "hermes", content: task.goal, isMine: true,
+      conversationId: scope.conversationId, turnId: scope.turnId)
+    let domain = "AgentBlockedOutcome.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+    defer { defaults.removePersistentDomain(forName: domain) }
+    let store = UserDefaultsAgentRecordedRunStore(defaults: defaults)
+    let events = UserDefaultsAgentRunEventStore(defaults: defaults)
+    for _ in 0..<2 {
+      store.recordNativeExecution(task: task, outgoing: outgoing, status: .failed, events: events)
+    }
+    let run = try XCTUnwrap(store.runs().first)
+    XCTAssertEqual(run.status, .running)
+    XCTAssertEqual(run.completedAtMillis, 0)
+    XCTAssertEqual(run.finalOutput["outcome_unverified"], .bool(true))
+    let waits = events.events(runId: run.runId).filter { $0.type == .waitingForUser }
+    XCTAssertEqual(waits.count, 1)
+    XCTAssertEqual(waits.first?.payload["loop_reason"], .string(task.verification))
+    XCTAssertTrue(AgentTaskCenterPolicy.actions(task).contains(.inspectEffect))
+    XCTAssertTrue(AgentTaskCenterPolicy.actions(task).contains(.cancel))
+    XCTAssertFalse(AgentTaskCenterPolicy.actions(task).contains(.delete))
+    XCTAssertFalse(AgentSelfModelReducer.observe(AgentSelfModel(), task: task).changed)
+
+    let workspaces = InMemoryAgentWorkspaceStore(initialWorkspaces: [
+      AgentWorkspace(workspaceId: run.runId, sessionId: scope.conversationId,
+        conversationId: scope.conversationId, taskId: task.taskId, goal: task.goal)
+    ])
+    let recovery = AgentRunRecoveryCoordinator(runStore: events, workspaceStore: workspaces,
+      recordedRun: { _ in run }, registration: { _, _ in nil }, adapterResolver: { _ in
+        XCTFail("Outcome recovery must not dispatch a remote adapter")
+        return nil
+      }, terminalDeliveries: { [] })
+    let restored = try await recovery.recover()
+    XCTAssertEqual(restored.first?.outcome, .restoredLocalWait)
+    XCTAssertEqual(workspaces.find(run.runId)?.status, .blocked)
+    XCTAssertEqual(workspaces.find(run.runId)?.errorMessage, task.verification)
+    XCTAssertEqual(events.events(runId: run.runId).filter { $0.type == .waitingForUser }, waits)
+
+    var foreign = try XCTUnwrap(waits.first)
+    foreign.turnId = "foreign"
+    XCTAssertNil(AgentBlockedOutcomePolicy.waitEvent(task: task, runId: run.runId, scope: scope, root: foreign))
+    task.activePlan?.safetyReview = AgentSafetyReview(blocked: true, reason: "Policy denied")
+    XCTAssertEqual(AgentBlockedOutcomePolicy.reason(task), "Policy denied")
+    XCTAssertFalse(AgentTaskCenterPolicy.actions(task).contains(.inspectEffect))
+  }
+
   func testRecordedExecutionLifecycleRespectsPreDispatchCancellationAndCurrentAttempt() {
     let scope = AgentPlanContinuationScope(conversationId: "conversation", turnId: "turn")
     func event(_ type: AgentRunControlEventType, _ invocation: String = "", at: Int64,
