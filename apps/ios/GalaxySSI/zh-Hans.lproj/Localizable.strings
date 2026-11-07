@@ -6059,6 +6059,8 @@
 "galaxyssi.managed_browser.title" = "浏览器控制";
 "galaxyssi.managed_browser.return" = "交回控制";
 "galaxyssi.managed_browser.failed" = "无法交回浏览器控制。";
+"galaxyssi.managed_browser.waiting" = "正在等待浏览器控制。";
+"galaxyssi.managed_browser.verification_required" = "需要重新观察外部状态才能继续此任务。";
 "galaxyssi.team.recovery.missing" = "原智能体团队不可用，正在等待，不会重新派发";
 "galaxyssi.team.recovery.failed" = "原智能体团队未能成功完成任务。";
 "galaxyssi.team.reply_commit_failed" = "无法保存智能体团队回复，该回复不会显示为普通消息。";
