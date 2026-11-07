@@ -80,8 +80,8 @@ enum GalaxySSIHealthCarePlan {
       "uncertainty": string(2_000, description: "Missing context, limitations and remaining uncertainty."),
       "sources": array(object(["title": string(300), "url": string(1_000, description: "Exact supplied HTTPS source URL."),
         "version": string(80), "applicability": string(2_000, description: "Population, applicability and limitations."),
-        "evidence_id": string(36, description: "Exact ID from native_sources."),
-        "quote": string(600, description: "Short original-language passage copied from that source excerpt.")])),
+        "evidence_id": string(36, description: "Exact ID from native_sources; reuse only with a different passage."),
+        "quote": string(600, description: "Short original-language passage copied from the provided excerpt.")])),
       "actions": array(object(["kind": ["type": "string", "enum": Kind.allCases.map(\.rawValue)],
         "description": string(1_000), "rationale": string(2_000, description: "Justify the step and any review window."),
         "source_index": ["type": "integer", "minimum": 0, "maximum": 7], "due_from": date, "due_until": date]))
@@ -115,13 +115,17 @@ enum GalaxySSIHealthCarePlan {
             parts.host?.isEmpty == false, parts.user == nil, parts.password == nil, let url = parts.url,
             let id = UUID(uuidString: try text(item, "evidence_id", max: 36)),
             let receipt = evidence.first(where: { $0.id == id }),
-            let provenance = receipt.match(url: url, quote: try text(item, "quote", max: 2_400))
+            let provenance = receipt.match(url: url, quote: try text(item, "quote", max: 2_400), fromModelExcerpt: true)
       else { throw invalid }
       _ = try text(item, "title", max: 300)
       return try .init(title: receipt.title, url: url, version: text(item, "version", max: 80),
         applicability: text(item, "applicability", max: 2_000), provenance: provenance)
     }
-    guard Set(sources.map(\.url)).count == sources.count else { throw invalid }
+    var cited: [UUID: Set<String>] = [:]
+    for source in sources {
+      guard let provenance = source.provenance,
+            cited[provenance.receiptID, default: []].insert(provenance.quote).inserted else { throw invalid }
+    }
     let actions = try rawActions.enumerated().map { index, row -> Action in
       guard let item = row.objectValue,
             Set(item.keys) == ["kind", "description", "rationale", "source_index", "due_from", "due_until"],
