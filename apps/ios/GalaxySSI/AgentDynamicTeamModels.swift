@@ -128,6 +128,7 @@ enum AgentCollaborationRuleTopics {
     In an achieved assessment, supply goal_coverage as mapping/review references, non-overlapping parts of reference pairs,
     or a manifest reference. A manifest is an artifact with body.semantic_goal_manifest, format galaxyssi.semantic-goal-manifest.v1,
     both host hashes, and either parts or manifests. Include each referenced record in parents. Coverage is not final delivery.
+    \(AgentCollaborationTypedRecordValidation.guidance)
     capability_gap records category, symptom, needed_capability, learning_options, chosen_option and rationale.
     innovation records origin, hypothesis, mechanism, difference, prior_art, falsifier, domain, applies_when, risks, alternatives
     and predictions (id, statement, test). Use novelty_scope not_checked. Transfer and combination require exact parent records.
