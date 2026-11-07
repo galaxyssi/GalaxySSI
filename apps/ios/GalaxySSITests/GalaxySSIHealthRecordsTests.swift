@@ -61,7 +61,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     try records.setPrivacy(.localCare, enabled: true)
     for index in 0..<35 {
       try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(Double(index / 3 - 80)),
-        value: index.isMultiple(of: 2) ? 110 : 85, unitOverride: "mg/dL", referenceInterval: "70 - 80"))
+        value: index.isMultiple(of: 2) ? 110 : 85, unitOverride: "mg/dL", referenceInterval: "70 - 80"),
+        allowDuplicate: true)
     }
     try records.write(.init(metric: .weight, measuredAt: now, value: 55))
     try records.reconcileLocalCare(now: now)
@@ -100,10 +101,50 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertNotEqual(try records.load().localCare?.current["glucose"]?.stage, .maintenance)
     let updated = try records.localCareMeasurementPage(id: concern.id, metric: .glucose, now: now)
     XCTAssertNotEqual(updated.binding.historyVersion, first.binding.historyVersion)
+    for index in 0..<102 {
+      try records.setPrivacy(.profileAnalysis, enabled: index.isMultiple(of: 2))
+    }
+    XCTAssertFalse(try records.load().privacyEvents?.contains(where: { $0.scope == .localCare }) ?? true)
+    let afterAuditRollover = try records.localCareMeasurementPage(id: concern.id, metric: .glucose,
+      expected: updated.binding, now: now)
+    XCTAssertEqual(afterAuditRollover.binding, updated.binding)
     try records.setPrivacy(.localCare, enabled: false)
     try records.setPrivacy(.localCare, enabled: true)
     XCTAssertThrowsError(try records.localCareMeasurementPage(id: concern.id, metric: .glucose,
       expected: updated.binding, after: updated.next, now: now))
+  }
+
+  @MainActor
+  func testLocalCarePermissionMigratesLegacyAuditWithoutReusingAnEvictedGrant() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let secrets = HealthFixtureSecrets()
+    let owner = "legacy-care-permission"
+    let records = GalaxySSIHealthRecords(owner: owner, secrets: secrets, isolatedFile: file)
+    try records.setPrivacy(.localCare, enabled: true)
+    let event = try XCTUnwrap(records.load().privacyEvents?.last)
+    let encodedKey = try XCTUnwrap(secrets.string(account: "health.records.v1." + owner))
+    let key = SymmetricKey(data: try XCTUnwrap(Data(base64Encoded: encodedKey)))
+    let context = Data("galaxyssi.health.records.v1:\(owner)".utf8)
+    let sealed = try AES.GCM.SealedBox(combined: Data(contentsOf: file))
+    let json = try AES.GCM.open(sealed, using: key, authenticating: context)
+    var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: json) as? [String: Any])
+    legacy.removeValue(forKey: "localCarePermission")
+    func writeLegacy() throws {
+      let bytes = try JSONSerialization.data(withJSONObject: legacy)
+      let box = try AES.GCM.seal(bytes, using: key, authenticating: context)
+      try XCTUnwrap(box.combined).write(to: file, options: .atomic)
+    }
+    try writeLegacy()
+    XCTAssertEqual(try records.load().localCarePermission, event.id)
+    legacy.removeValue(forKey: "privacyEvents")
+    try writeLegacy()
+    XCTAssertNil(try records.load().localCarePermission)
+    try records.reconcileLocalCare()
+    let replacement = try XCTUnwrap(records.load().localCarePermission)
+    XCTAssertNotEqual(replacement, event.id)
+    try records.reconcileLocalCare()
+    XCTAssertEqual(try records.load().localCarePermission, replacement)
   }
 
   @MainActor
@@ -628,7 +669,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
       value: 110, notes: "Private note excluded", unitOverride: "mg/dL", referenceInterval: "70 - 99")
     try records.write(reading)
     for index in 1...30 {
-      try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(Double(-300 - index)),
+      try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(Double(-300 - 120 * index)),
         value: 110, unitOverride: "mg/dL", referenceInterval: "70 - 99"))
     }
     try records.setPrivacy(.localCare, enabled: true)

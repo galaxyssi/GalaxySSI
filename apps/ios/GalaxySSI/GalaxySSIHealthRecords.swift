@@ -174,6 +174,7 @@ struct GalaxySSIHealthRecords {
     var profileAnalysisPermission: UUID?
     var profileAnalysisAudit: [ProfileAnalysisAudit]?
     var localCareAllowed: Bool?
+    var localCarePermission: UUID?
     var localCare: GalaxySSIHealthCare.Ledger?
     var localCareLastEvaluatedAt: Date?
     var localCareDiscussions: [String: GalaxySSIHealthCareDiscussion.Thread]?
@@ -317,9 +318,13 @@ struct GalaxySSIHealthRecords {
       return Archive()
     }
     let box = try AES.GCM.SealedBox(combined: data)
-    let archive = try JSONDecoder().decode(Archive.self,
+    var archive = try JSONDecoder().decode(Archive.self,
       from: AES.GCM.open(box, using: key(create: false), authenticating: context))
     guard archive.version == 1 else { throw Failure.unavailable }
+    if archive.localCareAllowed == true, archive.localCarePermission == nil,
+       let event = archive.privacyEvents?.last(where: { $0.scope == .localCare }), event.enabled {
+      archive.localCarePermission = event.id
+    }
     return archive
   }
 
@@ -415,6 +420,7 @@ struct GalaxySSIHealthRecords {
     case .localCare:
       previous = archive.localCareAllowed ?? false
       archive.localCareAllowed = enabled
+      if previous != enabled { archive.localCarePermission = enabled ? UUID() : nil }
     }
     guard previous != enabled else { return }
     if (previous ?? (scope == .importOriginals)) != enabled {
@@ -433,6 +439,10 @@ struct GalaxySSIHealthRecords {
     let readings = Dictionary(grouping: archive.current.filter { $0.isValid && $0.measuredAt <= now }, by: \.metric)
     var ledger = archive.localCare ?? .init()
     var changed = ledger.bloodPressurePolicyVersion != GalaxySSIHealthCarePriority.version
+    if archive.localCarePermission == nil {
+      archive.localCarePermission = UUID()
+      changed = true
+    }
     ledger.bloodPressurePolicyVersion = GalaxySSIHealthCarePriority.version
     for metric in GalaxySSIHealthMetric.allCases {
       let key = metric.rawValue
@@ -512,8 +522,7 @@ struct GalaxySSIHealthRecords {
                                 after: GalaxySSIHealthCareSeries.Cursor? = nil, now: Date = Date()) throws
     -> GalaxySSIHealthCareSeries.Page {
     let archive = try load()
-    guard archive.localCareAllowed == true,
-          let permission = archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id
+    guard archive.localCareAllowed == true, let permission = archive.localCarePermission
     else { throw Failure.permission }
     guard let concern = archive.localCare?.current[metric.rawValue], concern.id == id,
           let historyVersion = concern.historyVersion else { throw Failure.stale }
@@ -544,7 +553,7 @@ struct GalaxySSIHealthRecords {
       throws -> GalaxySSIHealthCareDiscussion.Approval {
     let archive = try load()
     let concern = try currentDiscussionConcern(id: id, metric: metric, archive: archive, now: now)
-    guard let care = archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id,
+    guard let care = archive.localCarePermission,
           let online = archive.healthOnlinePermission, let thread = archive.localCareDiscussions?[id.uuidString],
           thread.turns.count < GalaxySSIHealthCareDiscussion.maximumTurns,
           let endpoint = GalaxySSIHealthCareDiscussion.endpoint(for: model),
@@ -686,7 +695,7 @@ struct GalaxySSIHealthRecords {
       guard checked.revision == saved.concernRevision, checked.revision < Int.max,
             try GalaxySSIHealthCare.inputDigest(checked.assessment) == saved.assessmentDigest,
             archive.healthOnlinePermission == saved.onlinePermission,
-            archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id == saved.carePermission,
+            archive.localCarePermission == saved.carePermission,
             Self.localCarePlanEvidenceMatches(saved, archive: archive, owner: owner),
             !selected.isEmpty || acceptTarget,
             selected.isSubset(of: Set(saved.draft.actions.map(\.id))) else { throw Failure.stale }
@@ -734,7 +743,7 @@ struct GalaxySSIHealthRecords {
           concern.revision == proposal.concernRevision,
           try GalaxySSIHealthCare.inputDigest(concern.assessment) == proposal.assessmentDigest,
           archive.healthOnlinePermission == proposal.onlinePermission,
-          archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id == proposal.carePermission,
+          archive.localCarePermission == proposal.carePermission,
           Self.localCarePlanEvidenceMatches(proposal, archive: archive, owner: owner)
     else { throw Failure.stale }
     return concern
@@ -847,7 +856,7 @@ struct GalaxySSIHealthRecords {
           let plan = archive.localCarePlans?[adopted.proposalID.uuidString], plan.concernID == concernID,
           plan.state == .accepted, plan.selected.contains(adopted.action.id),
           archive.healthOnlinePermission == plan.onlinePermission,
-          archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id == plan.carePermission,
+          archive.localCarePermission == plan.carePermission,
           concern.context == plan.sourceContext,
           (try? GalaxySSIHealthCare.inputDigest(concern.assessment)) == plan.assessmentDigest else { return false }
     return GalaxySSIHealthCare.assess(archive.current.filter { $0.metric == metric && $0.isValid && $0.measuredAt <= now },
@@ -876,7 +885,7 @@ struct GalaxySSIHealthRecords {
           approval.comparisonBasis == GalaxySSIHealthCareComparison.discussionBasis(concern),
           approval.historyVersion == nil || approval.historyVersion == concern.historyVersion,
           archive.healthOnlinePermission == approval.onlinePermission,
-          archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id == approval.carePermission,
+          archive.localCarePermission == approval.carePermission,
           let thread = archive.localCareDiscussions?[concern.id.uuidString], thread.id == approval.threadID
     else { throw Failure.permission }
     return thread
