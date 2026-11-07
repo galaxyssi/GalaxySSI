@@ -13236,8 +13236,19 @@ final class MessageCoordinator: ObservableObject {
         _ = enqueuePhoneContactControl(kind: .receipt, targetCard: control.contactCard, receiptFor: object)
         return
       }
+      let previousRequest = store.friendRequests.first { $0.galaxySSIId == senderId }
+      let previouslyVerified = store.contact(id: senderId)?.isCommunicable == true
+      switch GalaxySSIPhoneContactEventPolicy.decision(control.kind, previous: previousRequest?.status,
+        verified: previouslyVerified) {
+      case .apply: break
+      case .receiptOnly:
+        finishPhonePairingControl(object, control: control)
+        return
+      case .ignore:
+        return
+      }
       if control.kind == .request,
-         store.contact(id: senderId)?.isCommunicable == true,
+         previouslyVerified,
          !store.hasPendingFriendRequest(for: senderId),
          signalEngine.processBundle(control.signalBundle, remoteName: senderId),
          store.refreshTrustedPhoneRelationship(
@@ -13253,10 +13264,9 @@ final class MessageCoordinator: ObservableObject {
         finishPhonePairingControl(object, control: control)
         return
       }
-      let previousDirection = store.friendRequests.first { $0.galaxySSIId == senderId }?.direction
       let requestDirection: GalaxySSIFriendRequestDirection = control.kind == .request
         ? .incoming
-        : (previousDirection ?? .outgoing)
+        : (previousRequest?.direction ?? .outgoing)
       guard let request = try? store.upsertOpaquePhoneRequest(
               card: control.contactCard,
               linkSecret: identityBoundRoutes.linkSecret,
@@ -13289,20 +13299,11 @@ final class MessageCoordinator: ObservableObject {
         refreshApprovedPhoneContactSubscriptions()
       } else if control.kind == .rejection {
         guard store.rejectFriendRequest(galaxySSIId: request.galaxySSIId) else { return }
-        let language = LanguagePolicySettings.resolveInterface(store.languagePolicy.interfaceLanguage)
-        let content = String(
-          format: GalaxySSILocalization.string(
-            "galaxyssi.phone_contact.request_rejected",
-            fallback: "%@ declined your contact request.",
-            language: language
-          ),
-          request.name
-        )
-        _ = store.appendSystemNotification(
-          content,
-          eventId: "phone-contact-rejected:\(control.controlId)"
-        )
       }
+      guard finishPhonePairingControl(object, control: control),
+            GalaxySSIPhoneContactEventPolicy.announces(control.kind, previous: previousRequest,
+              current: store.friendRequests.first { $0.galaxySSIId == senderId },
+              previouslyVerified: previouslyVerified) else { return }
       let language = LanguagePolicySettings.resolveInterface(store.languagePolicy.interfaceLanguage)
       let body: String
       switch control.kind {
@@ -13353,7 +13354,9 @@ final class MessageCoordinator: ObservableObject {
           request.name
         )
       }
-      guard finishPhonePairingControl(object, control: control) else { return }
+      if control.kind == .rejection {
+        _ = store.appendSystemNotification(body, eventId: "phone-contact-rejected:\(control.controlId)")
+      }
       NotificationService.notify(
         title: "GalaxySSI",
         body: body,
