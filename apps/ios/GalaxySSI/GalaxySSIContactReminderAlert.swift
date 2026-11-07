@@ -9,6 +9,19 @@ enum GalaxySSIContactReminderNotification {
   static let category = "galaxyssi.contact-reminder"
   static let pendingKey = "galaxyssi.contact-reminder.pending-action"
   static let actionNotification = Notification.Name("galaxyssi.contact-reminder.action")
+  static let quietKey = "contact_reminder_quiet"
+
+  static func request(_ id: String, language: String, quiet: Bool, soundAllowed: Bool) -> UNNotificationRequest {
+    let content = UNMutableNotificationContent()
+    content.title = "GalaxySSI"
+    content.body = GalaxySSILocalization.string("galaxyssi.contact_reminder.notification",
+      fallback: "You received a contact reminder.", language: language)
+    content.categoryIdentifier = category
+    content.userInfo = [quietKey: quiet]
+    content.interruptionLevel = quiet ? .passive : .active
+    content.sound = !quiet && soundAllowed ? .default : nil
+    return UNNotificationRequest(identifier: identifier(id), content: content, trigger: nil)
+  }
 
   static func register() {
     let center = UNUserNotificationCenter.current()
@@ -94,15 +107,6 @@ final class GalaxySSIContactReminderAlert {
       }
       return
     }
-    let content = UNMutableNotificationContent()
-    content.title = "GalaxySSI"
-    content.body = GalaxySSILocalization.string("galaxyssi.contact_reminder.notification",
-      fallback: "You received a contact reminder.", language: language)
-    content.categoryIdentifier = GalaxySSIContactReminderNotification.category
-    content.sound = quiet ? nil : .default
-    let request = UNNotificationRequest(identifier: GalaxySSIContactReminderNotification.identifier(record.id),
-      content: content, trigger: nil)
-    UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
   }
 
   func reconcile(_ records: [GalaxySSIContactReminder]) {

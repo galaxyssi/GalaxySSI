@@ -139,7 +139,8 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
   ) {
     if GalaxySSIContactReminderNotification.reminderID(notification.request.identifier) != nil {
-      completionHandler([])
+      let quiet = notification.request.content.userInfo[GalaxySSIContactReminderNotification.quietKey] as? Bool == true
+      completionHandler(quiet ? [.list] : [])
       return
     }
     if notification.request.identifier.hasPrefix(GalaxySSIHealthRecordingReminders.prefix) ||

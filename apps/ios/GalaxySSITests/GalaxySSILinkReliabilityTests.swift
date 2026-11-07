@@ -1,3 +1,4 @@
+import UserNotifications
 import XCTest
 @testable import GalaxySSI
 
@@ -30,6 +31,38 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
     let restored = try XCTUnwrap(reopened.pending(now: later).first)
     XCTAssertEqual(restored.backgroundLearning, true)
     XCTAssertEqual(restored.messageId, learning)
+  }
+
+  func testContactReminderPresentationSeparatesPanelAndSystemNotifications() {
+    var record = GalaxySSIContactReminder(id: "reminder-id-123456", peerID: "private-contact", outgoing: false,
+      createdAt: 1_000, expiresAt: 121_000, historyID: nil, status: .received, pendingAction: nil)
+    let policy = GalaxySSIContactReminderPresentationPolicy.self
+    XCTAssertEqual(policy.route(record, active: true, busy: false, backgroundEnabled: false, now: 2_000), .panel)
+    XCTAssertEqual(policy.route(record, active: false, busy: false, backgroundEnabled: true, now: 2_000),
+      .notification(quiet: false))
+    XCTAssertNil(policy.route(record, active: false, busy: false, backgroundEnabled: false, now: 2_000))
+    XCTAssertEqual(policy.route(record, active: true, busy: true, backgroundEnabled: false, now: 2_000),
+      .notification(quiet: true))
+    record.status = .quiet
+    XCTAssertEqual(policy.route(record, active: true, busy: false, backgroundEnabled: false, now: 2_000),
+      .notification(quiet: true))
+    XCTAssertFalse(policy.canShowPanel(record, explicitlyOpened: false, now: 2_000))
+    XCTAssertTrue(policy.canShowPanel(record, explicitlyOpened: true, now: 2_000))
+    XCTAssertFalse(policy.canShowPanel(record, explicitlyOpened: true, now: record.expiresAt))
+    record.status = .muted
+    XCTAssertNil(policy.route(record, active: true, busy: false, backgroundEnabled: true, now: 2_000))
+    XCTAssertFalse(policy.canPost(.denied))
+    XCTAssertFalse(policy.canPost(.notDetermined))
+    XCTAssertTrue(policy.canPost(.authorized))
+    XCTAssertTrue(policy.canPost(.provisional))
+
+    let request = GalaxySSIContactReminderNotification.request(record.id, language: "en", quiet: true, soundAllowed: true)
+    XCTAssertEqual(request.content.interruptionLevel, .passive)
+    XCTAssertNil(request.content.sound)
+    XCTAssertFalse(request.content.body.contains(record.peerID))
+    XCTAssertEqual(request.content.userInfo[GalaxySSIContactReminderNotification.quietKey] as? Bool, true)
+    let noSound = GalaxySSIContactReminderNotification.request(record.id, language: "en", quiet: false, soundAllowed: false)
+    XCTAssertNil(noSound.content.sound)
   }
 
   func testContactReminderOutboxPersistsCiphertextAndRejectsIdentifierReuse() throws {

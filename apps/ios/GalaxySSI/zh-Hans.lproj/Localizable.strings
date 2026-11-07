@@ -6300,6 +6300,10 @@
 "galaxyssi.contact_reminder.settings" = "提醒设置";
 "galaxyssi.contact_reminder.enable" = "接收联系人提醒";
 "galaxyssi.contact_reminder.silent_sound" = "在应用内静音模式下播放声音";
+"galaxyssi.contact_reminder.background_notifications" = "后台通知";
+"galaxyssi.contact_reminder.system_notifications" = "系统通知";
+"galaxyssi.contact_reminder.lock_screen" = "锁定屏幕";
+"galaxyssi.contact_reminder.not_requested" = "尚未请求";
 "galaxyssi.contact_reminder.mute" = "静音";
 "galaxyssi.contact_reminder.ignore" = "忽略";
 "galaxyssi.contact_reminder.got_it" = "知道了";
