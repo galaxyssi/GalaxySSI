@@ -470,10 +470,22 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                 )))
               }
               prepared.appendCitationRepairPrompt(draft: candidate, prompt: repairPrompt)
+              progress.requestFinalization()
+              continue
+            }
+            if !candidate.isBlank, repairPrompt != nil,
+               let partial = CloudWebGrounding.partialCitationRepairPrompt(candidate, results: evidenceResults),
+               progress.requestPartialSynthesisRepair(after: "stream_citations") {
+              if previewShown {
+                continuation.yield(.citationPreview(ModelStreamCitationPreview(
+                  requestId: requestId, text: "", receivedAtElapsedMs: elapsedMillis()
+                )))
+              }
+              prepared.appendCitationRepairPrompt(draft: candidate, prompt: partial)
               continue
             }
             let visibleAnswer = !candidate.isBlank && repairPrompt == nil
-              ? candidate
+              ? AgentIOSWebEvidenceVerification.resolveCitations(candidate, encodedToolResults: evidenceResults).text
               : CloudWebGrounding.evidenceFallback(results: evidenceResults)
             if !visibleAnswer.isBlank {
               emittedText = true

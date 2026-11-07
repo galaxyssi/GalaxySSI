@@ -97,6 +97,9 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
           )
         }
       }
+      response.assistantText = AgentIOSWebEvidenceVerification.resolveCitations(
+        response.assistantText, encodedToolResults: evidence
+      ).text
     }
     return response
   }

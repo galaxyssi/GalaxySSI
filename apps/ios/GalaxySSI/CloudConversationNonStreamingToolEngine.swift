@@ -67,11 +67,19 @@ struct CloudConversationNonStreamingToolEngine {
            !finalRound,
            progress.requestRepair("nonstream_citations") {
           conversation.appendCitationRepairPrompt(draft: candidate, prompt: repair)
+          progress.requestFinalization()
+          continue
+        }
+        if !candidate.isBlank,
+           let partial = CloudWebGrounding.partialCitationRepairPrompt(candidate, results: evidence),
+           progress.requestPartialSynthesisRepair(after: "nonstream_citations") {
+          conversation.appendCitationRepairPrompt(draft: candidate, prompt: partial)
           continue
         }
         if !candidate.isBlank,
            !CloudWebGrounding.citationValidation(candidate, results: evidence).requiresRepair {
-          return candidate + CloudImageAnnotationSession.artifactSuffix(requestId: requestId)
+          return AgentIOSWebEvidenceVerification.resolveCitations(candidate, encodedToolResults: evidence).text +
+            CloudImageAnnotationSession.artifactSuffix(requestId: requestId)
         }
         return CloudWebGrounding.evidenceFallback(results: evidence) +
           CloudImageAnnotationSession.artifactSuffix(requestId: requestId)

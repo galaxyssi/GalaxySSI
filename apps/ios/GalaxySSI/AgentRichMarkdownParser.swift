@@ -1,6 +1,113 @@
 import Foundation
 
 enum AgentMarkdownArtifactReferences {
+  struct CitationMarkup {
+    var text = ""
+    var destinations: [String] = []
+  }
+
+  static func citationMarkup(_ text: String, omitLinks: Bool = false,
+                             resolve: ((String) -> String?)? = nil) -> CitationMarkup {
+    let value = Array(text)
+    let marker = Array("[[cite:")
+    var result = CitationMarkup()
+    var index = 0
+    var fence: (Character, Int)?
+    while index < value.count {
+      if index == 0 || value[index - 1].isNewline {
+        var start = index
+        while start < value.count, value[start] == " " || value[start] == ">" {
+          start += 1
+        }
+        let quoted = value[index..<start].contains(">")
+        let edge = quoted ? start : index
+        if let next = fenceMarker(value, at: edge) {
+          if let active = fence {
+            let closing = value[start...].prefix { !$0.isNewline }
+            if active.0 == next.0, next.1 >= active.1,
+               closing.dropFirst(next.1).allSatisfy(\.isWhitespace) { fence = nil }
+          } else { fence = next }
+          appendLine(from: index, characters: value, to: &result.text, next: &index)
+          continue
+        }
+        if fence != nil || (!quoted && (start - index >= 4 || value[index] == "\t")) {
+          appendLine(from: index, characters: value, to: &result.text, next: &index)
+          continue
+        }
+      }
+      if value[index] == "\\", index + 1 < value.count {
+        result.text.append(contentsOf: value[index..<(index + 2)])
+        index += 2
+        continue
+      }
+      if value[index] == "`", let end = inlineCodeEnd(value, at: index) {
+        result.text.append(contentsOf: value[index..<end])
+        index = end
+        continue
+      }
+      if value[index] == "<", let end = citationHTMLEnd(value, at: index) {
+        result.text.append(contentsOf: value[index..<end])
+        index = end
+        continue
+      }
+      if let link = markdownLink(value, at: index) {
+        result.destinations.append(link.destination)
+        if !omitLinks || !["http://", "https://"].contains(where: { link.destination.lowercased().hasPrefix($0) }) {
+          result.text.append(contentsOf: value[index..<link.end])
+        }
+        index = link.end
+        continue
+      }
+      if let end = citationReferenceEnd(value, at: index) {
+        result.text.append(contentsOf: value[index..<end])
+        index = end
+        continue
+      }
+      if let resolve, value[index] == "[", value[index...].starts(with: marker) {
+        let start = index + marker.count
+        var end = start
+        while end < value.count, end - start <= 128, value[end] != "]", !value[end].isNewline { end += 1 }
+        if end > start, end - start <= 128, end + 1 < value.count, value[end] == "]", value[end + 1] == "]" {
+          result.text += resolve(String(value[start..<end])) ?? String(value[index...(end + 1)])
+          index = end + 2
+          continue
+        }
+        _ = resolve("")
+      }
+      result.text.append(value[index])
+      index += 1
+    }
+    return result
+  }
+
+  private static func citationHTMLEnd(_ value: [Character], at start: Int) -> Int? {
+    guard start + 1 < value.count, value[start + 1].isLetter || ["/", "!"].contains(value[start + 1]) else { return nil }
+    func end(of suffix: [Character], after index: Int) -> Int? {
+      (index..<value.count).first { position in
+        value[position] == suffix[0] && position + suffix.count <= value.count &&
+          String(value[position..<(position + suffix.count)]).lowercased() == String(suffix)
+      }.map { $0 + suffix.count }
+    }
+    if value[start...].starts(with: Array("<!--")) { return end(of: Array("-->"), after: start + 4) ?? value.count }
+    let name = String(value[(start + 1)...].prefix(while: \.isLetter)).lowercased()
+    var quote: Character?
+    var tagEnd = start + 1
+    while tagEnd < value.count {
+      let character = value[tagEnd]
+      if let active = quote {
+        if active == character { quote = nil }
+      } else if character == "'" || character == "\"" {
+        quote = character
+      } else if character == ">" { break }
+      tagEnd += 1
+    }
+    guard tagEnd < value.count else { return nil }
+    if ["pre", "code", "script", "style", "textarea", "div", "table", "section", "article"].contains(name) {
+      return end(of: Array("</\(name)>"), after: tagEnd + 1) ?? value.count
+    }
+    return tagEnd + 1
+  }
+
   static func removingInternalLinks(_ text: String) -> String {
     guard text.range(of: "galaxyssi-artifact://", options: .caseInsensitive) != nil else { return text }
     let characters = Array(text)
@@ -75,7 +182,7 @@ enum AgentMarkdownArtifactReferences {
     while end < characters.count {
       let character = characters[end]
       end += 1
-      if character == "\n" { break }
+      if character.isNewline { break }
     }
     output.append(contentsOf: characters[start..<end])
     next = end
@@ -110,13 +217,7 @@ enum AgentMarkdownArtifactReferences {
     } else if value[start] != "[" {
       return nil
     }
-    var labelEnd = labelStart + 1
-    while labelEnd < value.count {
-      if value[labelEnd] == "\\" { labelEnd += 2; continue }
-      if value[labelEnd] == "]" { break }
-      labelEnd += 1
-    }
-    guard labelEnd < value.count else { return nil }
+    guard let labelEnd = markdownLabelEnd(value, at: labelStart) else { return nil }
     var index = labelEnd + 1
     while index < value.count, value[index].isWhitespace { index += 1 }
     guard index < value.count, value[index] == "(" else { return nil }
@@ -167,6 +268,30 @@ enum AgentMarkdownArtifactReferences {
       index += 1
     }
     return nil
+  }
+
+  private static func markdownLabelEnd(_ value: [Character], at start: Int) -> Int? {
+    var index = start + 1
+    var depth = 0
+    while index < value.count, index - start <= 4_096, !value[index].isNewline {
+      if value[index] == "\\" { index += 2; continue }
+      if value[index] == "[" { depth += 1 }
+      if value[index] == "]" {
+        if depth == 0 { return index }
+        depth -= 1
+      }
+      index += 1
+    }
+    return nil
+  }
+
+  private static func citationReferenceEnd(_ value: [Character], at start: Int) -> Int? {
+    let label = value[start] == "!" ? start + 1 : start
+    guard label < value.count, value[label] == "[",
+          let end = markdownLabelEnd(value, at: label),
+          end + 2 < value.count, value[end + 1] == "[", value[end + 2] != "[",
+          let referenceEnd = markdownLabelEnd(value, at: end + 1) else { return nil }
+    return referenceEnd + 1
   }
 }
 
