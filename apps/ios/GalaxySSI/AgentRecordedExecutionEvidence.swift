@@ -42,10 +42,12 @@ enum AgentRecordedExecutionEvidence {
          [.completed, .failed, .blocked, .rolledBack].contains($0.status) }) {
       actual[action.id] = Observation(action: action, result: persisted)
     }
+    let uncertainActionIDs = Set((task.effectRecovery ?? []).map(\.actionId))
     for action in actions {
       let id = logicalID(action.id)
       if prior[id] == nil { order.append(id) }
-      prior[id] = call(action, observed: actual[action.id], old: prior[id], now: now)
+      prior[id] = call(action, observed: actual[action.id], old: prior[id], now: now,
+        unverifiedEffect: uncertainActionIDs.contains(action.id))
     }
     let planRows = snapshots.suffix(AgentLongTaskPersistenceLimits.maximumActions).map { action in
       AgentMcpJSONValue.object(["id": .string(logicalID(action.id)), "kind": .string(action.kind.rawValue),
@@ -55,7 +57,7 @@ enum AgentRecordedExecutionEvidence {
   }
 
   private static func call(_ action: AgentAction, observed: Observation?, old: AgentToolCallRecord?,
-                           now: Int64) -> AgentToolCallRecord {
+                           now: Int64, unverifiedEffect: Bool) -> AgentToolCallRecord {
     let execution = observed?.action ?? action
     let receipt = observed?.result
     let metadata = receipt?.metadata ?? [:]
@@ -73,7 +75,8 @@ enum AgentRecordedExecutionEvidence {
     let receiptID = (metadata["native_receipt_id"] ?? "").ifBlank(metadata["invocation_id"] ?? "")
     let explicitlyUndispatched = metadata["execution_started"] == "false" ||
       evidence["execution_started"]?.boolValue == false
-    let unknown = metadata["plan_node_outcome_unknown"] == "true" ||
+    let unknown = unverifiedEffect || metadata[AgentEffectRecoveryRecord.metadataKey] != nil ||
+      metadata["plan_node_outcome_unknown"] == "true" ||
       metadata["error_code"] == "effect_outcome_unknown" ||
       ["unknown", "uncertain", "unverified"].contains(evidence["outcome"]?.stringValue?.lowercased() ?? "") ||
       evidence["code"]?.stringValue?.lowercased() == "effect_outcome_unknown"

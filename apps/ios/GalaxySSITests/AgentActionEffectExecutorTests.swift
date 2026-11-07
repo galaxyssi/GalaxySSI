@@ -4,6 +4,65 @@ import XCTest
 final class AgentActionEffectExecutorTests: XCTestCase {
   private let screen = AgentScreenContext(foregroundApp: "Test", pageTitle: "Action recovery")
 
+  func testRestoredNativeOutcomeUsesEarlierExactReceiptAndPreservesPause() throws {
+    let outgoing = ChatMessage(contactId: "hermes", content: "Check the browser", isMine: true,
+      deliveryStatus: .local, conversationId: "conversation", turnId: "turn")
+    let scope = AgentNativeEffectScope(sessionId: "conversation", conversationId: "conversation", taskId: "turn", turnId: "turn")
+    let binding = AgentPlanContinuationScope(conversationId: "conversation", turnId: "turn")
+    let tool = AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate
+    let earlier = binding.bind(.init(id: "earlier", kind: .callNativeTool, target: tool, risk: .medium,
+      status: .completed, description: "Navigate", evidence: #"{"outcome":"unknown"}"#))
+    let later = binding.bind(.init(id: "later", kind: .callNativeTool, target: "browser.read", risk: .low,
+      status: .completed, description: "Read"))
+    let effect = AgentEffectRecoveryRecord(scope: scope, actionId: earlier.id, toolId: tool, version: "1.0.0",
+      inputDigest: "digest", invocationId: "original", uncertainAt: 20,
+      query: .init(kind: .browser, toolId: AgentEffectRecoveryRecord.browserObserver, version: "1.0.0",
+        input: ["request_id": .string("original")], subject: "original"))
+    let encoded = String(decoding: try JSONEncoder().encode(effect), as: UTF8.self)
+    let result = AgentActionResult(actionId: earlier.id, success: true, message: "Accepted; not verified",
+      metadata: [AgentEffectRecoveryRecord.metadataKey: encoded])
+    let restored = try XCTUnwrap(AgentEffectRecoveryRecord.restoredResult(
+      .observed(.init(result: result, verified: true)), action: earlier, requiresEffectClaim: true))
+    XCTAssertEqual(AgentEffectRecoveryRecord.forScopedAction(restored, action: earlier, scope: scope, now: 30), effect)
+    let opaque = try XCTUnwrap(AgentEffectRecoveryRecord.restoredResult(
+      .pending, action: earlier, requiresEffectClaim: true))
+    XCTAssertFalse(opaque.success)
+    XCTAssertNil(AgentEffectRecoveryRecord.forScopedAction(opaque, action: earlier, scope: scope, now: 30)?.query)
+    XCTAssertNil(AgentEffectRecoveryRecord.restoredResult(.pending, action: earlier, requiresEffectClaim: false))
+    let unrelated = AgentActionResult(actionId: later.id, success: true, message: "Completed", metadata: [:])
+    let mismatched = AgentEffectRecoveryRecord.restoredResult(.observed(.init(result: unrelated, verified: true)),
+      action: earlier, requiresEffectClaim: true)
+    XCTAssertEqual(mismatched?.actionId, earlier.id)
+    XCTAssertEqual(mismatched?.success, false)
+
+    var plan = AgentPlan(goal: "Check the browser", screen: screen, steps: [], actions: [later])
+    plan.executionMode = .autoComplete
+    plan.actionHistory = [earlier]
+    func candidates(_ plan: AgentPlan, outgoing: ChatMessage) -> [String]? {
+      AgentEffectRecoveryRecord.reviewableEffects(plan: plan, effects: [effect], taskId: "turn",
+        sessionId: "conversation", outgoing: outgoing)
+    }
+    XCTAssertEqual(candidates(plan, outgoing: outgoing), [earlier.id])
+    XCTAssertTrue(AgentEffectRecoveryRecord.terminalNeedsRecovery(earlier, requiresEffectClaim: true))
+    XCTAssertFalse(AgentEffectRecoveryRecord.terminalNeedsRecovery(later, requiresEffectClaim: false))
+    var wrongTurn = outgoing
+    wrongTurn.turnId = "another-turn"
+    XCTAssertNil(candidates(plan, outgoing: wrongTurn))
+    var task = AgentTaskRecord(taskId: "turn", sessionId: "conversation", goal: "Check the browser",
+      phase: .paused, routeKind: .localSystem, targetTitle: "Phone", risk: .medium, blocked: true)
+    task.activePlan = plan
+    task.effectRecovery = [effect]
+    XCTAssertTrue(AgentTaskCenterPolicy.resumable(task))
+    let projected = AgentRecordedExecutionEvidence.project(task: task, scope: binding, previous: [],
+      observations: [.init(action: earlier, result: restored)], now: 30)
+    let recorded = try XCTUnwrap(projected.calls.first { $0.id == earlier.id })
+    XCTAssertEqual(recorded.status, .running)
+    XCTAssertEqual(recorded.result["outcome_unverified"], .bool(true))
+    XCTAssertEqual(recorded.result["success"], .bool(false))
+    plan.executionMode = .planOnly
+    XCTAssertNil(candidates(plan, outgoing: outgoing))
+  }
+
   func testCompletedActionReplaysWithoutDispatchingAgain() {
     let store = InMemoryAgentNativeToolReplayStore()
     let executor = AgentActionEffectExecutor(store: store)

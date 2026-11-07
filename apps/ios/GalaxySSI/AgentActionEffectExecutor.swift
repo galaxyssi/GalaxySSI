@@ -89,6 +89,63 @@ struct AgentEffectRecoveryRecord: Codable, Equatable {
     return try? JSONDecoder().decode(Self.self, from: data)
   }
 
+  static func forScopedAction(_ result: AgentActionResult, action: AgentAction,
+                              scope: AgentNativeEffectScope, now: Int64) -> Self? {
+    guard action.kind == .callNativeTool, !scope.sessionId.isBlank, !scope.conversationId.isBlank,
+          !scope.turnId.isBlank, !scope.taskId.isBlank, scope.collaborationOwnerDigest == nil,
+          action.parameters[AgentPlanContinuationScope.conversationIdKey].map({ $0.isBlank || $0 == scope.conversationId }) != false,
+          action.parameters[AgentPlanContinuationScope.turnIdKey].map({ $0.isBlank || $0 == scope.turnId }) != false
+    else { return nil }
+    let toolId = action.parameters["tool_id"] ?? action.target
+    if result.actionId == action.id, let native = fromActionResult(result),
+       native.scope == scope, native.actionId == action.id, native.toolId == toolId { return native }
+    guard result.actionId != action.id || result.metadata[metadataKey] != nil ||
+      result.metadata["error_code"] == "effect_outcome_unknown" ||
+      result.metadata["plan_node_outcome_unknown"] == "true" else { return nil }
+    // An interrupted or foreign receipt cannot supply a readback contract.
+    return .init(scope: scope, actionId: action.id, toolId: toolId, version: "", inputDigest: "",
+      invocationId: action.id, uncertainAt: now, query: nil)
+  }
+
+  static func terminalNeedsRecovery(_ action: AgentAction, requiresEffectClaim: Bool) -> Bool {
+    guard action.kind == .callNativeTool, requiresEffectClaim, [.completed, .failed].contains(action.status),
+          AgentCompletionEvidencePolicy.hasUnverifiedOutcome(action) else { return false }
+    let raw = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(action.evidence.utf8))
+    let output = AgentObservedOutputFields.output(raw) ?? [:]
+    if output["dispatch_attempted"] == .bool(false), output["request_accepted"] == .bool(false) { return false }
+    return action.status == .completed || output["request_accepted"] == .bool(true) ||
+      output.string("code") == "effect_outcome_unknown" || output["outcome"] == .string("unknown")
+  }
+
+  static func restoredResult(_ claim: AgentPlanNodeClaim, action: AgentAction,
+                             requiresEffectClaim: Bool) -> AgentActionResult? {
+    switch claim {
+    case .observed(let observation) where observation.verified && observation.result.actionId == action.id:
+      return observation.result
+    case .observed, .pending:
+      guard requiresEffectClaim else { return nil }
+      return .init(actionId: action.id, success: false,
+        message: "The prior action has no matching durable outcome. It was not repeated.",
+        metadata: ["plan_node_outcome_unknown": "true", "evidence": agentPlanNodeObservationPendingEvidence])
+    case .acquired: return nil
+    }
+  }
+
+  static func reviewableEffects(
+    plan: AgentPlan, effects: [Self], taskId: String, sessionId: String, outgoing: ChatMessage
+  ) -> [String]? {
+    guard plan.executionMode != .planOnly, !effects.isEmpty else { return nil }
+    let scope = AgentPlanContinuationScope(conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString))
+    let history = plan.executionSnapshots(in: scope)
+    guard effects.allSatisfy({ effect in
+      effect.matches(taskId: taskId, sessionId: sessionId, outgoing: outgoing) &&
+        history.contains { $0.id == effect.actionId && $0.kind == .callNativeTool &&
+          ($0.parameters["tool_id"] ?? $0.target) == effect.toolId && [.completed, .failed].contains($0.status) }
+    }) else { return nil }
+    return effects.filter { !$0.hasObservation && $0.query != nil }.map(\.actionId)
+  }
+
   static func parseInput(_ action: AgentAction) -> AgentMcpJSONObject? {
     let text = (action.parameters["input_json"] ?? "").ifBlank("{}")
     return try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(text.utf8))
