@@ -1013,6 +1013,102 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(try validates(raw.replacingOccurrences(of: "\"role\":\"reviewer\"", with: "\"role\":\"author\"")))
   }
 
+  func testTypedRecordContentIsOptionalButNeverCoercedOrSynthesized() throws {
+    for kind in [AgentCollaborationResearchDraft.Kind.executableTool, .toolTestPlan, .workflowMethod, .experimentPlan,
+                 .experimentResult, .capabilityGap, .innovation, .learningAgenda, .failureExperience] {
+      var draft = AgentCollaborationResearchDraft(id: "typed", objectId: nil, baseRevision: 0, kind: kind, title: "Typed",
+        body: [kind.rawValue: .object(["original": .string("Exact payload")])], parents: [])
+      let before = try JSONEncoder().encode(draft)
+      XCTAssertNoThrow(try AgentCollaborationTypedRecordValidation.validate(draft))
+      XCTAssertEqual(try JSONEncoder().encode(draft).count, before.count)
+      XCTAssertNil(draft.body["content"])
+      for invalid in [AgentMcpJSONValue.null, .int(1), .bool(true), .array([]), .object([:]), .string(" \n\t")] {
+        draft.body["content"] = invalid
+        XCTAssertThrowsError(try AgentCollaborationTypedRecordValidation.validate(draft)) {
+          let problem = ($0 as? AgentCollaborationTypedRecordValidation)?.problem
+          XCTAssertEqual(problem?["code"], .string("record_content_invalid"))
+          XCTAssertEqual(problem?["path"], .string("/body/content"))
+        }
+        XCTAssertEqual(draft.body["content"], invalid)
+      }
+      draft.body["content"] = .string("Supplied original prose")
+      XCTAssertNoThrow(try AgentCollaborationTypedRecordValidation.validate(draft))
+      draft.body[kind.rawValue] = .string("not structured")
+      XCTAssertThrowsError(try AgentCollaborationTypedRecordValidation.validate(draft)) {
+        XCTAssertEqual(($0 as? AgentCollaborationTypedRecordValidation)?.problem["code"], .string("typed_body_required"))
+      }
+    }
+    let documentary = AgentCollaborationResearchDraft(id: "document", objectId: nil, baseRevision: 0,
+      kind: .artifact, title: "Document", body: ["content": .string("Documentary original")], parents: [])
+    XCTAssertFalse(AgentCollaborationTypedRecordValidation.kinds.contains(documentary.kind.rawValue))
+  }
+
+  func testTypedToolPublicationPreservesSourceAndPersistsInvalidOptionalContentFeedback() throws {
+    let suite = "typed-content-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: folder) }
+    let secrets = InMemorySecretStore()
+    let file = folder.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    var team = durableTeamSnapshot("typed-records")
+    team.members[1].dispatchCheckpoint = .dispatching
+    XCTAssertTrue(history.upsert(team))
+    let member = team.members[1]
+    let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId, memberId: member.memberId, sourceId: member.sourceMessageId)
+    let source = "def run(parameters):\n    return parameters\n"
+    let spec: AgentMcpJSONObject = ["language": .string("python"), "name": .string("Identity"),
+      "purpose": .string("Preserve data"), "applies_when": .string("Tests"), "avoid_when": .string("Unverified use"),
+      "environment": .string("python"), "dependencies": .string("None"), "side_effects": .string("None"),
+      "source": .string(source), "input_schema": .object(["type": .string("object"), "properties": .object([:])])]
+    func artifact(_ content: AgentMcpJSONValue?, id: String = "source") -> String {
+      var body: AgentMcpJSONObject = ["executable_tool": .object(spec)]
+      body["content"] = content
+      return AgentMcpJSONCodec.stringify(["format": .string(AgentCollaborationResearchEnvelope.wireFormat),
+        "summary": .string("Tool candidate"), "workspace": .array([.object([
+          "id": .string(id), "base_revision": .int(0), "kind": .string("executable_tool"), "title": .string("Identity"),
+          "body": .object(body), "parents": .array([])
+        ])])])
+    }
+    let raw = artifact(nil)
+    let input: AgentMcpJSONObject = ["mode": .string("publish"), "milestone_id": .string("typed"), "artifact": .string(raw)]
+    let receipt = try history.publishCollaborationMilestone(input, scope: scope)
+    XCTAssertEqual(receipt["success"], .bool(true))
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertEqual(try reopened.publishCollaborationMilestone(input, scope: scope), receipt)
+    var selector = try XCTUnwrap(receipt["references"]?.arrayValue?.first?.objectValue)
+    selector["mode"] = .string("workspace")
+    let original = try reopened.recallCollaborationOriginal(selector, scope: scope)
+    let saved = try JSONDecoder().decode(AgentCollaborationResearchRevision.self, from: Data(original.string("content").utf8))
+    XCTAssertNil(saved.draft.body["content"])
+    XCTAssertEqual(saved.draft.body["executable_tool"]?.objectValue, spec)
+    XCTAssertNil(saved.measuredCases)
+    let invalid = artifact(.int(7), id: "invalid")
+    let rejected = try reopened.publishCollaborationMilestone([
+      "mode": .string("publish"), "milestone_id": .string("invalid"), "artifact": .string(invalid)
+    ], scope: scope)
+    XCTAssertEqual(rejected["status"], .string("rejected"))
+    let detail = try XCTUnwrap(rejected["record_validation"]?.objectValue)
+    XCTAssertEqual(detail["code"], .string("record_content_invalid"))
+    XCTAssertEqual(detail["actual"], .string("not a string"))
+    XCTAssertEqual(try history.publishCollaborationMilestone(["mode": .string("receipt"), "milestone_id": .string("invalid"),
+      "artifact_sha256": try XCTUnwrap(rejected["artifact_sha256"])], scope: scope), rejected)
+    team.members[1].status = .succeeded
+    team.members[1].replyContent = invalid
+    team.updatedAtMillis += 1
+    XCTAssertTrue(reopened.upsert(team))
+    XCTAssertThrowsError(try reopened.publishSavedResearchReply(invalid, scope: scope)) {
+      XCTAssertTrue($0 is AgentCollaborationTypedRecordValidation)
+    }
+    let retained = try XCTUnwrap(history.rejectedResearchReply(scope: scope))
+    XCTAssertEqual(retained.raw, invalid)
+    XCTAssertEqual(retained.rejection.problem, detail)
+    XCTAssertNil(try history.committedResearchRevisions(scope: scope))
+  }
+
   func testToolTestRegistrationUsesSkillParameterContract() throws {
     let tool = """
     {"language":"python","name":"Check","purpose":"Validate","applies_when":"Input","avoid_when":"None",
