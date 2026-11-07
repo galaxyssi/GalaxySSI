@@ -10,6 +10,8 @@ enum GalaxySSIHealthCareDiscussion {
     let question: String
     let destination: String
     var answer: String?
+    var proposalID: UUID?
+    var planRequested: Bool?
   }
 
   struct Thread: Codable, Identifiable, Equatable {
@@ -64,6 +66,7 @@ enum GalaxySSIHealthCareDiscussion {
     let question: String
     let payload: String
     let reviewedAt: Date
+    var proposesPlan = false
 
     func isCurrent(at now: Date) -> Bool {
       now >= reviewedAt && now.timeIntervalSince(reviewedAt) < GalaxySSIHealthCareDiscussion.approvalLifetime
@@ -122,29 +125,48 @@ enum GalaxySSIHealthCareDiscussion {
       historical observations, and a confirmed individual target. Never infer a target from a reference interval.
       State missing measurement context and uncertainty. Do not diagnose, change medication, or claim to have accessed
       records or verified current external sources. Discuss possible questions for a clinician, not a saved care plan.
-      Do not claim to schedule or perform any action. Return only plain text. No tools are available.
-      """
+      Do not claim to schedule or perform any action.
+      """ + (approval.proposesPlan
+        ? "\nUse exactly one \(GalaxySSIHealthCarePlan.tool) call to propose a draft. Do not return an accepted plan."
+        : "\nReturn only plain text. No tools are available.")
     let user = ["role": "user", "content": approval.payload]
-    let body: [String: Any]
+    var body: [String: Any]
     switch approval.model.apiStyle {
     case .anthropic:
       request.setValue(key, forHTTPHeaderField: "x-api-key")
       request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-      body = ["model": approval.model.modelId, "max_tokens": 768, "system": instruction, "messages": [user]]
+      body = ["model": approval.model.modelId, "max_tokens": approval.proposesPlan ? 2_048 : 768,
+              "system": instruction, "messages": [user]]
     case .gemini:
       request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
       body = ["systemInstruction": ["parts": [["text": instruction]]],
               "contents": [["role": "user", "parts": [["text": approval.payload]]]],
-              "generationConfig": ["maxOutputTokens": 1_024]]
+              "generationConfig": ["maxOutputTokens": approval.proposesPlan ? 2_048 : 1_024]]
     case .openAICompatible:
       request.setValue("Bearer " + key, forHTTPHeaderField: "Authorization")
       let host = approval.endpoint.host?.lowercased()
       var options: [String: Any] = ["model": approval.model.modelId, "stream": false,
         "messages": [["role": "system", "content": instruction], user]]
-      options[host == "api.openai.com" ? "max_completion_tokens" : "max_tokens"] = 1_024
+      options[host == "api.openai.com" ? "max_completion_tokens" : "max_tokens"] = approval.proposesPlan ? 2_048 : 1_024
       if host == "api.openai.com" { options["store"] = false }
       if host == "api.deepseek.com" { options["thinking"] = ["type": "disabled"] }
       body = options
+    }
+    if approval.proposesPlan {
+      let name = GalaxySSIHealthCarePlan.tool
+      let description = GalaxySSIHealthCarePlan.description
+      let schema = GalaxySSIHealthCarePlan.schema
+      switch approval.model.apiStyle {
+      case .openAICompatible:
+        body["tools"] = [["type": "function", "function": ["name": name, "description": description, "parameters": schema]]]
+        body["tool_choice"] = ["type": "function", "function": ["name": name]]
+      case .anthropic:
+        body["tools"] = [["name": name, "description": description, "input_schema": schema]]
+        body["tool_choice"] = ["type": "tool", "name": name, "disable_parallel_tool_use": true]
+      case .gemini:
+        body["tools"] = [["functionDeclarations": [["name": name, "description": description, "parametersJsonSchema": schema]]]]
+        body["toolConfig"] = ["functionCallingConfig": ["mode": "ANY", "allowedFunctionNames": [name]]]
+      }
     }
     request.httpBody = try JSONSerialization.data(withJSONObject: body)
     return request

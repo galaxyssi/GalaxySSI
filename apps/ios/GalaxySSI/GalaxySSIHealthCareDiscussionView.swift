@@ -19,6 +19,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
   @State private var active: GalaxySSIHealthCareDiscussion.Approval?
   @State private var task: Task<Void, Never>?
   @State private var failed = false
+  @State private var proposesPlan = false
 
   private var contacts: [GalaxySSIContact] {
     store.contacts.filter {
@@ -40,6 +41,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
           VStack(alignment: .leading, spacing: 8) {
             Text(turn.question).font(.body.weight(.semibold))
             if let answer = turn.answer { Text(answer).textSelection(.enabled) }
+            else if turn.proposalID != nil { Text(t("plan_retained", "Draft available in Health plans")) }
             else if active?.id == turn.id { ProgressView() }
             else { Text(t("unanswered", "No saved reply")).foregroundColor(.secondary) }
           }
@@ -57,10 +59,12 @@ struct GalaxySSIHealthCareDiscussionView: View {
             }
           }.disabled(task != nil)
           TextField(t("question", "Ask about this concern"), text: $question).disabled(task != nil)
+          Toggle(t("request_plan", "Request a draft plan"), isOn: $proposesPlan).disabled(task != nil)
           Button(t("preview", "Review data before sending"), action: preview)
             .disabled(task != nil || provider.isEmpty || question.isBlank || question.utf8.count > 2_048)
         }
         if task != nil { Button(t("stop", "Cancel request"), role: .cancel) { clearRequest() } }
+        GalaxySSIHealthCarePlansSection(records: records, concernID: concernID)
       }
       if scene == .active, failed { Text(t("unavailable", "This discussion or request is no longer available.")) }
     }
@@ -87,6 +91,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
             Section(t("provider", "Provider and model")) {
               Text(review.model.modelId)
               Text(review.endpoint.absoluteString).font(.footnote).textSelection(.enabled)
+              if review.proposesPlan { Text(t("request_plan", "Request a draft plan")) }
             }
             Section(t("data", "Data included in this request")) {
               Text(review.payload).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
@@ -122,7 +127,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
           let key = store.apiKey(for: model), task == nil else { failed = true; return }
     do {
       approval = try records.prepareLocalCareDiscussion(id: concernID, metric: metric, question: question,
-        destinationID: provider, model: model, credential: key)
+        destinationID: provider, model: model, credential: key, proposesPlan: proposesPlan)
       failed = false
     } catch { failed = true }
   }
@@ -177,10 +182,15 @@ struct GalaxySSIHealthCareDiscussionView: View {
           let bytes = try await GalaxySSIHealthSummaryTransport.responseBytes(request, limit: 65_536)
           status = .sent
           guard active?.id == review.id, !Task.isCancelled, currentRoute(review) != nil else { return }
-          let answer = try GalaxySSIHealthFollowUpTransport.output(bytes, style: review.model.apiStyle)
           active = nil
           defer { task = nil }
-          try records.finishLocalCareDiscussionTurn(review, answer: answer)
+          if review.proposesPlan {
+            let arguments = try GalaxySSIHealthCarePlan.arguments(bytes, style: review.model.apiStyle)
+            try records.saveLocalCarePlan(review, arguments: arguments)
+          } else {
+            let answer = try GalaxySSIHealthFollowUpTransport.output(bytes, style: review.model.apiStyle)
+            try records.finishLocalCareDiscussionTurn(review, answer: answer)
+          }
         } catch { if !Task.isCancelled { failed = true } }
       }
     } catch { failed = true }
@@ -188,7 +198,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
 
   private func clearRequest() { task?.cancel(); task = nil; active = nil; approval = nil }
   private func clearSensitive() {
-    clearRequest(); thread = nil; question = ""; provider = ""; allowed = false; failed = false
+    clearRequest(); thread = nil; question = ""; provider = ""; allowed = false; failed = false; proposesPlan = false
   }
   private func t(_ key: String, _ fallback: String) -> String {
     GalaxySSILocalization.string("galaxyssi.health.discussion." + key, fallback: fallback, language: language)

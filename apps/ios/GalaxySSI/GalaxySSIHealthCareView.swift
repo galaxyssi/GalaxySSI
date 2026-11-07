@@ -22,7 +22,7 @@ struct GalaxySSIHealthCareView: View {
             rows(concerns.filter { [.verify, .evidence, .reassess].contains($0.stage) })
           }
           Section(t("follow_up", "Improvement and follow-up")) {
-            rows(concerns.filter { [.maintenance, .paused, .closed].contains($0.stage) })
+            rows(concerns.filter { [.reviewPlan, .waitingResults, .maintenance, .paused, .closed].contains($0.stage) })
           }
           Section(t("sources", "Trends and originals")) {
             NavigationLink(t("trends", "Measurement trends")) { GalaxySSIHealthTrendView(records: records) }
@@ -230,6 +230,7 @@ private struct GalaxySSIHealthCareDetail: View {
           }
           if hasMore { Button(t("more", "Show more")) { loadHistory(append: true) } }
         }
+        GalaxySSIHealthCarePlansSection(records: records, concernID: id)
         Button(t("remove", "Delete concern"), role: .destructive) { confirmingDelete = true }
       }
       if scene == .active, failed { Text(t("unavailable", "Local health review could not be loaded.")) }
@@ -301,6 +302,8 @@ private enum GalaxySSIHealthCareText {
     switch stage {
     case .verify: label = "Verify context"
     case .evidence: label = "Review evidence"
+    case .reviewPlan: label = "Review plan"
+    case .waitingResults: label = "Waiting for results"
     case .reassess: label = "Reassess"
     case .maintenance: label = "Maintenance"
     case .paused: label = "Paused"

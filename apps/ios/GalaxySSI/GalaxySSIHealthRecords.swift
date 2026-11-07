@@ -177,6 +177,7 @@ struct GalaxySSIHealthRecords {
     var localCare: GalaxySSIHealthCare.Ledger?
     var localCareLastEvaluatedAt: Date?
     var localCareDiscussions: [String: GalaxySSIHealthCareDiscussion.Thread]?
+    var localCarePlans: [String: GalaxySSIHealthCarePlan.Proposal]?
 
     var keepsNewImportOriginals: Bool { retainImportOriginals ?? true }
 
@@ -482,7 +483,7 @@ struct GalaxySSIHealthRecords {
   }
 
   func prepareLocalCareDiscussion(id: UUID, metric: GalaxySSIHealthMetric, question: String,
-      destinationID: String, model: CloudModelConfig, credential: String, now: Date = Date())
+      destinationID: String, model: CloudModelConfig, credential: String, proposesPlan: Bool = false, now: Date = Date())
       throws -> GalaxySSIHealthCareDiscussion.Approval {
     let archive = try load()
     let concern = try currentDiscussionConcern(id: id, metric: metric, archive: archive, now: now)
@@ -499,7 +500,7 @@ struct GalaxySSIHealthRecords {
       onlinePermission: online, destinationID: destinationID, destinationDigest: destination,
       credentialDigest: credentialDigest, model: model, endpoint: endpoint,
       question: question, payload: try GalaxySSIHealthCareDiscussion.payload(concern: concern, question: question,
-        thread: thread, destination: destination), reviewedAt: now)
+        thread: thread, destination: destination), reviewedAt: now, proposesPlan: proposesPlan)
   }
 
   func validateLocalCareDiscussionApproval(_ approval: GalaxySSIHealthCareDiscussion.Approval) throws {
@@ -519,26 +520,105 @@ struct GalaxySSIHealthRecords {
             endpoint: approval.endpoint, credential: approval.credentialDigest) == approval.destinationDigest,
           try GalaxySSIHealthCareDiscussion.payload(concern: concern, question: approval.question, thread: thread,
             destination: approval.destinationDigest) == approval.payload else { throw Failure.stale }
-    thread.turns.append(.init(id: approval.id, question: approval.question, destination: approval.destinationDigest))
+    thread.turns.append(.init(id: approval.id, question: approval.question, destination: approval.destinationDigest,
+      planRequested: approval.proposesPlan ? true : nil))
     archive.localCareDiscussions?[approval.concernID.uuidString] = thread
     try persist(archive)
   }
 
   func validateLocalCareDiscussionTurn(_ approval: GalaxySSIHealthCareDiscussion.Approval, now: Date = Date()) throws {
     let thread = try checkedDiscussion(approval, archive: load(), now: now)
-    guard thread.turns.last?.id == approval.id, thread.turns.last?.answer == nil else { throw Failure.stale }
+    guard thread.turns.last?.id == approval.id, thread.turns.last?.answer == nil,
+          thread.turns.last?.proposalID == nil,
+          (thread.turns.last?.planRequested == true) == approval.proposesPlan else { throw Failure.stale }
   }
 
   func finishLocalCareDiscussionTurn(_ approval: GalaxySSIHealthCareDiscussion.Approval, answer: String,
                                      now: Date = Date()) throws {
-    guard !answer.isBlank, answer.utf8.count <= 6_144 else { throw Failure.invalid }
+    guard !approval.proposesPlan, !answer.isBlank, answer.utf8.count <= 6_144 else { throw Failure.invalid }
     var archive = try load()
     var thread = try checkedDiscussion(approval, archive: archive, now: now)
     guard let index = thread.turns.indices.last, thread.turns[index].id == approval.id,
-          thread.turns[index].answer == nil else { throw Failure.stale }
+          thread.turns[index].answer == nil, thread.turns[index].proposalID == nil,
+          thread.turns[index].planRequested != true else { throw Failure.stale }
     thread.turns[index].answer = answer
     archive.localCareDiscussions?[approval.concernID.uuidString] = thread
     try persist(archive)
+  }
+
+  func saveLocalCarePlan(_ approval: GalaxySSIHealthCareDiscussion.Approval, arguments: AgentMcpJSONObject,
+                         now: Date = Date()) throws {
+    guard approval.proposesPlan else { throw Failure.permission }
+    var archive = try load()
+    var thread = try checkedDiscussion(approval, archive: archive, now: now)
+    var plans = archive.localCarePlans ?? [:]
+    let key = approval.id.uuidString
+    let digest = AgentMcpJSONCodec.sha256(arguments)
+    if let prior = plans[key] {
+      guard prior.requestDigest == digest, prior.concernID == approval.concernID,
+            thread.turns.contains(where: { $0.id == approval.id && $0.proposalID == prior.id }) else { throw Failure.stale }
+      return
+    }
+    guard let index = thread.turns.indices.last, thread.turns[index].id == approval.id,
+          thread.turns[index].answer == nil, thread.turns[index].proposalID == nil, thread.turns[index].planRequested == true,
+          let concern = archive.localCare?.current[approval.metric.rawValue] else { throw Failure.stale }
+    let draft = try GalaxySSIHealthCarePlan.parse(arguments, now: now)
+    plans[key] = try .init(id: approval.id, concernID: approval.concernID, metric: approval.metric,
+      concernRevision: approval.concernRevision, assessmentDigest: GalaxySSIHealthCare.inputDigest(concern.assessment),
+      carePermission: approval.carePermission, onlinePermission: approval.onlinePermission, contactID: approval.destinationID,
+      modelID: approval.model.modelId, endpoint: approval.endpoint, destinationDigest: approval.destinationDigest,
+      createdAt: now, requestDigest: digest, draft: draft)
+    thread.turns[index].proposalID = approval.id
+    archive.localCarePlans = plans
+    archive.localCareDiscussions?[approval.concernID.uuidString] = thread
+    try persist(archive)
+  }
+
+  func resolveLocalCarePlan(_ proposal: GalaxySSIHealthCarePlan.Proposal, selected: Set<Int>?,
+                            now: Date = Date()) throws {
+    var archive = try load()
+    guard archive.localCareAllowed == true,
+          var ledger = archive.localCare, var current = ledger.current[proposal.metric.rawValue],
+          current.id == proposal.concernID,
+          var saved = archive.localCarePlans?[proposal.id.uuidString], saved == proposal, saved.state == .pending,
+          now >= saved.createdAt else { throw Failure.stale }
+    if let selected {
+      let checked = try currentDiscussionConcern(id: saved.concernID, metric: saved.metric, archive: archive, now: now)
+      guard checked.revision == saved.concernRevision, checked.revision < Int.max,
+            try GalaxySSIHealthCare.inputDigest(checked.assessment) == saved.assessmentDigest,
+            archive.healthOnlinePermission == saved.onlinePermission,
+            archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id == saved.carePermission,
+            !selected.isEmpty, selected.isSubset(of: Set(saved.draft.actions.map(\.id))) else { throw Failure.stale }
+      let actions = saved.draft.actions.filter { selected.contains($0.id) }
+      guard actions.allSatisfy({ saved.draft.sources.indices.contains($0.sourceIndex) &&
+        $0.dueUntil.map { $0 >= now } != false }) else { throw Failure.stale }
+      var adopted = current.adoptedActions ?? []
+      guard !adopted.contains(where: { $0.proposalID == saved.id }) else { throw Failure.stale }
+      adopted += actions.map { .init(proposalID: saved.id, action: $0, source: saved.draft.sources[$0.sourceIndex],
+        confirmedAt: now) }
+      current.adoptedActions = adopted
+      current.stage = actions.contains(where: { $0.kind == .recheck }) ? .waitingResults : .reviewPlan
+      current.revision += 1
+      current.updatedAt = max(current.updatedAt, now)
+      ledger.publish(current)
+      archive.localCare = ledger
+      saved.selected = selected
+      saved.state = .accepted
+    } else { saved.state = .dismissed }
+    saved.resolvedAt = now
+    archive.localCarePlans?[saved.id.uuidString] = saved
+    try persist(archive)
+  }
+
+  func validateLocalCarePlanReview(_ proposal: GalaxySSIHealthCarePlan.Proposal, now: Date = Date()) throws {
+    let archive = try load()
+    let concern = try currentDiscussionConcern(id: proposal.concernID, metric: proposal.metric, archive: archive, now: now)
+    guard archive.localCarePlans?[proposal.id.uuidString] == proposal, proposal.state == .pending,
+          concern.revision == proposal.concernRevision,
+          try GalaxySSIHealthCare.inputDigest(concern.assessment) == proposal.assessmentDigest,
+          archive.healthOnlinePermission == proposal.onlinePermission,
+          archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id == proposal.carePermission
+    else { throw Failure.stale }
   }
 
   private func currentDiscussionConcern(id: UUID, metric: GalaxySSIHealthMetric, archive: Archive,
