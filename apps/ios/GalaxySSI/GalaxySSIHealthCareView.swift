@@ -189,6 +189,7 @@ private struct GalaxySSIHealthCareDetail: View {
   @State private var confirmingDelete = false
   @State private var confirmingRevokeTarget = false
   @State private var targetComparison = GalaxySSIHealthCareTarget.Comparison.reviewRequired
+  @State private var deletionCandidate: GalaxySSIHealthCare.Concern?
 
   var body: some View {
     List {
@@ -257,7 +258,10 @@ private struct GalaxySSIHealthCareDetail: View {
         }
         GalaxySSIHealthCarePlansSection(records: records, concernID: id)
         GalaxySSIHealthCareFollowUpsSection(records: records, concernID: id, metric: metric)
-        Button(t("remove", "Delete concern"), role: .destructive) { confirmingDelete = true }
+        Button(t("remove", "Delete concern"), role: .destructive) {
+          deletionCandidate = concern
+          confirmingDelete = true
+        }
       }
       if scene == .active, failed { Text(t("unavailable", "Local health review could not be loaded.")) }
     }
@@ -267,9 +271,11 @@ private struct GalaxySSIHealthCareDetail: View {
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) {
       if $0.object as? String == records.owner { reload() }
     }
-    .confirmationDialog(t("remove", "Delete concern"), isPresented: $confirmingDelete, titleVisibility: .visible) {
+    .confirmationDialog(t("remove", "Delete concern"), isPresented: $confirmingDelete,
+                        titleVisibility: .visible, presenting: deletionCandidate) { candidate in
       Button(t("remove", "Delete concern"), role: .destructive) {
-        if let concern { perform { try records.deleteLocalCare(concern); dismiss() } }
+        deletionCandidate = nil
+        perform { try records.deleteLocalCare(candidate); dismiss() }
       }
     }
     .alert(targetText("revoke", "Revoke target"), isPresented: $confirmingRevokeTarget) {
@@ -320,6 +326,7 @@ private struct GalaxySSIHealthCareDetail: View {
           let current = archive.localCare?.current[metric.rawValue], current.id == id else {
       concern = nil; history = []; measurement = nil; reason = ""; targetValue = ""; targetSource = ""
       rationale = ""; confirmedBy = ""; confirmingDelete = false; confirmingRevokeTarget = false
+      deletionCandidate = nil
       targetComparison = .reviewRequired
       return
     }
@@ -344,6 +351,7 @@ private struct GalaxySSIHealthCareDetail: View {
   private func perform(_ action: () throws -> Void) {
     guard scene == .active else { return }
     do { try action(); failed = false; reload() }
+    catch GalaxySSIHealthRecords.Failure.stale { try? records.reconcileLocalCare(); failed = true; reload() }
     catch { failed = true; reload() }
   }
 
