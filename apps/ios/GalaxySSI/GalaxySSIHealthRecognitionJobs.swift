@@ -6,6 +6,7 @@ enum GalaxySSIHealthRecognitionJobs {
   static let maximumPages = 40
   static let maximumJobs = 16
   static let maximumTextBytes = 2 * 1024 * 1024
+  static let processID = UUID()
 
   enum Phase: String, Codable { case queued, running, interrupted, completed, cancelled, failed }
 
@@ -32,6 +33,10 @@ enum GalaxySSIHealthRecognitionJobs {
     var phase = Phase.queued
     var run: UUID?
     var pages: [Page] = []
+    var requiresPDFPassword: Bool?
+    var runProcess: UUID?
+
+    var reviewPages: [Page] { requiresPDFPassword == true && phase != .completed ? [] : pages }
   }
 
   static func validDigest(_ hash: String) -> Bool {
@@ -49,9 +54,13 @@ enum GalaxySSIHealthRecognitionJobs {
     return .init(id: digest, ordinal: region.id, text: text, bounds: bounds)
   }
 
-  static func process(_ data: Data, kind: GalaxySSIHealthOriginalStore.Kind, page: Int) throws -> Page {
+  static func pdfPageCount(_ data: Data, password: String? = nil) throws -> Int {
+    try GalaxySSIHealthPDFText.open(data, password: password, extracting: true).pageCount
+  }
+
+  static func process(_ data: Data, kind: GalaxySSIHealthOriginalStore.Kind, page: Int, password: String? = nil) throws -> Page {
     let result: GalaxySSIHealthPDFText.Result
-    if kind == .pdf { result = try GalaxySSIHealthPDFText.read(data, page: page) }
+    if kind == .pdf { result = try GalaxySSIHealthPDFText.read(data, page: page, password: password) }
     else { result = try GalaxySSIHealthPDFText.readImage(data) }
     var seen = Set<String>()
     let lines = result.regions.prefix(150).map(line).filter { seen.insert($0.id).inserted }
@@ -61,6 +70,12 @@ enum GalaxySSIHealthRecognitionJobs {
 
 @MainActor
 struct GalaxySSIHealthRecognitionJobsView: View {
+  private struct UnlockRequest: Identifiable {
+    var id: UUID { job?.id ?? original.id }
+    let original: GalaxySSIHealthOriginalStore.Original
+    let job: GalaxySSIHealthRecognitionJobs.Job?
+  }
+
   @Environment(\.scenePhase) private var scene
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.timeZone) private var timeZone
@@ -73,6 +88,9 @@ struct GalaxySSIHealthRecognitionJobsView: View {
   @State private var activeRun: UUID?
   @State private var limit = 20
   @State private var failed = false
+  @State private var restricted = false
+  @State private var unlock: UnlockRequest?
+  @State private var unlockFailed = false
   @State private var repairJob: GalaxySSIHealthRecognitionJobs.Job?
   @State private var selectingRepair = false
   @State private var missingSource: UUID?
@@ -91,8 +109,12 @@ struct GalaxySSIHealthRecognitionJobsView: View {
                 Text(phase(job)).foregroundColor(.secondary)
               }
             }
+            .disabled(task != nil)
           }
           if jobs.isEmpty { Text(t("empty", "No recognition jobs")).foregroundColor(.secondary) }
+          if task != nil {
+            Button(t("cancel", "Cancel recognition"), role: .destructive) { stop(cancelled: true) }
+          }
         }
         Section(t("originals", "Saved originals")) {
           ForEach(originals.prefix(limit)) { original in
@@ -100,19 +122,23 @@ struct GalaxySSIHealthRecognitionJobsView: View {
           }
           if originals.count > limit { Button(t("more", "Show more")) { limit += 20 } }
         }
+        if restricted { Text(restrictedMessage) }
         if failed { Text(t("failed", "The original or recognition job is unavailable.")) }
       }
     }
     .navigationTitle(t("title", "Local Report Recognition"))
     .navigationBarTitleDisplayMode(.inline)
-    .onAppear(perform: reload)
+    .onAppear(perform: enterQueue)
     .onDisappear { if task != nil { stop(cancelled: false) } }
     .onChange(of: scene) {
-      if $0 == .active { reload() }
-      else if $0 == .background {
+      if $0 == .active { enterQueue() }
+      else {
         stop(cancelled: false)
+        unlock = nil; unlockFailed = false; restricted = false
         jobs = []; originals = []; failed = false
-        selectingRepair = false; repairJob = nil; missingSource = nil; removedSources = []
+        if $0 == .background {
+          selectingRepair = false; repairJob = nil; missingSource = nil; removedSources = []
+        }
       }
     }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) {
@@ -120,6 +146,12 @@ struct GalaxySSIHealthRecognitionJobsView: View {
     }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.reviewInputsChanged)) {
       if $0.object as? String == records.owner { reload() }
+    }
+    .sheet(item: $unlock, onDismiss: { unlockFailed = false }) { request in
+      GalaxySSIHealthPDFPasswordForm(failed: unlockFailed) { password in
+        if let job = request.job { run(job, password: password) }
+        else { enqueue(request.original, password: password) }
+      }
     }
     .fileImporter(isPresented: $selectingRepair, allowedContentTypes: [.pdf, .image]) { result in
       defer { repairJob = nil }
@@ -149,38 +181,43 @@ struct GalaxySSIHealthRecognitionJobsView: View {
         if activeID == id {
           ProgressView()
           Button(t("cancel", "Cancel recognition"), role: .destructive) { stop(cancelled: true) }
-        } else if job.phase != .completed && job.phase != .cancelled {
-          Button(t("resume", "Start or resume recognition")) { run(job) }
+        } else if job.phase != .completed && job.phase != .cancelled && job.phase != .running {
+          Button(t("resume", "Start or resume recognition")) {
+            if job.requiresPDFPassword == true { requestUnlock(job.original, job: job) }
+            else { run(job) }
+          }
             .disabled(task != nil || missingSource == id || !originals.contains(job.original))
           Button(t("cancel", "Cancel recognition"), role: .destructive) {
             do { try records.cancelRecognitionJob(id: job.id, expected: job.version); reload() }
             catch { failed = true }
           }
         }
-        ForEach(originals.contains(job.original) && missingSource != id ? job.pages : [], id: \.index) { page in
+        ForEach(originals.contains(job.original) && missingSource != id ? job.reviewPages : [], id: \.index) { page in
           NavigationLink {
             pageDetail(page.index, jobID: job.id)
           } label: {
             Text(String(format: t("page", "Page %lld"), Int64(page.index + 1)))
           }
         }
-        if activeID != id {
+        if job.phase != .running && activeID != id {
           Button(t("remove", "Remove job"), role: .destructive) {
             do { try records.removeRecognitionJob(id: id, expected: job.version); reload() }
             catch { failed = true }
           }
         }
+        if restricted { Text(restrictedMessage) }
         if failed { Text(t("failed", "The original or recognition job is unavailable.")) }
       }
     }
     .navigationTitle(t("jobs", "Recognition jobs"))
+    .onDisappear { if activeID == id { stop(cancelled: false) } }
   }
 
   private func pageDetail(_ index: Int, jobID: UUID) -> some View {
     List {
       if scene == .active, missingSource != jobID,
          let job = jobs.first(where: { $0.id == jobID }), originals.contains(job.original),
-         let page = job.pages.first(where: { $0.index == index }) {
+         let page = job.reviewPages.first(where: { $0.index == index }) {
         let sourceContext = GalaxySSIHealthOCRSourceContext.inspect(page.lines.map(\.text), timeZone: timeZone)
         ForEach(page.lines) { line in
           NavigationLink {
@@ -203,30 +240,63 @@ struct GalaxySSIHealthRecognitionJobsView: View {
     }
   }
 
-  private func enqueue(_ original: GalaxySSIHealthOriginalStore.Original) {
+  private func enterQueue() {
     guard scene == .active else { return }
-    do {
-      let bytes = try store.read(original)
-      let count = original.kind == .pdf ? try GalaxySSIHealthPDFText.pageCount(bytes) : 1
-      try records.enqueueRecognition(original: original, pageCount: count)
-      reload()
-    } catch { failed = true }
+    do { try records.reconcileAbandonedRecognitionJobs(); reload() }
+    catch { jobs = []; originals = []; failed = true }
   }
 
-  private func run(_ job: GalaxySSIHealthRecognitionJobs.Job) {
+  private func requestUnlock(_ original: GalaxySSIHealthOriginalStore.Original, job: GalaxySSIHealthRecognitionJobs.Job?) {
+    unlockFailed = false
+    unlock = .init(original: original, job: job)
+  }
+
+  private func enqueue(_ original: GalaxySSIHealthOriginalStore.Original, password: String? = nil) {
     guard scene == .active, task == nil else { return }
+    failed = false; restricted = false
+    do {
+      let bytes = try store.read(original)
+      let count = original.kind == .pdf ? try GalaxySSIHealthRecognitionJobs.pdfPageCount(bytes, password: password) : 1
+      let job = try records.enqueueRecognition(original: original, pageCount: count, requiresPDFPassword: password != nil)
+      unlock = nil
+      reload()
+      if let password, job.phase != .completed && job.phase != .cancelled && job.phase != .running {
+        run(job, password: password)
+      }
+    } catch GalaxySSIHealthPDFText.Failure.locked {
+      requestUnlock(original, job: nil)
+    } catch GalaxySSIHealthPDFText.Failure.incorrectPassword {
+      unlockFailed = true
+    } catch GalaxySSIHealthPDFText.Failure.extractionRestricted {
+      if password == nil { requestUnlock(original, job: nil) }
+      else { unlock = nil; restricted = true }
+    } catch { unlock = nil; failed = true }
+  }
+
+  private func run(_ job: GalaxySSIHealthRecognitionJobs.Job, password: String? = nil) {
+    guard scene == .active, task == nil else { return }
+    if job.requiresPDFPassword == true && password == nil {
+      requestUnlock(job.original, job: job)
+      return
+    }
+    failed = false; restricted = false
     do {
       let bytes: Data
       do { bytes = try store.read(job.original) }
       catch { missingSource = job.id; throw error }
-      let run = try records.beginRecognitionJob(id: job.id, expected: job.version)
+      if job.original.kind == .pdf {
+        guard try GalaxySSIHealthRecognitionJobs.pdfPageCount(bytes, password: password) == job.pageCount
+        else { throw GalaxySSIHealthRecords.Failure.stale }
+      }
+      let run = try records.beginRecognitionJob(id: job.id, expected: job.version, unlockedProtectedPDF: password != nil)
+      unlock = nil
       activeID = job.id; activeRun = run
       reload()
       task = Task {
         do {
           for index in job.pages.count..<job.pageCount {
             let worker = Task.detached(priority: .userInitiated) {
-              try GalaxySSIHealthRecognitionJobs.process(bytes, kind: job.original.kind, page: index)
+              try GalaxySSIHealthRecognitionJobs.process(bytes, kind: job.original.kind, page: index, password: password)
             }
             let page = try await withTaskCancellationHandler(operation: { try await worker.value },
                                                              onCancel: { worker.cancel() })
@@ -245,9 +315,16 @@ struct GalaxySSIHealthRecognitionJobsView: View {
             failed = !(error is CancellationError)
           }
         }
-        if activeRun == run { activeID = nil; activeRun = nil; task = nil; reload() }
+        if activeRun == run { activeID = nil; activeRun = nil; task = nil; enterQueue() }
       }
-    } catch { failed = true }
+    } catch GalaxySSIHealthPDFText.Failure.locked {
+      requestUnlock(job.original, job: job)
+    } catch GalaxySSIHealthPDFText.Failure.incorrectPassword {
+      unlockFailed = true
+    } catch GalaxySSIHealthPDFText.Failure.extractionRestricted {
+      if password == nil { requestUnlock(job.original, job: job) }
+      else { unlock = nil; restricted = true }
+    } catch { unlock = nil; failed = true }
   }
 
   private func stop(cancelled: Bool) {
@@ -255,7 +332,7 @@ struct GalaxySSIHealthRecognitionJobsView: View {
       try? records.finishRecognitionJob(id: id, run: run, phase: cancelled ? .cancelled : .interrupted)
     }
     task?.cancel(); task = nil; activeID = nil; activeRun = nil
-    reload()
+    enterQueue()
   }
 
   private func reload() {
@@ -285,5 +362,10 @@ struct GalaxySSIHealthRecognitionJobsView: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     GalaxySSILocalization.string("galaxyssi.health.recognition." + key, fallback: fallback, language: language)
+  }
+
+  private var restrictedMessage: String {
+    GalaxySSILocalization.string("galaxyssi.health.pdf_text.extraction_restricted",
+      fallback: "This PDF does not allow text extraction.", language: language)
   }
 }
