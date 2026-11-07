@@ -156,6 +156,8 @@ enum AgentCollaborationRuleTopics {
     and an object input_schema using the existing Skill parameter contract. tool_test_plan binds the exact executable_tool parent
     and matching environment. Include purpose, coverage_gaps, oracle_basis and distinct cases with id, purpose, reason, input
     and expected (explicit null is allowed). Include target and regression cases. Registration neither executes nor releases code.
+    Use capabilities to find unfinished tools and test plans. Follow usage_recall for original test history. A pre-execution
+    rejection belongs only to the requested plan; only an exact runtime-bound test belongs to a candidate.
     """),
     Topic(id: "workflows", purpose: "Register workflow roles, steps and review conditions", prerequisites: ["foundation"], contract: """
     workflow_method includes purpose, domain, bottleneck, change_rationale, applies_when, avoid_when, risks, expected_gain,

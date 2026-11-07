@@ -149,9 +149,18 @@ enum AgentIOSLocalModelWebToolRunner {
           "topic": .object(["type": .string("string")]), "cursor": .object(["type": .string("string")])
         ])
       ], risk: .low, effect: .readOnly)
+    var scopedDescriptor = descriptor
+    scopedDescriptor.inputSchema = AgentCollaborationCandidateRecall.nativeSchema(descriptor.inputSchema, enabled: !originalsOnly)
     return AgentNativeToolExecutableDefinition(
-      definition: AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: collaborationRecallId)
+      definition: AgentPhoneNativeToolDefinition(descriptor: scopedDescriptor, executorId: collaborationRecallId)
     ) { invocation in
+      if !originalsOnly, invocation.input["mode"] == .string(AgentCollaborationCandidateRecall.mode) {
+        try invocation.checkpoint()
+        guard let result = read(invocation.input) else {
+          return .failure(code: "collaboration_original_unavailable", message: "The scoped original is unavailable")
+        }
+        return .success(output: result)
+      }
       try invocation.checkpoint()
       guard modes.contains(invocation.input.string("mode")), let result = read(invocation.input) else {
         return .failure(code: "collaboration_original_unavailable", message: "The scoped original is unavailable")

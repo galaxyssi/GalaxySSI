@@ -587,6 +587,8 @@ final class AgentTeamExecutionHistoryStore {
   func recallCollaborationOriginal(_ input: AgentMcpJSONObject,
                                    scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
+    if mode == AgentCollaborationCandidateRecall.mode, input["view"] == nil,
+       let history = try recallCandidateTestHistory(input, scope: scope) { return history }
     if mode == "dependency" { return try recallDependencyOriginal(input, scope: scope) }
     if mode == "capabilities" { return try recallCapabilities(input, scope: scope) }
     if mode == "evolution_rules" {
@@ -648,6 +650,11 @@ final class AgentTeamExecutionHistoryStore {
               key: "native-evidence-revoked", revision: 0) != true else {
         throw AgentTeamHistoryDatabase.Failure.stale
       }
+      if mode == "evidence",
+         let original = try AgentCollaborationCandidateRecall.readOriginal(id: id, hash: hash, scope: scope, database: database) {
+        return (try page(original), ["evidence_id": .string(id), "sha256": .string(hash), "origin": .string("ios_native_tool")],
+          ["complete": .bool(false), "mode": .string("not_tracked_for_native_observations")])
+      }
       if mode == "workspace" {
         guard case .int(let revision)? = input["revision"], revision > 0,
               let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
@@ -701,7 +708,25 @@ final class AgentTeamExecutionHistoryStore {
         "reading every page does not verify the claims in the source."
       )
     }
+    if sourceReference?["origin"] == .string("ios_native_tool") {
+      result["citation_guidance"] = .string("Follow next_offset for exact inputs and diagnostics. " +
+        "This historical native observation is not a release, a cloud read-coverage receipt or proof of correctness.")
+    }
     return result
+  }
+
+  private func recallCandidateTestHistory(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope)
+    throws -> AgentMcpJSONObject? {
+    try access { database in
+      guard let team = try database.snapshots(runId: scope.runId).first,
+            team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
+            let member = team.members.first(where: { $0.memberId == scope.memberId &&
+              $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }),
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true else { throw AgentTeamHistoryDatabase.Failure.stale }
+      return try AgentCollaborationCandidateRecall.history(input, scope: scope,
+        dependencies: member.dispatchDependencyMemberIds ?? [], database: database)
+    }
   }
 
   private func recallDependencyOriginal(_ input: AgentMcpJSONObject,
@@ -779,10 +804,19 @@ final class AgentTeamExecutionHistoryStore {
               key == "object:" + head.reference.objectId else { throw AgentTeamHistoryDatabase.Failure.corrupt }
         guard head.turnId != scope.turnId || (head.runId == scope.runId && head.authorId == scope.memberId) else { continue }
         let kind = head.draft.kind.rawValue
-        guard ["workflow_method", "executable_tool", "failure_experience", "capability_lesson"].contains(kind),
+        let candidate = AgentCollaborationCandidateRecall.isCandidate(head.draft.kind)
+        guard candidate || ["workflow_method", "failure_experience", "capability_lesson"].contains(kind),
               let body = head.draft.body[kind]?.objectValue else { continue }
-        let text = ([head.draft.title, kind] + ["purpose", "domain", "applies_when", "observed_issue", "rationale"]
-          .map { body.string($0) }).joined(separator: "\n")
+        var metadata = candidate ? AgentCollaborationCandidateRecall.searchableMetadata(body, tool: head.draft.kind == .executableTool)
+          : ["purpose", "domain", "applies_when", "observed_issue", "rationale"].map { body.string($0) }
+        var linkedSources: [AgentMcpJSONValue] = []
+        if head.draft.kind == .toolTestPlan, let ref = AgentCollaborationCandidateRecall.linkedTool(head),
+           let original = try AgentCollaborationCandidateRecall.exact(ref, scope: scope, database: database),
+           original.draft.kind == .executableTool, let spec = original.draft.body["executable_tool"]?.objectValue {
+          metadata += AgentCollaborationCandidateRecall.searchableMetadata(spec, tool: true)
+          linkedSources.append(.object(["source": .object(AgentCollaborationCandidateRecall.reference(ref)), "complete_read": .bool(false)]))
+        }
+        let text = ([head.draft.title, kind] + metadata).joined(separator: "\n")
         func matches(_ term: String) -> Bool {
           text.range(of: term, options: [.caseInsensitive, .diacriticInsensitive]) != nil
         }
@@ -801,6 +835,12 @@ final class AgentTeamExecutionHistoryStore {
           entry.removeValue(forKey: "title")
           ranked.append((score, entry))
           continue
+        }
+        if candidate {
+          entry["usage_recall"] = .object(AgentCollaborationCandidateRecall.selector(head.reference))
+          entry["reuse_status"] = .string("candidate_requires_testing_and_independent_release")
+          entry["linked_sources"] = .array(linkedSources)
+          entry["grants_permissions"] = .bool(false)
         }
         entries.append(.object(entry))
         if entries.count == 8 { break }
