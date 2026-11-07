@@ -382,7 +382,8 @@ extension MessageCoordinator {
             try? transportReceiptJournal.discard(id: work.id)
             continue
           }
-          let result = await mqttClient.publishTransportReceipt(topic: topic, payload: wire) {
+          let result = await mqttClient.publishTransportReceipt(topic: topic, payload: wire,
+            routes: routes, desktopId: work.phonePeer ? nil : work.peerId) {
             Task { @MainActor [weak self] in
               guard let self else { return }
               try? transportReceiptJournal.acknowledge(
