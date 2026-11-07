@@ -7,6 +7,66 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HealthCareStoreDeviceTest {
+    @Test fun discussionOpensPrivateAndResumesWithoutSendingAQuestion(): Unit = fixture { names, store ->
+        val issue = add(store)
+        val transcript = AgentTranscriptStore(context)
+        val conversations = mutableListOf<String>()
+        try {
+            val first = HealthCareDiscussion.open(context, issue.id, names).also(conversations::add)
+            val created = transcript.conversation(first)!!
+            assertTrue(created.privateMode); assertTrue(created.trackingPaused)
+            assertEquals(HealthCareDiscussionPolicy.TOPIC_PREFIX + issue.id, created.globalTopicKey)
+            assertTrue(transcript.list(first).isEmpty())
+            assertEquals(first, HealthCareDiscussion.open(context, issue.id, names))
+            transcript.archiveConversation(first)
+            val second = HealthCareDiscussion.open(context, issue.id, names).also(conversations::add)
+            assertNotEquals(first, second)
+            assertEquals(issue.id, store.discussion(first)); assertEquals(issue.id, store.discussion(second))
+            assertEquals(second, store.concern(issue.id)!!.conversationId)
+        } finally { conversations.forEach(transcript::deleteConversation) }
+    }
+    @Test fun schemaOneUpgradesWithoutChangingExistingConcerns(): Unit = fixture { names, store ->
+        val issue = add(store)
+        store.close()
+        context.openOrCreateDatabase(names.care, 0, null).use { db ->
+            db.execSQL("DROP TABLE discussion_grants"); db.execSQL("DROP TABLE discussions"); db.version = 1
+        }
+        HealthCareStore(context, names.care).use { upgraded ->
+            assertEquals(issue, upgraded.concern(issue.id))
+            val conversation = UUID.randomUUID().toString()
+            upgraded.bindDiscussion(issue.id, issue.revision, conversation)
+            assertEquals(issue.id, upgraded.discussion(conversation))
+        }
+    }
+    @Test fun discussionBindingAndApprovalRemainEncryptedAcrossReopenAndDeletion(): Unit = fixture { names, store ->
+        val issue = add(store)
+        val conversation = UUID.randomUUID().toString()
+        val bound = store.bindDiscussion(issue.id, issue.revision, conversation)
+        val grant = HealthCareDiscussionGrant(conversation, UUID.randomUUID().toString(), issue.id, bound.revision,
+            store.settings().version, "fixture-privacy", "a".repeat(64), System.currentTimeMillis(), "fixture-provider", "fixture-model", "high")
+        store.approveDiscussion(grant)
+        HealthCareStore(context, names.care).use {
+            assertEquals(issue.id, it.discussion(conversation)); assertEquals(grant, it.discussionGrant(grant.turnId))
+        }
+        context.openOrCreateDatabase(names.care, 0, null).use { db ->
+            db.rawQuery("SELECT payload FROM discussion_grants", null).use { row ->
+                assertTrue(row.moveToFirst()); assertFalse(row.getBlob(0).toString(Charsets.ISO_8859_1).contains("fixture-provider"))
+            }
+        }
+        store.delete(issue.id, bound.revision)
+        assertEquals(issue.id, store.discussion(conversation)); assertNull(store.concern(issue.id))
+        assertTrue(runCatching { store.approveDiscussion(grant.copy(turnId = UUID.randomUUID().toString())) }.isFailure)
+    }
+    @Test fun discussionsCannotRebindAnotherConcernOrApproveStaleRevisions(): Unit = fixture { _, store ->
+        val first = add(store); val second = add(store, HealthMetric.HBA1C)
+        val conversation = UUID.randomUUID().toString()
+        val bound = store.bindDiscussion(first.id, first.revision, conversation)
+        assertTrue(runCatching { store.bindDiscussion(second.id, second.revision, conversation) }.exceptionOrNull() is HealthCareConflict)
+        val stale = HealthCareDiscussionGrant(conversation, UUID.randomUUID().toString(), first.id, first.revision,
+            store.settings().version, "fixture-privacy", "a".repeat(64), System.currentTimeMillis(), "fixture-provider", "fixture-model", "high")
+        assertTrue(runCatching { store.approveDiscussion(stale) }.exceptionOrNull() is HealthCareConflict)
+        assertEquals(bound, store.concern(first.id))
+    }
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val now get() = System.currentTimeMillis() - 60_000
     private fun fixture(test: (HealthOverviewDatabases, HealthCareStore) -> Unit) {

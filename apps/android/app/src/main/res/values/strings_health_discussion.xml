@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_care_discussion_title">Health discussion · %1$s</string>
+    <string name="health_care_discussion_title_short">Discuss next steps</string>
+    <string name="health_care_discussion_confirm">Review health data sharing</string>
+    <string name="health_care_discussion_send">Confirm and send</string>
+    <string name="health_care_discussion_data">Review included data</string>
+    <string name="health_care_discussion_default_model">Provider default</string>
+    <string name="health_care_discussion_disclosure">Recipient: %1$s\nModel: %2$s\n\nThis question, the concern below, and this private discussion history will be shared. Other health records and original files are excluded. Public research may send clinical search terms to search services. A different provider requires another confirmation. Suggestions do not create plans or reminders.</string>
+    <string name="health_care_discussion_permissions">Enable confirmed measurements and profile context in Health privacy before discussing this concern.</string>
+    <string name="health_care_discussion_online">Online health analysis is off. Enable it in Health privacy before sharing this concern with a cloud or Desktop model.</string>
+    <string name="health_care_discussion_no_model">The selected model is unavailable. Choose an available model in this conversation before sending.</string>
+    <string name="health_care_discussion_inactive">This concern is paused, closed, or its source is unavailable. Review it in Personal Health first.</string>
+    <string name="health_care_discussion_expired">Health data, permissions, destination or approval have changed. Review and confirm this question again; no alternative provider was authorized.</string>
+    <string name="health_care_discussion_scope">This health discussion permits public research only. It cannot send messages, change records, schedule reminders or call another model without separate confirmation.</string>
+    <string name="health_care_discussion_import">Import and confirm new health files in Personal Health first. This discussion shares only its reviewed measurements and context.</string>
+</resources>

@@ -45,6 +45,7 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
         if (!active || !agentPage) return
         if (loading) { dirty = true; return }
         loading = true; dirty = false; val token = generation
+        val conversation = activity.agentTranscriptStore.activeConversation()
         worker.execute {
             val result = runCatching {
                 val context = activity.applicationContext
@@ -52,14 +53,17 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
                     HealthCareEngine.evaluate(context, names)
                     HealthPrivacyStore(context, names.privacy).use { privacy ->
                         if (!privacy.policy().metrics) emptyList() else HealthCareStore(context, names.care).use { store ->
-                            if (!store.settings().enabled) emptyList() else store.page(limit = 3, includePaused = false).items
+                            if (!store.settings().enabled) emptyList()
+                            else if (conversation.globalTopicKey.startsWith(HealthCareDiscussionPolicy.TOPIC_PREFIX))
+                                listOfNotNull(store.discussion(conversation.id)?.let(store::concern))
+                            else store.page(limit = 3, includePaused = false).items
                         }
                     }
                 }
             }
             main.post {
                 loading = false
-                if (active && agentPage && token == generation) {
+                if (active && agentPage && token == generation && activity.agentTranscriptStore.activeConversation().id == conversation.id) {
                     host.removeAllViews()
                     val concerns = result.getOrDefault(emptyList())
                     host.visibility = if (concerns.isEmpty() && result.isSuccess) View.GONE else View.VISIBLE

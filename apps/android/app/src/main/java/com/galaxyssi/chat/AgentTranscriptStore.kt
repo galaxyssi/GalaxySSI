@@ -962,7 +962,9 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
     fun createAgentConversation(
         title: String,
         parentConversationId: String = "",
-        globalTopicKey: String = ""
+        globalTopicKey: String = "",
+        privateMode: Boolean = false,
+        trackingPaused: Boolean = false
     ): AgentConversation {
         val memoryBaseline = AgentSessionMemoryBudgetRuntime.begin()
         val now = System.currentTimeMillis()
@@ -972,6 +974,8 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
             createdAt = now,
             updatedAt = now,
             createdByAgent = true,
+            privateMode = privateMode,
+            trackingPaused = trackingPaused,
             parentConversationId = parentConversationId.trim().take(120),
             globalTopicKey = globalTopicKey.trim().take(MAX_GLOBAL_TOPIC_KEY_CHARACTERS)
         )

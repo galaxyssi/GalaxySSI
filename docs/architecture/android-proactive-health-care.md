@@ -85,8 +85,8 @@ context confirmation, original record, guideline link, pause/resume and history.
 
 ## Remaining acceptance work for the full goal
 
-- Bind a care issue to a dedicated, resumable conversation on the Agent main
-  page. Verify consent for the actual provider and minimize the transmitted data.
+- Complete real-provider acceptance of the scoped Agent discussion described
+  below, including Desktop recovery, local models and permission revocation.
 - Integrate authoritative guideline retrieval, applicability/version checks and
   source-backed model explanations, including uncertain or conflicting evidence.
 - Let the Agent propose lifestyle actions, clinician discussion items and
@@ -101,3 +101,35 @@ context confirmation, original record, guideline link, pause/resume and history.
   accessibility acceptance of the entire workflow.
 
 Local tests and a native overview alone must not be used to mark this goal complete.
+
+## Scoped Agent discussion
+
+An issue can open a dedicated private, tracking-paused Agent conversation. Its
+encrypted binding survives issue deletion: an old conversation cannot silently
+become an ordinary chat with unrestricted routing. Reopening an active bound
+conversation preserves its history. No model request is made merely by opening
+the conversation.
+
+Each submitted question previews the concern snapshot and the concrete selected
+model. Auto resolves a candidate before confirmation. The approval is bound to
+the conversation, turn, issue revision, privacy and review-setting versions and
+destination fingerprint. Cloud endpoint, API style and effective model are checked
+again at the disclosure boundary. Desktop pairing identity is checked separately
+from the frozen model invocation. Fallback to another destination is not implied.
+Approval expires after one hour and must be renewed with another submitted question.
+Local review permission does not grant online analysis permission.
+
+Only this issue and the private discussion history are included; unrelated memories,
+original attachments, screen state and other health records are not supplied to
+initial planning. New health files must first be imported and confirmed in Personal
+Health. Public research is scoped to search/fetch and tool inspection, with generic
+clinical terms requested in the prompt. Search services may receive those terms.
+Native invocation authorization is retained by registry subsets and runs before
+effect replay. Discussions cannot mutate records, schedule reminders, send messages,
+inspect unrelated local data or delegate to another model. A proposed improvement
+or follow-up window is not a durable care plan or a delivered reminder.
+
+This does not yet implement a clinical evidence validator, automatic due delivery,
+or the complete plan-confirmation workflow. Transport already submitted to a remote
+provider cannot be retracted by revoking a permission. Further requests are checked
+again; in-flight cancellation and background recovery require end-to-end acceptance.

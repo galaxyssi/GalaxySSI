@@ -333,7 +333,8 @@ object AgentDataDisclosureLedger {
                 conversationIdHash = disclosureHash(conversationId),
                 taskIdHash = disclosureHash(taskId),
                 turnIdHash = disclosureHash(turnId)
-            )
+            ),
+            HealthCareDiscussion.rejection(context, conversationId, turnId, HealthCareDiscussion.cloudDestination(contact))
         )
     }
 
@@ -375,7 +376,9 @@ object AgentDataDisclosureLedger {
                 conversationIdHash = disclosureHash(conversationId),
                 taskIdHash = disclosureHash(taskId),
                 turnIdHash = disclosureHash(turnId)
-            )
+            ),
+            if (HealthCareDiscussion.bound(context, conversationId)) HealthCareDiscussion.rejection(context, conversationId,
+                turnId, HealthCareDiscussion.desktopDestination(context, contactId)) else null
         )
     }
 
@@ -397,13 +400,13 @@ object AgentDataDisclosureLedger {
             destinations = records.map(AgentDataDisclosureRecord::destinationId).distinct().size
         )
 
-    private fun begin(context: Context, record: AgentDataDisclosureRecord): AgentDisclosureTicket {
+    private fun begin(context: Context, record: AgentDataDisclosureRecord, scopeFailure: String? = null): AgentDisclosureTicket {
         val store = EncryptedAgentDataDisclosureStore(context)
-        val blocked = record.destinationId in store.blockedDestinationIds()
+        val blocked = scopeFailure != null || record.destinationId in store.blockedDestinationIds()
         val stored = if (blocked) {
             record.copy(
                 status = AgentDisclosureStatus.BLOCKED,
-                failureReason = "Destination blocked by the privacy dashboard"
+                failureReason = scopeFailure ?: "Destination blocked by the privacy dashboard"
             )
         } else {
             record
