@@ -639,6 +639,8 @@ enum AgentCompletionEvidencePolicy {
     for key in ["native_tool_id", "native_tool_status", "native_tool_receipt_status"] {
       action.parameters["_galaxyssi_observed_" + key] = result.metadata[key]
     }
+    action.parameters[AgentNativeFailureObservation.actionParameter] =
+      result.metadata[AgentNativeFailureObservation.metadataKey]
   }
 
   private static func missingObservedOutcome(

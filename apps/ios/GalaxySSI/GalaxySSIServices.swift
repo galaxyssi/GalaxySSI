@@ -138,6 +138,7 @@ final class MessageCoordinator: ObservableObject {
   private var agentHomeDisplayContactIdsByTurnId: [String: String] = [:]
   private var capturePermissionRequests = AgentCapturePermissionRequests()
   private var capturePermissionsReady: [String: UUID] = [:]
+  private var supervisedBrowserRecoveries = Set<UUID>()
   private var captureDispatches: [String: UUID] = [:]
   private lazy var capturePermissionEvents = UserDefaultsAgentRunEventStore()
   private var currentAgentScreenContext = AgentScreenContext(
@@ -526,6 +527,7 @@ final class MessageCoordinator: ObservableObject {
     )
     installForegroundRecoveryWake()
     recoverManagedBrowserMembers()
+    recoverSupervisedBrowserWaits()
     startDesktopReplyRecovery()
     pendingReplyRecoveryWake.request(isConnected: mqttClient.relationshipSubscriptionsReady)
     Task {
@@ -856,6 +858,7 @@ final class MessageCoordinator: ObservableObject {
         guard let self else { return }
         self.continueForegroundCapturePermissions()
         self.recoverManagedBrowserMembers()
+        self.recoverSupervisedBrowserWaits()
         self.pendingReplyRecoveryWake.request(isConnected: self.mqttClient.relationshipSubscriptionsReady)
       }
     }
@@ -5894,6 +5897,23 @@ final class MessageCoordinator: ObservableObject {
       }
       return true
     }
+    if let wait = task.supervisedBrowserWait {
+      guard !automatic, supervisedBrowserAllowed(wait.conversationID),
+            !PhoneExecutionAuthority.isCancelled(taskId: taskId),
+            let outgoing = store.persistedMessage(id: wait.outgoingID, contactId: wait.contactID),
+            wait.action(in: task, outgoing: outgoing, profileID: store.profile.identityFingerprint) != nil else { return false }
+      guard let previous = store.agentTask(id: taskId), previous.phase == .paused,
+            previous.supervisedBrowserWait == wait else { return false }
+      task.phase = .waitingResponse
+      task.blocked = false
+      task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+      guard store.commitSupervisedBrowserState(expected: previous, updated: task) else { return false }
+      if wait.resolution != nil { wakeSupervisedBrowserWait(wait) }
+      else if wait.hostProcessID != AgentOwnedOperationContext.processId {
+        try? resolveSupervisedBrowser(wait, resolution: .interrupted(.appProcessChanged))
+      }
+      return true
+    }
     let action: AgentAction
     if let plan = task.activePlan {
       let runnable = AgentToolCoordination.runnableActions(plan)
@@ -5956,6 +5976,7 @@ final class MessageCoordinator: ObservableObject {
     }
     var cancelled = task
     cancelled.phase = .cancelled
+    cancelled.supervisedBrowserWait = nil
     cancelled.pendingPlanning = nil
     cancelled.plannerSnapshot = nil
     cancelled.blocked = false
@@ -6012,6 +6033,7 @@ final class MessageCoordinator: ObservableObject {
 
   private func finalizeCancelledLocalNativeAction(_ original: AgentTaskRecord, at timestamp: Int64, emitReply: Bool) {
     var task = original
+    task.supervisedBrowserWait = nil
     let taskId = task.taskId
     let action = task.pendingAction
     let captureWait = task.capturePermission
@@ -8624,6 +8646,16 @@ final class MessageCoordinator: ObservableObject {
     return try managedBrowserContinuations.cookies(request.handoff.ticket, binding: request.binding)
   }
 
+  func recordManagedBrowserContentExit(_ request: AgentManagedBrowserPresentation) throws {
+    guard managedBrowserPresentationIsCurrent(request) else {
+      throw AgentManagedBrowserContinuationStore.Failure.scopeChanged
+    }
+    if try managedBrowserContinuations.recordWebContentExit(request.handoff.ticket, binding: request.binding) {
+      NotificationCenter.default.post(name: AgentManagedBrowserContinuationStore.changed, object: request.binding.owner.runId)
+      recoverManagedBrowserMembers()
+    }
+  }
+
   func saveManagedBrowserCookies(_ cookies: [HTTPCookie], for request: AgentManagedBrowserPresentation) throws {
     guard managedBrowserPresentationIsCurrent(request) else { throw AgentManagedBrowserContinuationStore.Failure.scopeChanged }
     try managedBrowserContinuations.saveCookies(cookies, ticket: request.handoff.ticket, binding: request.binding)
@@ -8683,6 +8715,9 @@ final class MessageCoordinator: ObservableObject {
   private func driveManagedBrowserMember(_ binding: AgentManagedBrowserDispatchBinding,
       mode: AgentManagedBrowserContinuationStore.Mode) async throws -> String? {
     let owner = binding.owner
+    if mode == .recovery, managedBrowserControl(binding) == .run {
+      try managedBrowserContinuations.reconcileHostProcess(binding)
+    }
     do {
       return try await managedBrowserContinuations.withLease(binding: binding, mode: mode,
         control: managedBrowserControl(binding)) { lease, work in
@@ -9457,14 +9492,20 @@ final class MessageCoordinator: ObservableObject {
       AgentActiveTurnPolicy.supersedingGoal(activeGoal: prior, intervention: requestText, kind: .constraint) +
         "\nTreat prior state as context, not permission to repeat effects. Inspect before retrying."
     } ?? requestText
+    var planTools = runtime.registry.descriptors().filter {
+      !outgoing.readOnlyAnalysis || AgentScreenAnalysisToolPolicy.allows($0)
+    }
+    if !outgoing.readOnlyAnalysis, supervisedBrowserAllowed(outgoing.conversationId),
+       !planTools.contains(where: { $0.id == AgentSupervisedBrowserWait.toolID }),
+       let browser = try? AgentManagedBrowserToolExecution.descriptor() {
+      planTools.append(browser)
+    }
     let planRequest = AgentPlanRequest(
       goal: plannerGoal,
       screen: selectedForPhoneTurn && !plannerSettings.shareScreenText
         ? AgentScreenContext(foregroundApp: "GalaxySSI", pageTitle: "Agent")
         : currentAgentScreenContext,
-      nativeTools: runtime.registry.descriptors().filter {
-        !outgoing.readOnlyAnalysis || AgentScreenAnalysisToolPolicy.allows($0)
-      },
+      nativeTools: planTools,
       responseLanguage: store.languagePolicy.responseLanguage,
       executionMode: executionMode,
       completionRequirements: completionRequirements
@@ -9868,7 +9909,7 @@ final class MessageCoordinator: ObservableObject {
     mode: AgentPlanExecutionParallelMode,
     task: AgentTaskRecord
   ) -> Bool {
-    guard !actions.isEmpty,
+    guard !actions.isEmpty, !actions.contains(where: AgentSupervisedBrowserWait.isHandoff),
           ![AgentPermissionMode.observeOnly, .suggestOnly].contains(
             store.agentSafetySettings.permissionMode
           ) else {
@@ -10295,6 +10336,9 @@ final class MessageCoordinator: ObservableObject {
     if task.pendingActions.isEmpty {
       task.pendingActions = [action]
     }
+    if AgentSupervisedBrowserWait.isHandoff(action) {
+      return beginSupervisedBrowserWait(action: action, outgoing: outgoing, task: &task)
+    }
     if let kind = AgentCapturePermissionContinuation.kind(for: action),
        let registry = localNativeToolRuntime?.registry,
        let data = (action.parameters["input_json"] ?? "").ifBlank("{}").data(using: .utf8),
@@ -10312,6 +10356,109 @@ final class MessageCoordinator: ObservableObject {
       retainFailedLocalNativeAction(action, task: &task)
     }
     return handled
+  }
+
+  private func beginSupervisedBrowserWait(action: AgentAction, outgoing: ChatMessage,
+                                         task: inout AgentTaskRecord) -> Bool {
+    let previous = store.agentTask(id: task.taskId)
+    guard previous?.supervisedBrowserWait == nil, task.supervisedBrowserWait == nil,
+          permitsEffectRecoveryActions([action], task: task, outgoing: outgoing),
+          !PhoneExecutionAuthority.isCancelled(taskId: task.taskId), supervisedBrowserAllowed(task.sessionId),
+          let wait = AgentSupervisedBrowserWait(task: task, outgoing: outgoing, action: action,
+            profileID: store.profile.identityFingerprint),
+          var plan = task.activePlan, let index = plan.actions.firstIndex(where: { $0.id == wait.actionID }) else {
+      return false
+    }
+    var waiting = task
+    waiting.supervisedBrowserWait = wait
+    waiting.phase = .waitingResponse
+    waiting.blocked = false
+    waiting.result = ""
+    waiting.verification = localizedReply("galaxyssi.managed_browser.waiting",
+      fallback: "Waiting for browser control.")
+    plan.actions[index].status = .waitingResponse
+    plan.actions[index].parameters[AgentSupervisedBrowserWait.requestReceiptKey] =
+      AgentMcpJSONCodec.stringify(wait.requestReceipt)
+    waiting.activePlan = plan
+    waiting.planContext = AgentTaskPlanContext(plan: plan)
+    waiting.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+    guard store.commitSupervisedBrowserState(expected: previous, updated: waiting) else { return false }
+    task = waiting
+    return true
+  }
+
+  func supervisedBrowserRequest(taskID: String) -> AgentSupervisedBrowserWait? {
+    guard let wait = store.agentTask(id: taskID)?.supervisedBrowserWait,
+          wait.resolution == nil, supervisedBrowserContext(wait) != nil else { return nil }
+    return wait
+  }
+
+  private func supervisedBrowserAllowed(_ conversationID: String) -> Bool {
+    guard let session = store.agentSession(id: conversationID), session.id == conversationID,
+          !session.privateMode, !session.trackingPaused, session.mergedIntoConversationId.isBlank else { return false }
+    return ![AgentPermissionMode.observeOnly, .suggestOnly].contains(store.agentSafetySettings.permissionMode)
+  }
+
+  private func supervisedBrowserContext(_ wait: AgentSupervisedBrowserWait)
+    -> (task: AgentTaskRecord, outgoing: ChatMessage, action: AgentAction)? {
+    guard supervisedBrowserAllowed(wait.conversationID), !PhoneExecutionAuthority.isCancelled(taskId: wait.taskID),
+          let task = store.agentTask(id: wait.taskID), task.phase == .waitingResponse,
+          let outgoing = store.persistedMessage(id: wait.outgoingID, contactId: wait.contactID),
+          let action = wait.action(in: task, outgoing: outgoing, profileID: store.profile.identityFingerprint)
+    else { return nil }
+    return (task, outgoing, action)
+  }
+
+  func resolveSupervisedBrowser(_ wait: AgentSupervisedBrowserWait, resolution: AgentSupervisedBrowserWait.Resolution) throws {
+    guard wait.accepts(resolution), let context = supervisedBrowserContext(wait),
+          var plan = context.task.activePlan,
+          let index = plan.actions.firstIndex(where: { $0.id == context.action.id }) else {
+      throw AgentManagedBrowserContinuationStore.Failure.staleTicket
+    }
+    var task = context.task
+    var resolved = wait
+    resolved.resolution = resolution
+    task.supervisedBrowserWait = resolved
+    task.pendingAction = nil
+    task.pendingActions = []
+    let output = AgentMcpJSONCodec.stringify(resolution.output)
+    let message = "Browser control event recorded. Verify external state before deciding the next action."
+    plan.actions[index].status = .failed
+    plan.actions[index].result = message
+    plan.actions[index].evidence = output
+    plan.actions[index].parameters[AgentSupervisedBrowserWait.observationKey] = output
+    task.activePlan = plan
+    task.planContext = AgentTaskPlanContext(plan: plan)
+    task.lastNativeActionResult = AgentActionResult(actionId: wait.actionID, success: false, message: message,
+      metadata: ["native_tool_output": output, "native_tool_id": AgentSupervisedBrowserWait.toolID,
+        "native_receipt_id": wait.id.uuidString])
+    task.verification = message
+    task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+    guard store.commitSupervisedBrowserState(expected: context.task, updated: task) else {
+      throw AgentManagedBrowserContinuationStore.Failure.unavailable
+    }
+    wakeSupervisedBrowserWait(resolved)
+  }
+
+  private func wakeSupervisedBrowserWait(_ wait: AgentSupervisedBrowserWait) {
+    guard wait.resolution != nil, let context = supervisedBrowserContext(wait),
+          supervisedBrowserRecoveries.insert(wait.id).inserted else { return }
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      defer { self.supervisedBrowserRecoveries.remove(wait.id) }
+      guard self.supervisedBrowserContext(wait) != nil else { return }
+      await self.continueRollingNativePlan(taskId: wait.taskID, outgoing: context.outgoing)
+    }
+  }
+
+  private func recoverSupervisedBrowserWaits() {
+    for task in store.agentTaskRecords where task.phase == .waitingResponse {
+      guard let wait = task.supervisedBrowserWait else { continue }
+      if wait.resolution != nil { wakeSupervisedBrowserWait(wait) }
+      else if wait.hostProcessID != AgentOwnedOperationContext.processId {
+        try? resolveSupervisedBrowser(wait, resolution: .interrupted(.appProcessChanged))
+      }
+    }
   }
 
   private func retainFailedLocalNativeAction(_ action: AgentAction, task: inout AgentTaskRecord) {
@@ -10700,6 +10847,10 @@ final class MessageCoordinator: ObservableObject {
           let previousResult = task.lastNativeActionResult else {
       return
     }
+    if let wait = task.supervisedBrowserWait {
+      guard wait.resolution != nil, supervisedBrowserRecoveries.contains(wait.id),
+            supervisedBrowserContext(wait) != nil else { return }
+    }
     guard let continuationScope = AgentPlanContinuationScope.resolve(
       plan: previousPlan,
       activeConversationId: outgoing.conversationId,
@@ -10713,7 +10864,9 @@ final class MessageCoordinator: ObservableObject {
     }
     let recovery = !(task.effectRecovery ?? []).isEmpty
     let reason = AgentRollingPlanPolicy.reason(plan: previousPlan, result: previousResult) +
-      (recovery ? ";recovery=host_readback_only;do_not_repeat_original_effect_or_claim_completion" : "")
+      (recovery ? ";recovery=host_readback_only;do_not_repeat_original_effect_or_claim_completion" : "") +
+      (task.supervisedBrowserWait == nil ? "" :
+        ";browser_control_event_only;inspect_fresh_external_state_before_any_mutation_or_completion")
     let plannerHistory = previousPlan.executionSnapshots(in: continuationScope)
     let plannerSnapshot = task.plannerSnapshot
       ?? capturePlannerSnapshot(conversationId: outgoing.conversationId)
@@ -10818,6 +10971,28 @@ final class MessageCoordinator: ObservableObject {
     guard (task.effectRecovery ?? []).allSatisfy({
       $0.hasObservation && $0.matches(taskId: task.taskId, sessionId: task.sessionId, outgoing: outgoing)
     }) else { return false }
+    if let wait = task.supervisedBrowserWait {
+      guard wait.resolution != nil, supervisedBrowserContext(wait) != nil else { return false }
+      let acceptable: Bool
+      if case let .plan(plan)? = outcome, !plan.actions.isEmpty {
+        let readsOnly = plan.actions.allSatisfy { action in
+          let id = action.parameters["tool_id"] ?? action.target
+          return action.kind == .callNativeTool && !id.hasPrefix("galaxyssi.tools.") &&
+            id != AgentIOSWebMediaNativeToolCatalog.browserSessionOperationStatus &&
+            localNativeToolRuntime?.registry.lookup(id)?.descriptor.effect == .readOnly
+        }
+        let newHandoff = plan.actions.count == 1 && plan.actions.first.map(AgentSupervisedBrowserWait.isHandoff) == true
+        acceptable = readsOnly || newHandoff
+      } else { acceptable = false }
+      guard acceptable else {
+        task.phase = .paused
+        task.verification = localizedReply("galaxyssi.managed_browser.verification_required",
+          fallback: "A fresh external observation is required before continuing this task.")
+        task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+        store.upsertAgentTask(task)
+        return false
+      }
+    }
     guard let outcome else {
       task.verification = "Rolling plan assessment is pending because the planning model is unavailable"
       if !(task.effectRecovery ?? []).isEmpty {
@@ -10925,18 +11100,33 @@ final class MessageCoordinator: ObservableObject {
     continuedPlan.verificationResults = previousPlan.verificationResults
     continuedPlan.validation = AgentPlanValidator.validate(continuedPlan)
     guard continuedPlan.validation.valid else {
+      if task.supervisedBrowserWait != nil { task.phase = .paused }
       task.verification = "Rolling plan assessment returned an invalid next batch"
       task.executionLog.append("Rolling plan: invalid model batch at revision \(previousPlan.revision + 1)")
       task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
       store.upsertAgentTask(task)
       return false
     }
+    let browserTask = task.supervisedBrowserWait == nil ? nil : task
+    task.supervisedBrowserWait = nil
     task.phase = .executing
     task.result = ""
     task.verification = "Rolling plan revision \(continuedPlan.revision) accepted"
     task.executionLog.append("Rolling plan: accepted revision \(continuedPlan.revision) with \(continuedPlan.actions.count) action(s)")
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
-    store.upsertAgentTask(task)
+    if let browserTask {
+      // Commit the replacement plan before removing the event fence; the old pending actions must not wake after a crash.
+      task.activePlan = continuedPlan
+      task.planContext = AgentTaskPlanContext(plan: continuedPlan)
+      task.pendingActions = AgentToolCoordination.runnableActions(continuedPlan)
+      task.pendingAction = task.pendingActions.first
+      guard store.commitSupervisedBrowserState(expected: browserTask, updated: task) else {
+        task = browserTask
+        return false
+      }
+    } else {
+      store.upsertAgentTask(task)
+    }
     return applyLocalNativeActions(
       actions: continuedPlan.actions,
       outgoing: outgoing,
