@@ -1151,6 +1151,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     )
     dispatchDependencyMemberIds = try container.decodeIfPresent([String].self, forKey: .dispatchDependencyMemberIds)
     dispatchResourceObservation = try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .dispatchResourceObservation)
+    recruitmentTemplateID = try container.decodeIfPresent(UUID.self, forKey: .recruitmentTemplateID)
   }
 
   func elapsedExecutionMillis(now: Int64, team: AgentTeamExecutionSnapshot) -> Int64? {

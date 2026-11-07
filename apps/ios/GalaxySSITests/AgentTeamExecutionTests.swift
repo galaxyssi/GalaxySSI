@@ -2177,6 +2177,16 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(try open().acceptedGoalDeliveryRecoveryPage(after: "").deliveries.isEmpty)
   }
 
+  func testSavedMemberDecodingPreservesRecruitmentProvenance() throws {
+    var team = durableTeamSnapshot("provenance")
+    team.members[1].recruitmentTemplateID = UUID()
+    let restored = try JSONDecoder().decode(AgentTeamExecutionSnapshot.self, from: JSONEncoder().encode(team))
+    XCTAssertEqual(restored.members[1].recruitmentTemplateID, team.members[1].recruitmentTemplateID)
+    XCTAssertEqual(restored.reviewIdentity(restored.members[1].memberId),
+      team.members[1].recruitmentTemplateID?.uuidString.lowercased())
+    XCTAssertNil(restored.members[0].recruitmentTemplateID)
+  }
+
   func testRecruitDirectoryProjectionUsesStableIdentityAndDoesNotRestoreDeletedMembers() throws {
     typealias Graph = AgentCollaborationLiveGraph
     let lead = AgentCollaborationRoster.Member(name: "Lead", resourceId: "lead")
