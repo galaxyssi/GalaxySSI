@@ -37,10 +37,10 @@ object AgentWebIntelligenceNativeTools {
     fun androidDefinitions(
         context: Context,
         web: AgentBoundedWebService
-    ): List<AgentNativeToolDefinition> = definitions(
+    ): List<AgentNativeToolDefinition> = HealthCareWebEvidence.wrap(definitions(
         AgentWebIntelligenceService.android(context.applicationContext, web),
         web.availability
-    )
+    )) { invocation, output -> HealthCareWebEvidence.observe(context.applicationContext, invocation, output) }
 
     fun definitions(
         service: AgentWebIntelligenceService,

@@ -1,0 +1,5 @@
+<resources>
+    <string name="health_care_evidence_read">Source retrieved: %1$s · Read in this discussion: %2$s</string>
+    <string name="health_care_evidence_scope">The original passage was matched to a native read receipt. Source version, relevance and medical applicability still require assessment.</string>
+    <string name="health_care_evidence_missing">This older draft has no native read receipt. Ask the Agent to read the source and prepare an updated plan before confirming it.</string>
+</resources>

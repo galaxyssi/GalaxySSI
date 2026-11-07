@@ -38,7 +38,8 @@ internal class HealthCarePlanReview(private val activity: Activity, private val 
             val source = HealthRecordStore(activity, names.records).use {
                 HealthCareEngine.inputVersion(settings.version, privacy.version, it.metricVersion(issue.metric))
             }
-            Snapshot(plan, issue, HealthCarePlanPolicy.current(plan, issue, settings, privacy, source))
+            Snapshot(plan, issue, HealthCarePlanPolicy.current(plan, issue, settings, privacy, source) &&
+                plan.sources.all { it.evidence != null })
         }
     }
     fun show(id: String) {
@@ -80,6 +81,12 @@ internal class HealthCarePlanReview(private val activity: Activity, private val 
             ui.add(content, ui.profileRow(source.title, "${source.version}\n${source.applicability}") {
                 runCatching { activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(source.url))) }.onFailure { error() }
             }, 6)
+            source.evidence?.let { evidence ->
+                ui.add(content, ui.text(activity.getString(R.string.health_care_evidence_read,
+                    date(evidence.retrievedAt), date(evidence.observedAt)), 13f, muted = true), 4)
+                ui.add(content, ui.text(source.quote, 14f), 4)
+                ui.add(content, ui.text(activity.getString(R.string.health_care_evidence_scope), 13f, muted = true), 4)
+            } ?: ui.add(content, ui.text(activity.getString(R.string.health_care_evidence_missing), 14f), 4)
         }
         dialog = AlertDialog.Builder(activity).setTitle(R.string.health_care_plan_title)
             .setView(ScrollView(activity).apply { addView(content) })
