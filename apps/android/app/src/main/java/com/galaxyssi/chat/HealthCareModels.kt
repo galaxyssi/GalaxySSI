@@ -73,7 +73,8 @@ internal data class HealthCareBaseline(val refs: List<HealthCareRecordRef>, val 
 }
 
 internal data class HealthCareTarget(val field: String, val low: String?, val high: String?, val unit: String,
-    val rationale: String, val source: String, val confirmedBy: String, val confirmedAt: Long) {
+    val rationale: String, val source: String, val confirmedBy: String, val confirmedAt: Long,
+    val lowInclusive: Boolean = true, val highInclusive: Boolean = true, val planId: String = "", val basis: String = "") {
     init {
         require(field.isNotBlank() && field.length <= 80 && unit.length <= 32 && (low != null || high != null))
         require((low == null || low.length in 1..128) && (high == null || high.length in 1..128))
@@ -81,12 +82,18 @@ internal data class HealthCareTarget(val field: String, val low: String?, val hi
         require(lower == null || upper == null || lower <= upper)
         require(rationale.isNotBlank() && rationale.length <= 2000 && source.isNotBlank() && source.length <= 2048)
         require(confirmedBy.isNotBlank() && confirmedBy.length <= 200 && confirmedAt > 0)
+        require(planId.isEmpty() || HealthProfilePolicy.uuid(planId))
+        require(basis.isEmpty() || basis.matches(Regex("[a-f0-9]{64}")))
+        require((planId.isEmpty()) == basis.isEmpty())
+        if (planId.isNotEmpty()) HealthCareTargetPolicy.validateBounds(low, high, lowInclusive, highInclusive)
     }
     fun json() = JSONObject().put("field", field).put("low", low ?: JSONObject.NULL).put("high", high ?: JSONObject.NULL)
         .put("unit", unit).put("rationale", rationale).put("source", source).put("confirmed_by", confirmedBy).put("confirmed_at", confirmedAt)
+        .put("low_inclusive", lowInclusive).put("high_inclusive", highInclusive).put("plan_id", planId).put("basis", basis)
     companion object { fun from(j: JSONObject) = HealthCareTarget(j.getString("field"), if (j.isNull("low")) null else j.getString("low"),
         if (j.isNull("high")) null else j.getString("high"), j.getString("unit"), j.getString("rationale"), j.getString("source"),
-        j.getString("confirmed_by"), j.getLong("confirmed_at")) }
+        j.getString("confirmed_by"), j.getLong("confirmed_at"), j.optBoolean("low_inclusive", true), j.optBoolean("high_inclusive", true),
+        j.optString("plan_id"), j.optString("basis")) }
 }
 
 /** These are different evidence bases. Neither a reference interval nor a historical baseline is a target. */
@@ -142,12 +149,14 @@ internal data class HealthCareConcern(val id: String, val metric: HealthMetric, 
     val updatedAt: Long, val inputVersion: String, val assessment: HealthCareAssessment,
     val stage: HealthCareStage = HealthCareStage.VERIFY_CONTEXT, val context: HealthCareContext? = null,
     val target: HealthCareTarget? = null, val actions: List<HealthCareAction> = emptyList(),
-    val reviewNote: String = "", val reviewedBy: String = "", val conversationId: String = "", val profileId: String = "self") {
+    val reviewNote: String = "", val reviewedBy: String = "", val conversationId: String = "", val profileId: String = "self",
+    val targetRevision: Int = 0) {
     init {
         require(HealthProfilePolicy.uuid(id) && revision > 0 && createdAt > 0 && updatedAt >= createdAt && profileId == "self")
         require(inputVersion.length <= 256 && actions.size <= 30 && actions.map { it.id }.distinct().size == actions.size)
         require(reviewNote.length <= 4000 && reviewedBy.length <= 200 && conversationId.length <= 256)
         require(target == null || target.field in metric.fields && target.unit in metric.units)
+        require(targetRevision >= 0)
         require(stage !in setOf(HealthCareStage.MAINTENANCE, HealthCareStage.CLOSED) || reviewNote.isNotBlank() && reviewedBy.isNotBlank())
     }
     val open get() = stage != HealthCareStage.CLOSED
@@ -157,7 +166,7 @@ internal data class HealthCareConcern(val id: String, val metric: HealthMetric, 
         .put("created_at", createdAt).put("updated_at", updatedAt).put("input_version", inputVersion).put("assessment", assessment.json())
         .put("stage", stage.name).put("context", context?.json() ?: JSONObject.NULL).put("target", target?.json() ?: JSONObject.NULL)
         .put("actions", JSONArray(actions.map { it.json() })).put("review_note", reviewNote).put("reviewed_by", reviewedBy)
-        .put("conversation", conversationId).put("profile", profileId)
+        .put("conversation", conversationId).put("profile", profileId).put("target_revision", targetRevision)
     companion object {
         fun from(j: JSONObject): HealthCareConcern {
             require(j.getInt("schema") == 1)
@@ -166,7 +175,7 @@ internal data class HealthCareConcern(val id: String, val metric: HealthMetric, 
                 HealthCareStage.valueOf(j.getString("stage")), if (j.isNull("context")) null else HealthCareContext.from(j.getJSONObject("context")),
                 if (j.isNull("target")) null else HealthCareTarget.from(j.getJSONObject("target")),
                 j.getJSONArray("actions").let { a -> (0 until a.length()).map { HealthCareAction.from(a.getJSONObject(it)) } },
-                j.getString("review_note"), j.getString("reviewed_by"), j.getString("conversation"), j.getString("profile"))
+                j.getString("review_note"), j.getString("reviewed_by"), j.getString("conversation"), j.getString("profile"), j.optInt("target_revision"))
         }
     }
 }
