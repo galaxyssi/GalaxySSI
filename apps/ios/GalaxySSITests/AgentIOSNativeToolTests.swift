@@ -2,7 +2,8 @@ import UIKit
 import XCTest
 @testable import GalaxySSI
 
-extension GalaxySSIStoreTests {
+@MainActor
+final class AgentPendingNativeOutcomeTests: XCTestCase {
   func testPendingNativeOutcomeRequiresEachExactHostReceiptAndDeclaredPostcondition() throws {
     let mutation = AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate
     let observer = AgentEffectRecoveryRecord.browserObserver
@@ -62,7 +63,9 @@ extension GalaxySSIStoreTests {
     requirements.outcomes = [a.3, weakened]
     XCTAssertEqual(assess(full).settledActionIDs, ["a"])
   }
+}
 
+extension GalaxySSIStoreTests {
   func testDeviceStateEvidenceRequiresTypedReadbackForTheExactRequest() {
     let tool = AgentIOSSystemNativeToolCatalog.audioVolumeSet
     let input: AgentMcpJSONObject = ["stream": .string("media"), "percent": .int(50)]
