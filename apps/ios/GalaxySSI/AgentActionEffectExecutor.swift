@@ -163,6 +163,114 @@ struct AgentEffectRecoveryRecord: Codable, Equatable {
   }
 }
 
+struct AgentOutcomeContinuation: Codable, Equatable {
+  let sessionID: String
+  let conversationID: String
+  let turnID: String
+  let planID: String
+  let revision: Int
+  let pendingDigest: String
+
+  static func pendingIDs(_ task: AgentTaskRecord) -> Set<String> {
+    var ids = Set((task.effectRecovery ?? []).map(\.actionId))
+    let actions = task.activePlan.map { AgentDurablePlanHistoryPolicy.latestSnapshots($0.actionHistory + $0.actions) } ?? []
+    for action in actions where action.kind == .callNativeTool && [.completed, .failed].contains(action.status) {
+      guard let raw = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(action.evidence.utf8)),
+            let output = AgentObservedOutputFields.output(raw),
+            output["dispatch_attempted"] != .bool(false) || output["request_accepted"] != .bool(false) else { continue }
+      let accepted = output["request_accepted"] == .bool(true) || output["dispatch_attempted"] == .bool(true)
+      if output.string("code") == "effect_outcome_unknown" ||
+        (accepted && AgentCompletionEvidencePolicy.hasUnverifiedOutcome(action)) {
+        ids.insert(action.id)
+      }
+    }
+    if let result = task.lastNativeActionResult,
+       result.metadata["error_code"] == "effect_outcome_unknown" ||
+        result.metadata["plan_node_outcome_unknown"] == "true" ||
+        result.metadata["failure_kind"] == "business_outcome_unverified" ||
+        result.metadata["outcome_unverified"] == "true" ||
+        result.metadata[AgentEffectRecoveryRecord.metadataKey] != nil {
+      ids.insert(result.actionId)
+    }
+    return ids
+  }
+
+  static func capture(_ task: AgentTaskRecord) -> Self? {
+    let ids = pendingIDs(task)
+    guard let plan = task.activePlan, plan.executionMode != .planOnly, plan.revision > 0, !plan.planId.isBlank,
+          !task.taskId.isBlank, !task.sessionId.isBlank, !ids.isEmpty, !ids.contains(where: \.isBlank),
+          let scope = AgentPlanContinuationScope.resolve(plan: plan, activeConversationId: task.sessionId,
+            activeTurnId: task.taskId, sessionId: task.sessionId),
+          scope.conversationId == task.sessionId, scope.turnId == task.taskId else { return nil }
+    let actions = plan.executionSnapshots(in: scope)
+    guard ids.isSubset(of: Set(actions.map(\.id))) else { return nil }
+    let effects = task.effectRecovery ?? []
+    guard effects.allSatisfy({ $0.scope.taskId == task.taskId && $0.scope.sessionId == task.sessionId &&
+      $0.scope.conversationId == scope.conversationId && $0.scope.turnId == scope.turnId &&
+      $0.scope.collaborationOwnerDigest == nil }) else { return nil }
+    let receipts = effects.map { effect in
+      AgentModelLoopRecoveryIdentity.sha256(["action": effect.actionId, "tool": effect.toolId,
+        "invocation": effect.invocationId, "input": effect.inputDigest, "version": effect.version])
+    }.sorted()
+    let pending = actions.filter { ids.contains($0.id) }.map { action in
+      AgentModelLoopRecoveryIdentity.sha256(["id": action.id, "kind": action.kind.rawValue,
+        "tool": action.parameters["tool_id"] ?? action.target, "input": action.parameters["input_json"] ?? ""])
+    }.sorted()
+    return .init(sessionID: task.sessionId, conversationID: scope.conversationId, turnID: scope.turnId,
+      planID: plan.planId, revision: plan.revision,
+      pendingDigest: AgentModelLoopRecoveryIdentity.sha256(["actions": pending.joined(separator: ","),
+        "receipts": receipts.joined(separator: ",")]))
+  }
+
+  func permits(_ task: AgentTaskRecord, outgoing: ChatMessage) -> Bool {
+    outgoing.isMine && !outgoing.readOnlyAnalysis && outgoing.sourceConversationId.isBlank &&
+      outgoing.conversationId == conversationID && outgoing.turnId.ifBlank(outgoing.id.uuidString) == turnID &&
+      Self.capture(task) == self
+  }
+
+  static func isUnverified(_ task: AgentTaskRecord) -> Bool {
+    guard !pendingIDs(task).isEmpty || task.outcomeContinuation != nil else { return false }
+    return task.verifiedOutcome == nil || task.verifiedOutcome != capture(task)
+  }
+
+  static func guardCompletion(_ candidate: AgentTaskRecord, previous: AgentTaskRecord? = nil,
+                              message: String = "The original outcome is still unverified. Inspect it before resuming.")
+    -> AgentTaskRecord {
+    var task = candidate
+    if let previous, candidate.phase != .cancelled, isUnverified(previous) {
+      let retained = (previous.effectRecovery ?? []).allSatisfy { effect in
+        (candidate.effectRecovery ?? []).contains {
+          $0.actionId == effect.actionId && $0.scope == effect.scope &&
+            $0.toolId == effect.toolId && $0.invocationId == effect.invocationId && $0.inputDigest == effect.inputDigest
+        }
+      }
+      if !retained || candidate.activePlan == nil && previous.activePlan != nil ||
+        !pendingIDs(previous).isSubset(of: pendingIDs(candidate)) {
+        task = previous
+        task.updatedAtMillis = max(previous.updatedAtMillis, candidate.updatedAtMillis)
+      }
+    }
+    if candidate.phase == .completed {
+      if isUnverified(task) {
+        task.phase = .blocked
+        task.blocked = true
+        task.result = message
+        task.verification = message
+        if task.executionLog.last != message { task.executionLog.append(message) }
+      } else if task.verifiedOutcome != nil {
+        task.outcomeContinuation = nil
+      }
+    }
+    if [.blocked, .failed, .paused].contains(task.phase), isUnverified(task), task.outcomeContinuation == nil {
+      task.outcomeContinuation = previous?.outcomeContinuation ?? capture(task)
+    }
+    if task.phase == .blocked, isUnverified(task) {
+      task.result = task.verification.ifBlank(message)
+    }
+    return task
+  }
+}
+
 /// Durably claims legacy Agent actions before dispatching their external effects.
 final class AgentActionEffectExecutor {
   private let store: AgentNativeToolReplayStore

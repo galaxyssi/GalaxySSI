@@ -233,7 +233,7 @@ struct GalaxySSIAgentRecentTasksView: View {
   }
 
   private func retryTask(_ task: AgentTaskRecord) {
-    if !(store.agentTask(id: task.taskId)?.effectRecovery ?? task.effectRecovery ?? []).isEmpty {
+    if AgentOutcomeContinuation.isUnverified(store.agentTask(id: task.taskId) ?? task) {
       inspectEffect(task)
       return
     }

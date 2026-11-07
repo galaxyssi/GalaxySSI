@@ -1,6 +1,59 @@
 import XCTest
 @testable import GalaxySSI
 
+final class AgentOutcomeContinuationTests: XCTestCase {
+  func testBlockedOutcomeSurvivesCodingAndRejectsChangedOwnerPlanOrEffects() throws {
+    let scope = AgentPlanContinuationScope(conversationId: "conversation", turnId: "turn")
+    let native = AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate
+    let action = scope.bind(AgentAction(id: "effect", kind: .callNativeTool, target: native, risk: .medium,
+      status: .completed, description: "Accepted effect", parameters: ["input_json": #"{"url":"https://example.test"}"#],
+      evidence: #"{"request_accepted":true,"outcome":"unknown"}"#))
+    var plan = AgentPlan(goal: "Fixture", screen: .init(foregroundApp: "Test"), steps: [], actions: [action])
+    plan.executionMode = .autoComplete
+    var task = AgentTaskRecord(taskId: "turn", sessionId: "conversation", goal: "Fixture", phase: .completed,
+      routeKind: .localSystem, targetTitle: "Phone", risk: .medium, blocked: false, activePlan: plan, result: "Success")
+    task.effectRecovery = [.init(scope: .init(sessionId: "conversation", conversationId: "conversation",
+      taskId: "turn", turnId: "turn"), actionId: action.id, toolId: native, version: "1.0.0",
+      inputDigest: "exact-input", invocationId: "accepted-invocation", uncertainAt: 10, query: nil)]
+    let blocked = AgentOutcomeContinuation.guardCompletion(task)
+    XCTAssertEqual(blocked.phase, .blocked)
+    XCTAssertNotEqual(blocked.result, "Success")
+    XCTAssertEqual(blocked.activePlan, task.activePlan)
+    XCTAssertEqual(blocked.effectRecovery, task.effectRecovery)
+    let restored = try JSONDecoder().decode(AgentTaskRecord.self, from: JSONEncoder().encode(blocked))
+    let token = try XCTUnwrap(restored.outcomeContinuation)
+    let outgoing = ChatMessage(contactId: "hermes", content: "Fixture", isMine: true, deliveryStatus: .local,
+      conversationId: "conversation", turnId: "turn")
+    XCTAssertTrue(token.permits(restored, outgoing: outgoing))
+    var wrong = outgoing
+    wrong.turnId = "different-turn"
+    XCTAssertFalse(token.permits(restored, outgoing: wrong))
+    wrong = outgoing
+    wrong.conversationId = "different-conversation"
+    XCTAssertFalse(token.permits(restored, outgoing: wrong))
+    var changed = restored
+    changed.activePlan?.revision += 1
+    XCTAssertFalse(token.permits(changed, outgoing: outgoing))
+    changed = restored
+    changed.activePlan?.actions[0].parameters["input_json"] = "{}"
+    XCTAssertFalse(token.permits(changed, outgoing: outgoing))
+    changed = restored
+    changed.effectRecovery = nil
+    XCTAssertFalse(token.permits(changed, outgoing: outgoing))
+
+    var staleCallback = task
+    staleCallback.activePlan = nil
+    staleCallback.effectRecovery = nil
+    staleCallback.result = "Unrelated success"
+    let retained = AgentOutcomeContinuation.guardCompletion(staleCallback, previous: restored)
+    XCTAssertEqual(retained.phase, .blocked)
+    XCTAssertEqual(retained.outcomeContinuation, token)
+    XCTAssertEqual(retained.effectRecovery, restored.effectRecovery)
+    staleCallback.phase = .waitingResponse
+    XCTAssertEqual(AgentOutcomeContinuation.guardCompletion(staleCallback, previous: restored).phase, .blocked)
+  }
+}
+
 final class AgentActionEffectExecutorTests: XCTestCase {
   private let screen = AgentScreenContext(foregroundApp: "Test", pageTitle: "Action recovery")
 
