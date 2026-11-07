@@ -2183,6 +2183,29 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(added.recruitmentTemplateID, template.id)
     XCTAssertTrue(added.mentionOnly)
     XCTAssertEqual(projection.applying(to: updated), updated)
+    XCTAssertFalse(first.isReusable(added, originalTemplateID: template.id))
+    var optedIn = updated
+    optedIn.members[2].mentionOnly = false
+    let reusable = optedIn.members[2]
+    XCTAssertTrue(first.isReusable(reusable, originalTemplateID: template.id))
+    let templateKey = template.id.uuidString
+    let workerKey = reusable.id.uuidString
+    let work = Graph.Work(id: "sample", member: "recruit:first", assignment: "Check the sample",
+      depends_on: [], dependency_policy: nil, independent_review: nil)
+    let expansion = Graph.WorkflowExpansion(format: "galaxyssi.work-expansion.v1", work: [.work(work)], recruit: [request])
+    let graph = try XCTUnwrap(Graph().appending(expansion, authorizedMembers: [templateKey, workerKey],
+      historicalAuthors: [:], settled: [:], recruitmentTemplates: [templateKey: digest], recruitmentOwner: "run-two",
+      recruitmentDirectory: "group", resolveHistorical: { recruit, _ in
+        recruit.isReusable(reusable, originalTemplateID: template.id) ? workerKey : nil
+      }, resolve: { _ in nil }))
+    let reused = try XCTUnwrap(graph.work.first?.recruitment)
+    XCTAssertEqual(graph.work.first?.member, workerKey)
+    XCTAssertEqual(reused.executionIdentity, workerKey.lowercased())
+    XCTAssertTrue(reused.accepts(reusable, roster: optedIn))
+    XCTAssertFalse(reused.accepts(added, roster: updated))
+    var changedRole = reusable
+    changedRole.role = "Different responsibility"
+    XCTAssertFalse(reused.accepts(changedRole, roster: optedIn))
     var edited = updated
     edited.members[2].name = "Edited by the user"
     XCTAssertEqual(projection.applying(to: edited), edited)

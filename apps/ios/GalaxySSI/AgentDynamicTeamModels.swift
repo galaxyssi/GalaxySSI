@@ -369,6 +369,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     let template: String
     let templateDigest: String
     var directoryID: UUID? = nil
+    var reusedMember: String? = nil
     let role: String
     let scope: String
     let reason: String
@@ -380,10 +381,9 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
       guard request.id.range(of: #"\A[A-Za-z0-9_-]{1,80}\z"#, options: .regularExpression) != nil,
             !role.isEmpty, role.utf8.count <= 240, !scope.isEmpty, scope.utf8.count <= 2_000,
             !reason.isEmpty, reason.utf8.count <= 2_000 else { return nil }
-      func normalize(_ value: String) -> String { value.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ") }
       self.identity = "recruit-" + AgentMcpJSONCodec.sha256(["owner": .string(owner),
         "template": .string(request.template_member), "template_sha256": .string(templateDigest),
-        "role": .string(normalize(role)), "scope": .string(normalize(scope))])
+        "role": .string(Self.normalized(role)), "scope": .string(Self.normalized(scope))])
       self.template = request.template_member
       self.templateDigest = templateDigest
       self.role = role
@@ -392,11 +392,36 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
       if !directoryOwner.isBlank {
         let digest = AgentMcpJSONCodec.sha256(["conversation": .string(directoryOwner),
           "template": .string(AgentTeamProgressPolicy.stableCollaborationMemberId(request.template_member)),
-          "template_sha256": .string(templateDigest), "role": .string(normalize(role)), "scope": .string(normalize(scope))])
+          "template_sha256": .string(templateDigest), "role": .string(Self.normalized(role)), "scope": .string(Self.normalized(scope))])
         let token = Array(digest.prefix(32))
         let groups = [0..<8, 8..<12, 12..<16, 16..<20, 20..<32]
         self.directoryID = UUID(uuidString: groups.map { String(token[$0]) }.joined(separator: "-"))
       }
+    }
+
+    private static func normalized(_ value: String) -> String {
+      value.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
+    var executionMember: String { reusedMember ?? template }
+
+    var executionIdentity: String {
+      if reusedMember != nil, let directoryID { return directoryID.uuidString.lowercased() }
+      return identity
+    }
+
+    func accepts(_ member: AgentCollaborationRoster.Member, roster: AgentCollaborationRoster) -> Bool {
+      guard !member.mentionOnly, Self.templateDigest(member) == templateDigest,
+            let templateID = UUID(uuidString: AgentTeamProgressPolicy.stableCollaborationMemberId(template)),
+            let original = roster.members.first(where: { $0.id == templateID && !$0.mentionOnly && $0.recruitmentTemplateID == nil }),
+            Self.templateDigest(original) == templateDigest else { return false }
+      if reusedMember == nil { return member.id == templateID }
+      return isReusable(member, originalTemplateID: templateID)
+    }
+
+    func isReusable(_ member: AgentCollaborationRoster.Member, originalTemplateID: UUID) -> Bool {
+      member.id == directoryID && member.recruitmentTemplateID == originalTemplateID && !member.mentionOnly &&
+        Self.templateDigest(member) == templateDigest && Self.normalized(member.role) == Self.normalized(role)
     }
 
     static func templateDigest(_ member: AgentCollaborationRoster.Member) -> String {
@@ -510,6 +535,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
                  historicalAuthors: [String: String], settled: [String: Settlement],
                  recruitmentTemplates: [String: String] = [:], recruitmentOwner: String = "",
                  recruitmentDirectory: String = "", authorIdentity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId,
+                 resolveHistorical: (Recruitment, Bool) -> String? = { _, _ in nil },
                  resolve: (AgentCollaborationWorkflowInstance) throws -> [Work]?) rethrows -> Self? {
     guard expansion.format == "galaxyssi.work-expansion.v1", !expansion.work.isEmpty else { return nil }
     var instances = workflowInstances ?? [:]
@@ -523,9 +549,10 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
             expansion.work.contains(where: {
               if case .work(let item) = $0 { return item.member == alias }; return false
             }),
-            let requested = Recruitment(request, owner: recruitmentOwner, templateDigest: digest, directoryOwner: recruitmentDirectory),
+            var requested = Recruitment(request, owner: recruitmentOwner, templateDigest: digest, directoryOwner: recruitmentDirectory),
             directory[alias] == nil || directory[alias]?.identity == requested.identity else { return nil }
       if directory[alias] == nil {
+        requested.reusedMember = resolveHistorical(requested, true)
         directory[alias] = directory.values.first(where: { $0.identity == requested.identity }) ?? requested
       }
     }
@@ -537,7 +564,8 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
         if item.member.hasPrefix("recruit:") {
           guard let binding = directory[item.member], recruitmentTemplates[binding.template] == binding.templateDigest
           else { return nil }
-          item.member = binding.template
+          if let reused = binding.reusedMember, resolveHistorical(binding, false) != reused { return nil }
+          item.member = binding.executionMember
           item.recruitment = binding
         }
         additions.append(item)

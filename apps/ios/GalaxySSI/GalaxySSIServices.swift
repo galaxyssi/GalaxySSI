@@ -8683,7 +8683,8 @@ final class MessageCoordinator: ObservableObject {
         else { return }
         result[worker.memberId] = AgentCollaborationLiveGraph.Recruitment.templateDigest(member)
       } ?? [:]
-      guard let admission = try? history.publishCollaborationMilestone(input, scope: scope, recruitmentTemplates: templates),
+      guard let admission = try? history.publishCollaborationMilestone(input, scope: scope,
+        recruitmentTemplates: templates, recruitmentRoster: roster),
             admission["status"] == .string("work_admitted") else {
         return ["success": .bool(false), "status": .string("work_admission_unavailable")]
       }
@@ -8788,8 +8789,7 @@ final class MessageCoordinator: ObservableObject {
       return unavailable("work_specialist_unavailable")
     }
     if let recruitment = work.recruitment {
-      guard !configured.mentionOnly,
-            recruitment.templateDigest == AgentCollaborationLiveGraph.Recruitment.templateDigest(configured)
+      guard recruitment.accepts(configured, roster: roster)
       else { return unavailable("work_recruit_template_changed") }
     }
     enum Route {
@@ -8852,7 +8852,7 @@ final class MessageCoordinator: ObservableObject {
     guard claim.claimed else { return claim.run.receipt(now: AgentControlPlaneClock.nowMillis()) }
     let dependencies = AgentMcpJSONCodec.stringify(["dependencies": .array(claim.dependencies.map(AgentMcpJSONValue.object))])
     let recruitment = work.recruitment.map {
-      AgentMcpJSONCodec.stringify(["member_id": .string($0.identity), "role": .string($0.role), "scope": .string($0.scope)])
+      AgentMcpJSONCodec.stringify(["member_id": .string($0.executionIdentity), "role": .string($0.role), "scope": .string($0.scope)])
     } ?? "none"
     let prompt = """
       Complete this scoped collaboration assignment. Return the result and any uncertainty.
@@ -9640,8 +9640,7 @@ final class MessageCoordinator: ObservableObject {
           let worker = UUID(uuidString: AgentTeamProgressPolicy.stableCollaborationMemberId(work.member)),
           roster.members.contains(where: { configured in
             configured.id == worker && configured.resourceId == binding.contactID &&
-              (work.recruitment.map { !$0.templateDigest.isBlank && !configured.mentionOnly &&
-                $0.templateDigest == AgentCollaborationLiveGraph.Recruitment.templateDigest(configured) } ?? true)
+              (work.recruitment.map { $0.accepts(configured, roster: roster) } ?? true)
           }),
           let task = store.agentTask(id: binding.owner.turnId), task.sessionId == binding.owner.conversationId,
           !task.blocked, task.phase != .cancelled, !PhoneExecutionAuthority.isCancelled(taskId: task.taskId),
