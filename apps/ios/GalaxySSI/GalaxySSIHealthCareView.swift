@@ -143,6 +143,7 @@ private struct GalaxySSIHealthCareDetail: View {
   @State private var context = GalaxySSIHealthCare.Context.Applicability.unknown
   @State private var failed = false
   @State private var confirmingDelete = false
+  @State private var deletionCandidate: GalaxySSIHealthCare.Concern?
 
   var body: some View {
     List {
@@ -225,7 +226,10 @@ private struct GalaxySSIHealthCareDetail: View {
           }
           if hasMore { Button(t("more", "Show more")) { loadHistory(append: true) } }
         }
-        Button(t("remove", "Delete concern"), role: .destructive) { confirmingDelete = true }
+        Button(t("remove", "Delete concern"), role: .destructive) {
+          deletionCandidate = concern
+          confirmingDelete = true
+        }
       }
       if scene == .active, failed { Text(t("unavailable", "Local health review could not be loaded.")) }
     }
@@ -235,9 +239,11 @@ private struct GalaxySSIHealthCareDetail: View {
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) {
       if $0.object as? String == records.owner { reload() }
     }
-    .confirmationDialog(t("remove", "Delete concern"), isPresented: $confirmingDelete, titleVisibility: .visible) {
+    .confirmationDialog(t("remove", "Delete concern"), isPresented: $confirmingDelete,
+                        titleVisibility: .visible, presenting: deletionCandidate) { candidate in
       Button(t("remove", "Delete concern"), role: .destructive) {
-        if let concern { perform { try records.deleteLocalCare(concern); dismiss() } }
+        deletionCandidate = nil
+        perform { try records.deleteLocalCare(candidate); dismiss() }
       }
     }
   }
@@ -246,7 +252,7 @@ private struct GalaxySSIHealthCareDetail: View {
     guard scene == .active, let archive = try? records.load(), archive.localCareAllowed == true,
           let current = archive.localCare?.current[metric.rawValue], current.id == id else {
       concern = nil; history = []; measurement = nil; reason = ""; targetValue = ""; targetSource = ""
-      rationale = ""; confirmedBy = ""; confirmingDelete = false; context = .unknown
+      rationale = ""; confirmedBy = ""; confirmingDelete = false; deletionCandidate = nil; context = .unknown
       return
     }
     concern = current
@@ -266,6 +272,7 @@ private struct GalaxySSIHealthCareDetail: View {
   private func perform(_ action: () throws -> Void) {
     guard scene == .active else { return }
     do { try action(); failed = false; reload() }
+    catch GalaxySSIHealthRecords.Failure.stale { try? records.reconcileLocalCare(); failed = true; reload() }
     catch { failed = true; reload() }
   }
 

@@ -503,12 +503,14 @@ struct GalaxySSIHealthRecords {
     try updateLocalCare(concern, now: target.confirmedAt) { current, _ in current.target = target }
   }
 
-  func deleteLocalCare(_ concern: GalaxySSIHealthCare.Concern) throws {
+  func deleteLocalCare(_ concern: GalaxySSIHealthCare.Concern, now: Date = Date()) throws {
     var archive = try load()
     guard archive.localCareAllowed == true else { throw Failure.permission }
     let key = concern.metric.rawValue
     guard var ledger = archive.localCare, ledger.current[key] == concern else { throw Failure.stale }
-    let readings = archive.current.filter { $0.metric == concern.metric && $0.isValid && $0.measuredAt <= Date() }
+    let readings = archive.current.filter { $0.metric == concern.metric && $0.isValid && $0.measuredAt <= now }
+    guard (GalaxySSIHealthCare.assess(readings, context: concern.context) ?? .removed) == concern.assessment
+    else { throw Failure.stale }
     ledger.deletedInput[key] = try GalaxySSIHealthCare.inputDigest(GalaxySSIHealthCare.assess(readings, context: nil) ?? .removed)
     ledger.current.removeValue(forKey: key)
     ledger.history.removeValue(forKey: concern.id.uuidString)
