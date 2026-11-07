@@ -182,7 +182,7 @@ struct GalaxySSIHealthTrendView: View {
   @Environment(\.locale) private var locale
   let records: GalaxySSIHealthRecords
   private let fixedMetric: GalaxySSIHealthMetric?
-  private let recordMeasurement: (GalaxySSIHealthMetric) -> Void
+  private let recordMeasurement: ((GalaxySSIHealthMetric) -> Void)?
   @State private var metric: GalaxySSIHealthMetric
   @State private var component = GalaxySSIHealthTrend.Component.value
   @State private var selectedUnit: String?
@@ -199,6 +199,7 @@ struct GalaxySSIHealthTrendView: View {
   @State private var trendVersions: [String] = []
   @State private var explanation: GalaxySSIHealthTrendAnalysis?
   @State private var recordAfterExplanation: GalaxySSIHealthMetric?
+  @State private var fallbackEditor: GalaxySSIHealthMetric?
   @State private var selected: GalaxySSIHealthTrend.Point?
   @State private var changed = false
   @State private var error = false
@@ -210,7 +211,7 @@ struct GalaxySSIHealthTrendView: View {
   @State private var selectedOriginTitle: String?
 
   init(records: GalaxySSIHealthRecords, fixedMetric: GalaxySSIHealthMetric? = nil,
-       recordMeasurement: @escaping (GalaxySSIHealthMetric) -> Void) {
+       recordMeasurement: ((GalaxySSIHealthMetric) -> Void)? = nil) {
     self.records = records
     self.fixedMetric = fixedMetric
     self.recordMeasurement = recordMeasurement
@@ -325,12 +326,17 @@ struct GalaxySSIHealthTrendView: View {
       invalidate()
     }
     .onChange(of: scene) { phase in
-      if phase != .active { trendVersions = []; explanation = nil; recordAfterExplanation = nil }
+      if phase != .active {
+        trendVersions = []; explanation = nil; recordAfterExplanation = nil; fallbackEditor = nil
+      }
     }
     .sheet(item: $explanation, onDismiss: {
       if let metric = recordAfterExplanation {
         recordAfterExplanation = nil
-        if scene == .active { recordMeasurement(metric) }
+        if scene == .active {
+          if let recordMeasurement { recordMeasurement(metric) }
+          else { fallbackEditor = metric }
+        }
       }
     }) { route in
       NavigationView {
@@ -341,6 +347,14 @@ struct GalaxySSIHealthTrendView: View {
         .toolbar { ToolbarItem(placement: .cancellationAction) {
           Button(t("done", "Done")) { explanation = nil }
         } }
+      }.navigationViewStyle(.stack)
+    }
+    .sheet(item: $fallbackEditor, onDismiss: reload) { metric in
+      NavigationView {
+        GalaxySSIHealthCenterView(records: records, initialRecordMetric: metric)
+          .toolbar { ToolbarItem(placement: .cancellationAction) {
+            Button(t("done", "Done")) { fallbackEditor = nil }
+          } }
       }.navigationViewStyle(.stack)
     }
     .sheet(item: $selected) { point in

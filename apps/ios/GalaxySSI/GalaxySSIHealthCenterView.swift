@@ -20,6 +20,12 @@ struct GalaxySSIHealthCenterView: View {
   @State private var sourceAttention: [GalaxySSIHealthSourceAttention.Incident] = []
   @State private var sourceCoverage: GalaxySSIHealthSourceAttention?
   @State private var sourceAttentionUnavailable = false
+  @State private var initialRecordMetric: GalaxySSIHealthMetric?
+
+  init(records: GalaxySSIHealthRecords, initialRecordMetric: GalaxySSIHealthMetric? = nil) {
+    self.records = records
+    _initialRecordMetric = State(initialValue: initialRecordMetric)
+  }
   @State private var sourceRecovery: GalaxySSIHealthSourceAttention.Incident?
 
   private enum Notice: String, Identifiable {
@@ -200,7 +206,14 @@ struct GalaxySSIHealthCenterView: View {
     }
     .navigationTitle(t("title", "Health Center"))
     .navigationBarTitleDisplayMode(.inline)
-    .onAppear { if scenePhase == .active { reload() } }
+    .onAppear {
+      guard scenePhase == .active else { return }
+      reload()
+      if let metric = initialRecordMetric {
+        initialRecordMetric = nil
+        editor = archive?.draft ?? GalaxySSIHealthDraft(metric: metric)
+      }
+    }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { notification in
       if notification.object as? String == records.owner, editor == nil, scenePhase == .active { reload() }
     }
