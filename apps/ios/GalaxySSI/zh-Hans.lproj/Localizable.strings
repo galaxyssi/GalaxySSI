@@ -1362,6 +1362,9 @@
 "galaxyssi.agent_runtime.audit_summary" = "%d 个事件";
 "galaxyssi.agent_runtime.audit_detail" = "%@ / %@ / %@";
 "galaxyssi.agent.task_control.cancel" = "取消任务";
+"galaxyssi.managed_browser.resume_task" = "继续任务";
+"galaxyssi.managed_browser.pause_task" = "暂停任务";
+"galaxyssi.managed_browser.control_failed" = "无法更改任务控制状态。";
 "galaxyssi.agent.task_details" = "详情";
 "galaxyssi.agent_runtime.collapse" = "收起";
 "galaxyssi.agent_runtime.expand" = "展开";

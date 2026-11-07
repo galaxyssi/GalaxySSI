@@ -520,6 +520,8 @@ struct GalaxySSIAgentTeamDetailView: View {
   @State private var recoveryRetry = AgentTeamRecoveryRetryState()
   @State private var browserHandoff: AgentManagedBrowserPresentation?
   @State private var browserRevision = 0
+  @State private var confirmBrowserStop = false
+  @State private var browserControlFailed = false
 
   private var canReadMailbox: Bool {
     guard let session = store.agentSession(id: snapshot.conversationId), session.id == snapshot.conversationId,
@@ -548,6 +550,7 @@ struct GalaxySSIAgentTeamDetailView: View {
             badge: GalaxySSIAgentTeamPresentation.stateLabel(snapshot.state, language: interfaceLanguage)
           )
           overview
+          managedBrowserControls
           ForEach(coordinator.managedBrowserRequests(runID: snapshot.supervisorRunId)) { request in
             Button { browserHandoff = request } label: {
               Label(t("galaxyssi.managed_browser.open", "Take browser control"), systemImage: "safari")
@@ -599,9 +602,49 @@ struct GalaxySSIAgentTeamDetailView: View {
     .sheet(item: $browserHandoff) { request in
       GalaxySSIManagedBrowserHandoffView(request: request).environmentObject(coordinator)
     }
+    .confirmationDialog(t("galaxyssi.agent.task_control.cancel", "Cancel task"), isPresented: $confirmBrowserStop) {
+      Button(t("galaxyssi.agent.task_control.cancel", "Cancel task"), role: .destructive) {
+        setManagedBrowserControl(.stop)
+      }
+    }
     .onChange(of: canReadMailbox) { _ in recentMessages = []; mailboxRevision &+= 1 }
     .onChange(of: store.profile.identityFingerprint) { _ in recentMessages = []; mailboxRevision &+= 1 }
     .onChange(of: snapshot.supervisorRunId) { _ in recentMessages = []; mailboxRevision &+= 1 }
+  }
+
+  @ViewBuilder
+  private var managedBrowserControls: some View {
+    if let state = coordinator.managedBrowserTaskControl(runID: snapshot.supervisorRunId, taskID: snapshot.taskId),
+       state == .run || state == .pause {
+      HStack(spacing: 16) {
+        if state == .pause {
+          Button {
+            setManagedBrowserControl(.run)
+          } label: {
+            Label(t("galaxyssi.managed_browser.resume_task", "Resume task"), systemImage: "play")
+          }
+        } else {
+          Button {
+            setManagedBrowserControl(.pause)
+          } label: {
+            Label(t("galaxyssi.managed_browser.pause_task", "Pause task"), systemImage: "pause")
+          }
+        }
+        Button(role: .destructive) { confirmBrowserStop = true } label: {
+          Label(t("galaxyssi.agent.task_control.cancel", "Cancel task"), systemImage: "stop")
+        }
+      }
+      .id(browserRevision)
+    }
+    if browserControlFailed {
+      Text(t("galaxyssi.managed_browser.control_failed", "Task control could not be changed."))
+        .font(.footnote).foregroundColor(.secondary)
+    }
+  }
+
+  private func setManagedBrowserControl(_ intent: AgentManagedBrowserContinuationStore.Control) {
+    browserControlFailed = !coordinator.changeManagedBrowserTaskControl(intent,
+      runID: snapshot.supervisorRunId, taskID: snapshot.taskId)
   }
 
   private func refreshRecoveryRetry() {

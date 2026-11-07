@@ -22,6 +22,7 @@ final class MessageCoordinator: ObservableObject {
   private lazy var managedBrowserContinuations = AgentManagedBrowserContinuationStore(secrets: store.secrets)
   private var liveManagedBrowserMembers: Set<String> = []
   private var managedBrowserRecoveryInFlight: Set<String> = []
+  private var managedBrowserInference: [String: Task<AgentIOSLocalModelWebToolCompletion, Error>] = [:]
   private var liveManagedBrowserTeams: Set<String> = []
   private var activeGoalWorkDrains: Set<String> = []
   private var activeGoalWorkSlots: [String: Int] = [:]
@@ -4630,7 +4631,7 @@ final class MessageCoordinator: ObservableObject {
         lastError = budget.localizedDescription
         return false
       } catch {
-        if error is AgentManagedBrowserContinuationStore.Failure { return false }
+        if error is AgentManagedBrowserContinuationStore.Failure || error is CancellationError { return false }
         lastError = error.localizedDescription
         if let wire = collaborationPlan.actions.first?.parameters[agentTeamSpecParameter],
            let spec = AgentTeamDispatchSpecCodec.decode(wire),
@@ -6210,10 +6211,18 @@ final class MessageCoordinator: ObservableObject {
 
   @discardableResult
   func pauseLocalNativeAction(taskId: String) -> Bool {
-    guard var task = store.agentTask(id: taskId),
-          AgentTaskCenterPolicy.pauseable(task) else {
-      return false
+    guard var task = store.agentTask(id: taskId) else { return false }
+    if let scope = managedBrowserRunScope(for: task),
+       task.phase == .waitingResponse || AgentTaskCenterPolicy.pauseable(task) {
+      guard writeManagedBrowserControl(.pause, scope: scope) else { return false }
+      task.phase = .paused
+      task.teamRecoveryRunId = scope.runID
+      task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+      store.upsertAgentTask(task)
+      signalManagedBrowserControl(scope)
+      return true
     }
+    guard AgentTaskCenterPolicy.pauseable(task) else { return false }
     let captureWait = task.capturePermission
     if captureWait != nil {
       capturePermissionRequests.invalidate(taskId: taskId)
@@ -6236,10 +6245,18 @@ final class MessageCoordinator: ObservableObject {
 
   @discardableResult
   func resumeLocalNativeAction(taskId: String, automatic: Bool = false) -> Bool {
-    guard var task = store.agentTask(id: taskId),
-          task.phase == .paused else {
-      return false
+    guard var task = store.agentTask(id: taskId) else { return false }
+    if !automatic, let scope = managedBrowserRunScope(for: task),
+       (try? managedBrowserContinuations.control(scope: scope)) == .pause {
+      guard writeManagedBrowserControl(.run, scope: scope) else { return false }
+      if let resumed = AgentSavedTeamReplyPolicy.reconcileRecoveryWait(task, runId: scope.runID,
+        cancelled: false, verification: task.verification, now: AgentControlPlaneClock.nowMillis()) {
+        store.upsertAgentTask(resumed)
+      }
+      signalManagedBrowserControl(scope)
+      return true
     }
+    guard task.phase == .paused else { return false }
     if let wait = task.capturePermission {
       guard !automatic, !wait.dispatched, !PhoneExecutionAuthority.isCancelled(taskId: taskId),
             let outgoing = capturePermissionMessage(wait),
@@ -6341,7 +6358,10 @@ final class MessageCoordinator: ObservableObject {
           AgentTaskCenterPolicy.canRequestCancellation(task.phase) else {
       return false
     }
+    let browserScope = managedBrowserRunScope(for: task)
+    if let browserScope, !writeManagedBrowserControl(.stop, scope: browserScope) { return false }
     let timestamp = max(task.updatedAtMillis, Int64(Date().timeIntervalSince1970 * 1_000))
+    defer { if let browserScope { signalManagedBrowserControl(browserScope) } }
     guard store.persistLocalWorkspaceCancellation(for: task, at: timestamp) else { return false }
     PhoneExecutionAuthority.requestCancellation(taskId: task.taskId)
     if task.pendingAction != nil || !task.pendingActions.isEmpty || task.capturePermission != nil {
@@ -8295,6 +8315,13 @@ final class MessageCoordinator: ObservableObject {
           throw GalaxySSIError.invalidPayload(localizedReply("galaxyssi.collaboration.member_binding_invalid",
             fallback: "A collaboration member or its assigned model changed. Check the group settings and try again."))
         }
+        if frozenDispatch != nil {
+          let scope = AgentManagedBrowserContinuationStore.RunScope(profileID: profileIdentity, team: savedTeam,
+            hostContextDigest: managedBrowserContextDigest(savedTeam))
+          let control = try managedBrowserContinuations.control(scope: scope)
+          if control == .stop { throw CancellationError() }
+          if control == .pause { throw AgentManagedBrowserContinuationStore.Failure.notReady }
+        }
       }
       if recovery != nil {
         let history = AgentTeamExecutionHistoryStore.shared
@@ -9540,6 +9567,76 @@ final class MessageCoordinator: ObservableObject {
     ])
   }
 
+  private func managedBrowserRunScope(for task: AgentTaskRecord) -> AgentManagedBrowserContinuationStore.RunScope? {
+    let profile = store.profile.identityFingerprint
+    let candidates = managedBrowserContinuations.pendingTeamDispatches(profileID: profile).filter {
+      $0.turnID == task.taskId && $0.conversationID == task.sessionId &&
+        (task.teamRecoveryRunId == nil || $0.runID == task.teamRecoveryRunId)
+    }
+    guard candidates.count == 1, let dispatch = candidates.first else { return nil }
+    return managedBrowserRunScope(dispatch)
+  }
+
+  private func managedBrowserRunScope(_ dispatch: AgentManagedBrowserTeamDispatch)
+    -> AgentManagedBrowserContinuationStore.RunScope? {
+    let profile = store.profile.identityFingerprint
+    guard let session = store.agentSession(id: dispatch.conversationID), session.id == dispatch.conversationID,
+          !session.privateMode, session.mergedIntoConversationId.isBlank, session.collaborationRoster != nil,
+          let outgoing = store.persistedMessage(id: dispatch.outgoingID, contactId: dispatch.contactID),
+          let team = AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: dispatch.runID),
+          dispatch.matches(team, outgoing: outgoing, profileID: profile), !team.state.deliverable else { return nil }
+    return .init(profileID: profile, team: team, hostContextDigest: managedBrowserContextDigest(team))
+  }
+
+  private func writeManagedBrowserControl(_ intent: AgentManagedBrowserContinuationStore.Control,
+      scope: AgentManagedBrowserContinuationStore.RunScope) -> Bool {
+    (try? managedBrowserContinuations.writeControl(intent, scope: scope)) == true
+  }
+
+  private func signalManagedBrowserControl(_ scope: AgentManagedBrowserContinuationStore.RunScope) {
+    guard scope.profileID == store.profile.identityFingerprint else { return }
+    NotificationCenter.default.post(name: AgentManagedBrowserContinuationStore.changed, object: scope.runID)
+    recoverManagedBrowserMembers(bindings: managedBrowserContinuations.indexedBindings(scope: scope))
+    recoverManagedBrowserTeams(runID: scope.runID)
+  }
+
+  func managedBrowserTaskControl(runID: String, taskID: String) -> AgentManagedBrowserContinuationStore.Control? {
+    guard let scope = managedBrowserRunScope(runID: runID, taskID: taskID) else { return nil }
+    do {
+      if let intent = try managedBrowserContinuations.control(scope: scope) { return intent }
+    } catch { return nil }
+    if store.agentTask(id: taskID)?.phase == .cancelled { return .stop }
+    return .run
+  }
+
+  private func managedBrowserRunScope(runID: String, taskID: String) -> AgentManagedBrowserContinuationStore.RunScope? {
+    guard let dispatch = managedBrowserContinuations.pendingTeamDispatches(profileID: store.profile.identityFingerprint)
+      .first(where: { $0.runID == runID && $0.turnID == taskID }) else { return nil }
+    return managedBrowserRunScope(dispatch)
+  }
+
+  func changeManagedBrowserTaskControl(_ intent: AgentManagedBrowserContinuationStore.Control,
+                                       runID: String, taskID: String) -> Bool {
+    guard let scope = managedBrowserRunScope(runID: runID, taskID: taskID),
+          let current = managedBrowserTaskControl(runID: runID, taskID: taskID),
+          current != .stop, intent != .unavailable, current != intent else { return false }
+    if let task = store.agentTask(id: taskID), managedBrowserRunScope(for: task) == scope {
+      switch intent {
+      case .run: return resumeLocalNativeAction(taskId: taskID)
+      case .pause:
+        if task.phase == .waitingResponse || AgentTaskCenterPolicy.pauseable(task) {
+          return pauseLocalNativeAction(taskId: taskID)
+        }
+      case .stop:
+        if AgentTaskCenterPolicy.canRequestCancellation(task.phase) { return cancelLocalAgentTask(taskId: taskID) }
+      case .unavailable: return false
+      }
+    }
+    guard writeManagedBrowserControl(intent, scope: scope) else { return false }
+    signalManagedBrowserControl(scope)
+    return true
+  }
+
   private func managedBrowserControl(_ binding: AgentManagedBrowserDispatchBinding) -> AgentManagedBrowserContinuationStore.Control {
     let owner = binding.owner
     guard binding.profileID == store.profile.identityFingerprint,
@@ -9556,7 +9653,12 @@ final class MessageCoordinator: ObservableObject {
     if team.state == .cancelled || member.status == .cancelled || store.agentTask(id: owner.turnId)?.phase == .cancelled {
       return .stop
     }
-    if session.trackingPaused || store.agentTask(id: owner.turnId)?.phase == .paused { return .pause }
+    let intent: AgentManagedBrowserContinuationStore.Control?
+    do { intent = try managedBrowserContinuations.control(scope: .init(binding)) }
+    catch { return .unavailable }
+    if intent == .stop { return .stop }
+    if session.trackingPaused || intent == .pause ||
+      (intent != .run && store.agentTask(id: owner.turnId)?.phase == .paused) { return .pause }
     if member.status == .succeeded || (!member.status.isTerminal && team.state == .running) ||
       (member.status == .interrupted && team.state == .interrupted) { return .run }
     return .unavailable
@@ -9701,22 +9803,29 @@ final class MessageCoordinator: ObservableObject {
             else { return false }
             return AgentIOSLocalModelWebToolRunner.collaborationRecallIsAuthorized(owner, database: database)
           }
-          let completion: AgentIOSLocalModelWebToolCompletion
-          do {
-            completion = try await withTransientAgentSlot(target: target, sourceMessageId: owner.sourceId) {
+          let job = Task { @MainActor in
+            try await self.withTransientAgentSlot(target: target, sourceMessageId: owner.sourceId) {
               try await AgentIOSLocalModelWebToolRunner.run(prompt: input.prompt, profile: profile,
                 hasAttachments: input.hasAttachments, sessionID: owner.conversationId, conversationID: owner.conversationId,
                 turnID: owner.turnId, taskID: owner.sourceId, baseSystemPrompt: input.systemPrompt, registry: runtime.registry,
                 collaborationRecallScope: owner, collaborationOwner: owner,
-                collaborationConversationDatabase: store.agentConversationDatabase,
+                collaborationConversationDatabase: self.store.agentConversationDatabase,
                 managedBrowser: execution, managedInput: input,
-                managedJournal: EncryptedAgentModelLoopJournal(secrets: store.secrets,
+                managedJournal: EncryptedAgentModelLoopJournal(secrets: self.store.secrets,
                   storageKey: "galaxyssi.agent.managed-browser-loop." + binding.key))
             }
+          }
+          managedBrowserInference[binding.key] = job
+          defer { managedBrowserInference.removeValue(forKey: binding.key) }
+          let completion: AgentIOSLocalModelWebToolCompletion
+          do {
+            completion = try await withTaskCancellationHandler(operation: { try await job.value }, onCancel: { job.cancel() })
           } catch AgentIOSLocalModelWebToolError.waitingForBrowserControl {
             NotificationCenter.default.post(name: AgentManagedBrowserContinuationStore.changed, object: owner.runId)
             return nil
           } catch {
+            let control = managedBrowserControl(binding)
+            if control == .stop || control == .pause { return nil }
             if error is CancellationError { throw error }
             throw AgentManagedBrowserContinuationStore.Failure.unavailable
           }
@@ -9751,17 +9860,29 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
-  private func recoverManagedBrowserMembers() {
-    for binding in managedBrowserContinuations.pendingBindings(profileID: store.profile.identityFingerprint)
-      where !liveManagedBrowserMembers.contains(binding.key) && managedBrowserRecoveryInFlight.insert(binding.key).inserted {
+  private func recoverManagedBrowserMembers(bindings: [AgentManagedBrowserDispatchBinding]? = nil) {
+    let pending = bindings ?? managedBrowserContinuations.pendingBindings(profileID: store.profile.identityFingerprint)
+    for binding in pending {
+      if bindings == nil { try? managedBrowserContinuations.backfillWakeIndex(binding) }
+      let control = managedBrowserControl(binding)
+      if control == .stop {
+        managedBrowserInference[binding.key]?.cancel()
+        try? managedBrowserContinuations.retireStoppedBinding(binding)
+      }
+      guard control == .run || control == .stop, !liveManagedBrowserMembers.contains(binding.key),
+            managedBrowserRecoveryInFlight.insert(binding.key).inserted else { continue }
       Task { @MainActor [weak self] in
         guard let self else { return }
         defer { self.managedBrowserRecoveryInFlight.remove(binding.key) }
+        let wasStopping = self.managedBrowserControl(binding) == .stop
         _ = try? await self.driveManagedBrowserMember(binding, mode: .recovery)
+        if !wasStopping && self.managedBrowserControl(binding) == .stop {
+          _ = try? await self.driveManagedBrowserMember(binding, mode: .recovery)
+        }
         self.recoverManagedBrowserTeams(runID: binding.owner.runId)
       }
     }
-    recoverManagedBrowserTeams()
+    if bindings == nil { recoverManagedBrowserTeams() }
   }
 
   private func recoverManagedBrowserTeams(runID: String? = nil) {
@@ -9787,12 +9908,33 @@ final class MessageCoordinator: ObservableObject {
         }
         continue
       }
+      let scope = AgentManagedBrowserContinuationStore.RunScope(profileID: profile, team: team,
+        hostContextDigest: managedBrowserContextDigest(team))
+      let intent: AgentManagedBrowserContinuationStore.Control?
+      do {
+        intent = try managedBrowserContinuations.control(scope: scope)
+        if intent == .stop {
+          if managedBrowserContinuations.indexedBindings(scope: scope).isEmpty,
+             managedBrowserContinuations.pendingBindings(profileID: profile, runID: input.runID).isEmpty {
+            try? managedBrowserContinuations.finishTeamDispatch(input)
+          }
+          continue
+        }
+        if intent == .pause { continue }
+      } catch { continue }
       guard team.state == .running || team.state == .interrupted else { continue }
       if team.state == .interrupted && team.members.contains(where: {
         $0.status == .interrupted && $0.dispatchCheckpoint != .notStarted
       }) { continue }
-      let phase = store.agentTask(id: input.turnID)?.phase
-      if phase == .paused || phase == .blocked || phase == .cancelled || phase == .failed { continue }
+      if let parent = store.agentTask(id: input.turnID) {
+        if [.blocked, .cancelled, .failed].contains(parent.phase) { continue }
+        if parent.phase == .paused {
+          guard intent == .run, parent.teamRecoveryRunId == input.runID,
+                let resumed = AgentSavedTeamReplyPolicy.reconcileRecoveryWait(parent, runId: input.runID,
+                  cancelled: false, verification: parent.verification, now: AgentControlPlaneClock.nowMillis()),
+                store.replaceAgentTaskForRecovery(expected: parent, updated: resumed) else { continue }
+        }
+      }
       let pending = managedBrowserContinuations.pendingBindings(profileID: profile, runID: input.runID)
       guard !pending.contains(where: { binding in
         team.members.contains { $0.memberId == binding.owner.memberId &&
