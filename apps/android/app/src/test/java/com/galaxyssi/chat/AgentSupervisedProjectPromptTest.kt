@@ -977,6 +977,20 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `scoped health discussion exposes the complete plan proposal schema`() {
+        val tool = HealthCarePlanTool.definition { _, _ -> error("Manifest rendering must not execute a tool") }.descriptor
+        val context = request("Discuss this authorized concern").runtimeContext.copy(nativeTools = listOf(tool),
+            capabilityMatrix = AgentRuntimeCapabilitySnapshot.EMPTY)
+        listOf(false, true).forEach { phoneControl ->
+            val manifest = AgentSupervisedProjectToolInventory.render(context, maximumSchemaCharacters = 80, phoneControl = phoneControl)
+            assertTrue(manifest.contains(tool.id))
+            assertTrue(manifest.contains(AgentNativeJsonCodec.stringify(tool.inputSchema.document)))
+            assertTrue(manifest.contains("source_index")); assertTrue(manifest.contains("due_until"))
+            assertFalse(manifest.contains("concurrency=parallel_read_only"))
+        }
+    }
+
+    @Test
     fun `project tool manifest falls back to descriptor availability without a capability snapshot`() {
         val available = projectToolDescriptor(AgentMobileProjectNativeTools.CLONE)
         val unavailable = projectToolDescriptor(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST).copy(

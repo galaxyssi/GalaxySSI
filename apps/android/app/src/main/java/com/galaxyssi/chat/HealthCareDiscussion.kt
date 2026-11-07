@@ -73,7 +73,7 @@ internal object HealthCareDiscussion {
             val screen = ScreenContext(context.packageName, pageTitle = "Health discussion")
             val safeRuntime = runtime.copy(goal = goal, screen = screen, memoryCapture = false, memories = emptyList(),
                 knowledgeItems = emptyList(), systemTools = emptyList(), callableTargets = listOf(target),
-                nativeTools = runtime.nativeTools.filter { it.id in HealthCareDiscussionPolicy.researchTools })
+                nativeTools = runtime.nativeTools.filter { it.id in HealthCareDiscussionPolicy.discussionTools })
             val request = AgentRequest(goal, screen, listOf(target), memories = emptyList(), runtimeContext = safeRuntime,
                 conversationContext = history, executionTurnId = grant.turnId)
             val base = RuleBasedAgentPlanner(context).supervisedProjectActions(request)?.singleOrNull() ?: error("No health discussion route")
@@ -157,7 +157,7 @@ internal object HealthCareDiscussion {
         val granted = HealthCareStore(context).use { it.discussionGrant(turn) } ?: return context.getString(R.string.health_care_discussion_expired)
         val allowed = when (action.kind) {
             AgentActionKind.DRAFT_PLAN -> true
-            AgentActionKind.CALL_NATIVE_TOOL -> action.parameters["tool_id"] in HealthCareDiscussionPolicy.researchTools
+            AgentActionKind.CALL_NATIVE_TOOL -> action.parameters["tool_id"] in HealthCareDiscussionPolicy.discussionTools
             AgentActionKind.CALL_CONNECTOR -> action.parameters["connector_id"] == granted.targetId &&
                 action.parameters["agent_model_id"].orEmpty() == granted.modelId &&
                 action.parameters["agent_reasoning_effort"].orEmpty() == granted.effort &&
@@ -170,8 +170,8 @@ internal object HealthCareDiscussion {
     fun toolRejection(context: Context, tool: AgentNativeToolDescriptor, invocation: AgentNativeToolInvocationContext): String? {
         if (!bound(context, invocation.conversationId)) return null
         return rejection(context, invocation.conversationId, invocation.turnId)
-            ?: if (tool.id !in HealthCareDiscussionPolicy.researchTools) context.getString(R.string.health_care_discussion_scope)
-            else if (tool.id !in setOf(AgentToolDiscoveryTools.ID, AgentToolInspectionTools.DESCRIBE, AgentConversationRecallTool.ID) &&
+            ?: if (tool.id !in HealthCareDiscussionPolicy.discussionTools) context.getString(R.string.health_care_discussion_scope)
+            else if (tool.id !in setOf(AgentToolDiscoveryTools.ID, AgentToolInspectionTools.DESCRIBE, AgentConversationRecallTool.ID, HealthCarePlanTool.ID) &&
                 !HealthPrivacyStore(context).use { it.policy().online }) context.getString(R.string.health_care_discussion_online)
             else null
     }

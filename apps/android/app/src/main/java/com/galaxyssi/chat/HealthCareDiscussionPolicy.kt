@@ -40,6 +40,7 @@ internal object HealthCareDiscussionPolicy {
     val researchTools = setOf("web.search", "web.open", "galaxyssi.web.head", "galaxyssi.web.fetch",
         "galaxyssi.web.intelligence.search", "galaxyssi.web.intelligence.fetch",
         "galaxyssi.tools.discover", "galaxyssi.tools.describe", "galaxyssi.phone.conversation.recall")
+    val discussionTools get() = researchTools + HealthCarePlanTool.ID
 
     fun snapshot(value: HealthCareConcern): String = JSONObject()
         .put("metric", value.metric.name).put("revision", value.revision).put("stage", value.stage.name)
@@ -58,6 +59,11 @@ internal object HealthCareDiscussionPolicy {
         source as freshly verified. Explain uncertainty, appropriate next steps and urgent warning signs when
         relevant. Do not change medications or promise to detect all emergencies. Suggestions and follow-up
         windows remain proposals, not saved plans or scheduled reminders; these require separate confirmation.
+        When enough context and evidence support a practical next step, submit a final draft with
+        galaxyssi.health.plan.propose. Include source versions, applicability, remaining uncertainty and
+        reasons for any review window. Never invent a deadline when the evidence does not support one.
+        The tool only stores a pending proposal: the user reviews each item in the Agent page.
+        If context is insufficient, ask a focused question instead of manufacturing a plan.
         Do not claim an action was performed without an execution receipt. Do not call other models, access
         unrelated records or write memories. Only the supplied concern and this private discussion are in scope.
 
