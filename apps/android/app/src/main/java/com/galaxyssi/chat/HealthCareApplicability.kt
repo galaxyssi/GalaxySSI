@@ -94,8 +94,11 @@ internal object HealthCareApplicabilityPolicy {
         return if (matches) HealthCareCheckResult.MATCH else HealthCareCheckResult.MISMATCH
     }
     fun validate(review: HealthCareApplicability, action: HealthCareAction, sources: List<HealthCarePlanSource>) {
-        require(review.checks.all { it.sourceIndex in sources.indices } && review.conflicts.all { c -> c.sourceIndices.all { it in sources.indices } })
+        validateSources(review, sources)
         if (review.mode == HealthCareApplicabilityMode.DISCUSSION_ONLY) require(action.kind in setOf(HealthCareActionKind.CONTEXT, HealthCareActionKind.CLINICIAN_DISCUSSION))
+    }
+    fun validateSources(review: HealthCareApplicability, sources: List<HealthCarePlanSource>) {
+        require(review.checks.all { it.sourceIndex in sources.indices } && review.conflicts.all { c -> c.sourceIndices.all { it in sources.indices } })
     }
     fun status(review: HealthCareApplicability?, issue: HealthCareConcern): HealthCareApplicabilityStatus = when {
         review == null -> HealthCareApplicabilityStatus.MISSING_REVIEW

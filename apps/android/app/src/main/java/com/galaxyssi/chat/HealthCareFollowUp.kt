@@ -23,10 +23,14 @@ internal data class HealthCareReminder(val actionId: String, val concernId: Stri
 
 internal object HealthCareFollowUpPolicy {
     fun basis(issue: HealthCareConcern): String = AgentNativeJsonCodec.sha256(mapOf("source" to issue.inputVersion,
-        "context" to issue.context?.json()?.toString()))
+        "context" to issue.context?.json()?.toString()) + targetBasis(issue))
     fun anchor(issue: HealthCareConcern, action: HealthCareAction): String = AgentNativeJsonCodec.sha256(mapOf(
         "concern" to issue.id, "source" to issue.inputVersion, "context" to issue.context?.json()?.toString(),
-        "action" to action.json().toString()))
+        "action" to action.json().toString()) + targetBasis(issue))
+    // Leave pre-target reminder hashes unchanged; changing a target requires a new action review.
+    private fun targetBasis(issue: HealthCareConcern): Map<String, String> = issue.target?.let {
+        mapOf("individual_target" to it.json().toString())
+    }.orEmpty() + if (issue.targetRevision > 0) mapOf("target_revision" to issue.targetRevision.toString()) else emptyMap()
 
     fun eligible(issue: HealthCareConcern, action: HealthCareAction, settings: HealthCareSettings,
         privacy: HealthPrivacyPolicy, sourceVersion: String): Boolean =

@@ -249,7 +249,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         grounded
     }
     fun resolvePlan(id: String, selected: Set<String>, expectedRevision: Int, privacy: HealthPrivacyPolicy,
-        sourceVersion: String, now: Long): HealthCareConcern = transaction(true) {
+        sourceVersion: String, now: Long, acceptTarget: Boolean = false): HealthCareConcern = transaction(true) {
         val proposed = plan(id) ?: throw HealthCareConflict()
         val issue = concern(proposed.grant.concernId) ?: throw HealthCareConflict()
         if (proposed.state != HealthCarePlanState.PENDING || issue.revision != expectedRevision ||
@@ -257,11 +257,15 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         if (proposed.sources.any { source -> source.evidence?.let {
             HealthCareEvidencePolicy.supports(it, proposed.grant, source.url, source.quote)
         } != true }) throw HealthCareEvidenceMissing()
-        val next = HealthCarePlanPolicy.accept(proposed, issue, selected, now)
+        val next = HealthCarePlanPolicy.accept(proposed, issue, selected, now, acceptTarget)
             .copy(revision = issue.revision + 1, updatedAt = maxOf(issue.updatedAt, now))
         persist(next, "agent_plan_confirmed")
-        persistPlan(proposed.copy(state = HealthCarePlanState.ACCEPTED, selected = selected, resolvedAt = now))
+        persistPlan(proposed.copy(state = HealthCarePlanState.ACCEPTED, selected = selected, resolvedAt = now, targetSelected = acceptTarget))
         next
+    }
+    fun revokeTarget(id: String, expectedRevision: Int, privacy: HealthPrivacyPolicy): HealthCareConcern = update(id, expectedRevision, "individual_target_revoked") {
+        if (!privacy.metrics || !privacy.profile) throw HealthCareConflict()
+        HealthCareTargetPolicy.revoke(it)
     }
     fun dismissPlan(id: String, now: Long) = transaction(true) {
         val proposed = plan(id) ?: throw HealthCareConflict()

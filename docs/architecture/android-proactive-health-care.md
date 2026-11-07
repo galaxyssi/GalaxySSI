@@ -356,3 +356,38 @@ Research must assess authoritative sources, population, conflicting evidence and
 uncertainty; professional review, real-provider research/reassessment and clinical
 acceptance remain required. A read receipt must never be advertised as proof that
 a health recommendation is safe, correct or personally applicable.
+
+## Individually reviewed targets
+
+The existing phone-only `galaxyssi.health.plan.propose` tool accepts an optional
+`target_proposal` alongside zero to eight actions. A draft names one required
+measurement component, exact bounded decimal limits, explicit inclusive/exclusive
+bounds, the current measurement unit, rationale, a native source receipt and
+individualized applicability checks. Empty action lists require a target proposal.
+The model cannot set confirmation fields, replace the current target, schedule
+reminders or declare a stable outcome. Screening criteria and reference midpoints
+must not be manufactured into treatment targets.
+
+Agent main and Personal Health use the same pending-plan review. Target selection
+starts unchecked and is independent of action selection; unresolved applicability
+or a mismatched unit/component blocks target adoption. The native transaction
+records user confirmation, not clinician approval, along with the source-bound
+proposal ID and current report/context basis. A replacement uses a new approved
+discussion turn and explicit confirmation. Encrypted concern history retains both
+versions. The target review offers the existing scoped Agent discussion and a
+separately confirmed revocation; revocation preserves reports and returns to
+reassessment without changing medications.
+
+Target revisions participate in action/reminder anchors. Changing or revoking a
+target cancels stale reminders and requires action review. The monotonic revision
+prevents revocation from making pre-target actions eligible again. Unchanged
+concerns without targets retain their existing reminder hashes. New JSON fields
+are optional when reading legacy encrypted records; legacy targets remain visible
+but require review before comparison. No database schema rewrite is necessary.
+
+Numeric comparison is limited to the stated component and confirmation basis.
+Different report/context versions retain the target as historical context and
+request review rather than silently reapplying it. A value inside the bounds does
+not establish clinical improvement, stability, maintenance or completion. This
+implements target proposal and review infrastructure, not clinically validated
+target generation or the complete longitudinal maintenance lifecycle.

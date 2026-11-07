@@ -3,8 +3,9 @@ package com.galaxyssi.chat
 import android.content.Context
 
 internal object HealthCareApplicabilityPresentation {
-    fun text(context: Context, plan: HealthCarePlan, issue: HealthCareConcern, action: HealthCareAction): String {
-        val review = plan.applicability[action.id]
+    fun text(context: Context, plan: HealthCarePlan, issue: HealthCareConcern, action: HealthCareAction): String =
+        text(context, plan.applicability[action.id], issue, HealthCareApplicabilityPolicy.canAccept(plan, issue, action))
+    fun text(context: Context, review: HealthCareApplicability?, issue: HealthCareConcern, canAccept: Boolean): String {
         val status = HealthCareApplicabilityPolicy.status(review, issue)
         val lines = mutableListOf(context.getString(when (status) {
             HealthCareApplicabilityStatus.MISSING_REVIEW -> R.string.health_applicability_legacy
@@ -32,7 +33,7 @@ internal object HealthCareApplicabilityPresentation {
             lines += context.getString(R.string.health_applicability_conflict_detail,
                 conflict.sourceIndices.joinToString(", ") { (it + 1).toString() }, conflict.detail, conflict.nextStep)
         }
-        if (!HealthCareApplicabilityPolicy.canAccept(plan, issue, action)) lines += context.getString(R.string.health_applicability_blocked)
+        if (!canAccept) lines += context.getString(R.string.health_applicability_blocked)
         return lines.joinToString("\n\n")
     }
     private fun field(value: HealthCareApplicabilityField) = when (value) {

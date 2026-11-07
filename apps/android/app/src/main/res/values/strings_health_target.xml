@@ -1,0 +1,17 @@
+<resources>
+    <string name="health_target_plan_pending">Target and plan pending review (%1$d actions)</string>
+    <string name="health_target_adopt">Adopt this individual target</string>
+    <string name="health_target_replace">Replace the current target after review</string>
+    <string name="health_target_scope">User confirmation is not clinician approval. This applies to the stated component only, not the entire metric or overall health. One in-target result does not establish stability. Do not change medication based on this target.</string>
+    <string name="health_target_change_notice">Changing a target requires review of existing actions and reminders. Previous targets and decisions remain in the encrypted history.</string>
+    <string name="health_target_review_required">Target needs review: the report or context changed, or its original confirmation basis is unavailable.</string>
+    <string name="health_target_not_comparable">This result cannot be compared numerically with the target.</string>
+    <string name="health_target_below">This recorded component is below the confirmed target.</string>
+    <string name="health_target_within">This recorded component is within the confirmed target; stability has not been established.</string>
+    <string name="health_target_above">This recorded component is above the confirmed target.</string>
+    <string name="health_target_confirmed">User confirmed: %1$s. Not independently clinician-verified.</string>
+    <string name="health_target_review">Review individual target</string>
+    <string name="health_target_discuss">Discuss adjustment</string>
+    <string name="health_target_revoke">Revoke target</string>
+    <string name="health_target_revoke_notice">Stop using this target and return to reassessment. Related reminders will be cancelled and actions will require review; records and target history are retained.</string>
+</resources>
