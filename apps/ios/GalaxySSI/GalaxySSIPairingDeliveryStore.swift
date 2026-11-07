@@ -124,12 +124,17 @@ final class GalaxySSIPairingDeliveryStore {
   }
 
   func acknowledge(peer: String, fingerprint: String, receipt: [String: Any]) -> Bool {
+    guard receipt.string("type") == GalaxySSIPhoneContactControl.Kind.receipt.rawValue,
+          !peer.isEmpty, receipt.string("from") == peer, !receipt.string("to").isEmpty else { return false }
     Self.lock.lock()
     defer { Self.lock.unlock() }
     var state = load()
-    guard let index = state.pending.firstIndex(where: {
-      !$0.isDesktop && $0.peer == peer && $0.fingerprint == fingerprint &&
-        $0.controlId == receipt.string("ack_control_id") && $0.payloadHash == receipt.string("ack_payload_hash")
+    guard let index = state.pending.firstIndex(where: { pending in
+      guard !pending.isDesktop, pending.peer == peer,
+            pending.fingerprint.caseInsensitiveCompare(fingerprint) == .orderedSame,
+            pending.controlId == receipt.string("ack_control_id"), pending.payloadHash == receipt.string("ack_payload_hash"),
+            let original = try? JSONSerialization.jsonObject(with: pending.payload) as? [String: Any] else { return false }
+      return original.string("from") == receipt.string("to") && original.string("to") == receipt.string("from")
     }) else { return false }
     state.pending.remove(at: index)
     return save(state)
