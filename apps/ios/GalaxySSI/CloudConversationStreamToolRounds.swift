@@ -380,7 +380,7 @@ struct CloudModelStreamMutableConversation {
        "method_history", "evolution_rules"]) +
       ["desktop_evidence_list", "desktop_evidence"]
     let properties: [String: Any] = [
-      "mode": ["type": "string", "enum": modes],
+      "mode": ["type": "string", "enum": originalsOnly ? modes : modes + [AgentCollaborationSourceAccess.mode]],
       "member_id": ["type": "string"],
       "object_id": ["type": "string"], "revision": ["type": "integer"],
       "evidence_id": ["type": "string"], "sha256": ["type": "string"], "offset": ["type": "integer"],
@@ -400,7 +400,7 @@ struct CloudModelStreamMutableConversation {
     let historyDescription = originalsOnly ? "" :
       " Use evidence for saved native observations and method_history with exact tool release object_id, revision and sha256 for native outcomes. Replays are not new executions; these are not quality measures. " +
       "Use method_history with view=evaluations and the exact workflow identity for measurements and counterevidence. " +
-      AgentCollaborationWorkflowCheck.instructions
+      AgentCollaborationWorkflowCheck.instructions + " " + AgentCollaborationSourceAccess.instructions
     appendCollaborationFunction(["name": Self.collaborationRecallName, "description": description +
       " Use acceptance_record with an exact current object_id, revision and sha256 to read a saved criterion delivery or review from this run. " +
       "Use native_evidence with exact evidence_id and sha256 for a native observation. Read all pages before citing origin ios_native_tool, evidence_id and sha256. " +

@@ -587,10 +587,27 @@ final class AgentTeamExecutionHistoryStore {
 
   enum EvidenceReadMode: Equatable {
     case local, desktopPreview, desktopConfirm(contentHash: String)
+    case desktopCloudPreview, desktopCloudConfirm(contentHash: String)
+
+    var isPreview: Bool { self == .desktopPreview || self == .desktopCloudPreview }
+
+    var cloudDelivery: Bool {
+      switch self {
+      case .desktopCloudPreview, .desktopCloudConfirm: return true
+      default: return false
+      }
+    }
+
+    var confirmationHash: String? {
+      switch self {
+      case .desktopConfirm(let hash), .desktopCloudConfirm(let hash): return hash
+      default: return nil
+      }
+    }
   }
 
   func recallCollaborationOriginal(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope,
-                                   evidenceRead: EvidenceReadMode = .local) throws -> AgentMcpJSONObject {
+                                   generation: Int64? = nil, evidenceRead: EvidenceReadMode = .local) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
     guard evidenceRead == .local || mode == "evidence" else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     if mode == AgentCollaborationCandidateRecall.mode, input["view"] == nil,
@@ -644,6 +661,20 @@ final class AgentTeamExecutionHistoryStore {
     if mode == "problems" { return try recallCloudProblems(input, scope: scope) }
     if mode == "desktop_evidence" || mode == "desktop_evidence_list" {
       return try recallDesktopAcceptanceEvidence(input, scope: scope)
+    }
+    if mode == AgentCollaborationSourceAccess.mode {
+      return try access { database in
+        guard let team = try database.snapshots(runId: scope.runId).first,
+              team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
+              let member = team.members.first(where: { $0.memberId == scope.memberId &&
+                $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }),
+              try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+                key: "native-evidence-revoked", revision: 0) != true else {
+          throw AgentTeamHistoryDatabase.Failure.stale
+        }
+        return try AgentCollaborationSourceAccess.page(input, scope: scope,
+          dependencies: member.dispatchDependencyMemberIds ?? [], generation: generation, database: database)
+      }
     }
     let hash = input.string("sha256")
     let workspace = mode == "workspace" || mode == "acceptance_record"
@@ -704,8 +735,8 @@ final class AgentTeamExecutionHistoryStore {
           throw AgentTeamHistoryDatabase.Failure.corrupt
         }
         let slice = try page(data)
-        if evidenceRead == .desktopPreview { return (slice, source, nil) }
-        if case .desktopConfirm(let expected) = evidenceRead,
+        if evidenceRead.isPreview { return (slice, source, nil) }
+        if let expected = evidenceRead.confirmationHash,
            AgentDesktopNativeEvidenceDelivery.digest(slice.content) != expected {
           throw AgentTeamHistoryDatabase.Failure.stale
         }
@@ -737,7 +768,8 @@ final class AgentTeamExecutionHistoryStore {
           "status": .string(Self.nativeObservationSupportsAcceptance(record) ? "succeeded" : "failed")
         ], key: key)
       }
-      if mode == "evidence", let native = try database.researchRecord(AgentCollaborationNativeReleaseHistory.Original.self,
+      if mode == "evidence", !evidenceRead.cloudDelivery,
+         let native = try database.researchRecord(AgentCollaborationNativeReleaseHistory.Original.self,
         conversationId: scope.conversationId, key: "native-evidence:" + id, revision: 0) {
         let originalScope = native.scope
         let sameRun = originalScope.runId == scope.runId && originalScope.turnId == scope.turnId
@@ -752,13 +784,13 @@ final class AgentTeamExecutionHistoryStore {
         let key = "native-read-coverage:" + Self.readCoverageDigest(scope: scope, id: id, hash: hash)
         return try evidencePage(encoder.encode(native), source: native.sourceReference(id: id, hash: hash), key: key)
       }
-      guard evidenceRead == .local, let record = try database.cloudEvidence(id: id, conversationId: scope.conversationId),
-            record.scope.conversationId == scope.conversationId,
-            record.scope.turnId != scope.turnId || record.scope == scope else {
+      guard evidenceRead == .local || evidenceRead.cloudDelivery,
+            let observation = try database.readableCollaborationEvidence(id: id, sha256: hash, scope: scope) else {
         throw AgentTeamHistoryDatabase.Failure.stale
       }
       let key = Self.cloudReadCoverageKey(scope: scope, id: id, hash: hash)
-      return try evidencePage(encoder.encode(record), source: [
+      let record = observation.record
+      return try evidencePage(observation.bytes, source: [
         "evidence_id": .string(id), "sha256": .string(hash), "origin": .string("ios_cloud_tool"),
         "tool": .string(record.call.name), "status": .string(record.observedFailure ? "failed" : "succeeded")
       ], key: key)
