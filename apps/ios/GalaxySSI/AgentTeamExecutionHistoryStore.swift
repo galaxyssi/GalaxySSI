@@ -619,11 +619,12 @@ final class AgentTeamExecutionHistoryStore {
     }
     if mode == "problems" { return try recallCloudProblems(input, scope: scope) }
     let hash = input.string("sha256")
-    let idKey = mode == "workspace" ? "object_id" : "evidence_id"
+    let workspace = mode == "workspace" || mode == "acceptance_record"
+    let idKey = workspace ? "object_id" : "evidence_id"
     let id = input.string(idKey)
     var allowed: Set<String> = ["mode", "sha256", "offset", idKey]
-    if mode == "workspace" { allowed.insert("revision") }
-    guard ["workspace", "evidence"].contains(mode), Set(input.keys).isSubset(of: allowed),
+    if workspace { allowed.insert("revision") }
+    guard (workspace || mode == "evidence"), Set(input.keys).isSubset(of: allowed),
           [id, hash].allSatisfy({ $0.utf8.count == 64 &&
             $0.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) } }),
           case .int(let offset) = input["offset"] ?? .int(0), offset >= 0 else {
@@ -648,14 +649,22 @@ final class AgentTeamExecutionHistoryStore {
               key: "native-evidence-revoked", revision: 0) != true else {
         throw AgentTeamHistoryDatabase.Failure.stale
       }
-      if mode == "workspace" {
+      if workspace {
         guard case .int(let revision)? = input["revision"], revision > 0,
               let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
-                conversationId: scope.conversationId, key: "object:" + id, revision: revision),
+                conversationId: scope.conversationId, key: "object:" + id,
+                revision: mode == "acceptance_record" ? nil : revision),
               record.reference.objectId == id, record.reference.revision == revision,
-              record.reference.sha256 == hash,
-              record.turnId != scope.turnId || (record.runId == scope.runId && record.authorId == scope.memberId)
+              record.reference.sha256 == hash
         else { throw AgentTeamHistoryDatabase.Failure.stale }
+        if mode == "acceptance_record" {
+          guard Self.isScopedAcceptanceRecord(record, team: team, kinds: [.artifact, .proposal, .decision, .acceptanceReview]),
+                team.members.contains(where: { $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId &&
+                  $0.deliveryMode != .ignore && ($0.dispatchCheckpoint == .dispatching || $0.dispatchCheckpoint == .accepted) })
+          else { throw AgentTeamHistoryDatabase.Failure.stale }
+        } else if record.turnId == scope.turnId && (record.runId != scope.runId || record.authorId != scope.memberId) {
+          throw AgentTeamHistoryDatabase.Failure.stale
+        }
         return (try page(encoder.encode(record)), nil, nil)
       }
       guard let record = try database.cloudEvidence(id: id, conversationId: scope.conversationId),
@@ -1245,9 +1254,15 @@ final class AgentTeamExecutionHistoryStore {
         for parent in draft.parents + (draft.resolves ?? []) {
           guard let existing = try database.researchRecord(AgentCollaborationResearchRevision.self,
             conversationId: conversationId, key: "object:" + parent.objectId, revision: parent.revision),
-            existing.reference == parent,
-            existing.turnId != turnId || existing.authorId == memberId else {
+            existing.reference == parent else {
             throw AgentTeamHistoryDatabase.Failure.stale
+          }
+          if existing.turnId == turnId && existing.authorId != memberId {
+            guard draft.kind == .acceptanceReview, draft.parents == [parent], draft.resolves?.isEmpty != false,
+                  Self.isScopedAcceptanceRecord(existing, team: snapshot, kinds: [.artifact, .proposal, .decision]),
+                  let current = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                    conversationId: conversationId, key: "object:" + parent.objectId), current.reference == parent
+            else { throw AgentTeamHistoryDatabase.Failure.stale }
           }
         }
         if draft.kind == .transferStudy {
@@ -1465,6 +1480,9 @@ final class AgentTeamExecutionHistoryStore {
     }
     if mode == AgentCollaborationGoalAssessmentPolicy.appendWorkMode {
       return try admitCollaborationWork(input, scope: scope)
+    }
+    if mode == AgentCollaborationGoalAssessmentPolicy.checkGoalEvidenceMode {
+      return try checkCollaborationGoalEvidence(input, scope: scope)
     }
     if mode == "validate_assessment" {
       guard Set(input.keys) == ["mode", "artifact"], let raw = input["artifact"]?.strictStringValue,
@@ -2158,6 +2176,76 @@ final class AgentTeamExecutionHistoryStore {
         "replayed": .bool(false), "work_dispatched": .bool(false)]
       try database.insertResearchRecord(receipt, conversationId: scope.conversationId, key: key, revision: 0)
       return receipt
+    }
+  }
+
+  private static func isScopedAcceptanceRecord(_ record: AgentCollaborationResearchRevision,
+      team: AgentTeamExecutionSnapshot, kinds: [AgentCollaborationResearchDraft.Kind]) -> Bool {
+    record.runId == team.supervisorRunId && record.turnId == team.taskId && kinds.contains(record.draft.kind) &&
+      team.members.contains(where: { $0.memberId == record.authorId && $0.sourceMessageId == record.sourceId &&
+        $0.deliveryMode != .ignore })
+  }
+
+  private func checkCollaborationGoalEvidence(_ input: AgentMcpJSONObject,
+    scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+    typealias Gate = AgentCollaborationDocumentaryAcceptance
+    guard Set(input.keys) == ["mode", "artifact", "expected_revision"],
+          case .int(let expected)? = input["expected_revision"], expected > 0,
+          let raw = input["artifact"]?.strictStringValue, raw.utf8.count <= 131_072
+    else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    return try access { database in
+      let team = try Self.activeGoalCoordinator(scope, database: database)
+      guard let checkpoint = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first,
+            checkpoint.revision == expected, checkpoint.phase == .working, !checkpoint.contract.isEmpty,
+            checkpoint.conversationId == scope.conversationId, checkpoint.turnId == scope.turnId
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys]
+      func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+      func ref(_ value: AgentCollaborationResearchReference) -> Gate.Reference {
+        .init(objectId: value.objectId, revision: value.revision, sha256: value.sha256)
+      }
+      var originals: [String: Gate.OriginalObservation] = [:]
+      let outcome = Gate.evaluate(raw, preserving: checkpoint.contract, conversationId: scope.conversationId,
+        runId: scope.runId, turnId: scope.turnId, readRevision: { id, revision in
+          guard id.utf8.count == 64, id.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
+                let saved = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                  conversationId: scope.conversationId, key: "object:" + id, revision: revision),
+                saved.reference.objectId == id else { return nil }
+          let currentAssignment = saved.runId == scope.runId && saved.turnId == scope.turnId
+          if currentAssignment {
+            guard team.members.contains(where: { $0.memberId == saved.authorId &&
+              $0.sourceMessageId == saved.sourceId && $0.deliveryMode != .ignore }) else { return nil }
+          }
+          var observed = Set<String>()
+          if revision == nil, currentAssignment {
+            let evidenceScope = AgentCollaborationToolEvidenceScope(runId: scope.runId,
+              conversationId: scope.conversationId, turnId: scope.turnId, memberId: saved.authorId, sourceId: saved.sourceId)
+            let reads = try Self.freezeCloudReads(saved.draft.observations ?? [], scope: evidenceScope, database: database)
+            for read in reads {
+              guard let original = try database.cloudEvidence(id: read.evidenceId, conversationId: scope.conversationId),
+                    original.scope.runId == scope.runId, original.scope.turnId == scope.turnId,
+                    original.scope.conversationId == scope.conversationId,
+                    !original.observedFailure, !original.output.isBlank,
+                    !original.call.name.lowercased().contains("recall"),
+                    team.members.contains(where: { $0.memberId == original.scope.memberId &&
+                      $0.sourceMessageId == original.scope.sourceId && $0.deliveryMode != .ignore })
+              else { return nil }
+              observed.insert(read.evidenceId)
+              originals[read.evidenceId] = .init(origin: "ios_cloud_tool", tool: original.call.name,
+                status: "returned", kind: "tool_output_recorded")
+            }
+          }
+          return Gate.Revision(reference: ref(saved.reference), conversationId: scope.conversationId,
+            runId: saved.runId, turnId: saved.turnId, authorId: saved.authorId, kind: saved.draft.kind.rawValue,
+            body: saved.draft.body, parents: saved.draft.parents.map(ref), hostObservationIds: observed)
+        }, observationIsSupporting: { originals[$0] != nil }, originalObservation: { originals[$0] })
+      let verified = outcome == .achieved
+      return ["success": .bool(verified), "status": .string(verified ? "criterion_evidence_verified" : "criterion_evidence_unverified"),
+        "validation_scope": .string("criterion_evidence_only_not_goal_acceptance"), "goal_accepted": .bool(false),
+        "revision": .int(expected), "assessment_sha256": .string(digest(Data(raw.utf8))),
+        "goal_sha256": .string(digest(Data(team.goal.utf8))),
+        "criteria_sha256": .string(try digest(encoder.encode(checkpoint.contract)))]
     }
   }
 

@@ -602,7 +602,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           collaborationRecall: collaborationRecallScope.map { scope in
             { arguments in
               await MainActor.run {
-                guard collaborationEvidence != nil || ["goal", "dependency"].contains(arguments.string("mode")) else {
+                guard collaborationEvidence != nil || ["goal", "dependency", "acceptance_record"].contains(arguments.string("mode")) else {
                   return nil
                 }
                 guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
@@ -624,8 +624,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                 return await goalWorkHandler(arguments)
               }
               return await MainActor.run {
-                let coordinatorMutation = AgentCollaborationGoalAssessmentPolicy.isCoordinatorMutation(arguments.string("mode"))
-                guard collaborationEvidence != nil || arguments["mode"] == .string("validate_assessment") || coordinatorMutation else {
+                let needsCoordinator = AgentCollaborationGoalAssessmentPolicy.requiresCoordinator(mode)
+                guard collaborationEvidence != nil || mode == "validate_assessment" || needsCoordinator else {
                   return nil
                 }
                 guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
@@ -633,9 +633,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                       let member = scope.memberId.split(separator: ":").first,
                       let memberId = UUID(uuidString: String(member)), roster.members.contains(where: { $0.id == memberId }),
                       session.mergedIntoConversationId.isBlank, !session.privateMode, !session.trackingPaused else { return nil }
-                if coordinatorMutation {
-                  guard collaborationModelAudit == scope, roster.coordinatorId == memberId,
-                        let task = store.agentTask(id: scope.turnId), !task.blocked,
+                if needsCoordinator {
+                  guard collaborationEvidence == nil, collaborationModelAudit == scope, roster.coordinatorId == memberId,
+                        let task = store.agentTask(id: scope.turnId), task.sessionId == scope.conversationId, !task.blocked,
                         task.phase == .executing || task.phase == .waitingResponse,
                         !PhoneExecutionAuthority.isCancelled(taskId: task.taskId) else { return nil }
                 }

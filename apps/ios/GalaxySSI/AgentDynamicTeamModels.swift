@@ -114,6 +114,9 @@ enum AgentCollaborationRuleTopics {
     Publish galaxyssi.research-artifact.v1 with a workspace array. Each item has id, kind, title, body, base_revision and parents.
     Use base_revision 0 for new records and exact object_id, revision and sha256 for references. Cite original cloud observations
     with evidence_id and sha256 when the record supports citations. Read each page before citing it. Publication is not verification.
+    For acceptance_review, cite exactly one current delivery in parents. In body.acceptance_review include criterion_id,
+    requirement, target (the exact parent), verdict (supported, refuted, or not_tested), rationale and unresolved.
+    The reviewer must be independent of the delivery author; cite completely read original observations in observations.
     capability_gap records category, symptom, needed_capability, learning_options, chosen_option and rationale.
     innovation records origin, hypothesis, mechanism, difference, prior_art, falsifier, domain, applies_when, risks, alternatives
     and predictions (id, statement, test). Use novelty_scope not_checked. Transfer and combination require exact parent records.
@@ -578,6 +581,11 @@ enum AgentCollaborationGoalAssessmentPolicy {
   static let appendWorkMode = "append_work"
   static let runWorkMode = "run_work"
   static let runReadyWorkMode = "run_ready_work"
+  static let checkGoalEvidenceMode = "check_goal_evidence"
+
+  static func requiresCoordinator(_ mode: String) -> Bool {
+    isCoordinatorMutation(mode) || mode == checkGoalEvidenceMode
+  }
 
   static func dispatchesWork(_ mode: String) -> Bool {
     mode == runWorkMode || mode == runReadyWorkMode || mode == appendWorkMode

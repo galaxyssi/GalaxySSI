@@ -2011,6 +2011,80 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(parent, saved: saved, failureText: "Failed", now: 10))
   }
 
+  func testCoordinatorChecksExactIndependentGoalEvidenceWithoutAcceptingGoal() throws {
+    let suite = "goal-evidence-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    func open() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]),
+        fileURL: root.appendingPathComponent("history.sqlite3"))
+    }
+    let history = open()
+    var team = durableTeamSnapshot("goal-evidence")
+    team.goal = "Document the observed value"
+    team.members.append(AgentTeamMemberSnapshot(agentId: "delivery", deliveryMode: .observe, sourceMessageId: "delivery-source"))
+    for index in team.members.indices { team.members[index].dispatchCheckpoint = .accepted }
+    XCTAssertTrue(history.upsert(team))
+    func scope(_ index: Int) -> AgentCollaborationToolEvidenceScope {
+      .init(runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
+        memberId: team.members[index].memberId, sourceId: team.members[index].sourceMessageId)
+    }
+    func publish(_ draft: AgentCollaborationResearchDraft, author: Int, id: String) throws -> AgentCollaborationResearchReference {
+      let owner = scope(author)
+      let publication = try history.publishResearchObjects([draft], runId: owner.runId,
+        conversationId: owner.conversationId, turnId: owner.turnId, memberId: owner.memberId,
+        sourceId: owner.sourceId, milestone: (id, id))
+      return try XCTUnwrap(publication.references.first)
+    }
+    let initial = """
+      {"format":"galaxyssi.goal-assessment.v1","summary":"Pinned","decision":"continue","work":[],"blockers":[],
+       "criteria":[{"id":"value","requirement":"Document the value","verification":"documentary","status":"open","evidence":[]}]}
+      """
+    let pinned = try history.publishCollaborationMilestone(
+      ["mode": .string("establish_contract"), "artifact": .string(initial)], scope: scope(0))
+    var artifact = AgentCollaborationResearchDraft(id: "delivery", objectId: nil, baseRevision: 0, kind: .artifact,
+      title: "Delivery", body: ["content": .string("Observed value 42")], parents: [])
+    let delivery = try publish(artifact, author: 2, id: "delivery-v1")
+    func ref(_ value: AgentCollaborationResearchReference) -> AgentMcpJSONObject {
+      ["object_id": .string(value.objectId), "revision": .int(value.revision), "sha256": .string(value.sha256)]
+    }
+    var read = ref(delivery)
+    read["mode"] = .string("workspace")
+    XCTAssertThrowsError(try history.recallCollaborationOriginal(read, scope: scope(1)))
+    read["mode"] = .string("acceptance_record")
+    XCTAssertTrue(try history.recallCollaborationOriginal(read, scope: scope(1)).string("content").contains("Observed value 42"))
+    let review = try publish(.init(id: "review", objectId: nil, baseRevision: 0, kind: .acceptanceReview,
+      title: "Independent review", body: ["acceptance_review": .object([
+        "criterion_id": .string("value"), "requirement": .string("Document the value"), "target": .object(ref(delivery)),
+        "verdict": .string("supported"), "rationale": .string("Reviewed the exact delivery"), "unresolved": .array([])
+      ])], parents: [delivery]), author: 1, id: "review-v1")
+    let criterion: AgentMcpJSONObject = ["id": .string("value"), "requirement": .string("Document the value"),
+      "verification": .string("documentary"), "status": .string("met"), "evidence_kind": .string("observed"),
+      "evidence": .array([.string(delivery.sha256), .string(review.sha256)]),
+      "delivery": .object(ref(delivery)), "review": .object(ref(review))]
+    let assessment: AgentMcpJSONObject = ["format": .string("galaxyssi.goal-assessment.v1"), "summary": .string("Reviewed"),
+      "decision": .string("achieved"), "work": .array([]), "blockers": .array([]), "criteria": .array([.object(criterion)])]
+    var request: AgentMcpJSONObject = ["mode": .string("check_goal_evidence"), "expected_revision": .int(1),
+      "artifact": .string(AgentMcpJSONCodec.stringify(assessment))]
+    XCTAssertThrowsError(try open().publishCollaborationMilestone(request, scope: scope(1)))
+    let checked = try open().publishCollaborationMilestone(request, scope: scope(0))
+    XCTAssertEqual(checked["status"], .string("criterion_evidence_verified"))
+    XCTAssertEqual(checked["goal_accepted"], .bool(false))
+    XCTAssertEqual(checked["criteria_sha256"], pinned["criteria_sha256"])
+    request["expected_revision"] = .int(2)
+    XCTAssertThrowsError(try open().publishCollaborationMilestone(request, scope: scope(0)))
+    request["expected_revision"] = .int(1)
+    artifact.objectId = delivery.objectId
+    artifact.baseRevision = delivery.revision
+    artifact.body["content"] = .string("Revised value")
+    _ = try publish(artifact, author: 2, id: "delivery-v2")
+    XCTAssertThrowsError(try history.recallCollaborationOriginal(read, scope: scope(1)))
+    XCTAssertEqual(try open().publishCollaborationMilestone(request, scope: scope(0))["status"],
+      .string("criterion_evidence_unverified"))
+  }
+
   func testScopedCoordinatorCanEstablishOnlyAnOpenImmutableGoalContract() throws {
     let suite = "established-contract-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
