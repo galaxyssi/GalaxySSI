@@ -43,7 +43,8 @@ internal object AgentNativeActionObservation {
         val observation = result.metadata[KEY].orEmpty()
         val output = result.metadata["native_tool_output"].orEmpty()
         val value = observation.ifBlank { output }
-        return AgentWebObservation.compact(value, limit, preserveReceipt = true) ?: value.take(limit)
+        return HealthCareHistoryObservation.compact(value, limit, preserveReceipt = true)
+            ?: AgentWebObservation.compact(value, limit, preserveReceipt = true) ?: value.take(limit)
     }
 
     private fun details(value: Any?): Any? {

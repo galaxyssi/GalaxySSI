@@ -100,24 +100,27 @@ internal data class HealthCareTarget(val field: String, val low: String?, val hi
 internal data class HealthCareAssessment(val record: HealthCareRecordRef?, val measuredAt: Long, val value: String,
     val unit: String, val reportReference: String, val signals: Set<HealthCareSignal>,
     val guideline: HealthCareGuideline? = null, val baseline: HealthCareBaseline? = null,
-    val sample: HealthCareSample? = null, val comparison: HealthCareComparison? = null) {
+    val sample: HealthCareSample? = null, val comparison: HealthCareComparison? = null,
+    val series: HealthCareSeries? = null) {
     init {
         require(measuredAt >= 0 && value.length <= 1000 && unit.length <= 32 && reportReference.length <= 200)
         require(record != null || signals == setOf(HealthCareSignal.SOURCE_REMOVED))
         require(guideline != null || HealthCareSignal.GUIDELINE_REVIEW !in signals)
         require(sample == null || sample.record == record && sample.measuredAt == measuredAt && sample.unit == unit && sample.reference == reportReference)
         require(comparison == null || sample != null && comparison.before.metric == sample.metric)
+        require(series == null || series.samples.first() == sample)
     }
     fun json() = JSONObject().put("record", record?.json() ?: JSONObject.NULL).put("measured_at", measuredAt)
         .put("value", value).put("unit", unit).put("reference", reportReference).put("signals", JSONArray(signals.map { it.name }))
         .put("guideline", guideline?.json() ?: JSONObject.NULL).put("baseline", baseline?.json() ?: JSONObject.NULL)
-        .apply { sample?.let { put("sample", it.json()) }; comparison?.let { put("comparison", it.json()) } }
+        .apply { sample?.let { put("sample", it.json()) }; comparison?.let { put("comparison", it.json()) }; series?.let { put("series", it.json()) } }
     companion object { fun from(j: JSONObject) = HealthCareAssessment(if (j.isNull("record")) null else HealthCareRecordRef.from(j.getJSONObject("record")),
         j.getLong("measured_at"), j.getString("value"), j.getString("unit"), j.getString("reference"),
         j.getJSONArray("signals").let { a -> (0 until a.length()).map { HealthCareSignal.valueOf(a.getString(it)) }.toSet() },
         if (j.isNull("guideline")) null else HealthCareGuideline.from(j.getJSONObject("guideline")),
         if (j.isNull("baseline")) null else HealthCareBaseline.from(j.getJSONObject("baseline")),
-        j.optJSONObject("sample")?.let(HealthCareSample::from), j.optJSONObject("comparison")?.let(HealthCareComparison::from)) }
+        j.optJSONObject("sample")?.let(HealthCareSample::from), j.optJSONObject("comparison")?.let(HealthCareComparison::from),
+        j.optJSONObject("series")?.let(HealthCareSeries::from)) }
 }
 
 internal data class HealthCareAction(val id: String, val kind: HealthCareActionKind, val description: String,

@@ -40,17 +40,31 @@ internal object HealthCareDiscussionPolicy {
     val researchTools = setOf("web.search", "web.open", "galaxyssi.web.head", "galaxyssi.web.fetch",
         "galaxyssi.web.intelligence.search", "galaxyssi.web.intelligence.fetch",
         "galaxyssi.tools.discover", "galaxyssi.tools.describe", "galaxyssi.phone.conversation.recall")
-    val discussionTools get() = researchTools + HealthCarePlanTool.ID
+    val discussionTools get() = researchTools + setOf(HealthCarePlanTool.ID, HealthCareHistoryTool.ID)
+
+    // This is transport detection only. Actual record access still requires the persisted per-turn grant.
+    fun hasStructuredContext(prompt: String): Boolean {
+        if (!prompt.trimStart().startsWith("Discuss this authorized health concern with the user in their language.")) return false
+        val start = prompt.indexOf("Authorized concern snapshot:")
+        if (start < 0) return false
+        return runCatching {
+            val data = org.json.JSONTokener(prompt.substring(start + "Authorized concern snapshot:".length).trimStart())
+                .nextValue() as JSONObject
+            data.getString("input_version").isNotBlank() && data.getJSONObject("assessment").length() > 0 &&
+                HealthMetric.valueOf(data.getString("metric")) in HealthMetric.entries
+        }.getOrDefault(false)
+    }
 
     fun snapshot(value: HealthCareConcern): String = JSONObject()
-        .put("metric", value.metric.name).put("revision", value.revision).put("stage", value.stage.name)
+        .put("metric", value.metric.name).put("revision", value.revision).put("stage", value.stage.name).put("input_version", value.inputVersion)
         .put("assessment", value.assessment.json().apply {
-            remove("comparison"); if (value.assessment.comparison != null) remove("sample")
+            remove("comparison"); remove("series"); if (value.assessment.comparison != null) remove("sample")
             else value.assessment.sample?.let { put("sample", it.modelJson()) }
         }).put("confirmed_context", value.context?.json() ?: JSONObject.NULL)
         .put("individual_target", value.target?.json() ?: JSONObject.NULL)
         .put("target_comparison", if (value.target == null) JSONObject.NULL else HealthCareTargetPolicy.comparison(value).name)
         .put("result_comparison", HealthCareComparisonPolicy.handoff(value.assessment, value.context) ?: JSONObject.NULL)
+        .put("measurement_history", value.assessment.series?.modelJson(value.assessment.sample!!, value.context, value.assessment.comparison) ?: JSONObject.NULL)
         .put("priority_notice", HealthCarePriority.handoff(value) ?: JSONObject.NULL)
         .put("actions", org.json.JSONArray(value.actions.map { it.json() })).toString(2)
 
@@ -72,6 +86,14 @@ internal object HealthCareDiscussionPolicy {
         state uncertainty instead of forcing a category. Propose the next justified step using applicable sources.
         One in-range value cannot establish stability, close follow-up or authorize maintenance. Review against an
         explicitly confirmed individual target when applicable; do not replace it with a report midpoint.
+        measurement_history is a contiguous recent page, not the entire archive when has_earlier is true.
+        Use galaxyssi.health.history.read with this input_version to inspect earlier pages when needed, following
+        its next cursor. The host restricts access to this concern's metric and the self profile. Never cherry-pick
+        normal results or count a corrected record as a second measurement. Compare collection conditions,
+        source and reference changes, elapsed time and missing context. Do not combine incompatible measurements.
+        Source/method agreement has not been clinically verified, even when values agree. Unknown prior context
+        is not inherited from today's confirmation. Read enough history to support the claimed observation window;
+        explicitly state gaps and bounded coverage. Do not claim that any fixed number of results proves stability.
         target_comparison is a component-level numeric comparison, not a clinical outcome. REVIEW_REQUIRED means
         the measurement/context basis changed or the old target lacks provenance; retain it as historical context,
         not as a current recommendation. To propose or adjust a justified individual target, use target_proposal

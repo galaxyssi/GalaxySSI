@@ -30,6 +30,7 @@ class HealthCareActivity : Activity() {
     private val planReview by lazy { HealthCarePlanReview(this, names) }
     private val actionReview by lazy { HealthCareActionReview(this, names) }
     private val targetReview by lazy { HealthCareTargetReview(this, names) }
+    private val historyReview by lazy { HealthCareHistoryReview(this, names) }
     private lateinit var body: LinearLayout
     private var active = false
     private var generation = 0
@@ -40,7 +41,7 @@ class HealthCareActivity : Activity() {
     private var selected: String? = null
     private var cursor: HealthCareCursor? = null
     private val observer = object : ContentObserver(main) {
-        override fun onChange(selfChange: Boolean) { planReview.clear(); actionReview.clear(); targetReview.clear(); generation++; load() }
+        override fun onChange(selfChange: Boolean) { planReview.clear(); actionReview.clear(); targetReview.clear(); historyReview.clear(); generation++; load() }
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,10 +57,10 @@ class HealthCareActivity : Activity() {
         load()
     }
     override fun onStop() {
-        active = false; generation++; dialog?.dismiss(); dialog = null; planReview.clear(); actionReview.clear(); targetReview.clear(); body.removeAllViews()
+        active = false; generation++; dialog?.dismiss(); dialog = null; planReview.clear(); actionReview.clear(); targetReview.clear(); historyReview.clear(); body.removeAllViews()
         contentResolver.unregisterContentObserver(observer); super.onStop()
     }
-    override fun onDestroy() { planReview.destroy(); actionReview.destroy(); targetReview.destroy(); worker.execute { store.close() }; worker.shutdown(); super.onDestroy() }
+    override fun onDestroy() { planReview.destroy(); actionReview.destroy(); targetReview.destroy(); historyReview.destroy(); worker.execute { store.close() }; worker.shutdown(); super.onDestroy() }
     @Deprecated("Uses the existing native health navigation contract")
     override fun onBackPressed() = back()
     private fun back() { if (selected == null) finish() else { selected = null; cursor = null; generation++; load() } }
@@ -137,6 +138,8 @@ class HealthCareActivity : Activity() {
         ui.add(content, ui.text("${value.assessment.value} ${value.assessment.unit}", 22f, bold = true), 8)
         ui.add(content, ui.text(getString(value.stage.titleResource()), 14f, muted = true), 6)
         HealthCarePriorityPresentation.add(this, content, value)
+        if (profile && value.assessment.series != null) ui.add(content, ui.profileRow(getString(R.string.health_series_title),
+            getString(R.string.health_series_summary)) { historyReview.show(value.id) }.apply { tag = "health-care-series" }, 8)
         ui.add(content, ui.command(R.string.health_care_discussion_title_short) { discuss(value) }
             .apply { tag = "health-care-discuss" }, 12)
         proposals.forEach { plan -> ui.add(content, ui.profileRow(HealthCareTargetPresentation.planTitle(this, plan)) {

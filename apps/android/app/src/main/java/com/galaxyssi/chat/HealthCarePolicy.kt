@@ -94,6 +94,7 @@ internal object HealthCarePolicy {
         val changed = prior.assessment != next
         val stage = when {
             prior.stage == HealthCareStage.PAUSED -> HealthCareStage.PAUSED
+            prior.stage == HealthCareStage.MAINTENANCE && prior.inputVersion != inputVersion -> HealthCareStage.REASSESS
             !changed -> prior.stage
             prior.stage == HealthCareStage.CLOSED && next.signals.isEmpty() -> HealthCareStage.CLOSED
             next.record == null || HealthCareSignal.GLUCOSE_CONTEXT in next.signals || HealthCareSignal.RESULT_NOT_EXACT in next.signals -> HealthCareStage.VERIFY_CONTEXT
