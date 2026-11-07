@@ -14,7 +14,8 @@ class HealthCarePlanPolicyTest {
     private val grant = HealthCareDiscussionGrant(UUID.randomUUID().toString(), UUID.randomUUID().toString(), issue.id,
         issue.revision, settings.version, privacy.version, "a".repeat(64), now, "fixture-provider", "fixture-model", "high")
     private val source = mapOf("title" to "Synthetic source", "url" to "https://example.test/guideline", "version" to "fixture-2026",
-        "applicability" to "Synthetic fixture; no medical advice")
+        "applicability" to "Synthetic fixture; no medical advice", "evidence_id" to UUID.randomUUID().toString(),
+        "supporting_quote" to "Synthetic fixture; no medical advice")
     private fun action(kind: String = "CONTEXT", from: String = "", until: String = ""): AgentNativeJsonObject = mapOf(
         "kind" to kind, "description" to "Confirm the test conditions", "rationale" to "The report context is incomplete",
         "source_index" to 0, "due_from" to from, "due_until" to until)

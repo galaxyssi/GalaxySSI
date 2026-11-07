@@ -9,16 +9,21 @@ import org.json.JSONObject
 internal enum class HealthCarePlanState { PENDING, ACCEPTED, DISMISSED }
 
 /** Model citations are provenance claims, not independently verified medical evidence. */
-internal data class HealthCarePlanSource(val title: String, val url: String, val version: String, val applicability: String) {
+internal data class HealthCarePlanSource(val title: String, val url: String, val version: String, val applicability: String,
+    val evidenceId: String = "", val quote: String = "", val evidence: HealthCareEvidence? = null) {
     init {
         require(title.isNotBlank() && title.length <= 300 && version.isNotBlank() && version.length <= 80)
         require(applicability.isNotBlank() && applicability.length <= 2000 && url.length <= 1000)
         val uri = URI(url)
         require(uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.userInfo == null)
+        require(evidenceId.isEmpty() || HealthProfilePolicy.uuid(evidenceId))
+        require(quote.length <= 600 && (evidence == null || evidence.id == evidenceId))
     }
     fun json() = JSONObject().put("title", title).put("url", url).put("version", version).put("applicability", applicability)
+        .put("evidence_id", evidenceId).put("supporting_quote", quote).put("evidence", evidence?.json() ?: JSONObject.NULL)
     companion object { fun from(j: JSONObject) = HealthCarePlanSource(j.getString("title"), j.getString("url"),
-        j.getString("version"), j.getString("applicability")) }
+        j.getString("version"), j.getString("applicability"), j.optString("evidence_id"), j.optString("supporting_quote"),
+        j.optJSONObject("evidence")?.let(HealthCareEvidence::from)) }
 }
 
 internal data class HealthCarePlan(val grant: HealthCareDiscussionGrant, val inputVersion: String, val createdAt: Long,
@@ -54,8 +59,10 @@ internal object HealthCarePlanPolicy {
         keys(input, setOf("uncertainty", "sources", "actions"))
         require(grant.concernId == issue.id && grant.revision == issue.revision)
         val sources = input.getJSONArray("sources").let { a -> (0 until a.length()).map {
-            val source = a.getJSONObject(it); keys(source, setOf("title", "url", "version", "applicability"))
-            HealthCarePlanSource.from(source)
+            val source = a.getJSONObject(it); keys(source, setOf("title", "url", "version", "applicability", "evidence_id", "supporting_quote"))
+            HealthCarePlanSource.from(source).also { value ->
+                require(HealthProfilePolicy.uuid(value.evidenceId) && value.quote.length in 12..600)
+            }
         } }
         val actions = input.getJSONArray("actions").let { a -> (0 until a.length()).map { index ->
             val action = a.getJSONObject(index)
@@ -67,7 +74,8 @@ internal object HealthCarePlanPolicy {
             require(until == null || until >= now) { "The suggested review window has already ended" }
             HealthCareAction(UUID.nameUUIDFromBytes("${grant.turnId}:$index".toByteArray(Charsets.UTF_8)).toString(),
                 HealthCareActionKind.valueOf(action.getString("kind")), action.getString("description"), action.getString("rationale"),
-                "${source.title}\n${source.version}\n${source.url}", dueFrom = from, dueUntil = until)
+                "${source.title}\n${source.version}\n${source.url}", dueFrom = from, dueUntil = until,
+                evidenceId = source.evidenceId, supportingQuote = source.quote)
         } }
         return HealthCarePlan(grant, issue.inputVersion, now, AgentNativeJsonCodec.sha256(request), input.getString("uncertainty"), sources, actions)
     }
