@@ -5416,6 +5416,11 @@ final class MessageCoordinator: ObservableObject {
       return await continueObservedShortcutReview(task: &task, outgoing: outgoing)
     }
     let previousPlan = task.activePlan
+    if AgentOutcomeContinuation.isUnverified(task) {
+      if task.outcomeContinuation == nil { task = store.upsertAgentTask(task) }
+      guard !(task.effectRecovery ?? []).isEmpty,
+            task.outcomeContinuation?.permits(task, outgoing: outgoing) == true else { return false }
+    }
     let continuationScope = previousPlan.flatMap {
       AgentPlanContinuationScope.resolve(
         plan: $0,
@@ -5595,7 +5600,7 @@ final class MessageCoordinator: ObservableObject {
   @discardableResult
   func retryFailedLocalNativeAction(taskId: String) -> Bool {
     guard var task = store.agentTask(id: taskId),
-          (task.effectRecovery ?? []).isEmpty,
+          !AgentOutcomeContinuation.isUnverified(task),
           task.phase == .failed,
           let failedAction = task.pendingAction ?? task.pendingActions.first,
           failedAction.status == .failed,
@@ -5658,7 +5663,9 @@ final class MessageCoordinator: ObservableObject {
   private func permitsEffectRecoveryActions(
     _ actions: [AgentAction], task: AgentTaskRecord, outgoing: ChatMessage
   ) -> Bool {
-    (task.effectRecovery ?? []).allSatisfy { effect in
+    let effects = task.effectRecovery ?? []
+    guard !AgentOutcomeContinuation.isUnverified(task) || !effects.isEmpty else { return false }
+    return effects.allSatisfy { effect in
       effect.matches(taskId: task.taskId, sessionId: task.sessionId, outgoing: outgoing) &&
         effect.permitsFollowUp(actions)
     }
@@ -5667,9 +5674,11 @@ final class MessageCoordinator: ObservableObject {
   private func inspectLocalEffect(
     _ index: Int, outgoing: ChatMessage, task: inout AgentTaskRecord, registry: AgentNativeToolRegistry
   ) -> Bool {
+    if task.outcomeContinuation == nil { task = store.upsertAgentTask(task) }
     guard var effects = task.effectRecovery, effects.indices.contains(index) else { return false }
     let effect = effects[index]
-    guard effect.matches(taskId: task.taskId, sessionId: task.sessionId, outgoing: outgoing),
+    guard task.outcomeContinuation?.permits(task, outgoing: outgoing) == true,
+          effect.matches(taskId: task.taskId, sessionId: task.sessionId, outgoing: outgoing),
           ![AgentPermissionMode.observeOnly, .suggestOnly].contains(store.agentSafetySettings.permissionMode),
           !store.agentSafetySettings.executionPaused,
           !PhoneExecutionAuthority.isCancelled(taskId: task.taskId),
@@ -5730,7 +5739,8 @@ final class MessageCoordinator: ObservableObject {
 
   private func continueObservedShortcutReview(task: inout AgentTaskRecord, outgoing: ChatMessage) async -> Bool {
     let effects = task.effectRecovery ?? []
-    guard !effects.isEmpty, effects.allSatisfy({
+    if task.outcomeContinuation == nil { task = store.upsertAgentTask(task) }
+    guard task.outcomeContinuation?.permits(task, outgoing: outgoing) == true, !effects.isEmpty, effects.allSatisfy({
       $0.hasObservation && $0.matches(taskId: task.taskId, sessionId: task.sessionId, outgoing: outgoing)
     }), let snapshot = shortcutReviewPlanner(task: task, outgoing: outgoing) else { return false }
     task.plannerSnapshot = snapshot
@@ -5862,6 +5872,21 @@ final class MessageCoordinator: ObservableObject {
     guard var task = store.agentTask(id: taskId),
           task.phase == .paused else {
       return false
+    }
+    if AgentOutcomeContinuation.isUnverified(task) {
+      if task.outcomeContinuation == nil { task = store.upsertAgentTask(task) }
+      guard !automatic, task.capturePermission == nil, task.teamRecoveryRunId == nil,
+            !store.agentSafetySettings.executionPaused, !PhoneExecutionAuthority.isCancelled(taskId: taskId),
+            let outgoing = localOutgoingMessage(for: task),
+            task.outcomeContinuation?.permits(task, outgoing: outgoing) == true else { return false }
+      task.phase = .blocked
+      task.blocked = true
+      task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+      store.upsertAgentTask(task)
+      Task { @MainActor [weak self] in
+        _ = await self?.replanLocalNativeAction(taskId: taskId)
+      }
+      return true
     }
     if let wait = task.capturePermission {
       guard !automatic, !wait.dispatched, !PhoneExecutionAuthority.isCancelled(taskId: taskId),
@@ -9669,6 +9694,11 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     task: inout AgentTaskRecord
   ) async -> Bool {
+    if AgentOutcomeContinuation.isUnverified(task) {
+      task.phase = .completed
+      task = store.upsertAgentTask(task)
+      return false
+    }
     let normalized = response.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalized.isEmpty else { return false }
     let visual: AgentVisualOutputPolicy.Reply?
@@ -9704,7 +9734,8 @@ final class MessageCoordinator: ObservableObject {
     task.verification = "Model completed the initial turn without a phone action"
     task.executionLog.append("Model direct response completed without entering the native tool loop")
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
-    store.upsertAgentTask(task)
+    task = store.upsertAgentTask(task)
+    guard task.phase == .completed else { return false }
     store.appendDeliveryTrace(
       outgoing.id,
       contactId: outgoing.contactId,
@@ -9731,6 +9762,11 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     task: inout AgentTaskRecord
   ) -> Bool {
+    if AgentOutcomeContinuation.isUnverified(task) {
+      task.phase = .completed
+      task = store.upsertAgentTask(task)
+      return false
+    }
     var planContext = AgentTaskPlanContext(plan: plan)
     planContext.executionMode = .planOnly
     task.planContext = planContext
@@ -9745,7 +9781,8 @@ final class MessageCoordinator: ObservableObject {
     task.verification = "Plan generated without executing native tools"
     task.executionLog.append("Plan only: generated \(plan.actions.count) action(s) without execution")
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
-    store.upsertAgentTask(task)
+    task = store.upsertAgentTask(task)
+    guard task.phase == .completed else { return false }
     store.appendDeliveryTrace(
       outgoing.id,
       contactId: outgoing.contactId,
@@ -10136,7 +10173,13 @@ final class MessageCoordinator: ObservableObject {
     task.executionLog.append(rollingBatchBoundary
       ? "Rolling plan: parallel batch completed; requesting model assessment"
       : "Native tools: \(parallelMode.rawValue) batch completed")
-    store.upsertAgentTask(task)
+    task = store.upsertAgentTask(task)
+    if task.phase == .blocked, AgentOutcomeContinuation.isUnverified(task) {
+      localRecordedRunStore.recordNativeExecution(observations, task: task, outgoing: outgoing, status: .running)
+      store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId, stage: "local_native_tool_failed",
+        detail: task.verification, status: .failed)
+      return
+    }
     localRecordedRunStore.recordNativeExecution(observations, task: task, outgoing: outgoing,
       status: rollingBatchBoundary ? .running : .completed)
     store.appendDeliveryTrace(
@@ -10619,11 +10662,19 @@ final class MessageCoordinator: ObservableObject {
       task.executionLog.append("Native tool \(toolId): retried \(retryCount) time(s)")
     }
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
-    store.upsertAgentTask(task)
+    task = store.upsertAgentTask(task)
     let recordedStatus: AgentRecordedRunStatus = !verifiedStep ? .failed :
       (hasRemainingActions || rollingBatchBoundary || needsOutcomeDecision ? .running : .completed)
     localRecordedRunStore.recordNativeExecution([.init(action: executionAction, result: result)],
       task: task, outgoing: outgoing, status: recordedStatus)
+    if verifiedStep, task.phase == .blocked, AgentOutcomeContinuation.isUnverified(task) {
+      store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId, stage: "local_native_tool_failed",
+        detail: task.verification, status: .failed)
+      _ = store.appendIncoming(task.result, from: outgoing.contactId, remoteMessageId: outgoing.turnId,
+        status: .failed, traceStage: "local_native_tool_error", detail: toolId,
+        conversationId: outgoing.conversationId, turnId: outgoing.turnId)
+      return
+    }
     store.appendDeliveryTrace(
       outgoing.id,
       contactId: outgoing.contactId,
@@ -10815,6 +10866,7 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     task: inout AgentTaskRecord
   ) async -> Bool {
+    guard task.outcomeContinuation.map({ $0.permits(task, outgoing: outgoing) }) != false else { return false }
     guard (task.effectRecovery ?? []).allSatisfy({
       $0.hasObservation && $0.matches(taskId: task.taskId, sessionId: task.sessionId, outgoing: outgoing)
     }) else { return false }
@@ -10934,6 +10986,7 @@ final class MessageCoordinator: ObservableObject {
     task.phase = .executing
     task.result = ""
     task.verification = "Rolling plan revision \(continuedPlan.revision) accepted"
+    task.outcomeContinuation = nil
     task.executionLog.append("Rolling plan: accepted revision \(continuedPlan.revision) with \(continuedPlan.actions.count) action(s)")
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
     store.upsertAgentTask(task)
@@ -11021,6 +11074,10 @@ final class MessageCoordinator: ObservableObject {
     task.pendingAction = nil
     task.pendingActions = []
     task.phase = .completed
+    if let effects = task.effectRecovery, !effects.isEmpty, effects.allSatisfy(\.hasObservation),
+       AgentOutcomeContinuation.pendingIDs(task).isSubset(of: Set(effects.map(\.actionId))) {
+      task.verifiedOutcome = AgentOutcomeContinuation.capture(task)
+    }
     task.result = hasResults ? finalAction.description : finalPlan.expectedResult
       .ifBlank(finalAction.result)
       .ifBlank(finalAction.description)
@@ -11032,7 +11089,8 @@ final class MessageCoordinator: ObservableObject {
       zh: LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage).hasPrefix("zh"))
     let attachments = videos + files
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
-    store.upsertAgentTask(task)
+    task = store.upsertAgentTask(task)
+    guard task.phase == .completed else { return }
     localRecordedRunStore.recordNativeExecution(task: task, outgoing: outgoing, status: .completed)
     store.appendDeliveryTrace(
       outgoing.id,

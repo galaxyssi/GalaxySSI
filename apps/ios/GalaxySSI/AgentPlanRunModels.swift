@@ -120,6 +120,8 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
   var historyManifest: AgentSessionHistoryManifest?
   var lastNativeActionResult: AgentActionResult?
   var effectRecovery: [AgentEffectRecoveryRecord]? = nil
+  var outcomeContinuation: AgentOutcomeContinuation? = nil
+  var verifiedOutcome: AgentOutcomeContinuation? = nil
   var nativeActionResults: [String]
   var result: String
   var verification: String
@@ -226,6 +228,8 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     case historyManifest = "history_pages"
     case lastNativeActionResult = "last_native_action_result"
     case effectRecovery = "effect_recovery"
+    case outcomeContinuation = "unverified_outcome_continuation"
+    case verifiedOutcome = "verified_outcome"
     case nativeActionResults = "native_action_results"
     case result
     case verification
@@ -275,6 +279,8 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
       updatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? 0
     )
     effectRecovery = try container.decodeIfPresent([AgentEffectRecoveryRecord].self, forKey: .effectRecovery)
+    outcomeContinuation = try container.decodeIfPresent(AgentOutcomeContinuation.self, forKey: .outcomeContinuation)
+    verifiedOutcome = try container.decodeIfPresent(AgentOutcomeContinuation.self, forKey: .verifiedOutcome)
     teamRecoveryRunId = try container.decodeIfPresent(String.self, forKey: .teamRecoveryRunId)
     teamResultRichOutput = try container.decodeIfPresent(String.self, forKey: .teamResultRichOutput)
     capturePermission = try container.decodeIfPresent(AgentCapturePermissionContinuation.self, forKey: .capturePermission)
