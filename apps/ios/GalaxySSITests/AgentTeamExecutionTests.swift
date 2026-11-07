@@ -1035,6 +1035,198 @@ extension GalaxySSIStoreTests {
       try decode(plan.replacingOccurrences(of: ",\"expected\":null", with: "")), tool: spec))
   }
 
+  func testSavedToolExecutionJournalRecoversWithoutRerunningAndFencesScope() throws {
+    typealias Execution = AgentCollaborationSavedToolExecution
+    let suite = "saved-tool-execution-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    func open() -> AgentTeamExecutionHistoryStore {
+      AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]),
+        fileURL: root.appendingPathComponent("history.sqlite"))
+    }
+    let history = open()
+    var team = durableTeamSnapshot("journal-run")
+    team.members[0].dispatchCheckpoint = .accepted
+    team.members[0].dispatchAllowsSavedToolTest = true
+    XCTAssertTrue(history.upsert(team))
+    let assignment = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId, memberId: team.members[0].memberId, sourceId: team.members[0].sourceMessageId)
+    func scope(generation: Int64 = 1) -> Execution.Scope {
+      .init(assignment: assignment, profileFingerprint: "profile", desktopID: "desktop",
+        desktopFingerprint: "pair", routeID: "route", generation: generation)
+    }
+    func start(_ id: String, timeout: AgentMcpJSONValue = .int(2_000), extra: Bool = false) -> Execution.Request? {
+      var input: AgentMcpJSONObject = ["mode": .string("start"), "execution_id": .string(id), "timeout_ms": timeout,
+        "tool_test_plan": .object(["object_id": .string(String(repeating: "a", count: 64)),
+          "sha256": .string(String(repeating: "b", count: 64)), "revision": .int(1)])]
+      if extra { input["source"] = .string("not permitted") }
+      return Execution.Request(phase: "start", input: input)
+    }
+    func query(_ id: String, _ mode: String) throws -> Execution.Request {
+      try XCTUnwrap(Execution.Request(phase: mode, input: ["mode": .string(mode), "execution_id": .string(id)]))
+    }
+    XCTAssertNil(start("tool\n"))
+    XCTAssertNil(start("tool", timeout: .string("2000")))
+    XCTAssertNil(start("tool", extra: true))
+    XCTAssertNil(Execution.Request(phase: "cancel", input: ["mode": .string("status"), "execution_id": .string("tool")]))
+    let original = try XCTUnwrap(start("tool"))
+    XCTAssertTrue(Execution.permitsDirectRuntime(source: "def run(parameters): return parameters", key: "saved-test"))
+    XCTAssertFalse(Execution.permitsDirectRuntime(source: "def run(parameters): return 'delete'", key: "saved-test"))
+    let busy = try history.updateSavedToolExecution(.request(original), scope: scope(), allowAdmission: false, process: "a", now: 1)
+    XCTAssertEqual(busy.response["status"], .string("busy"))
+    XCTAssertFalse(busy.shouldLaunch)
+    let admitted = try history.updateSavedToolExecution(.request(original), scope: scope(), process: "a", now: 1)
+    XCTAssertTrue(admitted.shouldLaunch)
+    XCTAssertEqual(admitted.response["status"], .string("queued"))
+    XCTAssertFalse(try history.updateSavedToolExecution(.request(original), scope: scope(), process: "a", now: 2).shouldLaunch)
+    let different = try XCTUnwrap(start("tool", timeout: .int(3_000)))
+    XCTAssertThrowsError(try history.updateSavedToolExecution(.request(different), scope: scope(), process: "a", now: 2))
+    XCTAssertThrowsError(try history.updateSavedToolExecution(.request(original), scope: scope(generation: 2), process: "a", now: 2))
+    XCTAssertTrue(try history.updateSavedToolExecution(.running(executionID: "tool"), scope: scope(), process: "a", now: 3).didStart)
+    let reopened = open()
+    let recovered = try reopened.updateSavedToolExecution(.request(original), scope: scope(), process: "b", now: 4)
+    XCTAssertFalse(recovered.shouldLaunch)
+    XCTAssertEqual(recovered.response["status"], .string("interrupted"))
+    XCTAssertFalse(try reopened.updateSavedToolExecution(.running(executionID: "tool"), scope: scope(), process: "b", now: 5).didStart)
+
+    let queued = try XCTUnwrap(start("queued"))
+    _ = try reopened.updateSavedToolExecution(.request(queued), scope: scope(), process: "b", now: 6)
+    let cancelled = try reopened.updateSavedToolExecution(.request(query("queued", "cancel")), scope: scope(), process: "b", now: 7)
+    XCTAssertEqual(cancelled.response["status"], .string("cancelled"))
+    XCTAssertFalse(cancelled.shouldCancel)
+    XCTAssertFalse(try reopened.updateSavedToolExecution(.running(executionID: "queued"), scope: scope(), process: "b", now: 8).didStart)
+    let revoked = try XCTUnwrap(start("revoked"))
+    _ = try reopened.updateSavedToolExecution(.request(revoked), scope: scope(), process: "b", now: 8)
+    let interrupted = try reopened.updateSavedToolExecution(.interrupt(executionID: "revoked"),
+      scope: scope(), process: "b", now: 8)
+    XCTAssertEqual(interrupted.response["status"], .string("interrupted"))
+    XCTAssertFalse(try reopened.updateSavedToolExecution(.request(revoked), scope: scope(), process: "b", now: 8).shouldLaunch)
+
+    let running = try XCTUnwrap(start("running"))
+    _ = try reopened.updateSavedToolExecution(.request(running), scope: scope(), process: "b", now: 9)
+    _ = try reopened.updateSavedToolExecution(.running(executionID: "running"), scope: scope(), process: "b", now: 10)
+    let cancelling = try reopened.updateSavedToolExecution(.request(query("running", "cancel")),
+      scope: scope(), process: "b", now: 11)
+    XCTAssertTrue(cancelling.shouldCancel)
+    XCTAssertEqual(cancelling.response["status"], .string("cancelling"))
+    let pending = try XCTUnwrap(cancelling.record)
+    let outcomes: [(String, Execution.Record.State)] = [
+      ("runtime_execution_cancelled", .cancelled), ("runtime_cancellation_unconfirmed", .interrupted),
+      ("runtime_execution_outcome_unknown", .interrupted)
+    ]
+    for (code, state) in outcomes {
+      let output: AgentMcpJSONObject = ["error": .object(["code": .string(code)])]
+      let terminal = try Execution.apply(.finish(executionID: "running", result: output),
+        scope: scope(), existing: pending, process: "b", now: 12)
+      XCTAssertEqual(terminal.record?.state, state)
+      XCTAssertEqual(terminal.record?.result, output)
+    }
+    let result: AgentMcpJSONObject = ["native_status": .string("cancelled"), "passed": .null]
+    _ = try reopened.updateSavedToolExecution(.finish(executionID: "running", result: result), scope: scope(), process: "b", now: 12)
+    let restored = try open().updateSavedToolExecution(.request(query("running", "status")), scope: scope(), process: "c", now: 13)
+    XCTAssertEqual(restored.response["status"], .string("finished"))
+    XCTAssertEqual(restored.response["result"], .object(result))
+    reopened.removeResearchObjects(conversationId: assignment.conversationId)
+    XCTAssertThrowsError(try reopened.updateSavedToolExecution(.request(original), scope: scope(), process: "b", now: 14))
+  }
+
+  func testSavedToolTestResolvesExactRecordsAndKeepsTheOracleOutsidePython() throws {
+    let suite = "saved-tool-test-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: InMemorySecretStore(),
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: root.appendingPathComponent("history.sqlite"))
+    func scope(_ team: AgentTeamExecutionSnapshot) -> AgentCollaborationToolEvidenceScope {
+      .init(runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
+        memberId: team.members[0].memberId, sourceId: team.members[0].sourceMessageId)
+    }
+    func publish(_ draft: AgentCollaborationResearchDraft, run: String) throws -> AgentCollaborationResearchReference {
+      var author = durableTeamSnapshot(run)
+      author.taskId = run
+      author.members[0].status = .succeeded
+      XCTAssertTrue(history.upsert(author))
+      let owner = scope(author)
+      return try XCTUnwrap(history.publishResearchObjects([draft], runId: owner.runId,
+        conversationId: owner.conversationId, turnId: owner.turnId,
+        memberId: owner.memberId, sourceId: owner.sourceId).references.first)
+    }
+    let spec: AgentMcpJSONObject = [
+      "language": .string("python"), "name": .string("Check"), "purpose": .string("Validate"),
+      "applies_when": .string("Input"), "avoid_when": .string("None"), "environment": .string("python"),
+      "dependencies": .string("None"), "side_effects": .string("None"),
+      "source": .string("def run(parameters): return parameters['value']"),
+      "input_schema": .object(["type": .string("object"), "required": .array([.string("value")]),
+        "properties": .object(["value": .object(["type": .string("integer")])])])
+    ]
+    let tool = try publish(.init(id: "tool", objectId: nil, baseRevision: 0, kind: .executableTool,
+      title: "Saved source", body: ["executable_tool": .object(spec)], parents: []), run: "author-tool")
+    let oracle = AgentMcpJSONValue.object(["a/b": .array([.string("held-back"), .int(1)])])
+    let plan: AgentMcpJSONObject = [
+      "environment": .string("python"), "purpose": .string("Validate"), "coverage_gaps": .string("Limited"),
+      "oracle_basis": .string("External"), "executable_tool": .object(["object_id": .string(tool.objectId),
+        "revision": .int(tool.revision), "sha256": .string(tool.sha256)]),
+      "cases": .array([
+        .object(["id": .string("target"), "purpose": .string("target"), "reason": .string("Typical"),
+          "input": .object(["value": .int(1)]), "expected": oracle]),
+        .object(["id": .string("regression"), "purpose": .string("regression"), "reason": .string("Zero"),
+          "input": .object(["value": .int(0)]), "expected": .null])
+      ])
+    ]
+    let reference = try publish(.init(id: "plan", objectId: nil, baseRevision: 0, kind: .toolTestPlan,
+      title: "Saved plan", body: ["tool_test_plan": .object(plan)], parents: [tool]), run: "author-plan")
+    var running = durableTeamSnapshot("execute-plan")
+    running.members[0].dispatchCheckpoint = .dispatching
+    running.members[0].dispatchAllowsSavedToolTest = true
+    XCTAssertTrue(history.upsert(running))
+    let reader = scope(running)
+    let prepared = try history.prepareSavedToolTest(reference, timeoutMillis: 1_000, scope: reader)
+    XCTAssertEqual(prepared.runtimeInput["network_enabled"], .bool(false))
+    XCTAssertEqual(prepared.runtimeInput["language"], .string("python"))
+    let source = prepared.runtimeInput.string("source")
+    let encoded = try XCTUnwrap(source.components(separatedBy: "base64.b64decode('").last?.split(separator: "'").first)
+    let supplied = try XCTUnwrap(Data(base64Encoded: String(encoded)))
+    let passedToPython = try JSONDecoder().decode(AgentMcpJSONObject.self, from: supplied)
+    XCTAssertEqual(Set(passedToPython.keys), ["cases", "source"])
+    XCTAssertEqual(passedToPython["cases"]?.arrayValue?.first?.objectValue?["input"], .object(["value": .int(1)]))
+    XCTAssertFalse(String(decoding: supplied, as: UTF8.self).contains("held-back"))
+
+    func report(_ rows: [AgentMcpJSONValue], truncated: Bool = false) -> AgentNativeToolResult {
+      let runtime: AgentMcpJSONObject = ["python": .array([.int(3), .int(11), .int(0)]),
+        "implementation": .string("cpython"), "machine": .string("aarch64")]
+      let stdout = AgentMcpJSONCodec.stringify(["format": .string(AgentCollaborationSavedToolTest.reportFormat),
+        "runtime": .object(runtime), "environment_matches": .bool(true), "results": .array(rows)])
+      let output: AgentMcpJSONObject = ["exit_code": .int(0), "stdout": .string(stdout), "output_truncated": .bool(truncated)]
+      return .init(status: .succeeded, output: output, message: "", receipt: .init(invocationId: "fixture",
+        startedAtEpochMillis: 1, finishedAtEpochMillis: 2, durationMillis: 1, status: .succeeded,
+        inputSha256: AgentMcpJSONCodec.sha256(prepared.runtimeInput), outputSha256: AgentMcpJSONCodec.sha256(output)),
+        provenance: .init(toolId: AgentIOSOnDeviceRuntimeNativeToolCatalog.execute,
+          toolVersion: "1", location: .application, executorId: "fixture", contractVersion: "1"))
+    }
+    let rows: [AgentMcpJSONValue] = [
+      .object(["id": .string("target"), "output": oracle]),
+      .object(["id": .string("regression"), "output": .null])
+    ]
+    XCTAssertEqual(prepared.evaluate(report(rows))["passed"], .bool(true))
+    XCTAssertEqual(prepared.evaluate(report(rows, truncated: true))["passed"], .bool(false))
+    XCTAssertEqual(prepared.evaluate(report([rows[0], rows[0]]))["passed"], .bool(false))
+    var wrong = rows
+    wrong[0] = .object(["id": .string("target"), "output": .object(["a/b": .array([.string("held-back"), .bool(true)])])])
+    let mismatch = prepared.evaluate(report(wrong))
+    XCTAssertEqual(mismatch["passed"], .bool(false))
+    XCTAssertEqual(mismatch["problems"]?.arrayValue?.first?.objectValue?["path"], .string("/results/0/output/a~1b/1"))
+    var tampered = report(rows)
+    tampered.receipt.inputSha256 = "changed"
+    XCTAssertEqual(prepared.evaluate(tampered)["passed"], .bool(false))
+    var stale = reference
+    stale.sha256 = String(repeating: "0", count: 64)
+    XCTAssertThrowsError(try history.prepareSavedToolTest(stale, timeoutMillis: 1_000, scope: reader))
+    history.removeResearchObjects(conversationId: reader.conversationId)
+    XCTAssertThrowsError(try history.prepareSavedToolTest(reference, timeoutMillis: 1_000, scope: reader))
+  }
+
   func testForecastRecomputesUtilityWithoutChoosingAnAction() throws {
     let raw = """
     {"work_id":"test","executor":"member","horizon":"One test","decision_rationale":"Avoid side effects",
