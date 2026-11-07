@@ -147,6 +147,7 @@ enum AgentCollaborationRuleTopics {
     report_pointer, source and cases. experiment_result binds the plan and completely read original measurement observations.
     capability_lesson binds exact result and rollback parents; retain requires passing target and regression cases,
     an independent reviewer and full original evidence reads. Reject or revise can preserve historical findings.
+    \(AgentCollaborationExperimentResultFeedback.guidance)
     """),
     Topic(id: "learning", purpose: "Compare and record learning choices", prerequisites: ["foundation"], contract: """
     learning_agenda is immutable. Include goal_alignment, resource_reasoning, selection_reason, reconsider_when and options.

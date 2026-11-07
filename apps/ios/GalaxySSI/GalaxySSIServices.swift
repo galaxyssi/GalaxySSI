@@ -8652,6 +8652,13 @@ final class MessageCoordinator: ObservableObject {
         Direct requests are research context for a later assignment, not authorization to start work.
         """)
     }
+    if member.context["_galaxyssi_selection_source"] == "collaboration_roster" {
+      instruction.append(AgentCollaborationExperimentResultFeedback.guidance)
+      if member.deliveryMode == .respond {
+        instruction.append("Match requested record kinds to their host contracts. If reporting evidence cannot satisfy a preregistered comparison, " +
+          "correct the assignment or request a prospective comparison. Preserve original reports, criteria and verification types.")
+      }
+    }
     return goal + "\n\n" + instruction.joined(separator: "\n")
   }
 

@@ -981,6 +981,153 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(AgentCollaborationWorkflowIntake.validatesLineage(revision, parents: [ref("before")], current: exact))
   }
 
+  func testExperimentResultPlanFeedbackKeepsFieldFactsAndDoesNotDiscloseIsolatedRecords() throws {
+    typealias Feedback = AgentCollaborationExperimentResultFeedback
+    let scope = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "group", turnId: "turn",
+      memberId: "reporter", sourceId: "source")
+    let id = String(repeating: "a", count: 64)
+    let hash = String(repeating: "b", count: 64)
+    let ref = AgentCollaborationResearchReference(objectId: id, revision: 1, sha256: hash)
+    let reference: AgentMcpJSONObject = ["object_id": .string(id), "revision": .int(1), "sha256": .string(hash)]
+    var saved = AgentCollaborationResearchRevision(reference: ref, previousHash: nil, runId: "previous",
+      turnId: "previous-turn", authorId: "other", sourceId: "other-source",
+      draft: .init(id: "plan", objectId: nil, baseRevision: 0, kind: .artifact, title: "Plan",
+        body: ["content": .string("Saved")], parents: []))
+    func draft(_ raw: AgentMcpJSONValue?) -> AgentCollaborationResearchDraft {
+      var body: AgentMcpJSONObject = ["interpretation": .string("Report"), "limitations": .string("Observational")]
+      body["plan"] = raw
+      return .init(id: "result", objectId: nil, baseRevision: 0, kind: .experimentResult, title: "Result",
+        body: ["experiment_result": .object(body)], parents: [ref])
+    }
+    func problem(_ raw: AgentMcpJSONValue?) throws -> AgentMcpJSONObject {
+      do { _ = try Feedback.registeredPlan(in: draft(raw), scope: scope) { _ in saved } }
+      catch let feedback as Feedback { return feedback.problem }
+      XCTFail("Expected typed result feedback")
+      return [:]
+    }
+    let absent = try problem(nil)
+    XCTAssertEqual(absent["code"], .string("experiment_plan_reference_required"))
+    XCTAssertEqual(absent["path"], .string("/body/experiment_result/plan"))
+    XCTAssertEqual(absent["actual"], .string("absent"))
+    XCTAssertEqual(try problem(.null)["actual"], .string("null"))
+    XCTAssertEqual(try problem(.array([]))["actual"], .string("not an object"))
+    var fractional = reference
+    fractional["revision"] = .double(1.5)
+    let revision = try problem(.object(fractional))
+    XCTAssertEqual(revision["code"], .string("record_revision_invalid"))
+    XCTAssertEqual(revision["path"], .string("/body/experiment_result/plan/revision"))
+    XCTAssertEqual(revision["actual"], .double(1.5))
+    let wrongKind = try problem(.object(reference))
+    XCTAssertEqual(wrongKind["component"], .string("WorkspaceRecordValidator"))
+    XCTAssertEqual(wrongKind["path"], .string("/body/experiment_result/plan/kind"))
+    XCTAssertEqual(wrongKind["actual"], .string("artifact"))
+    XCTAssertEqual(wrongKind["reference"], .object(reference))
+    var wrongHash = reference
+    wrongHash["sha256"] = .string(String(repeating: "c", count: 64))
+    let wrong = try problem(.object(wrongHash))
+    XCTAssertEqual(wrong["code"], .string("record_digest_mismatch"))
+    XCTAssertEqual(wrong["expected"], .string(hash))
+    XCTAssertEqual(wrong["actual"], wrongHash["sha256"])
+    saved.turnId = scope.turnId
+    let hidden = try problem(.object(wrongHash))
+    XCTAssertEqual(hidden["code"], .string("record_unavailable"))
+    XCTAssertEqual(hidden["actual"], .string("missing or isolated"))
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(hidden).contains(hash))
+    XCTAssertThrowsError(try Feedback.registeredPlan(in: draft(.object(reference)), scope: scope) { _ in
+      throw AgentTeamHistoryDatabase.Failure.unavailable
+    }) { XCTAssertTrue($0 is AgentTeamHistoryDatabase.Failure) }
+    let contract = try XCTUnwrap(absent["record_contract"]?.objectValue)
+    XCTAssertEqual(contract["automatic_conversion"], .bool(false))
+    XCTAssertEqual(contract["registration_before_measurements_required"], .bool(true))
+    XCTAssertTrue(contract.string("guidance").contains("coordinator assistance"))
+  }
+
+  func testExperimentResultRejectionRetainsDraftAndReceiptAcrossReopenWithoutRelabeling() throws {
+    let suite = "experiment-result-feedback-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: folder) }
+    let secrets = InMemorySecretStore()
+    let file = folder.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    var team = durableTeamSnapshot("experiment-feedback")
+    team.members[1].dispatchCheckpoint = .dispatching
+    XCTAssertTrue(history.upsert(team))
+    let member = team.members[1]
+    let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId, memberId: member.memberId, sourceId: member.sourceMessageId)
+    func artifact(kind: String, plan: AgentMcpJSONValue? = nil) -> String {
+      var result: AgentMcpJSONObject = ["interpretation": .string("Observed"), "limitations": .string("Not measured")]
+      result["plan"] = plan
+      return AgentMcpJSONCodec.stringify(["format": .string(AgentCollaborationResearchEnvelope.wireFormat),
+        "summary": .string("Report"), "workspace": .array([.object([
+          "id": .string("report"), "title": .string("Report"), "kind": .string(kind), "base_revision": .int(0),
+          "body": .object(["experiment_result": .object(result), "content": .string("Complete original report")]),
+          "parents": .array([])
+        ])])])
+    }
+    let raw = artifact(kind: "experiment_result") + "\n"
+    let rejected = try history.publishCollaborationMilestone([
+      "mode": .string("publish"), "milestone_id": .string("comparison"), "artifact": .string(raw)
+    ], scope: scope)
+    XCTAssertEqual(rejected["status"], .string("rejected"))
+    XCTAssertEqual(rejected["rejected_draft_preserved"], .bool(true))
+    let detail = try XCTUnwrap(rejected["record_validation"]?.objectValue)
+    XCTAssertEqual(detail["code"], .string("experiment_plan_reference_required"))
+    XCTAssertNil(rejected["references"])
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let lookup: AgentMcpJSONObject = ["mode": .string("receipt"), "milestone_id": .string("comparison"),
+      "artifact_sha256": try XCTUnwrap(rejected["artifact_sha256"])]
+    XCTAssertEqual(try reopened.publishCollaborationMilestone(lookup, scope: scope), rejected)
+    let records = try AgentTeamHistoryDatabase(fileURL: file,
+      storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    let base = "publication:" + AgentMcpJSONCodec.sha256(["run": .string(scope.runId),
+      "member": .string(scope.memberId), "source": .string(scope.sourceId)])
+    let rejectionKey = base + ":rejected-milestone:" + AgentMcpJSONCodec.sha256([
+      "id": .string("comparison"), "hash": try XCTUnwrap(rejected["artifact_sha256"])
+    ])
+    let preserved = try XCTUnwrap(records.researchRecord(AgentCollaborationMilestoneRejection.self,
+      conversationId: scope.conversationId, key: rejectionKey, revision: 0))
+    XCTAssertEqual(preserved.artifact, Data(raw.utf8))
+    let corruptID = String(repeating: "d", count: 64)
+    try records.transaction {
+      try records.insertResearchRecord("not a workspace revision", conversationId: scope.conversationId,
+        key: "object:" + corruptID, revision: 1)
+    }
+    let corruptPlan = AgentMcpJSONValue.object(["object_id": .string(corruptID), "revision": .int(1),
+      "sha256": .string(String(repeating: "e", count: 64))])
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone([
+      "mode": .string("publish"), "milestone_id": .string("broken-store"),
+      "artifact": .string(artifact(kind: "experiment_result", plan: corruptPlan))
+    ], scope: scope)) { XCTAssertTrue($0 is DecodingError) }
+    XCTAssertEqual(try reopened.publishCollaborationMilestone(["mode": .string("list")], scope: scope)["milestones"], .array([]))
+    let stored = try reopened.publishCollaborationMilestone([
+      "mode": .string("publish"), "milestone_id": .string("report"), "artifact": .string(artifact(kind: "artifact"))
+    ], scope: scope)
+    let ref = try XCTUnwrap(stored["references"]?.arrayValue?.first?.objectValue)
+    var selector = ref
+    selector["mode"] = .string("workspace")
+    let document = try reopened.recallCollaborationOriginal(selector, scope: scope)
+    XCTAssertTrue(document.string("content").contains("Complete original report"))
+    let saved = try JSONDecoder().decode(AgentCollaborationResearchRevision.self, from: Data(document.string("content").utf8))
+    XCTAssertEqual(saved.draft.kind, .artifact)
+    XCTAssertNil(saved.measuredCases)
+    team.members[1].status = .succeeded
+    team.members[1].replyContent = raw
+    team.updatedAtMillis += 1
+    XCTAssertTrue(reopened.upsert(team))
+    XCTAssertThrowsError(try reopened.publishSavedResearchReply(raw, scope: scope)) {
+      XCTAssertEqual(($0 as? AgentCollaborationExperimentResultFeedback)?.problem, detail)
+    }
+    let final = try XCTUnwrap(history.rejectedResearchReply(scope: scope))
+    XCTAssertEqual(Data(final.raw.utf8), Data(raw.utf8))
+    XCTAssertEqual(final.rejection.reason, .invalidDraft)
+    XCTAssertEqual(final.rejection.problem, detail)
+    XCTAssertNil(try history.committedResearchRevisions(scope: scope))
+  }
+
   func testExperimentRegistrationRequiresMeasurableTargetAndUniqueCases() {
     var item: AgentMcpJSONObject = ["id": .string("target"), "metric": .string("accuracy"),
       "prediction": .string("Improves"), "purpose": .string("target"), "direction": .string("maximize"),

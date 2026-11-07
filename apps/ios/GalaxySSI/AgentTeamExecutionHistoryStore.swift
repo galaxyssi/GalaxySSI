@@ -1337,7 +1337,7 @@ final class AgentTeamExecutionHistoryStore {
       for draft in drafts {
         try AgentCollaborationTypedRecordValidation.validate(draft)
         guard !draft.id.isBlank, draft.id.utf8.count <= 160, !draft.title.isBlank,
-              draft.title.utf8.count <= 960, !draft.body.isEmpty,
+              draft.title.utf8.count <= 960, !draft.body.isEmpty || draft.kind == .experimentResult,
               draft.baseRevision >= 0, draft.baseRevision < Int64.max else { throw AgentTeamHistoryDatabase.Failure.corrupt }
         if draft.kind == .capabilityGap || draft.kind == .innovation {
           guard AgentCollaborationEvolutionIntake.validates(draft) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
@@ -1621,20 +1621,27 @@ final class AgentTeamExecutionHistoryStore {
           hypothesisFeedback = feedback
           frozenReads = reads
         } else if draft.kind == .experimentResult {
+          let scope = AgentCollaborationToolEvidenceScope(runId: runId, conversationId: conversationId,
+            turnId: turnId, memberId: memberId, sourceId: sourceId)
+          let plan = try AgentCollaborationExperimentResultFeedback.registeredPlan(in: draft, scope: scope) { objectId in
+            do {
+              let row = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                conversationId: conversationId, key: "object:" + objectId)
+              guard row == nil || row?.reference.objectId == objectId else {
+                throw AgentTeamHistoryDatabase.Failure.corrupt
+              }
+              return row
+            } catch {
+              throw AgentCollaborationExperimentResultFeedback.StorageFailure(underlying: error)
+            }
+          }
           guard draft.objectId?.isBlank != false, draft.baseRevision == 0, !references.isEmpty,
                 let value = draft.body["experiment_result"]?.objectValue,
                 !value.string("interpretation").isBlank, !value.string("limitations").isBlank,
-                let link = AgentCollaborationExperimentPlanIntake.reference(value["plan"]), draft.parents.contains(link),
-                let plan = try database.researchRecord(AgentCollaborationResearchRevision.self,
-                  conversationId: conversationId, key: "object:" + link.objectId),
-                plan.reference == link, plan.draft.kind == .experimentPlan,
-                plan.turnId != turnId || (plan.runId == runId && plan.authorId == memberId),
                 let registered = plan.registeredAtMillis,
                 let spec = plan.draft.body["experiment_plan"]?.objectValue,
                 let source = spec["source"]?.objectValue, source.string("origin") == "ios_cloud_tool"
           else { throw AgentTeamHistoryDatabase.Failure.stale }
-          let scope = AgentCollaborationToolEvidenceScope(runId: runId, conversationId: conversationId,
-            turnId: turnId, memberId: memberId, sourceId: sourceId)
           let reads = try Self.freezeCloudReads(references, scope: scope, database: database)
           var authors = Set<String>()
           let reports = try reads.map { read -> AgentMcpJSONObject in
@@ -2121,6 +2128,10 @@ final class AgentTeamExecutionHistoryStore {
       let receipt = try publishResearchObjects(drafts, runId: scope.runId, conversationId: scope.conversationId,
         turnId: scope.turnId, memberId: scope.memberId, sourceId: scope.sourceId, milestone: (id, hash))
       return Self.milestoneReceipt(receipt, id: id, status: "published")
+    } catch let feedback as AgentCollaborationExperimentResultFeedback {
+      return try retainRejectedMilestone(raw, id: id, hash: hash, scope: scope, reason: "rejected", problem: feedback.problem)
+    } catch let storage as AgentCollaborationExperimentResultFeedback.StorageFailure {
+      throw storage.underlying
     } catch AgentTeamHistoryDatabase.Failure.corrupt {
       return try retainRejectedMilestone(raw, id: id, hash: hash, scope: scope, reason: "invalid_artifact")
     } catch AgentTeamHistoryDatabase.Failure.stale {
@@ -2196,6 +2207,11 @@ final class AgentTeamExecutionHistoryStore {
     do {
       _ = try publishResearchObjects(drafts, runId: scope.runId, conversationId: scope.conversationId,
         turnId: scope.turnId, memberId: scope.memberId, sourceId: scope.sourceId, finalMilestones: milestones)
+    } catch let feedback as AgentCollaborationExperimentResultFeedback {
+      try recordResearchRejection(raw, scope: scope, reason: .invalidDraft, problem: feedback.problem)
+      throw feedback
+    } catch let storage as AgentCollaborationExperimentResultFeedback.StorageFailure {
+      throw storage.underlying
     } catch AgentTeamHistoryDatabase.Failure.corrupt {
       try recordResearchRejection(raw, scope: scope, reason: .invalidDraft)
       throw AgentTeamHistoryDatabase.Failure.corrupt
