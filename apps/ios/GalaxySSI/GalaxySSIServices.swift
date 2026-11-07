@@ -7858,7 +7858,8 @@ final class MessageCoordinator: ObservableObject {
     guard let spec = AgentTeamDispatchSpecCodec.decode(action.parameters[agentTeamSpecParameter] ?? "") else {
       return nil
     }
-    if isCollaboration, !liveManagedBrowserTeams.insert(spec.supervisorRunId).inserted {
+    if isCollaboration, recoveringGoalCoordinatorRun == spec.supervisorRunId ||
+        !liveManagedBrowserTeams.insert(spec.supervisorRunId).inserted {
       throw AgentManagedBrowserContinuationStore.Failure.busy
     }
     defer {
@@ -8076,9 +8077,10 @@ final class MessageCoordinator: ObservableObject {
             memberId: member.memberId, sourceId: sourceMessageId) : nil
           let memberPrompt = try promptForDispatch()
           if let recallScope, member.deliveryMode == .respond, executionMode != .planOnly, !outgoing.readOnlyAnalysis {
+            let binding = try bindLocalGoalCoordinator(profile: profile, scope: recallScope, requestText: memberPrompt,
+              attachments: attachments, outgoing: outgoing, profileID: profileIdentity)
             let delivered = try await runLocalGoalCoordinator(profile: profile, target: target, scope: recallScope,
-              requestText: memberPrompt, attachments: attachments, outgoing: outgoing, profileID: profileIdentity,
-              targets: targetsById)
+              binding: binding, outgoing: outgoing, targets: targetsById)
             if delivered { persistSynchronousTeamPrimary(member: member, spec: spec, outgoing: outgoing) }
             primaryPublished = true
             markDirectedRequestsDelivered()
@@ -8726,20 +8728,47 @@ final class MessageCoordinator: ObservableObject {
     } ?? [:]
   }
 
-  private func runLocalGoalCoordinator(profile: LocalModelRuntimeProfile, target: AgentCallableTarget,
-      scope: AgentCollaborationToolEvidenceScope, requestText: String, attachments: [GalaxySSIDraftAttachment],
-      outgoing: ChatMessage, profileID: String, targets: [String: AgentCallableTarget]) async throws -> Bool {
-    guard let runtime = localNativeToolRuntime, let roster = liveGoalWorkRoster(scope, profileID: profileID),
-          let digest = AgentCollaborationAcceptedDelivery.Source.rosterDigest(roster) else { throw CancellationError() }
-    let history = AgentTeamExecutionHistoryStore.shared
+  private func bindLocalGoalCoordinator(profile: LocalModelRuntimeProfile, scope: AgentCollaborationToolEvidenceScope,
+      requestText: String, attachments: [GalaxySSIDraftAttachment], outgoing: ChatMessage, profileID: String)
+      throws -> AgentCollaborationCoordinatorRecovery {
+    guard let roster = liveGoalWorkRoster(scope, profileID: profileID),
+          let digest = AgentCollaborationAcceptedDelivery.Source.rosterDigest(roster),
+          let original = store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId),
+          original.isMine, !original.readOnlyAnalysis, original.conversationId == scope.conversationId,
+          original.turnId.ifBlank(original.id.uuidString) == scope.turnId else { throw CancellationError() }
+    let manifest = attachments.isEmpty ? nil : CloudCoordinatorAttachmentRecovery.capture(attachments, images: [],
+      outgoing: original, turns: store.agentSessionMessages(scope.conversationId), namesOnly: true)
+    guard attachments.isEmpty || manifest != nil else { throw AgentManagedBrowserContinuationStore.Failure.unavailable }
     let source = AgentCollaborationAcceptedDelivery.Source(profileID: profileID, messageID: outgoing.id,
       contactID: outgoing.contactId, rosterDigest: digest)
+    let binding = AgentCollaborationCoordinatorRecovery(owner: scope, source: source,
+      originalPrompt: localModelPrompt(text: requestText, attachments: attachments, conversation: ""),
+      process: AgentCollaborationGoalWorkRun.processID, attachments: manifest, local: profile,
+      localSourceDigest: AgentCollaborationCoordinatorRecovery.messageDigest(original))
+    try AgentTeamExecutionHistoryStore.shared.saveGoalCoordinatorRecovery(binding)
+    return binding
+  }
+
+  private func runLocalGoalCoordinator(profile: LocalModelRuntimeProfile, target: AgentCallableTarget,
+      scope: AgentCollaborationToolEvidenceScope, binding: AgentCollaborationCoordinatorRecovery,
+      outgoing: ChatMessage, targets: [String: AgentCallableTarget], recovering: Bool = false) async throws -> Bool {
+    let source = binding.source
+    let profileID = source.profileID
+    guard let runtime = localNativeToolRuntime, let roster = liveGoalWorkRoster(scope, profileID: profileID),
+          binding.owner == scope, binding.local == profile, binding.resourceID == target.id,
+          source.messageID == outgoing.id, source.contactID == outgoing.contactId,
+          AgentCollaborationAcceptedDelivery.Source.rosterDigest(roster) == source.rosterDigest
+    else { throw CancellationError() }
+    let history = AgentTeamExecutionHistoryStore.shared
     func requireLiveScope() throws {
       try Task.checkCancellation()
-      guard liveGoalWorkRoster(scope, profileID: profileID) == roster,
+      guard (!recovering || UIApplication.shared.applicationState == .active),
+            liveGoalWorkRoster(scope, profileID: profileID) == roster,
             let original = store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId),
-            original.isMine, original.conversationId == scope.conversationId,
-            original.turnId.ifBlank(original.id.uuidString) == scope.turnId else { throw CancellationError() }
+            original.isMine, !original.readOnlyAnalysis, original.conversationId == scope.conversationId,
+            original.turnId.ifBlank(original.id.uuidString) == scope.turnId,
+            AgentCollaborationCoordinatorRecovery.messageDigest(original) == binding.localSourceDigest
+      else { throw CancellationError() }
     }
     func leaveWaiting(_ reason: String) throws -> Bool {
       try requireLiveScope()
@@ -8759,11 +8788,12 @@ final class MessageCoordinator: ObservableObject {
       catch is CancellationError { throw CancellationError() }
       catch { return try leaveWaiting("collaboration_goal_delivery_pending") }
     }
-    let originalPrompt = localModelPrompt(text: requestText, attachments: attachments, conversation: "")
     var feedback = ""
+    var needsRecoveryClaim = recovering
     while true {
       try requireLiveScope()
-      guard LocalModelRuntimeSettings.isProfileEnabled(profile), LocalModelInferenceRuntime.shared.ready(profile: profile)
+      guard LocalModelRuntimeCatalog.profiles().contains(profile), LocalModelRuntimeSettings.isProfileEnabled(profile),
+            LocalModelInferenceRuntime.shared.ready(profile: profile)
       else { return try leaveWaiting("collaboration_local_model_unavailable") }
       let cancellation = AgentModelToolLoopCancellationSource()
       let monitor = Task { @MainActor in
@@ -8777,10 +8807,19 @@ final class MessageCoordinator: ObservableObject {
         database: store.agentConversationDatabase, recruitmentTemplates: goalRecruitmentTemplates(scope, roster: roster, targets: targets),
         cancellation: cancellation.token)
       let candidate: String
+      var startedInference = false
       do {
         candidate = try await withTransientAgentSlot(target: target, sourceMessageId: scope.sourceId) {
-          try await AgentIOSLocalModelWebToolRunner.run(prompt: originalPrompt + feedback, profile: profile,
-            hasAttachments: !attachments.isEmpty, sessionID: scope.conversationId, conversationID: scope.conversationId,
+          try requireLiveScope()
+          if needsRecoveryClaim {
+            guard let progress = try history.claimGoalCoordinatorRecovery(binding) else { throw CancellationError() }
+            needsRecoveryClaim = false
+            feedback = "\n\nResume the original goal. Read pinned originals and work_result; do not repeat claimed work. " +
+              "Host checkpoint: " + AgentMcpJSONCodec.stringify(progress)
+          }
+          startedInference = true
+          return try await AgentIOSLocalModelWebToolRunner.run(prompt: binding.originalPrompt + feedback, profile: profile,
+            hasAttachments: binding.attachments != nil, sessionID: scope.conversationId, conversationID: scope.conversationId,
             turnID: scope.turnId, taskID: scope.sourceId,
             baseSystemPrompt: localModelSystemPrompt,
             registry: runtime.registry, collaborationRecallScope: scope, collaborationOwner: scope,
@@ -8788,8 +8827,16 @@ final class MessageCoordinator: ObservableObject {
             goalCoordinator: authority).text
         }
       } catch is CancellationError { throw CancellationError() }
-      catch { return try leaveWaiting("collaboration_local_coordinator_waiting") }
+      catch {
+        try requireLiveScope()
+        if startedInference {
+          _ = await drainReadyGoalWork(scope, roster: roster, outgoing: outgoing, profileID: profileID, targets: targets)
+        }
+        return try leaveWaiting("collaboration_local_coordinator_waiting")
+      }
       try requireLiveScope()
+      guard LocalModelRuntimeCatalog.profiles().contains(profile), LocalModelRuntimeSettings.isProfileEnabled(profile)
+      else { return try leaveWaiting("collaboration_local_model_unavailable") }
       if let accepted = try? history.prepareFinalGoalDelivery(candidate, scope: scope, source: source) {
         do { _ = try projectAcceptedGoalDelivery(accepted, detail: profile.id); return true }
         catch is CancellationError { throw CancellationError() }
@@ -9451,7 +9498,8 @@ final class MessageCoordinator: ObservableObject {
     let scope = binding.owner
     let recoveryKey = profile + ":" + scope.ownershipDigest
     let history = AgentTeamExecutionHistoryStore.shared
-    guard recoveringGoalCoordinatorRun == nil, binding.source.profileID == profile,
+    guard recoveringGoalCoordinatorRun == nil, !liveManagedBrowserTeams.contains(scope.runId),
+          binding.source.profileID == profile, let resourceID = binding.resourceID,
           !resumedGoalCoordinatorRuns.contains(recoveryKey),
           let roster = liveGoalWorkRoster(scope, profileID: profile),
           AgentCollaborationAcceptedDelivery.Source.rosterDigest(roster) == binding.source.rosterDigest,
@@ -9462,57 +9510,82 @@ final class MessageCoordinator: ObservableObject {
           let action = parent.activePlan?.actions[index], [.running, .waitingResponse].contains(action.status),
           let spec = AgentTeamDispatchSpecCodec.decode(action.parameters[agentTeamSpecParameter] ?? ""),
           let primary = spec.definition.members.first(where: { $0.memberId == scope.memberId &&
-            $0.agentId == binding.route.contactId && $0.deliveryMode == .respond }),
+            $0.agentId == resourceID && $0.deliveryMode == .respond }),
           let outgoing = store.persistedMessage(id: binding.source.messageID, contactId: binding.source.contactID),
           outgoing.isMine, !outgoing.readOnlyAnalysis, outgoing.conversationId == scope.conversationId,
-          outgoing.turnId.ifBlank(outgoing.id.uuidString) == scope.turnId,
-          binding.route.resolve(contact: store.contact(id: binding.route.contactId),
-            apiKey: { store.apiKey(for: $0) }) != nil
+          outgoing.turnId.ifBlank(outgoing.id.uuidString) == scope.turnId
     else { return }
     let targets = Dictionary(uniqueKeysWithValues: AgentCallableTargetCatalog.build(
       contacts: store.visibleContacts, apiKey: { store.apiKey(for: $0) }).map { ($0.id, $0) })
-    guard let target = targets[primary.agentId], target.kind == .model, target.status == .available,
-          let slot = try? acquireAgentSlot(target: target, sourceMessageId: scope.sourceId + ":goal-recovery") else { return }
+    guard let target = targets[primary.agentId], target.status == .available else { return }
+    let slot: String?
+    if let route = binding.route {
+      guard target.kind == .model,
+            route.resolve(contact: store.contact(id: route.contactId), apiKey: { store.apiKey(for: $0) }) != nil,
+            let acquired = try? acquireAgentSlot(target: target, sourceMessageId: scope.sourceId + ":goal-recovery")
+      else { return }
+      slot = acquired
+    } else if let local = binding.local {
+      let configured = primary.context["_galaxyssi_member_model_id"] ?? ""
+      guard configured.isBlank || configured == local.id,
+            LocalModelRuntimeCatalog.profiles().contains(local), LocalModelRuntimeSettings.isProfileEnabled(local),
+            LocalModelInferenceRuntime.shared.ready(profile: local),
+            AgentCollaborationCoordinatorRecovery.messageDigest(outgoing) == binding.localSourceDigest else { return }
+      slot = nil
+    } else { return }
     resumedGoalCoordinatorRuns.insert(recoveryKey)
     recoveringGoalCoordinatorRun = scope.runId
     Task { @MainActor [weak self] in
       defer {
-        UserDefaultsAgentGlobalRunSlotStore.shared.release(ownerId: slot)
+        if let slot { UserDefaultsAgentGlobalRunSlotStore.shared.release(ownerId: slot) }
         self?.recoveringGoalCoordinatorRun = nil
         self?.recoverAcceptedGoalDeliveries()
       }
       guard let self, !Task.isCancelled, UIApplication.shared.applicationState == .active,
             self.liveGoalWorkRoster(scope, profileID: profile) == roster,
             self.store.agentTask(id: scope.turnId) == parent else { return }
-      let images: [CloudImagePayload]
-      if let manifest = binding.attachments {
-        guard let originals = self.goalRecoveryAttachmentSources(manifest, conversationID: scope.conversationId),
-              let restored = await Task.detached(priority: .utility, operation: {
-                manifest.restore(messages: originals, conversationID: scope.conversationId, taskID: outgoing.id.uuidString)
-              }).value,
-              self.goalRecoveryAttachmentSources(manifest, conversationID: scope.conversationId) != nil else { return }
-        images = restored
-      } else {
-        guard !binding.route.hadAttachments else { return }
-        images = []
+      func canResume() -> Bool {
+        !Task.isCancelled && UIApplication.shared.applicationState == .active &&
+          self.liveGoalWorkRoster(scope, profileID: profile) == roster &&
+          self.store.agentTask(id: scope.turnId) == parent &&
+          self.store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId)?.isMine == true
       }
-      guard !Task.isCancelled, UIApplication.shared.applicationState == .active,
-            self.liveGoalWorkRoster(scope, profileID: profile) == roster,
-            self.store.agentTask(id: scope.turnId) == parent,
-            self.store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId)?.isMine == true,
-            let contact = binding.route.resolve(contact: self.store.contact(id: binding.route.contactId),
-              apiKey: { self.store.apiKey(for: $0) }),
-            let progress = try? history.claimGoalCoordinatorRecovery(binding) else { return }
-      var turn = outgoing
-      turn.content = binding.originalPrompt + "\n\nResume the original collaboration goal from saved work. " +
-        "Use goal, criteria and source recall, and retrieve exact work outputs by work ID. Do not rerun claimed work. " +
-        "Host checkpoint: " + AgentMcpJSONCodec.stringify(progress)
       do {
-        let delivered = try await self.receiveCloudStreamReply(contact: contact, turns: [turn], images: images,
-          outgoing: outgoing, modelDetail: binding.route.modelId, displayContactId: outgoing.contactId,
-          collaborationModelAudit: scope, goalWorkHandler: { arguments in
-            await self.handleGoalWorkRequest(arguments, scope: scope, outgoing: outgoing, profileID: profile, targets: targets)
-          })
+        let delivered: Bool
+        if let local = binding.local {
+          if let manifest = binding.attachments {
+            guard let originals = self.goalRecoveryAttachmentSources(manifest, conversationID: scope.conversationId),
+                  await Task.detached(priority: .utility, operation: {
+                    manifest.verifyNamesOnlyOriginals(messages: originals, conversationID: scope.conversationId)
+                  }).value,
+                  self.goalRecoveryAttachmentSources(manifest, conversationID: scope.conversationId) != nil else { return }
+          }
+          guard canResume() else { return }
+          delivered = try await self.runLocalGoalCoordinator(profile: local, target: target, scope: scope,
+            binding: binding, outgoing: outgoing, targets: targets, recovering: true)
+        } else if let route = binding.route {
+          let images: [CloudImagePayload]
+          if let manifest = binding.attachments {
+            guard let originals = self.goalRecoveryAttachmentSources(manifest, conversationID: scope.conversationId),
+                  let restored = await Task.detached(priority: .utility, operation: {
+                    manifest.restore(messages: originals, conversationID: scope.conversationId, taskID: outgoing.id.uuidString)
+                  }).value,
+                  self.goalRecoveryAttachmentSources(manifest, conversationID: scope.conversationId) != nil else { return }
+            images = restored
+          } else { images = [] }
+          guard canResume(),
+                let contact = route.resolve(contact: self.store.contact(id: route.contactId), apiKey: { self.store.apiKey(for: $0) }),
+                let progress = try? history.claimGoalCoordinatorRecovery(binding) else { return }
+          var turn = outgoing
+          turn.content = binding.originalPrompt + "\n\nResume the original collaboration goal from saved work. " +
+            "Use goal, criteria and source recall, and retrieve exact work outputs by work ID. Do not rerun claimed work. " +
+            "Host checkpoint: " + AgentMcpJSONCodec.stringify(progress)
+          delivered = try await self.receiveCloudStreamReply(contact: contact, turns: [turn], images: images,
+            outgoing: outgoing, modelDetail: route.modelId, displayContactId: outgoing.contactId,
+            collaborationModelAudit: scope, goalWorkHandler: { arguments in
+              await self.handleGoalWorkRequest(arguments, scope: scope, outgoing: outgoing, profileID: profile, targets: targets)
+            })
+        } else { return }
         if delivered {
           if let current = self.store.agentTask(id: scope.turnId), current.phase == .executing, !current.blocked,
              let waiting = AgentSavedTeamReplyPolicy.reconcileRecoveryWait(current, runId: scope.runId,

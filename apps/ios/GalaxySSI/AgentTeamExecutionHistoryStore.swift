@@ -2829,11 +2829,11 @@ final class AgentTeamExecutionHistoryStore {
   func saveGoalCoordinatorRecovery(_ binding: AgentCollaborationCoordinatorRecovery) throws {
     let scope = binding.owner
     guard !binding.originalPrompt.isBlank, binding.originalPrompt.utf8.count <= 131_072,
-          binding.route.hadAttachments ? binding.attachments?.isValid == true : binding.attachments == nil
+          let resourceID = binding.resourceID
     else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     try access { database in
       let team = try Self.activeGoalCoordinator(scope, database: database)
-      guard team.members.contains(where: { $0.memberId == scope.memberId && $0.agentId == binding.route.contactId })
+      guard team.members.contains(where: { $0.memberId == scope.memberId && $0.agentId == resourceID })
       else { throw AgentTeamHistoryDatabase.Failure.stale }
       let key = "goal-coordinator-recovery:" + scope.ownershipDigest
       if let prior = try database.researchRecord(AgentCollaborationCoordinatorRecovery.self,
@@ -2848,7 +2848,10 @@ final class AgentTeamExecutionHistoryStore {
   func claimGoalCoordinatorRecovery(_ binding: AgentCollaborationCoordinatorRecovery) throws -> AgentMcpJSONObject? {
     let scope = binding.owner
     return try access { database in
-      _ = try Self.activeGoalCoordinator(scope, database: database)
+      let team = try Self.activeGoalCoordinator(scope, database: database)
+      guard let resourceID = binding.resourceID,
+            team.members.contains(where: { $0.memberId == scope.memberId && $0.agentId == resourceID })
+      else { return nil }
       let saved = try database.researchRecord(AgentCollaborationCoordinatorRecovery.self,
         conversationId: scope.conversationId, key: "goal-coordinator-recovery:" + scope.ownershipDigest, revision: 0)
       guard saved == binding, binding.process != AgentCollaborationGoalWorkRun.processID else { return nil }
@@ -2894,7 +2897,8 @@ final class AgentTeamExecutionHistoryStore {
           if receipt.source != nil { deliveries.append(receipt) }
         } else if let binding = try database.researchRecord(AgentCollaborationCoordinatorRecovery.self,
           conversationId: scope.conversationId, key: "goal-coordinator-recovery:" + scope.ownershipDigest, revision: 0),
-                  binding.owner == scope, binding.process != AgentCollaborationGoalWorkRun.processID {
+                  binding.owner == scope, binding.resourceID == primary.agentId,
+                  binding.process != AgentCollaborationGoalWorkRun.processID {
           coordinators.append(binding)
         }
       }

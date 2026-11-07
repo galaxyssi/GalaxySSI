@@ -83,6 +83,26 @@ final class AgentIOSLocalModelWebToolProtocolTests: XCTestCase {
     XCTAssertNoThrow(try authority.validate())
     XCTAssertEqual(try authority.executable().descriptor.effect, .mutation)
     XCTAssertFalse(AgentIOSLocalModelWebToolProtocol.toolIDs.contains(AgentIOSLocalModelWebToolRunner.goalCoordinatorToolID))
+    let original = ChatMessage(contactId: "owner", content: "Original request", isMine: true,
+      conversationId: scope.conversationId, turnId: scope.turnId)
+    let source = AgentCollaborationAcceptedDelivery.Source(profileID: "owner", messageID: original.id,
+      contactID: original.contactId, rosterDigest: try XCTUnwrap(AgentCollaborationAcceptedDelivery.Source.rosterDigest(roster)))
+    let profile = try XCTUnwrap(LocalModelRuntimeCatalog.profiles(defaults: defaults).first(where: \.supportsIOSRuntime))
+    let binding = AgentCollaborationCoordinatorRecovery(owner: scope, source: source,
+      originalPrompt: "Original request", process: "previous-process", local: profile,
+      localSourceDigest: AgentCollaborationCoordinatorRecovery.messageDigest(original))
+    var edited = original
+    edited.content = "Edited request"
+    XCTAssertNotEqual(AgentCollaborationCoordinatorRecovery.messageDigest(edited), binding.localSourceDigest)
+    try history.saveGoalCoordinatorRecovery(binding)
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets, fileURL: root.appendingPathComponent("team.sqlite"))
+    XCTAssertEqual(try reopened.acceptedGoalDeliveryRecoveryPage(after: "").coordinators, [binding])
+    var changed = binding
+    changed.local?.fileName = "replacement.gguf"
+    XCTAssertThrowsError(try reopened.saveGoalCoordinatorRecovery(changed))
+    XCTAssertNil(try reopened.claimGoalCoordinatorRecovery(changed))
+    XCTAssertEqual(try reopened.claimGoalCoordinatorRecovery(binding)?["revision"], .int(0))
+    XCTAssertNil(try reopened.claimGoalCoordinatorRecovery(binding))
     var foreign = scope
     foreign.sourceId = "foreign"
     XCTAssertThrowsError(try AgentIOSLocalModelWebToolRunner.GoalCoordinator(scope: foreign, roster: roster,

@@ -21,8 +21,15 @@ final class CloudModelClientStreamingTests: XCTestCase {
     XCTAssertEqual(copy.restore(messages: [prior.id: prior], conversationID: "group", taskID: outgoing.id.uuidString), images)
     XCTAssertNil(copy.restore(messages: [:], conversationID: "group", taskID: outgoing.id.uuidString))
     XCTAssertNil(copy.restore(messages: [prior.id: prior], conversationID: "different-group", taskID: outgoing.id.uuidString))
+    let namesOnly = try XCTUnwrap(CloudCoordinatorAttachmentRecovery.capture([attachment], images: [],
+      outgoing: outgoing, turns: [prior, outgoing], namesOnly: true))
+    XCTAssertNil(namesOnly.entries.first?.transportDigest)
+    XCTAssertTrue(namesOnly.verifyNamesOnlyOriginals(messages: [prior.id: prior], conversationID: "group"))
+    XCTAssertFalse(copy.verifyNamesOnlyOriginals(messages: [prior.id: prior], conversationID: "group"))
+    XCTAssertNil(namesOnly.restore(messages: [prior.id: prior], conversationID: "group", taskID: outgoing.id.uuidString))
     prior.richOutputJson = ""
     XCTAssertNil(copy.restore(messages: [prior.id: prior], conversationID: "group", taskID: outgoing.id.uuidString))
+    XCTAssertFalse(namesOnly.verifyNamesOnlyOriginals(messages: [prior.id: prior], conversationID: "group"))
   }
 
   func testHistoricalImageSurvivesToolContinuationAndNonStreamingFallback() throws {

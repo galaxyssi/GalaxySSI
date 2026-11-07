@@ -244,10 +244,31 @@ struct AgentCollaborationAcceptedDelivery: Codable, Equatable {
 struct AgentCollaborationCoordinatorRecovery: Codable, Equatable {
   let owner: AgentCollaborationToolEvidenceScope
   let source: AgentCollaborationAcceptedDelivery.Source
-  let route: AgentManualCloudBinding
+  var route: AgentManualCloudBinding? = nil
   let originalPrompt: String
   let process: String
   var attachments: CloudCoordinatorAttachmentRecovery? = nil
+  var local: LocalModelRuntimeProfile? = nil
+  var localSourceDigest: String? = nil
+
+  var resourceID: String? {
+    switch (route, local) {
+    case (.some(let cloud), nil):
+      guard localSourceDigest == nil,
+            cloud.hadAttachments ? attachments?.isValid == true : attachments == nil else { return nil }
+      return cloud.contactId
+    case (nil, .some(let profile)):
+      guard !profile.id.isBlank, profile.supportsIOSRuntime, localSourceDigest?.count == 64,
+            attachments.map({ $0.isValid && $0.entries.allSatisfy { $0.transportDigest == nil } }) != false
+      else { return nil }
+      return "local-llm"
+    default: return nil
+    }
+  }
+
+  static func messageDigest(_ message: ChatMessage) -> String {
+    AgentModelLoopRecoveryIdentity.sha256(["content": message.content, "rich": message.richOutputJson])
+  }
 }
 
 struct AgentCollaborationGoalWorkRun: Codable {

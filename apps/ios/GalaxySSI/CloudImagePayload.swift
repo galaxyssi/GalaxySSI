@@ -61,7 +61,7 @@ struct CloudCoordinatorAttachmentRecovery: Codable, Equatable {
   }
 
   static func capture(_ attachments: [GalaxySSIDraftAttachment], images: [CloudImagePayload],
-                      outgoing: ChatMessage, turns: [ChatMessage]) -> Self? {
+                      outgoing: ChatMessage, turns: [ChatMessage], namesOnly: Bool = false) -> Self? {
     guard (1...GalaxySSIAttachmentPayloadBuilder.maximumAttachmentCount).contains(attachments.count),
           Set(attachments.map(\.id)).count == attachments.count else { return nil }
     var imageIndex = 0
@@ -78,7 +78,7 @@ struct CloudCoordinatorAttachmentRecovery: Codable, Equatable {
             block.mimeType.lowercased() == attachment.mimeType.lowercased(),
             block.metadata["size_bytes"] == String(attachment.data.count) else { return nil }
       let transport: String?
-      if attachment.isImage {
+      if attachment.isImage && !namesOnly {
         guard images.indices.contains(imageIndex), images[imageIndex].originalData == attachment.data else { return nil }
         transport = transportFingerprint(images[imageIndex])
         imageIndex += 1
@@ -103,9 +103,29 @@ struct CloudCoordinatorAttachmentRecovery: Codable, Equatable {
                workspace: (String, String, [AgentRichBlock]) -> [AgentRestoredAttachment] = {
                  AgentAttachmentWorkspaceStager.restore(conversationId: $0, turnId: $1, blocks: $2, matchExactIDs: true)
                }) -> [CloudImagePayload]? {
+    guard var attachments = restoreOriginals(messages: messages, conversationID: conversationID, workspace: workspace)
+    else { return nil }
+    defer { attachments.wipeSensitive() }
+    guard let images = try? CloudImagePayloadFactory.prepare(attachments, taskId: taskID),
+          images.map(Self.transportFingerprint) == entries.compactMap(\.transportDigest) else { return nil }
+    return images
+  }
+
+  func verifyNamesOnlyOriginals(messages: [UUID: ChatMessage], conversationID: String) -> Bool {
+    guard entries.allSatisfy({ $0.transportDigest == nil }),
+          var attachments = restoreOriginals(messages: messages, conversationID: conversationID, workspace: {
+            AgentAttachmentWorkspaceStager.restore(conversationId: $0, turnId: $1, blocks: $2, matchExactIDs: true)
+          }) else { return false }
+    attachments.wipeSensitive()
+    return true
+  }
+
+  private func restoreOriginals(messages: [UUID: ChatMessage], conversationID: String,
+      workspace: (String, String, [AgentRichBlock]) -> [AgentRestoredAttachment]) -> [GalaxySSIDraftAttachment]? {
     guard isValid else { return nil }
     var attachments: [GalaxySSIDraftAttachment] = []
-    defer { attachments.wipeSensitive() }
+    var verified = false
+    defer { if !verified { attachments.wipeSensitive() } }
     for entry in entries {
       guard !Task.isCancelled, let message = messages[entry.messageID],
             matches(message, entry: entry, conversationID: conversationID),
@@ -119,9 +139,8 @@ struct CloudCoordinatorAttachmentRecovery: Codable, Equatable {
       attachments.append(.init(id: entry.attachmentID, displayName: entry.name, mimeType: entry.mime, data: data,
         historicalSourceTurnId: entry.historicalTurn, composerImageQuality: entry.quality))
     }
-    guard let images = try? CloudImagePayloadFactory.prepare(attachments, taskId: taskID),
-          images.map(Self.transportFingerprint) == entries.compactMap(\.transportDigest) else { return nil }
-    return images
+    verified = true
+    return attachments
   }
 
   private static func block(for id: String, in message: ChatMessage) -> AgentRichBlock? {
