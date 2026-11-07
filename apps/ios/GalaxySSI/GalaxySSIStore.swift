@@ -792,20 +792,41 @@ final class GalaxySSIStore: ObservableObject {
     guard !snapshot.isEmpty else { return }
     let identity = profile.identityFingerprint
     let history = chatHistoryDatabase
-    let work = Task.detached(priority: .utility) { () -> [String: [AgentReplyUnreadStore.PendingMarker]] in
+    let visibility = scheduledReplyVisibility()
+    let work = Task.detached(priority: .utility) { () -> ([String: [AgentReplyUnreadStore.PendingMarker]], [String: Set<String>]) in
       var confirmed: [String: [AgentReplyUnreadStore.PendingMarker]] = [:]
+      var quietByConversation: [String: Set<String>] = [:]
       for (conversation, markers) in snapshot {
-        guard !Task.isCancelled else { return [:] }
+        guard !Task.isCancelled else { return ([:], [:]) }
         history.prepareLegacyUnreadIndex(conversationId: conversation)
-        guard let missing = history.missingUnreadTokens(conversationId: conversation,
-          candidates: Set(markers.map(\.token))), !missing.isEmpty else { continue }
-        confirmed[conversation] = markers.filter { missing.contains($0.token) }
+        let tokens = Set(markers.map(\.token))
+        let missing = history.missingUnreadTokens(conversationId: conversation, candidates: tokens) ?? []
+        let quiet = history.quietScheduledUnreadTokens(conversationId: conversation, candidates: tokens, visibility: visibility)
+        if !missing.isEmpty || !quiet.isEmpty {
+          confirmed[conversation] = markers.filter { missing.contains($0.token) || quiet.contains($0.token) }
+        }
+        if !quiet.isEmpty { quietByConversation[conversation] = quiet }
       }
-      return confirmed
+      return (confirmed, quietByConversation)
     }
-    let confirmed = await withTaskCancellationHandler(operation: { await work.value }, onCancel: { work.cancel() })
-    guard !Task.isCancelled, profile.identityFingerprint == identity else { return }
-    agentReplyUnreadStore.discardMissing(confirmed)
+    var (confirmed, quiet) = await withTaskCancellationHandler(operation: { await work.value }, onCancel: { work.cancel() })
+    guard !Task.isCancelled, profile.identityFingerprint == identity, scheduledReplyVisibility() == visibility else { return }
+    for (conversation, tokens) in quiet {
+      let current = history.quietScheduledUnreadTokens(conversationId: conversation, candidates: tokens, visibility: visibility)
+      let noLongerQuiet = tokens.subtracting(current)
+      confirmed[conversation]?.removeAll { noLongerQuiet.contains($0.token) }
+      quiet[conversation] = current
+    }
+    agentReplyUnreadStore.discardMissing(confirmed, quiet: quiet)
+  }
+
+  func discardQuietScheduledUnread(conversationId: String, turnId: String) {
+    let visibility = scheduledReplyVisibility()
+    guard visibility.mayHide(conversation: conversationId, token: turnId) else { return }
+    let markers = agentReplyUnreadStore.pendingSnapshot()[conversationId]?.filter { $0.token == turnId } ?? []
+    guard !markers.isEmpty, chatHistoryDatabase.quietScheduledUnreadTokens(conversationId: conversationId,
+      candidates: [turnId], visibility: visibility).contains(turnId) else { return }
+    agentReplyUnreadStore.discardMissing([conversationId: markers], quiet: [conversationId: [turnId]])
   }
 
   func markAgentRepliesRead(
@@ -3335,11 +3356,13 @@ final class GalaxySSIStore: ObservableObject {
 
   private func synchronizeMessageCache(previous: [String: [ChatMessage]]) {
     guard !suppressMessageDatabaseSync else { return }
+    let visibility = scheduledReplyVisibility()
     for (contactId, messages) in messagesByContact {
       let oldById = Dictionary(uniqueKeysWithValues: (previous[contactId] ?? []).map { ($0.id, $0) })
       for message in messages where oldById[message.id] != message {
-        if chatHistoryDatabase.upsert(message) {
-          agentReplyUnreadStore.record(message, previous: oldById[message.id])
+        if chatHistoryDatabase.upsert(message), !visibility.hides(message) {
+          let previous = oldById[message.id]
+          agentReplyUnreadStore.record(message, previous: previous.flatMap { visibility.hides($0) ? nil : $0 })
         }
       }
     }

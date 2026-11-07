@@ -1,6 +1,10 @@
 import Foundation
 
 extension GalaxySSIStore {
+  func scheduledReplyVisibility() -> AgentScheduledReplyVisibility {
+    .init(tasks: proactiveTasks, runs: proactiveRuns)
+  }
+
   func conversationSchedules(_ conversationId: String? = nil) -> [AgentProactiveTask] {
     automationTasks().filter {
       $0.action.isConversationSchedule && (conversationId == nil || $0.action.conversationId == conversationId)
@@ -296,7 +300,11 @@ extension GalaxySSIStore {
          let taskIndex = tasks.firstIndex(where: { $0.taskId == task.taskId }) {
         tasks[taskIndex] = updatedTask
       }
-      return commitConversationScheduleState(tasks: tasks, runs: runs)
+      let committed = commitConversationScheduleState(tasks: tasks, runs: runs)
+      if committed {
+        discardQuietScheduledUnread(conversationId: task.action.conversationId, turnId: finished.runId)
+      }
+      return committed
     }
     proactiveRuns[index] = finished
     replaceAutomationTask(updatedTask)

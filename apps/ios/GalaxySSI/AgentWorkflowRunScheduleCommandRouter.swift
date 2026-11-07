@@ -1,5 +1,45 @@
 import Foundation
 
+struct AgentScheduledReplyVisibility: Equatable, Sendable {
+  enum Rule: Equatable, Sendable { case hidden, unlessRich }
+  private let rules: [String: [String: Rule]]
+
+  init(tasks: [AgentProactiveTask], runs: [AgentProactiveRun]) {
+    let grouped = Dictionary(grouping: runs, by: \.taskId)
+    var result: [String: [String: Rule]] = [:]
+    for task in tasks where task.action.isConversationSchedule {
+      let conversation = task.action.conversationId
+      guard !conversation.isBlank, let history = grouped[task.taskId] else { continue }
+      let ordered = history.sorted {
+        ($0.scheduledForMillis, $0.runId) < ($1.scheduledForMillis, $1.runId)
+      }
+      var previous: AgentProactiveRun?
+      var older: AgentProactiveRun?
+      for run in ordered {
+        if let previous, previous.scheduledForMillis < run.scheduledForMillis { older = previous }
+        if run.status == .unverified && run.errorCode == "phone_observation_unverified" {
+          result[conversation, default: [:]][run.runId] = .hidden
+        } else if run.status.terminal, older?.status == run.status, older?.resultSummary == run.resultSummary {
+          result[conversation, default: [:]][run.runId] = .unlessRich
+        }
+        if [.completed, .failed, .unverified].contains(run.status) { previous = run }
+      }
+    }
+    rules = result
+  }
+
+  func mayHide(conversation: String, token: String) -> Bool { rules[conversation]?[token] != nil }
+
+  func hides(_ message: ChatMessage) -> Bool {
+    guard !message.isMine, !message.isSystem, message.sourceConversationId.isBlank else { return false }
+    switch rules[message.conversationId]?[message.turnId] {
+    case .hidden?: return true
+    case .unlessRich?: return message.richOutputJson.isBlank
+    case nil: return false
+    }
+  }
+}
+
 enum AgentConversationSchedule {
   enum Command: Equatable {
     case save(prompt: String, trigger: AgentProactiveTrigger?, frequency: String, new: Bool)
