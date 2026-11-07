@@ -990,6 +990,8 @@
     A10000000000000000009B34 /* AgentTeamRecoveryRetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B34 /* AgentTeamRecoveryRetry.swift */; };
     A10000000000000000000F41 /* AgentCollaborationNumericTrial.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000F41 /* AgentCollaborationNumericTrial.swift */; };
     A10000000000000000000274 /* AgentTeamExecutionRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000274 /* AgentTeamExecutionRuntime.swift */; };
+    A1000000000000000000E357 /* AgentCollaborationWorkflowConditions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000E357 /* AgentCollaborationWorkflowConditions.swift */; };
+    A1000000000000000000E358 /* AgentCollaborationWorkflowCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000E358 /* AgentCollaborationWorkflowCheck.swift */; };
     A10000000000000000000275 /* AgentPolicyFirewallModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000275 /* AgentPolicyFirewallModels.swift */; };
     A10000000000000000000276 /* AgentPhoneCapabilityCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000276 /* AgentPhoneCapabilityCatalog.swift */; };
     A10000000000000000000278 /* AgentIOSSystemNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000278 /* AgentIOSSystemNativeTools.swift */; };
@@ -2178,6 +2180,8 @@
     A20000000000000000009B34 /* AgentTeamRecoveryRetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamRecoveryRetry.swift; sourceTree = "<group>"; };
     A20000000000000000000F41 /* AgentCollaborationNumericTrial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationNumericTrial.swift; sourceTree = "<group>"; };
     A20000000000000000000274 /* AgentTeamExecutionRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamExecutionRuntime.swift; sourceTree = "<group>"; };
+    A2000000000000000000E357 /* AgentCollaborationWorkflowConditions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationWorkflowConditions.swift; sourceTree = "<group>"; };
+    A2000000000000000000E358 /* AgentCollaborationWorkflowCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationWorkflowCheck.swift; sourceTree = "<group>"; };
     A20000000000000000000275 /* AgentPolicyFirewallModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPolicyFirewallModels.swift; sourceTree = "<group>"; };
     A20000000000000000000276 /* AgentPhoneCapabilityCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneCapabilityCatalog.swift; sourceTree = "<group>"; };
     A20000000000000000000278 /* AgentIOSSystemNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSystemNativeTools.swift; sourceTree = "<group>"; };
@@ -2949,6 +2953,8 @@
         A20000000000000000009B34 /* AgentTeamRecoveryRetry.swift */,
         A20000000000000000000F41 /* AgentCollaborationNumericTrial.swift */,
         A20000000000000000000274 /* AgentTeamExecutionRuntime.swift */,
+        A2000000000000000000E357 /* AgentCollaborationWorkflowConditions.swift */,
+        A2000000000000000000E358 /* AgentCollaborationWorkflowCheck.swift */,
         A20000000000000000000275 /* AgentPolicyFirewallModels.swift */,
         A20000000000000000000276 /* AgentPhoneCapabilityCatalog.swift */,
         A20000000000000000000278 /* AgentIOSSystemNativeTools.swift */,
@@ -4250,6 +4256,8 @@
         A10000000000000000009B34 /* AgentTeamRecoveryRetry.swift in Sources */,
         A10000000000000000000F41 /* AgentCollaborationNumericTrial.swift in Sources */,
         A10000000000000000000274 /* AgentTeamExecutionRuntime.swift in Sources */,
+        A1000000000000000000E357 /* AgentCollaborationWorkflowConditions.swift in Sources */,
+        A1000000000000000000E358 /* AgentCollaborationWorkflowCheck.swift in Sources */,
         A10000000000000000000275 /* AgentPolicyFirewallModels.swift in Sources */,
         A10000000000000000000276 /* AgentPhoneCapabilityCatalog.swift in Sources */,
         A10000000000000000000278 /* AgentIOSSystemNativeTools.swift in Sources */,
