@@ -731,6 +731,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                let receipt = try? CloudModelStreamJSON.mcpObject(from: output), receipt["rejected_draft_preserved"] == .bool(true),
                progress.requestRepair("collaboration_milestone_publication") { madeProgress = true }
             if arguments["mode"] == .string("validate_assessment"),
+               let checked = try? CloudModelStreamJSON.mcpObject(from: output), checked["status"] == .string("returned"),
+               checked["success"] == .bool(true),
                progress.requestRepair("collaboration_assessment_preflight") { madeProgress = true }
             continue
           }

@@ -801,9 +801,16 @@ enum AgentCollaborationGoalAssessmentPolicy {
     var validator: AgentMcpJSONObject? = nil
 
     var hasValidValidatorBinding: Bool {
-      guard let validator else { return true }
-      return verification == .computational && requirement == AgentCollaborationNumericTrial.requirement &&
-        validator["id"] == .string(AgentCollaborationNumericTrial.validatorId)
+      validatorSchemaIssue == nil
+    }
+
+    var validatorSchemaIssue: AgentCollaborationNumericTrial.ValidatorIssue? {
+      guard let validator else { return nil }
+      guard verification == .computational, requirement == AgentCollaborationNumericTrial.requirement else {
+        return .init(path: "", expected: "numeric validator on the exact computational verification requirement",
+          actual: "validator is not bound to the supported requirement")
+      }
+      return AgentCollaborationNumericTrial.validatorIssue(validator)
     }
   }
 
@@ -904,9 +911,8 @@ enum AgentCollaborationGoalAssessmentPolicy {
   }
 
   static func blockerAssessment(_ raw: String, preserving contract: [Criterion]) -> Assessment? {
-    guard !contract.isEmpty, raw.utf8.count <= 131_072,
-          let draft = try? JSONDecoder().decode(Assessment.self, from: Data(raw.utf8)),
-          draft.format == "galaxyssi.goal-assessment.v1", draft.decision == .blocked, !draft.summary.isBlank,
+    guard !contract.isEmpty, case .success(let draft) = parseAssessment(raw, limit: 131_072),
+          draft.decision == .blocked,
           draft.work.isEmpty, draft.recruit?.isEmpty != false, (1...16).contains(draft.blockers.count),
           Set(draft.blockers.map(\.id)).count == draft.blockers.count,
           draft.blockers.allSatisfy({ !$0.id.isBlank && !$0.reason.isBlank && !$0.resume_when.isBlank &&
@@ -940,9 +946,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
   }
 
   static func initialContract(_ raw: String) -> [Criterion]? {
-    guard raw.utf8.count <= 131_072,
-          let draft = try? JSONDecoder().decode(Assessment.self, from: Data(raw.utf8)),
-          draft.format == "galaxyssi.goal-assessment.v1", !draft.summary.isBlank,
+    guard case .success(let draft) = parseAssessment(raw, limit: 131_072),
           draft.decision == .continue, draft.work.isEmpty, draft.blockers.isEmpty, draft.recruit?.isEmpty != false,
           (1...64).contains(draft.criteria.count),
           Set(draft.criteria.map(\.id)).count == draft.criteria.count,
@@ -972,71 +976,11 @@ enum AgentCollaborationGoalAssessmentPolicy {
     case achieved
   }
 
-  static func preflight(_ raw: String, establishedContract: Bool) -> AgentMcpJSONObject {
-    var response: AgentMcpJSONObject = [
-      "success": .bool(false), "status": .string("invalid_assessment"),
-      "json_valid": .bool(false),
-      "acceptance_contract_state": .string(establishedContract ? "established" : "not_established"),
-      "validation_scope": .string("structure_only_not_admission_or_acceptance")
-    ]
-    func fail(_ path: String, _ reason: String, allowed: [String] = []) -> AgentMcpJSONObject {
-      response["field_path"] = .string(path)
-      response["reason"] = .string(reason)
-      if !allowed.isEmpty { response["allowed_values"] = .array(allowed.map(AgentMcpJSONValue.string)) }
-      return response
-    }
-    let data = Data(raw.utf8)
-    guard data.count <= 131_072, (try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data)) != nil else {
-      return fail("$", "expected_bounded_json_object")
-    }
-    response["json_valid"] = .bool(true)
-    func path(_ keys: [CodingKey]) -> String {
-      keys.reduce("$") { value, key in
-        if let index = key.intValue { return value + "[\(index)]" }
-        return value + "." + key.stringValue
-      }
-    }
-    let draft: Assessment
-    do { draft = try JSONDecoder().decode(Assessment.self, from: data) }
-    catch let DecodingError.keyNotFound(key, context) { return fail(path(context.codingPath + [key]), "required_field") }
-    catch let DecodingError.typeMismatch(_, context) { return fail(path(context.codingPath), "wrong_type") }
-    catch let DecodingError.valueNotFound(_, context) { return fail(path(context.codingPath), "required_value") }
-    catch let DecodingError.dataCorrupted(context) { return fail(path(context.codingPath), "invalid_value") }
-    catch { return fail("$", "invalid_assessment") }
-    guard draft.format == "galaxyssi.goal-assessment.v1" else {
-      return fail("$.format", "unexpected_format", allowed: ["galaxyssi.goal-assessment.v1"])
-    }
-    guard !draft.summary.isBlank else { return fail("$.summary", "expected_nonblank_text") }
-    guard !draft.criteria.isEmpty else { return fail("$.criteria", "expected_nonempty_criteria") }
-    var ids = Set<String>()
-    for (index, criterion) in draft.criteria.enumerated() {
-      let root = "$.criteria[\(index)]"
-      guard !criterion.id.isBlank, ids.insert(criterion.id).inserted else { return fail(root + ".id", "expected_unique_id") }
-      guard !criterion.requirement.isBlank else { return fail(root + ".requirement", "expected_nonblank_text") }
-      for (sourceIndex, source) in (criterion.required_observations ?? []).enumerated() {
-        let sourcePath = root + ".required_observations[\(sourceIndex)]"
-        guard RequiredObservation.allowedOrigins.contains(source.origin) else {
-          return fail(sourcePath + ".origin", "unsupported_origin", allowed: RequiredObservation.allowedOrigins)
-        }
-        guard !source.tool.isBlank else { return fail(sourcePath + ".tool", "expected_nonblank_text") }
-      }
-    }
-    response["success"] = .bool(true)
-    response["status"] = .string("valid_structure")
-    return response
-  }
-
   static func evaluate(_ raw: String, preserving contract: [Criterion],
                        authorizedMembers: Set<String>, completedWork: Set<String>,
                        checkedBlockers: Set<String> = [],
                        verified: [String: VerifiedCriterion] = [:]) -> Outcome {
-    guard raw.utf8.count <= 256_000,
-          let assessment = try? JSONDecoder().decode(Assessment.self, from: Data(raw.utf8)),
-          assessment.format == "galaxyssi.goal-assessment.v1",
-          !assessment.summary.isBlank, !assessment.criteria.isEmpty,
-          Set(assessment.criteria.map(\.id)).count == assessment.criteria.count,
-          assessment.criteria.allSatisfy({ !$0.id.isBlank && !$0.requirement.isBlank && $0.hasValidValidatorBinding &&
-            ($0.required_observations ?? []).allSatisfy(\.isValid) }) else {
+    guard case .success(let assessment) = parseAssessment(raw) else {
       return .needsAssessment
     }
     let criteria = Dictionary(uniqueKeysWithValues: assessment.criteria.map { ($0.id, $0) })
@@ -1148,8 +1092,8 @@ enum AgentCollaborationDocumentaryAcceptance {
                        originalObservation: (String) throws -> OriginalObservation? = { _ in nil })
     -> AgentCollaborationGoalAssessmentPolicy.Outcome {
     typealias Policy = AgentCollaborationGoalAssessmentPolicy
-    guard !conversationId.isBlank, !runId.isBlank, !turnId.isBlank, raw.utf8.count <= 256_000,
-          let assessment = try? JSONDecoder().decode(Policy.Assessment.self, from: Data(raw.utf8)),
+    guard !conversationId.isBlank, !runId.isBlank, !turnId.isBlank,
+          case .success(let assessment) = Policy.parseAssessment(raw),
           assessment.decision == .achieved else { return .needsAssessment }
 
     func current(_ reference: Reference) throws -> Revision? {
