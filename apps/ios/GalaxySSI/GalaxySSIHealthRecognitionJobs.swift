@@ -27,12 +27,12 @@ enum GalaxySSIHealthRecognitionJobs {
     var id = UUID()
     var version = UUID()
     let original: GalaxySSIHealthOriginalStore.Original
+    var captureSource: GalaxySSIHealthPhotoDraft.Source?
     let addedAt: Date
     let pageCount: Int
     var phase = Phase.queued
     var run: UUID?
     var pages: [Page] = []
-    var captureSource: GalaxySSIHealthPhotoDraft.Source?
   }
 
   static func validDigest(_ hash: String) -> Bool {
@@ -109,12 +109,10 @@ struct GalaxySSIHealthRecognitionJobsView: View {
         if failed { Text(t("failed", "The original or recognition job is unavailable.")) }
       }
     }
+    .task(id: scene) { await runPhotoBatch() }
     .navigationTitle(t("title", "Local Report Recognition"))
     .navigationBarTitleDisplayMode(.inline)
-    .onAppear {
-      reload()
-      runNextPhotoInBatch()
-    }
+    .onAppear(perform: reload)
     .onDisappear { if task != nil { stop(cancelled: false) } }
     .onChange(of: scene) {
       if $0 == .active { reload() }
@@ -266,21 +264,26 @@ struct GalaxySSIHealthRecognitionJobsView: View {
             failed = !(error is CancellationError)
           }
         }
-        if activeRun == run {
-          activeID = nil; activeRun = nil; task = nil; reload()
-          if jobs.first(where: { $0.id == job.id })?.phase == .completed {
-            runNextPhotoInBatch()
-          }
-        }
+        if activeRun == run { activeID = nil; activeRun = nil; task = nil; reload() }
       }
     } catch { failed = true }
   }
 
-  private func runNextPhotoInBatch() {
-    guard scene == .active, task == nil, let automaticPhotoBatch,
-          let next = jobs.filter({ $0.captureSource?.batchID == automaticPhotoBatch && $0.phase == .queued })
-            .min(by: { ($0.captureSource?.order ?? 0) < ($1.captureSource?.order ?? 0) }) else { return }
-    run(next)
+  private func runPhotoBatch() async {
+    guard scene == .active, let automaticPhotoBatch else { return }
+    reload()
+    while !Task.isCancelled, scene == .active {
+      if task == nil {
+        guard let next = jobs.filter({ $0.captureSource?.batchID == automaticPhotoBatch &&
+          $0.phase != .completed && $0.phase != .cancelled })
+          .min(by: { ($0.captureSource?.order ?? 0) < ($1.captureSource?.order ?? 0) }),
+          next.phase == .queued else { return }
+        run(next)
+        if task == nil { return }
+      }
+      do { try await Task.sleep(nanoseconds: 250_000_000) }
+      catch { return }
+    }
   }
 
   private func stop(cancelled: Bool) {

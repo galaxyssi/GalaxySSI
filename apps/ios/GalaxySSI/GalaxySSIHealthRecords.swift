@@ -496,6 +496,43 @@ struct GalaxySSIHealthRecords {
     try GalaxySSIHealthMetricDeletion.preview(metric, filter: filter, in: load())
   }
 
+  func editPhotoCaptureDraft(expected: UUID, page: UUID?, offset: Int? = nil) throws {
+    var archive = try load()
+    guard var draft = archive.photoCaptureDraft, draft.version == expected else { throw Failure.stale }
+    if let page {
+      try draft.edit(page, offset: offset)
+      archive.photoCaptureDraft = draft
+    } else { archive.photoCaptureDraft = nil }
+    try persist(archive)
+  }
+
+  func persistPhotoCaptureDraft(_ updated: Archive, expected: UUID?) throws {
+    guard try load().photoCaptureDraft?.version == expected else { throw Failure.stale }
+    try persist(updated)
+  }
+
+  func submitPhotoCaptureDraft(expected: UUID, originals: GalaxySSIHealthOriginalStore) throws {
+    guard originals.owner == owner else { throw Failure.invalid }
+    try originals.withRestoreLease { lease in
+      try originals.reconcileRestores(lease: lease)
+      var archive = try load()
+      guard let draft = archive.photoCaptureDraft, draft.version == expected, !draft.pages.isEmpty,
+            draft.pages.count <= GalaxySSIHealthPhotoDraft.maximumPages else { throw Failure.stale }
+      let existing = archive.recognitionJobs ?? []
+      guard existing.count + draft.pages.count <= GalaxySSIHealthRecognitionJobs.maximumJobs else { throw Failure.invalid }
+      let jobs = try draft.pages.enumerated().map { index, page -> GalaxySSIHealthRecognitionJobs.Job in
+        _ = try originals.read(page.original, lease: lease)
+        let crop = try originals.readCrop(for: page.original)?.metadata.revision
+        return .init(original: page.original,
+          captureSource: .init(batchID: draft.id, mode: draft.mode, order: index + 1, cropRevision: crop),
+          addedAt: Date(), pageCount: 1)
+      }
+      archive.photoCaptureDraft = nil
+      archive.recognitionJobs = jobs + existing
+      try persist(archive)
+    }
+  }
+
   func previewBluetoothHistoryDeletion(device: UUID) throws -> GalaxySSIHealthMetricDeletion.Preview {
     try GalaxySSIHealthMetricDeletion.preview(.bloodPressure, filter: .bluetooth, bluetoothDevice: device, in: load())
   }
@@ -549,42 +586,6 @@ struct GalaxySSIHealthRecords {
     jobs.insert(.init(original: original, addedAt: Date(), pageCount: pageCount), at: 0)
     archive.recognitionJobs = jobs
     try persist(archive)
-  }
-
-  func editPhotoCaptureDraft(expected: UUID, page: UUID?, offset: Int? = nil) throws {
-    var archive = try load()
-    guard var draft = archive.photoCaptureDraft, draft.version == expected else { throw Failure.stale }
-    if let page {
-      try draft.edit(page, offset: offset)
-      archive.photoCaptureDraft = draft
-    } else { archive.photoCaptureDraft = nil }
-    try persist(archive)
-  }
-
-  func persistPhotoCaptureDraft(_ updated: Archive, expected: UUID?) throws {
-    guard try load().photoCaptureDraft?.version == expected else { throw Failure.stale }
-    try persist(updated)
-  }
-
-  func submitPhotoCaptureDraft(expected: UUID, originals: GalaxySSIHealthOriginalStore) throws {
-    guard originals.owner == owner else { throw Failure.invalid }
-    try originals.withRestoreLease { lease in
-      try originals.reconcileRestores(lease: lease)
-      var archive = try load()
-      guard let draft = archive.photoCaptureDraft, draft.version == expected, !draft.pages.isEmpty,
-            draft.pages.count <= GalaxySSIHealthPhotoDraft.maximumPages else { throw Failure.stale }
-      let existing = archive.recognitionJobs ?? []
-      guard existing.count + draft.pages.count <= GalaxySSIHealthRecognitionJobs.maximumJobs else { throw Failure.invalid }
-      let jobs = try draft.pages.enumerated().map { index, page -> GalaxySSIHealthRecognitionJobs.Job in
-        _ = try originals.read(page.original, lease: lease)
-        let crop = try originals.readCrop(for: page.original)?.metadata.revision
-        return .init(original: page.original, addedAt: Date(), pageCount: 1,
-          captureSource: .init(batchID: draft.id, mode: draft.mode, order: index + 1, cropRevision: crop))
-      }
-      archive.photoCaptureDraft = nil
-      archive.recognitionJobs = jobs + existing
-      try persist(archive)
-    }
   }
 
   func beginRecognitionJob(id: UUID, expected: UUID) throws -> UUID {
