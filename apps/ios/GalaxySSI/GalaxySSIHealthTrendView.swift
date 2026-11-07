@@ -182,6 +182,7 @@ struct GalaxySSIHealthTrendView: View {
   @Environment(\.locale) private var locale
   let records: GalaxySSIHealthRecords
   private let fixedMetric: GalaxySSIHealthMetric?
+  private let recordMeasurement: (GalaxySSIHealthMetric) -> Void
   @State private var metric: GalaxySSIHealthMetric
   @State private var component = GalaxySSIHealthTrend.Component.value
   @State private var selectedUnit: String?
@@ -189,11 +190,15 @@ struct GalaxySSIHealthTrendView: View {
   @State private var aggregation = GalaxySSIHealthTrend.Aggregation.mean
   @State private var source = GalaxySSIHealthTrend.Source.all
   @State private var snapshotTime = Date()
+  @State private var snapshotCalendar: Calendar?
   @State private var focusedDay: Date?
   @State private var allowed = false
   @State private var device: UUID?
   @State private var devices: [GalaxySSIHealthTrendDevice] = []
   @State private var trend: GalaxySSIHealthTrend?
+  @State private var trendVersions: [String] = []
+  @State private var explanation: GalaxySSIHealthTrendAnalysis?
+  @State private var recordAfterExplanation: GalaxySSIHealthMetric?
   @State private var selected: GalaxySSIHealthTrend.Point?
   @State private var changed = false
   @State private var error = false
@@ -204,9 +209,11 @@ struct GalaxySSIHealthTrendView: View {
   @State private var originCursors: [GalaxySSIHealthTrend.HealthOrigin] = []
   @State private var selectedOriginTitle: String?
 
-  init(records: GalaxySSIHealthRecords, fixedMetric: GalaxySSIHealthMetric? = nil) {
+  init(records: GalaxySSIHealthRecords, fixedMetric: GalaxySSIHealthMetric? = nil,
+       recordMeasurement: @escaping (GalaxySSIHealthMetric) -> Void) {
     self.records = records
     self.fixedMetric = fixedMetric
+    self.recordMeasurement = recordMeasurement
     _metric = State(initialValue: fixedMetric ?? .bloodPressure)
   }
 
@@ -267,6 +274,9 @@ struct GalaxySSIHealthTrendView: View {
             Button(t("refresh", "Refresh"), action: reload)
           } else if let trend {
             if let average = trend.mean, let minimum = trend.minimum, let maximum = trend.maximum {
+              Button(action: explainTrend) {
+                Label(t("explain", "Explain this trend"), systemImage: "text.bubble")
+              }
               Section(t("summary", "Summary")) {
                 Text(String(format: t("coverage", "%lld of %lld days with readings"), Int64(trend.validDays), Int64(days)))
                 statistic(t("mean", "Mean"), average)
@@ -313,6 +323,25 @@ struct GalaxySSIHealthTrendView: View {
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.trendInputsChanged)) { event in
       guard event.object as? String == records.owner, scene == .active else { return }
       invalidate()
+    }
+    .onChange(of: scene) { phase in
+      if phase != .active { trendVersions = []; explanation = nil; recordAfterExplanation = nil }
+    }
+    .sheet(item: $explanation, onDismiss: {
+      if let metric = recordAfterExplanation {
+        recordAfterExplanation = nil
+        if scene == .active { recordMeasurement(metric) }
+      }
+    }) { route in
+      NavigationView {
+        GalaxySSIHealthAssistantView(records: records, trendScope: route) { _ in
+          recordAfterExplanation = route.spec.metric
+          explanation = nil
+        }
+        .toolbar { ToolbarItem(placement: .cancellationAction) {
+          Button(t("done", "Done")) { explanation = nil }
+        } }
+      }.navigationViewStyle(.stack)
     }
     .sheet(item: $selected) { point in
       NavigationView {
@@ -373,6 +402,7 @@ struct GalaxySSIHealthTrendView: View {
     selected = nil
     focusedDay = nil
     trend = nil
+    trendVersions = []
     changed = false
     do {
       let archive = try records.load()
@@ -382,25 +412,43 @@ struct GalaxySSIHealthTrendView: View {
       let current = archive.current
       devices = source == .healthKit ? [] : GalaxySSIHealthTrendDevice.options(in: current, metric: metric)
       snapshotTime = Date()
+      var local = calendar
+      local.timeZone = timeZone
+      snapshotCalendar = local
       if source == .healthKit {
-        var local = calendar
-        local.timeZone = timeZone
         let today = local.startOfDay(for: snapshotTime)
         let start = local.date(byAdding: .day, value: 1 - days, to: today) ?? today
         originPage = GalaxySSIHealthTrend.origins(in: current, metric: metric, from: start, through: snapshotTime,
                                                   after: originCursors.last)
       }
-      trend = makeTrend(current)
+      let spec = trendSpec
+      trend = spec.chart(current)
+      trendVersions = spec.versions(current)
     } catch { allowed = false; error = true; resetOrigins() }
   }
 
-  private func makeTrend(_ current: [GalaxySSIHealthReading]) -> GalaxySSIHealthTrend {
-    var local = calendar
-    local.timeZone = timeZone
-    let scoped = GalaxySSIHealthTrendDevice.matching(current, device: source == .healthKit ? nil : device)
-    return GalaxySSIHealthTrend(current: scoped, metric: metric, component: component,
-      now: snapshotTime, dayCount: days, calendar: local, unit: selectedUnit, source: source,
-      healthOrigin: source == .healthKit ? origin : .all)
+  private var trendSpec: GalaxySSIHealthTrendAnalysis.Spec {
+    let local = snapshotCalendar ?? calendar
+    return .init(metric: metric, component: component, unit: unit, source: source,
+      device: source == .healthKit ? nil : device, origin: source == .healthKit ? origin : .all,
+      aggregation: aggregation, through: snapshotTime, days: days, calendar: local)
+  }
+
+  private func makeTrend(_ current: [GalaxySSIHealthReading]) -> GalaxySSIHealthTrend { trendSpec.chart(current) }
+
+  private func explainTrend() {
+    guard scene == .active, allowed, !changed, trend != nil else { return }
+    do {
+      let archive = try records.load()
+      let label = selectedOriginTitle ?? device.flatMap { id in devices.first { $0.id == id } }.map(deviceTitle)
+      let route = GalaxySSIHealthTrendAnalysis(spec: trendSpec, versions: trendVersions,
+        sourceTitle: label.map { sourceTitle(source) + " / " + $0 } ?? sourceTitle(source))
+      guard route.spec.calendar.timeZone == timeZone else { reload(); return }
+      guard archive.derivesOverview == true, route.spec.versions(archive.current) == route.versions
+      else { invalidate(); return }
+      guard route.result(archive.current) != nil else { return }
+      explanation = route
+    } catch { invalidate() }
   }
 
   private func openAudit(_ point: GalaxySSIHealthTrend.Point) {
@@ -420,6 +468,7 @@ struct GalaxySSIHealthTrendView: View {
     selected = nil
     focusedDay = nil
     trend = nil
+    trendVersions = []
     do {
       allowed = try records.load().derivesOverview == true; changed = allowed
       if !allowed { resetOrigins() }

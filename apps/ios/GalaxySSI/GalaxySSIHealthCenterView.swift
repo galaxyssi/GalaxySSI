@@ -186,7 +186,9 @@ struct GalaxySSIHealthCenterView: View {
         Label(t("backup.title", "Health Backup"), systemImage: "externaldrive")
       }
       NavigationLink {
-        GalaxySSIHealthTrendView(records: records)
+        GalaxySSIHealthTrendView(records: records) { metric in
+          editor = (try? records.load())?.draft ?? GalaxySSIHealthDraft(metric: metric)
+        }
       } label: {
         Label(t("trend.title", "Measurement Trends"), systemImage: "chart.xyaxis.line")
       }
