@@ -39,6 +39,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
   var body: some View {
     List {
       if scene == .active, let thread {
+        if metric == .bloodPressure { GalaxySSIHealthCarePrioritySection(records: records, concernID: concernID) }
         if thread.turns.count > limit {
           Button(t("more", "Show earlier messages")) { limit += 20 }
         }

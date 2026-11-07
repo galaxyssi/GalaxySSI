@@ -61,11 +61,14 @@ enum GalaxySSIHealthCare {
     var adoptedActions: [GalaxySSIHealthCarePlan.AdoptedAction]?
     var measurement: GalaxySSIHealthCareComparison.Sample?
     var comparison: GalaxySSIHealthCareComparison.Pair?
+    var bloodPressureWarning: GalaxySSIHealthCarePriority.Warning?
   }
   struct Ledger: Codable {
     var current: [String: Concern] = [:]
     var history: [String: [Concern]] = [:]
     var deletedInput: [String: String] = [:]
+    var bloodPressurePolicyVersion: String?
+    var acknowledgedBloodPressure: Record?
 
     mutating func publish(_ next: Concern) {
       let key = next.metric.rawValue

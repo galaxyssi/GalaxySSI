@@ -6,6 +6,71 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  func testRecordedBloodPressureWarningUsesEitherComponentWithoutConversionRounding() throws {
+    let policy = GalaxySSIHealthCarePriority.self
+    func reading(_ top: String, _ bottom: String, unit: String = "mmHg") throws -> GalaxySSIHealthReading {
+      .init(metric: .bloodPressure, value: try XCTUnwrap(Decimal(string: top)),
+        diastolic: try XCTUnwrap(Decimal(string: bottom)), unitOverride: unit)
+    }
+    XCTAssertNil(policy.evaluate(try reading("180", "120")))
+    XCTAssertNotNil(policy.evaluate(try reading("181", "90")))
+    XCTAssertNotNil(policy.evaluate(try reading("170", "121")))
+    XCTAssertNil(policy.evaluate(try reading("23.998032", "15.998688", unit: "kPa")))
+    XCTAssertNotNil(policy.evaluate(try reading("23.998033", "15", unit: "kPa")))
+    XCTAssertNotNil(policy.evaluate(try reading("20", "15.998689", unit: "kPa")))
+    XCTAssertNil(policy.evaluate(try reading("20", "16", unit: "unknown")))
+  }
+
+  @MainActor
+  func testBloodPressureWarningAcknowledgmentIsVersionBoundAndLeavesOtherConcernsUnchanged() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "priority-fixture", secrets: secrets, isolatedFile: file)
+    let now = Date()
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-100), value: 110,
+      unitOverride: "mg/dL", referenceInterval: "70 - 99"))
+    let bp = GalaxySSIHealthReading(metric: .bloodPressure, measuredAt: now.addingTimeInterval(-86_400),
+      value: 170, diastolic: 121)
+    try records.write(bp)
+    XCTAssertThrowsError(try records.reconcileLocalCare(now: now))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let archive = try records.load()
+    let ledger = try XCTUnwrap(archive.localCare)
+    let ordinary = try XCTUnwrap(ledger.current["glucose"])
+    let (_, warning) = try XCTUnwrap(GalaxySSIHealthRecords.currentCareBloodPressureWarning(archive, now: now))
+    XCTAssertEqual(warning.record.id, bp.id)
+    XCTAssertEqual(warning.handoff.currentSymptoms, "unknown")
+    XCTAssertFalse(warning.handoff.currentEmergencyEstablished)
+    let first = GalaxySSIHealthCarePriority.page(Array(ledger.current.values), acknowledged: nil, limit: 1)
+    XCTAssertEqual(first.rows.first?.metric, .bloodPressure)
+    let cursor = try XCTUnwrap(first.next)
+    let rest = GalaxySSIHealthCarePriority.page(Array(ledger.current.values), acknowledged: nil, after: cursor)
+    XCTAssertEqual(rest.rows.map(\.id), [ordinary.id])
+    try records.acknowledgeLocalCareBloodPressure(warning, now: now)
+    let reopened = GalaxySSIHealthRecords(owner: "priority-fixture", secrets: secrets, isolatedFile: file)
+    XCTAssertEqual(try reopened.load().localCare?.acknowledgedBloodPressure, warning.record)
+
+    var correction = try XCTUnwrap(reopened.load().current.first(where: { $0.id == bp.id }))
+    correction.value = 171
+    try reopened.write(correction)
+    XCTAssertNil(try GalaxySSIHealthRecords.currentCareBloodPressureWarning(reopened.load(), now: now))
+    XCTAssertThrowsError(try reopened.acknowledgeLocalCareBloodPressure(warning, now: now))
+    try reopened.reconcileLocalCare(now: now)
+    let updated = try reopened.load()
+    let (_, replacement) = try XCTUnwrap(GalaxySSIHealthRecords.currentCareBloodPressureWarning(updated, now: now))
+    XCTAssertEqual(replacement.record.id, warning.record.id)
+    XCTAssertNotEqual(replacement.record.revision, warning.record.revision)
+    XCTAssertNotEqual(updated.localCare?.acknowledgedBloodPressure, replacement.record)
+    XCTAssertEqual(updated.localCare?.current["glucose"], ordinary)
+
+    try reopened.write(.init(metric: .bloodPressure, measuredAt: now.addingTimeInterval(-50), value: 130, diastolic: 80))
+    try reopened.reconcileLocalCare(now: now)
+    XCTAssertNil(try GalaxySSIHealthRecords.currentCareBloodPressureWarning(reopened.load(), now: now))
+    XCTAssertEqual(try reopened.load().localCare?.current["glucose"], ordinary)
+  }
+
   @MainActor
   func testLocalCareComparisonFencesCorrectionsBackfillAndPrivateSourceIdentity() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

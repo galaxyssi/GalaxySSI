@@ -35,6 +35,7 @@ enum GalaxySSIHealthCareDiscussion {
     let confirmedTarget: String?
     let comparison: GalaxySSIHealthCareComparison.ModelComparison?
     let confirmedFacts: GalaxySSIHealthCareApplicability.Facts?
+    let recordedBloodPressureWarning: GalaxySSIHealthCarePriority.Handoff?
 
     init(_ concern: GalaxySSIHealthCare.Concern) {
       metric = concern.metric
@@ -50,6 +51,7 @@ enum GalaxySSIHealthCareDiscussion {
       confirmedTarget = concern.target?.value
       comparison = concern.comparison?.modelValue(currentContext: concern.context)
       confirmedFacts = GalaxySSIHealthCareApplicability.currentFacts(concern)
+      recordedBloodPressureWarning = concern.bloodPressureWarning?.handoff
     }
   }
 
@@ -149,6 +151,9 @@ enum GalaxySSIHealthCareDiscussion {
       records or verified current external sources. Discuss possible questions for a clinician, not a saved care plan.
       A subsequent result, a record correction and a history change are different events. Arithmetic changes do not establish
       improvement, deterioration or stability. Explain comparison gaps and distinguish old and current confirmed context.
+      If the saved snapshot includes a recorded blood pressure warning, address it first using its cited scope.
+      Do not present a historical record or unknown symptoms as a current emergency. Do not substitute a routine plan
+      or medication suggestion for timely care, or apply the nonpregnant adult guidance to pregnancy or children.
       Do not claim to schedule or perform any action.
       """ + (approval.proposesPlan
         ? "\nUse exactly one \(GalaxySSIHealthCarePlan.tool) call to propose a draft. Cite only supplied native_sources by " +
