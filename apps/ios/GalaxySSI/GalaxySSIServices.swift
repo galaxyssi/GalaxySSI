@@ -301,6 +301,7 @@ final class MessageCoordinator: ObservableObject {
   private lazy var teamReplyOwnerProfile = store.profile.identityFingerprint
   private var researchPublicationRecoveryProfile: String?
   private var artifactDownloadRetryGate = AgentArtifactRequestRetryGate()
+  private var artifactDownloadExpectedDigests: [String: String] = [:]
   private var artifactFetchRetryGate = AgentArtifactRequestRetryGate()
   private var liveConnectorMessageIds: [String: UUID] = [:]
   private var liveConnectorSequenceByKey: [String: Int64] = [:]
@@ -2338,10 +2339,17 @@ final class MessageCoordinator: ObservableObject {
       artifactDownloadFailure = lastError
       return false
     }
+    if saveToDownloads, let pending = artifactDownloadExpectedDigests[artifactURI], pending != digest {
+      lastError = localizedReply("rich_output_artifact_version_unavailable",
+        fallback: "The requested image version is unavailable.")
+      artifactDownloadFailure = lastError
+      return false
+    }
     let alreadyPending = pendingArtifactDownloads.contains(artifactURI) ||
       pendingArtifactFetches.contains(artifactURI)
     if saveToDownloads {
       pendingArtifactDownloads.insert(artifactURI)
+      artifactDownloadExpectedDigests[artifactURI] = digest
     } else {
       pendingArtifactFetches.insert(artifactURI)
     }
@@ -2388,6 +2396,7 @@ final class MessageCoordinator: ObservableObject {
   private func clearPendingArtifactRequest(_ artifactURI: String, saveToDownloads: Bool) {
     if saveToDownloads {
       pendingArtifactDownloads.remove(artifactURI)
+      artifactDownloadExpectedDigests.removeValue(forKey: artifactURI)
       artifactDownloadRetryGate.remove(artifactURI)
     } else {
       pendingArtifactFetches.remove(artifactURI)
@@ -15101,23 +15110,41 @@ final class MessageCoordinator: ObservableObject {
             throw GalaxySSIError.transportUnavailable
           }
           self.scheduleOutboxFlush(after: 0)
-          let saveRequested = pendingArtifactDownloads.remove(result.artifactURI) != nil
+          pendingArtifactDownloads.remove(result.artifactURI)
+          let expectedSaveDigest = artifactDownloadExpectedDigests.removeValue(forKey: result.artifactURI)
           pendingArtifactFetches.remove(result.artifactURI)
           artifactDownloadRetryGate.remove(result.artifactURI)
           artifactFetchRetryGate.remove(result.artifactURI)
           artifactRevision &+= 1
           artifactDownloadFailure = ""
           artifactDownloadSavedPath = ""
-          if saveRequested {
+          if let expectedSaveDigest {
             do {
               artifactDownloadSavedPath = try desktopArtifactStore.saveArtifactUriToDownloads(
-                sourceURI: result.artifactURI
+                sourceURI: result.artifactURI, expectedSHA256: expectedSaveDigest
               )
+            } catch AgentDesktopArtifactStoreError.imageVersionMismatch {
+              artifactDownloadFailure = localizedReply("rich_output_artifact_version_unavailable",
+                fallback: "The requested image version is unavailable.")
             } catch {
               artifactDownloadFailure = error.localizedDescription
             }
           }
           artifactDownloadCompletedRevision &+= 1
+          _ = self.replayPendingIncoming()
+        } catch let error as AgentDesktopArtifactStoreError
+          where error == .imageFormatMismatch || error == .imageVersionMismatch {
+          guard self.store.profile.identityFingerprint == owner,
+                self.desktopArtifactLinkIsCurrent(link, payload: payload) else { return }
+          let uri = payload.string("artifact_uri")
+          self.clearPendingArtifactRequest(uri, saveToDownloads: true)
+          self.clearPendingArtifactRequest(uri, saveToDownloads: false)
+          self.lastError = error == .imageVersionMismatch
+            ? self.localizedReply("rich_output_artifact_version_unavailable", fallback: "The requested image version is unavailable.")
+            : self.localizedReply("rich_output_artifact_image_format_invalid",
+                fallback: "The delivered image does not match its file format.")
+          self.artifactDownloadFailure = self.lastError
+          self.deliveryStore.completeIncoming(messageId: messageId)
           _ = self.replayPendingIncoming()
         } catch {
           guard self.store.profile.identityFingerprint == owner else { return }
@@ -15131,6 +15158,7 @@ final class MessageCoordinator: ObservableObject {
       payload.string("status") != "stored" {
       let artifactURI = payload.string("artifact_uri")
       pendingArtifactDownloads.remove(artifactURI)
+      artifactDownloadExpectedDigests.removeValue(forKey: artifactURI)
       pendingArtifactFetches.remove(artifactURI)
       artifactDownloadRetryGate.remove(artifactURI)
       artifactFetchRetryGate.remove(artifactURI)

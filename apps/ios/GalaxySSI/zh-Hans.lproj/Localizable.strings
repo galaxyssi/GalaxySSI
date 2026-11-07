@@ -5271,6 +5271,9 @@
 "rich_output_download" = "下载";
 "rich_output_download_requested" = "已请求";
 "rich_output_download_failed" = "无法请求此工件。";
+"rich_output_artifact_transport_copy" = "传输副本，非原图";
+"rich_output_artifact_version_unavailable" = "无法获取请求的图片版本。";
+"rich_output_artifact_image_format_invalid" = "收到的图片与声明的文件格式不符。";
 "rich_output_download_retry" = "重试";
 "rich_output_download_timeout" = "桌面端暂未响应，可以再次请求。";
 "rich_output_save" = "保存到文件";

@@ -92,6 +92,49 @@ enum AgentDesktopArtifactStoreError: Error, Equatable {
   case invalidPayload(String)
   case integrity(String)
   case unavailable(String)
+  case imageFormatMismatch
+  case imageVersionMismatch
+}
+
+enum AgentDesktopImageFidelity {
+  private static let mimeByExtension = [
+    "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+    "webp": "image/webp", "gif": "image/gif", "bmp": "image/bmp"
+  ]
+  private static let extensionByMIME = [
+    "image/png": "png", "image/jpeg": "jpeg", "image/webp": "webp", "image/gif": "gif", "image/bmp": "bmp"
+  ]
+
+  private static func claims(name: String, uri: String, mime: String) -> (extensions: [String], mime: String) {
+    let mediaType = mime.split(separator: ";", maxSplits: 1).first?
+      .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    let uriPath = URLComponents(string: uri)?.path ?? ""
+    let extensions = [(name as NSString).pathExtension, (uriPath as NSString).pathExtension]
+      .map { $0.lowercased() }.filter { !$0.isEmpty }
+    return (extensions, mediaType)
+  }
+
+  static func applies(name: String, uri: String, mime: String) -> Bool {
+    let claim = claims(name: name, uri: uri, mime: mime)
+    return claim.extensions.contains { mimeByExtension[$0] != nil } || extensionByMIME[claim.mime] != nil
+  }
+
+  static func validate(_ data: Data, name: String, uri: String, mime: String) throws {
+    let claim = claims(name: name, uri: uri, mime: mime)
+    guard let format = claim.extensions.first(where: { mimeByExtension[$0] != nil }) ?? extensionByMIME[claim.mime],
+          let expectedMIME = mimeByExtension[format] else { return }
+    let genericMIME = claim.mime.isEmpty || claim.mime == "application/octet-stream"
+    guard (genericMIME || claim.mime == expectedMIME),
+          claim.extensions.allSatisfy({ mimeByExtension[$0] == expectedMIME }),
+          AgentVerifiedArtifactSnapshot.verifiesImage(data, extension: format)
+    else { throw AgentDesktopArtifactStoreError.imageFormatMismatch }
+  }
+
+  static func validateVersion(name: String, uri: String, mime: String, size: Int64, digest: String,
+                              originalSize: Int64, originalDigest: String) throws {
+    guard applies(name: name, uri: uri, mime: mime), digest == originalDigest else { return }
+    guard size == originalSize else { throw AgentDesktopArtifactStoreError.imageFormatMismatch }
+  }
 }
 
 final class AgentDesktopArtifactStore {
@@ -127,6 +170,11 @@ final class AgentDesktopArtifactStore {
   func ingest(_ payload: [String: Any]) throws -> AgentDesktopArtifactIngestResult {
     try locked {
       let typed = try AgentDesktopArtifactChunkPayload(payload)
+      try AgentDesktopImageFidelity.validateVersion(name: typed.name, uri: typed.artifactURI, mime: typed.mimeType,
+        size: typed.sizeBytes, digest: typed.sha256, originalSize: typed.originalSizeBytes,
+        originalDigest: typed.originalSHA256)
+      try rejectImageCopyReplacingOriginal(uri: typed.artifactURI, digest: typed.sha256,
+        originalDigest: typed.originalSHA256)
       if let record = try existingRecord(artifactURI: typed.artifactURI),
         record.artifactId == typed.artifactId,
         record.sha256 == typed.sha256,
@@ -140,6 +188,7 @@ final class AgentDesktopArtifactStore {
               record.originalSHA256 == typed.originalSHA256 else {
           throw AgentDesktopArtifactStoreError.integrity("Stored artifact identity does not match the replay")
         }
+        if isImage(record) { _ = try verifiedImageBytes(record, from: file) }
         return AgentDesktopArtifactIngestResult(
           completed: true,
           artifactId: typed.artifactId,
@@ -205,7 +254,10 @@ final class AgentDesktopArtifactStore {
         artifactId: typed.artifactId,
         chunkCount: typed.chunkCount,
         expectedSizeBytes: typed.sizeBytes,
-        expectedSHA256: typed.sha256
+        expectedSHA256: typed.sha256,
+        validate: { data in
+          try AgentDesktopImageFidelity.validate(data, name: typed.name, uri: typed.artifactURI, mime: typed.mimeType)
+        }
       )
 
       let record = AgentDesktopArtifactRecord(
@@ -250,6 +302,15 @@ final class AgentDesktopArtifactStore {
             sha256(plaintext) == digest else {
         throw AgentDesktopArtifactStoreError.integrity("Blob artifact integrity check failed")
       }
+      try AgentDesktopImageFidelity.validate(plaintext, name: manifest.string("name"), uri: artifactURI,
+        mime: manifest.string("mime_type"))
+      let originalSize = manifest.int64("original_size_bytes")
+      let originalDigest = manifest.string("original_sha256").ifBlank(digest)
+      try AgentDesktopImageFidelity.validateVersion(name: manifest.string("name"), uri: artifactURI,
+        mime: manifest.string("mime_type"), size: size, digest: digest,
+        originalSize: originalSize == 0 ? size : originalSize,
+        originalDigest: originalDigest)
+      try rejectImageCopyReplacingOriginal(uri: artifactURI, digest: digest, originalDigest: originalDigest)
       try fileManager.createDirectory(at: filesDirectory, withIntermediateDirectories: true)
       let target = filesDirectory.appendingPathComponent("\(artifactId).saenc", isDirectory: false)
       try cipher.write(plaintext, to: target, purpose: artifactPurpose(artifactId))
@@ -288,6 +349,10 @@ final class AgentDesktopArtifactStore {
     let category = block.metadata["category"] ?? ""
     let generatedSizeText = !category.isEmpty && block.text.hasPrefix("\(category) \u{00B7} ")
     let safeURI = "galaxyssi-local-artifact://\(record.artifactId)"
+    var versionMetadata: [String: String] = [:]
+    if isImage(record) {
+      versionMetadata["image_artifact_version"] = isOriginalImage(record) ? "original" : "transport_copy"
+    }
     return AgentRichBlock(
       id: block.id,
       type: block.type,
@@ -318,7 +383,7 @@ final class AgentDesktopArtifactStore {
         "transport": "encrypted-fragmented",
         "storage": "app_private_file",
         "saved_to_downloads": record.savedToDownloads ? "true" : "false"
-      ]) { _, new in new }
+      ]) { _, new in new }.merging(versionMetadata) { _, new in new }
     )
   }
 
@@ -331,11 +396,23 @@ final class AgentDesktopArtifactStore {
       fileManager.fileExists(atPath: file.path) else {
       return nil
     }
-    return try? cipher.materializeTemporaryFile(
+    guard let materialized = try? cipher.materializeTemporaryFile(
       from: file,
       purpose: artifactPurpose(record.artifactId),
       displayName: record.name
-    )
+    ) else { return nil }
+    if isImage(record) {
+      do {
+        let bytes = try Data(contentsOf: materialized, options: .mappedIfSafe)
+        try verifyImageRecord(record, bytes: bytes)
+      } catch {
+        if materialized.standardizedFileURL != file.standardizedFileURL {
+          try? fileManager.removeItem(at: materialized)
+        }
+        return nil
+      }
+    }
+    return materialized
   }
 
   static func isHTMLArtifact(name: String, mimeType: String) -> Bool {
@@ -371,12 +448,23 @@ final class AgentDesktopArtifactStore {
     }
   }
 
-  func saveArtifactUriToDownloads(sourceURI: String) throws -> String {
+  func saveArtifactUriToDownloads(sourceURI: String, expectedSHA256: String? = nil) throws -> String {
     try locked {
       guard let record = try existingRecord(artifactURI: sourceURI),
             let source = try artifactFile(record: record),
             fileManager.fileExists(atPath: source.path) else {
         throw AgentDesktopArtifactStoreError.unavailable("Artifact is not available")
+      }
+      let plaintext: Data
+      if isImage(record) {
+        if let expectedSHA256 {
+          guard expectedSHA256 == record.sha256 else { throw AgentDesktopArtifactStoreError.imageVersionMismatch }
+        } else if !isOriginalImage(record) {
+          throw AgentDesktopArtifactStoreError.imageVersionMismatch
+        }
+        plaintext = try verifiedImageBytes(record, from: source)
+      } else {
+        plaintext = try cipher.read(from: source, purpose: artifactPurpose(record.artifactId))
       }
       let fileName = Self.safeFileName(record.name).ifBlank("GalaxySSI-artifact")
       guard let downloadsDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask)
@@ -387,13 +475,6 @@ final class AgentDesktopArtifactStore {
       }
       try fileManager.createDirectory(at: downloadsDirectory, withIntermediateDirectories: true)
       let destination = downloadsDirectory.appendingPathComponent(fileName, isDirectory: false)
-      if fileManager.fileExists(atPath: destination.path) {
-        try fileManager.removeItem(at: destination)
-      }
-      let plaintext = try cipher.read(
-        from: source,
-        purpose: artifactPurpose(record.artifactId)
-      )
       try plaintext.write(to: destination, options: [.atomic])
 
       var updated = record
@@ -456,7 +537,8 @@ final class AgentDesktopArtifactStore {
     artifactId: String,
     chunkCount: Int,
     expectedSizeBytes: Int64,
-    expectedSHA256: String
+    expectedSHA256: String,
+    validate: (Data) throws -> Void
   ) throws {
     var data = Data()
     data.reserveCapacity(Int(min(expectedSizeBytes, Int64(Int.max))))
@@ -470,6 +552,11 @@ final class AgentDesktopArtifactStore {
     guard Int64(data.count) == expectedSizeBytes && sha256(data) == expectedSHA256 else {
       try? fileManager.removeItem(at: target)
       throw AgentDesktopArtifactStoreError.integrity("Artifact integrity check failed")
+    }
+    do { try validate(data) }
+    catch {
+      try? fileManager.removeItem(at: incoming)
+      throw error
     }
     try cipher.write(data, to: target, purpose: artifactPurpose(artifactId))
   }
@@ -494,6 +581,35 @@ final class AgentDesktopArtifactStore {
     return try JSONDecoder().decode(AgentDesktopArtifactRecord.self, from: Data(contentsOf: url))
   }
 
+  private func isImage(_ record: AgentDesktopArtifactRecord) -> Bool {
+    AgentDesktopImageFidelity.applies(name: record.name, uri: record.artifactURI, mime: record.mimeType)
+  }
+
+  private func isOriginalImage(_ record: AgentDesktopArtifactRecord) -> Bool {
+    record.sha256 == record.originalSHA256 && record.sizeBytes == record.originalSizeBytes
+  }
+
+  private func verifyImageRecord(_ record: AgentDesktopArtifactRecord, bytes: Data) throws {
+    guard Int64(bytes.count) == record.sizeBytes, sha256(bytes) == record.sha256 else {
+      throw AgentDesktopArtifactStoreError.integrity("Stored image integrity check failed")
+    }
+    try AgentDesktopImageFidelity.validate(bytes, name: record.name, uri: record.artifactURI, mime: record.mimeType)
+  }
+
+  private func verifiedImageBytes(_ record: AgentDesktopArtifactRecord, from file: URL) throws -> Data {
+    let bytes = try cipher.read(from: file, purpose: artifactPurpose(record.artifactId))
+    try verifyImageRecord(record, bytes: bytes)
+    return bytes
+  }
+
+  private func rejectImageCopyReplacingOriginal(uri: String, digest: String, originalDigest: String) throws {
+    guard digest != originalDigest, let record = try existingRecord(artifactURI: uri),
+          isImage(record), isOriginalImage(record), record.sha256 == originalDigest,
+          let file = try artifactFile(record: record), (try? verifiedImageBytes(record, from: file)) != nil
+    else { return }
+    throw AgentDesktopArtifactStoreError.imageVersionMismatch
+  }
+
   private func matchesBlock(
     record: AgentDesktopArtifactRecord,
     block: AgentRichBlock
@@ -515,6 +631,9 @@ final class AgentDesktopArtifactStore {
     let hasVersion = !requestedHash.isEmpty || !requestedSize.isEmpty
     let currentMatches = (requestedHash.isEmpty || requestedHash == record.sha256) &&
       (requestedSize.isEmpty || requestedSize == String(record.sizeBytes))
+    if block.type == .image || isImage(record), !isOriginalImage(record) {
+      return requestedHash == record.sha256 && currentMatches
+    }
     if !hasVersion || currentMatches { return true }
 
     let isBlob = record.artifactURI.hasPrefix("galaxyssi-artifact://blob/") ||

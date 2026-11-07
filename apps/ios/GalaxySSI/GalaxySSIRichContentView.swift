@@ -967,6 +967,11 @@ private struct GalaxySSIRichBlockView: View {
         selectableText(block.title)
           .font(.subheadline.weight(.semibold))
       }
+      if isTransportImageCopy {
+        Text(t("rich_output_artifact_transport_copy", "Transport copy, not the original"))
+          .font(.caption)
+          .foregroundColor(.galaxySSITextSecondary)
+      }
 
       GalaxySSIAnimatedImageView(data: data)
         .frame(width: GalaxySSIImageResourceDecoder.galleryThumbnailSize(from: data).width,
@@ -976,7 +981,7 @@ private struct GalaxySSIRichBlockView: View {
         .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .onTapGesture {
           imageViewerItem = makeImageViewerItem(
-            data: data,
+            data: localDesktopArtifactImageData ?? data,
             url: nil,
             id: "\(block.id)-image",
             title: block.title,
@@ -984,7 +989,7 @@ private struct GalaxySSIRichBlockView: View {
           )
         }
         .contextMenu {
-          Button { _ = GalaxySSIImageClipboard.copy(data) } label: {
+          Button { _ = GalaxySSIImageClipboard.copy(localDesktopArtifactImageData ?? data) } label: {
             Label(t("clipboard_image_copy", "Copy image"), systemImage: "doc.on.doc")
           }
         }
@@ -1546,6 +1551,11 @@ private struct GalaxySSIRichBlockView: View {
         url: nil,
         typeLabel: resourceTypeLabel
       )
+      if available, isTransportImageCopy {
+        Text(t("rich_output_artifact_transport_copy", "Transport copy, not the original"))
+          .font(.caption)
+          .foregroundColor(.galaxySSITextSecondary)
+      }
       if available {
         LazyVGrid(
           columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 2),
@@ -1624,6 +1634,10 @@ private struct GalaxySSIRichBlockView: View {
   private var isDesktopArtifact: Bool {
     let sourceURI = block.metadata["artifact_source_uri"] ?? block.uri
     return block.isArtifactBlock && AgentDesktopArtifactStore.isGalaxySSIArtifactURI(sourceURI)
+  }
+
+  private var isTransportImageCopy: Bool {
+    coordinator.desktopArtifactStore.resolveBlock(block).metadata["image_artifact_version"] == "transport_copy"
   }
 
   private var localArtifactFile: URL? {

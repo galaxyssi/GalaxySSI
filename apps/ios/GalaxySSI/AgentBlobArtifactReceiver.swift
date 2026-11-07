@@ -473,6 +473,8 @@ actor AgentBlobArtifactReceiver {
   private func errorCode(_ error: Error) -> String {
     if case AgentBlobFailure.invalid(let code) = error { return code }
     if case AgentBlobFailure.http(let code, _) = error { return code }
+    if case AgentDesktopArtifactStoreError.imageFormatMismatch = error { return "artifact_image_format_mismatch" }
+    if case AgentDesktopArtifactStoreError.imageVersionMismatch = error { return "artifact_image_version_mismatch" }
     return "artifact_blob_receive_failed"
   }
 
@@ -482,7 +484,7 @@ actor AgentBlobArtifactReceiver {
       "artifact_blob_manifest_mismatch", "manifest_hash_mismatch",
       "ciphertext_hash_mismatch", "chunk_authentication_failed",
       "plaintext_hash_mismatch", "invalid_private_descriptor",
-      "invalid_artifact_blob_manifest"
+      "invalid_artifact_blob_manifest", "artifact_image_format_mismatch", "artifact_image_version_mismatch"
     ].contains(code)
   }
 }
