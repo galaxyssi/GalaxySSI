@@ -585,7 +585,8 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   func recallCollaborationOriginal(_ input: AgentMcpJSONObject,
-                                   scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+                                   scope: AgentCollaborationToolEvidenceScope, generation: Int64? = nil,
+                                   recordEvidenceCoverage: Bool = true) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
     if mode == "dependency" { return try recallDependencyOriginal(input, scope: scope) }
     if mode == "capabilities" { return try recallCapabilities(input, scope: scope) }
@@ -618,6 +619,20 @@ final class AgentTeamExecutionHistoryStore {
         expectedHash: input["sha256"]?.stringValue)
     }
     if mode == "problems" { return try recallCloudProblems(input, scope: scope) }
+    if mode == AgentCollaborationSourceAccess.mode {
+      return try access { database in
+        guard let team = try database.snapshots(runId: scope.runId).first,
+              team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
+              let member = team.members.first(where: { $0.memberId == scope.memberId &&
+                $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }),
+              try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+                key: "native-evidence-revoked", revision: 0) != true else {
+          throw AgentTeamHistoryDatabase.Failure.stale
+        }
+        return try AgentCollaborationSourceAccess.page(input, scope: scope,
+          dependencies: member.dispatchDependencyMemberIds ?? [], generation: generation, database: database)
+      }
+    }
     let hash = input.string("sha256")
     let idKey = mode == "workspace" ? "object_id" : "evidence_id"
     let id = input.string(idKey)
@@ -650,24 +665,21 @@ final class AgentTeamExecutionHistoryStore {
       }
       if mode == "workspace" {
         guard case .int(let revision)? = input["revision"], revision > 0,
-              let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
-                conversationId: scope.conversationId, key: "object:" + id, revision: revision),
-              record.reference.objectId == id, record.reference.revision == revision,
-              record.reference.sha256 == hash,
-              record.turnId != scope.turnId || (record.runId == scope.runId && record.authorId == scope.memberId)
+              let record = try database.readableCollaborationRevision(
+                .init(objectId: id, revision: revision, sha256: hash), scope: scope)
         else { throw AgentTeamHistoryDatabase.Failure.stale }
         return (try page(encoder.encode(record)), nil, nil)
       }
-      guard let record = try database.cloudEvidence(id: id, conversationId: scope.conversationId),
-            record.scope.conversationId == scope.conversationId,
-            record.scope.turnId != scope.turnId || record.scope == scope else {
+      guard let observation = try database.readableCollaborationEvidence(id: id, sha256: hash, scope: scope) else {
         throw AgentTeamHistoryDatabase.Failure.stale
       }
-      let data = try encoder.encode(record)
-      guard SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == hash else {
-        throw AgentTeamHistoryDatabase.Failure.corrupt
-      }
-      let slice = try page(data)
+      let record = observation.record
+      let slice = try page(observation.bytes)
+      let reference: AgentMcpJSONObject = [
+        "evidence_id": .string(id), "sha256": .string(hash), "origin": .string("ios_cloud_tool"),
+        "tool": .string(record.call.name), "status": .string(record.observedFailure ? "failed" : "succeeded")
+      ]
+      if !recordEvidenceCoverage { return (slice, reference, nil) }
       let key = Self.cloudReadCoverageKey(scope: scope, id: id, hash: hash)
       let previous = try database.researchRecord(AgentCollaborationReadCoverage.self,
         conversationId: scope.conversationId, key: key, revision: 0) ?? AgentCollaborationReadCoverage()
@@ -678,10 +690,7 @@ final class AgentTeamExecutionHistoryStore {
           key: key, revision: 0, replaceCoverage: true)
       }
       let complete = coverage.contiguousEnd == slice.total
-      return (slice, [
-        "evidence_id": .string(id), "sha256": .string(hash), "origin": .string("ios_cloud_tool"),
-        "tool": .string(record.call.name), "status": .string(record.observedFailure ? "failed" : "succeeded")
-      ], [
+      return (slice, reference, [
         "complete": .bool(complete), "total_characters": .int(slice.total),
         "first_missing_offset": complete ? .null : .int(coverage.contiguousEnd),
         "content_utf8_sha256": .string(hash)
