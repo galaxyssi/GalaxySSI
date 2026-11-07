@@ -439,6 +439,33 @@ final class AgentTeamHistoryDatabase {
     }
   }
 
+  func researchObjectRevisions(conversationId: String, after: (String, Int64), limit: Int)
+    throws -> [(objectID: String, revision: Int64)] {
+    let statement = try prepare("""
+      SELECT record_key,revision FROM collaboration_research_records
+      WHERE namespace=? AND group_key=? AND (record_key,revision)>(?,?) AND record_key<'object;'
+      ORDER BY record_key,revision LIMIT ?
+      """)
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    bind(Self.digest(conversationId), at: 2, to: statement)
+    bind("object:" + after.0, at: 3, to: statement)
+    sqlite3_bind_int64(statement, 4, after.1)
+    sqlite3_bind_int64(statement, 5, Int64(limit))
+    var rows: [(String, Int64)] = []
+    while true {
+      let status = sqlite3_step(statement)
+      if status == SQLITE_DONE { return rows }
+      guard status == SQLITE_ROW, let key = sqlite3_column_text(statement, 0) else { throw Failure.corrupt }
+      let recordKey = String(cString: key)
+      let id = String(recordKey.dropFirst("object:".count))
+      let revision = sqlite3_column_int64(statement, 1)
+      guard recordKey.hasPrefix("object:"), AgentCollaborationMethodEvaluations.Cursor.validDigest(id),
+            revision > 0 else { throw Failure.corrupt }
+      rows.append((id, revision))
+    }
+  }
+
   func milestoneKeys(conversationId: String, prefix: String, after: String) throws -> [String] {
     guard prefix.hasSuffix(":") else { throw Failure.corrupt }
     let statement = try prepare("""

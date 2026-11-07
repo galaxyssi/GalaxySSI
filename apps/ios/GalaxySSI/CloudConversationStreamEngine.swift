@@ -684,7 +684,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           if progress.record(toolName: outcome.call.name, arguments: arguments, output: output) {
             madeProgress = true
             if outcome.call.name.lowercased() != CloudImageAnnotationPlan.toolName &&
-                !CloudWebToolLoopProgress.isRuleRecall(toolName: outcome.call.name, arguments: arguments) {
+                !CloudWebToolLoopProgress.isNonEvidenceRecall(toolName: outcome.call.name, arguments: arguments) {
               evidenceResults.append((outcome.call.name, output))
             }
           }
@@ -706,7 +706,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         let promptResults = results.map { call, output in
           if call.name == publishName { return (call, output) }
           if let arguments = try? CloudModelStreamJSON.mcpObject(from: call.argumentsJson),
-             CloudWebToolLoopProgress.isRuleRecall(toolName: call.name, arguments: arguments) {
+             CloudWebToolLoopProgress.isNonEvidenceRecall(toolName: call.name, arguments: arguments) {
             return (call, output)
           }
           return (call, projectionByOriginal[output] ?? evidencePromptLedger.project(output))
