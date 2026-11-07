@@ -368,12 +368,13 @@ struct CloudModelStreamMutableConversation {
 
   mutating func installCollaborationPublication(assessmentOnly: Bool = false) {
     let modes = assessmentOnly
-      ? ["validate_assessment", AgentCollaborationGoalAssessmentPolicy.establishContractMode]
+      ? ["validate_assessment", AgentCollaborationGoalAssessmentPolicy.establishContractMode,
+         AgentCollaborationGoalAssessmentPolicy.appendWorkMode]
       : ["publish", "status", "receipt", "list", "validate_assessment"]
     let properties: [String: Any] = [
       "mode": ["type": "string", "enum": modes],
       "milestone_id": ["type": "string"], "artifact": ["type": "string"], "artifact_sha256": ["type": "string"],
-      "cursor": ["type": "string"]
+      "cursor": ["type": "string"], "expected_revision": ["type": "integer"]
     ]
     var schema: [String: Any] = ["type": "object", "properties": properties,
       "required": ["mode"]]
@@ -381,7 +382,7 @@ struct CloudModelStreamMutableConversation {
     appendCollaborationFunction([
       "name": Self.collaborationPublishName,
       "description": assessmentOnly
-        ? "Use validate_assessment with artifact containing the exact goal-assessment JSON to check its structure. As coordinator, use establish_contract with a continue assessment, open criteria without evidence, and empty work and blockers to freeze the original acceptance criteria once. This does not dispatch work or accept the goal."
+        ? "Use validate_assessment with artifact containing the exact goal-assessment JSON to check its structure. As coordinator, use establish_contract with a continue assessment, open criteria without evidence, and empty work and blockers. Use append_work with a unique milestone_id, expected_revision, and a galaxyssi.work-expansion.v1 JSON artifact to append authorized work. Retry the identical request after an uncertain response. Admission does not dispatch work or accept the goal."
         : "Use status to check availability. Publish interim research with milestone_id and an artifact JSON string. Retry identical bytes, or use receipt with milestone_id and artifact_sha256. Use list with next_cursor to recover saved IDs, then cite them in milestones in your final artifact. Use validate_assessment with artifact to check goal-assessment structure without publishing. Receipts do not verify evidence or complete the assignment."
     ], schema: schema)
   }

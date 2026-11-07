@@ -2759,7 +2759,7 @@ final class MessageCoordinator: ObservableObject {
           let parent = store.agentTask(id: context.team.taskId),
           parent.phase == .executing || parent.phase == .waitingResponse
     else { return }
-    if publishing, phase == AgentCollaborationGoalAssessmentPolicy.establishContractMode {
+    if publishing, AgentCollaborationGoalAssessmentPolicy.isCoordinatorMutation(phase) {
       guard roster.coordinatorId == personId, !parent.blocked,
             !PhoneExecutionAuthority.isCancelled(taskId: parent.taskId) else { return }
     }

@@ -498,6 +498,11 @@ enum AgentCollaborationGoalAssessmentPolicy {
   }
 
   static let establishContractMode = "establish_contract"
+  static let appendWorkMode = "append_work"
+
+  static func isCoordinatorMutation(_ mode: String) -> Bool {
+    mode == establishContractMode || mode == appendWorkMode
+  }
 
   static func initialContract(_ raw: String) -> [Criterion]? {
     guard raw.utf8.count <= 131_072,

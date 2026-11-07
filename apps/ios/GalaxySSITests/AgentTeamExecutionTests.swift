@@ -2073,7 +2073,36 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(criteria["sha256"], saved["criteria_sha256"])
     XCTAssertEqual(reopened.goalCheckpoint(runId: team.supervisorRunId, conversationId: team.conversationId,
       turnId: team.taskId)?.contract.first?.requirement, "Measure the sample")
+    func work(_ requestID: String, id: String, member: String, expected: Int64,
+              dependencies: [String] = []) -> AgentMcpJSONObject {
+      let graph: AgentMcpJSONObject = ["format": .string("galaxyssi.work-expansion.v1"), "work": .array([.object([
+        "id": .string(id), "member": .string(member), "assignment": .string("Measure the fixture"),
+        "depends_on": .array(dependencies.map(AgentMcpJSONValue.string))
+      ])])]
+      return ["mode": .string(AgentCollaborationGoalAssessmentPolicy.appendWorkMode),
+        "artifact": .string(AgentMcpJSONCodec.stringify(graph)), "milestone_id": .string(requestID),
+        "expected_revision": .int(expected)]
+    }
+    let first = work("batch-1", id: "measure", member: scope(1).memberId, expected: 1)
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(first, scope: scope(1)))
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(
+      work("unknown", id: "forbidden", member: "not-in-team", expected: 1), scope: scope(0)))
+    let admitted = try reopened.publishCollaborationMilestone(first, scope: scope(0))
+    XCTAssertEqual(admitted["revision"], .int(2))
+    XCTAssertEqual(admitted["work_dispatched"], .bool(false))
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(
+      work("batch-1", id: "changed", member: scope(1).memberId, expected: 1), scope: scope(0)))
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(
+      work("stale", id: "stale-work", member: scope(1).memberId, expected: 1), scope: scope(0)))
+    let followup = work("batch-2", id: "verify", member: scope(0).memberId, expected: 2, dependencies: ["measure"])
+    XCTAssertEqual(try reopened.publishCollaborationMilestone(followup, scope: scope(0))["revision"], .int(3))
+    XCTAssertEqual(try open().publishCollaborationMilestone(first, scope: scope(0))["replayed"], .bool(true))
+    let latest = try XCTUnwrap(open().goalCheckpoint(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId))
+    XCTAssertEqual(latest.liveGraph?.work.map(\.id), ["measure", "verify"])
+    XCTAssertEqual(latest.liveGraph?.ready(settled: [:], active: []).map(\.id), ["measure"])
     reopened.removeResearchObjects(conversationId: team.conversationId)
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(first, scope: scope(0)))
     XCTAssertThrowsError(try reopened.publishCollaborationMilestone(request, scope: scope(0)))
   }
 

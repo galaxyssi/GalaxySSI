@@ -614,8 +614,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           collaborationPublish: collaborationRecallScope.map { scope in
             { arguments in
               await MainActor.run {
-                let establishing = arguments["mode"] == .string(AgentCollaborationGoalAssessmentPolicy.establishContractMode)
-                guard collaborationEvidence != nil || arguments["mode"] == .string("validate_assessment") || establishing else {
+                let coordinatorMutation = AgentCollaborationGoalAssessmentPolicy.isCoordinatorMutation(arguments.string("mode"))
+                guard collaborationEvidence != nil || arguments["mode"] == .string("validate_assessment") || coordinatorMutation else {
                   return nil
                 }
                 guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
@@ -623,7 +623,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                       let member = scope.memberId.split(separator: ":").first,
                       let memberId = UUID(uuidString: String(member)), roster.members.contains(where: { $0.id == memberId }),
                       session.mergedIntoConversationId.isBlank, !session.privateMode, !session.trackingPaused else { return nil }
-                if establishing {
+                if coordinatorMutation {
                   guard collaborationModelAudit == scope, roster.coordinatorId == memberId,
                         let task = store.agentTask(id: scope.turnId), !task.blocked,
                         task.phase == .executing || task.phase == .waitingResponse,
@@ -681,9 +681,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             publicationResults[outcome.call.callId] = output
             if let receipt = try? CloudModelStreamJSON.mcpObject(from: output), receipt["status"] == .string("published"),
                publishedMilestones.insert(receipt.string("milestone_id")).inserted { madeProgress = true }
-            if arguments["mode"] == .string(AgentCollaborationGoalAssessmentPolicy.establishContractMode),
+            if AgentCollaborationGoalAssessmentPolicy.isCoordinatorMutation(arguments.string("mode")),
                let receipt = try? CloudModelStreamJSON.mcpObject(from: output),
-               receipt["status"] == .string("contract_established"), receipt["replayed"] == .bool(false) {
+               ["contract_established", "work_admitted"].contains(receipt.string("status")),
+               receipt["replayed"] == .bool(false) {
               madeProgress = true
             }
             if arguments["mode"] == .string("publish"),

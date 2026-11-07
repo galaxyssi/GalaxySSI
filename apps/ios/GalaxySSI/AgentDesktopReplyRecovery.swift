@@ -73,12 +73,12 @@ enum AgentDesktopCollaborationPublicationWire {
   static let contract = "galaxyssi.collaboration-publish/1"
 
   static func accepts(phase: String, input: AgentMcpJSONObject) -> Bool {
-    ["publish", "status", "receipt", "list", "validate_assessment",
-     AgentCollaborationGoalAssessmentPolicy.establishContractMode].contains(phase) && input["mode"] == .string(phase)
+    input["mode"] == .string(phase) && (["publish", "status", "receipt", "list", "validate_assessment"].contains(phase) ||
+      AgentCollaborationGoalAssessmentPolicy.isCoordinatorMutation(phase))
   }
 
   static func permits(phase: String, observer: Bool) -> Bool {
-    if phase == AgentCollaborationGoalAssessmentPolicy.establishContractMode { return !observer }
+    if AgentCollaborationGoalAssessmentPolicy.isCoordinatorMutation(phase) { return !observer }
     return observer || phase == "validate_assessment"
   }
 }

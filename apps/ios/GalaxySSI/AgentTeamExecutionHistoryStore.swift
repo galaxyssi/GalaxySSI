@@ -1463,6 +1463,9 @@ final class AgentTeamExecutionHistoryStore {
     if mode == AgentCollaborationGoalAssessmentPolicy.establishContractMode {
       return try establishCollaborationGoalContract(input, scope: scope)
     }
+    if mode == AgentCollaborationGoalAssessmentPolicy.appendWorkMode {
+      return try admitCollaborationWork(input, scope: scope)
+    }
     if mode == "validate_assessment" {
       guard Set(input.keys) == ["mode", "artifact"], let raw = input["artifact"]?.strictStringValue,
             raw.utf8.count <= 131_072 else { throw AgentTeamHistoryDatabase.Failure.corrupt }
@@ -1923,21 +1926,70 @@ final class AgentTeamExecutionHistoryStore {
     catch { return nil }
   }
 
+  private static func activeGoalCoordinator(_ scope: AgentCollaborationToolEvidenceScope,
+    database: AgentTeamHistoryDatabase) throws -> AgentTeamExecutionSnapshot {
+    guard let team = try database.snapshots(runId: scope.runId).first,
+          team.conversationId == scope.conversationId, team.taskId == scope.turnId, team.state == .running,
+          !team.goal.isBlank, team.primaryMemberId == scope.memberId,
+          team.members.contains(where: { $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId &&
+            $0.deliveryMode == .respond && !$0.status.isTerminal &&
+            ($0.dispatchCheckpoint == .dispatching || $0.dispatchCheckpoint == .accepted) }),
+          try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+            key: "native-evidence-revoked", revision: 0) != true
+    else { throw AgentTeamHistoryDatabase.Failure.stale }
+    return team
+  }
+
+  private func admitCollaborationWork(_ input: AgentMcpJSONObject,
+    scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+    guard Set(input.keys) == ["mode", "artifact", "milestone_id", "expected_revision"],
+          let id = input["milestone_id"]?.strictStringValue,
+          id.range(of: #"\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\z"#, options: .regularExpression) != nil,
+          case .int(let expected)? = input["expected_revision"], expected > 0, expected < Int64.max,
+          let raw = input["artifact"]?.strictStringValue, raw.utf8.count <= 131_072,
+          let expansion = try? JSONDecoder().decode(AgentCollaborationLiveGraph.WorkflowExpansion.self, from: Data(raw.utf8)),
+          (1...64).contains(expansion.work.count) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    let fingerprint = AgentMcpJSONCodec.sha256(input)
+    let key = "work-admission:" + AgentMcpJSONCodec.sha256([
+      "scope": .string(scope.ownershipDigest), "id": .string(id)
+    ])
+    return try access { database in
+      let team = try Self.activeGoalCoordinator(scope, database: database)
+      if var prior = try database.researchRecord(AgentMcpJSONObject.self,
+        conversationId: scope.conversationId, key: key, revision: 0) {
+        guard prior["request_sha256"] == .string(fingerprint) else { throw AgentTeamHistoryDatabase.Failure.stale }
+        prior["replayed"] = .bool(true)
+        return prior
+      }
+      guard var checkpoint = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first,
+            checkpoint.conversationId == scope.conversationId, checkpoint.turnId == scope.turnId,
+            checkpoint.phase == .working, checkpoint.revision == expected else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let graph = checkpoint.liveGraph ?? .init()
+      let authorized = Set(team.members.filter { $0.deliveryMode != .ignore }.map(\.memberId))
+      guard let updated = try graph.appending(expansion, authorizedMembers: authorized,
+        historicalAuthors: [:], settled: [:], resolve: { try Self.resolveWorkflow($0, snapshot: team, database: database) }),
+        updated.work.count > graph.work.count else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      checkpoint.liveGraph = updated
+      checkpoint.revision += 1
+      checkpoint.completedWorkIds = []
+      guard try Self.persistGoalCheckpoint(checkpoint, expectedRevision: expected, database: database)
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let receipt: AgentMcpJSONObject = ["success": .bool(true), "status": .string("work_admitted"),
+        "request_sha256": .string(fingerprint), "milestone_id": .string(id),
+        "revision": .int(checkpoint.revision), "admitted_work_count": .int(Int64(updated.work.count - graph.work.count)),
+        "replayed": .bool(false), "work_dispatched": .bool(false)]
+      try database.insertResearchRecord(receipt, conversationId: scope.conversationId, key: key, revision: 0)
+      return receipt
+    }
+  }
+
   private func establishCollaborationGoalContract(_ input: AgentMcpJSONObject,
     scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
     guard Set(input.keys) == ["mode", "artifact"], let raw = input["artifact"]?.strictStringValue,
           let contract = AgentCollaborationGoalAssessmentPolicy.initialContract(raw)
     else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     return try access { database in
-      guard let team = try database.snapshots(runId: scope.runId).first,
-            team.conversationId == scope.conversationId, team.taskId == scope.turnId, team.state == .running,
-            !team.goal.isBlank, team.primaryMemberId == scope.memberId,
-            team.members.contains(where: { $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId &&
-              $0.deliveryMode == .respond && !$0.status.isTerminal &&
-              ($0.dispatchCheckpoint == .dispatching || $0.dispatchCheckpoint == .accepted) }),
-            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
-              key: "native-evidence-revoked", revision: 0) != true
-      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      _ = try Self.activeGoalCoordinator(scope, database: database)
       let prior = try database.goalCheckpoints(runId: scope.runId, revision: 1, newestOnly: true).first
       if let prior {
         guard prior.conversationId == scope.conversationId, prior.turnId == scope.turnId, prior.contract == contract
@@ -2015,46 +2067,49 @@ final class AgentTeamExecutionHistoryStore {
           checkpoint.contract.allSatisfy({ !$0.id.isBlank && !$0.requirement.isBlank && $0.hasValidValidatorBinding }),
           checkpoint.completedWorkIds.allSatisfy({ !$0.isBlank }) else { return false }
     do {
-      return try access { database in
-        guard let snapshot = try database.snapshots(runId: checkpoint.runId).first,
-              snapshot.conversationId == checkpoint.conversationId, snapshot.taskId == checkpoint.turnId,
-              !snapshot.state.deliverable else { return false }
-        let prior = try database.goalCheckpoints(runId: checkpoint.runId, newestOnly: checkpoint.completedWorkIds.isEmpty)
-        guard (prior.first?.revision ?? 0) == expectedRevision,
-              (prior.first?.liveGraph?.work ?? []).elementsEqual(
-                (checkpoint.liveGraph?.work ?? []).prefix(prior.first?.liveGraph?.work.count ?? 0)),
-              prior.allSatisfy({
-                $0.conversationId == checkpoint.conversationId && $0.turnId == checkpoint.turnId &&
-                  $0.contract == checkpoint.contract && $0.completedWorkIds.isDisjoint(with: checkpoint.completedWorkIds)
-              }) else { return false }
-        let existing = prior.first?.liveGraph?.work ?? []
-        let updated = checkpoint.liveGraph?.work ?? []
-        let priorWorkflows = prior.first?.liveGraph?.workflowInstances ?? [:]
-        let workflows = checkpoint.liveGraph?.workflowInstances ?? [:]
-        let additions = updated.dropFirst(existing.count)
-        let authors = Dictionary(updated.map { ($0.id, $0.member) }, uniquingKeysWith: { first, _ in first })
-        guard priorWorkflows.allSatisfy({ workflows[$0.key] == $0.value }),
-              authors.count == updated.count,
-              additions.allSatisfy({ item in
-                guard let id = item.workflowExecutionId else {
-                  return item.review_targets == nil || item.hasIndependentReviewAuthors { authors[$0] }
-                }
-                return priorWorkflows[id] == nil && workflows[id] != nil
-              }) else { return false }
-        for (id, instance) in workflows where priorWorkflows[id] == nil {
-          guard id == instance.execution_id,
-                let compiled = try Self.resolveWorkflow(instance, snapshot: snapshot, database: database),
-                compiled == additions.filter({ $0.workflowExecutionId == id }) else { return false }
-        }
-        guard let ranks = try Self.validatedLearningPriorities(updated, existingCount: existing.count,
-          previous: prior.first?.liveGraph?.learningPriorities ?? [:], snapshot: snapshot,
-          database: database) else { return false }
-        var pinned = checkpoint
-        pinned.liveGraph = checkpoint.liveGraph?.pinningLearningPriorities(ranks)
-        try database.insertGoalCheckpoint(pinned)
-        return true
-      }
+      return try access { try Self.persistGoalCheckpoint(checkpoint, expectedRevision: expectedRevision, database: $0) }
     } catch { return false }
+  }
+
+  private static func persistGoalCheckpoint(_ checkpoint: AgentCollaborationGoalCheckpoint, expectedRevision: Int64,
+                                            database: AgentTeamHistoryDatabase) throws -> Bool {
+    guard let snapshot = try database.snapshots(runId: checkpoint.runId).first,
+          snapshot.conversationId == checkpoint.conversationId, snapshot.taskId == checkpoint.turnId,
+          !snapshot.state.deliverable else { return false }
+    let prior = try database.goalCheckpoints(runId: checkpoint.runId, newestOnly: checkpoint.completedWorkIds.isEmpty)
+    guard (prior.first?.revision ?? 0) == expectedRevision,
+          (prior.first?.liveGraph?.work ?? []).elementsEqual(
+            (checkpoint.liveGraph?.work ?? []).prefix(prior.first?.liveGraph?.work.count ?? 0)),
+          prior.allSatisfy({
+            $0.conversationId == checkpoint.conversationId && $0.turnId == checkpoint.turnId &&
+              $0.contract == checkpoint.contract && $0.completedWorkIds.isDisjoint(with: checkpoint.completedWorkIds)
+          }) else { return false }
+    let existing = prior.first?.liveGraph?.work ?? []
+    let updated = checkpoint.liveGraph?.work ?? []
+    let priorWorkflows = prior.first?.liveGraph?.workflowInstances ?? [:]
+    let workflows = checkpoint.liveGraph?.workflowInstances ?? [:]
+    let additions = updated.dropFirst(existing.count)
+    let authors = Dictionary(updated.map { ($0.id, $0.member) }, uniquingKeysWith: { first, _ in first })
+    guard priorWorkflows.allSatisfy({ workflows[$0.key] == $0.value }),
+          authors.count == updated.count,
+          additions.allSatisfy({ item in
+            guard let id = item.workflowExecutionId else {
+              return item.review_targets == nil || item.hasIndependentReviewAuthors { authors[$0] }
+            }
+            return priorWorkflows[id] == nil && workflows[id] != nil
+          }) else { return false }
+    for (id, instance) in workflows where priorWorkflows[id] == nil {
+      guard id == instance.execution_id,
+            let compiled = try Self.resolveWorkflow(instance, snapshot: snapshot, database: database),
+            compiled == additions.filter({ $0.workflowExecutionId == id }) else { return false }
+    }
+    guard let ranks = try Self.validatedLearningPriorities(updated, existingCount: existing.count,
+      previous: prior.first?.liveGraph?.learningPriorities ?? [:], snapshot: snapshot,
+      database: database) else { return false }
+    var pinned = checkpoint
+    pinned.liveGraph = checkpoint.liveGraph?.pinningLearningPriorities(ranks)
+    try database.insertGoalCheckpoint(pinned)
+    return true
   }
 
   func appendSavedCollaborationWorkflow(_ instance: AgentCollaborationWorkflowInstance,
