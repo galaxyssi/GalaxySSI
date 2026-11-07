@@ -106,7 +106,8 @@ extension GalaxySSIStoreTests {
     original["trust"] = .string("execution_observed_not_claim_verified")
     original["coverage"] = .string("provider_payload_as_received")
     original["observation"] = .object(["provider": .string("codex"), "thread_id": .string("provider-thread"),
-      "turn_id": .string("provider-turn"), "item": .object(["type": .string("webSearch")])])
+      "turn_id": .string("provider-turn"), "item": .object(["type": .string("commandExecution"),
+        "exitCode": .int(0), "aggregatedOutput": .string("original output")])])
     func page(for body: Data) -> AgentMcpJSONObject {
       binding.fields.mapValues(AgentMcpJSONValue.string).merging([
         "type": .string("agent_task_evidence"), "mode": .string("page"), "status": .string("ready"),
@@ -115,7 +116,7 @@ extension GalaxySSIStoreTests {
         "sha256": .string(digest(body)), "page_sha256": .string(digest(body)),
         "sequence": .int(1), "page_count": .int(1), "page_index": .int(0),
         "total_bytes": .int(Int64(body.count)), "data_b64": .string(body.base64EncodedString()),
-        "item_type": .string("webSearch"), "trust": .string("execution_observed_not_claim_verified"),
+        "item_type": .string("commandExecution"), "trust": .string("execution_observed_not_claim_verified"),
         "coverage": .string("provider_payload_as_received")
       ]) { _, new in new }
     }
@@ -138,7 +139,11 @@ extension GalaxySSIStoreTests {
       conversationId: "group", taskId: "turn", primaryAgentId: "primary", goal: "Research",
       visibilityMode: .background, state: .running, members: [
         AgentTeamMemberSnapshot(agentId: "review", deliveryMode: .observe, status: .pending,
-          instanceId: "member", sourceMessageId: source)
+          instanceId: "member", sourceMessageId: source),
+        AgentTeamMemberSnapshot(agentId: "primary", deliveryMode: .respond, sourceMessageId: "coordinator",
+          dispatchCheckpoint: .accepted),
+        AgentTeamMemberSnapshot(agentId: "independent", deliveryMode: .observe, sourceMessageId: "independent-source",
+          dispatchCheckpoint: .accepted)
       ], createdAtMillis: 1, updatedAtMillis: 1)
     XCTAssertTrue(history.upsert(snapshot))
     XCTAssertEqual(try history.consumeOwnedReply(source: source, conversation: "group", turn: "turn",
@@ -158,6 +163,60 @@ extension GalaxySSIStoreTests {
     XCTAssertThrowsError(try history.advanceDesktopEvidenceCursor(request, from: 0, to: 2, final: false))
     try history.advanceDesktopEvidenceCursor(request, from: 1, to: 1, final: true)
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets, fileURL: file)
+    let reader = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "group", turnId: "turn",
+      memberId: "independent", sourceId: "independent-source")
+    let listed = try reopened.recallCollaborationOriginal(["mode": .string("desktop_evidence_list")], scope: reader)
+    let entry = try XCTUnwrap(listed["entries"]?.arrayValue?.first?.objectValue)
+    XCTAssertEqual(entry["evidence_id"], .string(receipt.archiveId))
+    XCTAssertEqual(entry["tool"], .string("commandExecution"))
+    XCTAssertEqual(entry["status"], .string("returned"))
+    var read: AgentMcpJSONObject = ["mode": .string("desktop_evidence"), "evidence_id": .string(receipt.archiveId),
+      "sha256": .string(receipt.sha256)]
+    let sourceRecord = try reopened.publishResearchObjects([.init(id: "original", objectId: nil, baseRevision: 0,
+      kind: .artifact, title: "Original", body: ["content": .string("original output")], parents: [])],
+      runId: "run", conversationId: "group", turnId: "turn", memberId: "member", sourceId: source)
+    let target = try XCTUnwrap(sourceRecord.references.first)
+    func ref(_ value: AgentCollaborationResearchReference) -> AgentMcpJSONValue {
+      .object(["object_id": .string(value.objectId), "revision": .int(value.revision), "sha256": .string(value.sha256)])
+    }
+    let draft = AgentCollaborationResearchDraft(id: "desktop-review", objectId: nil, baseRevision: 0, kind: .acceptanceReview,
+      title: "Review", body: ["acceptance_review": .object(["criterion_id": .string("record"),
+        "requirement": .string("Record the returned output"), "target": ref(target), "verdict": .string("supported"),
+        "rationale": .string("Read exact archived output"), "unresolved": .array([])])], parents: [target],
+      observations: [["origin": .string("desktop_codex_tool"), "evidence_id": .string(receipt.archiveId),
+        "sha256": .string(receipt.sha256)]])
+    func publishReview() throws -> AgentCollaborationResearchPublication {
+      try reopened.publishResearchObjects([draft], runId: reader.runId, conversationId: reader.conversationId,
+        turnId: reader.turnId, memberId: reader.memberId, sourceId: reader.sourceId, milestone: ("review", "fixture"))
+    }
+    XCTAssertThrowsError(try publishReview())
+    read["offset"] = .int(1)
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(read, scope: reader))
+    read["offset"] = .int(0)
+    let archived = try reopened.recallCollaborationOriginal(read, scope: reader)
+    XCTAssertEqual(Data(base64Encoded: archived.string("data_b64")), body)
+    XCTAssertEqual(archived["host_read_coverage"]?.objectValue?["complete"], .bool(true))
+    let review = try XCTUnwrap(publishReview().references.first)
+    let coordinator = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "group", turnId: "turn",
+      memberId: "primary", sourceId: "coordinator")
+    let required: AgentMcpJSONValue = .array([.object(["origin": .string("desktop_codex_tool"), "tool": .string("commandExecution")])])
+    var criterion: AgentMcpJSONObject = ["id": .string("record"), "requirement": .string("Record the returned output"),
+      "verification": .string("documentary"), "status": .string("open"), "evidence": .array([]), "required_observations": required]
+    var assessment: AgentMcpJSONObject = ["format": .string("galaxyssi.goal-assessment.v1"), "summary": .string("Record"),
+      "decision": .string("continue"), "work": .array([]), "blockers": .array([]), "criteria": .array([.object(criterion)])]
+    _ = try reopened.publishCollaborationMilestone(
+      ["mode": .string("establish_contract"), "artifact": .string(AgentMcpJSONCodec.stringify(assessment))], scope: coordinator)
+    criterion["status"] = .string("met")
+    criterion["evidence_kind"] = .string("observed")
+    criterion["evidence"] = .array([.string(receipt.archiveId)])
+    criterion["delivery"] = ref(target)
+    criterion["review"] = ref(review)
+    assessment["decision"] = .string("achieved")
+    assessment["criteria"] = .array([.object(criterion)])
+    let result = try reopened.publishCollaborationMilestone(["mode": .string("check_goal_evidence"),
+      "artifact": .string(AgentMcpJSONCodec.stringify(assessment)), "expected_revision": .int(1)], scope: coordinator)
+    XCTAssertEqual(result["status"], .string("criterion_evidence_verified"))
+    XCTAssertEqual(result["goal_accepted"], .bool(false))
     let job = AgentDesktopToolEvidenceWire.ImportJob(binding: binding, generation: 2, profileIdentity: "profile")
     try history.enqueueDesktopEvidenceJob(job)
     try history.enqueueDesktopEvidenceJob(job)
@@ -473,6 +532,30 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(recovery.acceptsFinal(item, desktopId: "desktop"))
     item["execution_generation"] = 3
     XCTAssertFalse(recovery.acceptsFinal(item, desktopId: "desktop"))
+  }
+
+  func testDesktopGoalWorkRecoveryAcceptsOnlyOriginalGeneration() throws {
+    let name = "desktop-goal-recovery-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let recovery = AgentDesktopReplyRecovery(defaults: defaults, secrets: InMemorySecretStore(),
+      journal: DesktopReplyRecoveryTestJournal())
+    let source = UUID()
+    let binding = AgentDesktopReplyBinding(desktopId: "desktop", displayContactId: "agent",
+      sourceId: source, contactId: "agent", agentId: "codex", identity: .init(clientRouteId: "route",
+        conversationId: "conversation", taskId: source.uuidString, turnId: "turn"), goalWork: true)
+    XCTAssertTrue(recovery.track(binding, now: 1_000))
+    let request = try XCTUnwrap(recovery.request(binding, online: true, now: 1_000))
+    var item: [String: Any] = binding.fields
+    item.merge(["status": "completed", "remote_run_id": "run", "execution_generation": 2,
+      "status_sequence": 4]) { _, new in new }
+    var result: [String: Any] = ["type": "agent_task_recovery_result", "request_id": request["request_id"]!,
+      "client_route_id": "route", "items": [item]]
+    XCTAssertNil(recovery.receive(result, authenticatedDesktopId: "desktop", now: 2_000))
+    item["execution_generation"] = 1
+    result["items"] = [item]
+    XCTAssertNil(recovery.receive(result, authenticatedDesktopId: "foreign", now: 2_000))
+    XCTAssertEqual(recovery.receive(result, authenticatedDesktopId: "desktop", now: 2_000)?.generation, 1)
   }
 
   func testOrdinaryDesktopBindingKeepsLegacyKeyAlgorithm() throws {

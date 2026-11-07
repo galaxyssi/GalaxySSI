@@ -718,6 +718,7 @@ struct AgentCollaborationRoster: Codable, Equatable {
     var modelId = ""
     var mentionOnly = false
     var reasoningEffort: String? = nil
+    var recruitmentTemplateID: UUID? = nil
   }
 
   static let maximumMembers = 1_024
@@ -725,6 +726,7 @@ struct AgentCollaborationRoster: Codable, Equatable {
   var coordinatorId: UUID?
   var independentReview = false
   var workflow: Workflow?
+  var handledRecruitmentIDs: [UUID]? = nil
 
   var isValid: Bool {
     guard !members.isEmpty, members.count <= Self.maximumMembers,

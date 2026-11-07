@@ -73,11 +73,13 @@ enum AgentDesktopCollaborationPublicationWire {
   static let contract = "galaxyssi.collaboration-publish/1"
 
   static func accepts(phase: String, input: AgentMcpJSONObject) -> Bool {
-    ["publish", "status", "receipt", "list", "validate_assessment"].contains(phase) && input["mode"] == .string(phase)
+    input["mode"] == .string(phase) && (["publish", "status", "receipt", "list", "validate_assessment"].contains(phase) ||
+      AgentCollaborationGoalAssessmentPolicy.isCoordinatorMutation(phase))
   }
 
   static func permits(phase: String, observer: Bool) -> Bool {
-    observer || phase == "validate_assessment"
+    if AgentCollaborationGoalAssessmentPolicy.isCoordinatorMutation(phase) { return !observer }
+    return observer || phase == "validate_assessment"
   }
 }
 
@@ -194,6 +196,7 @@ struct AgentDesktopReplyBinding: Codable, Equatable {
   var managedSource: AgentManagedDesktopReplySource? = nil
   var teamSource: AgentTeamDesktopReplySource? = nil
   var attemptSourceId: UUID? = nil
+  var goalWork: Bool? = nil
   var sourceIdentity: String {
     teamSource?.sourceMessageId ?? managedSource.map { String($0.sourceMessageId) } ??
       attemptSourceId?.uuidString ?? sourceId.uuidString
@@ -207,6 +210,8 @@ struct AgentDesktopReplyBinding: Codable, Equatable {
 
   var isValid: Bool {
     identity.isComplete && !(managedSource != nil && teamSource != nil) &&
+      (goalWork != true || (managedSource == nil && teamSource == nil && attemptSourceId == nil &&
+        identity.taskId == sourceIdentity && contactId == displayContactId)) &&
       (attemptSourceId == nil || (managedSource == nil && teamSource == nil && attemptSourceId != sourceId)) &&
       (teamSource.map {
       !$0.supervisorRunId.isBlank && $0.supervisorRunId.count <= 200 && !$0.memberId.isBlank &&
@@ -223,6 +228,7 @@ struct AgentDesktopReplyBinding: Codable, Equatable {
     if let managedSource { values += [managedSource.ownerRunId, String(managedSource.executionGeneration)] }
     if let teamSource { values += ["team-observer", teamSource.supervisorRunId, teamSource.memberId] }
     if attemptSourceId != nil { values += ["codex-replay", sourceId.uuidString] }
+    if goalWork == true { values += ["goal-work"] }
     let data = (try? JSONEncoder().encode(values)) ?? Data()
     return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
@@ -574,6 +580,7 @@ final class AgentDesktopReplyRecovery {
           let status = items[0]["status"] as? String, Self.statuses.contains(status),
           let runId = items[0]["remote_run_id"] as? String, !runId.isBlank, runId.count <= 200,
           let generation = Self.integer(items[0]["execution_generation"], minimum: 1),
+          query.binding.goalWork != true || generation == 1,
           query.binding.managedSource == nil || query.binding.managedSource?.executionGeneration == generation,
           let sequence = Self.integer(items[0]["status_sequence"], minimum: 0),
           record.accepts(status: status, generation: generation, sequence: sequence) else { return nil }

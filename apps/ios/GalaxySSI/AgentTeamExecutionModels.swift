@@ -902,6 +902,8 @@ struct AgentCollaborationResearchRevision: Codable {
   var sourceId: String
   var draft: AgentCollaborationResearchDraft
   var frozenCloudReads: [AgentCollaborationFrozenCloudRead]? = nil
+  var frozenNativeReads: [AgentCollaborationFrozenCloudRead]? = nil
+  var frozenDesktopReads: [AgentDesktopToolEvidenceWire.FrozenRead]? = nil
   var declaredExpectedUtilities: [String: Double]? = nil
   var expectedInformationGainBits: [String: Double]? = nil
   var hypothesisFeedback: AgentMcpJSONObject? = nil
@@ -1065,6 +1067,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
   var dispatchCheckpoint: AgentTeamMemberDispatchCheckpoint?
   var dispatchDependencyMemberIds: [String]? = nil
   var dispatchResourceObservation: AgentMcpJSONObject? = nil
+  var recruitmentTemplateID: UUID? = nil
   var displayName: String?
   var researchStage: String?
   var executionStartedAtMillis: Int64?
@@ -1120,6 +1123,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     case dispatchCheckpoint = "dispatch_checkpoint"
     case dispatchDependencyMemberIds = "dispatch_dependency_member_ids"
     case dispatchResourceObservation = "dispatch_resource_observation"
+    case recruitmentTemplateID = "recruitment_template_id"
     case displayName = "display_name"
     case researchStage = "research_stage"
     case executionStartedAtMillis = "execution_started_at_millis"
@@ -1147,6 +1151,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     )
     dispatchDependencyMemberIds = try container.decodeIfPresent([String].self, forKey: .dispatchDependencyMemberIds)
     dispatchResourceObservation = try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .dispatchResourceObservation)
+    recruitmentTemplateID = try container.decodeIfPresent(UUID.self, forKey: .recruitmentTemplateID)
   }
 
   func elapsedExecutionMillis(now: Int64, team: AgentTeamExecutionSnapshot) -> Int64? {
@@ -1177,6 +1182,12 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
   var executionEndedAtMillis: Int64?
 
   var primaryMemberId: String { primaryInstanceId.ifBlank(primaryAgentId) }
+
+  func reviewIdentity(_ memberID: String) -> String {
+    let stable = AgentTeamProgressPolicy.stableCollaborationMemberId(memberID)
+    let member = members.first { AgentTeamProgressPolicy.stableCollaborationMemberId($0.memberId) == stable }
+    return member?.recruitmentTemplateID?.uuidString.lowercased() ?? stable
+  }
 
   init(
     supervisorRunId: String,
@@ -1342,20 +1353,7 @@ enum AgentSavedTeamReplyPolicy {
             (parent.phase == .paused && parent.teamRecoveryRunId == saved.supervisorRunId),
           parent.taskId == saved.taskId, parent.sessionId == saved.conversationId,
           saved.createdAtMillis >= parent.createdAtMillis,
-          var plan = parent.activePlan else { return nil }
-    let matchingIndices = plan.actions.indices.filter { index in
-      plan.actions[index].kind == .callConnector &&
-        AgentTeamDispatchSpecCodec.decode(plan.actions[index].parameters[agentTeamSpecParameter] ?? "")?.supervisorRunId == saved.supervisorRunId
-    }
-    guard matchingIndices.count == 1, let index = matchingIndices.first,
-          plan.actions[index].status != .completed,
-          let spec = AgentTeamDispatchSpecCodec.decode(plan.actions[index].parameters[agentTeamSpecParameter] ?? ""),
-          spec.supervisorRunId == saved.supervisorRunId, spec.definition.teamId == saved.teamId,
-          spec.definition.primaryMemberId == saved.primaryMemberId,
-          spec.definition.members.count == saved.members.count,
-          spec.definition.members.allSatisfy({ expected in
-            saved.members.contains { $0.memberId == expected.memberId && $0.agentId == expected.agentId }
-          }) else { return nil }
+          var plan = parent.activePlan, let index = pendingDispatchIndex(parent, saved: saved) else { return nil }
     let success = saved.hasSuccessfulOutput
     var result = parent
     result.phase = saved.state == .cancelled ? .cancelled : (success ? .completed : .failed)
@@ -1377,6 +1375,25 @@ enum AgentSavedTeamReplyPolicy {
     result.planContext = AgentTaskPlanContext(plan: plan)
     result.updatedAtMillis = max(now, parent.updatedAtMillis)
     return result
+  }
+
+  static func pendingDispatchIndex(_ parent: AgentTaskRecord, saved: AgentTeamExecutionSnapshot) -> Int? {
+    guard parent.taskId == saved.taskId, parent.sessionId == saved.conversationId,
+          saved.createdAtMillis >= parent.createdAtMillis, let plan = parent.activePlan else { return nil }
+    let matchingIndices = plan.actions.indices.filter { index in
+      plan.actions[index].kind == .callConnector &&
+        AgentTeamDispatchSpecCodec.decode(plan.actions[index].parameters[agentTeamSpecParameter] ?? "")?.supervisorRunId == saved.supervisorRunId
+    }
+    guard matchingIndices.count == 1, let index = matchingIndices.first,
+          plan.actions[index].status != .completed,
+          let spec = AgentTeamDispatchSpecCodec.decode(plan.actions[index].parameters[agentTeamSpecParameter] ?? ""),
+          spec.supervisorRunId == saved.supervisorRunId, spec.definition.teamId == saved.teamId,
+          spec.definition.primaryMemberId == saved.primaryMemberId,
+          spec.definition.members.count == saved.members.count,
+          spec.definition.members.allSatisfy({ expected in
+            saved.members.contains { $0.memberId == expected.memberId && $0.agentId == expected.agentId }
+          }) else { return nil }
+    return index
   }
 
   static func apply(to saved: AgentTeamExecutionSnapshot, source: String, conversation: String,

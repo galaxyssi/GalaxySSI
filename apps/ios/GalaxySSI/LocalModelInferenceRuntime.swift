@@ -203,7 +203,8 @@ final class LocalModelInferenceRuntime {
     temperature: Double = 0.3,
     thinkingMode: LocalModelThinkingMode = .automatic,
     workClass: LocalModelWorkClass = .interactive,
-    taskId: String = ""
+    taskId: String = "",
+    cancellation: AgentModelToolLoopCancellationToken = .none
   ) async throws -> LocalModelInferenceResult {
     let timing = AgentModelTiming(taskId: taskId)
     return try await timing.measureAsync(.request) {
@@ -212,7 +213,8 @@ final class LocalModelInferenceRuntime {
         inferenceQueue.async { [self] in
           queueWait.completed()
           do {
-            continuation.resume(returning: try generate(
+            guard !cancellation.isCancellationRequested else { throw CancellationError() }
+            let result = try generate(
               profile: profile,
               systemPrompt: systemPrompt,
               userPrompt: userPrompt,
@@ -221,7 +223,9 @@ final class LocalModelInferenceRuntime {
               thinkingMode: thinkingMode,
               workClass: workClass,
               timing: timing
-            ))
+            )
+            guard !cancellation.isCancellationRequested else { throw CancellationError() }
+            continuation.resume(returning: result)
           } catch {
             continuation.resume(throwing: error)
           }
