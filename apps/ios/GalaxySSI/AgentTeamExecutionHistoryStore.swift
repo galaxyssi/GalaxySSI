@@ -1462,7 +1462,8 @@ final class AgentTeamExecutionHistoryStore {
     let id = input.string("milestone_id")
     if mode == "validate_assessment" {
       guard Set(input.keys) == ["mode", "artifact"], let raw = input["artifact"]?.strictStringValue,
-            raw.utf8.count <= 131_072 else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+            !raw.isBlank, AgentMcpJSONCodec.stringify(input).utf8.count <= 131_072
+      else { throw AgentTeamHistoryDatabase.Failure.corrupt }
       let established = try access { database in
         guard let team = try database.snapshots(runId: scope.runId).first,
               team.conversationId == scope.conversationId, team.taskId == scope.turnId, team.state == .running,

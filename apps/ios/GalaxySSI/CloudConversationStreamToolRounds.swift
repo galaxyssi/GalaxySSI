@@ -379,8 +379,8 @@ struct CloudModelStreamMutableConversation {
     appendCollaborationFunction([
       "name": Self.collaborationPublishName,
       "description": assessmentOnly
-        ? "Use validate_assessment with artifact containing the exact goal-assessment JSON. Checks structure only; does not submit or approve the assessment."
-        : "Use status to check availability. Publish interim research with milestone_id and an artifact JSON string. Retry identical bytes, or use receipt with milestone_id and artifact_sha256. Use list with next_cursor to recover saved IDs, then cite them in milestones in your final artifact. Use validate_assessment with artifact to check goal-assessment structure without publishing. Receipts do not verify evidence or complete the assignment."
+        ? "Use validate_assessment with the exact goal-assessment JSON string in artifact. Check schema_valid and repair the reported field in this turn. Checks structure and qualified validator specifications only; does not submit or approve the assessment."
+        : "Use status to check availability. Publish interim research with milestone_id and an artifact JSON string. Retry identical bytes, or use receipt with milestone_id and artifact_sha256. Use list with next_cursor to recover saved IDs, then cite them in milestones in your final artifact. Use validate_assessment with the exact draft in artifact; check schema_valid and repair the reported field without publishing. Receipts do not verify evidence or complete the assignment."
     ], schema: schema)
   }
 
