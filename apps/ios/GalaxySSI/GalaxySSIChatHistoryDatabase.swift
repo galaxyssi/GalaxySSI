@@ -690,6 +690,47 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
     }
   }
 
+  func quietScheduledUnreadTokens(conversationId: String, candidates: Set<String>,
+                                  visibility: AgentScheduledReplyVisibility) -> Set<String> {
+    let scoped = candidates.filter { visibility.mayHide(conversation: conversationId, token: $0) }
+    guard !scoped.isEmpty else { return [] }
+    return locked {
+      guard rowCachingEnabled, !Task.isCancelled,
+            let legacy = prepare("""
+              SELECT 1 FROM chat_messages WHERE conversation_id = ?
+                AND contact_id = 'hermes' AND is_mine = 0 AND is_system = 0 AND agent_unread_key IS NULL LIMIT 1
+              """) else { return [] }
+      defer { sqlite3_finalize(legacy) }
+      bind(conversationId, at: 1, to: legacy)
+      guard sqlite3_step(legacy) == SQLITE_DONE,
+            let lookup = prepare("""
+              SELECT message_id, encrypted_payload FROM chat_messages WHERE conversation_id = ?
+                AND contact_id = 'hermes' AND is_mine = 0 AND is_system = 0 AND agent_unread_key = ? LIMIT 65
+              """) else { return [] }
+      defer { sqlite3_finalize(lookup) }
+      var quiet = Set<String>()
+      for token in scoped {
+        guard !Task.isCancelled else { return [] }
+        guard let key = try? cipher.chatUnreadReplyIndex(conversationId: conversationId, token: token) else { continue }
+        sqlite3_reset(lookup)
+        bind(conversationId, at: 1, to: lookup)
+        bind(key, at: 2, to: lookup)
+        var matches = 0
+        var step = sqlite3_step(lookup)
+        while step == SQLITE_ROW && matches < 64 {
+          guard let id = sqlite3_column_text(lookup, 0),
+                let message = decode(lookup, id: String(cString: id), payloadColumn: 1),
+                message.conversationId == conversationId, AgentReplyUnreadPolicy.token(message) == token,
+                visibility.hides(message) else { break }
+          matches += 1
+          step = sqlite3_step(lookup)
+        }
+        if matches > 0 && step == SQLITE_DONE { quiet.insert(token) }
+      }
+      return quiet
+    }
+  }
+
   private func turnTimingStarts(conversationId: String, turnIds: Set<String>) -> [String: Int64]? {
     var cursor: GalaxySSIChatHistoryCursor?
     while !Task.isCancelled {
