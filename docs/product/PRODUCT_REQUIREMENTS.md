@@ -72,7 +72,7 @@ Security boundaries are documented in `docs/security/TRUST_MODEL.md`.
 - Desktop source smoke and pairing smoke must pass locally and in CI.
 - Android device smoke checks should pass before publishing a mobile build.
 - Windows package smoke should pass before publishing a Desktop build.
-- Manual release checks in `docs/testing/README.md` should be completed before a public release.
+- Manual release checks in `CONTRIBUTING.md` should be completed before a public release. Keep test reports and evidence outside the repository.
 
 ## Deferred Scope
 
