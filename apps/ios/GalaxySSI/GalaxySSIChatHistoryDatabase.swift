@@ -658,7 +658,9 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
         AND (contact_id='hermes' OR conversation_id GLOB 'ios-agent-*') LIMIT 128
       """) {
       var batch: [(String, String)] = []
-      while sqlite3_step(select) == SQLITE_ROW {
+      var step = sqlite3_step(select)
+      while step == SQLITE_ROW {
+        defer { step = sqlite3_step(select) }
         guard let raw = sqlite3_column_text(select, 0) else { continue }
         let id = String(cString: raw)
         if let message = decode(select, id: id, payloadColumn: 1), let key = ownershipIndex(message) {
@@ -666,6 +668,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
         } else { batch.append((id, "")) }
       }
       sqlite3_finalize(select)
+      guard step == SQLITE_DONE else { return }
       if batch.isEmpty { complete = true; return }
       guard let update = prepare("UPDATE chat_messages SET agent_owner_key=? WHERE message_id=? AND agent_owner_key IS NULL") else { return }
       var changed = true

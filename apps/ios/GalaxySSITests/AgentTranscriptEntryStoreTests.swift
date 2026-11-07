@@ -754,7 +754,7 @@ final class GalaxySSIChatHistoryDatabaseTests: XCTestCase {
     let turn = "non-uuid-voice-turn"
     let originalID = "ios-agent-original", otherID = "ios-agent-other"
     let foreign = ChatMessage(contactId: "hermes", content: "Stale copied answer", isMine: false,
-      createdAt: Date(timeIntervalSince1970: 30), conversationId: otherID, turnId: turn)
+      createdAt: Date(timeIntervalSince1970: 30), conversationId: otherID, turnId: turn, remoteMessageId: "shared-reply")
     let legitimate = ChatMessage(contactId: "hermes", content: "Other turn", isMine: false,
       createdAt: Date(timeIntervalSince1970: 20), conversationId: otherID, turnId: "other-turn")
     XCTAssertTrue(db.upsert(foreign))
@@ -778,6 +778,11 @@ final class GalaxySSIChatHistoryDatabaseTests: XCTestCase {
     XCTAssertEqual(reopened.page(contactId: nil, conversationId: otherID,
       before: try XCTUnwrap(page.nextCursor), pageSize: 1).messages, [legitimate])
     XCTAssertEqual(reopened.latestMessage(conversationId: otherID), legitimate)
+    XCTAssertFalse(reopened.containsIncoming(contactId: "hermes", remoteMessageId: "shared-reply"))
+    let delivered = ChatMessage(contactId: "hermes", content: "Actual answer", isMine: false,
+      conversationId: originalID, turnId: turn, remoteMessageId: "shared-reply")
+    XCTAssertEqual(try reopened.persistTransportIncoming(delivered), delivered)
+    XCTAssertEqual(reopened.message(id: foreign.id), foreign)
     var imported = foreign
     imported.id = UUID()
     imported.sourceConversationId = originalID

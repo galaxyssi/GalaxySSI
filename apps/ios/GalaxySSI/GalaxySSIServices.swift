@@ -7978,7 +7978,6 @@ final class MessageCoordinator: ObservableObject {
       let dependencies = isCollaboration
         ? AgentCollaborationDecisionContext.dependencyLines(availableObservations, recallAvailable: canRecall) : nil
       var decisionContext: [String] = []
-      if let followupContext { decisionContext.append(followupContext) }
       let mailbox = UserDefaultsAgentTeamMailbox()
       let recipient = AgentTeamProgressPolicy.stableCollaborationMemberId(member.memberId)
       let directedRequests = isCollaboration ? mailbox.pendingMessages(supervisorRunId: spec.supervisorRunId,
@@ -8024,10 +8023,11 @@ final class MessageCoordinator: ObservableObject {
             turnId: homeTurnId, memberId: member.memberId, sourceId: sourceMessageId), sections: sections)
         let sectionHint = "Pinned dispatch sections: " + sections.keys.sorted().joined(separator: ", ") +
           ". Use section with mode=goal (phone/cloud) or mode=goal_contract (Desktop)."
-        return agentTeamMemberPrompt(goal: requestText, member: member,
+        let prompt = agentTeamMemberPrompt(goal: requestText, member: member,
           primaryInstanceId: spec.definition.primaryMemberId,
           dependencyLines: dependencies?.lines ?? [],
           decisionContext: [resources] + decisionContext + [sectionHint])
+        return prompt + (followupContext.map { "\n\n" + $0 } ?? "")
       }
 
       do {
