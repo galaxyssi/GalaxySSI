@@ -44,7 +44,7 @@
     <string name="health_care_falling">The latest three comparable daily measurements decreased. This alone does not establish disease.</string>
     <string name="health_care_non_exact">The reported result is a bound, range or label, not an exact numeric measurement.</string>
     <string name="health_care_removed">The source measurement is no longer available. Recheck the evidence before continuing.</string>
-    <string name="health_care_changed_result">A new result is available. Review it against the existing plan before ending follow-up.</string>
+    <string name="health_care_changed_result">Measurement information changed. Review it against the existing plan before ending follow-up.</string>
     <string name="health_care_adult">Age 18 or older</string>
     <string name="health_care_pregnant">Pregnant</string>
     <string name="health_care_diabetes">Previously diagnosed with diabetes</string>
@@ -68,4 +68,19 @@
     <string name="health_care_action_confirmed">Confirmed</string>
     <string name="health_care_action_done">Completed</string>
     <string name="health_care_action_declined">Declined</string>
+    <string name="health_care_comparison_title">Review the change</string>
+    <string name="health_care_comparison_values">Previous %1$s → Latest %2$s</string>
+    <string name="health_care_comparison_correction">Record corrected: %1$s → %2$s</string>
+    <string name="health_care_comparison_history">History changed: %1$s → %2$s</string>
+    <string name="health_care_comparison_times">Previous collection: %1$s\nLatest collection: %2$s</string>
+    <string name="health_care_comparison_units">Units differ; values have not been converted.</string>
+    <string name="health_care_comparison_conditions">Collection conditions or body side differ.</string>
+    <string name="health_care_comparison_unknown">Collection conditions are incomplete.</string>
+    <string name="health_care_comparison_source">The data source or device changed.</string>
+    <string name="health_care_comparison_reference">The report reference interval changed.</string>
+    <string name="health_care_comparison_not_exact">A result is missing or not an exact number.</string>
+    <string name="health_care_comparison_context">Both readings need their own confirmed context.</string>
+    <string name="health_care_comparison_context_changed">Confirmed clinical context differs.</string>
+    <string name="health_care_comparison_method">Laboratory or measurement-method comparability is not verified.</string>
+    <string name="health_care_comparison_not_clinical">A numerical change alone does not establish improvement, worsening or stability. Review the evidence and existing plan before changing follow-up.</string>
 </resources>
