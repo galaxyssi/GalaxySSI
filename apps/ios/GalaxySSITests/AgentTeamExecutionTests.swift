@@ -1035,6 +1035,79 @@ extension GalaxySSIStoreTests {
       try decode(plan.replacingOccurrences(of: ",\"expected\":null", with: "")), tool: spec))
   }
 
+  func testSavedToolExecutionJournalRecoversWithoutRerunningAndFencesScope() throws {
+    typealias Execution = AgentCollaborationSavedToolExecution
+    let suite = "saved-tool-execution-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    func open() -> AgentTeamExecutionHistoryStore {
+      AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]),
+        fileURL: root.appendingPathComponent("history.sqlite"))
+    }
+    let history = open()
+    var team = durableTeamSnapshot("journal-run")
+    team.members[0].dispatchCheckpoint = .accepted
+    XCTAssertTrue(history.upsert(team))
+    let assignment = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId, memberId: team.members[0].memberId, sourceId: team.members[0].sourceMessageId)
+    func scope(generation: Int64 = 1) -> Execution.Scope {
+      .init(assignment: assignment, profileFingerprint: "profile", desktopID: "desktop",
+        desktopFingerprint: "pair", routeID: "route", generation: generation)
+    }
+    func start(_ id: String, timeout: AgentMcpJSONValue = .int(2_000), extra: Bool = false) -> Execution.Request? {
+      var input: AgentMcpJSONObject = ["mode": .string("start"), "execution_id": .string(id), "timeout_ms": timeout,
+        "tool_test_plan": .object(["object_id": .string(String(repeating: "a", count: 64)),
+          "sha256": .string(String(repeating: "b", count: 64)), "revision": .int(1)])]
+      if extra { input["source"] = .string("not permitted") }
+      return Execution.Request(phase: "start", input: input)
+    }
+    func query(_ id: String, _ mode: String) throws -> Execution.Request {
+      try XCTUnwrap(Execution.Request(phase: mode, input: ["mode": .string(mode), "execution_id": .string(id)]))
+    }
+    XCTAssertNil(start("tool\n"))
+    XCTAssertNil(start("tool", timeout: .string("2000")))
+    XCTAssertNil(start("tool", extra: true))
+    XCTAssertNil(Execution.Request(phase: "cancel", input: ["mode": .string("status"), "execution_id": .string("tool")]))
+    let original = try XCTUnwrap(start("tool"))
+    let admitted = try history.updateSavedToolExecution(.request(original), scope: scope(), process: "a", now: 1)
+    XCTAssertTrue(admitted.shouldLaunch)
+    XCTAssertEqual(admitted.response["status"], .string("queued"))
+    XCTAssertFalse(try history.updateSavedToolExecution(.request(original), scope: scope(), process: "a", now: 2).shouldLaunch)
+    let different = try XCTUnwrap(start("tool", timeout: .int(3_000)))
+    XCTAssertThrowsError(try history.updateSavedToolExecution(.request(different), scope: scope(), process: "a", now: 2))
+    XCTAssertThrowsError(try history.updateSavedToolExecution(.request(original), scope: scope(generation: 2), process: "a", now: 2))
+    XCTAssertTrue(try history.updateSavedToolExecution(.running(executionID: "tool"), scope: scope(), process: "a", now: 3).didStart)
+    let reopened = open()
+    let recovered = try reopened.updateSavedToolExecution(.request(original), scope: scope(), process: "b", now: 4)
+    XCTAssertFalse(recovered.shouldLaunch)
+    XCTAssertEqual(recovered.response["status"], .string("interrupted"))
+    XCTAssertFalse(try reopened.updateSavedToolExecution(.running(executionID: "tool"), scope: scope(), process: "b", now: 5).didStart)
+
+    let queued = try XCTUnwrap(start("queued"))
+    _ = try reopened.updateSavedToolExecution(.request(queued), scope: scope(), process: "b", now: 6)
+    let cancelled = try reopened.updateSavedToolExecution(.request(query("queued", "cancel")), scope: scope(), process: "b", now: 7)
+    XCTAssertEqual(cancelled.response["status"], .string("cancelled"))
+    XCTAssertFalse(cancelled.shouldCancel)
+    XCTAssertFalse(try reopened.updateSavedToolExecution(.running(executionID: "queued"), scope: scope(), process: "b", now: 8).didStart)
+
+    let running = try XCTUnwrap(start("running"))
+    _ = try reopened.updateSavedToolExecution(.request(running), scope: scope(), process: "b", now: 9)
+    _ = try reopened.updateSavedToolExecution(.running(executionID: "running"), scope: scope(), process: "b", now: 10)
+    let cancelling = try reopened.updateSavedToolExecution(.request(query("running", "cancel")),
+      scope: scope(), process: "b", now: 11)
+    XCTAssertTrue(cancelling.shouldCancel)
+    XCTAssertEqual(cancelling.response["status"], .string("cancelling"))
+    let result: AgentMcpJSONObject = ["native_status": .string("cancelled"), "passed": .null]
+    _ = try reopened.updateSavedToolExecution(.finish(executionID: "running", result: result), scope: scope(), process: "b", now: 12)
+    let restored = try open().updateSavedToolExecution(.request(query("running", "status")), scope: scope(), process: "c", now: 13)
+    XCTAssertEqual(restored.response["status"], .string("finished"))
+    XCTAssertEqual(restored.response["result"], .object(result))
+    reopened.removeResearchObjects(conversationId: assignment.conversationId)
+    XCTAssertThrowsError(try reopened.updateSavedToolExecution(.request(original), scope: scope(), process: "b", now: 14))
+  }
+
   func testSavedToolTestResolvesExactRecordsAndKeepsTheOracleOutsidePython() throws {
     let suite = "saved-tool-test-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

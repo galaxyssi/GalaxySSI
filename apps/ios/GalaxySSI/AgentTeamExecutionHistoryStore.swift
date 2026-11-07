@@ -1715,6 +1715,33 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
+  func updateSavedToolExecution(_ operation: AgentCollaborationSavedToolExecution.Operation,
+                                scope: AgentCollaborationSavedToolExecution.Scope,
+                                process: String = AgentCollaborationSavedToolExecution.processID,
+                                now: Int64 = AgentControlPlaneClock.nowMillis()) throws
+    -> AgentCollaborationSavedToolExecution.Outcome {
+    try access { database in
+      let assignment = scope.assignment
+      guard let team = try database.snapshots(runId: assignment.runId).first,
+            team.state == .running, team.conversationId == assignment.conversationId, team.taskId == assignment.turnId,
+            team.members.contains(where: { $0.memberId == assignment.memberId && $0.sourceMessageId == assignment.sourceId &&
+              $0.deliveryMode != .ignore && !$0.status.isTerminal &&
+              ($0.dispatchCheckpoint == .dispatching || $0.dispatchCheckpoint == .accepted) }),
+            try database.researchRecord(Bool.self, conversationId: assignment.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let key = scope.key(operation.id)
+      let existing = try database.researchRecord(AgentCollaborationSavedToolExecution.Record.self,
+        conversationId: assignment.conversationId, key: key, revision: 0)
+      let outcome = try AgentCollaborationSavedToolExecution.apply(operation, scope: scope,
+        existing: existing, process: process, now: now)
+      if let record = outcome.record, record != existing {
+        if existing != nil { try database.removeResearchRecord(conversationId: assignment.conversationId, key: key) }
+        try database.insertResearchRecord(record, conversationId: assignment.conversationId, key: key, revision: 0)
+      }
+      return outcome
+    }
+  }
+
   func prepareSavedToolTest(_ reference: AgentCollaborationResearchReference, timeoutMillis: Int64,
                             scope: AgentCollaborationToolEvidenceScope) throws -> AgentCollaborationSavedToolTest.Prepared {
     try access { database in
