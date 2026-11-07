@@ -8058,7 +8058,15 @@ final class MessageCoordinator: ObservableObject {
           }
         }
         if target.id == "local-llm" {
-          let profile = LocalModelRuntimeSettings.selectedProfile()
+          let selected = member.context["_galaxyssi_member_model_id"] ?? ""
+          let profile: LocalModelRuntimeProfile
+          if isCollaboration, member.deliveryMode == .respond, !selected.isBlank {
+            guard let configured = LocalModelRuntimeCatalog.profiles().first(where: { $0.id == selected })
+            else { throw LocalModelInferenceError.modelNotReady }
+            profile = configured
+          } else {
+            profile = LocalModelRuntimeSettings.selectedProfile()
+          }
           guard LocalModelRuntimeSettings.isProfileEnabled(profile),
             LocalModelInferenceRuntime.shared.ready(profile: profile) else {
             throw LocalModelInferenceError.modelNotReady
@@ -8067,6 +8075,15 @@ final class MessageCoordinator: ObservableObject {
             conversationId: outgoing.conversationId, turnId: homeTurnId,
             memberId: member.memberId, sourceId: sourceMessageId) : nil
           let memberPrompt = try promptForDispatch()
+          if let recallScope, member.deliveryMode == .respond, executionMode != .planOnly, !outgoing.readOnlyAnalysis {
+            let delivered = try await runLocalGoalCoordinator(profile: profile, target: target, scope: recallScope,
+              requestText: memberPrompt, attachments: attachments, outgoing: outgoing, profileID: profileIdentity,
+              targets: targetsById)
+            if delivered { persistSynchronousTeamPrimary(member: member, spec: spec, outgoing: outgoing) }
+            primaryPublished = true
+            markDirectedRequestsDelivered()
+            continue
+          }
           if let recallScope, executionMode != .planOnly, !outgoing.readOnlyAnalysis {
             if frozenDispatch == nil {
               guard attachments.count == stagedAttachments.count else {
@@ -8678,15 +8695,7 @@ final class MessageCoordinator: ObservableObject {
     var receipt: AgentMcpJSONObject
     if mode == policy.appendWorkMode {
       let history = AgentTeamExecutionHistoryStore.shared
-      let templates = history.snapshot(supervisorRunId: scope.runId)?.members.reduce(into: [String: String]()) { result, worker in
-        guard worker.deliveryMode == .observe, let target = targets[worker.agentId], target.status == .available,
-              target.kind == .model || target.kind == .agent || target.id == "local-llm",
-              let id = UUID(uuidString: AgentTeamProgressPolicy.stableCollaborationMemberId(worker.memberId)),
-              let member = roster.members.first(where: { $0.id == id && $0.resourceId == worker.agentId &&
-                !$0.mentionOnly && $0.recruitmentTemplateID == nil })
-        else { return }
-        result[worker.memberId] = AgentCollaborationLiveGraph.Recruitment.templateDigest(member)
-      } ?? [:]
+      let templates = goalRecruitmentTemplates(scope, roster: roster, targets: targets)
       guard let admission = try? history.publishCollaborationMilestone(input, scope: scope,
         recruitmentTemplates: templates, recruitmentRoster: roster),
             admission["status"] == .string("work_admitted") else {
@@ -8703,6 +8712,102 @@ final class MessageCoordinator: ObservableObject {
     receipt["dispatch"] = .object(dispatch)
     receipt["new_execution"] = dispatch["new_execution"] ?? .bool(false)
     return receipt
+  }
+
+  private func goalRecruitmentTemplates(_ scope: AgentCollaborationToolEvidenceScope, roster: AgentCollaborationRoster,
+                                         targets: [String: AgentCallableTarget]) -> [String: String] {
+    AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: scope.runId)?.members.reduce(into: [String: String]()) { result, worker in
+      guard worker.deliveryMode == .observe, let target = targets[worker.agentId], target.status == .available,
+            target.kind == .model || target.kind == .agent || target.id == "local-llm",
+            let id = UUID(uuidString: AgentTeamProgressPolicy.stableCollaborationMemberId(worker.memberId)),
+            let member = roster.members.first(where: { $0.id == id && $0.resourceId == worker.agentId &&
+              !$0.mentionOnly && $0.recruitmentTemplateID == nil }) else { return }
+      result[worker.memberId] = AgentCollaborationLiveGraph.Recruitment.templateDigest(member)
+    } ?? [:]
+  }
+
+  private func runLocalGoalCoordinator(profile: LocalModelRuntimeProfile, target: AgentCallableTarget,
+      scope: AgentCollaborationToolEvidenceScope, requestText: String, attachments: [GalaxySSIDraftAttachment],
+      outgoing: ChatMessage, profileID: String, targets: [String: AgentCallableTarget]) async throws -> Bool {
+    guard let runtime = localNativeToolRuntime, let roster = liveGoalWorkRoster(scope, profileID: profileID),
+          let digest = AgentCollaborationAcceptedDelivery.Source.rosterDigest(roster) else { throw CancellationError() }
+    let history = AgentTeamExecutionHistoryStore.shared
+    let source = AgentCollaborationAcceptedDelivery.Source(profileID: profileID, messageID: outgoing.id,
+      contactID: outgoing.contactId, rosterDigest: digest)
+    func requireLiveScope() throws {
+      try Task.checkCancellation()
+      guard liveGoalWorkRoster(scope, profileID: profileID) == roster,
+            let original = store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId),
+            original.isMine, original.conversationId == scope.conversationId,
+            original.turnId.ifBlank(original.id.uuidString) == scope.turnId else { throw CancellationError() }
+    }
+    func leaveWaiting(_ reason: String) throws -> Bool {
+      try requireLiveScope()
+      if var task = store.agentTask(id: scope.turnId) {
+        let expected = task
+        task.phase = .waitingResponse
+        task.verification = reason
+        task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+        _ = store.replaceAgentTaskForRecovery(expected: expected, updated: task)
+      }
+      return false
+    }
+    try requireLiveScope()
+    if let prior = try history.acceptedGoalDelivery(scope: scope) {
+      guard prior.source == source else { throw CancellationError() }
+      do { _ = try projectAcceptedGoalDelivery(prior, detail: profile.id); return true }
+      catch is CancellationError { throw CancellationError() }
+      catch { return try leaveWaiting("collaboration_goal_delivery_pending") }
+    }
+    let originalPrompt = localModelPrompt(text: requestText, attachments: attachments, conversation: "")
+    var feedback = ""
+    while true {
+      try requireLiveScope()
+      guard LocalModelRuntimeSettings.isProfileEnabled(profile), LocalModelInferenceRuntime.shared.ready(profile: profile)
+      else { return try leaveWaiting("collaboration_local_model_unavailable") }
+      let cancellation = AgentModelToolLoopCancellationSource()
+      let monitor = Task { @MainActor in
+        while !Task.isCancelled {
+          do { try requireLiveScope() } catch { cancellation.cancel(); return }
+          do { try await Task.sleep(nanoseconds: 500_000_000) } catch { return }
+        }
+      }
+      defer { monitor.cancel() }
+      let authority = AgentIOSLocalModelWebToolRunner.GoalCoordinator(scope: scope, roster: roster,
+        database: store.agentConversationDatabase, recruitmentTemplates: goalRecruitmentTemplates(scope, roster: roster, targets: targets),
+        cancellation: cancellation.token)
+      let candidate: String
+      do {
+        candidate = try await withTransientAgentSlot(target: target, sourceMessageId: scope.sourceId) {
+          try await AgentIOSLocalModelWebToolRunner.run(prompt: originalPrompt + feedback, profile: profile,
+            hasAttachments: !attachments.isEmpty, sessionID: scope.conversationId, conversationID: scope.conversationId,
+            turnID: scope.turnId, taskID: scope.sourceId,
+            baseSystemPrompt: localModelSystemPrompt,
+            registry: runtime.registry, collaborationRecallScope: scope, collaborationOwner: scope,
+            collaborationConversationDatabase: store.agentConversationDatabase, collaborationOriginalsOnly: true,
+            goalCoordinator: authority).text
+        }
+      } catch is CancellationError { throw CancellationError() }
+      catch { return try leaveWaiting("collaboration_local_coordinator_waiting") }
+      try requireLiveScope()
+      if let accepted = try? history.prepareFinalGoalDelivery(candidate, scope: scope, source: source) {
+        do { _ = try projectAcceptedGoalDelivery(accepted, detail: profile.id); return true }
+        catch is CancellationError { throw CancellationError() }
+        catch { return try leaveWaiting("collaboration_goal_delivery_pending") }
+      }
+      if candidate.utf8.count <= 131_072,
+         (try? CloudModelStreamJSON.mcpObject(from: candidate))?["decision"] == .string("blocked") {
+        _ = try? history.planGoalBlockerResolution(after: candidate, scope: scope,
+          eligibleMembers: goalBlockerSpecialists(scope, roster: roster))
+      }
+      _ = await drainReadyGoalWork(scope, roster: roster, outgoing: outgoing, profileID: profileID, targets: targets)
+      try requireLiveScope()
+      guard let saved = try? history.reserveGoalContinuation(after: candidate, scope: scope)
+      else { return try leaveWaiting("collaboration_goal_evidence_required") }
+      feedback = "\n\nContinue from this host state. Read saved work with work_result, cite reviewed originals, and " +
+        "never repeat a claimed assignment. If resource resolution has an available alternative, plan feasible work. " +
+        AgentMcpJSONCodec.stringify(saved)
+    }
   }
 
   private func drainReadyGoalWork(_ scope: AgentCollaborationToolEvidenceScope, roster: AgentCollaborationRoster,

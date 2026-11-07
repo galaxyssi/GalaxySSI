@@ -1022,7 +1022,8 @@ final class AgentTeamExecutionHistoryStore {
             $0.deliveryMode != .ignore }),
           [.phone, .application].contains(record.result.provenance.location),
           !record.result.provenance.toolId.isBlank,
-          record.result.provenance.toolId != AgentIOSLocalModelWebToolRunner.collaborationRecallId
+          ![AgentIOSLocalModelWebToolRunner.collaborationRecallId, AgentIOSLocalModelWebToolRunner.goalCoordinatorToolID]
+            .contains(record.result.provenance.toolId)
     else { return nil }
     return record
   }
