@@ -2113,18 +2113,40 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(manifestCheck["goal_accepted"], .bool(false))
     XCTAssertEqual(try coverageStatus(["parts": .array([.object(part), .object(part)])])["status"],
       .string("goal_coverage_unverified"))
-    _ = try publish(coverageReview("refuted", segments: mapped), author: 3, id: "dissent")
+    let dissent = try publish(coverageReview("refuted", segments: mapped), author: 3, id: "dissent")
     XCTAssertEqual(try coverageStatus(part)["status"], .string("goal_coverage_unverified"))
     request["expected_revision"] = .int(2)
     XCTAssertThrowsError(try open().publishCollaborationMilestone(request, scope: scope(0)))
     request["expected_revision"] = .int(1)
+    var candidate = assessment
+    candidate["goal_coverage"] = .object(part)
+    candidate["final_delivery"] = .object(ref(delivery))
+    candidate["summary"] = .string("Do not substitute this model summary")
+    let proposed = AgentMcpJSONCodec.stringify(candidate)
+    XCTAssertThrowsError(try open().prepareFinalGoalDelivery(proposed, scope: scope(0)))
+    var resolved = coverageReview("supported", segments: mapped)
+    resolved.objectId = dissent.objectId
+    resolved.baseRevision = dissent.revision
+    _ = try publish(resolved, author: 3, id: "resolved-dissent")
+    var wrongDelivery = candidate
+    wrongDelivery["final_delivery"] = .object(ref(mapping))
+    XCTAssertThrowsError(try open().prepareFinalGoalDelivery(AgentMcpJSONCodec.stringify(wrongDelivery), scope: scope(0)))
+    XCTAssertThrowsError(try open().prepareFinalGoalDelivery(proposed, scope: scope(1)))
+    let accepted = try open().prepareFinalGoalDelivery(proposed, scope: scope(0))
+    XCTAssertEqual(accepted.reference, delivery)
+    XCTAssertEqual(accepted.content, "Observed value 42")
+    XCTAssertEqual(try open().acceptedGoalDelivery(scope: scope(0)), accepted)
+    XCTAssertEqual(try open().prepareFinalGoalDelivery(proposed, scope: scope(0)), accepted)
+    XCTAssertThrowsError(try open().prepareFinalGoalDelivery(proposed + "\n", scope: scope(0)))
+    XCTAssertEqual(open().goalCheckpoint(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId)?.phase, .accepted)
     artifact.objectId = delivery.objectId
     artifact.baseRevision = delivery.revision
     artifact.body["content"] = .string("Revised value")
     _ = try publish(artifact, author: 2, id: "delivery-v2")
     XCTAssertThrowsError(try history.recallCollaborationOriginal(read, scope: scope(1)))
-    XCTAssertEqual(try open().publishCollaborationMilestone(request, scope: scope(0))["status"],
-      .string("criterion_evidence_unverified"))
+    XCTAssertThrowsError(try open().publishCollaborationMilestone(request, scope: scope(0)))
+    XCTAssertEqual(try open().acceptedGoalDelivery(scope: scope(0))?.content, "Observed value 42")
   }
 
   func testScopedCoordinatorCanEstablishOnlyAnOpenImmutableGoalContract() throws {

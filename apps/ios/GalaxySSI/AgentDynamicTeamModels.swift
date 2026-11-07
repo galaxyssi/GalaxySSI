@@ -204,7 +204,7 @@ enum AgentCollaborationRuleTopics {
 }
 
 struct AgentCollaborationGoalCheckpoint: Codable, Equatable {
-  enum Phase: String, Codable { case planning, working, waiting }
+  enum Phase: String, Codable { case planning, working, waiting, accepted }
   var runId: String
   var conversationId: String
   var turnId: String
@@ -213,6 +213,15 @@ struct AgentCollaborationGoalCheckpoint: Codable, Equatable {
   var contract: [AgentCollaborationGoalAssessmentPolicy.Criterion]
   var completedWorkIds: Set<String>
   var liveGraph: AgentCollaborationLiveGraph? = nil
+}
+
+struct AgentCollaborationAcceptedDelivery: Codable, Equatable {
+  let owner: AgentCollaborationToolEvidenceScope
+  let assessmentDigest: String
+  let goalDigest: String
+  let criteriaDigest: String
+  let reference: AgentCollaborationResearchReference
+  let content: String
 }
 
 struct AgentCollaborationGoalWorkRun: Codable {

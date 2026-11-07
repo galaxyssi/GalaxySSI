@@ -2214,7 +2214,6 @@ final class AgentTeamExecutionHistoryStore {
 
   private func checkCollaborationGoalEvidence(_ input: AgentMcpJSONObject,
     scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
-    typealias Gate = AgentCollaborationDocumentaryAcceptance
     guard Set(input.keys) == ["mode", "artifact", "expected_revision"],
           case .int(let expected)? = input["expected_revision"], expected > 0,
           let raw = input["artifact"]?.strictStringValue, raw.utf8.count <= 131_072
@@ -2225,6 +2224,14 @@ final class AgentTeamExecutionHistoryStore {
             checkpoint.revision == expected, checkpoint.phase == .working, !checkpoint.contract.isEmpty,
             checkpoint.conversationId == scope.conversationId, checkpoint.turnId == scope.turnId
       else { throw AgentTeamHistoryDatabase.Failure.stale }
+      return try Self.evaluateGoalEvidence(raw, scope: scope, checkpoint: checkpoint, team: team, database: database)
+    }
+  }
+
+  private static func evaluateGoalEvidence(_ raw: String, scope: AgentCollaborationToolEvidenceScope,
+    checkpoint: AgentCollaborationGoalCheckpoint, team: AgentTeamExecutionSnapshot,
+    database: AgentTeamHistoryDatabase) throws -> AgentMcpJSONObject {
+      typealias Gate = AgentCollaborationDocumentaryAcceptance
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.sortedKeys]
       func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
@@ -2271,7 +2278,7 @@ final class AgentTeamExecutionHistoryStore {
       var response: AgentMcpJSONObject = ["success": .bool(verified),
         "status": .string(verified ? "criterion_evidence_verified" : "criterion_evidence_unverified"),
         "validation_scope": .string("criterion_evidence_only_not_goal_acceptance"), "goal_accepted": .bool(false),
-        "revision": .int(expected), "assessment_sha256": .string(digest(Data(raw.utf8))),
+        "revision": .int(checkpoint.revision), "assessment_sha256": .string(digest(Data(raw.utf8))),
         "goal_sha256": .string(digest(Data(team.goal.utf8))), "criteria_sha256": .string(digest(criteria))]
       if let assessment = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8)),
          let coverage = assessment["goal_coverage"] {
@@ -2298,6 +2305,69 @@ final class AgentTeamExecutionHistoryStore {
         response["validation_scope"] = .string("goal_coverage_and_criterion_evidence_not_final_delivery")
       }
       return response
+  }
+
+  func prepareFinalGoalDelivery(_ raw: String, scope: AgentCollaborationToolEvidenceScope)
+    throws -> AgentCollaborationAcceptedDelivery {
+    guard raw.utf8.count <= 131_072,
+          let assessment = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8)),
+          assessment["decision"] == .string("achieved"), let ref = Self.forecastReference(assessment["final_delivery"]),
+          assessment["criteria"]?.arrayValue?.contains(where: {
+            let criterion = $0.objectValue
+            return criterion?["status"] == .string("met") && Self.forecastReference(criterion?["delivery"]) == ref
+          }) == true
+    else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    let digest = SHA256.hash(data: Data(raw.utf8)).map { String(format: "%02x", $0) }.joined()
+    let key = "goal-final-delivery:" + scope.ownershipDigest
+    return try access { database in
+      let team = try Self.activeGoalCoordinator(scope, database: database)
+      guard var checkpoint = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first,
+            checkpoint.conversationId == scope.conversationId, checkpoint.turnId == scope.turnId
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      if let prior = try database.researchRecord(AgentCollaborationAcceptedDelivery.self,
+        conversationId: scope.conversationId, key: key, revision: 0) {
+        guard checkpoint.phase == .accepted, prior.owner == scope, prior.assessmentDigest == digest, prior.reference == ref
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        return prior
+      }
+      guard checkpoint.phase == .working, checkpoint.revision < Int64.max, !checkpoint.contract.isEmpty
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      for work in checkpoint.liveGraph?.work ?? [] {
+        guard let run = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
+          conversationId: scope.conversationId, key: Self.goalWorkKey(work.id, scope: scope), revision: 0),
+              run.owner == scope, run.state != .running else { throw AgentTeamHistoryDatabase.Failure.stale }
+      }
+      let verified = try Self.evaluateGoalEvidence(raw, scope: scope, checkpoint: checkpoint, team: team, database: database)
+      guard verified["status"] == .string("goal_coverage_verified"),
+            let delivery = try database.researchRecord(AgentCollaborationResearchRevision.self,
+              conversationId: scope.conversationId, key: "object:" + ref.objectId), delivery.reference == ref,
+            Self.isScopedAcceptanceRecord(delivery, team: team, kinds: [.artifact, .proposal, .decision]),
+            let content = delivery.draft.body["content"]?.strictStringValue, !content.isBlank
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let receipt = AgentCollaborationAcceptedDelivery(owner: scope, assessmentDigest: digest,
+        goalDigest: verified.string("goal_sha256"), criteriaDigest: verified.string("criteria_sha256"),
+        reference: ref, content: content)
+      let previousRevision = checkpoint.revision
+      checkpoint.revision += 1
+      checkpoint.phase = .accepted
+      checkpoint.completedWorkIds = []
+      guard try Self.persistGoalCheckpoint(checkpoint, expectedRevision: previousRevision, database: database)
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      try database.insertResearchRecord(receipt, conversationId: scope.conversationId, key: key, revision: 0)
+      return receipt
+    }
+  }
+
+  func acceptedGoalDelivery(scope: AgentCollaborationToolEvidenceScope) throws -> AgentCollaborationAcceptedDelivery? {
+    try access { database in
+      _ = try Self.activeGoalCoordinator(scope, database: database)
+      guard let checkpoint = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first,
+            checkpoint.phase == .accepted, checkpoint.conversationId == scope.conversationId,
+            checkpoint.turnId == scope.turnId else { return nil }
+      guard let receipt = try database.researchRecord(AgentCollaborationAcceptedDelivery.self,
+        conversationId: scope.conversationId, key: "goal-final-delivery:" + scope.ownershipDigest, revision: 0),
+            receipt.owner == scope else { throw AgentTeamHistoryDatabase.Failure.stale }
+      return receipt
     }
   }
 
@@ -2401,6 +2471,7 @@ final class AgentTeamExecutionHistoryStore {
 
   func advanceGoalCheckpoint(_ checkpoint: AgentCollaborationGoalCheckpoint, expectedRevision: Int64) -> Bool {
     guard expectedRevision >= 0, expectedRevision < Int64.max, checkpoint.revision == expectedRevision + 1,
+          checkpoint.phase != .accepted,
           !checkpoint.contract.isEmpty, Set(checkpoint.contract.map(\.id)).count == checkpoint.contract.count,
           checkpoint.contract.allSatisfy({ !$0.id.isBlank && !$0.requirement.isBlank && $0.hasValidValidatorBinding }),
           checkpoint.completedWorkIds.allSatisfy({ !$0.isBlank }) else { return false }
@@ -2416,6 +2487,7 @@ final class AgentTeamExecutionHistoryStore {
           !snapshot.state.deliverable else { return false }
     let prior = try database.goalCheckpoints(runId: checkpoint.runId, newestOnly: checkpoint.completedWorkIds.isEmpty)
     guard (prior.first?.revision ?? 0) == expectedRevision,
+          prior.first?.phase != .accepted,
           (prior.first?.liveGraph?.work ?? []).elementsEqual(
             (checkpoint.liveGraph?.work ?? []).prefix(prior.first?.liveGraph?.work.count ?? 0)),
           prior.allSatisfy({

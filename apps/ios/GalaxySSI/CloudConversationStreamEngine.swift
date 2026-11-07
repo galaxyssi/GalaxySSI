@@ -235,6 +235,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       )
       var prepared = try CloudModelStreamMutableConversation(request: request)
       let collaborationRecallScope = collaborationEvidence ?? collaborationModelAudit
+      let goalAssessmentOnly = collaborationEvidence == nil && collaborationModelAudit != nil && goalWorkHandler != nil
       if collaborationRecallScope != nil {
         prepared.installCollaborationRecall(originalsOnly: collaborationEvidence == nil)
       }
@@ -259,7 +260,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           ? CloudCitationPreview(evidence: evidenceResults)
           : nil
         var previewShown = false
-        let roundRequest = try prepared.requestForRound(roundId: roundId, finalRound: finalRound)
+        let roundRequest = try prepared.requestForRound(roundId: roundId, finalRound: finalRound,
+          finalInstruction: goalAssessmentOnly ? CloudModelStreamMutableConversation.goalAssessmentFinalInstruction : nil)
         let assembler = ToolCallDeltaAssembler()
         let inlineProtocolGuard = InlineToolProtocolStreamGuard()
         var roundCompleted = false
@@ -298,7 +300,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
 
           case .textDelta(let value):
             let visibleText = inlineProtocolGuard.append(value.text)
-            if let preview = citationPreview?.append(visibleText) {
+            if !goalAssessmentOnly, let preview = citationPreview?.append(visibleText) {
               previewShown = true
               continuation.yield(.citationPreview(ModelStreamCitationPreview(
                 requestId: requestId,
@@ -306,7 +308,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                 receivedAtElapsedMs: value.receivedAtElapsedMs
               )))
             }
-            if !visibleText.isEmpty && !bufferForCitationVerification {
+            if !goalAssessmentOnly && !visibleText.isEmpty && !bufferForCitationVerification {
               emittedText = true
               emittedSequence += 1
               continuation.yield(
@@ -417,7 +419,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         }
 
         let visibleTail = inlineProtocolGuard.finishVisibleText()
-        if !visibleTail.isEmpty && !bufferForCitationVerification {
+        if !goalAssessmentOnly && !visibleTail.isEmpty && !bufferForCitationVerification {
           emittedText = true
           emittedSequence += 1
           continuation.yield(
@@ -454,6 +456,15 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           )))
         }
         if calls.isEmpty {
+          if goalAssessmentOnly {
+            continuation.yield(.textDelta(ModelStreamTextDelta(requestId: requestId, sequence: emittedSequence + 1,
+              text: rawRoundText, receivedAtElapsedMs: elapsedMillis())))
+            AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .sent)
+            continuation.yield(.completed(ModelStreamCompleted(requestId: requestId, finishReason: lastFinishReason,
+              completedAtElapsedMs: elapsedMillis())))
+            continuation.finish()
+            return
+          }
           if CloudWebGrounding.containsInternalToolProtocol(rawRoundText),
              !finalRound,
              progress.requestFormatRepair("stream_internal_protocol") {

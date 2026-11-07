@@ -8136,7 +8136,7 @@ final class MessageCoordinator: ObservableObject {
               let audit = isCollaboration ? AgentCollaborationToolEvidenceScope(
                 runId: spec.supervisorRunId, conversationId: outgoing.conversationId,
                 turnId: homeTurnId, memberId: member.memberId, sourceId: sourceMessageId) : nil
-              try await receiveRequestedCloudReply(
+              let didDeliver = try await receiveRequestedCloudReply(
                 contact: memberContact,
                 requestText: memberPrompt,
                 attachments: attachments,
@@ -8150,7 +8150,7 @@ final class MessageCoordinator: ObservableObject {
                   }
                 }
               )
-              persistSynchronousTeamPrimary(member: member, spec: spec, outgoing: outgoing)
+              if didDeliver { persistSynchronousTeamPrimary(member: member, spec: spec, outgoing: outgoing) }
               primaryPublished = true
             } else {
               let result = try await hiddenCloudTeamReply(
@@ -8519,6 +8519,7 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
+  @discardableResult
   private func receiveRequestedCloudReply(
     contact: GalaxySSIContact,
     requestText: String,
@@ -8527,7 +8528,7 @@ final class MessageCoordinator: ObservableObject {
     scopeToConversation: Bool = false,
     collaborationModelAudit: AgentCollaborationToolEvidenceScope? = nil,
     goalWorkHandler: CloudConversationStreamEngine.GoalWorkHandler? = nil
-  ) async throws {
+  ) async throws -> Bool {
     let images = try CloudImagePayloadFactory.prepare(
       attachments,
       taskId: outgoing.id.uuidString
@@ -8547,7 +8548,7 @@ final class MessageCoordinator: ObservableObject {
       turns[index].content = prompt
     }
     let detail = cloudContact.selectedCloudModel?.modelId ?? cloudContact.cloudProvider.ifBlank(cloudContact.id)
-    try await receiveCloudStreamReply(
+    return try await receiveCloudStreamReply(
       contact: cloudContact,
       turns: turns,
       images: images,
@@ -12224,6 +12225,7 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
+  @discardableResult
   private func receiveCloudStreamReply(
     contact: GalaxySSIContact,
     turns: [ChatMessage],
@@ -12234,7 +12236,7 @@ final class MessageCoordinator: ObservableObject {
     collaborationModelAudit: AgentCollaborationToolEvidenceScope? = nil,
     goalWorkHandler: CloudConversationStreamEngine.GoalWorkHandler? = nil,
     dispatchLease: AgentCloudDispatchLease? = nil
-  ) async throws {
+  ) async throws -> Bool {
     var scopedTurns = turns
     if outgoing.readOnlyAnalysis {
       guard let index = turns.firstIndex(where: { $0.id == outgoing.id && $0.isMine &&
@@ -12247,6 +12249,42 @@ final class MessageCoordinator: ObservableObject {
     }
     let requestId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
     let destinationId = displayContactId.ifBlank(contact.id)
+    let goalScope = goalWorkHandler == nil ? nil : collaborationModelAudit
+    let goalProfile = store.profile.identityFingerprint
+    let goalRoster = goalScope.flatMap { liveGoalWorkRoster($0, profileID: goalProfile) }
+    let history = AgentTeamExecutionHistoryStore.shared
+    func deferGoalDelivery(_ scope: AgentCollaborationToolEvidenceScope, reason: String) {
+      guard var task = store.agentTask(id: scope.turnId), task.sessionId == scope.conversationId,
+            liveGoalWorkRoster(scope, profileID: goalProfile) == goalRoster else { return }
+      task.phase = .waitingResponse
+      task.verification = reason
+      task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+      store.upsertAgentTask(task)
+    }
+    func deliverAcceptedGoal(_ receipt: AgentCollaborationAcceptedDelivery,
+                             scope: AgentCollaborationToolEvidenceScope) throws {
+      try Task.checkCancellation()
+      guard goalRoster != nil, liveGoalWorkRoster(scope, profileID: goalProfile) == goalRoster,
+            receipt.owner == scope, requestId == scope.turnId,
+            let original = store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId),
+            original.isMine, original.conversationId == scope.conversationId,
+            original.turnId.ifBlank(original.id.uuidString) == scope.turnId else { throw CancellationError() }
+      let saved = try store.persistTransportIncoming(receipt.content, from: destinationId, remoteMessageId: requestId,
+        conversationId: scope.conversationId, turnId: outgoing.turnId, richOutputJson: "",
+        tracePrefix: "collaboration_final_delivery")
+      guard Data(saved.content.utf8) == Data(receipt.content.utf8) else { throw GalaxySSIError.unsupportedResponse }
+      store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId, stage: "cloud_reply",
+        detail: modelDetail, status: .delivered)
+      onIncomingMessage?(saved)
+    }
+    if let goalScope {
+      guard goalRoster != nil else { throw CancellationError() }
+      if let prior = try history.acceptedGoalDelivery(scope: goalScope) {
+        do { try deliverAcceptedGoal(prior, scope: goalScope); return true }
+        catch is CancellationError { throw CancellationError() }
+        catch { deferGoalDelivery(goalScope, reason: "collaboration_goal_delivery_pending"); return false }
+      }
+    }
     let persistedSource = store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId)
     if persistedSource?.deliveryTrace.contains(where: { $0.stage == "cloud_request" }) != true {
       store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId,
@@ -12273,6 +12311,7 @@ final class MessageCoordinator: ObservableObject {
         continue
 
       case .citationPreview(let preview):
+        if goalScope != nil { continue }
         if preview.text.isEmpty {
           if let current = incoming,
              current.remoteMessageId.hasPrefix("agent-stream-preview-") {
@@ -12304,6 +12343,12 @@ final class MessageCoordinator: ObservableObject {
         }
 
       case .textDelta(let delta):
+        if goalScope != nil {
+          if accumulated.utf8.count <= 131_072 {
+            accumulated += delta.text.utf8.count <= 131_072 ? delta.text : "!"
+          }
+          continue
+        }
         accumulated += delta.text
         let content = accumulated.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(accumulated)
         if let current = incoming {
@@ -12331,6 +12376,16 @@ final class MessageCoordinator: ObservableObject {
 
       case .completed:
         if completed { continue }
+        if let goalScope {
+          guard liveGoalWorkRoster(goalScope, profileID: goalProfile) == goalRoster else { throw CancellationError() }
+          if let receipt = try? history.prepareFinalGoalDelivery(accumulated, scope: goalScope) {
+            do { try deliverAcceptedGoal(receipt, scope: goalScope); return true }
+            catch is CancellationError { throw CancellationError() }
+            catch { deferGoalDelivery(goalScope, reason: "collaboration_goal_delivery_pending"); return false }
+          }
+          deferGoalDelivery(goalScope, reason: "collaboration_goal_evidence_required")
+          return false
+        }
         let clean = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
         var deliveryText = clean
         if let current = incoming {
@@ -12388,6 +12443,7 @@ final class MessageCoordinator: ObservableObject {
     guard completed else {
       throw GalaxySSIError.unsupportedResponse
     }
+    return true
   }
 
   private func visualDeliveryFailure(_ error: Error) -> String {

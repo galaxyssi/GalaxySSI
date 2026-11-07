@@ -385,7 +385,7 @@ struct CloudModelStreamMutableConversation {
       "name": Self.collaborationPublishName,
       "description": assessmentOnly
         ? "Use validate_assessment with artifact containing the exact goal-assessment JSON to check its structure. As coordinator, use establish_contract with a continue assessment, open criteria without evidence, and empty work and blockers. Use append_work with a unique milestone_id, expected_revision, and a galaxyssi.work-expansion.v1 JSON artifact. Retry identical requests after an uncertain response. Use check_goal_evidence with an achieved assessment in artifact and the exact expected_revision to verify saved criterion deliveries and independent reviews. Include goal_coverage with exact mapping/review references, parts, or a manifest to also check coverage of the pinned goal source. This does not accept the goal." +
-          (canRunGoalWork ? " An accepted batch starts ready assignments in dependency order. Use run_ready_work with no other fields to resume unclaimed assignments. Use run_work with an admitted work_id to retrieve its saved output or run one ready assignment. Desktop work is plan-only. Claimed work is never automatically reexecuted." : "")
+          (canRunGoalWork ? " An accepted batch starts ready assignments in dependency order. Use run_ready_work with no other fields to resume unclaimed assignments. Use run_work with an admitted work_id to retrieve its saved output or run one ready assignment. Desktop work is plan-only. Claimed work is never automatically reexecuted. " + Self.goalAssessmentFinalInstruction : "")
         : "Use status to check availability. Publish interim research with milestone_id and an artifact JSON string. Retry identical bytes, or use receipt with milestone_id and artifact_sha256. Use list with next_cursor to recover saved IDs, then cite them in milestones in your final artifact. Use validate_assessment with artifact to check goal-assessment structure without publishing. Receipts do not verify evidence or complete the assignment."
     ], schema: schema)
   }
@@ -403,9 +403,11 @@ struct CloudModelStreamMutableConversation {
     body["tools"] = tools
   }
 
-  mutating func requestForRound(roundId: String, finalRound: Bool = false) throws -> ModelStreamRequest {
+  static let goalAssessmentFinalInstruction = "Return only the galaxyssi.goal-assessment.v1 JSON object. Never claim achieved without exact reviewed criterion deliveries, goal_coverage, and final_delivery. Select final_delivery from a met criterion. Return a non-achieved assessment if evidence is missing. Do not send final deliverable prose; the host loads the reviewed text."
+
+  mutating func requestForRound(roundId: String, finalRound: Bool = false, finalInstruction: String? = nil) throws -> ModelStreamRequest {
     if finalRound {
-      prepareFinalRound()
+      prepareFinalRound(instruction: finalInstruction ?? Self.finalizePrompt)
     }
     var next = request
     next.requestId = roundId
@@ -483,7 +485,7 @@ struct CloudModelStreamMutableConversation {
     appendPlainConversationTurn(role: "user", text: CloudWebGrounding.inlineEvidenceMessage(evidence))
   }
 
-  private mutating func prepareFinalRound() {
+  private mutating func prepareFinalRound(instruction: String) {
     guard !finalRoundPrepared else { return }
     finalRoundPrepared = true
     body.removeValue(forKey: "tools")
@@ -493,14 +495,14 @@ struct CloudModelStreamMutableConversation {
       var messages = conversationArray(key: "messages")
       messages.append([
         "role": "user",
-        "content": Self.finalizePrompt
+        "content": instruction
       ])
       body["messages"] = messages
     case .gemini:
       var contents = conversationArray(key: "contents")
       contents.append([
         "role": "user",
-        "parts": [["text": Self.finalizePrompt]]
+        "parts": [["text": instruction]]
       ])
       body["contents"] = contents
     }
