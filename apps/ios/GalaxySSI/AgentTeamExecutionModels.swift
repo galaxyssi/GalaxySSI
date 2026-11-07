@@ -878,13 +878,37 @@ enum AgentCollaborationWorkflowIntake {
 
 struct AgentCollaborationResearchEnvelope: Decodable {
   static let wireFormat = "galaxyssi.research-artifact.v1"
+  static let maximumReplyBytes = 256_000
   var format: String
   var workspace: [AgentCollaborationResearchDraft]?
   var milestones: [String]?
 
+  private struct FormatHeader: Decodable {
+    let format: String
+  }
+
+  // Parse a view of the reply; hashing and persistence still use the original bytes.
+  static func replyJSON(in raw: String) -> Data? {
+    guard raw.utf8.count <= maximumReplyBytes, raw.contains(wireFormat) else { return nil }
+    let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    if text.hasPrefix("```"), text.hasSuffix("```"),
+       let newline = text.firstIndex(where: { $0.isNewline }),
+       ["```", "```json"].contains(text[..<newline].lowercased()) {
+      let end = text.index(text.endIndex, offsetBy: -3)
+      let start = text.index(after: newline)
+      if start <= end { return Data(text[start..<end].utf8) }
+    }
+    return Data(text.utf8)
+  }
+
+  static func isCompleteReply(_ raw: String) -> Bool {
+    guard let data = replyJSON(in: raw) else { return false }
+    return (try? JSONDecoder().decode(FormatHeader.self, from: data))?.format == wireFormat
+  }
+
   static func publication(in raw: String) throws -> [AgentCollaborationResearchDraft]? {
-    guard raw.utf8.count <= 256_000, raw.contains(wireFormat) else { return nil }
-    let envelope = try JSONDecoder().decode(Self.self, from: Data(raw.utf8))
+    guard let data = replyJSON(in: raw) else { return nil }
+    let envelope = try JSONDecoder().decode(Self.self, from: data)
     guard envelope.format == wireFormat, let workspace = envelope.workspace, !workspace.isEmpty else { return nil }
     return workspace
   }
