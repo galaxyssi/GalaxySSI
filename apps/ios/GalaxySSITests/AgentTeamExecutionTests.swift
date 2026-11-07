@@ -2186,6 +2186,9 @@ extension GalaxySSIStoreTests {
     """
     let mode = AgentCollaborationGoalAssessmentPolicy.establishContractMode
     let request: AgentMcpJSONObject = ["mode": .string(mode), "artifact": .string(raw)]
+    XCTAssertThrowsError(try history.reserveGoalContinuation(after: raw, scope: scope(1)))
+    XCTAssertEqual(try history.reserveGoalContinuation(after: raw, scope: scope(0))?["status"], .string("contract_missing"))
+    XCTAssertNil(try open().reserveGoalContinuation(after: "The same goal, different model prose.", scope: scope(0)))
     let check: AgentMcpJSONObject = ["mode": .string("validate_assessment"), "artifact": .string(raw)]
     XCTAssertTrue(AgentDesktopCollaborationPublicationWire.accepts(phase: mode, input: request))
     XCTAssertFalse(AgentDesktopCollaborationPublicationWire.permits(phase: mode, observer: true))
@@ -2249,6 +2252,10 @@ extension GalaxySSIStoreTests {
       turnId: team.taskId))
     XCTAssertEqual(latest.liveGraph?.work.map(\.id), ["measure", "verify"])
     XCTAssertEqual(latest.liveGraph?.ready(settled: [:], active: []).map(\.id), ["measure"])
+    let unfinished = try open().reserveGoalContinuation(after: raw, scope: scope(0))
+    XCTAssertEqual(unfinished?["revision"], .int(3))
+    XCTAssertEqual(unfinished?["work_counts"]?.objectValue?["unclaimed"], .int(2))
+    XCTAssertNil(try open().reserveGoalContinuation(after: raw + "\n", scope: scope(0)))
     XCTAssertEqual(try open().readyGoalWork(scope: scope(0), excluding: [], limit: 3, now: 10), ["measure"])
     XCTAssertEqual(try open().readyGoalWork(scope: scope(0), excluding: ["measure"], limit: 3, now: 10), [])
     XCTAssertThrowsError(try open().readyGoalWork(scope: scope(1), excluding: [], limit: 3, now: 10))
@@ -2271,6 +2278,9 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(finished["status"], .string("succeeded"))
     XCTAssertEqual(finished["goal_accepted"], .bool(false))
     XCTAssertEqual(finished["target"], .object(worker.fields))
+    let advanced = try open().reserveGoalContinuation(after: raw, scope: scope(0))
+    XCTAssertEqual(advanced?["work_counts"]?.objectValue?["succeeded"], .int(1))
+    XCTAssertNil(try open().reserveGoalContinuation(after: raw, scope: scope(0)))
     XCTAssertEqual(try open().readyGoalWork(scope: scope(0), excluding: [], limit: 3, now: 13), ["verify"])
     XCTAssertThrowsError(try reopened.finishGoalWork(started.run, output: "Replace", interrupted: false, now: 13))
     let next = try reopened.claimGoalWork(verify, scope: scope(0), now: 14)

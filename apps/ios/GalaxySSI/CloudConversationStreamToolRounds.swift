@@ -231,6 +231,10 @@ final class CloudWebToolLoopProgress {
     return true
   }
 
+  func resumeGoalAssessment() {
+    finalizationRequested = false
+  }
+
   func semanticKey(toolName: String, arguments: AgentMcpJSONObject) -> String {
     var normalized = arguments
     if Self.isRuleRecall(toolName: toolName, arguments: arguments) {
@@ -462,6 +466,14 @@ struct CloudModelStreamMutableConversation {
     body.removeValue(forKey: "tools")
     body.removeValue(forKey: "tool_choice")
     finalRoundPrepared = true
+  }
+
+  mutating func appendGoalContinuation(_ context: AgentMcpJSONObject) {
+    appendPlainConversationTurn(role: "user", text:
+      "The host has not accepted the collaboration goal. Continue from this saved state, not from scratch. " +
+      "Establish missing criteria, recall saved work, dispatch only unclaimed ready work, or repair the exact evidence references. " +
+      "If no authorized progress remains, report a non-achieved assessment with the blocker and resume condition. Host state: " +
+      AgentMcpJSONCodec.stringify(context))
   }
 
   mutating func appendInlineToolResults(

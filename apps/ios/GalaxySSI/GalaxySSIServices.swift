@@ -12378,7 +12378,15 @@ final class MessageCoordinator: ObservableObject {
     if let collaborationModelAudit, let engine = cloudStreamEngine as? CloudConversationStreamEngine {
       events = engine.streamConversation(contact: contact, store: store, turns: scopedTurns, images: images,
         requestId: requestId, collaborationEvidence: nil, collaborationModelAudit: collaborationModelAudit,
-        goalWorkHandler: goalWorkHandler)
+        goalWorkHandler: goalWorkHandler, goalContinuationHandler: goalScope.map { scope in
+          { raw in
+            guard !Task.isCancelled, let goalSource,
+                  self.liveGoalWorkRoster(scope, profileID: goalProfile) == goalRoster,
+                  originalGoalSourceExists(scope) else { return nil }
+            if (try? history.prepareFinalGoalDelivery(raw, scope: scope, source: goalSource)) != nil { return nil }
+            return try? history.reserveGoalContinuation(after: raw, scope: scope)
+          }
+        })
     } else {
       events = cloudStreamEngine.streamConversation(contact: contact, store: store, turns: scopedTurns,
         images: images, requestId: requestId)

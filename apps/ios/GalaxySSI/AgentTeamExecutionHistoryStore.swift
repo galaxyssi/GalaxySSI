@@ -2307,6 +2307,51 @@ final class AgentTeamExecutionHistoryStore {
       return response
   }
 
+  func reserveGoalContinuation(after raw: String, scope: AgentCollaborationToolEvidenceScope)
+    throws -> AgentMcpJSONObject? {
+    typealias Policy = AgentCollaborationGoalAssessmentPolicy
+    let assessment = raw.utf8.count <= 131_072
+      ? (try? JSONDecoder().decode(Policy.Assessment.self, from: Data(raw.utf8))) : nil
+    return try access { database in
+      _ = try Self.activeGoalCoordinator(scope, database: database)
+      let checkpoint = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first
+      if let checkpoint {
+        guard checkpoint.phase == .working, checkpoint.conversationId == scope.conversationId,
+              checkpoint.turnId == scope.turnId else { return nil }
+      }
+      var states: [AgentMcpJSONValue] = []
+      var counts: [String: Int64] = [:]
+      var examples: [AgentMcpJSONValue] = []
+      for work in checkpoint?.liveGraph?.work ?? [] {
+        let saved = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
+          conversationId: scope.conversationId, key: Self.goalWorkKey(work.id, scope: scope), revision: 0)
+        guard saved == nil || saved?.owner == scope else { throw AgentTeamHistoryDatabase.Failure.stale }
+        let status = saved?.state.rawValue ?? "unclaimed"
+        counts[status, default: 0] += 1
+        let state: AgentMcpJSONObject = ["work_id": .string(work.id), "status": .string(status),
+          "output_sha256": saved?.outputHash.map(AgentMcpJSONValue.string) ?? .null]
+        states.append(.object(state))
+        if examples.count < 24, status == "unclaimed" || status == "failed" || status == "interrupted" {
+          examples.append(.object(["work_id": .string(work.id), "status": .string(status)]))
+        }
+      }
+      if let checkpoint, counts["unclaimed", default: 0] == 0, counts["running", default: 0] == 0,
+         case .waiting = Policy.evaluate(raw, preserving: checkpoint.contract, authorizedMembers: [], completedWork: []) {
+        return nil
+      }
+      let revision = checkpoint?.revision ?? 0
+      let digest = AgentMcpJSONCodec.sha256(["revision": .int(revision), "work": .array(states)])
+      let key = "goal-continuation:" + scope.ownershipDigest + ":" + digest
+      guard try database.researchRecord(Bool.self, conversationId: scope.conversationId, key: key, revision: 0) == nil
+      else { return nil }
+      try database.insertResearchRecord(true, conversationId: scope.conversationId, key: key, revision: 0)
+      let reason = checkpoint == nil ? "contract_missing" :
+        (assessment?.decision == .achieved ? "final_delivery_not_verified" : "goal_unfinished")
+      return ["status": .string(reason), "revision": .int(revision), "work_counts": .object(counts.mapValues(AgentMcpJSONValue.int)),
+        "work_examples": .array(examples), "goal_accepted": .bool(false)]
+    }
+  }
+
   func prepareFinalGoalDelivery(_ raw: String, scope: AgentCollaborationToolEvidenceScope,
                                 source: AgentCollaborationAcceptedDelivery.Source? = nil)
     throws -> AgentCollaborationAcceptedDelivery {

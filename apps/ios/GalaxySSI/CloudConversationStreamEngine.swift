@@ -56,6 +56,7 @@ extension CloudConversationStreaming {
 
 final class CloudConversationStreamEngine: CloudModelStreamClient {
   typealias GoalWorkHandler = @MainActor (AgentMcpJSONObject) async -> AgentMcpJSONObject
+  typealias GoalContinuationHandler = @MainActor (String) -> AgentMcpJSONObject?
   private static let maxParallelToolCalls = 4
 
   private struct ToolExecutionOutcome {
@@ -128,7 +129,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     requestId: String,
     collaborationEvidence: AgentCollaborationToolEvidenceScope?,
     collaborationModelAudit: AgentCollaborationToolEvidenceScope? = nil,
-    goalWorkHandler: GoalWorkHandler? = nil
+    goalWorkHandler: GoalWorkHandler? = nil,
+    goalContinuationHandler: GoalContinuationHandler? = nil
   ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
     let conversationRequestId = Self.normalizedRequestId(requestId)
     return AsyncThrowingStream { continuation in
@@ -142,6 +144,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           collaborationEvidence: collaborationEvidence,
           collaborationModelAudit: collaborationModelAudit ?? collaborationEvidence,
           goalWorkHandler: goalWorkHandler,
+          goalContinuationHandler: goalContinuationHandler,
           continuation: continuation
         )
       }
@@ -180,6 +183,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     collaborationEvidence: AgentCollaborationToolEvidenceScope?,
     collaborationModelAudit: AgentCollaborationToolEvidenceScope?,
     goalWorkHandler: GoalWorkHandler?,
+    goalContinuationHandler: GoalContinuationHandler?,
     continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation
   ) async {
     defer { CloudImageAnnotationSession.discard(requestId: requestId) }
@@ -255,6 +259,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         round += 1
         let roundId = "\(requestId):r\(currentRound)"
         let finalRound = progress.finalizationRequested
+        let continuationConversation = goalAssessmentOnly && finalRound ? prepared : nil
         let bufferForCitationVerification = !evidenceResults.isEmpty
         let citationPreview = bufferForCitationVerification
           ? CloudCitationPreview(evidence: evidenceResults)
@@ -455,16 +460,24 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             receivedAtElapsedMs: elapsedMillis()
           )))
         }
-        if calls.isEmpty {
-          if goalAssessmentOnly {
-            continuation.yield(.textDelta(ModelStreamTextDelta(requestId: requestId, sequence: emittedSequence + 1,
-              text: rawRoundText, receivedAtElapsedMs: elapsedMillis())))
-            AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .sent)
-            continuation.yield(.completed(ModelStreamCompleted(requestId: requestId, finishReason: lastFinishReason,
-              completedAtElapsedMs: elapsedMillis())))
-            continuation.finish()
-            return
+        if goalAssessmentOnly && (calls.isEmpty || finalRound) {
+          let candidate = calls.isEmpty ? rawRoundText : ""
+          if let goalContinuationHandler, let context = await goalContinuationHandler(candidate) {
+            try Task.checkCancellation()
+            if let continuationConversation { prepared = continuationConversation }
+            progress.resumeGoalAssessment()
+            prepared.appendGoalContinuation(context)
+            continue
           }
+          continuation.yield(.textDelta(ModelStreamTextDelta(requestId: requestId, sequence: emittedSequence + 1,
+            text: candidate, receivedAtElapsedMs: elapsedMillis())))
+          AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .sent)
+          continuation.yield(.completed(ModelStreamCompleted(requestId: requestId, finishReason: lastFinishReason,
+            completedAtElapsedMs: elapsedMillis())))
+          continuation.finish()
+          return
+        }
+        if calls.isEmpty {
           if CloudWebGrounding.containsInternalToolProtocol(rawRoundText),
              !finalRound,
              progress.requestFormatRepair("stream_internal_protocol") {
