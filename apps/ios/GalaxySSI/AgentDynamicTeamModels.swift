@@ -437,12 +437,16 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
   }
 
   func ready(settled: [String: Settlement], active: Set<String>) -> [Work] {
-    var ready = work.filter { item in
+    prioritizeReady(work.filter { item in
       settled[item.id] == nil && !active.contains(item.id) && item.depends_on.allSatisfy { dependency in
         guard let state = settled[dependency] else { return false }
         return item.dependency_policy == .terminal || state == .succeeded
       }
-    }
+    })
+  }
+
+  func prioritizeReady(_ candidates: [Work]) -> [Work] {
+    var ready = candidates
     guard let learningPriorities else { return ready }
     var slots: [String: [Int]] = [:]
     for (index, item) in ready.enumerated() {
@@ -573,6 +577,11 @@ enum AgentCollaborationGoalAssessmentPolicy {
   static let establishContractMode = "establish_contract"
   static let appendWorkMode = "append_work"
   static let runWorkMode = "run_work"
+  static let runReadyWorkMode = "run_ready_work"
+
+  static func dispatchesWork(_ mode: String) -> Bool {
+    mode == runWorkMode || mode == runReadyWorkMode || mode == appendWorkMode
+  }
 
   static func isCoordinatorMutation(_ mode: String) -> Bool {
     mode == establishContractMode || mode == appendWorkMode

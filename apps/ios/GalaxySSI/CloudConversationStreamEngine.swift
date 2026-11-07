@@ -618,8 +618,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           },
           collaborationPublish: collaborationRecallScope.map { scope in
             { arguments in
-              if arguments["mode"] == .string(AgentCollaborationGoalAssessmentPolicy.runWorkMode) {
-                guard collaborationEvidence == nil, collaborationModelAudit == scope, let goalWorkHandler else { return nil }
+              let mode = arguments.string("mode")
+              if AgentCollaborationGoalAssessmentPolicy.dispatchesWork(mode), let goalWorkHandler {
+                guard collaborationEvidence == nil, collaborationModelAudit == scope else { return nil }
                 return await goalWorkHandler(arguments)
               }
               return await MainActor.run {
@@ -696,7 +697,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                receipt["replayed"] == .bool(false) {
               madeProgress = true
             }
-            if arguments["mode"] == .string(AgentCollaborationGoalAssessmentPolicy.runWorkMode),
+            if AgentCollaborationGoalAssessmentPolicy.dispatchesWork(arguments.string("mode")),
                let receipt = try? CloudModelStreamJSON.mcpObject(from: output),
                receipt["new_execution"] == .bool(true) {
               madeProgress = true

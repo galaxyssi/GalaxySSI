@@ -22,6 +22,8 @@ final class MessageCoordinator: ObservableObject {
   private var liveManagedBrowserMembers: Set<String> = []
   private var managedBrowserRecoveryInFlight: Set<String> = []
   private var liveManagedBrowserTeams: Set<String> = []
+  private var activeGoalWorkDrains: Set<String> = []
+  private var activeGoalWorkSlots: [String: Int] = [:]
   private var managedBrowserTeamRecoveryInFlight: Set<String> = []
   private var runningAutomationCycle = false
   @Published private(set) var lastRevokedContactIds: Set<String> = []
@@ -8143,7 +8145,7 @@ final class MessageCoordinator: ObservableObject {
                 collaborationModelAudit: audit,
                 goalWorkHandler: audit.map { scope in
                   { arguments in
-                    await self.runAdmittedGoalWork(arguments, scope: scope, outgoing: outgoing,
+                    await self.handleGoalWorkRequest(arguments, scope: scope, outgoing: outgoing,
                       profileID: profileIdentity, targets: targetsById)
                   }
                 }
@@ -8620,29 +8622,130 @@ final class MessageCoordinator: ObservableObject {
     return result
   }
 
+  private func liveGoalWorkRoster(_ scope: AgentCollaborationToolEvidenceScope, profileID: String) -> AgentCollaborationRoster? {
+    guard store.profile.identityFingerprint == profileID,
+          let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
+          !session.privateMode, !session.trackingPaused, session.mergedIntoConversationId.isBlank,
+          let roster = session.collaborationRoster,
+          let person = UUID(uuidString: AgentTeamProgressPolicy.stableCollaborationMemberId(scope.memberId)),
+          roster.coordinatorId == person,
+          let task = store.agentTask(id: scope.turnId), task.sessionId == scope.conversationId, !task.blocked,
+          task.phase == .executing || task.phase == .waitingResponse,
+          !PhoneExecutionAuthority.isCancelled(taskId: task.taskId) else { return nil }
+    return roster
+  }
+
+  private func handleGoalWorkRequest(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope,
+                                     outgoing: ChatMessage, profileID: String,
+                                     targets: [String: AgentCallableTarget]) async -> AgentMcpJSONObject {
+    let policy = AgentCollaborationGoalAssessmentPolicy.self
+    let mode = input.string("mode")
+    if mode == policy.runWorkMode {
+      return await runAdmittedGoalWork(input, scope: scope, outgoing: outgoing, profileID: profileID, targets: targets)
+    }
+    guard !Task.isCancelled, !outgoing.readOnlyAnalysis, outgoing.conversationId == scope.conversationId,
+          let roster = liveGoalWorkRoster(scope, profileID: profileID) else {
+      return ["success": .bool(false), "status": .string("work_scope_unavailable")]
+    }
+    var receipt: AgentMcpJSONObject
+    if mode == policy.appendWorkMode {
+      guard let admission = try? AgentTeamExecutionHistoryStore.shared.publishCollaborationMilestone(input, scope: scope),
+            admission["status"] == .string("work_admitted") else {
+        return ["success": .bool(false), "status": .string("work_admission_unavailable")]
+      }
+      receipt = admission
+    } else {
+      guard mode == policy.runReadyWorkMode, Set(input.keys) == ["mode"] else {
+        return ["success": .bool(false), "status": .string("work_request_invalid")]
+      }
+      receipt = ["success": .bool(true), "status": .string("work_dispatch_pass")]
+    }
+    let dispatch = await drainReadyGoalWork(scope, roster: roster, outgoing: outgoing, profileID: profileID, targets: targets)
+    receipt["dispatch"] = .object(dispatch)
+    receipt["new_execution"] = dispatch["new_execution"] ?? .bool(false)
+    return receipt
+  }
+
+  private func drainReadyGoalWork(_ scope: AgentCollaborationToolEvidenceScope, roster: AgentCollaborationRoster,
+                                   outgoing: ChatMessage, profileID: String,
+                                   targets: [String: AgentCallableTarget]) async -> AgentMcpJSONObject {
+    let key = scope.ownershipDigest
+    guard activeGoalWorkDrains.insert(key).inserted else { return ["status": .string("dispatch_in_progress")] }
+    defer { activeGoalWorkDrains.remove(key) }
+    let history = AgentTeamExecutionHistoryStore.shared
+    var excluded = Set<String>()
+    var deferred = Set<String>()
+    var outcomes: [String: String] = [:]
+    var started: [String] = []
+    var startedCount: Int64 = 0
+    var newExecution = false
+    var status = "no_ready_work"
+    while !Task.isCancelled, liveGoalWorkRoster(scope, profileID: profileID) == roster {
+      let capacity = 3 - activeGoalWorkSlots[key, default: 0]
+      guard capacity > 0 else { status = "work_capacity_unavailable"; break }
+      guard let ready = try? history.readyGoalWork(scope: scope, excluding: excluded.union(deferred), limit: capacity) else {
+        status = "work_scope_unavailable"
+        break
+      }
+      guard !ready.isEmpty else { break }
+      var waveStarted = false
+      await withTaskGroup(of: (String, String, Bool).self) { group in
+        for id in ready {
+          group.addTask { @MainActor in
+            guard self.liveGoalWorkRoster(scope, profileID: profileID) == roster else {
+              return (id, "work_scope_unavailable", false)
+            }
+            let result = await self.runAdmittedGoalWork(
+              ["mode": .string(AgentCollaborationGoalAssessmentPolicy.runWorkMode), "work_id": .string(id)],
+              scope: scope, outgoing: outgoing, profileID: profileID, targets: targets)
+            return (id, result.string("status"), result["new_execution"] == .bool(true))
+          }
+        }
+        for await (id, outcome, launched) in group {
+          outcomes[id] = outcome
+          if outcome == "work_capacity_unavailable" && !launched { deferred.insert(id) } else { excluded.insert(id) }
+          if launched {
+            waveStarted = true
+            startedCount += 1
+            if started.count < 64 { started.append(id) }
+          }
+        }
+      }
+      if waveStarted {
+        newExecution = true
+        deferred.removeAll()
+      }
+    }
+    if Task.isCancelled || liveGoalWorkRoster(scope, profileID: profileID) != roster { status = "work_scope_unavailable" }
+    else if status == "no_ready_work", !deferred.isEmpty { status = "work_capacity_unavailable" }
+    var counts: [String: Int64] = [:]
+    for outcome in outcomes.values { counts[outcome, default: 0] += 1 }
+    return ["status": .string(status), "attempted_count": .int(Int64(outcomes.count)),
+      "outcomes": .object(counts.mapValues(AgentMcpJSONValue.int)), "new_execution": .bool(newExecution),
+      "started_count": .int(startedCount), "started_work_ids": .array(started.map(AgentMcpJSONValue.string)),
+      "goal_accepted": .bool(false)]
+  }
+
   private func runAdmittedGoalWork(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope,
                                       outgoing: ChatMessage, profileID: String,
                                       targets: [String: AgentCallableTarget]) async -> AgentMcpJSONObject {
     func unavailable(_ status: String) -> AgentMcpJSONObject { ["success": .bool(false), "status": .string(status)] }
-    func liveRoster() -> AgentCollaborationRoster? {
-      guard store.profile.identityFingerprint == profileID,
-            let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
-            !session.privateMode, !session.trackingPaused, session.mergedIntoConversationId.isBlank,
-            let roster = session.collaborationRoster,
-            let person = UUID(uuidString: AgentTeamProgressPolicy.stableCollaborationMemberId(scope.memberId)),
-            roster.coordinatorId == person,
-            let task = store.agentTask(id: scope.turnId), !task.blocked,
-            task.phase == .executing || task.phase == .waitingResponse,
-            !PhoneExecutionAuthority.isCancelled(taskId: task.taskId) else { return nil }
-      return roster
-    }
+    func liveRoster() -> AgentCollaborationRoster? { liveGoalWorkRoster(scope, profileID: profileID) }
     guard !Task.isCancelled, !outgoing.readOnlyAnalysis,
+          outgoing.conversationId == scope.conversationId,
           Set(input.keys) == ["mode", "work_id"],
           let id = input["work_id"]?.strictStringValue, !id.isBlank, id.utf8.count <= 160,
           let roster = liveRoster() else { return unavailable("work_scope_unavailable") }
     let history = AgentTeamExecutionHistoryStore.shared
     guard let (work, prior) = try? history.goalWork(id, scope: scope) else { return unavailable("work_unavailable") }
     if let prior { return prior.receipt(now: AgentControlPlaneClock.nowMillis()) }
+    let key = scope.ownershipDigest
+    guard activeGoalWorkSlots[key, default: 0] < 3 else { return unavailable("work_capacity_unavailable") }
+    activeGoalWorkSlots[key, default: 0] += 1
+    defer {
+      let remaining = activeGoalWorkSlots[key, default: 1] - 1
+      if remaining > 0 { activeGoalWorkSlots[key] = remaining } else { activeGoalWorkSlots.removeValue(forKey: key) }
+    }
     guard let team = history.snapshot(supervisorRunId: scope.runId),
           let assigned = team.members.first(where: { $0.memberId == work.member && $0.deliveryMode == .observe }),
           let person = UUID(uuidString: AgentTeamProgressPolicy.stableCollaborationMemberId(work.member)),

@@ -2007,6 +2007,50 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
+  func readyGoalWork(scope: AgentCollaborationToolEvidenceScope, excluding: Set<String>, limit: Int,
+                     now: Int64 = AgentControlPlaneClock.nowMillis()) throws -> [String] {
+    try access { database in
+      let team = try Self.activeGoalCoordinator(scope, database: database)
+      guard let checkpoint = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first,
+            checkpoint.phase == .working, checkpoint.conversationId == scope.conversationId,
+            checkpoint.turnId == scope.turnId else { throw AgentTeamHistoryDatabase.Failure.stale }
+      guard let graph = checkpoint.liveGraph else { return [] }
+      let specialists = Set(team.members.filter { $0.deliveryMode == .observe }.map(\.memberId))
+      var states: [String: AgentCollaborationGoalWorkRun.State] = [:]
+      var unclaimed = Set<String>()
+      func savedState(_ id: String) throws -> AgentCollaborationGoalWorkRun.State? {
+        if let state = states[id] { return state }
+        if unclaimed.contains(id) { return nil }
+        let saved = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
+          conversationId: scope.conversationId, key: Self.goalWorkKey(id, scope: scope), revision: 0)
+        if let saved {
+          guard saved.owner == scope else { throw AgentTeamHistoryDatabase.Failure.stale }
+          let state = saved.visibleState(now: now)
+          states[id] = state
+          return state
+        }
+        unclaimed.insert(id)
+        return nil
+      }
+      let width = min(max(limit, 1), 3)
+      var ready: [AgentCollaborationLiveGraph.Work] = []
+      for work in graph.work where !excluding.contains(work.id) && specialists.contains(work.member) {
+        guard try savedState(work.id) == nil,
+              try work.depends_on.allSatisfy({ id in
+                Self.goalWorkDependencyReady(try savedState(id), policy: work.dependency_policy)
+              }) else { continue }
+        ready.append(work)
+        if graph.learningPriorities == nil, ready.count == width { break }
+      }
+      return graph.prioritizeReady(ready).prefix(width).map(\.id)
+    }
+  }
+
+  private static func goalWorkDependencyReady(_ state: AgentCollaborationGoalWorkRun.State?,
+      policy: AgentCollaborationLiveGraph.DependencyPolicy?) -> Bool {
+    state == .succeeded || (policy == .terminal && (state == .failed || state == .interrupted))
+  }
+
   func claimGoalWork(_ work: AgentCollaborationLiveGraph.Work, scope: AgentCollaborationToolEvidenceScope,
                      target: AgentCollaborationGoalWorkRun.Target? = nil,
                      now: Int64 = AgentControlPlaneClock.nowMillis())
@@ -2033,8 +2077,7 @@ final class AgentTeamExecutionHistoryStore {
         guard let source = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
           conversationId: scope.conversationId, key: Self.goalWorkKey(dependency, scope: scope), revision: 0),
           source.owner == scope,
-          source.state == .succeeded || (work.dependency_policy == .terminal &&
-            [AgentCollaborationGoalWorkRun.State.failed, .interrupted].contains(source.visibleState(now: now)))
+          Self.goalWorkDependencyReady(source.visibleState(now: now), policy: work.dependency_policy)
         else { throw AgentTeamHistoryDatabase.Failure.stale }
         let evidence = source.receipt(now: now)
         dependencies.append(evidence)

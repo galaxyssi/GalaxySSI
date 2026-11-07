@@ -2074,10 +2074,11 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(reopened.goalCheckpoint(runId: team.supervisorRunId, conversationId: team.conversationId,
       turnId: team.taskId)?.contract.first?.requirement, "Measure the sample")
     func work(_ requestID: String, id: String, member: String, expected: Int64,
-              dependencies: [String] = []) -> AgentMcpJSONObject {
+              dependencies: [String] = [], terminal: Bool = false) -> AgentMcpJSONObject {
       let graph: AgentMcpJSONObject = ["format": .string("galaxyssi.work-expansion.v1"), "work": .array([.object([
         "id": .string(id), "member": .string(member), "assignment": .string("Measure the fixture"),
-        "depends_on": .array(dependencies.map(AgentMcpJSONValue.string))
+        "depends_on": .array(dependencies.map(AgentMcpJSONValue.string)),
+        "dependency_policy": .string(terminal ? "terminal" : "success")
       ])])]
       return ["mode": .string(AgentCollaborationGoalAssessmentPolicy.appendWorkMode),
         "artifact": .string(AgentMcpJSONCodec.stringify(graph)), "milestone_id": .string(requestID),
@@ -2094,13 +2095,16 @@ extension GalaxySSIStoreTests {
       work("batch-1", id: "changed", member: scope(1).memberId, expected: 1), scope: scope(0)))
     XCTAssertThrowsError(try reopened.publishCollaborationMilestone(
       work("stale", id: "stale-work", member: scope(1).memberId, expected: 1), scope: scope(0)))
-    let followup = work("batch-2", id: "verify", member: scope(0).memberId, expected: 2, dependencies: ["measure"])
+    let followup = work("batch-2", id: "verify", member: scope(1).memberId, expected: 2, dependencies: ["measure"])
     XCTAssertEqual(try reopened.publishCollaborationMilestone(followup, scope: scope(0))["revision"], .int(3))
     XCTAssertEqual(try open().publishCollaborationMilestone(first, scope: scope(0))["replayed"], .bool(true))
     let latest = try XCTUnwrap(open().goalCheckpoint(runId: team.supervisorRunId, conversationId: team.conversationId,
       turnId: team.taskId))
     XCTAssertEqual(latest.liveGraph?.work.map(\.id), ["measure", "verify"])
     XCTAssertEqual(latest.liveGraph?.ready(settled: [:], active: []).map(\.id), ["measure"])
+    XCTAssertEqual(try open().readyGoalWork(scope: scope(0), excluding: [], limit: 3, now: 10), ["measure"])
+    XCTAssertEqual(try open().readyGoalWork(scope: scope(0), excluding: ["measure"], limit: 3, now: 10), [])
+    XCTAssertThrowsError(try open().readyGoalWork(scope: scope(1), excluding: [], limit: 3, now: 10))
     let measure = try XCTUnwrap(latest.liveGraph?.work.first)
     let verify = try XCTUnwrap(latest.liveGraph?.work.last)
     XCTAssertThrowsError(try reopened.claimGoalWork(verify, scope: scope(0), now: 10))
@@ -2110,6 +2114,7 @@ extension GalaxySSIStoreTests {
     XCTAssertThrowsError(try reopened.claimGoalWork(measure, scope: scope(0), target: wrongWorker, now: 10))
     let started = try reopened.claimGoalWork(measure, scope: scope(0), target: worker, now: 10)
     XCTAssertTrue(started.claimed)
+    XCTAssertEqual(try open().readyGoalWork(scope: scope(0), excluding: [], limit: 3, now: 11), [])
     let duplicate = try open().claimGoalWork(measure, scope: scope(0), target: wrongWorker, now: 11)
     XCTAssertFalse(duplicate.claimed)
     XCTAssertEqual(duplicate.run.dispatchID, started.run.dispatchID)
@@ -2119,6 +2124,7 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(finished["status"], .string("succeeded"))
     XCTAssertEqual(finished["goal_accepted"], .bool(false))
     XCTAssertEqual(finished["target"], .object(worker.fields))
+    XCTAssertEqual(try open().readyGoalWork(scope: scope(0), excluding: [], limit: 3, now: 13), ["verify"])
     XCTAssertThrowsError(try reopened.finishGoalWork(started.run, output: "Replace", interrupted: false, now: 13))
     let next = try reopened.claimGoalWork(verify, scope: scope(0), now: 14)
     XCTAssertTrue(next.claimed)
@@ -2126,6 +2132,8 @@ extension GalaxySSIStoreTests {
     let expired = try open().claimGoalWork(verify, scope: scope(0), now: 14 + AgentCollaborationGoalWorkRun.leaseMillis)
     XCTAssertFalse(expired.claimed)
     XCTAssertEqual(expired.run.visibleState(now: 14 + AgentCollaborationGoalWorkRun.leaseMillis), .interrupted)
+    XCTAssertEqual(try open().readyGoalWork(scope: scope(0), excluding: [], limit: 3,
+      now: 14 + AgentCollaborationGoalWorkRun.leaseMillis), [])
     XCTAssertThrowsError(try reopened.finishGoalWork(next.run, output: "Late", interrupted: false,
       now: 14 + AgentCollaborationGoalWorkRun.leaseMillis))
     let desktopRequest = work("batch-3", id: "desktop", member: scope(1).memberId, expected: 3)
@@ -2162,6 +2170,15 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(try secondOpen.finishDesktopGoalWork(binding, output: "Late inline result"))
     XCTAssertEqual(try secondOpen.goalWork("desktop", scope: scope(0)).1?.desktopArchiveDigest, digest)
     XCTAssertEqual(try secondOpen.goalWork("desktop", scope: scope(0)).1?.output, "Original result")
+    for (index, id) in ["recover-a", "recover-b", "recover-c", "recover-d"].enumerated() {
+      _ = try reopened.publishCollaborationMilestone(work("batch-" + id, id: id, member: scope(1).memberId,
+        expected: 4 + Int64(index), dependencies: ["verify"], terminal: true), scope: scope(0))
+    }
+    XCTAssertEqual(try open().readyGoalWork(scope: scope(0), excluding: [], limit: 99, now: 15), [])
+    XCTAssertEqual(try open().readyGoalWork(scope: scope(0), excluding: [], limit: 99,
+      now: 14 + AgentCollaborationGoalWorkRun.leaseMillis), ["recover-a", "recover-b", "recover-c"])
+    XCTAssertEqual(try open().readyGoalWork(scope: scope(0), excluding: ["recover-a"], limit: 3,
+      now: 14 + AgentCollaborationGoalWorkRun.leaseMillis), ["recover-b", "recover-c", "recover-d"])
     reopened.removeResearchObjects(conversationId: team.conversationId)
     XCTAssertThrowsError(try reopened.publishCollaborationMilestone(first, scope: scope(0)))
     XCTAssertThrowsError(try reopened.publishCollaborationMilestone(request, scope: scope(0)))
