@@ -656,6 +656,9 @@
 "galaxyssi.health.trend.changed" = "测量记录已变更，请刷新查看最新结果。";
 "galaxyssi.health.trend.summary" = "摘要";
 "galaxyssi.health.trend.coverage" = "%lld / %lld 天有测量记录";
+"galaxyssi.health.trend.chart" = "测量图表";
+"galaxyssi.health.trend.chart_data" = "图表数据";
+"galaxyssi.health.trend.chart_data_count" = "记录数：%lld";
 "galaxyssi.health.trend.mean" = "平均值";
 "galaxyssi.health.trend.min" = "最小值";
 "galaxyssi.health.trend.max" = "最大值";

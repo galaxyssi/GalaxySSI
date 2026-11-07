@@ -2598,6 +2598,23 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(trend.mean, Decimal(string: "66.5"))
     XCTAssertEqual(trend.minimum, 64)
     XCTAssertEqual(trend.maximum, 69)
+    let pulse = trend.chartData(.min, component: .pulse)
+    XCTAssertEqual(pulse.map(\.id), [0, 2])
+    XCTAssertEqual(pulse.map(\.value), [64, 69])
+    XCTAssertEqual(pulse.last?.point.revisions, [two.id: 3])
+    let pressure = GalaxySSIHealthTrend(current: [two, one, missing], metric: .bloodPressure,
+      component: .diastolic, now: now, dayCount: 3, calendar: calendar)
+    let diastolic = pressure.chartData(.max, component: .diastolic)
+    XCTAssertEqual(diastolic.map(\.value), [80, 84])
+    XCTAssertEqual(diastolic.last?.point.readings.count, 2)
+    XCTAssertEqual(diastolic.last?.point.extremum(.max, component: .diastolic)?.id, missing.id)
+    var corrected = two
+    corrected.revision += 1
+    let updated = GalaxySSIHealthTrend(current: [corrected, one, missing], metric: .bloodPressure,
+      component: .pulse, now: now, dayCount: 3, calendar: calendar).chartData(.min, component: .pulse)
+    XCTAssertEqual(updated.map(\.value), pulse.map(\.value))
+    XCTAssertTrue(updated[0].matches(pulse[0]))
+    XCTAssertFalse(updated[1].matches(pulse[1]))
   }
 
   func testHealthCatalogRefreshAnchorsToSurvivingVisibleRecord() throws {
