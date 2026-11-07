@@ -29,6 +29,7 @@ class HealthCareStoreDeviceTest {
         val issue = add(store)
         store.close()
         context.openOrCreateDatabase(names.care, 0, null).use { db ->
+            restoreHealthCareSchemaFive(db)
             db.execSQL("DROP TABLE evidence_reads"); db.execSQL("DROP TABLE action_reminders"); db.execSQL("DROP TABLE plans"); db.execSQL("DROP TABLE discussion_grants"); db.execSQL("DROP TABLE discussions"); db.version = 1
         }
         HealthCareStore(context, names.care).use { upgraded ->

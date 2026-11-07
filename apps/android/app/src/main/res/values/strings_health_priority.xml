@@ -1,0 +1,11 @@
+<resources>
+    <string name="health_care_bp_title">Review this blood pressure reading first</string>
+    <string name="health_care_bp_threshold">Recorded systolic pressure exceeds 180 or diastolic pressure exceeds 120 mmHg. This is not a diagnosis.</string>
+    <string name="health_care_bp_record">Recorded %1$s: %2$s %3$s</string>
+    <string name="health_care_bp_emergency">If your blood pressure is currently this high with chest pain, breathlessness, back pain, numbness, weakness, vision changes or trouble speaking, contact local emergency services now. Do not wait for Agent.</string>
+    <string name="health_care_bp_recheck">If this is a current reading without these or other new concerning symptoms, wait at least one minute and measure again. If still this high, contact a health professional as soon as possible. Do not change medication yourself.</string>
+    <string name="health_care_bp_scope">This guidance is for nonpregnant adults. Children and pregnancy need different assessment; seek prompt professional advice rather than relying on this cutoff.</string>
+    <string name="health_care_bp_history">Check the measurement date. An old record does not establish a current emergency. The App cannot determine your current symptoms or detect every dangerous condition; no warning does not mean safe.</string>
+    <string name="health_care_bp_details">View guidance and source</string>
+    <string name="health_care_bp_source">Source: American Heart Association · reviewed 14 Aug 2025</string>
+</resources>

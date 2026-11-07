@@ -87,6 +87,10 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
                     host.visibility = if (concerns.isEmpty() && result.isSuccess) View.GONE else View.VISIBLE
                     if (result.isFailure) host.addView(ui.profileRow(activity.getString(R.string.health_care_partial)) { reload() })
                     else concerns.firstOrNull()?.let { item ->
+                        HealthCarePriorityPresentation.add(activity, host, item, compact = true) {
+                            activity.startActivity(Intent(activity, HealthCareActivity::class.java).putExtra("health_care_id", item.id)
+                                .putHealthNavigationFixture(names))
+                        }
                         host.addView(ui.profileRow(activity.getString(item.metric.titleResource()) + " · " + activity.getString(item.stage.titleResource()),
                             HealthCareComparisonPresentation.summary(activity, item.assessment)
                                 ?: "${item.assessment.value} ${item.assessment.unit}") {
