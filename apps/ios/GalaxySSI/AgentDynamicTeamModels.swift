@@ -162,6 +162,9 @@ enum AgentCollaborationRuleTopics {
     falsifier, dimensions, roles, inputs and steps. Steps declare id, role, stage, assignment, depends_on, dependency_policy,
     independent_review and optional review_targets. Dependencies must be acyclic, review targets must be dependencies, and
     the reviewed role must differ from the reviewer. Steps cannot override tools, models or permissions.
+    A workflow_selection_rule parents an independently retained workflow comparison lesson. Use purpose, domain, condition_basis,
+    limitations, prospective_test, lesson, when_all and unless_any. Each condition has id, input, pointer, operator, value and rationale.
+    \(AgentCollaborationWorkflowCheck.instructions)
     """)
   ]
 

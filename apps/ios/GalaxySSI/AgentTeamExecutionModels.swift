@@ -145,6 +145,7 @@ struct AgentCollaborationResearchDraft: Codable {
     case experimentResult = "experiment_result"
     case capabilityLesson = "capability_lesson"
     case workflowMethod = "workflow_method"
+    case workflowSelectionRule = "workflow_selection_rule"
     case candidateEvent = "candidate_event"
     case teamExchange = "team_exchange"
     case capabilityGap = "capability_gap"

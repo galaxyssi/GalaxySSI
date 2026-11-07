@@ -303,13 +303,15 @@ enum AgentIOSLocalModelWebToolRunner {
         (!readOnlyAnalysis || AgentScreenAnalysisToolPolicy.allows($0))
     }
     if !readOnlyAnalysis, let recallScope, let database {
-      try scoped.registerExecutable(collaborationRecallTool(originalsOnly: originalsOnly) { input in
+      let read: (AgentMcpJSONObject) -> AgentMcpJSONObject? = { input in
         guard collaborationRecallIsAuthorized(recallScope, database: database),
               AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: recallScope.runId)?.state == .running,
               let result = try? AgentTeamExecutionHistoryStore.shared.recallCollaborationOriginal(input, scope: recallScope),
               collaborationRecallIsAuthorized(recallScope, database: database) else { return nil }
         return result
-      })
+      }
+      let recall = try collaborationRecallTool(originalsOnly: originalsOnly, read: read)
+      try scoped.registerExecutable(originalsOnly ? recall : AgentCollaborationWorkflowCheck.nativeTool(recall, read: read))
     }
     return scoped
   }
