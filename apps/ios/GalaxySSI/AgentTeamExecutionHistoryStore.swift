@@ -779,7 +779,8 @@ final class AgentTeamExecutionHistoryStore {
               key == "object:" + head.reference.objectId else { throw AgentTeamHistoryDatabase.Failure.corrupt }
         guard head.turnId != scope.turnId || (head.runId == scope.runId && head.authorId == scope.memberId) else { continue }
         let kind = head.draft.kind.rawValue
-        guard ["workflow_method", "executable_tool", "failure_experience", "capability_lesson"].contains(kind),
+        guard ["workflow_method", "executable_tool", "failure_experience", "capability_lesson",
+               "capability_suite", "capability_channel"].contains(kind),
               let body = head.draft.body[kind]?.objectValue else { continue }
         let text = ([head.draft.title, kind] + ["purpose", "domain", "applies_when", "observed_issue", "rationale"]
           .map { body.string($0) }).joined(separator: "\n")
@@ -790,6 +791,12 @@ final class AgentTeamExecutionHistoryStore {
         guard pinInitial ? score > 0 : terms.allSatisfy(matches) else { continue }
         let state: String
         switch kind {
+        case "capability_suite":
+          guard head.retentionBank != nil else { continue }
+          state = "protected_measured_cases"
+        case "capability_channel":
+          guard head.capabilitySelection != nil else { continue }
+          state = "selected_scoped_version"
         case "capability_lesson": state = body.string("decision") == "retain" ? "retained_lesson" : "historical_lesson"
         case "failure_experience": state = "observed_failure"
         default: state = "unverified_candidate"
@@ -801,6 +808,12 @@ final class AgentTeamExecutionHistoryStore {
           entry.removeValue(forKey: "title")
           ranked.append((score, entry))
           continue
+        }
+        if kind == "capability_suite", let count = head.retentionBank?.anchors.count {
+          entry["protected_case_count"] = .int(Int64(count))
+        }
+        if let selection = head.capabilitySelection {
+          entry["newer_capabilities_require_revalidation"] = .bool(selection.requiresRevalidation)
         }
         entries.append(.object(entry))
         if entries.count == 8 { break }
@@ -966,6 +979,7 @@ final class AgentTeamExecutionHistoryStore {
         var expectedUtilities: [String: Double]? = nil
         var expectedInformation: [String: Double]? = nil
         var hypothesisFeedback: AgentMcpJSONObject? = nil
+        var retentionBank: AgentCollaborationCapabilityBank? = nil
         var carriedPosterior: AgentMcpJSONObject? = nil
         var measuredCases: [AgentCollaborationMeasuredCase]? = nil
         var trialAuthors: [String]? = nil
@@ -1133,7 +1147,7 @@ final class AgentTeamExecutionHistoryStore {
           }
         } else if draft.kind == .experimentPlan {
           guard references.isEmpty else { throw AgentTeamHistoryDatabase.Failure.corrupt }
-          let valid = try AgentCollaborationExperimentPlanIntake.validates(draft) { reference in
+          func current(_ reference: AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision? {
             guard !drafts.contains(where: { $0.objectId == reference.objectId }),
                   let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
                     conversationId: conversationId, key: "object:" + reference.objectId),
@@ -1141,7 +1155,22 @@ final class AgentTeamExecutionHistoryStore {
                   record.turnId != turnId || (record.runId == runId && record.authorId == memberId) else { return nil }
             return record
           }
-          guard valid else { throw AgentTeamHistoryDatabase.Failure.stale }
+          guard try AgentCollaborationExperimentPlanIntake.validates(draft, current: current)
+          else { throw AgentTeamHistoryDatabase.Failure.stale }
+          if let ref = AgentCollaborationExperimentPlanIntake.reference(draft.body["experiment_plan"]?.objectValue?["retention_suite"]) {
+            retentionBank = try current(ref)?.retentionBank
+          }
+        } else if draft.kind == .capabilitySuite {
+          guard let bank = try AgentCollaborationCapabilityBank.freeze(draft: draft, exact: { ref in
+            guard !revisedInBatch.contains(ref.objectId),
+                  let saved = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                    conversationId: conversationId, key: "object:" + ref.objectId),
+                  saved.reference == ref,
+                  saved.turnId != turnId || (saved.runId == runId && saved.authorId == memberId)
+            else { return nil }
+            return saved
+          }) else { throw AgentTeamHistoryDatabase.Failure.stale }
+          retentionBank = bank
         } else if draft.kind == .numericModelTrial {
           guard draft.objectId?.isBlank != false, draft.baseRevision == 0, references.isEmpty,
                 let trial = draft.body["numeric_model_trial"]?.objectValue,
@@ -1242,6 +1271,29 @@ final class AgentTeamExecutionHistoryStore {
         } else {
           guard existingId == nil, draft.baseRevision == 0 else { throw AgentTeamHistoryDatabase.Failure.stale }
         }
+        var capabilitySelection: AgentCollaborationCapabilitySelection?
+        if draft.kind == .capabilityChannel {
+          func saved(_ ref: AgentCollaborationResearchReference, historical: Bool) throws -> AgentCollaborationResearchRevision? {
+            guard (ref.objectId == objectId || !revisedInBatch.contains(ref.objectId)),
+                  let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                    conversationId: conversationId, key: "object:" + ref.objectId, revision: historical ? ref.revision : nil),
+                  record.reference == ref,
+                  record.turnId != turnId || (record.runId == runId && record.authorId == memberId)
+            else { return nil }
+            return record
+          }
+          capabilitySelection = try AgentCollaborationCapabilitySelection.validate(draft: draft, objectID: objectId,
+            head: head, exact: { try saved($0, historical: false) }, historical: { try saved($0, historical: true) },
+            implementationKind: { ref in
+              guard try saved(ref, historical: false)?.draft.kind.rawValue == "tool_release",
+                    let record = try database.researchRecord(AgentMcpJSONObject.self, conversationId: conversationId,
+                      key: "object:" + ref.objectId, revision: ref.revision),
+                    record["testedToolRelease"]?.objectValue?["state"] == .string("eligible_for_scoped_tool_execution")
+              else { return nil }
+              return "tool_release"
+            })
+          guard capabilitySelection != nil else { throw AgentTeamHistoryDatabase.Failure.stale }
+        }
         for parent in draft.parents + (draft.resolves ?? []) {
           guard let existing = try database.researchRecord(AgentCollaborationResearchRevision.self,
             conversationId: conversationId, key: "object:" + parent.objectId, revision: parent.revision),
@@ -1282,6 +1334,8 @@ final class AgentTeamExecutionHistoryStore {
           expectedInformationGainBits: expectedInformation,
           hypothesisFeedback: hypothesisFeedback,
           carriedHypothesisPosterior: carriedPosterior,
+          retentionBank: retentionBank,
+          capabilitySelection: capabilitySelection,
           registeredAtMillis: [.experimentPlan, .actionForecast].contains(draft.kind) ? AgentControlPlaneClock.nowMillis() : nil,
           measuredCases: measuredCases, trialAuthors: trialAuthors, numericReplay: numericReplay)
         let bytes = try encoder.encode(revision)

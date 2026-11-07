@@ -804,6 +804,7 @@
     A10000000000000000000675 /* AgentRunRecoveryCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000675 /* AgentRunRecoveryCoordinator.swift */; };
     A10000000000000000000677 /* AgentPermissionRevocationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000677 /* AgentPermissionRevocationCoordinator.swift */; };
     A10000000000000000000679 /* AgentTaskSupervisor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000679 /* AgentTaskSupervisor.swift */; };
+    A10000000000000000000F8C /* AgentCollaborationCapabilityRetention.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000F8C /* AgentCollaborationCapabilityRetention.swift */; };
     A10000000000000000000681 /* AgentActionNotificationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000681 /* AgentActionNotificationModels.swift */; };
     A10000000000000000000462 /* AgentIOSUserNotificationPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000462 /* AgentIOSUserNotificationPublisher.swift */; };
     A10000000000000000000463 /* AgentIOSNativeActionExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000463 /* AgentIOSNativeActionExecutor.swift */; };
@@ -1923,6 +1924,7 @@
     A20000000000000000000675 /* AgentRunRecoveryCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunRecoveryCoordinator.swift; sourceTree = "<group>"; };
     A20000000000000000000677 /* AgentPermissionRevocationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPermissionRevocationCoordinator.swift; sourceTree = "<group>"; };
     A20000000000000000000679 /* AgentTaskSupervisor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskSupervisor.swift; sourceTree = "<group>"; };
+    A20000000000000000000F8C /* AgentCollaborationCapabilityRetention.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationCapabilityRetention.swift; sourceTree = "<group>"; };
     A20000000000000000000681 /* AgentActionNotificationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActionNotificationModels.swift; sourceTree = "<group>"; };
     A20000000000000000000462 /* AgentIOSUserNotificationPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSUserNotificationPublisher.swift; sourceTree = "<group>"; };
     A20000000000000000000463 /* AgentIOSNativeActionExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeActionExecutor.swift; sourceTree = "<group>"; };
@@ -2636,6 +2638,7 @@
         A20000000000000000000897 /* GalaxySSIVoiceAgentRunsView.swift */,
         A20000000000000000000677 /* AgentPermissionRevocationCoordinator.swift */,
         A20000000000000000000679 /* AgentTaskSupervisor.swift */,
+        A20000000000000000000F8C /* AgentCollaborationCapabilityRetention.swift */,
         A20000000000000000000681 /* AgentActionNotificationModels.swift */,
         A20000000000000000000462 /* AgentIOSUserNotificationPublisher.swift */,
         A20000000000000000000463 /* AgentIOSNativeActionExecutor.swift */,
@@ -3882,6 +3885,7 @@
         A10000000000000000000897 /* GalaxySSIVoiceAgentRunsView.swift in Sources */,
         A10000000000000000000677 /* AgentPermissionRevocationCoordinator.swift in Sources */,
         A10000000000000000000679 /* AgentTaskSupervisor.swift in Sources */,
+        A10000000000000000000F8C /* AgentCollaborationCapabilityRetention.swift in Sources */,
         A10000000000000000000681 /* AgentActionNotificationModels.swift in Sources */,
         A10000000000000000000462 /* AgentIOSUserNotificationPublisher.swift in Sources */,
         A10000000000000000000463 /* AgentIOSNativeActionExecutor.swift in Sources */,

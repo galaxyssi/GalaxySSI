@@ -750,6 +750,117 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(AgentCollaborationExperimentPlanIntake.measure([costly], plan: plan))
   }
 
+  func testCapabilityBankRejectsDroppedCasesWeakerTestsAndCumulativeDrift() throws {
+    typealias Intake = AgentCollaborationExperimentPlanIntake
+    func ref(_ id: String) -> AgentCollaborationResearchReference { .init(objectId: id, revision: 1, sha256: id) }
+    func wire(_ value: AgentCollaborationResearchReference) -> AgentMcpJSONValue {
+      .object(["object_id": .string(value.objectId), "revision": .int(value.revision), "sha256": .string(value.sha256)])
+    }
+    let dataset = ref("dataset")
+    let anchor = AgentCollaborationCapabilityBank.Anchor(id: "protected", metric: "score", direction: "maximize",
+      dataset: dataset, repetitions: 1, tolerance: 2, value: 100, threshold: 99, result: ref("original"))
+    let bank = AgentCollaborationCapabilityBank(lesson: ref("lesson"), previous: nil, domain: "fixture",
+      environment: "offline", budgetUnit: "calls", anchors: [anchor])
+    let protected: AgentMcpJSONObject = ["id": .string("protected"), "metric": .string("score"),
+      "prediction": .string("Retain"), "purpose": .string("regression"), "direction": .string("maximize"),
+      "dataset": wire(dataset), "repetitions": .int(1), "minimum_gain": .int(0), "tolerance": .int(2)]
+    var target = protected
+    target["id"] = .string("target")
+    target["purpose"] = .string("target")
+    let spec: AgentMcpJSONObject = ["innovation": wire(ref("idea")), "baseline": wire(ref("old")),
+      "environment": .string("offline"), "budget_unit": .string("calls"), "budget_limit": .int(1),
+      "retention_suite": wire(ref("suite")), "cases": .array([.object(protected), .object(target)])]
+    XCTAssertTrue(bank.admits(spec, domain: "fixture"))
+    XCTAssertFalse(bank.admits(spec, domain: "other"))
+    for (field, value) in [("dataset", wire(ref("different"))), ("tolerance", .int(3)),
+                           ("repetitions", .int(0)), ("direction", .string("minimize"))] {
+      var changed = protected
+      changed[field] = value
+      var weakened = spec
+      weakened["cases"] = .array([.object(changed), .object(target)])
+      XCTAssertFalse(bank.admits(weakened, domain: "fixture"), field)
+    }
+    var omitted = spec
+    omitted["cases"] = .array([.object(target)])
+    XCTAssertFalse(bank.admits(omitted, domain: "fixture"))
+
+    let plan = AgentCollaborationResearchRevision(reference: ref("plan"), previousHash: nil,
+      runId: "run", turnId: "turn", authorId: "author", sourceId: "source",
+      draft: .init(id: "plan", objectId: nil, baseRevision: 0, kind: .experimentPlan,
+        title: "Plan", body: ["experiment_plan": .object(spec)], parents: []), retentionBank: bank)
+    func report(candidate: Int64) -> AgentMcpJSONObject {
+      let rows: [AgentMcpJSONValue] = ["protected", "target"].flatMap { id in
+        ["baseline", "candidate"].map { variant in
+          .object(["case_id": .string(id), "variant": .string(variant),
+            "variant_sha256": .string(variant == "baseline" ? "old" : "idea"),
+            "metric": .string("score"), "dataset_sha256": .string("dataset"), "repetition": .int(1),
+            "value": .int(id == "protected" ? (variant == "baseline" ? 99 : candidate) :
+              (variant == "baseline" ? 1 : 2)), "budget_used": .int(1)])
+        }
+      }
+      return ["format": .string("galaxyssi.experiment-measurements.v1"), "plan_sha256": .string("plan"),
+        "environment": .string("offline"), "budget_unit": .string("calls"), "measurements": .array(rows)]
+    }
+    for candidate in [97, 98, 99] as [Int64] {
+      let measured = try XCTUnwrap(Intake.measure([report(candidate: candidate)], plan: plan))
+      let row = try XCTUnwrap(measured.first { $0.id == "protected" })
+      XCTAssertEqual(row.originalAnchorMet, candidate == 99)
+      XCTAssertEqual(row.state, candidate == 99 ? "passed" : "not_met")
+    }
+    var unpinned = plan
+    unpinned.retentionBank = nil
+    XCTAssertNil(Intake.measure([report(candidate: 99)], plan: unpinned))
+  }
+
+  func testCapabilityChannelRollbackKeepsLatestBankAndRejectsOtherChannels() throws {
+    typealias Selection = AgentCollaborationCapabilitySelection
+    func ref(_ id: String, _ revision: Int64 = 1) -> AgentCollaborationResearchReference {
+      .init(objectId: id, revision: revision, sha256: id + "-\(revision)")
+    }
+    func record(_ identity: AgentCollaborationResearchReference, kind: AgentCollaborationResearchDraft.Kind)
+      -> AgentCollaborationResearchRevision {
+      .init(reference: identity, previousHash: nil, runId: "run", turnId: "turn", authorId: "author", sourceId: "source",
+        draft: .init(id: identity.objectId, objectId: nil, baseRevision: 0, kind: kind, title: "Fixture", body: [:], parents: []))
+    }
+    let implementation = ref("implementation"), lesson = ref("lesson"), innovation = ref("innovation")
+    let oldSuite = ref("old-bank"), newSuite = ref("new-bank")
+    let oldChannel = ref("channel"), currentChannel = ref("channel", 2)
+    func selection(_ bank: AgentCollaborationResearchReference) -> Selection {
+      .init(implementation: implementation, implementationKind: "tool_release", lesson: lesson, innovation: innovation,
+        suite: bank, testedSuite: bank, domain: "fixture", restoredFrom: nil)
+    }
+    var old = record(oldChannel, kind: .capabilityChannel)
+    old.capabilitySelection = selection(oldSuite)
+    var current = record(currentChannel, kind: .capabilityChannel)
+    current.capabilitySelection = selection(newSuite)
+    var retained = record(lesson, kind: .capabilityLesson)
+    retained.frozenCloudReads = [.init(evidenceId: "source", sha256: "hash", totalCharacters: 10)]
+    var firstBank = record(oldSuite, kind: .capabilitySuite)
+    firstBank.retentionBank = .init(lesson: lesson, previous: nil, domain: "fixture",
+      environment: "offline", budgetUnit: "calls", anchors: [])
+    var latestBank = record(newSuite, kind: .capabilitySuite)
+    latestBank.retentionBank = firstBank.retentionBank
+    let exact = [lesson.objectId: retained, oldSuite.objectId: firstBank, newSuite.objectId: latestBank,
+                 innovation.objectId: record(innovation, kind: .innovation)]
+    func rollback(_ target: AgentCollaborationResearchReference) -> Selection? {
+      let draft = AgentCollaborationResearchDraft(id: "rollback", objectId: currentChannel.objectId, baseRevision: 2,
+        kind: .capabilityChannel, title: "Rollback", body: ["capability_channel": .object([
+          "operation": .string("rollback"), "reason": .string("Restore known implementation"),
+          "target_revision": .object(["object_id": .string(target.objectId), "revision": .int(target.revision),
+            "sha256": .string(target.sha256)])
+        ])], parents: [target])
+      return Selection.validate(draft: draft, objectID: currentChannel.objectId, head: current,
+        exact: { exact[$0.objectId] }, historical: { $0 == old.reference ? old : nil },
+        implementationKind: { $0 == implementation ? "tool_release" : nil })
+    }
+    let restored = try XCTUnwrap(rollback(oldChannel))
+    XCTAssertEqual(restored.testedSuite, oldSuite)
+    XCTAssertEqual(restored.suite, newSuite)
+    XCTAssertTrue(restored.requiresRevalidation)
+    XCTAssertNil(rollback(ref("other-channel")))
+    XCTAssertNil(rollback(currentChannel))
+  }
+
   func testCapabilityRetentionRequiresPassingTargetAndRegression() {
     let target = AgentCollaborationMeasuredCase(id: "target", purpose: "target", state: "passed")
     var regression = AgentCollaborationMeasuredCase(id: "regression", purpose: "regression", state: "passed")
