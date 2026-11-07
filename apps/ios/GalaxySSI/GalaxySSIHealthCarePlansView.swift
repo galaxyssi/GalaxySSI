@@ -71,17 +71,18 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
   @State private var valid = false
   @State private var visible = false
   @State private var failed = false
+  private var legacyPending: Bool { proposal.state == .pending && proposal.draft.sources.contains { $0.provenance == nil } }
 
   var body: some View {
     List {
       if scene == .active, visible {
-        if valid || proposal.state != .pending {
+        if valid || proposal.state != .pending || legacyPending {
           Section(t("uncertainty", "Uncertainty")) {
             Text(proposal.draft.uncertainty)
             Text(proposal.modelID).foregroundColor(.secondary)
             Text(proposal.endpoint.absoluteString).font(.caption).foregroundColor(.secondary)
           }
-          Section(t("unverified_sources", "Model sources (not independently verified)")) {
+          Section(t("source_review", "Source reads (applicability not verified)")) {
             ForEach(Array(proposal.draft.sources.indices), id: \.self) { index in
               let source = proposal.draft.sources[index]
               VStack(alignment: .leading, spacing: 4) {
@@ -89,6 +90,15 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
                 Text(source.version).font(.caption)
                 Text(source.url.absoluteString).font(.caption)
                 Text(source.applicability).foregroundColor(.secondary)
+                if let proof = source.provenance {
+                  Text(proof.quote).textSelection(.enabled)
+                  Text(t("retrieved", "Retrieved")).font(.caption)
+                  Text(proof.retrievedAt, format: .dateTime).font(.caption)
+                  Text(t("observed", "Recorded on this device")).font(.caption)
+                  Text(proof.observedAt, format: .dateTime).font(.caption)
+                } else {
+                  Text(t("legacy_source", "No native read receipt")).font(.caption).foregroundColor(.secondary)
+                }
               }
             }
           }
@@ -106,7 +116,11 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
           }
         }
         if proposal.state == .pending {
-          if !valid { Text(t("stale", "The measurement, concern or permission changed.")) }
+          if !valid {
+            if legacyPending {
+              Text(t("legacy_pending", "This draft has no native read receipts. Request a new draft."))
+            } else { Text(t("stale", "The measurement, concern or permission changed.")) }
+          }
           if valid {
             Button(t("accept", "Accept selected steps")) { resolve(selected) }.disabled(selected.isEmpty)
             Text(t("not_scheduled", "Accepting steps does not schedule reminders.")).foregroundColor(.secondary)

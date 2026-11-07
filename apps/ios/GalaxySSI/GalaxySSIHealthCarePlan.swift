@@ -20,6 +20,7 @@ enum GalaxySSIHealthCarePlan {
     let url: URL
     let version: String
     let applicability: String
+    var provenance: GalaxySSIHealthCareEvidence.Provenance?
   }
   struct Action: Codable, Equatable, Identifiable {
     let id: Int
@@ -77,15 +78,17 @@ enum GalaxySSIHealthCarePlan {
     let date = string(40, description: "ISO 8601 with an explicit offset, or empty if no review window applies.")
     return object([
       "uncertainty": string(2_000, description: "Missing context, limitations and remaining uncertainty."),
-      "sources": array(object(["title": string(300), "url": string(1_000, description: "HTTPS source URL."),
-        "version": string(80), "applicability": string(2_000, description: "Population, applicability and limitations.")])),
+      "sources": array(object(["title": string(300), "url": string(1_000, description: "Exact supplied HTTPS source URL."),
+        "version": string(80), "applicability": string(2_000, description: "Population, applicability and limitations."),
+        "evidence_id": string(36, description: "Exact ID from native_sources."),
+        "quote": string(600, description: "Short original-language passage copied from that source excerpt.")])),
       "actions": array(object(["kind": ["type": "string", "enum": Kind.allCases.map(\.rawValue)],
         "description": string(1_000), "rationale": string(2_000, description: "Justify the step and any review window."),
         "source_index": ["type": "integer", "minimum": 0, "maximum": 7], "due_from": date, "due_until": date]))
     ])
   }
 
-  static func parse(_ args: AgentMcpJSONObject, now: Date) throws -> Draft {
+  static func parse(_ args: AgentMcpJSONObject, evidence: [GalaxySSIHealthCareEvidence.Receipt], now: Date) throws -> Draft {
     let invalid = GalaxySSIHealthRecords.Failure.invalid
     func text(_ object: AgentMcpJSONObject, _ key: String, max: Int) throws -> String {
       guard let value = object[key]?.strictStringValue, !value.isBlank, value.utf8.count <= max else { throw invalid }
@@ -107,12 +110,16 @@ enum GalaxySSIHealthCarePlan {
           let rawActions = args["actions"]?.arrayValue, (1...8).contains(rawActions.count)
     else { throw invalid }
     let sources = try rawSources.map { row -> Source in
-      guard let item = row.objectValue, Set(item.keys) == ["title", "url", "version", "applicability"],
+      guard let item = row.objectValue, Set(item.keys) == ["title", "url", "version", "applicability", "evidence_id", "quote"],
             let parts = URLComponents(string: try text(item, "url", max: 1_000)), parts.scheme == "https",
-            parts.host?.isEmpty == false, parts.user == nil, parts.password == nil, let url = parts.url
+            parts.host?.isEmpty == false, parts.user == nil, parts.password == nil, let url = parts.url,
+            let id = UUID(uuidString: try text(item, "evidence_id", max: 36)),
+            let receipt = evidence.first(where: { $0.id == id }),
+            let provenance = receipt.match(url: url, quote: try text(item, "quote", max: 2_400))
       else { throw invalid }
-      return try .init(title: text(item, "title", max: 300), url: url, version: text(item, "version", max: 80),
-        applicability: text(item, "applicability", max: 2_000))
+      _ = try text(item, "title", max: 300)
+      return try .init(title: receipt.title, url: url, version: text(item, "version", max: 80),
+        applicability: text(item, "applicability", max: 2_000), provenance: provenance)
     }
     guard Set(sources.map(\.url)).count == sources.count else { throw invalid }
     let actions = try rawActions.enumerated().map { index, row -> Action in

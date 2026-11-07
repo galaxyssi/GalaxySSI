@@ -17,6 +17,10 @@
 "galaxyssi.health.discussion.close" = "关闭";
 "galaxyssi.health.discussion.request_plan" = "请求计划草稿";
 "galaxyssi.health.discussion.plan_retained" = "草稿已保存，可在健康计划中审核";
+"galaxyssi.health.discussion.reading_sources" = "正在读取公开资料";
+"galaxyssi.health.discussion.source.labResults" = "MedlinePlus：理解实验室检测结果";
+"galaxyssi.health.discussion.source.glucose" = "NIDDK：糖尿病检测与诊断";
+"galaxyssi.health.discussion.source.pressure" = "NHLBI：高血压诊断";
 "galaxyssi.health.plan.title" = "健康计划";
 "galaxyssi.health.plan.pending" = "审核草稿";
 "galaxyssi.health.plan.accepted" = "已采纳计划";
@@ -24,6 +28,11 @@
 "galaxyssi.health.plan.more" = "显示更多";
 "galaxyssi.health.plan.uncertainty" = "不确定性";
 "galaxyssi.health.plan.unverified_sources" = "模型引用（未独立核验）";
+"galaxyssi.health.plan.source_review" = "已读取来源（未验证适用性）";
+"galaxyssi.health.plan.retrieved" = "检索时间";
+"galaxyssi.health.plan.observed" = "本机记录时间";
+"galaxyssi.health.plan.legacy_source" = "无本机读取回执";
+"galaxyssi.health.plan.legacy_pending" = "此草稿没有本机读取回执，请重新生成。";
 "galaxyssi.health.plan.actions" = "建议步骤";
 "galaxyssi.health.plan.adopted" = "已采纳";
 "galaxyssi.health.plan.stale" = "测量、关注项或授权已变更。";

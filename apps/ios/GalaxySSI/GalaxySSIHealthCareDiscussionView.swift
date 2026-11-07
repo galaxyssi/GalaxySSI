@@ -20,6 +20,11 @@ struct GalaxySSIHealthCareDiscussionView: View {
   @State private var task: Task<Void, Never>?
   @State private var failed = false
   @State private var proposesPlan = false
+  @State private var selectedSources = Set<GalaxySSIHealthCareEvidence.PublicSource>()
+  @State private var readingTask: Task<Void, Never>?
+  @State private var readingID: UUID?
+
+  private var busy: Bool { task != nil || readingTask != nil }
 
   private var contacts: [GalaxySSIContact] {
     store.contacts.filter {
@@ -57,13 +62,23 @@ struct GalaxySSIHealthCareDiscussionView: View {
             ForEach(contacts) { contact in
               Text(contact.name + " / " + (contact.selectedCloudModel?.modelId ?? "")).tag(contact.id)
             }
-          }.disabled(task != nil)
-          TextField(t("question", "Ask about this concern"), text: $question).disabled(task != nil)
-          Toggle(t("request_plan", "Request a draft plan"), isOn: $proposesPlan).disabled(task != nil)
+          }.disabled(busy)
+          TextField(t("question", "Ask about this concern"), text: $question).disabled(busy)
+          Toggle(t("request_plan", "Request a draft plan"), isOn: $proposesPlan).disabled(busy)
+          if proposesPlan {
+            ForEach(GalaxySSIHealthCareEvidence.PublicSource.allCases) { source in
+              Toggle(t("source." + source.rawValue, source.title), isOn: Binding(
+                get: { selectedSources.contains(source) }, set: { enabled in
+                  if enabled { selectedSources.insert(source) } else { selectedSources.remove(source) }
+                })).disabled(busy)
+            }
+          }
           Button(t("preview", "Review data before sending"), action: preview)
-            .disabled(task != nil || provider.isEmpty || question.isBlank || question.utf8.count > 2_048)
+            .disabled(busy || provider.isEmpty || question.isBlank || question.utf8.count > 2_048 ||
+              (proposesPlan && selectedSources.isEmpty))
         }
-        if task != nil { Button(t("stop", "Cancel request"), role: .cancel) { clearRequest() } }
+        if readingTask != nil { ProgressView(t("reading_sources", "Reading public sources")) }
+        if busy { Button(t("stop", "Cancel request"), role: .cancel) { clearRequest() } }
         GalaxySSIHealthCarePlansSection(records: records, concernID: concernID)
         GalaxySSIHealthCareFollowUpsSection(records: records, concernID: concernID, metric: metric)
       }
@@ -95,7 +110,9 @@ struct GalaxySSIHealthCareDiscussionView: View {
               if review.proposesPlan { Text(t("request_plan", "Request a draft plan")) }
             }
             Section(t("data", "Data included in this request")) {
-              Text(review.payload).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
+              if let payload = try? review.providerPayload() {
+                Text(payload).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
+              }
             }
             Button(t("send", "Send approved data")) { send(review) }
           }
@@ -125,11 +142,33 @@ struct GalaxySSIHealthCareDiscussionView: View {
 
   private func preview() {
     guard scene == .active, store.profile.identityFingerprint == records.owner, let model = models[provider],
-          let key = store.apiKey(for: model), task == nil else { failed = true; return }
+          let key = store.apiKey(for: model), !busy else { failed = true; return }
     do {
-      approval = try records.prepareLocalCareDiscussion(id: concernID, metric: metric, question: question,
+      let pending = try records.prepareLocalCareDiscussion(id: concernID, metric: metric, question: question,
         destinationID: provider, model: model, credential: key, proposesPlan: proposesPlan)
       failed = false
+      if !pending.proposesPlan { approval = pending; return }
+      let sources = GalaxySSIHealthCareEvidence.PublicSource.allCases.filter { selectedSources.contains($0) }
+      guard !sources.isEmpty else { failed = true; return }
+      readingID = pending.id
+      readingTask = Task {
+        defer { if readingID == pending.id { readingID = nil; readingTask = nil } }
+        do {
+          var prepared = pending
+          let binding = GalaxySSIHealthCareEvidence.Binding(pending)
+          for source in sources {
+            try Task.checkCancellation()
+            try records.validateLocalCareDiscussionApproval(pending)
+            let receipt = try await GalaxySSIHealthCareEvidence.fetch(source, binding: binding)
+            try Task.checkCancellation()
+            prepared.evidence.append(receipt)
+          }
+          guard readingID == pending.id, currentRoute(prepared) != nil else { return }
+          try records.validateLocalCareDiscussionApproval(prepared)
+          _ = try prepared.providerPayload()
+          approval = prepared
+        } catch { if readingID == pending.id, !Task.isCancelled { failed = true } }
+      }
     } catch { failed = true }
   }
 
@@ -161,11 +200,12 @@ struct GalaxySSIHealthCareDiscussionView: View {
     approval = nil
     let ledger = coordinator.healthDisclosureStore
     do {
+      let sentPayload = try review.providerPayload()
       let request = try GalaxySSIHealthCareDiscussion.request(review, key: key)
       try records.beginLocalCareDiscussionTurn(review)
       let ticket = AgentDataDisclosureLedger.beginCloudRequest(store: ledger, destination: .init(contact: contact),
         text: "", purpose: "Explicit health concern discussion",
-        textSummary: .init(characters: review.payload.count, kinds: [.messageText, .systemInstructions, .toolOutput]))
+        textSummary: .init(characters: sentPayload.count, kinds: [.messageText, .systemInstructions, .toolOutput]))
       guard ticket.allowed else { failed = true; return }
       active = review
       question = ""
@@ -197,9 +237,13 @@ struct GalaxySSIHealthCareDiscussionView: View {
     } catch { failed = true }
   }
 
-  private func clearRequest() { task?.cancel(); task = nil; active = nil; approval = nil }
+  private func clearRequest() {
+    task?.cancel(); task = nil; active = nil; approval = nil
+    readingTask?.cancel(); readingTask = nil; readingID = nil
+  }
   private func clearSensitive() {
     clearRequest(); thread = nil; question = ""; provider = ""; allowed = false; failed = false; proposesPlan = false
+    selectedSources = []
   }
   private func t(_ key: String, _ fallback: String) -> String {
     GalaxySSILocalization.string("galaxyssi.health.discussion." + key, fallback: fallback, language: language)

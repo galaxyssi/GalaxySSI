@@ -64,6 +64,11 @@ struct GalaxySSIHealthCareFollowUpsSection: View {
   private func row(_ action: GalaxySSIHealthCarePlan.AdoptedAction) -> some View {
     VStack(alignment: .leading, spacing: 7) {
       Text(action.action.description).font(.body.weight(.semibold))
+      if let proof = action.source.provenance {
+        Text(action.source.title).font(.caption).foregroundColor(.secondary)
+        Text(proof.quote).font(.caption).textSelection(.enabled)
+        Text(proof.retrievedAt, format: .dateTime).font(.caption).foregroundColor(.secondary)
+      }
       if let outcome = action.outcome {
         Text(outcome.note)
         Text(outcome.reportedAt, style: .date).font(.caption).foregroundColor(.secondary)

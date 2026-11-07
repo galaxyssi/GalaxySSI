@@ -178,6 +178,7 @@ struct GalaxySSIHealthRecords {
     var localCareLastEvaluatedAt: Date?
     var localCareDiscussions: [String: GalaxySSIHealthCareDiscussion.Thread]?
     var localCarePlans: [String: GalaxySSIHealthCarePlan.Proposal]?
+    var localCareEvidence: [String: [GalaxySSIHealthCareEvidence.Receipt]]?
     var localCareFollowUps: [String: GalaxySSIHealthCareFollowUp.Reminder]?
 
     var keepsNewImportOriginals: Bool { retainImportOriginals ?? true }
@@ -521,6 +522,15 @@ struct GalaxySSIHealthRecords {
             endpoint: approval.endpoint, credential: approval.credentialDigest) == approval.destinationDigest,
           try GalaxySSIHealthCareDiscussion.payload(concern: concern, question: approval.question, thread: thread,
             destination: approval.destinationDigest) == approval.payload else { throw Failure.stale }
+    if approval.proposesPlan {
+      let evidence = approval.evidence
+      guard (1...3).contains(evidence.count), Set(evidence.map(\.id)).count == evidence.count,
+            Set(evidence.map(\.url)).count == evidence.count,
+            evidence.allSatisfy({ $0.valid(for: approval, now: now) }) else { throw Failure.permission }
+      var saved = archive.localCareEvidence ?? [:]
+      saved[approval.id.uuidString] = evidence
+      archive.localCareEvidence = saved
+    } else if !approval.evidence.isEmpty { throw Failure.permission }
     thread.turns.append(.init(id: approval.id, question: approval.question, destination: approval.destinationDigest,
       planRequested: approval.proposesPlan ? true : nil))
     archive.localCareDiscussions?[approval.concernID.uuidString] = thread
@@ -563,7 +573,9 @@ struct GalaxySSIHealthRecords {
     guard let index = thread.turns.indices.last, thread.turns[index].id == approval.id,
           thread.turns[index].answer == nil, thread.turns[index].proposalID == nil, thread.turns[index].planRequested == true,
           let concern = archive.localCare?.current[approval.metric.rawValue] else { throw Failure.stale }
-    let draft = try GalaxySSIHealthCarePlan.parse(arguments, now: now)
+    guard let evidence = archive.localCareEvidence?[key], !evidence.isEmpty, evidence == approval.evidence,
+          evidence.allSatisfy({ $0.valid(for: approval, now: now) }) else { throw Failure.permission }
+    let draft = try GalaxySSIHealthCarePlan.parse(arguments, evidence: evidence, now: now)
     plans[key] = try .init(id: approval.id, concernID: approval.concernID, metric: approval.metric,
       concernRevision: approval.concernRevision, assessmentDigest: GalaxySSIHealthCare.inputDigest(concern.assessment),
       sourceContext: concern.context,
@@ -590,6 +602,7 @@ struct GalaxySSIHealthRecords {
             try GalaxySSIHealthCare.inputDigest(checked.assessment) == saved.assessmentDigest,
             archive.healthOnlinePermission == saved.onlinePermission,
             archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id == saved.carePermission,
+            Self.localCarePlanEvidenceMatches(saved, archive: archive, owner: owner),
             !selected.isEmpty, selected.isSubset(of: Set(saved.draft.actions.map(\.id))) else { throw Failure.stale }
       let actions = saved.draft.actions.filter { selected.contains($0.id) }
       guard actions.allSatisfy({ saved.draft.sources.indices.contains($0.sourceIndex) &&
@@ -619,8 +632,25 @@ struct GalaxySSIHealthRecords {
           concern.revision == proposal.concernRevision,
           try GalaxySSIHealthCare.inputDigest(concern.assessment) == proposal.assessmentDigest,
           archive.healthOnlinePermission == proposal.onlinePermission,
-          archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id == proposal.carePermission
+          archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id == proposal.carePermission,
+          Self.localCarePlanEvidenceMatches(proposal, archive: archive, owner: owner)
     else { throw Failure.stale }
+  }
+
+  private static func localCarePlanEvidenceMatches(_ proposal: GalaxySSIHealthCarePlan.Proposal, archive: Archive,
+                                                   owner: String) -> Bool {
+    guard let receipts = archive.localCareEvidence?[proposal.id.uuidString], !proposal.draft.sources.isEmpty,
+          let thread = archive.localCareDiscussions?[proposal.concernID.uuidString] else { return false }
+    return proposal.draft.sources.allSatisfy { source in
+      guard let proof = source.provenance, let receipt = receipts.first(where: { $0.id == proof.receiptID })
+      else { return false }
+      let binding = receipt.binding
+      return binding.owner == owner && binding.thread == thread.id && binding.turn == proposal.id &&
+        binding.concern == proposal.concernID && binding.revision == proposal.concernRevision &&
+        binding.carePermission == proposal.carePermission && binding.onlinePermission == proposal.onlinePermission &&
+        binding.destination == proposal.destinationDigest && receipt.observedAt <= proposal.createdAt &&
+        receipt.match(url: source.url, quote: proof.quote) == proof
+    }
   }
 
   func scheduleLocalCareFollowUp(concernID: UUID, metric: GalaxySSIHealthMetric, actionID: String,

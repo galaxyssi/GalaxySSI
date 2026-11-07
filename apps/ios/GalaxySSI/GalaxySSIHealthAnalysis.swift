@@ -196,14 +196,16 @@ enum GalaxySSIHealthSummaryTransport {
     return output
   }
 
-  static func responseBytes(_ request: URLRequest, limit: Int = 32_768) async throws -> Data {
+  static func responseBytes(_ request: URLRequest, limit: Int = 32_768, mimeTypes: Set<String>? = nil) async throws -> Data {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.httpCookieStorage = nil
     configuration.urlCache = nil
     let session = URLSession(configuration: configuration, delegate: NoRedirect(), delegateQueue: nil)
     defer { session.finishTasksAndInvalidate() }
     let (bytes, response) = try await session.bytes(for: request)
-    guard let response = response as? HTTPURLResponse, (200...299).contains(response.statusCode)
+    guard let response = response as? HTTPURLResponse, (200...299).contains(response.statusCode),
+          mimeTypes.map({ types in response.url == request.url &&
+            response.mimeType.map { types.contains($0.lowercased()) } == true }) != false
     else { throw GalaxySSIHealthAnalysis.Failure.invalid }
     var data = Data()
     for try await byte in bytes {
