@@ -116,6 +116,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     var acknowledgementGroup: MqttPublishAckGroup? = nil
     var fragmentIndex: Int = 0
     var pathCompletion: MqttPhysicalCompletion? = nil
+    var transientQuery = false
   }
   private struct InFlightTiming {
     var attemptId: String
@@ -365,6 +366,21 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     }
   }
 
+  // Recovery callers own the nonce and the retry clock. Never replay their old poll on reconnect.
+  func publishRecoveryQuery(topic: String, payload: Data) async -> MqttPublishResult {
+    await withCheckedContinuation { continuation in
+      queue.async {
+        guard !self.intentionallyDisconnected,
+              let secret = self.relationshipSecret(forSendingTopic: topic),
+              self.sendWirePayload(topic: topic, payload: payload, secret: secret, transientQuery: true) else {
+          continuation.resume(returning: .failed)
+          return
+        }
+        continuation.resume(returning: .published)
+      }
+    }
+  }
+
   func publishDurable(
     topic: String,
     payload: Data,
@@ -576,7 +592,8 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     durableBrokerAcknowledged: ((@escaping () -> Void) -> Void)? = nil,
     pathGate: MqttPathPublication? = nil,
     admissionDeferred: (() -> Void)? = nil,
-    physicallySubmitted: ((Bool) -> Void)? = nil
+    physicallySubmitted: ((Bool) -> Void)? = nil,
+    transientQuery: Bool = false
   ) -> Bool {
     let wirePayload = String(decoding: payload, as: UTF8.self)
     let logicalMessageId = Self.logicalMessageId(payload)
@@ -593,6 +610,11 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     }) else {
       return false
     }
+    if transientQuery {
+      guard sealedPackets.count == 1 else { return false }
+      pumpPendingPublishes()
+      guard hasLiveTransport(), mqttInflightPacketIds.count < Self.maximumMqttInflight else { return false }
+    }
     if pathGate != nil || !durableMessageId.isEmpty {
       let queuedBytes = pendingPacketPublishes.reduce(0) { $0 + $1.payload.count } +
         inFlightPublishes.values.reduce(0) { $0 + $1.payload.count }
@@ -605,7 +627,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
         return false
       }
     }
-    if !logicalMessageId.isEmpty { peerReceiptStartedAt[logicalMessageId] = enqueuedAtMillis }
+    if !transientQuery, !logicalMessageId.isEmpty { peerReceiptStartedAt[logicalMessageId] = enqueuedAtMillis }
     let acknowledgements = MqttPublishAckGroup(packetCount: sealedPackets.count)
     pendingPacketPublishes.append(contentsOf: sealedPackets.enumerated().map { index, packet in
       PendingPublish(
@@ -622,10 +644,15 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
         durableBrokerAcknowledged: durableBrokerAcknowledged,
         pathGate: pathGate,
         acknowledgementGroup: acknowledgements,
-        fragmentIndex: index
+        fragmentIndex: index,
+        transientQuery: transientQuery
       )
     })
     pumpPendingPublishes()
+    if transientQuery, !inFlightPublishes.values.contains(where: { $0.acknowledgementGroup === acknowledgements }) {
+      pendingPacketPublishes.removeAll { $0.acknowledgementGroup === acknowledgements }
+      return false
+    }
     if let physicallySubmitted {
       let submitted = inFlightPublishes.values.filter { $0.acknowledgementGroup === acknowledgements }.count
       physicallySubmitted(submitted == sealedPackets.count)
@@ -1216,13 +1243,13 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
 
   private func resetOutboundInflightForReconnect() {
     pendingPacketPublishes.removeAll { pending in
-      guard pending.pathGate != nil else { return false }
+      guard pending.pathGate != nil || pending.transientQuery else { return false }
       finishPhysical(pending, acknowledged: false)
       return true
     }
     if !inFlightPublishes.isEmpty {
       let retries = inFlightPublishes.values.compactMap { pending -> PendingPublish? in
-        if pending.pathGate != nil {
+        if pending.pathGate != nil || pending.transientQuery {
           finishPhysical(pending, acknowledged: false)
           return nil
         }

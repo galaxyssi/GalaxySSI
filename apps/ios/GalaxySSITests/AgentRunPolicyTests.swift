@@ -717,11 +717,8 @@ extension GalaxySSIStoreTests {
     response["items"] = [item]
     XCTAssertEqual(recovery.receive(response, authenticatedDesktopId: "desktop", now: 3_000)?.terminalObservedAt, 3_000)
     XCTAssertNil(recovery.receive(response, authenticatedDesktopId: "desktop", now: 3_001))
-    let second = try XCTUnwrap(recovery.request(binding, online: true, now: 31_000))
-    response["request_id"] = second["request_id"]!
+    XCTAssertNil(recovery.request(binding, online: true, now: 31_000))
     item["status_sequence"] = 2
-    response["items"] = [item]
-    XCTAssertEqual(recovery.receive(response, authenticatedDesktopId: "desktop", now: 32_000)?.terminalObservedAt, 3_000)
     var final = item
     final["task_status"] = "completed"
     final["execution_generation"] = 0
@@ -828,11 +825,26 @@ extension GalaxySSIStoreTests {
     for now in [Int64(1_000), 31_000, 271_000] {
       XCTAssertNil(recovery.request(binding, online: false, now: now))
     }
-    XCTAssertEqual(recovery.pending.first?.misses, 3)
+    XCTAssertEqual(recovery.pending.first?.misses, 1)
     XCTAssertNil(recovery.pending.first?.expiryReason(now: 300_999))
-    XCTAssertEqual(recovery.pending.first?.expiryReason(now: 301_000), "desktop_status_unavailable")
+    XCTAssertNil(recovery.pending.first?.expiryReason(now: 301_000))
+    XCTAssertNil(recovery.request(binding, online: false, now: 301_000))
+    XCTAssertNil(recovery.request(binding, online: false, now: 331_000))
+    XCTAssertEqual(recovery.pending.first?.expiryReason(now: 331_000), "desktop_status_unavailable")
     XCTAssertNil(recovery.pending.first?.expiryReason(now: 10))
+    var live: [String: Any] = binding.fields
+    live.merge(["type": "agent_task_event", "task_status": "running",
+      "execution_generation": 2, "status_sequence": 4]) { _, newer in newer }
+    XCTAssertTrue(recovery.observeLiveLease(live, binding: binding, now: 332_000))
+    XCTAssertEqual(recovery.pending.first?.misses, 0)
+    XCTAssertNil(recovery.pending.first?.expiryReason(now: 332_000))
+    XCTAssertFalse(recovery.observeLiveLease(live, binding: binding, now: 333_000))
+    live["execution_generation"] = 1
+    live["status_sequence"] = 900
+    XCTAssertFalse(recovery.observeLiveLease(live, binding: binding, now: 334_000))
+    XCTAssertEqual(recovery.pending.first?.lastResponseAt, 332_000)
     XCTAssertTrue(recovery.retire(binding))
+    XCTAssertNil(recovery.request(binding, online: true, now: 365_000))
     XCTAssertTrue(recovery.pending.isEmpty)
   }
 

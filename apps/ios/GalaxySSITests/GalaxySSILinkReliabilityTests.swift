@@ -118,7 +118,7 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
     for index in 0..<8 {
       XCTAssertTrue(window.acquire(topic: "a", messageId: "message-\(index)", now: 100))
     }
-    XCTAssertEqual(window.delay(topic: "a", messageId: "fresh", now: 101), 1)
+    XCTAssertEqual(window.delay(topic: "a", messageId: "fresh", now: 101), 29)
     XCTAssertEqual(window.delay(topic: "a", messageId: "message-0", now: 101), 29)
     XCTAssertTrue(window.acquire(topic: "b", messageId: "other", now: 101))
     XCTAssertFalse(window.acquire(topic: "a", messageId: "fresh", now: 101))
@@ -137,6 +137,55 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
     store.enqueue(messageId: "send", topic: "topic/up", wirePayload: "encrypted-wire", now: now)
     XCTAssertEqual(store.nextRetryDelay(now: now, minimumDelay: { _ in 1 }), 1)
     XCTAssertEqual(try XCTUnwrap(store.pending(now: now).first).attempts, 0)
+  }
+
+  func testReconnectOnlyWakesUnsentRowsAndKeepsAttemptedBackoff() throws {
+    let store = makeDeliveryStore()
+    let now = Date(timeIntervalSince1970: 1_000)
+    store.enqueue(messageId: "sent", topic: "topic/up", wirePayload: "wire", now: now)
+    store.markAttempt(messageId: "sent", now: now)
+    store.markPublished(messageId: "sent", now: now)
+    store.enqueue(messageId: "new", topic: "topic/up", wirePayload: "wire", now: now.addingTimeInterval(100))
+    let deadline = try XCTUnwrap(store.outboxMigrationSnapshot().first { $0.messageId == "sent" }?.nextAttemptAt)
+    store.makePendingImmediatelyRetryable(now: now)
+    XCTAssertEqual(store.pending(now: now).map(\.messageId), ["new"])
+    let attempted = try XCTUnwrap(store.outboxMigrationSnapshot().first { $0.messageId == "sent" })
+    XCTAssertEqual(attempted.nextAttemptAt, deadline)
+    XCTAssertEqual(attempted.status, "published")
+  }
+
+  func testStaleUnclassifiedLegacyOutboxRowIsRetainedWithoutReplaying() throws {
+    let suite = "held-outbox-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = InMemorySecretStore()
+    let old = Date(timeIntervalSince1970: 1_000)
+    let now = old.addingTimeInterval(901)
+    let original = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: secrets)
+    original.enqueue(messageId: "legacy", topic: "topic/up", wirePayload: "legacy-wire", now: old)
+    original.enqueue(messageId: "tracked", topic: "topic/up", wirePayload: "tracked-wire",
+      clientSourceMessageId: "source", now: old)
+    original.enqueue(messageId: "modern", topic: "topic/up", wirePayload: "modern-wire", now: old)
+    let key = "galaxyssi-ios-link-delivery-v1"
+    let data = try XCTUnwrap(defaults.data(forKey: key))
+    var snapshot = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    var rows = try XCTUnwrap(snapshot["outbox"] as? [[String: Any]])
+    for index in rows.indices where rows[index]["messageId"] as? String != "modern" {
+      rows[index].removeValue(forKey: "retry_classified")
+    }
+    snapshot["outbox"] = rows
+    defaults.set(try JSONSerialization.data(withJSONObject: snapshot), forKey: key)
+    let restored = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: secrets)
+    XCTAssertEqual(restored.holdStaleUnclassified(now: now, activeMessageIds: ["legacy"]), 0)
+    XCTAssertEqual(restored.holdStaleUnclassified(now: now), 1)
+    restored.makePendingImmediatelyRetryable(now: now)
+    restored.markPublished(messageId: "legacy", now: now)
+    let reopened = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: secrets)
+    XCTAssertEqual(Set(reopened.pending(now: now).map(\.messageId)), ["tracked", "modern"])
+    XCTAssertTrue(reopened.discardExhausted(maxAttempts: 1, now: now).isEmpty)
+    let held = try XCTUnwrap(reopened.outboxMigrationSnapshot().first { $0.messageId == "legacy" })
+    XCTAssertTrue(held.isHeld)
+    XCTAssertEqual(held.wirePayload, "legacy-wire")
   }
 
   func testAdmissionDeferralPreservesEarlierAttemptAndCiphertext() throws {

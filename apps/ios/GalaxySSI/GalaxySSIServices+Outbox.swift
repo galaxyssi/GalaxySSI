@@ -14,7 +14,7 @@ struct LinkOutboxReceiptWindow {
     }
     let lane = entries.values.filter { $0.topic == topic && $0.expiresAt > now }
     guard lane.count >= 8, let first = lane.map(\.expiresAt).min() else { return 0 }
-    return min(1, first - now)
+    return first - now
   }
 
   mutating func acquire(topic: String, messageId: String, now: TimeInterval) -> Bool {
@@ -94,6 +94,7 @@ extension MessageCoordinator {
     var activeMessageIds = await mqttClient.outstandingDurableMessageIds()
     guard !Task.isCancelled else { return }
     reconcileOutboxReceiptWindow()
+    deliveryStore.holdStaleUnclassified(activeMessageIds: activeMessageIds.union(outboxReceiptWindow.messageIds))
     let eligible = learningOutboxEligibility()
     handleExhaustedDeliveries(
       deliveryStore.discardExhausted(
