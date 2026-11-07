@@ -92,7 +92,10 @@ class HealthCareEvidenceDeviceTest {
     @Test fun schemaFourUpgradeKeepsExistingConcernAndDoesNotInventReadReceipts(): Unit = fixture { names, store, plan ->
         val prior = store.concern(plan.grant.concernId)
         store.close()
-        context.openOrCreateDatabase(names.care, 0, null).use { it.execSQL("DROP TABLE evidence_reads"); it.version = 4 }
+        context.openOrCreateDatabase(names.care, 0, null).use {
+            restoreHealthCareSchemaFive(it)
+            it.execSQL("DROP TABLE evidence_reads"); it.version = 4
+        }
         HealthCareStore(context, names.care).use { assertEquals(prior, it.concern(plan.grant.concernId)); assertNull(it.evidence(plan.sources.single().evidenceId)) }
     }
     @Test fun publicMedicalSourceUsesRealNativeHttpsReadAndEncryptedReceipt() {

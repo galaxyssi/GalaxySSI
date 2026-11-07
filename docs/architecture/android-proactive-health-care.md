@@ -131,6 +131,44 @@ This supplies longitudinal evidence, not a clinically validated automatic outcom
 classifier. Broader real-provider applicability, conflicting-source, maintenance
 and complete UI acceptance remain required.
 
+## Recorded blood-pressure priority notice
+
+An opt-in local assessment now flags a confirmed stored systolic reading above
+180 or diastolic reading above 120 mmHg. Either component can trigger it. kPa
+comparisons use the NIST conventional mmHg factor (0.1333224 kPa) without
+intermediate rounding; pulse is never compared to a pressure threshold.
+
+This is a recorded-value warning, not a diagnosis, live monitoring or an emergency
+detection service. The Agent surface puts the measurement date and conditional
+emergency advice before ordinary concern actions. The detail page distinguishes
+current symptoms, a current reading without concerning symptoms, historical
+records, and adult nonpregnant scope. It never waits for a model or source fetch
+to show the bundled notice, auto-dials, changes medication or creates a reminder.
+Children and pregnancy require different professional assessment; absence of
+this notice is not safety clearance. There is no arbitrary time-based rule that
+turns an imported historical measurement into a present emergency.
+
+Sources checked on 2026-11-07:
+
+- [AHA: when to seek emergency help](https://www.heart.org/en/health-topics/high-blood-pressure/understanding-blood-pressure-readings/when-to-call-911-for-high-blood-pressure)
+- [AHA: readings and either-component thresholds](https://www.heart.org/en/health-topics/high-blood-pressure/understanding-blood-pressure-readings)
+- [NIST: pressure conversion factors](https://www.nist.gov/pml/special-publication-811/nist-guide-si-appendix-b-conversion-factors/nist-guide-si-appendix-b9)
+
+Schema 6 adds a coarse priority index beside existing lifecycle metadata; values,
+sources and symptoms remain inside authenticated encrypted records. Decoding
+checks the priority index against authenticated signals. Keyset pagination orders
+priority, update time and ID, with no full-history decryption. Existing schema
+1-5 rows migrate without rewriting encrypted payloads. A separate, metric-specific
+assessment cache version lets a policy upgrade replay blood-pressure evaluation
+without changing source identity or invalidating unrelated confirmed reminders.
+Deletion retains a source-bound dismissal marker even across policy refreshes;
+changed source data can be evaluated again. Pausing remains effective. Background
+and privacy-revocation clearing and dedicated discussion scope remain unchanged.
+
+The first notice covers only this blood-pressure case. It is not a comprehensive
+clinical triage system; broader urgent conditions, symptoms, provider behavior and
+clinical validation still require separate evaluation.
+
 ## Action-level applicability review
 
 Every new model-proposed action includes a structured review: discussion-only or

@@ -50,6 +50,7 @@ internal object HealthCareDiscussionPolicy {
         }).put("confirmed_context", value.context?.json() ?: JSONObject.NULL)
         .put("individual_target", value.target?.json() ?: JSONObject.NULL)
         .put("result_comparison", HealthCareComparisonPolicy.handoff(value.assessment, value.context) ?: JSONObject.NULL)
+        .put("priority_notice", HealthCarePriority.handoff(value) ?: JSONObject.NULL)
         .put("actions", org.json.JSONArray(value.actions.map { it.json() })).toString(2)
 
     fun prompt(question: String, snapshot: String): String = """
@@ -58,6 +59,11 @@ internal object HealthCareDiscussionPolicy {
         guideline criteria, descriptive personal baseline and an explicitly confirmed individualized target.
         Never infer an ideal value from the midpoint of a reference interval. Check units, specimen, dates,
         fasting state and missing context before interpreting. Do not diagnose from a single measurement.
+        A priority_notice is a local recorded-value warning, not confirmation of a current emergency.
+        Establish measurement time and current symptoms; do not assume an old imported record describes the present.
+        Explain symptom-dependent urgent action before research or routine plans. Never delay emergency help for
+        a model response, another measurement, source retrieval or completing a questionnaire when danger signs are present.
+        Do not treat absence of a warning as safety clearance or apply adult nonpregnant criteria universally.
         When result_comparison is present, compare the exact before/after records, units, collection conditions,
         source changes and prior action outcomes. Arithmetic change is not clinical improvement or worsening.
         A corrected record or changed history is not a new follow-up measurement. Explain any comparability gaps.

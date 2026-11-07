@@ -115,7 +115,7 @@ class HealthCareActivity : Activity() {
         if (!snapshot.settings.enabled) ui.add(content, ui.text(getString(R.string.health_care_disabled), 14f, muted = true), 8)
         if (snapshot.page.items.isEmpty()) ui.add(content, ui.text(getString(R.string.health_care_empty), 14f, muted = true), 8)
         snapshot.page.items.forEach { item ->
-            ui.add(content, ui.profileRow(getString(item.metric.titleResource()),
+            ui.add(content, ui.profileRow(getString(if (HealthCarePriority.rank(item.assessment) > 0) R.string.health_care_bp_title else item.metric.titleResource()),
                 "${item.assessment.value} ${item.assessment.unit} · ${getString(item.stage.titleResource())}") {
                 selected = item.id; generation++; load()
             }.apply { tag = "health-care-item-${item.metric.name}" }, 8)
@@ -135,6 +135,7 @@ class HealthCareActivity : Activity() {
         content.addView(ui.text(getString(value.metric.titleResource()), 23f, bold = true))
         ui.add(content, ui.text("${value.assessment.value} ${value.assessment.unit}", 22f, bold = true), 8)
         ui.add(content, ui.text(getString(value.stage.titleResource()), 14f, muted = true), 6)
+        HealthCarePriorityPresentation.add(this, content, value)
         ui.add(content, ui.command(R.string.health_care_discussion_title_short) { discuss(value) }
             .apply { tag = "health-care-discuss" }, 12)
         proposals.forEach { plan -> ui.add(content, ui.profileRow(getString(R.string.health_care_plan_pending, plan.actions.size)) {
