@@ -43,6 +43,7 @@ internal enum class HealthAccessPurpose(val permission: HealthPrivacyOption? = n
     WEEKLY_REPORT(HealthPrivacyOption.CONFIRMED_METRICS),
     SAVE_WEEKLY_REPORT(HealthPrivacyOption.CONFIRMED_METRICS),
     HEALTH_ANALYSIS(HealthPrivacyOption.CONFIRMED_METRICS),
+    PROACTIVE_CARE(HealthPrivacyOption.CONFIRMED_METRICS),
     HEALTH_ANALYSIS_ONLINE(HealthPrivacyOption.ONLINE_ANALYSIS),
     SAVE_RECORDS, SAVE_ORIGINALS, GENERATE_BACKUP, DELETE_PROFILE, DELETE_BLUETOOTH_HISTORY, DELETE_HEALTH_CONNECT_HISTORY,
     DELETE_MEASUREMENT_HISTORY, DELETE_ORIGINAL_BYTES
@@ -73,7 +74,7 @@ internal data class HealthAccessScope(
             HealthAccessPurpose.OVERVIEW -> require(metrics == setOf(HealthMetric.SLEEP_DURATION) && baselineFrom == null && format == null)
             HealthAccessPurpose.WEEKLY_REPORT, HealthAccessPurpose.SAVE_WEEKLY_REPORT ->
                 require(metrics.isNotEmpty() && fields.isEmpty() && !annotations && format == if (purpose == HealthAccessPurpose.SAVE_WEEKLY_REPORT) HealthAccessFormat.PDF else null)
-            HealthAccessPurpose.HEALTH_ANALYSIS, HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE ->
+            HealthAccessPurpose.HEALTH_ANALYSIS, HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE, HealthAccessPurpose.PROACTIVE_CARE ->
                 require(metrics.isNotEmpty() && fields.isEmpty() && !annotations && !reportRecords && format == null)
             HealthAccessPurpose.SAVE_RECORDS -> require(metrics.isNotEmpty() && count != null && format in listOf(HealthAccessFormat.CSV, HealthAccessFormat.JSON, HealthAccessFormat.XLSX, HealthAccessFormat.ZIP))
             HealthAccessPurpose.SAVE_ORIGINALS -> require(count != null && format in listOf(HealthAccessFormat.ZIP, HealthAccessFormat.ORIGINAL))
