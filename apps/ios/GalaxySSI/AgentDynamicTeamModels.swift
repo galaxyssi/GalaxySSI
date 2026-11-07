@@ -140,7 +140,12 @@ enum AgentCollaborationRuleTopics {
     reconsider_when and resource_estimates. Estimates name unit, status and basis; unknown estimates have no numeric value.
     A saved agenda does not execute work or grant resources.
     """),
-    Topic(id: "procedures", purpose: "Preserve observed failure experience", prerequisites: ["foundation"], contract: """
+    Topic(id: "procedures", purpose: "Reuse retained procedures and observed failure experience", prerequisites: ["foundation"], contract: """
+    Publish procedure_skill with the exact retained lesson as a parent, name, keywords, limitations and inputs
+    (name, description and required). The original method comes from the lesson; replacement text is rejected.
+    Use capabilities to find an exact procedure_skill. For a work expansion, procedure_use contains procedure,
+    inputs, applicability (why, conditions_checked and remaining_uncertainty), and exact failure experience references.
+    This is task data, not a global Skill installation or a permission grant.
     failure_experience is immutable and requires completely read original cloud observations, including at least one observed
     failure. Include observed_issue, interpretation, uncertainty, applies_when, avoid_repetition, reconsider_when and
     recovery_options. A recorded failure is not proof of a cause and is not a permanent prohibition.
@@ -215,6 +220,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     let dependency_policy: DependencyPolicy?
     let independent_review: Bool?
     var stage: String? = nil
+    var procedure_use: AgentCollaborationProcedure.Use? = nil
     var learning: LearningBinding? = nil
     var review_targets: [String]? = nil
     var workflowExecutionId: String? = nil
@@ -278,6 +284,13 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
   private(set) var work: [Work] = []
   private(set) var workflowInstances: [String: AgentCollaborationWorkflowInstance]? = nil
   private(set) var learningPriorities: [String: Int64]? = nil
+  private(set) var procedureBindings: [String: AgentMcpJSONObject]? = nil
+
+  func pinningProcedures(_ bindings: [String: AgentMcpJSONObject]) -> Self {
+    var next = self
+    next.procedureBindings = bindings.isEmpty ? nil : bindings
+    return next
+  }
 
   func pinningLearningPriorities(_ ranks: [String: Int64]) -> Self {
     var next = self
