@@ -134,6 +134,10 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
           .frame(maxWidth: .infinity, alignment: .leading)
           .padding(.vertical, 8)
         }
+        if let receipt = store.remoteResearchReceipt(for: message) {
+          GalaxySSIRemoteResearchDisclosure(receipt: receipt, t: t)
+            .accessibilityIdentifier("ios.agent.research-disclosure.\(message.id.uuidString)")
+        }
       }
       if let target = AgentReplySpeechPresentationPolicy.target(message) {
         GalaxySSIAgentReplySpeechFooter(runtime: replySpeech, entryId: target.entryId,
@@ -399,5 +403,52 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
       liveStartedAt: progress.startedAt,
       liveDuration: elapsedDuration
     )
+  }
+}
+
+private struct GalaxySSIRemoteResearchDisclosure: View {
+  let receipt: AgentRemoteResearchReceipt
+  let t: (String, String) -> String
+  @State private var expanded = false
+  @State private var page = 1
+
+  var body: some View {
+    let queries = receipt.recordedQueries
+    let title = String(format: t("galaxyssi.agent.research.disclosure.summary", "%lld searches, %lld sources found"),
+      Int64(queries.count), Int64(receipt.sources.count))
+    DisclosureGroup(isExpanded: $expanded) {
+      VStack(alignment: .leading, spacing: 8) {
+        ForEach(Array(queries.prefix(page * 20)), id: \.self) { query in
+          Text(verbatim: query)
+            .textSelection(.enabled)
+        }
+        ForEach(receipt.sources.prefix(page * 50)) { source in
+          Link(destination: source.url) {
+            VStack(alignment: .leading, spacing: 2) {
+              Text(verbatim: source.title.ifBlank(source.url.host ?? source.url.absoluteString))
+                .lineLimit(2)
+              if source.openingReported {
+                Text(t("galaxyssi.agent.research.disclosure.remote_opening", "Desktop reported opening this page"))
+                  .font(.caption)
+                  .foregroundColor(.galaxySSITextSecondary)
+              }
+            }
+            .frame(minHeight: 44, alignment: .leading)
+          }
+        }
+        if queries.count > page * 20 || receipt.sources.count > page * 50 {
+          Button(t("galaxyssi.agent.research.disclosure.more", "Show more")) { page += 1 }
+        }
+      }
+      .padding(.top, 6)
+    } label: {
+      Text(receipt.truncated
+        ? title + " \u{00B7} " + t("galaxyssi.agent.research.disclosure.partial", "Partial record")
+        : title)
+        .foregroundColor(.galaxySSITextSecondary)
+    }
+    .font(.footnote)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.vertical, 4)
   }
 }

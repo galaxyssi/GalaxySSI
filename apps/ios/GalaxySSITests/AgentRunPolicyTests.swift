@@ -219,6 +219,72 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(request.verifyOriginal([foreign], descriptor: foreignDescriptor))
   }
 
+  func testRemoteResearchReceiptDecodesLiveTerminalAndReplayWithoutClaimingVerification() throws {
+    let live: [String: Any] = ["queries": ["Solar   capacity", "Solar capacity ..."], "sources": [
+      ["url": "https://Example.org:443/report#intro"],
+      ["url": "https://user:secret@example.org/private"],
+      ["url": "file:///private/report.pdf"]
+    ]]
+    let terminal: [String: Any] = ["queries": ["solar capacity", "Grid study"], "sources": [
+      ["url": "https://example.org/report#table", "title": "Capacity report", "status": "open_reported"],
+      ["url": "https://example.org/grid", "title": "Grid study", "status": "verified"]
+    ], "truncated": true]
+    let payload: [String: Any] = [
+      "research_trace": terminal,
+      "progress_event": ["metadata": ["research_trace": live]],
+      "events": [42, ["metadata": ["research_trace": live]]]
+    ]
+    let receipt = AgentRemoteResearchReceipt.from(payload)
+    XCTAssertEqual(receipt.recordedQueries, ["solar capacity", "Grid study"])
+    XCTAssertEqual(receipt.sources.map(\.id), ["https://example.org/report", "https://example.org/grid"])
+    XCTAssertEqual(receipt.sources.map(\.openingReported), [true, false])
+    XCTAssertEqual(receipt.sources.first?.title, "Capacity report")
+    XCTAssertTrue(receipt.truncated)
+    XCTAssertEqual(AgentRemoteResearchReceipt.from(["events": [["metadata": ["research_trace": live]]]])
+      .recordedQueries, ["Solar capacity"])
+    XCTAssertFalse(AgentRemoteResearchReceipt.from(["content": "Not a research receipt"]).visible)
+  }
+
+  @MainActor
+  func testRemoteResearchReceiptPersistsBeforeReplyAndRejectsStaleGenerationAndAttempt() throws {
+    let suite = "research-disclosure-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = InMemorySecretStore()
+    let source = UUID()
+    let replay = UUID()
+    let store = AgentResearchCheckpointStore(defaults: defaults, secrets: secrets, owner: "owner")
+    let live = AgentRemoteResearchReceipt(queries: ["Private query"])
+    let terminal = AgentRemoteResearchReceipt.from(["research_trace": ["sources": [
+      ["url": "https://example.org/evidence", "title": "Remote result"]
+    ]]])
+    XCTAssertTrue(store.mergeRemoteReceipt(live, conversation: "one", turn: "turn", source: source,
+      attempt: source, generation: 2, mappedAttempt: false))
+    let reopened = AgentResearchCheckpointStore(defaults: defaults, secrets: secrets, owner: "owner")
+    XCTAssertTrue(reopened.mergeRemoteReceipt(terminal, conversation: "one", turn: "turn", source: source,
+      attempt: source, generation: 2, mappedAttempt: false))
+    XCTAssertFalse(reopened.mergeRemoteReceipt(terminal, conversation: "one", turn: "turn", source: source,
+      attempt: source, generation: 2, mappedAttempt: false))
+    XCTAssertFalse(reopened.mergeRemoteReceipt(.init(queries: ["Stale generation"]), conversation: "one", turn: "turn",
+      source: source, attempt: source, generation: 1, mappedAttempt: false))
+    XCTAssertEqual(reopened.remoteReceipt(conversation: "one", turn: "turn", source: source)?.queries, ["Private query"])
+    XCTAssertNil(reopened.remoteReceipt(conversation: "two", turn: "turn", source: source))
+    XCTAssertNil(reopened.remoteReceipt(conversation: "one", turn: "other", source: source))
+    XCTAssertFalse(defaults.dictionaryRepresentation().description.contains("Private query"))
+    XCTAssertTrue(reopened.handoff(conversation: "one", turn: "turn", source: source).isEmpty)
+    XCTAssertTrue(reopened.mergeRemoteReceipt(.init(), conversation: "one", turn: "turn", source: source,
+      attempt: replay, generation: 1, mappedAttempt: true))
+    XCTAssertFalse(reopened.mergeRemoteReceipt(live, conversation: "one", turn: "turn", source: source,
+      attempt: source, generation: 3, mappedAttempt: false))
+    XCTAssertEqual(reopened.remoteReceipt(conversation: "one", turn: "turn", source: source)?.queries, ["Private query"])
+    XCTAssertTrue(reopened.mergeRemoteReceipt(.init(queries: ["Retry query"]), conversation: "one", turn: "turn", source: source,
+      attempt: replay, generation: 1, mappedAttempt: true))
+    XCTAssertEqual(reopened.remoteReceipt(conversation: "one", turn: "turn", source: source)?.queries,
+      ["Private query", "Retry query"])
+    reopened.remove(conversation: "one", turn: "turn", source: source)
+    XCTAssertNil(reopened.remoteReceipt(conversation: "one", turn: "turn", source: source))
+  }
+
   @MainActor
   func testRecoveryControlSummariesAreExcludedBeforeProgressTruncation() {
     let markers = ["[\"GALAXYSSI_RECOVERY_ACTION_V1\"]",

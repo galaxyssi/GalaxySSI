@@ -288,6 +288,8 @@ extension GalaxySSIStoreTests {
     var body: [String: Any] = binding.fields
     body.merge(["type": "text", "message_id": "reply", "content": String(repeating: "answer ", count: 3_000),
       "task_status": "completed", "execution_generation": 2, "status_sequence": 3]) { _, new in new }
+    body["research_trace"] = ["queries": ["Archived search"],
+      "sources": [["url": "https://example.org/archived", "status": "open_reported"]]]
     let data = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
     func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
     let pageSize = AgentResultPageCheckpointStore.maximumPageBytes
@@ -322,6 +324,10 @@ extension GalaxySSIStoreTests {
     XCTAssertNotNil(reopened.receive(pageOne, record: record, now: 4_000))
     let assembled = try XCTUnwrap(reopened.assembled(record))
     XCTAssertEqual(assembled["content"] as? String, body["content"] as? String)
+    let research = AgentRemoteResearchReceipt.from(assembled)
+    XCTAssertEqual(research.recordedQueries, ["Archived search"])
+    XCTAssertEqual(research.sources.first?.id, "https://example.org/archived")
+    XCTAssertEqual(research.sources.first?.openingReported, true)
     let receipt = try XCTUnwrap(reopened.receipt(record))
     XCTAssertEqual(AgentResultReceipt.fromPayload(receipt.payload, desktopId: "desktop"), receipt)
     XCTAssertTrue(reopened.receipts.insert(receipt))

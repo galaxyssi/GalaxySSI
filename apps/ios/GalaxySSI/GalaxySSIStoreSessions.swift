@@ -973,6 +973,26 @@ extension GalaxySSIStore {
     researchCheckpointStore.merge(rows, conversation: conversation, turn: turn, source: sourceId)
   }
 
+  func persistRemoteResearchReceipt(_ payload: [String: Any], sourceId: UUID, attempt: UUID,
+                                    conversation: String, turn: String, generation: Int64) {
+    guard !conversation.isBlank, !turn.isBlank,
+          let session = agentSession(id: conversation), !session.privateMode, !session.trackingPaused,
+          let source = chatHistoryDatabase.message(id: sourceId), source.isMine, !source.isSystem,
+          !source.deliveryTrace.contains(where: { $0.stage == "screen_analysis_cancelled" }),
+          source.conversationId == conversation, source.turnId.ifBlank(source.id.uuidString) == turn else { return }
+    if researchCheckpointStore.mergeRemoteReceipt(.from(payload), conversation: conversation, turn: turn,
+      source: sourceId, attempt: attempt, generation: generation, mappedAttempt: attempt != sourceId) {
+      objectWillChange.send()
+    }
+  }
+
+  func remoteResearchReceipt(for source: ChatMessage) -> AgentRemoteResearchReceipt? {
+    guard source.isMine, !source.isSystem, let session = agentSession(id: source.conversationId),
+          !session.privateMode, !session.trackingPaused else { return nil }
+    return researchCheckpointStore.remoteReceipt(conversation: source.conversationId,
+      turn: source.turnId.ifBlank(source.id.uuidString), source: source.id)
+  }
+
   func researchRetryHandoff(for source: ChatMessage) -> String {
     let conversation = source.conversationId
     guard source.isMine, !source.isSystem, conversation == activeAgentConversationId,

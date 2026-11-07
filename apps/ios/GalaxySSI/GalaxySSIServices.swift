@@ -3445,9 +3445,42 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
+  private func persistAuthenticatedResearchReceipt(_ payload: [String: Any], link: ServerLink) {
+    let type = payload.string("type")
+    guard type == "agent_task_event" ||
+            (type == "text" && AgentDesktopReplyRecovery.terminalStatuses.contains(payload.string("task_status"))),
+          link.paired, payload["peer_chat"] as? Bool != true,
+          payload.string("desktop_id").ifBlank(link.desktopId) == link.desktopId,
+          payload.string("client_route_id") == link.routes.clientRouteId,
+          taskIdentityStore.matchesRegistered(payload: payload),
+          let contact = store.contact(id: payload.string("contact_id")), contact.trustState == .verified,
+          contact.desktopId == link.desktopId, contact.connectorAgentId == payload.string("agent_id"),
+          let attempt = UUID(uuidString: payload.string("source_message_id")),
+          let generation = AgentDesktopReplyRecovery.integer(payload["execution_generation"], minimum: 1) else { return }
+    let conversation = payload.string("conversation_id")
+    let turn = payload.string("turn_id")
+    guard mayRecoverSavedDesktopSource(conversation: conversation, turn: turn, sourceID: attempt.uuidString) else { return }
+    var source = attempt
+    if let record = desktopReplyRecovery.pending.first(where: { $0.binding.desktopId == link.desktopId && $0.binding.matches(payload) }) {
+      guard generation >= record.generation,
+            generation >= (record.codexProgress?.generation ?? 0),
+            record.binding.managedSource.map({ $0.executionGeneration == generation }) ?? true else { return }
+      if record.binding.sourceId != attempt {
+        guard let original = currentDesktopReplySource(record.binding) else { return }
+        source = original.id
+      }
+    }
+    store.persistRemoteResearchReceipt(payload, sourceId: source, attempt: attempt,
+      conversation: conversation, turn: turn, generation: generation)
+  }
+
   private func persistRecoveredDesktopResult(_ payload: [String: Any], record: AgentDesktopReplyRecoveryRecord) {
     let binding = record.binding
     guard let source = currentDesktopReplySource(binding), let receipt = desktopResultRecovery.receipt(record) else { return }
+    if let attempt = UUID(uuidString: binding.sourceIdentity) {
+      store.persistRemoteResearchReceipt(payload, sourceId: source.id, attempt: attempt,
+        conversation: binding.identity.conversationId, turn: binding.identity.turnId, generation: record.generation)
+    }
     if scheduleCodexReplay(payload, record: record, source: source) {
       _ = desktopResultRecovery.receipts.insert(receipt)
       return
@@ -14073,6 +14106,7 @@ final class MessageCoordinator: ObservableObject {
     }
     if appPayload.string("type") == "agent_task_recovery_result" {
       if object.string("scheme") == "signal", let link, link.paired,
+         object.string("from") == link.desktopId, object.string("to") == signalEngine.identity.name,
          appPayload.string("client_route_id") == link.routes.clientRouteId,
          let expected = desktopReplyRecovery.expectedBinding(appPayload), desktopRecoveryBindingIsCurrent(expected),
          let item = (appPayload["items"] as? [[String: Any]])?.first,
@@ -14098,6 +14132,7 @@ final class MessageCoordinator: ObservableObject {
     }
     if appPayload.string("type") == "agent_task_result_page" {
       if object.string("scheme") == "signal", let link, link.paired,
+         object.string("from") == link.desktopId, object.string("to") == signalEngine.identity.name,
          appPayload.string("client_route_id") == link.routes.clientRouteId,
          let expected = desktopResultRecovery.expectedBinding(appPayload), expected.desktopId == link.desktopId,
          desktopRecoveryBindingIsCurrent(expected), let record = desktopReplyRecovery.record(for: expected),
@@ -14126,6 +14161,10 @@ final class MessageCoordinator: ObservableObject {
     if object.string("scheme") == "signal", appPayload.string("type") == "text",
        AgentDesktopReplyRecovery.terminalStatuses.contains(appPayload.string("task_status")), let link,
        !desktopReplyRecovery.acceptsFinal(appPayload, desktopId: link.desktopId) { return }
+    if object.string("scheme") == "signal", let link,
+       object.string("from") == link.desktopId, object.string("to") == signalEngine.identity.name {
+      persistAuthenticatedResearchReceipt(appPayload, link: link)
+    }
     if object.string("scheme") == "signal", appPayload.string("type") == "text", let link, link.paired,
        taskIdentityStore.matchesRegistered(payload: appPayload),
        let record = desktopReplyRecovery.pending.first(where: {

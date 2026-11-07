@@ -6160,6 +6160,10 @@
 "galaxyssi.agent.progress.research.limit" = "请求了 %lld 字节；上限：%lld 字节";
 "galaxyssi.agent.progress.research.no_body" = "没有可读取的网页正文";
 "galaxyssi.agent.progress.research.fetch_failed" = "网页读取失败";
+"galaxyssi.agent.research.disclosure.summary" = "%lld 次搜索，找到 %lld 个来源";
+"galaxyssi.agent.research.disclosure.remote_opening" = "电脑报告已打开此页面";
+"galaxyssi.agent.research.disclosure.more" = "显示更多";
+"galaxyssi.agent.research.disclosure.partial" = "仅记录部分结果";
 "galaxyssi.agent.progress.save_failed" = "无法保存智能体进度。";
 "galaxyssi.screen_assistant.privacy_ios" = "仅在你选择内容并发送后，才向所选 Agent 提供内容。开启此开关不会截屏或启动任务。iOS 不允许此图标悬浮在其他应用之上。";
 "galaxyssi.collaboration.new" = "新建协作组";
