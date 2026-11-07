@@ -203,6 +203,9 @@ enum AgentCollaborationRuleTopics {
     For comparison, link exact workflow_method parents from both innovations. Register experiment_plan.workflow_comparison
     with dataset, controlled_conditions, quality_oracle, cost_accounting and selection_bias. Include a quality regression case.
     Each measurement must identify its actual variant's workflow_sha256 and the registered dataset_sha256.
+    A workflow_selection_rule parents an independently retained workflow comparison lesson. Use purpose, domain, condition_basis,
+    limitations, prospective_test, lesson, when_all and unless_any. Each condition has id, input, pointer, operator, value and rationale.
+    \(AgentCollaborationWorkflowCheck.instructions)
     """)
   ]
 

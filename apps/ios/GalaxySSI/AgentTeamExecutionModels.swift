@@ -309,6 +309,7 @@ struct AgentCollaborationResearchDraft: Codable {
     case capabilitySuite = "capability_suite"
     case capabilityChannel = "capability_channel"
     case workflowMethod = "workflow_method"
+    case workflowSelectionRule = "workflow_selection_rule"
     case candidateEvent = "candidate_event"
     case procedureSkill = "procedure_skill"
     case teamExchange = "team_exchange"
