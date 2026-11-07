@@ -90,6 +90,45 @@ class AgentStartupRecoveryTest {
         assertEquals(AgentPhase.EXECUTING, state.load()?.phase)
     }
 
+    @Test fun waitingPhoneReplySurvivesCoordinatorRecoveryIncludingLegacyPausedCheckpoint() {
+        for (marker in listOf("", PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE)) {
+            for (phase in listOf(AgentPhase.WAITING_RESPONSE, AgentPhase.PAUSED)) {
+                val pending = AgentAction("remote", AgentActionKind.CALL_CONNECTOR, "codex", AgentRisk.LOW,
+                    AgentActionStatus.WAITING_RESPONSE, "Research")
+                val snapshot = session().copy(phase = phase, currentPlan = session().currentPlan!!.copy(actions = listOf(pending)),
+                    lastActionResult = AgentActionResult("remote", true, "Waiting", mapOf(
+                        "awaiting_response" to "true", "source_message_id" to "42", "contact_id" to "peer",
+                        "conversation_id" to "conversation", "turn_id" to "task", "remote_task_id" to "remote-task",
+                        "resource_location" to "desktop")))
+                val waiting = workspace().copy(status = AgentWorkspaceStatus.WAITING_RESPONSE,
+                    currentPlanSnapshot = marker)
+                val store = InMemoryAgentWorkspaceStore(listOf(waiting))
+                val state = InMemoryAgentSessionStore().apply { save(snapshot) }
+                assertEquals(1, recover(store, mapOf("task" to state)))
+                assertTrue(AgentConnectorReceiptAdmission.saved(state.load()!!, 42, "peer", "conversation", "task", "remote-task"))
+                assertEquals(snapshot.currentPlan, state.load()!!.currentPlan)
+                assertEquals(AgentWorkspaceStatus.WAITING_RESPONSE, store.find("task")!!.status)
+                assertEquals(0, recover(store, mapOf("task" to state)))
+                assertEquals(1, store.find("task")!!.eventJournal.size)
+
+                val userPausedStore = InMemoryAgentWorkspaceStore(listOf(waiting.copy(status = AgentWorkspaceStatus.PAUSED)))
+                val userPaused = InMemoryAgentSessionStore().apply { save(snapshot.copy(phase = AgentPhase.PAUSED)) }
+                assertEquals(0, recover(userPausedStore, mapOf("task" to userPaused)))
+                assertEquals(AgentPhase.PAUSED, userPaused.load()!!.phase)
+            }
+        }
+    }
+
+    @Test fun unmarkedRemoteWaitWithoutReceiptIsNotChanged() {
+        val waiting = workspace().copy(status = AgentWorkspaceStatus.WAITING_RESPONSE)
+        val store = InMemoryAgentWorkspaceStore(listOf(waiting))
+        val saved = session().copy(phase = AgentPhase.WAITING_RESPONSE)
+        val state = InMemoryAgentSessionStore().apply { save(saved) }
+        assertEquals(0, recover(store, mapOf("task" to state)))
+        assertEquals(saved, state.load())
+        assertEquals(waiting, store.find("task"))
+    }
+
     @Test fun concreteIntegrityErrorSurvivesStartupReconciliation() {
         val error = AgentActionResult("active-plan-recovery", false, "Missing encrypted plan page",
             mapOf("active_plan_recovery_error" to "true"))

@@ -163,9 +163,10 @@ android {
         applicationId = "com.galaxyssi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1523
-        versionName = "0.1.7.110"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        versionCode = 1525
+        versionName = "0.1.7.112"
+        testInstrumentationRunner = if (providers.gradleProperty("healthResearchAcceptance").orNull == "true")
+            "com.galaxyssi.chat.HealthResearchAcceptanceRunner" else "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
         buildConfigField("String", "QNN_RUNTIME_VERSION", "\"2.47.0\"")

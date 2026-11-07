@@ -42,8 +42,10 @@ internal object AgentColdBootRecoveryPolicy {
         snapshot: AgentSessionSnapshot,
         processInstanceId: String,
         nowMillis: Long,
-        reason: String
+        reason: String,
+        recoverPendingResponse: Boolean = false
     ): AgentSessionSnapshot {
+        val pendingResponse = pendingConnectorResponse(snapshot, recoverPendingResponse)
         val loop = snapshot.executionLoopSnapshot?.let { current ->
             if (!current.phase.isTerminal && current.phase != AgentExecutionLoopPhase.PAUSED) {
                 current.copy(
@@ -59,9 +61,14 @@ internal object AgentColdBootRecoveryPolicy {
             }
         }
         return snapshot.copy(
-            phase = AgentPhase.PAUSED,
+            // A persisted remote receipt is still awaiting its reply, not permission to redispatch.
+            phase = if (pendingResponse != null) AgentPhase.WAITING_RESPONSE else AgentPhase.PAUSED,
             currentPlan = if (snapshot.pendingPlanning?.isReplanning == true) snapshot.currentPlan
-                else snapshot.currentPlan?.recoverInterruptedExecution(),
+                else snapshot.currentPlan?.let { plan ->
+                    if (pendingResponse == null) plan else plan.copy(actions = plan.actions.map {
+                        if (it.id == pendingResponse.actionId) it.copy(status = AgentActionStatus.WAITING_RESPONSE) else it
+                    })
+                }?.recoverInterruptedExecution(),
             lastActionResult = snapshot.lastActionResult?.takeIf {
                 it.metadata["plan_node_recovery_error"] == "true" ||
                     it.metadata["active_plan_recovery_error"] == "true" ||
@@ -78,6 +85,16 @@ internal object AgentColdBootRecoveryPolicy {
             updatedAtMillis = nowMillis
         )
     }
+
+    fun pendingConnectorResponse(snapshot: AgentSessionSnapshot, recoverPendingResponse: Boolean): AgentActionResult? =
+        snapshot.lastActionResult?.takeIf { result ->
+            (snapshot.phase in setOf(AgentPhase.WAITING_RESPONSE, AgentPhase.EXECUTING) ||
+                recoverPendingResponse && snapshot.phase == AgentPhase.PAUSED) &&
+                result.metadata["awaiting_response"] == "true" &&
+                (result.metadata["source_message_id"]?.toLongOrNull() ?: 0L) > 0L &&
+                snapshot.currentPlan?.actions?.any { it.id == result.actionId && it.kind == AgentActionKind.CALL_CONNECTOR &&
+                    it.status in setOf(AgentActionStatus.RUNNING, AgentActionStatus.WAITING_RESPONSE) } == true
+        }
 
     private val PHONE_RUNTIME_MARKERS = listOf(
         "galaxyssi.project.",
@@ -100,7 +117,7 @@ internal object AgentColdBootRecoveryCoordinator {
             processInstanceId = AgentProcessIdentity.instanceId,
             now = System.currentTimeMillis(), reason = reason
         )
-        Log.i(TAG, "Paused $paused interrupted task(s) after process restart")
+        Log.i(TAG, "Reconciled $paused interrupted task(s) after process restart")
         return paused
     }
 
@@ -117,27 +134,34 @@ internal object AgentColdBootRecoveryCoordinator {
     ): Int {
         val interrupted = store.list().filter { workspace ->
             workspace.workspaceId !in activeWorkspaceIds() &&
-                !workspace.cancellationRequested && AgentColdBootRecoveryPolicy.shouldPause(workspace)
+                !workspace.cancellationRequested && (AgentColdBootRecoveryPolicy.shouldPause(workspace) ||
+                    workspace.status == AgentWorkspaceStatus.WAITING_RESPONSE)
         }
         var paused = 0
         interrupted.forEach { workspace ->
+            val sessions = sessionStore(workspace.workspaceId)
+            // Durable receipts survive compacted plans that no longer contain runtime marker text.
+            if (!AgentColdBootRecoveryPolicy.shouldPause(workspace) &&
+                sessions.load()?.let { AgentColdBootRecoveryPolicy.pendingConnectorResponse(it, true) } == null) return@forEach
             if (!pauseSessionStore(
-                sessionStore(workspace.workspaceId),
+                sessions,
                 now,
                 reason,
                 journal = journal,
                 processInstanceId = processInstanceId,
-                force = true
+                force = true,
+                recoverPendingResponse = workspace.status == AgentWorkspaceStatus.WAITING_RESPONSE
             )) return@forEach
+            val awaitingResponse = sessions.load()?.phase == AgentPhase.WAITING_RESPONSE
             val nextSequence = workspace.eventSequence + 1L
             store.upsert(
                 workspace.copy(
-                    status = AgentWorkspaceStatus.PAUSED,
+                    status = if (awaitingResponse) AgentWorkspaceStatus.WAITING_RESPONSE else AgentWorkspaceStatus.PAUSED,
                     errorMessage = "",
                     eventSequence = nextSequence,
                     eventJournal = (workspace.eventJournal + AgentWorkspaceEvent(
                         sequence = nextSequence,
-                        kind = EVENT_KIND,
+                        kind = if (awaitingResponse) "task.waiting_response.process_restart" else EVENT_KIND,
                         message = reason,
                         timestampMillis = now
                     )).takeLast(AgentWorkspaceLimits.MAX_EVENTS),
@@ -157,7 +181,8 @@ internal object AgentColdBootRecoveryCoordinator {
         reason: String,
         journal: AgentPlanNodeJournal,
         processInstanceId: String,
-        force: Boolean = false
+        force: Boolean = false,
+        recoverPendingResponse: Boolean = false
     ): Boolean {
         val snapshot = store.load() ?: return false
         if (!AgentColdBootRecoveryPolicy.belongsToPreviousProcess(snapshot, processInstanceId)) {
@@ -173,7 +198,8 @@ internal object AgentColdBootRecoveryCoordinator {
                     else AgentPlanNodeRecovery.restoreOrReport(snapshot, journal),
                 processInstanceId = processInstanceId,
                 nowMillis = nowMillis,
-                reason = reason
+                reason = reason,
+                recoverPendingResponse = recoverPendingResponse
             )
         )
         return true

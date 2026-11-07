@@ -36,6 +36,15 @@ class HealthCareResearchUiDeviceTest {
         while (SystemClock.elapsedRealtime() < deadline)
         fail("Research UI did not reach expected state")
     }
+    private fun capture(name: String) {
+        if (InstrumentationRegistry.getArguments().getString("health_care_screenshot") != "true") return
+        instrumentation.waitForIdleSync()
+        // Dialog visibility precedes its compositor transition; capture the settled surface.
+        SystemClock.sleep(300)
+        instrumentation.uiAutomation.takeScreenshot()?.let { bitmap -> try {
+            File(context.getExternalFilesDir(null), name).outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        } finally { bitmap.recycle() } }
+    }
     private fun fixture(authorized: Boolean = false, block: (ActivityScenario<HealthCareActivity>, HealthOverviewDatabases, HealthCarePlan) -> Unit) {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         val names = HealthOverviewDatabases(UUID.randomUUID().toString())
@@ -62,12 +71,7 @@ class HealthCareResearchUiDeviceTest {
     @Test fun stopActionRevokesConsentAndKeepsDurableCancellation() = fixture(true) { scenario, names, plan ->
         scenario.onActivity { find(it, "health-care-research")!!.performClick() }
         await(scenario) { dialog(review(it))?.isShowing == true }
-        if (InstrumentationRegistry.getArguments().getString("health_care_screenshot") == "true") {
-            instrumentation.waitForIdleSync()
-            instrumentation.uiAutomation.takeScreenshot()?.let { bitmap -> try {
-                File(context.getExternalFilesDir(null), "health-research-fixture.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            } finally { bitmap.recycle() } }
-        }
+        capture("health-research-fixture.png")
         scenario.onActivity {
             val d = dialog(review(it))!!
             assertNotNull(views(d.window!!.decorView).firstOrNull { view -> view.tag == "health-research-state" })
@@ -104,10 +108,15 @@ class HealthCareResearchUiDeviceTest {
             val d = dialog(review(it))!!
             val check = views(d.window!!.decorView).filterIsInstance<CheckBox>().single()
             assertFalse(check.isChecked); assertFalse(d.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled)
+        }
+        capture("health-research-consent-fixture.png")
+        scenario.onActivity {
+            val d = dialog(review(it))!!
+            val check = views(d.window!!.decorView).filterIsInstance<CheckBox>().single()
             check.performClick(); assertTrue(d.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled)
             d.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
-            assertNull(dialog(review(it)))
         }
+        await(scenario) { dialog(review(it)) == null }
         HealthCareStore(context, names.care).use {
             assertNull(it.researchAuthorization(issue.id)); assertTrue(it.researchJobs(issue.id).isEmpty())
         }
