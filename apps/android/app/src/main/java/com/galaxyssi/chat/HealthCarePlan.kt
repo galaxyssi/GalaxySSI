@@ -30,7 +30,7 @@ internal data class HealthCarePlan(val grant: HealthCareDiscussionGrant, val inp
     val requestHash: String, val uncertainty: String, val sources: List<HealthCarePlanSource>, val actions: List<HealthCareAction>,
     val state: HealthCarePlanState = HealthCarePlanState.PENDING, val selected: Set<String> = emptySet(), val resolvedAt: Long? = null,
     val applicability: Map<String, HealthCareApplicability> = emptyMap(), val target: HealthCareTargetProposal? = null,
-    val targetSelected: Boolean = false) {
+    val targetSelected: Boolean = false, val maintenance: HealthCareMaintenanceProposal? = null, val maintenanceSelected: Boolean = false) {
     val id get() = grant.turnId
     init {
         require(inputVersion.isNotBlank() && createdAt > 0 && requestHash.matches(Regex("[a-f0-9]{64}")))
@@ -42,6 +42,8 @@ internal data class HealthCarePlan(val grant: HealthCareDiscussionGrant, val inp
         require(applicability.keys.all { id -> actions.any { it.id == id } })
         applicability.forEach { (id, review) -> HealthCareApplicabilityPolicy.validate(review, actions.single { it.id == id }, sources) }
         target?.let { HealthCareTargetPolicy.validate(it, sources) }
+        maintenance?.let { HealthCareMaintenancePolicy.validate(it, this) }
+        require(!maintenanceSelected || maintenance != null && state == HealthCarePlanState.ACCEPTED && actions[maintenance.recheckIndex].id in selected)
         require(!targetSelected || target != null && state == HealthCarePlanState.ACCEPTED)
         require(if (state == HealthCarePlanState.PENDING) resolvedAt == null && selected.isEmpty() && !targetSelected
             else resolvedAt != null && resolvedAt >= createdAt && (state != HealthCarePlanState.ACCEPTED || selected.isNotEmpty() || targetSelected))
@@ -50,7 +52,8 @@ internal data class HealthCarePlan(val grant: HealthCareDiscussionGrant, val inp
         .put("hash", requestHash).put("uncertainty", uncertainty).put("sources", JSONArray(sources.map { it.json() }))
         .put("actions", JSONArray(actions.map { it.json() })).put("state", state.name).put("selected", JSONArray(selected.sorted()))
         .put("resolved_at", resolvedAt ?: JSONObject.NULL).put("applicability", JSONObject(applicability.mapValues { it.value.json() }))
-        .apply { target?.let { put("target", it.json()) }; put("target_selected", targetSelected) }
+        .apply { target?.let { put("target", it.json()) }; put("target_selected", targetSelected)
+            maintenance?.let { put("maintenance", it.json()) }; put("maintenance_selected", maintenanceSelected) }
     companion object {
         fun from(j: JSONObject) = HealthCarePlan(HealthCareDiscussionGrant.from(j.getJSONObject("grant")), j.getString("input_version"),
             j.getLong("created_at"), j.getString("hash"), j.getString("uncertainty"), j.getJSONArray("sources").let { a ->
@@ -59,14 +62,15 @@ internal data class HealthCarePlan(val grant: HealthCareDiscussionGrant, val inp
             j.getJSONArray("selected").let { a -> (0 until a.length()).map { a.getString(it) }.toSet() },
             if (j.isNull("resolved_at")) null else j.getLong("resolved_at"), j.optJSONObject("applicability")?.let { a ->
                 a.keys().asSequence().associateWith { HealthCareApplicability.from(a.getJSONObject(it)) }
-            }.orEmpty(), j.optJSONObject("target")?.let(HealthCareTargetProposal::from), j.optBoolean("target_selected"))
+            }.orEmpty(), j.optJSONObject("target")?.let(HealthCareTargetProposal::from), j.optBoolean("target_selected"),
+            j.optJSONObject("maintenance")?.let(HealthCareMaintenanceProposal::from), j.optBoolean("maintenance_selected"))
     }
 }
 
 internal object HealthCarePlanPolicy {
     fun parse(request: AgentNativeJsonObject, grant: HealthCareDiscussionGrant, issue: HealthCareConcern, now: Long): HealthCarePlan {
         val input = JSONObject(AgentNativeJsonCodec.stringify(request))
-        keys(input, setOf("uncertainty", "sources", "actions") + if (input.has("target_proposal")) setOf("target_proposal") else emptySet())
+        keys(input, setOf("uncertainty", "sources", "actions") + setOf("target_proposal", "maintenance_review").filter(input::has))
         require(grant.concernId == issue.id && grant.revision == issue.revision)
         val sources = input.getJSONArray("sources").let { a -> (0 until a.length()).map {
             val source = a.getJSONObject(it); keys(source, setOf("title", "url", "version", "applicability", "evidence_id", "supporting_quote"))
@@ -91,7 +95,8 @@ internal object HealthCarePlanPolicy {
                 }
         } }
         return HealthCarePlan(grant, issue.inputVersion, now, AgentNativeJsonCodec.sha256(request), input.getString("uncertainty"), sources, actions,
-            applicability = reviews, target = if (input.has("target_proposal")) HealthCareTargetProposal.from(input.getJSONObject("target_proposal")) else null)
+            applicability = reviews, target = if (input.has("target_proposal")) HealthCareTargetProposal.from(input.getJSONObject("target_proposal")) else null,
+            maintenance = if (input.has("maintenance_review")) HealthCareMaintenanceProposal.from(input.getJSONObject("maintenance_review")) else null)
     }
     private fun keys(j: JSONObject, expected: Set<String>) { require(j.keys().asSequence().toSet() == expected) }
     private fun date(value: String): Long? = if (value.isEmpty()) null else
@@ -103,7 +108,8 @@ internal object HealthCarePlanPolicy {
         settings.version == plan.grant.settingsVersion && privacy.metrics && privacy.profile && privacy.version == plan.grant.privacyVersion &&
         issue.stage !in setOf(HealthCareStage.PAUSED, HealthCareStage.CLOSED) && HealthCareSignal.SOURCE_REMOVED !in issue.assessment.signals
 
-    fun accept(plan: HealthCarePlan, issue: HealthCareConcern, selected: Set<String>, now: Long, acceptTarget: Boolean = false): HealthCareConcern {
+    fun accept(plan: HealthCarePlan, issue: HealthCareConcern, selected: Set<String>, now: Long, acceptTarget: Boolean = false,
+        acceptMaintenance: Boolean = false): HealthCareConcern {
         require(plan.state == HealthCarePlanState.PENDING && (selected.isNotEmpty() || acceptTarget) && now >= plan.createdAt)
         require(selected.all { id -> plan.actions.any { it.id == id } })
         val next = if (acceptTarget) issue.copy(target = HealthCareTargetPolicy.accept(plan, issue, now), targetRevision = Math.addExact(issue.targetRevision, 1)) else issue
@@ -113,7 +119,11 @@ internal object HealthCarePlanPolicy {
             it.copy(state = HealthCareActionState.CONFIRMED, confirmedAt = now, basis = HealthCareFollowUpPolicy.basis(next))
         }
         require(issue.actions.none { it.id in selected })
-        return next.copy(actions = issue.actions + accepted, stage = if (accepted.any { it.kind == HealthCareActionKind.RECHECK })
+        val result = next.copy(actions = issue.actions + accepted, stage = if (accepted.any { it.kind == HealthCareActionKind.RECHECK })
             HealthCareStage.WAITING_RESULTS else HealthCareStage.REVIEW_PLAN)
+        return if (acceptMaintenance) {
+            require(!acceptTarget)
+            HealthCareMaintenancePolicy.accept(plan, issue, result, selected, now)
+        } else result
     }
 }

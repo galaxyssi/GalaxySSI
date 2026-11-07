@@ -24,7 +24,11 @@ internal object HealthCareEngine {
                     var changed = 0
                     for (metric in HealthMetric.entries) {
                         if (cancelled()) return changed
-                        val prior = care.forMetric(metric)
+                        var prior = care.forMetric(metric)
+                        if (prior != null && HealthCareMaintenancePolicy.needsReassessment(prior, now)) {
+                            prior = care.reassessMaintenance(prior.id, prior.revision, now)
+                            changed++
+                        }
                         val stamp = versions.getValue(metric)
                         if (stamp.isBlank() && prior == null) continue
                         val key = inputVersion(settings.version, permission.version, stamp)

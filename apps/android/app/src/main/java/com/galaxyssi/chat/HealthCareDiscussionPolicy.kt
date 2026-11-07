@@ -63,6 +63,7 @@ internal object HealthCareDiscussionPolicy {
         }).put("confirmed_context", value.context?.json() ?: JSONObject.NULL)
         .put("individual_target", value.target?.json() ?: JSONObject.NULL)
         .put("target_comparison", if (value.target == null) JSONObject.NULL else HealthCareTargetPolicy.comparison(value).name)
+        .put("maintenance_review", value.maintenance?.json()?.put("clinical_stability_verified", false) ?: JSONObject.NULL)
         .put("result_comparison", HealthCareComparisonPolicy.handoff(value.assessment, value.context) ?: JSONObject.NULL)
         .put("measurement_history", value.assessment.series?.modelJson(value.assessment.sample!!, value.context, value.assessment.comparison) ?: JSONObject.NULL)
         .put("priority_notice", HealthCarePriority.handoff(value) ?: JSONObject.NULL)
@@ -100,6 +101,17 @@ internal object HealthCareDiscussionPolicy {
         in galaxyssi.health.plan.propose with exact bounds, inclusivity, unit, supporting receipt and applicability.
         Never turn screening criteria into treatment goals or invent clinician confirmation. The user must review
         it separately. A single value within that target does not establish stability or authorize maintenance.
+        If source-backed longitudinal evidence supports discussing maintenance, optionally include maintenance_review
+        in galaxyssi.health.plan.propose. Cite a contiguous prefix of measurement_history starting with the latest
+        record (exact IDs and revisions), not a selection of normal results. Do not claim archive-wide coverage.
+        CURRENT_TARGET requires an already reviewed current target; do not combine a new target and maintenance
+        in one proposal. Use RISK_REVIEW only when applicable sources support follow-up without a numeric target;
+        never invent a numeric target or use this alternative to bypass an existing target.
+        Explain why the observation period and population support this step; no fixed count proves stability.
+        Include a justified future RECHECK action and its index. Unfinished prior actions, unknown or incompatible
+        conditions, missing target provenance and unresolved applicability require reassessment instead.
+        Maintenance remains a separately unchecked user choice, not medical certification, automatic closure,
+        or permission to cancel reminders. New evidence and the next review window reopen assessment.
         For each proposed action, read and cite its population and limitations, not only a numerical threshold.
         Declare source-supported applicability checks separately from actual patient context. Treat UNKNOWN as
         unknown, never as NO. List unsupported factors and material source conflicts with their next resolution step;

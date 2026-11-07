@@ -428,4 +428,47 @@ Different report/context versions retain the target as historical context and
 request review rather than silently reapplying it. A value inside the bounds does
 not establish clinical improvement, stability, maintenance or completion. This
 implements target proposal and review infrastructure, not clinically validated
-target generation or the complete longitudinal maintenance lifecycle.
+target generation.
+
+## Reviewed maintenance and reassessment
+
+The same scoped plan tool accepts an optional `maintenance_review`: rationale,
+source index, individualized applicability, exact consecutive record IDs/revisions,
+and the index of a proposed future `RECHECK` action. `CURRENT_TARGET` requires an
+already reviewed target on the current evidence basis. `RISK_REVIEW` permits
+source-backed follow-up without inventing a numerical target, but cannot bypass
+an existing target. A target change and maintenance cannot share a proposal.
+
+The native gate requires a contiguous prefix of the current bounded history page,
+including the latest result and distinct measurement times. Two records are only
+a structural minimum, never a clinical stability criterion. A truncated page
+boundary cannot certify a complete observation window; larger windows currently
+need further review, not an invented whole-archive conclusion. Differences in
+units, source, reference interval or collection conditions, unconfirmed glucose
+context, unresolved applicability, priority warnings, or unfinished prior actions
+prevent adoption. Method agreement still lacks independent clinical validation.
+
+Both Agent main and Personal Health present the proposal, evidence window,
+limitations, source receipts and next assessment. Maintenance is an independent,
+initially unchecked choice and also requires selecting the future reassessment.
+Confirmation atomically records the proposal identity, user review, action and
+evidence basis in the encrypted concern history. It does not certify clinical
+stability, close tracking, cancel existing actions, or authorize notifications.
+Reminder scheduling remains a separate user action with existing quiet-hour and
+privacy rules. Reviewed evidence remains accessible after acceptance.
+
+Source or target changes, action completion and the next reassessment window
+return the concern to reassessment, preserving the earlier decision. An explicit
+reassess action is also available. The deadline check runs even when measurement
+evaluation is cached. An earlier accepted action also reopens review so its due
+time cannot repeatedly wake a still-maintained concern. The existing reminder scheduler carries the next deadline
+without posting an unauthorized notification. Reopening encrypted databases and
+reconciliation recover the state, but OS scheduling is inexact and is not an
+emergency-monitoring guarantee. Paused tracking stays paused. Legacy maintenance
+states without a structured review reopen for reassessment rather than silently
+acquiring new evidence or authority.
+
+These are workflow and provenance checks. Quotation verification, numerical
+agreement and user confirmation are not a professional medical assessment.
+Clinical validity, wider longitudinal review and autonomous authorized research
+still require separate acceptance; no medication change is supported.

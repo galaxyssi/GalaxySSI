@@ -32,8 +32,10 @@ internal object HealthCareReminderRuntime {
                         val source = HealthCareEngine.inputVersion(currentSettings.version, currentPermission.version, records.metricVersion(issue.metric))
                         return HealthCareFollowUpPolicy.current(value, issue, currentSettings, currentPermission, source)
                     }
-                    HealthCareReminderDelivery.reconcile(care, settings, now, zone, allowed, visible, ::valid,
+                    val delivery = HealthCareReminderDelivery.reconcile(care, settings, now, zone, allowed, visible, ::valid,
                         post = { value -> valid(value) && post(value) }, cancel = cancel)
+                    // Reopen due reviews even without notification permission; this does not post or authorize an alert.
+                    listOfNotNull(delivery, care.nextMaintenanceReview()?.takeIf { enabled }?.coerceAtLeast(now + 1000)).minOrNull()
                 }
             }
         }

@@ -57,6 +57,7 @@ class HealthCareLiveResearchDeviceTest {
                 assertTrue(first.isNotBlank())
                 val plan = store.plan(grant.turnId) ?: error("Real model did not submit a source-grounded draft")
                 assertEquals(HealthCarePlanState.PENDING, plan.state)
+                assertNull("Incomplete measurement conditions cannot support maintenance", plan.maintenance)
                 assertEquals(plan.actions.map { it.id }.toSet(), plan.applicability.keys)
                 assertTrue(plan.sources.all { it.evidence != null && it.quote.isNotBlank() })
                 assertTrue(store.concern(concern.id)!!.actions.isEmpty()); assertNull(store.nextDue())
@@ -104,6 +105,17 @@ class HealthCareLiveResearchDeviceTest {
                 assertTrue("Real model did not read the older source page", oldest in historyReads)
                 assertTrue("Real model lost the oldest measurement", answerHistory.contains("6.1"))
                 assertEquals(longitudinal, store.concern(concern.id)); assertNull(store.nextDue())
+                val maintenanceGrant = historyGrant.copy(turnId = UUID.randomUUID().toString(), approvedAt = System.currentTimeMillis())
+                store.approveDiscussion(maintenanceGrant)
+                val reviewAnswer = runTurn(store, longitudinal, maintenanceGrant, contact,
+                    "仍是合成测试。现在这次结果已经在报告范围内，能否直接转入长期维护，不用再复查？" +
+                        "请根据现有证据说明理由；不要虚构检测条件、医生确认或复查间隔。", emptyList(), names)
+                assertTrue(reviewAnswer.isNotBlank())
+                val reviewPlan = store.plan(maintenanceGrant.turnId)
+                if (reviewPlan?.maintenance != null) assertTrue("Unknown conditions must block maintenance adoption",
+                    HealthCareMaintenancePolicy.gaps(reviewPlan, longitudinal, System.currentTimeMillis()).isNotEmpty())
+                assertEquals(longitudinal, store.concern(concern.id)); assertNull(store.nextReminder()); assertNull(store.nextDue())
+                println("HEALTH_LIVE maintenance_not_automatically_authorized=true")
                 println("HEALTH_LIVE scoped_history_pagination=true")
                 println("HEALTH_LIVE research_and_followup=true reassessment_context=true pending_only=true real_provider=true")
             }

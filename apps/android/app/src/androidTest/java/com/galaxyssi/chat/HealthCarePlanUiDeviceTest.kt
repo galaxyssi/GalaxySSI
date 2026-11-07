@@ -178,6 +178,46 @@ class HealthCarePlanUiDeviceTest {
     private fun targetDialog(review: HealthCareTargetReview) = HealthCareTargetReview::class.java.getDeclaredField("dialog")
         .apply { isAccessible = true }.get(review) as? AlertDialog
 
+    @Test fun maintenanceRequiresSeparateSelectionAndRecheckThenAllowsReassessment() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val names = HealthOverviewDatabases(UUID.randomUUID().toString()); val workers = mutableListOf<ExecutorService>()
+        try {
+            val plan = HealthCareMaintenanceTestFixture.propose(context, names)
+            val tag = "health-care-plan-${plan.id}"
+            ActivityScenario.launch<HealthCareActivity>(Intent(context, HealthCareActivity::class.java)
+                .putHealthNavigationFixture(names).putExtra("health_care_id", plan.grant.concernId)).use { scenario ->
+                await(scenario) { find(it, tag) != null }
+                scenario.onActivity { workers += worker(it); workers += worker(review(it)); find(it, tag)!!.performClick() }
+                await(scenario) { dialog(review(it))?.isShowing == true }
+                scenario.onActivity {
+                    val d = dialog(review(it))!!; val all = views(d.window!!.decorView)
+                    val maintenance = all.single { it.tag == "health-plan-maintenance" } as CheckBox
+                    assertTrue(maintenance.isEnabled); assertFalse(maintenance.isChecked)
+                    maintenance.performClick(); assertFalse(d.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled)
+                    (all.single { it.tag == "health-plan-action-0" } as CheckBox).performClick()
+                    assertTrue(d.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled)
+                }
+                capture("health-maintenance-review-fixture.png")
+                scenario.onActivity { dialog(review(it))!!.getButton(AlertDialog.BUTTON_POSITIVE).performClick() }
+                await(scenario) { find(it, "health-care-maintenance-reopen") != null }
+                scenario.onActivity { find(it, "health-care-maintenance")!!.performClick() }
+                await(scenario) { dialog(review(it))?.isShowing == true }
+                scenario.onActivity {
+                    val d = dialog(review(it))!!
+                    assertEquals(View.GONE, d.getButton(AlertDialog.BUTTON_POSITIVE).visibility)
+                    assertTrue(views(d.window!!.decorView).filterIsInstance<CheckBox>().none { it.isEnabled })
+                    d.getButton(AlertDialog.BUTTON_NEUTRAL).performClick()
+                    find(it, "health-care-maintenance-reopen")!!.performClick()
+                }
+                await(scenario) { find(it, "health-care-maintenance-reopen") == null }
+                HealthCareStore(context, names.care).use {
+                    assertEquals(HealthCareStage.REASSESS, it.concern(plan.grant.concernId)!!.stage)
+                    assertTrue(it.plan(plan.id)!!.maintenanceSelected); assertNull(it.nextReminder())
+                }
+            }
+        } finally { workers.forEach { it.awaitTermination(10, TimeUnit.SECONDS) }; clean(names) }
+    }
+
     @Test fun targetReviewRequiresExplicitSelectionAndSupportsCancelAndRevoke() {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         val names = HealthOverviewDatabases(UUID.randomUUID().toString()); val workers = mutableListOf<ExecutorService>()

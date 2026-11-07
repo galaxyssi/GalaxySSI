@@ -124,12 +124,12 @@ class HealthCarePolicyTest {
         assertNull(HealthCarePolicy.assess(HealthMetric.GLUCOSE, listOf(wrong), null))
         assertNull(HealthCarePolicy.assess(HealthMetric.HBA1C, listOf(reading()), null))
     }
-    @Test fun maintenanceRequiresExplicitReviewButDoesNotForceAnInventedNumericTarget() {
+    @Test fun textOnlyReviewCannotAuthorizeMaintenanceWithoutEvidenceAndNextAssessment() {
         val c = concern()
         assertTrue(runCatching { HealthCarePolicy.review(c, HealthCareStage.MAINTENANCE, "", "user", now) }.isFailure)
         assertTrue(runCatching { c.copy(stage = HealthCareStage.CLOSED) }.isFailure)
-        val reviewed = HealthCarePolicy.review(c, HealthCareStage.MAINTENANCE, "Clinician reviewed; no numerical target indicated", "user-reported clinician review", now)
-        assertEquals(HealthCareStage.MAINTENANCE, reviewed.stage); assertNull(reviewed.target)
+        assertTrue(runCatching { HealthCarePolicy.review(c, HealthCareStage.MAINTENANCE,
+            "Clinician reviewed; no numerical target indicated", "user-reported clinician review", now) }.isFailure)
         assertEquals(HealthCareStage.CLOSED, HealthCarePolicy.review(c, HealthCareStage.CLOSED, "Reviewed with clinician", "user", now).stage)
     }
     @Test fun targetsRequireAnExplicitBasisAndConfirmation() {
