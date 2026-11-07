@@ -161,6 +161,17 @@ enum AgentCollaborationRuleTopics {
     avoid_when, limitations, authorization_boundary and unresolved: []. Include that same observation in observations.
     The host checks full evidence reads and re-evaluates all cases. Release does not grant permissions or certify safety.
     """),
+    Topic(id: "retention", purpose: "Preserve measured capability cases across versions", prerequisites: ["foundation"], contract: """
+    Publish capability_suite with scope, limitations and the exact independently retained lesson as a parent.
+    Every measured case needs an exact dataset artifact. A future experiment_plan.retention_suite must cite the suite
+    as a parent and preserve its dataset, metric, direction, repetitions and tolerance in regression cases.
+    The host checks the original anchor as well as the current control. Extend a passing suite with previous_suite;
+    never remove earlier cases, weaken feasibility thresholds or move their original anchors.
+    capability_channel selects an exact independently reviewed tool release tied to the retained innovation and suite.
+    Use operation initialize or promote with implementation, lesson, suite and reason. Promotion extends the active suite.
+    To roll back, cite target_revision from the same channel. Rollback preserves the latest bank and may require revalidation.
+    A selection grants no permissions and does not rerun or undo work.
+    """),
     Topic(id: "workflows", purpose: "Register workflow roles, steps and review conditions", prerequisites: ["foundation"], contract: """
     workflow_method includes purpose, domain, bottleneck, change_rationale, applies_when, avoid_when, risks, expected_gain,
     falsifier, dimensions, roles, inputs and steps. Steps declare id, role, stage, assignment, depends_on, dependency_policy,

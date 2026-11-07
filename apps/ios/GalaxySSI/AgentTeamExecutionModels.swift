@@ -146,6 +146,8 @@ struct AgentCollaborationResearchDraft: Codable {
     case experimentPlan = "experiment_plan"
     case experimentResult = "experiment_result"
     case capabilityLesson = "capability_lesson"
+    case capabilitySuite = "capability_suite"
+    case capabilityChannel = "capability_channel"
     case workflowMethod = "workflow_method"
     case candidateEvent = "candidate_event"
     case teamExchange = "team_exchange"
@@ -684,7 +686,7 @@ enum AgentCollaborationExperimentPlanIntake {
                         current: (AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision?) rethrows -> Bool {
     guard draft.kind == .experimentPlan, draft.objectId?.isBlank != false, draft.baseRevision == 0,
           let spec = draft.body["experiment_plan"]?.objectValue,
-          ["retention_suite", "transfer_study", "team_comparison", "workflow_comparison"].allSatisfy({ spec[$0] == nil }),
+          ["transfer_study", "team_comparison", "workflow_comparison"].allSatisfy({ spec[$0] == nil }),
           hasText(spec, ["method", "environment", "budget_unit", "prediction_id"]),
           let pointer = spec["report_pointer"]?.stringValue, pointer.isEmpty || pointer.hasPrefix("/"),
           let limit = number(spec["budget_limit"]), limit > 0,
@@ -699,6 +701,12 @@ enum AgentCollaborationExperimentPlanIntake {
           let predictions = savedIdea.draft.body["innovation"]?.objectValue?["predictions"]?.arrayValue,
           predictions.contains(where: { $0.objectValue?.string("id") == spec.string("prediction_id") }),
           let cases = spec["cases"]?.arrayValue, validatesCases(cases) else { return false }
+    if let value = spec["retention_suite"] {
+      guard let ref = reference(value), draft.parents.contains(ref),
+            let suite = try current(ref), suite.draft.kind == .capabilitySuite, let bank = suite.retentionBank,
+            let domain = savedIdea.draft.body["innovation"]?.objectValue?["domain"]?.strictStringValue,
+            bank.admits(spec, domain: domain) else { return false }
+    }
     for raw in cases {
       if let item = raw.objectValue, item["dataset"] != nil {
         guard let dataset = reference(item["dataset"]), draft.parents.contains(dataset),
@@ -736,7 +744,7 @@ enum AgentCollaborationExperimentPlanIntake {
     fields.allSatisfy { object[$0]?.stringValue?.isBlank == false }
   }
 
-  private static func number(_ value: AgentMcpJSONValue?) -> Double? {
+  static func number(_ value: AgentMcpJSONValue?) -> Double? {
     switch value {
     case .some(.int(let number)): return Double(number)
     case .some(.double(let number)) where number.isFinite: return number
@@ -750,6 +758,11 @@ enum AgentCollaborationExperimentPlanIntake {
           let cases = spec["cases"]?.arrayValue, validatesCases(cases),
           let idea = reference(spec["innovation"]), let baseline = reference(spec["baseline"]),
           let budget = number(spec["budget_limit"]), budget > 0 else { return nil }
+    guard (spec["retention_suite"] == nil) == (plan.retentionBank == nil) else { return nil }
+    if let bank = plan.retentionBank, !bank.admits(spec, domain: bank.domain) { return nil }
+    let protected = plan.retentionBank?.anchors ?? []
+    guard Set(protected.map(\.id)).count == protected.count else { return nil }
+    let anchors = Dictionary(uniqueKeysWithValues: protected.map { ($0.id, $0) })
     let definitions = Dictionary(uniqueKeysWithValues: cases.compactMap(\.objectValue).map { ($0.string("id"), $0) })
     struct Sample: Hashable { var variant: String; var repetition: Int64 }
     var values: [String: [Sample: Double]] = [:]
@@ -799,8 +812,9 @@ enum AgentCollaborationExperimentPlanIntake {
         passed = maximize ? candidate >= threshold : candidate <= threshold
       default: passed = gain > 0 && gain >= (number(item["minimum_gain"]) ?? 0)
       }
-      results.append(.init(id: id, purpose: purpose, state: passed ? "passed" : "not_met",
-        baseline: control, candidate: candidate, gain: gain))
+      let anchorMet = anchors[id]?.passes(candidate, case: item)
+      results.append(.init(id: id, purpose: purpose, state: passed && anchorMet != false ? "passed" : "not_met",
+        baseline: control, candidate: candidate, gain: gain, originalAnchorMet: anchorMet))
     }
     return results
   }
@@ -813,6 +827,7 @@ struct AgentCollaborationMeasuredCase: Codable, Equatable {
   var baseline: Double? = nil
   var candidate: Double? = nil
   var gain: Double? = nil
+  var originalAnchorMet: Bool? = nil
 
   static func supportsRetention(_ cases: [Self]) -> Bool {
     cases.contains { $0.purpose == "target" } &&
@@ -908,6 +923,8 @@ struct AgentCollaborationResearchRevision: Codable {
   var expectedInformationGainBits: [String: Double]? = nil
   var hypothesisFeedback: AgentMcpJSONObject? = nil
   var carriedHypothesisPosterior: AgentMcpJSONObject? = nil
+  var retentionBank: AgentCollaborationCapabilityBank? = nil
+  var capabilitySelection: AgentCollaborationCapabilitySelection? = nil
   var registeredAtMillis: Int64? = nil
   var measuredCases: [AgentCollaborationMeasuredCase]? = nil
   var trialAuthors: [String]? = nil
