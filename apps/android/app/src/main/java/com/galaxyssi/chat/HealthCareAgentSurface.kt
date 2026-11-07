@@ -17,6 +17,7 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
     private val planReview = HealthCarePlanReview(activity, names)
     private val actionReview = HealthCareActionReview(activity, names)
     private val targetReview = HealthCareTargetReview(activity, names)
+    private val historyReview = HealthCareHistoryReview(activity, names)
     private var active = false
     private var agentPage = activity.findViewById<View>(R.id.collaborationOutputList).visibility != View.VISIBLE
     private var loading = false
@@ -24,7 +25,7 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
     private var generation = 0
     private var visibleConversation = ""
     private val observer = object : ContentObserver(main) {
-        override fun onChange(selfChange: Boolean) { planReview.clear(); actionReview.clear(); targetReview.clear(); generation++; reload() }
+        override fun onChange(selfChange: Boolean) { planReview.clear(); actionReview.clear(); targetReview.clear(); historyReview.clear(); generation++; reload() }
     }
     fun resume() {
         if (active) return
@@ -39,12 +40,12 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
         if (active) activity.contentResolver.unregisterContentObserver(observer)
         active = false; clear()
     }
-    fun clear() { generation++; planReview.clear(); actionReview.clear(); targetReview.clear(); host.removeAllViews(); host.visibility = View.GONE }
+    fun clear() { generation++; planReview.clear(); actionReview.clear(); targetReview.clear(); historyReview.clear(); host.removeAllViews(); host.visibility = View.GONE }
     fun showForAgent(value: Boolean) {
         agentPage = value
         if (value) reload() else clear()
     }
-    fun destroy() { pause(); planReview.destroy(); actionReview.destroy(); targetReview.destroy(); worker.shutdown() }
+    fun destroy() { pause(); planReview.destroy(); actionReview.destroy(); targetReview.destroy(); historyReview.destroy(); worker.shutdown() }
     private data class Snapshot(val concerns: List<HealthCareConcern>, val plans: List<HealthCarePlan> = emptyList(),
         val action: HealthCareAction? = null, val reminder: HealthCareReminder? = null, val profile: Boolean = false)
     private fun reload() {
@@ -52,7 +53,7 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
         val conversation = activity.agentTranscriptStore.activeConversation()
         if (conversation.id != visibleConversation) {
             visibleConversation = conversation.id
-            planReview.clear(); actionReview.clear(); targetReview.clear(); generation++
+            planReview.clear(); actionReview.clear(); targetReview.clear(); historyReview.clear(); generation++
         }
         if (loading) { dirty = true; return }
         loading = true; dirty = false; val token = generation
@@ -98,6 +99,10 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
                             activity.startActivity(Intent(activity, HealthCareActivity::class.java).putExtra("health_care_id", item.id)
                                 .putHealthNavigationFixture(names))
                         }.apply { tag = "agent-health-care-concern" })
+                        if (snapshot.profile && item.assessment.series != null) host.addView(ui.profileRow(
+                            activity.getString(R.string.health_series_title), activity.getString(R.string.health_series_summary)) {
+                            historyReview.show(item.id)
+                        }.apply { tag = "agent-health-care-series" })
                         snapshot.plans.firstOrNull()?.let { plan ->
                             host.addView(ui.profileRow(HealthCareTargetPresentation.planTitle(activity, plan)) {
                                 planReview.show(plan.id)

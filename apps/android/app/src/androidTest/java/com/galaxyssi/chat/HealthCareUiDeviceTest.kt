@@ -1,6 +1,7 @@
 package com.galaxyssi.chat
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.app.KeyguardManager
 import android.content.Intent
 import android.graphics.Bitmap
@@ -49,6 +50,46 @@ class HealthCareUiDeviceTest {
     }
     private fun clean(names: HealthOverviewDatabases) {
         listOf(names.care, names.records, names.privacy).forEach(context::deleteDatabase)
+    }
+    private fun historyReview(activity: HealthCareActivity) = HealthCareActivity::class.java.getDeclaredMethod("getHistoryReview")
+        .apply { isAccessible = true }.invoke(activity) as HealthCareHistoryReview
+    private fun historyDialog(review: HealthCareHistoryReview) = HealthCareHistoryReview::class.java.getDeclaredField("dialog")
+        .apply { isAccessible = true }.get(review) as? AlertDialog
+    private fun worker(value: Any) = value.javaClass.getDeclaredField("worker").apply { isAccessible = true }.get(value) as ExecutorService
+    @Test fun longitudinalHistoryPagesClearOnBackgroundAndPrivacyChange() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val names = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val workers = mutableListOf<ExecutorService>()
+        try {
+            seed(names)
+            HealthRecordStore(context, names.records).use { records -> repeat(33) { index -> records.save(HealthDraft(HealthMetric.GLUCOSE,
+                mapOf("glucose" to "6.3"), "mmol/L", System.currentTimeMillis() - (index + 3L) * 86_400_000L, reference = "4-6")) } }
+            HealthCareEngine.evaluate(context, names)
+            val id = HealthCareStore(context, names.care).use { it.forMetric(HealthMetric.GLUCOSE)!!.id }
+            ActivityScenario.launch<HealthCareActivity>(Intent(context, HealthCareActivity::class.java)
+                .putExtra("health_care_id", id).putHealthNavigationFixture(names)).use { scenario ->
+                await(scenario) { find(it, "health-care-series") != null }
+                scenario.onActivity { workers += worker(it); workers += worker(historyReview(it)); find(it, "health-care-series")!!.performClick() }
+                await(scenario) { historyDialog(historyReview(it))?.isShowing == true }
+                scenario.onActivity { activity ->
+                    val d = historyDialog(historyReview(activity))!!
+                    assertEquals(30, views(d.window!!.decorView).count { it.tag == "health-series-value" })
+                    assertTrue(views(d.window!!.decorView).filterIsInstance<TextView>().any { it.text.toString() == activity.getString(R.string.health_series_earlier) })
+                    d.getButton(AlertDialog.BUTTON_NEUTRAL).performClick()
+                }
+                await(scenario) { historyDialog(historyReview(it))?.window?.decorView?.let { root -> views(root).count { it.tag == "health-series-value" } == 5 } == true }
+                capture("health-series-older-fixture.png")
+                scenario.moveToState(Lifecycle.State.CREATED)
+                scenario.onActivity { assertNull(historyDialog(historyReview(it))) }
+                scenario.moveToState(Lifecycle.State.RESUMED)
+                await(scenario) { find(it, "health-care-series") != null }
+                scenario.onActivity { find(it, "health-care-series")!!.performClick() }
+                await(scenario) { historyDialog(historyReview(it))?.isShowing == true }
+                capture("health-series-recent-fixture.png")
+                HealthPrivacyStore(context, names.privacy).use { it.change(HealthPrivacyOption.CONFIRMED_METRICS, false, it.policy().version) }
+                await(scenario) { historyDialog(historyReview(it)) == null && find(it, "health-care-series") == null }
+            }
+        } finally { workers.forEach { it.awaitTermination(10, TimeUnit.SECONDS) }; clean(names) }
     }
     private fun capture(name: String) {
         if (InstrumentationRegistry.getArguments().getString("health_care_screenshot") != "true") return
@@ -188,8 +229,10 @@ class HealthCareUiDeviceTest {
                 scenario.onActivity { activity ->
                     val label = views(find(activity, "agent-health-care-concern")!!).filterIsInstance<TextView>().joinToString { it.text.toString() }
                     assertTrue(label.contains("6.3")); assertTrue(label.contains("5.4"))
+                    assertNotNull(find(activity, "agent-health-care-series"))
                     activity.healthCareSurface!!.showForAgent(false)
                     assertNull(find(activity, "agent-health-care-concern"))
+                    assertNull(find(activity, "agent-health-care-series"))
                     activity.healthCareSurface!!.showForAgent(true)
                 }
                 await(scenario) { find(it, "agent-health-care-concern") != null }

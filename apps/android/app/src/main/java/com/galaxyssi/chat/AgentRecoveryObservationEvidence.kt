@@ -18,7 +18,8 @@ internal object AgentRecoveryObservationEvidence {
         val json = runCatching { JSONObject(value) }.getOrNull()
         val proof = json?.optJSONObject(KEY)
         if (proof?.optJSONObject("recovery_query") == null) {
-            return AgentWebObservation.compact(value, limit, preserveReceipt = true) ?: value.take(limit)
+            return HealthCareHistoryObservation.compact(value, limit, preserveReceipt = true)
+                ?: AgentWebObservation.compact(value, limit, preserveReceipt = true) ?: value.take(limit)
         }
         if (value.length <= AgentSessionPersistencePolicy.MAX_ACTION_TEXT_CHARACTERS) return value
         val compact = JSONObject().put(KEY, proof).put("state_verified", false).toString()

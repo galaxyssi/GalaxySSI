@@ -1,0 +1,8 @@
+<resources>
+    <string name="health_series_title">Results over time</string>
+    <string name="health_series_summary">Review measurements and comparison gaps</string>
+    <string name="health_series_notice">These are recorded results, not a stability assessment. Matching values or a normal result do not prove improvement. Collection methods and missing context still need review.</string>
+    <string name="health_series_earlier">Earlier records are available. This page does not represent the entire history.</string>
+    <string name="health_series_end">End of the currently available records. Missing or unrecorded tests cannot be assessed.</string>
+    <string name="health_series_more">Earlier results</string>
+</resources>

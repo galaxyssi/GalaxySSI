@@ -67,6 +67,13 @@ internal object HealthCareComparisonPolicy {
         val previous = value.comparison ?: return emptySet()
         val before = previous.before
         val after = value.sample ?: return emptySet()
+        return gaps(before, after, previous.previousContext, context?.takeIf { it.record == after.record })
+    }
+
+    fun gaps(before: HealthCareSample, after: HealthCareSample, old: HealthCareContext?, now: HealthCareContext?): Set<HealthCareComparisonGap> {
+        require(before.metric == after.metric)
+        require(old == null || old.record == before.record)
+        require(now == null || now.record == after.record)
         val gaps = linkedSetOf(HealthCareComparisonGap.METHOD_UNVERIFIED)
         if (before.unit != after.unit) gaps += HealthCareComparisonGap.UNITS_DIFFER
         if (before.condition == "unspecified" || after.condition == "unspecified") gaps += HealthCareComparisonGap.CONDITIONS_UNKNOWN
@@ -76,8 +83,6 @@ internal object HealthCareComparisonPolicy {
         if (after.metric.requiredFields.any { HealthResult.parse(before.values[it].orEmpty(), after.metric.form)?.exactNumber == null ||
                 HealthResult.parse(after.values[it].orEmpty(), after.metric.form)?.exactNumber == null }) gaps += HealthCareComparisonGap.NON_EXACT_RESULT
         if (after.metric == HealthMetric.GLUCOSE) {
-            val old = previous.previousContext
-            val now = context?.takeIf { it.record == after.record }
             fun incomplete(c: HealthCareContext?) = c == null || c.adult == HealthCareTruth.UNKNOWN ||
                 c.pregnant == HealthCareTruth.UNKNOWN || c.diagnosedDiabetes == HealthCareTruth.UNKNOWN ||
                 c.specimen == HealthCareSpecimen.UNKNOWN || c.fastingHours == null || c.illnessOrMedication == HealthCareTruth.UNKNOWN

@@ -66,8 +66,17 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
     ).use { it.moveToFirst(); it.getLong(0) }
     fun recentSelf(until: Long, limit: Int, metric: HealthMetric? = null, manual: Boolean = false): List<HealthObservation> {
         require(limit in 1..PAGE_SIZE)
+        return recentSelfRows(until, limit, metric, manual, null)
+    }
+    fun careHistory(until: Long, metric: HealthMetric, after: HealthPageCursor? = null): HealthRecordPage {
+        val rows = recentSelfRows(until, PAGE_SIZE + 1, metric, false, after)
+        val visible = rows.take(PAGE_SIZE)
+        return HealthRecordPage(visible, if (rows.size > PAGE_SIZE) visible.last().let { HealthPageCursor(it.draft.measuredAt, it.id) } else null)
+    }
+    private fun recentSelfRows(until: Long, limit: Int, metric: HealthMetric?, manual: Boolean,
+        start: HealthPageCursor?): List<HealthObservation> {
         val found = ArrayList<HealthObservation>(limit)
-        var after: HealthPageCursor? = null
+        var after = start
         while (true) {
             val args = arrayListOf(until.toString())
             val conditions = arrayListOf("deleted=0", "measured_at<=?")

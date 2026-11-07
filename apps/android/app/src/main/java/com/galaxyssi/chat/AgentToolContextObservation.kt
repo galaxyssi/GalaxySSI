@@ -21,6 +21,10 @@ internal object AgentToolContextObservation {
         result.error?.details?.get("outcome_unknown") == true || result.output["outcome_unknown"] == true
 
     fun compact(result: AgentModelToolResultContent): AgentModelToolResultContent {
+        HealthCareHistoryObservation.compact(AgentNativeJsonCodec.stringify(result.output), 1_200)?.let {
+            return result.copy(output = org.json.JSONObject(it).toNativeObject(), message = "",
+                nativeResult = result.nativeResult?.filterKeys { key -> key in evidenceKeys })
+        }
         val text = result.error?.message?.takeIf(String::isNotBlank)
             ?: result.message.ifBlank { AgentNativeJsonCodec.stringify(result.output) }
         val references = result.output.filter { (key, value) ->

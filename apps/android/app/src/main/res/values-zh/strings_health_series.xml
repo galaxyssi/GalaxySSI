@@ -1,0 +1,8 @@
+<resources>
+    <string name="health_series_title">持续结果与趋势</string>
+    <string name="health_series_summary">查看历次结果与可比性缺口</string>
+    <string name="health_series_notice">以下是已记录结果，不是稳定性评估。数值相近或一次正常不代表改善，检测方法及缺失背景仍需核对。</string>
+    <string name="health_series_earlier">还有更早记录，本页不代表全部历史。</string>
+    <string name="health_series_end">已到当前可用记录的末尾，未记录或缺失的检测无法评估。</string>
+    <string name="health_series_more">更早的结果</string>
+</resources>
