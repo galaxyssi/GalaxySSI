@@ -18,7 +18,10 @@ class HealthCarePlanPolicyTest {
         "supporting_quote" to "Synthetic fixture; no medical advice")
     private fun action(kind: String = "CONTEXT", from: String = "", until: String = ""): AgentNativeJsonObject = mapOf(
         "kind" to kind, "description" to "Confirm the test conditions", "rationale" to "The report context is incomplete",
-        "source_index" to 0, "due_from" to from, "due_until" to until)
+        "source_index" to 0, "due_from" to from, "due_until" to until,
+        "applicability" to mapOf("mode" to if (kind in setOf("CONTEXT", "CLINICIAN_DISCUSSION")) "DISCUSSION_ONLY" else "INDIVIDUALIZED",
+            "checks" to listOf(mapOf("field" to "metric", "operator" to "EQUALS", "expected" to "GLUCOSE", "source_index" to 0)),
+            "missing_information" to emptyList<String>(), "conflicts" to emptyList<String>()))
     private fun input(actions: List<AgentNativeJsonObject> = listOf(action()), sources: List<AgentNativeJsonObject> = listOf(source)) =
         mapOf("uncertainty" to "Fasting conditions have not been confirmed", "sources" to sources, "actions" to actions)
     private fun parse(input: AgentNativeJsonObject = input()) = HealthCarePlanPolicy.parse(input, grant, issue, now)
