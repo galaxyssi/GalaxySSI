@@ -1715,6 +1715,38 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
+  func prepareSavedToolTest(_ reference: AgentCollaborationResearchReference, timeoutMillis: Int64,
+                            scope: AgentCollaborationToolEvidenceScope) throws -> AgentCollaborationSavedToolTest.Prepared {
+    try access { database in
+      guard let team = try database.snapshots(runId: scope.runId).first,
+            team.state == .running, team.conversationId == scope.conversationId, team.taskId == scope.turnId,
+            let member = team.members.first(where: { $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId }),
+            member.deliveryMode != .ignore, !member.status.isTerminal,
+            member.dispatchCheckpoint == .dispatching || member.dispatchCheckpoint == .accepted,
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true else { throw AgentTeamHistoryDatabase.Failure.stale }
+      func current(_ ref: AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision {
+        guard let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                conversationId: scope.conversationId, key: "object:" + ref.objectId),
+              record.reference == ref else { throw AgentTeamHistoryDatabase.Failure.stale }
+        if record.turnId == scope.turnId {
+          guard record.runId == scope.runId, (record.authorId == scope.memberId && record.sourceId == scope.sourceId) ||
+            (member.dispatchDependencyMemberIds?.contains(record.authorId) == true &&
+              team.members.contains(where: { $0.memberId == record.authorId && $0.sourceMessageId == record.sourceId &&
+                $0.deliveryMode != .ignore && $0.status.isTerminal })) else { throw AgentTeamHistoryDatabase.Failure.stale }
+        }
+        return record
+      }
+      let plan = try current(reference)
+      guard plan.draft.kind == .toolTestPlan,
+            let test = plan.draft.body["tool_test_plan"]?.objectValue,
+            let tool = AgentCollaborationSavedToolTest.reference(test["executable_tool"]),
+            let prepared = AgentCollaborationSavedToolTest.prepare(plan: plan, tool: try current(tool),
+              timeoutMillis: timeoutMillis) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      return prepared
+    }
+  }
+
   func recordNativeObservation(_ observation: AgentCollaborationNativeToolObservation) throws -> AgentMcpJSONObject {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
