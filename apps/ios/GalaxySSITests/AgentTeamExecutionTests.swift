@@ -236,6 +236,117 @@ extension GalaxySSIStoreTests {
     XCTAssertThrowsError(try history.recordNativeObservation(observation))
   }
 
+  func testNativeOriginalRecallReopensAndRequiresAnExactVisibleSource() throws {
+    let suite = "native-original-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite")
+    func open() -> AgentTeamExecutionHistoryStore {
+      AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+        executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    }
+    let history = open()
+    var team = durableTeamSnapshot("native-original")
+    let author = team.members[0]
+    team.members[1].dispatchDependencyMemberIds = [author.memberId]
+    XCTAssertTrue(history.upsert(team))
+    func scope(_ snapshot: AgentTeamExecutionSnapshot, index: Int) -> AgentCollaborationToolEvidenceScope {
+      .init(runId: snapshot.supervisorRunId, conversationId: snapshot.conversationId, turnId: snapshot.taskId,
+        memberId: snapshot.members[index].memberId, sourceId: snapshot.members[index].sourceMessageId)
+    }
+    let longInput = String(repeating: "original parameters ", count: 240)
+    let result = AgentNativeToolResult(status: .rejected, output: [:], message: "Rejected before execution",
+      receipt: AgentNativeToolReceipt(invocationId: "replay", startedAtEpochMillis: 1,
+        finishedAtEpochMillis: 2, durationMillis: 1, status: .rejected, inputSha256: "input",
+        outputSha256: "output", replayed: true, originalInvocationId: "original"),
+      provenance: AgentNativeToolProvenance(toolId: "test.tool", toolVersion: "2", location: .phone,
+        executorId: "test", contractVersion: "1"))
+    let observation = AgentCollaborationNativeToolObservation(runId: team.supervisorRunId,
+      conversationId: team.conversationId, turnId: team.taskId, memberId: author.memberId,
+      sourceId: author.sourceMessageId, input: ["parameters": .string(longInput)], result: result)
+    let receipt = try history.recordNativeObservation(observation)
+    let selector: AgentMcpJSONObject = ["mode": .string("evidence"),
+      "evidence_id": .string(receipt.string("evidence_id")), "sha256": .string(receipt.string("sha256"))]
+    let reader = scope(team, index: 1)
+    XCTAssertThrowsError(try history.recallCollaborationOriginal(selector, scope: reader))
+    let own = try history.recallCollaborationOriginal(selector, scope: scope(team, index: 0))
+    XCTAssertEqual(own["host_read_coverage"]?.objectValue?["complete"], .bool(false))
+
+    team.members[0].status = .failed
+    XCTAssertTrue(history.upsert(team))
+    let reopened = open()
+    var wrongHash = selector
+    wrongHash["sha256"] = .string(String(repeating: "0", count: 64))
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(wrongHash, scope: reader))
+    var anotherRun = durableTeamSnapshot("another-native-run")
+    XCTAssertTrue(reopened.upsert(anotherRun))
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(selector, scope: scope(anotherRun, index: 0)))
+    anotherRun = durableTeamSnapshot("another-native-group")
+    anotherRun.conversationId = "foreign-group"
+    XCTAssertTrue(reopened.upsert(anotherRun))
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(selector, scope: scope(anotherRun, index: 0)))
+
+    let first = try reopened.recallCollaborationOriginal(selector, scope: reader, evidenceRead: .desktopPreview)
+    XCTAssertEqual(first["source_reference"]?.objectValue?["origin"], .string("ios_native_tool"))
+    XCTAssertEqual(first["source_reference"]?.objectValue?["status"], .string("rejected"))
+    XCTAssertEqual(first["source_reference"]?.objectValue?["replayed"], .bool(true))
+    XCTAssertNil(first["host_read_coverage"])
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(selector, scope: reader,
+      evidenceRead: .desktopConfirm(contentHash: String(repeating: "0", count: 64))))
+    var lastSelector = selector
+    lastSelector["offset"] = .int(4_000)
+    let last = try reopened.recallCollaborationOriginal(lastSelector, scope: reader)
+    XCTAssertEqual(last["next_offset"], .null)
+    XCTAssertEqual(last["host_read_coverage"]?.objectValue?["first_missing_offset"], .int(0))
+    let deliveredHash = AgentDesktopNativeEvidenceDelivery.digest(first.string("content"))
+    let confirmed = try reopened.recallCollaborationOriginal(selector, scope: reader,
+      evidenceRead: .desktopConfirm(contentHash: deliveredHash))
+    XCTAssertEqual(confirmed["host_read_coverage"]?.objectValue?["first_missing_offset"], .int(2_000))
+    XCTAssertEqual(try open().recallCollaborationOriginal(selector, scope: reader,
+      evidenceRead: .desktopConfirm(contentHash: deliveredHash))["host_read_coverage"], confirmed["host_read_coverage"])
+    var middleSelector = selector
+    middleSelector["offset"] = .int(2_000)
+    let middle = try open().recallCollaborationOriginal(middleSelector, scope: reader)
+    XCTAssertEqual(middle["host_read_coverage"]?.objectValue?["complete"], .bool(true))
+    let joined = Data((first.string("content") + middle.string("content") + last.string("content")).utf8)
+    let original = try JSONDecoder().decode(AgentCollaborationNativeToolObservation.self, from: joined)
+    XCTAssertEqual(original.input, observation.input)
+    XCTAssertEqual(original.result, observation.result)
+    var later = durableTeamSnapshot("native-later-turn")
+    later.taskId = "later-turn"
+    XCTAssertTrue(reopened.upsert(later))
+    let laterPage = try reopened.recallCollaborationOriginal(selector, scope: scope(later, index: 0))
+    XCTAssertEqual(laterPage["source_reference"], first["source_reference"])
+    XCTAssertEqual(laterPage["host_read_coverage"]?.objectValue?["complete"], .bool(false))
+    reopened.removeResearchObjects(conversationId: team.conversationId)
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(selector, scope: reader))
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(selector, scope: scope(later, index: 0)))
+  }
+
+  func testDesktopNativeEvidenceReceiptBindsPageRouteAndProcess() throws {
+    let delivery = AgentDesktopNativeEvidenceDelivery()
+    let input: AgentMcpJSONObject = ["mode": .string("evidence"), "offset": .int(0),
+      "evidence_id": .string(String(repeating: "a", count: 64)), "sha256": .string(String(repeating: "b", count: 64))]
+    XCTAssertTrue(AgentDesktopNativeEvidenceDelivery.accepts(input))
+    let receipt = try XCTUnwrap(delivery.issue(content: "original page", binding: "route-a", input: input, now: 1_000))
+    let digest = AgentDesktopNativeEvidenceDelivery.digest("original page")
+    XCTAssertEqual(delivery.confirm(receipt, binding: "route-a", input: input, now: 2_000), digest)
+    XCTAssertEqual(delivery.confirm(receipt, binding: "route-a", input: input, now: 2_001), digest)
+    XCTAssertNil(delivery.confirm(receipt, binding: "route-b", input: input, now: 2_000))
+    XCTAssertNil(delivery.confirm(receipt, binding: "route-a", input: input, now: 61_000))
+    XCTAssertNil(AgentDesktopNativeEvidenceDelivery().confirm(receipt, binding: "route-a", input: input, now: 2_000))
+    var next = input
+    next["offset"] = .int(2_000)
+    XCTAssertNil(delivery.confirm(receipt, binding: "route-a", input: next, now: 2_000))
+    next["offset"] = .string("2000")
+    XCTAssertFalse(AgentDesktopNativeEvidenceDelivery.accepts(next))
+    var tampered = receipt
+    tampered["content_sha256"] = .string(String(repeating: "c", count: 64))
+    XCTAssertNil(delivery.confirm(tampered, binding: "route-a", input: input, now: 2_000))
+  }
+
   func testCloudEvidenceReceiptIsScopedAndRejectsChangedReplay() throws {
     let suite = "team-cloud-evidence-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
