@@ -37,6 +37,7 @@ enum GalaxySSIHealthCarePlan {
     let sources: [Source]
     let actions: [Action]
     var target: GalaxySSIHealthCareTarget.Proposal?
+    var maintenance: GalaxySSIHealthCareMaintenance.Draft?
   }
   struct Proposal: Codable, Equatable, Identifiable {
     let id: UUID
@@ -58,6 +59,7 @@ enum GalaxySSIHealthCarePlan {
     var selected: Set<Int> = []
     var resolvedAt: Date?
     var targetAccepted: Bool?
+    var maintenanceAccepted: Bool?
   }
   struct AdoptedAction: Codable, Equatable, Identifiable {
     let proposalID: UUID
@@ -94,6 +96,7 @@ enum GalaxySSIHealthCarePlan {
     ])
     var properties = envelope["properties"] as? [String: Any] ?? [:]
     properties["target"] = GalaxySSIHealthCareTarget.schema
+    properties["maintenance"] = GalaxySSIHealthCareMaintenance.schema
     envelope["properties"] = properties
     return envelope
   }
@@ -115,7 +118,7 @@ enum GalaxySSIHealthCarePlan {
       guard let parsed = formatter.date(from: value) else { throw invalid }
       return parsed
     }
-    guard Set(args.keys).subtracting(["target"]) == ["uncertainty", "sources", "actions"],
+    guard Set(args.keys).subtracting(["target", "maintenance"]) == ["uncertainty", "sources", "actions"],
           let rawSources = args["sources"]?.arrayValue, (1...8).contains(rawSources.count),
           let rawActions = args["actions"]?.arrayValue, rawActions.count <= 8
     else { throw invalid }
@@ -156,8 +159,14 @@ enum GalaxySSIHealthCarePlan {
       guard let body = value.objectValue else { throw invalid }
       target = try GalaxySSIHealthCareTarget.parse(body, sourceCount: sources.count)
     } else { target = nil }
+    let maintenance: GalaxySSIHealthCareMaintenance.Draft?
+    if let value = args["maintenance"], value != .null {
+      guard target == nil, let body = value.objectValue else { throw invalid }
+      maintenance = try GalaxySSIHealthCareMaintenance.parse(body, actions: actions, sourceCount: sources.count)
+    } else { maintenance = nil }
     guard !actions.isEmpty || target != nil else { throw invalid }
-    return try .init(uncertainty: text(args, "uncertainty", max: 2_000), sources: sources, actions: actions, target: target)
+    return try .init(uncertainty: text(args, "uncertainty", max: 2_000), sources: sources, actions: actions,
+      target: target, maintenance: maintenance)
   }
 
   static func arguments(_ data: Data, style: GalaxySSICloudAPIStyle) throws -> AgentMcpJSONObject {

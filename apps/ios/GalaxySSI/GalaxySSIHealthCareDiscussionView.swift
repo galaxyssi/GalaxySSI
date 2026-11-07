@@ -12,6 +12,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
   let concernID: UUID
   let metric: GalaxySSIHealthMetric
   @State private var thread: GalaxySSIHealthCareDiscussion.Thread?
+  @State private var maintenance: GalaxySSIHealthCareMaintenance.Review?
   @State private var question = ""
   @State private var provider = ""
   @State private var allowed = false
@@ -85,6 +86,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
         if busy { Button(t("stop", "Cancel request"), role: .cancel) { clearRequest() } }
         GalaxySSIHealthCareComparisonSection(records: records, id: concernID, metric: metric)
         GalaxySSIHealthCareSeriesLink(records: records, id: concernID, metric: metric)
+        if let maintenance { GalaxySSIHealthCareMaintenanceSection(review: maintenance) }
         GalaxySSIHealthCarePlansSection(records: records, concernID: concernID)
         GalaxySSIHealthCareFollowUpsSection(records: records, concernID: concernID, metric: metric)
       }
@@ -145,6 +147,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
             concern.id == concernID, concern.stage != .paused, concern.stage != .closed,
             concern.assessment.record != nil else { throw GalaxySSIHealthRecords.Failure.permission }
       thread = archive.localCareDiscussions?[concernID.uuidString]
+      maintenance = concern.maintenance
       allowed = archive.healthOnlinePermission != nil
     } catch { clearSensitive(); failed = true }
   }
@@ -272,7 +275,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
       expected = output.next
       let canRead = expected != nil && count < Tool.maximumPages
       request = try Tool.continuing(request, with: call, output: output, style: review.model.apiStyle,
-        proposesPlan: review.proposesPlan, historyAvailable: canRead)
+        proposesPlan: review.proposesPlan, historyAvailable: canRead, maintenanceAvailable: review.initialHistory != nil)
     }
   }
 
@@ -281,7 +284,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
     readingTask?.cancel(); readingTask = nil; readingID = nil
   }
   private func clearSensitive() {
-    clearRequest(); thread = nil; question = ""; provider = ""; allowed = false; failed = false; proposesPlan = false
+    clearRequest(); thread = nil; maintenance = nil; question = ""; provider = ""; allowed = false; failed = false; proposesPlan = false
     allowsHistory = false
     selectedSources = []
   }

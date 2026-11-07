@@ -23,6 +23,12 @@ enum GalaxySSIHealthCareDiscussion {
   }
 
   struct Snapshot: Encodable {
+    struct MaintenanceSummary: Encodable {
+      let basis: GalaxySSIHealthCareMaintenance.Basis
+      let nextAssessment: Date
+      let active: Bool
+      let clinicalStabilityVerified = false
+    }
     let metric: GalaxySSIHealthMetric
     let revision: Int
     let result: String
@@ -38,6 +44,7 @@ enum GalaxySSIHealthCareDiscussion {
     let confirmedFacts: GalaxySSIHealthCareApplicability.Facts?
     let recordedBloodPressureWarning: GalaxySSIHealthCarePriority.Handoff?
     let numericTarget: GalaxySSIHealthCareTarget.ModelValue?
+    let maintenanceReview: MaintenanceSummary?
 
     init(_ concern: GalaxySSIHealthCare.Concern) {
       metric = concern.metric
@@ -55,6 +62,9 @@ enum GalaxySSIHealthCareDiscussion {
       confirmedFacts = GalaxySSIHealthCareApplicability.currentFacts(concern)
       recordedBloodPressureWarning = concern.bloodPressureWarning?.handoff
       numericTarget = GalaxySSIHealthCareTarget.modelValue(concern)
+      maintenanceReview = concern.maintenance.map {
+        .init(basis: $0.basis, nextAssessment: $0.due, active: concern.stage == .maintenance)
+      }
     }
   }
 
@@ -185,6 +195,13 @@ enum GalaxySSIHealthCareDiscussion {
         : "\nReturn a plain-text reply when done.")
       + (approval.historyVersion == nil ? "" : "\n" + GalaxySSIHealthCareHistoryTool.coverage)
       + (approval.initialHistory?.next == nil ? "" : "\n" + GalaxySSIHealthCareHistoryTool.instructions)
+      + (approval.proposesPlan && approval.initialHistory != nil ? """
+        \nA maintenance draft requires two or more exact consecutive records beginning with the latest result
+        from the approved recent page, an individualized applicability review, one cited source, and a separate
+        future RECHECK action. Do not combine maintenance with a new target. Use CURRENT_TARGET only for an existing
+        current confirmed target; otherwise use RISK_REVIEW only if no target exists and source evidence supports review.
+        Never infer stability, close tracking, or claim that a notification was scheduled.
+        """ : "")
     let user = ["role": "user", "content": payload]
     var body: [String: Any]
     switch approval.model.apiStyle {
@@ -209,7 +226,8 @@ enum GalaxySSIHealthCareDiscussion {
       body = options
     }
     GalaxySSIHealthCareHistoryTool.configure(&body, style: approval.model.apiStyle,
-      proposesPlan: approval.proposesPlan, historyAvailable: approval.initialHistory?.next != nil)
+      proposesPlan: approval.proposesPlan, historyAvailable: approval.initialHistory?.next != nil,
+      maintenanceAvailable: approval.initialHistory != nil)
     let bytes = try JSONSerialization.data(withJSONObject: body)
     guard approval.historyVersion == nil || bytes.count <= GalaxySSIHealthCareHistoryTool.requestBudget
     else { throw GalaxySSIHealthRecords.Failure.invalid }

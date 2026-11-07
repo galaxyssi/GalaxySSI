@@ -235,7 +235,7 @@ private struct GalaxySSIHealthCareDetail: View {
         Section(t("follow_up", "Improvement and follow-up")) {
           if let note = concern.reviewNote { Text(note) }
           Picker(t("stage", "Review status"), selection: $stage) {
-            ForEach([GalaxySSIHealthCare.Stage.reassess, .paused, .maintenance, .closed], id: \.rawValue) {
+            ForEach([GalaxySSIHealthCare.Stage.reassess, .paused, .closed], id: \.rawValue) {
               Text(GalaxySSIHealthCareText.stage($0, language: language)).tag($0)
             }
           }
@@ -257,6 +257,7 @@ private struct GalaxySSIHealthCareDetail: View {
           }
           if hasMore { Button(t("more", "Show more")) { loadHistory(append: true) } }
         }
+        if let maintenance = concern.maintenance { GalaxySSIHealthCareMaintenanceSection(review: maintenance) }
         GalaxySSIHealthCarePlansSection(records: records, concernID: id)
         GalaxySSIHealthCareFollowUpsSection(records: records, concernID: id, metric: metric)
         Button(t("remove", "Delete concern"), role: .destructive) {

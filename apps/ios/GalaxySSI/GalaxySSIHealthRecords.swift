@@ -443,6 +443,7 @@ struct GalaxySSIHealthRecords {
       archive.localCarePermission = UUID()
       changed = true
     }
+    guard let permission = archive.localCarePermission else { throw Failure.permission }
     ledger.bloodPressurePolicyVersion = GalaxySSIHealthCarePriority.version
     for metric in GalaxySSIHealthMetric.allCases {
       let key = metric.rawValue
@@ -455,9 +456,11 @@ struct GalaxySSIHealthRecords {
       let (sample, comparison) = GalaxySSIHealthCareComparison.reconcile(candidates, prior: prior)
       let historyVersion = GalaxySSIHealthCareSeries.version(candidates)
       if let prior {
-        guard prior.revision < Int.max,
-              prior.assessment != next || prior.measurement != sample || prior.comparison != comparison ||
-                prior.bloodPressureWarning != warning || prior.historyVersion != historyVersion else { continue }
+        let reviewDue = prior.stage == .maintenance &&
+          (GalaxySSIHealthCareMaintenance.nextDue(prior, permission: permission).map { $0 <= now } ?? true)
+        guard prior.revision < Int.max, reviewDue || prior.assessment != next || prior.measurement != sample ||
+          prior.comparison != comparison || prior.bloodPressureWarning != warning || prior.historyVersion != historyVersion
+        else { continue }
         var updated = prior
         updated.revision += 1
         updated.updatedAt = max(prior.updatedAt, now)
@@ -467,7 +470,8 @@ struct GalaxySSIHealthRecords {
         updated.bloodPressureWarning = warning
         updated.historyVersion = historyVersion
         if updated.context?.record != next.record { updated.context = nil }
-        if prior.stage != .paused && !(prior.stage == .closed && next.signals.isEmpty && warning == nil) {
+        if prior.stage == .maintenance { updated.stage = .reassess }
+        else if prior.stage != .paused && !(prior.stage == .closed && next.signals.isEmpty && warning == nil) {
           updated.stage = next.record == nil || next.signals.contains(.glucoseContext) || next.signals.contains(.notExact)
             ? .verify : .reassess
         }
@@ -484,6 +488,18 @@ struct GalaxySSIHealthRecords {
     archive.localCare = ledger
     archive.localCareLastEvaluatedAt = now
     try persist(archive)
+  }
+
+  func reconcileLocalCareMaintenance(now: Date = Date()) throws -> Date? {
+    let before = try load()
+    guard before.localCareAllowed == true,
+          before.localCare?.current.values.contains(where: { $0.stage == .maintenance }) == true else { return nil }
+    try reconcileLocalCare(now: now)
+    let after = try load()
+    guard let permission = after.localCarePermission, let ledger = after.localCare else { return nil }
+    return ledger.current.values.compactMap {
+      GalaxySSIHealthCareMaintenance.nextDue($0, permission: permission)
+    }.filter { $0 > now }.min()
   }
 
   func acknowledgeLocalCareBloodPressure(_ warning: GalaxySSIHealthCarePriority.Warning, now: Date = Date()) throws {
@@ -669,6 +685,11 @@ struct GalaxySSIHealthRecords {
     guard let evidence = archive.localCareEvidence?[key], !evidence.isEmpty, evidence == approval.evidence,
           evidence.allSatisfy({ $0.valid(for: approval, now: now) }) else { throw Failure.permission }
     let draft = try GalaxySSIHealthCarePlan.parse(arguments, evidence: evidence, now: now)
+    if let maintenance = draft.maintenance {
+      guard approval.historyVersion == concern.historyVersion,
+            GalaxySSIHealthCareMaintenance.containsApprovedPrefix(maintenance, history: approval.initialHistory)
+      else { throw Failure.permission }
+    }
     plans[key] = try .init(id: approval.id, concernID: approval.concernID, metric: approval.metric,
       concernRevision: approval.concernRevision, assessmentDigest: GalaxySSIHealthCare.inputDigest(concern.assessment),
       sourceContext: concern.context,
@@ -682,8 +703,9 @@ struct GalaxySSIHealthRecords {
   }
 
   func resolveLocalCarePlan(_ proposal: GalaxySSIHealthCarePlan.Proposal, selected: Set<Int>?,
-                            acceptTarget: Bool = false, now: Date = Date()) throws {
-    guard selected != nil || !acceptTarget else { throw Failure.invalid }
+                            acceptTarget: Bool = false, acceptMaintenance: Bool = false, now: Date = Date()) throws {
+    guard selected != nil || (!acceptTarget && !acceptMaintenance),
+          !acceptMaintenance || !acceptTarget else { throw Failure.invalid }
     var archive = try load()
     guard archive.localCareAllowed == true,
           var ledger = archive.localCare, var current = ledger.current[proposal.metric.rawValue],
@@ -705,6 +727,20 @@ struct GalaxySSIHealthRecords {
         $0.dueUntil.map { $0 >= now } != false }) else { throw Failure.stale }
       var adopted = current.adoptedActions ?? []
       guard !adopted.contains(where: { $0.proposalID == saved.id }) else { throw Failure.stale }
+      let maintenanceReview: GalaxySSIHealthCareMaintenance.Review?
+      if acceptMaintenance {
+        guard let draft = saved.draft.maintenance, selected.contains(draft.recheckIndex),
+              let version = checked.historyVersion,
+              let due = saved.draft.actions.first(where: { $0.id == draft.recheckIndex })?.dueFrom
+        else { throw Failure.stale }
+        let evaluation = try maintenanceEvaluation(saved, concern: checked, archive: archive, now: now)
+        guard evaluation.gaps.isEmpty else { throw Failure.stale }
+        maintenanceReview = try .init(proposalID: saved.id, actionID: "\(saved.id.uuidString):\(draft.recheckIndex)",
+          historyVersion: version, contextBasis: GalaxySSIHealthCareTarget.basis(checked),
+          targetRevision: checked.targetRevision, carePermission: saved.carePermission, confirmedAt: now,
+          due: due, basis: draft.goalBasis, rationale: draft.rationale, source: saved.draft.sources[draft.sourceIndex],
+          samples: evaluation.samples)
+      } else { maintenanceReview = nil }
       if acceptTarget {
         guard let draft = saved.draft.target, saved.draft.sources.indices.contains(draft.sourceIndex),
               GalaxySSIHealthCareTarget.canConfirm(draft, concern: checked),
@@ -722,6 +758,12 @@ struct GalaxySSIHealthRecords {
       if !actions.isEmpty {
         current.adoptedActions = adopted
         current.stage = actions.contains(where: { $0.kind == .recheck }) ? .waitingResults : .reviewPlan
+      }
+      if let maintenanceReview {
+        current.maintenance = maintenanceReview
+        current.stage = .maintenance
+        current.reviewNote = maintenanceReview.rationale
+        saved.maintenanceAccepted = true
       }
       current.revision += 1
       current.updatedAt = max(current.updatedAt, now)
@@ -747,6 +789,24 @@ struct GalaxySSIHealthRecords {
           Self.localCarePlanEvidenceMatches(proposal, archive: archive, owner: owner)
     else { throw Failure.stale }
     return concern
+  }
+
+  func localCareMaintenancePreview(_ proposal: GalaxySSIHealthCarePlan.Proposal, now: Date = Date())
+    throws -> (gaps: Set<GalaxySSIHealthCareMaintenance.Gap>, samples: [GalaxySSIHealthCareComparison.Sample]) {
+    let concern = try validateLocalCarePlanReview(proposal, now: now)
+    return try maintenanceEvaluation(proposal, concern: concern, archive: load(), now: now)
+  }
+
+  private func maintenanceEvaluation(_ proposal: GalaxySSIHealthCarePlan.Proposal,
+      concern: GalaxySSIHealthCare.Concern, archive: Archive, now: Date)
+    throws -> (gaps: Set<GalaxySSIHealthCareMaintenance.Gap>, samples: [GalaxySSIHealthCareComparison.Sample]) {
+    let readings = archive.current.filter { $0.metric == concern.metric && $0.isValid && $0.measuredAt <= now }
+    guard let version = concern.historyVersion, GalaxySSIHealthCareSeries.version(readings) == version,
+          archive.localCarePermission == proposal.carePermission else { throw Failure.stale }
+    let binding = GalaxySSIHealthCareSeries.Binding(concern: concern.id, revision: concern.revision,
+      historyVersion: version, permission: proposal.carePermission)
+    let page = try GalaxySSIHealthCareSeries.page(readings, concern: concern, binding: binding, after: nil)
+    return GalaxySSIHealthCareMaintenance.evaluate(proposal.draft, concern: concern, page: page, now: now)
   }
 
   private static func localCarePlanEvidenceMatches(_ proposal: GalaxySSIHealthCarePlan.Proposal, archive: Archive,
@@ -902,9 +962,13 @@ struct GalaxySSIHealthRecords {
       let confirmed = facts?.screeningContext ?? applicability
       let context = GalaxySSIHealthCare.Context(record: record, applicability: confirmed, facts: facts)
       guard let assessment = GalaxySSIHealthCare.assess(readings, context: context) else { throw Failure.stale }
+      if current.stage == .maintenance, current.context != context {
+        current.stage = .reassess
+      } else if current.stage != .paused && current.stage != .maintenance {
+        current.stage = confirmed == .unknown ? .verify : .evidence
+      }
       current.context = context
       current.assessment = assessment
-      if current.stage != .paused { current.stage = confirmed == .unknown ? .verify : .evidence }
     }
   }
 
@@ -914,9 +978,9 @@ struct GalaxySSIHealthRecords {
           !reason.isBlank, reason.utf8.count <= 2_048 else { throw Failure.invalid }
     try updateLocalCare(concern, now: now) { current, archive in
       if stage == .maintenance {
-        guard let record = current.assessment.record, archive.current.contains(where: {
-          GalaxySSIHealthCare.Record($0) == record
-        }) else { throw Failure.stale }
+        guard let permission = archive.localCarePermission,
+              GalaxySSIHealthCareMaintenance.nextDue(current, permission: permission).map({ $0 > now }) == true
+        else { throw Failure.stale }
       }
       current.stage = stage
       current.reviewNote = reason
@@ -932,6 +996,7 @@ struct GalaxySSIHealthRecords {
       guard current.target != target else { return }
       current.targetRevision = (current.targetRevision ?? 0) + 1
       current.target = target
+      if current.stage == .maintenance { current.stage = .reassess }
     }
   }
 

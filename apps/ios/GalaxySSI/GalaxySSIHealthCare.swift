@@ -16,6 +16,11 @@ enum GalaxySSIHealthCare {
       id = reading.id
       revision = reading.revision
     }
+
+    init(id: UUID, revision: Int) {
+      self.id = id
+      self.revision = revision
+    }
   }
   struct Context: Codable, Equatable {
     enum Applicability: String, Codable, Hashable, CaseIterable { case unknown, applicable, excluded }
@@ -65,6 +70,7 @@ enum GalaxySSIHealthCare {
     var measurement: GalaxySSIHealthCareComparison.Sample?
     var comparison: GalaxySSIHealthCareComparison.Pair?
     var bloodPressureWarning: GalaxySSIHealthCarePriority.Warning?
+    var maintenance: GalaxySSIHealthCareMaintenance.Review?
   }
   struct Ledger: Codable {
     var current: [String: Concern] = [:]
