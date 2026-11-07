@@ -1498,14 +1498,15 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   func publishCollaborationMilestone(_ input: AgentMcpJSONObject,
-                                     scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+                                     scope: AgentCollaborationToolEvidenceScope,
+                                     recruitmentTemplates: [String: String] = [:]) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
     let id = input.string("milestone_id")
     if mode == AgentCollaborationGoalAssessmentPolicy.establishContractMode {
       return try establishCollaborationGoalContract(input, scope: scope)
     }
     if mode == AgentCollaborationGoalAssessmentPolicy.appendWorkMode {
-      return try admitCollaborationWork(input, scope: scope)
+      return try admitCollaborationWork(input, scope: scope, recruitmentTemplates: recruitmentTemplates)
     }
     if mode == AgentCollaborationGoalAssessmentPolicy.checkGoalEvidenceMode {
       return try checkCollaborationGoalEvidence(input, scope: scope)
@@ -2078,15 +2079,28 @@ final class AgentTeamExecutionHistoryStore {
       }
       let width = min(max(limit, 1), 3)
       var ready: [AgentCollaborationLiveGraph.Work] = []
+      var busyRecruits = Set<String>()
+      for item in graph.work {
+        if let recruitment = item.recruitment, try savedState(item.id) == .running {
+          busyRecruits.insert(recruitment.identity)
+        }
+      }
+      var candidateIdentities = Set<String>()
       for work in graph.work where !excluding.contains(work.id) && specialists.contains(work.member) {
-        guard try savedState(work.id) == nil,
+        guard work.recruitment.map({ !busyRecruits.contains($0.identity) }) ?? true,
+              try savedState(work.id) == nil,
               try work.depends_on.allSatisfy({ id in
                 Self.goalWorkDependencyReady(try savedState(id), policy: work.dependency_policy)
               }) else { continue }
+        if graph.learningPriorities == nil, let recruit = work.recruitment,
+           !candidateIdentities.insert(recruit.identity).inserted { continue }
         ready.append(work)
         if graph.learningPriorities == nil, ready.count == width { break }
       }
-      return graph.prioritizeReady(ready).prefix(width).map(\.id)
+      var identities = Set<String>()
+      return graph.prioritizeReady(ready).filter {
+        $0.recruitment.map { identities.insert($0.identity).inserted } ?? true
+      }.prefix(width).map(\.id)
     }
   }
 
@@ -2116,6 +2130,16 @@ final class AgentTeamExecutionHistoryStore {
             target.map({ !$0.modelID.isBlank && $0.modelID.utf8.count <= 1_024 &&
               ($0.kind == .local) == ($0.resourceID == "local-llm") }) ?? true
       else { throw AgentTeamHistoryDatabase.Failure.stale }
+      if let recruit = work.recruitment {
+        guard let graph = checkpoint.liveGraph, graph.recruitments?.values.contains(recruit) == true,
+              recruit.template == work.member else { throw AgentTeamHistoryDatabase.Failure.stale }
+        for sibling in graph.work where sibling.id != work.id && sibling.recruitment?.identity == recruit.identity {
+          let prior = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
+            conversationId: scope.conversationId, key: Self.goalWorkKey(sibling.id, scope: scope), revision: 0)
+          guard prior == nil || (prior?.owner == scope && prior?.visibleState(now: now) != .running)
+          else { throw AgentTeamHistoryDatabase.Failure.stale }
+        }
+      }
       var dependencies: [AgentMcpJSONObject] = []
       for dependency in work.depends_on {
         guard let source = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
@@ -2129,7 +2153,8 @@ final class AgentTeamExecutionHistoryStore {
                 <= 64 * 1_024 else { throw AgentTeamHistoryDatabase.Failure.corrupt }
       }
       let run = AgentCollaborationGoalWorkRun(workID: work.id, dispatchID: UUID().uuidString, owner: scope,
-        memberID: work.member, process: AgentCollaborationGoalWorkRun.processID, startedAt: now, target: target, state: .running)
+        memberID: work.recruitment?.identity ?? work.member, process: AgentCollaborationGoalWorkRun.processID,
+        startedAt: now, target: target, state: .running, templateMemberID: work.recruitment?.template)
       try database.insertResearchRecord(run, conversationId: scope.conversationId, key: key, revision: 0)
       return (run, true, dependencies)
     }
@@ -2163,7 +2188,7 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   private func admitCollaborationWork(_ input: AgentMcpJSONObject,
-    scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+    scope: AgentCollaborationToolEvidenceScope, recruitmentTemplates: [String: String]) throws -> AgentMcpJSONObject {
     guard Set(input.keys) == ["mode", "artifact", "milestone_id", "expected_revision"],
           let id = input["milestone_id"]?.strictStringValue,
           id.range(of: #"\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\z"#, options: .regularExpression) != nil,
@@ -2188,18 +2213,29 @@ final class AgentTeamExecutionHistoryStore {
             checkpoint.phase == .working, checkpoint.revision == expected else { throw AgentTeamHistoryDatabase.Failure.stale }
       let graph = checkpoint.liveGraph ?? .init()
       let authorized = Set(team.members.filter { $0.deliveryMode != .ignore }.map(\.memberId))
+      let specialists = Set(team.members.filter { $0.deliveryMode == .observe }.map(\.memberId))
       guard let updated = try graph.appending(expansion, authorizedMembers: authorized,
-        historicalAuthors: [:], settled: [:], resolve: { try Self.resolveWorkflow($0, snapshot: team, database: database) }),
+        historicalAuthors: [:], settled: [:], recruitmentTemplates: recruitmentTemplates.filter { specialists.contains($0.key) },
+        recruitmentOwner: scope.ownershipDigest,
+        resolve: { try Self.resolveWorkflow($0, snapshot: team, database: database) }),
         updated.work.count > graph.work.count else { throw AgentTeamHistoryDatabase.Failure.corrupt }
       checkpoint.liveGraph = updated
       checkpoint.revision += 1
       checkpoint.completedWorkIds = []
       guard try Self.persistGoalCheckpoint(checkpoint, expectedRevision: expected, database: database)
       else { throw AgentTeamHistoryDatabase.Failure.stale }
-      let receipt: AgentMcpJSONObject = ["success": .bool(true), "status": .string("work_admitted"),
+      var receipt: AgentMcpJSONObject = ["success": .bool(true), "status": .string("work_admitted"),
         "request_sha256": .string(fingerprint), "milestone_id": .string(id),
         "revision": .int(checkpoint.revision), "admitted_work_count": .int(Int64(updated.work.count - graph.work.count)),
         "replayed": .bool(false), "work_dispatched": .bool(false)]
+      let aliases = Set(expansion.work.compactMap { entry -> String? in
+        if case .work(let work) = entry, work.member.hasPrefix("recruit:") { return work.member }; return nil
+      })
+      if !aliases.isEmpty {
+        receipt["recruits"] = .object((updated.recruitments ?? [:]).filter { aliases.contains($0.key) }.mapValues {
+          .object(["member_id": .string($0.identity), "template_member_id": .string($0.template)])
+        })
+      }
       try database.insertResearchRecord(receipt, conversationId: scope.conversationId, key: key, revision: 0)
       return receipt
     }
@@ -2625,11 +2661,18 @@ final class AgentTeamExecutionHistoryStore {
     let updated = checkpoint.liveGraph?.work ?? []
     let priorWorkflows = prior.first?.liveGraph?.workflowInstances ?? [:]
     let workflows = checkpoint.liveGraph?.workflowInstances ?? [:]
+    let previousRecruits = prior.first?.liveGraph?.recruitments ?? [:]
+    let recruits = checkpoint.liveGraph?.recruitments ?? [:]
     let additions = updated.dropFirst(existing.count)
     let authors = Dictionary(updated.map { ($0.id, $0.member) }, uniquingKeysWith: { first, _ in first })
     guard priorWorkflows.allSatisfy({ workflows[$0.key] == $0.value }),
+          previousRecruits.allSatisfy({ recruits[$0.key] == $0.value }),
           authors.count == updated.count,
           additions.allSatisfy({ item in
+            if let recruit = item.recruitment {
+              guard item.workflowExecutionId == nil, item.member == recruit.template,
+                    recruits.values.contains(recruit) else { return false }
+            }
             guard let id = item.workflowExecutionId else {
               return item.review_targets == nil || item.hasIndependentReviewAuthors { authors[$0] }
             }

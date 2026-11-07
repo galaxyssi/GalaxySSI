@@ -302,6 +302,7 @@ struct AgentCollaborationGoalWorkRun: Codable {
   var outputHash: String? = nil
   var truncated: Bool? = nil
   var desktopArchiveDigest: String? = nil
+  var templateMemberID: String? = nil
 
   func visibleState(now: Int64) -> State {
     guard state == .running, process != Self.processID || now >= startedAt + Self.leaseMillis
@@ -311,12 +312,14 @@ struct AgentCollaborationGoalWorkRun: Codable {
 
   func receipt(now: Int64) -> AgentMcpJSONObject {
     let status = visibleState(now: now)
-    return ["success": .bool(true), "status": .string(status.rawValue), "work_id": .string(workID),
+    var result: AgentMcpJSONObject = ["success": .bool(true), "status": .string(status.rawValue), "work_id": .string(workID),
       "dispatch_id": .string(dispatchID), "member_id": .string(memberID),
       "target": target.map { .object($0.fields) } ?? .null,
       "started_at": .int(startedAt), "finished_at": finishedAt.map(AgentMcpJSONValue.int) ?? .null,
       "output": output.map(AgentMcpJSONValue.string) ?? .null, "output_sha256": outputHash.map(AgentMcpJSONValue.string) ?? .null,
       "output_truncated": .bool(truncated ?? false), "goal_accepted": .bool(false), "automatically_reexecuted": .bool(false)]
+    if let templateMemberID { result["template_member_id"] = .string(templateMemberID) }
+    return result
   }
 }
 
@@ -326,7 +329,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
 
   struct Work: Codable, Equatable {
     let id: String
-    let member: String
+    var member: String
     let assignment: String
     let depends_on: [String]
     let dependency_policy: DependencyPolicy?
@@ -335,6 +338,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var learning: LearningBinding? = nil
     var review_targets: [String]? = nil
     var workflowExecutionId: String? = nil
+    var recruitment: Recruitment? = nil
 
     func hasIndependentReviewAuthors(_ author: (String) -> String?) -> Bool {
       if let review_targets {
@@ -349,6 +353,46 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
         return AgentTeamProgressPolicy.stableCollaborationMemberId(origin) !=
           AgentTeamProgressPolicy.stableCollaborationMemberId(member)
       }
+    }
+  }
+
+  struct RecruitmentRequest: Decodable {
+    let id: String
+    let template_member: String
+    let role: String
+    let scope: String
+    let reason: String
+  }
+
+  struct Recruitment: Codable, Equatable {
+    let identity: String
+    let template: String
+    let templateDigest: String
+    let role: String
+    let scope: String
+    let reason: String
+
+    init?(_ request: RecruitmentRequest, owner: String, templateDigest: String) {
+      let role = request.role.trimmingCharacters(in: .whitespacesAndNewlines)
+      let scope = request.scope.trimmingCharacters(in: .whitespacesAndNewlines)
+      let reason = request.reason.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard request.id.range(of: #"\A[A-Za-z0-9_-]{1,80}\z"#, options: .regularExpression) != nil,
+            !role.isEmpty, role.utf8.count <= 240, !scope.isEmpty, scope.utf8.count <= 2_000,
+            !reason.isEmpty, reason.utf8.count <= 2_000 else { return nil }
+      func normalize(_ value: String) -> String { value.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+      self.identity = "recruit-" + AgentMcpJSONCodec.sha256(["owner": .string(owner),
+        "template": .string(request.template_member), "template_sha256": .string(templateDigest),
+        "role": .string(normalize(role)), "scope": .string(normalize(scope))])
+      self.template = request.template_member
+      self.templateDigest = templateDigest
+      self.role = role
+      self.scope = scope
+      self.reason = reason
+    }
+
+    static func templateDigest(_ member: AgentCollaborationRoster.Member) -> String {
+      AgentMcpJSONCodec.sha256(["resource": .string(member.resourceId), "model": .string(member.modelId),
+        "reasoning": .string(member.reasoningEffort ?? ""), "mention_only": .bool(member.mentionOnly)])
     }
   }
 
@@ -379,7 +423,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
             from: Data(AgentMcpJSONCodec.stringify(instance).utf8)))
         } else {
           let item = try Work(from: decoder)
-          guard item.workflowExecutionId == nil else {
+          guard item.workflowExecutionId == nil, item.recruitment == nil else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
               debugDescription: "Workflow bindings must come from a saved method"))
           }
@@ -390,11 +434,13 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
 
     let format: String
     let work: [Entry]
+    var recruit: [RecruitmentRequest]? = nil
   }
 
   private(set) var work: [Work] = []
   private(set) var workflowInstances: [String: AgentCollaborationWorkflowInstance]? = nil
   private(set) var learningPriorities: [String: Int64]? = nil
+  private(set) var recruitments: [String: Recruitment]? = nil
 
   func pinningLearningPriorities(_ ranks: [String: Int64]) -> Self {
     var next = self
@@ -407,7 +453,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     guard raw.utf8.count <= 256_000,
           let expansion = try? JSONDecoder().decode(Expansion.self, from: Data(raw.utf8)),
           expansion.format == "galaxyssi.work-expansion.v1", !expansion.work.isEmpty,
-          expansion.work.allSatisfy({ $0.workflowExecutionId == nil }) else { return nil }
+          expansion.work.allSatisfy({ $0.workflowExecutionId == nil && $0.recruitment == nil }) else { return nil }
     return appendingWork(expansion.work, authorizedMembers: authorizedMembers, historicalAuthors: historicalAuthors, settled: settled)
   }
 
@@ -425,13 +471,37 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
 
   func appending(_ expansion: WorkflowExpansion, authorizedMembers: Set<String>,
                  historicalAuthors: [String: String], settled: [String: Settlement],
+                 recruitmentTemplates: [String: String] = [:], recruitmentOwner: String = "",
                  resolve: (AgentCollaborationWorkflowInstance) throws -> [Work]?) rethrows -> Self? {
     guard expansion.format == "galaxyssi.work-expansion.v1", !expansion.work.isEmpty else { return nil }
     var instances = workflowInstances ?? [:]
+    var directory = recruitments ?? [:]
+    let requests = expansion.recruit ?? []
+    guard requests.count <= 64, Set(requests.map(\.id)).count == requests.count else { return nil }
+    for request in requests {
+      let alias = "recruit:" + request.id
+      guard !recruitmentOwner.isBlank, let digest = recruitmentTemplates[request.template_member],
+            authorizedMembers.contains(request.template_member),
+            expansion.work.contains(where: {
+              if case .work(let item) = $0 { return item.member == alias }; return false
+            }),
+            let requested = Recruitment(request, owner: recruitmentOwner, templateDigest: digest),
+            directory[alias] == nil || directory[alias]?.identity == requested.identity else { return nil }
+      if directory[alias] == nil {
+        directory[alias] = directory.values.first(where: { $0.identity == requested.identity }) ?? requested
+      }
+    }
+    guard directory.count <= AgentCollaborationRoster.maximumMembers else { return nil }
     var additions: [Work] = []
     for entry in expansion.work {
       switch entry {
-      case .work(let item):
+      case .work(var item):
+        if item.member.hasPrefix("recruit:") {
+          guard let binding = directory[item.member], recruitmentTemplates[binding.template] == binding.templateDigest
+          else { return nil }
+          item.member = binding.template
+          item.recruitment = binding
+        }
         additions.append(item)
       case .workflow(let instance):
         if let existing = instances[instance.execution_id] {
@@ -447,6 +517,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     guard var next = appendingWork(additions, authorizedMembers: authorizedMembers,
       historicalAuthors: historicalAuthors, settled: settled) else { return nil }
     next.workflowInstances = instances.isEmpty ? nil : instances
+    next.recruitments = directory.isEmpty ? nil : directory
     return next
   }
 

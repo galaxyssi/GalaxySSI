@@ -2361,6 +2361,44 @@ extension GalaxySSIStoreTests {
       now: 14 + AgentCollaborationGoalWorkRun.leaseMillis), ["recover-a", "recover-b", "recover-c"])
     XCTAssertEqual(try open().readyGoalWork(scope: scope(0), excluding: ["recover-a"], limit: 3,
       now: 14 + AgentCollaborationGoalWorkRun.leaseMillis), ["recover-b", "recover-c", "recover-d"])
+    let template = scope(1).memberId
+    let templates = [template: "authorized-template-digest"]
+    func recruit(_ vacancy: String, workID: String, batch: String, revision: Int64, role: String = "Evidence collector",
+                 independent: Bool = false) -> AgentMcpJSONObject {
+      let request: AgentMcpJSONObject = ["id": .string(vacancy), "template_member": .string(template),
+        "role": .string(role), "scope": .string("Collect a bounded observation"), "reason": .string("Existing scope")]
+      let item: AgentMcpJSONObject = ["id": .string(workID), "member": .string("recruit:" + vacancy),
+        "assignment": .string("Collect the observation"), "independent_review": .bool(independent),
+        "depends_on": .array(independent ? [.string("measure")] : [])]
+      let graph: AgentMcpJSONObject = ["format": .string("galaxyssi.work-expansion.v1"),
+        "recruit": .array([.object(request)]), "work": .array([.object(item)])]
+      return ["mode": .string("append_work"), "artifact": .string(AgentMcpJSONCodec.stringify(graph)),
+        "milestone_id": .string(batch), "expected_revision": .int(revision)]
+    }
+    let recruitOne = recruit("vacancy-one", workID: "recruited-one", batch: "recruit-one", revision: 8)
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(recruitOne, scope: scope(0)))
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(
+      recruit("independent", workID: "forbidden-review", batch: "forbidden-review", revision: 8, independent: true),
+      scope: scope(0), recruitmentTemplates: templates))
+    let recruited = try reopened.publishCollaborationMilestone(recruitOne, scope: scope(0), recruitmentTemplates: templates)
+    let same = try open().publishCollaborationMilestone(recruitOne, scope: scope(0), recruitmentTemplates: templates)
+    XCTAssertEqual(same["replayed"], .bool(true))
+    let member = recruited["recruits"]?.objectValue?["recruit:vacancy-one"]?.objectValue
+    XCTAssertEqual(member?["template_member_id"], .string(template))
+    XCTAssertThrowsError(try open().publishCollaborationMilestone(
+      recruit("vacancy-one", workID: "changed-role", batch: "recruit-change", revision: 9, role: "Other role"),
+      scope: scope(0), recruitmentTemplates: templates))
+    let second = try open().publishCollaborationMilestone(
+      recruit("vacancy-two", workID: "recruited-two", batch: "recruit-two", revision: 9),
+      scope: scope(0), recruitmentTemplates: templates)
+    XCTAssertEqual(second["recruits"]?.objectValue?["recruit:vacancy-two"]?.objectValue, member)
+    let firstWork = try open().goalWork("recruited-one", scope: scope(0)).0
+    let secondWork = try open().goalWork("recruited-two", scope: scope(0)).0
+    let firstRun = try open().claimGoalWork(firstWork, scope: scope(0), target: worker, now: 40).run
+    XCTAssertEqual(firstRun.receipt(now: 41)["member_id"], member?["member_id"])
+    XCTAssertThrowsError(try open().claimGoalWork(secondWork, scope: scope(0), target: worker, now: 41))
+    _ = try open().finishGoalWork(firstRun, output: "First result", interrupted: false, now: 42)
+    XCTAssertTrue(try open().claimGoalWork(secondWork, scope: scope(0), target: worker, now: 43).claimed)
     reopened.removeResearchObjects(conversationId: team.conversationId)
     XCTAssertThrowsError(try reopened.publishCollaborationMilestone(first, scope: scope(0)))
     XCTAssertThrowsError(try reopened.publishCollaborationMilestone(request, scope: scope(0)))
