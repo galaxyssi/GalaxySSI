@@ -145,6 +145,12 @@ enum AgentCollaborationRuleTopics {
     Valid failed cases are saved. An exact previous_trial parent can compare the same preserved cases.
     experiment_plan binds exact innovation and baseline parents, prediction_id, method, environment, budget_unit, budget_limit,
     report_pointer, source and cases. experiment_result binds the plan and completely read original measurement observations.
+    To compare workflows, both innovations must parent and reference an exact workflow_method in their domain.
+    Set experiment_plan.workflow_comparison to {dataset:exact artifact reference, controlled_conditions, quality_oracle,
+    cost_accounting, selection_bias}; parent the dataset and include target and regression cases.
+    Each measurement carries workflow_sha256 and dataset_sha256 as well as its innovation variant_sha256.
+    Discover previous comparisons using method_history with view=evaluations. Read original conditions and negative results;
+    an empty scan is unknown history, not evidence that a method works.
     capability_lesson binds exact result and rollback parents; retain requires passing target and regression cases,
     an independent reviewer and full original evidence reads. Reject or revise can preserve historical findings.
     \(AgentCollaborationExperimentResultFeedback.guidance)

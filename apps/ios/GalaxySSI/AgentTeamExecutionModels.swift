@@ -869,6 +869,8 @@ enum AgentCollaborationExperimentPlanIntake {
           let oldMethod = savedOld.draft.body["workflow_method"]?.objectValue,
           let nextMethod = savedNext.draft.body["workflow_method"]?.objectValue,
           let domain = oldMethod["domain"]?.strictStringValue, !domain.isBlank, nextMethod["domain"] == .string(domain),
+          baseline.draft.body["innovation"]?.objectValue?["domain"] == .string(domain),
+          candidate.draft.body["innovation"]?.objectValue?["domain"] == .string(domain),
           let comparison = spec["workflow_comparison"]?.objectValue,
           Set(comparison.keys) == ["dataset", "controlled_conditions", "quality_oracle", "cost_accounting", "selection_bias"],
           hasText(comparison, ["controlled_conditions", "quality_oracle", "cost_accounting", "selection_bias"]),

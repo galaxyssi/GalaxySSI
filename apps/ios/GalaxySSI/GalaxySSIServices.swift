@@ -2826,7 +2826,7 @@ final class MessageCoordinator: ObservableObject {
       } catch AgentTeamHistoryDatabase.Failure.corrupt {
         result["status"] = .string("invalid_artifact")
       } catch {}
-    } else if [AgentCollaborationNativeReleaseHistory.mode, "capabilities"].contains(input.string("mode")),
+    } else if ["method_history", "workspace", "capabilities"].contains(input.string("mode")),
               var page = try? history.recallCollaborationOriginal(input, scope: scope) {
       page["success"] = .bool(true)
       page["status"] = .string("returned")
