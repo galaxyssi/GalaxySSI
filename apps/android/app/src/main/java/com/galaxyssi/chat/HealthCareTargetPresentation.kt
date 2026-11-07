@@ -26,5 +26,6 @@ internal object HealthCareTargetPresentation {
             context.getString(R.string.health_target_confirmed, date), context.getString(R.string.health_target_scope)).joinToString("\n\n")
     }
     fun planTitle(context: Context, plan: HealthCarePlan) = context.getString(
-        if (plan.target == null) R.string.health_care_plan_pending else R.string.health_target_plan_pending, plan.actions.size)
+        if (plan.maintenance != null) R.string.health_maintenance_pending
+        else if (plan.target == null) R.string.health_care_plan_pending else R.string.health_target_plan_pending, plan.actions.size)
 }

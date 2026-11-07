@@ -108,6 +108,12 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
                                 planReview.show(plan.id)
                             }.apply { tag = "agent-health-care-plan" })
                         }
+                        if (snapshot.profile) item.maintenance?.let { review ->
+                            host.addView(ui.profileRow(activity.getString(R.string.health_maintenance_review_title),
+                                activity.getString(if (item.stage == HealthCareStage.MAINTENANCE) R.string.health_maintenance_active else R.string.health_maintenance_reassess)) {
+                                planReview.show(review.planId)
+                            }.apply { tag = "agent-health-care-maintenance" })
+                        }
                         if (snapshot.profile && item.target != null) host.addView(ui.profileRow(activity.getString(R.string.health_target_review),
                             HealthCareTargetPresentation.status(activity, item)) { targetReview.show(item.id) }
                             .apply { tag = "agent-health-care-target" })
