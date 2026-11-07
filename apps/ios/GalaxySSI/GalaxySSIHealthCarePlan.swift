@@ -41,6 +41,7 @@ enum GalaxySSIHealthCarePlan {
     let metric: GalaxySSIHealthMetric
     let concernRevision: Int
     let assessmentDigest: String
+    var sourceContext: GalaxySSIHealthCare.Context? = nil
     let carePermission: UUID
     let onlinePermission: UUID
     let contactID: String
@@ -59,6 +60,7 @@ enum GalaxySSIHealthCarePlan {
     let action: Action
     let source: Source
     let confirmedAt: Date
+    var outcome: GalaxySSIHealthCareFollowUp.Outcome?
     var id: String { "\(proposalID.uuidString):\(action.id)" }
   }
 

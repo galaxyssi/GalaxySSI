@@ -178,6 +178,7 @@ struct GalaxySSIHealthRecords {
     var localCareLastEvaluatedAt: Date?
     var localCareDiscussions: [String: GalaxySSIHealthCareDiscussion.Thread]?
     var localCarePlans: [String: GalaxySSIHealthCarePlan.Proposal]?
+    var localCareFollowUps: [String: GalaxySSIHealthCareFollowUp.Reminder]?
 
     var keepsNewImportOriginals: Bool { retainImportOriginals ?? true }
 
@@ -565,6 +566,7 @@ struct GalaxySSIHealthRecords {
     let draft = try GalaxySSIHealthCarePlan.parse(arguments, now: now)
     plans[key] = try .init(id: approval.id, concernID: approval.concernID, metric: approval.metric,
       concernRevision: approval.concernRevision, assessmentDigest: GalaxySSIHealthCare.inputDigest(concern.assessment),
+      sourceContext: concern.context,
       carePermission: approval.carePermission, onlinePermission: approval.onlinePermission, contactID: approval.destinationID,
       modelID: approval.model.modelId, endpoint: approval.endpoint, destinationDigest: approval.destinationDigest,
       createdAt: now, requestDigest: digest, draft: draft)
@@ -619,6 +621,103 @@ struct GalaxySSIHealthRecords {
           archive.healthOnlinePermission == proposal.onlinePermission,
           archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id == proposal.carePermission
     else { throw Failure.stale }
+  }
+
+  func scheduleLocalCareFollowUp(concernID: UUID, metric: GalaxySSIHealthMetric, actionID: String,
+                                 replacing token: UUID?, at requested: Date, now: Date = Date()) throws {
+    guard requested.timeIntervalSinceReferenceDate.isFinite, requested > now else { throw Failure.invalid }
+    var archive = try load()
+    guard archive.localCareFollowUps?[actionID]?.id == token,
+          Self.careFollowUpPreferences(archive) != nil,
+          Self.careFollowUpIsCurrent(concernID: concernID, metric: metric, actionID: actionID, archive: archive, now: now)
+    else { throw Failure.stale }
+    var reminders = archive.localCareFollowUps ?? [:]
+    reminders[actionID] = .init(id: UUID(), actionID: actionID, concernID: concernID, metric: metric, requestedAt: requested)
+    archive.localCareFollowUps = reminders
+    try persist(archive)
+  }
+
+  func cancelLocalCareFollowUp(_ reminder: GalaxySSIHealthCareFollowUp.Reminder) throws {
+    var archive = try load()
+    guard archive.localCareFollowUps?[reminder.actionID]?.id == reminder.id else { throw Failure.stale }
+    archive.localCareFollowUps?.removeValue(forKey: reminder.actionID)
+    try persist(archive)
+  }
+
+  func recordLocalCareOutcome(concernID: UUID, metric: GalaxySSIHealthMetric, action: GalaxySSIHealthCarePlan.AdoptedAction,
+                              note: String, now: Date = Date()) throws {
+    let note = note.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !note.isEmpty, note.utf8.count <= 2_000 else { throw Failure.invalid }
+    var archive = try load()
+    guard archive.localCareAllowed == true, var ledger = archive.localCare, var current = ledger.current[metric.rawValue],
+          current.id == concernID, current.stage != .closed, current.revision < Int.max,
+          let index = current.adoptedActions?.firstIndex(of: action), action.outcome == nil else { throw Failure.stale }
+    current.adoptedActions?[index].outcome = .init(note: note, reportedAt: now)
+    if current.stage != .paused { current.stage = .reassess }
+    current.revision += 1
+    current.updatedAt = max(current.updatedAt, now)
+    ledger.publish(current)
+    archive.localCare = ledger
+    archive.localCareFollowUps?.removeValue(forKey: action.id)
+    try persist(archive)
+  }
+
+  func localCareFollowUpDelivery(pending: [String: Date], delivered: Set<String>, permitted: Bool,
+      calendar: Calendar, now: Date) throws -> GalaxySSIHealthCareFollowUp.DeliveryPlan {
+    let archive = try load()
+    let reminders = (archive.localCareFollowUps ?? [:]).values.filter {
+      Self.careFollowUpIsCurrent(concernID: $0.concernID, metric: $0.metric, actionID: $0.actionID, archive: archive, now: now)
+    }
+    return GalaxySSIHealthCareFollowUp.deliveryPlan(reminders: reminders, preferences: Self.careFollowUpPreferences(archive),
+      permitted: permitted, pending: pending, delivered: delivered, calendar: calendar, now: now)
+  }
+
+  func markLocalCareFollowUpSubmitted(_ delivery: GalaxySSIHealthCareFollowUp.Delivery,
+                                      calendar: Calendar, now: Date) throws {
+    var archive = try load()
+    let expected = delivery.reminder
+    guard var reminder = archive.localCareFollowUps?[expected.actionID], reminder.id == expected.id,
+          delivery.due >= reminder.requestedAt.addingTimeInterval(-1),
+          let preferences = Self.careFollowUpPreferences(archive),
+          preferences.nextAllowed(delivery.due, calendar: calendar) == delivery.due,
+          Self.careFollowUpIsCurrent(concernID: reminder.concernID, metric: reminder.metric,
+            actionID: reminder.actionID, archive: archive, now: now) else { throw Failure.stale }
+    guard reminder.submittedFor != delivery.due else { return }
+    reminder.submittedFor = delivery.due
+    archive.localCareFollowUps?[reminder.actionID] = reminder
+    try persist(archive)
+  }
+
+  func localCareFollowUpTarget(token: UUID, now: Date) throws -> GalaxySSIHealthCareFollowUp.Reminder? {
+    let archive = try load()
+    guard Self.careFollowUpPreferences(archive) != nil,
+          let reminder = archive.localCareFollowUps?.values.first(where: { $0.id == token }),
+          reminder.submittedFor.map({ $0 <= now.addingTimeInterval(2) }) == true,
+          Self.careFollowUpIsCurrent(concernID: reminder.concernID, metric: reminder.metric, actionID: reminder.actionID,
+            archive: archive, now: now) else { return nil }
+    return reminder
+  }
+
+  static func careFollowUpPreferences(_ archive: Archive) -> GalaxySSIHealthReviewDelivery.Preferences? {
+    guard archive.reviewReminderState?.enabled == true,
+          let preferences = archive.reviewReminderState?.notificationPreferences, preferences.enabled else { return nil }
+    return preferences
+  }
+
+  static func careFollowUpIsCurrent(concernID: UUID, metric: GalaxySSIHealthMetric, actionID: String,
+                                    archive: Archive, now: Date = Date()) -> Bool {
+    guard archive.localCareAllowed == true,
+          let concern = archive.localCare?.current[metric.rawValue], concern.id == concernID,
+          concern.stage != .paused, concern.stage != .closed, concern.assessment.record != nil,
+          let adopted = concern.adoptedActions?.first(where: { $0.id == actionID && $0.outcome == nil }),
+          let plan = archive.localCarePlans?[adopted.proposalID.uuidString], plan.concernID == concernID,
+          plan.state == .accepted, plan.selected.contains(adopted.action.id),
+          archive.healthOnlinePermission == plan.onlinePermission,
+          archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id == plan.carePermission,
+          concern.context == plan.sourceContext,
+          (try? GalaxySSIHealthCare.inputDigest(concern.assessment)) == plan.assessmentDigest else { return false }
+    return GalaxySSIHealthCare.assess(archive.current.filter { $0.metric == metric && $0.isValid && $0.measuredAt <= now },
+      context: concern.context) == concern.assessment
   }
 
   private func currentDiscussionConcern(id: UUID, metric: GalaxySSIHealthMetric, archive: Archive,
@@ -1475,6 +1574,15 @@ struct GalaxySSIHealthRecords {
   }
 
   private func persist(_ archive: Archive, notify: Bool = true) throws {
+    var archive = archive
+    if let reminders = archive.localCareFollowUps, !reminders.isEmpty {
+      let now = Date()
+      let enabled = Self.careFollowUpPreferences(archive) != nil
+      archive.localCareFollowUps = reminders.filter {
+        enabled && Self.careFollowUpIsCurrent(concernID: $0.value.concernID, metric: $0.value.metric,
+          actionID: $0.key, archive: archive, now: now)
+      }
+    }
     let payload = try JSONEncoder().encode(archive)
     guard let sealed = try AES.GCM.seal(payload, using: key(create: true),
                                         authenticating: context).combined else { throw Failure.unavailable }

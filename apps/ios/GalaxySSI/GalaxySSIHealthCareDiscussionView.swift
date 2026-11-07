@@ -65,6 +65,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
         }
         if task != nil { Button(t("stop", "Cancel request"), role: .cancel) { clearRequest() } }
         GalaxySSIHealthCarePlansSection(records: records, concernID: concernID)
+        GalaxySSIHealthCareFollowUpsSection(records: records, concernID: concernID, metric: metric)
       }
       if scene == .active, failed { Text(t("unavailable", "This discussion or request is no longer available.")) }
     }

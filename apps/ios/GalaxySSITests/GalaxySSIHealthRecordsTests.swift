@@ -63,16 +63,68 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(updated.adoptedActions?.map(\.action.kind), [.recheck])
     XCTAssertThrowsError(try reopened.resolveLocalCarePlan(draft, selected: [0], now: now))
     XCTAssertNil(try reopened.load().reviewReminderState)
+    let action = try XCTUnwrap(updated.adoptedActions?.first)
+    let firstTime = now.addingTimeInterval(3_600)
+    XCTAssertThrowsError(try reopened.scheduleLocalCareFollowUp(concernID: concern.id, metric: .glucose,
+      actionID: action.id, replacing: nil, at: firstTime, now: now))
+    try reopened.setReviewRemindersEnabled(true)
+    try reopened.setReviewNotificationPreferences(.init(enabled: true, quietStart: 0, quietEnd: 0))
+    XCTAssertThrowsError(try reopened.scheduleLocalCareFollowUp(concernID: concern.id, metric: .glucose,
+      actionID: action.id, replacing: nil, at: now, now: now))
+    try reopened.scheduleLocalCareFollowUp(concernID: concern.id, metric: .glucose, actionID: action.id,
+      replacing: nil, at: firstTime, now: now)
+    let firstReminder = try XCTUnwrap(reopened.load().localCareFollowUps?[action.id])
+    let secondTime = firstTime.addingTimeInterval(3_600)
+    try reopened.scheduleLocalCareFollowUp(concernID: concern.id, metric: .glucose, actionID: action.id,
+      replacing: firstReminder.id, at: secondTime, now: now)
+    XCTAssertThrowsError(try reopened.cancelLocalCareFollowUp(firstReminder))
+    let secondReminder = try XCTUnwrap(reopened.load().localCareFollowUps?[action.id])
+    let delivery = try XCTUnwrap(reopened.localCareFollowUpDelivery(pending: [:], delivered: [],
+      permitted: true, calendar: .current, now: now).pending.first)
+    XCTAssertEqual(delivery.reminder, secondReminder)
+    XCTAssertEqual(delivery.due, secondTime)
+    let calendar = Calendar.current
+    let hour = calendar.component(.hour, from: secondTime)
+    let quiet = GalaxySSIHealthReviewDelivery.Preferences(enabled: true, quietStart: hour, quietEnd: (hour + 1) % 24)
+    let deferred = GalaxySSIHealthCareFollowUp.deliveryPlan(reminders: [secondReminder], preferences: quiet,
+      permitted: true, pending: [:], delivered: [], calendar: calendar, now: now)
+    XCTAssertGreaterThan(try XCTUnwrap(deferred.pending.first?.due), secondTime)
+    XCTAssertTrue(GalaxySSIHealthCareFollowUp.deliveryPlan(reminders: [secondReminder], preferences: quiet,
+      permitted: false, pending: [:], delivered: [], calendar: calendar, now: now).pending.isEmpty)
+    try reopened.markLocalCareFollowUpSubmitted(delivery, calendar: .current, now: now)
+    XCTAssertNil(try reopened.localCareFollowUpTarget(token: firstReminder.id, now: secondTime))
+    XCTAssertEqual(try reopened.localCareFollowUpTarget(token: secondReminder.id, now: secondTime)?.id, secondReminder.id)
+    let otherApproval = try reopened.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "A separate step",
+      destinationID: "provider", model: model, credential: "fixture-api-key", proposesPlan: true, now: now)
+    try reopened.beginLocalCareDiscussionTurn(otherApproval, now: now)
+    try reopened.saveLocalCarePlan(otherApproval, arguments: arguments, now: now)
+    let otherPlan = try XCTUnwrap(reopened.load().localCarePlans?[otherApproval.id.uuidString])
+    try reopened.resolveLocalCarePlan(otherPlan, selected: [0], now: now)
+    let otherAction = try XCTUnwrap(reopened.load().localCare?.current["glucose"]?.adoptedActions?.last)
+    try reopened.scheduleLocalCareFollowUp(concernID: concern.id, metric: .glucose, actionID: otherAction.id,
+      replacing: nil, at: firstTime, now: now)
+    XCTAssertThrowsError(try reopened.recordLocalCareOutcome(concernID: concern.id, metric: .glucose,
+      action: action, note: " ", now: now))
+    try reopened.recordLocalCareOutcome(concernID: concern.id, metric: .glucose, action: action,
+      note: "Discussed at appointment", now: now)
+    let recorded = try XCTUnwrap(reopened.load().localCare?.current["glucose"])
+    XCTAssertEqual(recorded.stage, .reassess)
+    XCTAssertEqual(recorded.assessment, updated.assessment)
+    XCTAssertEqual(recorded.adoptedActions?.first?.outcome?.note, "Discussed at appointment")
+    XCTAssertNil(try reopened.load().localCareFollowUps?[action.id])
+    XCTAssertNotNil(try reopened.load().localCareFollowUps?[otherAction.id])
+    XCTAssertNil(try reopened.localCareFollowUpTarget(token: secondReminder.id, now: secondTime))
     let second = try reopened.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Another draft",
       destinationID: "provider", model: model, credential: "fixture-api-key", proposesPlan: true, now: now)
     try reopened.beginLocalCareDiscussionTurn(second, now: now)
     try reopened.saveLocalCarePlan(second, arguments: arguments, now: now)
     let revoked = try XCTUnwrap(reopened.load().localCarePlans?[second.id.uuidString])
     try reopened.setHealthOnlinePermission(false)
+    XCTAssertNil(try reopened.load().localCareFollowUps?[otherAction.id])
     XCTAssertThrowsError(try reopened.resolveLocalCarePlan(revoked, selected: [0], now: now))
     try reopened.resolveLocalCarePlan(revoked, selected: nil, now: now)
     XCTAssertEqual(try reopened.load().localCarePlans?[second.id.uuidString]?.state, .dismissed)
-    XCTAssertEqual(try reopened.load().localCare?.current["glucose"]?.adoptedActions?.count, 1)
+    XCTAssertEqual(try reopened.load().localCare?.current["glucose"]?.adoptedActions?.count, 2)
   }
 
   @MainActor
