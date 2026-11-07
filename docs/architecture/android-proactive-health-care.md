@@ -89,8 +89,8 @@ context confirmation, original record, guideline link, pause/resume and history.
   below, including Desktop recovery, local models and permission revocation.
 - Integrate authoritative guideline retrieval, applicability/version checks and
   source-backed model explanations, including uncertain or conflicting evidence.
-- Let the Agent propose lifestyle actions, clinician discussion items and
-  justified follow-up windows, with user confirmation before scheduling.
+- Validate real-provider use of the pending-plan tool and review UI below,
+  including source applicability and justified follow-up windows.
 - Deliver durable due reminders with deduplication, permission-aware lock-screen
   privacy, restart recovery, snooze and subsequent-result reassessment.
 - Implement clinically reviewed urgency handling separately from routine advice,
@@ -125,11 +125,49 @@ initial planning. New health files must first be imported and confirmed in Perso
 Health. Public research is scoped to search/fetch and tool inspection, with generic
 clinical terms requested in the prompt. Search services may receive those terms.
 Native invocation authorization is retained by registry subsets and runs before
-effect replay. Discussions cannot mutate records, schedule reminders, send messages,
-inspect unrelated local data or delegate to another model. A proposed improvement
-or follow-up window is not a durable care plan or a delivered reminder.
+effect replay. Discussions cannot mutate measurements, schedule reminders, send
+messages, inspect unrelated local data or delegate to another model. The only
+additional local mutation is a pending-plan submission; it is not user acceptance
+or a delivered reminder.
 
-This does not yet implement a clinical evidence validator, automatic due delivery,
-or the complete plan-confirmation workflow. Transport already submitted to a remote
+This does not yet implement a clinical evidence validator or automatic due delivery.
+Transport already submitted to a remote
 provider cannot be retracted by revoking a permission. Further requests are checked
 again; in-flight cancellation and background recovery require end-to-end acceptance.
+
+## Proposed plans and explicit review
+
+`galaxyssi.health.plan.propose` retains one immutable, replay-safe draft per
+approved discussion turn. The phone binds the draft to the actual conversation,
+grant, concern revision and source clock; the model cannot supply these identities
+or a confirmed state. Action IDs are deterministic. The encrypted `plans` table is
+separate from concerns so submitting a proposal does not invalidate the current
+model turn, change the concern, or activate a deadline. Database schema 3 upgrades
+schemas 1 and 2 without rewriting existing encrypted data. Pending pages are
+bounded to 30 records; resolving or dismissing them exposes older drafts without
+total-history truncation.
+
+The Agent main page and concern details offer the same review dialog. No action
+is preselected. The dialog shows uncertainties, model provenance, source version
+and population, and any explicit review window. Model citations are labelled as
+not independently verified; user acceptance does not certify their clinical
+accuracy. Unsupported optimal targets and medication orders are not structured
+plan operations. Clinical content validation still requires further work.
+
+Acceptance appends only selected actions and records a concern revision in the
+same transaction that resolves the draft. Cancel leaves the draft pending;
+dismissal adds nothing. Duplicate delivery cannot append actions twice. New source
+data, changes to context, permission/settings versions, pause, deletion and expired
+review windows prevent stale acceptance. Source clocks are read immediately before
+the care transaction; measurement and care databases are separate, so a concurrent
+later measurement is reconciled as a new assessment rather than a cross-database
+atomic snapshot. Recheck items enter waiting-for-results; other items do not claim
+that a medical test is pending. No target or normal/stable state is inferred.
+
+Review views are dismissed on backgrounding, conversation changes and observed
+record/permission changes. Persistence and validation run off the UI thread.
+Stored plans remain encrypted across process restarts. Deleting a concern also
+deletes its draft payloads while retaining the existing protected conversation
+binding. Notifications and their separate consent, snooze, deduplication and
+restart delivery remain outstanding; saving a plan explicitly does not promise
+an alert.
