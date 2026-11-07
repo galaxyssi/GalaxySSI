@@ -6,6 +6,14 @@ enum AgentCollaborationSavedToolExecution {
   static let responseType = "collaboration_tool_test_result"
   static let processID = UUID().uuidString
 
+  static func permitsDirectRuntime(source: String, key: String) -> Bool {
+    let toolId = AgentIOSOnDeviceRuntimeNativeToolCatalog.execute
+    let action = AgentAction(id: key, kind: .callNativeTool, target: toolId, risk: .medium,
+      status: .proposed, description: "Run a saved collaboration test",
+      parameters: ["tool_id": toolId, "source": source], requiresConfirmation: false)
+    return AgentConfirmationPolicy.tier(for: action) == .direct
+  }
+
   struct Request {
     enum Mode: String { case start, status, cancel }
     let mode: Mode
@@ -80,7 +88,7 @@ enum AgentCollaborationSavedToolExecution {
         "input_sha256": .string(inputHash), "updated_at": .int(updatedAt), "result": result.map(AgentMcpJSONValue.object) ?? .null,
         "retry_after_ms": state.active ? .int(2_000) : .null, "automatically_reexecuted": .bool(false),
         "reason": .string(state == .interrupted
-          ? "Process restarted before a result was recorded. Recover original evidence before choosing another execution ID."
+          ? "Execution ended without a confirmed result. Recover original evidence before choosing another execution ID."
           : "")]
     }
   }
@@ -88,12 +96,13 @@ enum AgentCollaborationSavedToolExecution {
   enum Operation {
     case request(Request)
     case running(executionID: String)
+    case interrupt(executionID: String)
     case finish(executionID: String, result: AgentMcpJSONObject)
 
     var id: String {
       switch self {
       case .request(let request): return request.executionID
-      case .running(let id), .finish(let id, _): return id
+      case .running(let id), .interrupt(let id), .finish(let id, _): return id
       }
     }
   }
@@ -103,14 +112,16 @@ enum AgentCollaborationSavedToolExecution {
     var shouldLaunch = false
     var shouldCancel = false
     var didStart = false
+    var busy = false
 
     var response: AgentMcpJSONObject {
-      record?.response ?? ["success": .bool(true), "status": .string("not_recorded")]
+      if busy { return ["success": .bool(true), "status": .string("busy"), "retry_after_ms": .int(2_000)] }
+      return record?.response ?? ["success": .bool(true), "status": .string("not_recorded")]
     }
   }
 
   static func apply(_ operation: Operation, scope: Scope, existing: Record?, process: String,
-                    now: Int64) throws -> Outcome {
+                    now: Int64, allowAdmission: Bool = true) throws -> Outcome {
     guard scope.isValid, !process.isBlank, now >= 0,
           existing.map({ $0.scope == scope && $0.executionID == operation.id }) ?? true else {
       throw AgentTeamHistoryDatabase.Failure.stale
@@ -132,6 +143,7 @@ enum AgentCollaborationSavedToolExecution {
           guard record.inputHash == request.inputHash else { throw AgentTeamHistoryDatabase.Failure.stale }
           return Outcome(record: record)
         }
+        guard allowAdmission else { return Outcome(record: nil, busy: true) }
         return Outcome(record: Record(scope: scope, executionID: request.executionID, inputHash: request.inputHash,
           plan: plan, timeoutMillis: timeoutMillis, ownerProcess: process, state: .queued, updatedAt: now), shouldLaunch: true)
       case .status:
@@ -148,6 +160,11 @@ enum AgentCollaborationSavedToolExecution {
       record.state = .running
       record.updatedAt = max(record.updatedAt, now)
       return Outcome(record: record, didStart: true)
+    case .interrupt:
+      guard var record = current, record.state.active else { return Outcome(record: current) }
+      record.state = .interrupted
+      record.updatedAt = max(record.updatedAt, now)
+      return Outcome(record: record)
     case .finish(_, let result):
       guard AgentMcpJSONCodec.stringify(result).utf8.count <= 16 * 1_024 else {
         throw AgentTeamHistoryDatabase.Failure.corrupt

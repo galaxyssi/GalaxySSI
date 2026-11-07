@@ -8,6 +8,7 @@ enum AgentCollaborationSavedToolTest {
   struct Prepared {
     let runtimeInput: AgentMcpJSONObject
     let evidenceInput: AgentMcpJSONObject
+    let originalSource: String
     fileprivate let cases: [AgentMcpJSONObject]
 
     func evaluate(_ result: AgentNativeToolResult) -> AgentMcpJSONObject {
@@ -137,7 +138,7 @@ enum AgentCollaborationSavedToolTest {
         "mode": .string("test"), "tool_test_plan": .object(fields(plan.reference)),
         "executable_tool": .object(fields(tool.reference)), "execution_source_sha256": .string(digest(program)),
         "source_sha256": .string(digest(source)), "timeout_ms": .int(timeoutMillis), "grants_permissions": .bool(false)
-      ], cases: cases)
+      ], originalSource: source, cases: cases)
   }
 
   private static func fields(_ ref: AgentCollaborationResearchReference) -> AgentMcpJSONObject {

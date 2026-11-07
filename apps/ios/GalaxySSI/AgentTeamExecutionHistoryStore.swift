@@ -156,6 +156,7 @@ final class AgentTeamExecutionHistoryStore {
                   replacement.sourceMessageId == member.sourceMessageId,
                   replacement.dispatchCheckpoint == member.dispatchCheckpoint,
                   replacement.dispatchDependencyMemberIds == member.dispatchDependencyMemberIds,
+                  replacement.dispatchAllowsSavedToolTest == member.dispatchAllowsSavedToolTest,
                   replacement.dispatchResourceObservation == member.dispatchResourceObservation else {
               throw AgentTeamHistoryDatabase.Failure.stale
             }
@@ -1717,6 +1718,7 @@ final class AgentTeamExecutionHistoryStore {
 
   func updateSavedToolExecution(_ operation: AgentCollaborationSavedToolExecution.Operation,
                                 scope: AgentCollaborationSavedToolExecution.Scope,
+                                allowAdmission: Bool = true,
                                 process: String = AgentCollaborationSavedToolExecution.processID,
                                 now: Int64 = AgentControlPlaneClock.nowMillis()) throws
     -> AgentCollaborationSavedToolExecution.Outcome {
@@ -1725,7 +1727,7 @@ final class AgentTeamExecutionHistoryStore {
       guard let team = try database.snapshots(runId: assignment.runId).first,
             team.state == .running, team.conversationId == assignment.conversationId, team.taskId == assignment.turnId,
             team.members.contains(where: { $0.memberId == assignment.memberId && $0.sourceMessageId == assignment.sourceId &&
-              $0.deliveryMode != .ignore && !$0.status.isTerminal &&
+              $0.deliveryMode != .ignore && !$0.status.isTerminal && $0.dispatchAllowsSavedToolTest == true &&
               ($0.dispatchCheckpoint == .dispatching || $0.dispatchCheckpoint == .accepted) }),
             try database.researchRecord(Bool.self, conversationId: assignment.conversationId,
               key: "native-evidence-revoked", revision: 0) != true else { throw AgentTeamHistoryDatabase.Failure.stale }
@@ -1733,7 +1735,7 @@ final class AgentTeamExecutionHistoryStore {
       let existing = try database.researchRecord(AgentCollaborationSavedToolExecution.Record.self,
         conversationId: assignment.conversationId, key: key, revision: 0)
       let outcome = try AgentCollaborationSavedToolExecution.apply(operation, scope: scope,
-        existing: existing, process: process, now: now)
+        existing: existing, process: process, now: now, allowAdmission: allowAdmission)
       if let record = outcome.record, record != existing {
         if existing != nil { try database.removeResearchRecord(conversationId: assignment.conversationId, key: key) }
         try database.insertResearchRecord(record, conversationId: assignment.conversationId, key: key, revision: 0)
@@ -1748,7 +1750,7 @@ final class AgentTeamExecutionHistoryStore {
       guard let team = try database.snapshots(runId: scope.runId).first,
             team.state == .running, team.conversationId == scope.conversationId, team.taskId == scope.turnId,
             let member = team.members.first(where: { $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId }),
-            member.deliveryMode != .ignore, !member.status.isTerminal,
+            member.deliveryMode != .ignore, !member.status.isTerminal, member.dispatchAllowsSavedToolTest == true,
             member.dispatchCheckpoint == .dispatching || member.dispatchCheckpoint == .accepted,
             try database.researchRecord(Bool.self, conversationId: scope.conversationId,
               key: "native-evidence-revoked", revision: 0) != true else { throw AgentTeamHistoryDatabase.Failure.stale }

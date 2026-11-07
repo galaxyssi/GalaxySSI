@@ -1049,6 +1049,7 @@ extension GalaxySSIStoreTests {
     let history = open()
     var team = durableTeamSnapshot("journal-run")
     team.members[0].dispatchCheckpoint = .accepted
+    team.members[0].dispatchAllowsSavedToolTest = true
     XCTAssertTrue(history.upsert(team))
     let assignment = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
       turnId: team.taskId, memberId: team.members[0].memberId, sourceId: team.members[0].sourceMessageId)
@@ -1071,6 +1072,11 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(start("tool", extra: true))
     XCTAssertNil(Execution.Request(phase: "cancel", input: ["mode": .string("status"), "execution_id": .string("tool")]))
     let original = try XCTUnwrap(start("tool"))
+    XCTAssertTrue(Execution.permitsDirectRuntime(source: "def run(parameters): return parameters", key: "saved-test"))
+    XCTAssertFalse(Execution.permitsDirectRuntime(source: "def run(parameters): return 'delete'", key: "saved-test"))
+    let busy = try history.updateSavedToolExecution(.request(original), scope: scope(), allowAdmission: false, process: "a", now: 1)
+    XCTAssertEqual(busy.response["status"], .string("busy"))
+    XCTAssertFalse(busy.shouldLaunch)
     let admitted = try history.updateSavedToolExecution(.request(original), scope: scope(), process: "a", now: 1)
     XCTAssertTrue(admitted.shouldLaunch)
     XCTAssertEqual(admitted.response["status"], .string("queued"))
@@ -1091,6 +1097,12 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(cancelled.response["status"], .string("cancelled"))
     XCTAssertFalse(cancelled.shouldCancel)
     XCTAssertFalse(try reopened.updateSavedToolExecution(.running(executionID: "queued"), scope: scope(), process: "b", now: 8).didStart)
+    let revoked = try XCTUnwrap(start("revoked"))
+    _ = try reopened.updateSavedToolExecution(.request(revoked), scope: scope(), process: "b", now: 8)
+    let interrupted = try reopened.updateSavedToolExecution(.interrupt(executionID: "revoked"),
+      scope: scope(), process: "b", now: 8)
+    XCTAssertEqual(interrupted.response["status"], .string("interrupted"))
+    XCTAssertFalse(try reopened.updateSavedToolExecution(.request(revoked), scope: scope(), process: "b", now: 8).shouldLaunch)
 
     let running = try XCTUnwrap(start("running"))
     _ = try reopened.updateSavedToolExecution(.request(running), scope: scope(), process: "b", now: 9)
@@ -1155,6 +1167,7 @@ extension GalaxySSIStoreTests {
       title: "Saved plan", body: ["tool_test_plan": .object(plan)], parents: [tool]), run: "author-plan")
     var running = durableTeamSnapshot("execute-plan")
     running.members[0].dispatchCheckpoint = .dispatching
+    running.members[0].dispatchAllowsSavedToolTest = true
     XCTAssertTrue(history.upsert(running))
     let reader = scope(running)
     let prepared = try history.prepareSavedToolTest(reference, timeoutMillis: 1_000, scope: reader)
