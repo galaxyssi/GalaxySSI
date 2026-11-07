@@ -1940,6 +1940,84 @@ final class AgentTeamExecutionHistoryStore {
     return team
   }
 
+  private static func goalWorkKey(_ workID: String, scope: AgentCollaborationToolEvidenceScope) -> String {
+    "goal-work:" + AgentMcpJSONCodec.sha256(["run": .string(scope.runId), "turn": .string(scope.turnId), "work": .string(workID)])
+  }
+
+  func goalWork(_ workID: String, scope: AgentCollaborationToolEvidenceScope)
+    throws -> (AgentCollaborationLiveGraph.Work, AgentCollaborationGoalWorkRun?) {
+    try access { database in
+      _ = try Self.activeGoalCoordinator(scope, database: database)
+      guard let checkpoint = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first,
+            checkpoint.turnId == scope.turnId, checkpoint.conversationId == scope.conversationId,
+            let work = checkpoint.liveGraph?.work.first(where: { $0.id == workID })
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let run = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
+        conversationId: scope.conversationId, key: Self.goalWorkKey(workID, scope: scope), revision: 0)
+      guard run == nil || run?.owner == scope else { throw AgentTeamHistoryDatabase.Failure.stale }
+      return (work, run)
+    }
+  }
+
+  func claimGoalWork(_ work: AgentCollaborationLiveGraph.Work, scope: AgentCollaborationToolEvidenceScope,
+                     now: Int64 = AgentControlPlaneClock.nowMillis())
+    throws -> (run: AgentCollaborationGoalWorkRun, claimed: Bool, dependencies: [AgentMcpJSONObject]) {
+    try access { database in
+      let team = try Self.activeGoalCoordinator(scope, database: database)
+      let key = Self.goalWorkKey(work.id, scope: scope)
+      if let prior = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
+        conversationId: scope.conversationId, key: key, revision: 0) {
+        guard prior.owner == scope else { throw AgentTeamHistoryDatabase.Failure.stale }
+        return (prior, false, [])
+      }
+      guard (0...(Int64.max - AgentCollaborationGoalWorkRun.leaseMillis)).contains(now),
+            let checkpoint = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first,
+            checkpoint.phase == .working, checkpoint.conversationId == scope.conversationId,
+            checkpoint.turnId == scope.turnId, checkpoint.liveGraph?.work.contains(work) == true,
+            team.members.contains(where: { $0.memberId == work.member && $0.deliveryMode != .ignore })
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      var dependencies: [AgentMcpJSONObject] = []
+      for dependency in work.depends_on {
+        guard let source = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
+          conversationId: scope.conversationId, key: Self.goalWorkKey(dependency, scope: scope), revision: 0),
+          source.owner == scope,
+          source.state == .succeeded || (work.dependency_policy == .terminal &&
+            [AgentCollaborationGoalWorkRun.State.failed, .interrupted].contains(source.visibleState(now: now)))
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        let evidence = source.receipt(now: now)
+        dependencies.append(evidence)
+        guard AgentMcpJSONCodec.stringify(["dependencies": .array(dependencies.map(AgentMcpJSONValue.object))]).utf8.count
+                <= 64 * 1_024 else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      }
+      let run = AgentCollaborationGoalWorkRun(workID: work.id, dispatchID: UUID().uuidString, owner: scope,
+        memberID: work.member, process: AgentCollaborationGoalWorkRun.processID, startedAt: now, state: .running)
+      try database.insertResearchRecord(run, conversationId: scope.conversationId, key: key, revision: 0)
+      return (run, true, dependencies)
+    }
+  }
+
+  func finishGoalWork(_ claim: AgentCollaborationGoalWorkRun, output: String?, interrupted: Bool,
+                      now: Int64 = AgentControlPlaneClock.nowMillis()) throws -> AgentMcpJSONObject {
+    try access { database in
+      _ = try Self.activeGoalCoordinator(claim.owner, database: database)
+      let key = Self.goalWorkKey(claim.workID, scope: claim.owner)
+      guard var run = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
+        conversationId: claim.owner.conversationId, key: key, revision: 0),
+        run.owner == claim.owner, run.dispatchID == claim.dispatchID, run.process == AgentCollaborationGoalWorkRun.processID,
+        run.visibleState(now: now) == .running else { throw AgentTeamHistoryDatabase.Failure.stale }
+      run.state = interrupted ? .interrupted : (output == nil ? .failed : .succeeded)
+      run.finishedAt = max(now, run.startedAt)
+      if let output, !interrupted {
+        run.output = String(decoding: output.utf8.prefix(24 * 1_024), as: UTF8.self)
+        run.outputHash = SHA256.hash(data: Data(output.utf8)).map { String(format: "%02x", $0) }.joined()
+        run.truncated = output.utf8.count > 24 * 1_024
+      }
+      try database.removeResearchRecord(conversationId: run.owner.conversationId, key: key)
+      try database.insertResearchRecord(run, conversationId: run.owner.conversationId, key: key, revision: 0)
+      return run.receipt(now: now)
+    }
+  }
+
   private func admitCollaborationWork(_ input: AgentMcpJSONObject,
     scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
     guard Set(input.keys) == ["mode", "artifact", "milestone_id", "expected_revision"],

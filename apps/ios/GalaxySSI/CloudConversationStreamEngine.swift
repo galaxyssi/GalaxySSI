@@ -55,6 +55,7 @@ extension CloudConversationStreaming {
 }
 
 final class CloudConversationStreamEngine: CloudModelStreamClient {
+  typealias GoalWorkHandler = @MainActor (AgentMcpJSONObject) async -> AgentMcpJSONObject
   private static let maxParallelToolCalls = 4
 
   private struct ToolExecutionOutcome {
@@ -126,7 +127,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     images: [CloudImagePayload],
     requestId: String,
     collaborationEvidence: AgentCollaborationToolEvidenceScope?,
-    collaborationModelAudit: AgentCollaborationToolEvidenceScope? = nil
+    collaborationModelAudit: AgentCollaborationToolEvidenceScope? = nil,
+    goalWorkHandler: GoalWorkHandler? = nil
   ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
     let conversationRequestId = Self.normalizedRequestId(requestId)
     return AsyncThrowingStream { continuation in
@@ -139,6 +141,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           requestId: conversationRequestId,
           collaborationEvidence: collaborationEvidence,
           collaborationModelAudit: collaborationModelAudit ?? collaborationEvidence,
+          goalWorkHandler: goalWorkHandler,
           continuation: continuation
         )
       }
@@ -176,6 +179,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     requestId: String,
     collaborationEvidence: AgentCollaborationToolEvidenceScope?,
     collaborationModelAudit: AgentCollaborationToolEvidenceScope?,
+    goalWorkHandler: GoalWorkHandler?,
     continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation
   ) async {
     defer { CloudImageAnnotationSession.discard(requestId: requestId) }
@@ -235,7 +239,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         prepared.installCollaborationRecall(originalsOnly: collaborationEvidence == nil)
       }
       if collaborationRecallScope != nil {
-        prepared.installCollaborationPublication(assessmentOnly: collaborationEvidence == nil)
+        prepared.installCollaborationPublication(assessmentOnly: collaborationEvidence == nil,
+          canRunGoalWork: collaborationEvidence == nil && goalWorkHandler != nil)
       }
       let publishName = CloudModelStreamMutableConversation.collaborationPublishName
       var publishedMilestones = Set<String>()
@@ -613,7 +618,11 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           },
           collaborationPublish: collaborationRecallScope.map { scope in
             { arguments in
-              await MainActor.run {
+              if arguments["mode"] == .string(AgentCollaborationGoalAssessmentPolicy.runWorkMode) {
+                guard collaborationEvidence == nil, collaborationModelAudit == scope, let goalWorkHandler else { return nil }
+                return await goalWorkHandler(arguments)
+              }
+              return await MainActor.run {
                 let coordinatorMutation = AgentCollaborationGoalAssessmentPolicy.isCoordinatorMutation(arguments.string("mode"))
                 guard collaborationEvidence != nil || arguments["mode"] == .string("validate_assessment") || coordinatorMutation else {
                   return nil
@@ -685,6 +694,11 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                let receipt = try? CloudModelStreamJSON.mcpObject(from: output),
                ["contract_established", "work_admitted"].contains(receipt.string("status")),
                receipt["replayed"] == .bool(false) {
+              madeProgress = true
+            }
+            if arguments["mode"] == .string(AgentCollaborationGoalAssessmentPolicy.runWorkMode),
+               let receipt = try? CloudModelStreamJSON.mcpObject(from: output),
+               receipt["new_execution"] == .bool(true) {
               madeProgress = true
             }
             if arguments["mode"] == .string("publish"),

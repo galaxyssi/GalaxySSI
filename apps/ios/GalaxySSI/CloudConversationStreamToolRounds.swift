@@ -366,15 +366,16 @@ struct CloudModelStreamMutableConversation {
     appendCollaborationFunction(function, schema: schema)
   }
 
-  mutating func installCollaborationPublication(assessmentOnly: Bool = false) {
-    let modes = assessmentOnly
+  mutating func installCollaborationPublication(assessmentOnly: Bool = false, canRunGoalWork: Bool = false) {
+    var modes = assessmentOnly
       ? ["validate_assessment", AgentCollaborationGoalAssessmentPolicy.establishContractMode,
          AgentCollaborationGoalAssessmentPolicy.appendWorkMode]
       : ["publish", "status", "receipt", "list", "validate_assessment"]
+    if canRunGoalWork { modes.append(AgentCollaborationGoalAssessmentPolicy.runWorkMode) }
     let properties: [String: Any] = [
       "mode": ["type": "string", "enum": modes],
       "milestone_id": ["type": "string"], "artifact": ["type": "string"], "artifact_sha256": ["type": "string"],
-      "cursor": ["type": "string"], "expected_revision": ["type": "integer"]
+      "cursor": ["type": "string"], "expected_revision": ["type": "integer"], "work_id": ["type": "string"]
     ]
     var schema: [String: Any] = ["type": "object", "properties": properties,
       "required": ["mode"]]
@@ -382,7 +383,8 @@ struct CloudModelStreamMutableConversation {
     appendCollaborationFunction([
       "name": Self.collaborationPublishName,
       "description": assessmentOnly
-        ? "Use validate_assessment with artifact containing the exact goal-assessment JSON to check its structure. As coordinator, use establish_contract with a continue assessment, open criteria without evidence, and empty work and blockers. Use append_work with a unique milestone_id, expected_revision, and a galaxyssi.work-expansion.v1 JSON artifact to append authorized work. Retry the identical request after an uncertain response. Admission does not dispatch work or accept the goal."
+        ? "Use validate_assessment with artifact containing the exact goal-assessment JSON to check its structure. As coordinator, use establish_contract with a continue assessment, open criteria without evidence, and empty work and blockers. Use append_work with a unique milestone_id, expected_revision, and a galaxyssi.work-expansion.v1 JSON artifact. Retry identical requests after an uncertain response. Admission does not dispatch work or accept the goal." +
+          (canRunGoalWork ? " Use run_work with an admitted work_id assigned to a cloud specialist once its dependencies are satisfied. The same ID returns its saved outcome and is never automatically reexecuted." : "")
         : "Use status to check availability. Publish interim research with milestone_id and an artifact JSON string. Retry identical bytes, or use receipt with milestone_id and artifact_sha256. Use list with next_cursor to recover saved IDs, then cite them in milestones in your final artifact. Use validate_assessment with artifact to check goal-assessment structure without publishing. Receipts do not verify evidence or complete the assignment."
     ], schema: schema)
   }

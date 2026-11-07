@@ -203,6 +203,39 @@ struct AgentCollaborationGoalCheckpoint: Codable, Equatable {
   var liveGraph: AgentCollaborationLiveGraph? = nil
 }
 
+struct AgentCollaborationGoalWorkRun: Codable {
+  enum State: String, Codable { case running, succeeded, failed, interrupted }
+  static let processID = UUID().uuidString
+  static let leaseMillis: Int64 = 300_000
+
+  let workID: String
+  let dispatchID: String
+  let owner: AgentCollaborationToolEvidenceScope
+  let memberID: String
+  let process: String
+  let startedAt: Int64
+  var state: State
+  var finishedAt: Int64? = nil
+  var output: String? = nil
+  var outputHash: String? = nil
+  var truncated: Bool? = nil
+
+  func visibleState(now: Int64) -> State {
+    guard state == .running, process != Self.processID || now >= startedAt + Self.leaseMillis
+    else { return state }
+    return .interrupted
+  }
+
+  func receipt(now: Int64) -> AgentMcpJSONObject {
+    let status = visibleState(now: now)
+    return ["success": .bool(true), "status": .string(status.rawValue), "work_id": .string(workID),
+      "dispatch_id": .string(dispatchID), "member_id": .string(memberID),
+      "started_at": .int(startedAt), "finished_at": finishedAt.map(AgentMcpJSONValue.int) ?? .null,
+      "output": output.map(AgentMcpJSONValue.string) ?? .null, "output_sha256": outputHash.map(AgentMcpJSONValue.string) ?? .null,
+      "output_truncated": .bool(truncated ?? false), "goal_accepted": .bool(false), "automatically_reexecuted": .bool(false)]
+  }
+}
+
 struct AgentCollaborationLiveGraph: Codable, Equatable {
   enum DependencyPolicy: String, Codable { case success, terminal }
   enum Settlement: String, Codable { case succeeded, failed, cancelled, skipped }
@@ -499,6 +532,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
 
   static let establishContractMode = "establish_contract"
   static let appendWorkMode = "append_work"
+  static let runWorkMode = "run_work"
 
   static func isCoordinatorMutation(_ mode: String) -> Bool {
     mode == establishContractMode || mode == appendWorkMode
