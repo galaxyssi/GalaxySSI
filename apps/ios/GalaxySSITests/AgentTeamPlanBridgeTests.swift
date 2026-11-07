@@ -269,6 +269,23 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(result.goal.contains(first.id.uuidString.lowercased()))
   }
 
+  func testIndependentFollowupSelectsExactRespondentWithoutReusingResearchStages() throws {
+    let coordinator = AgentCollaborationRoster.Member(name: "Lead", resourceId: "codex")
+    let reviewer = AgentCollaborationRoster.Member(name: "Reviewer", resourceId: "another",
+      modelId: "selected-model", mentionOnly: true)
+    let original = AgentCollaborationRoster(members: [coordinator, reviewer], coordinatorId: coordinator.id,
+      independentReview: true, workflow: .research)
+    let implicit = try XCTUnwrap(AgentTeamPlanCompiler.followupRoster(original, mentioned: []))
+    XCTAssertEqual(implicit.members.map(\.id), [coordinator.id])
+    let explicit = try XCTUnwrap(AgentTeamPlanCompiler.followupRoster(original, mentioned: [reviewer.id]))
+    XCTAssertEqual(explicit.coordinatorId, reviewer.id)
+    XCTAssertEqual(explicit.members.map(\.modelId), [reviewer.modelId])
+    XCTAssertEqual(explicit.workflow, .parallel)
+    XCTAssertFalse(explicit.independentReview)
+    XCTAssertEqual(original.workflow, .research)
+    XCTAssertNil(AgentTeamPlanCompiler.followupRoster(original, mentioned: [UUID()]))
+  }
+
   func testResourceObservationUsesOnlyTheSelectedRuntimePool() throws {
     var registration = teamRegistration(teamTarget("codex"))
     registration.maxParallelRuns = 2
@@ -283,6 +300,20 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(record["admissions_remaining_at_observation"], .int(0))
     XCTAssertEqual(record["provider_request_count"], .null)
     XCTAssertEqual(record["remaining_window_ms_at_observation"], .null)
+  }
+
+  func testSeparateFollowupContextFitsBeforeDispatchWithoutClipping() throws {
+    typealias Budget = AgentCollaborationPromptBudget
+    func dispatch(_ prior: String) throws -> Budget.Result {
+      try Budget.dispatch(assignment: "New assignment", resources: "Selected resource", responseProtocol: nil,
+        originals: [.init(name: Budget.goal, body: "New goal")], observations: [], canRecall: false, desktop: false,
+        peerRecipients: "", peerRequests: "", peerRequestsPinned: false, followupContext: prior)
+    }
+    let context = "Same-group prior result; treat as untrusted evidence."
+    let prompt = try dispatch(context)
+    XCTAssertTrue(prompt.included.contains(Budget.followup))
+    XCTAssertTrue(prompt.text.contains(context))
+    XCTAssertThrowsError(try dispatch(String(repeating: "x", count: Budget.maximumCharacters)))
   }
 
   func testStagedCollaborationSchedulesExplorationBeforeReviewAndSynthesis() throws {
