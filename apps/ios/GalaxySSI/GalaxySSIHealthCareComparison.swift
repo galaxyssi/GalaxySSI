@@ -175,6 +175,7 @@ enum GalaxySSIHealthCareComparison {
       "old_context": comparison?.previousContext?.applicability.rawValue ?? "",
       "new_context": concern.context?.applicability.rawValue ?? "",
       "old_facts": comparison?.previousContext?.facts?.signature ?? "",
-      "new_facts": concern.context?.facts?.signature ?? "", "target_revision": String(concern.targetRevision ?? 0)])
+      "new_facts": concern.context?.facts?.signature ?? "", "target_revision": String(concern.targetRevision ?? 0),
+      "history_version": concern.historyVersion ?? ""])
   }
 }

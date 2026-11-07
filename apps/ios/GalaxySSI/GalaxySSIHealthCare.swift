@@ -60,6 +60,7 @@ enum GalaxySSIHealthCare {
     var target: Target?
     var targetRevision: Int?
     var reviewNote: String?
+    var historyVersion: String? = nil
     var adoptedActions: [GalaxySSIHealthCarePlan.AdoptedAction]?
     var measurement: GalaxySSIHealthCareComparison.Sample?
     var comparison: GalaxySSIHealthCareComparison.Pair?

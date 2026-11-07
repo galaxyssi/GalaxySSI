@@ -214,6 +214,7 @@ private struct GalaxySSIHealthCareDetail: View {
           Text(concern.assessment.reference.ifBlank(t("none", "Not recorded")))
         }
         GalaxySSIHealthCareComparisonSection(records: records, id: id, metric: metric)
+        GalaxySSIHealthCareSeriesLink(records: records, id: id, metric: metric)
         Section(t("guideline", "Guideline criterion")) {
           if concern.assessment.guidelineVersion != nil {
             Link(t("ada", "ADA 2026: Diagnosis and Classification"), destination: GalaxySSIHealthCare.guidelineURL)
@@ -373,7 +374,7 @@ private struct LabeledCareMeasurement: View {
   }
 }
 
-private enum GalaxySSIHealthCareText {
+enum GalaxySSIHealthCareText {
   static func string(_ key: String, _ fallback: String, language: String) -> String {
     GalaxySSILocalization.string("galaxyssi.health.care." + key, fallback: fallback, language: language)
   }

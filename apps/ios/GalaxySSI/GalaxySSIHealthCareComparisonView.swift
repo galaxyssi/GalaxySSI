@@ -96,6 +96,16 @@ struct GalaxySSIHealthCareComparisonSection: View {
   }
 
   private func gapLabel(_ gap: GalaxySSIHealthCareComparison.Gap) -> String {
+    GalaxySSIHealthCareComparisonText.gap(gap, language: language)
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    GalaxySSILocalization.string("galaxyssi.health.comparison." + key, fallback: fallback, language: language)
+  }
+}
+
+enum GalaxySSIHealthCareComparisonText {
+  static func gap(_ gap: GalaxySSIHealthCareComparison.Gap, language: String) -> String {
     let label: String
     switch gap {
     case .unitsDiffer: label = "Measurement units differ."
@@ -108,11 +118,7 @@ struct GalaxySSIHealthCareComparisonSection: View {
     case .contextDiffers: label = "The separately confirmed contexts differ."
     case .methodUnverified: label = "Method comparability and clinical change are not established."
     }
-    return t("gap." + gap.rawValue, label)
-  }
-
-  private func t(_ key: String, _ fallback: String) -> String {
-    GalaxySSILocalization.string("galaxyssi.health.comparison." + key, fallback: fallback, language: language)
+    return GalaxySSILocalization.string("galaxyssi.health.comparison.gap." + gap.rawValue, fallback: label, language: language)
   }
 }
 

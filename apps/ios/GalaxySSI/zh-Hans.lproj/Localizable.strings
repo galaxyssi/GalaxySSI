@@ -178,6 +178,12 @@
 "galaxyssi.health.care.stage" = "审核状态";
 "galaxyssi.health.care.save_review" = "保存审核";
 "galaxyssi.health.care.history" = "关注项历史";
+"galaxyssi.health.care.series_title" = "测量历史";
+"galaxyssi.health.care.series_notice" = "数值相近不代表临床稳定。";
+"galaxyssi.health.care.series_more" = "更早的测量";
+"galaxyssi.health.care.series_end" = "没有更早的测量";
+"galaxyssi.health.care.series_recent" = "最近测量";
+"galaxyssi.health.care.series_changed" = "测量历史或授权已变化。";
 "galaxyssi.health.care.more" = "显示更多";
 "galaxyssi.health.care.remove" = "删除关注项";
 "galaxyssi.health.care.stage.verify" = "核对背景";

@@ -7,6 +7,46 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testLocalCareMeasurementPagesAreContiguousAndOldEditsInvalidateReview() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date(timeIntervalSince1970: 1_700_000_000)
+    try records.setPrivacy(.localCare, enabled: true)
+    for index in 0..<35 {
+      try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(Double(index / 3 - 80)),
+        value: index.isMultiple(of: 2) ? 110 : 85, unitOverride: "mg/dL", referenceInterval: "70 - 80"))
+    }
+    try records.write(.init(metric: .weight, measuredAt: now, value: 55))
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    try records.reviewLocalCare(concern, stage: .maintenance, reason: "Synthetic review", now: now)
+    let first = try records.localCareMeasurementPage(id: concern.id, metric: .glucose, now: now)
+    let next = try XCTUnwrap(first.next)
+    let second = try records.localCareMeasurementPage(id: concern.id, metric: .glucose,
+      expected: first.binding, after: next, now: now)
+    let all = try records.load().current.filter { $0.metric == .glucose }
+    XCTAssertEqual(first.rows.count, 30)
+    XCTAssertEqual(first.rows.map(\.id) + second.rows.map(\.id), all.map(\.id))
+    XCTAssertNil(second.next)
+    XCTAssertThrowsError(try records.localCareMeasurementPage(id: concern.id, metric: .weight,
+      expected: first.binding, after: next, now: now))
+    var oldest = try XCTUnwrap(all.last)
+    oldest.value = 95
+    try records.write(oldest)
+    XCTAssertThrowsError(try records.localCareMeasurementPage(id: concern.id, metric: .glucose,
+      expected: first.binding, after: next, now: now))
+    try records.reconcileLocalCare(now: now)
+    XCTAssertNotEqual(try records.load().localCare?.current["glucose"]?.stage, .maintenance)
+    let updated = try records.localCareMeasurementPage(id: concern.id, metric: .glucose, now: now)
+    XCTAssertNotEqual(updated.binding.historyVersion, first.binding.historyVersion)
+    try records.setPrivacy(.localCare, enabled: false)
+    try records.setPrivacy(.localCare, enabled: true)
+    XCTAssertThrowsError(try records.localCareMeasurementPage(id: concern.id, metric: .glucose,
+      expected: updated.binding, after: updated.next, now: now))
+  }
+
+  @MainActor
   func testReviewedTargetIsSeparateAndInvalidatesOldReminderAnchors() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }
