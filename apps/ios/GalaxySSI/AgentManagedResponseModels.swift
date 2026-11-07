@@ -343,7 +343,7 @@ enum AgentManagedResponseCodec {
     [
       "source_message_id": .int(response.sourceMessageId),
       "contact_id": .string(response.contactId),
-      "content": .string(String(response.content.prefix(AgentConnectorResponse.maxContentCharacters))),
+      "content": .string(AgentConnectorResponse.boundedContent(response.content)),
       "conversation_id": .string(response.conversationId),
       "turn_id": .string(response.turnId),
       "task_id": .string(response.taskId),

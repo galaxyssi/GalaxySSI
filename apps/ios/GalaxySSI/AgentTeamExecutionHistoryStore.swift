@@ -1600,8 +1600,8 @@ final class AgentTeamExecutionHistoryStore {
     let drafts: [AgentCollaborationResearchDraft]
     let milestones: [String]
     do {
-      guard raw.utf8.count <= 256_000, raw.contains(AgentCollaborationResearchEnvelope.wireFormat) else { return }
-      let envelope = try JSONDecoder().decode(AgentCollaborationResearchEnvelope.self, from: Data(raw.utf8))
+      guard let data = AgentCollaborationResearchEnvelope.replyJSON(in: raw) else { return }
+      let envelope = try JSONDecoder().decode(AgentCollaborationResearchEnvelope.self, from: data)
       guard envelope.format == AgentCollaborationResearchEnvelope.wireFormat else { return }
       drafts = envelope.workspace ?? []
       milestones = envelope.milestones ?? []

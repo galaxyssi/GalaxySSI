@@ -566,6 +566,9 @@ extension GalaxySSIStoreTests {
     """
     let drafts = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: raw))
     XCTAssertEqual(drafts.map(\.id), ["note"])
+    let fenced = " \r\n```json\r\n" + raw + "\r\n```\r\n "
+    let fencedDrafts = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: fenced))
+    XCTAssertEqual(fencedDrafts.map(\.id), ["note"])
     XCTAssertThrowsError(try AgentCollaborationResearchEnvelope.publication(
       in: "{\"format\":\"galaxyssi.research-artifact.v1\",\"workspace\":{}}"))
   }

@@ -8303,6 +8303,8 @@ final class MessageCoordinator: ObservableObject {
       instruction.append("""
         If your contribution creates a reusable research object, return one JSON object with format
         "galaxyssi.research-artifact.v1", a public summary, and a workspace array.
+        Put only explicit local Markdown links for intended phone downloads in the public summary.
+        Workspace bodies and milestone references are evidence, not attachment requests.
         Each new item needs a stable id, base_revision 0, kind (such as evidence, hypothesis, or proposal),
         title, a nonempty JSON body, and parents (empty unless you have exact saved references).
         For collaborative learning, use capability_gap with body.capability_gap containing category, symptom,
