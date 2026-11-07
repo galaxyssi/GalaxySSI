@@ -114,6 +114,7 @@ struct GalaxySSIHealthOverview {
 struct GalaxySSIHealthRecords {
   static let trendInputsChanged = Notification.Name("galaxyssi.health.trendInputsChanged")
   static let profileInputsChanged = Notification.Name("galaxyssi.health.profileInputsChanged")
+  private static var activeRecognitionRuns: Set<UUID> = []
 
   enum Failure: Error {
     case invalid, stale, duplicate, unavailable, permission
@@ -562,8 +563,13 @@ struct GalaxySSIHealthRecords {
   func reconcileAbandonedRecognitionJobs(process: UUID = GalaxySSIHealthRecognitionJobs.processID) throws {
     var archive = try load()
     guard var jobs = archive.recognitionJobs else { return }
-    let abandoned = jobs.indices.filter { jobs[$0].phase == .running && jobs[$0].runProcess != process }
+    let abandoned = jobs.indices.filter {
+      let job = jobs[$0]
+      return job.phase == .running &&
+        (job.runProcess != process || job.run.map(Self.activeRecognitionRuns.contains) != true)
+    }
     guard !abandoned.isEmpty else { return }
+    let abandonedRuns = abandoned.compactMap { jobs[$0].run }
     for index in abandoned {
       jobs[index].phase = .interrupted
       jobs[index].run = nil
@@ -572,6 +578,7 @@ struct GalaxySSIHealthRecords {
     }
     archive.recognitionJobs = jobs
     try persist(archive)
+    Self.activeRecognitionRuns.subtract(abandonedRuns)
   }
 
   func beginRecognitionJob(id: UUID, expected: UUID, unlockedProtectedPDF: Bool = false) throws -> UUID {
@@ -588,13 +595,16 @@ struct GalaxySSIHealthRecords {
     job.phase = .running
     job.version = UUID()
     archive.recognitionJobs?[index] = job
-    try persist(archive)
+    Self.activeRecognitionRuns.insert(run)
+    do { try persist(archive) }
+    catch { Self.activeRecognitionRuns.remove(run); throw error }
     return run
   }
 
   func commitRecognitionPage(id: UUID, run: UUID, page: GalaxySSIHealthRecognitionJobs.Page) throws {
     var archive = try load()
-    guard let index = archive.recognitionJobs?.firstIndex(where: { $0.id == id && $0.run == run }),
+    guard Self.activeRecognitionRuns.contains(run),
+          let index = archive.recognitionJobs?.firstIndex(where: { $0.id == id && $0.run == run }),
           var job = archive.recognitionJobs?[index], job.phase == .running,
           page.index == job.pages.count, page.index < job.pageCount,
           page.lines.count <= 150, Set(page.lines.map(\.id)).count == page.lines.count,
@@ -609,10 +619,13 @@ struct GalaxySSIHealthRecords {
     if job.pages.count == job.pageCount { job.phase = .completed; job.run = nil; job.runProcess = nil }
     archive.recognitionJobs?[index] = job
     try persist(archive)
+    if job.phase == .completed { Self.activeRecognitionRuns.remove(run) }
   }
 
   func finishRecognitionJob(id: UUID, run: UUID, phase: GalaxySSIHealthRecognitionJobs.Phase) throws {
     guard phase == .cancelled || phase == .failed || phase == .interrupted else { throw Failure.invalid }
+    // A stopped reader must not remain live when protected storage is temporarily unavailable.
+    defer { Self.activeRecognitionRuns.remove(run) }
     var archive = try load()
     guard let index = archive.recognitionJobs?.firstIndex(where: { $0.id == id && $0.run == run && $0.phase == .running })
     else { throw Failure.stale }
@@ -628,19 +641,23 @@ struct GalaxySSIHealthRecords {
     guard let index = archive.recognitionJobs?.firstIndex(where: { $0.id == id && $0.version == expected &&
       $0.phase != .completed && $0.phase != .cancelled })
     else { throw Failure.stale }
+    let run = archive.recognitionJobs?[index].run
     archive.recognitionJobs?[index].phase = .cancelled
     archive.recognitionJobs?[index].run = nil
     archive.recognitionJobs?[index].runProcess = nil
     archive.recognitionJobs?[index].version = UUID()
     try persist(archive)
+    if let run { Self.activeRecognitionRuns.remove(run) }
   }
 
   func removeRecognitionJob(id: UUID, expected: UUID) throws {
     var archive = try load()
     guard let index = archive.recognitionJobs?.firstIndex(where: { $0.id == id && $0.version == expected })
     else { throw Failure.stale }
+    let run = archive.recognitionJobs?[index].run
     archive.recognitionJobs?.remove(at: index)
     try persist(archive)
+    if let run { Self.activeRecognitionRuns.remove(run) }
   }
 
   func stageReportItem(_ input: GalaxySSIHealthReportReview.Item, replacing expected: UUID?) throws {

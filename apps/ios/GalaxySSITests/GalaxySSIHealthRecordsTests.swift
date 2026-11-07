@@ -1277,7 +1277,18 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertThrowsError(try reopened.commitRecognitionPage(id: job.id, run: run, page: second))
     XCTAssertEqual(try GalaxySSIHealthRecognitionJobs.pdfPageCount(store.read(original), password: password), count)
     let resumed = try reopened.beginRecognitionJob(id: job.id, expected: interrupted.version, unlockedProtectedPDF: true)
-    try reopened.commitRecognitionPage(id: job.id, run: resumed, page: second)
+    secrets.unavailable = true
+    XCTAssertThrowsError(try reopened.finishRecognitionJob(id: job.id, run: resumed, phase: .interrupted))
+    secrets.unavailable = false
+    XCTAssertEqual(try reopened.load().recognitionJobs?.first?.phase, .running)
+    XCTAssertThrowsError(try reopened.commitRecognitionPage(id: job.id, run: resumed, page: second))
+    try reopened.reconcileAbandonedRecognitionJobs()
+    let unlocked = try XCTUnwrap(reopened.load().recognitionJobs?.first)
+    XCTAssertEqual(unlocked.phase, .interrupted)
+    XCTAssertEqual(unlocked.pages, [first])
+    XCTAssertTrue(unlocked.reviewPages.isEmpty)
+    let recovered = try reopened.beginRecognitionJob(id: job.id, expected: unlocked.version, unlockedProtectedPDF: true)
+    try reopened.commitRecognitionPage(id: job.id, run: recovered, page: second)
     let completed = try XCTUnwrap(reopened.load().recognitionJobs?.first)
     XCTAssertEqual(completed.reviewPages, [first, second])
     XCTAssertTrue(try reopened.load().current.isEmpty)
@@ -3030,7 +3041,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
 
 private final class HealthFixtureSecrets: GalaxySSISecretStore {
   private var values: [String: String] = [:]
+  var unavailable = false
   func setString(_ value: String, account: String) throws { values[account] = value }
-  func string(account: String) -> String? { values[account] }
+  func string(account: String) -> String? { unavailable ? nil : values[account] }
   func delete(account: String) { values.removeValue(forKey: account) }
 }

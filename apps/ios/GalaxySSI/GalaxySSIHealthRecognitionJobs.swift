@@ -315,7 +315,7 @@ struct GalaxySSIHealthRecognitionJobsView: View {
             failed = !(error is CancellationError)
           }
         }
-        if activeRun == run { activeID = nil; activeRun = nil; task = nil; reload() }
+        if activeRun == run { activeID = nil; activeRun = nil; task = nil; enterQueue() }
       }
     } catch GalaxySSIHealthPDFText.Failure.locked {
       requestUnlock(job.original, job: job)
@@ -332,7 +332,7 @@ struct GalaxySSIHealthRecognitionJobsView: View {
       try? records.finishRecognitionJob(id: id, run: run, phase: cancelled ? .cancelled : .interrupted)
     }
     task?.cancel(); task = nil; activeID = nil; activeRun = nil
-    reload()
+    enterQueue()
   }
 
   private func reload() {
