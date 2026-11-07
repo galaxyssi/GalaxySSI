@@ -340,7 +340,8 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var workflowExecutionId: String? = nil
     var recruitment: Recruitment? = nil
 
-    func hasIndependentReviewAuthors(_ author: (String) -> String?) -> Bool {
+    func hasIndependentReviewAuthors(_ author: (String) -> String?,
+      identity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId) -> Bool {
       if let review_targets {
         guard independent_review == true, !review_targets.isEmpty,
               Set(review_targets).count == review_targets.count,
@@ -350,8 +351,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
       let targets = review_targets ?? depends_on
       return !targets.isEmpty && targets.allSatisfy { target in
         guard let origin = author(target), !origin.isBlank else { return false }
-        return AgentTeamProgressPolicy.stableCollaborationMemberId(origin) !=
-          AgentTeamProgressPolicy.stableCollaborationMemberId(member)
+        return identity(origin) != identity(member)
       }
     }
   }
@@ -368,11 +368,12 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     let identity: String
     let template: String
     let templateDigest: String
+    var directoryID: UUID? = nil
     let role: String
     let scope: String
     let reason: String
 
-    init?(_ request: RecruitmentRequest, owner: String, templateDigest: String) {
+    init?(_ request: RecruitmentRequest, owner: String, templateDigest: String, directoryOwner: String) {
       let role = request.role.trimmingCharacters(in: .whitespacesAndNewlines)
       let scope = request.scope.trimmingCharacters(in: .whitespacesAndNewlines)
       let reason = request.reason.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -388,11 +389,47 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
       self.role = role
       self.scope = scope
       self.reason = reason
+      if !directoryOwner.isBlank {
+        let digest = AgentMcpJSONCodec.sha256(["conversation": .string(directoryOwner),
+          "template": .string(AgentTeamProgressPolicy.stableCollaborationMemberId(request.template_member)),
+          "template_sha256": .string(templateDigest), "role": .string(normalize(role)), "scope": .string(normalize(scope))])
+        let token = Array(digest.prefix(32))
+        let groups = [0..<8, 8..<12, 12..<16, 16..<20, 20..<32]
+        self.directoryID = UUID(uuidString: groups.map { String(token[$0]) }.joined(separator: "-"))
+      }
     }
 
     static func templateDigest(_ member: AgentCollaborationRoster.Member) -> String {
       AgentMcpJSONCodec.sha256(["resource": .string(member.resourceId), "model": .string(member.modelId),
         "reasoning": .string(member.reasoningEffort ?? ""), "mention_only": .bool(member.mentionOnly)])
+    }
+  }
+
+  struct DirectoryProjection {
+    let source: AgentCollaborationAcceptedDelivery.Source
+    let recruits: [Recruitment]
+
+    func applying(to roster: AgentCollaborationRoster) -> AgentCollaborationRoster {
+      var updated = roster
+      var handled = Set(roster.handledRecruitmentIDs ?? [])
+      var names = Set(roster.members.map { $0.name.lowercased() })
+      for recruit in recruits {
+        guard handled.count < AgentCollaborationRoster.maximumMembers, let id = recruit.directoryID,
+              handled.insert(id).inserted else { continue }
+        guard updated.members.count < AgentCollaborationRoster.maximumMembers,
+              !updated.members.contains(where: { $0.id == id }),
+              let templateID = UUID(uuidString: AgentTeamProgressPolicy.stableCollaborationMemberId(recruit.template)),
+              let template = roster.members.first(where: { $0.id == templateID && !$0.mentionOnly && $0.recruitmentTemplateID == nil }),
+              Recruitment.templateDigest(template) == recruit.templateDigest else { continue }
+        let base = String(recruit.role.prefix(48))
+        var name = base, suffix = 2
+        while !names.insert(name.lowercased()).inserted { name = "\(base) \(suffix)"; suffix += 1 }
+        updated.members.append(.init(id: id, name: name, role: recruit.role, resourceId: template.resourceId,
+          modelId: template.modelId, mentionOnly: true, reasoningEffort: template.reasoningEffort,
+          recruitmentTemplateID: templateID))
+      }
+      updated.handledRecruitmentIDs = handled.isEmpty ? nil : handled.sorted { $0.uuidString < $1.uuidString }
+      return updated
     }
   }
 
@@ -472,6 +509,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
   func appending(_ expansion: WorkflowExpansion, authorizedMembers: Set<String>,
                  historicalAuthors: [String: String], settled: [String: Settlement],
                  recruitmentTemplates: [String: String] = [:], recruitmentOwner: String = "",
+                 recruitmentDirectory: String = "", authorIdentity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId,
                  resolve: (AgentCollaborationWorkflowInstance) throws -> [Work]?) rethrows -> Self? {
     guard expansion.format == "galaxyssi.work-expansion.v1", !expansion.work.isEmpty else { return nil }
     var instances = workflowInstances ?? [:]
@@ -485,7 +523,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
             expansion.work.contains(where: {
               if case .work(let item) = $0 { return item.member == alias }; return false
             }),
-            let requested = Recruitment(request, owner: recruitmentOwner, templateDigest: digest),
+            let requested = Recruitment(request, owner: recruitmentOwner, templateDigest: digest, directoryOwner: recruitmentDirectory),
             directory[alias] == nil || directory[alias]?.identity == requested.identity else { return nil }
       if directory[alias] == nil {
         directory[alias] = directory.values.first(where: { $0.identity == requested.identity }) ?? requested
@@ -515,14 +553,15 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     }
     if additions.isEmpty { return self }
     guard var next = appendingWork(additions, authorizedMembers: authorizedMembers,
-      historicalAuthors: historicalAuthors, settled: settled) else { return nil }
+      historicalAuthors: historicalAuthors, settled: settled, authorIdentity: authorIdentity) else { return nil }
     next.workflowInstances = instances.isEmpty ? nil : instances
     next.recruitments = directory.isEmpty ? nil : directory
     return next
   }
 
   private func appendingWork(_ additions: [Work], authorizedMembers: Set<String>,
-                             historicalAuthors: [String: String], settled: [String: Settlement]) -> Self? {
+                             historicalAuthors: [String: String], settled: [String: Settlement],
+                             authorIdentity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId) -> Self? {
     var byId = Dictionary(work.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     guard byId.count == work.count else { return nil }
     for item in additions {
@@ -535,7 +574,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     }
     for item in additions {
       guard item.depends_on.allSatisfy({ byId[$0] != nil || settled[$0] != nil }),
-            item.hasIndependentReviewAuthors({ byId[$0]?.member ?? historicalAuthors[$0] }) else { return nil }
+            item.hasIndependentReviewAuthors({ byId[$0]?.member ?? historicalAuthors[$0] }, identity: authorIdentity) else { return nil }
     }
     var resolved = Set(settled.keys)
     var remaining = work + additions
@@ -616,7 +655,7 @@ struct AgentCollaborationWorkflowInstance: Codable, Equatable {
     }
     guard compiled.count == steps.count else { return nil }
     let members = Dictionary(uniqueKeysWithValues: compiled.map { ($0.id, $0.member) })
-    guard compiled.allSatisfy({ $0.hasIndependentReviewAuthors { members[$0] } }) else { return nil }
+    guard compiled.allSatisfy({ $0.hasIndependentReviewAuthors({ members[$0] }) }) else { return nil }
     return compiled
   }
 }

@@ -1065,6 +1065,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
   var dispatchCheckpoint: AgentTeamMemberDispatchCheckpoint?
   var dispatchDependencyMemberIds: [String]? = nil
   var dispatchResourceObservation: AgentMcpJSONObject? = nil
+  var recruitmentTemplateID: UUID? = nil
   var displayName: String?
   var researchStage: String?
   var executionStartedAtMillis: Int64?
@@ -1120,6 +1121,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     case dispatchCheckpoint = "dispatch_checkpoint"
     case dispatchDependencyMemberIds = "dispatch_dependency_member_ids"
     case dispatchResourceObservation = "dispatch_resource_observation"
+    case recruitmentTemplateID = "recruitment_template_id"
     case displayName = "display_name"
     case researchStage = "research_stage"
     case executionStartedAtMillis = "execution_started_at_millis"
@@ -1177,6 +1179,12 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
   var executionEndedAtMillis: Int64?
 
   var primaryMemberId: String { primaryInstanceId.ifBlank(primaryAgentId) }
+
+  func reviewIdentity(_ memberID: String) -> String {
+    let stable = AgentTeamProgressPolicy.stableCollaborationMemberId(memberID)
+    let member = members.first { AgentTeamProgressPolicy.stableCollaborationMemberId($0.memberId) == stable }
+    return member?.recruitmentTemplateID?.uuidString.lowercased() ?? stable
+  }
 
   init(
     supervisorRunId: String,

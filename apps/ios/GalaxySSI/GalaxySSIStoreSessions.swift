@@ -662,13 +662,37 @@ extension GalaxySSIStore {
       return agentConversationDatabase.read(session.id)
     }
     guard var session = agentSession(id: conversationId), session.id == conversationId,
-          session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank else { return nil }
+          let current = session.collaborationRoster, session.mergedIntoConversationId.isBlank else { return nil }
+    var roster = roster
+    let handled = Set(roster.handledRecruitmentIDs ?? []).union(current.handledRecruitmentIDs ?? [])
+    roster.handledRecruitmentIDs = handled.isEmpty ? nil : handled.sorted { $0.uuidString < $1.uuidString }
+    for index in roster.members.indices {
+      if let old = current.members.first(where: { $0.id == roster.members[index].id }) {
+        roster.members[index].recruitmentTemplateID = old.recruitmentTemplateID
+      }
+    }
     session.title = title
     session.collaborationRoster = roster
     session.updatedAt = Self.nowMillis()
     guard agentConversationDatabase.upsert(session) else { return nil }
     cacheAgentConversation(session)
     return session
+  }
+
+  func projectAgentCollaborationRecruits(_ projection: AgentCollaborationLiveGraph.DirectoryProjection,
+                                         conversationId: String) -> Bool {
+    guard profile.identityFingerprint == projection.source.profileID,
+          var session = agentSession(id: conversationId), session.id == conversationId,
+          session.status == .active, !session.privateMode, !session.trackingPaused, session.mergedIntoConversationId.isBlank,
+          let roster = session.collaborationRoster else { return false }
+    let updated = projection.applying(to: roster)
+    guard updated != roster else { return true }
+    guard updated.isValid else { return false }
+    session.collaborationRoster = updated
+    session.updatedAt = Self.nowMillis()
+    guard agentConversationDatabase.upsert(session) else { return false }
+    cacheAgentConversation(session)
+    return true
   }
 
   @discardableResult

@@ -95,6 +95,7 @@ enum AgentCollaborationGoalCoverage {
   static func verifies(_ coverage: AgentMcpJSONObject, source: AgentMcpJSONObject, criteria: Set<String>,
                        coordinator: String, current: (AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision?,
                        previousAuthor: (String, Int64) throws -> String?,
+                       identity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId,
                        hasDissent: (AgentCollaborationResearchReference) throws -> Bool) throws -> Bool {
     let goalHash = source.string("goal_sha256"), criteriaHash = source.string("criteria_sha256")
     let sourceIDs = Set((source["segments"]?.arrayValue ?? []).compactMap { $0.objectValue?["id"]?.strictStringValue })
@@ -131,7 +132,7 @@ enum AgentCollaborationGoalCoverage {
     } else { parts = [.object(coverage)] }
     guard !parts.isEmpty, parts.count <= sourceIDs.count else { return false }
     var seen = Set<String>(), mapped = Set<String>(), maps = Set<String>(), authors = Set<String>(), reviewers = Set<String>()
-    let stable = AgentTeamProgressPolicy.stableCollaborationMemberId
+    let stable = identity
     for value in parts {
       guard let row = value.objectValue, Set(row.keys) == ["mapping", "review"],
             let mappingRef = reference(row["mapping"]), let reviewRef = reference(row["review"]),

@@ -2158,6 +2158,45 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(try open().acceptedGoalDeliveryRecoveryPage(after: "").deliveries.isEmpty)
   }
 
+  func testRecruitDirectoryProjectionUsesStableIdentityAndDoesNotRestoreDeletedMembers() throws {
+    typealias Graph = AgentCollaborationLiveGraph
+    let lead = AgentCollaborationRoster.Member(name: "Lead", resourceId: "lead")
+    let template = AgentCollaborationRoster.Member(name: "Evidence", resourceId: "original-resource", modelId: "model")
+    let roster = AgentCollaborationRoster(members: [lead, template], coordinatorId: lead.id)
+    let request = Graph.RecruitmentRequest(id: "first", template_member: template.id.uuidString, role: "Evidence",
+      scope: "Check the sample", reason: "Current task")
+    let digest = Graph.Recruitment.templateDigest(template)
+    let first = try XCTUnwrap(Graph.Recruitment(request, owner: "run-one", templateDigest: digest, directoryOwner: "group"))
+    let second = try XCTUnwrap(Graph.Recruitment(request, owner: "run-two", templateDigest: digest, directoryOwner: "group"))
+    XCTAssertNotEqual(first.identity, second.identity)
+    XCTAssertEqual(first.directoryID, second.directoryID)
+    let source = AgentCollaborationAcceptedDelivery.Source(profileID: "profile", messageID: UUID(),
+      contactID: "hermes", rosterDigest: "roster")
+    let projection = Graph.DirectoryProjection(source: source, recruits: [first, second])
+    let updated = projection.applying(to: roster)
+    let added = try XCTUnwrap(updated.members.last)
+    XCTAssertEqual(updated.members.count, 3)
+    XCTAssertEqual(added.id, first.directoryID)
+    XCTAssertEqual(added.name, "Evidence 2")
+    XCTAssertEqual(added.resourceId, template.resourceId)
+    XCTAssertEqual(added.modelId, template.modelId)
+    XCTAssertEqual(added.recruitmentTemplateID, template.id)
+    XCTAssertTrue(added.mentionOnly)
+    XCTAssertEqual(projection.applying(to: updated), updated)
+    var edited = updated
+    edited.members[2].name = "Edited by the user"
+    XCTAssertEqual(projection.applying(to: edited), edited)
+    edited.members.removeLast()
+    XCTAssertEqual(projection.applying(to: edited), edited)
+    var changedTemplate = roster
+    changedTemplate.members[1].modelId = "replacement"
+    XCTAssertEqual(projection.applying(to: changedTemplate).members, changedTemplate.members)
+    var team = durableTeamSnapshot("review-identity")
+    team.members[1].instanceId = added.id.uuidString
+    team.members[1].recruitmentTemplateID = template.id
+    XCTAssertEqual(team.reviewIdentity(added.id.uuidString), team.reviewIdentity(template.id.uuidString))
+  }
+
   func testScopedCoordinatorCanEstablishOnlyAnOpenImmutableGoalContract() throws {
     let suite = "established-contract-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

@@ -305,6 +305,7 @@ final class MessageCoordinator: ObservableObject {
   private var recoveringAcceptedGoalDeliveries = false
   private var recoveringGoalCoordinatorRun: String?
   private var resumedGoalCoordinatorRuns: Set<String> = []
+  private var reconciledRecruitDirectories: Set<String> = []
   private var artifactDownloadRetryGate = AgentArtifactRequestRetryGate()
   private var artifactFetchRetryGate = AgentArtifactRequestRetryGate()
   private var liveConnectorMessageIds: [String: UUID] = [:]
@@ -7897,8 +7898,12 @@ final class MessageCoordinator: ObservableObject {
       createdAtMillis: teamCreatedAt, updatedAtMillis: teamCreatedAt,
       primaryInstanceId: spec.definition.primaryMemberId)
     if isCollaboration {
+      let roster = store.agentSession(id: outgoing.conversationId)?.collaborationRoster
       for (index, member) in ordered.enumerated() {
         savedTeam.members[index].dispatchDependencyMemberIds = member.dependsOnAgentIds.sorted()
+        if let id = UUID(uuidString: AgentTeamProgressPolicy.stableCollaborationMemberId(member.memberId)) {
+          savedTeam.members[index].recruitmentTemplateID = roster?.members.first(where: { $0.id == id })?.recruitmentTemplateID
+        }
       }
     }
     let saveTeamHistory = store.agentSession(id: outgoing.conversationId).map {
@@ -8673,7 +8678,8 @@ final class MessageCoordinator: ObservableObject {
         guard worker.deliveryMode == .observe, let target = targets[worker.agentId], target.status == .available,
               target.kind == .model || target.kind == .agent || target.id == "local-llm",
               let id = UUID(uuidString: AgentTeamProgressPolicy.stableCollaborationMemberId(worker.memberId)),
-              let member = roster.members.first(where: { $0.id == id && $0.resourceId == worker.agentId && !$0.mentionOnly })
+              let member = roster.members.first(where: { $0.id == id && $0.resourceId == worker.agentId &&
+                !$0.mentionOnly && $0.recruitmentTemplateID == nil })
         else { return }
         result[worker.memberId] = AgentCollaborationLiveGraph.Recruitment.templateDigest(member)
       } ?? [:]
@@ -9463,6 +9469,7 @@ final class MessageCoordinator: ObservableObject {
     let snapshots = runId.map { id in history.snapshot(supervisorRunId: id).map { [$0] } ?? [] }
       ?? history.deliverableSnapshots()
     for saved in snapshots where saved.state.deliverable {
+      defer { projectCompletedGoalRecruits(saved) }
       guard let session = store.agentSession(id: saved.conversationId), session.id == saved.conversationId,
             session.mergedIntoConversationId.isBlank, !session.privateMode, !session.trackingPaused,
             let parent = store.agentTask(id: saved.taskId),
@@ -9477,6 +9484,28 @@ final class MessageCoordinator: ObservableObject {
         }
       }
     }
+  }
+
+  private func projectCompletedGoalRecruits(_ saved: AgentTeamExecutionSnapshot) {
+    guard saved.hasSuccessfulOutput, let parent = store.agentTask(id: saved.taskId),
+          parent.sessionId == saved.conversationId, parent.phase == .completed else { return }
+    let profile = store.profile.identityFingerprint
+    let key = profile + ":" + saved.supervisorRunId
+    guard !reconciledRecruitDirectories.contains(key) else { return }
+    let history = AgentTeamExecutionHistoryStore.shared
+    do {
+      guard let projection = try history.completedRecruitDirectoryProjection(runID: saved.supervisorRunId) else {
+        reconciledRecruitDirectories.insert(key)
+        return
+      }
+      guard projection.source.profileID == profile,
+            let original = store.persistedMessage(id: projection.source.messageID, contactId: projection.source.contactID),
+            original.isMine, original.conversationId == saved.conversationId,
+            original.turnId.ifBlank(original.id.uuidString) == saved.taskId,
+            try !history.hasRunningCollaboration(conversationId: saved.conversationId),
+            store.projectAgentCollaborationRecruits(projection, conversationId: saved.conversationId) else { return }
+      reconciledRecruitDirectories.insert(key)
+    } catch { return }
   }
 
   private func persistTeamMemberFailure(_ error: String, member: AgentTeamMember,

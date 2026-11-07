@@ -1267,7 +1267,7 @@ final class AgentTeamExecutionHistoryStore {
             throw AgentTeamHistoryDatabase.Failure.stale
           }
           if draft.kind == .acceptanceReview, draft.body[AgentCollaborationGoalCoverage.reviewKey] != nil {
-            let stable = AgentTeamProgressPolicy.stableCollaborationMemberId
+            let stable = snapshot.reviewIdentity
             guard Self.isScopedAcceptanceRecord(existing, team: snapshot, kinds: [.artifact]),
                   existing.draft.body[AgentCollaborationGoalCoverage.mappingKey]?.objectValue != nil,
                   stable(memberId) != stable(existing.authorId), stable(memberId) != stable(snapshot.primaryMemberId)
@@ -2216,7 +2216,7 @@ final class AgentTeamExecutionHistoryStore {
       let specialists = Set(team.members.filter { $0.deliveryMode == .observe }.map(\.memberId))
       guard let updated = try graph.appending(expansion, authorizedMembers: authorized,
         historicalAuthors: [:], settled: [:], recruitmentTemplates: recruitmentTemplates.filter { specialists.contains($0.key) },
-        recruitmentOwner: scope.ownershipDigest,
+        recruitmentOwner: scope.ownershipDigest, recruitmentDirectory: scope.conversationId, authorIdentity: team.reviewIdentity,
         resolve: { try Self.resolveWorkflow($0, snapshot: team, database: database) }),
         updated.work.count > graph.work.count else { throw AgentTeamHistoryDatabase.Failure.corrupt }
       checkpoint.liveGraph = updated
@@ -2306,7 +2306,7 @@ final class AgentTeamExecutionHistoryStore {
             }
           }
           return Gate.Revision(reference: ref(saved.reference), conversationId: scope.conversationId,
-            runId: saved.runId, turnId: saved.turnId, authorId: saved.authorId, kind: saved.draft.kind.rawValue,
+            runId: saved.runId, turnId: saved.turnId, authorId: team.reviewIdentity(saved.authorId), kind: saved.draft.kind.rawValue,
             body: saved.draft.body, parents: saved.draft.parents.map(ref), hostObservationIds: observed)
         }, observationIsSupporting: { originals[$0] != nil }, originalObservation: { originals[$0] })
       let verified = outcome == .achieved
@@ -2332,7 +2332,7 @@ final class AgentTeamExecutionHistoryStore {
             }, previousAuthor: { id, revision in
               try database.researchRecord(AgentCollaborationResearchRevision.self,
                 conversationId: scope.conversationId, key: "object:" + id, revision: revision)?.authorId
-            }, hasDissent: { ref in
+            }, identity: team.reviewIdentity, hasDissent: { ref in
               try Self.hasSemanticCoverageDissent(ref, team: team, database: database)
             })
         } == true
@@ -2534,6 +2534,41 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
+  func hasRunningCollaboration(conversationId: String) throws -> Bool {
+    try access { try $0.snapshots(conversation: conversationId, recoverableOnly: true).contains { $0.state == .running } }
+  }
+
+  func completedRecruitDirectoryProjection(runID: String) throws -> AgentCollaborationLiveGraph.DirectoryProjection? {
+    try access { database in
+      guard let team = try database.snapshots(runId: runID).first, team.state.deliverable, team.hasSuccessfulOutput,
+            let coordinator = team.members.first(where: { $0.memberId == team.primaryMemberId &&
+              $0.deliveryMode == .respond && $0.status == .succeeded }),
+            let checkpoint = try database.goalCheckpoints(runId: runID, newestOnly: true).first,
+            checkpoint.phase == .accepted, checkpoint.conversationId == team.conversationId,
+            checkpoint.turnId == team.taskId, let graph = checkpoint.liveGraph,
+            graph.recruitments?.isEmpty == false,
+            try database.researchRecord(Bool.self, conversationId: team.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true else { return nil }
+      let scope = AgentCollaborationToolEvidenceScope(runId: runID, conversationId: team.conversationId,
+        turnId: team.taskId, memberId: coordinator.memberId, sourceId: coordinator.sourceMessageId)
+      guard let receipt = try Self.acceptedGoalDelivery(scope: scope, database: database),
+            let source = receipt.source, let reply = coordinator.replyContent,
+            Data(reply.utf8) == Data(receipt.content.utf8) else { return nil }
+      var seen = Set<UUID>()
+      var recruits: [AgentCollaborationLiveGraph.Recruitment] = []
+      for work in graph.work {
+        guard let recruit = work.recruitment, let id = recruit.directoryID, !seen.contains(id),
+              let run = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
+                conversationId: scope.conversationId, key: Self.goalWorkKey(work.id, scope: scope), revision: 0),
+              run.owner == scope, run.memberID == recruit.identity, run.templateMemberID == recruit.template,
+              run.state == .succeeded else { continue }
+        seen.insert(id)
+        recruits.append(recruit)
+      }
+      return recruits.isEmpty ? nil : .init(source: source, recruits: recruits)
+    }
+  }
+
   private static func hasSemanticCoverageDissent(_ target: AgentCollaborationResearchReference,
       team: AgentTeamExecutionSnapshot, database: AgentTeamHistoryDatabase) throws -> Bool {
     let prefix = AgentCollaborationGoalCoverage.reviewIndexPrefix(target)
@@ -2674,14 +2709,16 @@ final class AgentTeamExecutionHistoryStore {
                     recruits.values.contains(recruit) else { return false }
             }
             guard let id = item.workflowExecutionId else {
-              return item.review_targets == nil || item.hasIndependentReviewAuthors { authors[$0] }
+              return item.hasIndependentReviewAuthors({ authors[$0] }, identity: snapshot.reviewIdentity)
             }
             return priorWorkflows[id] == nil && workflows[id] != nil
           }) else { return false }
     for (id, instance) in workflows where priorWorkflows[id] == nil {
       guard id == instance.execution_id,
             let compiled = try Self.resolveWorkflow(instance, snapshot: snapshot, database: database),
-            compiled == additions.filter({ $0.workflowExecutionId == id }) else { return false }
+            compiled == additions.filter({ $0.workflowExecutionId == id }),
+            compiled.allSatisfy({ $0.hasIndependentReviewAuthors({ authors[$0] }, identity: snapshot.reviewIdentity) })
+      else { return false }
     }
     guard let ranks = try Self.validatedLearningPriorities(updated, existingCount: existing.count,
       previous: prior.first?.liveGraph?.learningPriorities ?? [:], snapshot: snapshot,
