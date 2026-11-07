@@ -339,6 +339,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var review_targets: [String]? = nil
     var workflowExecutionId: String? = nil
     var recruitment: Recruitment? = nil
+    var blockerResolution: AgentCollaborationGoalAssessmentPolicy.Resolution? = nil
 
     func hasIndependentReviewAuthors(_ author: (String) -> String?,
       identity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId) -> Bool {
@@ -485,7 +486,8 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
             from: Data(AgentMcpJSONCodec.stringify(instance).utf8)))
         } else {
           let item = try Work(from: decoder)
-          guard item.workflowExecutionId == nil, item.recruitment == nil else {
+          guard item.workflowExecutionId == nil, item.recruitment == nil, item.blockerResolution == nil,
+                !item.id.hasPrefix(AgentCollaborationGoalAssessmentPolicy.resolutionPrefix) else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
               debugDescription: "Workflow bindings must come from a saved method"))
           }
@@ -515,7 +517,8 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     guard raw.utf8.count <= 256_000,
           let expansion = try? JSONDecoder().decode(Expansion.self, from: Data(raw.utf8)),
           expansion.format == "galaxyssi.work-expansion.v1", !expansion.work.isEmpty,
-          expansion.work.allSatisfy({ $0.workflowExecutionId == nil && $0.recruitment == nil }) else { return nil }
+          expansion.work.allSatisfy({ $0.workflowExecutionId == nil && $0.recruitment == nil &&
+            $0.blockerResolution == nil && !$0.id.hasPrefix(AgentCollaborationGoalAssessmentPolicy.resolutionPrefix) }) else { return nil }
     return appendingWork(expansion.work, authorizedMembers: authorizedMembers, historicalAuthors: historicalAuthors, settled: settled)
   }
 
@@ -523,6 +526,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
                          authorizedMembers: Set<String>, historicalAuthors: [String: String],
                          settled: [String: Settlement]) -> Self? {
     guard workflowInstances?[instance.execution_id] == nil,
+          compiled.allSatisfy({ !$0.id.hasPrefix(AgentCollaborationGoalAssessmentPolicy.resolutionPrefix) }),
           var next = appendingWork(compiled, authorizedMembers: authorizedMembers,
             historicalAuthors: historicalAuthors, settled: settled) else { return nil }
     var instances = workflowInstances ?? [:]
@@ -574,7 +578,8 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
           guard existing == instance else { return nil }
           continue
         }
-        guard let work = try resolve(instance), !work.isEmpty else { return nil }
+        guard let work = try resolve(instance), !work.isEmpty,
+              work.allSatisfy({ !$0.id.hasPrefix(AgentCollaborationGoalAssessmentPolicy.resolutionPrefix) }) else { return nil }
         additions.append(contentsOf: work)
         instances[instance.execution_id] = instance
       }
@@ -585,6 +590,11 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     next.workflowInstances = instances.isEmpty ? nil : instances
     next.recruitments = directory.isEmpty ? nil : directory
     return next
+  }
+
+  func appendingResolutionWork(_ additions: [Work], authorizedMembers: Set<String>) -> Self? {
+    guard additions.allSatisfy({ $0.blockerResolution?.workID == $0.id }) else { return nil }
+    return appendingWork(additions, authorizedMembers: authorizedMembers, historicalAuthors: [:], settled: [:])
   }
 
   private func appendingWork(_ additions: [Work], authorizedMembers: Set<String>,
@@ -746,6 +756,59 @@ enum AgentCollaborationGoalAssessmentPolicy {
     var alternatives: [Alternative]?
   }
 
+  static let resolutionPrefix = "resource-resolution:"
+
+  struct Resolution: Codable, Equatable {
+    let blockerID: String
+    let workID: String
+    let binding: String
+
+    init?(_ blocker: Blocker) {
+      guard blocker.kind == .resource || blocker.kind == .permission,
+            blocker.id.range(of: #"\A[A-Za-z0-9._-]{1,128}\z"#, options: .regularExpression) != nil,
+            !blocker.reason.isBlank, blocker.reason.utf8.count <= 2_048,
+            !blocker.resume_when.isBlank, blocker.resume_when.utf8.count <= 2_048 else { return nil }
+      blockerID = blocker.id
+      workID = AgentCollaborationGoalAssessmentPolicy.resolutionPrefix + AgentMcpJSONCodec.sha256([
+        "id": .string(blocker.id), "kind": .string(blocker.kind.rawValue)])
+      binding = AgentMcpJSONCodec.sha256(["work": .string(workID),
+        "reason": .string(blocker.reason), "resume_when": .string(blocker.resume_when)])
+    }
+  }
+
+  struct ResolutionReport: Decodable {
+    struct Alternative: Decodable {
+      enum Status: String, Decodable { case available, unavailable, needs_approval, not_applicable }
+      let option: String
+      let status: Status
+      let result: String
+      let evidence: [String]
+    }
+    let format: String
+    let alternatives: [Alternative]
+
+    static func checked(_ raw: String) -> Self? {
+      guard raw.utf8.count <= 24 * 1_024, let report = try? JSONDecoder().decode(Self.self, from: Data(raw.utf8)),
+            report.format == "galaxyssi.resource-resolution-result.v1", (1...16).contains(report.alternatives.count),
+            report.alternatives.allSatisfy({ !$0.option.isBlank && !$0.result.isBlank && !$0.evidence.isEmpty &&
+              $0.evidence.allSatisfy { !$0.isBlank } }),
+            Set(report.alternatives.map(\.option)).count == report.alternatives.count else { return nil }
+      return report
+    }
+
+    func supportsWaiting(_ blocker: Blocker, workID: String, digest: String) -> Bool {
+      guard let proposed = blocker.alternatives, proposed.count == alternatives.count,
+            Set(proposed.map(\.option)).count == proposed.count else { return false }
+      return alternatives.allSatisfy { original in
+        original.status != .available && proposed.contains { candidate in
+          candidate.option == original.option && candidate.status.rawValue == original.status.rawValue &&
+            candidate.result == original.result &&
+            Set(original.evidence + [workID, digest]).isSubset(of: Set(candidate.evidence))
+        }
+      }
+    }
+  }
+
   struct Assessment: Codable {
     var format: String
     var summary: String
@@ -754,6 +817,24 @@ enum AgentCollaborationGoalAssessmentPolicy {
     var work: [Work]
     var blockers: [Blocker]
     var recruit: [Work]?
+  }
+
+  static func blockerAssessment(_ raw: String, preserving contract: [Criterion]) -> Assessment? {
+    guard !contract.isEmpty, raw.utf8.count <= 131_072,
+          let draft = try? JSONDecoder().decode(Assessment.self, from: Data(raw.utf8)),
+          draft.format == "galaxyssi.goal-assessment.v1", draft.decision == .blocked, !draft.summary.isBlank,
+          draft.work.isEmpty, draft.recruit?.isEmpty != false, (1...16).contains(draft.blockers.count),
+          Set(draft.blockers.map(\.id)).count == draft.blockers.count,
+          draft.blockers.allSatisfy({ !$0.id.isBlank && !$0.reason.isBlank && !$0.resume_when.isBlank &&
+            (($0.kind != .resource && $0.kind != .permission) || Resolution($0) != nil) }),
+          draft.criteria.count == contract.count, Set(draft.criteria.map(\.id)).count == draft.criteria.count,
+          contract.allSatisfy({ original in
+            guard let current = draft.criteria.first(where: { $0.id == original.id }) else { return false }
+            return current.requirement == original.requirement && current.verification == original.verification &&
+              current.validator == original.validator &&
+              Set(original.required_observations ?? []).isSubset(of: Set(current.required_observations ?? []))
+          }) else { return nil }
+    return draft
   }
 
   static let establishContractMode = "establish_contract"

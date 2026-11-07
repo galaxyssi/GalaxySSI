@@ -12527,6 +12527,16 @@ final class MessageCoordinator: ObservableObject {
                   self.liveGoalWorkRoster(scope, profileID: goalProfile) == goalRoster,
                   originalGoalSourceExists(scope) else { return nil }
             if (try? history.prepareFinalGoalDelivery(raw, scope: scope, source: goalSource)) != nil { return nil }
+            if raw.utf8.count <= 131_072,
+               (try? CloudModelStreamJSON.mcpObject(from: raw))?["decision"] == .string("blocked"),
+               let roster = goalRoster {
+              let eligible = self.goalBlockerSpecialists(scope, roster: roster)
+              if (try? history.planGoalBlockerResolution(after: raw, scope: scope, eligibleMembers: eligible)) == true {
+                _ = await goalWorkHandler?(["mode": .string(AgentCollaborationGoalAssessmentPolicy.runReadyWorkMode)])
+              }
+            }
+            guard !Task.isCancelled, self.liveGoalWorkRoster(scope, profileID: goalProfile) == goalRoster,
+                  originalGoalSourceExists(scope) else { return nil }
             return try? history.reserveGoalContinuation(after: raw, scope: scope)
           }
         })
@@ -12676,6 +12686,27 @@ final class MessageCoordinator: ObservableObject {
       throw GalaxySSIError.unsupportedResponse
     }
     return true
+  }
+
+  private func goalBlockerSpecialists(_ scope: AgentCollaborationToolEvidenceScope,
+                                       roster: AgentCollaborationRoster) -> [String] {
+    guard let team = AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: scope.runId) else { return [] }
+    let targets = Dictionary(uniqueKeysWithValues: AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts, apiKey: { store.apiKey(for: $0) }).map { ($0.id, $0) })
+    let candidates = team.members.compactMap { worker -> (String, Int)? in
+      guard worker.deliveryMode == .observe,
+            let id = UUID(uuidString: AgentTeamProgressPolicy.stableCollaborationMemberId(worker.memberId)),
+            roster.members.contains(where: { $0.id == id && $0.resourceId == worker.agentId && !$0.mentionOnly }),
+            let target = targets[worker.agentId], target.status == .available else { return nil }
+      if target.id == "local-llm" { return (worker.memberId, 2) }
+      if target.kind == .model { return (worker.memberId, 0) }
+      if target.kind == .agent, let contact = store.contact(id: worker.agentId), contact.connectorAgentId == "codex",
+         contact.trustState == .verified, contact.deliveryMode.isGalaxySSILinkFamily {
+        return (worker.memberId, 1)
+      }
+      return nil
+    }
+    return candidates.sorted { $0.1 == $1.1 ? $0.0 < $1.0 : $0.1 < $1.1 }.map(\.0)
   }
 
   private func visualDeliveryFailure(_ error: Error) -> String {

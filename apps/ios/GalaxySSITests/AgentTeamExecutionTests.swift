@@ -2461,6 +2461,41 @@ extension GalaxySSIStoreTests {
     XCTAssertThrowsError(try open().claimGoalWork(secondWork, scope: scope(0), target: worker, now: 41))
     _ = try open().finishGoalWork(firstRun, output: "First result", interrupted: false, now: 42)
     XCTAssertTrue(try open().claimGoalWork(secondWork, scope: scope(0), target: worker, now: 43).claimed)
+    let blocker = AgentCollaborationGoalAssessmentPolicy.Blocker(id: "missing-instrument", kind: .resource,
+      reason: "The instrument is unavailable", resume_when: "An authorized instrument is reachable", alternatives: nil)
+    let resolutionBinding = try XCTUnwrap(AgentCollaborationGoalAssessmentPolicy.Resolution(blocker))
+    var blocked = try JSONDecoder().decode(AgentCollaborationGoalAssessmentPolicy.Assessment.self, from: Data(raw.utf8))
+    blocked.decision = .blocked
+    blocked.blockers = [blocker]
+    func encode(_ value: AgentCollaborationGoalAssessmentPolicy.Assessment) throws -> String {
+      String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
+    }
+    let pending = try encode(blocked)
+    XCTAssertFalse(try open().planGoalBlockerResolution(after: pending, scope: scope(0), eligibleMembers: [scope(0).memberId]))
+    XCTAssertTrue(try open().planGoalBlockerResolution(after: pending, scope: scope(0), eligibleMembers: [template]))
+    XCTAssertFalse(try open().planGoalBlockerResolution(after: pending, scope: scope(0), eligibleMembers: [template]))
+    let resolution = try open().goalWork(resolutionBinding.workID, scope: scope(0)).0
+    XCTAssertEqual(resolution.blockerResolution, resolutionBinding)
+    let job = try open().claimGoalWork(resolution, scope: scope(0), target: worker, now: 44).run
+    let report = """
+      {"format":"galaxyssi.resource-resolution-result.v1","alternatives":[
+        {"option":"Shared instrument","status":"unavailable","result":"The authorized route is offline","evidence":["saved observation"]}]}
+      """
+    let result = try open().finishGoalWork(job, output: report, interrupted: false, now: 45)
+    let reportDigest = try XCTUnwrap(result["output_sha256"]?.strictStringValue)
+    let evidence = try XCTUnwrap(AgentCollaborationGoalAssessmentPolicy.ResolutionReport.checked(report))
+    var checkedBlocker = blocker
+    checkedBlocker.alternatives = [.init(option: "Shared instrument", status: .unavailable,
+      result: "The authorized route is offline", evidence: ["saved observation", resolutionBinding.workID, reportDigest])]
+    XCTAssertTrue(evidence.supportsWaiting(checkedBlocker, workID: resolutionBinding.workID, digest: reportDigest))
+    XCTAssertFalse(evidence.supportsWaiting(checkedBlocker, workID: resolutionBinding.workID, digest: "invented"))
+    let available = try XCTUnwrap(AgentCollaborationGoalAssessmentPolicy.ResolutionReport.checked(
+      report.replacingOccurrences(of: "\"unavailable\"", with: "\"available\"")))
+    XCTAssertFalse(available.supportsWaiting(checkedBlocker, workID: resolutionBinding.workID, digest: reportDigest))
+    blocked.blockers = [checkedBlocker]
+    let feedback = try open().reserveGoalContinuation(after: encode(blocked), scope: scope(0))
+    XCTAssertEqual(feedback?["resource_resolution"]?.arrayValue?.first?.objectValue?["status"],
+      .string("waiting_supported_by_saved_report"))
     reopened.removeResearchObjects(conversationId: team.conversationId)
     XCTAssertThrowsError(try reopened.publishCollaborationMilestone(first, scope: scope(0)))
     XCTAssertThrowsError(try reopened.publishCollaborationMilestone(request, scope: scope(0)))

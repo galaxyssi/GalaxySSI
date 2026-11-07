@@ -472,6 +472,8 @@ struct CloudModelStreamMutableConversation {
     appendPlainConversationTurn(role: "user", text:
       "The host has not accepted the collaboration goal. Continue from this saved state, not from scratch. " +
       "Establish missing criteria, recall saved work, dispatch only unclaimed ready work, or repair the exact evidence references. " +
+      "For resource_resolution feedback, read the saved work via run_work. Cite the work ID, output digest and the reported " +
+      "evidence in every corresponding alternative. If the report found an available option, schedule feasible work instead. " +
       "If no authorized progress remains, report a non-achieved assessment with the blocker and resume condition. Host state: " +
       AgentMcpJSONCodec.stringify(context))
   }

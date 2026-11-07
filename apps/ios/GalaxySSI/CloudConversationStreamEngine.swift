@@ -56,7 +56,7 @@ extension CloudConversationStreaming {
 
 final class CloudConversationStreamEngine: CloudModelStreamClient {
   typealias GoalWorkHandler = @MainActor (AgentMcpJSONObject) async -> AgentMcpJSONObject
-  typealias GoalContinuationHandler = @MainActor (String) -> AgentMcpJSONObject?
+  typealias GoalContinuationHandler = @MainActor (String) async -> AgentMcpJSONObject?
   private static let maxParallelToolCalls = 4
 
   private struct ToolExecutionOutcome {
