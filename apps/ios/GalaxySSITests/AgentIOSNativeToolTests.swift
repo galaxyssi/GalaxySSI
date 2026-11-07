@@ -3,6 +3,66 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testPendingNativeOutcomeRequiresEachExactHostReceiptAndDeclaredPostcondition() throws {
+    let mutation = AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate
+    let observer = AgentEffectRecoveryRecord.browserObserver
+    let descriptor = try XCTUnwrap(AgentIOSWebMediaNativeToolCatalog.definitions().map(\.descriptor).first { $0.id == observer })
+    let scope = AgentNativeEffectScope(sessionId: "session", conversationId: "conversation", taskId: "task", turnId: "turn")
+    let binding = AgentPlanContinuationScope(conversationId: scope.conversationId, turnId: scope.turnId)
+    func fixture(_ name: String, at time: Int64) -> (AgentEffectRecoveryRecord, AgentAction, AgentAction, AgentObservedCompletion) {
+      let invocation = "dispatch-" + name
+      let args: AgentMcpJSONObject = ["request_id": .string(invocation)]
+      let output: AgentMcpJSONObject = ["request_id": .string(invocation), "operation": .string("navigate"),
+        "state": .string("completed"), "observed_at_epoch_ms": .int(time + 1)]
+      let receipt = AgentNativeToolReceipt(invocationId: "read-" + name, startedAtEpochMillis: time + 1,
+        finishedAtEpochMillis: time + 2, durationMillis: 1, status: .succeeded,
+        inputSha256: AgentMcpJSONCodec.sha256(args), outputSha256: AgentMcpJSONCodec.sha256(output))
+      let effect = AgentEffectRecoveryRecord(scope: scope, actionId: name, toolId: mutation, version: descriptor.version,
+        inputDigest: "fixture", invocationId: invocation, uncertainAt: time,
+        query: .init(kind: .browser, toolId: observer, version: descriptor.version, input: args, subject: invocation),
+        observation: .init(scope: scope, toolId: observer, version: descriptor.version, receipt: receipt, output: output))
+      let origin = binding.bind(.init(id: name, kind: .callNativeTool, target: mutation, risk: .medium,
+        status: .failed, description: "Uncertain write", evidence: #"{"outcome":"unknown"}"#))
+      let read = binding.bind(.init(id: receipt.invocationId, kind: .callNativeTool, target: observer, risk: .low,
+        status: .completed, description: "Host readback", evidence: AgentMcpJSONCodec.stringify(output)))
+      let outcome = AgentObservedCompletion(id: "outcome-" + name, toolId: observer, subject: ["/request_id": invocation],
+        checks: ["/state": .string("completed")], afterToolId: mutation)
+      return (effect, origin, read, outcome)
+    }
+    let a = fixture("a", at: 10)
+    let b = fixture("b", at: 20)
+    let full = [a.1, a.2, b.1, b.2]
+    var requirements = AgentCompletionRequirements(publication: .none, phoneLinux: false)
+    requirements.outcomes = [a.3]
+    func assess(_ history: [AgentAction], effects: [AgentEffectRecoveryRecord] = [],
+                available: Bool = true) -> AgentCompletionEvidencePolicy.PendingOutcomes {
+      AgentCompletionEvidencePolicy.pendingOutcomes(requirements: requirements, history: history,
+        effects: effects.isEmpty ? [a.0, b.0] : effects, scope: scope,
+        descriptorFor: { available && $0 == observer ? descriptor : nil })
+    }
+    let partial = assess(full)
+    XCTAssertEqual(partial.settledActionIDs, ["a"])
+    XCTAssertEqual(partial.issues.count, 1)
+    requirements.outcomes = [a.3, b.3]
+    let settled = assess(full)
+    XCTAssertEqual(settled.settledActionIDs, ["a", "b"])
+    XCTAssertTrue(settled.issues.isEmpty)
+    XCTAssertTrue(AgentCompletionEvidencePolicy.missingEvidence(requirements: requirements, history: full,
+      satisfiedPendingOutcomes: settled.satisfiedOutcomeIDs).isEmpty)
+    XCTAssertEqual(assess(full, available: false).issues.count, 2)
+    var foreign = b.2
+    foreign.parameters[AgentPlanContinuationScope.conversationIdKey] = "other"
+    XCTAssertEqual(assess([a.1, a.2, b.1, foreign]).settledActionIDs, ["a"])
+    var newer = b.2
+    newer.id = "later"
+    newer.evidence = #"{"request_id":"dispatch-b","state":"failed"}"#
+    XCTAssertEqual(assess(full + [newer]).settledActionIDs, ["a"])
+    var weakened = b.3
+    weakened.checks = ["/operation": .string("navigate")]
+    requirements.outcomes = [a.3, weakened]
+    XCTAssertEqual(assess(full).settledActionIDs, ["a"])
+  }
+
   func testDeviceStateEvidenceRequiresTypedReadbackForTheExactRequest() {
     let tool = AgentIOSSystemNativeToolCatalog.audioVolumeSet
     let input: AgentMcpJSONObject = ["stream": .string("media"), "percent": .int(50)]

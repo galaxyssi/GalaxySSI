@@ -41,6 +41,8 @@ struct AgentEffectRecoveryRecord: Codable, Equatable {
     _ result: AgentNativeToolResult, action: AgentAction, descriptor: AgentNativeToolDescriptor
   ) -> AgentEffectRecoveryRecord? {
     guard descriptor.requiresEffectClaim,
+          !(result.output["dispatch_attempted"] == .bool(false) &&
+            result.output["request_accepted"] == .bool(false)),
           ["effect_outcome_unknown", "invalid_output", "missing_output_validation"].contains(result.error?.code ?? "") ||
           result.error?.details["outcome_unknown"] == .bool(true) ||
           result.status == .verificationFailed ||

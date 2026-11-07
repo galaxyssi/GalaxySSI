@@ -5664,6 +5664,18 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
+  private func pendingNativeOutcomes(
+    _ task: AgentTaskRecord?, outgoing: ChatMessage, requirements: AgentCompletionRequirements?,
+    history: [AgentAction]
+  ) -> AgentCompletionEvidencePolicy.PendingOutcomes {
+    let turn = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    let scope = AgentNativeEffectScope(sessionId: task?.sessionId ?? outgoing.conversationId,
+      conversationId: outgoing.conversationId, taskId: task?.taskId ?? turn, turnId: turn)
+    return AgentCompletionEvidencePolicy.pendingOutcomes(requirements: requirements, history: history,
+      effects: task?.effectRecovery ?? [], scope: scope,
+      descriptorFor: { localNativeToolRuntime?.registry.lookup($0)?.descriptor })
+  }
+
   private func inspectLocalEffect(
     _ index: Int, outgoing: ChatMessage, task: inout AgentTaskRecord, registry: AgentNativeToolRegistry
   ) -> Bool {
@@ -9578,9 +9590,7 @@ final class MessageCoordinator: ObservableObject {
         return .init("actions", "device_mutation_not_requested",
           "The user asked a question or prohibited the effect. Do not mutate device state or start a capture.")
       }
-      if let recoveryTask,
-         plan.actions.contains(where: AgentRollingPlanPolicy.closesFromVerifiedEvidence) ||
-          !permitsEffectRecoveryActions(plan.actions, task: recoveryTask, outgoing: outgoing) {
+      if let recoveryTask, !permitsEffectRecoveryActions(plan.actions, task: recoveryTask, outgoing: outgoing) {
         return .init("actions", "unverified_effect_recovery",
           "The host readback describes current state, not the original effect. Do not repeat the uncertain action or claim completion from that readback.")
       }
@@ -9595,21 +9605,27 @@ final class MessageCoordinator: ObservableObject {
         guard executionMode != .planOnly else {
           return .init("actions", "completion_not_allowed", "Return a plan for review, not a completion marker.")
         }
+        let pending = pendingNativeOutcomes(recoveryTask, outgoing: outgoing, requirements: plan.completionRequirements,
+          history: observationHistory)
         let proposedMissing = AgentCompletionEvidencePolicy.missingEvidence(
           requirements: plan.completionRequirements,
           history: scopedHistory,
           answerOnly: answerOnly,
-          observationHistory: observationHistory
+          observationHistory: observationHistory,
+          satisfiedPendingOutcomes: pending.satisfiedOutcomeIDs
         )
         let retainedPriorRequirements = AgentCompletionEvidencePolicy.priorRequirementsAfterPointerRepair(
           completionRequirements, candidate: plan.completionRequirements, diagnostics: currentObservationDiagnostics)
         let priorMissing = retainedPriorRequirements == nil ? [] : AgentCompletionEvidencePolicy.missingEvidence(
           requirements: retainedPriorRequirements, history: scopedHistory, answerOnly: answerOnly,
-          observationHistory: observationHistory)
-        let unsettled = scopedHistory.contains(where: AgentCompletionEvidencePolicy.hasUnverifiedOutcome)
-          ? ["a settled result for every outstanding operation"] : []
+          observationHistory: observationHistory,
+          satisfiedPendingOutcomes: pendingNativeOutcomes(recoveryTask, outgoing: outgoing,
+            requirements: retainedPriorRequirements, history: observationHistory).satisfiedOutcomeIDs)
+        let open = scopedHistory.contains { [.proposed, .pendingConfirmation, .running, .waitingResponse].contains($0.status) }
+        let unsettled = pending.issues + (open ? ["a settled result for every outstanding operation"] : [])
         let diagnostics = currentObservationDiagnostics + AgentCompletionEvidencePolicy.observationDiagnostics(
-            requirements: plan.completionRequirements, history: observationHistory)
+            requirements: plan.completionRequirements, history: observationHistory,
+            satisfiedPendingOutcomes: pending.satisfiedOutcomeIDs)
         let diagnosticText = boundedDiagnostics(diagnostics, limit: 4_000)
           .map { AgentMcpJSONCodec.stringify($0) }.joined(separator: "\n")
         let requestedArtifacts = AgentArtifactCompletionEvidence.combinedRequirements(prior: completionRequirements,
@@ -10124,27 +10140,32 @@ final class MessageCoordinator: ObservableObject {
       plan: updatedPlan,
       result: results.last
     )
-    task.phase = rollingBatchBoundary ? .waitingResponse : .completed
+    let pending = pendingNativeOutcomes(task, outgoing: outgoing, requirements: updatedPlan.completionRequirements,
+      history: updatedPlan.actionHistory + updatedPlan.actions)
+    let blockedOutcome = !rollingBatchBoundary && !pending.issues.isEmpty
+    task.phase = rollingBatchBoundary ? .waitingResponse : (blockedOutcome ? .blocked : .completed)
     task.verification = rollingBatchBoundary
       ? "Waiting for the planning model to assess parallel native tool receipts"
       : "Parallel \(parallelMode.rawValue) actions returned verified native tool receipts"
-    if !rollingBatchBoundary, !(task.effectRecovery ?? []).isEmpty {
-      task.phase = .blocked
+    if blockedOutcome {
+      task.blocked = true
       task.verification = localizedReply("galaxyssi.agent.effect_recovery.observed",
         fallback: "Affected state observed. The original outcome is not confirmed. Re-plan to decide the next step.")
+      task.result = task.verification
+      task.executionLog.append(contentsOf: pending.issues.prefix(8))
     }
     task.executionLog.append(rollingBatchBoundary
       ? "Rolling plan: parallel batch completed; requesting model assessment"
       : "Native tools: \(parallelMode.rawValue) batch completed")
     store.upsertAgentTask(task)
     localRecordedRunStore.recordNativeExecution(observations, task: task, outgoing: outgoing,
-      status: rollingBatchBoundary ? .running : .completed)
+      status: rollingBatchBoundary ? .running : (blockedOutcome ? .failed : .completed))
     store.appendDeliveryTrace(
       outgoing.id,
       contactId: outgoing.contactId,
       stage: "local_native_tool_reply",
       detail: actions.map { $0.parameters["tool_id"] ?? $0.target }.joined(separator: ","),
-      status: rollingBatchBoundary ? .sent : .delivered
+      status: rollingBatchBoundary ? .sent : (blockedOutcome ? .failed : .delivered)
     )
     if rollingBatchBoundary {
       let taskId = task.taskId
@@ -10154,10 +10175,10 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     _ = store.appendIncoming(
-      task.result,
+      blockedOutcome ? task.verification : task.result,
       from: outgoing.contactId,
       remoteMessageId: outgoing.turnId,
-      status: .delivered,
+      status: blockedOutcome ? .failed : .delivered,
       traceStage: "local_native_tool_reply_received",
       detail: "parallel_read_only",
       conversationId: outgoing.conversationId,
@@ -10569,10 +10590,12 @@ final class MessageCoordinator: ObservableObject {
     updateActiveNativePlan(action: boundAction, result: result, task: &task)
     let effects = task.effectRecovery ?? []
     let unresolvedEffect = effects.contains { !$0.hasObservation }
-    let verifiedStep = result.success && !unresolvedEffect
     let output = result.metadata["native_tool_output"].flatMap {
       try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data($0.utf8))
     } ?? [:]
+    let notDispatched = output["state_verified"] == .bool(false) &&
+      output["dispatch_attempted"] == .bool(false) && output["request_accepted"] == .bool(false)
+    let verifiedStep = result.success && !unresolvedEffect && !notDispatched
     let uncertainReply = AgentIOSDeviceStateEvidence.unavailableAudioControl(output)
       ? localizedReply("galaxyssi.agent.audio_control.unsupported",
           fallback: "iOS does not let GalaxySSI change global audio volume or mute. No change was attempted.")
@@ -10588,9 +10611,11 @@ final class MessageCoordinator: ObservableObject {
       plan: task.activePlan,
       result: result
     )
-    let needsOutcomeDecision = !hasRemainingActions && !rollingBatchBoundary && result.success &&
-      !(task.effectRecovery ?? []).isEmpty
-    task.phase = rollingBatchBoundary ? .waitingResponse : (result.success ? .completed : .failed)
+    let history = task.activePlan.map { $0.actionHistory + $0.actions } ?? []
+    let pending = pendingNativeOutcomes(task, outgoing: outgoing, requirements: task.activePlan?.completionRequirements,
+      history: history)
+    let needsOutcomeDecision = !hasRemainingActions && !rollingBatchBoundary && !pending.issues.isEmpty
+    task.phase = rollingBatchBoundary ? .waitingResponse : (verifiedStep ? .completed : .failed)
     if verifiedStep {
       task.lastCompletedNativeAction = action
       task.nativeRollbackAction = rollbackAction
@@ -10601,8 +10626,11 @@ final class MessageCoordinator: ObservableObject {
       : (result.success ? "Native tool receipt returned" : "Native tool execution failed")
     if needsOutcomeDecision {
       task.phase = .blocked
+      task.blocked = true
       task.verification = localizedReply("galaxyssi.agent.effect_recovery.observed",
         fallback: "Affected state observed. The original outcome is not confirmed. Re-plan to decide the next step.")
+      task.result = task.verification
+      task.executionLog.append(contentsOf: pending.issues.prefix(8))
     }
     if unresolvedEffect {
       task.phase = .blocked
@@ -10631,18 +10659,19 @@ final class MessageCoordinator: ObservableObject {
         ? "local_native_tool_progress"
         : (verifiedStep ? "local_native_tool_reply" : "local_native_tool_failed"),
       detail: action.parameters["tool_id"] ?? action.target,
-      status: verifiedStep && (hasRemainingActions || rollingBatchBoundary) ? .sent : (verifiedStep ? .delivered : .failed)
+      status: verifiedStep && (hasRemainingActions || rollingBatchBoundary) ? .sent :
+        (verifiedStep && !needsOutcomeDecision ? .delivered : .failed)
     )
     if !verifiedStep || (!hasRemainingActions && !rollingBatchBoundary) {
-      var richOutput = unresolvedEffect ? "" : localNativeRichOutput(result: result, responseText: reply)
-      if verifiedStep, !unresolvedEffect, let teamOutput = task.teamResultRichOutput {
+      var richOutput = unresolvedEffect || needsOutcomeDecision ? "" : localNativeRichOutput(result: result, responseText: reply)
+      if verifiedStep, !needsOutcomeDecision, let teamOutput = task.teamResultRichOutput {
         richOutput = AgentTeamArtifactOutput.appendingArtifacts(teamOutput, to: reply, richOutput: richOutput)
       }
       _ = store.appendIncoming(
-        reply,
+        needsOutcomeDecision ? task.verification : reply,
         from: outgoing.contactId,
         remoteMessageId: outgoing.turnId,
-        status: verifiedStep ? .delivered : .failed,
+        status: verifiedStep && !needsOutcomeDecision ? .delivered : .failed,
         traceStage: verifiedStep ? "local_native_tool_reply_received" : "local_native_tool_error",
         detail: action.parameters["tool_id"] ?? action.target,
         conversationId: outgoing.conversationId,
@@ -10843,14 +10872,6 @@ final class MessageCoordinator: ObservableObject {
     if nextPlan.actions.count == 1,
        let finalAction = nextPlan.actions.first,
        AgentRollingPlanPolicy.closesFromVerifiedEvidence(finalAction) {
-      guard (task.effectRecovery ?? []).isEmpty else {
-        task.verification = localizedReply("galaxyssi.agent.effect_recovery.observed",
-          fallback: "Affected state observed. The original outcome is not confirmed. Re-plan to decide the next step.")
-        task.phase = .blocked
-        task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
-        store.upsertAgentTask(task)
-        return false
-      }
       let requirements = Set((previousPlan.completionRequirements?.artifacts ?? []) +
                              (nextPlan.completionRequirements?.artifacts ?? []))
       var videos: [AgentRichBlock] = []
@@ -10964,14 +10985,17 @@ final class MessageCoordinator: ObservableObject {
     let hasResults = !(finalRequirements?.results ?? []).isEmpty
     let missingResults = AgentGoalResultEvidence.missing(finalRequirements, finalAnswer: finalAction.description,
       required: AgentGoalResultEvidence.requiresDeclaration(for: history))
-    let missingObservations = hasResults ? AgentCompletionEvidencePolicy.missingEvidence(
-      requirements: finalRequirements, history: history, observationHistory: history) : []
+    let pending = pendingNativeOutcomes(task, outgoing: outgoing, requirements: finalRequirements, history: history)
+    let missingObservations = finalRequirements != nil || hasResults ? AgentCompletionEvidencePolicy.missingEvidence(
+      requirements: finalRequirements, history: history, observationHistory: history,
+      satisfiedPendingOutcomes: pending.satisfiedOutcomeIDs) : []
     guard finalRequirements?.canReplace(previousPlan.completionRequirements) != false,
-          missingResults.isEmpty, missingObservations.isEmpty else {
+          missingResults.isEmpty, missingObservations.isEmpty, pending.issues.isEmpty else {
       task.phase = .blocked
       task.blocked = true
       task.verification = localizedReply("galaxyssi.agent.requested_results.unverified",
         fallback: "Some requested results are not yet verified.")
+      task.executionLog.append(contentsOf: pending.issues.prefix(8))
       task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
       store.upsertAgentTask(task)
       return

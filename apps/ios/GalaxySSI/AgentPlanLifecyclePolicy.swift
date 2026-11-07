@@ -404,6 +404,113 @@ struct AgentVerifiedWorkspaceVideo: Equatable, Sendable {
 }
 
 enum AgentCompletionEvidencePolicy {
+  struct PendingOutcomes {
+    var issues: [String] = []
+    var satisfiedOutcomeIDs: Set<String> = []
+    var settledActionIDs: Set<String> = []
+  }
+
+  static func pendingOutcomes(
+    requirements: AgentCompletionRequirements?, history: [AgentAction],
+    effects: [AgentEffectRecoveryRecord], scope: AgentNativeEffectScope,
+    descriptorFor: (String) -> AgentNativeToolDescriptor?
+  ) -> PendingOutcomes {
+    let snapshots = AgentDurablePlanHistoryPolicy.latestSnapshots(history.filter {
+      $0.parameters[AgentPlanContinuationScope.conversationIdKey] == scope.conversationId &&
+        $0.parameters[AgentPlanContinuationScope.turnIdKey] == scope.turnId
+    })
+    var result = PendingOutcomes()
+    var boundReadIDs: Set<String> = []
+    func note(_ action: String, _ tool: String, _ reason: String) {
+      result.issues.append("Unverified action \(action) (\(tool)): \(reason)")
+    }
+    for effect in effects {
+      guard effect.scope == scope, !scope.conversationId.isBlank, !scope.turnId.isBlank,
+            let origin = snapshots.first(where: { $0.id == effect.actionId && toolId($0) == effect.toolId }),
+            origin.kind == .callNativeTool else {
+        note(effect.actionId, effect.toolId, "origin_scope_or_receipt_missing")
+        continue
+      }
+      guard let query = effect.query,
+            let observer = descriptorFor(query.toolId), observer.effect == .readOnly,
+            observer.availability.status == .available, observer.version == query.version else {
+        note(effect.actionId, effect.toolId, "read_only_observation_contract_unavailable")
+        continue
+      }
+      guard let observation = effect.observation, effect.verifies(observation),
+            let readIndex = snapshots.firstIndex(where: {
+              $0.id == observation.receipt.invocationId && toolId($0) == observation.toolId &&
+                decodeObject($0.evidence) == observation.output
+            }), boundReadIDs.insert(observation.receipt.invocationId).inserted else {
+        note(effect.actionId, effect.toolId, "fresh_host_observation_missing")
+        continue
+      }
+      let subjectPath = query.kind == .browser ? "/request_id" : "/streams/media/stream"
+      let candidates = (requirements?.outcomes ?? []).filter {
+        $0.toolId == query.toolId && $0.afterToolId == effect.toolId &&
+          $0.subject[subjectPath] == query.subject && !$0.checks.isEmpty
+      }
+      guard !candidates.isEmpty else {
+        note(effect.actionId, effect.toolId, "declare a postcondition with after_tool_id=\(effect.toolId), tool_id=\(query.toolId), and subject \(subjectPath)")
+        continue
+      }
+      let newer = snapshots.dropFirst(readIndex + 1).filter { $0.id != origin.id }
+      let audioMutations: Set<String> = [AgentIOSSystemNativeToolCatalog.audioVolumeSet, AgentIOSSystemNativeToolCatalog.audioMuteSet]
+      let audioMayHaveChanged = query.kind == .audio && newer.contains { action in
+        guard audioMutations.contains(toolId(action)),
+              [.completed, .running, .waitingResponse].contains(action.status) ||
+                effects.contains(where: { $0.actionId == action.id }) else { return false }
+        let stream = AgentEffectRecoveryRecord.parseInput(action)?.string("stream").lowercased() ?? ""
+        return stream.isBlank || ["media", "music"].contains(stream)
+      }
+      let satisfied = audioMayHaveChanged ? [] : candidates.filter { candidate in
+        guard matchesOriginalPostcondition(effect, origin: origin, outcome: candidate, observation: observation) else { return false }
+        var readback = candidate
+        readback.afterToolId = ""
+        return missingObservedOutcome(readback, history: [snapshots[readIndex]]) == nil &&
+          missingObservedOutcome(readback, history: [snapshots[readIndex]] + newer) == nil
+      }
+      guard !satisfied.isEmpty else {
+        note(effect.actionId, effect.toolId, "bound_postcondition_not_satisfied")
+        continue
+      }
+      result.satisfiedOutcomeIDs.formUnion(satisfied.map(\.id))
+      result.settledActionIDs.insert(effect.actionId)
+    }
+    let known = Set(effects.map(\.actionId))
+    for action in snapshots where action.kind == .callNativeTool && [.completed, .failed].contains(action.status) &&
+      !known.contains(action.id) && hasUnverifiedOutcome(action) {
+      let tool = toolId(action)
+      if descriptorFor(tool)?.requiresEffectClaim == false { continue }
+      let output = AgentObservedOutputFields.output(decodeObject(action.evidence)) ?? [:]
+      if output["dispatch_attempted"] == .bool(false), output["request_accepted"] == .bool(false) { continue }
+      if action.status == .failed && output["request_accepted"] != .bool(true) &&
+        output.string("code") != "effect_outcome_unknown" { continue }
+      note(action.id, tool, "origin_observation_contract_missing")
+    }
+    return result
+  }
+
+  private static func matchesOriginalPostcondition(
+    _ effect: AgentEffectRecoveryRecord, origin: AgentAction, outcome: AgentObservedCompletion,
+    observation: AgentEffectRecoveryRecord.Observation
+  ) -> Bool {
+    if effect.query?.kind == .browser {
+      return outcome.checks["/state"] == .string("completed")
+    }
+    guard let input = AgentEffectRecoveryRecord.parseInput(origin),
+          AgentMcpJSONCodec.sha256(input) == effect.inputDigest,
+          ["media", "music"].contains(input.string("stream").lowercased()),
+          let stream = observation.output["streams"]?.objectValue?["media"]?.objectValue else { return false }
+    if effect.toolId == AgentIOSSystemNativeToolCatalog.audioMuteSet, let mute = input["muted"]?.boolValue {
+      return outcome.checks["/streams/media/muted"] == .bool(mute)
+    }
+    guard effect.toolId == AgentIOSSystemNativeToolCatalog.audioVolumeSet,
+          let percent = input["percent"]?.intValue, (0...100).contains(percent),
+          let max = stream["max"]?.intValue, (1...10_000).contains(max) else { return false }
+    return outcome.checks["/streams/media/current"] == .int((percent * max + 50) / 100)
+  }
+
   static func isAnswerOnly(
     history: [AgentAction],
     descriptorFor: (String) -> AgentNativeToolDescriptor?
@@ -439,13 +546,15 @@ enum AgentCompletionEvidencePolicy {
     requirements: AgentCompletionRequirements?,
     history: [AgentAction],
     answerOnly: Bool = false,
-    observationHistory: [AgentAction]? = nil
+    observationHistory: [AgentAction]? = nil,
+    satisfiedPendingOutcomes: Set<String> = []
   ) -> [String] {
     guard let requirements else {
       return answerOnly ? [] : ["model-declared completion_requirements (publication and phone_linux)"]
     }
     let completedTools = Set(history.filter(hasVerifiedCompletionReceipt).map(toolId))
-    var missing = observationDiagnostics(requirements: requirements, history: observationHistory ?? history).map {
+    var missing = observationDiagnostics(requirements: requirements, history: observationHistory ?? history,
+      satisfiedPendingOutcomes: satisfiedPendingOutcomes).map {
       "Observed outcome \($0.string("outcome_id")): \($0.string("code"))"
     }
     let timerTool = AgentNativeToolAgentActionAdapter.defaultToolId(.setAlarm)
@@ -593,11 +702,12 @@ enum AgentCompletionEvidencePolicy {
   ])
 
   static func observationDiagnostics(
-    requirements: AgentCompletionRequirements?, history: [AgentAction]
+    requirements: AgentCompletionRequirements?, history: [AgentAction], satisfiedPendingOutcomes: Set<String> = []
   ) -> [AgentMcpJSONObject] {
     guard let outcomes = requirements?.outcomes, !outcomes.isEmpty else { return [] }
     let snapshots = AgentDurablePlanHistoryPolicy.latestSnapshots(history)
-    return outcomes.compactMap { missingObservedOutcome($0, history: snapshots) }
+    return outcomes.filter { !satisfiedPendingOutcomes.contains($0.id) }
+      .compactMap { missingObservedOutcome($0, history: snapshots) }
   }
 
   static func priorRequirementsAfterPointerRepair(
