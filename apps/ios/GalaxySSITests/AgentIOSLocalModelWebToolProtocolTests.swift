@@ -48,6 +48,9 @@ final class AgentIOSLocalModelWebToolProtocolTests: XCTestCase {
     XCTAssertTrue(database.upsert(conversation))
     XCTAssertFalse(AgentIOSLocalModelWebToolRunner.collaborationRecallIsAuthorized(scope, database: database))
     conversation.trackingPaused = false
+    conversation.collaborationRoster?.members[1].resourceId = "cloud"
+    XCTAssertTrue(database.upsert(conversation))
+    XCTAssertFalse(AgentIOSLocalModelWebToolRunner.collaborationRecallIsAuthorized(scope, database: database))
     conversation.collaborationRoster = .init(members: [leader], coordinatorId: leader.id)
     XCTAssertTrue(database.upsert(conversation))
     XCTAssertFalse(AgentIOSLocalModelWebToolRunner.collaborationRecallIsAuthorized(scope, database: database))

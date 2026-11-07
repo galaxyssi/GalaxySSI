@@ -164,10 +164,9 @@ enum AgentIOSLocalModelWebToolRunner {
                                               database: AgentConversationDatabase) -> Bool {
     guard let session = database.read(scope.conversationId), session.id == scope.conversationId,
           !session.privateMode, !session.trackingPaused, session.mergedIntoConversationId.isBlank,
-          let roster = session.collaborationRoster,
-          let person = UUID(uuidString: AgentTeamProgressPolicy.stableCollaborationMemberId(scope.memberId))
+          let roster = session.collaborationRoster
     else { return false }
-    return roster.members.contains { $0.id == person }
+    return scope.rosterMember(in: roster)?.resourceId == "local-llm"
   }
 
   static func run(

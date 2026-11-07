@@ -108,7 +108,7 @@ enum AgentTeamDispatchSpecCodec {
       .ifBlank(primaryAgentId)
     guard !runId.isEmpty, !teamId.isEmpty, !primaryAgentId.isEmpty,
       case .array(let rawMembers)? = object["members"],
-      rawMembers.count >= 2,
+      !rawMembers.isEmpty,
       rawMembers.count <= 12 else {
       return nil
     }
@@ -136,6 +136,12 @@ enum AgentTeamDispatchSpecCodec {
       ))
     }
     let memberIds = Set(members.map(\.memberId))
+    if members.count == 1, let member = members.first {
+      guard member.context["_galaxyssi_selection_source"] == "collaboration_roster",
+            UUID(uuidString: member.memberId) != nil,
+            AgentCollaborationMemberIdentity(nodeID: member.memberId,
+              declaredPersonID: member.context[AgentCollaborationMemberIdentity.contextKey]) != nil else { return nil }
+    }
     guard memberIds.count == members.count,
       members.filter({ $0.deliveryMode == .respond }).count == 1,
       members.contains(where: { $0.memberId == primaryInstanceId && $0.deliveryMode == .respond }),
@@ -246,6 +252,15 @@ enum AgentTeamDispatchIds {
 }
 
 enum AgentTeamPlanCompiler {
+  static func rosterMember(for member: AgentTeamMember, in roster: AgentCollaborationRoster) -> AgentCollaborationRoster.Member? {
+    guard let identity = AgentCollaborationMemberIdentity(nodeID: member.memberId,
+            declaredPersonID: member.context[AgentCollaborationMemberIdentity.contextKey]),
+          let entry = identity.member(in: roster), entry.resourceId == member.agentId,
+          entry.modelId == (member.context["_galaxyssi_member_model_id"] ?? ""),
+          entry.reasoningEffort == member.context[AgentCollaborationReasoningSelection.contextKey] else { return nil }
+    return entry
+  }
+
   static func compileCollaboration(
     plan: AgentPlan,
     roster: AgentCollaborationRoster,
@@ -260,16 +275,17 @@ enum AgentTeamPlanCompiler {
       $0.id == coordinatorId ||
         (mentionedMemberIds.isEmpty ? !$0.mentionOnly : mentionedMemberIds.contains($0.id))
     }
-    guard (minTeamMembers...maxTeamMembers).contains(selected.count) else { return nil }
+    guard (1...maxTeamMembers).contains(selected.count) else { return nil }
     let available = Dictionary(targets.filter {
       [.agent, .model].contains($0.kind) && $0.status == .available
     }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     let registered = Dictionary(registrations.map { ($0.agentId, $0) },
       uniquingKeysWith: { first, _ in first })
     guard selected.allSatisfy({ member in
-      guard let effort = member.reasoningEffort else { return true }
-      guard let target = available[member.resourceId], target.kind == .agent else { return false }
-      return AgentCollaborationReasoningSelection.invocation(model: member.modelId, effort: effort,
+      guard let target = available[member.resourceId] else { return false }
+      if member.modelId.isBlank { return member.reasoningEffort == nil }
+      if target.kind == .model { return member.reasoningEffort == nil }
+      return AgentCollaborationReasoningSelection.rosterInvocation(model: member.modelId, effort: member.reasoningEffort,
         adapter: target.adapterType, profile: target.invocationProfile) != nil
     }) else { return nil }
     let counts = Dictionary(grouping: selected, by: \.resourceId).mapValues(\.count)
@@ -318,7 +334,7 @@ enum AgentTeamPlanCompiler {
       var memberContext = [
         "_galaxyssi_selection_source": "collaboration_roster",
         "_galaxyssi_member_name": member.name,
-        "_galaxyssi_roster_member_id": member.id.uuidString.lowercased(),
+        AgentCollaborationMemberIdentity.contextKey: member.id.uuidString.lowercased(),
         "_galaxyssi_member_model_id": member.modelId,
         "_galaxyssi_independent_review": roster.independentReview ? "true" : "false",
         "_galaxyssi_research_stage": stage
@@ -361,8 +377,7 @@ enum AgentTeamPlanCompiler {
       var identity = template
       identity.id = member.memberId
       identity.parameters["connector_id"] = member.agentId
-      if available[member.agentId]?.adapterType == "codex-app-server-or-cli",
-         let model = member.context["_galaxyssi_member_model_id"], !model.isBlank {
+      if let model = member.context["_galaxyssi_member_model_id"], !model.isBlank {
         identity.parameters["_galaxyssi_member_model_id"] = model
         identity.parameters[AgentCollaborationReasoningSelection.contextKey] = member.context[AgentCollaborationReasoningSelection.contextKey]
       }
