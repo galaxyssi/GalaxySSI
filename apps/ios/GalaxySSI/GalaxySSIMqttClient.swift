@@ -75,6 +75,25 @@ protocol GalaxySSILinkTransport: AnyObject {
   func publish(topic: String, payload: Data) async -> MqttPublishResult
 }
 
+private final class MqttLivePublishCancellation: @unchecked Sendable {
+  private let lock = NSLock()
+  private var cancelled = false
+
+  func cancel() {
+    lock.lock()
+    cancelled = true
+    lock.unlock()
+  }
+
+  func submit(_ send: () -> Void) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    guard !cancelled else { return false }
+    send()
+    return true
+  }
+}
+
 final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttBrokerPathTransport {
   @Published private(set) var isConnected = false
   @Published private(set) var relationshipSubscriptionsReady = false
@@ -395,6 +414,35 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
         continuation.resume(returning: submitted ? .published : .queued)
       }
     }
+  }
+
+  /// Live input must never enter a queue that can drain after reconnect.
+  func publishDesktopInputOnce(topic: String, payload: Data, expiresAt: Int64) async -> Bool {
+    guard !Task.isCancelled else { return false }
+    let cancellation = MqttLivePublishCancellation()
+    return await withTaskCancellationHandler(operation: {
+      await withCheckedContinuation { continuation in
+        queue.async {
+          guard self.hasLiveTransport(), !self.intentionallyDisconnected, Self.nowMillis() < expiresAt,
+                let secret = self.relationshipSecret(forSendingTopic: topic),
+                let packets = try? GalaxySSIMqttWireChunking.encode(wirePayload: String(decoding: payload, as: UTF8.self)),
+                !packets.isEmpty, packets.count <= 8,
+                let sealed = try? packets.map({ try GalaxySSILinkProtocol.sealWirePacket(Data($0.utf8), secret: secret) }),
+                sealed.allSatisfy({ $0.count + topic.utf8.count + 8 <= MqttRouteProtocol.packetBytes }),
+                Self.nowMillis() < expiresAt
+          else { continuation.resume(returning: false); return }
+          let sent = cancellation.submit {
+            for packet in sealed {
+              var body = Data()
+              body.appendUTF8(topic)
+              body.append(packet)
+              self.sendFrame(typeAndFlags: 0x30, body)
+            }
+          }
+          continuation.resume(returning: sent)
+        }
+      }
+    }, onCancel: { cancellation.cancel() })
   }
 
   func outstandingDurableMessageIds() async -> Set<String> {

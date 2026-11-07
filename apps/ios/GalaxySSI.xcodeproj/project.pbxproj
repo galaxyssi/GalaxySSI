@@ -214,6 +214,7 @@
     A10000000000000000001766 /* GalaxySSIDesktopDeviceMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001766 /* GalaxySSIDesktopDeviceMetadata.swift */; };
     A10000000000000000002021 /* GalaxySSIDeviceContactsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002021 /* GalaxySSIDeviceContactsView.swift */; };
     A10000000000000000001330 /* GalaxySSIDesktopControlView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001330 /* GalaxySSIDesktopControlView.swift */; };
+    D36120000000000000000001 /* GalaxySSIDesktopDirectInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D36120000000000000000002 /* GalaxySSIDesktopDirectInputView.swift */; };
     A10000000000000000000993 /* GalaxySSIOnDeviceAgentPermissionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000993 /* GalaxySSIOnDeviceAgentPermissionsView.swift */; };
     A10000000000000000000994 /* GalaxySSILanguageSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000994 /* GalaxySSILanguageSettingsView.swift */; };
     A10000000000000000001460 /* GalaxySSILanguagePolicyFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001460 /* GalaxySSILanguagePolicyFormatter.swift */; };
@@ -1418,6 +1419,7 @@
     A20000000000000000001766 /* GalaxySSIDesktopDeviceMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIDesktopDeviceMetadata.swift; sourceTree = "<group>"; };
     A20000000000000000002021 /* GalaxySSIDeviceContactsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIDeviceContactsView.swift; sourceTree = "<group>"; };
     A20000000000000000001330 /* GalaxySSIDesktopControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIDesktopControlView.swift; sourceTree = "<group>"; };
+    D36120000000000000000002 /* GalaxySSIDesktopDirectInputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIDesktopDirectInputView.swift; sourceTree = "<group>"; };
     A20000000000000000000993 /* GalaxySSIOnDeviceAgentPermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIOnDeviceAgentPermissionsView.swift; sourceTree = "<group>"; };
     A20000000000000000000994 /* GalaxySSILanguageSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSILanguageSettingsView.swift; sourceTree = "<group>"; };
     A20000000000000000001460 /* GalaxySSILanguagePolicyFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSILanguagePolicyFormatter.swift; sourceTree = "<group>"; };
@@ -3220,6 +3222,7 @@
         A20000000000000000001766 /* GalaxySSIDesktopDeviceMetadata.swift */,
         A20000000000000000002021 /* GalaxySSIDeviceContactsView.swift */,
         A20000000000000000001330 /* GalaxySSIDesktopControlView.swift */,
+        D36120000000000000000002 /* GalaxySSIDesktopDirectInputView.swift */,
         A20000000000000000000993 /* GalaxySSIOnDeviceAgentPermissionsView.swift */,
         A20000000000000000000994 /* GalaxySSILanguageSettingsView.swift */,
         A20000000000000000001460 /* GalaxySSILanguagePolicyFormatter.swift */,
@@ -4561,6 +4564,7 @@
         A10000000000000000001766 /* GalaxySSIDesktopDeviceMetadata.swift in Sources */,
         A10000000000000000002021 /* GalaxySSIDeviceContactsView.swift in Sources */,
         A10000000000000000001330 /* GalaxySSIDesktopControlView.swift in Sources */,
+        D36120000000000000000001 /* GalaxySSIDesktopDirectInputView.swift in Sources */,
         A10000000000000000000993 /* GalaxySSIOnDeviceAgentPermissionsView.swift in Sources */,
         A10000000000000000000994 /* GalaxySSILanguageSettingsView.swift in Sources */,
         A10000000000000000001460 /* GalaxySSILanguagePolicyFormatter.swift in Sources */,

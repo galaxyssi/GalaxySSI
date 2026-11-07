@@ -294,6 +294,8 @@ final class MessageCoordinator: ObservableObject {
   private var desktopControlPendingRequests: [String: AgentDesktopControlPendingRequest] = [:]
   private var desktopControlLiveFrames: [String: AgentDesktopControlScreenshot] = [:]
   let desktopControlFrameUpdates = PassthroughSubject<String, Never>()
+  let desktopInteractiveReceipts = PassthroughSubject<AgentDesktopInteractiveReceipt, Never>()
+  let desktopDirectFrameReceipts = PassthroughSubject<AgentDesktopDirectFrameReceipt, Never>()
   private var pendingArtifactDownloads: Set<String> = []
   private var pendingArtifactFetches: Set<String> = []
   private var attachmentRecoveryInFlight: Set<String> = []
@@ -2418,6 +2420,28 @@ final class MessageCoordinator: ObservableObject {
           let wire = try? linkWirePayload(payload, link: link) else {
       return false
     }
+    if request.pendingRequest.interactiveInput ||
+      (request.pendingRequest.streamFrame && request.actionId.hasPrefix(AgentDesktopControlRequestFactory.directFramePrefix)) {
+      let now = AgentControlPlaneClock.nowMillis()
+      let snapshot = desktopControlSnapshot(for: link)
+      let current = snapshot.currentAuthorization
+      guard UIApplication.shared.applicationState == .active, !Task.isCancelled,
+            snapshot.authorized, current?.desktopSessionId == request.pendingRequest.desktopSessionId,
+            (current?.desktopSessionExpiresAt ?? 0) > now, request.expiresAt > now,
+            store.serverLinks.contains(where: {
+              $0.paired && $0.fullDesktopExecutor && $0.desktopId == link.desktopId &&
+                $0.desktopFingerprint == link.desktopFingerprint && $0.routes.clientRouteId == link.routes.clientRouteId
+            }) else { return false }
+      desktopControlPendingRequests = desktopControlPendingRequests.filter {
+        let liveOnly = $0.value.interactiveInput || $0.key.hasPrefix(AgentDesktopControlRequestFactory.directFramePrefix)
+        return !liveOnly || $0.value.expiresAt > now
+      }
+      desktopControlPendingRequests[request.actionId] = request.pendingRequest
+      let sent = await mqttClient.publishDesktopInputOnce(topic: link.routes.controlTopic,
+        payload: wire.wireData, expiresAt: request.expiresAt)
+      if !sent { forgetDesktopInteractiveInput(request.actionId, desktopId: link.desktopId) }
+      return sent
+    }
     desktopControlPendingRequests[request.actionId] = request.pendingRequest
     var snapshot = desktopControlSnapshot(for: link)
     snapshot.lastActionStatus = "pending"
@@ -2454,6 +2478,23 @@ final class MessageCoordinator: ObservableObject {
       }
     }
     return false
+  }
+
+  func forgetDesktopInteractiveInput(_ actionId: String, desktopId: String) {
+    guard let request = desktopControlPendingRequests[actionId],
+          request.desktopId == desktopId,
+          request.interactiveInput ||
+            (request.streamFrame && actionId.hasPrefix(AgentDesktopControlRequestFactory.directFramePrefix)) else { return }
+    desktopControlPendingRequests.removeValue(forKey: actionId)
+  }
+
+  func requestDirectDesktopAuthorization(_ link: ServerLink) async -> Bool {
+    let now = AgentControlPlaneClock.nowMillis()
+    guard UIApplication.shared.applicationState == .active, link.paired, link.fullDesktopExecutor,
+          let wire = try? linkWirePayload(["type": "desktop_control_authorizations_request", "time": now], link: link)
+    else { return false }
+    return await mqttClient.publishDesktopInputOnce(topic: link.routes.controlTopic,
+      payload: wire.wireData, expiresAt: now + 4_000)
   }
 
   /// Sends a final PCM review only to a paired Desktop that recently advertised
@@ -15398,6 +15439,15 @@ final class MessageCoordinator: ObservableObject {
             let receipt = AgentDesktopControlReceipt.parse(source) else { return true }
       let pending = desktopControlPendingRequests[receipt.actionId]
       guard pending == nil || pending?.desktopId == desktopId else { return true }
+      let interactive = receipt.actionId.hasPrefix(AgentDesktopControlRequestFactory.interactiveActionPrefix)
+      let directFrame = receipt.actionId.hasPrefix(AgentDesktopControlRequestFactory.directFramePrefix)
+      if interactive || directFrame {
+        let now = AgentControlPlaneClock.nowMillis()
+        guard let pending, (interactive ? pending.interactiveInput : pending.streamFrame),
+              pending.expiresAt > now, snapshot.authorized,
+              snapshot.currentAuthorization?.desktopSessionId == pending.desktopSessionId,
+              UIApplication.shared.applicationState == .active else { return true }
+      }
       let context = AgentDesktopControlReceiptVerificationContext(
         expectedSignerId: link.signalName, expectedSignatureKeyId: link.desktopFingerprint,
         expectedControllerFingerprint: signalEngine.identity.fingerprint, pendingRequest: pending
@@ -15405,6 +15455,7 @@ final class MessageCoordinator: ObservableObject {
       guard AgentDesktopControlReceiptProtocol.verify(payload: source, context: context, verifier: { _, _, bytes, signature in
         signalEngine.verifyPairedDesktopSignature(bytes, signature: signature, envelope: envelope, link: link)
       }) else {
+        if interactive || directFrame { return true }
         guard pending != nil else { return true }
         snapshot.lastActionStatus = "unverified"
         snapshot.lastActionSummary = "desktop_action_receipt_unverified"
@@ -15415,6 +15466,23 @@ final class MessageCoordinator: ObservableObject {
       }
       desktopControlPendingRequests.removeValue(forKey: receipt.actionId)
       let output = source.object("output") ?? [:]
+      if interactive {
+        desktopInteractiveReceipts.send(.init(desktopId: desktopId, receipt: receipt,
+          focus: receipt.status == "succeeded" ? AgentDesktopInputFocus.parse(output) : nil))
+        return true
+      }
+      if directFrame {
+        let screenshot = receipt.status == "succeeded"
+          ? AgentDesktopControlScreenshot.parse(source.object("post_screenshot") ?? output.object("screenshot"),
+              defaultCapturedAt: receipt.completedAt) : nil
+        if let screenshot,
+           shouldApplyDesktopScreenshot(current: snapshot.screenshot, candidate: screenshot) {
+          desktopControlLiveFrames[desktopId] = screenshot
+          desktopControlFrameUpdates.send(desktopId)
+        }
+        desktopDirectFrameReceipts.send(.init(receipt: receipt, screenshot: screenshot))
+        return true
+      }
       let streamFrame = pending?.streamFrame == true || output.bool("stream_frame")
       if receipt.status == "succeeded",
          let screenshot = AgentDesktopControlScreenshot.parse(

@@ -153,9 +153,9 @@ private struct GalaxySSIDesktopControlDetail: View {
   @State private var statusMessage = ""
   @State private var requestFailed = false
   @State private var streamFps = 1
-  @State private var textInput = ""
   @State private var filePathInput = ""
-  @State private var showingTextInput = false
+  @State private var directDisplayPresented = false
+  @State private var openDirectKeyboard = false
   @State private var showingFileInput = false
   @State private var statusRequestId: String?
 
@@ -206,18 +206,10 @@ private struct GalaxySSIDesktopControlDetail: View {
         .foregroundColor(.galaxySSITextSecondary)
         .padding(.horizontal, 4)
     }
-    .alert(t("desktop_control_type_text", "Type text"), isPresented: $showingTextInput) {
-      TextField(t("desktop_control_type_text_placeholder", "Text to type"), text: $textInput)
-      Button(t("galaxyssi.common.cancel", "Cancel"), role: .cancel) { textInput = "" }
-      Button(t("desktop_control_action_type", "Type text")) {
-        send(AgentDesktopControlRequestFactory.typeText(
-          snapshot: snapshot,
-          routing: routing,
-          text: textInput,
-          nowMillis: nowMillis
-        ))
-        textInput = ""
-      }
+    .fullScreenCover(isPresented: $directDisplayPresented) {
+      GalaxySSIDesktopDirectInputView(link: link, startWithKeyboard: openDirectKeyboard, t: t)
+        .environmentObject(store)
+        .environmentObject(coordinator)
     }
     .alert(t("desktop_control_select_file", "Select Desktop file"), isPresented: $showingFileInput) {
       TextField(t("desktop_control_file_path_placeholder", "Desktop file path"), text: $filePathInput)
@@ -276,6 +268,15 @@ private struct GalaxySSIDesktopControlDetail: View {
         accessibilityTitle: t("desktop_control_screen_content_description", "Encrypted desktop screenshot")
       )
       .id(link.desktopId)
+      GalaxySSIDesktopControlActionRow(
+        title: t("desktop_control_direct_open", "Open remote display"),
+        subtitle: link.desktopName,
+        systemImage: "arrow.up.left.and.arrow.down.right",
+        tint: .galaxySSIAccent,
+        badge: t("desktop_control_action_view_screen", "View screen"),
+        enabled: link.fullDesktopExecutor,
+        action: { openDirectDisplay(keyboard: false) }
+      )
       GalaxySSIDesktopControlActionRow(
         title: t("desktop_control_refresh_screen", "Refresh screen"),
         subtitle: t("desktop_control_refresh_screen_subtitle", "Capture a compressed desktop snapshot"),
@@ -347,7 +348,7 @@ private struct GalaxySSIDesktopControlDetail: View {
         tint: .blue,
         badge: t("desktop_control_action_type", "Type text"),
         enabled: authorized,
-        action: { showingTextInput = true }
+        action: { openDirectDisplay(keyboard: true) }
       )
       GalaxySSIDesktopControlActionRow(
         title: t("desktop_control_select_file", "Select Desktop file"),
@@ -359,6 +360,11 @@ private struct GalaxySSIDesktopControlDetail: View {
         action: { showingFileInput = true }
       )
     }
+  }
+
+  private func openDirectDisplay(keyboard: Bool) {
+    openDirectKeyboard = keyboard
+    directDisplayPresented = true
   }
 
   private var authorizationSection: some View {

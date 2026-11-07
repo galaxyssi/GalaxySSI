@@ -781,6 +781,38 @@ struct AgentDesktopControlPendingRequest: Equatable {
   var inputSha256: String
   var expiresAt: Int64
   var streamFrame: Bool
+  var interactiveInput = false
+}
+
+struct AgentDesktopInputFocus: Equatable {
+  let available: Bool
+  let editable: Bool
+  let password: Bool
+  let targetId: String
+
+  var canBindText: Bool { available && editable && !password && !targetId.isEmpty }
+
+  static func parse(_ output: AgentMcpJSONObject) -> Self? {
+    guard output.bool("interactive_input"), let focus = output.object("input_focus"),
+          let available = focus["available"]?.boolValue,
+          let editable = focus["editable"]?.boolValue else { return nil }
+    let candidate = focus.string("target_id")
+    let valid = candidate.utf8.count == 64 &&
+      candidate.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
+    return Self(available: available, editable: editable, password: focus["password"]?.boolValue != false,
+      targetId: valid ? candidate : "")
+  }
+}
+
+struct AgentDesktopInteractiveReceipt {
+  let desktopId: String
+  let receipt: AgentDesktopControlReceipt
+  let focus: AgentDesktopInputFocus?
+}
+
+struct AgentDesktopDirectFrameReceipt {
+  let receipt: AgentDesktopControlReceipt
+  let screenshot: AgentDesktopControlScreenshot?
 }
 
 struct AgentDesktopControlRequestRoutingContext: Equatable {
@@ -805,6 +837,10 @@ struct AgentDesktopControlActionRequest: Equatable {
 
 enum AgentDesktopControlRequestFactory {
   static let actionTTLMillis: Int64 = 30_000
+  static let interactiveTTLMillis: Int64 = 8_000
+  static let directFrameTTLMillis: Int64 = 5_000
+  static let interactiveActionPrefix = "ios-direct-"
+  static let directFramePrefix = "ios-preview-"
 
   static func screenshot(
     snapshot: AgentDesktopRemoteControlSnapshot,
@@ -953,14 +989,20 @@ enum AgentDesktopControlRequestFactory {
     y: Int,
     coordinateWidth: Int = 0,
     coordinateHeight: Int = 0,
+    interactive: Bool = false,
+    button: String = "left",
+    clicks: Int = 1,
     actionId: String = UUID().uuidString,
     nowMillis: Int64
   ) -> AgentDesktopControlActionRequest? {
+    guard ["left", "right"].contains(button), (1...2).contains(clicks),
+          clicks == 1 || button == "left" else { return nil }
     var input: AgentMcpJSONObject = [
       "x": .int(Int64(x)),
       "y": .int(Int64(y)),
-      "button": .string("left")
+      "button": .string(button)
     ]
+    if interactive { input["clicks"] = .int(Int64(clicks)) }
     if coordinateWidth > 0 && coordinateHeight > 0 {
       input["coordinate_width"] = .int(Int64(coordinateWidth))
       input["coordinate_height"] = .int(Int64(coordinateHeight))
@@ -971,7 +1013,8 @@ enum AgentDesktopControlRequestFactory {
       toolId: AgentDesktopControlAction.clickXY,
       input: input,
       actionId: actionId,
-      nowMillis: nowMillis
+      nowMillis: nowMillis,
+      interactive: interactive
     )
   }
 
@@ -979,20 +1022,25 @@ enum AgentDesktopControlRequestFactory {
     snapshot: AgentDesktopRemoteControlSnapshot,
     routing: AgentDesktopControlRequestRoutingContext,
     text: String,
+    interactive: Bool = false,
+    targetId: String? = nil,
     actionId: String = UUID().uuidString,
     nowMillis: Int64
   ) -> AgentDesktopControlActionRequest? {
     guard !text.isBlank,
-          text.count <= 4_096 else {
+          text.utf16.count <= 4_096 else {
       return nil
     }
+    var input: AgentMcpJSONObject = ["text": .string(text)]
+    if let targetId, interactive, !targetId.isBlank { input["input_target_id"] = .string(targetId) }
     return requestAction(
       snapshot: snapshot,
       routing: routing,
       toolId: AgentDesktopControlAction.typeText,
-      input: ["text": .string(text)],
+      input: input,
       actionId: actionId,
-      nowMillis: nowMillis
+      nowMillis: nowMillis,
+      interactive: interactive
     )
   }
 
@@ -1000,6 +1048,8 @@ enum AgentDesktopControlRequestFactory {
     snapshot: AgentDesktopRemoteControlSnapshot,
     routing: AgentDesktopControlRequestRoutingContext,
     keys: [String],
+    interactive: Bool = false,
+    targetId: String? = nil,
     actionId: String = UUID().uuidString,
     nowMillis: Int64
   ) -> AgentDesktopControlActionRequest? {
@@ -1007,13 +1057,16 @@ enum AgentDesktopControlRequestFactory {
           keys.count <= 4 else {
       return nil
     }
+    var input: AgentMcpJSONObject = ["keys": .array(keys.map { .string($0) })]
+    if let targetId, interactive, !targetId.isBlank { input["input_target_id"] = .string(targetId) }
     return requestAction(
       snapshot: snapshot,
       routing: routing,
       toolId: AgentDesktopControlAction.hotkey,
-      input: ["keys": .array(keys.map { .string($0) })],
+      input: input,
       actionId: actionId,
-      nowMillis: nowMillis
+      nowMillis: nowMillis,
+      interactive: interactive
     )
   }
 
@@ -1021,6 +1074,7 @@ enum AgentDesktopControlRequestFactory {
     snapshot: AgentDesktopRemoteControlSnapshot,
     routing: AgentDesktopControlRequestRoutingContext,
     delta: Int,
+    interactive: Bool = false,
     actionId: String = UUID().uuidString,
     nowMillis: Int64
   ) -> AgentDesktopControlActionRequest? {
@@ -1034,7 +1088,8 @@ enum AgentDesktopControlRequestFactory {
       toolId: AgentDesktopControlAction.scroll,
       input: ["delta": .int(Int64(delta))],
       actionId: actionId,
-      nowMillis: nowMillis
+      nowMillis: nowMillis,
+      interactive: interactive
     )
   }
 
@@ -1160,7 +1215,8 @@ enum AgentDesktopControlRequestFactory {
     actionId: String,
     nowMillis: Int64,
     durable: Bool = true,
-    resetsSurfaceState: Bool = false
+    resetsSurfaceState: Bool = false,
+    interactive: Bool = false
   ) -> AgentDesktopControlActionRequest? {
     guard !snapshot.desktopId.isBlank,
           let authorization = snapshot.currentAuthorization,
@@ -1169,7 +1225,13 @@ enum AgentDesktopControlRequestFactory {
           authorization.desktopSessionExpiresAt > nowMillis else {
       return nil
     }
-    let expiresAt = nowMillis + actionTTLMillis
+    var input = input
+    let actionId = interactive ? interactiveActionPrefix + actionId : actionId
+    if interactive { input["interactive_input"] = .bool(true) }
+    let directFrame = actionId.hasPrefix(directFramePrefix) && input.bool("stream_frame")
+    let liveTTL = interactive ? interactiveTTLMillis : directFrameTTLMillis
+    let expiresAt = interactive || directFrame ? min(authorization.desktopSessionExpiresAt, nowMillis + liveTTL) :
+      nowMillis + actionTTLMillis
     let payload: AgentMcpJSONObject = [
       "type": .string("desktop_executor_request"),
       "task_id": .string("desktop-control-\(actionId)"),
@@ -1194,7 +1256,7 @@ enum AgentDesktopControlRequestFactory {
       input: input,
       payload: payload,
       pendingRequest: pending,
-      durable: durable,
+      durable: durable && !interactive,
       resetsSurfaceState: resetsSurfaceState
     )
   }
@@ -1284,7 +1346,8 @@ enum AgentDesktopControlReceiptProtocol {
       ]),
       inputSha256: digest(input),
       expiresAt: payload.int64("expires_at"),
-      streamFrame: input.bool("stream_frame")
+      streamFrame: input.bool("stream_frame"),
+      interactiveInput: input.bool("interactive_input")
     )
   }
 

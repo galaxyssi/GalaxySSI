@@ -1565,6 +1565,14 @@
 "desktop_control_live_display" = "远程画面";
 "desktop_control_screen_content_description" = "加密传输的电脑截图";
 "desktop_control_tap_refresh" = "刷新画面后开始控制";
+"desktop_control_direct_open" = "打开远程屏幕";
+"desktop_control_direct_waiting" = "正在等待远程画面";
+"desktop_control_direct_frame_failed" = "暂时无法获取远程画面";
+"desktop_control_direct_escape" = "退出键";
+"desktop_control_direct_voice" = "语音输入";
+"desktop_control_direct_hold" = "按住说话";
+"desktop_control_direct_unconfirmed" = "输入尚未确认。重试前请查看电脑。";
+"desktop_control_direct_focus_changed" = "电脑输入焦点已变化，请重新选择输入框。";
 "desktop_control_authorization_required" = "请重新扫描带桌面执行权限的二维码授权此 App";
 "desktop_control_repair_executor_required" = "请重新配对，并勾选“启动桌面执行器”";
 "desktop_control_refresh_screen" = "刷新画面";
