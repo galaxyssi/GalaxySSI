@@ -56,19 +56,8 @@ struct GalaxySSIContactReminderOverlay: ViewModifier {
 
   private func panel(_ reminder: GalaxySSIContactReminder) -> some View {
     VStack(alignment: .leading, spacing: 10) {
-      HStack {
-        Label(t("galaxyssi.contact_reminder.title", "Contact reminder"), systemImage: "bell.badge")
-          .font(.headline)
-        Spacer(minLength: 8)
-        Button {
-          settingsPresented = true
-        } label: {
-          Image(systemName: "gearshape").frame(width: 44, height: 44)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(t("galaxyssi.contact_reminder.settings", "Reminder settings"))
-        .accessibilityIdentifier("ios.contact-reminder.settings")
-      }
+      Label(t("galaxyssi.contact_reminder.title", "Contact reminder"), systemImage: "bell.badge")
+        .font(.headline)
       Text(store.contact(id: reminder.peerID)?.displayName ?? "")
         .font(.subheadline)
         .foregroundColor(.galaxySSITextSecondary)
@@ -80,6 +69,16 @@ struct GalaxySSIContactReminderOverlay: ViewModifier {
       }
     }
     .frame(maxWidth: 460, alignment: .leading)
+    .safeAreaInset(edge: .trailing, alignment: .top, spacing: 4) {
+      Button {
+        settingsPresented = true
+      } label: {
+        Image(systemName: "gearshape").frame(width: 44, height: 44)
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(t("galaxyssi.contact_reminder.settings", "Reminder settings"))
+      .accessibilityIdentifier("ios.contact-reminder.settings")
+    }
     .padding(14)
     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.galaxySSISeparator))
