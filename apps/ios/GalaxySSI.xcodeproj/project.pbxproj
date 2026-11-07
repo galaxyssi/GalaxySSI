@@ -989,6 +989,7 @@
     A10000000000000000009B3E /* GalaxySSIManagedBrowserHandoffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B3E /* GalaxySSIManagedBrowserHandoffView.swift */; };
     A10000000000000000009B34 /* AgentTeamRecoveryRetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B34 /* AgentTeamRecoveryRetry.swift */; };
     A10000000000000000000F41 /* AgentCollaborationNumericTrial.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000F41 /* AgentCollaborationNumericTrial.swift */; };
+    A1000000000000000000E356 /* AgentCollaborationExperimentResultFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000E356 /* AgentCollaborationExperimentResultFeedback.swift */; };
     A10000000000000000000274 /* AgentTeamExecutionRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000274 /* AgentTeamExecutionRuntime.swift */; };
     A10000000000000000000275 /* AgentPolicyFirewallModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000275 /* AgentPolicyFirewallModels.swift */; };
     A10000000000000000000276 /* AgentPhoneCapabilityCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000276 /* AgentPhoneCapabilityCatalog.swift */; };
@@ -2177,6 +2178,7 @@
     A20000000000000000009B3E /* GalaxySSIManagedBrowserHandoffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIManagedBrowserHandoffView.swift; sourceTree = "<group>"; };
     A20000000000000000009B34 /* AgentTeamRecoveryRetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamRecoveryRetry.swift; sourceTree = "<group>"; };
     A20000000000000000000F41 /* AgentCollaborationNumericTrial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationNumericTrial.swift; sourceTree = "<group>"; };
+    A2000000000000000000E356 /* AgentCollaborationExperimentResultFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationExperimentResultFeedback.swift; sourceTree = "<group>"; };
     A20000000000000000000274 /* AgentTeamExecutionRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamExecutionRuntime.swift; sourceTree = "<group>"; };
     A20000000000000000000275 /* AgentPolicyFirewallModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPolicyFirewallModels.swift; sourceTree = "<group>"; };
     A20000000000000000000276 /* AgentPhoneCapabilityCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneCapabilityCatalog.swift; sourceTree = "<group>"; };
@@ -2948,6 +2950,7 @@
         A20000000000000000009B3E /* GalaxySSIManagedBrowserHandoffView.swift */,
         A20000000000000000009B34 /* AgentTeamRecoveryRetry.swift */,
         A20000000000000000000F41 /* AgentCollaborationNumericTrial.swift */,
+        A2000000000000000000E356 /* AgentCollaborationExperimentResultFeedback.swift */,
         A20000000000000000000274 /* AgentTeamExecutionRuntime.swift */,
         A20000000000000000000275 /* AgentPolicyFirewallModels.swift */,
         A20000000000000000000276 /* AgentPhoneCapabilityCatalog.swift */,
@@ -4249,6 +4252,7 @@
         A10000000000000000009B3E /* GalaxySSIManagedBrowserHandoffView.swift in Sources */,
         A10000000000000000009B34 /* AgentTeamRecoveryRetry.swift in Sources */,
         A10000000000000000000F41 /* AgentCollaborationNumericTrial.swift in Sources */,
+        A1000000000000000000E356 /* AgentCollaborationExperimentResultFeedback.swift in Sources */,
         A10000000000000000000274 /* AgentTeamExecutionRuntime.swift in Sources */,
         A10000000000000000000275 /* AgentPolicyFirewallModels.swift in Sources */,
         A10000000000000000000276 /* AgentPhoneCapabilityCatalog.swift in Sources */,
