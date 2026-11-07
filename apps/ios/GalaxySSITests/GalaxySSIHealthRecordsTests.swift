@@ -7,6 +7,53 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testLocalCareRequiresPermissionAndPreservesExactRevisionHistory() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let now = Date(timeIntervalSince1970: 1_700_000_000)
+    let high = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-1_000),
+      value: 110, conditions: "lab", unitOverride: "mg/dL", referenceInterval: "70 - 99")
+    try records.write(high)
+    XCTAssertThrowsError(try records.reconcileLocalCare(now: now))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let first = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertEqual(first.assessment.signals, [.reportHigh, .glucoseContext])
+    XCTAssertNil(first.target)
+    XCTAssertNil(first.assessment.guidelineVersion)
+    try records.reconcileLocalCare(now: now)
+    XCTAssertEqual(try records.load().localCare?.current["glucose"], first)
+    try records.setLocalCareContext(first, applicability: .applicable, now: now)
+    let verified = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertEqual(verified.assessment.guidelineVersion, "ADA 2026")
+    XCTAssertThrowsError(try records.reviewLocalCare(first, stage: .closed, reason: "Stale revision", now: now))
+    let inRange = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-100),
+      value: 90, conditions: "lab", unitOverride: "mg/dL", referenceInterval: "70 - 99")
+    try records.write(inRange)
+    try records.reconcileLocalCare(now: now)
+    let updated = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertEqual(updated.id, first.id)
+    XCTAssertEqual(updated.stage, .reassess)
+    XCTAssertNil(updated.context)
+    XCTAssertEqual(try records.localCareHistory(updated.id).map(\.revision), [2, 1])
+    var later = high
+    later.id = UUID()
+    later.measuredAt = now.addingTimeInterval(-10)
+    later.value = 113
+    try records.write(later)
+    XCTAssertThrowsError(try records.reviewLocalCare(updated, stage: .closed, reason: "Source changed", now: now))
+    try records.reconcileLocalCare(now: now)
+    try records.deleteLocalCare(XCTUnwrap(records.load().localCare?.current["glucose"]))
+    try records.reconcileLocalCare(now: now)
+    XCTAssertNil(try records.load().localCare?.current["glucose"])
+    try records.setPrivacy(.localCare, enabled: false)
+    XCTAssertThrowsError(try records.localCareHistory(updated.id))
+    XCTAssertNil(try Data(contentsOf: file).range(of: Data("glucoseContext".utf8)))
+  }
+
+  @MainActor
   func testDataFilesOrdersAndPagesMetadataWithoutReadingPayloads() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

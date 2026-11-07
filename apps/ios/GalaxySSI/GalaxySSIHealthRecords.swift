@@ -120,7 +120,7 @@ struct GalaxySSIHealthRecords {
   }
 
   enum PrivacyScope: String, Codable {
-    case overview, weeklyReport, importOriginals, profileAnalysis
+    case overview, weeklyReport, importOriginals, profileAnalysis, localCare
   }
 
   struct PrivacyEvent: Codable, Identifiable {
@@ -173,6 +173,9 @@ struct GalaxySSIHealthRecords {
     var retainImportOriginals: Bool?
     var profileAnalysisPermission: UUID?
     var profileAnalysisAudit: [ProfileAnalysisAudit]?
+    var localCareAllowed: Bool?
+    var localCare: GalaxySSIHealthCare.Ledger?
+    var localCareLastEvaluatedAt: Date?
 
     var keepsNewImportOriginals: Bool { retainImportOriginals ?? true }
 
@@ -405,6 +408,9 @@ struct GalaxySSIHealthRecords {
     case .profileAnalysis:
       previous = archive.profileAnalysisPermission != nil
       archive.profileAnalysisPermission = enabled ? UUID() : nil
+    case .localCare:
+      previous = archive.localCareAllowed ?? false
+      archive.localCareAllowed = enabled
     }
     guard previous != enabled else { return }
     if (previous ?? (scope == .importOriginals)) != enabled {
@@ -415,6 +421,117 @@ struct GalaxySSIHealthRecords {
     try persist(archive)
     if scope == .overview { NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner) }
     if scope == .profileAnalysis { NotificationCenter.default.post(name: Self.profileInputsChanged, object: owner) }
+  }
+
+  func reconcileLocalCare(now: Date = Date()) throws {
+    var archive = try load()
+    guard archive.localCareAllowed == true else { throw Failure.permission }
+    let readings = Dictionary(grouping: archive.current.filter { $0.isValid && $0.measuredAt <= now }, by: \.metric)
+    var ledger = archive.localCare ?? .init()
+    var changed = false
+    for metric in GalaxySSIHealthMetric.allCases {
+      let key = metric.rawValue
+      let prior = ledger.current[key]
+      let assessed = GalaxySSIHealthCare.assess(readings[metric] ?? [], context: prior?.context)
+      guard prior != nil || assessed?.signals.isEmpty == false else { continue }
+      let next = assessed ?? .removed
+      if let prior {
+        guard prior.assessment != next, prior.revision < Int.max else { continue }
+        var updated = prior
+        updated.revision += 1
+        updated.updatedAt = max(prior.updatedAt, now)
+        updated.assessment = next
+        if updated.context?.record != next.record { updated.context = nil }
+        if prior.stage != .paused && !(prior.stage == .closed && next.signals.isEmpty) {
+          updated.stage = next.record == nil || next.signals.contains(.glucoseContext) || next.signals.contains(.notExact)
+            ? .verify : .reassess
+        }
+        ledger.publish(updated)
+      } else {
+        guard try ledger.deletedInput[key] != GalaxySSIHealthCare.inputDigest(next) else { continue }
+        ledger.publish(.init(id: UUID(), metric: metric, revision: 1, updatedAt: now, assessment: next,
+          stage: next.signals.contains(.guidelineReview) ? .evidence : .verify))
+      }
+      changed = true
+    }
+    guard changed || archive.localCareLastEvaluatedAt == nil else { return }
+    archive.localCare = ledger
+    archive.localCareLastEvaluatedAt = now
+    try persist(archive)
+  }
+
+  func localCareHistory(_ id: UUID, before revision: Int = Int.max) throws -> [GalaxySSIHealthCare.Concern] {
+    let archive = try load()
+    guard archive.localCareAllowed == true else { throw Failure.permission }
+    let history = archive.localCare?.history[id.uuidString] ?? []
+    return Array(history.reversed().lazy.filter { $0.revision < revision }.prefix(30))
+  }
+
+  func setLocalCareContext(_ concern: GalaxySSIHealthCare.Concern,
+                           applicability: GalaxySSIHealthCare.Context.Applicability, now: Date = Date()) throws {
+    try updateLocalCare(concern, now: now) { current, archive in
+      let readings = archive.current.filter { $0.metric == .glucose && $0.isValid && $0.measuredAt <= now }
+      guard current.metric == .glucose, let record = current.assessment.record,
+            readings.first.map(GalaxySSIHealthCare.Record.init) == record else { throw Failure.stale }
+      let context = GalaxySSIHealthCare.Context(record: record, applicability: applicability)
+      guard let assessment = GalaxySSIHealthCare.assess(readings, context: context) else { throw Failure.stale }
+      current.context = context
+      current.assessment = assessment
+      if current.stage != .paused { current.stage = applicability == .unknown ? .verify : .evidence }
+    }
+  }
+
+  func reviewLocalCare(_ concern: GalaxySSIHealthCare.Concern, stage: GalaxySSIHealthCare.Stage,
+                       reason: String, now: Date = Date()) throws {
+    guard [.paused, .reassess, .maintenance, .closed].contains(stage),
+          !reason.isBlank, reason.utf8.count <= 2_048 else { throw Failure.invalid }
+    try updateLocalCare(concern, now: now) { current, archive in
+      if stage == .maintenance {
+        guard let record = current.assessment.record, archive.current.contains(where: {
+          GalaxySSIHealthCare.Record($0) == record
+        }) else { throw Failure.stale }
+      }
+      current.stage = stage
+      current.reviewNote = reason
+    }
+  }
+
+  func setLocalCareTarget(_ concern: GalaxySSIHealthCare.Concern, target: GalaxySSIHealthCare.Target) throws {
+    guard [target.value, target.source, target.rationale, target.confirmedBy].allSatisfy({
+      !$0.isBlank && $0.utf8.count <= 1_024
+    }), target.confirmedAt.timeIntervalSinceReferenceDate.isFinite else { throw Failure.invalid }
+    try updateLocalCare(concern, now: target.confirmedAt) { current, _ in current.target = target }
+  }
+
+  func deleteLocalCare(_ concern: GalaxySSIHealthCare.Concern) throws {
+    var archive = try load()
+    guard archive.localCareAllowed == true else { throw Failure.permission }
+    let key = concern.metric.rawValue
+    guard var ledger = archive.localCare, ledger.current[key] == concern else { throw Failure.stale }
+    let readings = archive.current.filter { $0.metric == concern.metric && $0.isValid && $0.measuredAt <= Date() }
+    ledger.deletedInput[key] = try GalaxySSIHealthCare.inputDigest(GalaxySSIHealthCare.assess(readings, context: nil) ?? .removed)
+    ledger.current.removeValue(forKey: key)
+    ledger.history.removeValue(forKey: concern.id.uuidString)
+    archive.localCare = ledger
+    try persist(archive)
+  }
+
+  private func updateLocalCare(_ concern: GalaxySSIHealthCare.Concern, now: Date,
+                               change: (inout GalaxySSIHealthCare.Concern, Archive) throws -> Void) throws {
+    var archive = try load()
+    guard archive.localCareAllowed == true else { throw Failure.permission }
+    guard var ledger = archive.localCare, var current = ledger.current[concern.metric.rawValue], current == concern,
+          current.revision < Int.max else { throw Failure.stale }
+    let readings = archive.current.filter { $0.metric == concern.metric && $0.isValid && $0.measuredAt <= now }
+    guard (GalaxySSIHealthCare.assess(readings, context: current.context) ?? .removed) == current.assessment
+    else { throw Failure.stale }
+    try change(&current, archive)
+    guard current != concern else { return }
+    current.revision += 1
+    current.updatedAt = max(now, current.updatedAt)
+    ledger.publish(current)
+    archive.localCare = ledger
+    try persist(archive)
   }
 
   func discardDraft(id: UUID) throws {
