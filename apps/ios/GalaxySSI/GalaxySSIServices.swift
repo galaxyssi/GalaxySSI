@@ -145,6 +145,7 @@ final class MessageCoordinator: ObservableObject {
     pageTitle: "Agent"
   )
   private let localBrowserSessions = AgentIOSURLSessionBrowserSessionStore()
+  private let desktopNativeEvidenceDelivery = AgentDesktopNativeEvidenceDelivery()
   private lazy var localNativeToolRuntime: AgentPhoneNativeToolRuntime? = { [weak self] in
     guard let self else { return nil }
     let settingsStore = self.store
@@ -2862,6 +2863,100 @@ final class MessageCoordinator: ObservableObject {
       }
     }
     teamObserverDiscoveryCursor = page.next ?? ""
+  }
+
+  private func handleDesktopNativeEvidenceRecall(_ payload: [String: Any], link: ServerLink) async {
+    let wireContract = AgentDesktopCollaborationArchiveRecall.self
+    let now = AgentControlPlaneClock.nowMillis()
+    let phase = payload.string("phase")
+    let requestId = payload.string("request_id")
+    let source = payload.string("source_message_id")
+    let contact = payload.string("contact_id")
+    let observation = AgentTeamReplyObservation(payload: payload)
+    func decode(_ raw: Any?, limit: Int) -> AgentMcpJSONObject? {
+      guard let object = raw as? [String: Any], let data = try? JSONSerialization.data(withJSONObject: object),
+            data.count <= limit else { return nil }
+      return try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data)
+    }
+    guard payload.string("contract") == wireContract.contract, payload.string("agent_id") == "codex",
+          !GalaxySSITransportPrivacyPolicy.isLocalOnly(payload), ["read", "confirm"].contains(phase),
+          (1...128).contains(requestId.utf8.count), observation.valid, let generation = observation.generation,
+          let expiry = AgentTeamReplyObservation.integer(payload["expires_at"]), expiry > now, expiry - now <= 60_000,
+          let input = decode(payload["arguments"], limit: 4_096), AgentDesktopNativeEvidenceDelivery.accepts(input),
+          let identity = taskIdentityStore.identity(contactId: contact, sourceMessageId: source),
+          identity.taskId == source, identity.clientRouteId == link.routes.clientRouteId,
+          taskIdentityStore.matchesRegistered(payload: payload) else { return }
+    let confirmation = decode(payload["delivery"], limit: 1_024)
+    guard phase == "read" ? payload["delivery"] == nil : confirmation != nil else { return }
+    let history = AgentTeamExecutionHistoryStore.shared
+    let profile = store.profile.identityFingerprint
+    func authorizedScope() -> AgentCollaborationToolEvidenceScope? {
+      guard store.profile.identityFingerprint == profile,
+            store.serverLinks.contains(where: { $0.paired && $0.desktopId == link.desktopId &&
+              $0.desktopFingerprint == link.desktopFingerprint && $0.routes == link.routes }),
+            let target = store.contact(id: contact), target.trustState == .verified, !target.deleted,
+            target.desktopId == link.desktopId, target.connectorAgentId == "codex",
+            target.deliveryMode.isGalaxySSILinkFamily,
+            taskIdentityStore.matchesRegistered(payload: payload),
+            let context = try? history.recoveryContext(source: source, conversation: identity.conversationId,
+              turn: identity.turnId, contact: contact, requireResearchAccess: true),
+            context.owner.permitsRecall(generation: generation), context.owner.deliveryMode != .ignore,
+            context.team.state == .running, !context.member.status.isTerminal,
+            context.member.dispatchCheckpoint == .dispatching || context.member.dispatchCheckpoint == .accepted,
+            let session = store.agentSession(id: identity.conversationId), session.id == identity.conversationId,
+            !session.privateMode, !session.trackingPaused, session.mergedIntoConversationId.isBlank,
+            session.collaborationRoster?.members.contains(where: {
+              $0.id.uuidString.lowercased() == AgentTeamProgressPolicy.stableCollaborationMemberId(context.member.memberId) &&
+                $0.resourceId == contact
+            }) == true,
+            let task = store.agentTask(id: identity.turnId), task.phase == .executing || task.phase == .waitingResponse
+      else { return nil }
+      return .init(runId: context.team.supervisorRunId, conversationId: identity.conversationId,
+        turnId: identity.turnId, memberId: context.member.memberId, sourceId: source)
+    }
+    guard let scope = authorizedScope(), desktopCollaborationResponseReplay.begin(desktopId: link.desktopId) else { return }
+    defer { desktopCollaborationResponseReplay.end(desktopId: link.desktopId) }
+    let binding = AgentMcpJSONCodec.sha256(["assignment": .string(scope.ownershipDigest), "profile": .string(profile),
+      "desktop": .string(link.desktopId), "pair": .string(link.desktopFingerprint),
+      "route": .string(identity.clientRouteId), "route_key": .string(AgentDesktopNativeEvidenceDelivery.digest(link.routes.linkSecret)),
+      "contact": .string(contact), "generation": .int(generation)])
+    let replayKey = AgentMcpJSONCodec.sha256(["desktop": .string(link.desktopId), "request": .string(requestId)])
+    let fingerprint = AgentMcpJSONCodec.sha256(["binding": .string(binding), "phase": .string(phase),
+      "expires_at": .int(expiry), "arguments": .object(input), "delivery": confirmation.map(AgentMcpJSONValue.object) ?? .null])
+    var result: AgentMcpJSONObject = ["success": .bool(false), "status": .string("unavailable")]
+    switch desktopCollaborationResponseReplay.lookup(key: replayKey, fingerprint: fingerprint, now: now) {
+    case .identityMismatch: return
+    case .response(let saved): result = saved
+    case .missing:
+      if phase == "read",
+         var page = try? history.recallCollaborationOriginal(input, scope: scope, evidenceRead: .desktopPreview),
+         let content = page["content"]?.strictStringValue,
+         let delivery = desktopNativeEvidenceDelivery.issue(content: content, binding: binding, input: input, now: now) {
+        page["delivery"] = .object(delivery)
+        page["success"] = .bool(true)
+        page["status"] = .string("returned")
+        result = page
+      } else if let confirmation,
+                let hash = desktopNativeEvidenceDelivery.confirm(confirmation, binding: binding, input: input, now: now),
+                let page = try? history.recallCollaborationOriginal(input, scope: scope, evidenceRead: .desktopConfirm(contentHash: hash)),
+                let coverage = page["host_read_coverage"] {
+        result = ["success": .bool(true), "status": .string("confirmed"), "delivery": .object(confirmation),
+          "host_read_coverage": coverage]
+      }
+      desktopCollaborationResponseReplay.remember(result, key: replayKey, fingerprint: fingerprint,
+        expiresAt: expiry, now: AgentControlPlaneClock.nowMillis())
+    }
+    let response: AgentMcpJSONObject = [
+      "type": .string(wireContract.responseType), "contract": .string(wireContract.contract),
+      "request_id": .string(requestId), "phase": .string(phase), "execution_generation": .int(generation),
+      "client_route_id": .string(identity.clientRouteId), "conversation_id": .string(identity.conversationId),
+      "task_id": .string(identity.taskId), "turn_id": .string(identity.turnId), "source_message_id": .string(source),
+      "contact_id": .string(contact), "agent_id": .string("codex"), "result": .object(result)
+    ]
+    guard AgentControlPlaneClock.nowMillis() < expiry, authorizedScope() == scope,
+          let object = try? JSONSerialization.jsonObject(with: Data(AgentMcpJSONCodec.stringify(response).utf8)) as? [String: Any],
+          let sealed = try? linkWirePayload(object, link: link) else { return }
+    _ = await mqttClient.publish(topic: link.routes.upTopic, payload: sealed.wireData)
   }
 
   private func teamReplyContent(_ payload: [String: Any]) -> String {
@@ -14068,6 +14163,17 @@ final class MessageCoordinator: ObservableObject {
          let bytes = try? JSONSerialization.data(withJSONObject: appPayload),
          let response = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: bytes) {
         pending.1.yield(response)
+      }
+      return
+    }
+    if appPayload.string("type") == AgentDesktopCollaborationArchiveRecall.requestType,
+       appPayload.dictionary("arguments")?.string("mode") == "evidence" {
+      if allowStage, object.string("scheme") == "signal", let link, link.paired,
+         object.string("from") == link.desktopId, object.string("to") == signalEngine.identity.name,
+         link.routes.receiveWindow.contains(topic) {
+        Task { @MainActor [weak self] in
+          await self?.handleDesktopNativeEvidenceRecall(appPayload, link: link)
+        }
       }
       return
     }

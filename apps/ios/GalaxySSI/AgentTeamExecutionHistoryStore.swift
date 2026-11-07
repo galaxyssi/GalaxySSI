@@ -584,9 +584,14 @@ final class AgentTeamExecutionHistoryStore {
     _ = try? access { try $0.removeCloudEvidence(conversationId: conversationId) }
   }
 
-  func recallCollaborationOriginal(_ input: AgentMcpJSONObject,
-                                   scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+  enum EvidenceReadMode: Equatable {
+    case local, desktopPreview, desktopConfirm(contentHash: String)
+  }
+
+  func recallCollaborationOriginal(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope,
+                                   evidenceRead: EvidenceReadMode = .local) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
+    guard evidenceRead == .local || mode == "evidence" else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     if mode == "dependency" { return try recallDependencyOriginal(input, scope: scope) }
     if mode == "capabilities" { return try recallCapabilities(input, scope: scope) }
     if mode == "evolution_rules" {
@@ -665,6 +670,11 @@ final class AgentTeamExecutionHistoryStore {
           throw AgentTeamHistoryDatabase.Failure.corrupt
         }
         let slice = try page(data)
+        if evidenceRead == .desktopPreview { return (slice, source, nil) }
+        if case .desktopConfirm(let expected) = evidenceRead,
+           AgentDesktopNativeEvidenceDelivery.digest(slice.content) != expected {
+          throw AgentTeamHistoryDatabase.Failure.stale
+        }
         let previous = try database.researchRecord(AgentCollaborationReadCoverage.self,
           conversationId: scope.conversationId, key: key, revision: 0) ?? AgentCollaborationReadCoverage()
         var coverage = previous
@@ -699,7 +709,7 @@ final class AgentTeamExecutionHistoryStore {
           "replayed": .bool(native.result.receipt.replayed)
         ], key: key)
       }
-      guard let record = try database.cloudEvidence(id: id, conversationId: scope.conversationId),
+      guard evidenceRead == .local, let record = try database.cloudEvidence(id: id, conversationId: scope.conversationId),
             record.scope.conversationId == scope.conversationId,
             record.scope.turnId != scope.turnId || record.scope == scope else {
         throw AgentTeamHistoryDatabase.Failure.stale

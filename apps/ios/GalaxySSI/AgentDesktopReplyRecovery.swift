@@ -2,6 +2,54 @@ import CoreFoundation
 import CryptoKit
 import Foundation
 
+struct AgentDesktopNativeEvidenceDelivery {
+  private let key = SymmetricKey(size: .bits256)
+  private static let lifetime: Int64 = 60_000
+
+  static func accepts(_ input: AgentMcpJSONObject) -> Bool {
+    guard Set(input.keys).isSubset(of: ["mode", "evidence_id", "sha256", "offset"]),
+          input["mode"] == .string("evidence"),
+          let id = input["evidence_id"]?.strictStringValue, let digest = input["sha256"]?.strictStringValue,
+          isDigest(id), isDigest(digest), case .int(let offset) = input["offset"] ?? .int(0) else { return false }
+    return offset >= 0
+  }
+
+  static func digest(_ content: String) -> String {
+    SHA256.hash(data: Data(content.utf8)).map { String(format: "%02x", $0) }.joined()
+  }
+
+  func issue(content: String, binding: String, input: AgentMcpJSONObject, now: Int64) -> AgentMcpJSONObject? {
+    guard now >= 0, now <= Int64.max - Self.lifetime else { return nil }
+    let expires = now + Self.lifetime
+    let hash = Self.digest(content)
+    let tag = HMAC<SHA256>.authenticationCode(for: message(binding: binding, input: input, hash: hash, expires: expires),
+      using: key)
+    return ["receipt_id": .string("\(expires)." + Data(tag).base64URLEncodedString()), "content_sha256": .string(hash)]
+  }
+
+  func confirm(_ delivery: AgentMcpJSONObject, binding: String, input: AgentMcpJSONObject, now: Int64) -> String? {
+    guard Set(delivery.keys) == ["receipt_id", "content_sha256"],
+          let id = delivery["receipt_id"]?.strictStringValue, id.utf8.count <= 128,
+          let hash = delivery["content_sha256"]?.strictStringValue, Self.isDigest(hash), now >= 0 else { return nil }
+    let parts = id.split(separator: ".", omittingEmptySubsequences: false)
+    guard parts.count == 2, let expires = Int64(parts[0]), expires > now, expires - now <= Self.lifetime,
+          let tag = Data(base64URLEncoded: String(parts[1])), tag.count == 32,
+          HMAC<SHA256>.isValidAuthenticationCode(tag,
+            authenticating: message(binding: binding, input: input, hash: hash, expires: expires), using: key)
+    else { return nil }
+    return hash
+  }
+
+  private func message(binding: String, input: AgentMcpJSONObject, hash: String, expires: Int64) -> Data {
+    Data(AgentMcpJSONCodec.stringify(["contract": .string("ios-native-evidence-delivery.v1"),
+      "binding": .string(binding), "arguments": .object(input), "hash": .string(hash), "expires": .int(expires)]).utf8)
+  }
+
+  private static func isDigest(_ value: String) -> Bool {
+    value.utf8.count == 64 && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
+  }
+}
+
 protocol AgentDesktopReplyRecoveryPersisting: AnyObject {
   func loadDesktopReplyRecoveryState() throws -> Data?
   func writeDesktopReplyRecoveryState(_ data: Data) -> Bool

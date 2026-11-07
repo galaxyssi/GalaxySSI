@@ -288,15 +288,24 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(reopened.upsert(anotherRun))
     XCTAssertThrowsError(try reopened.recallCollaborationOriginal(selector, scope: scope(anotherRun, index: 0)))
 
-    let first = try reopened.recallCollaborationOriginal(selector, scope: reader)
+    let first = try reopened.recallCollaborationOriginal(selector, scope: reader, evidenceRead: .desktopPreview)
     XCTAssertEqual(first["source_reference"]?.objectValue?["origin"], .string("ios_native_tool"))
     XCTAssertEqual(first["source_reference"]?.objectValue?["status"], .string("rejected"))
     XCTAssertEqual(first["source_reference"]?.objectValue?["replayed"], .bool(true))
+    XCTAssertNil(first["host_read_coverage"])
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(selector, scope: reader,
+      evidenceRead: .desktopConfirm(contentHash: String(repeating: "0", count: 64))))
     var lastSelector = selector
     lastSelector["offset"] = .int(4_000)
     let last = try reopened.recallCollaborationOriginal(lastSelector, scope: reader)
     XCTAssertEqual(last["next_offset"], .null)
-    XCTAssertEqual(last["host_read_coverage"]?.objectValue?["first_missing_offset"], .int(2_000))
+    XCTAssertEqual(last["host_read_coverage"]?.objectValue?["first_missing_offset"], .int(0))
+    let deliveredHash = AgentDesktopNativeEvidenceDelivery.digest(first.string("content"))
+    let confirmed = try reopened.recallCollaborationOriginal(selector, scope: reader,
+      evidenceRead: .desktopConfirm(contentHash: deliveredHash))
+    XCTAssertEqual(confirmed["host_read_coverage"]?.objectValue?["first_missing_offset"], .int(2_000))
+    XCTAssertEqual(try open().recallCollaborationOriginal(selector, scope: reader,
+      evidenceRead: .desktopConfirm(contentHash: deliveredHash))["host_read_coverage"], confirmed["host_read_coverage"])
     var middleSelector = selector
     middleSelector["offset"] = .int(2_000)
     let middle = try open().recallCollaborationOriginal(middleSelector, scope: reader)
@@ -314,6 +323,28 @@ extension GalaxySSIStoreTests {
     reopened.removeResearchObjects(conversationId: team.conversationId)
     XCTAssertThrowsError(try reopened.recallCollaborationOriginal(selector, scope: reader))
     XCTAssertThrowsError(try reopened.recallCollaborationOriginal(selector, scope: scope(later, index: 0)))
+  }
+
+  func testDesktopNativeEvidenceReceiptBindsPageRouteAndProcess() throws {
+    let delivery = AgentDesktopNativeEvidenceDelivery()
+    let input: AgentMcpJSONObject = ["mode": .string("evidence"), "offset": .int(0),
+      "evidence_id": .string(String(repeating: "a", count: 64)), "sha256": .string(String(repeating: "b", count: 64))]
+    XCTAssertTrue(AgentDesktopNativeEvidenceDelivery.accepts(input))
+    let receipt = try XCTUnwrap(delivery.issue(content: "original page", binding: "route-a", input: input, now: 1_000))
+    let digest = AgentDesktopNativeEvidenceDelivery.digest("original page")
+    XCTAssertEqual(delivery.confirm(receipt, binding: "route-a", input: input, now: 2_000), digest)
+    XCTAssertEqual(delivery.confirm(receipt, binding: "route-a", input: input, now: 2_001), digest)
+    XCTAssertNil(delivery.confirm(receipt, binding: "route-b", input: input, now: 2_000))
+    XCTAssertNil(delivery.confirm(receipt, binding: "route-a", input: input, now: 61_000))
+    XCTAssertNil(AgentDesktopNativeEvidenceDelivery().confirm(receipt, binding: "route-a", input: input, now: 2_000))
+    var next = input
+    next["offset"] = .int(2_000)
+    XCTAssertNil(delivery.confirm(receipt, binding: "route-a", input: next, now: 2_000))
+    next["offset"] = .string("2000")
+    XCTAssertFalse(AgentDesktopNativeEvidenceDelivery.accepts(next))
+    var tampered = receipt
+    tampered["content_sha256"] = .string(String(repeating: "c", count: 64))
+    XCTAssertNil(delivery.confirm(tampered, binding: "route-a", input: input, now: 2_000))
   }
 
   func testCloudEvidenceReceiptIsScopedAndRejectsChangedReplay() throws {
