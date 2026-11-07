@@ -986,6 +986,7 @@
     A10000000000000000009B3B /* AgentManagedBrowserContinuationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B3B /* AgentManagedBrowserContinuationModels.swift */; };
     A10000000000000000009B3C /* AgentManagedBrowserContinuationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B3C /* AgentManagedBrowserContinuationStore.swift */; };
     A10000000000000000009B3D /* AgentManagedBrowserToolExecution.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B3D /* AgentManagedBrowserToolExecution.swift */; };
+    A1000000000000000000E351 /* AgentCollaborationEvidenceContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000E351 /* AgentCollaborationEvidenceContent.swift */; };
     A10000000000000000009B3E /* GalaxySSIManagedBrowserHandoffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B3E /* GalaxySSIManagedBrowserHandoffView.swift */; };
     A10000000000000000009B34 /* AgentTeamRecoveryRetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B34 /* AgentTeamRecoveryRetry.swift */; };
     A10000000000000000000F41 /* AgentCollaborationNumericTrial.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000F41 /* AgentCollaborationNumericTrial.swift */; };
@@ -2174,6 +2175,7 @@
     A20000000000000000009B3B /* AgentManagedBrowserContinuationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentManagedBrowserContinuationModels.swift; sourceTree = "<group>"; };
     A20000000000000000009B3C /* AgentManagedBrowserContinuationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentManagedBrowserContinuationStore.swift; sourceTree = "<group>"; };
     A20000000000000000009B3D /* AgentManagedBrowserToolExecution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentManagedBrowserToolExecution.swift; sourceTree = "<group>"; };
+    A2000000000000000000E351 /* AgentCollaborationEvidenceContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationEvidenceContent.swift; sourceTree = "<group>"; };
     A20000000000000000009B3E /* GalaxySSIManagedBrowserHandoffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIManagedBrowserHandoffView.swift; sourceTree = "<group>"; };
     A20000000000000000009B34 /* AgentTeamRecoveryRetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamRecoveryRetry.swift; sourceTree = "<group>"; };
     A20000000000000000000F41 /* AgentCollaborationNumericTrial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationNumericTrial.swift; sourceTree = "<group>"; };
@@ -2945,6 +2947,7 @@
         A20000000000000000009B3B /* AgentManagedBrowserContinuationModels.swift */,
         A20000000000000000009B3C /* AgentManagedBrowserContinuationStore.swift */,
         A20000000000000000009B3D /* AgentManagedBrowserToolExecution.swift */,
+        A2000000000000000000E351 /* AgentCollaborationEvidenceContent.swift */,
         A20000000000000000009B3E /* GalaxySSIManagedBrowserHandoffView.swift */,
         A20000000000000000009B34 /* AgentTeamRecoveryRetry.swift */,
         A20000000000000000000F41 /* AgentCollaborationNumericTrial.swift */,
@@ -4246,6 +4249,7 @@
         A10000000000000000009B3B /* AgentManagedBrowserContinuationModels.swift in Sources */,
         A10000000000000000009B3C /* AgentManagedBrowserContinuationStore.swift in Sources */,
         A10000000000000000009B3D /* AgentManagedBrowserToolExecution.swift in Sources */,
+        A1000000000000000000E351 /* AgentCollaborationEvidenceContent.swift in Sources */,
         A10000000000000000009B3E /* GalaxySSIManagedBrowserHandoffView.swift in Sources */,
         A10000000000000000009B34 /* AgentTeamRecoveryRetry.swift in Sources */,
         A10000000000000000000F41 /* AgentCollaborationNumericTrial.swift in Sources */,
