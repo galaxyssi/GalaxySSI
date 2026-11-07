@@ -36,6 +36,7 @@ enum GalaxySSIHealthCarePlan {
     let uncertainty: String
     let sources: [Source]
     let actions: [Action]
+    var target: GalaxySSIHealthCareTarget.Proposal?
   }
   struct Proposal: Codable, Equatable, Identifiable {
     let id: UUID
@@ -56,6 +57,7 @@ enum GalaxySSIHealthCarePlan {
     var state = State.pending
     var selected: Set<Int> = []
     var resolvedAt: Date?
+    var targetAccepted: Bool?
   }
   struct AdoptedAction: Codable, Equatable, Identifiable {
     let proposalID: UUID
@@ -63,6 +65,7 @@ enum GalaxySSIHealthCarePlan {
     let source: Source
     let confirmedAt: Date
     var outcome: GalaxySSIHealthCareFollowUp.Outcome?
+    var targetRevision: Int?
     var id: String { "\(proposalID.uuidString):\(action.id)" }
   }
 
@@ -77,17 +80,22 @@ enum GalaxySSIHealthCarePlan {
       ["type": "array", "items": items, "minItems": 1, "maxItems": 8]
     }
     let date = string(40, description: "ISO 8601 with an explicit offset, or empty if no review window applies.")
-    return object([
+    var envelope = object([
       "uncertainty": string(2_000, description: "Missing context, limitations and remaining uncertainty."),
       "sources": array(object(["title": string(300), "url": string(1_000, description: "Exact supplied HTTPS source URL."),
         "version": string(80), "applicability": string(2_000, description: "Population, applicability and limitations."),
         "evidence_id": string(36, description: "Exact ID from native_sources; reuse only with a different passage."),
         "quote": string(600, description: "Short original-language passage copied from the provided excerpt.")])),
-      "actions": array(object(["kind": ["type": "string", "enum": Kind.allCases.map(\.rawValue)],
+      "actions": ["type": "array", "minItems": 0, "maxItems": 8, "items": object([
+        "kind": ["type": "string", "enum": Kind.allCases.map(\.rawValue)],
         "description": string(1_000), "rationale": string(2_000, description: "Justify the step and any review window."),
         "source_index": ["type": "integer", "minimum": 0, "maximum": 7], "due_from": date, "due_until": date,
-        "applicability": GalaxySSIHealthCareApplicability.schema]))
+        "applicability": GalaxySSIHealthCareApplicability.schema])]
     ])
+    var properties = envelope["properties"] as? [String: Any] ?? [:]
+    properties["target"] = GalaxySSIHealthCareTarget.schema
+    envelope["properties"] = properties
+    return envelope
   }
 
   static func parse(_ args: AgentMcpJSONObject, evidence: [GalaxySSIHealthCareEvidence.Receipt], now: Date) throws -> Draft {
@@ -107,9 +115,9 @@ enum GalaxySSIHealthCarePlan {
       guard let parsed = formatter.date(from: value) else { throw invalid }
       return parsed
     }
-    guard Set(args.keys) == ["uncertainty", "sources", "actions"],
+    guard Set(args.keys).subtracting(["target"]) == ["uncertainty", "sources", "actions"],
           let rawSources = args["sources"]?.arrayValue, (1...8).contains(rawSources.count),
-          let rawActions = args["actions"]?.arrayValue, (1...8).contains(rawActions.count)
+          let rawActions = args["actions"]?.arrayValue, rawActions.count <= 8
     else { throw invalid }
     let sources = try rawSources.map { row -> Source in
       guard let item = row.objectValue, Set(item.keys) == ["title", "url", "version", "applicability", "evidence_id", "quote"],
@@ -143,7 +151,13 @@ enum GalaxySSIHealthCarePlan {
         rationale: text(item, "rationale", max: 2_000), sourceIndex: Int(source), dueFrom: from, dueUntil: until,
         applicability: GalaxySSIHealthCareApplicability.parse(review, kind: kind, sourceCount: sources.count))
     }
-    return try .init(uncertainty: text(args, "uncertainty", max: 2_000), sources: sources, actions: actions)
+    let target: GalaxySSIHealthCareTarget.Proposal?
+    if let value = args["target"], value != .null {
+      guard let body = value.objectValue else { throw invalid }
+      target = try GalaxySSIHealthCareTarget.parse(body, sourceCount: sources.count)
+    } else { target = nil }
+    guard !actions.isEmpty || target != nil else { throw invalid }
+    return try .init(uncertainty: text(args, "uncertainty", max: 2_000), sources: sources, actions: actions, target: target)
   }
 
   static func arguments(_ data: Data, style: GalaxySSICloudAPIStyle) throws -> AgentMcpJSONObject {

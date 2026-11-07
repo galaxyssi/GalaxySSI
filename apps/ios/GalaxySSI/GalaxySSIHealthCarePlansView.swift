@@ -71,6 +71,7 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
   @State private var valid = false
   @State private var visible = false
   @State private var checkedConcern: GalaxySSIHealthCare.Concern?
+  @State private var selectedTarget = false
   @State private var failed = false
   private var legacyPending: Bool { proposal.state == .pending && proposal.draft.sources.contains { $0.provenance == nil } }
 
@@ -113,7 +114,27 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
                 actionLabel(action)
                 if proposal.selected.contains(action.id) { Text(t("adopted", "Adopted")).font(.caption) }
               }
-              GalaxySSIHealthCareApplicabilityDetails(action: action, concern: checkedConcern)
+              GalaxySSIHealthCareApplicabilityDetails(review: action.applicability, concern: checkedConcern)
+            }
+          }
+          if let target = proposal.draft.target {
+            Section(GalaxySSIHealthCareTargetText.text("proposed", "Proposed individual target", language: language)) {
+              GalaxySSIHealthCareTargetSummary(component: target.component, bounds: target.bounds, unit: target.unit)
+              Text(target.rationale)
+              Text(String(format: t("numbered_source", "Source %lld"), Int64(target.sourceIndex) + 1))
+                .foregroundColor(.secondary)
+              GalaxySSIHealthCareApplicabilityDetails(review: target.applicability, concern: checkedConcern)
+              if canSelectTarget {
+                Toggle(GalaxySSIHealthCareTargetText.text("select", "Confirm this target", language: language),
+                  isOn: $selectedTarget)
+                Text(GalaxySSIHealthCareTargetText.text("user_approval", "User confirmation is not clinician approval.",
+                  language: language)).font(.caption).foregroundColor(.secondary)
+              } else if proposal.targetAccepted == true {
+                Text(GalaxySSIHealthCareTargetText.text("confirmed", "Confirmed by user", language: language))
+              } else if valid {
+                Text(GalaxySSIHealthCareTargetText.text("cannot_confirm", "Review the component, unit and applicability first.",
+                  language: language)).foregroundColor(.secondary)
+              }
             }
           }
         }
@@ -124,7 +145,8 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
             } else { Text(t("stale", "The measurement, concern or permission changed.")) }
           }
           if valid {
-            Button(t("accept", "Accept selected steps")) { resolve(selected) }.disabled(selected.isEmpty)
+            Button(t("accept_selection", "Confirm selection")) { resolve(selected, acceptTarget: selectedTarget) }
+              .disabled(selected.isEmpty && !selectedTarget)
             Text(t("not_scheduled", "Accepting steps does not schedule reminders.")).foregroundColor(.secondary)
           }
           Button(t("discard", "Discard draft"), role: .destructive) { resolve(nil) }
@@ -159,7 +181,7 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
     guard scene == .active, let archive = try? records.load(), archive.localCareAllowed == true,
           archive.localCarePlans?[proposal.id.uuidString] == proposal,
           archive.localCare?.current[proposal.metric.rawValue]?.id == proposal.concernID
-    else { visible = false; valid = false; checkedConcern = nil; selected = []; return }
+    else { visible = false; valid = false; checkedConcern = nil; selected = []; selectedTarget = false; return }
     visible = true
     checkedConcern = try? records.validateLocalCarePlanReview(proposal)
     valid = checkedConcern != nil
@@ -168,11 +190,17 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
         GalaxySSIHealthCareApplicability.canAdopt($0, concern: checkedConcern)
       }.map(\.id)))
     } else { selected = [] }
+    if !canSelectTarget { selectedTarget = false }
   }
 
-  private func resolve(_ selected: Set<Int>?) {
+  private var canSelectTarget: Bool {
+    guard valid, let target = proposal.draft.target, let checkedConcern else { return false }
+    return GalaxySSIHealthCareTarget.canConfirm(target, concern: checkedConcern)
+  }
+
+  private func resolve(_ selected: Set<Int>?, acceptTarget: Bool = false) {
     guard scene == .active, visible else { return }
-    do { try records.resolveLocalCarePlan(proposal, selected: selected); dismiss() }
+    do { try records.resolveLocalCarePlan(proposal, selected: selected, acceptTarget: acceptTarget); dismiss() }
     catch { failed = true; refresh() }
   }
   private func t(_ key: String, _ fallback: String) -> String { GalaxySSIHealthPlanText.string(key, fallback, language: language) }

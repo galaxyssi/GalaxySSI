@@ -6,6 +6,109 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  @MainActor
+  func testReviewedTargetIsSeparateAndInvalidatesOldReminderAnchors() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "target-fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-300), value: 110,
+      unitOverride: "mg/dL", referenceInterval: "70 - 99"))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.setHealthOnlinePermission(true)
+    try records.reconcileLocalCare(now: now)
+    func current() throws -> GalaxySSIHealthCare.Concern {
+      try XCTUnwrap(records.load().localCare?.current["glucose"])
+    }
+    let concernID = try current().id
+    _ = try records.openLocalCareDiscussion(id: concernID, metric: .glucose)
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    let quote = "This fictional source exists only to verify exact test provenance and is not clinical guidance."
+    let body = Data("<article><h1>Fixture</h1><p>\(quote) No real health data is present in this test.</p></article>".utf8)
+    let review: AgentMcpJSONObject = [
+      "mode": .string("INDIVIDUALIZED"), "checks": .array([.object(["field": .string("unit"),
+        "operator": .string("EQUALS"), "expected": .string("mg/dL"), "source_index": .int(0)])]),
+      "missing_information": .array([]), "conflicts": .array([])
+    ]
+    let action: AgentMcpJSONObject = ["kind": .string("RECHECK"), "description": .string("Fixture step"),
+      "rationale": .string("Synthetic review"), "source_index": .int(0), "due_from": .string(""),
+      "due_until": .string(""), "applicability": .object(review)]
+    let target: AgentMcpJSONObject = ["field": .string("value"), "low": .string("110"), "high": .string("120"),
+      "low_inclusive": .bool(false), "high_inclusive": .bool(true), "unit": .string("mg/dL"),
+      "rationale": .string("Synthetic boundary fixture"), "source_index": .int(0), "applicability": .object(review)]
+    var badBound = target
+    badBound["low"] = .string("1.1e2")
+    XCTAssertThrowsError(try GalaxySSIHealthCareTarget.parse(badBound, sourceCount: 1))
+    badBound = target
+    badBound["high"] = .string("110")
+    XCTAssertThrowsError(try GalaxySSIHealthCareTarget.parse(badBound, sourceCount: 1))
+    func saveDraft(_ proposed: AgentMcpJSONObject?, actionIncluded: Bool) throws -> GalaxySSIHealthCarePlan.Proposal {
+      var approval = try records.prepareLocalCareDiscussion(id: concernID, metric: .glucose, question: "Test draft",
+        destinationID: "provider", model: model, credential: "fixture-api-key", proposesPlan: true, now: now)
+      let source = GalaxySSIHealthCareEvidence.PublicSource.labResults
+      let evidence = try GalaxySSIHealthCareEvidence.fromNativeBody(body, source: source, binding: .init(approval),
+        retrievedAt: now, observedAt: now)
+      approval.evidence = [evidence]
+      let reference: AgentMcpJSONObject = ["title": .string("Fixture"), "url": .string(source.url.absoluteString),
+        "version": .string("2026"), "applicability": .string("Fixture only"), "evidence_id": .string(evidence.id.uuidString),
+        "quote": .string(quote)]
+      var arguments: AgentMcpJSONObject = ["uncertainty": .string("Synthetic"), "sources": .array([.object(reference)]),
+        "actions": .array(actionIncluded ? [.object(action)] : [])]
+      if let proposed { arguments["target"] = .object(proposed) }
+      try records.beginLocalCareDiscussionTurn(approval, now: now)
+      try records.saveLocalCarePlan(approval, arguments: arguments, now: now)
+      return try XCTUnwrap(records.load().localCarePlans?[approval.id.uuidString])
+    }
+    let oldPlan = try saveDraft(nil, actionIncluded: true)
+    try records.resolveLocalCarePlan(oldPlan, selected: [0], now: now)
+    let oldAction = try XCTUnwrap(current().adoptedActions?.first)
+    XCTAssertNil(oldAction.targetRevision)
+    try records.setReviewRemindersEnabled(true)
+    try records.setReviewNotificationPreferences(.init(enabled: true, quietStart: 0, quietEnd: 0))
+    func schedule(_ action: GalaxySSIHealthCarePlan.AdoptedAction) throws {
+      try records.scheduleLocalCareFollowUp(concernID: concernID, metric: .glucose, actionID: action.id,
+        replacing: nil, at: now.addingTimeInterval(3_600), now: now)
+    }
+    try schedule(oldAction)
+    let first = try saveDraft(target, actionIncluded: false)
+    XCTAssertNil(try current().target)
+    XCTAssertThrowsError(try records.resolveLocalCarePlan(first, selected: [], now: now))
+    try records.resolveLocalCarePlan(first, selected: [], acceptTarget: true, now: now)
+    let confirmed = try current()
+    XCTAssertEqual(confirmed.targetRevision, 1)
+    XCTAssertEqual(confirmed.adoptedActions, [oldAction])
+    XCTAssertEqual(confirmed.stage, .waitingResults)
+    XCTAssertEqual(records.localCareTargetComparison(confirmed, now: now), .below)
+    XCTAssertNil(try records.load().localCareFollowUps?[oldAction.id])
+    XCTAssertThrowsError(try schedule(oldAction))
+
+    var inclusive = target
+    inclusive["low_inclusive"] = .bool(true)
+    let replacement = try saveDraft(inclusive, actionIncluded: true)
+    try records.resolveLocalCarePlan(replacement, selected: [0], acceptTarget: true, now: now)
+    let replaced = try current()
+    let newAction = try XCTUnwrap(replaced.adoptedActions?.last)
+    XCTAssertEqual(newAction.targetRevision, 2)
+    XCTAssertEqual(records.localCareTargetComparison(replaced, now: now), .within)
+    XCTAssertEqual(replaced.stage, .waitingResults)
+    try schedule(newAction)
+    try records.revokeLocalCareTarget(replaced, now: now)
+    XCTAssertNil(try current().target)
+    XCTAssertEqual(try current().targetRevision, 3)
+    XCTAssertNil(try records.load().localCareFollowUps?[newAction.id])
+    XCTAssertThrowsError(try schedule(newAction))
+    XCTAssertTrue(try records.localCareHistory(concernID).contains { $0.target?.numeric != nil })
+
+    let fresh = try saveDraft(inclusive, actionIncluded: false)
+    try records.resolveLocalCarePlan(fresh, selected: [], acceptTarget: true, now: now)
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-30), value: 112,
+      unitOverride: "mg/dL", referenceInterval: "70 - 99"))
+    try records.reconcileLocalCare(now: now)
+    XCTAssertEqual(records.localCareTargetComparison(try current(), now: now), .reviewRequired)
+    XCTAssertEqual(try current().stage, .reassess)
+  }
+
   func testRecordedBloodPressureWarningUsesEitherComponentWithoutConversionRounding() throws {
     let policy = GalaxySSIHealthCarePriority.self
     func reading(_ top: String, _ bottom: String, unit: String = "mmHg") throws -> GalaxySSIHealthReading {

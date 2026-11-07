@@ -67,16 +67,16 @@ struct GalaxySSIHealthCareContextEditor: View {
 
 struct GalaxySSIHealthCareApplicabilityDetails: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
-  let action: GalaxySSIHealthCarePlan.Action
+  let review: GalaxySSIHealthCareApplicability.Review?
   let concern: GalaxySSIHealthCare.Concern?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
       if let concern {
-        let status = GalaxySSIHealthCareApplicability.status(action.applicability, concern: concern)
+        let status = GalaxySSIHealthCareApplicability.status(review, concern: concern)
         Text(t("status." + status.rawValue, statusLabel(status))).font(.caption.weight(.semibold))
       }
-      if let review = action.applicability {
+      if let review {
         ForEach(review.checks) { check in
           let field = GalaxySSIHealthCareApplicabilityText.field(check.field, language: language)
           let symbol = check.comparison == .atLeast ? ">=" : check.comparison == .atMost ? "<=" : "="

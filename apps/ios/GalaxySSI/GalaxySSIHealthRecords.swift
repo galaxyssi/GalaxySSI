@@ -624,7 +624,8 @@ struct GalaxySSIHealthRecords {
   }
 
   func resolveLocalCarePlan(_ proposal: GalaxySSIHealthCarePlan.Proposal, selected: Set<Int>?,
-                            now: Date = Date()) throws {
+                            acceptTarget: Bool = false, now: Date = Date()) throws {
+    guard selected != nil || !acceptTarget else { throw Failure.invalid }
     var archive = try load()
     guard archive.localCareAllowed == true,
           var ledger = archive.localCare, var current = ledger.current[proposal.metric.rawValue],
@@ -638,17 +639,32 @@ struct GalaxySSIHealthRecords {
             archive.healthOnlinePermission == saved.onlinePermission,
             archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id == saved.carePermission,
             Self.localCarePlanEvidenceMatches(saved, archive: archive, owner: owner),
-            !selected.isEmpty, selected.isSubset(of: Set(saved.draft.actions.map(\.id))) else { throw Failure.stale }
+            !selected.isEmpty || acceptTarget,
+            selected.isSubset(of: Set(saved.draft.actions.map(\.id))) else { throw Failure.stale }
       let actions = saved.draft.actions.filter { selected.contains($0.id) }
       guard actions.allSatisfy({ saved.draft.sources.indices.contains($0.sourceIndex) &&
         GalaxySSIHealthCareApplicability.canAdopt($0, concern: checked) &&
         $0.dueUntil.map { $0 >= now } != false }) else { throw Failure.stale }
       var adopted = current.adoptedActions ?? []
       guard !adopted.contains(where: { $0.proposalID == saved.id }) else { throw Failure.stale }
+      if acceptTarget {
+        guard let draft = saved.draft.target, saved.draft.sources.indices.contains(draft.sourceIndex),
+              GalaxySSIHealthCareTarget.canConfirm(draft, concern: checked),
+              (current.targetRevision ?? 0) < Int.max else { throw Failure.stale }
+        let source = saved.draft.sources[draft.sourceIndex]
+        current.targetRevision = (current.targetRevision ?? 0) + 1
+        current.target = try .init(value: draft.bounds.description + " " + draft.unit,
+          source: source.title + "\n" + source.url.absoluteString, rationale: draft.rationale, confirmedBy: "user",
+          confirmedAt: now, numeric: .init(proposalID: saved.id, component: draft.component, bounds: draft.bounds,
+            unit: draft.unit, source: source, basis: GalaxySSIHealthCareTarget.basis(checked)))
+        saved.targetAccepted = true
+      }
       adopted += actions.map { .init(proposalID: saved.id, action: $0, source: saved.draft.sources[$0.sourceIndex],
-        confirmedAt: now) }
-      current.adoptedActions = adopted
-      current.stage = actions.contains(where: { $0.kind == .recheck }) ? .waitingResults : .reviewPlan
+        confirmedAt: now, targetRevision: current.targetRevision) }
+      if !actions.isEmpty {
+        current.adoptedActions = adopted
+        current.stage = actions.contains(where: { $0.kind == .recheck }) ? .waitingResults : .reviewPlan
+      }
       current.revision += 1
       current.updatedAt = max(current.updatedAt, now)
       ledger.publish(current)
@@ -778,6 +794,7 @@ struct GalaxySSIHealthRecords {
           let concern = archive.localCare?.current[metric.rawValue], concern.id == concernID,
           concern.stage != .paused, concern.stage != .closed, concern.assessment.record != nil,
           let adopted = concern.adoptedActions?.first(where: { $0.id == actionID && $0.outcome == nil }),
+          (adopted.targetRevision ?? 0) == (concern.targetRevision ?? 0),
           let plan = archive.localCarePlans?[adopted.proposalID.uuidString], plan.concernID == concernID,
           plan.state == .accepted, plan.selected.contains(adopted.action.id),
           archive.healthOnlinePermission == plan.onlinePermission,
@@ -849,8 +866,37 @@ struct GalaxySSIHealthRecords {
   func setLocalCareTarget(_ concern: GalaxySSIHealthCare.Concern, target: GalaxySSIHealthCare.Target) throws {
     guard [target.value, target.source, target.rationale, target.confirmedBy].allSatisfy({
       !$0.isBlank && $0.utf8.count <= 1_024
-    }), target.confirmedAt.timeIntervalSinceReferenceDate.isFinite else { throw Failure.invalid }
-    try updateLocalCare(concern, now: target.confirmedAt) { current, _ in current.target = target }
+    }), target.confirmedAt.timeIntervalSinceReferenceDate.isFinite, target.numeric == nil else { throw Failure.invalid }
+    try updateLocalCare(concern, now: target.confirmedAt) { current, _ in
+      guard current.target?.numeric == nil, (current.targetRevision ?? 0) < Int.max else { throw Failure.stale }
+      guard current.target != target else { return }
+      current.targetRevision = (current.targetRevision ?? 0) + 1
+      current.target = target
+    }
+  }
+
+  func revokeLocalCareTarget(_ concern: GalaxySSIHealthCare.Concern, now: Date = Date()) throws {
+    var archive = try load()
+    guard archive.localCareAllowed == true, var ledger = archive.localCare,
+          var current = ledger.current[concern.metric.rawValue], current == concern, current.target != nil,
+          current.revision < Int.max, (current.targetRevision ?? 0) < Int.max else { throw Failure.stale }
+    current.targetRevision = (current.targetRevision ?? 0) + 1
+    current.target = nil
+    if current.stage != .paused && current.stage != .closed { current.stage = .reassess }
+    current.revision += 1
+    current.updatedAt = max(current.updatedAt, now)
+    ledger.publish(current)
+    archive.localCare = ledger
+    try persist(archive)
+  }
+
+  func localCareTargetComparison(_ concern: GalaxySSIHealthCare.Concern, now: Date = Date())
+      -> GalaxySSIHealthCareTarget.Comparison {
+    guard let archive = try? load(), archive.localCareAllowed == true,
+          archive.localCare?.current[concern.metric.rawValue] == concern else { return .reviewRequired }
+    let readings = archive.current.filter { $0.metric == concern.metric && $0.isValid && $0.measuredAt <= now }
+    guard GalaxySSIHealthCare.assess(readings, context: concern.context) == concern.assessment else { return .reviewRequired }
+    return GalaxySSIHealthCareTarget.comparison(concern)
   }
 
   func deleteLocalCare(_ concern: GalaxySSIHealthCare.Concern) throws {

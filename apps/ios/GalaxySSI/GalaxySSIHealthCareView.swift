@@ -187,6 +187,8 @@ private struct GalaxySSIHealthCareDetail: View {
   @State private var confirmedBy = ""
   @State private var failed = false
   @State private var confirmingDelete = false
+  @State private var confirmingRevokeTarget = false
+  @State private var targetComparison = GalaxySSIHealthCareTarget.Comparison.reviewRequired
 
   var body: some View {
     List {
@@ -227,26 +229,7 @@ private struct GalaxySSIHealthCareDetail: View {
             Text("\(NSDecimalNumber(decimal: baseline.low).stringValue) - \(NSDecimalNumber(decimal: baseline.high).stringValue) \(concern.assessment.unit)")
           } else { Text(t("none", "Not recorded")) }
         }
-        Section(t("target", "Confirmed individual target")) {
-          if let target = concern.target {
-            Text(target.value)
-            Text(target.source)
-            Text(target.rationale)
-            Text(target.confirmedBy)
-            Text(target.confirmedAt, style: .date)
-          }
-          TextField(t("target", "Confirmed individual target"), text: $targetValue)
-          TextField(t("target_source", "Target source"), text: $targetSource)
-          TextField(t("reason", "Reason"), text: $rationale)
-          TextField(t("confirmed_by", "Confirmed by"), text: $confirmedBy)
-          Button(t("save_target", "Save confirmed target")) {
-            perform {
-              try records.setLocalCareTarget(concern, target: .init(value: targetValue, source: targetSource,
-                rationale: rationale, confirmedBy: confirmedBy, confirmedAt: Date()))
-              targetValue = ""; targetSource = ""; rationale = ""; confirmedBy = ""
-            }
-          }.disabled([targetValue, targetSource, rationale, confirmedBy].contains(where: \.isBlank))
-        }
+        targetSection(concern)
         Section(t("follow_up", "Improvement and follow-up")) {
           if let note = concern.reviewNote { Text(note) }
           Picker(t("stage", "Review status"), selection: $stage) {
@@ -265,6 +248,9 @@ private struct GalaxySSIHealthCareDetail: View {
               Text(GalaxySSIHealthCareText.stage(version.stage, language: language))
               Text(version.updatedAt, style: .date).foregroundColor(.secondary)
               if let note = version.reviewNote { Text(note).font(.caption) }
+              if let target = version.target {
+                Text(t("target", "Confirmed individual target") + ": " + target.value).font(.caption)
+              }
             }
           }
           if hasMore { Button(t("more", "Show more")) { loadHistory(append: true) } }
@@ -286,18 +272,65 @@ private struct GalaxySSIHealthCareDetail: View {
         if let concern { perform { try records.deleteLocalCare(concern); dismiss() } }
       }
     }
+    .alert(targetText("revoke", "Revoke target"), isPresented: $confirmingRevokeTarget) {
+      Button(targetText("revoke", "Revoke target"), role: .destructive) {
+        if let concern { perform { try records.revokeLocalCareTarget(concern) } }
+      }
+      Button(targetText("cancel", "Cancel"), role: .cancel) {}
+    } message: {
+      Text(targetText("revoke_message", "History stays available. Reminders bound to the old target are cancelled."))
+    }
+  }
+
+  private func targetSection(_ concern: GalaxySSIHealthCare.Concern) -> some View {
+    Section(t("target", "Confirmed individual target")) {
+      if let target = concern.target {
+        if let numeric = target.numeric {
+          GalaxySSIHealthCareTargetSummary(component: numeric.component, bounds: numeric.bounds, unit: numeric.unit)
+          Text(targetText("user_approval", "User confirmation is not clinician approval.")).foregroundColor(.secondary)
+          Text(GalaxySSIHealthCareTargetText.comparison(targetComparison, language: language))
+          Text(numeric.source.title)
+          if let proof = numeric.source.provenance { Text(proof.quote).font(.caption).textSelection(.enabled) }
+        } else {
+          Text(target.value)
+          Text(target.source)
+          Text(target.confirmedBy)
+        }
+        Text(target.rationale)
+        Text(target.confirmedAt, style: .date)
+        Button(targetText("revoke", "Revoke target"), role: .destructive) { confirmingRevokeTarget = true }
+      } else {
+        TextField(targetText("manual_note", "Personal target note"), text: $targetValue)
+        TextField(t("target_source", "Target source"), text: $targetSource)
+        TextField(t("reason", "Reason"), text: $rationale)
+        TextField(t("confirmed_by", "Confirmed by"), text: $confirmedBy)
+        Button(targetText("save_note", "Save target note")) {
+          perform {
+            try records.setLocalCareTarget(concern, target: .init(value: targetValue, source: targetSource,
+              rationale: rationale, confirmedBy: confirmedBy, confirmedAt: Date()))
+            targetValue = ""; targetSource = ""; rationale = ""; confirmedBy = ""
+          }
+        }.disabled([targetValue, targetSource, rationale, confirmedBy].contains(where: \.isBlank))
+      }
+    }
   }
 
   private func reload() {
     guard scene == .active, let archive = try? records.load(), archive.localCareAllowed == true,
           let current = archive.localCare?.current[metric.rawValue], current.id == id else {
       concern = nil; history = []; measurement = nil; reason = ""; targetValue = ""; targetSource = ""
-      rationale = ""; confirmedBy = ""; confirmingDelete = false
+      rationale = ""; confirmedBy = ""; confirmingDelete = false; confirmingRevokeTarget = false
+      targetComparison = .reviewRequired
       return
     }
     concern = current
+    targetComparison = current.target?.numeric == nil ? .reviewRequired : records.localCareTargetComparison(current)
     measurement = archive.current.first { GalaxySSIHealthCare.Record($0) == current.assessment.record }
     loadHistory(append: false)
+  }
+
+  private func targetText(_ key: String, _ fallback: String) -> String {
+    GalaxySSIHealthCareTargetText.text(key, fallback, language: language)
   }
 
   private func loadHistory(append: Bool) {
