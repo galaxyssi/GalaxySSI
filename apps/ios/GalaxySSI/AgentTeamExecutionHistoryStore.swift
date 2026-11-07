@@ -156,6 +156,7 @@ final class AgentTeamExecutionHistoryStore {
                   replacement.sourceMessageId == member.sourceMessageId,
                   replacement.dispatchCheckpoint == member.dispatchCheckpoint,
                   replacement.dispatchDependencyMemberIds == member.dispatchDependencyMemberIds,
+                  replacement.dispatchAllowsSavedToolTest == member.dispatchAllowsSavedToolTest,
                   replacement.dispatchResourceObservation == member.dispatchResourceObservation else {
               throw AgentTeamHistoryDatabase.Failure.stale
             }
@@ -2033,6 +2034,66 @@ final class AgentTeamExecutionHistoryStore {
     _ = try? access { database in
       try database.removeResearchRecords(conversationId: conversationId)
       try database.insertResearchRecord(true, conversationId: conversationId, key: "native-evidence-revoked", revision: 0)
+    }
+  }
+
+  func updateSavedToolExecution(_ operation: AgentCollaborationSavedToolExecution.Operation,
+                                scope: AgentCollaborationSavedToolExecution.Scope,
+                                allowAdmission: Bool = true,
+                                process: String = AgentCollaborationSavedToolExecution.processID,
+                                now: Int64 = AgentControlPlaneClock.nowMillis()) throws
+    -> AgentCollaborationSavedToolExecution.Outcome {
+    try access { database in
+      let assignment = scope.assignment
+      guard let team = try database.snapshots(runId: assignment.runId).first,
+            team.state == .running, team.conversationId == assignment.conversationId, team.taskId == assignment.turnId,
+            team.members.contains(where: { $0.memberId == assignment.memberId && $0.sourceMessageId == assignment.sourceId &&
+              $0.deliveryMode != .ignore && !$0.status.isTerminal && $0.dispatchAllowsSavedToolTest == true &&
+              ($0.dispatchCheckpoint == .dispatching || $0.dispatchCheckpoint == .accepted) }),
+            try database.researchRecord(Bool.self, conversationId: assignment.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let key = scope.key(operation.id)
+      let existing = try database.researchRecord(AgentCollaborationSavedToolExecution.Record.self,
+        conversationId: assignment.conversationId, key: key, revision: 0)
+      let outcome = try AgentCollaborationSavedToolExecution.apply(operation, scope: scope,
+        existing: existing, process: process, now: now, allowAdmission: allowAdmission)
+      if let record = outcome.record, record != existing {
+        if existing != nil { try database.removeResearchRecord(conversationId: assignment.conversationId, key: key) }
+        try database.insertResearchRecord(record, conversationId: assignment.conversationId, key: key, revision: 0)
+      }
+      return outcome
+    }
+  }
+
+  func prepareSavedToolTest(_ reference: AgentCollaborationResearchReference, timeoutMillis: Int64,
+                            scope: AgentCollaborationToolEvidenceScope) throws -> AgentCollaborationSavedToolTest.Prepared {
+    try access { database in
+      guard let team = try database.snapshots(runId: scope.runId).first,
+            team.state == .running, team.conversationId == scope.conversationId, team.taskId == scope.turnId,
+            let member = team.members.first(where: { $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId }),
+            member.deliveryMode != .ignore, !member.status.isTerminal, member.dispatchAllowsSavedToolTest == true,
+            member.dispatchCheckpoint == .dispatching || member.dispatchCheckpoint == .accepted,
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true else { throw AgentTeamHistoryDatabase.Failure.stale }
+      func current(_ ref: AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision {
+        guard let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                conversationId: scope.conversationId, key: "object:" + ref.objectId),
+              record.reference == ref else { throw AgentTeamHistoryDatabase.Failure.stale }
+        if record.turnId == scope.turnId {
+          guard record.runId == scope.runId, (record.authorId == scope.memberId && record.sourceId == scope.sourceId) ||
+            (member.dispatchDependencyMemberIds?.contains(record.authorId) == true &&
+              team.members.contains(where: { $0.memberId == record.authorId && $0.sourceMessageId == record.sourceId &&
+                $0.deliveryMode != .ignore && $0.status.isTerminal })) else { throw AgentTeamHistoryDatabase.Failure.stale }
+        }
+        return record
+      }
+      let plan = try current(reference)
+      guard plan.draft.kind == .toolTestPlan,
+            let test = plan.draft.body["tool_test_plan"]?.objectValue,
+            let tool = AgentCollaborationSavedToolTest.reference(test["executable_tool"]),
+            let prepared = AgentCollaborationSavedToolTest.prepare(plan: plan, tool: try current(tool),
+              timeoutMillis: timeoutMillis) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      return prepared
     }
   }
 

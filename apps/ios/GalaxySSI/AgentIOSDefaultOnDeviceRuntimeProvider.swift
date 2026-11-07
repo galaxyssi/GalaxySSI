@@ -772,15 +772,16 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
         message: availability.reason.ifBlank(runtimeSetupReason())
       )
     }
-    if let readinessFailure = brokerReadinessFailure(invocation) {
-      return readinessFailure
-    }
     do {
-      let output = try broker.invoke(
-        operation: .execute,
+      guard !invocation.isCancellationRequested else { throw AgentIOSRuntimeBrokerError.executionCancelled }
+      if let readinessFailure = brokerReadinessFailure(invocation) {
+        return readinessFailure
+      }
+      let output = try broker.execute(
         input: input,
         context: invocation.context,
-        deadlineEpochMillis: invocation.deadlineEpochMillis
+        deadlineEpochMillis: invocation.deadlineEpochMillis,
+        cancellationRequested: { invocation.isCancellationRequested }
       )
       return AgentNativeToolExecutionResult.success(
         output: output,

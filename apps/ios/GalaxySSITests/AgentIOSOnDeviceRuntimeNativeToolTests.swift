@@ -509,6 +509,61 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(provider.availability(operation: .execute).status, .available)
   }
 
+  func testDefaultRuntimeProviderForwardsCancellationToTheBroker() throws {
+    final class Broker: AgentIOSRuntimeBrokerProviding {
+      let implementationId = "cancellable-runtime-broker"
+      var requested = false
+      var probes = 0
+      var executions = 0
+
+      func availability() -> AgentNativeToolAvailability { .available }
+
+      func invoke(
+        operation: AgentIOSOnDeviceRuntimeToolOperation,
+        input: AgentMcpJSONObject,
+        context: AgentNativeToolInvocationContext,
+        deadlineEpochMillis: Int64
+      ) throws -> AgentMcpJSONObject {
+        XCTAssertEqual(operation, .status)
+        probes += 1
+        return ["backend_ready": .bool(true), "linux_base_version": .string("1.3.9")]
+      }
+
+      func execute(
+        input: AgentMcpJSONObject,
+        context: AgentNativeToolInvocationContext,
+        deadlineEpochMillis: Int64,
+        cancellationRequested: () -> Bool
+      ) throws -> AgentMcpJSONObject {
+        executions += 1
+        XCTAssertFalse(cancellationRequested())
+        requested = true
+        XCTAssertTrue(cancellationRequested())
+        throw AgentIOSRuntimeBrokerError.executionCancelled
+      }
+    }
+
+    let root = try temporaryDirectory("ios-runtime-cancellation")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let broker = Broker()
+    let provider = AgentIOSDefaultOnDeviceRuntimeProvider(runtimeRootURL: root, broker: broker)
+    let invocation = AgentNativeToolInvocation(
+      descriptor: try AgentNativeToolDescriptor(
+        id: "ios.runtime.execute", version: "1.0.0", title: "Execute runtime command",
+        description: "Executes a Linux command through the paired runtime broker.", location: .phone, risk: .high
+      ),
+      input: [:], context: AgentNativeToolInvocationContext(invocationId: "cancel-runtime"),
+      startedAtEpochMillis: 0, deadlineEpochMillis: 100, nowMillis: { 0 },
+      cancellationRequested: { broker.requested }, progressReporter: { _, _ in }
+    )
+    let running = provider.invoke(operation: .execute, input: [:], invocation: invocation)
+    XCTAssertEqual(running.error?.code, "runtime_execution_cancelled")
+    let alreadyCancelled = provider.invoke(operation: .execute, input: [:], invocation: invocation)
+    XCTAssertEqual(alreadyCancelled.error?.code, "runtime_execution_cancelled")
+    XCTAssertEqual(broker.probes, 1)
+    XCTAssertEqual(broker.executions, 1)
+  }
+
   func testDefaultRuntimeProviderUsesCachedLifecycleForStatusWithoutBrokerProbe() throws {
     final class ProbeCountingBroker: AgentIOSRuntimeBrokerProviding {
       var implementationId: String { "probe-counting-runtime-broker" }

@@ -8,6 +8,7 @@ struct AgentCollaborationNativeToolObservation: Codable {
   var sourceId: String
   var input: AgentMcpJSONObject
   var result: AgentNativeToolResult
+  var evaluation: AgentMcpJSONObject? = nil
 }
 
 struct AgentCollaborationToolEvidenceScope: Codable, Equatable {
@@ -1070,6 +1071,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
   var dispatchDependencyMemberIds: [String]? = nil
   var dispatchResourceObservation: AgentMcpJSONObject? = nil
   var recruitmentTemplateID: UUID? = nil
+  var dispatchAllowsSavedToolTest: Bool? = nil
   var displayName: String?
   var researchStage: String?
   var executionStartedAtMillis: Int64?
@@ -1126,6 +1128,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     case dispatchDependencyMemberIds = "dispatch_dependency_member_ids"
     case dispatchResourceObservation = "dispatch_resource_observation"
     case recruitmentTemplateID = "recruitment_template_id"
+    case dispatchAllowsSavedToolTest = "dispatch_allows_saved_tool_test"
     case displayName = "display_name"
     case researchStage = "research_stage"
     case executionStartedAtMillis = "execution_started_at_millis"
@@ -1153,6 +1156,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     )
     dispatchDependencyMemberIds = try container.decodeIfPresent([String].self, forKey: .dispatchDependencyMemberIds)
     dispatchResourceObservation = try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .dispatchResourceObservation)
+    dispatchAllowsSavedToolTest = try container.decodeIfPresent(Bool.self, forKey: .dispatchAllowsSavedToolTest)
   }
 
   func elapsedExecutionMillis(now: Int64, team: AgentTeamExecutionSnapshot) -> Int64? {

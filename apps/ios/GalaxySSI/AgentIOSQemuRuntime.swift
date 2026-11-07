@@ -577,8 +577,10 @@ private final class AgentIOSQemuGuestClient {
     input: AgentMcpJSONObject,
     context: AgentNativeToolInvocationContext,
     workspacePath: String,
-    deadlineEpochMillis: Int64
+    deadlineEpochMillis: Int64,
+    cancellationRequested: () -> Bool = { false }
   ) throws -> AgentMcpJSONObject {
+    guard !cancellationRequested() else { throw AgentIOSRuntimeBrokerError.executionCancelled }
     let connection = try openConnection()
     defer { connection.cancel() }
     let hello = try handshake(connection: connection, deadlineEpochMillis: deadlineEpochMillis)
@@ -591,15 +593,62 @@ private final class AgentIOSQemuGuestClient {
     }
     let requestId = "execute-\(UUID().uuidString)"
     let payload = try executePayload(input: input, context: context, workspacePath: workspacePath)
-    try send(
-      envelope(requestId: requestId, type: "execute", sequence: 1, payload: payload),
-      through: connection,
-      timeout: timeout(deadlineEpochMillis: deadlineEpochMillis, maximum: 30 * 60_000)
-    )
-    var sequence: Int64 = 0
     let deadline = timeout(deadlineEpochMillis: deadlineEpochMillis, maximum: 30 * 60_000)
+    guard !cancellationRequested() else { throw AgentIOSRuntimeBrokerError.executionCancelled }
+    var cancelDeadline: DispatchTime?
+    func checkpoint() throws -> DispatchTime {
+      if let cancelDeadline { return cancelDeadline }
+      guard cancellationRequested() else { return deadline }
+      guard hello["capabilities"]?.arrayValue?.contains(.string("runtime.cancel")) == true else {
+        throw executionOutcomeUnknown(cancellationRequested: true)
+      }
+      let acknowledgementDeadline = DispatchTime.now() + .seconds(5)
+      cancelDeadline = acknowledgementDeadline
+      try send(
+        envelope(requestId: requestId, type: "cancel", sequence: 2, payload: [:]),
+        through: connection,
+        timeout: acknowledgementDeadline
+      )
+      return acknowledgementDeadline
+    }
+
+    do {
+      try send(
+        envelope(requestId: requestId, type: "execute", sequence: 1, payload: payload),
+        through: connection,
+        timeout: deadline
+      )
+      return try executionResult(connection: connection, context: context, requestId: requestId, checkpoint: checkpoint)
+    } catch let error as AgentIOSRuntimeBrokerError {
+      switch error {
+      case .timeout, .transport, .malformedResponse, .authenticationFailed:
+        // The execute frame may have reached the guest. Do not use the boot retry path.
+        throw executionOutcomeUnknown(cancellationRequested: cancelDeadline != nil || cancellationRequested())
+      default:
+        throw error
+      }
+    }
+  }
+
+  private func executionOutcomeUnknown(cancellationRequested: Bool) -> AgentIOSRuntimeBrokerError {
+    .remote(
+      code: cancellationRequested ? "runtime_cancellation_unconfirmed" : "runtime_execution_outcome_unknown",
+      message: cancellationRequested
+        ? "The embedded Debian guest did not confirm that execution stopped."
+        : "The embedded Debian guest did not confirm the execution outcome.",
+      retryable: false
+    )
+  }
+
+  private func executionResult(
+    connection: NWConnection,
+    context: AgentNativeToolInvocationContext,
+    requestId: String,
+    checkpoint: () throws -> DispatchTime
+  ) throws -> AgentMcpJSONObject {
+    var sequence: Int64 = 0
     while true {
-      let response = try receive(through: connection, timeout: deadline)
+      let response = try receive(through: connection, checkpoint: checkpoint)
       try verify(response)
       guard response["request_id"]?.stringValue == requestId else { continue }
       let currentSequence = response["sequence"]?.intValue ?? 0
@@ -617,11 +666,7 @@ private final class AgentIOSQemuGuestClient {
           "backend": .string("ios_app_sandbox_qemu_tci")
         ]) { current, _ in current }
       case "cancelled":
-        throw AgentIOSRuntimeBrokerError.remote(
-          code: "runtime_execution_cancelled",
-          message: "The embedded Debian execution was cancelled.",
-          retryable: true
-        )
+        throw AgentIOSRuntimeBrokerError.executionCancelled
       case "error":
         throw AgentIOSRuntimeBrokerError.remote(
           code: "runtime_guest_execution_failed",
@@ -649,10 +694,8 @@ private final class AgentIOSQemuGuestClient {
       through: connection,
       timeout: timeout(deadlineEpochMillis: deadlineEpochMillis, maximum: 15_000)
     )
-    let response = try receive(
-      through: connection,
-      timeout: timeout(deadlineEpochMillis: deadlineEpochMillis, maximum: 15_000)
-    )
+    let deadline = timeout(deadlineEpochMillis: deadlineEpochMillis, maximum: 15_000)
+    let response = try receive(through: connection, checkpoint: { deadline })
     try verify(response)
     guard response["request_id"]?.stringValue == requestId,
           response["type"]?.stringValue == "hello_ack",
@@ -798,18 +841,25 @@ private final class AgentIOSQemuGuestClient {
     if let failure { throw AgentIOSRuntimeBrokerError.transport(failure.localizedDescription) }
   }
 
-  private func receive(through connection: NWConnection, timeout: DispatchTime) throws -> AgentMcpJSONObject {
-    let header = try receive(exactly: 4, through: connection, timeout: timeout)
+  private func receive(
+    through connection: NWConnection,
+    checkpoint: () throws -> DispatchTime
+  ) throws -> AgentMcpJSONObject {
+    let header = try receive(exactly: 4, through: connection, checkpoint: checkpoint)
     let length = header.reduce(0) { ($0 << 8) | Int($1) }
     guard (1...Self.maximumFrameBytes).contains(length) else { throw AgentIOSRuntimeBrokerError.malformedResponse }
-    let frame = try receive(exactly: length, through: connection, timeout: timeout)
+    let frame = try receive(exactly: length, through: connection, checkpoint: checkpoint)
     guard let envelope = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: frame) else {
       throw AgentIOSRuntimeBrokerError.malformedResponse
     }
     return envelope
   }
 
-  private func receive(exactly length: Int, through connection: NWConnection, timeout: DispatchTime) throws -> Data {
+  private func receive(
+    exactly length: Int,
+    through connection: NWConnection,
+    checkpoint: () throws -> DispatchTime
+  ) throws -> Data {
     let signal = DispatchSemaphore(value: 0)
     var received: Data?
     var failure: NWError?
@@ -818,7 +868,12 @@ private final class AgentIOSQemuGuestClient {
       failure = error
       signal.signal()
     }
-    guard signal.wait(timeout: timeout) == .success else { throw AgentIOSRuntimeBrokerError.timeout }
+    while signal.wait(timeout: .now()) != .success {
+      let deadline = try checkpoint()
+      let poll = DispatchTime.now() + .milliseconds(100)
+      if signal.wait(timeout: min(poll, deadline)) == .success { break }
+      if DispatchTime.now() >= deadline { throw AgentIOSRuntimeBrokerError.timeout }
+    }
     if let failure { throw AgentIOSRuntimeBrokerError.transport(failure.localizedDescription) }
     guard let received, received.count == length else { throw AgentIOSRuntimeBrokerError.malformedResponse }
     return received
@@ -866,6 +921,32 @@ struct AgentIOSInAppQemuRuntimeBroker: AgentIOSRuntimeBrokerProviding {
     context: AgentNativeToolInvocationContext,
     deadlineEpochMillis: Int64
   ) throws -> AgentMcpJSONObject {
+    try invoke(
+      operation: operation, input: input, context: context,
+      deadlineEpochMillis: deadlineEpochMillis, cancellationRequested: { false }
+    )
+  }
+
+  func execute(
+    input: AgentMcpJSONObject,
+    context: AgentNativeToolInvocationContext,
+    deadlineEpochMillis: Int64,
+    cancellationRequested: () -> Bool
+  ) throws -> AgentMcpJSONObject {
+    try invoke(
+      operation: .execute, input: input, context: context,
+      deadlineEpochMillis: deadlineEpochMillis, cancellationRequested: cancellationRequested
+    )
+  }
+
+  private func invoke(
+    operation: AgentIOSOnDeviceRuntimeToolOperation,
+    input: AgentMcpJSONObject,
+    context: AgentNativeToolInvocationContext,
+    deadlineEpochMillis: Int64,
+    cancellationRequested: () -> Bool
+  ) throws -> AgentMcpJSONObject {
+    guard !cancellationRequested() else { throw AgentIOSRuntimeBrokerError.executionCancelled }
     if credentials.sessionKey() == nil {
       try credentials.storeSessionKey(base64Encoded: AgentIOSRuntimeBrokerPairingKey.generate())
     }
@@ -874,6 +955,7 @@ struct AgentIOSInAppQemuRuntimeBroker: AgentIOSRuntimeBrokerProviding {
     var lastError: Error?
     // A no-JIT TCI guest can take up to 45 seconds to boot on a physical iPhone.
     for _ in 0..<Self.guestStartupAttempts {
+      guard !cancellationRequested() else { throw AgentIOSRuntimeBrokerError.executionCancelled }
       do {
         let client = AgentIOSQemuGuestClient(
           socketPath: try controller.socketPath(runtimeRootURL: runtimeRootURL),
@@ -887,7 +969,8 @@ struct AgentIOSInAppQemuRuntimeBroker: AgentIOSRuntimeBrokerProviding {
             input: input,
             context: context,
             workspacePath: try prepareWorkspace(input: input, context: context),
-            deadlineEpochMillis: deadlineEpochMillis
+            deadlineEpochMillis: deadlineEpochMillis,
+            cancellationRequested: cancellationRequested
           )
         case .softwareCatalog, .softwareSearch, .softwareInspect, .softwareInstall, .softwareRemove:
           let executionInput = try AgentIOSQemuLinuxSoftware.executionInput(operation: operation, input: input)

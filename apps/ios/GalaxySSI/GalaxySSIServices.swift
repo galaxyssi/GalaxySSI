@@ -67,6 +67,7 @@ final class MessageCoordinator: ObservableObject {
   private var desktopReplyRecoveryTask: Task<Void, Never>?
   private var desktopReplyRecoverySweepInFlight = false
   private var desktopReplyRecoverySweepRequested = false
+  private var activeSavedToolTests: [String: AgentModelToolLoopCancellationSource] = [:]
   let transportReceiptJournal = GalaxySSITransportReceiptJournal()
   var transportReceiptDrainTask: Task<Void, Never>?
   private let blobRelayConfigurationStore = AgentBlobRelayConfigurationStore()
@@ -2731,8 +2732,10 @@ final class MessageCoordinator: ObservableObject {
   private func handleDesktopCollaborationExchange(_ payload: [String: Any], link: ServerLink) async {
     let route = AgentDesktopCollaborationArchiveRecall.self
     let publication = AgentDesktopCollaborationPublicationWire.self
+    let toolTest = AgentCollaborationSavedToolExecution.self
+    let testing = payload.string("type") == toolTest.requestType
     let publishing = payload.string("type") == publication.requestType
-    let contract = publishing ? publication.contract : route.contract
+    let contract = testing ? toolTest.contract : (publishing ? publication.contract : route.contract)
     let phase = payload.string("phase")
     let now = AgentControlPlaneClock.nowMillis()
     let requestId = payload.string("request_id")
@@ -2741,7 +2744,7 @@ final class MessageCoordinator: ObservableObject {
     guard link.paired, payload.string("client_route_id") == link.routes.clientRouteId,
           !GalaxySSITransportPrivacyPolicy.isLocalOnly(payload),
           payload.string("agent_id") == "codex", payload.string("contract") == contract,
-          publishing || phase == "read", payload["delivery"] == nil,
+          testing || publishing || phase == "read", payload["delivery"] == nil,
           (1...128).contains(requestId.utf8.count),
           let expiry = AgentTeamReplyObservation.integer(payload["expires_at"]),
           expiry > now, expiry - now <= 60_000,
@@ -2782,6 +2785,14 @@ final class MessageCoordinator: ObservableObject {
     let history = AgentTeamExecutionHistoryStore.shared
     let scope = AgentCollaborationToolEvidenceScope(runId: context.team.supervisorRunId,
       conversationId: identity.conversationId, turnId: identity.turnId, memberId: context.member.memberId, sourceId: source)
+    let executionScope: AgentCollaborationSavedToolExecution.Scope? = testing ? .init(assignment: scope,
+      profileFingerprint: store.profile.identityFingerprint, desktopID: link.desktopId,
+      desktopFingerprint: link.desktopFingerprint, routeID: identity.clientRouteId, generation: generation) : nil
+    let testRequest = testing ? AgentCollaborationSavedToolExecution.Request(phase: phase, input: input) : nil
+    if testing {
+      guard testRequest != nil, let executionScope,
+            savedToolTestIsAuthorized(executionScope, contact: contact, link: link) else { return }
+    }
     guard desktopCollaborationResponseReplay.begin(desktopId: link.desktopId) else { return }
     defer { desktopCollaborationResponseReplay.end(desktopId: link.desktopId) }
     let key = AgentMcpJSONCodec.sha256(["desktop": .string(link.desktopId), "request": .string(requestId)])
@@ -2801,6 +2812,8 @@ final class MessageCoordinator: ObservableObject {
     var result: AgentMcpJSONObject = ["success": .bool(false), "status": .string("unavailable")]
     if let cached {
       result = cached
+    } else if let testRequest, let executionScope {
+      result = handleSavedToolTest(testRequest, scope: executionScope, contact: contact, link: link)
     } else if publishing {
       do {
         result = try history.publishCollaborationMilestone(input, scope: scope)
@@ -2845,16 +2858,131 @@ final class MessageCoordinator: ObservableObject {
       "task_id": .string(identity.taskId), "turn_id": .string(identity.turnId),
       "contact_id": .string(contact), "source_message_id": .string(source), "agent_id": .string("codex")
     ]
-    response["type"] = .string(publishing ? publication.responseType : route.responseType)
+    response["type"] = .string(testing ? toolTest.responseType : (publishing ? publication.responseType : route.responseType))
     response["contract"] = .string(contract)
     response["request_id"] = .string(requestId)
     response["phase"] = .string(phase)
     response["execution_generation"] = .int(generation)
     response["result"] = .object(result)
     guard AgentControlPlaneClock.nowMillis() < expiry,
+          executionScope.map({ savedToolTestIsAuthorized($0, contact: contact, link: link) }) ?? true,
           let object = try? JSONSerialization.jsonObject(with: Data(AgentMcpJSONCodec.stringify(response).utf8)) as? [String: Any],
           let wire = try? linkWirePayload(object, link: link) else { return }
     _ = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
+  }
+
+  private func savedToolTestIsAuthorized(_ scope: AgentCollaborationSavedToolExecution.Scope,
+                                         contact: String, link: ServerLink) -> Bool {
+    let assignment = scope.assignment
+    guard store.profile.identityFingerprint == scope.profileFingerprint,
+          let target = store.contact(id: contact), target.isCommunicable,
+          target.desktopId == scope.desktopID, target.connectorAgentId == "codex", target.deliveryMode.isGalaxySSILinkFamily,
+          store.serverLinks.contains(where: { $0.paired && $0.desktopId == scope.desktopID &&
+            $0.desktopFingerprint == scope.desktopFingerprint && $0.routes == link.routes &&
+            $0.routes.clientRouteId == scope.routeID }),
+          let registered = taskIdentityStore.identity(contactId: contact, sourceMessageId: assignment.sourceId),
+          registered.clientRouteId == scope.routeID, registered.taskId == assignment.sourceId,
+          registered.conversationId == assignment.conversationId, registered.turnId == assignment.turnId,
+          let access = try? AgentTeamExecutionHistoryStore.shared.recoveryContext(source: assignment.sourceId,
+            conversation: assignment.conversationId, turn: assignment.turnId, contact: contact, requireResearchAccess: true),
+          access.team.supervisorRunId == assignment.runId, access.team.state == .running,
+          access.member.memberId == assignment.memberId, !access.member.status.isTerminal,
+          access.member.dispatchAllowsSavedToolTest == true, access.owner.permitsRecall(generation: scope.generation),
+          access.member.dispatchCheckpoint == .dispatching || access.member.dispatchCheckpoint == .accepted,
+          let session = store.agentSession(id: assignment.conversationId), session.id == assignment.conversationId,
+          !session.privateMode, !session.trackingPaused, session.mergedIntoConversationId.isBlank,
+          let roster = session.collaborationRoster,
+          roster.members.contains(where: { $0.id.uuidString.lowercased() ==
+            AgentTeamProgressPolicy.stableCollaborationMemberId(assignment.memberId) && $0.resourceId == contact }),
+          let task = store.agentTask(id: assignment.turnId), task.phase == .executing || task.phase == .waitingResponse,
+          !task.blocked, !PhoneExecutionAuthority.isCancelled(taskId: task.taskId) else { return false }
+    return true
+  }
+
+  private func handleSavedToolTest(_ request: AgentCollaborationSavedToolExecution.Request,
+                                  scope: AgentCollaborationSavedToolExecution.Scope, contact: String,
+                                  link: ServerLink) -> AgentMcpJSONObject {
+    let history = AgentTeamExecutionHistoryStore.shared
+    let key = scope.key(request.executionID)
+    do {
+      let outcome = try history.updateSavedToolExecution(.request(request), scope: scope,
+        allowAdmission: activeSavedToolTests.count < 2)
+      if outcome.shouldCancel { activeSavedToolTests[key]?.cancel() }
+      if outcome.shouldLaunch, let record = outcome.record {
+        let cancellation = AgentModelToolLoopCancellationSource()
+        activeSavedToolTests[key] = cancellation
+        Task { @MainActor [weak self] in
+          await self?.runSavedToolTest(record, contact: contact, link: link, cancellation: cancellation)
+        }
+      }
+      return outcome.response
+    } catch {
+      return ["success": .bool(false), "status": .string("rejected"), "do_not_reexecute": .bool(true)]
+    }
+  }
+
+  private func runSavedToolTest(_ record: AgentCollaborationSavedToolExecution.Record, contact: String,
+                                link: ServerLink, cancellation: AgentModelToolLoopCancellationSource) async {
+    let scope = record.scope
+    let key = scope.key(record.executionID)
+    let history = AgentTeamExecutionHistoryStore.shared
+    defer { activeSavedToolTests.removeValue(forKey: key) }
+    func isAuthorized() -> Bool {
+      if savedToolTestIsAuthorized(scope, contact: contact, link: link) { return true }
+      _ = try? history.updateSavedToolExecution(.interrupt(executionID: record.executionID), scope: scope)
+      return false
+    }
+    guard isAuthorized(),
+          (try? history.updateSavedToolExecution(.running(executionID: record.executionID), scope: scope))?.didStart == true else { return }
+    func finish(_ result: AgentMcpJSONObject) {
+      _ = try? history.updateSavedToolExecution(.finish(executionID: record.executionID, result: result), scope: scope)
+    }
+    guard let prepared = try? history.prepareSavedToolTest(record.plan, timeoutMillis: record.timeoutMillis, scope: scope.assignment),
+          let registry = localNativeToolRuntime?.registry else {
+      finish(["native_status": .string("unavailable"), "passed": .null])
+      return
+    }
+    let toolId = AgentIOSOnDeviceRuntimeNativeToolCatalog.execute
+    guard AgentCollaborationSavedToolExecution.permitsDirectRuntime(source: prepared.originalSource, key: key) else {
+      finish(["native_status": .string("rejected"), "passed": .null, "reason": .string("requires_local_confirmation")])
+      return
+    }
+    guard isAuthorized() else { return }
+    let revoked = AgentModelToolLoopCancellationSource()
+    let monitor = Task { @MainActor [weak self] in
+      while !Task.isCancelled {
+        guard self?.savedToolTestIsAuthorized(scope, contact: contact, link: link) == true else {
+          revoked.cancel()
+          cancellation.cancel()
+          _ = try? history.updateSavedToolExecution(.interrupt(executionID: record.executionID), scope: scope)
+          return
+        }
+        do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
+      }
+    }
+    defer { monitor.cancel() }
+    let assignment = scope.assignment
+    let context = AgentNativeToolInvocationContext(invocationId: key, sessionId: assignment.runId,
+      conversationId: assignment.conversationId, turnId: assignment.turnId, callerId: "galaxyssi.collaboration.saved_test",
+      requestedAtEpochMillis: AgentControlPlaneClock.nowMillis(), idempotencyKey: key,
+      grantedPermissions: [AgentIOSOnDeviceRuntimeNativeToolCatalog.runtimePermission,
+        AgentIOSOnDeviceRuntimeNativeToolCatalog.workspacePermission],
+      attributes: ["workspace_id": String(key.dropFirst("saved-tool-test:".count))])
+    let token = cancellation.token
+    let result = await Task.detached(priority: .utility) {
+      registry.invoke(toolId, input: prepared.runtimeInput, context: context,
+        hooks: AgentNativeToolInvocationHooks(cancellationRequested: { token.isCancellationRequested }))
+    }.value
+    guard !revoked.token.isCancellationRequested, isAuthorized() else { return }
+    let evaluation = prepared.evaluate(result)
+    let receipt = try? history.recordNativeObservation(AgentCollaborationNativeToolObservation(runId: assignment.runId,
+      conversationId: assignment.conversationId, turnId: assignment.turnId, memberId: assignment.memberId,
+      sourceId: assignment.sourceId, input: prepared.evidenceInput, result: result, evaluation: evaluation))
+    let verdict = receipt != nil && evaluation["checks"] != nil ? evaluation["passed"] ?? .null : .null
+    finish(["native_status": .string(result.status.rawValue), "passed": verdict,
+      "native_receipt": result.toJSONObject()["receipt"] ?? .null,
+      "galaxyssi_evidence_receipt": receipt.map(AgentMcpJSONValue.object) ?? .null,
+      "error": result.error.map { .object(["code": .string($0.code), "details_in_original_evidence": .bool(receipt != nil)]) } ?? .null])
   }
 
   private func discoverTeamObserverReplies(now: Int64) {
@@ -7908,6 +8036,7 @@ final class MessageCoordinator: ObservableObject {
         if let id = UUID(uuidString: AgentTeamProgressPolicy.stableCollaborationMemberId(member.memberId)) {
           savedTeam.members[index].recruitmentTemplateID = roster?.members.first(where: { $0.id == id })?.recruitmentTemplateID
         }
+        savedTeam.members[index].dispatchAllowsSavedToolTest = executionMode == .autoComplete && !outgoing.readOnlyAnalysis
       }
     }
     let saveTeamHistory = store.agentSession(id: outgoing.conversationId).map {
@@ -15088,6 +15217,16 @@ final class MessageCoordinator: ObservableObject {
              let manifest = desktopResultRecovery.receiveInline(page, record: record,
                queryNonce: appPayload.string("request_id")) { _ = desktopReplyRecovery.attachManifest(manifest, to: record) }
           Task { @MainActor [weak self] in await self?.sweepDesktopReplyRecovery() }
+        }
+      }
+      return
+    }
+    if appPayload.string("type") == AgentCollaborationSavedToolExecution.requestType {
+      if allowStage, object.string("scheme") == "signal", let link, link.paired,
+         object.string("from") == link.desktopId, object.string("to") == signalEngine.identity.name,
+         link.routes.receiveWindow.contains(topic) {
+        Task { @MainActor [weak self] in
+          await self?.handleDesktopCollaborationExchange(appPayload, link: link)
         }
       }
       return

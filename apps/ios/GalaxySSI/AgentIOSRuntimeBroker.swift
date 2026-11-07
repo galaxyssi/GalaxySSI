@@ -340,6 +340,30 @@ protocol AgentIOSRuntimeBrokerProviding {
     context: AgentNativeToolInvocationContext,
     deadlineEpochMillis: Int64
   ) throws -> AgentMcpJSONObject
+  func execute(
+    input: AgentMcpJSONObject,
+    context: AgentNativeToolInvocationContext,
+    deadlineEpochMillis: Int64,
+    cancellationRequested: () -> Bool
+  ) throws -> AgentMcpJSONObject
+}
+
+extension AgentIOSRuntimeBrokerProviding {
+  func execute(
+    input: AgentMcpJSONObject,
+    context: AgentNativeToolInvocationContext,
+    deadlineEpochMillis: Int64,
+    cancellationRequested: () -> Bool
+  ) throws -> AgentMcpJSONObject {
+    guard !cancellationRequested() else { throw AgentIOSRuntimeBrokerError.executionCancelled }
+    return try invoke(operation: .execute, input: input, context: context, deadlineEpochMillis: deadlineEpochMillis)
+  }
+}
+
+extension AgentIOSRuntimeBrokerError {
+  static var executionCancelled: Self {
+    .remote(code: "runtime_execution_cancelled", message: "The on-device Linux execution was cancelled.", retryable: false)
+  }
 }
 
 enum AgentIOSRuntimeBrokerHealth: Equatable {
