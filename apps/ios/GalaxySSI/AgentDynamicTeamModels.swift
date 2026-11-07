@@ -167,10 +167,12 @@ enum AgentCollaborationRuleTopics {
     as a parent and preserve its dataset, metric, direction, repetitions and tolerance in regression cases.
     The host checks the original anchor as well as the current control. Extend a passing suite with previous_suite;
     never remove earlier cases, weaken feasibility thresholds or move their original anchors.
-    capability_channel selects an exact independently reviewed tool release tied to the retained innovation and suite.
+    capability_channel selects an exact independently reviewed tool release or a workflow that passed controlled comparison.
     Use operation initialize or promote with implementation, lesson, suite and reason. Promotion extends the active suite.
     To roll back, cite target_revision from the same channel. Rollback preserves the latest bank and may require revalidation.
     A selection grants no permissions and does not rerun or undo work.
+    For a saved workflow, include capability_channel as an exact reference inside workflow_instance alongside its matching method.
+    New work requires the active selection; previously admitted work keeps its original selection.
     """),
     Topic(id: "workflows", purpose: "Register workflow roles, steps and review conditions", prerequisites: ["foundation"], contract: """
     workflow_method includes purpose, domain, bottleneck, change_rationale, applies_when, avoid_when, risks, expected_gain,
@@ -272,8 +274,12 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
       init(from decoder: Decoder) throws {
         let object = try AgentMcpJSONObject(from: decoder)
         if let raw = object["workflow_instance"] {
+          let required: Set<String> = ["execution_id", "method", "inputs", "roles"]
           guard object.count == 1, let instance = raw.objectValue,
-                Set(instance.keys) == Set(["execution_id", "method", "inputs", "roles"]) else {
+                required.isSubset(of: instance.keys),
+                Set(instance.keys).isSubset(of: required.union(["capability_channel"])),
+                instance["capability_channel"] == nil ||
+                  AgentCollaborationExperimentPlanIntake.reference(instance["capability_channel"]) != nil else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
               debugDescription: "Invalid workflow instance wrapper"))
           }
@@ -413,6 +419,7 @@ struct AgentCollaborationWorkflowInstance: Codable, Equatable {
   let method: AgentCollaborationResearchReference
   let inputs: [String: AgentCollaborationResearchReference]
   let roles: [String: String]
+  var capability_channel: AgentCollaborationResearchReference? = nil
 
   func compile(_ body: AgentMcpJSONObject) -> [AgentCollaborationLiveGraph.Work]? {
     guard !execution_id.isBlank, execution_id.utf8.count <= 160,

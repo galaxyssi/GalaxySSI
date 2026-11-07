@@ -1422,12 +1422,13 @@ final class AgentTeamExecutionHistoryStore {
           capabilitySelection = try AgentCollaborationCapabilitySelection.validate(draft: draft, objectID: objectId,
             head: head, exact: { try saved($0, historical: false) }, historical: { try saved($0, historical: true) },
             implementationKind: { ref in
-              guard try saved(ref, historical: false)?.draft.kind.rawValue == "tool_release",
-                    let record = try database.researchRecord(AgentMcpJSONObject.self, conversationId: conversationId,
-                      key: "object:" + ref.objectId, revision: ref.revision),
-                    record["testedToolRelease"]?.objectValue?["state"] == .string("eligible_for_scoped_tool_execution")
-              else { return nil }
-              return "tool_release"
+              guard let record = try saved(ref, historical: false) else { return nil }
+              switch record.draft.kind {
+              case .workflowMethod: return "workflow_method"
+              case .toolRelease where record.testedToolRelease?["state"] == .string("eligible_for_scoped_tool_execution"):
+                return "tool_release"
+              default: return nil
+              }
             })
           guard capabilitySelection != nil else { throw AgentTeamHistoryDatabase.Failure.stale }
         }
@@ -2425,6 +2426,16 @@ final class AgentTeamExecutionHistoryStore {
           method.turnId != snapshot.taskId ||
             (method.runId == snapshot.supervisorRunId && method.authorId == snapshot.primaryMemberId),
           let body = method.draft.body["workflow_method"]?.objectValue else { return nil }
+    if let channel = instance.capability_channel {
+      guard try database.researchRecord(Bool.self, conversationId: snapshot.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true,
+            let selected = try AgentCollaborationCapabilitySelection.resolve(channel, implementationKind: "workflow_method",
+              current: { ref in
+                guard let saved = try current(ref), saved.turnId != snapshot.taskId ||
+                  (saved.runId == snapshot.supervisorRunId && saved.authorId == snapshot.primaryMemberId) else { return nil }
+                return saved
+              }), selected.implementation == instance.method else { return nil }
+    }
     for input in instance.inputs.values {
       guard let saved = try current(input), saved.turnId != snapshot.taskId ||
         (saved.runId == snapshot.supervisorRunId && assigned == [saved.authorId]) else { return nil }

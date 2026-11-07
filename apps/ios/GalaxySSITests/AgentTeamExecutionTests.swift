@@ -1300,6 +1300,12 @@ extension GalaxySSIStoreTests {
       historicalAuthors: [:], settled: [:]) { _ in nil }, graph)
     let overridden = mixed.replacingOccurrences(of: "{\"workflow_instance\":", with: "{\"assignment\":\"Override\",\"workflow_instance\":")
     XCTAssertThrowsError(try JSONDecoder().decode(AgentCollaborationLiveGraph.WorkflowExpansion.self, from: Data(overridden.utf8)))
+    let withChannel = mixed.replacingOccurrences(of: "\"inputs\":{},\"roles\":",
+      with: "\"capability_channel\":{\"object_id\":\"channel\",\"revision\":1,\"sha256\":\"exact\"},\"inputs\":{},\"roles\":")
+    let selected = try JSONDecoder().decode(AgentCollaborationLiveGraph.WorkflowExpansion.self, from: Data(withChannel.utf8))
+    guard case .workflow(let pinned)? = selected.work.last else { return XCTFail("Missing workflow selection") }
+    XCTAssertEqual(pinned.capability_channel?.objectId, "channel")
+    XCTAssertEqual(pinned.compile(body), steps)
     XCTAssertFalse(try validates(raw.replacingOccurrences(of: "\"assignment\":\"Draft\"",
       with: "\"assignment\":\"Draft\",\"depends_on\":[\"review\"]")))
     XCTAssertFalse(try validates(raw.replacingOccurrences(of: "\"assignment\":\"Draft\"",
@@ -1822,6 +1828,90 @@ extension GalaxySSIStoreTests {
     XCTAssertThrowsError(try reopened.committedResearchRevisions(scope: wrongScope))
     reopened.removeResearchObjects(conversationId: first.conversationId)
     XCTAssertNil(try reopened.committedResearchRevisions(scope: scope))
+  }
+
+  func testWorkflowChannelPinsOldInstancesAndRejectsStaleNewAdmissions() throws {
+    let suite = "workflow-channel-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    func open() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    }
+    let history = open()
+    let team = durableTeamSnapshot("workflow-channel")
+    XCTAssertTrue(history.upsert(team))
+    let checkpoint = AgentCollaborationGoalCheckpoint(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId, revision: 1, phase: .working,
+      contract: [.init(id: "result", requirement: "Observe the result", verification: .physical,
+        status: .open, evidence_kind: nil, evidence: [])], completedWorkIds: [])
+    XCTAssertTrue(history.advanceGoalCheckpoint(checkpoint, expectedRevision: 0))
+    let database = try AgentTeamHistoryDatabase(fileURL: file,
+      storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    func ref(_ id: String, _ revision: Int64 = 1) -> AgentCollaborationResearchReference {
+      .init(objectId: id, revision: revision, sha256: id + "-\(revision)")
+    }
+    func row(_ ref: AgentCollaborationResearchReference, _ kind: AgentCollaborationResearchDraft.Kind,
+             body: AgentMcpJSONObject = [:]) -> AgentCollaborationResearchRevision {
+      .init(reference: ref, previousHash: nil, runId: "earlier-run", turnId: "earlier-turn",
+        authorId: "author", sourceId: "source", draft: .init(id: ref.objectId, objectId: nil, baseRevision: 0,
+          kind: kind, title: "Fixture", body: body, parents: []))
+    }
+    func save(_ row: AgentCollaborationResearchRevision) throws {
+      try database.insertResearchRecord(row, conversationId: team.conversationId,
+        key: "object:" + row.reference.objectId, revision: row.reference.revision)
+    }
+    let body = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data("""
+      {"purpose":"Verify","domain":"Fixture","bottleneck":"Errors","change_rationale":"Review",
+       "applies_when":"Comparable","avoid_when":"Unsafe","risks":"Delay","expected_gain":"Accuracy","falsifier":"No gain",
+       "dimensions":["verification"],"roles":["author"],"inputs":[],
+       "steps":[{"id":"draft","role":"author","stage":"EXPLORE","assignment":"Draft"}]}
+      """.utf8))
+    let previousMethod = ref("method-1"), nextMethod = ref("method-2")
+    for method in [previousMethod, nextMethod] {
+      try save(row(method, .workflowMethod, body: ["workflow_method": .object(body)]))
+    }
+    let lesson = ref("lesson"), innovation = ref("innovation"), bankRef = ref("suite")
+    try save(row(lesson, .capabilityLesson))
+    try save(row(innovation, .innovation))
+    var bank = row(bankRef, .capabilitySuite)
+    bank.retentionBank = .init(lesson: lesson, previous: nil, domain: "Fixture",
+      environment: "fixture", budgetUnit: "calls", anchors: [])
+    try save(bank)
+    func channel(_ identity: AgentCollaborationResearchReference, method: AgentCollaborationResearchReference)
+      -> AgentCollaborationResearchRevision {
+      var selected = row(identity, .capabilityChannel)
+      selected.capabilitySelection = .init(implementation: method, implementationKind: "workflow_method",
+        lesson: lesson, innovation: innovation, suite: bankRef, testedSuite: bankRef, domain: "Fixture", restoredFrom: nil)
+      return selected
+    }
+    let first = ref("channel"), promoted = ref("channel", 2)
+    try save(channel(first, method: previousMethod))
+    func instance(_ id: String, method: AgentCollaborationResearchReference, channel: AgentCollaborationResearchReference)
+      -> AgentCollaborationWorkflowInstance {
+      .init(execution_id: id, method: method, inputs: [:], roles: ["author": team.primaryMemberId], capability_channel: channel)
+    }
+    func append(_ instance: AgentCollaborationWorkflowInstance, revision: Int64, in store: AgentTeamExecutionHistoryStore) -> Bool {
+      store.appendSavedCollaborationWorkflow(instance, runId: team.supervisorRunId, conversationId: team.conversationId,
+        turnId: team.taskId, expectedRevision: revision, historicalAuthors: [:], settled: [:])
+    }
+    let existing = instance("first", method: previousMethod, channel: first)
+    XCTAssertFalse(append(instance("wrong", method: nextMethod, channel: first), revision: 1, in: history))
+    XCTAssertTrue(append(existing, revision: 1, in: history))
+    try save(channel(promoted, method: nextMethod))
+    let reopened = open()
+    XCTAssertTrue(append(existing, revision: 2, in: reopened))
+    XCTAssertFalse(append(instance("first", method: nextMethod, channel: promoted), revision: 2, in: reopened))
+    XCTAssertFalse(append(instance("stale", method: previousMethod, channel: first), revision: 2, in: reopened))
+    let new = instance("second", method: nextMethod, channel: promoted)
+    XCTAssertTrue(append(new, revision: 2, in: reopened))
+    let saved = try XCTUnwrap(reopened.goalCheckpoint(runId: checkpoint.runId,
+      conversationId: checkpoint.conversationId, turnId: checkpoint.turnId)?.liveGraph)
+    XCTAssertEqual(saved.workflowInstances?["first"], existing)
+    XCTAssertEqual(saved.workflowInstances?["second"], new)
+    XCTAssertEqual(saved.work.count, 2)
   }
 
   func testGoalCheckpointCompareAndSetRetainsPriorRevisionAfterReopen() throws {

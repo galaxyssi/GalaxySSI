@@ -127,12 +127,13 @@ struct AgentCollaborationCapabilitySelection: Codable, Equatable {
 
   static func resolve(
     _ channel: AgentCollaborationResearchReference,
+    implementationKind: String = "tool_release",
     current: (AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision?
   ) rethrows -> Self? {
     guard let record = try current(channel), record.reference == channel,
           record.draft.kind == .capabilityChannel, let selected = record.capabilitySelection,
-          selected.implementationKind == "tool_release",
-          let implementation = try current(selected.implementation), implementation.draft.kind.rawValue == "tool_release",
+          selected.implementationKind == implementationKind,
+          let implementation = try current(selected.implementation), implementation.draft.kind.rawValue == implementationKind,
           let active = try current(selected.suite)?.retentionBank, active.domain == selected.domain,
           let tested = try current(selected.testedSuite)?.retentionBank, tested.domain == selected.domain,
           tested.lesson == selected.lesson else { return nil }
@@ -197,6 +198,10 @@ struct AgentCollaborationCapabilitySelection: Codable, Equatable {
           let suite = try exact(suiteRef), suite.draft.kind == .capabilitySuite,
           let bank = suite.retentionBank, bank.lesson == lessonRef, ideaBody["domain"] == .string(bank.domain)
     else { return nil }
+    if kind == "workflow_method" {
+      guard let comparison = plan.workflowComparison, comparison.candidate == implementation,
+            comparison.baseline != implementation else { return nil }
+    }
     if let active = head?.capabilitySelection {
       guard active.implementationKind == kind, active.domain == bank.domain,
             ref(planBody["baseline"]) == active.innovation, ref(planBody["retention_suite"]) == active.suite,
