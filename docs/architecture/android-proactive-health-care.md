@@ -91,8 +91,8 @@ context confirmation, original record, guideline link, pause/resume and history.
   source-backed model explanations, including uncertain or conflicting evidence.
 - Validate real-provider use of the pending-plan tool and review UI below,
   including source applicability and justified follow-up windows.
-- Deliver durable due reminders with deduplication, permission-aware lock-screen
-  privacy, restart recovery, snooze and subsequent-result reassessment.
+- Complete real-device restart and delayed-alarm acceptance of the action-bound
+  reminders below, alongside clinically informed subsequent-result reassessment.
 - Implement clinically reviewed urgency handling separately from routine advice,
   individual targets and maintenance review, without promising all-danger detection.
 - Verify broader measurement/risk-context coverage, lab-method comparability,
@@ -130,7 +130,8 @@ messages, inspect unrelated local data or delegate to another model. The only
 additional local mutation is a pending-plan submission; it is not user acceptance
 or a delivered reminder.
 
-This does not yet implement a clinical evidence validator or automatic due delivery.
+This does not yet implement a clinical evidence validator. Explicitly scheduled
+action reminders are separate from model proposals, as described below.
 Transport already submitted to a remote
 provider cannot be retracted by revoking a permission. Further requests are checked
 again; in-flight cancellation and background recovery require end-to-end acceptance.
@@ -168,6 +169,45 @@ Review views are dismissed on backgrounding, conversation changes and observed
 record/permission changes. Persistence and validation run off the UI thread.
 Stored plans remain encrypted across process restarts. Deleting a concern also
 deletes its draft payloads while retaining the existing protected conversation
-binding. Notifications and their separate consent, snooze, deduplication and
-restart delivery remain outstanding; saving a plan explicitly does not promise
-an alert.
+binding. Saving a plan does not schedule an alert; notification scheduling is a
+separate user action.
+
+## Action follow-up and reminders
+
+The Agent main-page surface and concern details share action follow-up controls.
+Users can pick a reminder date and time, postpone or cancel that reminder, and
+record an action outcome. Date/time selection requires a final confirmation.
+Reminder time is independent of the medical review window; selecting a time
+outside that window warns without rewriting the recommendation.
+
+Confirmed actions retain a fingerprint of the source snapshot and measurement
+context. Older actions without that provenance remain readable but cannot be
+armed automatically. New readings, context changes, deleted sources, revoked
+permissions, paused tracking and disabled local review invalidate old reminders.
+Re-enabling a permission does not resurrect them. An unrelated conversation
+revision does not invalidate an otherwise unchanged action. Fresh clinical
+recommendations still require a new scoped discussion and plan review.
+
+Schema 4 adds per-action encrypted reminder rows with authenticated indexed
+identity, generation, state and due time. An action has one current reminder;
+postponement rotates its generation so a delayed prior delivery cannot mark the
+new schedule as delivered. Completion records a nonempty user-reported outcome,
+cancels that action's reminder in the same transaction, and enters reassessment
+without declaring normality, stability or maintenance. Other actions remain open.
+
+Delivery uses the existing health-reminder alarm, WorkManager reconciliation and
+boot/startup recovery paths. It respects system notification access, the health
+notification opt-in, quiet hours and pause-until settings. Blocked system delivery
+remains visible in-app and does not busy-poll. Due records use bounded indexed
+pages; no historical-total truncation is introduced. Notifications contain only a
+generic action-review notice, with no measurement, action text or health result.
+Their public lock-screen version remains generic. A posted notification is not a
+read receipt. Ordinary Android inexact/background scheduling can defer delivery;
+this is not an emergency alarm service.
+
+Notification posting and SQLite acknowledgement are not a distributed transaction.
+Reconciliation uses a stable per-action notification identity and only-alert-once
+updates, and rechecks scope before posting. A crash between posting and recording
+delivery may recreate a dismissed notice; exactly-once human delivery is not
+claimed. Database reopening and deterministic replay tests do not replace physical
+reboot and operating-system delayed-delivery acceptance.

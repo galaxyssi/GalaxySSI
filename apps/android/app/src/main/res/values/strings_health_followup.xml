@@ -1,0 +1,18 @@
+<resources>
+    <string name="health_care_followup_title">Follow up on this plan</string>
+    <string name="health_care_followup_notice">A confirmed health action is ready for review</string>
+    <string name="health_care_followup_time_notice">Reminder time is separate from the suggested medical review window. This is not an emergency monitoring service.</string>
+    <string name="health_care_followup_schedule">Schedule or postpone reminder</string>
+    <string name="health_care_followup_future_time">Choose a future reminder time.</string>
+    <string name="health_care_followup_cancel">Cancel reminder</string>
+    <string name="health_care_followup_complete">Record action outcome</string>
+    <string name="health_care_followup_outcome_hint">What did you complete, or what still needs follow-up?</string>
+    <string name="health_care_followup_outcome_notice">This records your reported outcome and requests reassessment. It does not confirm normal results or replace a report.</string>
+    <string name="health_care_followup_scheduled">Reminder scheduled: %1$s</string>
+    <string name="health_care_followup_delivered">Notification posted: %1$s · not proof it was read</string>
+    <string name="health_care_followup_cancelled">Reminder cancelled; review before scheduling again (%1$s)</string>
+    <string name="health_care_followup_in_app">In-app only. Open reminder settings to enable system notifications.</string>
+    <string name="health_care_followup_stale">Review the latest source and tracking permissions before scheduling.</string>
+    <string name="health_care_followup_confirm_time">Remind me at %1$s. Quiet hours and paused reminders may defer delivery; Android may also delay background delivery.</string>
+    <string name="health_care_followup_outside">This time is outside the suggested review window. It does not change that medical recommendation.</string>
+</resources>
