@@ -614,7 +614,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           collaborationPublish: collaborationRecallScope.map { scope in
             { arguments in
               await MainActor.run {
-                guard collaborationEvidence != nil || arguments["mode"] == .string("validate_assessment") else {
+                let establishing = arguments["mode"] == .string(AgentCollaborationGoalAssessmentPolicy.establishContractMode)
+                guard collaborationEvidence != nil || arguments["mode"] == .string("validate_assessment") || establishing else {
                   return nil
                 }
                 guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
@@ -622,6 +623,12 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                       let member = scope.memberId.split(separator: ":").first,
                       let memberId = UUID(uuidString: String(member)), roster.members.contains(where: { $0.id == memberId }),
                       session.mergedIntoConversationId.isBlank, !session.privateMode, !session.trackingPaused else { return nil }
+                if establishing {
+                  guard collaborationModelAudit == scope, roster.coordinatorId == memberId,
+                        let task = store.agentTask(id: scope.turnId), !task.blocked,
+                        task.phase == .executing || task.phase == .waitingResponse,
+                        !PhoneExecutionAuthority.isCancelled(taskId: task.taskId) else { return nil }
+                }
                 return try? AgentTeamExecutionHistoryStore.shared.publishCollaborationMilestone(arguments, scope: scope)
               }
             }
@@ -674,6 +681,11 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             publicationResults[outcome.call.callId] = output
             if let receipt = try? CloudModelStreamJSON.mcpObject(from: output), receipt["status"] == .string("published"),
                publishedMilestones.insert(receipt.string("milestone_id")).inserted { madeProgress = true }
+            if arguments["mode"] == .string(AgentCollaborationGoalAssessmentPolicy.establishContractMode),
+               let receipt = try? CloudModelStreamJSON.mcpObject(from: output),
+               receipt["status"] == .string("contract_established"), receipt["replayed"] == .bool(false) {
+              madeProgress = true
+            }
             if arguments["mode"] == .string("publish"),
                let receipt = try? CloudModelStreamJSON.mcpObject(from: output), receipt["rejected_draft_preserved"] == .bool(true),
                progress.requestRepair("collaboration_milestone_publication") { madeProgress = true }

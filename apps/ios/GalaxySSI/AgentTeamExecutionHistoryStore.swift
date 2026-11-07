@@ -1460,6 +1460,9 @@ final class AgentTeamExecutionHistoryStore {
                                      scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
     let id = input.string("milestone_id")
+    if mode == AgentCollaborationGoalAssessmentPolicy.establishContractMode {
+      return try establishCollaborationGoalContract(input, scope: scope)
+    }
     if mode == "validate_assessment" {
       guard Set(input.keys) == ["mode", "artifact"], let raw = input["artifact"]?.strictStringValue,
             raw.utf8.count <= 131_072 else { throw AgentTeamHistoryDatabase.Failure.corrupt }
@@ -1918,6 +1921,40 @@ final class AgentTeamExecutionHistoryStore {
     guard !run.isEmpty else { return nil }
     do { return newer(try access { try $0.snapshots(runId: run).first }, executionStore.snapshot(supervisorRunId: run)) }
     catch { return nil }
+  }
+
+  private func establishCollaborationGoalContract(_ input: AgentMcpJSONObject,
+    scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+    guard Set(input.keys) == ["mode", "artifact"], let raw = input["artifact"]?.strictStringValue,
+          let contract = AgentCollaborationGoalAssessmentPolicy.initialContract(raw)
+    else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    return try access { database in
+      guard let team = try database.snapshots(runId: scope.runId).first,
+            team.conversationId == scope.conversationId, team.taskId == scope.turnId, team.state == .running,
+            !team.goal.isBlank, team.primaryMemberId == scope.memberId,
+            team.members.contains(where: { $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId &&
+              $0.deliveryMode == .respond && !$0.status.isTerminal &&
+              ($0.dispatchCheckpoint == .dispatching || $0.dispatchCheckpoint == .accepted) }),
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let prior = try database.goalCheckpoints(runId: scope.runId, revision: 1, newestOnly: true).first
+      if let prior {
+        guard prior.conversationId == scope.conversationId, prior.turnId == scope.turnId, prior.contract == contract
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+      } else {
+        guard try database.goalCheckpoints(runId: scope.runId, newestOnly: true).isEmpty
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        try database.insertGoalCheckpoint(.init(runId: scope.runId, conversationId: scope.conversationId,
+          turnId: scope.turnId, revision: 1, phase: .working, contract: contract, completedWorkIds: []))
+      }
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys]
+      let hash = try SHA256.hash(data: encoder.encode(contract)).map { String(format: "%02x", $0) }.joined()
+      return ["success": .bool(true), "status": .string("contract_established"), "revision": .int(1),
+        "criteria_sha256": .string(hash), "criteria_count": .int(Int64(contract.count)),
+        "replayed": .bool(prior != nil), "goal_accepted": .bool(false), "work_dispatched": .bool(false)]
+    }
   }
 
   func goalCheckpoint(runId: String, conversationId: String, turnId: String,

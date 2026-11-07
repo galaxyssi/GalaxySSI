@@ -2011,6 +2011,72 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(parent, saved: saved, failureText: "Failed", now: 10))
   }
 
+  func testScopedCoordinatorCanEstablishOnlyAnOpenImmutableGoalContract() throws {
+    let suite = "established-contract-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    func open() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    }
+    let history = open()
+    var team = durableTeamSnapshot("active-goal")
+    team.goal = "Original user goal"
+    team.members[0].dispatchCheckpoint = .dispatching
+    team.members[1].dispatchCheckpoint = .accepted
+    XCTAssertTrue(history.upsert(team))
+    func scope(_ index: Int) -> AgentCollaborationToolEvidenceScope {
+      let member = team.members[index]
+      return .init(runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
+        memberId: member.memberId, sourceId: member.sourceMessageId)
+    }
+    let raw = """
+    {"format":"galaxyssi.goal-assessment.v1","summary":"Retain original acceptance","decision":"continue",
+     "criteria":[{"id":"sample","requirement":"Measure the sample","verification":"physical","status":"open","evidence":[]}],
+     "work":[],"blockers":[]}
+    """
+    let mode = AgentCollaborationGoalAssessmentPolicy.establishContractMode
+    let request: AgentMcpJSONObject = ["mode": .string(mode), "artifact": .string(raw)]
+    let check: AgentMcpJSONObject = ["mode": .string("validate_assessment"), "artifact": .string(raw)]
+    XCTAssertTrue(AgentDesktopCollaborationPublicationWire.accepts(phase: mode, input: request))
+    XCTAssertFalse(AgentDesktopCollaborationPublicationWire.permits(phase: mode, observer: true))
+    XCTAssertTrue(AgentDesktopCollaborationPublicationWire.permits(phase: mode, observer: false))
+    XCTAssertEqual(try history.publishCollaborationMilestone(check, scope: scope(0))["acceptance_contract_state"],
+      .string("not_established"))
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(request, scope: scope(1)))
+    var differentSource = scope(0)
+    differentSource.sourceId = "stale-dispatch"
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(request, scope: differentSource))
+    var closed = request
+    closed["artifact"] = .string(raw.replacingOccurrences(of: "\"open\"", with: "\"met\""))
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(closed, scope: scope(0)))
+    var work = request
+    work["artifact"] = .string(raw.replacingOccurrences(of: "\"work\":[]",
+      with: "\"work\":[{\"id\":\"new\",\"member\":\"primary\",\"assignment\":\"Run now\"}]"))
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(work, scope: scope(0)))
+    let saved = try history.publishCollaborationMilestone(request, scope: scope(0))
+    XCTAssertEqual(saved["replayed"], .bool(false))
+    XCTAssertEqual(saved["goal_accepted"], .bool(false))
+    XCTAssertEqual(saved["work_dispatched"], .bool(false))
+    var replacement = team
+    replacement.goal = "A different goal"
+    replacement.updatedAtMillis += 1
+    XCTAssertFalse(history.upsert(replacement))
+    let reopened = open()
+    XCTAssertEqual(try reopened.publishCollaborationMilestone(request, scope: scope(0))["replayed"], .bool(true))
+    var changed = request
+    changed["artifact"] = .string(raw.replacingOccurrences(of: "Measure the sample", with: "Replace the criterion"))
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(changed, scope: scope(0)))
+    let criteria = try reopened.readPinnedCollaborationGoal(scope: scope(0), section: "criteria")
+    XCTAssertEqual(criteria["sha256"], saved["criteria_sha256"])
+    XCTAssertEqual(reopened.goalCheckpoint(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId)?.contract.first?.requirement, "Measure the sample")
+    reopened.removeResearchObjects(conversationId: team.conversationId)
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(request, scope: scope(0)))
+  }
+
   func testSavedTeamFailureDistinguishesObserverFromPrimary() throws {
     let saved = AgentTeamExecutionSnapshot(supervisorRunId: "run", teamId: "team",
       conversationId: "conversation", taskId: "turn", primaryAgentId: "lead", state: .running,

@@ -497,6 +497,27 @@ enum AgentCollaborationGoalAssessmentPolicy {
     var recruit: [Work]?
   }
 
+  static let establishContractMode = "establish_contract"
+
+  static func initialContract(_ raw: String) -> [Criterion]? {
+    guard raw.utf8.count <= 131_072,
+          let draft = try? JSONDecoder().decode(Assessment.self, from: Data(raw.utf8)),
+          draft.format == "galaxyssi.goal-assessment.v1", !draft.summary.isBlank,
+          draft.decision == .continue, draft.work.isEmpty, draft.blockers.isEmpty, draft.recruit?.isEmpty != false,
+          (1...64).contains(draft.criteria.count),
+          Set(draft.criteria.map(\.id)).count == draft.criteria.count,
+          draft.criteria.allSatisfy({ criterion in
+            let observations = criterion.required_observations ?? []
+            return !criterion.id.isBlank && criterion.id.utf8.count <= 160 &&
+              !criterion.requirement.isBlank && criterion.requirement.utf8.count <= 8_192 &&
+              criterion.status == .open && criterion.evidence.isEmpty && criterion.evidence_kind == nil &&
+              criterion.delivery == nil && criterion.review == nil && criterion.hasValidValidatorBinding &&
+              observations.count <= 16 && Set(observations).count == observations.count &&
+              observations.allSatisfy { $0.isValid && $0.tool.utf8.count <= 160 }
+          }) else { return nil }
+    return draft.criteria
+  }
+
   struct VerifiedCriterion {
     var requirement: String
     var verification: Verification
