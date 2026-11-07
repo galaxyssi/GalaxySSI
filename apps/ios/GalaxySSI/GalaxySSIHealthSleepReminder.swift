@@ -1,6 +1,8 @@
 import Foundation
 
 enum GalaxySSIHealthSleepReminder {
+  static let notificationPrefix = "galaxyssi.health.sleep."
+  static let changed = Notification.Name("galaxyssi.health.sleep.changed")
   static let thresholds = [30, 45, 60, 90]
   static let ruleVersion = 1
 
@@ -72,6 +74,17 @@ enum GalaxySSIHealthSleepReminder {
     var completed = false
     var snoozedUntil: Date?
     var deliveredAt: Date?
+    var notificationDue: Date?
+  }
+
+  static func deliveryDate(_ date: Date, episode: Episode, preferences: Preferences,
+                           settings: GalaxySSIHealthRecordingReminders.Settings?, calendar: Calendar) -> Date? {
+    guard preferences.enabled, preferences.notifications, !episode.closed, !episode.completed else { return nil }
+    let earliest = max(date, max(episode.first.calculatedAt, episode.snoozedUntil ?? .distantPast))
+    let local = GalaxySSIHealthRecordingReminders.Settings(quietStart: preferences.quietStart, quietEnd: preferences.quietEnd)
+    return GalaxySSIHealthRecordingReminders.sharedDelivery(earliest, settings: settings, calendar: calendar) {
+      local.quietEndAfter($0, calendar: calendar)
+    }
   }
 
   struct Ledger: Codable, Equatable {

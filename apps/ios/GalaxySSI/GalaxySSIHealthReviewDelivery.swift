@@ -22,6 +22,12 @@ enum GalaxySSIHealthReviewDelivery {
       return calendar.nextDate(after: date, matching: DateComponents(hour: quietEnd, minute: 0),
                                matchingPolicy: .nextTime) ?? date
     }
+
+    func deliveryDate(_ date: Date, settings: GalaxySSIHealthRecordingReminders.Settings?, calendar: Calendar) -> Date? {
+      GalaxySSIHealthRecordingReminders.sharedDelivery(date, settings: settings, calendar: calendar) {
+        nextAllowed($0, calendar: calendar)
+      }
+    }
   }
 
   struct Ticket: Codable, Equatable {
@@ -62,13 +68,15 @@ enum GalaxySSIHealthReviewDelivery {
   }
 
   static func target(for token: UUID, jobs: [GalaxySSIHealthReviewReminders.Job],
-                     state: GalaxySSIHealthReviewReminders.State, now: Date) -> GalaxySSIHealthReviewReminders.Job? {
+                     state: GalaxySSIHealthReviewReminders.State, now: Date,
+                     settings: GalaxySSIHealthRecordingReminders.Settings? = nil) -> GalaxySSIHealthReviewReminders.Job? {
     guard state.enabled, let prefs = state.notificationPreferences, prefs.enabled,
           (prefs.pausedUntil ?? .distantPast) <= now,
+          (settings?.pausedUntil ?? .distantPast) <= now,
           let entry = state.deliveries?.first(where: { $0.value.token == token && !$0.value.suppressed }),
           let job = jobs.first(where: { $0.key == entry.key && $0.versions == entry.value.versions }),
           action(for: job, state: state)?.hides(at: now) != true,
-          cycle(for: job, state: state) == entry.value.cycle else { return nil }
+          entry.value.due <= now, cycle(for: job, state: state) == entry.value.cycle else { return nil }
     return job
   }
 
@@ -81,7 +89,8 @@ enum GalaxySSIHealthReviewDelivery {
     let content = UNMutableNotificationContent()
     content.title = title
     content.body = body
-    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, ticket.due.timeIntervalSince(now)), repeats: false)
+    let trigger = UNCalendarNotificationTrigger(dateMatching:
+      GalaxySSIHealthRecordingReminders.calendarTriggerDate(max(ticket.due, now.addingTimeInterval(1))), repeats: false)
     return UNNotificationRequest(identifier: ticket.identifier, content: content, trigger: trigger)
   }
 
@@ -90,11 +99,12 @@ enum GalaxySSIHealthReviewDelivery {
   }
 
   static func plan(jobs: [GalaxySSIHealthReviewReminders.Job], state: GalaxySSIHealthReviewReminders.State,
-                   now: Date, calendar: Calendar, permitted: Bool, scheduled: Set<UUID>, delivered: Set<UUID>)
+                   now: Date, calendar: Calendar, permitted: Bool, scheduled: Set<UUID>, delivered: Set<UUID>,
+                   settings: GalaxySSIHealthRecordingReminders.Settings? = nil)
     -> Plan {
     let prefs = state.notificationPreferences ?? .init()
     guard state.enabled && prefs.enabled else { return Plan() }
-    let paused = (prefs.pausedUntil ?? .distantPast) > now
+    let deferred = prefs.deliveryDate(now, settings: settings, calendar: calendar) != now
     let existing = state.deliveries ?? [:]
     var plan = Plan()
     for job in jobs {
@@ -102,7 +112,7 @@ enum GalaxySSIHealthReviewDelivery {
       let snooze = cycle(for: job, state: state)
       let previous = existing[job.key].flatMap { $0.cycle == snooze ? $0 : nil }
       let consumed = previous.map {
-        delivered.contains($0.token) || ($0.submitted && $0.due <= now && !scheduled.contains($0.token))
+        $0.due <= now && (delivered.contains($0.token) || ($0.submitted && !scheduled.contains($0.token)))
       } ?? false
       if !permitted || previous?.suppressed == true || (consumed && previous?.versions != job.versions) {
         if let previous, previous.suppressed, previous.versions == job.versions { plan.tickets[job.key] = previous }
@@ -115,14 +125,16 @@ enum GalaxySSIHealthReviewDelivery {
       if var previous, consumed {
         previous.submitted = true
         plan.tickets[job.key] = previous
-        if !paused, delivered.contains(previous.token) { plan.keepDelivered.insert(previous.token) }
+        if !deferred, delivered.contains(previous.token) { plan.keepDelivered.insert(previous.token) }
         continue
       }
-      let earliest = prefs.nextAllowed(max(now.addingTimeInterval(2), snooze ?? .distantPast), calendar: calendar)
+      guard let earliest = prefs.deliveryDate(max(now.addingTimeInterval(2), snooze ?? .distantPast),
+        settings: settings, calendar: calendar) else { continue }
       let ticket: Ticket
       if let previous, previous.versions == job.versions, previous.due >= (snooze ?? .distantPast),
+         !delivered.contains(previous.token),
          (previous.due > now || scheduled.contains(previous.token)),
-         prefs.nextAllowed(previous.due, calendar: calendar) == previous.due {
+         prefs.deliveryDate(previous.due, settings: settings, calendar: calendar) == previous.due {
         var resumed = previous
         if scheduled.contains(previous.token) { resumed.submitted = true }
         ticket = resumed
@@ -242,6 +254,9 @@ struct GalaxySSIHealthReviewNotificationLifecycle: ViewModifier {
       .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.reviewInputsChanged)) {
         if $0.object as? String == records.owner { refresh() }
       }
+      .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecordingReminders.changed)) {
+        if $0.object as? String == records.owner { refresh() }
+      }
       .task(id: generation) { await reconcile() }
       .sheet(item: $destination) { route in
         NavigationView {
@@ -277,6 +292,9 @@ struct GalaxySSIHealthReviewNotificationLifecycle: ViewModifier {
     let delivered = await center.deliveredNotifications()
     guard scene == .active, !Task.isCancelled, records.owner == store.profile.identityFingerprint else { return }
     let pendingIDs = Set(pending.compactMap { GalaxySSIHealthReviewDelivery.token($0.identifier) })
+    let calendarPendingIDs = Set(pending.compactMap { request in
+      request.trigger is UNCalendarNotificationTrigger ? GalaxySSIHealthReviewDelivery.token(request.identifier) : nil
+    })
     let deliveredIDs = Set(delivered.compactMap { GalaxySSIHealthReviewDelivery.token($0.request.identifier) })
     let calendar = Calendar.current
     let permitted = GalaxySSIHealthReviewDelivery.permitted(settings.authorizationStatus)
@@ -296,7 +314,7 @@ struct GalaxySSIHealthReviewNotificationLifecycle: ViewModifier {
     center.removeDeliveredNotifications(withIdentifiers: deliveredIDs.subtracting(plan.keepDelivered).map {
       GalaxySSIHealthReviewDelivery.prefix + $0.uuidString
     })
-    for ticket in plan.pending where !pendingIDs.contains(ticket.token) && !deliveredIDs.contains(ticket.token) {
+    for ticket in plan.pending where !calendarPendingIDs.contains(ticket.token) && !deliveredIDs.contains(ticket.token) {
       guard scene == .active, !Task.isCancelled, records.owner == store.profile.identityFingerprint else { return }
       do {
         try await center.add(GalaxySSIHealthReviewDelivery.request(ticket,
@@ -319,7 +337,7 @@ struct GalaxySSIHealthReviewNotificationLifecycle: ViewModifier {
     let records = records
     guard let archive = try? records.load(), let state = archive.reviewReminderState,
           let job = GalaxySSIHealthReviewDelivery.target(for: token, jobs: GalaxySSIHealthReviewReminders.jobs(in: archive),
-                                                         state: state, now: Date()) else { return }
+            state: state, now: Date(), settings: archive.recordingReminders?.settings) else { return }
     let original: GalaxySSIHealthOriginalStore.Original?
     if job.kind == .report {
       let originals = GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets)

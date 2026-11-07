@@ -6,12 +6,13 @@ import UserNotifications
 struct GalaxySSIHealthRecordingNotificationLifecycle: ViewModifier {
   @Environment(\.scenePhase) private var scene
   @Environment(\.galaxySSIInterfaceLanguage) private var language
-  let store: GalaxySSIStore
+  @ObservedObject var store: GalaxySSIStore
   @State private var generation = UUID()
 
   func body(content: Content) -> some View {
     content
       .onChange(of: scene) { if $0 == .active { generation = UUID() } }
+      .onChange(of: store.profile.identityFingerprint) { _ in generation = UUID() }
       .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
         generation = UUID()
       }
@@ -33,20 +34,20 @@ struct GalaxySSIHealthRecordingNotificationLifecycle: ViewModifier {
     let delivered = await center.deliveredNotifications().filter {
       $0.request.identifier.hasPrefix(GalaxySSIHealthRecordingReminders.prefix)
     }
-    guard !Task.isCancelled, owner == store.profile.identityFingerprint else { return }
+    guard scene == .active, !Task.isCancelled, owner == store.profile.identityFingerprint else { return }
     let now = Date()
     let calendar = Calendar.autoupdatingCurrent
     guard let ledger = try? records.loadRecordingReminders(at: now, calendar: calendar) else { return }
-    let upcoming = authorization == .authorized || authorization == .provisional
+    let permitted = GalaxySSIHealthSyncDelivery.permitted(authorization)
+    let upcoming = permitted
       ? ledger.upcoming(at: now, calendar: calendar) : []
     let desired = Set(upcoming.map { GalaxySSIHealthRecordingReminders.notificationID(owner: owner, day: $0.0) })
     center.removePendingNotificationRequests(withIdentifiers: pending.filter { !desired.contains($0.identifier) }.map(\.identifier))
-    let handled = Set(ledger.history.filter { $0.completedAt != nil || $0.disabled ||
-      ($0.snoozedUntil ?? .distantPast) > now }.map {
-        GalaxySSIHealthRecordingReminders.notificationID(owner: owner, day: $0.day)
-      })
+    let retained = Set(ledger.keepsDelivered(at: now, calendar: calendar).map {
+      GalaxySSIHealthRecordingReminders.notificationID(owner: owner, day: $0)
+    })
     center.removeDeliveredNotifications(withIdentifiers: delivered.map(\.request.identifier).filter {
-      !ledger.settings.enabled || !ledger.settings.notifications || handled.contains($0)
+      !permitted || !retained.contains($0)
     })
     for (day, due) in upcoming {
       guard !Task.isCancelled else { return }
@@ -56,8 +57,7 @@ struct GalaxySSIHealthRecordingNotificationLifecycle: ViewModifier {
       let content = UNMutableNotificationContent()
       content.title = GalaxySSIHealthRecordingReminderView.text("notification_title", "GalaxySSI reminder", language: language)
       content.body = GalaxySSIHealthRecordingReminderView.text("notification_body", "Open GalaxySSI to review.", language: language)
-      var date = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: due)
-      date.timeZone = calendar.timeZone
+      let date = GalaxySSIHealthRecordingReminders.calendarTriggerDate(due)
       let trigger = UNCalendarNotificationTrigger(dateMatching: date, repeats: false)
       do {
         try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
@@ -104,16 +104,16 @@ struct GalaxySSIHealthRecordingReminderView: View {
             DatePicker(t("time", "Daily time"), selection: timeBinding, displayedComponents: .hourAndMinute)
             Toggle(t("notifications", "System notifications"), isOn: $draft.notifications)
           }
-          if (draft.enabled && draft.notifications) || syncNotifications {
-            hourPicker(t("quiet_start", "Quiet hours begin"), value: $draft.quietStart)
-            hourPicker(t("quiet_end", "Quiet hours end"), value: $draft.quietEnd)
+        }
+        Section(t("delivery", "Health notification delivery")) {
+          hourPicker(t("quiet_start", "Quiet hours begin"), value: $draft.quietStart)
+          hourPicker(t("quiet_end", "Quiet hours end"), value: $draft.quietEnd)
+          Toggle(t("pause", "Pause for 24 hours"), isOn: Binding(
+            get: { (draft.pausedUntil ?? .distantPast) > Date() },
+            set: { draft.pausedUntil = $0 ? Date().addingTimeInterval(86_400) : nil }))
+          if let until = draft.pausedUntil, until > Date() {
+            incidentDate(t("paused_until", "Paused until"), at: until)
           }
-          if draft.enabled || syncNotifications {
-            Toggle(t("pause", "Pause for 24 hours"), isOn: Binding(
-              get: { (draft.pausedUntil ?? .distantPast) > Date() },
-              set: { draft.pausedUntil = $0 ? Date().addingTimeInterval(86_400) : nil }))
-          }
-          Button(t("save", "Save preferences"), action: save)
         }
         Section {
           Picker(t("filter", "Filter"), selection: $filter) {
@@ -147,6 +147,13 @@ struct GalaxySSIHealthRecordingReminderView: View {
     }
     .navigationTitle(t("title", "Health Recording Reminders"))
     .navigationBarTitleDisplayMode(.inline)
+    .toolbar {
+      if scene == .active {
+        ToolbarItem(placement: .confirmationAction) {
+          Button(t("save", "Save preferences"), action: save).disabled(draft == ledger.settings)
+        }
+      }
+    }
     .onAppear { reload(resetDraft: true); reloadIncidents() }
     .onChange(of: scene) {
       if $0 == .active { reload(resetDraft: true); reloadIncidents() }
