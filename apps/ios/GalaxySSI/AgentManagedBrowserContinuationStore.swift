@@ -24,6 +24,7 @@ final class AgentManagedBrowserContinuationStore {
   private struct Record: Codable {
     let binding: AgentManagedBrowserDispatchBinding
     let inputDigest: String
+    var catalogBinding: AgentManagedBrowserLoopInput.CatalogBinding? = nil
     var input: AgentManagedBrowserLoopInput?
     var handoffs: [String: AgentManagedBrowserHandoff] = [:]
     var activeCallID: String?
@@ -111,6 +112,15 @@ final class AgentManagedBrowserContinuationStore {
   func handoff(_ ticket: AgentManagedBrowserHandoff.Ticket,
                binding: AgentManagedBrowserDispatchBinding) throws -> AgentManagedBrowserHandoff {
     try locked { try exact(ticket, in: owned(binding)) }
+  }
+
+  func existingCatalogBinding(_ binding: AgentManagedBrowserDispatchBinding) throws
+    -> AgentManagedBrowserLoopInput.CatalogBinding? {
+    try locked {
+      guard let record = try read(binding.key) else { return nil }
+      guard record.binding == binding else { throw Failure.scopeChanged }
+      return record.catalogBinding ?? record.input?.effectiveCatalogBinding ?? .availableSnapshot
+    }
   }
 
   func savedRequest(lease: Lease, binding: AgentManagedBrowserDispatchBinding, callID: String,
@@ -370,6 +380,8 @@ final class AgentManagedBrowserContinuationStore {
   }
 
   private func save(_ record: Record) throws {
+    var record = record
+    if let input = record.input { record.catalogBinding = input.catalogBinding }
     let data = try JSONEncoder().encode(record)
     guard GalaxySSIEncryptedUserDefaultsStore.write(data, defaults: defaults, key: storageKey(record.binding.key),
       keyMaterialKey: namespace, secrets: secrets) else { throw Failure.unavailable }

@@ -62,12 +62,20 @@ struct AgentManagedBrowserDispatchBinding: Codable, Equatable {
 }
 
 struct AgentManagedBrowserLoopInput: Codable, Equatable {
+  enum CatalogBinding: String, Codable {
+    case availableSnapshot = "available_snapshot_v1"
+    case registeredContracts = "registered_contracts_v1"
+  }
+
   let loopID: String
   let inputIdentity: String
   let toolManifestHash: String
   let systemPrompt: String
   let prompt: String
   let hasAttachments: Bool
+  var catalogBinding: CatalogBinding? = nil
+
+  var effectiveCatalogBinding: CatalogBinding { catalogBinding ?? .availableSnapshot }
 
   var isValid: Bool {
     [loopID, inputIdentity, toolManifestHash].allSatisfy { !$0.isBlank && $0.utf8.count <= 256 } &&
