@@ -1856,6 +1856,12 @@ final class AgentTeamExecutionHistoryStore {
 
   func prepareSavedToolTest(_ reference: AgentCollaborationResearchReference, timeoutMillis: Int64,
                             scope: AgentCollaborationToolEvidenceScope) throws -> AgentCollaborationSavedToolTest.Prepared {
+    try prepareSavedToolExecution(test: reference, release: nil, parameters: nil, timeoutMillis: timeoutMillis, scope: scope)
+  }
+
+  func prepareSavedToolExecution(test: AgentCollaborationResearchReference?, release: AgentCollaborationResearchReference?,
+                                 parameters: AgentMcpJSONObject?, timeoutMillis: Int64,
+                                 scope: AgentCollaborationToolEvidenceScope) throws -> AgentCollaborationSavedToolTest.Prepared {
     try access { database in
       guard let team = try database.snapshots(runId: scope.runId).first,
             team.state == .running, team.conversationId == scope.conversationId, team.taskId == scope.turnId,
@@ -1868,14 +1874,20 @@ final class AgentTeamExecutionHistoryStore {
         guard let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
                 conversationId: scope.conversationId, key: "object:" + ref.objectId),
               record.reference == ref else { throw AgentTeamHistoryDatabase.Failure.stale }
-        if record.turnId == scope.turnId {
-          guard record.runId == scope.runId, (record.authorId == scope.memberId && record.sourceId == scope.sourceId) ||
-            (member.dispatchDependencyMemberIds?.contains(record.authorId) == true &&
-              team.members.contains(where: { $0.memberId == record.authorId && $0.sourceMessageId == record.sourceId &&
-                $0.deliveryMode != .ignore && $0.status.isTerminal })) else { throw AgentTeamHistoryDatabase.Failure.stale }
-        }
+        guard Self.canReadToolLineage(record, scope: scope, team: team, member: member)
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
         return record
       }
+      if let release, let parameters, test == nil {
+        let saved = try current(release)
+        guard let planRef = AgentCollaborationSavedToolTest.reference(saved.testedToolRelease?["tool_test_plan"]),
+              let toolRef = AgentCollaborationSavedToolTest.reference(saved.testedToolRelease?["executable_tool"]),
+              let prepared = AgentCollaborationSavedToolTest.prepareRun(release: saved,
+                plan: try current(planRef), tool: try current(toolRef), parameters: parameters, timeoutMillis: timeoutMillis)
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        return prepared
+      }
+      guard let reference = test, release == nil, parameters == nil else { throw AgentTeamHistoryDatabase.Failure.corrupt }
       let plan = try current(reference)
       guard plan.draft.kind == .toolTestPlan,
             let test = plan.draft.body["tool_test_plan"]?.objectValue,

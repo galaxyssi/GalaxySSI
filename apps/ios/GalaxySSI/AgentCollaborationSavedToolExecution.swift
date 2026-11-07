@@ -19,6 +19,8 @@ enum AgentCollaborationSavedToolExecution {
     let mode: Mode
     let executionID: String
     let plan: AgentCollaborationResearchReference?
+    let release: AgentCollaborationResearchReference?
+    let parameters: AgentMcpJSONObject?
     let timeoutMillis: Int64?
     let inputHash: String
 
@@ -31,15 +33,28 @@ enum AgentCollaborationSavedToolExecution {
       executionID = id
       switch mode {
       case .start:
-        guard Set(input.keys) == ["mode", "execution_id", "tool_test_plan", "timeout_ms"],
-              let reference = AgentCollaborationSavedToolTest.reference(input["tool_test_plan"]),
-              reference.revision <= Int64(Int32.max), case .int(let timeout)? = input["timeout_ms"],
+        guard case .int(let timeout)? = input["timeout_ms"],
               (100...AgentIOSOnDeviceRuntimeNativeToolCatalog.maxTimeoutMillis).contains(timeout) else { return nil }
-        plan = reference
+        if Set(input.keys) == ["mode", "execution_id", "tool_test_plan", "timeout_ms"],
+           let reference = AgentCollaborationSavedToolTest.reference(input["tool_test_plan"]),
+           reference.revision <= Int64(Int32.max) {
+          plan = reference
+          release = nil
+          parameters = nil
+        } else if Set(input.keys) == ["mode", "execution_id", "tool_release", "parameters", "timeout_ms"],
+                  let reference = AgentCollaborationSavedToolTest.reference(input["tool_release"]),
+                  reference.revision <= Int64(Int32.max), let values = input["parameters"]?.objectValue,
+                  AgentMcpJSONCodec.stringify(values).utf8.count <= 64 * 1_024 {
+          plan = nil
+          release = reference
+          parameters = values
+        } else { return nil }
         timeoutMillis = timeout
       case .status, .cancel:
         guard Set(input.keys) == ["mode", "execution_id"] else { return nil }
         plan = nil
+        release = nil
+        parameters = nil
         timeoutMillis = nil
       }
       inputHash = AgentMcpJSONCodec.sha256(input)
@@ -76,7 +91,9 @@ enum AgentCollaborationSavedToolExecution {
     let scope: Scope
     let executionID: String
     let inputHash: String
-    let plan: AgentCollaborationResearchReference
+    let plan: AgentCollaborationResearchReference?
+    var release: AgentCollaborationResearchReference? = nil
+    var parameters: AgentMcpJSONObject? = nil
     let timeoutMillis: Int64
     let ownerProcess: String
     var state: State
@@ -136,7 +153,8 @@ enum AgentCollaborationSavedToolExecution {
     case .request(let request):
       switch request.mode {
       case .start:
-        guard let plan = request.plan, let timeoutMillis = request.timeoutMillis else {
+        guard request.plan != nil || (request.release != nil && request.parameters != nil),
+              let timeoutMillis = request.timeoutMillis else {
           throw AgentTeamHistoryDatabase.Failure.corrupt
         }
         if let record = current {
@@ -145,7 +163,8 @@ enum AgentCollaborationSavedToolExecution {
         }
         guard allowAdmission else { return Outcome(record: nil, busy: true) }
         return Outcome(record: Record(scope: scope, executionID: request.executionID, inputHash: request.inputHash,
-          plan: plan, timeoutMillis: timeoutMillis, ownerProcess: process, state: .queued, updatedAt: now), shouldLaunch: true)
+          plan: request.plan, release: request.release, parameters: request.parameters,
+          timeoutMillis: timeoutMillis, ownerProcess: process, state: .queued, updatedAt: now), shouldLaunch: true)
       case .status:
         return Outcome(record: current)
       case .cancel:

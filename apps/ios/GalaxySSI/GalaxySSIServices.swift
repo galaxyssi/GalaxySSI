@@ -2919,7 +2919,8 @@ final class MessageCoordinator: ObservableObject {
     func finish(_ result: AgentMcpJSONObject) {
       _ = try? history.updateSavedToolExecution(.finish(executionID: record.executionID, result: result), scope: scope)
     }
-    guard let prepared = try? history.prepareSavedToolTest(record.plan, timeoutMillis: record.timeoutMillis, scope: scope.assignment),
+    guard let prepared = try? history.prepareSavedToolExecution(test: record.plan, release: record.release,
+            parameters: record.parameters, timeoutMillis: record.timeoutMillis, scope: scope.assignment),
           let registry = localNativeToolRuntime?.registry else {
       finish(["native_status": .string("unavailable"), "passed": .null])
       return
@@ -2962,6 +2963,7 @@ final class MessageCoordinator: ObservableObject {
       sourceId: assignment.sourceId, input: prepared.evidenceInput, result: result, evaluation: evaluation))
     let verdict = receipt != nil && evaluation["checks"] != nil ? evaluation["passed"] ?? .null : .null
     finish(["native_status": .string(result.status.rawValue), "passed": verdict,
+      "execution_mode": .string(record.release == nil ? "test" : "run"),
       "native_receipt": result.toJSONObject()["receipt"] ?? .null,
       "galaxyssi_evidence_receipt": receipt.map(AgentMcpJSONValue.object) ?? .null,
       "error": result.error.map { .object(["code": .string($0.code), "details_in_original_evidence": .bool(receipt != nil)]) } ?? .null])

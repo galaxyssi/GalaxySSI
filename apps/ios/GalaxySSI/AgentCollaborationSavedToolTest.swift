@@ -10,6 +10,7 @@ enum AgentCollaborationSavedToolTest {
     let evidenceInput: AgentMcpJSONObject
     let originalSource: String
     fileprivate let cases: [AgentMcpJSONObject]
+    fileprivate var expectedRuntime: AgentMcpJSONObject? = nil
 
     func evaluate(_ result: AgentNativeToolResult) -> AgentMcpJSONObject {
       func failure(_ code: String, _ path: String) -> AgentMcpJSONObject {
@@ -44,6 +45,16 @@ enum AgentCollaborationSavedToolTest {
       }
       guard let results = report["results"]?.arrayValue, results.count == cases.count else {
         return failure("case_coverage_mismatch", "/results")
+      }
+      if let expectedRuntime {
+        guard runtime == expectedRuntime else { return failure("runtime_identity_changed", "/runtime") }
+        guard let row = results.first?.objectValue, row["id"] == .string("run"),
+              row["error"] == nil, let output = row["output"] else {
+          return failure("run_output_invalid", "/results/0")
+        }
+        return ["passed": .bool(true), "runtime": .object(runtime), "output": output,
+          "checks": .array([]), "execution_mode": .string("run"), "goal_verified": .bool(false),
+          "replayed": .bool(result.receipt.replayed)]
       }
       var rows: [String: (AgentMcpJSONObject, Int)] = [:]
       for (index, value) in results.enumerated() {
@@ -147,16 +158,63 @@ enum AgentCollaborationSavedToolTest {
           let cases = test["cases"]?.arrayValue?.compactMap(\.objectValue),
           cases.allSatisfy({ ($0["id"]?.strictStringValue?.utf8.count ?? 0) > 0 &&
             ($0["id"]?.strictStringValue?.utf8.count ?? 0) <= 160 }) else { return nil }
-    let input: AgentMcpJSONObject = ["source": .string(source), "cases": .array(cases.map {
+    guard let program = program(source: source, cases: cases) else { return nil }
+    return Prepared(runtimeInput: runtimeInput(program, timeoutMillis: timeoutMillis), evidenceInput: [
+        "mode": .string("test"), "tool_test_plan": .object(fields(plan.reference)),
+        "executable_tool": .object(fields(tool.reference)), "execution_source_sha256": .string(digest(program)),
+        "source_sha256": .string(digest(source)), "timeout_ms": .int(timeoutMillis), "grants_permissions": .bool(false)
+      ], originalSource: source, cases: cases)
+  }
+
+  static func prepareRun(release: AgentCollaborationResearchRevision, plan: AgentCollaborationResearchRevision,
+                         tool: AgentCollaborationResearchRevision, parameters: AgentMcpJSONObject,
+                         timeoutMillis: Int64) -> Prepared? {
+    guard (100...AgentIOSOnDeviceRuntimeNativeToolCatalog.maxTimeoutMillis).contains(timeoutMillis),
+          release.draft.kind == .toolRelease, plan.draft.kind == .toolTestPlan, tool.draft.kind == .executableTool,
+          let verdict = release.testedToolRelease,
+          verdict["state"] == .string("eligible_for_scoped_tool_execution"),
+          reference(verdict["tool_test_plan"]) == plan.reference, reference(verdict["executable_tool"]) == tool.reference,
+          let releaseBody = release.draft.body["tool_release"]?.objectValue,
+          reference(releaseBody["tool_test_plan"]) == plan.reference, release.draft.parents.contains(plan.reference),
+          let planBody = plan.draft.body["tool_test_plan"]?.objectValue,
+          reference(planBody["executable_tool"]) == tool.reference, plan.draft.parents.contains(tool.reference),
+          let spec = tool.draft.body["executable_tool"]?.objectValue,
+          let source = spec["source"]?.strictStringValue, verdict["source_sha256"] == .string(digest(source)),
+          let runtime = verdict["tested_runtime"]?.objectValue,
+          let schema = AgentCollaborationToolRegistration.parameterSchema(spec),
+          AgentMcpJSONCodec.stringify(parameters).utf8.count <= 64 * 1_024,
+          AgentSkillManifestValidator.validateParameters(schema, value: .object(parameters), path: "$.parameters").isEmpty
+    else { return nil }
+    let cases: [AgentMcpJSONObject] = [["id": .string("run"), "input": .object(parameters)]]
+    guard let program = program(source: source, cases: cases, expectedRuntime: runtime) else { return nil }
+    return Prepared(runtimeInput: runtimeInput(program, timeoutMillis: timeoutMillis), evidenceInput: [
+      "mode": .string("run"), "tool_release": .object(fields(release.reference)),
+      "tool_test_plan": .object(fields(plan.reference)), "executable_tool": .object(fields(tool.reference)),
+      "parameters": .object(parameters), "tested_runtime": .object(runtime),
+      "execution_source_sha256": .string(digest(program)), "source_sha256": .string(digest(source)),
+      "timeout_ms": .int(timeoutMillis), "grants_permissions": .bool(false)
+    ], originalSource: source, cases: cases, expectedRuntime: runtime)
+  }
+
+  private static func runtimeInput(_ program: String, timeoutMillis: Int64) -> AgentMcpJSONObject {
+    ["language": .string("python"), "source": .string(program),
+      "timeout_ms": .int(timeoutMillis), "network_enabled": .bool(false)]
+  }
+
+  private static func program(source: String, cases: [AgentMcpJSONObject],
+                              expectedRuntime: AgentMcpJSONObject? = nil) -> String? {
+    var input: AgentMcpJSONObject = ["source": .string(source), "cases": .array(cases.map {
       .object(["id": $0["id"] ?? .null, "input": $0["input"] ?? .null])
     })]
+    if let expectedRuntime { input["expected_runtime"] = .object(expectedRuntime) }
     let encoded = Data(AgentMcpJSONCodec.stringify(input).utf8).base64EncodedString()
+    let gate = expectedRuntime == nil ? "" : "if runtime != payload['expected_runtime']: sys.exit('Saved tool runtime changed')\n"
     // This isolates Python namespaces, not the guest OS. The existing runtime policy still applies.
     let program = """
       import base64, contextlib, io, json, platform, sys
       payload = json.loads(base64.b64decode('\(encoded)').decode('utf-8'))
       runtime = {'python': list(sys.version_info[:3]), 'implementation': sys.implementation.name, 'machine': platform.machine()}
-      results = []
+      \(gate)results = []
       class Discard(io.TextIOBase):
           def write(self, value): return len(value)
       for case in payload['cases']:
@@ -173,12 +231,7 @@ enum AgentCollaborationSavedToolTest {
       print(json.dumps({'format': '\(reportFormat)', 'runtime': runtime, 'environment_matches': True, 'results': results}, allow_nan=False))
       """
     guard program.utf8.count <= 256 * 1_024 else { return nil }
-    return Prepared(runtimeInput: ["language": .string("python"), "source": .string(program),
-      "timeout_ms": .int(timeoutMillis), "network_enabled": .bool(false)], evidenceInput: [
-        "mode": .string("test"), "tool_test_plan": .object(fields(plan.reference)),
-        "executable_tool": .object(fields(tool.reference)), "execution_source_sha256": .string(digest(program)),
-        "source_sha256": .string(digest(source)), "timeout_ms": .int(timeoutMillis), "grants_permissions": .bool(false)
-      ], originalSource: source, cases: cases)
+    return program
   }
 
   private static func fields(_ ref: AgentCollaborationResearchReference) -> AgentMcpJSONObject {

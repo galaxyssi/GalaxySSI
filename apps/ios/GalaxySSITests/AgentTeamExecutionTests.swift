@@ -1239,6 +1239,20 @@ extension GalaxySSIStoreTests {
     let restored = try open().updateSavedToolExecution(.request(query("running", "status")), scope: scope(), process: "c", now: 13)
     XCTAssertEqual(restored.response["status"], .string("finished"))
     XCTAssertEqual(restored.response["result"], .object(result))
+    let selection: AgentMcpJSONValue = .object(["object_id": .string(String(repeating: "c", count: 64)),
+      "sha256": .string(String(repeating: "d", count: 64)), "revision": .int(1)])
+    var runInput: AgentMcpJSONObject = ["mode": .string("start"), "execution_id": .string("release-run"),
+      "timeout_ms": .int(1_000), "tool_release": selection, "parameters": .object(["value": .int(1)])]
+    let run = try XCTUnwrap(Execution.Request(phase: "start", input: runInput))
+    let runAdmitted = try reopened.updateSavedToolExecution(.request(run), scope: scope(), process: "b", now: 14)
+    XCTAssertTrue(runAdmitted.shouldLaunch)
+    XCTAssertNil(runAdmitted.record?.plan)
+    XCTAssertEqual(runAdmitted.record?.parameters, ["value": .int(1)])
+    runInput["parameters"] = .object(["value": .int(2)])
+    let changedRun = try XCTUnwrap(Execution.Request(phase: "start", input: runInput))
+    XCTAssertThrowsError(try reopened.updateSavedToolExecution(.request(changedRun), scope: scope(), process: "b", now: 15))
+    runInput["source"] = .string("untrusted override")
+    XCTAssertNil(Execution.Request(phase: "start", input: runInput))
     reopened.removeResearchObjects(conversationId: assignment.conversationId)
     XCTAssertThrowsError(try reopened.updateSavedToolExecution(.request(original), scope: scope(), process: "b", now: 14))
   }
@@ -1376,7 +1390,15 @@ extension GalaxySSIStoreTests {
     review.members[1].status = .succeeded
     review.updatedAtMillis += 1
     XCTAssertTrue(history.upsert(review))
-    XCTAssertEqual(try publishRelease().references.count, 1)
+    let releaseRef = try XCTUnwrap(publishRelease().references.first)
+    let runnable = try history.prepareSavedToolExecution(test: nil, release: releaseRef, parameters: ["value": .int(42)],
+      timeoutMillis: 1_000, scope: reader)
+    XCTAssertEqual(runnable.evidenceInput["mode"], .string("run"))
+    XCTAssertEqual(runnable.evidenceInput["parameters"], .object(["value": .int(42)]))
+    XCTAssertEqual(runnable.runtimeInput["network_enabled"], .bool(false))
+    XCTAssertTrue(runnable.runtimeInput.string("source").contains("runtime != payload['expected_runtime']"))
+    XCTAssertThrowsError(try history.prepareSavedToolExecution(test: nil, release: releaseRef,
+      parameters: ["value": .string("42")], timeoutMillis: 1_000, scope: reader))
     history.removeResearchObjects(conversationId: reader.conversationId)
     XCTAssertThrowsError(try history.prepareSavedToolTest(reference, timeoutMillis: 1_000, scope: reader))
   }
