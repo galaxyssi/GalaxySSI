@@ -771,6 +771,7 @@
     A10000000000000000000107 /* AgentIOSDesktopRemoteTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000107 /* AgentIOSDesktopRemoteTools.swift */; };
     A10000000000000000000108 /* AgentDesktopControlModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000108 /* AgentDesktopControlModels.swift */; };
     A10000000000000000000109 /* AgentIOSRuntimeNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000109 /* AgentIOSRuntimeNativeTools.swift */; };
+    A1000000000000000000E352 /* AgentCollaborationCandidateRecall.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000E352 /* AgentCollaborationCandidateRecall.swift */; };
     E10000000000000000000091 /* AgentIOSProjectRepositoryReadTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000091 /* AgentIOSProjectRepositoryReadTools.swift */; };
     E10000000000000000000092 /* AgentIOSProjectRepositoryMutationCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000092 /* AgentIOSProjectRepositoryMutationCatalog.swift */; };
     E10000000000000000000093 /* AgentIOSProjectRepositoryMutationExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000093 /* AgentIOSProjectRepositoryMutationExecutor.swift */; };
@@ -1900,6 +1901,7 @@
     A20000000000000000000107 /* AgentIOSDesktopRemoteTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSDesktopRemoteTools.swift; sourceTree = "<group>"; };
     A20000000000000000000108 /* AgentDesktopControlModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDesktopControlModels.swift; sourceTree = "<group>"; };
     A20000000000000000000109 /* AgentIOSRuntimeNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSRuntimeNativeTools.swift; sourceTree = "<group>"; };
+    A2000000000000000000E352 /* AgentCollaborationCandidateRecall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationCandidateRecall.swift; sourceTree = "<group>"; };
     E20000000000000000000091 /* AgentIOSProjectRepositoryReadTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSProjectRepositoryReadTools.swift; sourceTree = "<group>"; };
     E20000000000000000000092 /* AgentIOSProjectRepositoryMutationCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSProjectRepositoryMutationCatalog.swift; sourceTree = "<group>"; };
     E20000000000000000000093 /* AgentIOSProjectRepositoryMutationExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSProjectRepositoryMutationExecutor.swift; sourceTree = "<group>"; };
@@ -2622,6 +2624,7 @@
         A20000000000000000000107 /* AgentIOSDesktopRemoteTools.swift */,
         A20000000000000000000108 /* AgentDesktopControlModels.swift */,
         A20000000000000000000109 /* AgentIOSRuntimeNativeTools.swift */,
+        A2000000000000000000E352 /* AgentCollaborationCandidateRecall.swift */,
         E20000000000000000000091 /* AgentIOSProjectRepositoryReadTools.swift */,
         E20000000000000000000092 /* AgentIOSProjectRepositoryMutationCatalog.swift */,
         E20000000000000000000093 /* AgentIOSProjectRepositoryMutationExecutor.swift */,
@@ -3878,6 +3881,7 @@
         A10000000000000000000107 /* AgentIOSDesktopRemoteTools.swift in Sources */,
         A10000000000000000000108 /* AgentDesktopControlModels.swift in Sources */,
         A10000000000000000000109 /* AgentIOSRuntimeNativeTools.swift in Sources */,
+        A1000000000000000000E352 /* AgentCollaborationCandidateRecall.swift in Sources */,
         E10000000000000000000091 /* AgentIOSProjectRepositoryReadTools.swift in Sources */,
         E10000000000000000000092 /* AgentIOSProjectRepositoryMutationCatalog.swift in Sources */,
         E10000000000000000000093 /* AgentIOSProjectRepositoryMutationExecutor.swift in Sources */,

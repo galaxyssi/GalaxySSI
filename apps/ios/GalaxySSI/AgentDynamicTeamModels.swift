@@ -194,6 +194,8 @@ enum AgentCollaborationRuleTopics {
     A selection grants no permissions and does not rerun or undo work.
     For a saved workflow, include capability_channel as an exact reference inside workflow_instance alongside its matching method.
     New work requires the active selection; previously admitted work keeps its original selection.
+    Use capabilities to find unfinished tools and test plans. Follow usage_recall for original test history. A pre-execution
+    rejection belongs only to the requested plan; only an exact runtime-bound test belongs to a candidate.
     """),
     Topic(id: "workflows", purpose: "Register workflow roles, steps and review conditions", prerequisites: ["foundation"], contract: """
     workflow_method includes purpose, domain, bottleneck, change_rationale, applies_when, avoid_when, risks, expected_gain,

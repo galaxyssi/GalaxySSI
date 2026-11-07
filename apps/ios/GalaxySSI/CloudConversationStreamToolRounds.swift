@@ -361,7 +361,8 @@ struct CloudModelStreamMutableConversation {
       "query": ["type": "string"],
       "topic": ["type": "string"]
     ]
-    var schema: [String: Any] = ["type": "object", "properties": properties, "required": ["mode"]]
+    let scoped = AgentCollaborationCandidateRecall.cloudProperties(properties, enabled: !originalsOnly)
+    var schema: [String: Any] = ["type": "object", "properties": scoped, "required": ["mode"]]
     if request.provider != .gemini { schema["additionalProperties"] = false }
     if !originalsOnly { schema = AgentCollaborationWorkflowCheck.cloudSchema(schema) }
     let description = originalsOnly
