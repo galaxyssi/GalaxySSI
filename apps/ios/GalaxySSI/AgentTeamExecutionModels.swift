@@ -146,6 +146,7 @@ struct AgentCollaborationResearchDraft: Codable {
     case capabilityLesson = "capability_lesson"
     case workflowMethod = "workflow_method"
     case candidateEvent = "candidate_event"
+    case procedureSkill = "procedure_skill"
     case teamExchange = "team_exchange"
     case capabilityGap = "capability_gap"
     case innovation
@@ -903,6 +904,7 @@ struct AgentCollaborationResearchRevision: Codable {
   var draft: AgentCollaborationResearchDraft
   var frozenCloudReads: [AgentCollaborationFrozenCloudRead]? = nil
   var declaredExpectedUtilities: [String: Double]? = nil
+  var retainedProcedure: AgentCollaborationProcedure? = nil
   var expectedInformationGainBits: [String: Double]? = nil
   var hypothesisFeedback: AgentMcpJSONObject? = nil
   var carriedHypothesisPosterior: AgentMcpJSONObject? = nil

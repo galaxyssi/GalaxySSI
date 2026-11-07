@@ -778,6 +778,28 @@ final class AgentTeamExecutionHistoryStore {
                 conversationId: scope.conversationId, key: key),
               key == "object:" + head.reference.objectId else { throw AgentTeamHistoryDatabase.Failure.corrupt }
         guard head.turnId != scope.turnId || (head.runId == scope.runId && head.authorId == scope.memberId) else { continue }
+        if let procedure = head.retainedProcedure, head.draft.kind == .procedureSkill,
+           let body = head.draft.body["procedure_skill"]?.objectValue {
+          let text = ([head.draft.title, body.string("name"), procedure.domain, procedure.appliesWhen] +
+            (body["keywords"]?.arrayValue ?? []).compactMap(\.strictStringValue)).joined(separator: "\n")
+          func matches(_ term: String) -> Bool {
+            text.range(of: term, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+          }
+          let score = pinInitial ? Set(initialTerms.filter(matches)).count : 0
+          if pinInitial ? score > 0 : terms.allSatisfy(matches) {
+            var entry = AgentCollaborationProcedure.fields(head.reference)
+            entry["kind"] = .string("procedure_skill")
+            entry["state"] = .string("available_scoped_procedure")
+            if pinInitial {
+              ranked.append((score, entry))
+            } else {
+              entry["title"] = .string(head.draft.title)
+              entries.append(.object(entry))
+              if entries.count == 8 { break }
+            }
+          }
+          continue
+        }
         let kind = head.draft.kind.rawValue
         guard ["workflow_method", "executable_tool", "failure_experience", "capability_lesson"].contains(kind),
               let body = head.draft.body[kind]?.objectValue else { continue }
@@ -1275,11 +1297,24 @@ final class AgentTeamExecutionHistoryStore {
           }
           guard valid else { throw AgentTeamHistoryDatabase.Failure.stale }
         }
+        var retainedProcedure: AgentCollaborationProcedure?
+        if draft.kind == .procedureSkill {
+          guard let retained = try AgentCollaborationProcedure.freeze(draft, current: { ref in
+            guard !revisedInBatch.contains(ref.objectId),
+                  let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                    conversationId: conversationId, key: "object:" + ref.objectId),
+                  record.reference == ref,
+                  record.turnId != turnId || (record.runId == runId && record.authorId == memberId)
+            else { return nil }
+            return record
+          }) else { throw AgentTeamHistoryDatabase.Failure.stale }
+          retainedProcedure = retained
+        }
         var revision = AgentCollaborationResearchRevision(reference: .init(objectId: objectId,
           revision: draft.baseRevision + 1, sha256: ""), previousHash: head?.reference.sha256,
           runId: runId, turnId: turnId, authorId: memberId, sourceId: sourceId, draft: draft,
           frozenCloudReads: frozenReads, declaredExpectedUtilities: expectedUtilities,
-          expectedInformationGainBits: expectedInformation,
+          retainedProcedure: retainedProcedure, expectedInformationGainBits: expectedInformation,
           hypothesisFeedback: hypothesisFeedback,
           carriedHypothesisPosterior: carriedPosterior,
           registeredAtMillis: [.experimentPlan, .actionForecast].contains(draft.kind) ? AgentControlPlaneClock.nowMillis() : nil,
@@ -2014,10 +2049,51 @@ final class AgentTeamExecutionHistoryStore {
           database: database) else { return false }
         var pinned = checkpoint
         pinned.liveGraph = checkpoint.liveGraph?.pinningLearningPriorities(ranks)
+        guard let procedures = try Self.validatedProcedures(additions, existing: existing,
+          pinned: prior.first?.liveGraph?.procedureBindings ?? [:], snapshot: snapshot, database: database)
+        else { return false }
+        pinned.liveGraph = pinned.liveGraph?.pinningProcedures(procedures)
         try database.insertGoalCheckpoint(pinned)
         return true
       }
     } catch { return false }
+  }
+
+  private static func validatedProcedures(
+    _ additions: ArraySlice<AgentCollaborationLiveGraph.Work>, existing: [AgentCollaborationLiveGraph.Work],
+    pinned: [String: AgentMcpJSONObject], snapshot: AgentTeamExecutionSnapshot, database: AgentTeamHistoryDatabase
+  ) throws -> [String: AgentMcpJSONObject]? {
+    guard existing.allSatisfy({ ($0.procedure_use == nil) == (pinned[$0.id] == nil) }) else { return nil }
+    let requested = additions.filter { $0.procedure_use != nil }
+    guard !requested.isEmpty else { return pinned }
+    guard try database.researchRecord(Bool.self, conversationId: snapshot.conversationId,
+      key: "native-evidence-revoked", revision: 0) != true else { return nil }
+    var bindings = pinned
+    for work in requested {
+      guard let use = work.procedure_use, work.workflowExecutionId == nil,
+            let stage = work.stage, ["EXECUTE", "EXPLORE", "CHALLENGE", "VERIFY", "REVISE"].contains(stage),
+            snapshot.members.contains(where: { $0.memberId == work.member && $0.deliveryMode != .ignore && !$0.status.isTerminal })
+      else { return nil }
+      func lookup(_ ref: AgentCollaborationResearchReference, historical: Bool) throws -> AgentCollaborationResearchRevision? {
+        guard let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                conversationId: snapshot.conversationId, key: "object:" + ref.objectId,
+                revision: historical ? ref.revision : nil), record.reference == ref,
+              record.turnId != snapshot.taskId || (record.runId == snapshot.supervisorRunId &&
+                record.authorId == snapshot.primaryMemberId && record.authorId == work.member)
+        else { return nil }
+        return record
+      }
+      guard let skill = try lookup(use.procedure, historical: false), skill.draft.kind == .procedureSkill,
+            let procedure = skill.retainedProcedure, var binding = try procedure.binding(use,
+              current: { try lookup($0, historical: false) }, visible: { try lookup($0, historical: true) })
+      else { return nil }
+      binding["work_id"] = .string(work.id)
+      binding["member"] = .string(work.member)
+      binding["stage"] = .string(stage)
+      binding["assignment_sha256"] = .string(AgentMcpJSONCodec.sha256(["assignment": .string(work.assignment)]))
+      bindings[work.id] = binding
+    }
+    return bindings
   }
 
   func appendSavedCollaborationWorkflow(_ instance: AgentCollaborationWorkflowInstance,
