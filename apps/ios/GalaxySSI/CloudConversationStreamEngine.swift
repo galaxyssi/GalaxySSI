@@ -631,18 +631,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           collaborationRecall: collaborationRecallScope.map { scope in
             { arguments in
               await MainActor.run {
-                guard collaborationEvidence != nil || ["goal", "dependency", "acceptance_record", "native_evidence",
-                  "desktop_evidence", "desktop_evidence_list"].contains(arguments.string("mode")) else {
-                  return nil
-                }
-                guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
-                      let roster = session.collaborationRoster,
-                      let member = scope.memberId.split(separator: ":").first,
-                      let memberId = UUID(uuidString: String(member)),
-                      roster.members.contains(where: { $0.id == memberId }),
-                      session.mergedIntoConversationId.isBlank,
-                      !session.privateMode, !session.trackingPaused else { return nil }
-                return try? AgentTeamExecutionHistoryStore.shared.recallCollaborationOriginal(arguments, scope: scope)
+                Self.scopedCollaborationRecall(arguments, scope: scope, allowsResearch: collaborationEvidence != nil,
+                  session: store.agentSession(id: scope.conversationId), history: .shared)
               }
             }
           },
@@ -892,6 +882,21 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       )
       continuation.yield(.failed(ModelStreamFailed(requestId: requestId, error: streamError)))
     }
+  }
+
+  static func scopedCollaborationRecall(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope,
+                                        allowsResearch: Bool, session: AgentConversation?,
+                                        history: AgentTeamExecutionHistoryStore) -> AgentMcpJSONObject? {
+    let originalModes = ["goal", "dependency", "acceptance_record", "native_evidence", "desktop_evidence", "desktop_evidence_list"]
+    guard allowsResearch || originalModes.contains(input.string("mode")),
+          let session, session.id == scope.conversationId,
+          let roster = session.collaborationRoster,
+          let member = scope.memberId.split(separator: ":").first,
+          let memberId = UUID(uuidString: String(member)),
+          roster.members.contains(where: { $0.id == memberId }),
+          session.mergedIntoConversationId.isBlank,
+          !session.privateMode, !session.trackingPaused else { return nil }
+    return try? history.recallCollaborationOriginal(input, scope: scope)
   }
 
   private func executeToolCalls(
