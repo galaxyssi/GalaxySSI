@@ -117,6 +117,15 @@ enum AgentCollaborationRuleTopics {
     For acceptance_review, cite exactly one current delivery in parents. In body.acceptance_review include criterion_id,
     requirement, target (the exact parent), verdict (supported, refuted, or not_tested), rationale and unresolved.
     The reviewer must be independent of the delivery author; cite completely read original observations in observations.
+    For original-goal coverage, read the host goal source and copy its hashes and source IDs. Publish an artifact with
+    body.semantic_goal_mapping containing format galaxyssi.semantic-goal-mapping.v1, goal_sha256, criteria_sha256 and
+    segments (id, coverage_kind, criterion_ids, rationale). Map all outcome, constraint and context segments exactly once.
+    Outcomes must reference pinned criteria. A separate reviewer publishes acceptance_review with body.semantic_coverage_review
+    (target, verdict, rationale, unresolved, segments). Cite only that mapping in parents. Repeat each segment's exact id,
+    kind and criterion IDs, adding verdict, rationale and unresolved. Do not hide objections or relabel requested outcomes.
+    In an achieved assessment, supply goal_coverage as mapping/review references, non-overlapping parts of reference pairs,
+    or a manifest reference. A manifest is an artifact with body.semantic_goal_manifest, format galaxyssi.semantic-goal-manifest.v1,
+    both host hashes, and either parts or manifests. Include each referenced record in parents. Coverage is not final delivery.
     capability_gap records category, symptom, needed_capability, learning_options, chosen_option and rationale.
     innovation records origin, hypothesis, mechanism, difference, prior_art, falsifier, domain, applies_when, risks, alternatives
     and predictions (id, statement, test). Use novelty_scope not_checked. Transfer and combination require exact parent records.

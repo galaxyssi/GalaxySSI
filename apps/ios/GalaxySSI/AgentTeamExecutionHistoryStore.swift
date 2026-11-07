@@ -982,8 +982,13 @@ final class AgentTeamExecutionHistoryStore {
         if draft.kind == .acceptanceReview {
           let parents = draft.parents.map { AgentCollaborationDocumentaryAcceptance.Reference(
             objectId: $0.objectId, revision: $0.revision, sha256: $0.sha256) }
-          guard AgentCollaborationDocumentaryAcceptance.validReviewPublication(body: draft.body, parents: parents)
-          else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+          if draft.body[AgentCollaborationGoalCoverage.reviewKey] != nil {
+            guard references.isEmpty, draft.resolves?.isEmpty != false,
+                  AgentCollaborationGoalCoverage.reviewTarget(draft.body, parents: draft.parents) != nil
+            else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+          } else if !AgentCollaborationDocumentaryAcceptance.validReviewPublication(body: draft.body, parents: parents) {
+            throw AgentTeamHistoryDatabase.Failure.corrupt
+          }
           if !references.isEmpty {
             let scope = AgentCollaborationToolEvidenceScope(runId: runId, conversationId: conversationId,
               turnId: turnId, memberId: memberId, sourceId: sourceId)
@@ -1248,6 +1253,10 @@ final class AgentTeamExecutionHistoryStore {
         if let head {
           guard existingId != nil, head.authorId == memberId, head.draft.kind == draft.kind,
                 head.reference.revision == draft.baseRevision else { throw AgentTeamHistoryDatabase.Failure.stale }
+          if let target = AgentCollaborationGoalCoverage.reviewTarget(head.draft.body, parents: head.draft.parents) {
+            guard AgentCollaborationGoalCoverage.reviewTarget(draft.body, parents: draft.parents) == target
+            else { throw AgentTeamHistoryDatabase.Failure.stale }
+          }
         } else {
           guard existingId == nil, draft.baseRevision == 0 else { throw AgentTeamHistoryDatabase.Failure.stale }
         }
@@ -1257,9 +1266,19 @@ final class AgentTeamExecutionHistoryStore {
             existing.reference == parent else {
             throw AgentTeamHistoryDatabase.Failure.stale
           }
+          if draft.kind == .acceptanceReview, draft.body[AgentCollaborationGoalCoverage.reviewKey] != nil {
+            let stable = AgentTeamProgressPolicy.stableCollaborationMemberId
+            guard Self.isScopedAcceptanceRecord(existing, team: snapshot, kinds: [.artifact]),
+                  existing.draft.body[AgentCollaborationGoalCoverage.mappingKey]?.objectValue != nil,
+                  stable(memberId) != stable(existing.authorId), stable(memberId) != stable(snapshot.primaryMemberId)
+            else { throw AgentTeamHistoryDatabase.Failure.stale }
+          }
           if existing.turnId == turnId && existing.authorId != memberId {
-            guard draft.kind == .acceptanceReview, draft.parents == [parent], draft.resolves?.isEmpty != false,
-                  Self.isScopedAcceptanceRecord(existing, team: snapshot, kinds: [.artifact, .proposal, .decision]),
+            let review = draft.kind == .acceptanceReview && draft.parents == [parent] && draft.resolves?.isEmpty != false
+            let manifest = draft.kind == .artifact && draft.parents.contains(parent) && draft.resolves?.isEmpty != false &&
+              AgentCollaborationGoalCoverage.manifestLinks(draft.body, reference: parent)
+            let kinds: [AgentCollaborationResearchDraft.Kind] = review ? [.artifact, .proposal, .decision] : [.artifact, .acceptanceReview]
+            guard review || manifest, Self.isScopedAcceptanceRecord(existing, team: snapshot, kinds: kinds),
                   let current = try database.researchRecord(AgentCollaborationResearchRevision.self,
                     conversationId: conversationId, key: "object:" + parent.objectId), current.reference == parent
             else { throw AgentTeamHistoryDatabase.Failure.stale }
@@ -1314,6 +1333,13 @@ final class AgentTeamExecutionHistoryStore {
       for revision in revisions {
         try database.insertResearchRecord(revision, conversationId: conversationId,
           key: "object:" + revision.reference.objectId, revision: revision.reference.revision)
+        if revision.draft.kind == .acceptanceReview,
+           let target = AgentCollaborationGoalCoverage.reviewTarget(revision.draft.body, parents: revision.draft.parents) {
+          let key = AgentCollaborationGoalCoverage.reviewIndexPrefix(target) + revision.reference.objectId
+          if try database.researchRecord(String.self, conversationId: conversationId, key: key, revision: 0) == nil {
+            try database.insertResearchRecord(revision.reference.objectId, conversationId: conversationId, key: key, revision: 0)
+          }
+        }
       }
       let receipt = AgentCollaborationResearchPublication(requestHash: requestHash,
         references: linked + revisions.map(\.reference), milestoneId: milestone?.id,
@@ -2241,11 +2267,57 @@ final class AgentTeamExecutionHistoryStore {
             body: saved.draft.body, parents: saved.draft.parents.map(ref), hostObservationIds: observed)
         }, observationIsSupporting: { originals[$0] != nil }, originalObservation: { originals[$0] })
       let verified = outcome == .achieved
-      return ["success": .bool(verified), "status": .string(verified ? "criterion_evidence_verified" : "criterion_evidence_unverified"),
+      let criteria = try encoder.encode(checkpoint.contract)
+      var response: AgentMcpJSONObject = ["success": .bool(verified),
+        "status": .string(verified ? "criterion_evidence_verified" : "criterion_evidence_unverified"),
         "validation_scope": .string("criterion_evidence_only_not_goal_acceptance"), "goal_accepted": .bool(false),
         "revision": .int(expected), "assessment_sha256": .string(digest(Data(raw.utf8))),
-        "goal_sha256": .string(digest(Data(team.goal.utf8))),
-        "criteria_sha256": .string(try digest(encoder.encode(checkpoint.contract)))]
+        "goal_sha256": .string(digest(Data(team.goal.utf8))), "criteria_sha256": .string(digest(criteria))]
+      if let assessment = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8)),
+         let coverage = assessment["goal_coverage"] {
+        let source = try JSONDecoder().decode(AgentMcpJSONObject.self,
+          from: AgentCollaborationInlineOriginals.source(goal: team.goal, criteria: criteria))
+        let ids = Set(checkpoint.contract.map(\.id))
+        let assessmentIDs = Set((assessment["criteria"]?.arrayValue ?? []).compactMap { $0.objectValue?["id"]?.strictStringValue })
+        let covered = try verified && ids == assessmentIDs && coverage.objectValue.map { binding in
+          try AgentCollaborationGoalCoverage.verifies(binding, source: source, criteria: ids, coordinator: scope.memberId,
+            current: { ref in
+              guard let row = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                conversationId: scope.conversationId, key: "object:" + ref.objectId), row.reference == ref,
+                Self.isScopedAcceptanceRecord(row, team: team, kinds: [.artifact, .acceptanceReview]) else { return nil }
+              return row
+            }, previousAuthor: { id, revision in
+              try database.researchRecord(AgentCollaborationResearchRevision.self,
+                conversationId: scope.conversationId, key: "object:" + id, revision: revision)?.authorId
+            }, hasDissent: { ref in
+              try Self.hasSemanticCoverageDissent(ref, team: team, database: database)
+            })
+        } == true
+        response["success"] = .bool(covered)
+        response["status"] = .string(covered ? "goal_coverage_verified" : "goal_coverage_unverified")
+        response["validation_scope"] = .string("goal_coverage_and_criterion_evidence_not_final_delivery")
+      }
+      return response
+    }
+  }
+
+  private static func hasSemanticCoverageDissent(_ target: AgentCollaborationResearchReference,
+      team: AgentTeamExecutionSnapshot, database: AgentTeamHistoryDatabase) throws -> Bool {
+    let prefix = AgentCollaborationGoalCoverage.reviewIndexPrefix(target)
+    var cursor = ""
+    while true {
+      let keys = try database.milestoneKeys(conversationId: team.conversationId, prefix: prefix, after: cursor)
+      for key in keys {
+        guard let id = try database.researchRecord(String.self, conversationId: team.conversationId, key: key, revision: 0),
+              let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                conversationId: team.conversationId, key: "object:" + id) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        guard isScopedAcceptanceRecord(record, team: team, kinds: [.acceptanceReview]),
+              AgentCollaborationGoalCoverage.reviewTarget(record.draft.body, parents: record.draft.parents) == target
+        else { continue }
+        if !AgentCollaborationGoalCoverage.supports(record.draft.body) { return true }
+      }
+      guard let last = keys.last, keys.count == 33 else { return false }
+      cursor = last
     }
   }
 

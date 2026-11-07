@@ -2023,8 +2023,9 @@ extension GalaxySSIStoreTests {
     }
     let history = open()
     var team = durableTeamSnapshot("goal-evidence")
-    team.goal = "Document the observed value"
+    team.goal = "Document the observed value. Preserve its units."
     team.members.append(AgentTeamMemberSnapshot(agentId: "delivery", deliveryMode: .observe, sourceMessageId: "delivery-source"))
+    team.members.append(AgentTeamMemberSnapshot(agentId: "dissent", deliveryMode: .observe, sourceMessageId: "dissent-source"))
     for index in team.members.indices { team.members[index].dispatchCheckpoint = .accepted }
     XCTAssertTrue(history.upsert(team))
     func scope(_ index: Int) -> AgentCollaborationToolEvidenceScope {
@@ -2073,6 +2074,47 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(checked["status"], .string("criterion_evidence_verified"))
     XCTAssertEqual(checked["goal_accepted"], .bool(false))
     XCTAssertEqual(checked["criteria_sha256"], pinned["criteria_sha256"])
+    let header: AgentMcpJSONObject = ["goal_sha256": checked["goal_sha256"] ?? .null,
+      "criteria_sha256": checked["criteria_sha256"] ?? .null]
+    let mapped: [AgentMcpJSONObject] = [
+      ["id": .string("source-1"), "coverage_kind": .string("outcome"), "criterion_ids": .array([.string("value")]),
+        "rationale": .string("The criterion covers the requested observation")],
+      ["id": .string("source-2"), "coverage_kind": .string("constraint"), "criterion_ids": .array([]),
+        "rationale": .string("Preserve the original units in the report")]
+    ]
+    let mappingBody = header.merging(["format": .string("galaxyssi.semantic-goal-mapping.v1"),
+      "segments": .array(mapped.map(AgentMcpJSONValue.object))]) { _, new in new }
+    let mapping = try publish(.init(id: "mapping", objectId: nil, baseRevision: 0, kind: .artifact,
+      title: "Goal mapping", body: ["semantic_goal_mapping": .object(mappingBody)], parents: []), author: 2, id: "mapping")
+    func coverageReview(_ verdict: String, segments: [AgentMcpJSONObject]) -> AgentCollaborationResearchDraft {
+      let issues: AgentMcpJSONValue = .array(verdict == "supported" ? [] : [.string("Units not addressed")])
+      let fields: AgentMcpJSONObject = ["verdict": .string(verdict), "unresolved": issues]
+      let body = fields.merging(["target": .object(ref(mapping)), "rationale": .string("Checked the mapping"),
+        "segments": .array(segments.map { .object($0.merging(fields) { _, new in new }) })]) { _, new in new }
+      return .init(id: "coverage-review", objectId: nil, baseRevision: 0, kind: .acceptanceReview, title: "Coverage",
+        body: ["semantic_coverage_review": .object(body)], parents: [mapping])
+    }
+    let semanticReview = try publish(coverageReview("supported", segments: mapped), author: 1, id: "coverage-review")
+    let part: AgentMcpJSONObject = ["mapping": .object(ref(mapping)), "review": .object(ref(semanticReview))]
+    let manifest = try publish(.init(id: "manifest", objectId: nil, baseRevision: 0, kind: .artifact,
+      title: "Directory", body: ["semantic_goal_manifest": .object(header.merging([
+        "format": .string("galaxyssi.semantic-goal-manifest.v1"), "parts": .array([.object(part)])
+      ]) { _, new in new })], parents: [mapping, semanticReview]), author: 2, id: "manifest")
+    func coverageStatus(_ coverage: AgentMcpJSONObject) throws -> AgentMcpJSONObject {
+      var candidate = assessment
+      candidate["goal_coverage"] = .object(coverage)
+      var query = request
+      query["artifact"] = .string(AgentMcpJSONCodec.stringify(candidate))
+      return try open().publishCollaborationMilestone(query, scope: scope(0))
+    }
+    XCTAssertEqual(try coverageStatus(part)["status"], .string("goal_coverage_verified"))
+    let manifestCheck = try coverageStatus(["manifest": .object(ref(manifest))])
+    XCTAssertEqual(manifestCheck["status"], .string("goal_coverage_verified"))
+    XCTAssertEqual(manifestCheck["goal_accepted"], .bool(false))
+    XCTAssertEqual(try coverageStatus(["parts": .array([.object(part), .object(part)])])["status"],
+      .string("goal_coverage_unverified"))
+    _ = try publish(coverageReview("refuted", segments: mapped), author: 3, id: "dissent")
+    XCTAssertEqual(try coverageStatus(part)["status"], .string("goal_coverage_unverified"))
     request["expected_revision"] = .int(2)
     XCTAssertThrowsError(try open().publishCollaborationMilestone(request, scope: scope(0)))
     request["expected_revision"] = .int(1)
