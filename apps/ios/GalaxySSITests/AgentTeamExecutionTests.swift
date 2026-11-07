@@ -452,14 +452,98 @@ extension GalaxySSIStoreTests {
       "required_observations":[{"origin":"invented","tool":"search"}]}]}
     """
     let invalid = AgentCollaborationGoalAssessmentPolicy.preflight(raw, establishedContract: false)
+    XCTAssertEqual(invalid["success"], .bool(true))
+    XCTAssertEqual(invalid["schema_valid"], .bool(false))
     XCTAssertEqual(invalid["field_path"], .string("$.criteria[0].required_observations[0].origin"))
     XCTAssertEqual(invalid["json_valid"], .bool(true))
     XCTAssertEqual(invalid["acceptance_contract_state"], .string("not_established"))
     let valid = AgentCollaborationGoalAssessmentPolicy.preflight(
       raw.replacingOccurrences(of: "invented", with: "ios_cloud_tool"), establishedContract: true)
-    XCTAssertEqual(valid["status"], .string("valid_structure"))
+    XCTAssertEqual(valid["status"], .string("returned"))
+    XCTAssertEqual(valid["schema_valid"], .bool(true))
     XCTAssertEqual(valid["validation_scope"], .string("structure_only_not_admission_or_acceptance"))
     XCTAssertEqual(valid["acceptance_contract_state"], .string("established"))
+  }
+
+  func testAssessmentPreflightSharesValidatorSchemaWithAdmissionWithoutEndorsingWork() throws {
+    typealias Policy = AgentCollaborationGoalAssessmentPolicy
+    let spec: AgentMcpJSONObject = ["id": .string(AgentCollaborationNumericTrial.validatorId),
+      "variables": .array([.string("x")]), "cases": .array([.object([
+        "id": .string("original"), "input": .object(["x": .int(3)]), "expected": .int(3), "absolute_tolerance": .int(0)
+      ])])]
+    func draft(_ validator: AgentMcpJSONObject) -> String {
+      AgentMcpJSONCodec.stringify(["format": .string("galaxyssi.goal-assessment.v1"), "summary": .string("Draft"),
+        "decision": .string("continue"), "criteria": .array([.object([
+          "id": .string("one"), "requirement": .string(AgentCollaborationNumericTrial.requirement),
+          "verification": .string("computational"), "status": .string("open"), "evidence": .array([]),
+          "validator": .object(validator)
+        ])]), "work": .array([.object(["id": .string("verify"), "member": .string("owner"),
+          "assignment": .string("Review originals")])]), "blockers": .array([])])
+    }
+    let good = draft(spec)
+    var broken = spec
+    var row = try XCTUnwrap(spec["cases"]?.arrayValue?.first?.objectValue)
+    row["absolute_tolerance"] = .int(-1)
+    broken["cases"] = .array([.object(row)])
+    let bad = draft(broken)
+    let invalid = Policy.preflight(bad, establishedContract: false)
+    XCTAssertEqual(invalid["schema_valid"], .bool(false))
+    XCTAssertEqual(invalid["failure"]?.objectValue?["path"], .string("$.criteria[0].validator.cases[0].absolute_tolerance"))
+    XCTAssertEqual(invalid["failure"]?.objectValue?["code"], .string("invalid_validator"))
+    XCTAssertEqual(Policy.evaluate(bad, preserving: [], authorizedMembers: ["owner"], completedWork: []), .needsAssessment)
+    let valid = Policy.preflight(good, establishedContract: false)
+    XCTAssertEqual(valid["schema_valid"], .bool(true))
+    XCTAssertEqual(valid["committed"], .bool(false))
+    XCTAssertEqual(valid["goal_accepted"], .bool(false))
+    XCTAssertEqual(valid["assignment_completed"], .bool(false))
+    XCTAssertTrue(valid["not_checked"]?.arrayValue?.contains(.string("permissions")) == true)
+    XCTAssertEqual(Policy.evaluate(good, preserving: [], authorizedMembers: [], completedWork: []), .needsAssessment)
+    XCTAssertEqual(Policy.evaluate(good, preserving: [], authorizedMembers: ["owner"], completedWork: []), .schedule(["verify"]))
+    XCTAssertNotEqual(valid["draft_sha256"], Policy.preflight(good + "\n", establishedContract: false)["draft_sha256"])
+    XCTAssertEqual(Policy.preflight("{", establishedContract: false)["json_syntax"], .string("invalid"))
+    let array = Policy.preflight("[]", establishedContract: false)
+    XCTAssertEqual(array["json_syntax"], .string("valid"))
+    XCTAssertEqual(array["schema_valid"], .bool(false))
+  }
+
+  func testCoordinatorAssessmentPreflightDoesNotPublishAndRejectsRetiredAssignments() throws {
+    let suite = "preflight-scope-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: folder) }
+    let secrets = InMemorySecretStore()
+    let file = folder.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    var team = durableTeamSnapshot("assessment-scope")
+    team.members[0].dispatchCheckpoint = .accepted
+    XCTAssertTrue(history.upsert(team))
+    let owner = team.members[0]
+    let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId, memberId: owner.memberId, sourceId: owner.sourceMessageId)
+    let draft = #"{"format":"galaxyssi.goal-assessment.v1","summary":"Review","decision":"continue","work":[],"blockers":[],"criteria":[{"id":"one","requirement":"Check","verification":"documentary","status":"open","evidence":[]}]}"#
+    let input: AgentMcpJSONObject = ["mode": .string("validate_assessment"), "artifact": .string(draft)]
+    let result = try history.publishCollaborationMilestone(input, scope: scope)
+    XCTAssertEqual(result["schema_valid"], .bool(true))
+    XCTAssertEqual(result["acceptance_contract_state"], .string("not_established"))
+    let database = try AgentTeamHistoryDatabase(fileURL: file,
+      storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    XCTAssertTrue(try database.researchObjectKeys(conversationId: scope.conversationId, after: "", limit: 1).isEmpty)
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(["mode": .string("status")], scope: scope))
+    var forged = input
+    forged["member_id"] = .string("other")
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(forged, scope: scope))
+    var oversized = input
+    oversized["artifact"] = .string(String(repeating: "\" ", count: 50_000))
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(oversized, scope: scope))
+    var foreign = scope
+    foreign.sourceId = "other-source"
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(input, scope: foreign))
+    team.state = .interrupted
+    team.updatedAtMillis += 1
+    XCTAssertTrue(history.upsert(team))
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(input, scope: scope))
+    XCTAssertTrue(try database.researchObjectKeys(conversationId: scope.conversationId, after: "", limit: 1).isEmpty)
   }
 
   func testInterimPublicationReopensWithSameReceiptWithoutCompletingAssignment() throws {
