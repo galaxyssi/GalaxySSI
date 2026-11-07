@@ -131,6 +131,7 @@
     A10000000000000000000061 /* GalaxySSIAgentHomeHeaderPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000061 /* GalaxySSIAgentHomeHeaderPresentation.swift */; };
     A10000000000000000000A02 /* AgentConnectorStreamUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000A02 /* AgentConnectorStreamUpdate.swift */; };
     E36380000000000000000001 /* AgentResearchCheckpointStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36380000000000000000002 /* AgentResearchCheckpointStore.swift */; };
+    E3699A000000000000000001 /* AgentLocalResearchDisclosure.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3699A000000000000000002 /* AgentLocalResearchDisclosure.swift */; };
     A10000000000000000000005 /* GalaxySSIViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* GalaxySSIViews.swift */; };
     A10000000000000000001763 /* GalaxySSIEncryptedUserDefaultsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001763 /* GalaxySSIEncryptedUserDefaultsStore.swift */; };
     A100000000000000000F3600 /* GalaxySSIContactReminderStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000F3600 /* GalaxySSIContactReminderStore.swift */; };
@@ -1335,6 +1336,7 @@
     A20000000000000000000061 /* GalaxySSIAgentHomeHeaderPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentHomeHeaderPresentation.swift; sourceTree = "<group>"; };
     A20000000000000000000A02 /* AgentConnectorStreamUpdate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorStreamUpdate.swift; sourceTree = "<group>"; };
     E36380000000000000000002 /* AgentResearchCheckpointStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentResearchCheckpointStore.swift; sourceTree = "<group>"; };
+    E3699A000000000000000002 /* AgentLocalResearchDisclosure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalResearchDisclosure.swift; sourceTree = "<group>"; };
     A20000000000000000000005 /* GalaxySSIViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIViews.swift; sourceTree = "<group>"; };
     A20000000000000000001763 /* GalaxySSIEncryptedUserDefaultsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIEncryptedUserDefaultsStore.swift; sourceTree = "<group>"; };
     A200000000000000000F3600 /* GalaxySSIContactReminderStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIContactReminderStore.swift; sourceTree = "<group>"; };
@@ -3054,6 +3056,7 @@
         A20000000000000000000061 /* GalaxySSIAgentHomeHeaderPresentation.swift */,
         A20000000000000000000A02 /* AgentConnectorStreamUpdate.swift */,
         E36380000000000000000002 /* AgentResearchCheckpointStore.swift */,
+        E3699A000000000000000002 /* AgentLocalResearchDisclosure.swift */,
         A20000000000000000000889 /* Assets.xcassets */,
         A41000000000000000000890 /* Localizable.strings */,
         A20000000000000000000888 /* GalaxySSIAndroidParityUI.swift */,
@@ -4397,6 +4400,7 @@
         A10000000000000000000061 /* GalaxySSIAgentHomeHeaderPresentation.swift in Sources */,
         A10000000000000000000A02 /* AgentConnectorStreamUpdate.swift in Sources */,
         E36380000000000000000001 /* AgentResearchCheckpointStore.swift in Sources */,
+        E3699A000000000000000001 /* AgentLocalResearchDisclosure.swift in Sources */,
         A10000000000000000000888 /* GalaxySSIAndroidParityUI.swift in Sources */,
         A10000000000000000001880 /* GalaxySSIAgentHomeScanAttachments.swift in Sources */,
         F12661000000000000000001 /* GalaxySSIScannedAgentConversation.swift in Sources */,

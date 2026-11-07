@@ -439,7 +439,8 @@ enum CloudWebGrounding {
     name: String,
     arguments: AgentMcpJSONObject,
     context: AgentNativeToolInvocationContext,
-    readOnlyAnalysis: Bool = false
+    readOnlyAnalysis: Bool = false,
+    researchDisclosure: AgentLocalResearchCollector? = nil
   ) -> String {
     if name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "web_weather" {
       return executeWeather(provider: provider, arguments: arguments, context: context)
@@ -477,6 +478,7 @@ enum CloudWebGrounding {
               context: context
             )
           : result.output
+        researchDisclosure?.record(tool: name, output: output)
         return boundedModelJson(output)
       }
       return boundedModelJson(modelPayload(result: result, operation: operation, toolName: name))

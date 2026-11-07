@@ -20,6 +20,8 @@ struct CloudConversationNonStreamingToolEngine {
     requestId: String
   ) async throws -> String {
     defer { CloudImageAnnotationSession.discard(requestId: requestId) }
+    let disclosureOwner = await MainActor.run { store.profile.identityFingerprint }
+    let researchDisclosure = turns.last?.isMine == true ? AgentLocalResearchCollector() : nil
     let request = try await modelClient.prepareConversationStreamRequest(
       contact: contact,
       store: store,
@@ -115,9 +117,14 @@ struct CloudConversationNonStreamingToolEngine {
             requestId: requestId,
             conversationId: turns.last?.conversationId ?? "",
             turnId: turns.last?.turnId ?? requestId,
-            images: images
+            images: images,
+            readOnlyAnalysis: turns.last?.readOnlyAnalysis ?? false,
+            researchDisclosure: researchDisclosure
           )
         )
+        if let source = turns.last, let receipt = researchDisclosure?.drain(), receipt.visible {
+          await MainActor.run { store.persistLocalResearchDisclosure(receipt, source: source, owner: disclosureOwner) }
+        }
         results.append((call, output))
         if progress.record(toolName: call.name, arguments: arguments, output: output) {
           madeProgress = true

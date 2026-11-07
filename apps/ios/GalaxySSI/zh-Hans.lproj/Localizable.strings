@@ -6161,6 +6161,9 @@
 "galaxyssi.agent.progress.research.no_body" = "没有可读取的网页正文";
 "galaxyssi.agent.progress.research.fetch_failed" = "网页读取失败";
 "galaxyssi.agent.progress.save_failed" = "无法保存智能体进度。";
+"galaxyssi.agent.local_research.summary" = "%lld 次搜索，找到 %lld 个来源";
+"galaxyssi.agent.local_research.more" = "显示更多";
+"galaxyssi.agent.local_research.partial" = "仅记录部分结果";
 "galaxyssi.screen_assistant.privacy_ios" = "仅在你选择内容并发送后，才向所选 Agent 提供内容。开启此开关不会截屏或启动任务。iOS 不允许此图标悬浮在其他应用之上。";
 "galaxyssi.collaboration.new" = "新建协作组";
 "galaxyssi.collaboration.settings" = "协作组成员";

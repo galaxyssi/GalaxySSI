@@ -220,6 +220,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     var lastFinishReason: String?
     let conversationId = turns.last?.conversationId ?? ""
     let turnId = turns.last?.turnId.ifBlank(requestId) ?? requestId
+    let disclosureOwner = await MainActor.run { store.profile.identityFingerprint }
+    let researchDisclosure = turns.last?.isMine == true ? AgentLocalResearchCollector() : nil
 
     do {
       let request = try await modelClient.prepareConversationStreamRequest(
@@ -592,7 +594,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             conversationId: conversationId,
             turnId: turnId,
             images: images,
-            readOnlyAnalysis: turns.last?.readOnlyAnalysis ?? false
+            readOnlyAnalysis: turns.last?.readOnlyAnalysis ?? false,
+            researchDisclosure: researchDisclosure
           ),
           collaborationRecall: collaborationRecallScope.map { scope in
             { arguments in
@@ -646,6 +649,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
               outcomes[index].output = Self.cloudEvidenceOutput(output, receipt: receipt)
             }
           }
+        }
+        if let source = turns.last, let receipt = researchDisclosure?.drain(), receipt.visible {
+          await MainActor.run { store.persistLocalResearchDisclosure(receipt, source: source, owner: disclosureOwner) }
         }
         if let failedOutcome = outcomes.first(where: { $0.errorMessage != nil }) {
           let streamError = ModelStreamError(

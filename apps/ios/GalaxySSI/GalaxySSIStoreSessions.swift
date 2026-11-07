@@ -983,6 +983,23 @@ extension GalaxySSIStore {
       turn: source.turnId.ifBlank(source.id.uuidString), source: source.id)
   }
 
+  func persistLocalResearchDisclosure(_ receipt: AgentLocalResearchDisclosure, source: ChatMessage, owner: String) {
+    guard receipt.visible, owner == profile.identityFingerprint, source.isMine, !source.isSystem,
+          let session = agentSession(id: source.conversationId), !session.privateMode, !session.trackingPaused,
+          session.mergedIntoConversationId.isBlank,
+          let saved = chatHistoryDatabase.message(id: source.id), saved.isMine, !saved.isSystem,
+          saved.conversationId == source.conversationId, saved.turnId == source.turnId,
+          !saved.deliveryTrace.contains(where: { $0.stage == "screen_analysis_cancelled" }) else { return }
+    if researchCheckpointStore.mergeLocalDisclosure(receipt, conversation: source.conversationId,
+      turn: source.turnId.ifBlank(source.id.uuidString), source: source.id) { objectWillChange.send() }
+  }
+
+  func localResearchDisclosure(for source: ChatMessage) -> AgentLocalResearchDisclosure {
+    guard let session = agentSession(id: source.conversationId), !session.privateMode, !session.trackingPaused else { return .init() }
+    return researchCheckpointStore.localDisclosure(conversation: source.conversationId,
+      turn: source.turnId.ifBlank(source.id.uuidString), source: source.id)
+  }
+
   func latestAgentSessionMessage(_ conversationId: String) -> ChatMessage? {
     let clean = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !clean.isEmpty else { return nil }

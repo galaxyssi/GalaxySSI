@@ -136,7 +136,7 @@ struct AgentResearchCheckpointStore {
   }
 
   private var prefix: String { "agent.research-checkpoints.v1." + Self.digest(owner) + "." }
-  private func key(_ conversation: String, _ turn: String, _ source: UUID) -> String {
+  func key(_ conversation: String, _ turn: String, _ source: UUID) -> String {
     prefix + Self.digest(conversation) + "." + Self.digest(turn) + "." + Self.digest(source.uuidString.lowercased())
   }
 

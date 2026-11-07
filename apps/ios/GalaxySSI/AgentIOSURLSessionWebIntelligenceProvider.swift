@@ -814,6 +814,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     var evidenceGroups: [[AgentMcpJSONObject]] = []
     var receiptGroups: [[AgentMcpJSONObject]] = []
     var allReceipts: [AgentMcpJSONObject] = []
+    var executedQueries: [AgentMcpJSONValue] = []
 
     for (index, item) in queryPlan.enumerated() {
       guard !invocation.isCancellationRequested else {
@@ -827,6 +828,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       searchInput["verticals"] = .array((item.verticals.isEmpty ? Set(globalVerticals) : item.verticals).sorted().map(AgentMcpJSONValue.string))
       searchInput["categories"] = .array((item.categories.isEmpty ? Set(globalCategories) : item.categories).sorted().map(AgentMcpJSONValue.string))
       let searched = search(input: searchInput, invocation: invocation, operation: operation)
+      executedQueries.append(.string(item.query))
       guard searched.isSuccess else {
         let receipt: AgentMcpJSONObject = [
           "source_id": .string("research-query-\(index + 1)"),
@@ -996,6 +998,8 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     output["synthesis_required"] = .bool(true)
     output["research"] = .object([
       "query_plan": .array(queryPlan.map { .object($0.publicValue) }),
+      "executed_queries": .array(executedQueries),
+      "discovered_source_count": .int(Int64(searchResults.count)),
       "coverage": .array(coverage.map { .object($0.publicValue) }),
       "unresolved_queries": .array(coverage.filter { $0.status != "covered" }.map { .string($0.item.query) }),
       "synthesis_contract": .object([
@@ -1008,7 +1012,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     var researchMetadata: AgentMcpJSONObject = [:]
     researchMetadata["autonomous"] = .bool(autonomous)
     researchMetadata["query_plan_source"] = .string(input["query_plan"]?.arrayValue == nil ? "primary_query_only" : "model_supplied")
-    researchMetadata["queries_executed"] = .int(Int64(queryPlan.count))
+    researchMetadata["queries_executed"] = .int(Int64(executedQueries.count))
     researchMetadata["page_read_parallelism"] = .int(Int64(pageReadParallelism))
     researchMetadata["page_read_per_host"] = .int(Int64(perHostParallelism))
     researchMetadata["page_read_candidates"] = .int(Int64(pageReads.candidateCount))

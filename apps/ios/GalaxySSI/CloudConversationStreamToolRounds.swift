@@ -12,6 +12,7 @@ struct CloudConversationToolExecutionContext: Equatable {
   var turnId: String
   var images: [CloudImagePayload] = []
   var readOnlyAnalysis = false
+  var researchDisclosure: AgentLocalResearchCollector? = nil
 }
 
 struct CloudConversationToolExecutor: CloudConversationToolExecuting {
@@ -306,7 +307,8 @@ struct CloudWebGroundingToolExecutor: CloudConversationToolExecuting {
       name: call.name,
       arguments: arguments,
       context: invocationContext,
-      readOnlyAnalysis: context.readOnlyAnalysis
+      readOnlyAnalysis: context.readOnlyAnalysis,
+      researchDisclosure: context.researchDisclosure
     )
   }
 }

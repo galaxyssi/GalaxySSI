@@ -269,6 +269,7 @@ final class CloudWebGroundingTests: XCTestCase {
         return AgentNativeToolExecutionResult.success(
           output: [
             "request_id": .string("request-1"),
+            "query": input["query"] ?? .null,
             "results": .array([
               .object([
                 "title": .string("GalaxySSI"),
@@ -285,11 +286,13 @@ final class CloudWebGroundingTests: XCTestCase {
       grantedPermissions: [AgentIOSWebIntelligenceNativeToolCatalog.networkPermission],
       grantedConsents: [AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent]
     )
+    let collector = AgentLocalResearchCollector()
     let encoded = CloudWebGrounding.executeTool(
       provider: provider,
       name: "web_search",
       arguments: ["query": .string("GalaxySSI"), "max_results": .int(6)],
-      context: context
+      context: context,
+      researchDisclosure: collector
     )
     let payload = try XCTUnwrap(decodeObject(encoded))
     let pack = try XCTUnwrap(payload["evidence_pack"]?.objectValue)
@@ -302,6 +305,10 @@ final class CloudWebGroundingTests: XCTestCase {
     XCTAssertEqual(payload["protocol"], .string(AgentIOSWebIntelligenceNativeToolCatalog.protocolId))
     XCTAssertEqual(pack["protocol"], .string(AgentIOSWebEvidencePack.protocolId))
     XCTAssertEqual(pack["stats"]?.objectValue?["item_count"], .int(1))
+    let receipt = collector.drain()
+    XCTAssertEqual(receipt.queries, ["GalaxySSI"])
+    XCTAssertEqual(receipt.sources.map(\.id), ["https://galaxyssi.example/"])
+    XCTAssertNil(payload["research_disclosure"])
     provider.operations.removeAll()
     for tool in ["web_cache", "web_watch"] {
       let rejected = CloudWebGrounding.executeTool(provider: provider, name: tool,
@@ -313,6 +320,56 @@ final class CloudWebGroundingTests: XCTestCase {
     _ = CloudWebGrounding.executeTool(provider: provider, name: "web_search",
       arguments: ["query": .string("GalaxySSI")], context: context, readOnlyAnalysis: true)
     XCTAssertEqual(provider.operations, [.search])
+  }
+
+  func testLocalResearchDisclosureRecordsExecutedQueriesAndRawSourcesOnly() throws {
+    let output: AgentMcpJSONObject = [
+      "operation": .string("research"),
+      "research": .object([
+        "executed_queries": .array([.string("Grid   storage"), .string("grid storage")]),
+        "query_plan": .array([.object(["query": .string("Never executed")])]),
+        "discovered_source_count": .int(30)
+      ]),
+      "results": .array((1...20).map {
+        .object(["url": .string("https://example.org/report?part=\($0)#intro"), "title": .string("Report \($0)")])
+      } + [.object(["url": .string("https://user:secret@example.org/private")]),
+           .object(["url": .string("file:///private/report")])])
+    ]
+    let collector = AgentLocalResearchCollector()
+    collector.record(tool: "web_research", output: output)
+    let receipt = collector.drain()
+    XCTAssertEqual(receipt.queries, ["Grid storage"])
+    XCTAssertEqual(receipt.sources.count, 20)
+    XCTAssertEqual(receipt.sources.first?.id, "https://example.org/report?part=1")
+    XCTAssertTrue(receipt.truncated)
+    XCTAssertFalse(collector.drain().visible)
+    let restored = AgentLocalResearchDisclosure.restored([
+      .assistant("This text [is not a source](https://other.example)."),
+      .tool(.init(callId: "saved", toolId: AgentIOSWebIntelligenceNativeToolCatalog.research,
+        status: "succeeded", output: output))
+    ])
+    XCTAssertEqual(restored, receipt)
+  }
+
+  @MainActor
+  func testLocalResearchDisclosureDoesNotRecreateDeletedSourceOrCrossProfiles() throws {
+    let suite = "local-disclosure-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = GalaxySSIStore(defaults: defaults, secrets: InMemorySecretStore())
+    let session = store.createAgentSession(title: "Research")
+    let source = store.appendOutgoing("Research the grid", to: "hermes", conversationOverride: session.id)
+    let receipt = AgentLocalResearchDisclosure.observed(tool: "web_search", output: ["query": .string("Private query")])
+    let owner = store.profile.identityFingerprint
+    store.persistLocalResearchDisclosure(receipt, source: source, owner: "foreign-profile")
+    XCTAssertFalse(store.localResearchDisclosure(for: source).visible)
+    store.persistLocalResearchDisclosure(receipt, source: source, owner: owner)
+    XCTAssertEqual(store.localResearchDisclosure(for: source), receipt)
+    XCTAssertFalse(defaults.dictionaryRepresentation().description.contains("Private query"))
+    XCTAssertTrue(store.researchRetryHandoff(for: source).isEmpty)
+    XCTAssertTrue(store.deleteMessage(source.id, contactId: source.contactId))
+    store.persistLocalResearchDisclosure(receipt, source: source, owner: owner)
+    XCTAssertFalse(store.localResearchDisclosure(for: source).visible)
   }
 
   func testEvidenceFallbackCollectsBoundedHttpsSources() {
