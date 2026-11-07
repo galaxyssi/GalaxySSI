@@ -8,6 +8,8 @@ import org.junit.Assert.*
 import org.junit.Test
 
 internal fun restoreHealthCareSchemaFive(db: SQLiteDatabase) {
+    db.execSQL("DROP TABLE research_jobs")
+    db.execSQL("DROP TABLE research_authorizations")
     // Keep encrypted payloads intact while recreating the real pre-priority table layout.
     val columns = "id,revision,payload,updated_at,metric_key,open,stage,due_at"
     db.execSQL("CREATE TABLE legacy_concerns(id TEXT PRIMARY KEY,revision INTEGER NOT NULL,payload BLOB NOT NULL,updated_at INTEGER NOT NULL," +

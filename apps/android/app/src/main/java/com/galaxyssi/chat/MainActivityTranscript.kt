@@ -550,6 +550,9 @@ internal fun Context.persistAgentTranscript(
         taskId = state.sessionId,
         turnIdForTask = agentTranscriptStore::turnIdForTask
     )
+    val healthResearch = agentTranscriptStore.conversation(conversationId)?.globalTopicKey
+        ?.startsWith(HealthCareDiscussionPolicy.TOPIC_PREFIX) == true
+    if (healthResearch && !HealthCareResearchWork.allowProjection(this, conversationId, transcriptTurnId)) return
     val owners = listOf(
         transcriptTurnId.takeIf(String::isNotBlank)?.let(agentTranscriptStore::conversationIdForTurn),
         state.sessionId.takeIf(String::isNotBlank)?.let(agentTranscriptStore::conversationIdForTask),
@@ -692,6 +695,7 @@ internal fun Context.persistAgentTranscript(
             )
         )
     }
+    if (healthResearch) HealthCareResearchWork.projected(this, conversationId, transcriptTurnId, state)
 }
 
 internal fun Context.agentApprovalTitle(action: AgentAction): String {

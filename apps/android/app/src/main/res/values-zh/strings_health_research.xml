@@ -1,0 +1,20 @@
+<resources>
+    <string name="health_research_title">主动查证与跟进</string>
+    <string name="health_research_off">尚未授权</string>
+    <string name="health_research_on">已授权此健康事项</string>
+    <string name="health_research_enable">查看并确认授权</string>
+    <string name="health_research_revoke">停止主动查证</string>
+    <string name="health_research_open">进入 Agent 会话</string>
+    <string name="health_research_consent">允许此 Agent 在本事项出现新结果、行动反馈或复查到期时主动查证。它可接收当前资料摘要和相关历史、检索公开医学资料并提出计划；计划和目标仍需你确认。不授权诊断或修改用药。暂停此事项，或变更隐私、模型及接收方设置后，本授权失效。已经传出的资料无法撤回。</string>
+    <string name="health_research_acknowledge">我同意按此范围和接收方开展后续查证</string>
+    <string name="health_research_destination">Agent：%1$s\n模型：%2$s\n推理强度：%3$s</string>
+    <string name="health_research_question">请主动查证此健康事项的新证据与下一步。核对数据质量和相关历史，检索适用的专业来源，说明不确定性，只提出有依据的下一步。不要诊断、调整用药或把参考范围中点当成目标。请给出有用的答复；证据充分时，通过限定范围的健康工具提交待确认计划。</string>
+    <string name="health_research_requested">请查证此健康事项的新证据和下一步。</string>
+    <string name="health_research_queued">等待查证</string>
+    <string name="health_research_running">正在查证</string>
+    <string name="health_research_completed">查证已完成</string>
+    <string name="health_research_failed">查证失败</string>
+    <string name="health_research_cancelled">已停止查证</string>
+    <string name="health_research_superseded">资料已变化，旧查证已停止</string>
+    <string name="health_research_interrupted">执行在可恢复检查点保存前中断。可重新查看授权后再试，本次没有重复发送请求。</string>
+</resources>

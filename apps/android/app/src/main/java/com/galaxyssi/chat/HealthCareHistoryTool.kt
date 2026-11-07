@@ -52,12 +52,13 @@ internal object HealthCareHistoryTool {
             val settings = care.settings()
             HealthPrivacyStore(context, names.privacy).use { privacy ->
                 val permission = privacy.policy()
-                if (care.discussion(invocation.conversationId) != issue.id || input["input_version"] != issue.inputVersion ||
+                if (!care.researchGrantCurrent(grant) || care.discussion(invocation.conversationId) != issue.id || input["input_version"] != issue.inputVersion ||
                     !HealthCareDiscussionPolicy.permitted(grant, invocation.conversationId, invocation.turnId, issue,
                         settings, permission, grant.destination, now)) throw HealthCareConflict()
                 HealthRecordStore(context, names.records).use { records ->
                     fun current() = issue.inputVersion == HealthCareEngine.inputVersion(settings.version, permission.version, records.metricVersion(issue.metric)) &&
-                        privacy.policy() == permission && care.settings() == settings && care.concern(issue.id)?.revision == issue.revision
+                        privacy.policy() == permission && care.settings() == settings && care.concern(issue.id)?.revision == issue.revision &&
+                        care.researchGrantCurrent(grant)
                     if (!current()) throw HealthCareConflict()
                     val page = privacy.track(HealthAccessScope(HealthAccessPurpose.PROACTIVE_CARE, setOf(issue.metric))) {
                         records.careHistory(grant.approvedAt, issue.metric, after)

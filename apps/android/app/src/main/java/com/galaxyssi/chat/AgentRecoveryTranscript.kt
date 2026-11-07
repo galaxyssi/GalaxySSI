@@ -38,6 +38,7 @@ internal object AgentRecoveryTranscript {
 
     fun project(context: Context, workspace: AgentWorkspace, state: AgentUiState, store: AgentTranscriptStore) {
         require(workspace.conversationId.isNotBlank() && workspace.taskId.isNotBlank())
+        if (!HealthCareResearchWork.allowProjection(context, workspace.conversationId, workspace.taskId)) return
         checkNotNull(store.conversation(workspace.conversationId)) { "Recovery conversation no longer exists" }
         check(store.entriesForTurn(workspace.taskId).any {
             it.role == AgentTranscriptRole.USER && it.conversationId == workspace.conversationId

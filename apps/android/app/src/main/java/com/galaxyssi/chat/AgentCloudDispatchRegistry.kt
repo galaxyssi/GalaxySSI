@@ -91,6 +91,13 @@ internal object AgentCloudDispatchRegistry {
 
     fun cancelExact(identity: AgentCloudDispatchIdentity): Boolean = active[identity]?.cancel() ?: false
 
+    fun cancelTurn(conversationId: String, turnId: String) {
+        require(conversationId.isNotBlank() && turnId.isNotBlank())
+        active.forEach { (identity, lease) ->
+            if (identity.conversationId == conversationId && identity.turnId == turnId) lease.cancel()
+        }
+    }
+
     fun release(identity: AgentCloudDispatchIdentity, lease: AgentCloudDispatchLease) {
         active.remove(identity, lease)
     }

@@ -56,6 +56,7 @@ class AgentStartupRecoveryWorker(context: Context, parameters: WorkerParameters)
                 AgentInterruptedCloudRecovery.reconcile(applicationContext)
             },
             dispatch = {
+                HealthCareResearchWork.changed(applicationContext)
                 AgentTeamBackgroundRecovery.enqueue(applicationContext)
                 AgentConnectorBackgroundRecovery.enqueuePending(applicationContext)
                 AgentLongTaskRecoveryScheduler.enqueueRecoverable(
