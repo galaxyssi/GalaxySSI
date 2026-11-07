@@ -720,6 +720,7 @@
     A10000000000000000000101 /* GalaxySSICoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000101 /* GalaxySSICoreModels.swift */; };
     A10000000000000000000102 /* AgentNetworkRoutingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000102 /* AgentNetworkRoutingModels.swift */; };
     A10000000000000000000401 /* AgentConnectorModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000401 /* AgentConnectorModels.swift */; };
+    A1000000000000000000E351 /* GalaxySSIRuntimeCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000E351 /* GalaxySSIRuntimeCache.swift */; };
     A10000000000000000002005 /* AgentSubagentRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002005 /* AgentSubagentRuntime.swift */; };
     A10000000000000000002004 /* UserDefaultsAgentObservationContextStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002004 /* UserDefaultsAgentObservationContextStore.swift */; };
     A10000000000000000002002 /* UserDefaultsAgentConnectorResponseStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002002 /* UserDefaultsAgentConnectorResponseStore.swift */; };
@@ -1839,6 +1840,7 @@
     A20000000000000000000101 /* GalaxySSICoreModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSICoreModels.swift; sourceTree = "<group>"; };
     A20000000000000000000102 /* AgentNetworkRoutingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNetworkRoutingModels.swift; sourceTree = "<group>"; };
     A20000000000000000000401 /* AgentConnectorModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorModels.swift; sourceTree = "<group>"; };
+    A2000000000000000000E351 /* GalaxySSIRuntimeCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIRuntimeCache.swift; sourceTree = "<group>"; };
     A20000000000000000002005 /* AgentSubagentRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSubagentRuntime.swift; sourceTree = "<group>"; };
     A20000000000000000002004 /* UserDefaultsAgentObservationContextStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDefaultsAgentObservationContextStore.swift; sourceTree = "<group>"; };
     A20000000000000000002002 /* UserDefaultsAgentConnectorResponseStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDefaultsAgentConnectorResponseStore.swift; sourceTree = "<group>"; };
@@ -2538,6 +2540,7 @@
         A20000000000000000000707 /* AgentDirectActionContext.swift */,
         A20000000000000000000102 /* AgentNetworkRoutingModels.swift */,
         A20000000000000000000401 /* AgentConnectorModels.swift */,
+        A2000000000000000000E351 /* GalaxySSIRuntimeCache.swift */,
         A20000000000000000002005 /* AgentSubagentRuntime.swift */,
         A20000000000000000002004 /* UserDefaultsAgentObservationContextStore.swift */,
         A20000000000000000002002 /* UserDefaultsAgentConnectorResponseStore.swift */,
@@ -3829,6 +3832,7 @@
         A10000000000000000000707 /* AgentDirectActionContext.swift in Sources */,
         A10000000000000000000102 /* AgentNetworkRoutingModels.swift in Sources */,
         A10000000000000000000401 /* AgentConnectorModels.swift in Sources */,
+        A1000000000000000000E351 /* GalaxySSIRuntimeCache.swift in Sources */,
         A10000000000000000002002 /* UserDefaultsAgentConnectorResponseStore.swift in Sources */,
         A10000000000000000002001 /* AgentConnectorResponseResolver.swift in Sources */,
         A10000000000000000000402 /* AgentReputationModels.swift in Sources */,

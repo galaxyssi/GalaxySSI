@@ -2,6 +2,25 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testTeamSnapshotCacheRechecksCiphertextFromAnExternalWriterAndDoesNotReviveDeletedRows() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("team.sqlite3")
+    let secrets = InMemorySecretStore()
+    let reader = try AgentTeamHistoryDatabase(fileURL: file, storageKey: "team-cache", secrets: secrets)
+    let writer = try AgentTeamHistoryDatabase(fileURL: file, storageKey: "team-cache", secrets: secrets)
+    let original = durableTeamSnapshot("external-update")
+    try writer.transaction { try writer.put(original) }
+    XCTAssertEqual(try reader.snapshots(runId: original.supervisorRunId), [original])
+    XCTAssertEqual(try reader.snapshots(runId: original.supervisorRunId), [original])
+    var updated = original
+    updated.members[0].output = "Changed without a timestamp update"
+    try writer.transaction { try writer.put(updated) }
+    XCTAssertEqual(try reader.snapshots(runId: original.supervisorRunId), [updated])
+    try writer.transaction { try writer.remove(runId: original.supervisorRunId) }
+    XCTAssertTrue(try reader.snapshots(runId: original.supervisorRunId).isEmpty)
+  }
+
   @MainActor
   func testTeamRecoveryFailureBudgetSurvivesReloadAndOnlyResumesValidScope() throws {
     let suite = "team-recovery-\(UUID().uuidString)"

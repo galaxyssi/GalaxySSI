@@ -150,7 +150,9 @@ final class AgentTeamExecutionHistoryStore {
               throw AgentTeamHistoryDatabase.Failure.stale
             }
           }
-          if current.state.deliverable || current.updatedAtMillis > incoming.updatedAtMillis { return false }
+          if current.state.deliverable || current.updatedAtMillis > incoming.updatedAtMillis || current == incoming {
+            return false
+          }
           for member in current.members where member.dispatchCheckpoint != nil {
             guard let replacement = incoming.members.first(where: { $0.memberId == member.memberId }),
                   replacement.sourceMessageId == member.sourceMessageId,
