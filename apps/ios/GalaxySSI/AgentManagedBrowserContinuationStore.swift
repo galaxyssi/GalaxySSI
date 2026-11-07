@@ -6,8 +6,42 @@ final class AgentManagedBrowserContinuationStore {
     case unavailable, scopeChanged, legacyLoop, busy, invalidInput, notReady, staleTicket
   }
 
-  enum Control: Equatable { case run, pause, stop, unavailable }
+  enum Control: String, Codable { case run, pause, stop, unavailable }
   enum Mode: Equatable { case initial, recovery }
+
+  struct RunScope: Codable, Equatable {
+    let profileID: String
+    let runID: String
+    let teamID: String
+    let conversationID: String
+    let turnID: String
+    let hostContextDigest: String
+
+    init(profileID: String, team: AgentTeamExecutionSnapshot, hostContextDigest: String) {
+      self.profileID = profileID
+      runID = team.supervisorRunId
+      teamID = team.teamId
+      conversationID = team.conversationId
+      turnID = team.taskId
+      self.hostContextDigest = hostContextDigest
+    }
+
+    init(_ binding: AgentManagedBrowserDispatchBinding) {
+      profileID = binding.profileID
+      runID = binding.owner.runId
+      teamID = binding.teamID
+      conversationID = binding.owner.conversationId
+      turnID = binding.owner.turnId
+      hostContextDigest = binding.hostContextDigest
+    }
+
+    var key: String { AgentModelLoopRecoveryIdentity.sha256(self) }
+  }
+
+  private struct Intent: Codable {
+    let scope: RunScope
+    let control: Control
+  }
 
   struct Lease {
     fileprivate let key: String
@@ -31,6 +65,7 @@ final class AgentManagedBrowserContinuationStore {
     var delivered = false
     var deliveredReceiptID: UUID?
     var browserCookies: [String: [AgentManagedBrowserCookie]]? = nil
+    var ownerStopped: Bool? = nil
   }
 
   private static let lock = NSLock()
@@ -46,6 +81,36 @@ final class AgentManagedBrowserContinuationStore {
     self.namespace = namespace
   }
 
+  @discardableResult
+  func writeControl(_ control: Control, scope: RunScope) throws -> Bool {
+    try locked {
+      guard control != .unavailable else { throw Failure.invalidInput }
+      let previous = try readControl(scope)
+      guard previous != .stop || control == .stop else { return false }
+      if previous == control { return true }
+      let data = try JSONEncoder().encode(Intent(scope: scope, control: control))
+      guard GalaxySSIEncryptedUserDefaultsStore.write(data, defaults: defaults, key: controlKey(scope),
+        keyMaterialKey: namespace, secrets: secrets) else { throw Failure.unavailable }
+      return true
+    }
+  }
+
+  func control(scope: RunScope) throws -> Control? {
+    try locked { try readControl(scope) }
+  }
+
+  private func controlKey(_ scope: RunScope) -> String { namespace + ".control." + scope.key }
+
+  private func readControl(_ scope: RunScope) throws -> Control? {
+    let key = controlKey(scope)
+    guard GalaxySSIEncryptedUserDefaultsStore.contains(defaults: defaults, key: key) else { return nil }
+    guard let data = GalaxySSIEncryptedUserDefaultsStore.load(defaults: defaults, key: key,
+      keyMaterialKey: namespace, secrets: secrets),
+      let intent = try? JSONDecoder().decode(Intent.self, from: data),
+      intent.scope == scope, intent.control != .unavailable else { throw Failure.unavailable }
+    return intent.control
+  }
+
   func enroll(_ binding: AgentManagedBrowserDispatchBinding, input: AgentManagedBrowserLoopInput,
               legacyLoopExists: Bool) throws {
     try locked {
@@ -53,10 +118,13 @@ final class AgentManagedBrowserContinuationStore {
       let digest = AgentModelLoopRecoveryIdentity.sha256(input)
       if let current = try read(binding.key) {
         guard current.binding == binding, current.inputDigest == digest else { throw Failure.scopeChanged }
+        if !current.delivered { try track(binding) }
         return
       }
+      guard try readControl(RunScope(binding)) != .stop else { throw Failure.notReady }
       guard !legacyLoopExists else { throw Failure.legacyLoop }
       try save(Record(binding: binding, inputDigest: digest, input: input))
+      try track(binding)
     }
   }
 
@@ -64,8 +132,13 @@ final class AgentManagedBrowserContinuationStore {
                     _ body: (Lease, Work) async throws -> T) async throws -> T {
     let (lease, work) = try locked {
       guard Self.leases[storageKey(binding.key)] == nil else { throw Failure.busy }
-      let record = try owned(binding)
-      let work = try self.work(for: record, mode: mode, control: control)
+      var record = try owned(binding)
+      guard control != .unavailable else { throw Failure.unavailable }
+      let savedControl = try readControl(RunScope(binding))
+      let effective = control == .stop || savedControl == .stop ? Control.stop :
+        (savedControl == .pause ? .pause : control)
+      if effective == .stop { try retire(&record) }
+      let work = try self.work(for: record, mode: mode, control: effective)
       let lease = Lease(key: binding.key, nonce: UUID())
       Self.leases[storageKey(binding.key)] = lease.nonce
       return (lease, work)
@@ -85,6 +158,7 @@ final class AgentManagedBrowserContinuationStore {
     try locked {
       try requireLease(lease, binding: binding)
       var record = try owned(binding)
+      try requireInteractive(record)
       guard record.receipt == nil, !callID.isBlank, callID.utf8.count <= 256,
             !invocationID.isBlank, invocationID.utf8.count <= 256,
             address.utf8.count <= 4_096, AgentManagedBrowserHandoff.url(address) != nil else { throw Failure.invalidInput }
@@ -124,6 +198,7 @@ final class AgentManagedBrowserContinuationStore {
   func awaitingHandoff(binding: AgentManagedBrowserDispatchBinding) throws -> AgentManagedBrowserHandoff? {
     try locked {
       let record = try owned(binding)
+      try requireInteractive(record)
       guard record.receipt == nil, let callID = record.activeCallID,
             let handoff = record.handoffs[callID], handoff.state == .awaitingUser else { return nil }
       return handoff
@@ -155,6 +230,7 @@ final class AgentManagedBrowserContinuationStore {
   }
 
   private func activeBrowserHost(_ ticket: AgentManagedBrowserHandoff.Ticket, record: Record) throws -> String {
+    try requireInteractive(record)
     let handoff = try exact(ticket, in: record)
     guard record.receipt == nil, record.activeCallID == ticket.callID, handoff.state == .awaitingUser,
           let host = AgentManagedBrowserHandoff.url(handoff.address)?.host?.lowercased() else { throw Failure.staleTicket }
@@ -172,6 +248,41 @@ final class AgentManagedBrowserContinuationStore {
         return record.binding
       }
     }
+  }
+
+  func indexedBindings(scope: RunScope) -> [AgentManagedBrowserDispatchBinding] {
+    locked {
+      let prefix = indexPrefix(scope)
+      let keys = GalaxySSIEncryptedUserDefaultsStore.storedKeys(defaults: defaults, prefix: prefix).sorted()
+      var result: [AgentManagedBrowserDispatchBinding] = []
+      for offset in stride(from: 0, to: keys.count, by: 64) {
+        for key in keys[offset..<min(offset + 64, keys.count)] {
+          guard let data = GalaxySSIEncryptedUserDefaultsStore.load(defaults: defaults, key: key,
+            keyMaterialKey: namespace, secrets: secrets),
+            let hint = try? JSONDecoder().decode(AgentManagedBrowserDispatchBinding.self, from: data),
+            key == prefix + hint.key, RunScope(hint) == scope,
+            let record = try? owned(hint), !record.delivered else { continue }
+          result.append(record.binding)
+        }
+      }
+      return result
+    }
+  }
+
+  func backfillWakeIndex(_ binding: AgentManagedBrowserDispatchBinding) throws {
+    try locked {
+      guard try !owned(binding).delivered else { return }
+      try track(binding)
+    }
+  }
+
+  private func indexPrefix(_ scope: RunScope) -> String { namespace + ".wake." + scope.key + "." }
+
+  private func track(_ binding: AgentManagedBrowserDispatchBinding) throws {
+    let key = indexPrefix(RunScope(binding)) + binding.key
+    let data = try JSONEncoder().encode(binding)
+    guard GalaxySSIEncryptedUserDefaultsStore.write(data, defaults: defaults, key: key,
+      keyMaterialKey: namespace, secrets: secrets) else { throw Failure.unavailable }
   }
 
   func prepareTeamDispatch(_ input: AgentManagedBrowserTeamDispatch) throws {
@@ -222,6 +333,7 @@ final class AgentManagedBrowserContinuationStore {
                      observation: AgentManagedBrowserHandoff.Observation) throws {
     try locked {
       var record = try owned(binding)
+      try requireInteractive(record)
       var handoff = try exact(ticket, in: record)
       guard record.receipt == nil, observation.isValid else { throw Failure.invalidInput }
       guard record.activeCallID == ticket.callID else { throw Failure.staleTicket }
@@ -237,15 +349,35 @@ final class AgentManagedBrowserContinuationStore {
   func stop(_ ticket: AgentManagedBrowserHandoff.Ticket, binding: AgentManagedBrowserDispatchBinding) throws {
     try locked {
       var record = try owned(binding)
-      var handoff = try exact(ticket, in: record)
+      _ = try exact(ticket, in: record)
       guard record.receipt == nil, record.activeCallID == ticket.callID else { throw Failure.staleTicket }
-      if handoff.state == .stopped { return }
+      try retire(&record)
+    }
+  }
+
+  func retireStoppedBinding(_ binding: AgentManagedBrowserDispatchBinding) throws {
+    try locked {
+      guard try readControl(RunScope(binding)) == .stop else { throw Failure.notReady }
+      var record = try owned(binding)
+      try retire(&record)
+    }
+  }
+
+  private func retire(_ record: inout Record) throws {
+    guard !record.delivered, record.receipt == nil, record.ownerStopped != true else { return }
+    record.ownerStopped = true
+    if let call = record.activeCallID, var handoff = record.handoffs[call] {
       handoff.state = .stopped
       handoff.observation = nil
-      record.handoffs[ticket.callID] = handoff
-      record.browserCookies = nil
-      try save(record)
+      record.handoffs[call] = handoff
     }
+    record.browserCookies = nil
+    try save(record)
+  }
+
+  private func requireInteractive(_ record: Record) throws {
+    let intent = try readControl(RunScope(record.binding))
+    guard record.ownerStopped != true, intent != .stop, intent != .pause else { throw Failure.notReady }
   }
 
   func commit(_ state: AgentManagedBrowserMemberReceipt.State, text: String, lease: Lease,
@@ -257,6 +389,7 @@ final class AgentManagedBrowserContinuationStore {
         guard receipt.state == state, receipt.text == text else { throw Failure.scopeChanged }
         return receipt
       }
+      if state != .cancelled { try requireInteractive(record) }
       guard text.utf8.count <= 256 * 1_024,
             state == .cancelled || (!text.isBlank &&
               record.handoffs.values.allSatisfy { $0.state == .returned }) else { throw Failure.notReady }
@@ -285,15 +418,16 @@ final class AgentManagedBrowserContinuationStore {
       record.activeCallID = nil
       record.browserCookies = nil
       try save(record)
+      GalaxySSIEncryptedUserDefaultsStore.remove(defaults: defaults, key: indexPrefix(RunScope(binding)) + binding.key)
     }
   }
 
   private func work(for record: Record, mode: Mode, control: Control) throws -> Work {
     guard control != .unavailable else { throw Failure.unavailable }
     if record.delivered { return .alreadyDelivered }
-    if let receipt = record.receipt { return .deliver(receipt) }
     guard control != .pause else { throw Failure.notReady }
-    if control == .stop || record.handoffs.values.contains(where: { $0.state == .stopped }) {
+    if let receipt = record.receipt { return .deliver(receipt) }
+    if control == .stop || record.ownerStopped == true || record.handoffs.values.contains(where: { $0.state == .stopped }) {
       return .settleCancellation
     }
     if mode == .recovery {
