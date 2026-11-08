@@ -233,10 +233,15 @@ enum AgentDesktopToolEvidenceWire {
     }
 
     private func matches(_ response: AgentMcpJSONObject, authenticatedDesktopId: String, mode: String) -> Bool {
-      authenticatedDesktopId == binding.desktopId &&
+      matchesTransportResponse(response, authenticatedDesktopId: authenticatedDesktopId, mode: mode) &&
+        response.string("status") == "ready"
+    }
+
+    func matchesTransportResponse(_ response: AgentMcpJSONObject, authenticatedDesktopId: String, mode: String) -> Bool {
+      ["index", "page"].contains(mode) && authenticatedDesktopId == binding.desktopId &&
         response.string("type") == "agent_task_evidence" &&
         response.string("contract") == AgentDesktopToolEvidenceWire.contract &&
-        response.string("mode") == mode && response.string("status") == "ready" &&
+        response.string("mode") == mode &&
         response.string("request_id") == nonce && response["execution_generation"] == .int(generation) &&
         binding.fields.allSatisfy { response[$0.key] == .string($0.value) }
     }

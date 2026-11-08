@@ -3285,8 +3285,9 @@ final class MessageCoordinator: ObservableObject {
         terminal: true, success: !AgentRemoteOutcomePolicy.isFailure(record.status), now: AgentControlPlaneClock.nowMillis(),
         observation: AgentTeamReplyObservation(payload: payload))
       guard disposition == .observerCommitted || disposition == .observerDuplicate,
-            teamObserverResultIsCommitted(payload, binding: binding),
-            recordTeamResultReceipt(receipt, journalBacked: verifiedReceipt != nil) else { return false }
+            teamObserverResultIsCommitted(payload, binding: binding) else { return false }
+      if verifiedReceipt != nil { _ = try queueDesktopEvidenceImport(binding) }
+      guard recordTeamResultReceipt(receipt, journalBacked: verifiedReceipt != nil) else { return false }
       finalizeSavedCollaborationObserver(source: binding.sourceIdentity, conversation: binding.identity.conversationId,
         turn: binding.identity.turnId, contact: binding.contactId, expectedRunId: binding.teamSource?.supervisorRunId)
       if verifiedReceipt == nil { startDesktopEvidenceImport(binding) }
@@ -3477,6 +3478,11 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func startDesktopEvidenceImport(_ binding: AgentDesktopReplyBinding) {
+    guard (try? queueDesktopEvidenceImport(binding)) == true else { return }
+    retryDesktopEvidenceJobs()
+  }
+
+  private func queueDesktopEvidenceImport(_ binding: AgentDesktopReplyBinding) throws -> Bool {
     guard GalaxySSISignalEngine.isAvailable, binding.agentId == "codex",
           let context = currentTeamObserverRecovery(binding), context.member.status == .succeeded,
           let generation = context.owner.observedGeneration,
@@ -3484,25 +3490,26 @@ final class MessageCoordinator: ObservableObject {
           store.serverLinks.contains(where: { $0.paired && $0.desktopId == binding.desktopId &&
             $0.routes.clientRouteId == binding.identity.clientRouteId }),
           store.contact(id: binding.contactId)?.connectorCapabilities?.contains("desktop_codex_tool_evidence_v1") == true
-    else { return }
+    else { return false }
     let job = AgentDesktopToolEvidenceWire.ImportJob(binding: binding, generation: generation,
       profileIdentity: store.profile.identityFingerprint)
-    do {
-      try AgentTeamExecutionHistoryStore.shared.enqueueDesktopEvidenceJob(job)
-    } catch { return }
-    retryDesktopEvidenceJobs()
+    try AgentTeamExecutionHistoryStore.shared.enqueueDesktopEvidenceJob(job)
+    return true
   }
 
   private func retryDesktopEvidenceJobs() {
     resumeDesktopEvidenceJobs(wrapAtEnd: true)
   }
 
-  private func resumeDesktopEvidenceJobs(wrapAtEnd: Bool = false) {
-    guard GalaxySSISignalEngine.isAvailable, mqttClient.relationshipSubscriptionsReady,
+  private func resumeDesktopEvidenceJobs(wrapAtEnd: Bool = false, runtime: MqttBusinessTransportRuntime? = nil) {
+    let journalBacked = runtime != nil
+    guard GalaxySSISignalEngine.isAvailable, journalBacked || mqttClient.relationshipSubscriptionsReady,
           desktopEvidenceImports.count < 2 else { return }
     let history = AgentTeamExecutionHistoryStore.shared
     var mayWrap = wrapAtEnd && !desktopEvidenceJobCursor.isEmpty
-    while desktopEvidenceImports.count < 2 {
+    var pagesRemaining = journalBacked ? 4 : Int.max
+    while desktopEvidenceImports.count < 2, pagesRemaining > 0 {
+      pagesRemaining -= 1
       guard let batch = try? history.desktopEvidenceJobs(after: desktopEvidenceJobCursor) else { return }
       if batch.isEmpty {
         guard mayWrap else { return }
@@ -3515,6 +3522,7 @@ final class MessageCoordinator: ObservableObject {
         desktopEvidenceJobCursor = job.key
         let binding = job.binding
         guard store.profile.identityFingerprint == job.profileIdentity,
+              runtime?.canQueryDesktopEvidence(binding) != false,
               let context = currentTeamObserverRecovery(binding), context.member.status == .succeeded,
               context.owner.observedGeneration == job.generation,
               let session = store.agentSession(id: context.team.conversationId), session.id == context.team.conversationId,
@@ -3523,13 +3531,19 @@ final class MessageCoordinator: ObservableObject {
                 nonce: UUID().uuidString),
               desktopEvidenceImports.insert(job.key).inserted else { continue }
         mayWrap = false
-        Task { @MainActor [weak self] in
+        Task { @MainActor [weak self, weak runtime] in
           guard let self else { return }
           defer {
             self.desktopEvidenceImports.remove(job.key)
-            self.resumeDesktopEvidenceJobs()
+            if !journalBacked || runtime != nil { self.resumeDesktopEvidenceJobs(runtime: runtime) }
           }
-          await self.importDesktopEvidence(binding, generation: job.generation, profile: job.profileIdentity)
+          if journalBacked {
+            guard runtime != nil else { return }
+            await self.importDesktopEvidence(binding, generation: job.generation, profile: job.profileIdentity,
+              query: { [weak runtime] request, payload in await runtime?.queryDesktopEvidence(request, payload: payload) })
+          } else {
+            await self.importDesktopEvidence(binding, generation: job.generation, profile: job.profileIdentity)
+          }
           if (try? history.desktopEvidenceCursor(scope))?.archiveFinal == true {
             history.removeDesktopEvidenceJob(job)
           }
@@ -3538,7 +3552,12 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
-  private func importDesktopEvidence(_ binding: AgentDesktopReplyBinding, generation: Int64, profile: String) async {
+  private func importDesktopEvidence(_ binding: AgentDesktopReplyBinding, generation: Int64, profile: String,
+      query: ((AgentDesktopToolEvidenceWire.Request, AgentMcpJSONObject) async -> AgentMcpJSONObject?)? = nil) async {
+    func fetch(_ request: AgentDesktopToolEvidenceWire.Request, payload: AgentMcpJSONObject) async -> AgentMcpJSONObject? {
+      if let query { return await query(request, payload) }
+      return await queryDesktopEvidence(request, payload: payload)
+    }
     func isCurrent() -> Bool {
       !Task.isCancelled && store.profile.identityFingerprint == profile &&
         currentTeamObserverRecovery(binding)?.owner.observedGeneration == generation &&
@@ -3557,7 +3576,7 @@ final class MessageCoordinator: ObservableObject {
       guard let request = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: generation,
               nonce: UUID().uuidString),
             let payload = request.indexRequest(after: cursor, inlineBytes: inlineBytes),
-            let response = await queryDesktopEvidence(request, payload: payload),
+            let response = await fetch(request, payload: payload),
             isCurrent() else { return }
       let checkedIndex = request.verifyIndex(response, authenticatedDesktopId: binding.desktopId,
         after: cursor, inlineBytes: inlineBytes)
@@ -3586,7 +3605,7 @@ final class MessageCoordinator: ObservableObject {
             guard let pageRequest = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: generation,
                     nonce: UUID().uuidString),
                   let pagePayload = pageRequest.pageRequest(descriptor, index: number),
-                  let response = await queryDesktopEvidence(pageRequest, payload: pagePayload),
+                  let response = await fetch(pageRequest, payload: pagePayload),
                   isCurrent() else { return }
             let checkedPage = try? history.stageDesktopEvidencePage(response, desktopId: binding.desktopId,
               request: pageRequest, descriptor: descriptor, index: number)
@@ -15397,6 +15416,8 @@ final class MessageCoordinator: ObservableObject {
         try self.receiveJournalBackedDesktopRecovery(payload, desktopId: desktopId)
       }, recoveryQueries: { [weak self] ready in
         self?.journalBackedDesktopRecoveryQueries(ready: ready, onFailure: onFailure) ?? []
+      }, resumeEvidenceJobs: { [weak self] runtime in
+        self?.resumeDesktopEvidenceJobs(wrapAtEnd: true, runtime: runtime)
       })
     return try MqttBusinessTransportRuntime(peerChatStore: store, localFingerprint: signalEngine.identity.fingerprint,
       journal: journal, routeState: routeState, pool: pool, incomingAttachments: incomingAttachmentTransferStore,

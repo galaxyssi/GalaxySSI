@@ -419,7 +419,7 @@ final class GalaxySSISignalEngine {
     let payload = try request.applicationPayload()
     guard journal != nil, request.traffic == .control, request.attachmentDependencies.isEmpty,
           request.identity.local == Self.sha256(store.identityKeyPair.publicKey.serialize()),
-          ["agent_task_recovery_request", "agent_task_result_page_request"].contains(payload.string("type")),
+          ["agent_task_recovery_request", "agent_task_result_page_request", "agent_task_evidence_request"].contains(payload.string("type")),
           payload.string("request_id") == request.messageID, request.payload.count <= 16_384 else {
       throw MqttRouteError.invalidPayload
     }

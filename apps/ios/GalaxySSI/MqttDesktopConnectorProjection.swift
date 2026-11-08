@@ -9,6 +9,7 @@ struct MqttDesktopConnectorProjection {
   var resultRecovery: (() -> AgentDesktopResultRecovery?)? = nil
   var receiveRecoveryControl: (([String: Any], String) throws -> Void)? = nil
   var recoveryQueries: (((AgentDesktopReplyBinding) -> Bool) -> [[String: Any]])? = nil
+  var resumeEvidenceJobs: ((MqttBusinessTransportRuntime) -> Void)? = nil
 
   static func handles(_ payload: [String: Any]) -> Bool {
     payload["peer_chat"] as? Bool != true &&
@@ -133,6 +134,24 @@ struct MqttDesktopConnectorProjection {
     }
     var application = payload
     application["message_id"] = id.uuidString
+    return try MqttSignalSendRequest(identity: MqttBusinessIdentity(target.peer.binding), payload: application,
+      remoteName: target.peer.remoteSignalName, topic: target.peer.binding.sendTopic, clientRouteID: target.routeId,
+      traffic: .control, contactID: target.contactId)
+  }
+
+  func evidenceQueryRequest(_ request: AgentDesktopToolEvidenceWire.Request, payload: [String: Any],
+                            target: MqttPeerChatProjection.Destination) throws -> MqttSignalSendRequest {
+    guard target.desktop, request.binding.desktopId == target.peer.remoteSignalName,
+          request.binding.matches(payload), request.nonce == payload.string("request_id"),
+          UUID(uuidString: request.nonce)?.uuidString == request.nonce,
+          payload.string("type") == "agent_task_evidence_request",
+          payload.string("contract") == AgentDesktopToolEvidenceWire.contract,
+          ["index", "page"].contains(payload.string("mode")),
+          AgentDesktopReplyRecovery.integer(payload["execution_generation"], minimum: 1) == request.generation
+    else { throw MqttRouteError.invalidPayload }
+    _ = try contact(payload, target: target)
+    var application = payload
+    application["message_id"] = request.nonce
     return try MqttSignalSendRequest(identity: MqttBusinessIdentity(target.peer.binding), payload: application,
       remoteName: target.peer.remoteSignalName, topic: target.peer.binding.sendTopic, clientRouteID: target.routeId,
       traffic: .control, contactID: target.contactId)

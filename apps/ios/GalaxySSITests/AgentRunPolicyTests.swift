@@ -214,6 +214,15 @@ extension GalaxySSIStoreTests {
     let descriptor = try XCTUnwrap(AgentDesktopToolEvidenceWire.Descriptor(response))
     XCTAssertEqual(request.verifyPage(response, authenticatedDesktopId: "desktop", descriptor: descriptor, index: 0), body)
     XCTAssertNil(request.verifyPage(response, authenticatedDesktopId: "other", descriptor: descriptor, index: 0))
+    XCTAssertTrue(request.matchesTransportResponse(response, authenticatedDesktopId: "desktop", mode: "page"))
+    XCTAssertFalse(request.matchesTransportResponse(response, authenticatedDesktopId: "desktop", mode: "index"))
+    XCTAssertFalse(request.matchesTransportResponse(response, authenticatedDesktopId: "other", mode: "page"))
+    var delayed = response
+    delayed["request_id"] = .string("old-request")
+    XCTAssertFalse(request.matchesTransportResponse(delayed, authenticatedDesktopId: "desktop", mode: "page"))
+    delayed = response
+    delayed["execution_generation"] = .int(request.generation + 1)
+    XCTAssertFalse(request.matchesTransportResponse(delayed, authenticatedDesktopId: "desktop", mode: "page"))
     XCTAssertEqual(request.verifyOriginal([body], descriptor: descriptor), body)
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
