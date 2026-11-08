@@ -540,6 +540,18 @@ and explicitly marked when truncated. These are historical context, not medical
 applicability checks or receipts that can authorize a new plan. An intervening
 progress-only review does not erase the earlier source context. Bundled guideline
 links are starting citations, not evidence that a source body has been read.
+
+Both manual and automatic discussions also receive a bounded `clarification_context`
+with saved answers and unconfirmed fields for the exact measurement revision. Negative
+answers and zero fasting hours are known values, not missing data. A fasting label
+does not establish an exact duration. Context from another measurement or revision
+is not reused as current. The model acknowledges relevant saved facts and asks only
+material unresolved questions, rather than repeating the entire form. Reconfirmation
+requires an explicit conflict or change. Current symptoms are not inferred from old
+measurement-time answers, and an unconfirmed field is never automatically filled in.
+This handoff does not expand access to separate profile records or other metrics;
+their absence in the payload must not be described as the user having no such data.
+
 Avoiding duplicate research must not suppress the first source check after missing
 measurement context is clarified. New plans still require current-turn retrieval
 receipts and explicit user review. Retrieval failure is an evidence gap, not an
