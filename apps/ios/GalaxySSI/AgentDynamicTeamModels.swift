@@ -185,6 +185,10 @@ enum AgentCollaborationRuleTopics {
     and expected (explicit null is allowed). Include target and regression cases. Registration neither executes nor releases code.
     Use capabilities to find unfinished tools and test plans. Follow usage_recall for original test history. A pre-execution
     rejection belongs only to the requested plan; only an exact runtime-bound test belongs to a candidate.
+    An independent reviewer may publish tool_release after reading every page of the original native test in this run.
+    Use the exact tool_test_plan as a parent and include tool_test_plan, observation, review, applies_when, avoid_when,
+    limitations, authorization_boundary and an empty unresolved list. Cite the same observation in observations
+    with only evidence_id, sha256 and origin ios_native_tool. Host validation never grants runtime permissions.
     """),
     Topic(id: "retention", purpose: "Preserve measured capability cases across versions", prerequisites: ["foundation"], contract: """
     Publish capability_suite with scope, limitations and the exact independently retained lesson as a parent.

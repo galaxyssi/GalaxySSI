@@ -1,6 +1,59 @@
 import CryptoKit
 import Foundation
 
+enum AgentCollaborationSavedToolRelease {
+  struct Review {
+    let plan: AgentCollaborationResearchReference
+    let observation: AgentMcpJSONObject
+
+    init?(_ draft: AgentCollaborationResearchDraft) {
+      let fields = ["review", "applies_when", "avoid_when", "limitations", "authorization_boundary"]
+      guard draft.kind == .toolRelease, draft.objectId == nil, draft.baseRevision == 0,
+            let spec = draft.body["tool_release"]?.objectValue,
+            Set(spec.keys) == Set(fields + ["tool_test_plan", "observation", "unresolved"]),
+            fields.allSatisfy({ key in
+              guard let text = spec[key]?.strictStringValue else { return false }
+              return !text.isBlank && text.utf8.count <= 8_192
+            }),
+            spec["unresolved"] == .array([]),
+            let plan = AgentCollaborationSavedToolTest.reference(spec["tool_test_plan"]), draft.parents.contains(plan),
+            var observation = spec["observation"]?.objectValue,
+            observation.removeValue(forKey: "origin") == .string("ios_native_tool"),
+            Set(observation.keys) == ["evidence_id", "sha256"],
+            ["evidence_id", "sha256"].allSatisfy({ AgentCollaborationCandidateRecall.validDigest(observation.string($0)) })
+      else { return nil }
+      self.plan = plan
+      self.observation = observation
+    }
+  }
+
+  static func receipt(review: Review, plan: AgentCollaborationResearchRevision,
+      tool: AgentCollaborationResearchRevision, original: AgentCollaborationNativeToolObservation,
+      reviewerIdentity: String, authorIdentity: String) -> AgentMcpJSONObject? {
+    let result = original.result
+    guard !reviewerIdentity.isBlank, !authorIdentity.isBlank, reviewerIdentity != authorIdentity,
+          plan.reference == review.plan, let registered = plan.registeredAtMillis, registered > 0,
+          result.receipt.startedAtEpochMillis >= registered,
+          result.receipt.finishedAtEpochMillis >= result.receipt.startedAtEpochMillis,
+          !result.receipt.replayed, result.receipt.originalInvocationId == nil,
+          result.provenance.location == .application,
+          result.provenance.executorId == AgentIOSOnDeviceRuntimeNativeToolCatalog.brokerExecutorId,
+          case .int(let timeout)? = original.input["timeout_ms"],
+          let prepared = AgentCollaborationSavedToolTest.prepare(plan: plan, tool: tool, timeoutMillis: timeout),
+          original.input == prepared.evidenceInput else { return nil }
+    let evaluation = prepared.evaluate(result)
+    guard evaluation["passed"] == .bool(true), evaluation == original.evaluation,
+          let runtime = evaluation["runtime"]?.objectValue,
+          let digest = prepared.evidenceInput["source_sha256"] else { return nil }
+    return [
+      "state": .string(AgentCollaborationCapabilityPage.releaseState), "tool_test_plan": .object(AgentCollaborationCandidateRecall.reference(plan.reference)),
+      "executable_tool": .object(AgentCollaborationCandidateRecall.reference(tool.reference)),
+      "source_sha256": digest, "tested_runtime": .object(runtime), "observation": .object(review.observation),
+      "grants_permissions": .bool(false), "general_correctness_proven": .bool(false)
+    ]
+  }
+}
+
 enum AgentCollaborationSavedToolTest {
   static let reportFormat = "galaxyssi.executable-tool-output.v1"
   private static let maximumReportBytes = 96 * 1_024
