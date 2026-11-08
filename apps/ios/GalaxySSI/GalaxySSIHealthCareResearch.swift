@@ -20,6 +20,7 @@ enum GalaxySSIHealthCareResearch {
     var handoffVersion: Int?
     var pairedDesktop: GalaxySSIHealthDesktopResearch.Route?
     var sharesQuestionSnapshot: Bool?
+    var sharesQuestionPages: Bool?
   }
 
   enum State: String, Codable {

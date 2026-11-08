@@ -732,8 +732,12 @@ struct GalaxySSIHealthRecords {
       approval.asksQuestions = asksQuestions
     }
     if let research {
-      if archive.localCareResearch?.authorizations[id.uuidString]?.sharesQuestionSnapshot == true {
-        approval.questions = try localCareQuestionPage(concern, archive: archive, after: nil)
+      if let authorization = archive.localCareResearch?.authorizations[id.uuidString], authorization.sharesQuestionSnapshot == true {
+        let page = try localCareQuestionPage(concern, archive: archive, after: nil)
+        approval.questions = page
+        if authorization.sharesQuestionPages == true {
+          approval.questionCursor = .init(page, remaining: GalaxySSIHealthCareQuestions.maximumContinuations)
+        }
       }
       let handoff = try makeLocalCareResearchHandoff(research, concern: concern, archive: archive)
       approval.researchHandoff = handoff
@@ -799,7 +803,9 @@ struct GalaxySSIHealthRecords {
 
   func authorizeLocalCareResearch(_ approval: GalaxySSIHealthCareDiscussion.Approval,
       sources: Set<GalaxySSIHealthCareEvidence.PublicSource>, now: Date = Date()) throws {
-    guard !sources.isEmpty, approval.research == nil, approval.history == nil, !approval.asksQuestions else { throw Failure.invalid }
+    guard !sources.isEmpty, approval.research == nil, approval.history == nil, !approval.asksQuestions,
+          !approval.allowsStandingQuestionPages || (approval.questions != nil && approval.model != nil)
+    else { throw Failure.invalid }
     var archive = try load()
     let thread = try checkedDiscussion(approval, archive: archive, now: now)
     guard thread.turns.last?.id == approval.priorTurnID else { throw Failure.stale }
@@ -809,7 +815,8 @@ struct GalaxySSIHealthRecords {
       profileScopeEpoch: approval.profileScopeEpoch,
       contact: approval.destinationID, model: approval.modelID, endpoint: approval.endpoint,
       destination: approval.destinationDigest, sources: sources, authorizedAt: now, handoffVersion: 1,
-      pairedDesktop: approval.pairedDesktop, sharesQuestionSnapshot: approval.questions == nil ? nil : true))
+      pairedDesktop: approval.pairedDesktop, sharesQuestionSnapshot: approval.questions == nil ? nil : true,
+      sharesQuestionPages: approval.allowsStandingQuestionPages ? true : nil))
     archive.localCareResearch = ledger
     try persist(archive)
   }
@@ -1018,7 +1025,7 @@ struct GalaxySSIHealthRecords {
           approval.proposesPlan == handoff.plansOnly, approval.history == nil,
           let authorization = archive.localCareResearch?.authorizations[key], authorization.id == binding.authorization,
           (authorization.sharesQuestionSnapshot == true) == (approval.questions != nil),
-          approval.questionCursor == nil,
+          (approval.questionCursor == nil || (authorization.sharesQuestionPages == true && approval.model != nil)),
           authorization.handoffVersion == 1,
           authorization.thread == approval.threadID, authorization.destination == approval.destinationDigest,
           authorization.model == approval.modelID, authorization.endpoint == approval.endpoint,
@@ -1454,7 +1461,7 @@ struct GalaxySSIHealthRecords {
 
   func readLocalCareDiscussionQuestions(_ approval: GalaxySSIHealthCareDiscussion.Approval, after cursor: UUID,
       now: Date = Date()) throws -> GalaxySSIHealthCareQuestions.Page {
-    guard let original = approval.questions else { throw Failure.permission }
+    guard let original = approval.questions, approval.questionCursor != nil else { throw Failure.permission }
     try validateLocalCareDiscussionTurn(approval, now: now)
     let archive = try load()
     let concern = try currentDiscussionConcern(id: approval.concernID, metric: approval.metric, archive: archive, now: now)
