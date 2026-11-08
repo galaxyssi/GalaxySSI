@@ -29,3 +29,30 @@ class CommandLookupTest(unittest.TestCase):
             which("tool")
             which("tool")
             self.assertEqual(3, lookup.call_count)
+
+    def test_nested_adapter_reuses_coordinator_lookup(self):
+        @command_lookup_scope()
+        def adapter():
+            return which("codex")
+        with patch("command_lookup.shutil.which", return_value="codex.exe") as lookup:
+            with command_lookup_scope():
+                self.assertEqual("codex.exe", which("codex"))
+                self.assertEqual("codex.exe", adapter())
+                self.assertEqual("codex.exe", which("codex"))
+            self.assertEqual(1, lookup.call_count)
+            adapter()
+            self.assertEqual(2, lookup.call_count)
+
+    def test_concurrent_requests_do_not_share_lookup_cache(self):
+        from concurrent.futures import ThreadPoolExecutor
+        import threading
+        barrier = threading.Barrier(2)
+        def request():
+            with command_lookup_scope():
+                which("codex")
+                barrier.wait(timeout=2)
+                which("codex")
+        with patch("command_lookup.shutil.which", return_value="codex.exe") as lookup:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                list(pool.map(lambda _: request(), range(2)))
+            self.assertEqual(2, lookup.call_count)

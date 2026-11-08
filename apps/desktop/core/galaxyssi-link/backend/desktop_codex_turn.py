@@ -6,6 +6,28 @@ import time
 import uuid
 
 
+def managed_chat_scope(task, conversation_id: str) -> bool:
+    """Keep phone-native turns on their existing recovery/tool-aware adapter."""
+    if task is None:
+        return False
+    route = str(getattr(task, "client_route_id", "") or "")
+    if not route:
+        return str(getattr(task, "source_message_id", "")).startswith("desktop:")
+    valid_scope = (
+        getattr(task, "agent_id", "") == "desktop"
+        and bool(getattr(task, "source_message_id", ""))
+        and bool(getattr(task, "client_conversation_id", ""))
+        and bool(getattr(task, "client_turn_id", ""))
+        and bool(conversation_id)
+        and conversation_id == getattr(task, "conversation_id", "")
+    )
+    if not valid_scope:
+        return False
+    from pairing_access import has_full_executor
+    from pairing_state import get_client
+    return has_full_executor(get_client(route))
+
+
 def native_chat_model(command: list[str]) -> str:
     """Only migrate the built-in exec profile; custom flags keep their semantics."""
     if len(command) < 2 or command[1] != "exec":

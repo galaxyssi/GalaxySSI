@@ -9,6 +9,9 @@ _lookups = ContextVar("desktop_command_lookups", default=None)
 
 @contextmanager
 def command_lookup_scope():
+    if _lookups.get() is not None:
+        yield
+        return
     token = _lookups.set({})
     try:
         yield
