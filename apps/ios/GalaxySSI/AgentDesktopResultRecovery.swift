@@ -418,11 +418,12 @@ final class AgentDesktopResultRecovery {
   }
 
   func receive(_ payload: [String: Any], record: AgentDesktopReplyRecoveryRecord,
-               now: Int64) -> AgentDesktopResultManifest? {
+               now: Int64, commitManifest: (AgentDesktopResultManifest) -> Bool = { _ in true }) -> AgentDesktopResultManifest? {
     let nonce = payload.string("request_id")
     guard let query = queries[nonce], query.binding == record.binding, query.generation == record.generation,
           now >= query.startedAt, now - query.startedAt <= 120_000,
-          let manifest = savePage(payload, record: record, nonce: nonce, page: query.page) else { return nil }
+          let manifest = savePage(payload, record: record, nonce: nonce, page: query.page),
+          commitManifest(manifest) else { return nil }
     queries.removeValue(forKey: nonce)
     return manifest
   }

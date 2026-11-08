@@ -7,10 +7,13 @@ struct MqttDesktopConnectorProjection {
   let commitResponse: (AgentConnectorResponse, [String: Any]) throws -> Void
   var completedResult: (([String: Any], AgentResultReceipt) throws -> Void)? = nil
   var resultRecovery: (() -> AgentDesktopResultRecovery?)? = nil
+  var receiveRecoveryControl: (([String: Any], String) throws -> Void)? = nil
+  var recoveryQueries: (((AgentDesktopReplyBinding) -> Bool) -> [[String: Any]])? = nil
 
   static func handles(_ payload: [String: Any]) -> Bool {
     payload["peer_chat"] as? Bool != true &&
-      ["agent_task_event", "text", "agent_response", "agent_task_result_receipt_confirmed"].contains(payload.string("type"))
+      ["agent_task_event", "text", "agent_response", "agent_task_result_receipt_confirmed",
+       "agent_task_recovery_result", "agent_task_result_page"].contains(payload.string("type"))
   }
 
   private func contact(_ payload: [String: Any], target: MqttPeerChatProjection.Destination) throws -> GalaxySSIContact {
@@ -56,6 +59,20 @@ struct MqttDesktopConnectorProjection {
           payload.string("message_id") == item.messageID, Self.handles(payload) else {
       throw MqttRouteError.invalidPayload
     }
+    if ["agent_task_recovery_result", "agent_task_result_page"].contains(payload.string("type")) {
+      guard target.desktop, payload.string("client_route_id") == target.routeId,
+            payload.string("desktop_id").ifBlank(target.peer.remoteSignalName) == target.peer.remoteSignalName,
+            let receiveRecoveryControl else { throw MqttRouteError.identityChanged }
+      let fields: [String: Any]
+      if payload.string("type") == "agent_task_recovery_result" {
+        guard let items = payload["items"] as? [[String: Any]], items.count == 1,
+              let item = items.first else { throw MqttRouteError.invalidPayload }
+        fields = item
+      } else { fields = payload }
+      _ = try contact(fields, target: target)
+      try receiveRecoveryControl(payload, target.peer.remoteSignalName)
+      return
+    }
     let contact = try contact(payload, target: target)
     if payload.string("type") == "agent_task_result_receipt_confirmed" {
       guard let recovery = resultRecovery?(),
@@ -97,6 +114,29 @@ struct MqttDesktopConnectorProjection {
   func validateResultReceipt(_ receipt: AgentResultReceipt, target: MqttPeerChatProjection.Destination) throws {
     guard receipt.desktopId == target.peer.remoteSignalName else { throw MqttRouteError.identityChanged }
     _ = try contact(receipt.payload, target: target)
+  }
+
+  func recoveryQueryRequest(_ payload: [String: Any], target: MqttPeerChatProjection.Destination) throws -> MqttSignalSendRequest {
+    guard target.desktop, payload.string("desktop_id") == target.peer.remoteSignalName,
+          payload.string("client_route_id") == target.routeId,
+          let id = UUID(uuidString: payload.string("request_id")), id.uuidString == payload.string("request_id") else {
+      throw MqttRouteError.identityChanged
+    }
+    switch payload.string("type") {
+    case "agent_task_recovery_request":
+      guard let items = payload["items"] as? [[String: Any]], items.count == 1, let item = items.first else {
+        throw MqttRouteError.invalidPayload
+      }
+      _ = try contact(item, target: target)
+    case "agent_task_result_page_request":
+      _ = try contact(payload, target: target)
+    default: throw MqttRouteError.invalidPayload
+    }
+    var application = payload
+    application["message_id"] = id.uuidString
+    return try MqttSignalSendRequest(identity: MqttBusinessIdentity(target.peer.binding), payload: application,
+      remoteName: target.peer.remoteSignalName, topic: target.peer.binding.sendTopic, clientRouteID: target.routeId,
+      traffic: .control, contactID: target.contactId)
   }
 
   func resultReceiptRequest(_ work: AgentResultReceiptWork, target: MqttPeerChatProjection.Destination) throws -> MqttSignalSendRequest {
