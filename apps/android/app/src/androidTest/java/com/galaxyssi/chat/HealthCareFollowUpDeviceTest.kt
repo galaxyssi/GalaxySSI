@@ -148,7 +148,7 @@ class HealthCareFollowUpDeviceTest {
     }
     @Test fun schemaThreeUpgradePreservesConfirmedPlansAndConcern(): Unit = fixture { names, store, issue ->
         store.close()
-        context.openOrCreateDatabase(names.care, 0, null).use { it.execSQL("DROP TABLE action_reminders"); it.version = 3 }
+        context.openOrCreateDatabase(names.care, 0, null).use { it.execSQL("DROP TABLE evidence_reads"); it.execSQL("DROP TABLE action_reminders"); it.version = 3 }
         HealthCareStore(context, names.care).use { upgraded ->
             assertEquals(issue, upgraded.concern(issue.id)); assertTrue(upgraded.reminders(issue.id).isEmpty())
             assertNotNull(schedule(names, upgraded, issue, System.currentTimeMillis() + 60000))

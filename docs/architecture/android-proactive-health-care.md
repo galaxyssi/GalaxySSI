@@ -211,3 +211,38 @@ updates, and rechecks scope before posting. A crash between posting and recordin
 delivery may recreate a dismissed notice; exactly-once human delivery is not
 claimed. Database reopening and deterministic replay tests do not replace physical
 reboot and operating-system delayed-delivery acceptance.
+
+## Native evidence provenance
+
+Health research reuses the existing bounded, certificate-checked phone web tools.
+Only successful native `galaxyssi.web.intelligence.search` or `.fetch` results
+containing retrieved bodies can create health read receipts. Discovery snippets,
+model-authored URLs/hashes, failed fetches and malformed manifests cannot. The
+receipt binds the approved conversation/turn/concern revision to the actual URL,
+source title, body hash, reading-window excerpt, retrieval time and observation
+time. Cache age remains visible and is never presented as a publication date.
+
+Schema 5 adds indexed, individually encrypted evidence rows. Recording a read does
+not revise a concern or invalidate its in-flight discussion. Replay cannot rewrite
+a receipt. A new plan must reference receipts from that approved turn and include
+a short exact original-language supporting passage. Whitespace normalization is
+allowed; paraphrases, translations, omitted clauses and unrelated sources are not
+accepted as verbatim support. Compacted observations retain the source-to-receipt
+identity instead of silently losing the reference needed for plan submission.
+
+Plan persistence resolves references from the native store rather than trusting
+proof supplied by a model. Accepted actions retain their evidence IDs and quoted
+passages, available from follow-up controls on both Agent main and Personal Health.
+Deleting a concern removes its evidence rows. Existing records remain readable;
+legacy pending plans without receipts need an updated research turn before they
+can be accepted. Existing actions without evidence fields keep the same serialized
+form so this upgrade does not invalidate otherwise unchanged reminder anchors.
+
+This is retrieval/quotation verification, **not** medical validation. A passage can
+be real yet irrelevant, outdated, contradicted or unsuitable for a person's age,
+pregnancy, medications or diagnosis. Version and applicability fields remain model
+claims. The UI explicitly distinguishes these from native retrieval timestamps.
+Research must assess authoritative sources, population, conflicting evidence and
+uncertainty; professional review, real-provider research/reassessment and clinical
+acceptance remain required. A read receipt must never be advertised as proof that
+a health recommendation is safe, correct or personally applicable.

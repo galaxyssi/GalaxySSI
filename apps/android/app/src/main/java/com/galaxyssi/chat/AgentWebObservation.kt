@@ -19,6 +19,7 @@ internal object AgentWebObservation {
             listOf("invocation_id", "tool_id", "status").forEach { put(it, receipt.optString(it)) }
         })
         val pack = source.optJSONObject("evidence_pack")
+        val health = source.optJSONArray("health_evidence")
         val items = pack?.optJSONArray("items") ?: source.optJSONArray("results") ?: JSONArray()
         val result = JSONArray()
         if (pack != null) root.put("evidence_pack", JSONObject().put("items", result))
@@ -41,6 +42,13 @@ internal object AgentWebObservation {
             val compact = JSONObject()
             listOf("title", "url", "citation_id", "published_at", "evidence_level", "media_evidence_level").forEach { key ->
                 item.optString(key).takeIf(String::isNotBlank)?.let { compact.put(key, it) }
+            }
+            for (h in 0 until (health?.length() ?: 0)) {
+                val read = health?.optJSONObject(h) ?: continue
+                if (read.optString("citation_id") == item.optString("citation_id") && read.optString("url") == item.optString("url")) {
+                    compact.put("health_evidence_id", read.optString("evidence_id"))
+                    break
+                }
             }
             val images = item.optJSONArray("images")
             val image = images?.optJSONObject(0)?.optString("url").orEmpty()

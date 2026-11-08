@@ -110,7 +110,8 @@ internal data class HealthCareAssessment(val record: HealthCareRecordRef?, val m
 
 internal data class HealthCareAction(val id: String, val kind: HealthCareActionKind, val description: String,
     val rationale: String, val source: String, val state: HealthCareActionState = HealthCareActionState.PROPOSED,
-    val dueFrom: Long? = null, val dueUntil: Long? = null, val confirmedAt: Long? = null, val outcome: String = "", val basis: String = "") {
+    val dueFrom: Long? = null, val dueUntil: Long? = null, val confirmedAt: Long? = null, val outcome: String = "", val basis: String = "",
+    val evidenceId: String = "", val supportingQuote: String = "") {
     init {
         require(HealthProfilePolicy.uuid(id) && description.isNotBlank() && description.length <= 1000)
         require(rationale.isNotBlank() && rationale.length <= 2000 && source.isNotBlank() && source.length <= 2048)
@@ -118,14 +119,18 @@ internal data class HealthCareAction(val id: String, val kind: HealthCareActionK
         require(state !in setOf(HealthCareActionState.CONFIRMED, HealthCareActionState.DONE) || confirmedAt != null && confirmedAt > 0)
         require(outcome.length <= 2000 && (state != HealthCareActionState.DONE || outcome.isNotBlank()))
         require(basis.isEmpty() || basis.matches(Regex("[0-9a-f]{64}")))
+        require(evidenceId.isEmpty() || HealthProfilePolicy.uuid(evidenceId))
+        require(supportingQuote.length <= 600)
     }
     fun json() = JSONObject().put("id", id).put("kind", kind.name).put("description", description).put("rationale", rationale)
         .put("source", source).put("state", state.name).put("from", dueFrom ?: JSONObject.NULL).put("until", dueUntil ?: JSONObject.NULL)
         .put("confirmed_at", confirmedAt ?: JSONObject.NULL).put("outcome", outcome).put("basis", basis)
+        .apply { if (evidenceId.isNotEmpty()) { put("evidence_id", evidenceId); put("supporting_quote", supportingQuote) } }
     companion object { fun from(j: JSONObject) = HealthCareAction(j.getString("id"), HealthCareActionKind.valueOf(j.getString("kind")),
         j.getString("description"), j.getString("rationale"), j.getString("source"), HealthCareActionState.valueOf(j.getString("state")),
         if (j.isNull("from")) null else j.getLong("from"), if (j.isNull("until")) null else j.getLong("until"),
-        if (j.isNull("confirmed_at")) null else j.getLong("confirmed_at"), j.getString("outcome"), j.optString("basis", "")) }
+        if (j.isNull("confirmed_at")) null else j.getLong("confirmed_at"), j.getString("outcome"), j.optString("basis", ""),
+        j.optString("evidence_id"), j.optString("supporting_quote")) }
 }
 
 internal data class HealthCareConcern(val id: String, val metric: HealthMetric, val revision: Int, val createdAt: Long,

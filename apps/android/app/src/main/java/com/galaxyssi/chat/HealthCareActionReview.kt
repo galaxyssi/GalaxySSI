@@ -30,7 +30,7 @@ internal class HealthCareActionReview(private val activity: Activity, private va
     fun clear() { generation++; dialog?.dismiss(); dialog = null }
     fun destroy() { clear(); worker.shutdown() }
     private data class Snapshot(val issue: HealthCareConcern, val action: HealthCareAction, val reminder: HealthCareReminder?,
-        val notifications: Boolean, val eligible: Boolean)
+        val notifications: Boolean, val eligible: Boolean, val evidence: HealthCareEvidence?)
 
     fun show(concernId: String, actionId: String) {
         if (busy) return
@@ -49,7 +49,8 @@ internal class HealthCareActionReview(private val activity: Activity, private va
                     }
                     Snapshot(issue, action, store.reminder(actionId),
                         HealthReminderStore(activity, names.reminders).use { it.settings().notifications } && HealthReminderWork.systemAllowed(activity),
-                        HealthCareFollowUpPolicy.eligible(issue, action, settings, permission, source))
+                        HealthCareFollowUpPolicy.eligible(issue, action, settings, permission, source),
+                        action.evidenceId.takeIf(String::isNotBlank)?.let(store::evidence)?.takeIf { it.grant.concernId == issue.id })
                 }
             }
             main.post { if (token == generation && !activity.isFinishing && !activity.isDestroyed) result.fold(::render, { error() }) }
@@ -59,6 +60,15 @@ internal class HealthCareActionReview(private val activity: Activity, private va
         val content = ui.column().apply { setPadding(ui.dp(20), ui.dp(8), ui.dp(20), ui.dp(16)) }
         content.addView(ui.text(value.action.description, 18f, bold = true))
         ui.add(content, ui.text(value.action.rationale, 14f), 8)
+        value.evidence?.let { evidence ->
+            ui.add(content, ui.profileRow(evidence.title, evidence.url) {
+                runCatching { activity.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(evidence.url))) }.onFailure { error() }
+            }, 8)
+            ui.add(content, ui.text(value.action.supportingQuote, 14f), 4)
+            ui.add(content, ui.text(activity.getString(R.string.health_care_evidence_read, date(evidence.retrievedAt),
+                date(evidence.observedAt)), 13f, muted = true), 4)
+            ui.add(content, ui.text(activity.getString(R.string.health_care_evidence_scope), 13f, muted = true), 4)
+        }
         value.action.dueFrom?.let { ui.add(content, ui.text(activity.getString(R.string.health_care_plan_window,
             date(it), date(value.action.dueUntil!!)), 14f, muted = true), 8) }
         ui.add(content, ui.text(activity.getString(R.string.health_care_followup_time_notice), 14f, muted = true), 8)
