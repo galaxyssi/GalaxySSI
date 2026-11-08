@@ -10055,30 +10055,30 @@ final class MessageCoordinator: ObservableObject {
         break
       }
       guard !ready.isEmpty else { break }
-      var waveStarted = false
-      await withTaskGroup(of: (String, String, Bool).self) { group in
-        for id in ready {
+      let admission = AgentGoalWorkAdmissionOrder()
+      await withTaskGroup(of: (String, String).self) { group in
+        for (index, id) in ready.enumerated() {
           group.addTask { @MainActor in
+            await admission.wait(for: index)
             guard self.liveGoalWorkRoster(scope, profileID: profileID) == roster else {
-              return (id, "work_scope_unavailable", false)
+              admission.finish(index, claimedID: nil)
+              return (id, "work_scope_unavailable")
             }
             let result = await self.runAdmittedGoalWork(
               ["mode": .string(AgentCollaborationGoalAssessmentPolicy.runWorkMode), "work_id": .string(id)],
-              scope: scope, outgoing: outgoing, profileID: profileID, targets: targets)
-            return (id, result.string("status"), result["new_execution"] == .bool(true))
+              scope: scope, outgoing: outgoing, profileID: profileID, targets: targets,
+              onAdmission: { claimed in admission.finish(index, claimedID: claimed ? id : nil) })
+            return (id, result.string("status"))
           }
         }
-        for await (id, outcome, launched) in group {
+        for await (id, outcome) in group {
           outcomes[id] = outcome
-          if outcome == "work_capacity_unavailable" && !launched { deferred.insert(id) } else { excluded.insert(id) }
-          if launched {
-            waveStarted = true
-            startedCount += 1
-            if started.count < 64 { started.append(id) }
-          }
+          if outcome == "work_capacity_unavailable" { deferred.insert(id) } else { excluded.insert(id) }
         }
       }
-      if waveStarted {
+      if !admission.claimedIDs.isEmpty {
+        startedCount += Int64(admission.claimedIDs.count)
+        started.append(contentsOf: admission.claimedIDs.prefix(max(0, 64 - started.count)))
         newExecution = true
         deferred.removeAll()
       }
@@ -10095,7 +10095,10 @@ final class MessageCoordinator: ObservableObject {
 
   private func runAdmittedGoalWork(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope,
                                       outgoing: ChatMessage, profileID: String,
-                                      targets: [String: AgentCallableTarget]) async -> AgentMcpJSONObject {
+                                      targets: [String: AgentCallableTarget],
+                                      onAdmission: (@MainActor (Bool) -> Void)? = nil) async -> AgentMcpJSONObject {
+    var admissionFinished = false
+    defer { if !admissionFinished { onAdmission?(false) } }
     func unavailable(_ status: String) -> AgentMcpJSONObject { ["success": .bool(false), "status": .string(status)] }
     func liveRoster() -> AgentCollaborationRoster? { liveGoalWorkRoster(scope, profileID: profileID) }
     guard !Task.isCancelled, !outgoing.readOnlyAnalysis,
@@ -10182,6 +10185,9 @@ final class MessageCoordinator: ObservableObject {
       return unavailable("work_not_ready")
     }
     guard claim.claimed else { return claim.run.receipt(now: AgentControlPlaneClock.nowMillis()) }
+    // Finish the ordered permit and durable claim phase before any provider work suspends.
+    admissionFinished = true
+    onAdmission?(true)
     let dependencies = AgentMcpJSONCodec.stringify(["dependencies": .array(claim.dependencies.map(AgentMcpJSONValue.object))])
     let recruitment = work.recruitment.map {
       AgentMcpJSONCodec.stringify(["member_id": .string($0.executionIdentity), "role": .string($0.role), "scope": .string($0.scope)])
