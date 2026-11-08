@@ -631,6 +631,14 @@
     <div class="peer-image-viewer-stage"><img id="peerImageViewerImage" alt=""></div>
   </div>
 
+  <dialog id="conversationDeleteDialog" class="conversation-delete-dialog" aria-labelledby="conversationDeleteTitle" aria-describedby="conversationDeleteMessage">
+    <h2 id="conversationDeleteTitle" data-i18n="Delete conversation">Delete conversation</h2>
+    <p id="conversationDeleteMessage"></p>
+    <div class="conversation-delete-actions">
+      <button id="cancelConversationDeleteButton" class="secondary-button" type="button" data-i18n="Cancel" autofocus>Cancel</button>
+      <button id="confirmConversationDeleteButton" class="secondary-button danger-text" type="button" data-i18n="Delete">Delete</button>
+    </div>
+  </dialog>
   <div id="toast" class="toast" role="status" hidden></div>
   <script src="./connecting-animation.js"></script>
   <script src="../peer_hold_to_talk.js"></script>
@@ -641,6 +649,7 @@
   <script src="./blob-settings.js"></script>
   <script src="./peer-reminders.js"></script>
   <script src="./composer-clipboard.js"></script>
+  <script src="./conversation-confirmation.js"></script>
   <script src="./workspace.js"></script>
   <script src="./evolution-v2-panel.js"></script>
 </body>

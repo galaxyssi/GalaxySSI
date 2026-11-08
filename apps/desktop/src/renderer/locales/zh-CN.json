@@ -1144,4 +1144,5 @@
 , "Codex generation completed; checking response": "Codex 已生成回复，正在完成检查"
 , "Response contract checked": "已检查回复交付要求"
 , "Received Codex's response": "已收到 Codex 的回复"
+, "Delete conversation": "删除会话"
 }
