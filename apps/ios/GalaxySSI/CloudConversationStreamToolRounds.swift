@@ -143,6 +143,8 @@ final class CloudWebToolLoopProgress {
   private var requestedRepairs: Set<String> = []
   private var formatRepairs = 0
   private var ruleCoverage: [String: AgentCollaborationReadCoverage] = [:]
+  private var readingCoverage: [String: AgentCollaborationReadCoverage] = [:]
+  private(set) var performedDeepResearch = false
   private(set) var finalizationRequested = false
 
   func cached(toolName: String, arguments: AgentMcpJSONObject) -> String? {
@@ -158,6 +160,30 @@ final class CloudWebToolLoopProgress {
     let key = semanticKey(toolName: toolName, arguments: arguments)
     guard outputsByCall[key] == nil else { return false }
     outputsByCall[key] = output
+    if let operation = CloudWebGrounding.operation(forToolName: toolName),
+       operation == .research || operation == .agent,
+       AgentIOSWebResearchPlanCodec.isDeepResearch(arguments) {
+      performedDeepResearch = true
+    }
+    if CloudWebGrounding.operation(forToolName: toolName) == .fetch,
+       AgentIOSWebReadingWindow.requested(arguments) {
+      guard let root = decode(output), root["status"] == .string("completed"),
+            let window = root["reading_window"]?.objectValue,
+            window["scope"] == .string(AgentIOSWebReadingWindow.scope),
+            let start = window["offset"]?.intValue, let end = window["end_offset"]?.intValue,
+            let total = window["total_chars"]?.intValue, start >= 0, end > start, end <= total,
+            let hash = window["document_sha256"]?.stringValue, hash.utf8.count == 64,
+            let text = root["text"]?.stringValue, Int64(text.utf16.count) == end - start else { return false }
+      let resolved = root["evidence_pack"]?.objectValue?["items"]?.arrayValue?.first?.objectValue?["url"]?.stringValue
+      let url = AgentIOSWebEvidencePack.canonicalURL(resolved ?? arguments.string("url"))
+      guard !url.isEmpty else { return false }
+      let key = "\(url)\n\(hash)"
+      let previous = readingCoverage[key] ?? .init()
+      var updated = previous
+      updated.include(start: start, end: end)
+      readingCoverage[key] = updated
+      return updated != previous
+    }
     if Self.isMethodEvaluationRecall(toolName: toolName, arguments: arguments) {
       typealias Evaluation = AgentCollaborationMethodEvaluations
       guard let method = Evaluation.reference(from: arguments),
@@ -229,6 +255,7 @@ final class CloudWebToolLoopProgress {
   private func resourceKey(toolName: String, arguments: AgentMcpJSONObject) -> String? {
     let tool = toolName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     guard ["web_fetch", "web_extract", "web_diff"].contains(tool) else { return nil }
+    if tool == "web_fetch", AgentIOSWebReadingWindow.requested(arguments) { return nil }
     let value = AgentIOSWebEvidencePack.canonicalURL(arguments["url"]?.stringValue ?? "")
     return value.isEmpty ? nil : value
   }
@@ -345,6 +372,7 @@ struct CloudModelStreamMutableConversation {
   private(set) var request: ModelStreamRequest
   private var body: [String: Any]
   private var finalRoundPrepared = false
+  var canRequestBodyReadingReview: Bool { !finalRoundPrepared && body["tools"] != nil }
 
   init(request: ModelStreamRequest) throws {
     self.request = request
@@ -489,6 +517,11 @@ struct CloudModelStreamMutableConversation {
     body.removeValue(forKey: "tools")
     body.removeValue(forKey: "tool_choice")
     finalRoundPrepared = true
+  }
+
+  mutating func appendBodyReadingReview(draft: String, prompt: String) {
+    appendPlainConversationTurn(role: "assistant", text: draft)
+    appendPlainConversationTurn(role: "user", text: prompt)
   }
 
   mutating func appendInlineToolResults(
