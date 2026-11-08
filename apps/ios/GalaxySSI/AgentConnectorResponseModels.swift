@@ -433,7 +433,7 @@ struct AgentConnectorResponse: Codable, Equatable {
   ) {
     self.sourceMessageId = max(sourceMessageId, 0)
     self.contactId = contactId
-    self.content = String(content.prefix(Self.maxContentCharacters))
+    self.content = Self.boundedContent(content)
     self.conversationId = conversationId
     self.turnId = turnId
     self.taskId = taskId
@@ -495,6 +495,14 @@ struct AgentConnectorResponse: Codable, Equatable {
 
   static let maxContentCharacters = 24_000
   static let maxRichOutputCharacters = 48_000
+
+  static func boundedContent(_ content: String) -> String {
+    let preview = content.prefix(maxContentCharacters)
+    if preview.endIndex != content.endIndex, AgentCollaborationResearchEnvelope.isCompleteReply(content) {
+      return content
+    }
+    return String(preview)
+  }
 
   static func fromPayload(
     _ payload: [String: Any],
@@ -1136,7 +1144,7 @@ enum AgentConnectorResponseStoreCodec {
     .object([
       "source_message_id": .int(response.sourceMessageId),
       "contact_id": .string(response.contactId),
-      "content": .string(String(response.content.prefix(AgentConnectorResponse.maxContentCharacters))),
+      "content": .string(AgentConnectorResponse.boundedContent(response.content)),
       "conversation_id": .string(response.conversationId),
       "turn_id": .string(response.turnId),
       "task_id": .string(response.taskId),
@@ -1179,7 +1187,7 @@ enum AgentConnectorResponseNormalizer {
     return AgentConnectorResponse(
       sourceMessageId: response.sourceMessageId,
       contactId: response.contactId,
-      content: String(content.prefix(AgentConnectorResponse.maxContentCharacters)),
+      content: content,
       conversationId: response.conversationId,
       turnId: response.turnId,
       taskId: response.taskId,
