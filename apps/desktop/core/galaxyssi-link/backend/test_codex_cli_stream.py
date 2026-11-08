@@ -51,6 +51,12 @@ class CodexCliStreamTest(unittest.TestCase):
         raw = "not json\n[]\n" + "\n".join([answer("a", "First"), answer("a", "First"), answer("b", "Second")])
         self.assertEqual("First\n\nSecond", final_codex_answer(raw))
 
+    def test_timeout_also_covers_a_child_that_does_not_read_stdin(self):
+        process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        with process, self.assertRaises(subprocess.TimeoutExpired):
+            collect_codex_stream(process, input_bytes=b"x" * 2_000_000, timeout=0.2, on_event=lambda *args: None)
+        self.assertIsNotNone(process.poll())
+
     def test_no_answer_does_not_return_protocol_json(self):
         self.assertEqual("", final_codex_answer('{"type":"turn.completed"}'))
 

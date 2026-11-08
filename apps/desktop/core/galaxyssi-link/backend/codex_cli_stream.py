@@ -68,19 +68,23 @@ def collect_codex_stream(
         for line in iter(process.stderr.readline, b""):
             stderr.append(line)
 
-    readers = [threading.Thread(target=read_stdout, daemon=True), threading.Thread(target=read_stderr, daemon=True)]
-    for reader in readers:
-        reader.start()
-    try:
+    def write_stdin() -> None:
         if process.stdin is not None:
             try:
                 if input_bytes is not None:
                     process.stdin.write(input_bytes)
                     process.stdin.flush()
-            except BrokenPipeError:
+            except (BrokenPipeError, OSError):
                 pass
             finally:
                 process.stdin.close()
+
+    readers = [threading.Thread(target=read_stdout, daemon=True), threading.Thread(target=read_stderr, daemon=True)]
+    writer = threading.Thread(target=write_stdin, daemon=True)
+    for reader in readers:
+        reader.start()
+    writer.start()
+    try:
         process.wait(timeout=timeout)
     except BaseException:
         if process.poll() is None:
@@ -88,6 +92,7 @@ def collect_codex_stream(
         process.wait(timeout=3)
         raise
     finally:
+        writer.join(timeout=3)
         for reader, pipe in zip(readers, (process.stdout, process.stderr)):
             reader.join(timeout=3)
             if not reader.is_alive():
