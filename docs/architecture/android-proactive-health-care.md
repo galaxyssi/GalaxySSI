@@ -572,6 +572,18 @@ success. Durable phase markers permit inspection and resumption without insertin
 duplicate synthetic readings. Same-day synthetic readings do not establish
 clinical improvement, a long-term observation period or physical reboot coverage.
 
+The `outcome` phase continues that archive with a separate explicit review of one
+eligible synthetic plan action. It renews scoped consent, waits for an in-flight
+receipt and records a difficulty carrying out the action through `finishAction`,
+the same store entry point used by the outcome UI. No new reading or user chat
+message is inserted. Normal change notifications must initiate reassessment in
+the existing conversation, preserve the recorded limitation and leave another
+source-backed proposal pending. The completed action is not proof of clinical
+improvement; no target, maintenance state, closure, additional adopted action or
+reminder may appear. Its consent is revoked on success. Durable markers support
+replay without recording the outcome or submitting the request again. This does
+not substitute for a real elapsed clinical review window or multi-day follow-up.
+
 The runner redirects databases, task files and non-pairing preferences into a
 dedicated acceptance namespace before the application and workers initialize.
 It asserts the care, transcript and WorkManager database locations before
