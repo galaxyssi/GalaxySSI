@@ -525,6 +525,7 @@ final class MessageCoordinator: ObservableObject {
     }
     AgentIOSEvalReliabilityHarness.shared.start()
     let outboxEligibility = learningOutboxEligibility()
+    deliveryStore.holdStaleUnclassified()
     handleInterruptedDeliveries(deliveryStore.recoverInterruptedPublishing(eligible: outboxEligibility))
     _ = deliveryStore.ensureTransportEpoch(transportEpoch)
     deliveryStore.makePendingImmediatelyRetryable(eligible: outboxEligibility)
@@ -3392,7 +3393,7 @@ final class MessageCoordinator: ObservableObject {
       return false
     }
     managedDesktopProbes += 1
-    let published = await mqttClient.publishTransientControl(topic: link.routes.upTopic, payload: wire.wireData, link: link)
+    let published = await mqttClient.publishRecoveryQuery(topic: link.routes.upTopic, payload: wire.wireData, link: link)
     if published == .failed, !Task.isCancelled, profile == store.profile.identityFingerprint {
       teamRecoveryRetries.failure(run: run, profile: profile, progress: progress, now: now)
     }
@@ -3644,7 +3645,7 @@ final class MessageCoordinator: ObservableObject {
             $0.routes.clientRouteId == binding.identity.clientRouteId }),
           let wire = try? linkWirePayload(payload, link: link) else { return false }
     managedDesktopProbes += 1
-    _ = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
+    _ = await mqttClient.publishRecoveryQuery(topic: link.routes.upTopic, payload: wire.wireData, link: link)
     return true
   }
 
@@ -3807,7 +3808,7 @@ final class MessageCoordinator: ObservableObject {
               $0.routes.clientRouteId == binding.identity.clientRouteId }),
             let wire = try? linkWirePayload(payload, link: link) else { continue }
       published += 1
-      _ = await mqttClient.publishTransientControl(topic: link.routes.upTopic, payload: wire.wireData, link: link)
+      _ = await mqttClient.publishRecoveryQuery(topic: link.routes.upTopic, payload: wire.wireData, link: link)
     }
   }
 
@@ -14190,7 +14191,7 @@ final class MessageCoordinator: ObservableObject {
       guard let wire = try? linkWirePayload(payload, link: link) else {
         continue
       }
-      _ = await mqttClient.publishTransientControl(topic: link.routes.upTopic, payload: wire.wireData, link: link)
+      _ = await mqttClient.publishRecoveryQuery(topic: link.routes.upTopic, payload: wire.wireData, link: link)
     }
   }
 
@@ -15320,6 +15321,16 @@ final class MessageCoordinator: ObservableObject {
         deliveryStore.completeIncoming(messageId: messageId)
       }
       return
+    }
+    if appPayload.string("type") == "agent_task_event", object.string("scheme") == "signal",
+       let link, link.paired, object.string("from") == link.desktopId, object.string("to") == signalEngine.identity.name,
+       appPayload.string("client_route_id") == link.routes.clientRouteId,
+       taskIdentityStore.matchesRegistered(payload: appPayload),
+       let contact = store.contact(id: appPayload.string("contact_id")), contact.trustState == .verified,
+       contact.desktopId == link.desktopId, contact.connectorAgentId == appPayload.string("agent_id"),
+       let binding = desktopReplyRecovery.binding(for: appPayload, desktopId: link.desktopId),
+       desktopRecoveryBindingIsCurrent(binding) {
+      desktopReplyRecovery.observeLiveLease(appPayload, binding: binding, now: AgentControlPlaneClock.nowMillis())
     }
     if object.string("scheme") == "signal", handleTeamObserverReply(appPayload, link: link, messageId: messageId) { return }
     var recordedAuthenticatedProgress = false
