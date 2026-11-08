@@ -188,6 +188,7 @@ struct GalaxySSIHealthRecords {
     var localCareFeedback: [String: [GalaxySSIHealthCareFollowUp.FeedbackReceipt]]?
     var localCareResearch: GalaxySSIHealthCareResearch.Ledger?
     var localCareQuestions: [String: GalaxySSIHealthCareQuestions.Ledger]?
+    var localCareEncounters: GalaxySSIHealthEncounter.Ledger?
     var localCareAgenda: Data?
 
     var keepsNewImportOriginals: Bool { retainImportOriginals ?? true }
@@ -632,6 +633,64 @@ struct GalaxySSIHealthRecords {
     guard let scope = concern.profileScope else { return nil }
     guard let date = concern.assessment.measuredAt else { throw Failure.stale }
     return try scope.snapshot(loadProfile(), measuredAt: date)
+  }
+
+  private func localCareEncounterScope(id: UUID, metric: GalaxySSIHealthMetric, archive: Archive, now: Date)
+      throws -> (GalaxySSIHealthCare.Concern, GalaxySSIHealthEncounter.Stamp) {
+    guard archive.localCareAllowed == true, let permission = archive.localCarePermission else { throw Failure.permission }
+    guard let concern = archive.localCare?.current[metric.rawValue], concern.id == id else { throw Failure.stale }
+    let readings = archive.current.filter { $0.metric == metric && $0.isValid && $0.measuredAt <= now }
+    guard (GalaxySSIHealthCare.assess(readings, context: concern.context) ?? .removed) == concern.assessment else {
+      throw Failure.stale
+    }
+    return (concern, .init(concern: id, metric: metric, revision: concern.revision, permission: permission,
+      records: readings.map(GalaxySSIHealthCare.Record.init)))
+  }
+
+  func localCareEncounterPage(id: UUID, metric: GalaxySSIHealthMetric, entryID: UUID? = nil, before: Int? = nil,
+      expected: GalaxySSIHealthEncounter.Stamp? = nil, now: Date = Date()) throws -> GalaxySSIHealthEncounter.Page {
+    let archive = try load()
+    let (_, stamp) = try localCareEncounterScope(id: id, metric: metric, archive: archive, now: now)
+    guard before == nil || expected != nil, expected == nil || expected == stamp else { throw Failure.stale }
+    return try (archive.localCareEncounters ?? .init()).page(stamp, entryID: entryID, before: before)
+  }
+
+  func saveLocalCareEncounter(_ draft: GalaxySSIHealthEncounter.Draft, id: UUID, operation: UUID,
+      expected: GalaxySSIHealthEncounter.Stamp, expectedEntry: Int?, now: Date = Date()) throws -> GalaxySSIHealthEncounter.Receipt {
+    var archive = try load()
+    let (concern, stamp) = try localCareEncounterScope(id: expected.concern, metric: expected.metric, archive: archive, now: now)
+    guard expected.matchesInputs(stamp) else { throw Failure.stale }
+    var encounters = archive.localCareEncounters ?? .init()
+    let (receipt, inserted) = try encounters.save(id: id, operation: operation, expected: expected,
+      expectedEntry: expectedEntry, draft: draft, concern: concern, now: now)
+    if inserted {
+      guard var care = archive.localCare else { throw Failure.stale }
+      var current = concern
+      current.revision = receipt.entry.revision
+      current.updatedAt = receipt.entry.updated
+      care.publish(current)
+      archive.localCare = care
+      archive.localCareEncounters = encounters
+      try persist(archive)
+    }
+    return receipt
+  }
+
+  func deleteLocalCareEncounter(_ entry: GalaxySSIHealthEncounter.Entry,
+      expected: GalaxySSIHealthEncounter.Stamp, now: Date = Date()) throws {
+    var archive = try load()
+    let (concern, stamp) = try localCareEncounterScope(id: expected.concern, metric: expected.metric, archive: archive, now: now)
+    guard expected == stamp, concern.revision < Int.max - 1, entry.concern == concern.id,
+          var care = archive.localCare, var encounters = archive.localCareEncounters,
+          encounters.entries[entry.id] == entry else { throw Failure.stale }
+    encounters.remove(concern: concern.id, entry: entry.id)
+    var current = concern
+    current.revision += 1
+    current.updatedAt = max(now, current.updatedAt)
+    care.publish(current)
+    archive.localCare = care
+    archive.localCareEncounters = encounters
+    try persist(archive)
   }
 
   func localCareVisitPreview(id: UUID, metric: GalaxySSIHealthMetric, sections: Set<GalaxySSIHealthCareVisit.Section>,
@@ -1869,6 +1928,7 @@ struct GalaxySSIHealthRecords {
     ledger.history.removeValue(forKey: concern.id.uuidString)
     archive.localCareQuestions?.removeValue(forKey: concern.id.uuidString)
     archive.localCareFeedback?.removeValue(forKey: concern.id.uuidString)
+    archive.localCareEncounters?.remove(concern: concern.id)
     archive.localCare = ledger
     try persist(archive)
   }
