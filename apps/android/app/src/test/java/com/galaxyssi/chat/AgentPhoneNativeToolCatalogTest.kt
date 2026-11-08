@@ -102,6 +102,7 @@ class AgentPhoneNativeToolCatalogTest {
         val expected = linkedSetOf<String>().apply {
             addAll(AgentPhoneNativeToolCatalog.toolIds)
             addAll(AgentAppControlTools.toolIds)
+            addAll(AgentScheduleNativeTools.toolIds)
             addAll(AgentWebMediaNativeTools.toolIds)
             addAll(AgentWebIntelligenceNativeTools.toolIds)
             addAll(AgentHardwareNativeTools.toolIds)

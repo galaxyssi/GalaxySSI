@@ -4,7 +4,7 @@ internal object PhoneAssistantToolPolicy {
     val directActionToolIds = setOf(
         AgentNativeToolAgentActionAdapter.defaultToolId(AgentActionKind.SET_ALARM),
         AgentNativeToolAgentActionAdapter.defaultToolId(AgentActionKind.OPEN_APP)
-    )
+    ) + AgentScheduleNativeTools.toolIds
 
     fun allowsGeneralPhoneTool(id: String): Boolean =
         allowsRemotePhoneTool(id) || AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(id)
@@ -12,6 +12,7 @@ internal object PhoneAssistantToolPolicy {
     fun allowsRemotePhoneTool(id: String): Boolean = id == AgentConversationRecallTool.ID || id == HealthCarePlanTool.ID ||
         id == HealthCareHistoryTool.ID || id in AgentAppControlTools.toolIds ||
         id in AgentToolInspectionTools.toolIds || id in AgentPhoneUiNativeTools.toolIds ||
+        id in AgentScheduleNativeTools.toolIds ||
         id in AgentWebIntelligenceNativeTools.directSearchToolIds ||
         id in AgentInteractiveBrowserTools.toolIds ||
         id in AgentRuntimeControlTools.toolIds ||
