@@ -41,6 +41,14 @@ struct AgentScheduledReplyVisibility: Equatable, Sendable {
 }
 
 enum AgentConversationSchedule {
+  enum ReplyAlert: Equatable, Sendable {
+    case ordinary, scheduled(String), suppressed
+  }
+
+  static func replyAlertIdentifier(_ task: AgentProactiveTask) -> String {
+    "scheduled-reply:\(task.taskId):\(task.revision)"
+  }
+
   enum Command: Equatable {
     case save(prompt: String, trigger: AgentProactiveTrigger?, frequency: String, new: Bool)
     case pause, resume, list

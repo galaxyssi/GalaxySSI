@@ -4060,11 +4060,7 @@ final class MessageCoordinator: ObservableObject {
         onIncomingMessage?(incoming)
         hydrateBlobArtifactPresentation(message: incoming, contactId: incoming.contactId,
           sourceMessageId: binding.sourceIdentity)
-        if AgentRuntimeNotificationPolicy.shouldNotify(payload: payload,
-          applicationIsActive: UIApplication.shared.applicationState == .active) {
-          NotificationService.notify(title: store.contact(id: incoming.contactId)?.displayName ?? "GalaxySSI",
-            body: notificationPreview(content: content, payload: payload), userInfo: notificationUserInfo(for: incoming.contactId))
-        }
+        notifyDesktopReply(incoming, content: content, payload: payload)
       }
     } catch GalaxySSIChatHistoryError.locallyDeleted {
       // A durable user deletion is also a valid local disposition; never recreate or notify it.
@@ -4232,11 +4228,7 @@ final class MessageCoordinator: ObservableObject {
       onIncomingMessage?(incoming)
       hydrateBlobArtifactPresentation(message: incoming, contactId: incoming.contactId,
         sourceMessageId: binding.sourceId.uuidString)
-      if AgentRuntimeNotificationPolicy.shouldNotify(payload: payload,
-        applicationIsActive: UIApplication.shared.applicationState == .active) {
-        NotificationService.notify(title: store.contact(id: incoming.contactId)?.displayName ?? "GalaxySSI",
-          body: notificationPreview(content: content, payload: payload), userInfo: notificationUserInfo(for: incoming.contactId))
-      }
+      notifyDesktopReply(incoming, content: content, payload: payload)
     } catch GalaxySSIChatHistoryError.locallyDeleted {
       // Retire the receipt without recreating a locally deleted answer.
     } catch {
@@ -16902,15 +16894,30 @@ final class MessageCoordinator: ObservableObject {
       ))
       agentHomeDisplayContactIdsByTurnId.removeValue(forKey: responseTurnId)
     }
-    if AgentRuntimeNotificationPolicy.shouldNotify(
-      payload: appPayload,
-      applicationIsActive: UIApplication.shared.applicationState == .active
-    ) {
-      NotificationService.notify(
-        title: store.contact(id: displayContactId)?.displayName ?? "GalaxySSI",
-        body: notificationPreview(content: content, payload: appPayload),
-        userInfo: notificationUserInfo(for: displayContactId)
-      )
+    notifyDesktopReply(incoming, content: content, payload: appPayload)
+  }
+
+  func notifyDesktopReply(_ message: ChatMessage, content: String, payload: [String: Any]) {
+    guard AgentRuntimeNotificationPolicy.shouldNotify(payload: payload,
+      applicationIsActive: UIApplication.shared.applicationState == .active) else { return }
+    let conversation = message.conversationId, turn = message.turnId
+    let alert = store.scheduledReplyAlert(conversationId: conversation, turnId: turn)
+    let title = store.contact(id: message.contactId)?.displayName ?? "GalaxySSI"
+    let body = notificationPreview(content: content, payload: payload)
+    let userInfo = notificationUserInfo(for: message.contactId)
+    switch alert {
+    case .suppressed:
+      return
+    case .ordinary:
+      NotificationService.notify(title: title, body: body, userInfo: userInfo)
+    case .scheduled(let identifier):
+      NotificationService.notify(title: title, body: body, userInfo: userInfo, identifier: identifier) { [weak self] in
+        Task { @MainActor [weak self] in
+          guard self?.store.scheduledReplyAlert(conversationId: conversation, turnId: turn) != alert
+          else { return }
+          NotificationService.cancelNotification(identifier: identifier)
+        }
+      }
     }
   }
 
@@ -18241,7 +18248,10 @@ enum NotificationService {
   static func cancelIncomingMessage(contactId: String) {
     let cleanContactId = contactId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanContactId.isEmpty else { return }
-    let identifier = incomingMessageIdentifier(contactId: cleanContactId)
+    cancelNotification(identifier: incomingMessageIdentifier(contactId: cleanContactId))
+  }
+
+  static func cancelNotification(identifier: String) {
     AgentIOSOwnedNotificationStore.shared.remove(identifier: identifier)
     let center = UNUserNotificationCenter.current()
     center.removeDeliveredNotifications(withIdentifiers: [identifier])
@@ -18253,7 +18263,8 @@ enum NotificationService {
     body: String,
     userInfo: [AnyHashable: Any] = [:],
     identifier requestedIdentifier: String? = nil,
-    threadIdentifier: String = ""
+    threadIdentifier: String = "",
+    onPosted: (@Sendable () -> Void)? = nil
   ) {
     let normalizedIdentifier = requestedIdentifier?
       .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -18277,7 +18288,9 @@ enum NotificationService {
     content.threadIdentifier = threadIdentifier
     content.interruptionLevel = .active
     let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
-    UNUserNotificationCenter.current().add(request)
+    UNUserNotificationCenter.current().add(request) { error in
+      if error == nil { onPosted?() }
+    }
   }
 }
 

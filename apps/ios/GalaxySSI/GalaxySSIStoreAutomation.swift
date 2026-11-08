@@ -5,6 +5,24 @@ extension GalaxySSIStore {
     .init(tasks: proactiveTasks, runs: proactiveRuns)
   }
 
+  func scheduledReplyAlert(conversationId: String, turnId: String) -> AgentConversationSchedule.ReplyAlert {
+    guard !conversationId.isBlank, let occurrence = UUID(uuidString: turnId) else { return .ordinary }
+    let run = proactiveRuns.first { $0.runId == turnId }
+    if let run, let task = automationTask(id: run.taskId), task.action.isConversationSchedule,
+       task.action.conversationId == conversationId {
+      guard task.enabled, AgentConversationSchedule.revision(run) == task.revision,
+            run.status != .cancelled else { return .suppressed }
+      return .scheduled(AgentConversationSchedule.replyAlertIdentifier(task))
+    }
+    // Deleted schedules have no run row. Their original outgoing message still identifies the occurrence.
+    if let source = persistedMessage(id: occurrence, contactId: "hermes"), source.isMine,
+       source.conversationId == conversationId, source.turnId == turnId,
+       source.deliveryTrace.contains(where: { $0.stage == AgentConversationSchedule.occurrenceStage }) {
+      return .suppressed
+    }
+    return .ordinary
+  }
+
   func conversationSchedules(_ conversationId: String? = nil) -> [AgentProactiveTask] {
     automationTasks().filter {
       $0.action.isConversationSchedule && (conversationId == nil || $0.action.conversationId == conversationId)
@@ -67,6 +85,7 @@ extension GalaxySSIStore {
   }
 
   private func commitScheduleUpdate(_ task: AgentProactiveTask, now: Int64) throws {
+    let previous = automationTask(id: task.taskId)
     let runs = proactiveRuns.map { old -> AgentProactiveRun in
       guard old.taskId == task.taskId, old.status == .queued else { return old }
       var cancelled = old
@@ -78,6 +97,9 @@ extension GalaxySSIStore {
     let tasks = Self.sortedAutomationTasks(proactiveTasks.filter { $0.taskId != task.taskId } + [task])
     guard commitConversationScheduleState(tasks: tasks, runs: runs) else {
       throw AgentProactiveTaskError.invalid("Unable to persist the schedule")
+    }
+    if let previous {
+      NotificationService.cancelNotification(identifier: AgentConversationSchedule.replyAlertIdentifier(previous))
     }
   }
 
@@ -449,9 +471,11 @@ extension GalaxySSIStore {
   func deleteAutomationTask(id taskId: String) -> Bool {
     let clean = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !clean.isEmpty else { return false }
-    if automationTask(id: clean)?.action.isConversationSchedule == true {
-      return commitConversationScheduleState(tasks: proactiveTasks.filter { $0.taskId != clean },
-        runs: proactiveRuns.filter { $0.taskId != clean })
+    if let task = automationTask(id: clean), task.action.isConversationSchedule {
+      guard commitConversationScheduleState(tasks: proactiveTasks.filter { $0.taskId != clean },
+        runs: proactiveRuns.filter { $0.taskId != clean }) else { return false }
+      NotificationService.cancelNotification(identifier: AgentConversationSchedule.replyAlertIdentifier(task))
+      return true
     }
     let before = proactiveTasks.count
     proactiveTasks.removeAll { $0.taskId == clean }

@@ -231,8 +231,15 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertEqual(AgentConversationSchedule.revision(run), task.revision)
     XCTAssertNotNil(store.beginAutomationRun(id: run.runId, nowMillis: start))
     XCTAssertNil(store.beginAutomationRun(id: run.runId, nowMillis: start))
+    let messageID = try XCTUnwrap(UUID(uuidString: run.runId))
+    _ = store.appendOutgoing("Scheduled source", to: "hermes", turnId: run.runId, messageId: messageID,
+      conversationOverride: owner.id, sourceTrace: AgentConversationSchedule.occurrenceStage)
+    XCTAssertEqual(store.scheduledReplyAlert(conversationId: owner.id, turnId: run.runId),
+      .scheduled(AgentConversationSchedule.replyAlertIdentifier(task)))
+    XCTAssertEqual(store.scheduledReplyAlert(conversationId: other.id, turnId: run.runId), .ordinary)
     let changed = try store.saveConversationSchedule(conversationId: owner.id, id: task.taskId,
       prompt: "Check tomorrow's weather", trigger: nil, frequency: "", nowMillis: start + 1)
+    XCTAssertEqual(store.scheduledReplyAlert(conversationId: owner.id, turnId: run.runId), .suppressed)
     XCTAssertEqual(store.claimDueAutomationTasks(nowMillis: start + 1), 0)
     XCTAssertTrue(store.finishAutomationRun(id: run.runId, status: .failed,
       resultSummary: "Original result", nowMillis: start + 2))
@@ -242,9 +249,13 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertNotEqual(run.runId, next.runId)
     XCTAssertEqual(AgentConversationSchedule.revision(next), changed.revision)
     XCTAssertTrue(try store.setConversationScheduleEnabled(id: task.taskId, conversationId: owner.id, enabled: false))
+    XCTAssertEqual(store.scheduledReplyAlert(conversationId: owner.id, turnId: next.runId), .suppressed)
     XCTAssertNil(store.beginAutomationRun(id: next.runId, nowMillis: start + 3))
     XCTAssertTrue(try store.setConversationScheduleEnabled(id: task.taskId, conversationId: owner.id, enabled: true))
     XCTAssertEqual(store.automationTask(id: task.taskId)?.lastStatus, .queued)
+    XCTAssertTrue(store.deleteAutomationTask(id: task.taskId))
+    XCTAssertNotNil(store.persistedMessage(id: messageID, contactId: "hermes"))
+    XCTAssertEqual(store.scheduledReplyAlert(conversationId: owner.id, turnId: run.runId), .suppressed)
   }
 
   func testConversationScheduleSpeechUsesLiveCardState() throws {
