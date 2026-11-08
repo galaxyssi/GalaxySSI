@@ -6,6 +6,95 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  func testVisitWallClockRejectsMissingTimeAndRequiresExplicitOverlapOffset() throws {
+    let zone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+    let parser = ISO8601DateFormatter()
+    let spring = try XCTUnwrap(parser.date(from: "2026-03-08T16:00:00Z"))
+    let autumn = try XCTUnwrap(parser.date(from: "2026-11-01T16:00:00Z"))
+    XCTAssertTrue(GalaxySSIHealthEncounter.possibleTimes(day: spring, hour: 2, minute: 30, zone: zone).isEmpty)
+    let overlap = GalaxySSIHealthEncounter.possibleTimes(day: autumn, hour: 1, minute: 30, zone: zone)
+    XCTAssertEqual(overlap.map { zone.secondsFromGMT(for: $0) }, [-14_400, -18_000])
+    XCTAssertEqual(overlap.last?.timeIntervalSince(try XCTUnwrap(overlap.first)), 3_600)
+  }
+
+  @MainActor
+  func testVisitRecordsAreEncryptedRevisionCheckedAndDeleteHistory() throws {
+    typealias Visit = GalaxySSIHealthEncounter
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let secrets = HealthFixtureSecrets()
+    func open() -> GalaxySSIHealthRecords {
+      .init(owner: "visit-encounters", secrets: secrets, isolatedFile: file)
+    }
+    let records = open()
+    let now = Date()
+    let reading = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-600),
+      value: 110, unitOverride: "mg/dL", referenceInterval: "70 - 99")
+    try records.write(reading)
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    func page(_ store: GalaxySSIHealthRecords, entry: UUID? = nil) throws -> Visit.Page {
+      try store.localCareEncounterPage(id: concern.id, metric: .glucose, entryID: entry, now: now)
+    }
+    let original = try page(records).stamp
+    let entryID = UUID(), operation = UUID()
+    var draft = Visit.Draft(purpose: "private encounter fixture", facility: "Local clinic", state: .booked,
+      plannedAt: now.addingTimeInterval(600), zone: "UTC")
+    let first = try records.saveLocalCareEncounter(draft, id: entryID, operation: operation,
+      expected: original, expectedEntry: nil, now: now)
+    XCTAssertEqual(try open().saveLocalCareEncounter(draft, id: entryID, operation: operation,
+      expected: original, expectedEntry: nil, now: now), first)
+    XCTAssertEqual(first.entry.source?.id, reading.id)
+    XCTAssertNil(String(data: try Data(contentsOf: file), encoding: .utf8)?.range(of: draft.purpose))
+    let booked = try page(open(), entry: entryID)
+    draft.state = .attended
+    draft.attendedAt = now.addingTimeInterval(1)
+    XCTAssertThrowsError(try records.saveLocalCareEncounter(draft, id: entryID, operation: UUID(),
+      expected: booked.stamp, expectedEntry: booked.entry?.revision, now: now))
+    draft.attendedAt = now.addingTimeInterval(-60)
+    XCTAssertThrowsError(try records.saveLocalCareEncounter(draft, id: entryID, operation: UUID(),
+      expected: original, expectedEntry: booked.entry?.revision, now: now))
+    let attended = try records.saveLocalCareEncounter(draft, id: entryID, operation: UUID(),
+      expected: booked.stamp, expectedEntry: booked.entry?.revision, now: now)
+    XCTAssertEqual(attended.entry.details.plannedAt, first.entry.details.plannedAt)
+    XCTAssertNotEqual(attended.entry.details.attendedAt, attended.entry.details.plannedAt)
+    XCTAssertEqual(try page(open(), entry: entryID).rows, [attended.entry, first.entry])
+    let oldPermission = try page(records, entry: entryID).stamp
+    try records.setPrivacy(.localCare, enabled: false)
+    XCTAssertThrowsError(try page(open()))
+    try records.setPrivacy(.localCare, enabled: true)
+    XCTAssertThrowsError(try records.deleteLocalCareEncounter(attended.entry, expected: oldPermission, now: now))
+    let current = try page(records, entry: entryID)
+    try records.deleteLocalCareEncounter(attended.entry, expected: current.stamp, now: now)
+    XCTAssertTrue(try page(open()).rows.isEmpty)
+    XCTAssertThrowsError(try page(open(), entry: entryID))
+    XCTAssertEqual(try open().load().localCareEncounters?.receipts.count, 0)
+  }
+
+  @MainActor
+  func testVisitLedgerPaginatesThirtyExactRevisions() throws {
+    typealias Visit = GalaxySSIHealthEncounter
+    let now = Date(), id = UUID()
+    var concern = GalaxySSIHealthCare.Concern(id: id, metric: .glucose, revision: 1, updatedAt: now,
+      assessment: .removed, stage: .verify)
+    let permission = UUID()
+    func stamp() -> Visit.Stamp {
+      .init(concern: id, metric: .glucose, revision: concern.revision, permission: permission, records: [])
+    }
+    var ledger = Visit.Ledger()
+    for number in 1...31 {
+      let result = try ledger.save(id: UUID(), operation: UUID(), expected: stamp(), expectedEntry: nil,
+        draft: .init(purpose: "Visit \(number)"), concern: concern, now: now)
+      concern.revision = result.receipt.entry.revision
+    }
+    let first = try ledger.page(stamp(), entryID: nil, before: nil)
+    XCTAssertEqual(first.rows.count, 30)
+    let second = try ledger.page(stamp(), entryID: nil, before: try XCTUnwrap(first.next))
+    XCTAssertEqual(second.rows.map(\.details.purpose), ["Visit 1"])
+    XCTAssertNil(second.next)
+  }
+
   @MainActor
   func testHealthVisitPreviewEnforcesSelectionExpiryAndExactSource() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

@@ -1654,6 +1654,7 @@ final class AgentTeamExecutionHistoryStore {
         var expectedUtilities: [String: Double]? = nil
         var expectedInformation: [String: Double]? = nil
         var hypothesisFeedback: AgentMcpJSONObject? = nil
+        var qualitativePrediction: AgentMcpJSONObject? = nil
         var retentionBank: AgentCollaborationCapabilityBank? = nil
         var carriedPosterior: AgentMcpJSONObject? = nil
         var measuredCases: [AgentCollaborationMeasuredCase]? = nil
@@ -1852,11 +1853,26 @@ final class AgentTeamExecutionHistoryStore {
                   let pointer = value["report_pointer"]?.stringValue, pointer.isEmpty || pointer.hasPrefix("/"),
                   snapshot.members.contains(where: { $0.memberId == value.string("executor") && $0.deliveryMode != .ignore }),
                   let actions = AgentCollaborationForecastIntake.actionIds(savedModel),
-                  let utilities = AgentCollaborationForecastIntake.utilities(value, actions: actions)
+                  let predictionMode = AgentCollaborationQualitativePrediction.Mode(value)
             else { throw AgentTeamHistoryDatabase.Failure.stale }
             model = savedModel
-            expectedUtilities = utilities
-            if value["hypothesis_test"] != nil {
+            if predictionMode == .qualitative {
+              guard let prediction = AgentCollaborationQualitativePrediction(value, actions: actions),
+                    let executor = snapshot.members.first(where: {
+                      $0.memberId == value.string("executor") && $0.deliveryMode != .ignore && !$0.sourceMessageId.isBlank
+                    }) else {
+                throw AgentTeamHistoryDatabase.Failure.corrupt
+              }
+              var declaration = prediction.declaration
+              declaration["executor_source_id"] = .string(executor.sourceMessageId)
+              qualitativePrediction = declaration
+            } else {
+              guard let utilities = AgentCollaborationForecastIntake.utilities(value, actions: actions) else {
+                throw AgentTeamHistoryDatabase.Failure.stale
+              }
+              expectedUtilities = utilities
+            }
+            if predictionMode == .probabilistic, value["hypothesis_test"] != nil {
               let scope = AgentCollaborationToolEvidenceScope(runId: runId, conversationId: conversationId,
                 turnId: turnId, memberId: memberId, sourceId: sourceId)
               if let test = value["hypothesis_test"]?.objectValue, let prior = test["prior_outcome"] {
@@ -1979,25 +1995,40 @@ final class AgentTeamExecutionHistoryStore {
                   conversationId: conversationId, key: "object:" + ref.objectId, revision: ref.revision),
                 forecast.reference == ref, forecast.draft.kind == .actionForecast,
                 forecast.turnId != turnId || (forecast.runId == runId && forecast.authorId == memberId),
-                forecast.expectedInformationGainBits != nil, let registered = forecast.registeredAtMillis,
+                let registered = forecast.registeredAtMillis,
                 let spec = forecast.draft.body["action_forecast"]?.objectValue,
                 let deadline = spec["valid_until"]?.intValue,
-                let tool = spec["source"]?.objectValue?.string("tool"),
-                let ids = spec["hypothesis_test"]?.objectValue?["event_ids"]?.arrayValue?.compactMap(\.strictStringValue),
-                let event = spec["events"]?.arrayValue?.compactMap(\.objectValue).first(where: { ids.contains($0.string("id")) })
+                let tool = spec["source"]?.objectValue?.string("tool")
           else { throw AgentTeamHistoryDatabase.Failure.stale }
           let reads = try Self.freezeCloudReads(references, scope: scope, database: database)
           guard let read = reads.first, let original = try database.cloudEvidence(id: read.evidenceId, conversationId: conversationId),
-                original.succeeded, original.call.name == tool, original.scope.memberId == spec.string("executor"),
+                original.call.name == tool, original.scope.memberId == spec.string("executor"),
                 original.scope.runId == forecast.runId, original.scope.turnId == forecast.turnId,
                 original.startedAtMillis >= registered, original.finishedAtMillis >= original.startedAtMillis,
-                forecast.carriedHypothesisPosterior == nil || original.startedAtMillis > registered,
-                let feedback = AgentCollaborationForecastIntake.hypothesisFeedback(spec,
-                  observed: Self.measurementValue(original.output, pointer: event.string("pointer")),
-                  withinValidity: original.finishedAtMillis <= deadline,
-                  carriedPosterior: forecast.carriedHypothesisPosterior)
+                forecast.carriedHypothesisPosterior == nil || original.startedAtMillis > registered
           else { throw AgentTeamHistoryDatabase.Failure.stale }
-          hypothesisFeedback = feedback
+          let withinValidity = original.finishedAtMillis <= deadline
+          if var declaration = forecast.qualitativePrediction {
+            let actions = Set(spec["choices"]?.arrayValue?.compactMap { $0.objectValue?["action_id"]?.strictStringValue } ?? [])
+            guard declaration.removeValue(forKey: "executor_source_id") == .string(original.scope.sourceId) else {
+              throw AgentTeamHistoryDatabase.Failure.stale
+            }
+            guard let prediction = AgentCollaborationQualitativePrediction(spec, actions: actions),
+                  declaration == prediction.declaration else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+            hypothesisFeedback = prediction.feedback(withinValidity: withinValidity) { pointer in
+              guard original.succeeded, !original.observedFailure else { return nil }
+              return Self.measurementValue(original.output, pointer: pointer)
+            }
+          } else {
+            guard original.succeeded, forecast.expectedInformationGainBits != nil,
+                  let ids = spec["hypothesis_test"]?.objectValue?["event_ids"]?.arrayValue?.compactMap(\.strictStringValue),
+                  let event = spec["events"]?.arrayValue?.compactMap(\.objectValue).first(where: { ids.contains($0.string("id")) }),
+                  let feedback = AgentCollaborationForecastIntake.hypothesisFeedback(spec,
+                    observed: Self.measurementValue(original.output, pointer: event.string("pointer")),
+                    withinValidity: withinValidity, carriedPosterior: forecast.carriedHypothesisPosterior)
+            else { throw AgentTeamHistoryDatabase.Failure.stale }
+            hypothesisFeedback = feedback
+          }
           frozenReads = reads
         } else if draft.kind == .experimentResult {
           let scope = AgentCollaborationToolEvidenceScope(runId: runId, conversationId: conversationId,
@@ -2154,7 +2185,7 @@ final class AgentTeamExecutionHistoryStore {
           revision: draft.baseRevision + 1, sha256: ""), previousHash: head?.reference.sha256,
           runId: runId, turnId: turnId, authorId: memberId, sourceId: sourceId, draft: draft,
           frozenCloudReads: frozenReads, frozenNativeReads: frozenNativeReads, frozenDesktopReads: frozenDesktopReads,
-          declaredExpectedUtilities: expectedUtilities,
+          declaredExpectedUtilities: expectedUtilities, qualitativePrediction: qualitativePrediction,
           retainedProcedure: retainedProcedure, expectedInformationGainBits: expectedInformation,
           hypothesisFeedback: hypothesisFeedback,
           carriedHypothesisPosterior: carriedPosterior,

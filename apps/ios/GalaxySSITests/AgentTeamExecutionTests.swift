@@ -3127,6 +3127,116 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(try open().committedResearchRevisions(scope: owner)?.first?.toolTestComparison, result)
   }
 
+  func testQualitativeForecastPreservesContradictionsAndFrozenObservationOnReopen() throws {
+    typealias Prediction = AgentCollaborationQualitativePrediction
+    let raw = """
+    {"prediction_mode":"qualitative","work_id":"trial","executor":"review","horizon":"One run",
+     "decision_rationale":"Compare","risk_tradeoff":"Low","information_value":"Distinguish",
+     "revalidate_before_action":"Check inputs","selected_action":"probe","report_pointer":"",
+     "events":[{"id":"ordered","meaning":"Output ordered","unit":"boolean","pointer":"/ordered","expected":true},
+               {"id":"complete","meaning":"Output complete","unit":"boolean","pointer":"/complete","expected":true}],
+     "choices":[
+       {"action_id":"probe","reasoning":"Observe","uncertainty":"Unknown","resources":"One","risk":"Low",
+        "expectations":{"ordered":"expected","complete":"expected"}},
+       {"action_id":"defer","reasoning":"Wait","uncertainty":"Unknown","resources":"None","risk":"Low",
+        "expectations":{"ordered":"unknown","complete":"unknown"}}],
+     "hypothesis_test":{"question":"Why does it fail?","assumptions":"Same input","prediction_basis":"Fixture",
+       "misspecification_check":"Both may fail","event_ids":["ordered","complete"],
+       "hypotheses":[{"id":"a","claim":"A"},{"id":"b","claim":"B"}],
+       "predictions":{"probe":{"a":{"ordered":"expected","complete":"expected"},
+                               "b":{"ordered":"not_expected","complete":"expected"}},
+                      "defer":{"a":{"ordered":"unknown","complete":"unknown"},
+                               "b":{"ordered":"unknown","complete":"unknown"}}}}}
+    """
+    var spec = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    let actions: Set<String> = ["probe", "defer"]
+    let prediction = try XCTUnwrap(Prediction(spec, actions: actions))
+    XCTAssertNil(AgentCollaborationForecastIntake.utilities(spec, actions: actions))
+    XCTAssertNil(AgentCollaborationForecastIntake.hypothesisInformation(spec))
+    let partial = prediction.feedback(withinValidity: true) { $0 == "/ordered" ? .bool(false) : nil }
+    XCTAssertEqual(partial["state"], .string("incomplete_observation"))
+    XCTAssertEqual(partial["hypotheses"]?.arrayValue?.first?.objectValue?["state"], .string("contradicted"))
+    XCTAssertEqual(partial["hypotheses"]?.arrayValue?.last?.objectValue?["state"], .string("unresolved"))
+    let contradicted = prediction.feedback(withinValidity: true) { _ in .bool(false) }
+    XCTAssertEqual(contradicted["state"], .string("contradicted_hypothesis_space"))
+    XCTAssertEqual(contradicted["scored_events"], .int(0))
+    XCTAssertEqual(contradicted["posterior"], .null)
+    XCTAssertEqual(prediction.feedback(withinValidity: false) { _ in .bool(false) }["observed_events"], .int(0))
+    var mixed = spec
+    mixed["utility_unit"] = .string("points")
+    XCTAssertNil(Prediction(mixed, actions: actions))
+    mixed = spec
+    mixed["prediction_mode"] = .null
+    XCTAssertNil(Prediction(mixed, actions: actions))
+
+    let suite = "qualitative-prediction-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore(), file = root.appendingPathComponent("history.sqlite3")
+    func open() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    }
+    let history = open()
+    var team = durableTeamSnapshot("qualitative")
+    team.members[1].dispatchCheckpoint = .dispatching
+    XCTAssertTrue(history.upsert(team))
+    let reader = team.members[1]
+    let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId, memberId: reader.memberId, sourceId: reader.sourceMessageId)
+    XCTAssertTrue(history.advanceGoalCheckpoint(.init(runId: scope.runId, conversationId: scope.conversationId,
+      turnId: scope.turnId, revision: 1, phase: .working,
+      contract: [.init(id: "check", requirement: "Check result", verification: .documentary,
+        status: .open, evidence_kind: nil, evidence: [])], completedWorkIds: []), expectedRevision: 0))
+    let database = try AgentTeamHistoryDatabase(fileURL: file,
+      storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    let goalHash = SHA256.hash(data: Data(team.goal.utf8)).map { String(format: "%02x", $0) }.joined()
+    let model = AgentCollaborationResearchReference(objectId: String(repeating: "a", count: 64), revision: 1,
+      sha256: String(repeating: "b", count: 64))
+    let modelActions: [AgentMcpJSONValue] = ["probe", "defer"].map { id in
+      .object(["id": .string(id), "mode": .string(id), "description": .string("Observe"),
+        "preconditions": .string("Fixture"), "expected_transition": .string("Unknown"),
+        "side_effects": .string("None"), "reversibility": .string("Read only"), "authorization": .string("Scoped")])
+    }
+    let environment = AgentCollaborationResearchDraft(id: "environment", objectId: nil, baseRevision: 0,
+      kind: .environmentModel, title: "Fixture", body: ["task_environment_model": .object([
+        "goal_sha256": .string(goalHash), "criterion_id": .string("check"), "requirement": .string("Check result"),
+        "actions": .array(modelActions)])], parents: [])
+    try database.insertResearchRecord(AgentCollaborationResearchRevision(reference: model, previousHash: nil,
+      runId: scope.runId, turnId: scope.turnId, authorId: scope.memberId, sourceId: scope.sourceId, draft: environment),
+      conversationId: scope.conversationId, key: "object:" + model.objectId, revision: model.revision)
+    let now = AgentControlPlaneClock.nowMillis()
+    spec["executor"] = .string(scope.memberId)
+    spec["task_environment_model"] = .object(AgentCollaborationCandidateRecall.reference(model))
+    spec["source"] = .object(["origin": .string("ios_cloud_tool"), "tool": .string("measure")])
+    spec["valid_until"] = .int(now + 60_000)
+    let forecast = AgentCollaborationResearchDraft(id: "forecast", objectId: nil, baseRevision: 0,
+      kind: .actionForecast, title: "Qualitative forecast", body: ["action_forecast": .object(spec)], parents: [model])
+    let ref = try XCTUnwrap(history.publishResearchObjects([forecast], runId: scope.runId,
+      conversationId: scope.conversationId, turnId: scope.turnId, memberId: scope.memberId, sourceId: scope.sourceId,
+      milestone: ("forecast", String(repeating: "c", count: 64))).references.first)
+    let observed = AgentCollaborationCloudToolEvidence(scope: scope, round: 1,
+      call: .init(callId: "observation", name: "measure", argumentsJson: "{}"), output: #"{"ordered":false}"#,
+      succeeded: true, startedAtMillis: now + 10_000, finishedAtMillis: now + 10_001)
+    let evidence = try history.recordCloudEvidence(observed)
+    let citation = evidence.filter { ["evidence_id", "sha256"].contains($0.key) }
+    var lookup = citation
+    lookup["mode"] = .string("evidence")
+    _ = try history.recallCollaborationOriginal(lookup, scope: scope)
+    team.members[1].status = .succeeded
+    team.updatedAtMillis += 1
+    XCTAssertTrue(history.upsert(team))
+    let outcome = AgentCollaborationResearchDraft(id: "outcome", objectId: nil, baseRevision: 0,
+      kind: .predictionOutcome, title: "Partial measurement",
+      body: ["prediction_outcome": .object(["forecast": .object(AgentCollaborationCandidateRecall.reference(ref))])],
+      parents: [ref], observations: [citation])
+    _ = try history.publishResearchObjects([outcome], runId: scope.runId, conversationId: scope.conversationId,
+      turnId: scope.turnId, memberId: scope.memberId, sourceId: scope.sourceId)
+    let saved = try XCTUnwrap(open().committedResearchRevisions(scope: scope)?.first)
+    XCTAssertEqual(saved.hypothesisFeedback, partial)
+    XCTAssertEqual(saved.frozenCloudReads?.first?.evidenceId, citation.string("evidence_id"))
+  }
+
   func testForecastRecomputesUtilityWithoutChoosingAnAction() throws {
     let raw = """
     {"work_id":"test","executor":"member","horizon":"One test","decision_rationale":"Avoid side effects",
