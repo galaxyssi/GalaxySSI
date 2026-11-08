@@ -118,6 +118,8 @@ enum AgentCollaborationRuleTopics {
     For acceptance_review, cite exactly one current delivery in parents. In body.acceptance_review include criterion_id,
     requirement, target (the exact parent), verdict (supported, refuted, or not_tested), rationale and unresolved.
     The reviewer must be independent of the delivery author; cite completely read original observations in observations.
+    Frozen host read coverage identifies the original reader, not your own coverage. Reading another member's receipt
+    does not satisfy your independent-read requirement.
     For iOS native tool observations, use native_evidence with the exact evidence_id and sha256. After reading every page,
     cite {origin:"ios_native_tool",evidence_id,sha256}. Do not cite recall itself, failed actions or replay receipts as new evidence.
     For original-goal coverage, read the host goal source and copy its hashes and source IDs. Publish an artifact with

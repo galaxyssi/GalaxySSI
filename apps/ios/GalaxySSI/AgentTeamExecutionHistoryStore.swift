@@ -788,11 +788,12 @@ final class AgentTeamExecutionHistoryStore {
             key: key, revision: 0, replaceCoverage: true)
         }
         let complete = coverage.contiguousEnd == slice.total
-        return (slice, source, [
+        let attribution = AgentCollaborationEvidenceContent.coverageBinding(scope, id: id, hash: hash, origin: source.string("origin"))
+        return (slice, source, attribution.merging([
           "complete": .bool(complete), "total_characters": .int(slice.total),
           "first_missing_offset": complete ? .null : .int(coverage.contiguousEnd),
           "content_utf8_sha256": .string(hash)
-        ])
+        ]) { _, value in value })
       }
       if mode == "native_evidence" {
         guard team.state == .running, team.members.contains(where: { $0.memberId == scope.memberId &&
@@ -1393,8 +1394,8 @@ final class AgentTeamExecutionHistoryStore {
       }
       return ["source_reference": .object(reference(archive)), "data_b64": .string(data.base64EncodedString()),
         "offset": .int(offset), "next_offset": next < Int64(archive.receipt.totalBytes) ? .int(next) : .null,
-        "host_read_coverage": .object(["complete": .bool(coverage.contiguousEnd == Int64(archive.receipt.totalBytes)),
-          "total_bytes": .int(Int64(archive.receipt.totalBytes))]), "trust": .string("untrusted_group_evidence")]
+        "host_read_coverage": .object(AgentCollaborationEvidenceContent.byteCoverage(scope, id: id, hash: hash,
+          total: Int64(archive.receipt.totalBytes), firstMissing: coverage.contiguousEnd)), "trust": .string("untrusted_group_evidence")]
     }
   }
 
@@ -1416,7 +1417,10 @@ final class AgentTeamExecutionHistoryStore {
       guard hash.finalize().map({ String(format: "%02x", $0) }).joined() == digest
       else { throw AgentTeamHistoryDatabase.Failure.corrupt }
       remaining -= archive.receipt.totalBytes
-      return .init(evidenceId: id, sha256: digest, totalBytes: archive.receipt.totalBytes)
+      let total = Int64(archive.receipt.totalBytes)
+      return .init(evidenceId: id, sha256: digest, totalBytes: archive.receipt.totalBytes,
+        hostReadCoverage: AgentCollaborationEvidenceContent.byteCoverage(scope, id: id, hash: digest,
+          total: total, firstMissing: total))
     }
   }
 
@@ -1479,7 +1483,9 @@ final class AgentTeamExecutionHistoryStore {
             let coverage = try database.researchRecord(AgentCollaborationReadCoverage.self,
               conversationId: scope.conversationId, key: key, revision: 0), coverage.contiguousEnd == total
       else { throw AgentTeamHistoryDatabase.Failure.stale }
-      return .init(evidenceId: id, sha256: digest, totalCharacters: total)
+      return .init(evidenceId: id, sha256: digest, totalCharacters: total,
+        hostReadCoverage: AgentCollaborationEvidenceContent.frozenTextCoverage(bytes, scope: scope, id: id,
+          hash: digest, origin: "ios_native_tool"))
     }
   }
 
@@ -1515,7 +1521,9 @@ final class AgentTeamExecutionHistoryStore {
         guard !original.call.name.lowercased().contains("recall") else { throw AgentTeamHistoryDatabase.Failure.corrupt }
         foundFailure = foundFailure || original.observedFailure
       }
-      return AgentCollaborationFrozenCloudRead(evidenceId: id, sha256: hash, totalCharacters: total)
+      return AgentCollaborationFrozenCloudRead(evidenceId: id, sha256: hash, totalCharacters: total,
+        hostReadCoverage: AgentCollaborationEvidenceContent.frozenTextCoverage(data, scope: scope, id: id,
+          hash: hash, origin: "ios_cloud_tool"))
     }
     guard !requireFailure || foundFailure else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     return reads
