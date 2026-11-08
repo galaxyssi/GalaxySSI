@@ -82,7 +82,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
       destinationID: "provider", model: model, credential: "fixture-api-key", proposesPlan: true, now: now)
     let source = GalaxySSIHealthCareEvidence.PublicSource.labResults
     let quote = "This fictional laboratory paragraph is a fixture for testing the extraction and exact passage matching."
-    let body = Data("<html><body><article><h1>Fixture</h1><p>\(quote) The remainder supplies more article content.</p></article></body></html>".utf8)
+    let secondQuote = "The remainder supplies more article content."
+    let body = Data("<html><body><article><h1>Fixture</h1><p>\(quote) \(secondQuote)</p></article></body></html>".utf8)
     func addEvidence(_ pending: GalaxySSIHealthCareDiscussion.Approval) throws -> GalaxySSIHealthCareDiscussion.Approval {
       var approval = pending
       approval.evidence = [try GalaxySSIHealthCareEvidence.fromNativeBody(body, source: source,
@@ -91,6 +92,22 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     }
     XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(pending, now: now))
     let approval = try addEvidence(pending)
+    let receipt = try XCTUnwrap(approval.evidence.first)
+    let withheld = "This later passage was not disclosed to the model."
+    let multilingual = quote + " " + String(repeating: "\u{6f22}", count: 3_000) + " " + withheld
+    var bounded = GalaxySSIHealthCareEvidence.Receipt(id: receipt.id, binding: receipt.binding, url: receipt.url,
+      title: receipt.title, contentHash: receipt.contentHash, excerpt: multilingual, excerptTruncated: false,
+      excerptByteLimit: GalaxySSIHealthCareEvidence.maximumModelExcerptBytes, retrievedAt: now, observedAt: now)
+    let reopenedReceipt = try JSONDecoder().decode(GalaxySSIHealthCareEvidence.Receipt.self,
+      from: JSONEncoder().encode(bounded))
+    XCTAssertEqual(reopenedReceipt.modelValue, bounded.modelValue)
+    XCTAssertEqual(reopenedReceipt.modelValue["evidence_id"], .string(receipt.id.uuidString))
+    XCTAssertLessThanOrEqual(reopenedReceipt.modelExcerpt.utf8.count, GalaxySSIHealthCareEvidence.maximumModelExcerptBytes)
+    XCTAssertEqual(reopenedReceipt.modelValue["excerpt_truncated"], .bool(true))
+    XCTAssertNotNil(reopenedReceipt.match(url: receipt.url, quote: quote))
+    XCTAssertNil(reopenedReceipt.match(url: receipt.url, quote: withheld))
+    bounded.excerptByteLimit = nil
+    XCTAssertNotNil(bounded.match(url: receipt.url, quote: withheld))
     let request = try GalaxySSIHealthCareDiscussion.request(approval, key: "fixture-api-key")
     XCTAssertTrue(String(decoding: try XCTUnwrap(request.httpBody), as: UTF8.self).contains(GalaxySSIHealthCarePlan.tool))
     XCTAssertTrue(try approval.providerPayload().contains(quote))
@@ -103,7 +120,20 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
       {"kind":"RECHECK","description":"Discuss a recheck","rationale":"Timing needs professional review","source_index":0,
       "due_from":"","due_until":""}]}
       """
-    let arguments = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    let original = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    let sourceRows = try XCTUnwrap(original["sources"]?.arrayValue)
+    var differentPassage = try XCTUnwrap(sourceRows.first?.objectValue)
+    differentPassage["quote"] = .string(secondQuote)
+    var actions = try XCTUnwrap(original["actions"]?.arrayValue)
+    var secondAction = try XCTUnwrap(actions[1].objectValue)
+    secondAction["source_index"] = .int(1)
+    actions[1] = .object(secondAction)
+    var arguments = original
+    arguments["sources"] = .array(sourceRows + [.object(differentPassage)])
+    arguments["actions"] = .array(actions)
+    var repeated = arguments
+    repeated["sources"] = .array(sourceRows + sourceRows)
+    XCTAssertThrowsError(try GalaxySSIHealthCarePlan.parse(repeated, evidence: approval.evidence, now: now))
     let call: AgentMcpJSONObject = ["type": .string("function"), "function": .object([
       "name": .string(GalaxySSIHealthCarePlan.tool), "arguments": .string(raw)
     ])]
@@ -111,7 +141,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
       Data(AgentMcpJSONCodec.stringify(["choices": .array([.object(["finish_reason": .string("tool_calls"),
         "message": .object(["tool_calls": .array(calls)])])])]).utf8)
     }
-    XCTAssertEqual(try GalaxySSIHealthCarePlan.arguments(envelope([.object(call)]), style: .openAICompatible), arguments)
+    XCTAssertEqual(try GalaxySSIHealthCarePlan.arguments(envelope([.object(call)]), style: .openAICompatible), original)
     XCTAssertThrowsError(try GalaxySSIHealthCarePlan.arguments(envelope([.object(call), .object(call)]), style: .openAICompatible))
     let invalidWindow = raw.replacingOccurrences(of: "\"due_from\":\"\"", with: "\"due_from\":\"2000-01-01T00:00:00Z\"")
     XCTAssertThrowsError(try GalaxySSIHealthCarePlan.parse(
@@ -141,6 +171,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let updated = try XCTUnwrap(reopened.load().localCare?.current["glucose"])
     XCTAssertEqual(updated.stage, .waitingResults)
     XCTAssertEqual(updated.adoptedActions?.map(\.action.kind), [.recheck])
+    XCTAssertEqual(updated.adoptedActions?.first?.source.provenance?.quote, secondQuote)
     XCTAssertThrowsError(try reopened.resolveLocalCarePlan(draft, selected: [0], currentDestination: destination, now: now))
     XCTAssertNil(try reopened.load().reviewReminderState)
     let action = try XCTUnwrap(updated.adoptedActions?.first)

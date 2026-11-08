@@ -2,6 +2,8 @@ import CryptoKit
 import Foundation
 
 enum GalaxySSIHealthCareEvidence {
+  static let maximumModelExcerptBytes = 8_192
+
   enum PublicSource: String, CaseIterable, Identifiable, Hashable {
     case labResults, glucose, pressure
     var id: String { rawValue }
@@ -61,20 +63,33 @@ enum GalaxySSIHealthCareEvidence {
     let contentHash: String
     let excerpt: String
     var excerptTruncated: Bool? = nil
+    var excerptByteLimit: Int? = nil
     let retrievedAt: Date
     let observedAt: Date
 
+    var modelExcerpt: String {
+      // Receipts created before the byte limit disclosed the full retained excerpt.
+      guard let limit = excerptByteLimit else { return excerpt }
+      var bytes = 0
+      return String(excerpt.prefix { character in
+        bytes += String(character).utf8.count
+        return bytes <= limit
+      })
+    }
+
     var modelValue: AgentMcpJSONObject {
       let date = ISO8601DateFormatter()
+      let visible = modelExcerpt
       return ["evidence_id": .string(id.uuidString), "url": .string(url.absoluteString), "title": .string(title),
-        "content_sha256": .string(contentHash), "excerpt": .string(excerpt),
-        "excerpt_truncated": .bool(excerptTruncated ?? true),
+        "content_sha256": .string(contentHash), "excerpt": .string(visible),
+        "excerpt_truncated": .bool(excerptTruncated != false || visible != excerpt),
         "retrieved_at": .string(date.string(from: retrievedAt)), "observed_at": .string(date.string(from: observedAt))]
     }
 
     func valid(for approval: GalaxySSIHealthCareDiscussion.Approval, now: Date) -> Bool {
       binding == Binding(approval) && approval.reviewedAt <= retrievedAt && retrievedAt <= observedAt &&
         observedAt <= now && PublicSource.allCases.contains(where: { $0.url == url }) &&
+        (excerptByteLimit == nil || excerptByteLimit == GalaxySSIHealthCareEvidence.maximumModelExcerptBytes) &&
         (100...8_000).contains(excerpt.count) && !title.isBlank && title.utf8.count <= 1_024 &&
         contentHash.range(of: #"\A[a-f0-9]{64}\z"#, options: .regularExpression) != nil
     }
@@ -82,7 +97,7 @@ enum GalaxySSIHealthCareEvidence {
     func match(url claimed: URL, quote: String) -> Provenance? {
       let original = GalaxySSIHealthCareEvidence.whitespace(quote)
       guard url.absoluteString == claimed.absoluteString, (12...600).contains(original.count),
-            GalaxySSIHealthCareEvidence.whitespace(excerpt).contains(original) else { return nil }
+            GalaxySSIHealthCareEvidence.whitespace(modelExcerpt).contains(original) else { return nil }
       return .init(receiptID: id, contentHash: contentHash, retrievedAt: retrievedAt, observedAt: observedAt, quote: original)
     }
   }
@@ -109,7 +124,8 @@ enum GalaxySSIHealthCareEvidence {
     guard excerpt.count >= 100 else { throw GalaxySSIHealthRecords.Failure.invalid }
     return Receipt(binding: binding, url: source.url, title: String(article.title.ifBlank(source.title).prefix(256)),
       contentHash: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(),
-      excerpt: excerpt, excerptTruncated: body.count > excerpt.count, retrievedAt: retrievedAt, observedAt: observedAt ?? Date())
+      excerpt: excerpt, excerptTruncated: body.count > excerpt.count, excerptByteLimit: maximumModelExcerptBytes,
+      retrievedAt: retrievedAt, observedAt: observedAt ?? Date())
   }
 
   private static func whitespace(_ value: String) -> String {
