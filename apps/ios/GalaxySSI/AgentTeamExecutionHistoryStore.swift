@@ -1654,6 +1654,8 @@ final class AgentTeamExecutionHistoryStore {
         var expectedUtilities: [String: Double]? = nil
         var expectedInformation: [String: Double]? = nil
         var hypothesisFeedback: AgentMcpJSONObject? = nil
+        var probeExecutorSourceID: String? = nil
+        var probeMeasuredEvents: [String: Bool]? = nil
         var qualitativePrediction: AgentMcpJSONObject? = nil
         var retentionBank: AgentCollaborationCapabilityBank? = nil
         var carriedPosterior: AgentMcpJSONObject? = nil
@@ -1856,6 +1858,23 @@ final class AgentTeamExecutionHistoryStore {
                   let predictionMode = AgentCollaborationQualitativePrediction.Mode(value)
             else { throw AgentTeamHistoryDatabase.Failure.stale }
             model = savedModel
+            if AgentCollaborationProbeContinuation.hasDeclarations(value) {
+              guard let continuation = AgentCollaborationProbeContinuation(value),
+                    let executor = snapshot.members.first(where: {
+                      $0.memberId == value.string("executor") && $0.deliveryMode != .ignore && !$0.sourceMessageId.isBlank
+                    }),
+                    try continuation.validates(members: Set(snapshot.members.filter { $0.deliveryMode != .ignore }.map(\.memberId)),
+                      method: { ref in
+                        guard let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                          conversationId: conversationId, key: "object:" + ref.objectId),
+                          record.reference == ref, record.draft.kind == .workflowMethod,
+                          record.turnId != turnId || (record.runId == runId && record.authorId == memberId)
+                        else { return nil }
+                        return record.draft.body["workflow_method"]?.objectValue
+                      })
+              else { throw AgentTeamHistoryDatabase.Failure.stale }
+              probeExecutorSourceID = executor.sourceMessageId
+            }
             if predictionMode == .qualitative {
               guard let prediction = AgentCollaborationQualitativePrediction(value, actions: actions),
                     let executor = snapshot.members.first(where: {
@@ -2008,6 +2027,16 @@ final class AgentTeamExecutionHistoryStore {
                 forecast.carriedHypothesisPosterior == nil || original.startedAtMillis > registered
           else { throw AgentTeamHistoryDatabase.Failure.stale }
           let withinValidity = original.finishedAtMillis <= deadline
+          if AgentCollaborationProbeContinuation.hasDeclarations(spec) {
+            guard forecast.probeExecutorSourceID == original.scope.sourceId else {
+              throw AgentTeamHistoryDatabase.Failure.stale
+            }
+            let report = try? JSONDecoder().decode(AgentMcpJSONValue.self, from: Data(original.output.utf8))
+            probeMeasuredEvents = AgentCollaborationProbeContinuation.measuredEvents(spec,
+              valid: withinValidity && original.succeeded && !original.observedFailure) { pointer in
+              report.flatMap { Self.measurementValue($0, pointer: pointer) }
+            }
+          }
           if var declaration = forecast.qualitativePrediction {
             let actions = Set(spec["choices"]?.arrayValue?.compactMap { $0.objectValue?["action_id"]?.strictStringValue } ?? [])
             guard declaration.removeValue(forKey: "executor_source_id") == .string(original.scope.sourceId) else {
@@ -2019,7 +2048,8 @@ final class AgentTeamExecutionHistoryStore {
               guard original.succeeded, !original.observedFailure else { return nil }
               return Self.measurementValue(original.output, pointer: pointer)
             }
-          } else {
+          } else if probeMeasuredEvents == nil || (original.succeeded && !original.observedFailure &&
+                                                    forecast.expectedInformationGainBits != nil) {
             guard original.succeeded, forecast.expectedInformationGainBits != nil,
                   let ids = spec["hypothesis_test"]?.objectValue?["event_ids"]?.arrayValue?.compactMap(\.strictStringValue),
                   let event = spec["events"]?.arrayValue?.compactMap(\.objectValue).first(where: { ids.contains($0.string("id")) }),
@@ -2194,7 +2224,8 @@ final class AgentTeamExecutionHistoryStore {
           registeredAtMillis: [.experimentPlan, .actionForecast, .toolTestPlan].contains(draft.kind) ? AgentControlPlaneClock.nowMillis() : nil,
           measuredCases: measuredCases, trialAuthors: trialAuthors, numericReplay: numericReplay,
           workflowComparison: workflowComparison, testedToolRelease: testedToolRelease,
-          toolTestComparison: toolTestComparison)
+          toolTestComparison: toolTestComparison, probeExecutorSourceID: probeExecutorSourceID,
+          probeMeasuredEvents: probeMeasuredEvents)
         let bytes = try encoder.encode(revision)
         // Reserve space for the SHA-256 field populated after the digest.
         guard bytes.count <= revision.storageBytesLimit - 64 else { throw AgentTeamHistoryDatabase.Failure.corrupt }
@@ -2304,8 +2335,13 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   private static func measurementValue(_ raw: String, pointer: String) -> AgentMcpJSONValue? {
-    guard var node = try? JSONDecoder().decode(AgentMcpJSONValue.self, from: Data(raw.utf8)),
-          pointer.isEmpty || pointer.hasPrefix("/") else { return nil }
+    guard let node = try? JSONDecoder().decode(AgentMcpJSONValue.self, from: Data(raw.utf8)) else { return nil }
+    return measurementValue(node, pointer: pointer)
+  }
+
+  private static func measurementValue(_ root: AgentMcpJSONValue, pointer: String) -> AgentMcpJSONValue? {
+    guard pointer.isEmpty || pointer.hasPrefix("/") else { return nil }
+    var node = root
     for part in pointer.split(separator: "/", omittingEmptySubsequences: false).dropFirst() {
       let key = part.replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~")
       if let child = node.objectValue?[key] {
@@ -2498,7 +2534,7 @@ final class AgentTeamExecutionHistoryStore {
               throw AgentTeamHistoryDatabase.Failure.stale
             }
           }
-          var result = Self.milestoneReceipt(saved, id: id, status: "recorded")
+          var result = Self.milestoneReceipt(saved, id: id, status: "recorded", scope: scope)
           result["receipt_recovered"] = .bool(true)
           return result
         }
@@ -2534,7 +2570,7 @@ final class AgentTeamExecutionHistoryStore {
       }
       let receipt = try publishResearchObjects(drafts, runId: scope.runId, conversationId: scope.conversationId,
         turnId: scope.turnId, memberId: scope.memberId, sourceId: scope.sourceId, milestone: (id, hash))
-      return Self.milestoneReceipt(receipt, id: id, status: "published")
+      return Self.milestoneReceipt(receipt, id: id, status: "published", scope: scope)
     } catch let feedback as AgentCollaborationExperimentResultFeedback {
       return try retainRejectedMilestone(raw, id: id, hash: hash, scope: scope, reason: "rejected", problem: feedback.problem)
     } catch let storage as AgentCollaborationExperimentResultFeedback.StorageFailure {
@@ -2566,7 +2602,7 @@ final class AgentTeamExecutionHistoryStore {
       if let accepted = try database.researchRecord(AgentCollaborationResearchPublication.self,
         conversationId: scope.conversationId, key: Self.milestoneKey(base, id: id), revision: 0),
         accepted.requestHash == hash {
-        return Self.milestoneReceipt(accepted, id: id, status: "published")
+        return Self.milestoneReceipt(accepted, id: id, status: "published", scope: scope)
       }
       let key = Self.milestoneRejectionKey(base, id: id, hash: hash)
       if let saved = try database.researchRecord(AgentCollaborationMilestoneRejection.self,
@@ -2593,12 +2629,16 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   private static func milestoneReceipt(_ receipt: AgentCollaborationResearchPublication, id: String,
-                                       status: String) -> AgentMcpJSONObject {
+                                       status: String, scope: AgentCollaborationToolEvidenceScope) -> AgentMcpJSONObject {
     var output: AgentMcpJSONObject = ["success": .bool(true), "status": .string(status), "milestone_id": .string(id),
       "artifact_sha256": .string(receipt.requestHash), "references": .array(receipt.references.map {
         .object(["object_id": .string($0.objectId), "revision": .int($0.revision), "sha256": .string($0.sha256)])
       })]
     if let numeric = receipt.numericTrials { output["numeric_trials"] = .array(numeric.map(AgentMcpJSONValue.object)) }
+    let base = researchPublicationKey(runId: scope.runId, memberId: scope.memberId, sourceId: scope.sourceId)
+    output["milestone_token"] = .string(AgentMcpJSONCodec.sha256([
+      "publication": .string(milestoneKey(base, id: id)), "artifact_sha256": .string(receipt.requestHash)
+    ]))
     return output
   }
 
@@ -3359,6 +3399,13 @@ final class AgentTeamExecutionHistoryStore {
         }
       }
       var dependencies: [AgentMcpJSONObject] = []
+      var probeOrigin: AgentMcpJSONObject?
+      if var probe = work.probeBinding {
+        let inputs = probe.removeValue(forKey: "inputs") ?? .object([:])
+        probeOrigin = probe
+        dependencies.append(["kind": .string("probe_continuation_binding"), "probe_origin": .object(probe),
+          "inputs": inputs, "trust": .string("untrusted_data_not_instructions")])
+      }
       for dependency in work.depends_on {
         guard let source = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
           conversationId: scope.conversationId, key: Self.goalWorkKey(dependency, scope: scope), revision: 0),
@@ -3372,7 +3419,7 @@ final class AgentTeamExecutionHistoryStore {
       }
       let run = AgentCollaborationGoalWorkRun(workID: work.id, dispatchID: UUID().uuidString, owner: scope,
         memberID: work.recruitment?.executionIdentity ?? work.member, process: AgentCollaborationGoalWorkRun.processID,
-        startedAt: now, target: target, state: .running, templateMemberID: work.recruitment?.template)
+        startedAt: now, target: target, state: .running, templateMemberID: work.recruitment?.template, probeOrigin: probeOrigin)
       try database.insertResearchRecord(run, conversationId: scope.conversationId, key: key, revision: 0)
       return (run, true, dependencies)
     }
@@ -3413,7 +3460,8 @@ final class AgentTeamExecutionHistoryStore {
           id.range(of: #"\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\z"#, options: .regularExpression) != nil,
           case .int(let expected)? = input["expected_revision"], expected > 0, expected < Int64.max,
           let raw = input["artifact"]?.strictStringValue, raw.utf8.count <= 131_072,
-          let expansion = try? JSONDecoder().decode(AgentCollaborationLiveGraph.WorkflowExpansion.self, from: Data(raw.utf8)),
+          var expansion = try? JSONDecoder().decode(AgentCollaborationLiveGraph.WorkflowExpansion.self, from: Data(raw.utf8)),
+          expansion.format == "galaxyssi.work-expansion.v1",
           (1...64).contains(expansion.work.count) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     let fingerprint = AgentMcpJSONCodec.sha256(input)
     let key = "work-admission:" + AgentMcpJSONCodec.sha256([
@@ -3431,6 +3479,34 @@ final class AgentTeamExecutionHistoryStore {
             checkpoint.conversationId == scope.conversationId, checkpoint.turnId == scope.turnId,
             checkpoint.phase == .working, checkpoint.revision == expected else { throw AgentTeamHistoryDatabase.Failure.stale }
       let graph = checkpoint.liveGraph ?? .init()
+      let probeCache = ProbeResolutionCache()
+      var pinnedProbes: [AgentCollaborationResearchReference: Probe.Request] = [:]
+      for instance in (graph.workflowInstances ?? [:]).values {
+        if let origin = instance.probeOrigin { pinnedProbes[origin.forecast] = origin.request }
+      }
+      var expanded: [AgentCollaborationLiveGraph.WorkflowExpansion.Entry] = []
+      var probeReports: [AgentMcpJSONValue] = []
+      for entry in expansion.work {
+        guard case .probe(let request) = entry else { expanded.append(entry); continue }
+        let resolution = try Self.resolveProbe(request, snapshot: team, database: database, cache: probeCache)
+        let matched = resolution.decisions.filter { $0.state == .matched }
+        guard pinnedProbes[resolution.forecast] == nil || pinnedProbes[resolution.forecast] == request
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        if !matched.isEmpty { pinnedProbes[resolution.forecast] = request }
+        probeReports.append(.object(["outcome": Self.probeReferenceValue(request.outcome),
+          "branches": .array(resolution.decisions.map { .object($0.report) })]))
+        expanded.append(contentsOf: matched.map { .workflow(resolution.instance(for: $0.branch, request: request)) })
+      }
+      guard expanded.count <= 1_024,
+            AgentMcpJSONCodec.stringify(["probe_decisions": .array(probeReports)]).utf8.count <= 48 * 1_024
+      else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      if expanded.isEmpty, !probeReports.isEmpty {
+        return ["success": .bool(false), "status": .string("probe_needs_replan"),
+          "revision": .int(checkpoint.revision), "probe_decisions": .array(probeReports),
+          "note": .string("No measured continuation matched. Replan ordinary work or register a new forecast."),
+          "work_dispatched": .bool(false)]
+      }
+      expansion.work = expanded
       let authorized = Set(team.members.filter { $0.deliveryMode != .ignore }.map(\.memberId))
       let specialists = Set(team.members.filter { $0.deliveryMode == .observe }.map(\.memberId))
       var busyHistorical = Set<String>()
@@ -3456,17 +3532,24 @@ final class AgentTeamExecutionHistoryStore {
           else { return nil }
           return saved.memberId
         },
-        resolve: { try Self.resolveWorkflow($0, snapshot: team, database: database) }),
-        updated.work.count > graph.work.count else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        resolve: { try Self.resolveWorkflow($0, snapshot: team, database: database, probeCache: probeCache) })
+      else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      if updated == graph, !probeReports.isEmpty {
+        return ["success": .bool(true), "status": .string("probe_already_admitted"), "revision": .int(checkpoint.revision),
+          "probe_decisions": .array(probeReports), "admitted_work_count": .int(0), "replayed": .bool(true),
+          "work_dispatched": .bool(false)]
+      }
+      guard updated.work.count > graph.work.count else { throw AgentTeamHistoryDatabase.Failure.corrupt }
       checkpoint.liveGraph = updated
       checkpoint.revision += 1
       checkpoint.completedWorkIds = []
-      guard try Self.persistGoalCheckpoint(checkpoint, expectedRevision: expected, database: database)
+      guard try Self.persistGoalCheckpoint(checkpoint, expectedRevision: expected, database: database, probeCache: probeCache)
       else { throw AgentTeamHistoryDatabase.Failure.stale }
       var receipt: AgentMcpJSONObject = ["success": .bool(true), "status": .string("work_admitted"),
         "request_sha256": .string(fingerprint), "milestone_id": .string(id),
         "revision": .int(checkpoint.revision), "admitted_work_count": .int(Int64(updated.work.count - graph.work.count)),
         "replayed": .bool(false), "work_dispatched": .bool(false)]
+      if !probeReports.isEmpty { receipt["probe_decisions"] = .array(probeReports) }
       let aliases = Set(expansion.work.compactMap { entry -> String? in
         if case .work(let work) = entry, work.member.hasPrefix("recruit:") { return work.member }; return nil
       })
@@ -4176,7 +4259,7 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   private static func persistGoalCheckpoint(_ checkpoint: AgentCollaborationGoalCheckpoint, expectedRevision: Int64,
-                                            database: AgentTeamHistoryDatabase) throws -> Bool {
+                                            database: AgentTeamHistoryDatabase, probeCache: ProbeResolutionCache? = nil) throws -> Bool {
     guard let snapshot = try database.snapshots(runId: checkpoint.runId).first,
           snapshot.conversationId == checkpoint.conversationId, snapshot.taskId == checkpoint.turnId,
           !snapshot.state.deliverable else { return false }
@@ -4211,13 +4294,21 @@ final class AgentTeamExecutionHistoryStore {
                     recruits.values.contains(recruit) else { return false }
             }
             guard let id = item.workflowExecutionId else {
-              return item.hasIndependentReviewAuthors({ authors[$0] }, identity: snapshot.reviewIdentity)
+              return item.probeBinding == nil && item.hasIndependentReviewAuthors({ authors[$0] }, identity: snapshot.reviewIdentity)
             }
             return priorWorkflows[id] == nil && workflows[id] != nil
           }) else { return false }
+    let probes = probeCache ?? ProbeResolutionCache()
+    var pinnedProbes: [AgentCollaborationResearchReference: Probe.Request] = [:]
+    for instance in workflows.values {
+      if let origin = instance.probeOrigin {
+        guard pinnedProbes[origin.forecast] == nil || pinnedProbes[origin.forecast] == origin.request else { return false }
+        pinnedProbes[origin.forecast] = origin.request
+      }
+    }
     for (id, instance) in workflows where priorWorkflows[id] == nil {
       guard id == instance.execution_id,
-            let compiled = try Self.resolveWorkflow(instance, snapshot: snapshot, database: database),
+            let compiled = try Self.resolveWorkflow(instance, snapshot: snapshot, database: database, probeCache: probes),
             compiled == additions.filter({ $0.workflowExecutionId == id }),
             compiled.allSatisfy({ $0.hasIndependentReviewAuthors({ authors[$0] }, identity: snapshot.reviewIdentity) })
       else { return false }
@@ -4292,7 +4383,7 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   private static func resolveWorkflow(_ instance: AgentCollaborationWorkflowInstance, snapshot: AgentTeamExecutionSnapshot,
-    database: AgentTeamHistoryDatabase) throws -> [AgentCollaborationLiveGraph.Work]? {
+    database: AgentTeamHistoryDatabase, probeCache: ProbeResolutionCache? = nil) throws -> [AgentCollaborationLiveGraph.Work]? {
     let assigned = Set(instance.roles.values)
     guard assigned.isSubset(of: Set(snapshot.members.filter { $0.deliveryMode != .ignore }.map(\.memberId))) else { return nil }
     func current(_ ref: AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision? {
@@ -4304,11 +4395,155 @@ final class AgentTeamExecutionHistoryStore {
           method.turnId != snapshot.taskId ||
             (method.runId == snapshot.supervisorRunId && method.authorId == snapshot.primaryMemberId),
           let body = method.draft.body["workflow_method"]?.objectValue else { return nil }
+    if let origin = instance.probeOrigin {
+      return try compileProbe(instance, origin: origin, body: body, snapshot: snapshot, database: database,
+        cache: probeCache ?? ProbeResolutionCache())
+    }
     for input in instance.inputs.values {
       guard let saved = try current(input), saved.turnId != snapshot.taskId ||
         (saved.runId == snapshot.supervisorRunId && assigned == [saved.authorId]) else { return nil }
     }
     return instance.compile(body)
+  }
+
+  private typealias Probe = AgentCollaborationProbeContinuation
+
+  private struct ProbeResolution {
+    let forecast: AgentCollaborationResearchReference
+    let model: AgentCollaborationResearchReference
+    let decisions: [Probe.Decision]
+    let matches: [String: Probe.Decision]
+    let original: AgentCollaborationCloudToolEvidence
+    let read: AgentCollaborationFrozenCloudRead
+    let report: AgentMcpJSONValue?
+    let reportPointer: String
+
+    func instance(for branch: Probe.Branch, request: Probe.Request) -> AgentCollaborationWorkflowInstance {
+      .init(execution_id: branch.executionID(forecast: forecast), method: branch.method, inputs: [:],
+        roles: branch.roles, probeOrigin: .init(request: request, forecast: forecast, branchID: branch.id))
+    }
+  }
+
+  private final class ProbeResolutionCache {
+    var resolved: [Probe.Request: ProbeResolution] = [:]
+    var current: Set<AgentCollaborationResearchReference> = []
+  }
+
+  private static func probeReferenceValue(_ ref: AgentCollaborationResearchReference) -> AgentMcpJSONValue {
+    .object(["object_id": .string(ref.objectId), "revision": .int(ref.revision), "sha256": .string(ref.sha256)])
+  }
+
+  private static func resolveProbe(_ request: Probe.Request, snapshot: AgentTeamExecutionSnapshot,
+      database: AgentTeamHistoryDatabase, cache: ProbeResolutionCache) throws -> ProbeResolution {
+    if let cached = cache.resolved[request] { return cached }
+    func read(_ reference: AgentCollaborationResearchReference, kind: AgentCollaborationResearchDraft.Kind)
+      throws -> AgentCollaborationResearchRevision? {
+      guard let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
+        conversationId: snapshot.conversationId, key: "object:" + reference.objectId, revision: reference.revision),
+        record.reference == reference, record.draft.kind == kind else { return nil }
+      return record
+    }
+    guard let outcome = try read(request.outcome, kind: .predictionOutcome),
+          isScopedAcceptanceRecord(outcome, team: snapshot, kinds: [.predictionOutcome]),
+          let occurrence = outcome.probeMeasuredEvents, let frozen = outcome.frozenCloudReads,
+          frozen.count == 1, let observation = frozen.first,
+          let forecastRef = Probe.reference(outcome.draft.body["prediction_outcome"]?.objectValue?["forecast"]),
+          outcome.draft.parents.contains(forecastRef),
+          let forecast = try read(forecastRef, kind: .actionForecast),
+          isScopedAcceptanceRecord(forecast, team: snapshot, kinds: [.actionForecast]),
+          let fields = forecast.draft.body["action_forecast"]?.objectValue,
+          let branches = Probe(fields), let registered = forecast.registeredAtMillis,
+          let deadline = fields["valid_until"]?.intValue,
+          let modelRef = Probe.reference(fields["task_environment_model"]), forecast.draft.parents.contains(modelRef),
+          let environment = try read(modelRef, kind: .environmentModel),
+          let model = environment.draft.body["task_environment_model"]?.objectValue,
+          model.string("goal_sha256") == SHA256.hash(data: Data(snapshot.goal.utf8)).map({ String(format: "%02x", $0) }).joined(),
+          let checkpoint = try database.goalCheckpoints(runId: snapshot.supervisorRunId, newestOnly: true).first,
+          checkpoint.conversationId == snapshot.conversationId, checkpoint.turnId == snapshot.taskId,
+          checkpoint.contract.contains(where: { $0.id == model.string("criterion_id") && $0.requirement == model.string("requirement") }),
+          let original = try database.cloudEvidence(id: observation.evidenceId, conversationId: snapshot.conversationId),
+          original.scope.runId == snapshot.supervisorRunId, original.scope.turnId == snapshot.taskId,
+          original.scope.conversationId == snapshot.conversationId, original.scope.sourceId == forecast.probeExecutorSourceID,
+          original.scope.memberId == fields.string("executor"), original.scope.memberId == outcome.authorId,
+          original.scope.sourceId == outcome.sourceId, original.call.name == fields["source"]?.objectValue?.string("tool"),
+          original.startedAtMillis >= registered, original.finishedAtMillis >= original.startedAtMillis,
+          let reportPointer = fields["report_pointer"]?.strictStringValue, let token = request.milestone
+    else { throw AgentTeamHistoryDatabase.Failure.stale }
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    let bytes = try encoder.encode(original)
+    guard SHA256.hash(data: bytes).map({ String(format: "%02x", $0) }).joined() == observation.sha256,
+          try hasProbeMilestone(token, outcome: request.outcome, original: original.scope, database: database)
+    else { throw AgentTeamHistoryDatabase.Failure.stale }
+    let root = try? JSONDecoder().decode(AgentMcpJSONValue.self, from: Data(original.output.utf8))
+    let calculated = Probe.measuredEvents(fields,
+      valid: original.finishedAtMillis <= deadline && original.succeeded && !original.observedFailure) { pointer in
+      root.flatMap { measurementValue($0, pointer: pointer) }
+    }
+    guard occurrence == calculated else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    let report = root.flatMap { measurementValue($0, pointer: reportPointer) }.flatMap { value -> AgentMcpJSONValue? in
+      guard let nested = value.strictStringValue else { return value }
+      if reportPointer.isEmpty { return value }
+      return (try? JSONDecoder().decode(AgentMcpJSONValue.self, from: Data(nested.utf8))) ?? value
+    }
+    let decisions = branches.decisions(occurrence: calculated)
+    let matches = Dictionary(uniqueKeysWithValues: decisions.filter { $0.state == .matched }.map { ($0.branch.id, $0) })
+    let result = ProbeResolution(forecast: forecastRef, model: modelRef, decisions: decisions, matches: matches,
+      original: original, read: observation, report: report, reportPointer: reportPointer)
+    cache.resolved[request] = result
+    return result
+  }
+
+  private static func hasProbeMilestone(_ token: String, outcome: AgentCollaborationResearchReference,
+      original: AgentCollaborationToolEvidenceScope, database: AgentTeamHistoryDatabase) throws -> Bool {
+    let base = researchPublicationKey(runId: original.runId, memberId: original.memberId, sourceId: original.sourceId)
+    let keys = try database.milestoneKeys(conversationId: original.conversationId, prefix: milestonePrefix(base), after: "")
+    for key in keys {
+      guard let receipt = try database.researchRecord(AgentCollaborationResearchPublication.self,
+        conversationId: original.conversationId, key: key, revision: 0),
+        let id = receipt.milestoneId, milestoneKey(base, id: id) == key, receipt.recordedAtMillis != nil,
+        receipt.references.contains(outcome) else { continue }
+      if token == AgentMcpJSONCodec.sha256(["publication": .string(key), "artifact_sha256": .string(receipt.requestHash)]) {
+        return true
+      }
+    }
+    return false
+  }
+
+  private static func compileProbe(_ instance: AgentCollaborationWorkflowInstance, origin: Probe.Origin,
+      body: AgentMcpJSONObject, snapshot: AgentTeamExecutionSnapshot, database: AgentTeamHistoryDatabase,
+      cache: ProbeResolutionCache) throws -> [AgentCollaborationLiveGraph.Work]? {
+    let resolved = try resolveProbe(origin.request, snapshot: snapshot, database: database, cache: cache)
+    for ref in [resolved.forecast, resolved.model, origin.request.outcome] where !cache.current.contains(ref) {
+      guard try database.researchRecord(AgentCollaborationResearchRevision.self, conversationId: snapshot.conversationId,
+        key: "object:" + ref.objectId)?.reference == ref else { return nil }
+      cache.current.insert(ref)
+    }
+    guard let decision = resolved.matches[origin.branchID],
+          resolved.instance(for: decision.branch, request: origin.request) == instance,
+          let steps = body["steps"]?.arrayValue else { return nil }
+    var values = decision.branch.inputs
+    for (name, pointer) in decision.branch.observedInputs {
+      guard let report = resolved.report, let value = measurementValue(report, pointer: pointer), value != .null
+      else { return nil }
+      values[name] = value
+    }
+    guard AgentMcpJSONCodec.stringify(values).utf8.count <= 24 * 1_024,
+          var compiled = instance.compile(body, boundInputNames: Set(values.keys)) else { return nil }
+    for index in compiled.indices {
+      guard let role = steps[index].objectValue?["role"]?.strictStringValue,
+            compiled[index].independent_review != true ||
+              snapshot.reviewIdentity(compiled[index].member) != snapshot.reviewIdentity(resolved.original.scope.memberId)
+      else { return nil }
+      compiled[index].probeBinding = ["forecast": probeReferenceValue(resolved.forecast),
+        "outcome": probeReferenceValue(origin.request.outcome), "branch_id": .string(origin.branchID),
+        "conditions": .object(decision.conditions.mapValues { .string($0.rawValue) }),
+        "observation": .object(["evidence_id": .string(resolved.read.evidenceId), "sha256": .string(resolved.read.sha256)]),
+        "report_pointer": .string(resolved.reportPointer), "observed_inputs": .object(decision.branch.observedInputs.mapValues { .string($0) }),
+        "inputs": .object(values), "recipient": .object([role: .string(compiled[index].member)]),
+        "quality_improved": .bool(false)]
+    }
+    return compiled
   }
 
   private static func validatedLearningPriorities(_ work: [AgentCollaborationLiveGraph.Work], existingCount: Int,

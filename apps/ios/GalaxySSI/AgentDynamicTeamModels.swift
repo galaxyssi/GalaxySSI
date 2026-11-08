@@ -141,6 +141,10 @@ enum AgentCollaborationRuleTopics {
     question, hypothesis claims, and environment scope. Omit explicit priors; the host uses the saved posterior.
     A prediction_outcome binds an exact forecast parent and one fully recalled original cloud tool observation
     from its executor. The host computes any posterior; declared probabilities are assumptions, not calibration.
+    To pre-register probe continuations, add continuations to a forecast choice before running the probe. Each branch
+    supplies id, rationale, when_events (registered event IDs to Boolean occurrence), an exact method reference, roles
+    bound to existing member IDs, declared inputs, and observed_inputs (input names to JSON pointers under report_pointer).
+    Declared and observed names must cover the saved method without overlap. Publish the exact outcome as a milestone.
     When numbers are unjustified, set prediction_mode to qualitative. Omit utility_unit, event utilities, and probabilities.
     Each choice supplies expectations for every event: expected, not_expected, or unknown. For competing explanations use
     hypothesis_test with question, assumptions, prediction_basis, misspecification_check, hypotheses (id, claim), event_ids,
@@ -404,6 +408,7 @@ struct AgentCollaborationGoalWorkRun: Codable {
   var truncated: Bool? = nil
   var desktopArchiveDigest: String? = nil
   var templateMemberID: String? = nil
+  var probeOrigin: AgentMcpJSONObject? = nil
 
   func visibleState(now: Int64) -> State {
     guard state == .running, process != Self.processID || now >= startedAt + Self.leaseMillis
@@ -420,6 +425,7 @@ struct AgentCollaborationGoalWorkRun: Codable {
       "output": output.map(AgentMcpJSONValue.string) ?? .null, "output_sha256": outputHash.map(AgentMcpJSONValue.string) ?? .null,
       "output_truncated": .bool(truncated ?? false), "goal_accepted": .bool(false), "automatically_reexecuted": .bool(false)]
     if let templateMemberID { result["template_member_id"] = .string(templateMemberID) }
+    if let probeOrigin { result["probe_origin"] = .object(probeOrigin) }
     return result
   }
 }
@@ -459,6 +465,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var learning: LearningBinding? = nil
     var review_targets: [String]? = nil
     var workflowExecutionId: String? = nil
+    var probeBinding: AgentMcpJSONObject? = nil
     var recruitment: Recruitment? = nil
     var blockerResolution: AgentCollaborationGoalAssessmentPolicy.Resolution? = nil
 
@@ -594,10 +601,17 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     enum Entry: Decodable {
       case work(Work)
       case workflow(AgentCollaborationWorkflowInstance)
+      case probe(AgentCollaborationProbeContinuation.Request)
 
       init(from decoder: Decoder) throws {
         let object = try AgentMcpJSONObject(from: decoder)
-        if let raw = object["workflow_instance"] {
+        if let raw = object["probe_continuation"] {
+          guard object.count == 1, let request = AgentCollaborationProbeContinuation.Request(raw) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+              debugDescription: "Invalid prospective probe continuation"))
+          }
+          self = .probe(request)
+        } else if let raw = object["workflow_instance"] {
           guard object.count == 1, let instance = raw.objectValue,
                 Set(instance.keys) == Set(["execution_id", "method", "inputs", "roles"]) else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
@@ -607,7 +621,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
             from: Data(AgentMcpJSONCodec.stringify(instance).utf8)))
         } else {
           let item = try Work(from: decoder)
-          guard item.workflowExecutionId == nil, item.recruitment == nil, item.blockerResolution == nil,
+          guard item.workflowExecutionId == nil, item.probeBinding == nil, item.recruitment == nil, item.blockerResolution == nil,
                 !item.id.hasPrefix(AgentCollaborationGoalAssessmentPolicy.resolutionPrefix) else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
               debugDescription: "Workflow bindings must come from a saved method"))
@@ -618,7 +632,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     }
 
     let format: String
-    let work: [Entry]
+    var work: [Entry]
     var recruit: [RecruitmentRequest]? = nil
   }
 
@@ -645,7 +659,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     guard raw.utf8.count <= 256_000,
           let expansion = try? JSONDecoder().decode(Expansion.self, from: Data(raw.utf8)),
           expansion.format == "galaxyssi.work-expansion.v1", !expansion.work.isEmpty,
-          expansion.work.allSatisfy({ $0.workflowExecutionId == nil && $0.recruitment == nil &&
+          expansion.work.allSatisfy({ $0.workflowExecutionId == nil && $0.probeBinding == nil && $0.recruitment == nil &&
             $0.blockerResolution == nil && !$0.id.hasPrefix(AgentCollaborationGoalAssessmentPolicy.resolutionPrefix) }) else { return nil }
     return appendingWork(expansion.work, authorizedMembers: authorizedMembers, historicalAuthors: historicalAuthors, settled: settled)
   }
@@ -692,6 +706,8 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var additions: [Work] = []
     for entry in expansion.work {
       switch entry {
+      case .probe:
+        return nil
       case .work(var item):
         if item.member.hasPrefix("recruit:") {
           guard let binding = directory[item.member], recruitmentTemplates[binding.template] == binding.templateDigest
@@ -791,14 +807,15 @@ struct AgentCollaborationWorkflowInstance: Codable, Equatable {
   let method: AgentCollaborationResearchReference
   let inputs: [String: AgentCollaborationResearchReference]
   let roles: [String: String]
+  var probeOrigin: AgentCollaborationProbeContinuation.Origin? = nil
 
-  func compile(_ body: AgentMcpJSONObject) -> [AgentCollaborationLiveGraph.Work]? {
+  func compile(_ body: AgentMcpJSONObject, boundInputNames: Set<String>? = nil) -> [AgentCollaborationLiveGraph.Work]? {
     guard !execution_id.isBlank, execution_id.utf8.count <= 160,
           AgentCollaborationWorkflowIntake.validates(body),
           let declaredRoles = body["roles"]?.arrayValue,
           Set(declaredRoles.compactMap(\.stringValue)) == Set(roles.keys),
           let declaredInputs = body["inputs"]?.arrayValue,
-          Set(declaredInputs.compactMap(\.stringValue)) == Set(inputs.keys),
+          Set(declaredInputs.compactMap(\.stringValue)) == (boundInputNames ?? Set(inputs.keys)),
           let steps = body["steps"]?.arrayValue else { return nil }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.withoutEscapingSlashes]
