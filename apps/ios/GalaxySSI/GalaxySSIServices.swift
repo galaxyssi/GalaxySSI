@@ -123,6 +123,9 @@ final class MessageCoordinator: ObservableObject {
     },
     publishReceipt: { [weak self] receipt, desktopId in
       await self?.publishBlobArtifactReceipt(receipt, desktopId: desktopId) ?? false
+    },
+    authorizeAgent: { [weak self] manifest, desktopId in
+      await self?.journalBlobAgentScopeIsCurrent(manifest, desktopId: desktopId) ?? false
     }
   )
   private let phoneAttachmentQueue = DispatchQueue(
@@ -591,7 +594,11 @@ final class MessageCoordinator: ObservableObject {
             if let self, self.transportConnected != ready {
               self.transportConnected = ready
               NotificationCenter.default.post(name: .galaxySSIAgentRoutingDidUpdate, object: nil, userInfo: ["connected": ready])
-              if ready { await self.blobArtifactReceiver.wake() }
+              if ready {
+                await self.blobArtifactCapabilityPublisher.reconnect()
+                await self.refreshBlobArtifactCapabilities()
+                await self.blobArtifactReceiver.wake()
+              }
             }
           }
           do { try await Task.sleep(nanoseconds: 500_000_000) } catch { break }
@@ -15557,14 +15564,44 @@ final class MessageCoordinator: ObservableObject {
     return try MqttBusinessTransportRuntime(peerChatStore: store, localFingerprint: signalEngine.identity.fingerprint,
       journal: journal, routeState: routeState, pool: pool, incomingAttachments: incomingAttachmentTransferStore,
       outgoingAttachments: attachmentTransferStore, desktopArtifacts: desktopArtifactStore,
-      desktopConnector: connector, receiveDesktopRelayConfiguration: { [weak self] payload, target in
+      desktopConnector: connector, receiveDesktopBlobControl: { [weak self] payload, target, identity in
         guard let self else { throw MqttDeliveryDispatch.Failure.unavailable }
         let links = self.store.serverLinks.filter {
           $0.paired && $0.desktopId == target.peer.remoteSignalName && $0.routes == target.routes
         }
         guard links.count == 1, let link = links.first else { throw MqttRouteError.identityChanged }
-        try self.blobRelayConfigurationStore.ingest(payload, link: link)
-        Task { await self.blobArtifactReceiver.wake() }
+        if payload.string("type") == AgentBlobRelayConfiguration.payloadType {
+          try self.blobRelayConfigurationStore.ingest(payload, link: link)
+          await self.refreshBlobArtifactCapabilities()
+          await self.blobArtifactReceiver.wake()
+          return
+        }
+        guard self.desktopArtifactStore.supportsStreamedBlobArtifacts,
+              let configuration = self.blobRelayConfigurationStore.configuration(for: link) else {
+          throw MqttDeliveryDispatch.Failure.unavailable
+        }
+        let manifest = try AgentBlobArtifactContract.validateOffer(payload, link: link, configuration: configuration)
+        let fields = ["client_route_id", "conversation_id", "task_id", "turn_id", "contact_id", "source_message_id", "desktop_id"]
+        guard fields.allSatisfy({ payload.string($0) == manifest.string($0) }),
+              try MqttRouteProtocol.integer(payload, "execution_generation") == MqttRouteProtocol.integer(manifest, "execution_generation"),
+              payload["peer_chat"] as? Bool == manifest["peer_chat"] as? Bool else {
+          throw MqttRouteError.identityChanged
+        }
+        try AgentBlobArtifactContract.validateDesktopScopedURI(manifest)
+        let peerChat = manifest["peer_chat"] as? Bool == true
+        if peerChat {
+          guard manifest.string("conversation_id") == target.conversationId,
+                try MqttRouteProtocol.integer(manifest, "execution_generation") == 1 else {
+            throw MqttRouteError.identityChanged
+          }
+        } else {
+          guard self.journalBlobAgentScopeIsCurrent(manifest, desktopId: link.desktopId) else {
+            throw MqttRouteError.identityChanged
+          }
+        }
+        try await self.blobArtifactReceiver.enqueue(payload: payload, link: link, configuration: configuration,
+          conversationId: manifest.string("conversation_id"), peerStorageBinding: peerChat ? identity.binding : nil,
+          agentReceiveBinding: peerChat ? nil : identity.binding)
       }, onFailure: onFailure)
   }
 
@@ -17742,16 +17779,33 @@ final class MessageCoordinator: ObservableObject {
       $0.routes.clientRouteId == link.routes.clientRouteId && $0.routes.remoteFingerprint == link.routes.remoteFingerprint }
   }
 
+  func journalBlobAgentScopeIsCurrent(_ manifest: [String: Any], desktopId: String) -> Bool {
+    guard !usesLegacyMqtt, let contact = store.contact(id: manifest.string("contact_id")),
+          contact.id == manifest.string("contact_id"), contact.isCommunicable, !contact.isDesktopDeviceContact,
+          contact.desktopId == desktopId, contact.deliveryMode.isGalaxySSILinkFamily,
+          store.serverLinks.contains(where: { $0.paired && $0.desktopId == desktopId &&
+            $0.routes.clientRouteId == manifest.string("client_route_id") }),
+          taskIdentityStore.matchesRegistered(payload: manifest),
+          !GalaxySSITransportPrivacyPolicy.isLocalOnly(manifest) else { return false }
+    return mayRecoverSavedDesktopSource(conversation: manifest.string("conversation_id"),
+      turn: manifest.string("turn_id"), sourceID: manifest.string("source_message_id"))
+  }
+
   private func blobArtifactIdentity(desktopId: String) -> AgentBlobArtifactReceiver.Identity? {
     guard let link = store.serverLinks.first(where: { $0.desktopId == desktopId && $0.paired }),
           let configuration = blobRelayConfigurationStore.configuration(for: link) else {
       return nil
     }
+    let projection = MqttPeerChatProjection(store: store, localFingerprint: signalEngine.identity.fingerprint)
+    let peerBinding = store.contacts.first { $0.isDesktopDeviceContact && $0.desktopId == desktopId }
+      .flatMap { projection.destination(for: $0) }
+      .flatMap { try? MqttBusinessIdentity($0.peer.binding).binding }
     return AgentBlobArtifactReceiver.Identity(
       desktopId: desktopId,
       clientRouteId: link.routes.clientRouteId,
       remoteFingerprint: link.routes.remoteFingerprint,
-      origin: configuration.origin
+      origin: configuration.origin,
+      peerBinding: peerBinding
     )
   }
 
@@ -17762,7 +17816,7 @@ final class MessageCoordinator: ObservableObject {
     if !usesLegacyMqtt {
       guard let runtime = journalMqttRuntime else { return false }
       do {
-        try runtime.enqueueDesktopBlobReceipt(receipt, desktopId: desktopId)
+        try runtime.enqueueDesktopBlobControl(receipt, desktopId: desktopId)
         return true
       } catch {
         return false
@@ -17778,7 +17832,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func refreshBlobArtifactCapabilities() async {
-    guard mqttClient.isConnected else { return }
+    guard usesLegacyMqtt ? mqttClient.isConnected : journalMqttRuntime?.hasReadyPeer == true else { return }
     let receiverReady: Bool
     do {
       try await blobArtifactReceiver.prepare()
@@ -17795,12 +17849,13 @@ final class MessageCoordinator: ObservableObject {
         localFingerprint: link.routes.localFingerprint
       )
       do {
-        let enabled = receiverReady && blobRelayConfigurationStore.configuration(for: link) != nil
+        let enabled = receiverReady && (usesLegacyMqtt || desktopArtifactStore.supportsStreamedBlobArtifacts) &&
+          blobRelayConfigurationStore.configuration(for: link) != nil
         guard let declaration = try await blobArtifactCapabilityPublisher.declaration(
           pair: pair,
           enabled: enabled
         ) else { continue }
-        publishDesktopArtifactControl([
+        let payload: [String: Any] = [
           "type": "artifact_blob_capability",
           "version": 1,
           "revision": declaration.revision,
@@ -17808,7 +17863,13 @@ final class MessageCoordinator: ObservableObject {
           "desktop_id": pair.desktopId,
           "client_route_id": pair.clientRouteId,
           "desktop_fingerprint": pair.desktopFingerprint
-        ], link: link)
+        ]
+        if usesLegacyMqtt {
+          publishDesktopArtifactControl(payload, link: link)
+        } else {
+          guard let runtime = journalMqttRuntime else { continue }
+          try runtime.enqueueDesktopBlobControl(payload, desktopId: link.desktopId)
+        }
         try await blobArtifactCapabilityPublisher.markAccepted(
           pair: pair,
           revision: declaration.revision
@@ -17825,7 +17886,7 @@ final class MessageCoordinator: ObservableObject {
     progress: Int,
     errorCode: String
   ) {
-    guard !manifest.isEmpty else { return }
+    guard !manifest.isEmpty, manifest["_local_peer_storage"] as? Bool != true else { return }
     let desktopId = manifest.string("desktop_id")
     let declaredContactId = manifest.string("contact_id")
     let sourceMessageId = manifest.string("source_message_id")

@@ -6,6 +6,210 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentDesktopArtifactHandoffTests: XCTestCase {
+  private actor BlobIdentityCalls {
+    private var calls = 0
+    private(set) var completionCalls: [Int] = []
+
+    func next() -> Int {
+      calls += 1
+      return calls
+    }
+
+    func recordCompletion() { completionCalls.append(calls) }
+  }
+
+  @MainActor
+  func testBlobReplacementSurvivesSuspendedIdentityCheck() async throws {
+    let root = temporaryDirectory("blob-revision")
+    let cipher = GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let artifacts = AgentDesktopArtifactStore(rootURL: root.appendingPathComponent("artifacts"), cipher: cipher)
+    let route = String(repeating: "A", count: 22)
+    let digest = String(repeating: "a", count: 64)
+    let origin = "https://relay.example.test"
+    let link = ServerLink(desktopId: "desktop", desktopName: "Desktop", desktopFingerprint: "remote",
+      signalName: "desktop", routes: .init(clientRouteId: route, linkSecret: "", localFingerprint: "local",
+      remoteFingerprint: "remote"), paired: true, accessProfile: "", accessScopes: [], updatedAt: Date())
+    let configuration = AgentBlobRelayConfiguration(desktopId: link.desktopId, clientRouteId: route,
+      desktopFingerprint: "remote", revision: 1, enabled: true, origin: origin, provisioningToken: digest)
+    var manifest: [String: Any] = [
+      "client_route_id": route, "conversation_id": "conversation", "task_id": "task", "turn_id": "turn",
+      "contact_id": "hermes", "source_message_id": "source", "desktop_id": "desktop",
+      "artifact_id": digest, "artifact_uri": "galaxyssi-artifact://task/output.bin", "name": "output.bin",
+      "relative_path": "output.bin", "mime_type": "application/octet-stream", "sha256": digest,
+      "original_sha256": digest, "size_bytes": 1, "original_size_bytes": 1, "execution_generation": 1,
+      "peer_chat": false
+    ]
+    manifest["transfer_id"] = AgentBlobProtocol.sha256(try AgentBlobProtocol.canonicalJSON(manifest))
+    let binding = try AgentBlobProtocol.bindingHash(AgentBlobArtifactContract.binding(manifest))
+    let descriptor: [String: Any] = [
+      "version": 1, "blob_id": String(digest.prefix(32)), "key": digest,
+      "nonce_prefix": String(digest.prefix(16)), "size": 1, "sha256": digest,
+      "binding_sha256": binding, "manifest_sha256": digest
+    ]
+    func offer(_ revision: Int, token: String = String(repeating: "a", count: 64)) -> [String: Any] {
+      ["type": AgentBlobArtifactContract.offerType, "version": 1, "transport_revision": revision,
+        "manifest": manifest, "blob_offer": ["version": 1, "relay": origin, "private": descriptor, "read_token": token]]
+    }
+    let suspended = expectation(description: "First job checking pairing")
+    let completed = expectation(description: "Only the current job records revocation")
+    completed.assertForOverFulfill = true
+    let (release, continuation) = AsyncStream<Void>.makeStream()
+    defer { continuation.finish() }
+    let calls = BlobIdentityCalls()
+    let receiver = AgentBlobArtifactReceiver(artifactStore: artifacts, applicationSupportDirectory: root, cipher: cipher,
+      identityProvider: { _ in
+        if await calls.next() == 1 {
+          suspended.fulfill()
+          var iterator = release.makeAsyncIterator()
+          _ = await iterator.next()
+        }
+        return nil
+      }, progress: { _, _ in XCTFail("Revoked transfer must not download") },
+      completion: { _, stored, error in
+        XCTAssertFalse(stored)
+        XCTAssertEqual(error, "artifact_blob_identity_mismatch")
+        await calls.recordCompletion()
+        completed.fulfill()
+      }, publishReceipt: { _, _ in XCTFail("Revoked transfer must not send a receipt"); return false })
+
+    try await receiver.enqueue(payload: offer(1), link: link, configuration: configuration, conversationId: "conversation")
+    await fulfillment(of: [suspended], timeout: 3)
+    var replay = offer(1)
+    replay["message_id"] = UUID().uuidString
+    try await receiver.enqueue(payload: replay, link: link, configuration: configuration, conversationId: "conversation")
+    do {
+      try await receiver.enqueue(payload: offer(1, token: String(repeating: "b", count: 64)),
+        link: link, configuration: configuration, conversationId: "conversation")
+      XCTFail("Same-revision offers must not replace the read token")
+    } catch AgentBlobFailure.invalid(let code) {
+      XCTAssertEqual(code, "artifact_blob_revision_conflict")
+    }
+    try await receiver.enqueue(payload: offer(2), link: link, configuration: configuration, conversationId: "conversation")
+    continuation.finish()
+    await fulfillment(of: [completed], timeout: 3)
+    let revisionsCheckedAtCompletion = await calls.completionCalls
+    XCTAssertEqual(revisionsCheckedAtCompletion, [2])
+  }
+
+  @MainActor
+  func testBlobStagingPublishesOnlyVerifiedBytesAndPreservesExistingRecordOnFailure() throws {
+    let root = temporaryDirectory("streaming-blob")
+    let artifacts = AgentDesktopArtifactStore(rootURL: root)
+    let first = Data(repeating: 41, count: 2 * 1_024 * 1_024)
+    let last = Data(repeating: 19, count: 17)
+    let expected = first + last
+    let size = Int64(expected.count)
+    let digest = sha256(expected)
+    let uri = "galaxyssi-artifact://blob/" + digest
+    let artifactID = AgentDesktopArtifactStore.stableID(uri: uri, sha256: digest)
+    let manifest: [String: Any] = ["artifact_id": artifactID, "artifact_uri": uri, "task_id": "stream",
+      "name": "stream.bin", "mime_type": "application/octet-stream", "sha256": digest, "size_bytes": size]
+    let block = AgentRichBlock(id: artifactID, type: .file, title: "stream.bin", uri: uri)
+
+    let staging = try XCTUnwrap(artifacts.stageBlobArtifact())
+    try staging.append(first, maximum: size)
+    XCTAssertThrowsError(try staging.append(Data(repeating: 0, count: last.count + 1), maximum: size))
+    XCTAssertFalse(artifacts.hasStoredArtifact(block))
+    try staging.append(last, maximum: size)
+    try artifacts.ingestBlobArtifact(manifest: manifest, staging: staging)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: staging.url.path))
+    let published = try XCTUnwrap(artifacts.localFile(for: block))
+    XCTAssertEqual(try Data(contentsOf: published), expected)
+
+    let corrupt = try XCTUnwrap(artifacts.stageBlobArtifact())
+    try corrupt.append(first, maximum: size)
+    try corrupt.append(Data(repeating: 0, count: last.count), maximum: size)
+    XCTAssertThrowsError(try artifacts.ingestBlobArtifact(manifest: manifest, staging: corrupt)) { error in
+      guard case AgentBlobFailure.invalid("plaintext_hash_mismatch") = error else {
+        return XCTFail("Unexpected failure: \(error)")
+      }
+    }
+    XCTAssertEqual(artifacts.localFile(for: block), published)
+    XCTAssertEqual(try Data(contentsOf: published), expected)
+
+    let image = try XCTUnwrap(artifacts.stageBlobArtifact())
+    try image.append(first, maximum: size)
+    try image.append(last, maximum: size)
+    var imageManifest = manifest
+    imageManifest["name"] = "stream.png"
+    imageManifest["mime_type"] = "image/png"
+    XCTAssertThrowsError(try artifacts.ingestBlobArtifact(manifest: imageManifest, staging: image)) { error in
+      XCTAssertEqual(error as? AgentDesktopArtifactStoreError, .imageFormatMismatch)
+    }
+    XCTAssertEqual(artifacts.localFile(for: block), published)
+  }
+
+  func testDesktopScopedBlobManifestPreservesJSONIntegerAndBooleanTypes() throws {
+    // Fixture from Desktop blob_artifact_contract.make_scoped_manifest.
+    let raw = """
+      {
+        "artifact_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "artifact_uri": "galaxyssi-artifact://blob/ff9e91d39f7e59115e6cd4e08a4436c4cc8e039349e464e74ce4df8a0c11fe9a",
+        "client_route_id": "AAAAAAAAAAAAAAAAAAAAAA",
+        "contact_id": "desktop",
+        "conversation_id": "peer:AAAAAAAAAAAAAAAAAAAAAA",
+        "desktop_id": "desktop",
+        "execution_generation": 1,
+        "mime_type": "application/octet-stream",
+        "name": "note #1.bin",
+        "original_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "original_size_bytes": 1,
+        "peer_chat": true,
+        "relative_path": "out/note #1.bin",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size_bytes": 1,
+        "source_message_id": "a0000000-0000-4000-8000-000000000001",
+        "task_id": "a0000000-0000-4000-8000-000000000001",
+        "transfer_id": "60da0fd5e5f9e2fc8572e08ad5e15f275eb21d4949adfa9c920a9df629a5562e",
+        "turn_id": "peer-turn"
+      }
+      """
+    let manifest = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
+    XCTAssertNoThrow(try AgentBlobArtifactContract.validateManifest(manifest))
+    XCTAssertNoThrow(try AgentBlobArtifactContract.validateDesktopScopedURI(manifest))
+    let number = try XCTUnwrap(JSONSerialization.jsonObject(with: Data("[1,true,0,false]".utf8)) as? [Any])
+    XCTAssertEqual(String(decoding: try AgentBlobProtocol.canonicalJSON(number), as: UTF8.self), "[1,true,0,false]")
+    var foreign = manifest
+    foreign["desktop_id"] = "foreign"
+    XCTAssertThrowsError(try AgentBlobArtifactContract.validateDesktopScopedURI(foreign))
+    var badType = manifest
+    badType["peer_chat"] = 1
+    XCTAssertThrowsError(try AgentBlobArtifactContract.validateManifest(badType))
+  }
+
+  @MainActor
+  func testPeerBlobStorageIsScopedToExactPairAndKeepsWireReceiptUnchanged() throws {
+    let artifacts = AgentDesktopArtifactStore(rootURL: temporaryDirectory("peer-blob-scope"))
+    let bytes = Data([17, 31, 47])
+    let digest = sha256(bytes)
+    let source = UUID().uuidString.lowercased()
+    let wireID = String(repeating: "a", count: 64)
+    let transfer = String(repeating: "b", count: 64)
+    let uri = "galaxyssi-artifact://blob/" + digest
+    let manifest: [String: Any] = ["peer_chat": true, "artifact_id": wireID, "transfer_id": transfer,
+      "artifact_uri": uri, "sha256": digest, "size_bytes": bytes.count, "task_id": source, "source_message_id": source,
+      "contact_id": "desktop", "desktop_id": "desktop", "name": "reply.ogg", "mime_type": "audio/ogg"]
+    let own = try AgentBlobPeerStorage(manifest: manifest, binding: String(repeating: "c", count: 64))
+    let foreign = try AgentBlobPeerStorage(manifest: manifest, binding: String(repeating: "d", count: 64))
+    XCTAssertNotEqual(own.localURI, foreign.localURI)
+    var wrong = manifest
+    wrong["task_id"] = UUID().uuidString
+    XCTAssertThrowsError(try AgentBlobPeerStorage(manifest: wrong, binding: String(repeating: "c", count: 64)))
+
+    let staging = try XCTUnwrap(artifacts.stageBlobArtifact())
+    try staging.append(bytes, maximum: own.size)
+    try artifacts.ingestBlobArtifact(manifest: own.storageManifest(manifest), staging: staging)
+    XCTAssertNil(try artifacts.verifiedPeerBlobDescriptor(foreign, durationMillis: 0))
+    let stored = try XCTUnwrap(artifacts.verifiedPeerBlobDescriptor(own, durationMillis: 1_200))
+    XCTAssertEqual(stored.string("artifact_uri"), own.localURI)
+    XCTAssertEqual(stored.string("artifact_id"), own.localID)
+    XCTAssertEqual(stored.int64("duration_ms"), 1_200)
+    XCTAssertFalse(artifacts.hasStoredArtifact(.init(id: wireID, type: .file, title: "reply", uri: uri)))
+    let receipt = AgentBlobArtifactContract.storedReceipt(manifest)
+    XCTAssertEqual(receipt.string("artifact_id"), wireID)
+    XCTAssertEqual(receipt.string("transfer_id"), transfer)
+  }
+
   @MainActor
   func testStoredArtifactReplayRemainsPendingUntilReceiptQueueCommits() throws {
     let fixture = try ChunkFixture()

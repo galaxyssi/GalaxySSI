@@ -174,12 +174,43 @@ struct MqttPeerChatProjection {
     for key in ["conversation_id", "task_id", "turn_id", "contact_id"] {
       _ = try MqttDeliveryEnvelope.checkedText(receipt[key], maximum: 256)
     }
+    return try desktopBlobControlRequest(receipt, target: target)
+  }
+
+  static func desktopBlobCapabilityRequest(_ payload: [String: Any], target: Destination) throws -> MqttSignalSendRequest {
+    guard target.desktop, payload.string("client_route_id") == target.routeId,
+          payload.string("desktop_id") == target.peer.remoteSignalName,
+          payload.string("desktop_fingerprint") == target.routes.remoteFingerprint else { throw MqttRouteError.identityChanged }
+    guard Set(payload.keys) == ["type", "version", "revision", "enabled", "desktop_id", "client_route_id", "desktop_fingerprint"],
+          payload.string("type") == "artifact_blob_capability", try MqttRouteProtocol.integer(payload, "version") == 1,
+          try MqttRouteProtocol.integer(payload, "revision") > 0, payload["enabled"] is Bool else {
+      throw MqttRouteError.invalidPayload
+    }
+    return try desktopBlobControlRequest(payload, target: target)
+  }
+
+  private static func desktopBlobControlRequest(_ original: [String: Any], target: Destination) throws -> MqttSignalSendRequest {
     let identity = try MqttBusinessIdentity(target.peer.binding)
-    let digest = MqttRouteProtocol.digest(try MqttBusinessStorage.payload(receipt))
-    var payload = receipt
-    payload["message_id"] = try stableID([identity.binding, "desktop-blob-stored", digest])
+    let digest = MqttRouteProtocol.digest(try MqttBusinessStorage.payload(original))
+    var payload = original
+    let discriminator = original.string("type") == AgentBlobArtifactContract.receiptType
+      ? "desktop-blob-stored" : "desktop-blob-capability"
+    payload["message_id"] = try stableID([identity.binding, discriminator, digest])
     return try MqttSignalSendRequest(identity: identity, payload: payload, remoteName: target.peer.remoteSignalName,
       topic: target.peer.binding.sendTopic, clientRouteID: target.routeId, traffic: .control, contactID: target.contactId)
+  }
+
+  func desktopPeerBlobDescriptors(_ descriptors: [[String: Any]], payload: [String: Any],
+                                  item: MqttBusinessInbox.Pending, target: Destination) throws -> [AgentBlobPeerStorage] {
+    let source = try desktopPeerSource(payload, target: target)
+    guard payload.string("type") == "peer_message", payload["peer_chat"] as? Bool == true,
+          payload.string("task_id") == source, UUID(uuidString: source) == UUID(uuidString: item.messageID),
+          try MqttRouteProtocol.integer(payload, "execution_generation") == 1,
+          (1...12).contains(descriptors.count) else { throw MqttRouteError.invalidPayload }
+    let artifacts = try descriptors.map { try AgentBlobPeerStorage(descriptor: $0, sourceID: source, binding: item.identity.binding) }
+    guard Set(artifacts.map(\.localID)).count == artifacts.count,
+          Set(artifacts.map(\.transferID)).count == artifacts.count else { throw MqttRouteError.invalidPayload }
+    return artifacts
   }
 
   @discardableResult

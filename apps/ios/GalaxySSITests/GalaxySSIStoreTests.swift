@@ -1183,6 +1183,39 @@ final class GalaxySSIStoreTests: XCTestCase {
       invalid[key] = value
       XCTAssertThrowsError(try MqttPeerChatProjection.desktopBlobReceiptRequest(invalid, target: target))
     }
+    var declaration: [String: Any] = ["type": "artifact_blob_capability", "version": 1,
+      "revision": 2, "enabled": true, "desktop_id": link.desktopId,
+      "client_route_id": target.routeId, "desktop_fingerprint": target.routes.remoteFingerprint]
+    let capability = try MqttPeerChatProjection.desktopBlobCapabilityRequest(declaration, target: target)
+    XCTAssertEqual(capability.traffic, .control)
+    XCTAssertNotEqual(capability.messageID, first.messageID)
+    declaration["desktop_fingerprint"] = String(repeating: "f", count: 64)
+    XCTAssertThrowsError(try MqttPeerChatProjection.desktopBlobCapabilityRequest(declaration, target: target))
+  }
+
+  @MainActor
+  func testDesktopPeerBlobBodyMustMatchItsSourceAndCurrentRoute() throws {
+    let store = makeStore()
+    let local = String(repeating: "b", count: 64)
+    let link = try store.addServerLink(from: makePairingQRCode(), localFingerprint: local)
+    store.markServerPaired(desktopId: link.desktopId)
+    let contact = try XCTUnwrap(store.contacts.first { $0.isDesktopDeviceContact && $0.desktopId == link.desktopId })
+    let projection = MqttPeerChatProjection(store: store, localFingerprint: local)
+    let target = try XCTUnwrap(projection.destination(for: contact))
+    let identity = try MqttBusinessIdentity(target.peer.binding)
+    let id = UUID(), source = id.uuidString.lowercased()
+    let hash = String(repeating: "a", count: 64)
+    let descriptor: [String: Any] = ["transfer_id": hash, "artifact_id": hash,
+      "artifact_uri": "galaxyssi-artifact://blob/" + hash, "size_bytes": 1, "sha256": hash]
+    var payload: [String: Any] = ["type": "peer_message", "peer_chat": true, "source_message_id": source,
+      "task_id": source, "execution_generation": 1, "client_route_id": target.routeId, "desktop_id": link.desktopId,
+      "contact_id": link.desktopId, "conversation_id": target.conversationId]
+    let item = MqttBusinessInbox.Pending(key: try identity.key(messageID: id.uuidString), identity: identity,
+      messageID: id.uuidString, payload: Data(), createdAt: 1)
+    XCTAssertEqual(try projection.desktopPeerBlobDescriptors([descriptor], payload: payload, item: item, target: target).count, 1)
+    XCTAssertThrowsError(try projection.desktopPeerBlobDescriptors([descriptor, descriptor], payload: payload, item: item, target: target))
+    payload["task_id"] = UUID().uuidString
+    XCTAssertThrowsError(try projection.desktopPeerBlobDescriptors([descriptor], payload: payload, item: item, target: target))
   }
 
   func testRenamesContactLocally() {
