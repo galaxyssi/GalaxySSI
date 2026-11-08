@@ -144,6 +144,38 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
     fun nextDue(): Long? = db.rawQuery("SELECT MIN(due_at) FROM concerns WHERE open=1", null).use {
         it.moveToFirst(); if (it.isNull(0)) null else it.getLong(0)
     }
+    fun discussion(conversationId: String): String? = db.rawQuery(
+        "SELECT payload FROM discussions WHERE conversation_id=?", arrayOf(conversationId)
+    ).use { row ->
+        if (!row.moveToFirst()) null else unpack("discussion", conversationId, row.getBlob(0)).let {
+            check(it.getString("conversation") == conversationId); it.getString("concern")
+        }
+    }
+    fun bindDiscussion(id: String, expectedRevision: Int, conversationId: String): HealthCareConcern = transaction(true) {
+        require(HealthProfilePolicy.uuid(conversationId))
+        val before = concern(id) ?: throw HealthCareConflict()
+        if (before.revision != expectedRevision || discussion(conversationId)?.let { it != id } == true) throw HealthCareConflict()
+        db.insertWithOnConflict("discussions", null, ContentValues().apply {
+            put("conversation_id", conversationId)
+            put("payload", pack("discussion", conversationId, JSONObject().put("conversation", conversationId).put("concern", id)))
+        }, SQLiteDatabase.CONFLICT_IGNORE)
+        before.copy(conversationId = conversationId, revision = before.revision + 1,
+            updatedAt = maxOf(before.updatedAt, System.currentTimeMillis())).also { persist(it, "discussion_bound") }
+    }
+    fun approveDiscussion(grant: HealthCareDiscussionGrant) = transaction {
+        val current = concern(grant.concernId) ?: throw HealthCareConflict()
+        if (discussion(grant.conversationId) != current.id || current.revision != grant.revision ||
+            !settings().enabled || settings().version != grant.settingsVersion) throw HealthCareConflict()
+        db.insertOrThrow("discussion_grants", null, ContentValues().apply {
+            put("turn_id", grant.turnId)
+            put("payload", pack("discussion_grant", grant.turnId, grant.json()))
+        })
+        Unit
+    }
+    fun discussionGrant(turnId: String): HealthCareDiscussionGrant? = db.rawQuery(
+        "SELECT payload FROM discussion_grants WHERE turn_id=?", arrayOf(turnId)
+    ).use { row -> if (!row.moveToFirst()) null else
+        HealthCareDiscussionGrant.from(unpack("discussion_grant", turnId, row.getBlob(0))).also { check(it.turnId == turnId) } }
     fun delete(id: String, expectedRevision: Int) = transaction(true) {
         val value = concern(id) ?: throw HealthCareConflict()
         if (value.revision != expectedRevision) throw HealthCareConflict()
@@ -153,7 +185,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         Unit
     }
     override fun close() = helper.close()
-    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 1) {
+    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 2) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE settings(id INTEGER PRIMARY KEY,version TEXT NOT NULL,payload BLOB NOT NULL)")
@@ -164,8 +196,16 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             db.execSQL("CREATE INDEX care_due ON concerns(open,due_at,id)")
             db.execSQL("CREATE TABLE history(concern_id TEXT NOT NULL,revision INTEGER NOT NULL,payload BLOB NOT NULL,PRIMARY KEY(concern_id,revision))")
             db.execSQL("CREATE TABLE evaluations(metric_key TEXT PRIMARY KEY,token TEXT NOT NULL,payload BLOB NOT NULL)")
+            discussions(db)
         }
-        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = error("Unsupported health care schema")
+        private fun discussions(db: SQLiteDatabase) {
+            // Bindings survive concern deletion so an old sensitive conversation cannot become an ordinary chat.
+            db.execSQL("CREATE TABLE discussions(conversation_id TEXT PRIMARY KEY,payload BLOB NOT NULL)")
+            db.execSQL("CREATE TABLE discussion_grants(turn_id TEXT PRIMARY KEY,payload BLOB NOT NULL)")
+        }
+        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+            check(oldVersion == 1 && newVersion == 2); discussions(db)
+        }
     }
     companion object {
         const val DEFAULT_DB = "health_care_v1.db"

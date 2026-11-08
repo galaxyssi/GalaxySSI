@@ -131,6 +131,8 @@ class HealthCareActivity : Activity() {
         content.addView(ui.text(getString(value.metric.titleResource()), 23f, bold = true))
         ui.add(content, ui.text("${value.assessment.value} ${value.assessment.unit}", 22f, bold = true), 8)
         ui.add(content, ui.text(getString(value.stage.titleResource()), 14f, muted = true), 6)
+        ui.add(content, ui.command(R.string.health_care_discussion_title_short) { discuss(value) }
+            .apply { tag = "health-care-discuss" }, 12)
         heading(content, R.string.health_care_why)
         if (value.assessment.signals.isEmpty()) ui.add(content, ui.text(getString(R.string.health_care_changed_result), 15f), 8)
         value.assessment.signals.forEach { ui.add(content, ui.text(getString(it.titleResource()), 15f), 8) }
@@ -232,6 +234,21 @@ class HealthCareActivity : Activity() {
             }
     }
     private fun heading(content: LinearLayout, title: Int) = ui.add(content, ui.text(getString(title), 18f, bold = true), 22)
+    private fun discuss(value: HealthCareConcern) {
+        // Fixture pages never create real user conversations or contact an actual provider.
+        if (names.fixture != null || mutating) return
+        mutating = true
+        worker.execute {
+            val result = runCatching { HealthCareDiscussion.open(applicationContext, value.id) }
+            main.post {
+                mutating = false
+                if (!active) return@post
+                result.fold({ id -> startActivity(Intent(this, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", id)) }, ::error)
+            }
+        }
+    }
     private fun basis(content: LinearLayout, title: Int, value: String) {
         ui.add(content, ui.text(getString(title), 14f, bold = true), 14)
         ui.add(content, ui.text(value, 14f, muted = true), 4)

@@ -72,6 +72,7 @@ class HealthCareUiDeviceTest {
                 await(scenario) { find(it, "health-care-context") != null }
                 scenario.onActivity { activity ->
                     val labels = views(activity.window.decorView).filterIsInstance<TextView>().map { it.text.toString() }
+                    assertNotNull(find(activity, "health-care-discuss"))
                     listOf(R.string.health_care_reference, R.string.health_care_guideline, R.string.health_care_baseline,
                         R.string.health_care_target, R.string.health_care_no_target).forEach { assertTrue(labels.contains(activity.getString(it))) }
                 }

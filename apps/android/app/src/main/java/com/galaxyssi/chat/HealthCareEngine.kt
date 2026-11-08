@@ -27,7 +27,7 @@ internal object HealthCareEngine {
                         val prior = care.forMetric(metric)
                         val stamp = versions.getValue(metric)
                         if (stamp.isBlank() && prior == null) continue
-                        val key = token(listOf(HealthCarePolicy.VERSION, settings.version, permission.version, stamp).joinToString("|"))
+                        val key = inputVersion(settings.version, permission.version, stamp)
                         if (care.evaluated(metric) == key) continue
                         val assessment = privacy.track(HealthAccessScope(HealthAccessPurpose.PROACTIVE_CARE, setOf(metric))) {
                             HealthCarePolicy.assess(metric, records.recentSelf(now, 30, metric), prior?.context)
@@ -42,6 +42,8 @@ internal object HealthCareEngine {
             }
         }
     }
+    internal fun inputVersion(settings: String, privacy: String, metricClock: String): String =
+        token(listOf(HealthCarePolicy.VERSION, settings, privacy, metricClock).joinToString("|"))
     private fun token(value: String): String {
         val bytes = value.toByteArray(Charsets.UTF_8)
         return try { MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 255) } }

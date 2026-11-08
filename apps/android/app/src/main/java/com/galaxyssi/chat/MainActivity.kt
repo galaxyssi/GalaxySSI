@@ -246,6 +246,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal lateinit var agentSubtitleText: TextView
     internal lateinit var agentOutputList: RecyclerView
     internal var healthCareSurface: HealthCareAgentSurface? = null
+    internal val healthCareDiscussion by lazy { HealthCareDiscussionController(this) }
     internal lateinit var agentOutputLayout: LinearLayoutManager
     internal lateinit var agentTranscriptAdapter: AgentTranscriptRecyclerAdapter
     internal lateinit var singleAgentTranscriptAdapter: AgentTranscriptRecyclerAdapter
@@ -1383,6 +1384,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
 
     override fun onPause() {
         healthCareSurface?.pause()
+        healthCareDiscussion.clear()
         ScreenAssistantConnection.removeListener(screenAssistantConnectionListener)
         mainPageBackPressGate.reset()
         foregroundAgentReload.invalidate()
@@ -1425,6 +1427,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
 
     override fun onTrimMemory(level: Int) {
         healthCareSurface?.clear()
+        healthCareDiscussion.clear()
         RuntimeSensitiveCaches.clearAll()
         KnowledgeSemanticSearch.clearRuntime()
         AgentEncryptedPreferenceCache.clearAll()
