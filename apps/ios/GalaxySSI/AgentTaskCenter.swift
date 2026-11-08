@@ -98,12 +98,14 @@ enum AgentTaskCenterPolicy {
   }
 
   static func resumable(_ task: AgentTaskRecord) -> Bool {
+    if task.supervisedBrowserWait != nil { return task.phase == .paused }
     if let wait = task.capturePermission { return task.phase == .paused && !wait.dispatched }
     return task.phase == .paused &&
       (task.pendingAction != nil || !task.pendingActions.isEmpty)
   }
 
   static func pauseable(_ task: AgentTaskRecord) -> Bool {
+    if let wait = task.supervisedBrowserWait { return task.phase == .waitingResponse && wait.resolution == nil }
     if let wait = task.capturePermission { return task.phase == .waitingResponse && !wait.dispatched }
     return [.planning, .waitingConfirmation, .executing, .verifying].contains(task.phase) &&
       (task.pendingPlanning != nil || task.pendingAction != nil || !task.pendingActions.isEmpty)

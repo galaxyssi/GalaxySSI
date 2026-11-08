@@ -596,7 +596,8 @@ internal object AgentSupervisedProjectToolInventory {
                     buildString {
                         append("- ").append(tool.id)
                         append(" | risk=").append(tool.risk.wireValue)
-                        if (tool.id in PhoneAssistantToolPolicy.directActionToolIds || tool.id == AgentConversationRecallTool.ID) {
+                        if (tool.id in PhoneAssistantToolPolicy.directActionToolIds || tool.id == AgentConversationRecallTool.ID ||
+                            tool.id == HealthCarePlanTool.ID && tools.all { it.id in HealthCareDiscussionPolicy.discussionTools }) {
                             append(" | description=").append(tool.description)
                         }
                         if (phoneControl && !tool.requiresEffectClaim) append(" | effect=read_only")
@@ -607,7 +608,8 @@ internal object AgentSupervisedProjectToolInventory {
                         append(" | input=")
                         append(
                             if (tool.id in AgentWebIntelligenceNativeTools.directSearchToolIds ||
-                                tool.id in PhoneAssistantToolPolicy.directActionToolIds || tool.id == AgentConversationRecallTool.ID) {
+                                tool.id in PhoneAssistantToolPolicy.directActionToolIds || tool.id == AgentConversationRecallTool.ID ||
+                                tool.id == HealthCarePlanTool.ID && tools.all { it.id in HealthCareDiscussionPolicy.discussionTools }) {
                                 AgentNativeJsonCodec.stringify(tool.inputSchema.document)
                             } else AgentSupervisedProjectPromptCodec.compactInputSchema(
                                 tool.inputSchema.document,

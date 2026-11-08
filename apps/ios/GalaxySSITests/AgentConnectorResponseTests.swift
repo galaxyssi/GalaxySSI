@@ -3,6 +3,43 @@ import CryptoKit
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testLargeResearchReplyKeepsOriginalBytesThroughBothResponseStores() throws {
+    let note = String(repeating: "evidence ", count: 4_000)
+    let raw = "  ```json\n{\"format\":\"galaxyssi.research-artifact.v1\",\"summary\":\"[Report](outputs/final.pdf)\","
+      + "\"workspace\":[{\"id\":\"note\",\"kind\":\"evidence\",\"title\":\"Notes\","
+      + "\"base_revision\":0,\"parents\":[],\"body\":{\"text\":\"\(note)\"}}]}\n```\r\n"
+    let reply = try XCTUnwrap(AgentConnectorResponse.fromPayload([
+      "source_message_id": "77", "contact_id": "codex", "content": raw, "task_status": "completed"
+    ], nowMillis: 4_000))
+    XCTAssertGreaterThan(raw.count, AgentConnectorResponse.maxContentCharacters)
+    XCTAssertEqual(try AgentCollaborationResearchEnvelope.publication(in: raw)?.map(\.id), ["note"])
+    XCTAssertEqual(Data(reply.content.utf8), Data(raw.utf8))
+    let normalized = try XCTUnwrap(AgentConnectorResponseNormalizer.normalized(reply, nowMillis: 4_000))
+    let reopened = try XCTUnwrap(AgentConnectorResponseStoreCodec.decode(
+      AgentConnectorResponseStoreCodec.encode([normalized]), nowMillis: 4_000).first)
+    XCTAssertEqual(Data(reopened.content.utf8), Data(raw.utf8))
+
+    let record = AgentManagedResponseRecord(ownerRunId: "child", supervisorRunId: "parent",
+      agentId: "codex", deliveryMode: .respond, sourceMessageId: 77, contactId: "codex",
+      state: .completed, response: normalized, createdAtMillis: 1_000, completedAtMillis: 4_000)
+    let managed = try XCTUnwrap(AgentManagedResponseCodec.decode(
+      AgentManagedResponseCodec.encode([record])).first?.response)
+    XCTAssertEqual(Data(managed.content.utf8), Data(raw.utf8))
+    let codable = try JSONDecoder().decode(AgentConnectorResponse.self, from: JSONEncoder().encode(reply))
+    XCTAssertEqual(Data(codable.content.utf8), Data(raw.utf8))
+  }
+
+  func testResearchReplyExceptionRejectsIncompleteOrOversizedContent() {
+    let prefix = "{\"format\":\"galaxyssi.research-artifact.v1\",\"summary\":\""
+    let incomplete = prefix + String(repeating: "a", count: 25_000)
+    let oversized = prefix + String(repeating: "a", count: AgentCollaborationResearchEnvelope.maximumReplyBytes) + "\"}"
+    let ordinary = String(repeating: "galaxyssi.research-artifact.v1 ", count: 1_000)
+    for content in [incomplete, oversized, ordinary] {
+      XCTAssertEqual(AgentConnectorResponse(sourceMessageId: 1, content: content).content.count,
+        AgentConnectorResponse.maxContentCharacters)
+    }
+  }
+
   func testCodexSilenceBudgetRetriesTwoInitialAttemptsThenAlternativesAndOneFinalAttempt() throws {
     var budget = AgentCodexSilenceRecoveryPolicy.Budget(origin: "codex")
     XCTAssertEqual(budget.next(failed: "codex", attemptId: "one", confirmedTimeout: true, alternatives: ["other"]), "codex")

@@ -3763,6 +3763,7 @@
 "protocol_event_decrypt_failure" = "Signal 解密失败";
 "protocol_event_chunk_duplicate" = "已拒绝冲突的重复分片";
 "protocol_event_fragment_rejected" = "已拒绝分片传输";
+"protocol_event_publish_admission_refused" = "发送未获准入";
 "protocol_badge_online" = "在线";
 "cc_service_link_connected" = "GalaxySSI Link 安全会话已连接";
 "cc_service_link_offline" = "GalaxySSI Link 离线或等待已配对端点";
@@ -5560,7 +5561,8 @@
 "galaxyssi.profile.avatar_remove_subtitle" = "恢复默认头像";
 "galaxyssi.profile.avatar_removed" = "头像已移除";
 "galaxyssi.agent_session.name_placeholder" = "会话名称";
-"galaxyssi.agent.download.complete" = "下载完成：%@\n已保存到 Download/GalaxySSI。";
+"galaxyssi.agent.download.complete" = "下载完成：%@";
+"galaxyssi.agent.download.private_started" = "已开始下载。完成后，文件将显示在当前会话中。";
 "galaxyssi.agent.download.failed" = "下载失败：%@%@";
 "galaxyssi.agent.open_voice" = "打开语音";
 "cc_mcp_title" = "MCP";
@@ -6059,6 +6061,8 @@
 "galaxyssi.managed_browser.title" = "浏览器控制";
 "galaxyssi.managed_browser.return" = "交回控制";
 "galaxyssi.managed_browser.failed" = "无法交回浏览器控制。";
+"galaxyssi.managed_browser.waiting" = "正在等待浏览器控制。";
+"galaxyssi.managed_browser.verification_required" = "需要重新观察外部状态才能继续此任务。";
 "galaxyssi.team.recovery.missing" = "原智能体团队不可用，正在等待，不会重新派发";
 "galaxyssi.team.recovery.failed" = "原智能体团队未能成功完成任务。";
 "galaxyssi.team.reply_commit_failed" = "无法保存智能体团队回复，该回复不会显示为普通消息。";
@@ -6086,8 +6090,8 @@
 "galaxyssi.screen_page.collecting" = "正在提取页面…";
 "galaxyssi.screen_page.prompt" = "请分析这份页面内容。";
 "galaxyssi.screen_page.added" = "已添加 %d 页";
-"galaxyssi.screen_page.pdf_saved" = "已保存到文件：我的 iPhone → GalaxySSI → Downloads → %@";
-"galaxyssi.screen_page.pdf_save_failed" = "无法在文件 App 中保存副本，原始 PDF 仍保留在附件中。";
+"galaxyssi.screen_page.pdf_saved" = "已保存在 GalaxySSI：%@";
+"galaxyssi.screen_page.pdf_save_failed" = "无法保存私有副本，原始 PDF 仍保留在附件中。";
 "galaxyssi.screen_page.truncated" = "文本提取已达到上限，已附上原始 PDF。";
 "galaxyssi.screen_page.image_pages" = "部分页面没有可选择文本，已附上原始 PDF。";
 "galaxyssi.screen_page.protected" = "不支持加密或禁止复制的 PDF。";
@@ -6178,6 +6182,7 @@
 "galaxyssi.collaboration.no_resources" = "没有可选的 Agent 或云端模型。";
 "galaxyssi.collaboration.save_failed" = "无法保存协作组。";
 "galaxyssi.collaboration.execution_unavailable" = "当前成员或会话设置不支持协作组执行。草稿未发送。";
+"galaxyssi.collaboration.member_binding_invalid" = "协作成员或其指定模型已变更。请检查群组设置后重试。";
 "galaxyssi.collaboration.execution_busy" = "协作组仍在分派上一条请求。";
 "galaxyssi.collaboration.history" = "搜索协作组历史";
 "galaxyssi.collaboration.history_search" = "搜索以往结果";

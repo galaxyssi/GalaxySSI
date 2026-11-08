@@ -49,7 +49,39 @@ enum AgentIOSDownloadFilePolicy {
   }
 
   static func relativePath(for fileName: String) -> String {
-    "Download/GalaxySSI/\(fileName)"
+    "app_private/\(fileName)"
+  }
+
+  static func isPrivate(_ file: URL) -> Bool {
+    GalaxySSIPrivateChatFiles.contains(file, in: GalaxySSIPrivateChatFiles.directory("Downloads"))
+  }
+
+  static func isRetained(_ file: URL) -> Bool {
+    if isPrivate(file) { return true }
+    guard let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return false }
+    return ["Download/GalaxySSI", "GalaxySSI Downloads"].contains {
+      GalaxySSIPrivateChatFiles.contains(file, in: documents.appendingPathComponent($0, isDirectory: true))
+    }
+  }
+
+  static func retainDownload(_ temporary: URL, in directory: URL, id: Int64, fileName: String) throws -> URL {
+    guard id > 0, !fileName.isEmpty, fileName != ".", fileName != "..",
+          !fileName.contains("/"), !fileName.contains("\\"),
+          try temporary.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true
+    else { throw CocoaError(.fileWriteInvalidFileName) }
+    let fileManager = FileManager.default
+    let recordDirectory = directory.appendingPathComponent(String(id), isDirectory: true)
+    try fileManager.createDirectory(at: recordDirectory, withIntermediateDirectories: true)
+    let destination = recordDirectory.appendingPathComponent(fileName, isDirectory: false)
+    try fileManager.moveItem(at: temporary, to: destination)
+    do {
+      try fileManager.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+        ofItemAtPath: destination.path)
+    } catch {
+      try? fileManager.removeItem(at: destination)
+      throw error
+    }
+    return destination
   }
 
   private static func fileExtension(_ value: String) -> String {
@@ -170,9 +202,11 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
         "title": .string(title),
         "description": .string(description),
         "platform": .string("ios"),
-        "scope": .string("ios_app_documents_download"),
+        "scope": .string("ios_app_download"),
         "display_name": .string(displayName),
-        "relative_path": .string(AgentIOSDownloadFilePolicy.relativePath(for: displayName)),
+        "relative_path": .string(localFileURL.map { AgentIOSDownloadFilePolicy.isPrivate($0)
+          ? AgentIOSDownloadFilePolicy.relativePath(for: $0.lastPathComponent) : "" }
+          ?? AgentIOSDownloadFilePolicy.relativePath(for: displayName)),
         "created_at_epoch_ms": .int(createdAtEpochMillis),
         "updated_at_epoch_ms": .int(updatedAtEpochMillis),
         "observed_at_epoch_ms": .int(observedAtEpochMillis)
@@ -197,7 +231,6 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
   private let session: URLSession
   private let sessionDelegate: AgentIOSDownloadSessionDelegate?
   private let storageDirectory: URL
-  private let legacyStorageDirectory: URL
   private let stateURL: URL
   private let defaults: UserDefaults
   private let secrets: GalaxySSISecretStore
@@ -233,17 +266,7 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
       self.session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
       self.sessionDelegate = delegate
     }
-    if let storageDirectory {
-      self.storageDirectory = storageDirectory
-    } else {
-      let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-        ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-      self.storageDirectory = base
-        .appendingPathComponent("Download", isDirectory: true)
-        .appendingPathComponent("GalaxySSI", isDirectory: true)
-    }
-    self.legacyStorageDirectory = self.storageDirectory.deletingLastPathComponent().deletingLastPathComponent()
-      .appendingPathComponent("GalaxySSI Downloads", isDirectory: true)
+    self.storageDirectory = storageDirectory ?? GalaxySSIPrivateChatFiles.directory("Downloads")
     let stateBase: URL
     if let storageDirectory {
       stateBase = storageDirectory
@@ -256,7 +279,6 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
       .appendingPathComponent("downloads.json", isDirectory: false)
     queue.sync {
       restoreStateLocked()
-      migrateLegacyStorageLocked()
     }
     sessionDelegate?.owner = self
     self.session.getAllTasks { [weak self] tasks in
@@ -372,7 +394,7 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
       message: "Download enqueued",
       metadata: [
         "implementation": .string("URLSession"),
-        "storage_scope": .string("ios_documents"),
+        "storage_scope": .string("app_private"),
         "android_status_compatible": .bool(true)
       ]
     )
@@ -396,7 +418,8 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
       message: "Download status read",
       metadata: [
         "implementation": .string("URLSession"),
-        "storage_scope": .string("ios_documents"),
+        "storage_scope": .string(record.localFileURL.map { AgentIOSDownloadFilePolicy.isPrivate($0) ? "app_private" : "ios_documents" }
+          ?? "app_private"),
         "android_status_compatible": .bool(true)
       ]
     )
@@ -425,13 +448,13 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
         "download_id": .int(id),
         "removed": .int(removed.count),
         "platform": .string("ios"),
-        "scope": .string("ios_app_documents_download"),
+        "scope": .string("ios_app_download"),
         "observed_at_epoch_ms": .int(nowMillis)
       ],
       message: "Download remove completed",
       metadata: [
         "implementation": .string("URLSession"),
-        "storage_scope": .string("ios_documents"),
+        "storage_scope": .string("ios_app_download"),
         "file_deleted": .bool(removed.fileURL != nil)
       ]
     )
@@ -529,7 +552,8 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
     response: URLResponse?,
     error: Error?
   ) {
-    queue.async {
+    // URLSession may discard its temporary file as soon as the callback returns.
+    queue.sync {
       guard var record = self.records[id],
             record.status != Status.successful,
             record.status != Status.failed else {
@@ -552,22 +576,12 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
         self.records[id] = record
       } else if let temporaryURL {
         do {
-          try FileManager.default.createDirectory(
-            at: self.storageDirectory,
-            withIntermediateDirectories: true
-          )
-          let destination = self.storageDirectory.appendingPathComponent(
-            self.safeFilename(
+          let destination = try AgentIOSDownloadFilePolicy.retainDownload(temporaryURL,
+            in: self.storageDirectory, id: id, fileName: self.safeFilename(
               title: record.title,
               originalURL: originalURL,
               timestampMillis: record.createdAtEpochMillis
-            ),
-            isDirectory: false
-          )
-          if FileManager.default.fileExists(atPath: destination.path) {
-            try FileManager.default.removeItem(at: destination)
-          }
-          try FileManager.default.moveItem(at: temporaryURL, to: destination)
+            ))
           let size = self.fileSize(destination)
           record.status = Status.successful
           record.reason = 0
@@ -717,31 +731,6 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
     if changed || !loadedEncrypted {
       persistLocked()
     }
-  }
-
-  private func migrateLegacyStorageLocked() {
-    guard legacyStorageDirectory.standardizedFileURL != storageDirectory.standardizedFileURL,
-          FileManager.default.fileExists(atPath: legacyStorageDirectory.path) else {
-      return
-    }
-    try? FileManager.default.createDirectory(at: storageDirectory, withIntermediateDirectories: true)
-    for recordID in Array(records.keys) {
-      guard var record = records[recordID],
-            let oldURL = record.localFileURL,
-            oldURL.standardizedFileURL.path.hasPrefix(legacyStorageDirectory.standardizedFileURL.path + "/"),
-            FileManager.default.fileExists(atPath: oldURL.path) else {
-        continue
-      }
-      let destination = storageDirectory.appendingPathComponent(oldURL.lastPathComponent, isDirectory: false)
-      if !FileManager.default.fileExists(atPath: destination.path) {
-        try? FileManager.default.moveItem(at: oldURL, to: destination)
-      }
-      if FileManager.default.fileExists(atPath: destination.path) {
-        record.localFileURL = destination
-        records[recordID] = record
-      }
-    }
-    persistLocked()
   }
 
   private func persistLocked() {

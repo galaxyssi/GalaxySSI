@@ -783,6 +783,7 @@ enum AgentPlanningHistoryContext {
     var fieldIndex: AgentObservedOutputFields.Index?
     if action.kind == .callNativeTool {
       object["tool_id"] = String((action.parameters["tool_id"] ?? action.target).prefix(256))
+      if let failure = AgentPlannerObservation.nativeFailureSummary(action) { object["native_failure"] = failure }
       if AgentPlannerObservation.isWorkspaceExport(action) {
         return artifactExportLine(action, scope: scope, object: object, limit: limit)
       }
@@ -913,8 +914,18 @@ enum AgentPlannerObservation {
 
   static func nativeSources(_ action: AgentAction) -> [String] {
     var seen = Set<String>()
-    return [action.result, action.evidence].map(AgentObservationRedaction.redact)
+    return [action.parameters[AgentNativeFailureObservation.actionParameter] ?? "", action.result, action.evidence,
+      action.parameters[AgentSupervisedBrowserWait.requestReceiptKey] ?? ""]
+      .map(AgentObservationRedaction.redact)
       .filter { !$0.isEmpty && seen.insert($0).inserted }
+  }
+
+  static func nativeFailureSummary(_ action: AgentAction) -> [String: Any]? {
+    guard let raw = action.parameters[AgentNativeFailureObservation.actionParameter], raw.utf8.count <= 8_192,
+          let record = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else { return nil }
+    let keys: Set<String> = ["status", "receipt_status", "error_code", "retryable",
+      "outcome_unknown", "verification_status", "details_partial"]
+    return record.filter { keys.contains($0.key) }
   }
 
   static func observedFields(_ evidence: String) -> AgentObservedOutputFields.Index? {

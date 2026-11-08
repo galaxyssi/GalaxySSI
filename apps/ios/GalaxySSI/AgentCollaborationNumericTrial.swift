@@ -20,23 +20,85 @@ enum AgentCollaborationNumericTrial {
     "pow": { pow($0, $1) }, "min": { min($0, $1) }, "max": { max($0, $1) }
   ]
 
-  static func evaluate(_ trial: AgentMcpJSONObject) -> AgentMcpJSONObject? {
-    guard Set(trial.keys).subtracting(["previous_trial"]) == ["purpose", "reference_basis", "limitations", "validator", "computation"],
-          AgentCollaborationForecastIntake.hasText(trial, ["purpose", "reference_basis", "limitations"]),
-          let spec = trial["validator"]?.objectValue, Set(spec.keys) == ["id", "variables", "cases"],
-          spec["id"] == .string(validatorId), let names = spec["variables"]?.arrayValue,
-          (1...64).contains(names.count), let cases = spec["cases"]?.arrayValue, (1...4_096).contains(cases.count),
-          let computation = trial["computation"]?.objectValue, Set(computation.keys) == ["validator_id", "model"],
-          computation["validator_id"] == .string(validatorId), let model = computation["model"]?.objectValue
-    else { return nil }
+  struct ValidatorIssue: Error {
+    let path: String
+    let expected: String
+    let actual: String
+  }
+
+  private struct RegisteredCase {
+    let id: String
+    let inputs: [String: Double]
+    let expected: ReplayDecimal
+    let tolerance: ReplayDecimal
+  }
+
+  static func validatorIssue(_ spec: AgentMcpJSONObject) -> ValidatorIssue? {
+    if case .failure(let issue) = parseValidator(spec) { return issue }
+    return nil
+  }
+
+  private static func parseValidator(_ spec: AgentMcpJSONObject)
+    -> Result<(variables: Set<String>, cases: [RegisteredCase]), ValidatorIssue> {
+    func fail(_ path: String, _ expected: String, _ actual: String)
+      -> Result<(variables: Set<String>, cases: [RegisteredCase]), ValidatorIssue> {
+      .failure(.init(path: path, expected: expected, actual: actual))
+    }
+    guard spec["id"] == .string(validatorId) else {
+      return fail(".id", validatorId, "missing or unsupported validator ID")
+    }
+    guard Set(spec.keys).isSubset(of: ["id", "variables", "cases"]) else {
+      return fail("", "only id, variables and cases", "unexpected fields")
+    }
+    guard let names = spec["variables"]?.arrayValue, (1...64).contains(names.count) else {
+      return fail(".variables", "array with 1 to 64 variable names", "missing, wrong type or out of range")
+    }
     let variables = Set(names.compactMap(\.strictStringValue))
     guard variables.count == names.count, variables.allSatisfy({
       $0.range(of: "^[A-Za-z][A-Za-z0-9_]{0,63}$", options: .regularExpression) != nil
-    }) else { return nil }
-    var nodes = 0
-    guard let expression = compile(model, variables: variables, depth: 1, nodes: &nodes),
-          nodes * cases.count <= 2_000_000 else { return nil }
+    }) else { return fail(".variables", "unique ASCII variable identifiers", "duplicate or invalid variable name") }
+    guard let cases = spec["cases"]?.arrayValue, (1...4_096).contains(cases.count) else {
+      return fail(".cases", "array with 1 to 4096 registered cases", "missing, wrong type or out of range")
+    }
     var ids = Set<String>()
+    var parsed: [RegisteredCase] = []
+    for (index, item) in cases.enumerated() {
+      let path = ".cases[\(index)]"
+      guard let row = item.objectValue, Set(row.keys).isSubset(of: ["id", "input", "expected", "absolute_tolerance"]) else {
+        return fail(path, "case object with id, input, expected and absolute_tolerance", "wrong type or unexpected fields")
+      }
+      guard let id = row["id"]?.strictStringValue, !id.isBlank, id.utf8.count <= 128, ids.insert(id).inserted else {
+        return fail(path + ".id", "unique nonblank case ID of at most 128 UTF-8 bytes", "missing, duplicate or invalid case ID")
+      }
+      guard let inputs = row["input"]?.objectValue, Set(inputs.keys) == variables else {
+        return fail(path + ".input", "object with exactly the registered variables", "missing or different input fields")
+      }
+      let values = inputs.compactMapValues { number($0) }
+      guard values.count == inputs.count else {
+        return fail(path + ".input", "finite JSON numbers", "non-numeric or nonfinite value")
+      }
+      guard let expected = decimal(row["expected"], reference: true) else {
+        return fail(path + ".expected", "supported finite decimal", "missing or invalid expected value")
+      }
+      guard let tolerance = decimal(row["absolute_tolerance"], reference: true), !tolerance.negative else {
+        return fail(path + ".absolute_tolerance", "supported nonnegative finite decimal", "missing or invalid tolerance")
+      }
+      parsed.append(.init(id: id, inputs: values, expected: expected, tolerance: tolerance))
+    }
+    return .success((variables, parsed))
+  }
+
+  static func evaluate(_ trial: AgentMcpJSONObject) -> AgentMcpJSONObject? {
+    guard Set(trial.keys).subtracting(["previous_trial"]) == ["purpose", "reference_basis", "limitations", "validator", "computation"],
+          AgentCollaborationForecastIntake.hasText(trial, ["purpose", "reference_basis", "limitations"]),
+          let spec = trial["validator"]?.objectValue, case .success(let registered) = parseValidator(spec),
+          let computation = trial["computation"]?.objectValue, Set(computation.keys) == ["validator_id", "model"],
+          computation["validator_id"] == .string(validatorId), let model = computation["model"]?.objectValue
+    else { return nil }
+    let cases = registered.cases
+    var nodes = 0
+    guard let expression = compile(model, variables: registered.variables, depth: 1, nodes: &nodes),
+          nodes * cases.count <= 2_000_000 else { return nil }
     var checks: [AgentMcpJSONValue] = []
     var failures = 0
     var domainErrors = 0
@@ -45,18 +107,10 @@ enum AgentCollaborationNumericTrial {
     var worstError: ReplayDecimal?
     var firstDomainError: AgentMcpJSONObject?
     for item in cases {
-      guard let row = item.objectValue, Set(row.keys) == ["id", "input", "expected", "absolute_tolerance"],
-            let id = row["id"]?.strictStringValue, !id.isBlank, id.utf8.count <= 128, ids.insert(id).inserted,
-            let inputs = row["input"]?.objectValue, Set(inputs.keys) == variables,
-            let expected = decimal(row["expected"], reference: true),
-            let tolerance = decimal(row["absolute_tolerance"], reference: true), !tolerance.negative
-      else { return nil }
-      let values = inputs.compactMapValues { number($0) }
-      guard values.count == inputs.count else { return nil }
-      var check: AgentMcpJSONObject = ["id": .string(id), "passed": .bool(false)]
-      if let actual = expression(values), let actualDecimal = ReplayDecimal(String(actual)) {
-        let error = ReplayDecimal.distance(actualDecimal, expected)
-        let passed = !tolerance.isLess(than: error)
+      var check: AgentMcpJSONObject = ["id": .string(item.id), "passed": .bool(false)]
+      if let actual = expression(item.inputs), let actualDecimal = ReplayDecimal(String(actual)) {
+        let error = ReplayDecimal.distance(actualDecimal, item.expected)
+        let passed = !item.tolerance.isLess(than: error)
         check["actual"] = .double(actual)
         check["absolute_error"] = .string(error.text)
         check["passed"] = .bool(passed)
