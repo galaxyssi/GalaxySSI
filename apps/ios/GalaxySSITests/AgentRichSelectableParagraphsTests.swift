@@ -34,6 +34,51 @@ final class AgentRichSelectableParagraphsTests: XCTestCase {
   }
 
   @MainActor
+  func testPeerSelectionMoreKeepsNativeItemsAndDoesNotDelete() {
+    let view = GalaxySSIPeerSelectionTextView()
+    view.isSelectable = true
+    view.isEditable = false
+    view.text = "First paragraph.\n\nSecond paragraph."
+    view.moreTitle = "More"
+    var opened = 0
+    view.onMoreMessage = { opened += 1 }
+    view.onDeleteMessage = { XCTFail("More must not delete the message") }
+    let more = #selector(GalaxySSIPeerSelectionTextView.showPeerMessageActions(_:))
+    view.selectedRange = NSRange(location: 0, length: 0)
+    XCTAssertFalse(view.canPerformAction(more, withSender: nil))
+    view.showPeerMessageActions(nil)
+    XCTAssertEqual(opened, 0)
+    view.selectedRange = NSRange(location: 6, length: 19)
+    XCTAssertTrue(view.canPerformAction(more, withSender: nil))
+    XCTAssertFalse(view.canPerformAction(#selector(UIResponderStandardEditActions.delete(_:)), withSender: nil))
+    if #available(iOS 16.0, *) {
+      let copy = UIAction(title: "Copy") { _ in }
+      let menu = GalaxySSIPeerTextSelectionView.Coordinator().textView(view,
+        editMenuForTextIn: view.selectedRange, suggestedActions: [copy])
+      XCTAssertEqual(menu?.children.map(\.title), ["Copy", "More"])
+    }
+    view.showPeerMessageActions(nil)
+    XCTAssertEqual(opened, 1)
+    XCTAssertEqual(view.text, "First paragraph.\n\nSecond paragraph.")
+  }
+
+  @MainActor
+  func testPeerVoiceSelectionUsesVerbatimParagraphsAndStableWidth() {
+    let original = "One **literal** line\n\nSecond line"
+    let rendered = GalaxySSIPeerTextRenderer.transcript(original, fontSize: 14, outgoing: true)
+    XCTAssertEqual(rendered.string, original)
+    XCTAssertEqual((rendered.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)?.alignment, .right)
+    let source = original as NSString
+    let selected = source.range(of: "Second")
+    let paragraph = GalaxySSIParagraphSelectionPolicy.expansion(in: original, glyphOffset: selected.location,
+      nativeSelection: selected)
+    XCTAssertEqual(paragraph.map { source.substring(with: $0) }, "Second line")
+    let size = GalaxySSIPeerTextRenderer.size(rendered, maximumWidth: 160)
+    XCTAssertGreaterThan(size.height, 0)
+    XCTAssertLessThanOrEqual(size.width, 160)
+  }
+
+  @MainActor
   func testPeerNativeRendererPreservesParagraphStylesLinksAndConstrainedWidth() {
     let blocks = [
       AgentRichBlock(id: "heading", type: .heading, text: "Heading", metadata: ["level": "1"]),
