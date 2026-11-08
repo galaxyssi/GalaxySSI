@@ -5,6 +5,11 @@ struct AgentCollaborationWorkflowComparison: Codable, Equatable {
   let candidate: AgentCollaborationResearchReference
   let dataset: AgentCollaborationResearchReference
 
+  func matches(_ sample: AgentMcpJSONObject) -> Bool {
+    let method = sample.string("variant") == "baseline" ? baseline : candidate
+    return sample["workflow_sha256"] == .string(method.sha256) && sample["dataset_sha256"] == .string(dataset.sha256)
+  }
+
   static func resolve(_ draft: AgentCollaborationResearchDraft,
                       current: (AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision?) throws -> Self? {
     let ref = AgentCollaborationExperimentPlanIntake.reference

@@ -76,6 +76,25 @@ protocol GalaxySSILinkTransport: AnyObject {
   func publish(topic: String, payload: Data) async -> MqttPublishResult
 }
 
+private final class MqttLivePublishCancellation: @unchecked Sendable {
+  private let lock = NSLock()
+  private var cancelled = false
+
+  func cancel() {
+    lock.lock()
+    cancelled = true
+    lock.unlock()
+  }
+
+  func submit(_ send: () -> Void) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    guard !cancelled else { return false }
+    send()
+    return true
+  }
+}
+
 final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttBrokerPathTransport {
   @Published private(set) var isConnected = false
   @Published private(set) var relationshipSubscriptionsReady = false
@@ -118,6 +137,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     var acknowledgementGroup: MqttPublishAckGroup? = nil
     var fragmentIndex: Int = 0
     var pathCompletion: MqttPhysicalCompletion? = nil
+    var transientQuery = false
     var transientPriority = false
   }
   private struct InFlightTiming {
@@ -372,6 +392,12 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     }
   }
 
+  // Recovery callers own the nonce and the retry clock. Never replay their old poll on reconnect.
+  func publishRecoveryQuery(topic: String, payload: Data, link: ServerLink) async -> MqttPublishResult {
+    guard payload.count <= GalaxySSIMqttWireChunking.defaultDirectLimitBytes else { return .failed }
+    return await publishTransientControl(topic: topic, payload: payload, link: link)
+  }
+
   func publishTransientControl(topic: String, payload: Data, link: ServerLink) async -> MqttPublishResult {
     await withCheckedContinuation { continuation in
       queue.async {
@@ -473,6 +499,35 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
         continuation.resume(returning: submitted ? .published : .queued)
       }
     }
+  }
+
+  /// Live input must never enter a queue that can drain after reconnect.
+  func publishDesktopInputOnce(topic: String, payload: Data, expiresAt: Int64) async -> Bool {
+    guard !Task.isCancelled else { return false }
+    let cancellation = MqttLivePublishCancellation()
+    return await withTaskCancellationHandler(operation: {
+      await withCheckedContinuation { continuation in
+        queue.async {
+          guard self.hasLiveTransport(), !self.intentionallyDisconnected, Self.nowMillis() < expiresAt,
+                let secret = self.relationshipSecret(forSendingTopic: topic),
+                let packets = try? GalaxySSIMqttWireChunking.encode(wirePayload: String(decoding: payload, as: UTF8.self)),
+                !packets.isEmpty, packets.count <= 8,
+                let sealed = try? packets.map({ try GalaxySSILinkProtocol.sealWirePacket(Data($0.utf8), secret: secret) }),
+                sealed.allSatisfy({ $0.count + topic.utf8.count + 8 <= MqttRouteProtocol.packetBytes }),
+                Self.nowMillis() < expiresAt
+          else { continuation.resume(returning: false); return }
+          let sent = cancellation.submit {
+            for packet in sealed {
+              var body = Data()
+              body.appendUTF8(topic)
+              body.append(packet)
+              self.sendFrame(typeAndFlags: 0x30, body)
+            }
+          }
+          continuation.resume(returning: sent)
+        }
+      }
+    }, onCancel: { cancellation.cancel() })
   }
 
   func outstandingDurableMessageIds() async -> Set<String> {
@@ -685,7 +740,8 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     pathGate: MqttPathPublication? = nil,
     trackPeerReceipt: Bool = true,
     admissionDeferred: (() -> Void)? = nil,
-    physicallySubmitted: ((Bool) -> Void)? = nil
+    physicallySubmitted: ((Bool) -> Void)? = nil,
+    transientQuery: Bool = false
   ) -> Bool {
     let wirePayload = String(decoding: payload, as: UTF8.self)
     let logicalMessageId = trackPeerReceipt ? Self.logicalMessageId(payload) : ""
@@ -702,6 +758,11 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     }) else {
       return false
     }
+    if transientQuery {
+      guard sealedPackets.count == 1 else { return false }
+      pumpPendingPublishes()
+      guard hasLiveTransport(), mqttInflightPacketIds.count < Self.maximumMqttInflight else { return false }
+    }
     if pathGate != nil || !durableMessageId.isEmpty {
       let queuedBytes = pendingPacketPublishes.reduce(0) { $0 + $1.payload.count } +
         inFlightPublishes.values.reduce(0) { $0 + $1.payload.count }
@@ -714,7 +775,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
         return false
       }
     }
-    if !logicalMessageId.isEmpty { peerReceiptStartedAt[logicalMessageId] = enqueuedAtMillis }
+    if !transientQuery, !logicalMessageId.isEmpty { peerReceiptStartedAt[logicalMessageId] = enqueuedAtMillis }
     let acknowledgements = MqttPublishAckGroup(packetCount: sealedPackets.count)
     pendingPacketPublishes.append(contentsOf: sealedPackets.enumerated().map { index, packet in
       PendingPublish(
@@ -731,10 +792,15 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
         durableBrokerAcknowledged: durableBrokerAcknowledged,
         pathGate: pathGate,
         acknowledgementGroup: acknowledgements,
-        fragmentIndex: index
+        fragmentIndex: index,
+        transientQuery: transientQuery
       )
     })
     pumpPendingPublishes()
+    if transientQuery, !inFlightPublishes.values.contains(where: { $0.acknowledgementGroup === acknowledgements }) {
+      pendingPacketPublishes.removeAll { $0.acknowledgementGroup === acknowledgements }
+      return false
+    }
     if let physicallySubmitted {
       let submitted = inFlightPublishes.values.filter { $0.acknowledgementGroup === acknowledgements }.count
       physicallySubmitted(submitted == sealedPackets.count)
@@ -1329,13 +1395,13 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
 
   private func resetOutboundInflightForReconnect() {
     pendingPacketPublishes.removeAll { pending in
-      guard pending.pathGate != nil else { return false }
+      guard pending.pathGate != nil || pending.transientQuery else { return false }
       finishPhysical(pending, acknowledged: false)
       return true
     }
     if !inFlightPublishes.isEmpty {
       let retries = inFlightPublishes.values.compactMap { pending -> PendingPublish? in
-        if pending.pathGate != nil {
+        if pending.pathGate != nil || pending.transientQuery {
           finishPhysical(pending, acknowledged: false)
           return nil
         }

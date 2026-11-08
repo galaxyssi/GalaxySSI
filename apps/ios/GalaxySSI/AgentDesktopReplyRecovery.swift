@@ -2,6 +2,54 @@ import CoreFoundation
 import CryptoKit
 import Foundation
 
+struct AgentDesktopNativeEvidenceDelivery {
+  private let key = SymmetricKey(size: .bits256)
+  private static let lifetime: Int64 = 60_000
+
+  static func accepts(_ input: AgentMcpJSONObject) -> Bool {
+    guard Set(input.keys).isSubset(of: ["mode", "evidence_id", "sha256", "offset"]),
+          input["mode"] == .string("evidence"),
+          let id = input["evidence_id"]?.strictStringValue, let digest = input["sha256"]?.strictStringValue,
+          isDigest(id), isDigest(digest), case .int(let offset) = input["offset"] ?? .int(0) else { return false }
+    return offset >= 0
+  }
+
+  static func digest(_ content: String) -> String {
+    SHA256.hash(data: Data(content.utf8)).map { String(format: "%02x", $0) }.joined()
+  }
+
+  func issue(content: String, binding: String, input: AgentMcpJSONObject, now: Int64) -> AgentMcpJSONObject? {
+    guard now >= 0, now <= Int64.max - Self.lifetime else { return nil }
+    let expires = now + Self.lifetime
+    let hash = Self.digest(content)
+    let tag = HMAC<SHA256>.authenticationCode(for: message(binding: binding, input: input, hash: hash, expires: expires),
+      using: key)
+    return ["receipt_id": .string("\(expires)." + Data(tag).base64URLEncodedString()), "content_sha256": .string(hash)]
+  }
+
+  func confirm(_ delivery: AgentMcpJSONObject, binding: String, input: AgentMcpJSONObject, now: Int64) -> String? {
+    guard Set(delivery.keys) == ["receipt_id", "content_sha256"],
+          let id = delivery["receipt_id"]?.strictStringValue, id.utf8.count <= 128,
+          let hash = delivery["content_sha256"]?.strictStringValue, Self.isDigest(hash), now >= 0 else { return nil }
+    let parts = id.split(separator: ".", omittingEmptySubsequences: false)
+    guard parts.count == 2, let expires = Int64(parts[0]), expires > now, expires - now <= Self.lifetime,
+          let tag = Data(base64URLEncoded: String(parts[1])), tag.count == 32,
+          HMAC<SHA256>.isValidAuthenticationCode(tag,
+            authenticating: message(binding: binding, input: input, hash: hash, expires: expires), using: key)
+    else { return nil }
+    return hash
+  }
+
+  private func message(binding: String, input: AgentMcpJSONObject, hash: String, expires: Int64) -> Data {
+    Data(AgentMcpJSONCodec.stringify(["contract": .string("ios-native-evidence-delivery.v1"),
+      "binding": .string(binding), "arguments": .object(input), "hash": .string(hash), "expires": .int(expires)]).utf8)
+  }
+
+  private static func isDigest(_ value: String) -> Bool {
+    value.utf8.count == 64 && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
+  }
+}
+
 protocol AgentDesktopReplyRecoveryPersisting: AnyObject {
   func loadDesktopReplyRecoveryState() throws -> Data?
   func writeDesktopReplyRecoveryState(_ data: Data) -> Bool
@@ -330,10 +378,15 @@ struct AgentDesktopAcceptedReply: Codable, Equatable {
 }
 
 struct AgentDesktopReplyRecoveryRecord: Codable, Equatable {
+  static let probeInterval: Int64 = 30_000
+  static let maximumProbeGap: Int64 = 120_000
   var binding: AgentDesktopReplyBinding
   var createdAt: Int64
   var lastProbeAt: Int64 = 0
   var lastResponseAt: Int64 = 0
+  var probeWindowStartedAt: Int64? = nil
+  var liveLeaseGeneration: Int64? = nil
+  var liveLeaseSequence: Int64? = nil
   var misses = 0
   var terminalObservedAt: Int64 = 0
   var generation: Int64 = 0
@@ -353,6 +406,9 @@ struct AgentDesktopReplyRecoveryRecord: Codable, Equatable {
   var acceptedReply: AgentDesktopAcceptedReply? = nil
 
   func accepts(status: String, generation: Int64, sequence: Int64) -> Bool {
+    let liveGeneration = liveLeaseGeneration ?? 0
+    guard generation > liveGeneration ||
+      (generation == liveGeneration && sequence >= (liveLeaseSequence ?? -1)) else { return false }
     if let acceptedReply {
       return generation == acceptedReply.receipt.executionGeneration && status == "completed" &&
         sequence >= self.sequence
@@ -371,7 +427,8 @@ struct AgentDesktopReplyRecoveryRecord: Codable, Equatable {
     }
     let anchor = max(createdAt, lastResponseAt)
     guard anchor > 0, now >= anchor, now - anchor >= 5 * 60_000, misses >= 3,
-          lastProbeAt > 0, now >= lastProbeAt, now - lastProbeAt <= 120_000 else { return nil }
+          let start = probeWindowStartedAt, start > 0, lastProbeAt >= start,
+          now >= lastProbeAt, now - lastProbeAt <= Self.maximumProbeGap else { return nil }
     return "desktop_status_unavailable"
   }
 }
@@ -459,6 +516,10 @@ final class AgentDesktopReplyRecovery {
   }
 
   func record(for binding: AgentDesktopReplyBinding) -> AgentDesktopReplyRecoveryRecord? { records[binding.key] }
+
+  func binding(for payload: [String: Any], desktopId: String) -> AgentDesktopReplyBinding? {
+    records.values.first { $0.binding.desktopId == desktopId && $0.binding.matches(payload) }?.binding
+  }
 
   func isSupersededCodexPayload(_ payload: [String: Any], desktopId: String) -> Bool {
     supersededCodexBindings.contains { $0.desktopId == desktopId && $0.matches(payload) }
@@ -591,9 +652,17 @@ final class AgentDesktopReplyRecovery {
 
   func request(_ binding: AgentDesktopReplyBinding, online: Bool, now: Int64) -> [String: Any]? {
     guard var record = records[binding.key], now > 0,
-          record.lastProbeAt == 0 || (now >= record.lastProbeAt && now - record.lastProbeAt >= 30_000) else { return nil }
-    queries = queries.filter { now < $0.value.startedAt || now - $0.value.startedAt <= 120_000 }
+          record.acceptedReply == nil, record.terminalObservedAt == 0,
+          record.lastProbeAt == 0 || now < record.lastProbeAt ||
+            now - record.lastProbeAt >= AgentDesktopReplyRecoveryRecord.probeInterval else { return nil }
+    queries = queries.filter { now >= $0.value.startedAt &&
+      now - $0.value.startedAt <= AgentDesktopReplyRecoveryRecord.maximumProbeGap }
     if online && queries.count >= 128 { return nil }
+    if record.probeWindowStartedAt == nil || now < record.lastProbeAt ||
+       now - record.lastProbeAt > AgentDesktopReplyRecoveryRecord.maximumProbeGap {
+      record.probeWindowStartedAt = now
+      record.misses = 0
+    }
     record.lastProbeAt = now
     record.misses = min(record.misses, 1_000_000) + 1
     var next = records
@@ -604,6 +673,29 @@ final class AgentDesktopReplyRecovery {
     return ["type": "agent_task_recovery_request", "request_id": nonce,
       "desktop_id": binding.desktopId, "client_route_id": binding.identity.clientRouteId,
       "items": [binding.fields], "include_result_page": true]
+  }
+
+  @discardableResult
+  func observeLiveLease(_ payload: [String: Any], binding: AgentDesktopReplyBinding, now: Int64) -> Bool {
+    guard payload.string("type") == "agent_task_event", binding.matches(payload),
+          var record = records[binding.key], record.acceptedReply == nil, record.terminalObservedAt == 0,
+          now >= max(record.createdAt, record.lastResponseAt),
+          let generation = Self.integer(payload["execution_generation"], minimum: 1),
+          let sequence = Self.integer(payload["status_sequence"] ?? payload["status_seq"], minimum: 0),
+          binding.managedSource.map({ $0.executionGeneration == generation }) ?? true else { return false }
+    let status = AgentRemoteTaskStatusPolicy.normalize(payload.string("task_status").ifBlank(payload.string("status")))
+    guard Self.statuses.contains(status), !Self.terminalStatuses.contains(status),
+          generation > record.generation || (generation == record.generation && sequence > record.sequence),
+          generation > (record.liveLeaseGeneration ?? 0) ||
+            (generation == record.liveLeaseGeneration && sequence > (record.liveLeaseSequence ?? -1)) else { return false }
+    record.liveLeaseGeneration = generation
+    record.liveLeaseSequence = sequence
+    record.lastResponseAt = now
+    record.misses = 0
+    record.probeWindowStartedAt = nil
+    var next = records
+    next[binding.key] = record
+    return save(next)
   }
 
   func receive(_ payload: [String: Any], authenticatedDesktopId: String, now: Int64) -> AgentDesktopReplyRecoveryRecord? {
@@ -633,6 +725,7 @@ final class AgentDesktopReplyRecovery {
     record.status = status
     record.lastResponseAt = now
     record.misses = 0
+    record.probeWindowStartedAt = nil
     if Self.terminalStatuses.contains(status), record.terminalObservedAt == 0 { record.terminalObservedAt = now }
     var next = records
     next[query.binding.key] = record

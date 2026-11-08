@@ -9,11 +9,52 @@ final class CloudConversationStreamEngineTests: XCTestCase {
     XCTAssertTrue(progress.requestFormatRepair("arguments:first"))
     XCTAssertTrue(progress.requestFormatRepair("arguments:second"))
     XCTAssertFalse(progress.requestFormatRepair("arguments:third"))
+    XCTAssertFalse(progress.requestPartialSynthesisRepair(after: "citations"))
     XCTAssertTrue(progress.requestRepair("citations"))
+    XCTAssertTrue(progress.requestPartialSynthesisRepair(after: "citations"))
+    XCTAssertFalse(progress.requestPartialSynthesisRepair(after: "citations"))
     for index in 0..<12 {
       XCTAssertTrue(progress.record(toolName: "web_search", arguments: ["query": .string("source \(index)")],
                                     output: "new evidence"))
     }
+  }
+
+  @MainActor
+  func testOnePartialCitationRepairPreservesSupportedProse() async throws {
+    let fixture = try makeFixture()
+    let pack = AgentIOSWebEvidencePack.build(query: "report", status: "completed",
+      documents: [["url": .string("https://example.test/report"), "content": .string("A supported conclusion")]],
+      results: [], receipts: [], generatedAtMillis: 1)
+    let item = try XCTUnwrap(pack["items"]?.arrayValue?.first?.objectValue)
+    let marker = "[[cite:\(item.string("citation_id"))]]"
+    func answer(_ text: String) -> [ModelStreamEvent] {
+      [.textDelta(.init(requestId: "r", sequence: 1, text: text, receivedAtElapsedMs: 1)),
+       .completed(.init(requestId: "r", finishReason: "stop", completedAtElapsedMs: 2))]
+    }
+    let stream = RecordingModelStreamClient(eventBatches: [
+      [.toolCallDelta(.init(requestId: "r", sequence: 1, payload: .init(callId: "search", index: 0,
+          nameDelta: "web_search", argumentsDelta: #"{"query":"report"}"#))),
+       .completed(.init(requestId: "r", finishReason: "tool_calls", completedAtElapsedMs: 2))],
+      answer("Unsupported [Foreign](https://foreign.test/a)."),
+      answer("Still unsupported [[cite:missing]]."),
+      answer("Supported \(marker).\n\nThe other claim is unverified.")
+    ])
+    let executor = RecordingConversationToolExecutor(result: AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)]))
+    let engine = CloudConversationStreamEngine(streamClient: stream, toolExecutor: executor,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    let events = try await collect(engine.streamConversation(contact: fixture.contact, store: fixture.store,
+      turns: fixture.turns, requestId: "partial-citations"))
+    XCTAssertEqual(stream.requests.count, 4)
+    XCTAssertEqual(executor.calls.count, 1)
+    let repairedRequest = try XCTUnwrap(stream.requests.last)
+    XCTAssertTrue(repairedRequest.bodyJson.contains("concise partial answer"))
+    XCTAssertNil(try object(repairedRequest.bodyJson)["tools"])
+    let final = textDeltas(events).map(\.text).joined()
+    XCTAssertTrue(final.contains("Supported [1](<https://example.test/report>)"))
+    XCTAssertTrue(final.contains("other claim is unverified"))
+    XCTAssertFalse(final.contains("foreign.test"))
+    XCTAssertFalse(final.contains("[[cite:"))
+    XCTAssertNotNil(completed(events))
   }
 
   @MainActor
@@ -387,7 +428,7 @@ final class CloudConversationStreamEngineTests: XCTestCase {
     )
     let secondBody = try object(streamClient.requests[1].bodyJson)
     let messages = try XCTUnwrap(secondBody["messages"] as? [[String: Any]])
-    let toolMessage = try XCTUnwrap(messages.last)
+    let toolMessage = try XCTUnwrap(messages.last { $0["role"] as? String == "tool" })
 
     XCTAssertEqual(streamClient.requests.map(\.requestId), ["conversation-tool:r0", "conversation-tool:r1"])
     XCTAssertEqual(toolExecutor.calls.map(\.call.name), ["web_search"])
@@ -419,9 +460,12 @@ final class CloudConversationStreamEngineTests: XCTestCase {
       ),
       .completed(ModelStreamCompleted(requestId: "final", finishReason: "stop", completedAtElapsedMs: 21))
     ]])
-    let toolExecutor = RecordingConversationToolExecutor(
-      result: #"{"results":[{"url":"https://galaxyssi.example"}]}"#
-    )
+    let toolExecutor = RecordingConversationToolExecutor(result: "") { call in
+      let pack = AgentIOSWebEvidencePack.build(query: "report", status: "completed",
+        documents: [["url": .string("https://galaxyssi.example"), "content": .string("Evidence for \(call.callId)")]],
+        results: [], receipts: [], generatedAtMillis: 1)
+      return AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)])
+    }
     let engine = CloudConversationStreamEngine(
       streamClient: streamClient,
       toolExecutor: toolExecutor,
@@ -451,6 +495,7 @@ final class CloudConversationStreamEngineTests: XCTestCase {
     let streamClient = RecordingModelStreamClient(eventBatches: [
       toolRound(index: 0, callId: "call-original", query: "same-query"),
       toolRound(index: 1, callId: "call-repeated", query: "same-query"),
+      toolRound(index: 2, callId: "call-repeated-again", query: "same-query"),
       [
         .textDelta(
           ModelStreamTextDelta(
@@ -486,12 +531,284 @@ final class CloudConversationStreamEngineTests: XCTestCase {
     let finalMessages = try XCTUnwrap(finalBody["messages"] as? [[String: Any]])
 
     XCTAssertEqual(toolExecutor.calls.count, 1)
-    XCTAssertEqual(streamClient.requests.count, 3)
+    XCTAssertEqual(streamClient.requests.count, 4)
     XCTAssertNil(finalBody["tools"])
-    XCTAssertEqual(secondMessages.last?["tool_call_id"] as? String, "call-original")
+    XCTAssertEqual(secondMessages.last { $0["role"] as? String == "tool" }?["tool_call_id"] as? String, "call-original")
     XCTAssertTrue(finalMessages.contains { ($0["tool_call_id"] as? String) == "call-repeated" })
     XCTAssertNil(failed(events))
     XCTAssertNotNil(completed(events))
+  }
+
+  @MainActor
+  func testInterruptedAndEmptySynthesisReuseEvidenceWithoutExecutingMoreTools() async throws {
+    let fixture = try makeFixture()
+    let pack = AgentIOSWebEvidencePack.build(query: "report", status: "completed",
+      documents: [["url": .string("https://example.test/report"), "content": .string("Supported evidence")]],
+      results: [], receipts: [], generatedAtMillis: 1)
+    let executor = RecordingConversationToolExecutor(result: AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)]))
+    let stream = RecordingModelStreamClient(eventBatches: [
+      toolRound(index: 0, callId: "search", query: "report"),
+      [.failed(.init(requestId: "interrupted", error: .init(code: "NETWORK_ERROR", message: "offline", retryable: true)))],
+      [.completed(.init(requestId: "empty", finishReason: "stop", completedAtElapsedMs: 5))],
+      [.textDelta(.init(requestId: "final", sequence: 1,
+          text: "Supported answer [source](https://example.test/report).", receivedAtElapsedMs: 6)),
+       .completed(.init(requestId: "final", finishReason: "stop", completedAtElapsedMs: 7))]
+    ])
+    let engine = CloudConversationStreamEngine(streamClient: stream, toolExecutor: executor,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    let events = try await collect(engine.streamConversation(contact: fixture.contact, store: fixture.store,
+      turns: fixture.turns, requestId: "research-recovery"))
+    XCTAssertEqual(executor.calls.count, 1)
+    XCTAssertEqual(stream.requests.count, 4)
+    for request in stream.requests.suffix(2) {
+      XCTAssertNil(try object(request.bodyJson)["tools"])
+      XCTAssertTrue(request.bodyJson.contains("Supported evidence"))
+    }
+    XCTAssertTrue(stream.requests[2].bodyJson.contains("model_round_interrupted"))
+    XCTAssertTrue(stream.requests[3].bodyJson.contains("empty_synthesis"))
+    XCTAssertEqual(textDeltas(events).last?.text, "Supported answer [source](https://example.test/report).")
+    XCTAssertNil(failed(events))
+  }
+
+  @MainActor
+  func testCloudResearchRetryReusesDurableEvidenceForExactSourceWithoutRepeatingSearch() async throws {
+    let fixture = try makeFixture()
+    let session = fixture.store.createAgentSession(title: "Research")
+    let source = fixture.store.appendOutgoing("Research the report", to: fixture.contact.id,
+      conversationOverride: session.id)
+    let pack = AgentIOSWebEvidencePack.build(query: "report", status: "completed",
+      documents: [["url": .string("https://example.test/report"), "content": .string("Recovered research body")]],
+      results: [], receipts: [], generatedAtMillis: 1)
+    let executor = RecordingConversationToolExecutor(result: AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)]))
+    let first = CloudConversationStreamEngine(streamClient: RecordingModelStreamClient(eventBatches: [
+      toolRound(index: 0, callId: "first-search", query: "report"),
+      [.failed(.init(requestId: "failed", error: .init(code: "ABORTED", message: "Interrupted")))]
+    ]), toolExecutor: executor, disclosureStore: InMemoryAgentDataDisclosureStore())
+    _ = try await collect(first.streamConversation(contact: fixture.contact, store: fixture.store,
+      turns: [source], requestId: "first-attempt"))
+    XCTAssertEqual(executor.calls.count, 1)
+
+    let retry = fixture.store.appendOutgoing(source.content, to: fixture.contact.id, conversationOverride: session.id)
+    let repeated = RecordingModelStreamClient(eventBatches: [
+      toolRound(index: 0, callId: "repeat-search", query: "report"),
+      [.textDelta(.init(requestId: "reply", sequence: 1,
+        text: "Recovered answer [source](https://example.test/report).", receivedAtElapsedMs: 2)),
+       .completed(.init(requestId: "reply", finishReason: "stop", completedAtElapsedMs: 3))]
+    ])
+    let reopened = CloudConversationStreamEngine(streamClient: repeated, toolExecutor: executor,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    let events = try await collect(reopened.streamConversation(contact: fixture.contact, store: fixture.store,
+      turns: [source, retry], images: [], requestId: "second-attempt", collaborationEvidence: nil,
+      researchRetrySource: source))
+    XCTAssertTrue(repeated.requests.first?.bodyJson.contains("Recovered research body") == true)
+    XCTAssertEqual(executor.calls.count, 1)
+    XCTAssertNotNil(completed(events))
+
+    let request = try XCTUnwrap(repeated.requests.first)
+    var changed = source
+    changed.content += " changed"
+    XCTAssertNil(CloudResearchObservationRecovery.open(store: fixture.store, contact: fixture.contact,
+      request: request, turns: [changed, retry], retrySource: source))
+    XCTAssertTrue(fixture.store.deleteMessage(source.id, contactId: source.contactId))
+    XCTAssertNil(CloudResearchObservationRecovery.open(store: fixture.store, contact: fixture.contact,
+      request: request, turns: [source, retry], retrySource: source))
+  }
+
+  @MainActor
+  func testCloudResearchReplaysPendingSynthesisWithoutProviderOrToolCalls() async throws {
+    let fixture = try makeFixture()
+    let session = fixture.store.createAgentSession(title: "Research")
+    let source = fixture.store.appendOutgoing("Research the report", to: fixture.contact.id,
+      conversationOverride: session.id)
+    let pack = AgentIOSWebEvidencePack.build(query: "report", status: "completed",
+      documents: [["url": .string("https://example.test/report"), "content": .string("Research body")]],
+      results: [], receipts: [], generatedAtMillis: 1)
+    let executor = RecordingConversationToolExecutor(result: AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)]))
+    let answer = "The report describes the result [source](https://example.test/report)."
+    let provider = RecordingModelStreamClient(eventBatches: [
+      toolRound(index: 0, callId: "search", query: "report"),
+      [.textDelta(.init(requestId: "reply", sequence: 1, text: answer, receivedAtElapsedMs: 2)),
+       .completed(.init(requestId: "reply", finishReason: "stop", completedAtElapsedMs: 3))]
+    ])
+    let first = CloudConversationStreamEngine(streamClient: provider, toolExecutor: executor,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    let generated = try await collect(first.streamConversation(contact: fixture.contact, store: fixture.store,
+      turns: [source], requestId: "first"))
+    XCTAssertEqual(textDeltas(generated).last?.text, answer)
+    XCTAssertEqual(executor.calls.count, 1)
+
+    let retry = fixture.store.appendOutgoing(source.content, to: fixture.contact.id, conversationOverride: session.id)
+    let unusedProvider = RecordingModelStreamClient(events: [])
+    let reopened = CloudConversationStreamEngine(streamClient: unusedProvider, toolExecutor: executor,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    let replayed = try await collect(reopened.streamConversation(contact: fixture.contact, store: fixture.store,
+      turns: [source, retry], images: [], requestId: "retry", collaborationEvidence: nil, researchRetrySource: source))
+    XCTAssertEqual(textDeltas(replayed).map(\.text), [answer])
+    XCTAssertEqual(completed(replayed)?.finishReason, "recovered_synthesis")
+    XCTAssertTrue(unusedProvider.requests.isEmpty)
+    XCTAssertEqual(executor.calls.count, 1)
+  }
+
+  @MainActor
+  func testUnsupportedStreamSwitchesWireFormatWithoutDroppingResearchEvidenceOrRepeatingSearch() async throws {
+    let fixture = try makeFixture()
+    let pack = AgentIOSWebEvidencePack.build(query: "report", status: "completed",
+      documents: [["url": .string("https://example.test/report"), "content": .string("Observed source body")]],
+      results: [], receipts: [], generatedAtMillis: 1)
+    let executor = RecordingConversationToolExecutor(result: AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)]))
+    let answer = "The report describes the result [source](https://example.test/report)."
+    let provider = RecordingModelStreamClient(eventBatches: [
+      toolRound(index: 0, callId: "first-search", query: "report"),
+      [.failed(.init(requestId: "no-sse", error: .init(code: "STREAM_UNSUPPORTED", message: "No SSE")))],
+      toolRound(index: 2, callId: "repeated-search", query: "report"),
+      [.textDelta(.init(requestId: "reply", sequence: 1, text: answer, receivedAtElapsedMs: 2)),
+       .completed(.init(requestId: "reply", finishReason: "stop", completedAtElapsedMs: 3))]
+    ])
+    let engine = CloudConversationStreamEngine(streamClient: provider, toolExecutor: executor,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    let events = try await collect(engine.streamConversation(contact: fixture.contact, store: fixture.store,
+      turns: fixture.turns, requestId: "compat-research"))
+    XCTAssertEqual(provider.requests.map(\.transport), [.sse, .sse, .completeJSON, .completeJSON])
+    let compatible = try XCTUnwrap(provider.requests.first { $0.transport == .completeJSON })
+    XCTAssertEqual(try object(compatible.bodyJson)["stream"] as? Bool, false)
+    XCTAssertTrue(compatible.bodyJson.contains("Observed source body"))
+    XCTAssertEqual(executor.calls.count, 1)
+    XCTAssertEqual(textDeltas(events).last?.text, answer)
+    XCTAssertNotNil(completed(events))
+  }
+
+  func testCompleteJSONRequestPreservesGeminiEscapedPathAndUnrelatedQuery() throws {
+    let original = ModelStreamRequest(requestId: "gemini", provider: .gemini,
+      endpoint: "https://example.test/v1/models/custom%2Fname:streamGenerateContent?alt=sse&other=a%2Bb",
+      headers: ["x-goog-api-key": "fixture"],
+      bodyJson: #"{"stream":true,"stream_options":{"include_usage":true},"contents":[]}"#)
+    let compatible = try CloudConversationNonStreamingToolEngine.compatibilityRequest(original)
+    XCTAssertEqual(compatible.endpoint, "https://example.test/v1/models/custom%2Fname:generateContent?other=a%2Bb")
+    XCTAssertEqual(compatible.transport, .completeJSON)
+    XCTAssertEqual(compatible.headers, original.headers)
+    XCTAssertNil(try object(compatible.bodyJson)["stream"])
+    XCTAssertNil(try object(compatible.bodyJson)["stream_options"])
+    XCTAssertNotNil(try object(compatible.bodyJson)["contents"])
+  }
+
+  func testResearchBudgetStopsAtConfiguredLimitAndCountsOnlyNewEvidence() {
+    var now: Int64 = 1
+    let budget = CloudResearchRuntimeBudget(limits: .init(tools: 4, rounds: 8, activeMillis: 300), clock: { now })
+    XCTAssertTrue(budget.reserveTools(3))
+    XCTAssertFalse(budget.reserveTools(2))
+    XCTAssertEqual(budget.toolCalls, 3)
+    let pack = AgentIOSWebEvidencePack.build(query: "report", status: "completed",
+      documents: [["url": .string("https://example.test/report"), "content": .string("Evidence")]],
+      results: [], receipts: [], generatedAtMillis: 1)
+    let output = AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)])
+    XCTAssertTrue(budget.observe(tool: "web_search", output: output))
+    XCTAssertFalse(budget.observe(tool: "web_search", output: output))
+    XCTAssertFalse(budget.observe(tool: "web_search", output: #"{"status":"failed"}"#))
+    for _ in 0..<3 { budget.finishRetrievalBatch(madeProgress: false) }
+    XCTAssertEqual(budget.stopReason, "no_new_evidence")
+    budget.finishRetrievalBatch(madeProgress: true)
+    XCTAssertNil(budget.stopReason)
+    now += 301
+    XCTAssertEqual(budget.stopReason, "active_time_limit")
+    XCTAssertTrue(budget.requestEmptySynthesis("", hasEvidence: true))
+    XCTAssertFalse(budget.requestEmptySynthesis("", hasEvidence: true))
+  }
+
+  func testResearchRoundDeadlineCancelsAnUnfinishedModelCall() async throws {
+    do {
+      _ = try await CloudResearchRoundDeadline.run(millis: 15) {
+        try await Task.sleep(nanoseconds: 5_000_000_000)
+        return "late answer"
+      }
+      XCTFail("Expected a model deadline")
+    } catch let error as URLError {
+      XCTAssertEqual(error.code, .timedOut)
+    }
+    let answer = try await CloudResearchRoundDeadline.run(millis: 2_000) { "synthesis" }
+    XCTAssertEqual(answer, "synthesis")
+  }
+
+  func testResearchContactConfigurationKeepsAndroidKeysAndBoundsValues() throws {
+    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(GalaxySSIContact.hermes())) as? [String: Any])
+    object["cloud_research_limits"] = [
+      "tool_calls": 999, "model_rounds": "6", "active_minutes": -2,
+      "tool_timeout_seconds": 12, "model_timeout_seconds": 10, "evidence_chars": "invalid"
+    ] as [String: Any]
+    let contact = try JSONDecoder().decode(GalaxySSIContact.self, from: JSONSerialization.data(withJSONObject: object))
+    let limits = CloudResearchRuntimeBudget.Limits.configured(contact.cloud_research_limits)
+    XCTAssertEqual(limits.tools, 512)
+    XCTAssertEqual(limits.rounds, 6)
+    XCTAssertEqual(limits.activeMillis, 60_000)
+    XCTAssertEqual(limits.toolMillis, 12_000)
+    XCTAssertEqual(limits.modelMillis, 15_000)
+    XCTAssertEqual(limits.evidenceCharacters, 2_000_000)
+    let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(contact)) as? [String: Any])
+    XCTAssertEqual((encoded["cloud_research_limits"] as? [String: Any])?["model_rounds"] as? Int, 6)
+  }
+
+  func testSharedResearchQualityIsStructuralAndIgnoresQuotedExamples() throws {
+    let quality = try XCTUnwrap(CloudResearchQualityStandard.bundled)
+    let risky = "No authoritative records exist. It is most likely that she was his mentor."
+    let report = quality.assess(risky, researchObserved: true)
+    XCTAssertEqual(report.status, "needs_review")
+    XCTAssertEqual(Set(report.risks), ["unbounded_absence_of_evidence", "speculative_relationship"])
+    XCTAssertEqual(report.semanticVerification, "not_independently_verified")
+    XCTAssertEqual(quality.assess(risky, researchObserved: false).status, "not_applicable")
+    let example = "> \(risky)\n\n```text\n\(risky)\n```\n\n`\(risky)`"
+    XCTAssertEqual(quality.assess(example, researchObserved: true).status, "no_structural_risk_detected")
+    XCTAssertEqual(quality.assess("A plausible but unsupported fact.", researchObserved: true).semanticVerification,
+      "not_independently_verified")
+    XCTAssertTrue(quality.prompt.contains(report.contract))
+  }
+
+  func testResearchQualityUsesCrossPlatformFixtures() throws {
+    struct Fixture: Decodable {
+      let id: String
+      let answer: String
+      let research: Bool
+      let risks: [String]
+    }
+    let quality = try XCTUnwrap(CloudResearchQualityStandard.bundled)
+    let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "quality-cases", withExtension: "json"))
+    let fixtures = try JSONDecoder().decode([Fixture].self, from: Data(contentsOf: url))
+    XCTAssertFalse(fixtures.isEmpty)
+    for fixture in fixtures {
+      let report = quality.assess(fixture.answer, researchObserved: fixture.research)
+      XCTAssertEqual(report.risks, fixture.risks, fixture.id)
+      XCTAssertEqual(report.semanticVerification, "not_independently_verified", fixture.id)
+    }
+  }
+
+  @MainActor
+  func testStructuralRiskDoesNotStreamBeforeOneToolFreeQualityRepair() async throws {
+    let fixture = try makeFixture()
+    let pack = AgentIOSWebEvidencePack.build(query: "report", status: "completed",
+      documents: [["url": .string("https://example.test/report"), "content": .string("No such relation was established by this record.")]],
+      results: [], receipts: [], generatedAtMillis: 1)
+    let executor = RecordingConversationToolExecutor(result: AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)]))
+    func answer(_ text: String) -> [ModelStreamEvent] {
+      [.textDelta(.init(requestId: "answer", sequence: 1, text: text, receivedAtElapsedMs: 5)),
+       .completed(.init(requestId: "answer", finishReason: "stop", completedAtElapsedMs: 6))]
+    }
+    let risky = "No authoritative records exist [source](https://example.test/report).\n\n"
+    let corrected = "This record does not establish the relationship [source](https://example.test/report)."
+    let stream = RecordingModelStreamClient(eventBatches: [
+      toolRound(index: 0, callId: "search", query: "report"), answer(risky), answer(corrected)
+    ])
+    let engine = CloudConversationStreamEngine(streamClient: stream, toolExecutor: executor,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    let events = try await collect(engine.streamConversation(contact: fixture.contact, store: fixture.store,
+      turns: fixture.turns, requestId: "quality-repair"))
+    XCTAssertEqual(executor.calls.count, 1)
+    XCTAssertEqual(stream.requests.count, 3)
+    let repair = try XCTUnwrap(stream.requests.last)
+    XCTAssertNil(try object(repair.bodyJson)["tools"])
+    XCTAssertTrue(repair.bodyJson.contains("unbounded_absence_of_evidence"))
+    XCTAssertEqual(textDeltas(events).last?.text, corrected)
+    XCTAssertFalse(events.contains { event in
+      if case .citationPreview(let preview) = event { return preview.text.contains("No authoritative records exist") }
+      return false
+    })
   }
 
   @MainActor
@@ -713,15 +1030,17 @@ private final class RecordingConversationToolExecutor: CloudConversationToolExec
   }
 
   var result: String
+  let resultForCall: ((AssembledToolCall) -> String)?
   var calls: [Call] = []
 
-  init(result: String) {
+  init(result: String, resultForCall: ((AssembledToolCall) -> String)? = nil) {
     self.result = result
+    self.resultForCall = resultForCall
   }
 
   func executeTool(call: AssembledToolCall, context: CloudConversationToolExecutionContext) throws -> String {
     calls.append(Call(call: call, context: context))
-    return result
+    return resultForCall?(call) ?? result
   }
 }
 

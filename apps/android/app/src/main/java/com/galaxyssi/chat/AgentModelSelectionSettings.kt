@@ -241,6 +241,7 @@ object AgentModelSelectionSettings {
         writeSelection(editor, { field -> key(scope, field) }, selection)
         writeSelection(editor, ::defaultKey, selection)
         editor.apply()
+        HealthCareResearchWork.changed(context)
     }
 
     fun selectAutoForConversation(context: Context, conversationId: String) {
@@ -250,6 +251,7 @@ object AgentModelSelectionSettings {
         rememberActiveTarget(editor, scope, readSelection(preferences) { field -> key(scope, field) })
         writeSelection(editor, { field -> key(scope, field) }, AgentModelSelection())
         editor.apply()
+        HealthCareResearchWork.changed(context)
     }
 
     fun selectManual(
@@ -284,6 +286,7 @@ object AgentModelSelectionSettings {
             writeDefaultTargetConfiguration(editor, selection.targetId, selection.targetConfiguration())
         }
         editor.apply()
+        HealthCareResearchWork.changed(context)
     }
 
     fun configurationForTarget(
@@ -327,6 +330,7 @@ object AgentModelSelectionSettings {
         writeTargetConfiguration(editor, scope, updated.targetId, updated.targetConfiguration())
         writeDefaultTargetConfiguration(editor, updated.targetId, updated.targetConfiguration())
         editor.apply()
+        HealthCareResearchWork.changed(context)
     }
 
     fun clearConversation(context: Context, conversationId: String) {

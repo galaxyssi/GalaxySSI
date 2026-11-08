@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_care_plan_title">确认下一步</string>
+    <string name="health_care_plan_pending">查看待确认计划 · %1$d 项</string>
+    <string name="health_care_plan_notice">请选择想要保留的行动。这是 Agent 的建议，不是诊断或用药医嘱；保存后不会自动开启通知提醒。</string>
+    <string name="health_care_plan_model">建议来自 %1$s · %2$s</string>
+    <string name="health_care_plan_stale">记录、背景或权限已发生变化，请先结合最新资料重新讨论，再确认计划。</string>
+    <string name="health_care_plan_uncertainty">仍需确认</string>
+    <string name="health_care_plan_sources">模型引用的依据 · 尚未独立核验</string>
+    <string name="health_care_plan_window">建议复查窗口：%1$s 至 %2$s</string>
+    <string name="health_care_plan_window_expired">此复查窗口已过期，请让 Agent 重新评估。</string>
+    <string name="health_care_plan_accept">将所选项加入计划</string>
+    <string name="health_care_plan_dismiss">暂不采用</string>
+    <string name="health_care_plan_saved">已保存本次计划确认</string>
+    <string name="health_care_plan_changed">计划或权限已变化，或当前无法保存。请重新打开关注事项并核对。</string>
+</resources>
