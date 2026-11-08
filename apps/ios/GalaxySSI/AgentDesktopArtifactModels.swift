@@ -120,13 +120,21 @@ enum AgentDesktopImageFidelity {
   }
 
   static func validate(_ data: Data, name: String, uri: String, mime: String) throws {
+    try validate(name: name, uri: uri, mime: mime) { AgentVerifiedArtifactSnapshot.verifiesImage(data, extension: $0) }
+  }
+
+  static func validate(file: URL, name: String, uri: String, mime: String) throws {
+    try validate(name: name, uri: uri, mime: mime) { AgentVerifiedArtifactSnapshot.verifiesImage(at: file, extension: $0) }
+  }
+
+  private static func validate(name: String, uri: String, mime: String, verifies: (String) -> Bool) throws {
     let claim = claims(name: name, uri: uri, mime: mime)
     guard let format = claim.extensions.first(where: { mimeByExtension[$0] != nil }) ?? extensionByMIME[claim.mime],
           let expectedMIME = mimeByExtension[format] else { return }
     let genericMIME = claim.mime.isEmpty || claim.mime == "application/octet-stream"
     guard (genericMIME || claim.mime == expectedMIME),
           claim.extensions.allSatisfy({ mimeByExtension[$0] == expectedMIME }),
-          AgentVerifiedArtifactSnapshot.verifiesImage(data, extension: format)
+          verifies(format)
     else { throw AgentDesktopArtifactStoreError.imageFormatMismatch }
   }
 
@@ -289,7 +297,35 @@ final class AgentDesktopArtifactStore {
     }
   }
 
+  func stageBlobArtifact() throws -> GalaxySSILocalAttachmentStore.BlobStaging? {
+    try (cipher as? GalaxySSILocalAttachmentStore)?.stageBlob(in: blobStagingDirectory)
+  }
+
+  func ingestBlobArtifact(manifest: [String: Any], staging: GalaxySSILocalAttachmentStore.BlobStaging) throws {
+    guard cipher is GalaxySSILocalAttachmentStore,
+          staging.url.deletingLastPathComponent().standardizedFileURL.path == blobStagingDirectory.standardizedFileURL.path
+    else { throw AgentDesktopArtifactStoreError.integrity("Blob staging is not in the artifact store") }
+    try storeBlobArtifact(manifest: manifest, staged: true) { target, _, size, digest in
+      try staging.finish(size: size, sha256: digest)
+      try AgentDesktopImageFidelity.validate(file: staging.url, name: manifest.string("name"),
+        uri: manifest.string("artifact_uri"), mime: manifest.string("mime_type"))
+      try fileManager.moveItem(at: staging.url, to: target)
+    }
+  }
+
   func ingestBlobArtifact(manifest: [String: Any], plaintext: Data) throws {
+    try storeBlobArtifact(manifest: manifest, staged: false) { target, artifactId, size, digest in
+      guard size == Int64(plaintext.count), sha256(plaintext) == digest else {
+        throw AgentDesktopArtifactStoreError.integrity("Blob artifact integrity check failed")
+      }
+      try AgentDesktopImageFidelity.validate(plaintext, name: manifest.string("name"),
+        uri: manifest.string("artifact_uri"), mime: manifest.string("mime_type"))
+      try cipher.write(plaintext, to: target, purpose: artifactPurpose(artifactId))
+    }
+  }
+
+  private func storeBlobArtifact(manifest: [String: Any], staged: Bool,
+                                  writeContent: (URL, String, Int64, String) throws -> Void) throws {
     try locked {
       let artifactId = manifest.string("artifact_id")
       let artifactURI = manifest.string("artifact_uri")
@@ -298,12 +334,9 @@ final class AgentDesktopArtifactStore {
       guard Self.isGalaxySSIArtifactURI(artifactURI),
             artifactId.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil,
             digest.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil,
-            size == Int64(plaintext.count),
-            sha256(plaintext) == digest else {
+            size >= 0 else {
         throw AgentDesktopArtifactStoreError.integrity("Blob artifact integrity check failed")
       }
-      try AgentDesktopImageFidelity.validate(plaintext, name: manifest.string("name"), uri: artifactURI,
-        mime: manifest.string("mime_type"))
       let originalSize = manifest.int64("original_size_bytes")
       let originalDigest = manifest.string("original_sha256").ifBlank(digest)
       try AgentDesktopImageFidelity.validateVersion(name: manifest.string("name"), uri: artifactURI,
@@ -312,8 +345,9 @@ final class AgentDesktopArtifactStore {
         originalDigest: originalDigest)
       try rejectImageCopyReplacingOriginal(uri: artifactURI, digest: digest, originalDigest: originalDigest)
       try fileManager.createDirectory(at: filesDirectory, withIntermediateDirectories: true)
-      let target = filesDirectory.appendingPathComponent("\(artifactId).saenc", isDirectory: false)
-      try cipher.write(plaintext, to: target, purpose: artifactPurpose(artifactId))
+      let previous = staged ? try existingRecord(artifactURI: artifactURI) : nil
+      let targetName = staged ? "blob-\(artifactId)-\(UUID().uuidString).saenc" : "\(artifactId).saenc"
+      let target = filesDirectory.appendingPathComponent(targetName, isDirectory: false)
       let record = AgentDesktopArtifactRecord(
         artifactId: artifactId,
         artifactURI: artifactURI,
@@ -331,7 +365,18 @@ final class AgentDesktopArtifactStore {
         savedURI: "",
         savedAtMillis: 0
       )
-      try writeRecord(record, artifactURI: artifactURI)
+      try writeContent(target, artifactId, size, digest)
+      do {
+        try writeRecord(record, artifactURI: artifactURI)
+      } catch {
+        if staged { try? fileManager.removeItem(at: target) }
+        throw error
+      }
+      if let previous, let file = try? artifactFile(record: previous),
+         file.deletingLastPathComponent().standardizedFileURL.path == filesDirectory.standardizedFileURL.path,
+         file.lastPathComponent.hasPrefix("blob-\(previous.artifactId)-") {
+        try? fileManager.removeItem(at: file)
+      }
     }
   }
 
@@ -717,6 +762,10 @@ final class AgentDesktopArtifactStore {
 
   private var filesDirectory: URL {
     rootURL.appendingPathComponent("files", isDirectory: true)
+  }
+
+  private var blobStagingDirectory: URL {
+    filesDirectory.appendingPathComponent(".blob-staging", isDirectory: true)
   }
 
   private var metadataDirectory: URL {

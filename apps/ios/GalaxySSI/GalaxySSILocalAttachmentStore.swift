@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 enum GalaxySSIPrivateChatFiles {
@@ -56,6 +57,71 @@ final class GalaxySSILocalAttachmentStore: GalaxySSILocalAttachmentStoring {
 
   init(fileManager: FileManager = .default) {
     self.fileManager = fileManager
+  }
+
+  final class BlobStaging {
+    private let fileManager: FileManager
+    let url: URL
+    private var output: FileHandle?
+    private var hash = SHA256()
+    private(set) var count: Int64 = 0
+
+    fileprivate init(directory: URL, fileManager: FileManager) throws {
+      self.fileManager = fileManager
+      url = directory.appendingPathComponent(".blob-\(UUID().uuidString).storing")
+      try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+      guard fileManager.createFile(atPath: url.path, contents: nil, attributes: [
+        .protectionKey: FileProtectionType.completeUntilFirstUserAuthentication
+      ]) else { throw GalaxySSIAttachmentAtRestError.writeFailed }
+      do {
+        var file = url
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try file.setResourceValues(values)
+        output = try FileHandle(forWritingTo: url)
+      } catch {
+        try? fileManager.removeItem(at: url)
+        throw error
+      }
+    }
+
+    deinit {
+      try? output?.close()
+      try? fileManager.removeItem(at: url)
+    }
+
+    func append(_ bytes: Data, maximum: Int64) throws {
+      guard let output, count <= maximum, Int64(bytes.count) <= maximum - count else {
+        throw AgentBlobFailure.invalid("plaintext_hash_mismatch")
+      }
+      try output.write(contentsOf: bytes)
+      hash.update(data: bytes)
+      count += Int64(bytes.count)
+    }
+
+    func finish(size: Int64, sha256: String) throws {
+      guard let output, count == size,
+            hash.finalize().map({ String(format: "%02x", $0) }).joined() == sha256 else {
+        throw AgentBlobFailure.invalid("plaintext_hash_mismatch")
+      }
+      try output.synchronize()
+      try output.close()
+      self.output = nil
+    }
+  }
+
+  func stageBlob(in directory: URL) throws -> BlobStaging {
+    let keys: Set<URLResourceKey> = [.contentModificationDateKey, .isRegularFileKey]
+    if let entries = try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: Array(keys)) {
+      let cutoff = Date().addingTimeInterval(-86_400)
+      for entry in entries where entry.lastPathComponent.hasPrefix(".blob-") && entry.pathExtension == "storing" {
+        if let values = try? entry.resourceValues(forKeys: keys), values.isRegularFile == true,
+           let modified = values.contentModificationDate, modified < cutoff {
+          try? fileManager.removeItem(at: entry)
+        }
+      }
+    }
+    return try BlobStaging(directory: directory, fileManager: fileManager)
   }
 
   func isEncryptedFile(_ url: URL) -> Bool {

@@ -376,8 +376,8 @@ actor AgentBlobArtifactReceiver {
     ) else {
       throw AgentBlobFailure.invalid("manifest_hash_mismatch")
     }
+    let staging = try artifactStore.stageBlobArtifact()
     var plaintext = Data()
-    plaintext.reserveCapacity(Int(min(descriptor.size, Int64(Int.max))))
     for (index, chunk) in chunks.enumerated() {
       try await checkCurrent(job)
       let encrypted = try await client.binary(
@@ -387,15 +387,28 @@ actor AgentBlobArtifactReceiver {
             AgentBlobProtocol.sha256(encrypted) == chunk.sha256 else {
         throw AgentBlobFailure.invalid("ciphertext_hash_mismatch")
       }
-      plaintext.append(try AgentBlobProtocol.open(encrypted, descriptor: descriptor, index: index))
-      await progress(manifest, min(99, Int(Int64(plaintext.count) * 100 / max(1, descriptor.size))))
-    }
-    guard Int64(plaintext.count) == descriptor.size,
-          AgentBlobProtocol.sha256(plaintext) == descriptor.sha256 else {
-      throw AgentBlobFailure.invalid("plaintext_hash_mismatch")
+      let bytes = try AgentBlobProtocol.open(encrypted, descriptor: descriptor, index: index)
+      if let staging {
+        try staging.append(bytes, maximum: descriptor.size)
+      } else {
+        guard Int64(bytes.count) <= descriptor.size - Int64(plaintext.count) else {
+          throw AgentBlobFailure.invalid("plaintext_hash_mismatch")
+        }
+        plaintext.append(bytes)
+      }
+      let received = staging?.count ?? Int64(plaintext.count)
+      await progress(manifest, min(99, Int(received * 100 / max(1, descriptor.size))))
     }
     try await checkCurrent(job)
-    try artifactStore.ingestBlobArtifact(manifest: manifest, plaintext: plaintext)
+    if let staging {
+      try artifactStore.ingestBlobArtifact(manifest: manifest, staging: staging)
+    } else {
+      guard Int64(plaintext.count) == descriptor.size,
+            AgentBlobProtocol.sha256(plaintext) == descriptor.sha256 else {
+        throw AgentBlobFailure.invalid("plaintext_hash_mismatch")
+      }
+      try artifactStore.ingestBlobArtifact(manifest: manifest, plaintext: plaintext)
+    }
     try storeTerminalEvent(manifest: manifest, completed: true, errorCode: "")
     await completion(manifest, true, "")
     try await checkCurrent(job)

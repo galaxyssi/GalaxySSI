@@ -90,6 +90,54 @@ final class AgentDesktopArtifactHandoffTests: XCTestCase {
   }
 
   @MainActor
+  func testBlobStagingPublishesOnlyVerifiedBytesAndPreservesExistingRecordOnFailure() throws {
+    let root = temporaryDirectory("streaming-blob")
+    let artifacts = AgentDesktopArtifactStore(rootURL: root)
+    let first = Data(repeating: 41, count: 2 * 1_024 * 1_024)
+    let last = Data(repeating: 19, count: 17)
+    let expected = first + last
+    let size = Int64(expected.count)
+    let digest = sha256(expected)
+    let uri = "galaxyssi-artifact://blob/" + digest
+    let artifactID = AgentDesktopArtifactStore.stableID(uri: uri, sha256: digest)
+    let manifest: [String: Any] = ["artifact_id": artifactID, "artifact_uri": uri, "task_id": "stream",
+      "name": "stream.bin", "mime_type": "application/octet-stream", "sha256": digest, "size_bytes": size]
+    let block = AgentRichBlock(id: artifactID, type: .file, title: "stream.bin", uri: uri)
+
+    let staging = try XCTUnwrap(artifacts.stageBlobArtifact())
+    try staging.append(first, maximum: size)
+    XCTAssertThrowsError(try staging.append(Data(repeating: 0, count: last.count + 1), maximum: size))
+    XCTAssertFalse(artifacts.hasStoredArtifact(block))
+    try staging.append(last, maximum: size)
+    try artifacts.ingestBlobArtifact(manifest: manifest, staging: staging)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: staging.url.path))
+    let published = try XCTUnwrap(artifacts.localFile(for: block))
+    XCTAssertEqual(try Data(contentsOf: published), expected)
+
+    let corrupt = try XCTUnwrap(artifacts.stageBlobArtifact())
+    try corrupt.append(first, maximum: size)
+    try corrupt.append(Data(repeating: 0, count: last.count), maximum: size)
+    XCTAssertThrowsError(try artifacts.ingestBlobArtifact(manifest: manifest, staging: corrupt)) { error in
+      guard case AgentBlobFailure.invalid("plaintext_hash_mismatch") = error else {
+        return XCTFail("Unexpected failure: \(error)")
+      }
+    }
+    XCTAssertEqual(artifacts.localFile(for: block), published)
+    XCTAssertEqual(try Data(contentsOf: published), expected)
+
+    let image = try XCTUnwrap(artifacts.stageBlobArtifact())
+    try image.append(first, maximum: size)
+    try image.append(last, maximum: size)
+    var imageManifest = manifest
+    imageManifest["name"] = "stream.png"
+    imageManifest["mime_type"] = "image/png"
+    XCTAssertThrowsError(try artifacts.ingestBlobArtifact(manifest: imageManifest, staging: image)) { error in
+      XCTAssertEqual(error as? AgentDesktopArtifactStoreError, .imageFormatMismatch)
+    }
+    XCTAssertEqual(artifacts.localFile(for: block), published)
+  }
+
+  @MainActor
   func testStoredArtifactReplayRemainsPendingUntilReceiptQueueCommits() throws {
     let fixture = try ChunkFixture()
     let suite = "artifact-stored-replay-\(UUID().uuidString)"
