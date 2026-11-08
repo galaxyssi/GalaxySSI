@@ -17,6 +17,10 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
     private fun metricKey(metric: HealthMetric) = AgentMemoryIndexKey.token("$name|care-metric|self|${metric.name}")
     private fun questionRows() = HealthCareQuestionRows(db, ::pack, ::unpack) { AgentMemoryIndexKey.token("$name|care-question|self|$it") }
     private fun answerRows() = HealthCareAnswerRows(db, ::pack, ::unpack) { AgentMemoryIndexKey.token("$name|care-answer|self|$it") }
+    private fun agendaRows() = HealthCareAgendaRows(db, ::concern, ::reminders)
+    fun prepareAgendaBatch(limit: Int = 30): Boolean = transaction { agendaRows().prepareBatch(limit) }
+    fun agenda(filter: HealthCareAgendaFilter, dayEnd: Long, after: HealthCareAgendaCursor? = null, limit: Int = 30): HealthCareAgendaPage =
+        transaction { agendaRows().page(filter, dayEnd, after, limit) }
     private fun aad(kind: String, id: String) = "$name|health-care-v1|self|$kind|$id".toByteArray(Charsets.UTF_8)
     private fun pack(kind: String, id: String, json: JSONObject): ByteArray {
         val plain = json.toString().toByteArray(Charsets.UTF_8)
@@ -114,7 +118,8 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             action == null || action.state != HealthCareActionState.CONFIRMED ||
                 value.stage in setOf(HealthCareStage.PAUSED, HealthCareStage.CLOSED) ||
                 reminder.anchor != HealthCareFollowUpPolicy.anchor(value, action)
-        }.forEach { writeReminder(it.copy(state = HealthCareReminderState.CANCELLED, updatedAt = value.updatedAt)) }
+        }.forEach { writeReminder(it.copy(state = HealthCareReminderState.CANCELLED, updatedAt = value.updatedAt), false) }
+        agendaRows().replace(value)
     }
     fun applyEvaluation(metric: HealthMetric, token: String, expectedSettings: String, expectedRevision: Int?,
         assessment: HealthCareAssessment?, now: Long, evaluationVersion: String = ""): HealthCareConcern? = transaction(true) {
@@ -511,18 +516,26 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
     fun reminders(concernId: String): List<HealthCareReminder> = db.rawQuery(
         "SELECT $REMINDER_COLUMNS FROM action_reminders WHERE concern_id=? ORDER BY due,action_id LIMIT 30", arrayOf(concernId)
     ).use { rows -> buildList { while (rows.moveToNext()) add(decodeReminder(rows)) } }
-    private fun writeReminder(value: HealthCareReminder) {
+    private fun writeReminder(value: HealthCareReminder, syncAgenda: Boolean = true) {
         db.insertWithOnConflict("action_reminders", null, ContentValues().apply {
             put("action_id", value.actionId); put("concern_id", value.concernId); put("token", value.token)
             put("due", value.dueAt); put("state", value.state.name); put("payload", pack("reminder", value.actionId, value.json()))
         }, SQLiteDatabase.CONFLICT_REPLACE)
+        if (syncAgenda) {
+            val issue = try { concern(value.concernId) } catch (error: Exception) {
+                // Corruption must not prevent cancellation of an already posted reminder.
+                if (value.state != HealthCareReminderState.CANCELLED) throw error
+                null
+            }
+            if (issue == null) agendaRows().remove(value.concernId) else agendaRows().replace(issue)
+        }
     }
     fun scheduleReminder(concernId: String, actionId: String, expectedRevision: Int, expectedToken: String?,
         privacy: HealthPrivacyPolicy, sourceVersion: String, at: Long, now: Long): HealthCareReminder = transaction(true) {
         val issue = concern(concernId) ?: throw HealthCareConflict()
         if (issue.revision != expectedRevision || reminder(actionId)?.token != expectedToken) throw HealthCareConflict()
         val action = issue.actions.firstOrNull { it.id == actionId } ?: throw HealthCareConflict()
-        HealthCareFollowUpPolicy.schedule(issue, action, settings(), privacy, sourceVersion, at, now).also(::writeReminder)
+        HealthCareFollowUpPolicy.schedule(issue, action, settings(), privacy, sourceVersion, at, now).also { writeReminder(it) }
     }
     fun cancelReminder(actionId: String, expectedToken: String, now: Long) = transaction(true) {
         val value = reminder(actionId) ?: return@transaction
@@ -567,6 +580,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         db.delete("plans", "concern_id=?", arrayOf(id))
         db.delete("evidence_reads", "concern_id=?", arrayOf(id))
         db.delete("action_reminders", "concern_id=?", arrayOf(id))
+        agendaRows().remove(id)
         questionRows().delete(id)
         answerRows().delete(id)
         // Keep only encrypted routing tombstones so a late result cannot revive deleted health data.
@@ -590,7 +604,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         Unit
     }
     override fun close() = helper.close()
-    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 9) {
+    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 10) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE settings(id INTEGER PRIMARY KEY,version TEXT NOT NULL,payload BLOB NOT NULL)")
@@ -607,6 +621,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             research(db)
             HealthCareQuestionRows.create(db)
             HealthCareAnswerRows.create(db)
+            HealthCareAgendaRows.create(db)
         }
         private fun discussions(db: SQLiteDatabase) {
             // Bindings survive concern deletion so an old sensitive conversation cannot become an ordinary chat.
@@ -614,7 +629,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             db.execSQL("CREATE TABLE discussion_grants(turn_id TEXT PRIMARY KEY,payload BLOB NOT NULL)")
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            check(oldVersion in 1..8 && newVersion == 9)
+            check(oldVersion in 1..9 && newVersion == 10)
             if (oldVersion < 2) discussions(db)
             if (oldVersion < 3) plans(db)
             if (oldVersion < 4) reminders(db)
@@ -627,7 +642,8 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             }
             if (oldVersion < 7) research(db)
             if (oldVersion < 8) HealthCareQuestionRows.create(db)
-            HealthCareAnswerRows.create(db)
+            if (oldVersion < 9) HealthCareAnswerRows.create(db)
+            HealthCareAgendaRows.create(db)
         }
         private fun research(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE research_authorizations(concern_id TEXT PRIMARY KEY,id TEXT NOT NULL UNIQUE,payload BLOB NOT NULL)")
