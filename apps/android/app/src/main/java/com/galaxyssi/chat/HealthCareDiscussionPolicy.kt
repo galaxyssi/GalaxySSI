@@ -63,7 +63,8 @@ internal object HealthCareDiscussionPolicy {
         .put("assessment", value.assessment.json().apply {
             remove("comparison"); remove("series"); if (value.assessment.comparison != null) remove("sample")
             else value.assessment.sample?.let { put("sample", it.modelJson()) }
-        }).put("confirmed_context", value.context?.json() ?: JSONObject.NULL)
+        }).put("confirmed_context", HealthCareClarificationContext.current(value)?.json() ?: JSONObject.NULL)
+        .put("clarification_context", HealthCareClarificationContext.snapshot(value))
         .put("individual_target", value.target?.json() ?: JSONObject.NULL)
         .put("target_comparison", if (value.target == null) JSONObject.NULL else HealthCareTargetPolicy.comparison(value).name)
         .put("maintenance_review", value.maintenance?.json()?.put("clinical_stability_verified", false) ?: JSONObject.NULL)
@@ -79,6 +80,20 @@ internal object HealthCareDiscussionPolicy {
         guideline criteria, descriptive personal baseline and an explicitly confirmed individualized target.
         Never infer an ideal value from the midpoint of a reference interval. Check units, specimen, dates,
         fasting state and missing context before interpreting. Do not diagnose from a single measurement.
+        First inspect clarification_context and prior user answers. Its known_answers were already saved
+        in Health Center for the exact current record and revision. Use them; do not ask the user to fill
+        them again or claim they were never supplied. Briefly acknowledge relevant saved facts before any
+        necessary clarification. unconfirmed_fields is not a questionnaire: ask only unresolved details
+        that materially affect the next decision, and explain why. Reconfirm a known answer only for a
+        specific conflict, changed circumstances or record mismatch, identifying that reason explicitly.
+        A recorded fasting label does not provide exact fasting hours. If only the duration is missing,
+        acknowledge the saved fasting label and ask for the duration, not whether the record was fasting.
+        NO is a saved negative answer, not missing data. Unknown is not NO; never infer pregnancy status
+        from age, name or sex, or invent absent symptoms. Measurement-time answers are not proof of the
+        user's current symptoms. Prior chat answers may resolve a gap, but do not claim they were saved
+        to Health Center without a write receipt. separate_profile_included=false means other profile
+        data is outside this handoff, not that the user has no profile or did not fill it in. Do not claim
+        to have searched the whole Health Center or make the user repeat a complete medical history.
         automatic_follow_up explains why this background run started, using the durable run time and the
         last completed review in this same conversation. Lead with the relevant change or due action.
         elapsed_time_only means a review window arrived, not that a test was performed or health improved.
