@@ -32,6 +32,12 @@ enum GalaxySSIRuntimePlaintextProtection {
   private static let boundaryLock = NSLock()
   private static var boundaryActive = false
 
+  static var isBoundaryActive: Bool {
+    boundaryLock.lock()
+    defer { boundaryLock.unlock() }
+    return boundaryActive
+  }
+
   static var sensitiveDiagnosticsEnabled: Bool {
 #if DEBUG
     true

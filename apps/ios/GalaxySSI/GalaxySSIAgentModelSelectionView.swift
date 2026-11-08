@@ -205,6 +205,7 @@ enum AgentModelSelectionSettings {
     defaults: UserDefaults
   ) {
     guard let data = try? JSONEncoder().encode(value) else { return }
+    if defaults.data(forKey: key) != data { AgentInvocationProfile.clearMetadataCache() }
     defaults.set(data, forKey: key)
   }
 
