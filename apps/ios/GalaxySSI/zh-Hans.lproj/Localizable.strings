@@ -20,6 +20,7 @@
 "galaxyssi.health.questions.request" = "请求澄清问题";
 "galaxyssi.health.questions.include" = "在本次请求中包含已复核的问题";
 "galaxyssi.health.questions.disclosure" = "最多包含此关注项的 8 条当前问题及已复核的答复。";
+"galaxyssi.health.questions.page_disclosure" = "仅在本次请求中，模型最多可继续读取 4 页。";
 "galaxyssi.health.questions.retained" = "可在个人健康中查看问题。";
 "galaxyssi.health.questions.empty" = "暂无记录的问题";
 "galaxyssi.health.questions.previous" = "上一页";
@@ -49,6 +50,8 @@
 "galaxyssi.health.research.desktop_model" = "电脑端模型";
 "galaxyssi.health.research.desktop_effort" = "推理强度";
 "galaxyssi.health.research.default" = "服务商默认";
+"galaxyssi.health.research.share_questions" = "在自动研究中包含已复核的澄清记录";
+"galaxyssi.health.research.questions_scope" = "每次自动复核最多包含此关注项澄清记录的第一页。已复核的答复变化后，需要重新授权。";
 "galaxyssi.health.research.paired_boundary" = "已授权的健康内容会发给所选配对电脑及其配置的 Codex 服务商。任务仅限读取，电脑任务日志可能保留相关内容。";
 "galaxyssi.health.research.sources" = "允许查阅的公开来源";
 "galaxyssi.health.research.scope" = "GalaxySSI 处于前台时，可将当前关注项更新后的测量、已授权的档案内容、近期私密讨论和相关计划状态发送给此模型。研究可保存回复或草稿，但不会采纳步骤或安排提醒。你可随时撤销授权。";

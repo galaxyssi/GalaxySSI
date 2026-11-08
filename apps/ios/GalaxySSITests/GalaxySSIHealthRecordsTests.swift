@@ -827,9 +827,23 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let open = try XCTUnwrap(page().rows.first)
     XCTAssertEqual(open.state, .open)
     XCTAssertNil(open.answer)
+    func automatic() throws -> GalaxySSIHealthCareDiscussion.Approval {
+      let queued = try XCTUnwrap(records.reconcileLocalCareResearch(now: now).first?.1)
+      let job = try records.transitionLocalCareResearch(queued, concern: concern.id, to: .preparing)
+      return try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Review the current concern",
+        destinationID: "provider", model: model, credential: "fixture-api-key", proposesPlan: true, research: job, now: now)
+    }
+    try records.authorizeLocalCareResearch(approval(), sources: [.labResults], now: now)
+    XCTAssertNil(try automatic().questions)
     let oldPreview = try approval(shares: true)
+    try records.authorizeLocalCareResearch(oldPreview, sources: [.labResults], now: now)
+    let background = try automatic()
+    XCTAssertEqual(background.questions?.rows.first?.id, open.id)
+    XCTAssertNil(background.questionCursor)
     try records.reviewLocalCareQuestion(id: concern.id, metric: .glucose, row: open, state: .deferred, now: now)
     XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(oldPreview, now: now))
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(background, now: now))
+    XCTAssertTrue(try records.reconcileLocalCareResearch(now: now).isEmpty)
     let deferred = try XCTUnwrap(page().rows.first)
     XCTAssertEqual(deferred.state, .deferred)
     XCTAssertThrowsError(try records.reviewLocalCareQuestion(id: concern.id, metric: .glucose, row: deferred,
@@ -979,6 +993,57 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     try records.setHealthOnlinePermission(false)
     try records.setHealthOnlinePermission(true)
     XCTAssertThrowsError(try records.readLocalCareDiscussionHistory(authorized, after: cursor, now: now))
+  }
+
+  func testClarificationContinuationPinsWholeLedgerAndUsesSeparateTurnToken() throws {
+    typealias Questions = GalaxySSIHealthCareQuestions
+    typealias Tool = GalaxySSIHealthCareHistoryTool
+    let turn = UUID()
+    let now = Date()
+    var ledger = Questions.Ledger()
+    let questions = (0..<18).map {
+      Questions.Proposal(key: "context.item_\($0)", question: "Question \($0)?", purpose: "Fixture")
+    }
+    try ledger.propose(questions, scope: "selected", basis: "current", known: [:], turn: turn, now: now)
+    let initial = try ledger.page(scope: "selected", basis: "current", known: [:], after: nil)
+    let cursor = try XCTUnwrap(Questions.Cursor(initial, remaining: Questions.maximumContinuations))
+    let args = cursor.arguments(turn: turn)
+    XCTAssertNotEqual(args, cursor.arguments(turn: UUID()))
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(args).contains(cursor.after.uuidString))
+    let second = try ledger.page(scope: "selected", basis: "current", known: [:], after: cursor.after)
+    XCTAssertEqual(initial.rows.count, Questions.pageSize)
+    XCTAssertTrue(Set(initial.rows.map(\.id)).isDisjoint(with: second.rows.map(\.id)))
+    XCTAssertNil(Questions.Cursor(second, remaining: 0))
+    let next = try XCTUnwrap(Questions.Cursor(second, remaining: 1))
+    XCTAssertNotEqual(args, next.arguments(turn: turn))
+    let changed = try XCTUnwrap(second.rows.first)
+    try ledger.review(changed, scope: "selected", basis: "current", state: .deferred, answer: nil, now: now)
+    let updated = try ledger.page(scope: "selected", basis: "current", known: [:], after: nil)
+    XCTAssertEqual(updated.payload, initial.payload)
+    XCTAssertNotEqual(updated.ledgerVersion, initial.ledgerVersion)
+    XCTAssertThrowsError(try ledger.page(scope: "foreign", basis: "current", known: [:], after: cursor.after))
+
+    let function: [String: Any] = ["name": Questions.readTool, "args": ["input_version": turn.uuidString,
+      "cursor": args.string("cursor")]]
+    let wire = try JSONSerialization.data(withJSONObject: ["candidates": [["finishReason": "STOP",
+      "content": ["parts": [["functionCall": function]]]]]])
+    XCTAssertThrowsError(try Tool.call(wire, style: .gemini, proposesPlan: false))
+    let call = try XCTUnwrap(Tool.call(wire, style: .gemini, proposesPlan: false, allowsQuestionRead: true, asksQuestions: true))
+    XCTAssertEqual(call.name, Questions.readTool)
+    XCTAssertEqual(call.arguments, args)
+    var request = URLRequest(url: try XCTUnwrap(URL(string: "https://example.test")))
+    request.httpBody = try JSONSerialization.data(withJSONObject: ["contents": [["role": "user"]]])
+    let result = try Tool.continuing(request, with: call, payload: Questions.Cursor.payload(second, cursor: nil, turn: turn),
+      style: .gemini, proposesPlan: false, historyAvailable: false, allowsMaintenance: false,
+      questionsAvailable: false, asksQuestions: true)
+    let json = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(result.httpBody)) as? [String: Any])
+    let contents = try XCTUnwrap(json["contents"] as? [[String: Any]])
+    let parts = try XCTUnwrap(contents.last?["parts"] as? [[String: Any]])
+    let response = try XCTUnwrap(parts.first?["functionResponse"] as? [String: Any])
+    XCTAssertEqual(response["name"] as? String, Questions.readTool)
+    let tools = String(decoding: try JSONSerialization.data(withJSONObject: XCTUnwrap(json["tools"])), as: UTF8.self)
+    XCTAssertTrue(tools.contains(Questions.tool))
+    XCTAssertFalse(tools.contains(Questions.readTool))
   }
 
   func testDiscussionHistoryToolContinuesAllThreeProviderTransportsAndRejectsParallelCalls() throws {

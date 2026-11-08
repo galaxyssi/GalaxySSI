@@ -50,7 +50,8 @@ enum GalaxySSIHealthCareHistoryTool {
   }
 
   static func configure(_ body: inout [String: Any], style: GalaxySSICloudAPIStyle,
-                        proposesPlan: Bool, historyAvailable: Bool, allowsMaintenance: Bool = false) {
+                        proposesPlan: Bool, historyAvailable: Bool, allowsMaintenance: Bool = false,
+                        questionsAvailable: Bool = false, asksQuestions: Bool = false) {
     for key in ["tools", "tool_choice", "toolConfig", "parallel_tool_calls"] { body.removeValue(forKey: key) }
     let plan = GalaxySSIHealthCarePlan.tool
     let schema: [String: Any] = [
@@ -59,37 +60,47 @@ enum GalaxySSIHealthCareHistoryTool {
     ]
     var tools: [(String, String, [String: Any])] = []
     if historyAvailable { tools.append((function, instructions, schema)) }
+    if questionsAvailable {
+      tools.append((GalaxySSIHealthCareQuestions.readTool, GalaxySSIHealthCareQuestions.readInstruction, schema))
+    }
+    if asksQuestions {
+      tools.append((GalaxySSIHealthCareQuestions.tool, GalaxySSIHealthCareQuestions.instruction, GalaxySSIHealthCareQuestions.schema))
+    }
     if proposesPlan {
       tools.append((plan, GalaxySSIHealthCarePlan.description,
         GalaxySSIHealthCarePlan.schema(allowsMaintenance: allowsMaintenance)))
     }
     guard !tools.isEmpty else { return }
+    let required = !historyAvailable && !questionsAvailable ? tools.first?.0 : nil
     switch style {
     case .openAICompatible:
       body["tools"] = tools.map {
         ["type": "function", "function": ["name": $0.0, "description": $0.1, "parameters": $0.2] as [String: Any]]
           as [String: Any]
       }
-      if !historyAvailable { body["tool_choice"] = ["type": "function", "function": ["name": plan]] }
+      if let required { body["tool_choice"] = ["type": "function", "function": ["name": required]] }
     case .anthropic:
       body["tools"] = tools.map { ["name": $0.0, "description": $0.1, "input_schema": $0.2] as [String: Any] }
-      body["tool_choice"] = historyAvailable ? ["type": "auto", "disable_parallel_tool_use": true] :
-        ["type": "tool", "name": plan, "disable_parallel_tool_use": true]
+      if let required {
+        body["tool_choice"] = ["type": "tool", "name": required, "disable_parallel_tool_use": true]
+      } else { body["tool_choice"] = ["type": "auto", "disable_parallel_tool_use": true] }
     case .gemini:
       body["tools"] = [["functionDeclarations": tools.map {
         ["name": $0.0, "description": $0.1, "parametersJsonSchema": $0.2] as [String: Any]
       }]]
-      if !historyAvailable { body["toolConfig"] = ["functionCallingConfig": ["mode": "ANY", "allowedFunctionNames": [plan]]] }
+      if let required { body["toolConfig"] = ["functionCallingConfig": ["mode": "ANY", "allowedFunctionNames": [required]]] }
     }
   }
 
   struct Call {
+    let name: String
     let arguments: AgentMcpJSONObject
     let message: AgentMcpJSONObject
     let id: String?
   }
 
-  static func call(_ bytes: Data, style: GalaxySSICloudAPIStyle, proposesPlan: Bool) throws -> Call? {
+  static func call(_ bytes: Data, style: GalaxySSICloudAPIStyle, proposesPlan: Bool,
+                   allowsQuestionRead: Bool = false, asksQuestions: Bool = false) throws -> Call? {
     let root = try JSONDecoder().decode(AgentMcpJSONObject.self, from: bytes)
     let message: AgentMcpJSONObject
     let calls: [AgentMcpJSONObject]
@@ -128,8 +139,11 @@ enum GalaxySSIHealthCareHistoryTool {
     guard terminal, calls.count == 1, let entry = calls.first else { throw invalid }
     let spec = style == .openAICompatible ? entry["function"]?.objectValue : entry
     guard let spec else { throw invalid }
-    if proposesPlan, spec.string("name") == GalaxySSIHealthCarePlan.tool { return nil }
-    guard spec.string("name") == function else { throw invalid }
+    let name = spec.string("name")
+    if proposesPlan && name == GalaxySSIHealthCarePlan.tool || asksQuestions && name == GalaxySSIHealthCareQuestions.tool {
+      return nil
+    }
+    guard name == function || (allowsQuestionRead && name == GalaxySSIHealthCareQuestions.readTool) else { throw invalid }
     let id = entry["id"]?.strictStringValue
     guard (style == .gemini && id == nil) || id.map({ !$0.isBlank && $0.utf8.count <= 256 }) == true else { throw invalid }
     let args: AgentMcpJSONObject
@@ -145,11 +159,18 @@ enum GalaxySSIHealthCareHistoryTool {
       guard let input = spec["args"]?.objectValue else { throw invalid }
       args = input
     }
-    return Call(arguments: args, message: message, id: id)
+    return Call(name: name, arguments: args, message: message, id: id)
   }
 
   static func continuing(_ request: URLRequest, with call: Call, output: Output, style: GalaxySSICloudAPIStyle,
                          proposesPlan: Bool, historyAvailable: Bool, allowsMaintenance: Bool = false) throws -> URLRequest {
+    try continuing(request, with: call, payload: output.payload, style: style, proposesPlan: proposesPlan,
+      historyAvailable: historyAvailable, allowsMaintenance: allowsMaintenance)
+  }
+
+  static func continuing(_ request: URLRequest, with call: Call, payload: AgentMcpJSONObject, style: GalaxySSICloudAPIStyle,
+      proposesPlan: Bool, historyAvailable: Bool, allowsMaintenance: Bool, questionsAvailable: Bool = false,
+      asksQuestions: Bool = false) throws -> URLRequest {
     guard let bytes = request.httpBody, var body = try JSONSerialization.jsonObject(with: bytes) as? [String: Any]
     else { throw invalid }
     let channel = style == .gemini ? "contents" : "messages"
@@ -158,7 +179,7 @@ enum GalaxySSIHealthCareHistoryTool {
     guard var message = assistant as? [String: Any] else { throw invalid }
     message["role"] = style == .gemini ? "model" : "assistant"
     messages.append(message)
-    let text = AgentMcpJSONCodec.stringify(output.payload)
+    let text = AgentMcpJSONCodec.stringify(payload)
     switch style {
     case .openAICompatible:
       guard let id = call.id else { throw invalid }
@@ -167,13 +188,13 @@ enum GalaxySSIHealthCareHistoryTool {
       guard let id = call.id else { throw invalid }
       messages.append(["role": "user", "content": [["type": "tool_result", "tool_use_id": id, "content": text]]])
     case .gemini:
-      var result: [String: Any] = ["name": function, "response": try JSONSerialization.jsonObject(with: Data(text.utf8))]
+      var result: [String: Any] = ["name": call.name, "response": try JSONSerialization.jsonObject(with: Data(text.utf8))]
       if let id = call.id { result["id"] = id }
       messages.append(["role": "user", "parts": [["functionResponse": result]]])
     }
     body[channel] = messages
     configure(&body, style: style, proposesPlan: proposesPlan, historyAvailable: historyAvailable,
-      allowsMaintenance: allowsMaintenance)
+      allowsMaintenance: allowsMaintenance, questionsAvailable: questionsAvailable, asksQuestions: asksQuestions)
     let data = try JSONSerialization.data(withJSONObject: body)
     guard data.count <= requestBudget else { throw invalid }
     var next = request
