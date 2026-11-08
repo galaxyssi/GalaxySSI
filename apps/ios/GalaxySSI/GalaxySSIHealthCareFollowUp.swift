@@ -11,6 +11,36 @@ enum GalaxySSIHealthCareFollowUp {
     let reportedAt: Date
   }
 
+  struct Feedback: Codable, Equatable, Identifiable {
+    enum Kind: String, Codable, CaseIterable { case completed, partial, barrier }
+
+    let id: UUID
+    let kind: Kind
+    let note: String
+    let recordedAt: Date
+    let scope: String
+    let profileEpoch: UUID?
+    let planBasis: String
+
+    func isInScope(_ concern: GalaxySSIHealthCare.Concern) -> Bool {
+      profileEpoch == concern.profileScopeEpoch && scope == GalaxySSIHealthCareQuestions.scope(concern)
+    }
+  }
+
+  struct FeedbackReceipt: Codable, Equatable, Identifiable {
+    let concernID: UUID
+    let actionID: String
+    let actionTitle: String
+    let revision: Int
+    let feedback: Feedback
+    var id: UUID { feedback.id }
+  }
+
+  struct FeedbackPage {
+    let items: [FeedbackReceipt]
+    let next: Int?
+  }
+
   struct Reminder: Codable, Equatable, Identifiable {
     let id: UUID
     let actionID: String

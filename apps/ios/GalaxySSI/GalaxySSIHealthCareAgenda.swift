@@ -131,6 +131,7 @@ enum GalaxySSIHealthCareAgenda {
 
   struct Item: Identifiable {
     let scope: Scope
+    let revision: Int
     let action: GalaxySSIHealthCarePlan.AdoptedAction
     let reminder: GalaxySSIHealthCareFollowUp.Reminder?
     let plannedAt: Date?
