@@ -153,6 +153,7 @@ struct GalaxySSIHealthCareResearchControls: View {
     case .completed: return t("completed", "Research review available in the private discussion")
     case .interrupted: return t("interrupted", "Interrupted request was not resent")
     case .failed: return t("failed", "Research failed")
+    case .sourceUnavailable: return t("source_unavailable", "The approved source could not be read. No new plan was created.")
     case .cancelled: return t("cancelled", "Research cancelled")
     case .superseded: return t("superseded", "Research no longer matches the evidence")
     }

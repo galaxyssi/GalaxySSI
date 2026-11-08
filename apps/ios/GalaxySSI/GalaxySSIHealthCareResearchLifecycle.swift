@@ -103,7 +103,14 @@ struct GalaxySSIHealthCareResearchLifecycle: ViewModifier {
         for source in GalaxySSIHealthCareEvidence.PublicSource.allCases where authorization.sources.contains(source) {
           try Task.checkCancellation()
           try records.validateLocalCareDiscussionApproval(approval)
-          approval.evidence.append(try await GalaxySSIHealthCareEvidence.fetch(source, binding: .init(approval)))
+          do {
+            approval.evidence.append(try await GalaxySSIHealthCareEvidence.fetch(source, binding: .init(approval)))
+          } catch {
+            try Task.checkCancellation()
+            try records.validateLocalCareDiscussionApproval(approval)
+            _ = try records.transitionLocalCareResearch(job, concern: authorization.concern, to: .sourceUnavailable)
+            return
+          }
         }
       }
       try Task.checkCancellation()
