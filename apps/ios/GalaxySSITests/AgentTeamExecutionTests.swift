@@ -1209,7 +1209,9 @@ extension GalaxySSIStoreTests {
     let file = root.appendingPathComponent("history.sqlite3")
     let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
-    let team = durableTeamSnapshot("audit")
+    var team = durableTeamSnapshot("audit")
+    team.goal = "Verify the synthetic model admission"
+    team.members[0].dispatchCheckpoint = .accepted
     XCTAssertTrue(history.upsert(team))
     let member = try XCTUnwrap(team.members.first)
     let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
@@ -1227,7 +1229,14 @@ extension GalaxySSIStoreTests {
     try reopened.settleCollaborationModelCall(admission, settlement: completed)
     XCTAssertEqual(try history.collaborationModelCall(admission).settlement, completed)
     let interrupted = AgentCollaborationModelAdmission(id: UUID(), scope: scope, round: 0,
-      provider: .openAICompatible, requestedModel: nil, startedAtMillis: 3, route: .compatibility)
+      provider: .openAICompatible, requestedModel: nil, startedAtMillis: 3, route: .compatibility, lane: .hostLivePlanning)
+    try reopened.requireGoalCoordinationAuthority(scope, resourceID: member.agentId)
+    XCTAssertThrowsError(try reopened.requireGoalCoordinationAuthority(scope, resourceID: "wrong-resource"))
+    let observer = team.members[1]
+    let observerScope = AgentCollaborationToolEvidenceScope(runId: scope.runId, conversationId: scope.conversationId,
+      turnId: scope.turnId, memberId: observer.memberId, sourceId: observer.sourceMessageId)
+    XCTAssertThrowsError(try reopened.admitCollaborationModelCall(.init(id: UUID(), scope: observerScope,
+      round: 0, provider: .openAICompatible, requestedModel: nil, startedAtMillis: 3, lane: .hostLivePlanning)))
     try reopened.admitCollaborationModelCall(interrupted)
     let firstPage = try history.collaborationModelAuditPage(conversationId: scope.conversationId, limit: 1)
     let cursor = try XCTUnwrap(firstPage.next)
@@ -1237,6 +1246,7 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(entries.first(where: { $0.admission.id == admission.id })?.settlement, completed)
     XCTAssertNil(entries.first(where: { $0.admission.id == interrupted.id })?.settlement)
     XCTAssertEqual(entries.first(where: { $0.admission.id == interrupted.id })?.admission.route, .compatibility)
+    XCTAssertEqual(entries.first(where: { $0.admission.id == interrupted.id })?.admission.lane, .hostLivePlanning)
     XCTAssertNil(secondPage.next)
     XCTAssertTrue(try history.collaborationModelAuditPage(conversationId: "foreign").entries.isEmpty)
     XCTAssertThrowsError(try reopened.settleCollaborationModelCall(admission, settlement: .init(
@@ -3374,22 +3384,80 @@ extension GalaxySSIStoreTests {
     laterTasksArrived.expectedFulfillmentCount = 2
     let last = Task { @MainActor in
       laterTasksArrived.fulfill()
-      await gate.wait(for: 2)
+      guard await gate.wait(for: 2) else { XCTFail("Final reservation was unexpectedly cancelled"); return }
       gate.finish(2, claimedID: "a-last")
     }
     let middle = Task { @MainActor in
       laterTasksArrived.fulfill()
-      await gate.wait(for: 1)
-      gate.finish(1, claimedID: Task.isCancelled ? nil : "m-cancelled")
+      if await gate.wait(for: 1) { gate.finish(1, claimedID: Task.isCancelled ? nil : "m-cancelled") }
     }
     middle.cancel()
     await fulfillment(of: [laterTasksArrived], timeout: 3)
     XCTAssertTrue(gate.claimedIDs.isEmpty)
-    await gate.wait(for: 0)
+    let first = await gate.wait(for: 0)
+    XCTAssertTrue(first)
     gate.finish(0, claimedID: "z-first")
     await last.value
     await middle.value
     XCTAssertEqual(gate.claimedIDs, ["z-first", "a-last"])
+  }
+
+  @MainActor
+  func testSharedPlanningLaneRemainsIndependentOfWorkersAndRevalidatesQueuedGoals() async throws {
+    let workers = AgentGlobalRunSlotLedger()
+    XCTAssertTrue(workers.acquire(ownerId: "worker", runtimeKey: "same-provider", maxParallelRuns: 1, nowMillis: 1))
+    XCTAssertFalse(workers.acquire(ownerId: "queued-worker", runtimeKey: "same-provider", maxParallelRuns: 1, nowMillis: 1))
+    let lane = AgentCollaborationCoordinationLane()
+    func scope(_ run: String) -> AgentCollaborationToolEvidenceScope {
+      .init(runId: run, conversationId: "conversation", turnId: run, memberId: "planner", sourceId: "source")
+    }
+    let first = try XCTUnwrap(lane.acquireIfAvailable(owner: scope("first"), resourceID: "same-provider"))
+    XCTAssertNil(lane.acquireIfAvailable(owner: scope("different-provider"), resourceID: "other"))
+    let queued = expectation(description: "Coordinator queued")
+    var valid = true
+    let stale = Task { @MainActor in
+      do {
+        try await lane.withLease(owner: scope("stale"), resourceID: "same-provider", validate: {
+          if !valid { throw CancellationError() }
+          queued.fulfill()
+        }, operation: { XCTFail("A stale coordinator must not start") })
+      } catch is CancellationError {} catch { XCTFail("Unexpected error: \(error)") }
+    }
+    await fulfillment(of: [queued], timeout: 3)
+    valid = false
+    lane.release(first)
+    await stale.value
+    XCTAssertTrue(lane.available)
+    XCTAssertEqual(workers.activeCount(runtimeKey: "same-provider"), 1)
+    XCTAssertEqual(AgentCollaborationAdmissionCapacity.wire["maximum_single_run"], .int(4))
+  }
+
+  @MainActor
+  func testCancellingQueuedCoordinatorDoesNotConsumeOrReleaseAnotherLease() async throws {
+    let lane = AgentCollaborationCoordinationLane()
+    func scope(_ id: String) -> AgentCollaborationToolEvidenceScope {
+      .init(runId: id, conversationId: id, turnId: id, memberId: "planner", sourceId: id)
+    }
+    let first = try XCTUnwrap(lane.acquireIfAvailable(owner: scope("first"), resourceID: "one"))
+    let queued = expectation(description: "Coordinator waiting")
+    let cancelled = Task { @MainActor in
+      do {
+        try await lane.withLease(owner: scope("cancelled"), resourceID: "two", validate: {
+          queued.fulfill()
+        }, operation: { XCTFail("Cancelled coordinator must not start") })
+      } catch is CancellationError {} catch { XCTFail("Unexpected error: \(error)") }
+    }
+    await fulfillment(of: [queued], timeout: 3)
+    cancelled.cancel()
+    await cancelled.value
+    XCTAssertEqual(lane.queuedCount, 0)
+    XCTAssertFalse(lane.available)
+    lane.release(first)
+    let next = try XCTUnwrap(lane.acquireIfAvailable(owner: scope("next"), resourceID: "two"))
+    lane.release(first)
+    XCTAssertFalse(lane.available)
+    lane.release(next)
+    XCTAssertTrue(lane.available)
   }
 
   func testResearchSubagentsAdmitReadyWorkInOrderWithoutWaitingForUnrelatedWorker() async throws {
