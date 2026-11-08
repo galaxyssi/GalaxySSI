@@ -33,6 +33,7 @@ from attachment_request_broker import (
     attachment_request_broker,
 )
 from agent_gateway import ask_agent_sync, connector_diagnostics, deliver_agent_sync, agent_selection_snapshot
+from command_lookup import command_lookup_scope
 from agent_task_manager import (
     EXECUTION_LOCATION_CONTRACT,
     MAX_DELIVERY_TRACE_EVENTS,
@@ -4573,6 +4574,7 @@ def _interrupt_agent_runtime(task, on_event=None) -> None:
     agent_task_manager.cancel(task_id, on_event=on_event)
 
 
+@command_lookup_scope()
 def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: list[dict], content: str, msg_type: str) -> None:
     from agent_connector_modes import (
         is_structured_connector_task_mode,
@@ -6477,6 +6479,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 on_result=publish_recovery_result,
             )
 
+        @command_lookup_scope()
         def start_codex() -> None:
             nonlocal active_conversation_task, codex_run_conversation_id
             nonlocal parallel_codex_task, result_published

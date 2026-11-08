@@ -38,6 +38,7 @@ from agent_config import (
     local_model_config,
 )
 from agent_run_storage import desktop_state_root
+from command_lookup import command_lookup_scope
 from desktop_agent_adapters import (
     AgentAdapterDescriptor,
     AgentAdapterExecutionError,
@@ -1976,6 +1977,7 @@ def _cloud_model_available() -> tuple[bool, str]:
 
 # Keep user-facing Chinese strings as Unicode escapes so this gateway remains
 # stable across Windows console/codepage changes.
+@command_lookup_scope()
 def deliver_agent_sync(
     contact_id: str,
     text: str,
@@ -2493,7 +2495,7 @@ def _ask_cli_agent_locked(
             and not codex_video_permissions and working_directory is None):
         from agent_execution_harness import AgentExecutionPolicy, AgentTaskKind
         from agent_task_manager import agent_task_manager
-        from desktop_codex_turn import native_chat_model
+        from desktop_codex_turn import managed_chat_scope, native_chat_model
 
         visible_task = agent_task_manager.get(progress_task_id)
         runtime = cli_agent_runtime_config(spec.id, command)
@@ -2501,7 +2503,7 @@ def _ask_cli_agent_locked(
         model = native_chat_model(selected_command)
         policy = AgentExecutionPolicy.from_public(visible_task.execution_policy) if visible_task else None
         if (model and policy and policy.task_kind == AgentTaskKind.CHAT
-                and visible_task.source_message_id.startswith("desktop:")
+                and managed_chat_scope(visible_task, conversation_id)
                 and runtime["enabled"] and runtime["mode"] == "managed-app-server"):
             return _run_managed_codex_chat(spec, selected_command, text, task_id=task_id,
                 progress_task_id=progress_task_id, conversation_id=conversation_id,
@@ -2617,6 +2619,11 @@ def _run_managed_codex_chat(spec, command, text, *, task_id, progress_task_id,
 
     def on_event(event):
         nonlocal last_step
+        from agent_latency import record_task
+        stage = event.get("desktop_stage")
+        if stage in {"model_started", "model_completed"}:
+            record_task(progress_task_id, "desktop_model_submitted" if stage == "model_started"
+                        else "desktop_model_completed", provider="codex", once=True)
         delta = event.get("output_delta") or {}
         if delta.get("user_visible") and delta.get("text"):
             agent_task_manager.record_partial_result(progress_task_id,
@@ -2630,6 +2637,8 @@ def _run_managed_codex_chat(spec, command, text, *, task_id, progress_task_id,
                           "stage": event.get("desktop_stage", "progress"),
                           "elapsed_ms": event.get("elapsed_ms")}, expected_execution=expected)
 
+    from agent_latency import record_task
+    record_task(progress_task_id, "desktop_model_submit_started", provider="codex", once=True)
     reply = run_chat_turn(server=server, register=register, unregister=unregister,
         prompt=protect_agent_prompt(_styled_turn_prompt(spec, text, response_language)),
         fresh_prompt=protect_agent_prompt(_compiled_cli_prompt(spec, text, task_id, conversation_id,

@@ -3,7 +3,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from desktop_codex_turn import native_chat_model, run_chat_turn
+from desktop_codex_turn import managed_chat_scope, native_chat_model, run_chat_turn
+from pairing_access import grant_for_executor
 
 
 class DesktopCodexTurnTest(unittest.TestCase):
@@ -165,6 +166,41 @@ class GatewayManagedChatTest(unittest.TestCase):
                 sessions.return_value.get.return_value.session_id = ""
                 self.assertEqual("legacy", gateway._ask_cli_agent_locked(gateway.BASE_AGENTS["codex"],
                     self.command, "question", task_id="child", conversation_id="", progress_task_id="root", **extra))
+
+    def test_phone_desktop_handoff_reuses_managed_runtime_with_selected_model(self):
+        self.task.source_message_id = "phone-message"
+        self.task.agent_id = "desktop"
+        self.task.client_route_id = "phone-a"
+        self.task.client_conversation_id = "session"
+        self.task.client_turn_id = "turn"
+        self.task.conversation_id = "client:phone-a:session"
+        gateway = self.gateway
+        with patch("agent_task_manager.agent_task_manager.get", return_value=self.task), \
+                patch("pairing_state.get_client", return_value={"access": grant_for_executor(True)}), \
+                patch.object(gateway, "cli_agent_runtime_config", return_value={"enabled": True, "mode": "managed-app-server"}), \
+                patch.object(gateway, "_apply_selected_agent_model", return_value=self.command), \
+                patch.object(gateway, "_run_managed_codex_chat", return_value="answer") as managed, \
+                patch.object(gateway, "_run_cli_agent_process", side_effect=AssertionError("process per turn")):
+            self.assertEqual("answer", gateway._ask_cli_agent_locked(gateway.BASE_AGENTS["codex"],
+                self.command, "question", task_id="child", progress_task_id="root",
+                conversation_id=self.task.conversation_id, agent_reasoning_effort="high"))
+            self.assertEqual(self.task.conversation_id, managed.call_args.kwargs["conversation_id"])
+            self.assertEqual("configured-model", managed.call_args.kwargs["model"])
+            self.assertEqual("high", managed.call_args.kwargs["reasoning_effort"])
+
+    def test_native_phone_or_incomplete_or_cross_conversation_scope_is_not_migrated(self):
+        fields = dict(agent_id="desktop", source_message_id="phone-message", client_route_id="phone-a",
+                      client_conversation_id="session", client_turn_id="turn", conversation_id="scoped-a")
+        with patch("pairing_state.get_client", return_value={"access": grant_for_executor(True)}):
+            self.assertTrue(managed_chat_scope(SimpleNamespace(**fields), "scoped-a"))
+        for client in (None, {"access": grant_for_executor(False)}):
+            with patch("pairing_state.get_client", return_value=client):
+                self.assertFalse(managed_chat_scope(SimpleNamespace(**fields), "scoped-a"))
+        for changes in ({"agent_id": "codex"}, {"client_turn_id": ""}, {"source_message_id": ""},
+                        {"client_conversation_id": ""}, {"conversation_id": "scoped-b"}):
+            with self.subTest(changes=changes):
+                self.assertFalse(managed_chat_scope(SimpleNamespace(**{**fields, **changes}), "scoped-a"))
+        self.assertFalse(managed_chat_scope(None, "scoped-a"))
 
 
 if __name__ == "__main__":
