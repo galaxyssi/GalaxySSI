@@ -68,7 +68,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
 
   private let modelClient: CloudModelClient
   private let streamClient: CloudModelStreamClient
-  private let legacySender: CloudConversationLegacySending
+  private let legacySender: CloudConversationLegacySending?
   private let toolExecutor: CloudConversationToolExecuting
   private let disclosureStore: AgentDataDisclosureStore
   private let elapsedMillis: () -> Int64
@@ -87,7 +87,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
   ) {
     self.modelClient = modelClient
     self.streamClient = streamClient
-    self.legacySender = legacySender ?? modelClient
+    self.legacySender = legacySender
     self.toolExecutor = toolExecutor
     self.disclosureStore = disclosureStore
     self.elapsedMillis = elapsedMillis
@@ -272,6 +272,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         evidenceResults = await recovery.restore(into: &prepared, progress: progress, budget: research, ledger: evidencePromptLedger)
       }
       var round = 0
+      var useCompleteJSON = false
 
       while true {
         if !progress.finalizationRequested, let reason = research.stopReason {
@@ -288,7 +289,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           ? CloudCitationPreview(evidence: evidenceResults)
           : nil
         var previewShown = false
-        let roundRequest = try prepared.requestForRound(roundId: roundId, finalRound: finalRound)
+        let preparedRound = try prepared.requestForRound(roundId: roundId, finalRound: finalRound)
+        let roundRequest = useCompleteJSON
+          ? try CloudConversationNonStreamingToolEngine.compatibilityRequest(preparedRound) : preparedRound
         let assembler = ToolCallDeltaAssembler()
         let inlineProtocolGuard = InlineToolProtocolStreamGuard()
         var roundCompleted = false
@@ -296,7 +299,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         var observedUsage: ModelUsage?
         var reportedModel: String?
         var audit = try await beginCollaborationAudit(scope: collaborationModelAudit, round: currentRound,
-          request: roundRequest, route: .streaming, contact: contact, store: store)
+          request: roundRequest, route: useCompleteJSON ? .compatibility : .streaming, contact: contact, store: store)
         func finishAudit() {
           guard let admission = audit else { return }
           audit = nil
@@ -394,6 +397,14 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         finishAudit()
         setActiveRound(nil, for: requestId)
 
+        if legacySender == nil, !useCompleteJSON, !emittedText, roundFailure?.error.code == "STREAM_UNSUPPORTED" {
+          if previewShown {
+            continuation.yield(.citationPreview(.init(requestId: requestId, text: "", receivedAtElapsedMs: elapsedMillis())))
+          }
+          useCompleteJSON = true
+          continue
+        }
+
         let incomplete = roundFailure?.error ?? (!roundCompleted ? ModelStreamError(
           code: "STREAM_INTERRUPTED", message: "The provider stream ended before completion", retryable: true
         ) : nil)
@@ -420,10 +431,11 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
               receivedAtElapsedMs: elapsedMillis()
             )))
           }
-          if !emittedText && currentRound == 0 && failure.error.code == "STREAM_UNSUPPORTED" {
+          if let legacySender, !emittedText && currentRound == 0 && failure.error.code == "STREAM_UNSUPPORTED" {
             let fallbackAudit = try await beginCollaborationAudit(scope: collaborationModelAudit, round: currentRound,
               request: roundRequest, route: .compatibility, contact: contact, store: store)
             await emitLegacyConversation(
+              sender: legacySender,
               contact: contact,
               store: store,
               turns: turns,
@@ -432,8 +444,6 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
               sequence: &emittedSequence,
               ticket: ticket,
               audit: fallbackAudit,
-              researchRetrySource: researchRetrySource,
-              retainResearch: retainResearch && collaborationRecallScope == nil,
               continuation: continuation
             )
           } else {
@@ -908,6 +918,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
   }
 
   private func emitLegacyConversation(
+    sender: CloudConversationLegacySending,
     contact: GalaxySSIContact,
     store: GalaxySSIStore,
     turns: [ChatMessage],
@@ -916,8 +927,6 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     sequence: inout Int64,
     ticket: AgentDisclosureTicket,
     audit: AgentCollaborationModelAdmission?,
-    researchRetrySource: ChatMessage?,
-    retainResearch: Bool,
     continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation
   ) async {
     var auditState: AgentCollaborationModelSettlement.State = .interrupted
@@ -930,14 +939,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     }
     do {
       try Task.checkCancellation()
-      let text: String
-      if let client = legacySender as? CloudModelClient {
-        text = try await CloudConversationNonStreamingToolEngine(modelClient: client, toolExecutor: toolExecutor).reply(
-          contact: contact, store: store, turns: turns, images: images, requestId: requestId + ":compat",
-          researchRetrySource: researchRetrySource, retainResearch: retainResearch)
-      } else {
-        text = try await legacySender.send(contact: contact, store: store, turns: turns, images: images)
-      }
+      let text = try await sender.send(contact: contact, store: store, turns: turns, images: images)
       let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !cleanText.isEmpty else {
         throw GalaxySSIError.unsupportedResponse

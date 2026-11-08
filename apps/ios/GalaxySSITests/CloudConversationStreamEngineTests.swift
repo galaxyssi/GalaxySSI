@@ -608,6 +608,48 @@ final class CloudConversationStreamEngineTests: XCTestCase {
     XCTAssertEqual(executor.calls.count, 1)
   }
 
+  @MainActor
+  func testUnsupportedStreamSwitchesWireFormatWithoutDroppingResearchEvidenceOrRepeatingSearch() async throws {
+    let fixture = try makeFixture()
+    let pack = AgentIOSWebEvidencePack.build(query: "report", status: "completed",
+      documents: [["url": .string("https://example.test/report"), "content": .string("Observed source body")]],
+      results: [], receipts: [], generatedAtMillis: 1)
+    let executor = RecordingConversationToolExecutor(result: AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)]))
+    let answer = "The report describes the result [source](https://example.test/report)."
+    let provider = RecordingModelStreamClient(eventBatches: [
+      toolRound(index: 0, callId: "first-search", query: "report"),
+      [.failed(.init(requestId: "no-sse", error: .init(code: "STREAM_UNSUPPORTED", message: "No SSE")))],
+      toolRound(index: 2, callId: "repeated-search", query: "report"),
+      [.textDelta(.init(requestId: "reply", sequence: 1, text: answer, receivedAtElapsedMs: 2)),
+       .completed(.init(requestId: "reply", finishReason: "stop", completedAtElapsedMs: 3))]
+    ])
+    let engine = CloudConversationStreamEngine(streamClient: provider, toolExecutor: executor,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    let events = try await collect(engine.streamConversation(contact: fixture.contact, store: fixture.store,
+      turns: fixture.turns, requestId: "compat-research"))
+    XCTAssertEqual(provider.requests.map(\.transport), [.sse, .sse, .completeJSON, .completeJSON])
+    let compatible = try XCTUnwrap(provider.requests.first { $0.transport == .completeJSON })
+    XCTAssertEqual(try object(compatible.bodyJson)["stream"] as? Bool, false)
+    XCTAssertTrue(compatible.bodyJson.contains("Observed source body"))
+    XCTAssertEqual(executor.calls.count, 1)
+    XCTAssertEqual(textDeltas(events).last?.text, answer)
+    XCTAssertNotNil(completed(events))
+  }
+
+  func testCompleteJSONRequestPreservesGeminiEscapedPathAndUnrelatedQuery() throws {
+    let original = ModelStreamRequest(requestId: "gemini", provider: .gemini,
+      endpoint: "https://example.test/v1/models/custom%2Fname:streamGenerateContent?alt=sse&other=a%2Bb",
+      headers: ["x-goog-api-key": "fixture"],
+      bodyJson: #"{"stream":true,"stream_options":{"include_usage":true},"contents":[]}"#)
+    let compatible = try CloudConversationNonStreamingToolEngine.compatibilityRequest(original)
+    XCTAssertEqual(compatible.endpoint, "https://example.test/v1/models/custom%2Fname:generateContent?other=a%2Bb")
+    XCTAssertEqual(compatible.transport, .completeJSON)
+    XCTAssertEqual(compatible.headers, original.headers)
+    XCTAssertNil(try object(compatible.bodyJson)["stream"])
+    XCTAssertNil(try object(compatible.bodyJson)["stream_options"])
+    XCTAssertNotNil(try object(compatible.bodyJson)["contents"])
+  }
+
   func testResearchBudgetStopsAtConfiguredLimitAndCountsOnlyNewEvidence() {
     var now: Int64 = 1
     let budget = CloudResearchRuntimeBudget(limits: .init(tools: 4, rounds: 8, activeMillis: 300), clock: { now })

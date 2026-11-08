@@ -218,17 +218,26 @@ struct CloudConversationNonStreamingToolEngine {
   }
 
   private func complete(_ request: ModelStreamRequest) async throws -> ParsedResponse {
-    let body = try Self.compatibilityBody(request.bodyJson, provider: request.provider)
-    guard let url = compatibilityURL(request.endpoint, provider: request.provider) else {
-      throw GalaxySSIError.invalidPayload("Cloud endpoint is not a URL.")
-    }
+    let request = try Self.compatibilityRequest(request)
+    guard let url = URL(string: request.endpoint) else { throw GalaxySSIError.invalidPayload("Cloud endpoint is not a URL.") }
     var urlRequest = URLRequest(url: url)
     urlRequest.httpMethod = "POST"
-    urlRequest.httpBody = Data(body.utf8)
+    urlRequest.httpBody = Data(request.bodyJson.utf8)
     urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
     for (name, value) in request.headers { urlRequest.setValue(value, forHTTPHeaderField: name) }
     let object = try await modelClient.responseObject(for: urlRequest, throwHTTPFailure: true)
     return parse(object, provider: request.provider)
+  }
+
+  static func compatibilityRequest(_ request: ModelStreamRequest) throws -> ModelStreamRequest {
+    guard let endpoint = compatibilityURL(request.endpoint, provider: request.provider) else {
+      throw GalaxySSIError.invalidPayload("Cloud endpoint is not a URL.")
+    }
+    var result = request
+    result.endpoint = endpoint.absoluteString
+    result.bodyJson = try compatibilityBody(request.bodyJson, provider: request.provider)
+    result.transport = .completeJSON
+    return result
   }
 
   static func compatibilityBody(_ encoded: String, provider: ModelStreamProvider) throws -> String {
@@ -239,15 +248,16 @@ struct CloudConversationNonStreamingToolEngine {
     return try CloudModelStreamJSON.string(body)
   }
 
-  private func compatibilityURL(_ endpoint: String, provider: ModelStreamProvider) -> URL? {
+  private static func compatibilityURL(_ endpoint: String, provider: ModelStreamProvider) -> URL? {
     guard provider == .gemini, var components = URLComponents(string: endpoint) else {
       return URL(string: endpoint)
     }
-    components.path = components.path.replacingOccurrences(
+    components.percentEncodedPath = components.percentEncodedPath.replacingOccurrences(
       of: ":streamGenerateContent",
       with: ":generateContent"
     )
-    components.queryItems = (components.queryItems ?? []).filter { $0.name != "alt" }
+    let remaining = (components.percentEncodedQueryItems ?? []).filter { $0.name.removingPercentEncoding != "alt" }
+    components.percentEncodedQueryItems = remaining.isEmpty ? nil : remaining
     return components.url
   }
 
