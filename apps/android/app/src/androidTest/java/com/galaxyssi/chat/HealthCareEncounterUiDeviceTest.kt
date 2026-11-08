@@ -95,6 +95,7 @@ class HealthCareEncounterUiDeviceTest {
         await(scenario) { find(it, "encounter-delete") != null }
         if (InstrumentationRegistry.getArguments().getString("health_encounter_screenshot") == "true") {
             instrumentation.waitForIdleSync()
+            SystemClock.sleep(250)
             instrumentation.uiAutomation.takeScreenshot()?.let { bitmap -> try {
                 File(context.getExternalFilesDir(null), "health-encounter-fixture.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
             } finally { bitmap.recycle() } }
@@ -119,8 +120,9 @@ class HealthCareEncounterUiDeviceTest {
         scenario.onActivity {
             find(it, "encounter-add")!!.performClick(); typed = input(it, "encounter-purpose") as EditText
             typed.setText("合成未保存备注"); dialog(it)!!.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
-            assertTrue(typed.text.isEmpty()); assertNull(dialog(it))
         }
+        await(scenario) { dialog(it) == null }
+        scenario.onActivity { assertTrue(typed.text.isEmpty()) }
         assertTrue(entries(names, issue.id).isEmpty())
     }
     @Test fun bookingRequiresAnExplicitTimeAndNativePickersPersistIt(): Unit = fixture { names, issue, scenario ->
@@ -134,8 +136,12 @@ class HealthCareEncounterUiDeviceTest {
             assertTrue(dialog(it)!!.isShowing)
             input(it, "encounter-planned").performClick()
             (field(editor(it), "picker") as DatePickerDialog).getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        }
+        await(scenario) { field(editor(it), "picker") is TimePickerDialog }
+        scenario.onActivity {
             (field(editor(it), "picker") as TimePickerDialog).getButton(AlertDialog.BUTTON_POSITIVE).performClick()
         }
+        await(scenario) { (field(editor(it), "picker") as? android.app.Dialog)?.isShowing != true }
         save(scenario)
         val recorded = entries(names, issue.id).single()
         assertEquals(HealthCareEncounterState.BOOKING_RECORDED, recorded.details.state)

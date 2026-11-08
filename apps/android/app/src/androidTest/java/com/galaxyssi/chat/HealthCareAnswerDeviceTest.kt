@@ -136,7 +136,7 @@ class HealthCareAnswerDeviceTest {
         HealthCareStore(context, names.care).use { reopened ->
             assertEquals(q, reopened.question(q.id)); assertTrue(reopened.answers(reopened.concern(q.concernId)!!).items.isEmpty())
         }
-        context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(13, it.version) }
+        context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(14, it.version) }
     }
     @Test fun originalUserLookupIsIndexedAndDoesNotUseAssistantOrForeignTurns() {
         val name = "health-answer-transcript-${id()}.db"

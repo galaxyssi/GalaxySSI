@@ -403,3 +403,41 @@ instruction extraction, field-by-field review, dependencies from original
 deletion to future instructions, scoped Agent tools and post-treatment follow-up
 remain subsequent parts of the full lifecycle. Device acceptance is required
 before delivering this increment.
+
+## Source-backed instruction review
+
+Linked encounter originals now provide a local page-reading entry. A PDF text
+layer is preferred; image-only pages use the existing on-device OCR engine. Only
+the selected page is decoded. Users select exact source lines to create an
+unreviewed instruction draft, then classify and transcribe its fields. The
+retained source includes original identity/hash, page, recognition method, line
+indices, available bounding boxes and blur warning. There is no invented numeric
+OCR confidence. Password-protected PDFs remain unsupported in this page workflow.
+
+Medication, test, follow-up, rehabilitation, lifestyle and other drafts have
+explicit field states: unreviewed, checked against the source, or not stated in
+the source. Editing checked text resets its review. Not-stated fields contain no
+guessed text. Review records user transcription, not a clinician signature or
+medical validation. This increment cannot create or change executable medication
+instructions, actions or reminders, even when all fields have been reviewed.
+
+Schema 14 adds encrypted current drafts and immutable operation receipts with
+authenticated ownership indices. Draft and concern revisions commit atomically;
+retries cannot change their source or overwrite newer edits. Current drafts and
+review history use indexed keyset pages of at most 30 items. Source quotations
+and creation time survive later reviews. Deleting a draft purges its review
+history but not the original. A linked source cannot be unlinked while it has
+dependent drafts. Missing original bytes leave historical transcription visible,
+but block further field confirmation. Visit/concern deletion purges dependent
+drafts and review history.
+
+Reads, OCR and rendering run on a worker. Save rechecks the encounter, concern,
+privacy, measurement clock and original metadata/presence. Revocation, background,
+memory pressure and ten-minute expiry discard draft editors, selected source
+lines and preview bitmaps. No new plaintext file or network request is produced.
+
+Model-assisted structured drafting, authorized Agent review tools, source-checked
+plan/reminder mapping and treatment/rehabilitation follow-up remain subsequent
+increments. Manual line selection is not reported as autonomous clinical
+extraction. Software and device tests do not establish clinical effectiveness;
+the full lifecycle still requires its separate clinical and end-to-end gates.
