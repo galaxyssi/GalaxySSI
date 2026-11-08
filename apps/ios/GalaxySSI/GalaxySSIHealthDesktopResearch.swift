@@ -11,6 +11,8 @@ enum GalaxySSIHealthDesktopResearch {
       Do not use tools, read files, run commands, contact third parties, write memory, or perform any action.
       Do not diagnose, prescribe, set targets, schedule reminders, or infer current symptoms or clinical stability.
       A deadline is not new evidence. Use the existing plan when only a deadline changed. Treat unknown and unselected facts as unknown.
+      Latest action feedback is self-reported execution, not a new measurement, clinical improvement, or treatment approval.
+      Partial progress and barriers leave the action open. Discuss feasible changes for user review without changing the plan.
       """
     let format: String
     if approval.proposesPlan {

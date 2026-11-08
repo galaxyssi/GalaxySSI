@@ -20,6 +20,7 @@ struct GalaxySSIHealthCareResearchControls: View {
   @State private var desktopEffort = AgentModelReasoningEffort.automatic
   @State private var shareQuestions = false
   @State private var shareQuestionPages = false
+  @State private var shareActionFeedback = false
   @State private var sources = Set<GalaxySSIHealthCareEvidence.PublicSource>()
   @State private var review: Review?
   @State private var confirmed = false
@@ -72,6 +73,7 @@ struct GalaxySSIHealthCareResearchControls: View {
             Toggle(t("share_question_pages", "Allow the cloud model to read additional clarification pages"),
               isOn: $shareQuestionPages)
           }
+          Toggle(t("share_action_feedback", "Include latest action feedback in automatic research"), isOn: $shareActionFeedback)
           Button(t("review", "Review authorization"), action: preview).disabled(provider.isEmpty || sources.isEmpty)
         } else {
           Text(t("online_off", "Online Health discussion is off.")).foregroundColor(.secondary)
@@ -80,7 +82,9 @@ struct GalaxySSIHealthCareResearchControls: View {
       }
     }
     .onAppear(perform: reload)
-    .onChange(of: provider) { _ in desktopModel = ""; desktopEffort = .automatic; shareQuestionPages = false }
+    .onChange(of: provider) { _ in
+      desktopModel = ""; desktopEffort = .automatic; shareQuestionPages = false; shareActionFeedback = false
+    }
     .onChange(of: shareQuestions) { if !$0 { shareQuestionPages = false } }
     .onChange(of: scene) { if $0 == .active { reload() } else { clear() } }
     .onChange(of: store.profile.identityFingerprint) { _ in clear(); reload() }
@@ -111,6 +115,9 @@ struct GalaxySSIHealthCareResearchControls: View {
               }
             }
             Text(t("scope", "While GalaxySSI is active, this concern may send updated measurements, approved profile context, recent private replies and scoped plan status to this model. Research may save a reply or draft, but cannot adopt steps or schedule reminders. You can revoke access at any time."))
+            if proposed.approval.includesActionFeedback {
+              Text(t("action_feedback_scope", "This model may receive the latest eligible self-reported action notes for this concern, including future notes, but not their history."))
+            }
             if let questions = proposed.approval.questions {
               if proposed.approval.allowsStandingQuestionPages {
                 Text(t("question_pages_scope", "Each automatic review may include the first page and read up to four more pages for this concern. A changed reviewed reply requires new authorization."))
@@ -152,12 +159,13 @@ struct GalaxySSIHealthCareResearchControls: View {
       var approval: GalaxySSIHealthCareDiscussion.Approval
       if let (model, key) = route(provider) {
         approval = try records.prepareLocalCareDiscussion(id: concern, metric: metric, question: question,
-          destinationID: provider, model: model, credential: key, includesQuestions: shareQuestions)
+          destinationID: provider, model: model, credential: key, includesQuestions: shareQuestions,
+          includesActionFeedback: shareActionFeedback)
         approval.allowsStandingQuestionPages = shareQuestions && shareQuestionPages
       } else if let paired = coordinator.privateHealthDesktopRoute(contactID: provider, modelID: desktopModel,
                    effort: desktopEffort) {
         approval = try records.prepareLocalCareDesktopDiscussion(id: concern, metric: metric, question: question, route: paired,
-          includesQuestions: shareQuestions)
+          includesQuestions: shareQuestions, includesActionFeedback: shareActionFeedback)
       } else { throw GalaxySSIHealthRecords.Failure.permission }
       confirmed = false
       review = .init(approval: approval, sources: sources)
@@ -171,7 +179,8 @@ struct GalaxySSIHealthCareResearchControls: View {
       review = nil; failed = true; return
     }
     do {
-      try records.authorizeLocalCareResearch(approval, sources: proposed.sources)
+      try records.authorizeLocalCareResearch(approval, sources: proposed.sources,
+        sharesActionFeedback: approval.includesActionFeedback)
       review = nil
       confirmed = false
       reload()
@@ -201,6 +210,7 @@ struct GalaxySSIHealthCareResearchControls: View {
     desktopModel = ""; desktopEffort = .automatic
     shareQuestions = false
     shareQuestionPages = false
+    shareActionFeedback = false
   }
 
   private func status(_ state: Research.State) -> String {
