@@ -354,6 +354,9 @@ struct GalaxySSIHealthCareDetail: View {
             GalaxySSIHealthCareVisitView(records: records, id: id, metric: metric)
           }
         }
+        NavigationLink(GalaxySSIHealthEncounter.text("title", "Visit records", language)) {
+          GalaxySSIHealthEncounterView(records: records, concern: id, metric: metric)
+        }
         GalaxySSIHealthCareComparisonSection(records: records, id: id, metric: metric)
         Section(t("guideline", "Guideline criterion")) {
           if concern.assessment.guidelineVersion != nil {

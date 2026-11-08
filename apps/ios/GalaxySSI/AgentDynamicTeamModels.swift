@@ -141,6 +141,11 @@ enum AgentCollaborationRuleTopics {
     question, hypothesis claims, and environment scope. Omit explicit priors; the host uses the saved posterior.
     A prediction_outcome binds an exact forecast parent and one fully recalled original cloud tool observation
     from its executor. The host computes any posterior; declared probabilities are assumptions, not calibration.
+    When numbers are unjustified, set prediction_mode to qualitative. Omit utility_unit, event utilities, and probabilities.
+    Each choice supplies expectations for every event: expected, not_expected, or unknown. For competing explanations use
+    hypothesis_test with question, assumptions, prediction_basis, misspecification_check, hypotheses (id, claim), event_ids,
+    and predictions[action][hypothesis][event]. Do not supply priors, likelihoods or prior_outcome. The same one original
+    observation is compared against all registered expectations; missing observations are unresolved, not proof.
     A numeric_model_trial records local replay, not independent reference truth. Supply purpose, reference_basis, limitations,
     validator {id:"numeric_model_cases.v1",variables,cases:[{id,input,expected,absolute_tolerance}]}, and computation
     {validator_id:"numeric_model_cases.v1",model}. Expressions use {constant}, {variable}, or {op,args}.
