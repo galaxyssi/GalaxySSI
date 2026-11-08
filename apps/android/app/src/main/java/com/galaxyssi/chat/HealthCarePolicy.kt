@@ -108,8 +108,8 @@ internal object HealthCarePolicy {
         require(stage in setOf(HealthCareStage.MAINTENANCE, HealthCareStage.CLOSED, HealthCareStage.PAUSED, HealthCareStage.REASSESS))
         require(reason.isNotBlank() && reviewer.isNotBlank())
         if (stage == HealthCareStage.MAINTENANCE) {
-            require(value.assessment.record != null)
-            require(value.actions.none { it.state == HealthCareActionState.PROPOSED })
+            require(value.stage == HealthCareStage.MAINTENANCE && value.maintenance != null &&
+                !HealthCareMaintenancePolicy.needsReassessment(value, now)) { "Maintenance requires an explicitly accepted source-backed review" }
         }
         return value.copy(stage = stage, reviewNote = reason, reviewedBy = reviewer, updatedAt = maxOf(value.updatedAt, now))
     }

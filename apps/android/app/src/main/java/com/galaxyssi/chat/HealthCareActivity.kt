@@ -145,6 +145,15 @@ class HealthCareActivity : Activity() {
         proposals.forEach { plan -> ui.add(content, ui.profileRow(HealthCareTargetPresentation.planTitle(this, plan)) {
             planReview.show(plan.id)
         }.apply { tag = "health-care-plan-${plan.id}" }, 8) }
+        if (profile) value.maintenance?.let { review ->
+            ui.add(content, ui.profileRow(getString(R.string.health_maintenance_review_title),
+                getString(if (value.stage == HealthCareStage.MAINTENANCE) R.string.health_maintenance_active else R.string.health_maintenance_reassess)) {
+                planReview.show(review.planId)
+            }.apply { tag = "health-care-maintenance" }, 8)
+            if (value.stage == HealthCareStage.MAINTENANCE) ui.add(content, ui.command(R.string.health_maintenance_reopen) {
+                mutate { store.update(value.id, value.revision, "maintenance_user_reassessment") { it.copy(stage = HealthCareStage.REASSESS) } }
+            }.apply { tag = "health-care-maintenance-reopen" }, 8)
+        }
         heading(content, R.string.health_care_why)
         if (value.assessment.signals.isEmpty()) ui.add(content, ui.text(getString(R.string.health_care_changed_result), 15f), 8)
         value.assessment.signals.forEach { ui.add(content, ui.text(getString(it.titleResource()), 15f), 8) }

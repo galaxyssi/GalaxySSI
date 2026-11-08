@@ -153,7 +153,7 @@ internal data class HealthCareConcern(val id: String, val metric: HealthMetric, 
     val stage: HealthCareStage = HealthCareStage.VERIFY_CONTEXT, val context: HealthCareContext? = null,
     val target: HealthCareTarget? = null, val actions: List<HealthCareAction> = emptyList(),
     val reviewNote: String = "", val reviewedBy: String = "", val conversationId: String = "", val profileId: String = "self",
-    val targetRevision: Int = 0) {
+    val targetRevision: Int = 0, val maintenance: HealthCareMaintenance? = null) {
     init {
         require(HealthProfilePolicy.uuid(id) && revision > 0 && createdAt > 0 && updatedAt >= createdAt && profileId == "self")
         require(inputVersion.length <= 256 && actions.size <= 30 && actions.map { it.id }.distinct().size == actions.size)
@@ -170,6 +170,7 @@ internal data class HealthCareConcern(val id: String, val metric: HealthMetric, 
         .put("stage", stage.name).put("context", context?.json() ?: JSONObject.NULL).put("target", target?.json() ?: JSONObject.NULL)
         .put("actions", JSONArray(actions.map { it.json() })).put("review_note", reviewNote).put("reviewed_by", reviewedBy)
         .put("conversation", conversationId).put("profile", profileId).put("target_revision", targetRevision)
+        .apply { maintenance?.let { put("maintenance", it.json()) } }
     companion object {
         fun from(j: JSONObject): HealthCareConcern {
             require(j.getInt("schema") == 1)
@@ -178,7 +179,8 @@ internal data class HealthCareConcern(val id: String, val metric: HealthMetric, 
                 HealthCareStage.valueOf(j.getString("stage")), if (j.isNull("context")) null else HealthCareContext.from(j.getJSONObject("context")),
                 if (j.isNull("target")) null else HealthCareTarget.from(j.getJSONObject("target")),
                 j.getJSONArray("actions").let { a -> (0 until a.length()).map { HealthCareAction.from(a.getJSONObject(it)) } },
-                j.getString("review_note"), j.getString("reviewed_by"), j.getString("conversation"), j.getString("profile"), j.optInt("target_revision"))
+                j.getString("review_note"), j.getString("reviewed_by"), j.getString("conversation"), j.getString("profile"), j.optInt("target_revision"),
+                j.optJSONObject("maintenance")?.let(HealthCareMaintenance::from))
         }
     }
 }

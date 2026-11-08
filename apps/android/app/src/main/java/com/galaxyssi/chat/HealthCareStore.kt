@@ -146,6 +146,13 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             HealthCareCursor(it.updatedAt, it.id, HealthCarePriority.rank(it.assessment))
         } else null)
     }
+    fun revision(id: String, revision: Int): HealthCareConcern? {
+        require(HealthProfilePolicy.uuid(id) && revision > 0)
+        return db.rawQuery("SELECT payload FROM history WHERE concern_id=? AND revision=?", arrayOf(id, revision.toString())).use {
+            if (!it.moveToFirst()) null else HealthCareConcern.from(unpack("history", "$id:$revision", it.getBlob(0)).getJSONObject("concern"))
+                .also { value -> check(value.id == id && value.revision == revision) }
+        }
+    }
     fun history(id: String, beforeRevision: Int = Int.MAX_VALUE): List<HealthCareConcern> {
         require(HealthProfilePolicy.uuid(id))
         return db.rawQuery("SELECT revision,payload FROM history WHERE concern_id=? AND revision<? ORDER BY revision DESC LIMIT 30",
@@ -249,7 +256,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         grounded
     }
     fun resolvePlan(id: String, selected: Set<String>, expectedRevision: Int, privacy: HealthPrivacyPolicy,
-        sourceVersion: String, now: Long, acceptTarget: Boolean = false): HealthCareConcern = transaction(true) {
+        sourceVersion: String, now: Long, acceptTarget: Boolean = false, acceptMaintenance: Boolean = false): HealthCareConcern = transaction(true) {
         val proposed = plan(id) ?: throw HealthCareConflict()
         val issue = concern(proposed.grant.concernId) ?: throw HealthCareConflict()
         if (proposed.state != HealthCarePlanState.PENDING || issue.revision != expectedRevision ||
@@ -257,11 +264,18 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         if (proposed.sources.any { source -> source.evidence?.let {
             HealthCareEvidencePolicy.supports(it, proposed.grant, source.url, source.quote)
         } != true }) throw HealthCareEvidenceMissing()
-        val next = HealthCarePlanPolicy.accept(proposed, issue, selected, now, acceptTarget)
+        val next = HealthCarePlanPolicy.accept(proposed, issue, selected, now, acceptTarget, acceptMaintenance)
             .copy(revision = issue.revision + 1, updatedAt = maxOf(issue.updatedAt, now))
         persist(next, "agent_plan_confirmed")
-        persistPlan(proposed.copy(state = HealthCarePlanState.ACCEPTED, selected = selected, resolvedAt = now, targetSelected = acceptTarget))
+        persistPlan(proposed.copy(state = HealthCarePlanState.ACCEPTED, selected = selected, resolvedAt = now,
+            targetSelected = acceptTarget, maintenanceSelected = acceptMaintenance))
         next
+    }
+    fun reassessMaintenance(id: String, expectedRevision: Int, now: Long): HealthCareConcern = update(id, expectedRevision, "maintenance_review_due") {
+        if (HealthCareMaintenancePolicy.needsReassessment(it, now)) it.copy(stage = HealthCareStage.REASSESS) else it
+    }
+    fun nextMaintenanceReview(): Long? = db.rawQuery("SELECT MIN(due_at) FROM concerns WHERE stage='MAINTENANCE'", null).use {
+        it.moveToFirst(); if (it.isNull(0)) null else it.getLong(0)
     }
     fun revokeTarget(id: String, expectedRevision: Int, privacy: HealthPrivacyPolicy): HealthCareConcern = update(id, expectedRevision, "individual_target_revoked") {
         if (!privacy.metrics || !privacy.profile) throw HealthCareConflict()

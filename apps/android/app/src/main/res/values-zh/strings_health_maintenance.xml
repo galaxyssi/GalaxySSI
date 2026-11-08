@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_maintenance_review_title">长期维护评估</string>
+    <string name="health_maintenance_basis_target">依据：已确认的个体化目标</string>
+    <string name="health_maintenance_basis_risk">依据：风险评估，不设数值目标</string>
+    <string name="health_maintenance_pending">待确认维护建议 · %1$d 项行动</string>
+    <string name="health_maintenance_scope">数值符合目标不代表病情已经稳定。请结合医疗专业人员的意见，核对观察时段、来源适用性和下次评估安排。此处不会取消已有提醒，也不会自动开启新提醒。</string>
+    <string name="health_maintenance_records">评估依据：连续 %1$d 次结果，并非全部历史</string>
+    <string name="health_maintenance_adopt">已核对依据，选择长期维护跟进；同时勾选下方的下一次复评</string>
+    <string name="health_maintenance_active">已确认跟进方式，仍需按计划复评</string>
+    <string name="health_maintenance_reassess">上次维护评估已保留，需要重新评估</string>
+    <string name="health_maintenance_reopen">现在重新评估</string>
+    <string name="health_maintenance_saved_history">已保存的评估记录，不是新的建议</string>
+    <string name="health_maintenance_gap_target">请先核对当前个体化目标和结果。</string>
+    <string name="health_maintenance_gap_history">所选结果未覆盖完整、连续的观察时段。</string>
+    <string name="health_maintenance_gap_comparison">检测条件或结果可比性仍待确认。</string>
+    <string name="health_maintenance_gap_applicability">来源适用性或冲突仍待核对。</string>
+    <string name="health_maintenance_gap_actions">已有行动尚未完成，不能直接替换为维护。</string>
+    <string name="health_maintenance_gap_recheck">需要有来源支持、尚未到期的下一次复评窗口。</string>
+    <string name="health_maintenance_gap_priority">请先处理需要优先关注的情况。</string>
+</resources>
