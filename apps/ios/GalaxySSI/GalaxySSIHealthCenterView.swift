@@ -35,6 +35,11 @@ struct GalaxySSIHealthCenterView: View {
         Label(t("record_center.title", "Health Record Center"), systemImage: "square.and.pencil")
       }
       NavigationLink {
+        GalaxySSIHealthCareView(records: records)
+      } label: {
+        Label(t("care.title", "Health Care"), systemImage: "heart.text.square")
+      }
+      NavigationLink {
         GalaxySSIHealthDataFilesView(records: records, metrics: { metricCatalog }, review: { recordCenter })
       } label: {
         Label(t("data_files.title", "Data and Files"), systemImage: "folder")
@@ -329,6 +334,7 @@ struct GalaxySSIHealthCenterView: View {
     case .weeklyReport: return t("weekly.title", "Weekly Health Report")
     case .importOriginals: return t("privacy.import_originals", "Keep originals of new imports")
     case .profileAnalysis: return t("assistant.profile_permission", "Allow selected profile fields in local analysis")
+    case .localCare: return t("care.permission", "Allow local health review")
     }
   }
 
