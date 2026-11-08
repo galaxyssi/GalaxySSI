@@ -16,6 +16,8 @@
 "galaxyssi.health.discussion.send" = "发送已确认的数据";
 "galaxyssi.health.discussion.close" = "关闭";
 "galaxyssi.health.discussion.request_plan" = "请求计划草稿";
+"galaxyssi.health.discussion.allow_history" = "在本次请求中包含测量历史";
+"galaxyssi.health.discussion.history_scope" = "本次最多发送当前关注项最近的 30 条测量记录。仅在本次请求内，模型最多可继续读取 4 页更早的记录，每页最多 30 条。";
 "galaxyssi.health.discussion.plan_retained" = "草稿已保存，可在健康计划中审核";
 "galaxyssi.health.discussion.reading_sources" = "正在读取公开资料";
 "galaxyssi.health.discussion.source.labResults" = "MedlinePlus：理解实验室检测结果";
