@@ -124,6 +124,43 @@ extension GalaxySSIStoreTests {
       binding: "same")?.observations, [])
   }
 
+  @MainActor
+  func testCloudResearchFinalRequiresDurableCitationsAndCurrentQualityAndClearsOnlyExactDelivery() throws {
+    let name = "cloud-research-final-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let storage = AgentResearchCheckpointStore(defaults: defaults, secrets: InMemorySecretStore(), owner: "owner")
+    let source = UUID()
+    func open() throws -> AgentResearchCheckpointStore.CloudRun {
+      try XCTUnwrap(storage.openCloudRun(conversation: "conversation", turn: "turn", source: source, binding: "same"))
+    }
+    let quality = try XCTUnwrap(CloudResearchQualityStandard.bundled)
+    let oldQuality = try CloudResearchQualityStandard(data: Data(
+      #"{"version":"old","rules":[],"repair":"repair","risk_rules":[]}"#.utf8))
+    let run = try open()
+    let answer = "The report describes the result [source](https://example.test/report)."
+    storage.recordCloudFinal(answer, for: run, quality: quality)
+    XCTAssertNil(try open().final)
+    let pack = AgentIOSWebEvidencePack.build(query: "fixture", status: "completed",
+      documents: [["url": .string("https://example.test/report"), "content": .string("Research body")]],
+      results: [], receipts: [], generatedAtMillis: 1)
+    storage.appendCloudObservation(.init(tool: "web_search", arguments: ["query": .string("fixture")],
+      output: AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)])), to: run)
+    storage.recordCloudFinal("Invented [source](https://example.test/absent).", for: run, quality: quality)
+    XCTAssertNil(try open().final)
+    storage.recordCloudFinal(answer, for: run, quality: quality)
+    let pending = try open()
+    XCTAssertEqual(pending.final?.delivery.rawValue, "not_confirmed")
+    XCTAssertEqual(storage.reusableCloudFinal(for: pending, quality: quality), answer)
+    XCTAssertNil(storage.reusableCloudFinal(for: pending, quality: oldQuality))
+    XCTAssertFalse(defaults.dictionaryRepresentation().description.contains(answer))
+    storage.confirmCloudFinal(conversation: "conversation", turn: "turn", source: source, deliveredAnswer: "Different")
+    XCTAssertEqual(storage.reusableCloudFinal(for: try open(), quality: quality), answer)
+    storage.confirmCloudFinal(conversation: "conversation", turn: "turn", source: source, deliveredAnswer: answer)
+    XCTAssertNil(try open().final)
+    XCTAssertEqual(try open().observations.count, 1)
+  }
+
   func testDesktopToolEvidenceRejectsForeignNonceGenerationAndInnerScope() throws {
     let source = UUID().uuidString.lowercased()
     let owner = AgentTeamReplyOwner(supervisorRunId: "run", memberId: "member",

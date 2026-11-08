@@ -65,7 +65,7 @@ struct CloudResearchObservationRecovery {
   private let run: AgentResearchCheckpointStore.CloudRun
 
   static func open(store: GalaxySSIStore, contact: GalaxySSIContact, request: ModelStreamRequest,
-                   turns: [ChatMessage], retrySource: ChatMessage? = nil) -> Self? {
+                   turns: [ChatMessage], retrySource: ChatMessage? = nil, create: Bool = true) -> Self? {
     guard let source = retrySource ?? turns.last, mayRetain(source, in: store),
           let model = contact.selectedCloudModel,
           let index = turns.lastIndex(where: { $0.id == source.id }),
@@ -80,8 +80,31 @@ struct CloudResearchObservationRecovery {
     ) else { return nil }
     let storage = store.researchCheckpointStore
     guard let run = storage.openCloudRun(conversation: source.conversationId,
-      turn: source.turnId.ifBlank(source.id.uuidString), source: source.id, binding: binding) else { return nil }
+      turn: source.turnId.ifBlank(source.id.uuidString), source: source.id, binding: binding, create: create) else { return nil }
     return Self(source: source, storage: storage, run: run)
+  }
+
+  static func replay(store: GalaxySSIStore, contact: GalaxySSIContact, request: ModelStreamRequest,
+                     turns: [ChatMessage], retrySource: ChatMessage) -> String? {
+    guard !Task.isCancelled, let last = turns.last, last.id != retrySource.id,
+          last.conversationId == retrySource.conversationId, last.contactId == retrySource.contactId,
+          let saved = store.persistedMessage(id: last.id, contactId: last.contactId),
+          saved.isMine, !saved.isSystem, saved.content == retrySource.content,
+          saved.richOutputJson == retrySource.richOutputJson, saved.turnId == last.turnId,
+          let index = turns.firstIndex(where: { $0.id == retrySource.id }),
+          turns.dropFirst(index + 1).dropLast().allSatisfy({
+            $0.isSystem || (!$0.isMine && $0.turnId == retrySource.turnId)
+          }),
+          let recovery = open(store: store, contact: contact, request: request,
+            turns: turns, retrySource: retrySource, create: false),
+          let quality = CloudResearchQualityStandard.bundled else { return nil }
+    return recovery.storage.reusableCloudFinal(for: recovery.run, quality: quality)
+  }
+
+  func recordFinal(_ answer: String, store: GalaxySSIStore) {
+    guard !Task.isCancelled, storage.owner == store.researchCheckpointStore.owner,
+          Self.mayRetain(source, in: store), let quality = CloudResearchQualityStandard.bundled else { return }
+    storage.recordCloudFinal(answer, for: run, quality: quality)
   }
 
   func record(call: AssembledToolCall, output: String, store: GalaxySSIStore) {
@@ -236,10 +259,20 @@ struct AgentResearchCheckpointStore {
     let binding: String
     let startedAt: Date
     var observations: [CloudObservation] = []
+    var final: CloudFinal?
+  }
+
+  struct CloudFinal: Codable {
+    enum Stage: String, Codable { case synthesisCompleted = "synthesis_completed" }
+    enum Delivery: String, Codable { case notConfirmed = "not_confirmed" }
+    let answer: String
+    let qualityVersion: String
+    var stage = Stage.synthesisCompleted
+    var delivery = Delivery.notConfirmed
   }
 
   func openCloudRun(conversation: String, turn: String, source: UUID, binding: String,
-                    now: Date = Date()) -> CloudRun? {
+                    create: Bool = true, now: Date = Date()) -> CloudRun? {
     let storageKey = key(conversation, turn, source) + ".cloud-loop"
     if let current = readCloudRun(storageKey) {
       guard current.conversation == conversation, current.turn == turn, current.source == source,
@@ -249,6 +282,7 @@ struct AgentResearchCheckpointStore {
     } else if GalaxySSIEncryptedUserDefaultsStore.contains(defaults: defaults, key: storageKey) {
       return nil
     }
+    guard create else { return nil }
     let run = CloudRun(conversation: conversation, turn: turn, source: source, binding: binding, startedAt: now)
     return writeCloudRun(run, key: storageKey) ? run : nil
   }
@@ -263,6 +297,38 @@ struct AgentResearchCheckpointStore {
     else { return }
     current.observations.append(observation)
     _ = writeCloudRun(current, key: storageKey)
+  }
+
+  func recordCloudFinal(_ answer: String, for run: CloudRun, quality: CloudResearchQualityStandard) {
+    let storageKey = key(run.conversation, run.turn, run.source) + ".cloud-loop"
+    guard var current = readCloudRun(storageKey), current.binding == run.binding, current.startedAt == run.startedAt,
+          current.conversation == run.conversation, current.turn == run.turn, current.source == run.source,
+          current.final?.qualityVersion != quality.version, acceptsCloudFinal(answer, run: current, quality: quality)
+    else { return }
+    current.final = CloudFinal(answer: answer, qualityVersion: quality.version)
+    _ = writeCloudRun(current, key: storageKey)
+  }
+
+  func reusableCloudFinal(for run: CloudRun, quality: CloudResearchQualityStandard) -> String? {
+    guard let final = run.final, final.qualityVersion == quality.version,
+          acceptsCloudFinal(final.answer, run: run, quality: quality) else { return nil }
+    return final.answer
+  }
+
+  func confirmCloudFinal(conversation: String, turn: String, source: UUID, deliveredAnswer: String) {
+    let storageKey = key(conversation, turn, source) + ".cloud-loop"
+    guard var current = readCloudRun(storageKey), current.conversation == conversation,
+          current.turn == turn, current.source == source, current.final?.answer == deliveredAnswer else { return }
+    current.final = nil
+    _ = writeCloudRun(current, key: storageKey)
+  }
+
+  private func acceptsCloudFinal(_ answer: String, run: CloudRun, quality: CloudResearchQualityStandard) -> Bool {
+    guard !answer.isBlank, answer.utf8.count <= 64_000,
+          !CloudWebGrounding.containsInternalToolProtocol(answer),
+          quality.assess(answer, researchObserved: true).risks.isEmpty else { return false }
+    let evidence = run.observations.map { ($0.tool, $0.output) }
+    return CloudWebGrounding.citationValidation(answer, results: evidence).valid
   }
 
   private func readCloudRun(_ storageKey: String) -> CloudRun? {

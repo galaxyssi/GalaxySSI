@@ -45,6 +45,8 @@ struct CloudResearchQualityStandard {
       contract.rules.map { "- \($0)" }.joined(separator: "\n")
   }
 
+  var version: String { contract.version }
+
   func assess(_ answer: String, researchObserved: Bool) -> Report {
     guard researchObserved else { return Report(contract: contract.version, risks: [], researchObserved: false) }
     let prose = Self.prose(answer)

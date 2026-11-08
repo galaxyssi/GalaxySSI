@@ -12215,8 +12215,13 @@ final class MessageCoordinator: ObservableObject {
     if recoverable,
        let source = store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId),
        [.delivered, .read].contains(source.deliveryStatus),
-       store.chatHistoryDatabase.cloudDispatchReplies(receipt)?.contains(where: receipt.isCommittedReply) == true {
+       let committed = store.chatHistoryDatabase.cloudDispatchReplies(receipt)?.first(where: receipt.isCommittedReply) {
       _ = store.chatHistoryDatabase.retireCloudDispatch(receipt)
+      if committed.richOutputJson.isBlank {
+        let origin = researchRetrySource ?? source
+        store.researchCheckpointStore.confirmCloudFinal(conversation: origin.conversationId,
+          turn: origin.turnId.ifBlank(origin.id.uuidString), source: origin.id, deliveredAnswer: committed.content)
+      }
     }
   }
 

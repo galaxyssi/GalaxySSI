@@ -573,6 +573,41 @@ final class CloudConversationStreamEngineTests: XCTestCase {
       request: request, turns: [source, retry], retrySource: source))
   }
 
+  @MainActor
+  func testCloudResearchReplaysPendingSynthesisWithoutProviderOrToolCalls() async throws {
+    let fixture = try makeFixture()
+    let session = fixture.store.createAgentSession(title: "Research")
+    let source = fixture.store.appendOutgoing("Research the report", to: fixture.contact.id,
+      conversationOverride: session.id)
+    let pack = AgentIOSWebEvidencePack.build(query: "report", status: "completed",
+      documents: [["url": .string("https://example.test/report"), "content": .string("Research body")]],
+      results: [], receipts: [], generatedAtMillis: 1)
+    let executor = RecordingConversationToolExecutor(result: AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)]))
+    let answer = "The report describes the result [source](https://example.test/report)."
+    let provider = RecordingModelStreamClient(eventBatches: [
+      toolRound(index: 0, callId: "search", query: "report"),
+      [.textDelta(.init(requestId: "reply", sequence: 1, text: answer, receivedAtElapsedMs: 2)),
+       .completed(.init(requestId: "reply", finishReason: "stop", completedAtElapsedMs: 3))]
+    ])
+    let first = CloudConversationStreamEngine(streamClient: provider, toolExecutor: executor,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    let generated = try await collect(first.streamConversation(contact: fixture.contact, store: fixture.store,
+      turns: [source], requestId: "first"))
+    XCTAssertEqual(textDeltas(generated).last?.text, answer)
+    XCTAssertEqual(executor.calls.count, 1)
+
+    let retry = fixture.store.appendOutgoing(source.content, to: fixture.contact.id, conversationOverride: session.id)
+    let unusedProvider = RecordingModelStreamClient(events: [])
+    let reopened = CloudConversationStreamEngine(streamClient: unusedProvider, toolExecutor: executor,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    let replayed = try await collect(reopened.streamConversation(contact: fixture.contact, store: fixture.store,
+      turns: [source, retry], images: [], requestId: "retry", collaborationEvidence: nil, researchRetrySource: source))
+    XCTAssertEqual(textDeltas(replayed).map(\.text), [answer])
+    XCTAssertEqual(completed(replayed)?.finishReason, "recovered_synthesis")
+    XCTAssertTrue(unusedProvider.requests.isEmpty)
+    XCTAssertEqual(executor.calls.count, 1)
+  }
+
   func testResearchBudgetStopsAtConfiguredLimitAndCountsOnlyNewEvidence() {
     var now: Int64 = 1
     let budget = CloudResearchRuntimeBudget(limits: .init(tools: 4, rounds: 8, activeMillis: 300), clock: { now })

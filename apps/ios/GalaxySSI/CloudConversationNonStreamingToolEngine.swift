@@ -29,6 +29,9 @@ struct CloudConversationNonStreamingToolEngine {
       requestId: requestId,
       images: images
     )
+    if retainResearch, images.isEmpty, let researchRetrySource,
+       let cached = await CloudResearchObservationRecovery.replay(store: store, contact: contact, request: request,
+         turns: turns, retrySource: researchRetrySource) { return cached }
     var conversation = try CloudModelStreamMutableConversation(request: request)
     var evidence: [(String, String)] = []
     let progress = CloudWebToolLoopProgress()
@@ -122,7 +125,11 @@ struct CloudConversationNonStreamingToolEngine {
         }
         if !candidate.isBlank,
            !CloudWebGrounding.citationValidation(candidate, results: evidence).requiresRepair {
-          return candidate + CloudImageAnnotationSession.artifactSuffix(requestId: requestId)
+          let artifacts = CloudImageAnnotationSession.artifactSuffix(requestId: requestId)
+          if artifacts.isEmpty, !CloudWebGrounding.containsInternalToolProtocol(response.text) {
+            await recovery?.recordFinal(candidate, store: store)
+          }
+          return candidate + artifacts
         }
         return CloudWebGrounding.evidenceFallback(results: evidence) +
           CloudImageAnnotationSession.artifactSuffix(requestId: requestId)

@@ -185,6 +185,18 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation
   ) async {
     defer { CloudImageAnnotationSession.discard(requestId: requestId) }
+    if retainResearch, images.isEmpty, collaborationEvidence == nil, collaborationModelAudit == nil,
+       let researchRetrySource,
+       let request = try? await modelClient.prepareConversationStreamRequest(contact: contact, store: store,
+         turns: turns, requestId: requestId),
+       let cached = await CloudResearchObservationRecovery.replay(store: store, contact: contact, request: request,
+         turns: turns, retrySource: researchRetrySource) {
+      let now = elapsedMillis()
+      continuation.yield(.textDelta(.init(requestId: requestId, sequence: 1, text: cached, receivedAtElapsedMs: now)))
+      continuation.yield(.completed(.init(requestId: requestId, finishReason: "recovered_synthesis", completedAtElapsedMs: now)))
+      continuation.finish()
+      return
+    }
     let ticket = AgentDataDisclosureLedger.beginCloudRequest(
       store: disclosureStore,
       destination: AgentDataDisclosureCloudDestination(contact: contact),
@@ -550,6 +562,11 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             let visibleAnswer = !candidate.isBlank && repairPrompt == nil
               ? candidate
               : CloudWebGrounding.evidenceFallback(results: evidenceResults)
+            if !candidate.isBlank, repairPrompt == nil, roundCompleted,
+               !CloudWebGrounding.containsInternalToolProtocol(rawRoundText),
+               CloudImageAnnotationSession.artifactSuffix(requestId: requestId).isEmpty {
+              await recovery?.recordFinal(visibleAnswer, store: store)
+            }
             if !visibleAnswer.isBlank {
               emittedText = true
               emittedSequence += 1
