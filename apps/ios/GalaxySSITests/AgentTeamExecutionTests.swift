@@ -1970,9 +1970,126 @@ extension GalaxySSIStoreTests {
     let changes = try XCTUnwrap(AgentCollaborationNumericTrial.comparison(previous: first, current: second))
     XCTAssertEqual(changes["domain_recovered_case_ids"], .array([.string("domain")]))
     XCTAssertEqual(changes["regressed_case_ids"], .array([.string("tiny")]))
+    XCTAssertEqual(changes["error_increased_case_ids"], .array([.string("tiny")]))
     computation["model"] = .object(["op": .string("shell"), "args": .array([])])
     trial["computation"] = .object(computation)
     XCTAssertNil(AgentCollaborationNumericTrial.evaluate(trial))
+  }
+
+  func testNumericFeedbackPagesRetainAllScopedCasesAndCompactMilestoneReceipts() throws {
+    typealias Feedback = AgentCollaborationNumericFeedback
+    let suite = "numeric-feedback-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    var team = durableTeamSnapshot("run")
+    team.members[1].dispatchCheckpoint = .dispatching
+    XCTAssertTrue(history.upsert(team))
+    let scope = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: team.conversationId,
+      turnId: team.taskId, memberId: team.members[1].memberId, sourceId: team.members[1].sourceMessageId)
+    let caseCount = 140
+    let ids = (0..<caseCount).map { "case-\u{1F9EA}-\($0)" }
+    let cases: [AgentMcpJSONValue] = ids.enumerated().map { index, id in
+      .object(["id": .string(id), "input": .object(["x": .int(index.isMultiple(of: 2) ? 4 : -4)]),
+        "expected": .int(2), "absolute_tolerance": .int(0)])
+    }
+    let x: AgentMcpJSONValue = .object(["variable": .string("x")])
+    func publish(_ id: String, input: AgentMcpJSONValue, previous: AgentMcpJSONObject? = nil) throws -> AgentMcpJSONObject {
+      let validator = AgentCollaborationNumericTrial.validatorId
+      var trial: AgentMcpJSONObject = ["purpose": .string("Replay"), "reference_basis": .string("Supplied"),
+        "limitations": .string("Finite cases"),
+        "validator": .object(["id": .string(validator), "variables": .array([.string("x")]), "cases": .array(cases)]),
+        "computation": .object(["validator_id": .string(validator),
+          "model": .object(["op": .string("sqrt"), "args": .array([input])])])]
+      if let previous { trial["previous_trial"] = .object(previous) }
+      let draft: AgentMcpJSONObject = ["id": .string(id), "base_revision": .int(0), "kind": .string("numeric_model_trial"),
+        "title": .string("Numeric trial"), "body": .object(["numeric_model_trial": .object(trial)]),
+        "parents": .array(previous.map { [.object($0)] } ?? [])]
+      let artifact = AgentMcpJSONCodec.stringify(["format": .string("galaxyssi.research-artifact.v1"),
+        "summary": .string("Registered trial"), "workspace": .array([.object(draft)])])
+      return try history.publishCollaborationMilestone(["mode": .string("publish"), "milestone_id": .string(id),
+        "artifact": .string(artifact)], scope: scope)
+    }
+    let baseline = try publish("before", input: x)
+    let oldRef = try XCTUnwrap(baseline["references"]?.arrayValue?.first?.objectValue)
+    let candidate = try publish("after", input: .object(["op": .string("neg"), "args": .array([x])]), previous: oldRef)
+    let summary = try XCTUnwrap(candidate["numeric_trials"]?.arrayValue?.first?.objectValue)
+    let ref = try XCTUnwrap(summary["source_reference"]?.objectValue)
+    let selector = try XCTUnwrap(summary["case_feedback"]?.objectValue)
+    XCTAssertEqual(summary["case_count"], .int(Int64(caseCount)))
+    XCTAssertEqual(summary["failed_cases"], .int(Int64(caseCount / 2)))
+    XCTAssertEqual(summary["worst_case"]?.objectValue?["id"], .string(ids[0]))
+    XCTAssertNil(summary["checks"])
+    XCTAssertEqual(summary["comparison"]?.objectValue?["domain_failed_case_count"], .int(Int64(caseCount / 2)))
+    XCTAssertNil(summary["comparison"]?.objectValue?["domain_failed_case_ids"])
+    XCTAssertLessThan(AgentMcpJSONCodec.stringify(summary).utf8.count, 2_000)
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let receipt = try reopened.publishCollaborationMilestone(["mode": .string("receipt"), "milestone_id": .string("after"),
+      "artifact_sha256": try XCTUnwrap(candidate["artifact_sha256"])], scope: scope)
+    XCTAssertEqual(receipt["numeric_trials"], candidate["numeric_trials"])
+
+    let firstPage = try reopened.recallCollaborationOriginal(selector, scope: scope)
+    XCTAssertEqual(firstPage["source_reference"], .object(ref))
+    XCTAssertEqual(firstPage["matched_case_count"], .int(Int64(caseCount / 2)))
+    let cursor = try XCTUnwrap(firstPage["next_cursor"]?.strictStringValue)
+    var wrongFilter = selector
+    wrongFilter["cursor"] = .string(cursor)
+    wrongFilter["case_filter"] = .string("all")
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(wrongFilter, scope: scope))
+    var wrongRevision = oldRef
+    wrongRevision["mode"] = .string(Feedback.mode)
+    wrongRevision["cursor"] = .string(cursor)
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(wrongRevision, scope: scope))
+    var otherReader = scope
+    otherReader.memberId = team.members[0].memberId
+    otherReader.sourceId = team.members[0].sourceMessageId
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(selector, scope: otherReader))
+    var foreignGroup = scope
+    foreignGroup.conversationId = "other"
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(selector, scope: foreignGroup))
+
+    let progress = CloudWebToolLoopProgress()
+    let tool = CloudModelStreamMutableConversation.collaborationRecallName
+    XCTAssertTrue(progress.record(toolName: tool, arguments: selector, output: AgentMcpJSONCodec.stringify(firstPage)))
+    var defaultsOnly = selector
+    defaultsOnly["case_filter"] = nil
+    defaultsOnly["cursor"] = .string("")
+    XCTAssertFalse(progress.record(toolName: tool, arguments: defaultsOnly, output: AgentMcpJSONCodec.stringify(firstPage)))
+    func read(_ filter: String) throws -> [AgentMcpJSONObject] {
+      var input = selector
+      input["case_filter"] = .string(filter)
+      var content = ""
+      for _ in 0..<100 {
+        let output = try reopened.recallCollaborationOriginal(input, scope: scope)
+        XCTAssertTrue(Feedback.advances(try XCTUnwrap(Feedback.Request(input)), output: output))
+        content += try XCTUnwrap(output["content"]?.strictStringValue)
+        guard let next = output["next_cursor"]?.strictStringValue else {
+          let result = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(content.utf8))
+          return try XCTUnwrap(result["cases"]?.arrayValue).compactMap(\.objectValue)
+        }
+        input["cursor"] = .string(next)
+      }
+      XCTFail("Numeric case pagination did not terminate")
+      return []
+    }
+    XCTAssertEqual(try read("all").map { $0.string("id") }, ids)
+    let failures = try read("failed")
+    XCTAssertEqual(failures.map { $0.string("id") }, ids.enumerated().filter { $0.offset.isMultiple(of: 2) }.map(\.element))
+    XCTAssertEqual(failures.first?["expected"], .int(2))
+    XCTAssertEqual(failures.first?["absolute_tolerance"], .int(0))
+    XCTAssertEqual(failures.first?["input"]?.objectValue?["x"], .int(4))
+    XCTAssertEqual(failures.first?["observed"]?.objectValue?["error"], .string("nonfinite_expression_result"))
+    XCTAssertEqual(failures.first?["changes"], .array([.string("regressed"), .string("domain_failed")]))
+    XCTAssertEqual(try read("domain_error").count, caseCount / 2)
+    XCTAssertEqual(try read("regressed").count, caseCount / 2)
+    XCTAssertEqual(try read("improved").count, caseCount / 2)
+    XCTAssertEqual(try read("domain_recovered").count, caseCount / 2)
+    XCTAssertTrue(try read("error_reduced").isEmpty)
   }
 
   func testWorkflowConditionDiagnosticsKeepMissingNullAndExactNumbersDistinct() throws {

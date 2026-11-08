@@ -1,5 +1,140 @@
 import Foundation
 
+enum AgentCollaborationNumericFeedback {
+  static let mode = "numeric_cases"
+  static let trust = "host_numeric_replay_projection_not_independent_reference_truth_or_generalization"
+  static let changes = ["improved", "regressed", "error_reduced", "error_increased", "domain_recovered", "domain_failed"]
+  static let filters = ["failed", "all", "domain_error"] + changes
+  static let instructions = "Use numeric_cases with exact object_id, revision, sha256 and case_filter (default failed). " +
+    "Follow next_cursor with the same filter and join content pages before decoding. Use workspace for the full immutable trial."
+
+  struct Request {
+    let reference: AgentCollaborationResearchReference
+    let filter: String
+    let offset: Int64
+    private let binding: String
+
+    init?(_ input: AgentMcpJSONObject) {
+      guard Set(input.keys).isSubset(of: ["mode", "object_id", "revision", "sha256", "case_filter", "cursor"]),
+            input["mode"] == .string(AgentCollaborationNumericFeedback.mode),
+            let reference = AgentCollaborationCandidateRecall.reference(input),
+            case .string(let filter) = input["case_filter"] ?? .string("failed"), filters.contains(filter),
+            case .string(let cursor) = input["cursor"] ?? .string(""), cursor.utf8.count <= 512
+      else { return nil }
+      var fields = AgentCollaborationCandidateRecall.reference(reference)
+      fields["case_filter"] = .string(filter)
+      let binding = AgentMcpJSONCodec.sha256(fields)
+      if cursor.isEmpty {
+        offset = 0
+      } else {
+        guard let fields = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(cursor.utf8)),
+              Set(fields.keys) == ["binding", "offset"], fields["binding"] == .string(binding),
+              case .int(let position)? = fields["offset"], position > 0 else { return nil }
+        offset = position
+      }
+      self.reference = reference
+      self.filter = filter
+      self.binding = binding
+    }
+
+    func cursor(at offset: Int64) -> AgentMcpJSONValue {
+      .string(AgentMcpJSONCodec.stringify(["binding": .string(binding), "offset": .int(offset)]))
+    }
+  }
+
+  static func summary(_ revision: AgentCollaborationResearchRevision) -> AgentMcpJSONObject? {
+    guard revision.draft.kind == .numericModelTrial, var replay = revision.numericReplay else { return nil }
+    replay.removeValue(forKey: "checks")
+    replay["case_details_omitted"] = .bool(true)
+    if var worst = replay["worst_case"]?.objectValue, case .double(let value)? = worst["actual"],
+       let integer = Int64(exactly: value) {
+      // Match the numeric representation used when the encrypted receipt is decoded again.
+      worst["actual"] = .int(integer)
+      replay["worst_case"] = .object(worst)
+    }
+    if var comparison = replay["comparison"]?.objectValue {
+      for change in changes {
+        if let ids = comparison.removeValue(forKey: change + "_case_ids")?.arrayValue {
+          comparison[change + "_case_count"] = .int(Int64(ids.count))
+        }
+      }
+      comparison["case_ids_omitted"] = .bool(true)
+      replay["comparison"] = .object(comparison)
+    }
+    let source = AgentCollaborationCandidateRecall.reference(revision.reference)
+    var selector = source
+    selector["mode"] = .string(mode)
+    selector["case_filter"] = .string("failed")
+    replay["source_reference"] = .object(source)
+    replay["case_feedback"] = .object(selector)
+    return replay
+  }
+
+  static func page(_ request: Request, revision: AgentCollaborationResearchRevision) throws -> AgentMcpJSONObject {
+    guard revision.reference == request.reference, revision.draft.kind == .numericModelTrial,
+          let replay = revision.numericReplay, let checks = replay["checks"]?.arrayValue,
+          let cases = revision.draft.body["numeric_model_trial"]?.objectValue?["validator"]?.objectValue?["cases"]?.arrayValue,
+          (1...4_096).contains(cases.count), checks.count == cases.count,
+          replay["case_count"] == .int(Int64(cases.count)),
+          let spec = replay["spec_sha256"], let model = replay["model_sha256"]
+    else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    let comparison = replay["comparison"]?.objectValue
+    var changed: [String: Set<String>] = [:]
+    if let comparison {
+      for change in changes {
+        guard let list = comparison[change + "_case_ids"]?.arrayValue else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        let ids = Set(list.compactMap(\.strictStringValue))
+        guard ids.count == list.count else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        changed[change] = ids
+      }
+    }
+    var selected: [AgentMcpJSONValue] = []
+    var registered = Set<String>()
+    for (item, observed) in zip(cases, checks) {
+      guard var row = item.objectValue, let id = row["id"]?.strictStringValue, registered.insert(id).inserted,
+            let check = observed.objectValue, check["id"] == .string(id), case .bool(let passed)? = check["passed"]
+      else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      let labels = changes.filter { changed[$0]?.contains(id) == true }
+      let include: Bool
+      switch request.filter {
+      case "all": include = true
+      case "failed": include = !passed
+      case "domain_error": include = check["error"] != nil
+      default: include = labels.contains(request.filter)
+      }
+      if include {
+        row["observed"] = observed
+        row["changes"] = .array(labels.map(AgentMcpJSONValue.string))
+        selected.append(.object(row))
+      }
+    }
+    guard changed.values.allSatisfy({ $0.isSubset(of: registered) }) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    let content = AgentMcpJSONCodec.stringify(["cases": .array(selected)])
+    let page = try AgentCollaborationEvidenceContent.page(Data(content.utf8), offset: request.offset, evidence: true)
+    guard page.end > request.offset else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    return [
+      "status": .string("returned"), "content": .string(page.content), "offset": .int(request.offset),
+      "end_offset": .int(page.end), "total_characters": .int(page.wireTotal),
+      "offset_unit": .string(AgentCollaborationEvidenceContent.offsetUnit),
+      "next_cursor": page.end < page.wireTotal ? request.cursor(at: page.end) : .null,
+      "case_filter": .string(request.filter), "matched_case_count": .int(Int64(selected.count)),
+      "case_count": .int(Int64(cases.count)), "source_reference": .object(AgentCollaborationCandidateRecall.reference(revision.reference)),
+      "spec_sha256": spec, "model_sha256": model, "has_comparison": .bool(comparison != nil),
+      "trust": .string(trust), "read_guidance": .string(instructions)
+    ]
+  }
+
+  static func advances(_ request: Request, output: AgentMcpJSONObject) -> Bool {
+    guard output["status"] == .string("returned"), output["trust"] == .string(trust),
+          output["case_filter"] == .string(request.filter), output["offset"] == .int(request.offset),
+          output["source_reference"] == .object(AgentCollaborationCandidateRecall.reference(request.reference)),
+          case .int(let end)? = output["end_offset"], case .int(let total)? = output["total_characters"],
+          end > request.offset, end <= total, let content = output["content"]?.strictStringValue,
+          Int64(content.utf16.count) == end - request.offset else { return false }
+    return output["next_cursor"] == (end < total ? request.cursor(at: end) : .null)
+  }
+}
+
 enum AgentCollaborationNumericTrial {
   static let validatorId = "numeric_model_cases.v1"
   static let requirement = "Verify the saved numeric model on exactly the registered test cases; this does not establish generalization or physical validity."

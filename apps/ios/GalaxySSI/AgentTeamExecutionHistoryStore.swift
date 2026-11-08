@@ -649,6 +649,24 @@ final class AgentTeamExecutionHistoryStore {
     }
     if mode == "capabilities" { return try recallCapabilities(input, scope: scope) }
     if mode == "method_history" { return try recallMethodEvaluations(input, scope: scope) }
+    if mode == AgentCollaborationNumericFeedback.mode {
+      guard let request = AgentCollaborationNumericFeedback.Request(input) else {
+        throw AgentTeamHistoryDatabase.Failure.corrupt
+      }
+      return try access { database in
+        guard let team = try database.snapshots(runId: scope.runId).first,
+              team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
+              team.members.contains(where: { $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId &&
+                !$0.status.isTerminal && $0.deliveryMode != .ignore }),
+              try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+                key: "native-evidence-revoked", revision: 0) != true,
+              let revision = try database.readableCollaborationRevision(request.reference, scope: scope),
+              revision.draft.kind == .numericModelTrial,
+              revision.turnId != scope.turnId || revision.sourceId == scope.sourceId
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        return try AgentCollaborationNumericFeedback.page(request, revision: revision)
+      }
+    }
     if mode == "evolution_rules" {
       guard Set(input.keys).isSubset(of: ["mode", "topic", "offset"]),
             case .string(let topic) = input["topic"] ?? .string("all"), topic.utf8.count <= 32,
@@ -2105,9 +2123,11 @@ final class AgentTeamExecutionHistoryStore {
           }
         }
       }
+      let numericTrials = milestone == nil ? [] : revisions.compactMap(AgentCollaborationNumericFeedback.summary)
       let receipt = AgentCollaborationResearchPublication(requestHash: requestHash,
         references: linked + revisions.map(\.reference), milestoneId: milestone?.id,
-        recordedAtMillis: milestone == nil ? nil : AgentControlPlaneClock.nowMillis())
+        recordedAtMillis: milestone == nil ? nil : AgentControlPlaneClock.nowMillis(),
+        numericTrials: numericTrials.isEmpty ? nil : numericTrials)
       try database.insertResearchRecord(receipt, conversationId: conversationId, key: publicationKey, revision: 0)
       return receipt
     }
@@ -2439,10 +2459,12 @@ final class AgentTeamExecutionHistoryStore {
 
   private static func milestoneReceipt(_ receipt: AgentCollaborationResearchPublication, id: String,
                                        status: String) -> AgentMcpJSONObject {
-    ["success": .bool(true), "status": .string(status), "milestone_id": .string(id),
+    var output: AgentMcpJSONObject = ["success": .bool(true), "status": .string(status), "milestone_id": .string(id),
       "artifact_sha256": .string(receipt.requestHash), "references": .array(receipt.references.map {
         .object(["object_id": .string($0.objectId), "revision": .int($0.revision), "sha256": .string($0.sha256)])
       })]
+    if let numeric = receipt.numericTrials { output["numeric_trials"] = .array(numeric.map(AgentMcpJSONValue.object)) }
+    return output
   }
 
   func publishSavedResearchReply(_ raw: String, scope: AgentCollaborationToolEvidenceScope) throws {

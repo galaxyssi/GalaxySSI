@@ -143,6 +143,9 @@ enum AgentCollaborationRuleTopics {
     {validator_id:"numeric_model_cases.v1",model}. Expressions use {constant}, {variable}, or {op,args}.
     Operations: neg, abs, exp, expm1, log, log1p, sqrt, sin, cos, add, sub, mul, div, pow, min, max.
     Valid failed cases are saved. An exact previous_trial parent can compare the same preserved cases.
+    Use numeric_cases and the exact trial reference to read failed, improved, regressed, domain_error,
+    domain_recovered, domain_failed, error_reduced, error_increased or all cases. Follow next_cursor with the
+    same case_filter. This is a projection of host replay, not a new execution or independent validation.
     experiment_plan binds exact innovation and baseline parents, prediction_id, method, environment, budget_unit, budget_limit,
     report_pointer, source and cases. experiment_result binds the plan and completely read original measurement observations.
     To compare workflows, both innovations must parent and reference an exact workflow_method in their domain.
