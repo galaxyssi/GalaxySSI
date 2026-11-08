@@ -249,6 +249,7 @@ class HealthCareResearchDeviceTest {
         care.approveDiscussion(value.scope); care.close()
         context.openOrCreateDatabase(names.care, 0, null).use { db ->
             db.execSQL("DROP TABLE question_history"); db.execSQL("DROP TABLE questions")
+            db.execSQL("DROP TABLE answer_drafts")
             db.execSQL("DROP TABLE research_jobs"); db.execSQL("DROP TABLE research_authorizations"); db.version = 6
         }
         HealthCareStore(context, names.care).use {

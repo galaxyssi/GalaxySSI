@@ -172,8 +172,9 @@ unavailable until storage, authorization, and every query enforce isolation.
 
 - [x] Exact-measurement known/unconfirmed handoff for existing care discussions.
 - [x] Field-scoped independent profile context and source-version invalidation.
-- [ ] Persistent question ledger with answered/deferred/declined/conflict states.
+- [ ] Cross-provider conversational acceptance of the persistent question ledger.
 - [x] Indexed question storage, scoped native tools and explicit Personal Health answer review.
+- [x] Current-turn answer drafts with explicit local review and atomic saved-answer receipts.
 - [ ] Full issue lifecycle transitions and invalidation across every entry path.
 - [ ] Personal Health overview, comparable trends, and evidence-focused details.
 - [ ] Global indexed action queue, versioned plans, feedback and reminder recovery.
@@ -198,3 +199,31 @@ Measure click feedback, first-page load, pagination, and event processing
 separately from model/network latency. Target first-page P95 below 300 ms and
 click feedback below 100 ms on representative devices, but report measured
 results rather than treating these targets as guarantees.
+
+## Conversational answer review
+
+`galaxyssi.health.answers.propose` extracts an answer for an existing question ID
+and revision. It requires an exact quote from the current human message, not a
+model reply or retrieved document. The per-turn grant carries a digest of the
+approved input. The host reads one indexed original turn entry and verifies its
+role, conversation, turn and digest. Legacy grants and autonomous research cannot
+stage human answers. Typed and transcribed submissions share this path; this does
+not add a new microphone implementation.
+
+Schema 9 stores pending drafts in separately encrypted, paginated rows. A retry
+for the same question and turn returns the first draft without changing it or
+reopening a dismissal. Pending drafts never populate the saved question ledger,
+edit a measurement/profile, or authorize a reminder. Only local user review can
+accept an edited answer or discard a draft. Acceptance updates the question and
+draft receipt in one transaction, retains provenance and invalidates dependent
+research through the existing question-version mechanism. Unrelated questions
+from the same message remain reviewable; a changed source, sharing scope, original
+message or question revision prevents stale confirmation. A paused concern stays
+paused. The saved answer remains a self-report, not a verified clinical finding.
+
+Review uses the existing Agent health details entry and Personal Health concern
+page. The Agent header, transcript, shortcuts, composer and voice layout do not
+change. Reviews clear on background, navigation and observed privacy/source
+changes. Drafts survive process death, but expired source evidence cannot be
+silently accepted after reopening. Real-provider extraction and continuous voice
+acceptance remain distinct from synthetic tool/storage/UI regression tests.

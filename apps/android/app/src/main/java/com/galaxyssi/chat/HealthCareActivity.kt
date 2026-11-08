@@ -34,6 +34,7 @@ class HealthCareActivity : Activity() {
     private val researchReview by lazy { HealthCareResearchReview(this, names) }
     private val profileReview by lazy { HealthCareProfileReview(this, names) }
     private val questionReview by lazy { HealthCareQuestionReview(this, names) }
+    private val answerReview by lazy { HealthCareAnswerReview(this, names) }
     private lateinit var body: LinearLayout
     private var active = false
     private var generation = 0
@@ -44,7 +45,7 @@ class HealthCareActivity : Activity() {
     private var selected: String? = null
     private var cursor: HealthCareCursor? = null
     private val observer = object : ContentObserver(main) {
-        override fun onChange(selfChange: Boolean) { planReview.clear(); actionReview.clear(); targetReview.clear(); historyReview.clear(); profileReview.clear(); questionReview.clear(); generation++; load() }
+        override fun onChange(selfChange: Boolean) { planReview.clear(); actionReview.clear(); targetReview.clear(); historyReview.clear(); profileReview.clear(); questionReview.clear(); answerReview.clear(); generation++; load() }
         override fun onChange(selfChange: Boolean, uri: Uri?) {
             if (uri != HealthCareStore.changes(this@HealthCareActivity, names.care)) researchReview.clear()
             onChange(selfChange)
@@ -65,10 +66,10 @@ class HealthCareActivity : Activity() {
         load()
     }
     override fun onStop() {
-        active = false; generation++; dialog?.dismiss(); dialog = null; planReview.clear(); actionReview.clear(); targetReview.clear(); historyReview.clear(); researchReview.clear(); profileReview.clear(); questionReview.clear(); body.removeAllViews()
+        active = false; generation++; dialog?.dismiss(); dialog = null; planReview.clear(); actionReview.clear(); targetReview.clear(); historyReview.clear(); researchReview.clear(); profileReview.clear(); questionReview.clear(); answerReview.clear(); body.removeAllViews()
         contentResolver.unregisterContentObserver(observer); super.onStop()
     }
-    override fun onDestroy() { planReview.destroy(); actionReview.destroy(); targetReview.destroy(); historyReview.destroy(); researchReview.destroy(); profileReview.destroy(); questionReview.destroy(); worker.execute { store.close() }; worker.shutdown(); super.onDestroy() }
+    override fun onDestroy() { planReview.destroy(); actionReview.destroy(); targetReview.destroy(); historyReview.destroy(); researchReview.destroy(); profileReview.destroy(); questionReview.destroy(); answerReview.destroy(); worker.execute { store.close() }; worker.shutdown(); super.onDestroy() }
     @Deprecated("Uses the existing native health navigation contract")
     override fun onBackPressed() = back()
     private fun back() { if (selected == null) finish() else { selected = null; cursor = null; generation++; load() } }
@@ -149,6 +150,9 @@ class HealthCareActivity : Activity() {
         if (profile) ui.add(content, ui.profileRow(getString(R.string.health_question_title), getString(R.string.health_question_summary)) {
             questionReview.show(value.id)
         }.apply { tag = "health-care-questions" }, 8)
+        if (profile) ui.add(content, ui.profileRow(getString(R.string.health_answer_title)) {
+            answerReview.show(value.id)
+        }.apply { tag = "health-care-answers" }, 8)
         if (profile) ui.add(content, ui.profileRow(getString(R.string.health_care_profile_title),
             value.profileLink?.scope?.let { getString(R.string.health_care_profile_summary, it.fields.size, it.entries.size) }
                 ?: getString(R.string.health_care_profile_none)) { profileReview.show(value.id) }

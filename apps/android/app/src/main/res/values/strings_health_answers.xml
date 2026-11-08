@@ -1,0 +1,11 @@
+<resources>
+    <string name="health_answer_title">Review replies</string>
+    <string name="health_answer_pending">Pending your confirmation</string>
+    <string name="health_answer_empty">No replies awaiting review.</string>
+    <string name="health_answer_notice">Check the proposed answer against your words and this question. Saving records a self-report only; it does not change a report, medication or profile field. Existing source facts are retained separately, including any conflict.</string>
+    <string name="health_answer_quote">Your words: %1$s</string>
+    <string name="health_answer_previous">Previously reviewed answer: %1$s</string>
+    <string name="health_answer_stale">The source, sharing permission or question changed. This draft cannot be saved as a current answer. Review the question again, or discard this draft.</string>
+    <string name="health_answer_discard">Discard</string>
+    <string name="health_answer_discarded">Draft discarded. Health answers were not changed.</string>
+</resources>

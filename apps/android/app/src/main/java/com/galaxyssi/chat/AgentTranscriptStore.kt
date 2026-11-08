@@ -1258,6 +1258,9 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         entryDatabase.listConversationAfter(conversationId, afterSequenceExclusive, pageSize)
             .let { it.copy(entries = ownedEntries(it.entries)) }
 
+    internal fun firstEntryForTurn(conversationId: String, turnId: String): AgentTranscriptEntry? =
+        entryDatabase.firstEntryForTurn(conversationId, turnId)
+
     internal fun entriesForTurn(turnId: String): List<AgentTranscriptEntry> {
         val cleanTurnId = turnId.trim()
         return if (cleanTurnId.isBlank()) emptyList() else entryDatabase.listTurn(cleanTurnId)

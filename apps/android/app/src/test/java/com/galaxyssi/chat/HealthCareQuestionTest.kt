@@ -85,7 +85,7 @@ class HealthCareQuestionTest {
         assertTrue(HealthCareDiscussionPolicy.questionScopeCurrent(old, issue))
         assertFalse(HealthCareDiscussionPolicy.questionScopeCurrent(old, issue.copy(questionVersion = id())))
         assertTrue(HealthCareDiscussionPolicy.tools(old).intersect(HealthCareQuestionTools.ids).isEmpty())
-        val disclosed = old.copy(questionsShared = true)
+        val disclosed = old.copy(questionsShared = true, userInputDigest = AgentNativeJsonCodec.sha256("user input"))
         assertEquals(disclosed, HealthCareDiscussionGrant.from(disclosed.json()))
         assertTrue(HealthCareDiscussionPolicy.tools(disclosed).containsAll(HealthCareQuestionTools.ids))
         val consent = HealthCareResearchAuthorization(id(), old, "b".repeat(64))
