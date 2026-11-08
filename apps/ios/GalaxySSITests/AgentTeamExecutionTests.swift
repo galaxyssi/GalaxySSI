@@ -2601,6 +2601,144 @@ extension GalaxySSIStoreTests {
     XCTAssertThrowsError(try history.prepareSavedToolTest(reference, timeoutMillis: 1_000, scope: reader))
   }
 
+  func testToolComparisonRequiresBothOriginalsAndPreservesPairedFailures() throws {
+    let suite = "tool-comparison-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: InMemorySecretStore(),
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: root.appendingPathComponent("history.sqlite"))
+    func scope(_ team: AgentTeamExecutionSnapshot) -> AgentCollaborationToolEvidenceScope {
+      .init(runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
+        memberId: team.members[0].memberId, sourceId: team.members[0].sourceMessageId)
+    }
+    func publish(_ draft: AgentCollaborationResearchDraft, as owner: AgentCollaborationToolEvidenceScope)
+      throws -> AgentCollaborationResearchReference {
+      try XCTUnwrap(history.publishResearchObjects([draft], runId: owner.runId, conversationId: owner.conversationId,
+        turnId: owner.turnId, memberId: owner.memberId, sourceId: owner.sourceId).references.first)
+    }
+    func register(_ draft: AgentCollaborationResearchDraft) throws -> AgentCollaborationResearchReference {
+      var team = durableTeamSnapshot(draft.id)
+      team.taskId = draft.id
+      team.members[0].status = .succeeded
+      XCTAssertTrue(history.upsert(team))
+      return try publish(draft, as: scope(team))
+    }
+    func registerPair(_ name: String, source: String, oracle: String = "Known values") throws -> AgentCollaborationResearchReference {
+      let tool: AgentMcpJSONObject = ["language": .string("python"), "name": .string(name), "purpose": .string("Check"),
+        "applies_when": .string("Inputs"), "avoid_when": .string("None"), "environment": .string("python"),
+        "dependencies": .string("None"), "side_effects": .string("None"), "source": .string(source),
+        "input_schema": .object(["type": .string("object"), "required": .array([.string("n")]),
+          "properties": .object(["n": .object(["type": .string("integer")])])])]
+      let ref = try register(.init(id: name + "-tool", objectId: nil, baseRevision: 0, kind: .executableTool,
+        title: name, body: ["executable_tool": .object(tool)], parents: []))
+      let cases: [AgentMcpJSONValue] = ["target", "regression", "stable", "known_failure"].enumerated().map { index, id in
+        .object(["id": .string(id), "purpose": .string(index == 0 ? "target" : "regression"),
+          "reason": .string("Preserved check"), "input": .object(["n": .int(Int64(index))]), "expected": .int(1)])
+      }
+      let plan: AgentMcpJSONObject = ["environment": .string("python"), "purpose": .string("Check"),
+        "coverage_gaps": .string("Finite cases"), "oracle_basis": .string(oracle), "cases": .array(cases),
+        "executable_tool": .object(AgentCollaborationCandidateRecall.reference(ref))]
+      return try register(.init(id: name + "-plan", objectId: nil, baseRevision: 0, kind: .toolTestPlan,
+        title: name, body: ["tool_test_plan": .object(plan)], parents: [ref]))
+    }
+    let baseline = try registerPair("baseline", source: "def run(p): return [0, 1, 1, 0][p['n']]")
+    let candidate = try registerPair("candidate", source: "def run(p): return [1, 0, 1, 0][p['n']]")
+    let changed = try registerPair("changed-contract", source: "def run(p): return [1, 0, 1, 0][p['n']]",
+      oracle: "A different oracle")
+    var team = durableTeamSnapshot("comparison-run")
+    team.members[0].dispatchCheckpoint = .dispatching
+    team.members[0].dispatchAllowsSavedToolTest = true
+    team.members[1].dispatchCheckpoint = .dispatching
+    XCTAssertTrue(history.upsert(team))
+    let owner = scope(team)
+    func observe(_ ref: AgentCollaborationResearchReference, id: String, values: [Int64],
+                 patch: Int64 = 0) throws -> AgentMcpJSONObject {
+      let prepared = try history.prepareSavedToolTest(ref, timeoutMillis: 1_000, scope: owner)
+      let rows: [AgentMcpJSONValue] = zip(["target", "regression", "stable", "known_failure"], values).map {
+        .object(["id": .string($0.0), "output": .int($0.1)])
+      }
+      let runtime: AgentMcpJSONObject = ["python": .array([.int(3), .int(11), .int(patch)]),
+        "implementation": .string("cpython"), "machine": .string("aarch64")]
+      let stdout = AgentMcpJSONCodec.stringify(["format": .string(AgentCollaborationSavedToolTest.reportFormat),
+        "runtime": .object(runtime), "environment_matches": .bool(true), "results": .array(rows)])
+      let output: AgentMcpJSONObject = ["exit_code": .int(0), "stdout": .string(stdout)]
+      let now = AgentControlPlaneClock.nowMillis()
+      let result = AgentNativeToolResult(status: .succeeded, output: output, message: "", receipt: .init(invocationId: id,
+        startedAtEpochMillis: now, finishedAtEpochMillis: now, durationMillis: 0, status: .succeeded,
+        inputSha256: AgentMcpJSONCodec.sha256(prepared.runtimeInput), outputSha256: AgentMcpJSONCodec.sha256(output)),
+        provenance: .init(toolId: AgentIOSOnDeviceRuntimeNativeToolCatalog.execute, toolVersion: "1", location: .application,
+          executorId: AgentIOSOnDeviceRuntimeNativeToolCatalog.brokerExecutorId, contractVersion: "1"))
+      let evidence = try history.recordNativeObservation(.init(runId: owner.runId, conversationId: owner.conversationId,
+        turnId: owner.turnId, memberId: owner.memberId, sourceId: owner.sourceId, input: prepared.evidenceInput,
+        result: result, evaluation: prepared.evaluate(result)))
+      return evidence.filter { ["evidence_id", "sha256", "origin"].contains($0.key) }
+    }
+    let before = try observe(baseline, id: "before", values: [0, 1, 1, 0])
+    let after = try observe(candidate, id: "after", values: [1, 0, 1, 0])
+    let differentRuntime = try observe(candidate, id: "different-runtime", values: [1, 0, 1, 0], patch: 1)
+    let differentContract = try observe(changed, id: "different-contract", values: [1, 0, 1, 0])
+    func read(_ evidence: AgentMcpJSONObject, as reader: AgentCollaborationToolEvidenceScope) throws {
+      var offset: Int64? = 0
+      while let position = offset {
+        let page = try history.recallCollaborationOriginal(["mode": .string("native_evidence"),
+          "evidence_id": evidence["evidence_id"] ?? .null, "sha256": evidence["sha256"] ?? .null,
+          "offset": .int(position)], scope: reader)
+        offset = page["next_offset"]?.intValue
+      }
+    }
+    func comparison(_ after: AgentMcpJSONObject, candidate alternate: AgentCollaborationResearchReference? = nil)
+      -> AgentCollaborationResearchDraft {
+      func side(_ ref: AgentCollaborationResearchReference, _ proof: AgentMcpJSONObject) -> AgentMcpJSONValue {
+        .object(["tool_test_plan": .object(AgentCollaborationCandidateRecall.reference(ref)),
+          "observation": .object(proof.filter { $0.key != "origin" })])
+      }
+      let selected = alternate ?? candidate
+      return .init(id: "comparison", objectId: nil, baseRevision: 0, kind: .toolTestComparison, title: "Paired result",
+        body: ["tool_test_comparison": .object(["purpose": .string("Compare methods"),
+          "interpretation": .string("Tradeoff"), "limitations": .string("Four disclosed cases"),
+          "baseline": side(baseline, before), "candidate": side(selected, after)])],
+        parents: [baseline, selected], observations: [before, after])
+    }
+    var incompleteReader = owner
+    incompleteReader.memberId = team.members[1].memberId
+    incompleteReader.sourceId = team.members[1].sourceMessageId
+    try read(before, as: incompleteReader)
+    try read(before, as: owner)
+    try read(after, as: owner)
+    try read(differentRuntime, as: owner)
+    try read(differentContract, as: owner)
+    team.members[0].status = .succeeded
+    team.members[1].status = .succeeded
+    XCTAssertTrue(history.upsert(team))
+    XCTAssertThrowsError(try publish(comparison(after), as: incompleteReader))
+    XCTAssertThrowsError(try publish(comparison(differentRuntime), as: owner))
+    XCTAssertThrowsError(try publish(comparison(differentContract, candidate: changed), as: owner))
+    let ref = try publish(comparison(after), as: owner)
+    var reader = durableTeamSnapshot("recall-comparison")
+    reader.taskId = "recall-comparison"
+    XCTAssertTrue(history.upsert(reader))
+    var request = AgentCollaborationCandidateRecall.reference(ref)
+    request["mode"] = .string("workspace")
+    var offset: Int64? = 0
+    var content = ""
+    while let position = offset {
+      request["offset"] = .int(position)
+      let page = try history.recallCollaborationOriginal(request, scope: scope(reader))
+      content += try XCTUnwrap(page["content"]?.strictStringValue)
+      offset = page["next_offset"]?.intValue
+    }
+    let revision = try JSONDecoder().decode(AgentCollaborationResearchRevision.self, from: Data(content.utf8))
+    let result = try XCTUnwrap(revision.toolTestComparison)
+    XCTAssertEqual(result["counts"], .object(["improved": .int(1), "regressed": .int(1),
+      "both_passed": .int(1), "both_failed": .int(1)]))
+    let regression = result["cases"]?.arrayValue?[1].objectValue?["candidate"]?.objectValue
+    XCTAssertEqual(regression?["expected"], .int(1))
+    XCTAssertEqual(regression?["actual"], .int(0))
+    XCTAssertEqual(result["source_changed"], .bool(true))
+    XCTAssertEqual(result["grants_permissions"], .bool(false))
+  }
+
   func testForecastRecomputesUtilityWithoutChoosingAnAction() throws {
     let raw = """
     {"work_id":"test","executor":"member","horizon":"One test","decision_rationale":"Avoid side effects",

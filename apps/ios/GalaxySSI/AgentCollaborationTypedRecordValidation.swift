@@ -5,7 +5,8 @@ struct AgentCollaborationTypedRecordValidation: Error {
 
   static let kinds: Set<String> = [
     "capability_gap", "innovation", "experiment_plan", "experiment_result", "capability_lesson",
-    "learning_agenda", "transfer_study", "executable_tool", "tool_test_plan", "tool_release", "environment_model", "task_environment_model",
+    "learning_agenda", "transfer_study", "executable_tool", "tool_test_plan", "tool_release", "tool_test_comparison",
+    "environment_model", "task_environment_model",
     "action_forecast", "numeric_model_trial", "prediction_outcome", "workflow_method", "workflow_selection_rule",
     "team_exchange", "failure_experience", "innovation_opportunity"
   ]

@@ -250,6 +250,7 @@ struct AgentCollaborationResearchDraft: Codable {
     case executableTool = "executable_tool"
     case toolTestPlan = "tool_test_plan"
     case toolRelease = "tool_release"
+    case toolTestComparison = "tool_test_comparison"
     case environmentModel = "task_environment_model"
     case actionForecast = "action_forecast"
     case predictionOutcome = "prediction_outcome"
@@ -1140,9 +1141,11 @@ struct AgentCollaborationResearchRevision: Codable {
   var numericReplay: AgentMcpJSONObject? = nil
   var workflowComparison: AgentCollaborationWorkflowComparison? = nil
   var testedToolRelease: AgentMcpJSONObject? = nil
+  var toolTestComparison: AgentMcpJSONObject? = nil
 
   var storageBytesLimit: Int {
-    draft.kind == .numericModelTrial && numericReplay != nil
+    if draft.kind == .toolTestComparison && toolTestComparison != nil { return 1_048_576 }
+    return draft.kind == .numericModelTrial && numericReplay != nil
       ? Self.numericReplayStorageBytes : Self.standardStorageBytes
   }
 }

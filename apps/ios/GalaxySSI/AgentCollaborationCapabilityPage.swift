@@ -4,7 +4,7 @@ import Foundation
 struct AgentCollaborationCapabilityPage {
   private static let directoryKinds: Set<String> = [
     "workflow_method", "executable_tool", "tool_test_plan", "failure_experience", "capability_lesson",
-    "capability_suite", "capability_channel", "procedure_skill", "tool_release"
+    "capability_suite", "capability_channel", "procedure_skill", "tool_release", "tool_test_comparison"
   ]
   struct Row: Hashable {
     let objectID: String
@@ -65,6 +65,11 @@ struct AgentCollaborationCapabilityPage {
     }
     if original.draft.kind == .toolRelease,
        Self.releaseBinding(original) == nil || (original.turnId == scope.turnId && original.sourceId != scope.sourceId) {
+      unavailable.insert(row)
+      return nil
+    }
+    if original.draft.kind == .toolTestComparison,
+       original.toolTestComparison == nil || (original.turnId == scope.turnId && original.sourceId != scope.sourceId) {
       unavailable.insert(row)
       return nil
     }
