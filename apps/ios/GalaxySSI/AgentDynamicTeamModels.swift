@@ -112,12 +112,15 @@ enum AgentCollaborationRuleTopics {
   private static let topics = [
     Topic(id: "foundation", purpose: "Publish and read scoped research originals", prerequisites: [], contract: """
     Publish galaxyssi.research-artifact.v1 with a workspace array. Each item has id, kind, title, body, base_revision and parents.
+    \(AgentCollaborationResearchEnvelope.optionalNotesInstructions)
     Use base_revision 0 for new records and exact object_id, revision and sha256 for references. Cite original cloud observations
     with evidence_id and sha256 when the record supports citations. Read each page before citing it. Publication is not verification.
     \(AgentCollaborationTypedRecordValidation.guidance)
     For acceptance_review, cite exactly one current delivery in parents. In body.acceptance_review include criterion_id,
     requirement, target (the exact parent), verdict (supported, refuted, or not_tested), rationale and unresolved.
     The reviewer must be independent of the delivery author; cite completely read original observations in observations.
+    Frozen host read coverage identifies the original reader, not your own coverage. Reading another member's receipt
+    does not satisfy your independent-read requirement.
     For iOS native tool observations, use native_evidence with the exact evidence_id and sha256. After reading every page,
     cite {origin:"ios_native_tool",evidence_id,sha256}. Do not cite recall itself, failed actions or replay receipts as new evidence.
     For original-goal coverage, read the host goal source and copy its hashes and source IDs. Publish an artifact with
@@ -138,11 +141,19 @@ enum AgentCollaborationRuleTopics {
     question, hypothesis claims, and environment scope. Omit explicit priors; the host uses the saved posterior.
     A prediction_outcome binds an exact forecast parent and one fully recalled original cloud tool observation
     from its executor. The host computes any posterior; declared probabilities are assumptions, not calibration.
+    When numbers are unjustified, set prediction_mode to qualitative. Omit utility_unit, event utilities, and probabilities.
+    Each choice supplies expectations for every event: expected, not_expected, or unknown. For competing explanations use
+    hypothesis_test with question, assumptions, prediction_basis, misspecification_check, hypotheses (id, claim), event_ids,
+    and predictions[action][hypothesis][event]. Do not supply priors, likelihoods or prior_outcome. The same one original
+    observation is compared against all registered expectations; missing observations are unresolved, not proof.
     A numeric_model_trial records local replay, not independent reference truth. Supply purpose, reference_basis, limitations,
     validator {id:"numeric_model_cases.v1",variables,cases:[{id,input,expected,absolute_tolerance}]}, and computation
     {validator_id:"numeric_model_cases.v1",model}. Expressions use {constant}, {variable}, or {op,args}.
     Operations: neg, abs, exp, expm1, log, log1p, sqrt, sin, cos, add, sub, mul, div, pow, min, max.
     Valid failed cases are saved. An exact previous_trial parent can compare the same preserved cases.
+    Use numeric_cases and the exact trial reference to read failed, improved, regressed, domain_error,
+    domain_recovered, domain_failed, error_reduced, error_increased or all cases. Follow next_cursor with the
+    same case_filter. This is a projection of host replay, not a new execution or independent validation.
     experiment_plan binds exact innovation and baseline parents, prediction_id, method, environment, budget_unit, budget_limit,
     report_pointer, source and cases. experiment_result binds the plan and completely read original measurement observations.
     To compare workflows, both innovations must parent and reference an exact workflow_method in their domain.
@@ -185,6 +196,18 @@ enum AgentCollaborationRuleTopics {
     and expected (explicit null is allowed). Include target and regression cases. Registration neither executes nor releases code.
     Use capabilities to find unfinished tools and test plans. Follow usage_recall for original test history. A pre-execution
     rejection belongs only to the requested plan; only an exact runtime-bound test belongs to a candidate.
+    Publish an immutable tool_test_comparison with purpose, interpretation, limitations and baseline/candidate, each containing
+    tool_test_plan (exact parent) and observation (evidence_id and sha256). Cite both originals in observations with
+    origin ios_native_tool. Read both complete native reports from this run with mode native_evidence. Preserve environment, purpose, oracle_basis,
+    coverage_gaps, ordered cases and observed Python identity. Use workspace recall for the host's per-case improved, regressed,
+    both_passed and both_failed outcomes, including expected and actual values. This proves neither generalization nor adoption.
+    An independent reviewer may publish tool_release after reading every page of the original native test in this run.
+    Use the exact tool_test_plan as a parent and include tool_test_plan, observation, review, applies_when, avoid_when,
+    limitations, authorization_boundary and an empty unresolved list. Cite the same observation in observations
+    with only evidence_id, sha256 and origin ios_native_tool. Host validation never grants runtime permissions.
+    An authorized Desktop member can use collaboration_run_tool with the exact release or capability channel,
+    new parameters and a stable execution ID. The phone checks the current lineage and tested Python identity
+    before running. Use status with the same ID to recover the original result; discovery never authorizes execution.
     """),
     Topic(id: "retention", purpose: "Preserve measured capability cases across versions", prerequisites: ["foundation"], contract: """
     Publish capability_suite with scope, limitations and the exact independently retained lesson as a parent.
@@ -398,6 +421,25 @@ struct AgentCollaborationGoalWorkRun: Codable {
       "output_truncated": .bool(truncated ?? false), "goal_accepted": .bool(false), "automatically_reexecuted": .bool(false)]
     if let templateMemberID { result["template_member_id"] = .string(templateMemberID) }
     return result
+  }
+}
+
+@MainActor
+final class AgentGoalWorkAdmissionOrder {
+  private var next = 0
+  private var waiters: [Int: CheckedContinuation<Void, Never>] = [:]
+  private(set) var claimedIDs: [String] = []
+
+  func wait(for index: Int) async {
+    guard index != next else { return }
+    await withCheckedContinuation { waiters[index] = $0 }
+  }
+
+  func finish(_ index: Int, claimedID: String?) {
+    precondition(index == next)
+    if let claimedID { claimedIDs.append(claimedID) }
+    next += 1
+    waiters.removeValue(forKey: next)?.resume()
   }
 }
 
@@ -913,8 +955,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
   }
 
   static func blockerAssessment(_ raw: String, preserving contract: [Criterion]) -> Assessment? {
-    guard !contract.isEmpty, raw.utf8.count <= 131_072,
-          let draft = try? JSONDecoder().decode(Assessment.self, from: Data(raw.utf8)),
+    guard !contract.isEmpty, case .success(let draft) = parseAssessment(raw, limit: assessmentDraftLimit),
           draft.format == "galaxyssi.goal-assessment.v1", draft.decision == .blocked, !draft.summary.isBlank,
           draft.work.isEmpty, draft.recruit?.isEmpty != false, (1...16).contains(draft.blockers.count),
           Set(draft.blockers.map(\.id)).count == draft.blockers.count,
@@ -934,10 +975,12 @@ enum AgentCollaborationGoalAssessmentPolicy {
   static let appendWorkMode = "append_work"
   static let runWorkMode = "run_work"
   static let runReadyWorkMode = "run_ready_work"
+  static let workInventoryMode = "work_inventory"
   static let checkGoalEvidenceMode = "check_goal_evidence"
+  static let admissionInstructions = "List ready research work in the intended admission order. Waiting dependencies do not reserve capacity. Existing learning priorities reorder only their eligible learning positions. Admission order does not guarantee completion order."
 
   static func requiresCoordinator(_ mode: String) -> Bool {
-    isCoordinatorMutation(mode) || mode == checkGoalEvidenceMode
+    isCoordinatorMutation(mode) || mode == checkGoalEvidenceMode || mode == workInventoryMode || mode == assessmentRepairMode
   }
 
   static func dispatchesWork(_ mode: String) -> Bool {
@@ -949,8 +992,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
   }
 
   static func initialContract(_ raw: String) -> [Criterion]? {
-    guard raw.utf8.count <= 131_072,
-          let draft = try? JSONDecoder().decode(Assessment.self, from: Data(raw.utf8)),
+    guard case .success(let draft) = parseAssessment(raw, limit: assessmentDraftLimit),
           draft.format == "galaxyssi.goal-assessment.v1", !draft.summary.isBlank,
           draft.decision == .continue, draft.work.isEmpty, draft.blockers.isEmpty, draft.recruit?.isEmpty != false,
           (1...64).contains(draft.criteria.count),

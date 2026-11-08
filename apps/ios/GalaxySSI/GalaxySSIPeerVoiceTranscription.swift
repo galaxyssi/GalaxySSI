@@ -7,6 +7,20 @@ enum GalaxySSIPeerMessageAction: Equatable {
   case delete
 }
 
+struct GalaxySSIPeerMessageActionTarget: Equatable {
+  let scope: String
+  let contactID: String
+  let messageID: UUID
+
+  func resolve(scope current: String, contactID contact: String,
+      lookup: (UUID, String) -> ChatMessage?) -> ChatMessage? {
+    guard current == scope, contact == contactID,
+          let message = lookup(messageID, contactID), message.id == messageID,
+          message.contactId == contactID, !message.isSystem else { return nil }
+    return message
+  }
+}
+
 struct GalaxySSIPeerVoiceAttachment: Equatable {
   var displayName: String
   var mimeType: String

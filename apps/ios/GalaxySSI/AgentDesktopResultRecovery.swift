@@ -9,6 +9,8 @@ struct AgentDesktopEvidenceQueryTrace {
     case routeMismatch = "paired_route_mismatch", invalidResponse = "invalid_response"
     case indexValidated = "index_validated", indexRejected = "index_rejected"
     case pageStaged = "page_staged", pageNotStaged = "page_not_staged"
+    case sliceComplete = "slice_complete", sliceYielded = "slice_yielded", sliceDeferred = "slice_deferred"
+    case sliceWait = "slice_wait"
   }
 
   struct LateQueries {
@@ -50,6 +52,25 @@ struct AgentDesktopEvidenceQueryTrace {
     let correlation = token(nonce)
     let elapsed = max(0, now - started)
     logger.info("Evidence query rpc=\(correlation, privacy: .public) stage=\(stage.rawValue, privacy: .public) elapsed_ms=\(elapsed, privacy: .public)")
+  }
+}
+
+struct AgentDesktopEvidenceRecoverySlice {
+  private var remainingQueries = 4
+  private var exceededBudget = false
+
+  mutating func claimQuery() -> Bool {
+    guard remainingQueries > 0 else {
+      exceededBudget = true
+      return false
+    }
+    remainingQueries -= 1
+    return true
+  }
+
+  func outcome(archiveFinal: Bool, isCancelled: Bool) -> AgentDesktopEvidenceQueryTrace.Stage {
+    if archiveFinal { return .sliceComplete }
+    return exceededBudget && !isCancelled ? .sliceYielded : .sliceDeferred
   }
 }
 
@@ -109,6 +130,7 @@ enum AgentDesktopToolEvidenceWire {
     let evidenceId: String
     let sha256: String
     let totalBytes: Int
+    var hostReadCoverage: AgentMcpJSONObject? = nil
   }
 
   struct ImportCursor: Codable, Equatable {

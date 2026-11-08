@@ -181,7 +181,7 @@ extension AgentHomeView {
                 runAgentTimelineAction(action, task: task)
               },
               onCopyMessage: { message in
-                UIPasteboard.general.string = message.content
+                UIPasteboard.general.string = GalaxySSIMessageActionPolicy.copyText(for: message)
               },
               onDeleteMessage: { message in
                 store.deleteMessage(message.id, contactId: contact.id)

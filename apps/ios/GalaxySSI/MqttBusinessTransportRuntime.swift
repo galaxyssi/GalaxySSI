@@ -496,7 +496,8 @@ final class MqttBusinessTransportRuntime {
   }
 
   func queryDesktopEvidence(_ request: AgentDesktopToolEvidenceWire.Request,
-                            payload: AgentMcpJSONObject) async -> AgentMcpJSONObject? {
+                            payload: AgentMcpJSONObject,
+                            timeoutNanoseconds: UInt64 = 8_000_000_000) async -> AgentMcpJSONObject? {
     guard !Task.isCancelled, evidenceWaiters.count < 2, evidenceWaiters[request.nonce] == nil,
           let connector = desktopConnector else { return nil }
     do {
@@ -511,7 +512,7 @@ final class MqttBusinessTransportRuntime {
       evidenceWaiters[request.nonce] = EvidenceWaiter(identity: outgoing.identity, request: request,
         mode: object.string("mode"), signal: signal)
       let timer = Task {
-        do { try await Task.sleep(nanoseconds: 8_000_000_000) } catch { return }
+        do { try await Task.sleep(nanoseconds: timeoutNanoseconds) } catch { return }
         signal.finish()
       }
       defer {

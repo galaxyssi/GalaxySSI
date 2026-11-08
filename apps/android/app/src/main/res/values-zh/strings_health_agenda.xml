@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_agenda_title">健康行动</string>
+    <string name="health_agenda_summary">今天要做、后续安排、待核对与已记录结果</string>
+    <string name="health_agenda_today">今天</string>
+    <string name="health_agenda_later">后续</string>
+    <string name="health_agenda_review">待核对</string>
+    <string name="health_agenda_recorded">已记录</string>
+    <string name="health_agenda_loading">正在整理已保存的行动…</string>
+    <string name="health_agenda_empty">此分类暂无行动，不代表所有健康关注事项都已解决。</string>
+    <string name="health_agenda_refreshed">行动已更新，已返回最新列表的第一页。</string>
+    <string name="health_agenda_recorded_note">行动记录不等于已康复，健康变化仍需评估。</string>
+    <string name="health_agenda_review_note">计划尚未确认、已暂停或依据发生变化，请先核对相关关注事项。</string>
+    <string name="health_agenda_unscheduled">未安排时间</string>
+    <string name="health_agenda_reminder">提醒时间：%1$s</string>
+    <string name="health_agenda_reminded">已提醒：%1$s · 尚未记录结果</string>
+    <string name="health_agenda_concern">查看相关关注事项与依据</string>
+    <string name="health_agenda_previous">上一页</string>
+    <string name="health_agenda_next">下一页</string>
+    <string name="health_agenda_retry">重新加载</string>
+</resources>

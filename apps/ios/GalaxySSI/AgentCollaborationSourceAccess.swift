@@ -4,7 +4,7 @@ import Foundation
 enum AgentCollaborationSourceAccess {
   static let mode = "source_access"
   static let pageSize = 20
-  static let instructions = "Use source_access with exact workspace object_id, revision and sha256 to inspect direct sources. Follow next_cursor with the same root. Available means readable now, not read or verified. Read relevant originals or report unavailable evidence. No access is granted."
+  static let instructions = "Use source_access with exact workspace object_id, revision and sha256 to inspect direct sources. Follow next_cursor with the same root. Available means readable now, not read or verified. Author read coverage is frozen at publication and does not credit the current reader. Read relevant originals or report unavailable evidence. No access is granted."
 
   static func matches(tool: String, input: AgentMcpJSONObject) -> Bool {
     tool == CloudModelStreamMutableConversation.collaborationRecallName && input["mode"] == .string(mode)
@@ -75,6 +75,9 @@ enum AgentCollaborationSourceAccess {
         "kind": .string(kind), "source_field": .string(field), "source_index": .int(Int64(index)),
         "reference": .object(reference), "status": .string(available ? "available" : "missing_changed_or_out_of_scope")
       ]
+      if field == "host_observations", let coverage = observations[index].hostReadCoverage {
+        row["author_read_coverage"] = .object(coverage)
+      }
       if available {
         var selector = reference
         selector["mode"] = .string(kind)
@@ -96,7 +99,7 @@ enum AgentCollaborationSourceAccess {
 
 enum AgentDesktopCollaborationEvidenceDelivery {
   static func acceptsConfirmation(_ input: AgentMcpJSONObject, delivery: AgentMcpJSONObject?) -> Bool {
-    guard input["mode"] == .string("evidence"), let delivery,
+    guard ["evidence", "desktop_evidence"].contains(input.string("mode")), let delivery,
           Set(delivery.keys) == ["receipt_id", "content_sha256"],
           UUID(uuidString: delivery.string("receipt_id")) != nil,
           AgentCollaborationSourceAccess.validDigest(delivery.string("content_sha256")) else { return false }
@@ -108,19 +111,20 @@ enum AgentDesktopCollaborationEvidenceDelivery {
                        replay: inout AgentDesktopCollaborationResponseReplay,
                        read: (Bool) throws -> AgentMcpJSONObject) throws -> AgentMcpJSONObject? {
     let prefix = "evidence-delivery:"
+    let contentField = input["mode"] == .string("desktop_evidence") ? "data_b64" : "content"
     if let confirmation {
       guard acceptsConfirmation(input, delivery: confirmation),
             case .response(let saved) = replay.lookup(key: prefix + confirmation.string("receipt_id"),
               fingerprint: binding, now: now),
             saved["delivery"] == .object(confirmation),
-            let content = try read(false)["content"]?.stringValue,
+            let content = try read(false)[contentField]?.stringValue,
             digest(content) == confirmation.string("content_sha256"),
             let coverage = try read(true)["host_read_coverage"] else { return nil }
       return ["success": .bool(true), "status": .string("confirmed"),
               "delivery": .object(confirmation), "host_read_coverage": coverage]
     }
     var page = try read(false)
-    guard let content = page["content"]?.stringValue else { return nil }
+    guard let content = page[contentField]?.stringValue else { return nil }
     let id = UUID().uuidString.lowercased()
     let delivery: AgentMcpJSONObject = ["receipt_id": .string(id), "content_sha256": .string(digest(content))]
     replay.remember(["success": .bool(true), "delivery": .object(delivery)],

@@ -87,19 +87,16 @@ struct ContactConversationSummary: Equatable {
 
   var previewText: String {
     guard let lastMessage else { return "" }
-    let content = lastMessage.content.trimmingCharacters(in: .whitespacesAndNewlines)
-    if !content.isEmpty {
-      return lastMessage.content
-    }
+    let content = lastMessage.isMine ? lastMessage.content : AgentMarkdownArtifactReferences.removingInternalLinks(lastMessage.content)
+    if !content.isBlank { return content }
     for block in AgentRichContentCodec.decode(lastMessage.richOutputJson) {
-      let attachmentName = block.title
-        .ifBlank(block.fallbackText)
+      let attachmentName = AgentMarkdownArtifactReferences.removingInternalLinks(block.title.ifBlank(block.fallbackText))
         .trimmingCharacters(in: .whitespacesAndNewlines)
       if !attachmentName.isEmpty {
         return attachmentName
       }
     }
-    return AgentRichContentCodec.fallbackText(lastMessage.richOutputJson)
+    return AgentMarkdownArtifactReferences.removingInternalLinks(AgentRichContentCodec.fallbackText(lastMessage.richOutputJson))
   }
 }
 
@@ -1085,13 +1082,15 @@ final class GalaxySSIStore: ObservableObject {
     messageId: UUID,
     contactId: String
   ) -> Bool {
-    guard var messages = messagesByContact[contactId],
-          let index = messages.firstIndex(where: { $0.id == messageId }) else {
-      return false
+    guard var message = persistedMessage(id: messageId, contactId: contactId), !message.isSystem else { return false }
+    message.voiceTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard chatHistoryDatabase.upsert(message) else { return false }
+    if let index = messagesByContact[contactId]?.firstIndex(where: { $0.id == messageId }) {
+      let previous = suppressMessageDatabaseSync
+      suppressMessageDatabaseSync = true
+      defer { suppressMessageDatabaseSync = previous }
+      messagesByContact[contactId]?[index] = message
     }
-    messages[index].voiceTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-    messagesByContact[contactId] = messages
-    save()
     return true
   }
 

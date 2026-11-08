@@ -26,7 +26,8 @@ internal object HealthCareFollowUpPolicy {
         "context" to issue.context?.json()?.toString()) + targetBasis(issue) + profileBasis(issue) + questionBasis(issue))
     fun anchor(issue: HealthCareConcern, action: HealthCareAction): String = AgentNativeJsonCodec.sha256(mapOf(
         "concern" to issue.id, "source" to issue.inputVersion, "context" to issue.context?.json()?.toString(),
-        "action" to action.json().toString()) + targetBasis(issue) + profileBasis(issue) + questionBasis(issue))
+        // Execution feedback does not change an accepted action or its reminder time.
+        "action" to action.json().apply { remove("feedback") }.toString()) + targetBasis(issue) + profileBasis(issue) + questionBasis(issue))
     private fun questionBasis(issue: HealthCareConcern): Map<String, String> =
         if (issue.questionVersion.isEmpty()) emptyMap() else mapOf("question_version" to issue.questionVersion)
     private fun profileBasis(issue: HealthCareConcern): Map<String, String> =
@@ -62,9 +63,8 @@ internal object HealthCareFollowUpPolicy {
         require(note.isNotBlank() && note.length <= 2000)
         val action = issue.actions.firstOrNull { it.id == actionId } ?: throw HealthCareConflict()
         if (action.state != HealthCareActionState.CONFIRMED || !issue.open) throw HealthCareConflict()
-        return issue.copy(actions = issue.actions.map { if (it.id == actionId) it.copy(state = HealthCareActionState.DONE, outcome = note) else it },
-            stage = if (issue.stage == HealthCareStage.PAUSED) issue.stage else HealthCareStage.REASSESS,
-            updatedAt = maxOf(now, issue.updatedAt))
+        return HealthCareFeedbackPolicy.apply(issue, actionId, HealthCareFeedback(UUID.randomUUID().toString(),
+            HealthCareFeedbackKind.COMPLETED, note, now, action.basis, HealthCareQuestionPolicy.scope(issue)))
     }
 
     fun deliveryTime(dueAt: Long, settings: HealthReminderSettings, now: Long, zone: ZoneId): Long =

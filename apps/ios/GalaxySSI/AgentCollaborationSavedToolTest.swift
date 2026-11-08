@@ -1,9 +1,192 @@
 import CryptoKit
 import Foundation
 
+enum AgentCollaborationSavedToolRelease {
+  struct Review {
+    let plan: AgentCollaborationResearchReference
+    let observation: AgentMcpJSONObject
+
+    init?(_ draft: AgentCollaborationResearchDraft) {
+      let fields = ["review", "applies_when", "avoid_when", "limitations", "authorization_boundary"]
+      guard draft.kind == .toolRelease, draft.objectId == nil, draft.baseRevision == 0,
+            let spec = draft.body["tool_release"]?.objectValue,
+            Set(spec.keys) == Set(fields + ["tool_test_plan", "observation", "unresolved"]),
+            fields.allSatisfy({ key in
+              guard let text = spec[key]?.strictStringValue else { return false }
+              return !text.isBlank && text.utf8.count <= 8_192
+            }),
+            spec["unresolved"] == .array([]),
+            let plan = AgentCollaborationSavedToolTest.reference(spec["tool_test_plan"]), draft.parents.contains(plan),
+            var observation = spec["observation"]?.objectValue,
+            observation.removeValue(forKey: "origin") == .string("ios_native_tool"),
+            Set(observation.keys) == ["evidence_id", "sha256"],
+            ["evidence_id", "sha256"].allSatisfy({ AgentCollaborationCandidateRecall.validDigest(observation.string($0)) })
+      else { return nil }
+      self.plan = plan
+      self.observation = observation
+    }
+  }
+
+  static func receipt(review: Review, plan: AgentCollaborationResearchRevision,
+      tool: AgentCollaborationResearchRevision, original: AgentCollaborationNativeToolObservation,
+      reviewerIdentity: String, authorIdentity: String) -> AgentMcpJSONObject? {
+    guard !reviewerIdentity.isBlank, !authorIdentity.isBlank, reviewerIdentity != authorIdentity,
+          plan.reference == review.plan,
+          let evaluation = AgentCollaborationSavedToolTest.verifyOriginal(original, plan: plan, tool: tool),
+          evaluation["passed"] == .bool(true),
+          let runtime = evaluation["runtime"]?.objectValue,
+          let digest = original.input["source_sha256"] else { return nil }
+    return [
+      "state": .string(AgentCollaborationCapabilityPage.releaseState), "tool_test_plan": .object(AgentCollaborationCandidateRecall.reference(plan.reference)),
+      "executable_tool": .object(AgentCollaborationCandidateRecall.reference(tool.reference)),
+      "source_sha256": digest, "tested_runtime": .object(runtime), "observation": .object(review.observation),
+      "grants_permissions": .bool(false), "general_correctness_proven": .bool(false)
+    ]
+  }
+}
+
 enum AgentCollaborationSavedToolTest {
   static let reportFormat = "galaxyssi.executable-tool-output.v1"
   private static let maximumReportBytes = 96 * 1_024
+
+  static func verifyOriginal(_ original: AgentCollaborationNativeToolObservation,
+      plan: AgentCollaborationResearchRevision, tool: AgentCollaborationResearchRevision) -> AgentMcpJSONObject? {
+    let result = original.result
+    guard let registered = plan.registeredAtMillis, registered > 0,
+          result.receipt.startedAtEpochMillis >= registered,
+          result.receipt.finishedAtEpochMillis >= result.receipt.startedAtEpochMillis,
+          !result.receipt.replayed, result.receipt.originalInvocationId == nil,
+          result.provenance.location == .application,
+          result.provenance.executorId == AgentIOSOnDeviceRuntimeNativeToolCatalog.brokerExecutorId,
+          case .int(let timeout)? = original.input["timeout_ms"],
+          let prepared = prepare(plan: plan, tool: tool, timeoutMillis: timeout),
+          original.input == prepared.evidenceInput else { return nil }
+    let evaluation = prepared.evaluate(result)
+    guard evaluation["runtime"] != nil, evaluation["checks"] != nil, evaluation == original.evaluation else { return nil }
+    return evaluation
+  }
+
+  struct Comparison {
+    struct Side {
+      let plan: AgentCollaborationResearchReference
+      let observation: AgentMcpJSONObject
+
+      init?(_ value: AgentMcpJSONValue?) {
+        guard let spec = value?.objectValue, Set(spec.keys) == ["tool_test_plan", "observation"],
+              let plan = reference(spec["tool_test_plan"]),
+              let observation = spec["observation"]?.objectValue, Set(observation.keys) == ["evidence_id", "sha256"],
+              ["evidence_id", "sha256"].allSatisfy({
+                guard let value = observation[$0]?.strictStringValue else { return false }
+                return isDigest(value)
+              }) else { return nil }
+        self.plan = plan
+        self.observation = observation
+      }
+    }
+
+    let baseline: Side
+    let candidate: Side
+    var sides: [Side] { [baseline, candidate] }
+
+    init?(_ draft: AgentCollaborationResearchDraft) {
+      let fields = ["purpose", "interpretation", "limitations"]
+      guard draft.kind == .toolTestComparison, draft.objectId == nil, draft.baseRevision == 0,
+            draft.resolves?.isEmpty != false,
+            let spec = draft.body["tool_test_comparison"]?.objectValue,
+            Set(spec.keys) == Set(fields + ["baseline", "candidate"]),
+            fields.allSatisfy({
+              guard let value = spec[$0]?.strictStringValue else { return false }
+              return !value.isBlank && value.utf8.count <= 8_192
+            }),
+            let before = Side(spec["baseline"]), let after = Side(spec["candidate"]),
+            before.observation["evidence_id"] != after.observation["evidence_id"],
+            Set(draft.parents) == Set([before.plan, after.plan]) else { return nil }
+      baseline = before
+      candidate = after
+    }
+
+    struct Observed {
+      let plan: AgentCollaborationResearchRevision
+      let tool: AgentCollaborationResearchRevision
+      let original: AgentCollaborationNativeToolObservation
+    }
+
+    struct LineageSide {
+      let name: String
+      let plan: AgentCollaborationResearchReference
+      let tool: AgentCollaborationResearchReference
+    }
+
+    func lineage(_ receipt: AgentMcpJSONObject) -> [LineageSide]? {
+      guard receipt["state"] == .string("observed_paired_case_outcomes") else { return nil }
+      var output: [LineageSide] = []
+      for (name, declared) in zip(["baseline", "candidate"], sides) {
+        guard let saved = receipt[name]?.objectValue,
+              reference(saved["tool_test_plan"]) == declared.plan,
+              saved["observation"]?.objectValue == declared.observation,
+              let tool = reference(saved["executable_tool"]) else { return nil }
+        output.append(.init(name: name, plan: declared.plan, tool: tool))
+      }
+      return output
+    }
+
+    func preservesFrozenObservations(_ record: AgentCollaborationResearchRevision) -> Bool {
+      guard let receipt = record.toolTestComparison, lineage(receipt) != nil,
+            let citations = record.draft.observations, citations.count == sides.count,
+            let reads = record.frozenNativeReads, reads.count == sides.count else { return false }
+      return sides.allSatisfy { side in
+        let id = side.observation.string("evidence_id"), hash = side.observation.string("sha256")
+        return citations.contains { $0["origin"] == .string("ios_native_tool") &&
+          $0.string("evidence_id") == id && $0.string("sha256") == hash } &&
+          reads.contains { $0.evidenceId == id && $0.sha256 == hash && $0.totalCharacters > 0 }
+      }
+    }
+
+    func evaluate(baseline before: Observed, candidate after: Observed) -> AgentMcpJSONObject? {
+      guard before.plan.reference == baseline.plan, after.plan.reference == candidate.plan,
+            before.original.conversationId == after.original.conversationId,
+            before.original.runId == after.original.runId, before.original.turnId == after.original.turnId,
+            let oldSpec = before.plan.draft.body["tool_test_plan"]?.objectValue,
+            let newSpec = after.plan.draft.body["tool_test_plan"]?.objectValue,
+            ["environment", "purpose", "oracle_basis", "coverage_gaps", "cases"].allSatisfy({ key in
+              guard let lhs = oldSpec[key], let rhs = newSpec[key] else { return false }
+              return difference(lhs, rhs, at: "") == nil
+            }),
+            let old = verifyOriginal(before.original, plan: before.plan, tool: before.tool),
+            let new = verifyOriginal(after.original, plan: after.plan, tool: after.tool),
+            old["runtime"] == new["runtime"],
+            let oldChecks = old["checks"]?.arrayValue, let newChecks = new["checks"]?.arrayValue,
+            oldChecks.count == newChecks.count else { return nil }
+      var counts: [String: Int64] = ["improved": 0, "regressed": 0, "both_passed": 0, "both_failed": 0]
+      var cases: [AgentMcpJSONValue] = []
+      for (lhs, rhs) in zip(oldChecks, newChecks) {
+        guard let previous = lhs.objectValue, let current = rhs.objectValue,
+              let id = previous["id"], current["id"] == id,
+              let purpose = previous["purpose"],
+              case .bool(let wasPassing)? = previous["passed"], case .bool(let isPassing)? = current["passed"]
+        else { return nil }
+        let outcome = wasPassing ? (isPassing ? "both_passed" : "regressed") : (isPassing ? "improved" : "both_failed")
+        counts[outcome, default: 0] += 1
+        cases.append(.object(["id": id, "purpose": purpose, "outcome": .string(outcome), "baseline": lhs, "candidate": rhs]))
+      }
+      func binding(_ observed: Observed, _ side: Side, _ evaluation: AgentMcpJSONObject) -> AgentMcpJSONValue {
+        .object(["tool_test_plan": .object(fields(observed.plan.reference)),
+          "executable_tool": .object(fields(observed.tool.reference)), "observation": .object(side.observation),
+          "source_sha256": observed.original.input["source_sha256"] ?? .null,
+          "execution_source_sha256": observed.original.input["execution_source_sha256"] ?? .null,
+          "passed": evaluation["passed"] ?? .bool(false)])
+      }
+      return ["state": .string("observed_paired_case_outcomes"), "case_count": .int(Int64(cases.count)),
+        "counts": .object(counts.mapValues(AgentMcpJSONValue.int)), "cases": .array(cases),
+        "baseline": binding(before, baseline, old), "candidate": binding(after, candidate, new),
+        "source_changed": .bool(before.original.input["source_sha256"] != after.original.input["source_sha256"]),
+        "candidate_all_passed": new["passed"] ?? .bool(false),
+        "oracle_truth_verified": .bool(false), "unseen_cases_verified": .bool(false),
+        "environment_equivalence_proven": .bool(false), "independent_attempts_verified": .bool(false),
+        "causal_contribution": .null, "capability_gain_verified": .bool(false),
+        "automatically_adopted": .bool(false), "grants_permissions": .bool(false)]
+    }
+  }
 
   struct Prepared {
     let runtimeInput: AgentMcpJSONObject

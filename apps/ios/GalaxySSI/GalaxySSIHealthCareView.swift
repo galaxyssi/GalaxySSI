@@ -284,7 +284,7 @@ struct GalaxySSIHealthCareEntry: View {
 }
 
 @MainActor
-private struct GalaxySSIHealthCareDetail: View {
+struct GalaxySSIHealthCareDetail: View {
   @EnvironmentObject private var store: GalaxySSIStore
   @Environment(\.scenePhase) private var scene
   @Environment(\.dismiss) private var dismiss
@@ -307,6 +307,12 @@ private struct GalaxySSIHealthCareDetail: View {
   @State private var confirmingDelete = false
   @State private var deletionCandidate: GalaxySSIHealthCare.Concern?
   @State private var scopeCandidate: GalaxySSIHealthCare.Concern?
+
+  init(records: GalaxySSIHealthRecords, id: UUID, metric: GalaxySSIHealthMetric) {
+    self.records = records
+    self.id = id
+    self.metric = metric
+  }
 
   var body: some View {
     List {
@@ -342,6 +348,14 @@ private struct GalaxySSIHealthCareDetail: View {
         }
         Section(t("report_reference", "Report reference interval")) {
           Text(concern.assessment.reference.ifBlank(t("none", "Not recorded")))
+        }
+        if concern.assessment.record != nil {
+          NavigationLink(GalaxySSIHealthCareVisit.text("title", "Prepare for a visit", language)) {
+            GalaxySSIHealthCareVisitView(records: records, id: id, metric: metric)
+          }
+        }
+        NavigationLink(GalaxySSIHealthEncounter.text("title", "Visit records", language)) {
+          GalaxySSIHealthEncounterView(records: records, concern: id, metric: metric)
         }
         GalaxySSIHealthCareComparisonSection(records: records, id: id, metric: metric)
         Section(t("guideline", "Guideline criterion")) {
