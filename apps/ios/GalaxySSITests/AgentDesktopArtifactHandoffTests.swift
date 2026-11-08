@@ -6,6 +6,89 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentDesktopArtifactHandoffTests: XCTestCase {
+  private actor BlobIdentityCalls {
+    private var calls = 0
+    private(set) var completionCalls: [Int] = []
+
+    func next() -> Int {
+      calls += 1
+      return calls
+    }
+
+    func recordCompletion() { completionCalls.append(calls) }
+  }
+
+  @MainActor
+  func testBlobReplacementSurvivesSuspendedIdentityCheck() async throws {
+    let root = temporaryDirectory("blob-revision")
+    let cipher = GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let artifacts = AgentDesktopArtifactStore(rootURL: root.appendingPathComponent("artifacts"), cipher: cipher)
+    let route = String(repeating: "A", count: 22)
+    let digest = String(repeating: "a", count: 64)
+    let origin = "https://relay.example.test"
+    let link = ServerLink(desktopId: "desktop", desktopName: "Desktop", desktopFingerprint: "remote",
+      signalName: "desktop", routes: .init(clientRouteId: route, linkSecret: "", localFingerprint: "local",
+      remoteFingerprint: "remote"), paired: true, accessProfile: "", accessScopes: [], updatedAt: Date())
+    let configuration = AgentBlobRelayConfiguration(desktopId: link.desktopId, clientRouteId: route,
+      desktopFingerprint: "remote", revision: 1, enabled: true, origin: origin, provisioningToken: digest)
+    var manifest: [String: Any] = [
+      "client_route_id": route, "conversation_id": "conversation", "task_id": "task", "turn_id": "turn",
+      "contact_id": "hermes", "source_message_id": "source", "desktop_id": "desktop",
+      "artifact_id": digest, "artifact_uri": "galaxyssi-artifact://task/output.bin", "name": "output.bin",
+      "relative_path": "output.bin", "mime_type": "application/octet-stream", "sha256": digest,
+      "original_sha256": digest, "size_bytes": 1, "original_size_bytes": 1, "execution_generation": 1,
+      "peer_chat": false
+    ]
+    manifest["transfer_id"] = AgentBlobProtocol.sha256(try AgentBlobProtocol.canonicalJSON(manifest))
+    let binding = try AgentBlobProtocol.bindingHash(AgentBlobArtifactContract.binding(manifest))
+    let descriptor: [String: Any] = [
+      "version": 1, "blob_id": String(digest.prefix(32)), "key": digest,
+      "nonce_prefix": String(digest.prefix(16)), "size": 1, "sha256": digest,
+      "binding_sha256": binding, "manifest_sha256": digest
+    ]
+    func offer(_ revision: Int, token: String = String(repeating: "a", count: 64)) -> [String: Any] {
+      ["type": AgentBlobArtifactContract.offerType, "version": 1, "transport_revision": revision,
+        "manifest": manifest, "blob_offer": ["version": 1, "relay": origin, "private": descriptor, "read_token": token]]
+    }
+    let suspended = expectation(description: "First job checking pairing")
+    let completed = expectation(description: "Only the current job records revocation")
+    completed.assertForOverFulfill = true
+    let (release, continuation) = AsyncStream<Void>.makeStream()
+    defer { continuation.finish() }
+    let calls = BlobIdentityCalls()
+    let receiver = AgentBlobArtifactReceiver(artifactStore: artifacts, applicationSupportDirectory: root, cipher: cipher,
+      identityProvider: { _ in
+        if await calls.next() == 1 {
+          suspended.fulfill()
+          var iterator = release.makeAsyncIterator()
+          _ = await iterator.next()
+        }
+        return nil
+      }, progress: { _, _ in XCTFail("Revoked transfer must not download") },
+      completion: { _, stored, error in
+        XCTAssertFalse(stored)
+        XCTAssertEqual(error, "artifact_blob_identity_mismatch")
+        await calls.recordCompletion()
+        completed.fulfill()
+      }, publishReceipt: { _, _ in XCTFail("Revoked transfer must not send a receipt"); return false })
+
+    try await receiver.enqueue(payload: offer(1), link: link, configuration: configuration, conversationId: "conversation")
+    await fulfillment(of: [suspended], timeout: 3)
+    try await receiver.enqueue(payload: offer(1), link: link, configuration: configuration, conversationId: "conversation")
+    do {
+      try await receiver.enqueue(payload: offer(1, token: String(repeating: "b", count: 64)),
+        link: link, configuration: configuration, conversationId: "conversation")
+      XCTFail("Same-revision offers must not replace the read token")
+    } catch AgentBlobFailure.invalid(let code) {
+      XCTAssertEqual(code, "artifact_blob_revision_conflict")
+    }
+    try await receiver.enqueue(payload: offer(2), link: link, configuration: configuration, conversationId: "conversation")
+    continuation.finish()
+    await fulfillment(of: [completed], timeout: 3)
+    let revisionsCheckedAtCompletion = await calls.completionCalls
+    XCTAssertEqual(revisionsCheckedAtCompletion, [2])
+  }
+
   @MainActor
   func testStoredArtifactReplayRemainsPendingUntilReceiptQueueCommits() throws {
     let fixture = try ChunkFixture()

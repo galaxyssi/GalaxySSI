@@ -233,7 +233,7 @@ actor AgentBlobArtifactReceiver {
     )
     guard manifest.string("conversation_id") == conversationId,
           manifest["peer_chat"] as? Bool != true || manifest.string("contact_id") == link.desktopId,
-          let encoded = try? JSONSerialization.data(withJSONObject: payload) else {
+          let encoded = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) else {
       throw AgentBlobFailure.invalid("artifact_blob_identity_mismatch")
     }
     var jobs = try loadJobs()
@@ -254,7 +254,8 @@ actor AgentBlobArtifactReceiver {
         throw AgentBlobFailure.invalid("artifact_blob_identity_mismatch")
       }
       if existing.transportRevision == next.transportRevision {
-        guard existing.payload == next.payload else {
+        let saved = try JSONSerialization.jsonObject(with: existing.payload)
+        guard try JSONSerialization.data(withJSONObject: saved, options: [.sortedKeys]) == next.payload else {
           throw AgentBlobFailure.invalid("artifact_blob_revision_conflict")
         }
       } else {
@@ -320,36 +321,37 @@ actor AgentBlobArtifactReceiver {
       let job = jobs[index]
       do {
         try await process(job)
-        var latest = (try? loadJobs()) ?? []
-        latest.removeAll { $0.transferId == job.transferId }
-        try? saveJobs(latest)
+        var latest = try loadJobs()
+        if let current = latest.firstIndex(of: job) {
+          latest.remove(at: current)
+          try saveJobs(latest)
+        }
       } catch {
+        if Task.isCancelled { return }
         let code = errorCode(error)
-        var latest = (try? loadJobs()) ?? []
+        guard var latest = try? loadJobs() else { return }
+        guard let current = latest.firstIndex(of: job) else { continue }
         if isTerminal(code) {
-          latest.removeAll { $0.transferId == job.transferId }
+          latest.remove(at: current)
           let value = (try? manifest(job)) ?? [:]
-          try? storeTerminalEvent(manifest: value, completed: false, errorCode: code)
+          do {
+            try storeTerminalEvent(manifest: value, completed: false, errorCode: code)
+            try saveJobs(latest)
+          } catch { return }
           await completion(value, false, code)
-        } else if let current = latest.firstIndex(where: { $0.transferId == job.transferId }) {
+        } else {
           latest[current].attempts += 1
           let seconds = min(300, 2 << min(latest[current].attempts, 7))
           latest[current].nextAttemptAtMillis = nowMillis() + Int64(seconds * 1_000)
+          do { try saveJobs(latest) } catch { return }
         }
-        try? saveJobs(latest)
       }
     }
   }
 
   private func process(_ job: Job) async throws {
-    guard let identity = await identityProvider(job.desktopId),
-          identity == Identity(
-            desktopId: job.desktopId,
-            clientRouteId: job.clientRouteId,
-            remoteFingerprint: job.remoteFingerprint,
-            origin: job.origin
-          ),
-          let payload = try JSONSerialization.jsonObject(with: job.payload) as? [String: Any],
+    try await checkCurrent(job)
+    guard let payload = try JSONSerialization.jsonObject(with: job.payload) as? [String: Any],
           let offer = payload["blob_offer"] as? [String: Any],
           let privatePayload = offer["private"] as? [String: Any],
           let origin = URL(string: job.origin) else {
@@ -377,7 +379,7 @@ actor AgentBlobArtifactReceiver {
     var plaintext = Data()
     plaintext.reserveCapacity(Int(min(descriptor.size, Int64(Int.max))))
     for (index, chunk) in chunks.enumerated() {
-      guard !Task.isCancelled else { throw CancellationError() }
+      try await checkCurrent(job)
       let encrypted = try await client.binary(
         method: "GET", path: "\(path)/chunks/\(index)", token: token
       )
@@ -392,11 +394,26 @@ actor AgentBlobArtifactReceiver {
           AgentBlobProtocol.sha256(plaintext) == descriptor.sha256 else {
       throw AgentBlobFailure.invalid("plaintext_hash_mismatch")
     }
+    try await checkCurrent(job)
     try artifactStore.ingestBlobArtifact(manifest: manifest, plaintext: plaintext)
     try storeTerminalEvent(manifest: manifest, completed: true, errorCode: "")
     await completion(manifest, true, "")
+    try await checkCurrent(job)
     guard await publishReceipt(AgentBlobArtifactContract.storedReceipt(manifest), job.desktopId) else {
       throw AgentBlobFailure.invalid("artifact_blob_receipt_pending")
+    }
+  }
+
+  private func checkCurrent(_ job: Job) async throws {
+    try Task.checkCancellation()
+    let identity = await identityProvider(job.desktopId)
+    try Task.checkCancellation()
+    // A newer offer can replace this job while identity or network I/O is suspended.
+    guard try loadJobs().contains(job) else { throw CancellationError() }
+    guard let identity,
+          identity == Identity(desktopId: job.desktopId, clientRouteId: job.clientRouteId,
+            remoteFingerprint: job.remoteFingerprint, origin: job.origin) else {
+      throw AgentBlobFailure.invalid("artifact_blob_identity_mismatch")
     }
   }
 
