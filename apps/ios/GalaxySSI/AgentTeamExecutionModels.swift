@@ -577,7 +577,8 @@ enum AgentCollaborationForecastIntake {
   }
 
   static func utilities(_ forecast: AgentMcpJSONObject, actions: Set<String>) -> [String: Double]? {
-    guard hasText(forecast, ["work_id", "executor", "horizon", "decision_rationale", "risk_tradeoff",
+    guard AgentCollaborationQualitativePrediction.Mode(forecast) == .probabilistic,
+          hasText(forecast, ["work_id", "executor", "horizon", "decision_rationale", "risk_tradeoff",
                             "information_value", "revalidate_before_action", "utility_unit"]),
           actions.contains(forecast.string("selected_action")),
           let events = forecast["events"]?.arrayValue, (1...32).contains(events.count),
@@ -608,7 +609,9 @@ enum AgentCollaborationForecastIntake {
 
   static func hypothesisInformation(_ forecast: AgentMcpJSONObject,
                                     carriedPosterior: AgentMcpJSONObject? = nil) -> [String: Double]? {
-    guard let spec = forecast["hypothesis_test"]?.objectValue,
+    guard AgentCollaborationQualitativePrediction.Mode(forecast) == .probabilistic,
+          let spec = forecast["hypothesis_test"]?.objectValue,
+          spec["predictions"] == nil,
           (spec["prior_outcome"] != nil) == (carriedPosterior != nil),
           hasText(spec, ["question", "assumptions", "likelihood_basis", "misspecification_check"]),
           let hypotheses = spec["hypotheses"]?.arrayValue, (2...32).contains(hypotheses.count),
@@ -672,7 +675,8 @@ enum AgentCollaborationForecastIntake {
 
   static func hypothesisFeedback(_ forecast: AgentMcpJSONObject, observed: AgentMcpJSONValue?,
                                  withinValidity: Bool, carriedPosterior: AgentMcpJSONObject? = nil) -> AgentMcpJSONObject? {
-    guard let spec = forecast["hypothesis_test"]?.objectValue,
+    guard AgentCollaborationQualitativePrediction.Mode(forecast) == .probabilistic,
+          let spec = forecast["hypothesis_test"]?.objectValue,
           let ids = spec["event_ids"]?.arrayValue?.compactMap(\.strictStringValue),
           let hypotheses = spec["hypotheses"]?.arrayValue?.compactMap(\.objectValue),
           let likelihoods = spec["likelihoods"]?.objectValue?[forecast.string("selected_action")]?.objectValue,
@@ -1184,6 +1188,7 @@ struct AgentCollaborationResearchRevision: Codable {
   var frozenNativeReads: [AgentCollaborationFrozenCloudRead]? = nil
   var frozenDesktopReads: [AgentDesktopToolEvidenceWire.FrozenRead]? = nil
   var declaredExpectedUtilities: [String: Double]? = nil
+  var qualitativePrediction: AgentMcpJSONObject? = nil
   var retainedProcedure: AgentCollaborationProcedure? = nil
   var expectedInformationGainBits: [String: Double]? = nil
   var hypothesisFeedback: AgentMcpJSONObject? = nil
