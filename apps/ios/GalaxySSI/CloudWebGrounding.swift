@@ -258,7 +258,8 @@ enum CloudWebGrounding {
       "weather source and stop when the requested facts are supported. For news, distinguish event date, publication " +
       "date, retrieval time, and timezone; label older events as background and keep a short digest with dated links. " +
       "For weather, state the location, forecast date, and update time, distinguish observations from forecasts, and " +
-      "do not add tomorrow, air quality, or duplicate tables unless requested. For pictures, make one exact-subject " +
+      "do not add tomorrow, air quality, or duplicate tables unless requested. Use the destination's local date; " +
+      "if the requested day is unavailable, never substitute today's data. For pictures, make one exact-subject " +
       "image search, preserve the requested visual medium such as drawing or photo, pass the requested count as " +
       "max_results, and only search again when relevant evidence is missing. " +
       "For image-only replies, put a short neutral caption only in each Markdown image alt text; do not repeat captions " +
@@ -275,12 +276,17 @@ enum CloudWebGrounding {
     [
       functionTool(
         name: "web_weather",
-        description: "Get today's structured weather-model estimate and forecast. Supply a city and first-level " +
-          "region in English plus ISO country_code so the location and local forecast date can be verified.",
+        description: "Get a verified-location weather-model forecast for a day or range within the next 16 local days. " +
+          "Supply a city and first-level region in English plus ISO country_code. Use day_offset=1 for tomorrow " +
+          "or date=YYYY-MM-DD, not both. days defaults to one. Use web_search for historical observations, " +
+          "warnings or dates outside the forecast horizon.",
         properties: objectProperties([
           ("location", stringProperty()),
           ("region", stringProperty()),
-          ("country_code", stringProperty())
+          ("country_code", stringProperty()),
+          ("day_offset", integerProperty(minimum: 0, maximum: 15)),
+          ("days", integerProperty(minimum: 1, maximum: 16)),
+          ("date", stringProperty())
         ]),
         required: ["location", "region", "country_code"]
       ),
@@ -451,10 +457,11 @@ enum CloudWebGrounding {
     arguments: AgentMcpJSONObject,
     context: AgentNativeToolInvocationContext,
     readOnlyAnalysis: Bool = false,
-    researchDisclosure: AgentLocalResearchCollector? = nil
+    researchDisclosure: AgentLocalResearchCollector? = nil,
+    now: () -> Date = Date.init
   ) -> String {
     if name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "web_weather" {
-      return executeWeather(provider: provider, arguments: arguments, context: context)
+      return executeWeather(provider: provider, arguments: arguments, context: context, now: now)
     }
     guard let operation = operation(forToolName: name) else {
       return boundedModelJson([
@@ -544,7 +551,8 @@ enum CloudWebGrounding {
   private static func executeWeather(
     provider: AgentIOSWebIntelligenceToolProviding,
     arguments: AgentMcpJSONObject,
-    context: AgentNativeToolInvocationContext
+    context: AgentNativeToolInvocationContext,
+    now: () -> Date
   ) -> String {
     let location = arguments["location"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     let region = arguments["region"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -558,6 +566,7 @@ enum CloudWebGrounding {
       ])
     }
     do {
+      let range = try CloudWeatherForecastRange(arguments: arguments)
       let registry = try AgentNativeToolRegistry().registerExecutables(
         AgentPhoneNativeToolCatalog.webIntelligenceExecutableDefinitions(provider: provider)
       )
@@ -589,39 +598,46 @@ enum CloudWebGrounding {
         URLQueryItem(name: "longitude", value: String(longitude)),
         URLQueryItem(name: "current", value: "temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m"),
         URLQueryItem(name: "daily", value: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"),
-        URLQueryItem(name: "timezone", value: "auto"), URLQueryItem(name: "forecast_days", value: "1")
+        URLQueryItem(name: "timezone", value: "auto"),
+        URLQueryItem(name: "forecast_days", value: String(range.providerDays))
       ]
       let forecastURL = forecast.url!.absoluteString
       let weather = try fetchJSONObject(url: forecastURL, registry: registry, context: context)
       guard weather["error"]?.boolValue != true,
             let zone = TimeZone(identifier: weather["timezone"]?.stringValue ?? ""),
-            let forecastDate = weather["daily"]?.objectValue?["time"]?.arrayValue?.first?.stringValue else {
+            let daily = weather["daily"]?.objectValue else {
         throw WeatherLookupError.invalidResponse
       }
-      let formatter = DateFormatter()
-      formatter.locale = Locale(identifier: "en_US_POSIX")
-      formatter.timeZone = zone
-      formatter.dateFormat = "yyyy-MM-dd"
-      guard forecastDate == formatter.string(from: Date()) else { throw WeatherLookupError.invalidForecastDate }
-      let content: AgentMcpJSONObject = [
+      let retrieved = now()
+      let selection = try range.select(from: daily, timeZone: zone, now: retrieved)
+      let dateLabel = selection.firstDate == selection.lastDate
+        ? selection.firstDate : "\(selection.firstDate) to \(selection.lastDate)"
+      var content: AgentMcpJSONObject = [
         "provider": .string("Open-Meteo"),
         "location": .object([
           "name": place["name"] ?? .string(location), "region": place["admin1"] ?? .string(region),
           "country_code": .string(country), "latitude": .double(latitude), "longitude": .double(longitude)
         ]),
-        "timezone": .string(zone.identifier), "forecast_date": .string(forecastDate),
-        "conditions_type": .string("weather_model_estimate_not_station_observation"),
-        "current": weather["current"] ?? .object([:]), "current_units": weather["current_units"] ?? .object([:]),
-        "daily": weather["daily"] ?? .object([:]), "daily_units": weather["daily_units"] ?? .object([:]),
+        "timezone": .string(zone.identifier), "forecast_date": .string(selection.firstDate),
+        "forecast_end_date": .string(selection.lastDate),
+        "conditions_type": .string(selection.startsToday
+          ? "weather_model_estimate_not_station_observation" : "weather_model_forecast_not_observation"),
+        "daily": .object(selection.daily), "daily_units": weather["daily_units"] ?? .object([:]),
         "geocoding_source": .string(geocoderURL),
-        "note": .string("Current time is the model estimate's valid time, not a measured observation or publication timestamp. Weather codes use WMO interpretation. Null fields are unavailable, never zero.")
+        "note": .string(selection.startsToday
+          ? "Current time is the model estimate's valid time, not a measured observation or publication timestamp. Weather codes use WMO interpretation. Null fields are unavailable, never zero."
+          : "Daily values are model forecasts, not measured observations. Weather codes use WMO interpretation. Null fields are unavailable, never zero.")
       ]
-      let now = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+      if selection.startsToday {
+        content["current"] = weather["current"] ?? .object([:])
+        content["current_units"] = weather["current_units"] ?? .object([:])
+      }
+      let now = Int64((retrieved.timeIntervalSince1970 * 1_000).rounded())
       let pack = AgentIOSWebEvidencePack.build(
         query: location, status: "completed",
         documents: [[
           "url": .string(forecastURL),
-          "title": .string("Open-Meteo: \(place["name"]?.stringValue ?? location), \(place["admin1"]?.stringValue ?? region) (\(forecastDate))"),
+          "title": .string("Open-Meteo: \(place["name"]?.stringValue ?? location), \(place["admin1"]?.stringValue ?? region) (\(dateLabel))"),
           "content": .string(AgentMcpJSONCodec.stringify(content)),
           "content_type": .string("application/json"), "retrieved_at_millis": .int(now)
         ]],
@@ -631,7 +647,8 @@ enum CloudWebGrounding {
     } catch {
       return boundedModelJson([
         "status": .string("failed"), "operation": .string("weather"),
-        "error": .string(String(error.localizedDescription.prefix(300)))
+        "error": .string(String(error.localizedDescription.prefix(300))),
+        "recovery": .string("Correct invalid arguments or use web_search for the exact requested dates and location. Do not substitute other dates.")
       ])
     }
   }
@@ -665,12 +682,10 @@ enum CloudWebGrounding {
 
   private enum WeatherLookupError: LocalizedError {
     case invalidResponse
-    case invalidForecastDate
 
     var errorDescription: String? {
       switch self {
       case .invalidResponse: return "Weather provider returned an invalid response."
-      case .invalidForecastDate: return "Weather provider returned a different local forecast date."
       }
     }
   }

@@ -613,6 +613,7 @@
     A10000000000000000000351 /* GlobalRealtimeContextProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000351 /* GlobalRealtimeContextProvider.swift */; };
     A10000000000000000000501 /* GlobalRealtimeContextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000501 /* GlobalRealtimeContextTests.swift */; };
     A10000000000000000000502 /* CloudWebGrounding.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000502 /* CloudWebGrounding.swift */; };
+    A1000000000000000000F359 /* CloudWeatherForecastRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F359 /* CloudWeatherForecastRange.swift */; };
     A10000000000000000000503 /* CloudWebGroundingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000503 /* CloudWebGroundingTests.swift */; };
     A10000000000000000000504 /* GlobalProactiveDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000504 /* GlobalProactiveDiscovery.swift */; };
     A10000000000000000000505 /* GlobalProactiveDiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000505 /* GlobalProactiveDiscoveryTests.swift */; };
@@ -1850,6 +1851,7 @@
     A20000000000000000000351 /* GlobalRealtimeContextProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalRealtimeContextProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000501 /* GlobalRealtimeContextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalRealtimeContextTests.swift; sourceTree = "<group>"; };
     A20000000000000000000502 /* CloudWebGrounding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudWebGrounding.swift; sourceTree = "<group>"; };
+    A2000000000000000000F359 /* CloudWeatherForecastRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudWeatherForecastRange.swift; sourceTree = "<group>"; };
     A20000000000000000000503 /* CloudWebGroundingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudWebGroundingTests.swift; sourceTree = "<group>"; };
     A20000000000000000000504 /* GlobalProactiveDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalProactiveDiscovery.swift; sourceTree = "<group>"; };
     A20000000000000000000505 /* GlobalProactiveDiscoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalProactiveDiscoveryTests.swift; sourceTree = "<group>"; };
@@ -2797,6 +2799,7 @@
         A20000000000000000000856 /* GalaxySSIGlobalAutonomousBudgetRuntime.swift */,
         A20000000000000000000857 /* GlobalAutonomousSpecialistRuntime.swift */,
         A20000000000000000000502 /* CloudWebGrounding.swift */,
+        A2000000000000000000F359 /* CloudWeatherForecastRange.swift */,
         A20000000000000000000504 /* GlobalProactiveDiscovery.swift */,
         A20000000000000000000506 /* GlobalProactiveDelivery.swift */,
         A20000000000000000000508 /* GlobalProactiveDeliveryPolicy.swift */,
@@ -4067,6 +4070,7 @@
         A10000000000000000000856 /* GalaxySSIGlobalAutonomousBudgetRuntime.swift in Sources */,
         A10000000000000000000857 /* GlobalAutonomousSpecialistRuntime.swift in Sources */,
         A10000000000000000000502 /* CloudWebGrounding.swift in Sources */,
+        A1000000000000000000F359 /* CloudWeatherForecastRange.swift in Sources */,
         A10000000000000000000504 /* GlobalProactiveDiscovery.swift in Sources */,
         A10000000000000000000506 /* GlobalProactiveDelivery.swift in Sources */,
         A10000000000000000000508 /* GlobalProactiveDeliveryPolicy.swift in Sources */,
