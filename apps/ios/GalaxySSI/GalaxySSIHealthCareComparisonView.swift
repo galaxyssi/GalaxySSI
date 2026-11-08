@@ -71,7 +71,7 @@ struct GalaxySSIHealthCareComparisonSection: View {
             }
           }
           ForEach(pair.gaps(currentContext: context), id: \.rawValue) { gap in
-            Text(gapLabel(gap)).foregroundColor(.secondary)
+            Text(Self.gapLabel(gap, language: language)).foregroundColor(.secondary)
           }
         }
       }
@@ -140,7 +140,7 @@ struct GalaxySSIHealthCareComparisonSection: View {
     }
   }
 
-  private func gapLabel(_ gap: GalaxySSIHealthCareComparison.Gap) -> String {
+  static func gapLabel(_ gap: GalaxySSIHealthCareComparison.Gap, language: String) -> String {
     let label: String
     switch gap {
     case .unitsDiffer: label = "Measurement units differ."
@@ -153,7 +153,8 @@ struct GalaxySSIHealthCareComparisonSection: View {
     case .contextDiffers: label = "The separately confirmed contexts differ."
     case .methodUnverified: label = "Method comparability and clinical change are not established."
     }
-    return t("gap." + gap.rawValue, label)
+    return GalaxySSILocalization.string("galaxyssi.health.comparison.gap." + gap.rawValue,
+      fallback: label, language: language)
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

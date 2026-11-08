@@ -349,6 +349,11 @@ struct GalaxySSIHealthCareDetail: View {
         Section(t("report_reference", "Report reference interval")) {
           Text(concern.assessment.reference.ifBlank(t("none", "Not recorded")))
         }
+        if concern.assessment.record != nil {
+          NavigationLink(GalaxySSIHealthCareVisit.text("title", "Prepare for a visit", language)) {
+            GalaxySSIHealthCareVisitView(records: records, id: id, metric: metric)
+          }
+        }
         GalaxySSIHealthCareComparisonSection(records: records, id: id, metric: metric)
         Section(t("guideline", "Guideline criterion")) {
           if concern.assessment.guidelineVersion != nil {

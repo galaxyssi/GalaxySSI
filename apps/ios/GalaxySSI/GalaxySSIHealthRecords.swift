@@ -634,6 +634,67 @@ struct GalaxySSIHealthRecords {
     return try scope.snapshot(loadProfile(), measuredAt: date)
   }
 
+  func localCareVisitPreview(id: UUID, metric: GalaxySSIHealthMetric, sections: Set<GalaxySSIHealthCareVisit.Section>,
+      language: String, now: Date = Date()) throws -> GalaxySSIHealthCareVisit.Preview {
+    typealias Visit = GalaxySSIHealthCareVisit
+    typealias Questions = GalaxySSIHealthCareQuestions
+    guard !sections.isEmpty else { throw Failure.invalid }
+    let archive = try load()
+    guard archive.localCareAllowed == true, let permission = archive.localCarePermission else { throw Failure.permission }
+    let readings = archive.current.filter { $0.metric == metric && $0.isValid && $0.measuredAt <= now }
+    guard let concern = archive.localCare?.current[metric.rawValue], concern.id == id,
+          let measuredAt = concern.assessment.measuredAt, concern.assessment.record != nil,
+          GalaxySSIHealthCare.assess(readings, context: concern.context) == concern.assessment else { throw Failure.stale }
+    let presentation = Visit.Presentation(language: language)
+    let link = sections.contains(.profile) ? concern.profileScope : nil
+    let profile = try link.map { _ in try loadProfile() }
+    let profilePayload = try link.flatMap { scope in try profile.map { try scope.snapshot($0, measuredAt: measuredAt) } }
+    var items: [Visit.Item] = []
+    var limitations = [presentation.t("limitations", "Selected local information only. Not a diagnosis, treatment plan or complete medical history.")]
+    var questionVersion: String?
+    if sections.contains(.measurements) {
+      items += readings.prefix(8).map { presentation.measurement($0, concern: concern, latest: readings.first) }
+      if readings.count > 8 { limitations.append(presentation.t("more_records", "Only the eight latest readings are included.")) }
+    }
+    if sections.contains(.context) { items.append(presentation.context(concern)) }
+    if sections.contains(.actions) {
+      let context = careAgendaContext(concern, readings: readings)
+      let actions = concern.adoptedActions ?? []
+      items += actions.prefix(48).map { action in
+        var pending = action
+        pending.outcome = nil
+        return presentation.action(action, concern: concern,
+          stale: !careActionIsCurrent(pending, concern: concern, archive: archive, context: context))
+      }
+      if actions.count > 48 { limitations.append(presentation.t("more_actions", "Only the first 48 confirmed actions are included.")) }
+    }
+    if sections.contains(.questions) {
+      let ledger = archive.localCareQuestions?[id.uuidString] ?? .init()
+      let page = try ledger.page(scope: Questions.scope(concern), basis: Questions.basis(concern),
+        known: Questions.known(concern, profile: profilePayload), after: nil)
+      questionVersion = page.ledgerVersion
+      items += page.rows.prefix(8).map { presentation.question($0, page: page) }
+      if page.rows.count > 8 || page.next != nil {
+        limitations.append(presentation.t("more_questions", "Only the first eight questions are included."))
+      }
+    }
+    if sections.contains(.profile) { items += try presentation.profile(profile, link: link, at: measuredAt) }
+    let stamp = Visit.Stamp(revision: concern.revision, permission: permission, records: readings.map(GalaxySSIHealthCare.Record.init),
+      questionVersion: questionVersion, profile: link)
+    let revision = String(format: presentation.t("revision", "Revision %lld"), Int64(concern.revision))
+    return .init(created: now, sections: sections, stamp: stamp, heading: presentation.t("title", "Prepare for a visit"),
+      introduction: [metric.title(language: language), presentation.date(now), revision].joined(separator: " · "),
+      limitations: limitations.joined(separator: "\n"), items: items)
+  }
+
+  func localCareVisitSource(_ reference: GalaxySSIHealthCare.Record, metric: GalaxySSIHealthMetric) throws -> GalaxySSIHealthReading {
+    let archive = try load()
+    guard archive.localCareAllowed == true, let reading = archive.current.first(where: {
+      $0.metric == metric && $0.id == reference.id && $0.revision == reference.revision
+    }) else { throw Failure.stale }
+    return reading
+  }
+
   func localCareQuestionPage(id: UUID, metric: GalaxySSIHealthMetric, after: UUID? = nil,
                              now: Date = Date()) throws -> GalaxySSIHealthCareQuestions.Page {
     let archive = try load()
