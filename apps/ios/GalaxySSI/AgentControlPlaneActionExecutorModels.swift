@@ -969,12 +969,15 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     lock.unlock()
     let sourceMessageId = Int64(result.metadata["source_message_id"] ?? "") ?? 0
     let contactId = result.metadata["contact_id"] ?? ""
+    var waitingIdentity: AgentRunControlPayload = [:]
     if awaitingResponse && sourceMessageId > 0 {
       globalRunSlots.bindSourceMessage(ownerId: slotOwnerId, sourceMessageId: String(sourceMessageId))
       let responseConversationId = result.metadata["conversation_id"] ?? request.conversationId
       let responseTurnId = result.metadata["turn_id"] ?? request.messageId
       let responseTaskId = result.metadata["task_id"] ?? request.taskId
       let executionGeneration = max(Int64(result.metadata["execution_generation"] ?? "") ?? 1, 1)
+      waitingIdentity = ["connector_task_id": .string(responseTaskId), "connector_turn_id": .string(responseTurnId),
+        "connector_contact_id": .string(contactId), "execution_generation": .int(executionGeneration)]
       lock.lock()
       activeByRunId[request.runId] = ActiveRun(
         request: request,
@@ -1011,19 +1014,20 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
         return self.acceptConnectorResponse(response, managedIdentityVerified: true) != nil
       }
     }
+    let outcome: AgentRunControlPayload = [
+      "action_id": .string(item.action.id),
+      "success": .bool(result.success),
+      "source_message_id": .string(result.metadata["source_message_id"] ?? ""),
+      "result": .string(result.message),
+      "rich_output": .string(result.success && !awaitingResponse ? (result.metadata["rich_output"] ?? "") : ""),
+      "error": .string(result.success ? "" : result.message)
+    ]
     emit(
       request: request,
       registration: item.registration,
       type: awaitingResponse && sourceMessageId > 0 ? .waitingForDevice : (result.success ? .runCompleted : .runFailed),
       sequence: 4,
-      payload: [
-        "action_id": .string(item.action.id),
-        "success": .bool(result.success),
-        "source_message_id": .string(result.metadata["source_message_id"] ?? ""),
-        "result": .string(result.message),
-        "rich_output": .string(result.success && !awaitingResponse ? (result.metadata["rich_output"] ?? "") : ""),
-        "error": .string(result.success ? "" : result.message)
-      ]
+      payload: outcome.merging(waitingIdentity) { current, _ in current }
     )
     if !(awaitingResponse && sourceMessageId > 0) {
       globalRunSlots.release(ownerId: slotOwnerId)

@@ -4,7 +4,7 @@ import Foundation
 enum GalaxySSIHealthCare {
   static let guidelineURL = URL(string: "https://doi.org/10.2337/dc26-s002")!
 
-  enum Stage: String, Codable, Hashable { case verify, evidence, reassess, maintenance, paused, closed }
+  enum Stage: String, Codable, Hashable { case verify, evidence, reviewPlan, waitingResults, reassess, maintenance, paused, closed }
   enum Signal: String, Codable, Equatable {
     case reportLow, reportHigh, notExact, glucoseContext, guidelineReview, guidelineScope, rising, falling, sourceRemoved
   }
@@ -19,8 +19,45 @@ enum GalaxySSIHealthCare {
   }
   struct Context: Codable, Equatable {
     enum Applicability: String, Codable, Hashable, CaseIterable { case unknown, applicable, excluded }
+    struct Answers: Codable, Equatable {
+      enum Collection: String, Codable, Hashable, CaseIterable {
+        case fasting, afterMeal = "after_meal", resting, afterActivity = "after_activity"
+      }
+      enum Specimen: String, Codable, Hashable, CaseIterable {
+        case labPlasma = "lab_plasma", homeCapillary = "home_capillary", interstitial
+      }
+      var adult: Bool?
+      var pregnant: Bool?
+      var diagnosedDiabetes: Bool?
+      var specimen: Specimen?
+      var fastingHours: Int?
+      var illnessOrMedication: Bool?
+      var collection: Collection?
+
+      enum CodingKeys: String, CodingKey {
+        case adult, pregnant, specimen
+        case diagnosedDiabetes = "diagnosed_diabetes"
+        case fastingHours = "fasting_hours"
+        case illnessOrMedication = "illness_or_glucose_affecting_medication"
+        case collection = "collection_condition"
+      }
+
+      var unconfirmed: [String] {
+        [(CodingKeys.adult, adult == nil), (.pregnant, pregnant == nil), (.diagnosedDiabetes, diagnosedDiabetes == nil),
+         (.specimen, specimen == nil), (.fastingHours, fastingHours == nil), (.illnessOrMedication, illnessOrMedication == nil),
+         (.collection, collection == nil)]
+          .compactMap { $0.1 ? $0.0.rawValue : nil }
+      }
+
+      var conflictsWithApplicable: Bool {
+        adult == false || pregnant == true || diagnosedDiabetes == true ||
+          specimen.map { $0 != .labPlasma } == true || fastingHours.map { $0 < 8 } == true
+      }
+    }
     let record: Record
     let applicability: Applicability
+    var answers: Answers?
+    var confirmedAt: Date?
   }
   struct Baseline: Codable, Equatable {
     let records: [Record]
@@ -46,6 +83,7 @@ enum GalaxySSIHealthCare {
     let rationale: String
     let confirmedBy: String
     let confirmedAt: Date
+    var numeric: GalaxySSIHealthCareTarget.Confirmed?
   }
   struct Concern: Codable, Equatable, Identifiable {
     let id: UUID
@@ -53,20 +91,88 @@ enum GalaxySSIHealthCare {
     var revision: Int
     var updatedAt: Date
     var assessment: Assessment
+    var profileScope: GalaxySSIHealthCareProfileScope.Link?
+    var profileScopeEpoch: UUID?
+    var questionRevision: UUID?
+    var measurement: GalaxySSIHealthCareComparison.Sample?
+    var comparison: GalaxySSIHealthCareComparison.Pair?
     var stage: Stage
     var context: Context?
     var target: Target?
+    var targetRevision: Int?
     var reviewNote: String?
+    var maintenanceHistoryVersion: String?
+    var maintenanceReview: GalaxySSIHealthCareMaintenance.Review?
+    var bloodPressureWarning: GalaxySSIHealthCarePriority.Warning?
+    var adoptedActions: [GalaxySSIHealthCarePlan.AdoptedAction]?
   }
   struct Ledger: Codable {
     var current: [String: Concern] = [:]
     var history: [String: [Concern]] = [:]
     var deletedInput: [String: String] = [:]
+    var acknowledgedBloodPressure: Record?
 
     mutating func publish(_ next: Concern) {
       let key = next.metric.rawValue
       if let old = current[key] { history[old.id.uuidString, default: []].append(old) }
       current[key] = next
+    }
+
+    mutating func reconcileComparisons(readings: [GalaxySSIHealthMetric: [GalaxySSIHealthReading]],
+                                       previous: [String: Concern], now: Date) -> Bool {
+      var changed = false
+      for (key, concern) in current {
+        let prior = previous[key]
+        let (sample, pair) = GalaxySSIHealthCareComparison.reconcile(readings[concern.metric] ?? [], prior: prior)
+        guard sample != concern.measurement || pair != concern.comparison else { continue }
+        var next = concern
+        next.measurement = sample
+        next.comparison = pair
+        if let prior, prior.revision == concern.revision {
+          guard next.revision < Int.max else { continue }
+          next.revision += 1
+          next.updatedAt = max(next.updatedAt, now)
+          publish(next)
+        } else {
+          // The same evaluation already advanced the concern and retained the preceding revision.
+          current[key] = next
+        }
+        changed = true
+      }
+      return changed
+    }
+  }
+
+  static func agentConcerns(in archive: GalaxySSIHealthRecords.Archive) -> [Concern] {
+    guard archive.localCareAllowed == true, let ledger = archive.localCare else { return [] }
+    return Array(ledger.current.values
+      .filter { $0.stage != .paused && $0.stage != .closed }
+      .sorted { ($0.updatedAt, $0.id.uuidString) > ($1.updatedAt, $1.id.uuidString) }
+      .prefix(3))
+  }
+
+  struct AgentDiscussionTarget: Identifiable {
+    let id: UUID
+    let metric: GalaxySSIHealthMetric
+    let revision: Int
+    let permission: UUID?
+
+    init(_ concern: Concern, permission: UUID?) {
+      id = concern.id
+      metric = concern.metric
+      revision = concern.revision
+      self.permission = permission
+    }
+
+    func matches(_ archive: GalaxySSIHealthRecords.Archive) -> Bool {
+      guard archive.localCareAllowed == true,
+            let current = archive.localCare?.current[metric.rawValue], current.id == id, current.revision == revision,
+            current.assessment.record != nil, current.stage != .paused, current.stage != .closed else { return false }
+      return permission == Self.permission(in: archive)
+    }
+
+    static func permission(in archive: GalaxySSIHealthRecords.Archive) -> UUID? {
+      archive.localCarePermission
     }
   }
 
@@ -126,7 +232,7 @@ enum GalaxySSIHealthCare {
     return SHA256.hash(data: try encoder.encode(assessment)).map { String(format: "%02x", $0) }.joined()
   }
 
-  private static func sameSource(_ lhs: GalaxySSIHealthReading, _ rhs: GalaxySSIHealthReading) -> Bool {
+  static func sameSource(_ lhs: GalaxySSIHealthReading, _ rhs: GalaxySSIHealthReading) -> Bool {
     guard lhs.reportSource?.original == rhs.reportSource?.original, lhs.tableSource?.batch == rhs.tableSource?.batch,
           lhs.bluetoothReceipt?.device == rhs.bluetoothReceipt?.device,
           (lhs.healthKitSource == nil) == (rhs.healthKitSource == nil),

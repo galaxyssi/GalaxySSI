@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_care_profile_title">Profile used for this concern</string>
+    <string name="health_care_profile_scope">Choose saved fields and individual history, medication or allergy entries for this concern. Future discussions use their latest saved values; new entries are not added automatically. Birth date is sent only as age on the measurement date. Names and unsaved drafts are excluded. Sending still requires discussion consent. Changing the scope starts a new linked discussion and requires renewed background research consent; previous conversations remain available to read.</string>
+    <string name="health_care_profile_entries">%1$d background entries selected</string>
+    <string name="health_care_profile_summary">%1$d fields · %2$d background entries</string>
+    <string name="health_care_profile_none">No independent profile data selected</string>
+    <string name="health_care_profile_remove">Remove selection</string>
+    <string name="health_care_profile_changed">Selected profile data or permission changed. Open this concern in Personal Health → Proactive health, then review Profile used for this concern and try again.</string>
+    <string name="health_care_profile_shared">Also includes %1$d selected profile fields and %2$d background entries. Only these fields and entries, including their future updates, may be used in authorized follow-up research.</string>
+    <string name="health_care_profile_discussion_changed">This discussion no longer matches the concern or its sharing scope. Open the concern in Personal Health → Proactive health and choose Discuss next steps again. Previous messages are retained but will not be sent to the new discussion.</string>
+</resources>

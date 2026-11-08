@@ -532,6 +532,45 @@ repeat of the entire search or a replacement plan. New evidence, applicability,
 unresolved questions or source freshness may still justify retrieval. This is
 context for the model, not a keyword command router or a ban on further research.
 
+The handoff also contains up to eight source-body excerpts from completed automatic
+reviews of this concern. Retrieval uses the existing concern/review indexes,
+checks the encrypted grant's conversation, destination, settings and privacy,
+and retains original retrieval timestamps. Excerpts are bounded at 1,000 characters
+and explicitly marked when truncated. These are historical context, not medical
+applicability checks or receipts that can authorize a new plan. An intervening
+progress-only review does not erase the earlier source context. Bundled guideline
+links are starting citations, not evidence that a source body has been read.
+
+Both manual and automatic discussions also receive a bounded `clarification_context`
+with saved answers and unconfirmed fields for the exact measurement revision. Negative
+answers and zero fasting hours are known values, not missing data. A fasting label
+does not establish an exact duration. Context from another measurement or revision
+is not reused as current. The model acknowledges relevant saved facts and asks only
+material unresolved questions, rather than repeating the entire form. Reconfirmation
+requires an explicit conflict or change. Current symptoms are not inferred from old
+measurement-time answers, and an unconfirmed field is never automatically filled in.
+This handoff does not expand access to separate profile records or other metrics;
+their absence in the payload must not be described as the user having no such data.
+
+Avoiding duplicate research must not suppress the first source check after missing
+measurement context is clarified. New plans still require current-turn retrieval
+receipts and explicit user review. Retrieval failure is an evidence gap, not an
+excuse to claim that a bundled citation has been verified.
+
+Research progress is distinct from transport completion. The handoff reports
+available prior source context, whether any plan has been recorded, and the
+actual action count. A completed response with none of these does not complete
+initial source review. Once essential measurement context is available, this gap
+still warrants focused research without waiting for another laboratory result.
+Plan existence includes dismissed plans, so an empty action list cannot silently
+recreate a declined proposal. Existence does not imply acceptance or applicability.
+
+The opt-in real-provider acceptance supports `health_research_phase=recheck` once
+per APK version on the same synthetic concern and conversation. It preserves all
+earlier failed review turns, renews only the synthetic authorization, and retains
+the source-receipt and pending-plan assertions. Use `verify` to inspect the same
+result without scheduling another review. These phases do not clear user data.
+
 Cold-start reconciliation keeps a connector wait admissible when its saved
 action and durable source-message receipt agree. It does not convert that wait
 into a user pause or redispatch the request. This check uses saved action and

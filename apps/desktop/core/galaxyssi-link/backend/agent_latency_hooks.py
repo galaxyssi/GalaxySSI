@@ -14,6 +14,7 @@ LIFECYCLE_STAGES = {
 TRACE_STAGES = {
     "codex_turn_submit_started": "desktop_model_submit_started",
     "codex_turn_submitted": "desktop_model_submitted",
+    "codex_completed": "desktop_model_completed",
 }
 
 

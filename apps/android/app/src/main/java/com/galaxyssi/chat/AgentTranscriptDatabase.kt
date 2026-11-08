@@ -407,6 +407,11 @@ internal class AgentTranscriptEntryDatabase(
         }
     }
 
+    fun firstEntryForTurn(conversationId: String, turnId: String): AgentTranscriptEntry? =
+        readableDatabase.query(TABLE_ENTRIES, PAYLOAD_COLUMNS, "conversation_id=? AND turn_id=?",
+            arrayOf(conversationId, turnId), null, null, "sequence ASC", "1")
+            .use(::decodeEntries).firstOrNull()?.let(::hydrateEntry)
+
     fun listTurn(turnId: String): List<AgentTranscriptEntry> =
         readableDatabase.query(
             TABLE_ENTRIES,

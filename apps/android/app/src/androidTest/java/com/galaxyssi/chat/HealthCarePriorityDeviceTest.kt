@@ -8,6 +8,9 @@ import org.junit.Assert.*
 import org.junit.Test
 
 internal fun restoreHealthCareSchemaFive(db: SQLiteDatabase) {
+    db.execSQL("DROP TABLE question_history")
+    db.execSQL("DROP TABLE questions")
+    db.execSQL("DROP TABLE answer_drafts")
     db.execSQL("DROP TABLE research_jobs")
     db.execSQL("DROP TABLE research_authorizations")
     // Keep encrypted payloads intact while recreating the real pre-priority table layout.

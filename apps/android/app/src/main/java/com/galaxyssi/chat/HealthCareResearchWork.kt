@@ -123,6 +123,7 @@ internal object HealthCareResearchWork {
             val job = care.researchJob(turnId) ?: return@use true
             if (conversationId != job.conversationId || care.concern(job.concernId) == null) return@use false
             val authorization = care.researchAuthorization(job.concernId)
+            if (care.discussionGrant(turnId)?.profileLink != care.concern(job.concernId)?.profileLink) return@use false
             if (authorization?.active != true || authorization.id != job.authorizationId ||
                 job.state in setOf(HealthCareResearchState.CANCELLED, HealthCareResearchState.SUPERSEDED, HealthCareResearchState.FAILED)) return@use false
             if (!HealthCareResearchRuntime.bindingCurrent(context, authorization)) return@use false

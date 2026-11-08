@@ -699,6 +699,12 @@ final class GalaxySSIStore: ObservableObject {
     AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: chatHistoryDatabase)
   }
 
+  func persistedOutboundTransportSource(id: UUID) -> ChatMessage? {
+    guard let message = chatHistoryDatabase.message(id: id), message.isMine, !message.isSystem,
+          chatHistoryDatabase.admitsAgentTurn(message) else { return nil }
+    return message
+  }
+
   func makeLinkDeliveryStore() -> GalaxySSILinkDeliveryStore {
     GalaxySSILinkDeliveryStore(defaults: defaults, secrets: secrets, journal: chatHistoryDatabase)
   }
@@ -1580,6 +1586,30 @@ final class GalaxySSIStore: ObservableObject {
     return true
   }
 
+  func projectPeerAttachmentReceipt(_ transfer: AgentPreparedOutboundAttachment, sourceID: UUID,
+                                     contactID: String, failed: Bool = false, wireSourceID: String? = nil) throws {
+    guard transfer.scope.clientMessageId == (wireSourceID ?? sourceID.uuidString),
+          var message = persistedMessage(id: sourceID, contactId: contactID), message.isMine else {
+      throw MqttRouteError.identityChanged
+    }
+    let output = AgentRichContentCodec.decode(message.richOutputJson)
+    var updated = message.richOutputJson
+    if output.contains(where: { $0.metadata["transfer_id"] == transfer.transferId }),
+       let update = GalaxySSIPeerAttachmentTransferUpdate(payload: [
+            "transfer_id": transfer.transferId, "source_message_id": sourceID.uuidString,
+            "attachment_ordinal": transfer.ordinal, "name": transfer.originalName, "mime_type": transfer.mimeType,
+            "size_bytes": transfer.originalSizeBytes, "sha256": transfer.sha256,
+            "progress": failed ? 0 : 100,
+            "state": failed ? GalaxySSIPeerAttachmentTransferProgress.failed : GalaxySSIPeerAttachmentTransferProgress.complete
+       ]) {
+      updated = GalaxySSIPeerAttachmentTransferProgress.applying(update, to: message.richOutputJson)
+    }
+    guard updated != message.richOutputJson || (failed && message.deliveryStatus != .failed) else { return }
+    message.richOutputJson = updated
+    if failed { message.deliveryStatus = .failed }
+    guard persistExactHistoryMessage(message) else { throw MqttChunkStorageError.databaseFailure }
+  }
+
   private func refreshCommittedHistoryMessage(_ message: ChatMessage) {
     if !runtimePlaintextCleared, var cached = messagesByContact[message.contactId],
        let index = cached.firstIndex(where: { $0.id == message.id }) {
@@ -1592,8 +1622,8 @@ final class GalaxySSIStore: ObservableObject {
   }
 
   // The MQTT completion drain consumes its event only after this throws-or-succeeds boundary.
-  func persistTransportDelivery(_ event: MqttDeliveryCompletions.Event) throws {
-    let saved = try chatHistoryDatabase.persistTransportDelivery(event)
+  func persistTransportDelivery(_ event: MqttDeliveryCompletions.Event, messageContactID: String? = nil) throws {
+    let saved = try chatHistoryDatabase.persistTransportDelivery(event, messageContactID: messageContactID)
     guard !runtimePlaintextCleared, var cached = messagesByContact[saved.contactId],
           let index = cached.firstIndex(where: { $0.id == saved.id }) else { return }
     cached[index] = saved

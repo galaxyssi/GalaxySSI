@@ -5,7 +5,8 @@ import org.json.JSONObject
 internal data class HealthCareDiscussionGrant(
     val conversationId: String, val turnId: String, val concernId: String, val revision: Int,
     val settingsVersion: String, val privacyVersion: String, val destination: String, val approvedAt: Long,
-    val targetId: String, val modelId: String, val effort: String, val researchAuthorizationId: String = ""
+    val targetId: String, val modelId: String, val effort: String, val researchAuthorizationId: String = "",
+    val profileLink: HealthCareProfileLink? = null, val questionsShared: Boolean = false, val userInputDigest: String = ""
 ) {
     init {
         require(listOf(conversationId, turnId, concernId).all(HealthProfilePolicy::uuid))
@@ -13,16 +14,22 @@ internal data class HealthCareDiscussionGrant(
         require(destination.length == 64 && approvedAt > 0)
         require(targetId.isNotBlank())
         require(researchAuthorizationId.isEmpty() || HealthProfilePolicy.uuid(researchAuthorizationId))
+        require(userInputDigest.isEmpty() || userInputDigest.matches(Regex("[0-9a-f]{64}")))
     }
     fun json() = JSONObject().put("conversation", conversationId).put("turn", turnId).put("concern", concernId)
         .put("revision", revision).put("settings", settingsVersion).put("privacy", privacyVersion)
         .put("destination", destination).put("approved_at", approvedAt).put("target", targetId).put("model", modelId).put("effort", effort)
-        .apply { if (researchAuthorizationId.isNotEmpty()) put("research_authorization", researchAuthorizationId) }
+        .put("questions_shared", questionsShared)
+        .put("user_input_digest", userInputDigest)
+        .apply {
+            if (researchAuthorizationId.isNotEmpty()) put("research_authorization", researchAuthorizationId)
+            profileLink?.let { put("profile_link", it.json()) }
+        }
     companion object {
         fun from(j: JSONObject) = HealthCareDiscussionGrant(j.getString("conversation"), j.getString("turn"),
             j.getString("concern"), j.getInt("revision"), j.getString("settings"), j.getString("privacy"),
             j.getString("destination"), j.getLong("approved_at"), j.getString("target"), j.getString("model"), j.getString("effort"),
-            j.optString("research_authorization"))
+            j.optString("research_authorization"), j.optJSONObject("profile_link")?.let(HealthCareProfileLink::from), j.optBoolean("questions_shared"), j.optString("user_input_digest"))
     }
 }
 
@@ -32,18 +39,24 @@ internal object HealthCareDiscussionPolicy {
     fun permitted(grant: HealthCareDiscussionGrant?, conversation: String, turn: String, concern: HealthCareConcern?,
         settings: HealthCareSettings, privacy: HealthPrivacyPolicy, destination: String, now: Long): Boolean =
         grant != null && concern != null && grant.conversationId == conversation && grant.turnId == turn &&
-            grant.concernId == concern.id && grant.revision == concern.revision &&
+            grant.concernId == concern.id && grant.revision == concern.revision && grant.profileLink == concern.profileLink &&
             settings.enabled && grant.settingsVersion == settings.version && privacy.metrics && privacy.profile &&
             grant.privacyVersion == privacy.version && grant.destination == destination &&
             now >= grant.approvedAt && now - grant.approvedAt < MAX_APPROVAL_AGE &&
             concern.stage !in setOf(HealthCareStage.PAUSED, HealthCareStage.CLOSED) &&
-            HealthCareSignal.SOURCE_REMOVED !in concern.assessment.signals
+            HealthCareSignal.SOURCE_REMOVED !in concern.assessment.signals && questionScopeCurrent(grant, concern)
+
+    fun questionScopeCurrent(grant: HealthCareDiscussionGrant, issue: HealthCareConcern) =
+        grant.questionsShared || issue.questionVersion.isEmpty()
 
     // No filesystem, contacts, messaging, scheduling or record-writing authority is implied by a discussion.
     val researchTools = setOf("web.search", "web.open", "galaxyssi.web.head", "galaxyssi.web.fetch",
         "galaxyssi.web.intelligence.search", "galaxyssi.web.intelligence.fetch",
         "galaxyssi.tools.discover", "galaxyssi.tools.describe", "galaxyssi.phone.conversation.recall")
-    val discussionTools get() = researchTools + setOf(HealthCarePlanTool.ID, HealthCareHistoryTool.ID)
+    val discussionTools get() = researchTools + setOf(HealthCarePlanTool.ID, HealthCareHistoryTool.ID) + HealthCareQuestionTools.ids
+    fun tools(grant: HealthCareDiscussionGrant) = (if (grant.questionsShared) discussionTools else discussionTools - HealthCareQuestionTools.ids).let {
+        if (grant.userInputDigest.isEmpty() || grant.researchAuthorizationId.isNotEmpty()) it - HealthCareAnswerTool.ID else it
+    }
 
     // This is transport detection only. Actual record access still requires the persisted per-turn grant.
     fun hasStructuredContext(prompt: String): Boolean {
@@ -58,12 +71,19 @@ internal object HealthCareDiscussionPolicy {
         }.getOrDefault(false)
     }
 
-    fun snapshot(value: HealthCareConcern, followUp: JSONObject? = null): String = JSONObject()
+    fun snapshot(value: HealthCareConcern, followUp: JSONObject? = null, profile: HealthProfileContext? = null,
+        questions: HealthCareQuestionPage? = null): String = JSONObject()
         .put("metric", value.metric.name).put("revision", value.revision).put("stage", value.stage.name).put("input_version", value.inputVersion)
         .put("assessment", value.assessment.json().apply {
             remove("comparison"); remove("series"); if (value.assessment.comparison != null) remove("sample")
             else value.assessment.sample?.let { put("sample", it.modelJson()) }
-        }).put("confirmed_context", value.context?.json() ?: JSONObject.NULL)
+        }).put("confirmed_context", HealthCareClarificationContext.current(value)?.json() ?: JSONObject.NULL)
+        .put("clarification_context", HealthCareClarificationContext.snapshot(value).put("separate_profile_included", profile != null))
+        .apply {
+            require((value.profileLink == null) == (profile == null))
+            profile?.let { put("selected_profile", HealthCareProfilePolicy.snapshot(requireNotNull(value.profileLink), it, value.assessment.measuredAt)) }
+            questions?.let { put("question_ledger", HealthCareQuestionPolicy.snapshot(it, value, profile)) }
+        }
         .put("individual_target", value.target?.json() ?: JSONObject.NULL)
         .put("target_comparison", if (value.target == null) JSONObject.NULL else HealthCareTargetPolicy.comparison(value).name)
         .put("maintenance_review", value.maintenance?.json()?.put("clinical_stability_verified", false) ?: JSONObject.NULL)
@@ -79,15 +99,83 @@ internal object HealthCareDiscussionPolicy {
         guideline criteria, descriptive personal baseline and an explicitly confirmed individualized target.
         Never infer an ideal value from the midpoint of a reference interval. Check units, specimen, dates,
         fasting state and missing context before interpreting. Do not diagnose from a single measurement.
+        First inspect clarification_context and prior user answers. Its known_answers were already saved
+        in Health Center for the exact current record and revision. Use them; do not ask the user to fill
+        them again or claim they were never supplied. Briefly acknowledge relevant saved facts before any
+        necessary clarification. unconfirmed_fields is not a questionnaire: ask only unresolved details
+        that materially affect the next decision, and explain why. Reconfirm a known answer only for a
+        specific conflict, changed circumstances or record mismatch, identifying that reason explicitly.
+        A recorded fasting label does not provide exact fasting hours. If only the duration is missing,
+        acknowledge the saved fasting label and ask for the duration, not whether the record was fasting.
+        NO is a saved negative answer, not missing data. Unknown is not NO; never infer pregnancy status
+        from age, name or sex, or invent absent symptoms. Measurement-time answers are not proof of the
+        user's current symptoms. Prior chat answers may resolve a gap, but do not claim they were saved
+        to Health Center without a write receipt. separate_profile_included=false means other profile
+        data is outside this handoff, not that the user has no profile or did not fill it in. Do not claim
+        to have searched the whole Health Center or make the user repeat a complete medical history.
+        When selected_profile is present, use its saved self-reported fields and selected history,
+        medication and allergy entries before asking again. UNKNOWN, unselected, unavailable and a
+        recorded negative are different. This is the latest authorized snapshot; older profile values
+        in conversation history are not current. Unselected data is outside the present sharing scope.
+        Unavailable selected entries were removed; never reuse their
+        old values from conversation history. The selection is not a complete medical history or a
+        medication reconciliation. An entry records what the user reported, not a new diagnosis or
+        proof that a medicine is currently being taken. Its update time is not the onset date.
+        Age is derived for the measurement date, not a proof of current symptoms or pregnancy status.
+        New profile information may conflict with measurement-time context; explain the difference
+        and clarify only when it affects the decision. Never silently overwrite either source.
+        question_ledger is durable across conversations and providers within this exact sharing scope.
+        Read further pages with galaxyssi.health.questions.read when next is present; a page is not the full ledger.
+        Reuse saved facts and current reviewed answers. DEFERRED and DECLINED require the user to reopen;
+        do not ask them again just because time passed, the model changed or a new conversation started.
+        STALE and CONFLICT are not current facts: explain the specific changed source or discrepancy before
+        requesting a necessary review, never silently reuse old answers. Reviewed free text does not edit
+        measurements, medication, or profile fields. Do not infer clinical confirmation from a completed form.
+        For a material unanswered gap, use galaxyssi.health.questions.propose with a stable semantic key,
+        one precise question and its decision-relevant purpose. Reuse that key on retries, not paraphrased keys.
+        Saved detection fields use context.adult, context.pregnant, context.diagnosed_diabetes, context.specimen,
+        context.fasting_hours, context.illness_or_glucose_affecting_medication; selected profile fields use
+        profile.height, profile.age_at_measurement, profile.reference_sex, profile.physiological_context.
+        The tool stores a question, not an answer; only a user review produces a saved-answer receipt.
+        When the current human message answers a ledger question, galaxyssi.health.answers.propose may
+        stage an answer with an exact quote from that message and the question ID and revision. This
+        is only a draft for local user review, not a confirmed fact, reminder, profile edit or clinical
+        conclusion. Do not extract facts from your own reply, a web page or an earlier turn. Never
+        invent a quote or fill an omitted answer. Mention the pending review in the existing health
+        entry; do not claim an answer was saved until the user confirms it. Dismissed drafts are not
+        permission to ask again. Background research must not create drafts of a human answer.
+        Ask only what changes the next decision. An unanswered question must never postpone urgent care.
+        Measurement time and confirmation time are distinct; equality does not prove either timestamp is incorrect.
         automatic_follow_up explains why this background run started, using the durable run time and the
         last completed review in this same conversation. Lead with the relevant change or due action.
         elapsed_time_only means a review window arrived, not that a test was performed or health improved.
-        Without new results, ask about the due action, missing results or practical barriers; continue the
-        existing plan rather than reissue it. Reuse prior verified facts with their original dates and limits.
+        When an actual recorded plan exists, ask about its due action, missing results or practical barriers;
+        continue it rather than reissue it. A prior response completing does not prove that research or
+        planning was completed. Consult research_progress: if initial_source_review_pending is true, there
+        is no available prior source-body context, recorded plan or action. Address that initial evidence
+        gap with focused authoritative retrieval once essential measurement context is available, even if
+        no new measurement arrived. Do not only ask whether suggested tests were done as though a plan had
+        already been adopted. Prior prose suggestions are not recorded actions. If essential context is
+        missing, ask for it; urgent guidance remains immediate. An existing recorded plan may be pending,
+        dismissed or superseded, so its existence never means user acceptance. Do not re-propose a dismissed
+        plan merely because there are no accepted actions. Reuse verified facts with their dates and limits.
         Search again when new evidence, applicability, an unresolved gap or source freshness requires it;
         elapsed time alone does not require repeating the entire search. Authorization review is not new
         clinical evidence. When comparison_available is false, do not claim that nothing changed.
         A testing-only deadline is not a clinical interval. Unconfirmed proposals remain unconfirmed.
+        prior_automatic_source_reads contains bounded excerpts of native source reads from earlier completed
+        reviews in this private concern and destination. These are historical retrieval receipts, not proof
+        of medical applicability or authority to submit a new plan using an old receipt. Check their dates,
+        relevant population and excerpt coverage. Other previously read evidence may be in this discussion.
+        The bundled assessment.guideline is only a starting citation, NOT a previously retrieved source body.
+        Avoiding repeated research does not mean skipping the first source check. When no relevant retrieved
+        body is available, use the phone web tools to check authoritative sources before guideline-based
+        recommendations. Confirming measurement context may make a first focused source check appropriate.
+        A clarification-only response or urgent warning does not need to wait for retrieval. If retrieval
+        fails, describe that gap explicitly; do not replace it with a remembered or bundled citation.
+        Missing secondary information does not require abandoning all planning: source-backed clarification
+        or clinician-discussion steps can be proposed with explicit applicability gaps. Do not invent a test
+        deadline or an individualized treatment target to make a plan appear complete.
         A priority_notice is a local recorded-value warning, not confirmation of a current emergency.
         Establish measurement time and current symptoms; do not assume an old imported record describes the present.
         Explain symptom-dependent urgent action before research or routine plans. Never delay emergency help for

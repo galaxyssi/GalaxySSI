@@ -150,6 +150,7 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
       return
     }
     if notification.request.identifier.hasPrefix(GalaxySSIHealthRecordingReminders.prefix) ||
+      notification.request.identifier.hasPrefix(GalaxySSIHealthCareFollowUp.prefix) ||
       GalaxySSIHealthReviewDelivery.token(notification.request.identifier) != nil {
       completionHandler([.banner, .list])
       return
@@ -183,6 +184,18 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
         UserDefaults.standard.set(token.uuidString, forKey: GalaxySSIHealthReviewDelivery.pendingKey)
         DispatchQueue.main.async {
           NotificationCenter.default.post(name: GalaxySSIHealthReviewDelivery.openNotification, object: nil)
+        }
+      }
+      completionHandler()
+      return
+    }
+    if response.notification.request.identifier.hasPrefix(GalaxySSIHealthCareFollowUp.prefix) {
+      let identifier = response.notification.request.identifier
+      if response.actionIdentifier == UNNotificationDefaultActionIdentifier,
+         let token = UUID(uuidString: String(identifier.dropFirst(GalaxySSIHealthCareFollowUp.prefix.count))) {
+        UserDefaults.standard.set(token.uuidString, forKey: GalaxySSIHealthCareFollowUp.pendingKey)
+        DispatchQueue.main.async {
+          NotificationCenter.default.post(name: GalaxySSIHealthCareFollowUp.openNotification, object: nil)
         }
       }
       completionHandler()
@@ -367,6 +380,8 @@ private struct GalaxySSIRuntimeRoot: View {
       .environmentObject(runtime.voiceAgentRunRecovery)
       .modifier(GalaxySSIHealthSleepReminderLifecycle(store: runtime.store))
       .modifier(GalaxySSIHealthReviewNotificationLifecycle(store: runtime.store))
+      .modifier(GalaxySSIHealthCareFollowUpLifecycle(store: runtime.store))
+      .modifier(GalaxySSIHealthCareResearchLifecycle(store: runtime.store, coordinator: runtime.coordinator))
       .galaxySSITextScale(runtime.store.displaySettings)
       .modifier(GalaxySSIHealthRecordingNotificationLifecycle(store: runtime.store))
       .modifier(GalaxySSIHealthSyncNotificationLifecycle(store: runtime.store))

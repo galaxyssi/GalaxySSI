@@ -8,6 +8,28 @@ final class MqttSignalStateJournalTests: XCTestCase {
   private let snapshot = Data("test-ratchet-state".utf8)
   private let next = Data("advanced-test-ratchet-state".utf8)
 
+  func testColdStartupOnlyAdoptsAnIntactMarkerForThisProfile() throws {
+    let fixture = try ChunkFixture()
+    let journal = try makeJournal(fixture)
+    let fingerprint = String(repeating: "a", count: 64)
+    let absent = MqttSignalStateJournal.profileFileURL(profileID: "absent", root: fixture.root)
+    XCTAssertNil(try MqttSignalStateJournal.openMigrated(fileURL: absent,
+      expectedFingerprint: fingerprint, secrets: fixture.secrets))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: absent.path))
+    XCTAssertNil(try MqttSignalStateJournal.openMigrated(fileURL: fixture.url,
+      expectedFingerprint: fingerprint, secrets: fixture.secrets))
+    let marker = try journal.activateLegacy(localFingerprint: fingerprint, signalState: snapshot, entries: [])
+    XCTAssertEqual(try MqttSignalStateJournal.openMigrated(fileURL: fixture.url,
+      expectedFingerprint: fingerprint, secrets: fixture.secrets)?.legacyCutover(), marker)
+    XCTAssertThrowsError(try MqttSignalStateJournal.openMigrated(fileURL: fixture.url,
+      expectedFingerprint: String(repeating: "b", count: 64), secrets: fixture.secrets))
+    let partial = try ChunkFixture()
+    let incomplete = try makeJournal(partial)
+    _ = try incomplete.commit(expected: nil) { _ in ((), snapshot) }
+    XCTAssertThrowsError(try MqttSignalStateJournal.openMigrated(fileURL: partial.url,
+      expectedFingerprint: fingerprint, secrets: partial.secrets))
+  }
+
   func testLegacyCutoverCommitsSignalStateQueueAndMarkerTogether() throws {
     let fixture = try ChunkFixture()
     let journal = try makeJournal(fixture)

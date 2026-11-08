@@ -1,3 +1,4 @@
+import CoreFoundation
 import CryptoKit
 import Foundation
 
@@ -69,7 +70,7 @@ enum AgentBlobArtifactContract {
   static func validateManifest(_ source: [String: Any]) throws -> [String: Any] {
     let fields = Set(textLimits.keys).union(numberFields).union(["peer_chat", "transfer_id"])
     guard Set(source.keys) == fields,
-          source["peer_chat"] is Bool,
+          let peerChat = source["peer_chat"] as? NSNumber, CFGetTypeID(peerChat) == CFBooleanGetTypeID(),
           source.string("client_route_id").range(
             of: "^[A-Za-z0-9_-]{22}$", options: .regularExpression
           ) != nil else {
@@ -82,11 +83,11 @@ enum AgentBlobArtifactContract {
         throw AgentBlobFailure.invalid("invalid_artifact_blob_manifest")
       }
     }
-    let size = source.int64("size_bytes")
-    let originalSize = source.int64("original_size_bytes")
+    let size = try MqttRouteProtocol.integer(source, "size_bytes")
+    let originalSize = try MqttRouteProtocol.integer(source, "original_size_bytes")
     guard (1...AgentBlobProtocol.maximumFileBytes).contains(size),
           originalSize >= size,
-          source.int64("execution_generation") > 0,
+          try MqttRouteProtocol.integer(source, "execution_generation") > 0,
           AgentBlobProtocol.validHex(source.string("artifact_id"), bytes: 32),
           AgentBlobProtocol.validHex(source.string("sha256"), bytes: 32),
           AgentBlobProtocol.validHex(source.string("original_sha256"), bytes: 32),
@@ -111,6 +112,20 @@ enum AgentBlobArtifactContract {
     result["transfer_id"] = manifest.string("transfer_id")
     result["execution_generation"] = String(manifest.int64("execution_generation"))
     return result
+  }
+
+  static func validateDesktopScopedURI(_ manifest: [String: Any]) throws {
+    let unreserved = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+    guard let task = manifest.string("task_id").addingPercentEncoding(withAllowedCharacters: unreserved),
+          let path = manifest.string("relative_path").addingPercentEncoding(withAllowedCharacters: unreserved.union(CharacterSet(charactersIn: "/")))
+    else { throw AgentBlobFailure.invalid("invalid_artifact_blob_manifest") }
+    var original = manifest
+    original["transfer_id"] = nil
+    original["artifact_uri"] = "galaxyssi-artifact://\(task)/\(path)"
+    let scope = AgentBlobProtocol.sha256(try AgentBlobProtocol.canonicalJSON(original))
+    guard manifest.string("artifact_uri") == "galaxyssi-artifact://blob/" + scope else {
+      throw AgentBlobFailure.invalid("artifact_blob_manifest_mismatch")
+    }
   }
 
   static func descriptor(_ source: [String: Any]) throws -> AgentBlobPrivateDescriptor {
@@ -153,12 +168,54 @@ enum AgentBlobArtifactContract {
   }
 }
 
+struct AgentBlobPeerStorage {
+  let sourceID: String
+  let transferID: String
+  let size: Int64
+  let digest: String
+  let localID: String
+  var localURI: String { "galaxyssi-artifact://peer-blob/" + localID }
+
+  init(descriptor: [String: Any], sourceID: String, binding: String) throws {
+    self.sourceID = sourceID
+    transferID = descriptor.string("transfer_id")
+    size = try MqttRouteProtocol.integer(descriptor, "size_bytes")
+    digest = descriptor.string("sha256")
+    let artifactID = descriptor.string("artifact_id"), uri = descriptor.string("artifact_uri")
+    let prefix = "galaxyssi-artifact://blob/"
+    guard UUID(uuidString: sourceID)?.uuidString.lowercased() == sourceID, MqttRouteProtocol.hex(binding, count: 64),
+          MqttRouteProtocol.hex(transferID, count: 64), MqttRouteProtocol.hex(artifactID, count: 64),
+          MqttRouteProtocol.hex(digest, count: 64), (1...AgentBlobProtocol.maximumFileBytes).contains(size),
+          uri.hasPrefix(prefix), MqttRouteProtocol.hex(String(uri.dropFirst(prefix.count)), count: 64)
+    else { throw AgentBlobFailure.invalid("invalid_artifact_blob_manifest") }
+    localID = MqttRouteProtocol.digest(try GalaxySSILinkProtocol.jsonData([binding, sourceID, transferID, artifactID, uri, digest]))
+  }
+
+  init(manifest: [String: Any], binding: String) throws {
+    let source = manifest.string("source_message_id")
+    guard manifest["peer_chat"] as? Bool == true, manifest.string("task_id") == source,
+          manifest.string("contact_id") == manifest.string("desktop_id") else {
+      throw AgentBlobFailure.invalid("artifact_blob_identity_mismatch")
+    }
+    try self.init(descriptor: manifest, sourceID: source, binding: binding)
+  }
+
+  func storageManifest(_ original: [String: Any]) -> [String: Any] {
+    var result = original
+    result["artifact_id"] = localID
+    result["artifact_uri"] = localURI
+    result["task_id"] = sourceID
+    return result
+  }
+}
+
 actor AgentBlobArtifactReceiver {
   struct Identity: Equatable {
     var desktopId: String
     var clientRouteId: String
     var remoteFingerprint: String
     var origin: String
+    var peerBinding: String? = nil
   }
 
   private struct Job: Codable, Equatable {
@@ -171,6 +228,8 @@ actor AgentBlobArtifactReceiver {
     var transportRevision: Int64
     var attempts: Int
     var nextAttemptAtMillis: Int64
+    var peerStorageBinding: String?
+    var agentReceiveBinding: String?
   }
 
   private struct TerminalEvent: Codable, Equatable {
@@ -187,6 +246,7 @@ actor AgentBlobArtifactReceiver {
   typealias Progress = @Sendable ([String: Any], Int) async -> Void
   typealias Completion = @Sendable ([String: Any], Bool, String) async -> Void
   typealias ReceiptPublisher = @Sendable ([String: Any], String) async -> Bool
+  typealias AgentAuthorization = @Sendable ([String: Any], String) async -> Bool
 
   private let rootURL: URL
   private let journalURL: URL
@@ -197,6 +257,7 @@ actor AgentBlobArtifactReceiver {
   private let progress: Progress
   private let completion: Completion
   private let publishReceipt: ReceiptPublisher
+  private let authorizeAgent: AgentAuthorization
   private var drainTask: Task<Void, Never>?
 
   init(
@@ -206,7 +267,8 @@ actor AgentBlobArtifactReceiver {
     identityProvider: @escaping IdentityProvider,
     progress: @escaping Progress,
     completion: @escaping Completion,
-    publishReceipt: @escaping ReceiptPublisher
+    publishReceipt: @escaping ReceiptPublisher,
+    authorizeAgent: @escaping AgentAuthorization = { _, _ in false }
   ) {
     let support = applicationSupportDirectory ?? FileManager.default.urls(
       for: .applicationSupportDirectory, in: .userDomainMask
@@ -220,29 +282,39 @@ actor AgentBlobArtifactReceiver {
     self.progress = progress
     self.completion = completion
     self.publishReceipt = publishReceipt
+    self.authorizeAgent = authorizeAgent
   }
 
   func enqueue(
     payload: [String: Any],
     link: ServerLink,
     configuration: AgentBlobRelayConfiguration,
-    conversationId: String
+    conversationId: String,
+    peerStorageBinding: String? = nil,
+    agentReceiveBinding: String? = nil
   ) throws {
     let manifest = try AgentBlobArtifactContract.validateOffer(
       payload, link: link, configuration: configuration
     )
     guard manifest.string("conversation_id") == conversationId,
-          manifest["peer_chat"] as? Bool != true || manifest.string("contact_id") == link.desktopId,
-          let encoded = try? JSONSerialization.data(withJSONObject: payload) else {
+          manifest["peer_chat"] as? Bool != true || manifest.string("contact_id") == link.desktopId else {
       throw AgentBlobFailure.invalid("artifact_blob_identity_mismatch")
     }
+    if let peerStorageBinding { _ = try AgentBlobPeerStorage(manifest: manifest, binding: peerStorageBinding) }
+    if let agentReceiveBinding {
+      guard peerStorageBinding == nil, manifest["peer_chat"] as? Bool == false,
+            MqttRouteProtocol.hex(agentReceiveBinding, count: 64) else {
+        throw AgentBlobFailure.invalid("artifact_blob_identity_mismatch")
+      }
+    }
+    let encoded = try Self.offerIntent(payload)
     var jobs = try loadJobs()
     let next = Job(
       transferId: manifest.string("transfer_id"), payload: encoded,
       desktopId: link.desktopId, clientRouteId: link.routes.clientRouteId,
       remoteFingerprint: link.routes.remoteFingerprint, origin: configuration.origin,
       transportRevision: payload.int64("transport_revision"),
-      attempts: 0, nextAttemptAtMillis: 0
+      attempts: 0, nextAttemptAtMillis: 0, peerStorageBinding: peerStorageBinding, agentReceiveBinding: agentReceiveBinding
     )
     if let index = jobs.firstIndex(where: { $0.transferId == next.transferId }) {
       let existing = jobs[index]
@@ -250,22 +322,37 @@ actor AgentBlobArtifactReceiver {
             existing.desktopId == next.desktopId,
             existing.clientRouteId == next.clientRouteId,
             existing.remoteFingerprint == next.remoteFingerprint,
-            existing.origin == next.origin else {
+            existing.origin == next.origin,
+            existing.peerStorageBinding == nil || existing.peerStorageBinding == next.peerStorageBinding,
+            existing.agentReceiveBinding == nil || existing.agentReceiveBinding == next.agentReceiveBinding else {
         throw AgentBlobFailure.invalid("artifact_blob_identity_mismatch")
       }
       if existing.transportRevision == next.transportRevision {
-        guard existing.payload == next.payload else {
+        guard let saved = try JSONSerialization.jsonObject(with: existing.payload) as? [String: Any],
+              try Self.offerIntent(saved) == next.payload else {
           throw AgentBlobFailure.invalid("artifact_blob_revision_conflict")
+        }
+        if existing.peerStorageBinding != next.peerStorageBinding || existing.agentReceiveBinding != next.agentReceiveBinding {
+          jobs[index] = next
+          try saveJobs(jobs)
         }
       } else {
         jobs[index] = next
         try saveJobs(jobs)
       }
     } else {
+      guard jobs.count < 256, jobs.lazy.filter({ $0.desktopId == link.desktopId }).prefix(32).count < 32
+      else { throw MqttChunkStorageError.capacityExceeded }
       jobs.append(next)
       try saveJobs(jobs)
     }
     wake()
+  }
+
+  private static func offerIntent(_ payload: [String: Any]) throws -> Data {
+    var intent = payload
+    intent["message_id"] = nil
+    return try JSONSerialization.data(withJSONObject: intent, options: [.sortedKeys])
   }
 
   func wake() {
@@ -320,36 +407,37 @@ actor AgentBlobArtifactReceiver {
       let job = jobs[index]
       do {
         try await process(job)
-        var latest = (try? loadJobs()) ?? []
-        latest.removeAll { $0.transferId == job.transferId }
-        try? saveJobs(latest)
+        var latest = try loadJobs()
+        if let current = latest.firstIndex(of: job) {
+          latest.remove(at: current)
+          try saveJobs(latest)
+        }
       } catch {
+        if Task.isCancelled { return }
         let code = errorCode(error)
-        var latest = (try? loadJobs()) ?? []
+        guard var latest = try? loadJobs() else { return }
+        guard let current = latest.firstIndex(of: job) else { continue }
         if isTerminal(code) {
-          latest.removeAll { $0.transferId == job.transferId }
+          latest.remove(at: current)
           let value = (try? manifest(job)) ?? [:]
-          try? storeTerminalEvent(manifest: value, completed: false, errorCode: code)
-          await completion(value, false, code)
-        } else if let current = latest.firstIndex(where: { $0.transferId == job.transferId }) {
+          do {
+            try storeTerminalEvent(manifest: value, completed: false, errorCode: code)
+            try saveJobs(latest)
+          } catch { return }
+          await completion(presentationManifest(value, job: job), false, code)
+        } else {
           latest[current].attempts += 1
           let seconds = min(300, 2 << min(latest[current].attempts, 7))
           latest[current].nextAttemptAtMillis = nowMillis() + Int64(seconds * 1_000)
+          do { try saveJobs(latest) } catch { return }
         }
-        try? saveJobs(latest)
       }
     }
   }
 
   private func process(_ job: Job) async throws {
-    guard let identity = await identityProvider(job.desktopId),
-          identity == Identity(
-            desktopId: job.desktopId,
-            clientRouteId: job.clientRouteId,
-            remoteFingerprint: job.remoteFingerprint,
-            origin: job.origin
-          ),
-          let payload = try JSONSerialization.jsonObject(with: job.payload) as? [String: Any],
+    try await checkCurrent(job)
+    guard let payload = try JSONSerialization.jsonObject(with: job.payload) as? [String: Any],
           let offer = payload["blob_offer"] as? [String: Any],
           let privatePayload = offer["private"] as? [String: Any],
           let origin = URL(string: job.origin) else {
@@ -374,10 +462,10 @@ actor AgentBlobArtifactReceiver {
     ) else {
       throw AgentBlobFailure.invalid("manifest_hash_mismatch")
     }
+    let staging = try artifactStore.stageBlobArtifact()
     var plaintext = Data()
-    plaintext.reserveCapacity(Int(min(descriptor.size, Int64(Int.max))))
     for (index, chunk) in chunks.enumerated() {
-      guard !Task.isCancelled else { throw CancellationError() }
+      try await checkCurrent(job)
       let encrypted = try await client.binary(
         method: "GET", path: "\(path)/chunks/\(index)", token: token
       )
@@ -385,18 +473,65 @@ actor AgentBlobArtifactReceiver {
             AgentBlobProtocol.sha256(encrypted) == chunk.sha256 else {
         throw AgentBlobFailure.invalid("ciphertext_hash_mismatch")
       }
-      plaintext.append(try AgentBlobProtocol.open(encrypted, descriptor: descriptor, index: index))
-      await progress(manifest, min(99, Int(Int64(plaintext.count) * 100 / max(1, descriptor.size))))
+      let bytes = try AgentBlobProtocol.open(encrypted, descriptor: descriptor, index: index)
+      if let staging {
+        try staging.append(bytes, maximum: descriptor.size)
+      } else {
+        guard Int64(bytes.count) <= descriptor.size - Int64(plaintext.count) else {
+          throw AgentBlobFailure.invalid("plaintext_hash_mismatch")
+        }
+        plaintext.append(bytes)
+      }
+      let received = staging?.count ?? Int64(plaintext.count)
+      await progress(presentationManifest(manifest, job: job), min(99, Int(received * 100 / max(1, descriptor.size))))
     }
-    guard Int64(plaintext.count) == descriptor.size,
-          AgentBlobProtocol.sha256(plaintext) == descriptor.sha256 else {
-      throw AgentBlobFailure.invalid("plaintext_hash_mismatch")
+    try await checkCurrent(job)
+    let storage: [String: Any]
+    if let binding = job.peerStorageBinding {
+      storage = try AgentBlobPeerStorage(manifest: manifest, binding: binding).storageManifest(manifest)
+    } else {
+      storage = manifest
     }
-    try artifactStore.ingestBlobArtifact(manifest: manifest, plaintext: plaintext)
+    if let staging {
+      try artifactStore.ingestBlobArtifact(manifest: storage, staging: staging)
+    } else {
+      guard Int64(plaintext.count) == descriptor.size,
+            AgentBlobProtocol.sha256(plaintext) == descriptor.sha256 else {
+        throw AgentBlobFailure.invalid("plaintext_hash_mismatch")
+      }
+      try artifactStore.ingestBlobArtifact(manifest: storage, plaintext: plaintext)
+    }
     try storeTerminalEvent(manifest: manifest, completed: true, errorCode: "")
-    await completion(manifest, true, "")
+    await completion(presentationManifest(manifest, job: job), true, "")
+    try await checkCurrent(job)
     guard await publishReceipt(AgentBlobArtifactContract.storedReceipt(manifest), job.desktopId) else {
       throw AgentBlobFailure.invalid("artifact_blob_receipt_pending")
+    }
+  }
+
+  private func presentationManifest(_ manifest: [String: Any], job: Job) -> [String: Any] {
+    guard job.peerStorageBinding != nil else { return manifest }
+    var result = manifest
+    result["_local_peer_storage"] = true
+    return result
+  }
+
+  private func checkCurrent(_ job: Job) async throws {
+    try Task.checkCancellation()
+    let identity = await identityProvider(job.desktopId)
+    let agentAuthorized: Bool
+    if job.agentReceiveBinding != nil {
+      agentAuthorized = try await authorizeAgent(manifest(job), job.desktopId)
+    } else { agentAuthorized = true }
+    try Task.checkCancellation()
+    // A newer offer can replace this job while identity or network I/O is suspended.
+    guard try loadJobs().contains(job) else { throw CancellationError() }
+    guard let identity, identity.desktopId == job.desktopId, identity.clientRouteId == job.clientRouteId,
+          identity.remoteFingerprint == job.remoteFingerprint, identity.origin == job.origin,
+          job.peerStorageBinding == nil || job.peerStorageBinding == identity.peerBinding,
+          job.agentReceiveBinding == nil || job.agentReceiveBinding == identity.peerBinding,
+          agentAuthorized else {
+      throw AgentBlobFailure.invalid("artifact_blob_identity_mismatch")
     }
   }
 

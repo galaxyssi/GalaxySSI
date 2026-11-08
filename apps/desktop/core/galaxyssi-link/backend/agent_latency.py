@@ -56,6 +56,10 @@ STAGE_PAIRS = {
     "desktop_tool_ms": ("desktop_tool_started", "desktop_tool_completed"),
     "desktop_model_submit_ms": ("desktop_model_submit_started", "desktop_model_submitted"),
     "desktop_model_first_output_ms": ("desktop_model_submit_started", "desktop_first_output"),
+    "desktop_receive_to_model_ms": ("desktop_request_received", "desktop_model_submitted"),
+    # Unlike the legacy first-output-to-completion metric, these exclude generation.
+    "desktop_post_model_ms": ("desktop_model_completed", "desktop_task_completed"),
+    "desktop_model_to_enqueue_ms": ("desktop_model_completed", "desktop_response_enqueued"),
 }
 for _phase in ("evidence", "archive", "outbox", "encrypt", "wire_prepare"):
     STAGE_PAIRS[f"desktop_reply_{_phase}_ms"] = (f"desktop_reply_{_phase}_started", f"desktop_reply_{_phase}_finished")

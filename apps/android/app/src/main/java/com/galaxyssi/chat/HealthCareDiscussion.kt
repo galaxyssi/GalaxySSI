@@ -40,7 +40,7 @@ internal object HealthCareDiscussion {
         val privacy = HealthPrivacyStore(context).use { it.policy() }
         check(privacy.metrics && privacy.profile) { context.getString(R.string.health_care_discussion_permissions) }
         return HealthCareStore(context).use { care ->
-            val id = care.discussion(conversationId) ?: throw HealthCareConflict()
+            val id = care.discussion(conversationId) ?: error(context.getString(R.string.health_care_profile_discussion_changed))
             val concern = care.concern(id) ?: throw HealthCareConflict()
             check(care.settings().enabled && concern.stage !in setOf(HealthCareStage.PAUSED, HealthCareStage.CLOSED) &&
                 HealthCareSignal.SOURCE_REMOVED !in concern.assessment.signals) { context.getString(R.string.health_care_discussion_inactive) }
@@ -69,7 +69,9 @@ internal object HealthCareDiscussion {
             val destination = destination(context, target.id, model)
             val grant = HealthCareDiscussionGrant(conversationId, turnId, id, concern.revision,
                 care.settings().version, privacy.version, destination, System.currentTimeMillis(), target.id, model, effort.wireValue,
-                research?.id.orEmpty())
+                research?.id.orEmpty(), concern.profileLink, questionsShared = research?.scope?.questionsShared ?: true,
+                userInputDigest = if (research == null) AgentNativeJsonCodec.sha256(question.trim()) else "")
+            check(HealthCareDiscussionPolicy.questionScopeCurrent(grant, concern)) { context.getString(R.string.health_care_changed) }
             if (research != null) check(research.permits(grant) && care.researchGrantCurrent(grant)) {
                 context.getString(R.string.health_care_changed)
             }
@@ -77,9 +79,15 @@ internal object HealthCareDiscussion {
                 val job = checkNotNull(care.researchJob(turnId))
                 val previous = care.previousCompletedResearch(job)
                 HealthCareResearchHandoff.snapshot(concern, job, previous,
-                    previous?.let { care.revision(concern.id, it.revision) })
+                    previous?.let { care.revision(concern.id, it.revision) }, care.priorResearchEvidence(job, grant),
+                    care.hasRecordedPlan(concern.id, job.createdAt))
             }
-            val snapshot = HealthCareDiscussionPolicy.snapshot(concern, followUp)
+            val profile = concern.profileLink?.let { link ->
+                try { HealthCareProfileAccess.capture(context, link) }
+                catch (_: HealthProfileConflict) { error(context.getString(R.string.health_care_profile_changed)) }
+            }
+            val snapshot = HealthCareDiscussionPolicy.snapshot(concern, followUp, profile,
+                if (grant.questionsShared) care.questions(concern, limit = 8) else null)
             val goal = HealthCareDiscussionPolicy.prompt(question, snapshot)
             val history = AgentTranscriptStore(context).context(conversationId)
             check(history.conversationId == conversationId && history.privateMode && history.trackingPaused) {
@@ -88,7 +96,7 @@ internal object HealthCareDiscussion {
             val screen = ScreenContext(context.packageName, pageTitle = "Health discussion")
             val safeRuntime = runtime.copy(goal = goal, screen = screen, memoryCapture = false, memories = emptyList(),
                 knowledgeItems = emptyList(), systemTools = emptyList(), callableTargets = listOf(target),
-                nativeTools = runtime.nativeTools.filter { it.id in HealthCareDiscussionPolicy.discussionTools })
+                nativeTools = runtime.nativeTools.filter { it.id in HealthCareDiscussionPolicy.tools(grant) })
             val request = AgentRequest(goal, screen, listOf(target), memories = emptyList(), runtimeContext = safeRuntime,
                 conversationContext = history, executionTurnId = grant.turnId)
             val base = RuleBasedAgentPlanner(context).supervisedProjectActions(request)?.singleOrNull() ?: error("No health discussion route")
@@ -109,6 +117,7 @@ internal object HealthCareDiscussion {
             context.getString(R.string.health_care_changed)
         }
         check(destination(context, grant.targetId, grant.modelId) == grant.destination) { context.getString(R.string.health_care_changed) }
+        check(HealthCareProfileAccess.current(context, grant.profileLink)) { context.getString(R.string.health_care_profile_changed) }
         HealthPrivacyStore(context).use { privacy ->
             val policy = privacy.policy()
             check(policy.version == grant.privacyVersion && policy.metrics && policy.profile &&
@@ -166,7 +175,8 @@ internal object HealthCareDiscussion {
                 } } == true
                 HealthCareDiscussionPolicy.permitted(grant, conversationId, turnId, concern, settings, privacy,
                     actualDestination ?: destination(context, grant.targetId, grant.modelId), System.currentTimeMillis()) &&
-                    sourceCurrent && (grant.targetId == "local-llm" || privacy.online) && care.researchGrantCurrent(grant) &&
+                    sourceCurrent && HealthCareProfileAccess.current(context, grant.profileLink) &&
+                    (grant.targetId == "local-llm" || privacy.online) && care.researchGrantCurrent(grant) &&
                     (grant.researchAuthorizationId.isEmpty() || care.researchAuthorization(grant.concernId)?.let {
                         it.configuration == configurationFingerprint(context, conversationId, grant.targetId)
                     } == true)
@@ -183,7 +193,7 @@ internal object HealthCareDiscussion {
         val granted = HealthCareStore(context).use { it.discussionGrant(turn) } ?: return context.getString(R.string.health_care_discussion_expired)
         val allowed = when (action.kind) {
             AgentActionKind.DRAFT_PLAN -> true
-            AgentActionKind.CALL_NATIVE_TOOL -> action.parameters["tool_id"] in HealthCareDiscussionPolicy.discussionTools
+            AgentActionKind.CALL_NATIVE_TOOL -> action.parameters["tool_id"] in HealthCareDiscussionPolicy.tools(granted)
             AgentActionKind.CALL_CONNECTOR -> action.parameters["connector_id"] == granted.targetId &&
                 action.parameters["agent_model_id"].orEmpty() == granted.modelId &&
                 action.parameters["agent_reasoning_effort"].orEmpty() == granted.effort &&
@@ -197,8 +207,11 @@ internal object HealthCareDiscussion {
         if (!bound(context, invocation.conversationId)) return null
         return rejection(context, invocation.conversationId, invocation.turnId)
             ?: if (tool.id !in HealthCareDiscussionPolicy.discussionTools) context.getString(R.string.health_care_discussion_scope)
+            else if (tool.id in HealthCareQuestionTools.ids && !HealthCareStore(context).use {
+                it.discussionGrant(invocation.turnId)?.questionsShared == true
+            }) context.getString(R.string.health_care_discussion_scope)
             else if (tool.id !in setOf(AgentToolDiscoveryTools.ID, AgentToolInspectionTools.DESCRIBE, AgentConversationRecallTool.ID,
-                    HealthCarePlanTool.ID, HealthCareHistoryTool.ID) &&
+                    HealthCarePlanTool.ID, HealthCareHistoryTool.ID) && tool.id !in HealthCareQuestionTools.ids &&
                 !HealthPrivacyStore(context).use { it.policy().online }) context.getString(R.string.health_care_discussion_online)
             else null
     }

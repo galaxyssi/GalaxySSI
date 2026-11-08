@@ -1405,6 +1405,14 @@ button:disabled { cursor: default; opacity: 0.48; }
 
 .toast { position: fixed; z-index: 60; left: 50%; bottom: 22px; transform: translateX(-50%); max-width: min(520px, 80vw); padding: 9px 12px; border-radius: 6px; background: #24292e; color: #fff; box-shadow: var(--shadow); font-size: 0.9rem; }
 
+.conversation-delete-dialog { width: min(380px, calc(100vw - 40px)); padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.conversation-delete-dialog::backdrop { background: rgba(0, 0, 0, 0.2); }
+.conversation-delete-dialog h2 { margin: 0 0 12px; font-size: 1.1rem; }
+.conversation-delete-dialog p { margin: 0; line-height: 1.6; overflow-wrap: anywhere; }
+.conversation-delete-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.conversation-delete-actions button { min-width: 64px; min-height: 34px; }
+.conversation-delete-actions .danger-text { color: var(--red); }
+
 @media (max-width: 1080px) {
   .desktop-shell { grid-template-columns: 246px minmax(0, 1fr); }
   .compact-status b,

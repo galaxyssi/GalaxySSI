@@ -7,6 +7,1143 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testHealthClarificationPreservesNoAndZeroOnlyForExactMeasurement() throws {
+    typealias Care = GalaxySSIHealthCare
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "clarification", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let reading = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-60),
+      value: 110, conditions: "fasting", unitOverride: "mg/dL", referenceInterval: "70 - 99")
+    try records.write(reading)
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let initial = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    var answers = Care.Context.Answers()
+    answers.pregnant = false
+    answers.fastingHours = 0
+    XCTAssertThrowsError(try records.setLocalCareContext(initial, applicability: .applicable, answers: answers, now: now))
+    try records.setLocalCareContext(initial, applicability: .unknown, answers: answers, now: now)
+    let confirmed = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertEqual(confirmed.context?.answers, answers)
+    let targetBasis = try GalaxySSIHealthCareTarget.basis(confirmed)
+    var changedContext = confirmed
+    changedContext.context?.answers?.pregnant = true
+    XCTAssertNotEqual(try GalaxySSIHealthCareTarget.basis(changedContext), targetBasis)
+    var thread = try records.openLocalCareDiscussion(id: confirmed.id, metric: .glucose)
+    thread.turns.append(.init(id: UUID(), question: "Previous question", destination: "fixture",
+      answer: "Previous answer", measurement: confirmed.assessment.record))
+    func payload(_ concern: Care.Concern) throws -> [String: Any] {
+      let json = try GalaxySSIHealthCareDiscussion.payload(concern: concern, question: "Current question",
+        thread: thread, destination: "fixture")
+      XCTAssertFalse(json.contains(reading.id.uuidString))
+      return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+    }
+    func clarification(_ payload: [String: Any]) throws -> [String: Any] {
+      try XCTUnwrap((payload["concern"] as? [String: Any])?["clarification"] as? [String: Any])
+    }
+    let current = try clarification(payload(confirmed))
+    let known = try XCTUnwrap(current["knownAnswers"] as? [String: Any])
+    XCTAssertEqual(known["pregnant"] as? Bool, false)
+    XCTAssertEqual(known["fasting_hours"] as? Int, 0)
+    XCTAssertNil(known["adult"])
+    XCTAssertTrue((current["unconfirmedFields"] as? [String])?.contains("adult") == true)
+    typealias Policy = GalaxySSIHealthCareApplicability
+    let checks: [Policy.Check] = [
+      .init(field: .pregnant, comparison: .equals, expected: "NO", sourceIndex: 0),
+      .init(field: .fasting, comparison: .equals, expected: "0", sourceIndex: 0)
+    ]
+    let matching = Policy.Review(mode: .individualized, checks: checks, missingInformation: [], conflicts: [])
+    XCTAssertEqual(Policy.status(matching, concern: confirmed), .matched)
+    XCTAssertEqual(Policy.result(.init(field: .adult, comparison: .equals, expected: "NO", sourceIndex: 0),
+      concern: confirmed), .unknown)
+    XCTAssertEqual(Policy.result(.init(field: .unit, comparison: .equals, expected: "mmol/L", sourceIndex: 0),
+      concern: confirmed), .mismatch)
+    let conflict = Policy.Review(mode: .individualized, checks: checks, missingInformation: [],
+      conflicts: [.init(sourceIndices: [0, 1], detail: "Fixture conflict", nextStep: "Verify source applicability")])
+    XCTAssertEqual(Policy.status(conflict, concern: confirmed), .conflict)
+    var edited = try XCTUnwrap(records.load().current.first)
+    edited.value = 115
+    try records.write(edited)
+    try records.reconcileLocalCare(now: now)
+    var revised = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertNil(revised.context)
+    revised.context = confirmed.context
+    XCTAssertEqual(Policy.status(matching, concern: revised), .needsContext)
+    let historical = try payload(revised)
+    let context = try clarification(historical)
+    XCTAssertEqual(context["status"] as? String, "other_record_or_revision")
+    XCTAssertEqual((context["knownAnswers"] as? [String: Any])?.count, 0)
+    XCTAssertEqual((historical["previous"] as? [[String: String]])?.first?["measurementScope"], "historical_record")
+  }
+
+  @MainActor
+  func testLocalCarePlanAdoptsOnlySelectedStepsAndRejectsReplay() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let now = Date()
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-300), value: 110,
+      unitOverride: "mg/dL", referenceInterval: "70 - 99"))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.setHealthOnlinePermission(true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    _ = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    let pending = try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Draft options",
+      destinationID: "provider", model: model, credential: "fixture-api-key", proposesPlan: true, now: now)
+    let source = GalaxySSIHealthCareEvidence.PublicSource.labResults
+    let quote = "This fictional laboratory paragraph is a fixture for testing the extraction and exact passage matching."
+    let secondQuote = "The remainder supplies more article content."
+    let body = Data("<html><body><article><h1>Fixture</h1><p>\(quote) \(secondQuote)</p></article></body></html>".utf8)
+    func addEvidence(_ pending: GalaxySSIHealthCareDiscussion.Approval) throws -> GalaxySSIHealthCareDiscussion.Approval {
+      var approval = pending
+      approval.evidence = [try GalaxySSIHealthCareEvidence.fromNativeBody(body, source: source,
+        binding: .init(approval), retrievedAt: now, observedAt: now)]
+      return approval
+    }
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(pending, now: now))
+    let approval = try addEvidence(pending)
+    let receipt = try XCTUnwrap(approval.evidence.first)
+    let withheld = "This later passage was not disclosed to the model."
+    let multilingual = quote + " " + String(repeating: "\u{6f22}", count: 3_000) + " " + withheld
+    var bounded = GalaxySSIHealthCareEvidence.Receipt(id: receipt.id, binding: receipt.binding, url: receipt.url,
+      title: receipt.title, contentHash: receipt.contentHash, excerpt: multilingual, excerptTruncated: false,
+      excerptByteLimit: GalaxySSIHealthCareEvidence.maximumModelExcerptBytes, retrievedAt: now, observedAt: now)
+    let reopenedReceipt = try JSONDecoder().decode(GalaxySSIHealthCareEvidence.Receipt.self,
+      from: JSONEncoder().encode(bounded))
+    XCTAssertEqual(reopenedReceipt.modelValue, bounded.modelValue)
+    XCTAssertEqual(reopenedReceipt.modelValue["evidence_id"], .string(receipt.id.uuidString))
+    XCTAssertLessThanOrEqual(reopenedReceipt.modelExcerpt.utf8.count, GalaxySSIHealthCareEvidence.maximumModelExcerptBytes)
+    XCTAssertEqual(reopenedReceipt.modelValue["excerpt_truncated"], .bool(true))
+    XCTAssertNotNil(reopenedReceipt.match(url: receipt.url, quote: quote))
+    XCTAssertNil(reopenedReceipt.match(url: receipt.url, quote: withheld))
+    bounded.excerptByteLimit = nil
+    XCTAssertNotNil(bounded.match(url: receipt.url, quote: withheld))
+    let request = try GalaxySSIHealthCareDiscussion.request(approval, key: "fixture-api-key")
+    XCTAssertTrue(String(decoding: try XCTUnwrap(request.httpBody), as: UTF8.self).contains(GalaxySSIHealthCarePlan.tool))
+    XCTAssertTrue(try approval.providerPayload().contains(quote))
+    try records.beginLocalCareDiscussionTurn(approval, now: now)
+    let raw = """
+      {"uncertainty":"Context unconfirmed","sources":[{"title":"Fixture source","url":"\(source.url.absoluteString)",
+      "version":"2026","applicability":"Applicability needs review","evidence_id":"\(approval.evidence[0].id.uuidString)",
+      "quote":"\(quote)"}],"actions":[
+      {"kind":"CONTEXT","description":"Clarify context","rationale":"Missing context","source_index":0,"due_from":"","due_until":"",
+      "applicability":{"mode":"DISCUSSION_ONLY","checks":[],"missing_information":[],"conflicts":[]}},
+      {"kind":"RECHECK","description":"Discuss a recheck","rationale":"Timing needs professional review","source_index":0,
+      "due_from":"","due_until":"","applicability":{"mode":"INDIVIDUALIZED","checks":[{"field":"unit","operator":"EQUALS",
+      "expected":"mg/dL","source_index":0}],"missing_information":[],"conflicts":[]}},
+      {"kind":"LIFESTYLE","description":"Fixture action","rationale":"Requires context","source_index":0,"due_from":"","due_until":"",
+      "applicability":{"mode":"INDIVIDUALIZED","checks":[],"missing_information":["Missing context"],"conflicts":[]}}]}
+      """
+    let original = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    let sourceRows = try XCTUnwrap(original["sources"]?.arrayValue)
+    var differentPassage = try XCTUnwrap(sourceRows.first?.objectValue)
+    differentPassage["quote"] = .string(secondQuote)
+    var actions = try XCTUnwrap(original["actions"]?.arrayValue)
+    var secondAction = try XCTUnwrap(actions[1].objectValue)
+    secondAction["source_index"] = .int(1)
+    actions[1] = .object(secondAction)
+    var arguments = original
+    arguments["sources"] = .array(sourceRows + [.object(differentPassage)])
+    arguments["actions"] = .array(actions)
+    var repeated = arguments
+    repeated["sources"] = .array(sourceRows + sourceRows)
+    XCTAssertThrowsError(try GalaxySSIHealthCarePlan.parse(repeated, evidence: approval.evidence, now: now))
+    let call: AgentMcpJSONObject = ["type": .string("function"), "function": .object([
+      "name": .string(GalaxySSIHealthCarePlan.tool), "arguments": .string(raw)
+    ])]
+    func envelope(_ calls: [AgentMcpJSONValue]) -> Data {
+      Data(AgentMcpJSONCodec.stringify(["choices": .array([.object(["finish_reason": .string("tool_calls"),
+        "message": .object(["tool_calls": .array(calls)])])])]).utf8)
+    }
+    XCTAssertEqual(try GalaxySSIHealthCarePlan.arguments(envelope([.object(call)]), style: .openAICompatible), original)
+    XCTAssertThrowsError(try GalaxySSIHealthCarePlan.arguments(envelope([.object(call), .object(call)]), style: .openAICompatible))
+    let invalidWindow = raw.replacingOccurrences(of: "\"due_from\":\"\"", with: "\"due_from\":\"2000-01-01T00:00:00Z\"")
+    XCTAssertThrowsError(try GalaxySSIHealthCarePlan.parse(
+      JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(invalidWindow.utf8)), evidence: approval.evidence, now: now))
+    let forged = raw.replacingOccurrences(of: quote, with: "This passage was not in the original.")
+    XCTAssertThrowsError(try GalaxySSIHealthCarePlan.parse(
+      JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(forged.utf8)), evidence: approval.evidence, now: now))
+    try records.saveLocalCarePlan(approval, arguments: arguments, now: now)
+    try records.saveLocalCarePlan(approval, arguments: arguments, now: now)
+    var changed = arguments
+    changed["uncertainty"] = .string("Changed after persistence")
+    XCTAssertThrowsError(try records.saveLocalCarePlan(approval, arguments: changed, now: now))
+    XCTAssertNil(try records.load().localCare?.current["glucose"]?.adoptedActions)
+    let reopened = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let draft = try XCTUnwrap(reopened.load().localCarePlans?[approval.id.uuidString])
+    XCTAssertEqual(try reopened.load().localCareEvidence?[approval.id.uuidString], approval.evidence)
+    XCTAssertEqual(draft.draft.sources.first?.provenance?.quote, quote)
+    XCTAssertTrue(draft.selected.isEmpty)
+    let destination = GalaxySSIHealthCarePlan.currentDestination(draft, contactID: "provider",
+      model: model, credential: "fixture-api-key")
+    XCTAssertEqual(destination, approval.destinationDigest)
+    XCTAssertNil(GalaxySSIHealthCarePlan.currentDestination(draft, contactID: "provider",
+      model: model, credential: "changed-api-key"))
+    XCTAssertThrowsError(try reopened.resolveLocalCarePlan(draft, selected: [], currentDestination: destination, now: now))
+    XCTAssertThrowsError(try reopened.resolveLocalCarePlan(draft, selected: [1], now: now))
+    XCTAssertThrowsError(try reopened.resolveLocalCarePlan(draft, selected: [2], currentDestination: destination, now: now))
+    try reopened.resolveLocalCarePlan(draft, selected: [1], currentDestination: destination, now: now)
+    let updated = try XCTUnwrap(reopened.load().localCare?.current["glucose"])
+    XCTAssertEqual(updated.stage, .waitingResults)
+    XCTAssertEqual(updated.adoptedActions?.map(\.action.kind), [.recheck])
+    XCTAssertEqual(updated.adoptedActions?.first?.source.provenance?.quote, secondQuote)
+    XCTAssertThrowsError(try reopened.resolveLocalCarePlan(draft, selected: [0], currentDestination: destination, now: now))
+    XCTAssertNil(try reopened.load().reviewReminderState)
+    let action = try XCTUnwrap(updated.adoptedActions?.first)
+    let firstTime = now.addingTimeInterval(3_600)
+    XCTAssertThrowsError(try reopened.scheduleLocalCareFollowUp(concernID: concern.id, metric: .glucose,
+      actionID: action.id, replacing: nil, at: firstTime, now: now))
+    try reopened.setReviewRemindersEnabled(true)
+    try reopened.setReviewNotificationPreferences(.init(enabled: true, quietStart: 0, quietEnd: 0))
+    XCTAssertThrowsError(try reopened.scheduleLocalCareFollowUp(concernID: concern.id, metric: .glucose,
+      actionID: action.id, replacing: nil, at: now, now: now))
+    try reopened.scheduleLocalCareFollowUp(concernID: concern.id, metric: .glucose, actionID: action.id,
+      replacing: nil, at: firstTime, now: now)
+    let firstReminder = try XCTUnwrap(reopened.load().localCareFollowUps?[action.id])
+    let secondTime = firstTime.addingTimeInterval(3_600)
+    try reopened.scheduleLocalCareFollowUp(concernID: concern.id, metric: .glucose, actionID: action.id,
+      replacing: firstReminder.id, at: secondTime, now: now)
+    XCTAssertThrowsError(try reopened.cancelLocalCareFollowUp(firstReminder))
+    let secondReminder = try XCTUnwrap(reopened.load().localCareFollowUps?[action.id])
+    let delivery = try XCTUnwrap(reopened.localCareFollowUpDelivery(pending: [:], delivered: [],
+      permitted: true, calendar: .current, now: now).pending.first)
+    XCTAssertEqual(delivery.reminder, secondReminder)
+    XCTAssertEqual(delivery.due, secondTime)
+    let calendar = Calendar.current
+    let hour = calendar.component(.hour, from: secondTime)
+    let quiet = GalaxySSIHealthReviewDelivery.Preferences(enabled: true, quietStart: hour, quietEnd: (hour + 1) % 24)
+    let deferred = GalaxySSIHealthCareFollowUp.deliveryPlan(reminders: [secondReminder], preferences: quiet,
+      permitted: true, pending: [:], delivered: [], calendar: calendar, now: now)
+    XCTAssertGreaterThan(try XCTUnwrap(deferred.pending.first?.due), secondTime)
+    XCTAssertTrue(GalaxySSIHealthCareFollowUp.deliveryPlan(reminders: [secondReminder], preferences: quiet,
+      permitted: false, pending: [:], delivered: [], calendar: calendar, now: now).pending.isEmpty)
+    try reopened.markLocalCareFollowUpSubmitted(delivery, calendar: .current, now: now)
+    let staleDelivery = GalaxySSIHealthCareFollowUp.Delivery(reminder: secondReminder,
+      due: secondTime.addingTimeInterval(3_600))
+    XCTAssertThrowsError(try reopened.markLocalCareFollowUpSubmitted(staleDelivery, calendar: .current, now: now))
+    XCTAssertNil(try reopened.localCareFollowUpTarget(token: firstReminder.id, now: secondTime))
+    XCTAssertEqual(try reopened.localCareFollowUpTarget(token: secondReminder.id, now: secondTime)?.id, secondReminder.id)
+    let otherApproval = try addEvidence(reopened.prepareLocalCareDiscussion(id: concern.id, metric: .glucose,
+      question: "A separate step", destinationID: "provider", model: model, credential: "fixture-api-key",
+      proposesPlan: true, now: now))
+    try reopened.beginLocalCareDiscussionTurn(otherApproval, now: now)
+    let otherRaw = raw.replacingOccurrences(of: approval.evidence[0].id.uuidString,
+      with: otherApproval.evidence[0].id.uuidString)
+    try reopened.saveLocalCarePlan(otherApproval,
+      arguments: JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(otherRaw.utf8)), now: now)
+    let otherPlan = try XCTUnwrap(reopened.load().localCarePlans?[otherApproval.id.uuidString])
+    try reopened.resolveLocalCarePlan(otherPlan, selected: [0], currentDestination: otherApproval.destinationDigest, now: now)
+    let otherAction = try XCTUnwrap(reopened.load().localCare?.current["glucose"]?.adoptedActions?.last)
+    try reopened.scheduleLocalCareFollowUp(concernID: concern.id, metric: .glucose, actionID: otherAction.id,
+      replacing: nil, at: firstTime, now: now)
+    XCTAssertThrowsError(try reopened.recordLocalCareOutcome(concernID: concern.id, metric: .glucose,
+      action: action, note: " ", now: now))
+    try reopened.recordLocalCareOutcome(concernID: concern.id, metric: .glucose, action: action,
+      note: "Discussed at appointment", now: now)
+    let recorded = try XCTUnwrap(reopened.load().localCare?.current["glucose"])
+    XCTAssertEqual(recorded.stage, .reassess)
+    XCTAssertEqual(recorded.assessment, updated.assessment)
+    XCTAssertEqual(recorded.adoptedActions?.first?.outcome?.note, "Discussed at appointment")
+    XCTAssertNil(try reopened.load().localCareFollowUps?[action.id])
+    XCTAssertNotNil(try reopened.load().localCareFollowUps?[otherAction.id])
+    XCTAssertNil(try reopened.localCareFollowUpTarget(token: secondReminder.id, now: secondTime))
+    try reopened.reviewLocalCare(recorded, stage: .paused, reason: "Fixture pause", now: now)
+    let paused = try XCTUnwrap(reopened.load().localCare?.current["glucose"])
+    XCTAssertNil(try reopened.load().localCareFollowUps?[otherAction.id])
+    try reopened.reviewLocalCare(paused, stage: .reassess, reason: "Fixture resume", now: now)
+    XCTAssertNil(try reopened.load().localCareFollowUps?[otherAction.id])
+    try reopened.scheduleLocalCareFollowUp(concernID: concern.id, metric: .glucose, actionID: otherAction.id,
+      replacing: nil, at: firstTime, now: now)
+    let secondPending = try reopened.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Another draft",
+      destinationID: "provider", model: model, credential: "fixture-api-key", proposesPlan: true, now: now)
+    var crossTurn = secondPending
+    crossTurn.evidence = approval.evidence
+    XCTAssertThrowsError(try crossTurn.providerPayload(now: now))
+    XCTAssertThrowsError(try reopened.beginLocalCareDiscussionTurn(crossTurn, now: now))
+    let second = try addEvidence(secondPending)
+    try reopened.beginLocalCareDiscussionTurn(second, now: now)
+    XCTAssertThrowsError(try reopened.saveLocalCarePlan(second, arguments: arguments, now: now))
+    let secondRaw = raw.replacingOccurrences(of: approval.evidence[0].id.uuidString, with: second.evidence[0].id.uuidString)
+    try reopened.saveLocalCarePlan(second,
+      arguments: JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(secondRaw.utf8)), now: now)
+    let revoked = try XCTUnwrap(reopened.load().localCarePlans?[second.id.uuidString])
+    try reopened.setHealthOnlinePermission(false)
+    XCTAssertNil(try reopened.load().localCareFollowUps?[otherAction.id])
+    XCTAssertThrowsError(try reopened.resolveLocalCarePlan(revoked, selected: [0],
+      currentDestination: second.destinationDigest, now: now))
+    try reopened.resolveLocalCarePlan(revoked, selected: nil, now: now)
+    XCTAssertEqual(try reopened.load().localCarePlans?[second.id.uuidString]?.state, .dismissed)
+    XCTAssertEqual(try reopened.load().localCare?.current["glucose"]?.adoptedActions?.count, 2)
+  }
+
+  @MainActor
+  func testMaintenanceRequiresApprovedHistoryAndSelectedRecheckAndExpiresOnce() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "maintenance", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
+    let due = now.addingTimeInterval(3_600)
+    for day in 1...2 {
+      try records.write(.init(metric: .weight, measuredAt: now.addingTimeInterval(Double(-day) * 86_400),
+        value: 80, conditions: "same scale", unitOverride: "kg", referenceInterval: "50 - 70"))
+    }
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.setHealthOnlinePermission(true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["weight"])
+    _ = try records.openLocalCareDiscussion(id: concern.id, metric: .weight)
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    var approval = try records.prepareLocalCareDiscussion(id: concern.id, metric: .weight, question: "Review follow-up",
+      destinationID: "provider", model: model, credential: "fixture-api-key", proposesPlan: true, allowsHistory: true, now: now)
+    let source = GalaxySSIHealthCareEvidence.PublicSource.labResults
+    let quote = "This synthetic passage is long enough for testing review and preservation of cited source evidence."
+    approval.evidence = [try GalaxySSIHealthCareEvidence.fromNativeBody(
+      Data("<html><body><article><h1>Fixture</h1><p>\(quote)</p></article></body></html>".utf8),
+      source: source, binding: .init(approval), retrievedAt: now, observedAt: now)]
+    let date = ISO8601DateFormatter().string(from: due)
+    let raw = """
+      {"uncertainty":"This is not stability","sources":[{"title":"Fixture","url":"\(source.url.absoluteString)",
+      "version":"2026","applicability":"Confirm the recorded unit","evidence_id":"\(approval.evidence[0].id.uuidString)",
+      "quote":"\(quote)"}],"actions":[{"kind":"RECHECK","description":"Review again","rationale":"Follow-up",
+      "source_index":0,"due_from":"\(date)","due_until":"\(date)","applicability":{"mode":"INDIVIDUALIZED",
+      "checks":[{"field":"unit","operator":"EQUALS","expected":"kg","source_index":0}],"missing_information":[],"conflicts":[]}}],
+      "maintenance":{"rationale":"Review the same scope later","recent_sample_count":2,"source_index":0,"recheck_index":0,
+      "goal_basis":"RISK_REVIEW","applicability":{"mode":"INDIVIDUALIZED",
+      "checks":[{"field":"unit","operator":"EQUALS","expected":"kg","source_index":0}],"missing_information":[],"conflicts":[]}}}
+      """
+    let args = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    XCTAssertThrowsError(try GalaxySSIHealthCarePlan.parse(args, evidence: approval.evidence, now: now))
+    try records.beginLocalCareDiscussionTurn(approval, now: now)
+    try records.saveLocalCarePlan(approval, arguments: args, now: now)
+    let plan = try XCTUnwrap(records.load().localCarePlans?[approval.id.uuidString])
+    XCTAssertTrue(try records.localCareMaintenancePreview(plan, now: now).gaps.isEmpty)
+    XCTAssertThrowsError(try records.resolveLocalCarePlan(plan, selected: [], currentDestination: approval.destinationDigest,
+      acceptMaintenance: true, now: now))
+    try records.resolveLocalCarePlan(plan, selected: [0], currentDestination: approval.destinationDigest,
+      acceptMaintenance: true, now: now)
+    let accepted = try XCTUnwrap(records.load().localCare?.current["weight"])
+    XCTAssertEqual(accepted.stage, .maintenance)
+    XCTAssertEqual(accepted.maintenanceReview?.samples.count, 2)
+    XCTAssertEqual(accepted.maintenanceReview?.source.provenance?.quote, quote)
+    XCTAssertTrue(try records.load().localCareFollowUps?.isEmpty ?? true)
+    XCTAssertEqual(try records.reconcileLocalCareMaintenance(now: now), due)
+    XCTAssertNil(try records.reconcileLocalCareMaintenance(now: due))
+    let updated = try XCTUnwrap(records.load().localCare?.current["weight"])
+    XCTAssertEqual(updated.stage, .reassess)
+    XCTAssertNil(updated.maintenanceReview)
+    XCTAssertEqual(try records.localCareHistory(concern.id).first?.maintenanceReview, accepted.maintenanceReview)
+    XCTAssertNil(try records.reconcileLocalCareMaintenance(now: due.addingTimeInterval(1)))
+    XCTAssertEqual(try records.load().localCare?.current["weight"]?.revision, updated.revision)
+  }
+
+  @MainActor
+  func testResearchDeadlineContinuesExistingPlanWithoutASecondPlanToolOrSourceRead() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "research-deadline", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
+    let due = now.addingTimeInterval(3_600)
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-300), value: 110, unitOverride: "mg/dL"))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.setHealthOnlinePermission(true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    let original = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    func approval(_ job: GalaxySSIHealthCareResearch.Job? = nil, at date: Date) throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Review existing evidence",
+        destinationID: "provider", model: model, credential: "fixture-api-key", proposesPlan: job != nil, research: job, now: date)
+    }
+    func claim(_ date: Date) throws -> GalaxySSIHealthCareResearch.Job {
+      let queued = try XCTUnwrap(records.reconcileLocalCareResearch(now: date).first?.1)
+      return try records.transitionLocalCareResearch(queued, concern: concern.id, to: .preparing)
+    }
+    let source = GalaxySSIHealthCareEvidence.PublicSource.labResults
+    try records.authorizeLocalCareResearch(approval(at: now), sources: [source], now: now)
+    let clarification = try approval(claim(now), at: now)
+    XCTAssertFalse(clarification.proposesPlan)
+    XCTAssertEqual(clarification.researchHandoff?.payload["reasons"], .array([.string("initial_review")]))
+    try records.beginLocalCareDiscussionTurn(clarification, now: now)
+    try records.finishLocalCareDiscussionTurn(clarification, answer: "Was this collected fasting?", now: now)
+    let confirmedAt = now.addingTimeInterval(1)
+    try records.setLocalCareContext(concern, applicability: .applicable, now: confirmedAt)
+    var initial = try approval(claim(confirmedAt), at: confirmedAt)
+    XCTAssertTrue(initial.proposesPlan)
+    XCTAssertEqual(initial.researchHandoff?.payload["reasons"], .array([.string("measurement_context_changed")]))
+    let firstProgress = initial.researchHandoff?.payload["research_progress"]?.objectValue
+    XCTAssertEqual(firstProgress?["prior_response_completed"], .bool(true))
+    XCTAssertEqual(firstProgress?["source_context_available"], .bool(false))
+    XCTAssertEqual(firstProgress?["recorded_plan_exists"], .bool(false))
+    XCTAssertEqual(firstProgress?["initial_source_review_pending"], .bool(true))
+    let quote = "This fictional laboratory paragraph is a fixture for testing the extraction and exact passage matching."
+    initial.evidence = [try GalaxySSIHealthCareEvidence.fromNativeBody(
+      Data("<html><body><article><h1>Fixture</h1><p>\(quote)</p></article></body></html>".utf8),
+      source: source, binding: .init(initial), retrievedAt: confirmedAt, observedAt: confirmedAt)]
+    try records.beginLocalCareDiscussionTurn(initial, now: confirmedAt)
+    let date = ISO8601DateFormatter().string(from: due)
+    let json = """
+      {"uncertainty":"Uncertain","sources":[{"title":"Fixture","url":"\(source.url.absoluteString)","version":"1",
+      "applicability":"Review scope","evidence_id":"\(initial.evidence[0].id.uuidString)","quote":"\(quote)"}],
+      "actions":[{"kind":"RECHECK","description":"Review the same measurements","rationale":"Fixture","source_index":0,
+      "due_from":"\(date)","due_until":"\(date)","applicability":{"mode":"INDIVIDUALIZED",
+      "checks":[{"field":"unit","operator":"EQUALS","expected":"mg/dL","source_index":0}],
+      "missing_information":[],"conflicts":[]}}]}
+      """
+    let arguments = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(json.utf8))
+    try records.saveLocalCarePlan(initial, arguments: arguments, now: confirmedAt)
+    let research = try XCTUnwrap(records.load().localCareResearch)
+    let key = concern.id.uuidString
+    let authorization = try XCTUnwrap(research.authorizations[key])
+    let checkpoint = try XCTUnwrap(research.checkpoints?[key])
+    let renewedReview = GalaxySSIHealthCareResearch.Job(authorization: authorization.id, trigger: "reauthorized",
+      revision: checkpoint.revision, createdAt: confirmedAt.addingTimeInterval(1))
+    let dismissed = GalaxySSIHealthCareResearchHandoff.make(job: renewedReview, authorization: authorization,
+      basis: checkpoint.basis, prior: checkpoint, hasEarlierResult: true, plan: nil, recordedPlan: .dismissed,
+      actionCount: 0, historicalSources: [], essentialContextMissing: false, priorityWarning: false)
+    XCTAssertFalse(dismissed.plansOnly)
+    XCTAssertEqual(dismissed.payload["research_progress"]?.objectValue?["recorded_plan_state"], .string("dismissed"))
+    XCTAssertFalse(GalaxySSIHealthCareResearchHandoff.reusable(initial.evidence[0], turn: initial.id,
+      owner: "foreign-owner", authorization: authorization, job: renewedReview))
+    XCTAssertTrue(GalaxySSIHealthCareResearchHandoff.reusable(initial.evidence[0], turn: initial.id,
+      owner: records.owner, authorization: authorization, job: renewedReview))
+    let saved = try XCTUnwrap(records.load().localCarePlans?[initial.id.uuidString])
+    try records.resolveLocalCarePlan(saved, selected: [0], currentDestination: initial.destinationDigest, now: confirmedAt)
+    XCTAssertTrue(try records.reconcileLocalCareResearch(now: due.addingTimeInterval(-1)).isEmpty)
+
+    let followUp = try approval(claim(due), at: due)
+    XCTAssertEqual(followUp.threadID, original.id)
+    XCTAssertFalse(followUp.proposesPlan)
+    XCTAssertTrue(followUp.evidence.isEmpty)
+    let handoff = try XCTUnwrap(followUp.researchHandoff?.payload)
+    XCTAssertEqual(handoff["reasons"], .array([.string("review_due")]))
+    XCTAssertEqual(handoff["elapsed_time_only"], .bool(true))
+    let sourceContext = try XCTUnwrap(handoff["prior_automatic_source_reads"]?.arrayValue?.first?.objectValue)
+    XCTAssertEqual(sourceContext["content_sha256"], .string(initial.evidence[0].contentHash))
+    XCTAssertEqual(sourceContext["retrieved_at"], .string(ISO8601DateFormatter().string(from: confirmedAt)))
+    XCTAssertEqual(sourceContext["usable_for_new_plan"], .bool(false))
+    XCTAssertNil(sourceContext["evidence_id"])
+    XCTAssertThrowsError(try GalaxySSIHealthCarePlan.parse(arguments, evidence: [], now: due))
+    XCTAssertEqual(handoff["existing_plan_actions"]?.arrayValue?.first?.objectValue?["action_id"],
+      handoff["newly_due_action_ids"]?.arrayValue?.first)
+    let request = try GalaxySSIHealthCareDiscussion.request(followUp, key: "fixture-api-key")
+    let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
+    XCTAssertNil(body["tools"])
+    try records.beginLocalCareDiscussionTurn(followUp, now: due)
+    try records.finishLocalCareDiscussionTurn(followUp, answer: "The existing review is due.", now: due)
+    let archive = try records.load()
+    XCTAssertEqual(archive.localCarePlans?.count, 1)
+    XCTAssertEqual(archive.localCareDiscussions?[concern.id.uuidString]?.turns.last?.answer, "The existing review is due.")
+    XCTAssertEqual(archive.localCareResearch?.checkpoints?[concern.id.uuidString]?.turn, followUp.id)
+    XCTAssertTrue(try records.reconcileLocalCareResearch(now: due.addingTimeInterval(1)).isEmpty)
+
+    let current = try XCTUnwrap(archive.localCare?.current["glucose"])
+    let action = try XCTUnwrap(current.adoptedActions?.first)
+    try records.recordLocalCareOutcome(concernID: concern.id, metric: .glucose, action: action, note: "Private feedback",
+      now: due.addingTimeInterval(10))
+    let feedbackDate = due.addingTimeInterval(10)
+    let feedback = try approval(claim(feedbackDate), at: feedbackDate)
+    XCTAssertEqual(feedback.researchHandoff?.payload["reasons"], .array([.string("action_feedback")]))
+    XCTAssertFalse(feedback.payload.contains("Private feedback"))
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(try XCTUnwrap(feedback.researchHandoff?.payload)).contains("Private feedback"))
+  }
+
+  @MainActor
+  func testActionFeedbackSupersedesDispatchedHealthResearchWithoutNewMeasurement() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "research-action-feedback", secrets: secrets, isolatedFile: file)
+    let now = Date()
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-300), value: 110, unitOverride: "mg/dL"))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.setHealthOnlinePermission(true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    try records.setLocalCareContext(concern, applicability: .applicable, now: now)
+    let thread = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    let source = GalaxySSIHealthCareEvidence.PublicSource.labResults
+    let quote = "This fictional laboratory paragraph is a fixture for testing the extraction and exact passage matching."
+    let html = Data("<html><body><article><h1>Fixture</h1><p>\(quote)</p></article></body></html>".utf8)
+    func prepare(_ job: GalaxySSIHealthCareResearch.Job? = nil, at date: Date) throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Review the current concern",
+        destinationID: "provider", model: model, credential: "fixture-api-key", proposesPlan: job != nil, research: job, now: date)
+    }
+    func dispatch(at date: Date) throws -> GalaxySSIHealthCareDiscussion.Approval {
+      let queued = try XCTUnwrap(records.reconcileLocalCareResearch(now: date).first?.1)
+      let job = try records.transitionLocalCareResearch(queued, concern: concern.id, to: .preparing)
+      var approval = try prepare(job, at: date)
+      if approval.proposesPlan {
+        approval.evidence = [try GalaxySSIHealthCareEvidence.fromNativeBody(html, source: source,
+          binding: .init(approval), retrievedAt: date, observedAt: date)]
+      }
+      try records.beginLocalCareDiscussionTurn(approval, now: date)
+      return approval
+    }
+    func plan(_ approval: GalaxySSIHealthCareDiscussion.Approval) throws -> AgentMcpJSONObject {
+      let receipt = try XCTUnwrap(approval.evidence.first)
+      let json = """
+        {"uncertainty":"Fixture uncertainty","sources":[{"title":"Fixture","url":"\(source.url.absoluteString)",
+        "version":"1","applicability":"Review exact context","evidence_id":"\(receipt.id.uuidString)","quote":"\(quote)"}],
+        "actions":[{"kind":"CLINICIAN_DISCUSSION","description":"Discuss a practical barrier","rationale":"Fixture",
+        "source_index":0,"due_from":"","due_until":"","applicability":{"mode":"DISCUSSION_ONLY","checks":[],
+        "missing_information":[],"conflicts":[]}}]}
+        """
+      return try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(json.utf8))
+    }
+    try records.authorizeLocalCareResearch(prepare(at: now), sources: [source], now: now)
+    let initial = try dispatch(at: now)
+    try records.saveLocalCarePlan(initial, arguments: plan(initial), now: now)
+    let proposal = try XCTUnwrap(records.load().localCarePlans?[initial.id.uuidString])
+    try records.resolveLocalCarePlan(proposal, selected: [0], currentDestination: initial.destinationDigest, now: now)
+    let accepted = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    let action = try XCTUnwrap(accepted.adoptedActions?.first)
+
+    let renewedAt = now.addingTimeInterval(1)
+    try records.authorizeLocalCareResearch(prepare(at: renewedAt), sources: [source], now: renewedAt)
+    let older = try dispatch(at: renewedAt)
+    try records.validateLocalCareDiscussionTurn(older, now: renewedAt)
+    let feedbackAt = renewedAt.addingTimeInterval(1)
+    try records.recordLocalCareOutcome(concernID: concern.id, metric: .glucose, action: action, note: "A private barrier",
+      now: feedbackAt)
+    if older.proposesPlan {
+      XCTAssertThrowsError(try records.saveLocalCarePlan(older, arguments: plan(older), now: feedbackAt))
+    } else {
+      XCTAssertThrowsError(try records.finishLocalCareDiscussionTurn(older, answer: "Obsolete review", now: feedbackAt))
+    }
+    let next = try dispatch(at: feedbackAt)
+    XCTAssertNotEqual(next.id, older.id)
+    XCTAssertEqual(next.threadID, thread.id)
+    XCTAssertEqual(next.researchHandoff?.payload["reasons"], .array([.string("action_feedback")]))
+    XCTAssertFalse(try next.providerPayload(now: feedbackAt).contains("A private barrier"))
+    try records.saveLocalCarePlan(next, arguments: plan(next), now: feedbackAt)
+    try records.revokeLocalCareResearch(concern.id)
+
+    let reopened = GalaxySSIHealthRecords(owner: records.owner, secrets: secrets, isolatedFile: file)
+    let archive = try reopened.load()
+    let current = try XCTUnwrap(archive.localCare?.current["glucose"])
+    XCTAssertEqual(current.assessment.record, accepted.assessment.record)
+    XCTAssertEqual(current.adoptedActions?.count, 1)
+    XCTAssertEqual(current.adoptedActions?.first?.outcome?.note, "A private barrier")
+    XCTAssertNil(current.target)
+    XCTAssertNil(current.maintenanceReview)
+    XCTAssertEqual(current.stage, .reassess)
+    XCTAssertTrue(archive.localCareFollowUps?.isEmpty ?? true)
+    XCTAssertNil(archive.localCarePlans?[older.id.uuidString])
+    XCTAssertEqual(archive.localCarePlans?[next.id.uuidString]?.state, .pending)
+    XCTAssertTrue(try reopened.reconcileLocalCareResearch(now: feedbackAt.addingTimeInterval(1)).isEmpty)
+  }
+
+  @MainActor
+  func testPairedHealthResearchCancellationPreservesExactPrivateTurnAcrossRestart() throws {
+    typealias Desktop = GalaxySSIHealthDesktopResearch
+    typealias Research = GalaxySSIHealthCareResearch
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let route = Desktop.Route(connector: .init(contactId: "desktop:codex", desktopId: "desktop", clientRouteId: "client",
+      modelId: "fixture", reasoningEffort: .automatic), desktopFingerprint: "pinned")
+    var auth = Research.Authorization(concern: UUID(), metric: .glucose, thread: UUID(), localPermission: UUID(),
+      onlinePermission: UUID(), profileScopeEpoch: nil, contact: route.connector.contactId, model: route.connector.modelId,
+      endpoint: try XCTUnwrap(URL(string: "https://example.test")), destination: route.digest,
+      sources: [.labResults], authorizedAt: now, handoffVersion: 1)
+    var ledger = Research.Ledger()
+    auth.pairedDesktop = route
+    ledger.renew(auth)
+    ledger.reconcile(auth, trigger: "first", revision: 1, process: Research.process, now: now)
+    let key = auth.concern.uuidString
+    let queued = try XCTUnwrap(ledger.jobs[key])
+    try ledger.transition(queued, concern: auth.concern, to: .preparing, process: Research.process)
+    try ledger.transition(XCTUnwrap(ledger.jobs[key]), concern: auth.concern, to: .dispatched, process: Research.process)
+    let dispatched = try XCTUnwrap(ledger.jobs[key])
+    let binding = try Desktop.Binding(route: route, authorization: auth, job: dispatched, sender: "phone",
+      createdAtMillis: 1_800_000_000_000)
+    XCTAssertTrue(binding.identity.conversationId.hasPrefix(Desktop.conversationPrefix))
+    let request = try binding.request(sender: "phone", prompt: "Synthetic prompt", language: "en")
+    XCTAssertEqual(request.string("execution_mode"), AgentTaskExecutionMode.planOnly.rawValue)
+    XCTAssertEqual(request.string("_galaxyssi_long_term_write_allowed"), "false")
+    XCTAssertEqual(request.string("message_id"), try binding.request(sender: "phone",
+      prompt: "Synthetic prompt", language: "en").string("message_id"))
+    ledger.desktopTransport = .init()
+    try ledger.desktopTransport?.bind(binding)
+    ledger = try JSONDecoder().decode(Research.Ledger.self, from: JSONEncoder().encode(ledger))
+    ledger.reconcile(auth, trigger: "first", revision: 1, process: UUID(), now: now)
+    XCTAssertEqual(ledger.jobs[key]?.state, .dispatched)
+    XCTAssertEqual(ledger.desktopTransport?.active[dispatched.id.uuidString], binding)
+    ledger.revoke(auth.concern, now: now)
+    XCTAssertNil(ledger.desktopTransport?.active[dispatched.id.uuidString])
+    let cancellation = try XCTUnwrap(ledger.desktopTransport?.pendingCancellation[dispatched.id.uuidString])
+    XCTAssertEqual(cancellation.payload.string("task_id"), binding.identity.taskId)
+    XCTAssertEqual(cancellation.payload.string("source_message_id"), String(binding.source))
+    XCTAssertEqual(cancellation.payload.string("turn_id"), binding.identity.turnId)
+    XCTAssertThrowsError(try ledger.desktopTransport?.bind(binding))
+    try ledger.desktopTransport?.handedOff(cancellation)
+    XCTAssertTrue(ledger.desktopTransport?.pendingCancellation.isEmpty == true)
+  }
+
+  @MainActor
+  func testPairedHealthResearchRestoresExactApprovalWithoutCloudCredentials() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "paired-research", secrets: secrets, isolatedFile: file)
+    let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-120), value: 110, unitOverride: "mg/dL"))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.setHealthOnlinePermission(true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    let thread = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    let route = GalaxySSIHealthDesktopResearch.Route(connector: .init(contactId: "desktop:codex", desktopId: "desktop",
+      clientRouteId: "client", modelId: "fixture", reasoningEffort: .automatic), desktopFingerprint: "pinned")
+    let review = try records.prepareLocalCareDesktopDiscussion(id: concern.id, metric: .glucose,
+      question: "Review the current concern", route: route, now: now)
+    XCTAssertNil(review.model)
+    XCTAssertNil(review.endpoint)
+    XCTAssertThrowsError(try GalaxySSIHealthCareDiscussion.request(review, key: "fixture-api-key"))
+    try records.authorizeLocalCareResearch(review, sources: [.labResults], now: now)
+    let (authorization, queued) = try XCTUnwrap(records.reconcileLocalCareResearch(now: now).first)
+    let job = try records.transitionLocalCareResearch(queued, concern: concern.id, to: .preparing)
+    let approval = try records.prepareLocalCareDesktopDiscussion(id: concern.id, metric: .glucose,
+      question: "Review the current concern", route: route, research: job, now: now)
+    XCTAssertFalse(approval.proposesPlan)
+    try records.beginLocalCareDiscussionTurn(approval, now: now)
+    let binding = try records.bindLocalCareDesktopResearch(authorization, job: job.id, sender: "phone",
+      reviewedAt: approval.reviewedAt, now: now)
+    let reopened = GalaxySSIHealthRecords(owner: records.owner, secrets: secrets, isolatedFile: file)
+    let (_, dispatched, savedBinding) = try XCTUnwrap(reopened.dispatchedLocalCareDesktopResearch().first)
+    XCTAssertEqual(savedBinding, binding)
+    let restored = try reopened.prepareLocalCareDesktopDiscussion(id: concern.id, metric: .glucose,
+      question: "", route: route, research: dispatched, resume: savedBinding, now: now)
+    XCTAssertEqual(restored.threadID, thread.id)
+    XCTAssertEqual(try restored.providerPayload(now: now), try approval.providerPayload(now: now))
+    try reopened.validateLocalCareDiscussionTurn(restored, now: now)
+    try reopened.finishLocalCareDiscussionTurn(restored, answer: "Please confirm the measurement context.", now: now)
+    XCTAssertTrue(try reopened.dispatchedLocalCareDesktopResearch().isEmpty)
+    XCTAssertTrue(try reopened.reconcileLocalCareResearch(now: now).isEmpty)
+    XCTAssertEqual(try reopened.load().localCareDiscussions?[concern.id.uuidString]?.turns.last?.answer,
+      "Please confirm the measurement context.")
+    XCTAssertThrowsError(try GalaxySSIHealthDesktopResearch.planArguments("not a JSON draft"))
+  }
+
+  func testResearchLedgerRecoversPreparationWithoutResendingDispatch() throws {
+    typealias Research = GalaxySSIHealthCareResearch
+    let now = Date()
+    let process = UUID(), reopened = UUID()
+    let authorization = Research.Authorization(concern: UUID(), metric: .glucose, thread: UUID(),
+      localPermission: UUID(), onlinePermission: UUID(), profileScopeEpoch: nil, contact: "fixture", model: "fixture",
+      endpoint: try XCTUnwrap(URL(string: "https://example.test/v1/chat/completions")), destination: "fixture",
+      sources: [.labResults], authorizedAt: now)
+    let key = authorization.concern.uuidString
+    var ledger = Research.Ledger()
+    ledger.renew(authorization)
+    ledger.reconcile(authorization, trigger: "first", revision: 1, process: process, now: now)
+    let queued = try XCTUnwrap(ledger.jobs[key])
+    try ledger.transition(queued, concern: authorization.concern, to: .preparing, process: process)
+    ledger = try JSONDecoder().decode(Research.Ledger.self, from: JSONEncoder().encode(ledger))
+    ledger.reconcile(authorization, trigger: "first", revision: 1, process: reopened, now: now)
+    XCTAssertEqual(ledger.jobs[key], queued)
+    try ledger.transition(queued, concern: authorization.concern, to: .preparing, process: reopened)
+    let preparing = try XCTUnwrap(ledger.jobs[key])
+    XCTAssertThrowsError(try ledger.transition(preparing, concern: authorization.concern, to: .dispatched, process: process))
+    try ledger.transition(preparing, concern: authorization.concern, to: .dispatched, process: reopened)
+    let dispatched = try XCTUnwrap(ledger.jobs[key])
+    ledger.reconcile(authorization, trigger: "first", revision: 1, process: process, now: now)
+    XCTAssertEqual(ledger.jobs[key]?.state, .interrupted)
+    XCTAssertThrowsError(try ledger.transition(dispatched, concern: authorization.concern, to: .completed, process: reopened))
+    ledger.reconcile(authorization, trigger: "second", revision: 2, process: process, now: now)
+    XCTAssertNotEqual(ledger.jobs[key]?.id, dispatched.id)
+    XCTAssertEqual(ledger.jobs[key]?.state, .queued)
+    ledger.revoke(authorization.concern)
+    XCTAssertEqual(ledger.jobs[key]?.state, .cancelled)
+    XCTAssertNil(ledger.authorizations[key])
+  }
+
+  @MainActor
+  func testStandingResearchRejectsRevocationAndSupersededEvidence() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "research", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-300), value: 110, unitOverride: "mg/dL"))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.setHealthOnlinePermission(true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    let thread = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    XCTAssertTrue(try records.reconcileLocalCareResearch(now: now).isEmpty)
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    func approval(for job: GalaxySSIHealthCareResearch.Job? = nil) throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Review the recorded context",
+        destinationID: "provider", model: model, credential: "fixture-api-key", proposesPlan: job != nil, research: job, now: now)
+    }
+    try records.authorizeLocalCareResearch(approval(), sources: [.labResults], now: now)
+    let (auth, first) = try XCTUnwrap(records.reconcileLocalCareResearch(now: now).first)
+    XCTAssertEqual(auth.thread, thread.id)
+    XCTAssertEqual(try records.reconcileLocalCareResearch(now: now).first?.1, first)
+    let preparing = try records.transitionLocalCareResearch(first, concern: concern.id, to: .preparing)
+    XCTAssertTrue(try records.reconcileLocalCareResearch(now: now).isEmpty)
+    let prepared = try approval(for: preparing)
+    XCTAssertEqual(prepared.id, first.id)
+    XCTAssertFalse(prepared.proposesPlan)
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-60), value: 112, unitOverride: "mg/dL"))
+    let next = try XCTUnwrap(records.reconcileLocalCareResearch(now: now).first?.1)
+    XCTAssertNotEqual(next.id, first.id)
+    XCTAssertNil(records.currentLocalCareResearchJob(auth, id: first.id, now: now))
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(prepared, now: now))
+    try records.revokeLocalCareResearch(concern.id)
+    XCTAssertTrue(try records.reconcileLocalCareResearch(now: now).isEmpty)
+    XCTAssertThrowsError(try records.transitionLocalCareResearch(next, concern: concern.id, to: .preparing))
+    XCTAssertTrue(try records.openLocalCareDiscussion(id: concern.id, metric: .glucose).turns.isEmpty)
+  }
+
+  @MainActor
+  func testDispatchedResearchCannotPublishAfterNewMeasurement() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "research-new-measurement", secrets: secrets, isolatedFile: file)
+    let now = Date()
+    let first = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-300),
+      value: 110, unitOverride: "mg/dL")
+    try records.write(first)
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.setHealthOnlinePermission(true)
+    try records.reconcileLocalCare(now: now)
+    func concern() throws -> GalaxySSIHealthCare.Concern {
+      try XCTUnwrap(records.load().localCare?.current["glucose"])
+    }
+    let initial = try concern()
+    try records.setLocalCareContext(initial, applicability: .applicable, now: now)
+    let thread = try records.openLocalCareDiscussion(id: initial.id, metric: .glucose)
+    let source = GalaxySSIHealthCareEvidence.PublicSource.labResults
+    let quote = "This fictional laboratory paragraph is a fixture for testing the extraction and exact passage matching."
+    let html = Data("<html><body><article><h1>Fixture</h1><p>\(quote)</p></article></body></html>".utf8)
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    func approve(_ job: GalaxySSIHealthCareResearch.Job? = nil, at date: Date) throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try records.prepareLocalCareDiscussion(id: initial.id, metric: .glucose, question: "Review exact saved measurements",
+        destinationID: "provider", model: model, credential: "fixture-api-key", proposesPlan: job != nil, research: job, now: date)
+    }
+    func start(_ date: Date) throws -> GalaxySSIHealthCareDiscussion.Approval {
+      let queued = try XCTUnwrap(records.reconcileLocalCareResearch(now: date).first?.1)
+      let job = try records.transitionLocalCareResearch(queued, concern: initial.id, to: .preparing)
+      var approval = try approve(job, at: date)
+      approval.evidence = [try GalaxySSIHealthCareEvidence.fromNativeBody(html, source: source, binding: .init(approval),
+        retrievedAt: date, observedAt: date)]
+      try records.beginLocalCareDiscussionTurn(approval, now: date)
+      return approval
+    }
+    func arguments(_ approval: GalaxySSIHealthCareDiscussion.Approval) throws -> AgentMcpJSONObject {
+      let json = """
+        {"uncertainty":"Synthetic measurement","sources":[{"title":"Fixture","url":"\(source.url.absoluteString)",
+        "version":"1","applicability":"Review exact context","evidence_id":"\(approval.evidence[0].id.uuidString)","quote":"\(quote)"}],
+        "actions":[{"kind":"CONTEXT","description":"Review the measurement context","rationale":"Fixture",
+        "source_index":0,"due_from":"","due_until":"","applicability":{"mode":"DISCUSSION_ONLY","checks":[],
+        "missing_information":[],"conflicts":[]}}]}
+        """
+      return try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(json.utf8))
+    }
+    try records.authorizeLocalCareResearch(approve(at: now), sources: [source], now: now)
+    let old = try start(now)
+    try records.validateLocalCareDiscussionTurn(old, now: now)
+
+    let nextAt = now.addingTimeInterval(1)
+    let latest = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-60),
+      value: 118, unitOverride: "mg/dL")
+    try records.write(latest)
+    XCTAssertThrowsError(try records.saveLocalCarePlan(old, arguments: arguments(old), now: nextAt))
+    try records.reconcileLocalCare(now: nextAt)
+    let unconfirmed = try concern()
+    XCTAssertEqual(unconfirmed.assessment.record?.id, latest.id)
+    XCTAssertNil(unconfirmed.context)
+    try records.setLocalCareContext(unconfirmed, applicability: .applicable, now: nextAt)
+    let fresh = try start(nextAt)
+    XCTAssertNotEqual(fresh.id, old.id)
+    XCTAssertEqual(fresh.threadID, thread.id)
+    XCTAssertThrowsError(try records.saveLocalCarePlan(fresh, arguments: arguments(old), now: nextAt))
+    try records.saveLocalCarePlan(fresh, arguments: arguments(fresh), now: nextAt)
+
+    let reopened = GalaxySSIHealthRecords(owner: records.owner, secrets: secrets, isolatedFile: file)
+    let archive = try reopened.load()
+    let turns = try XCTUnwrap(archive.localCareDiscussions?[initial.id.uuidString]?.turns)
+    XCTAssertEqual(turns.map(\.id), [old.id, fresh.id])
+    XCTAssertNil(turns.first?.proposalID)
+    XCTAssertEqual(turns.last?.measurement?.id, latest.id)
+    XCTAssertEqual(archive.localCarePlans?.count, 1)
+    XCTAssertEqual(archive.localCarePlans?[fresh.id.uuidString]?.state, .pending)
+    let reviewed = try concern()
+    XCTAssertNil(reviewed.target)
+    XCTAssertNil(reviewed.adoptedActions)
+    XCTAssertNil(reviewed.maintenanceReview)
+    XCTAssertTrue(archive.localCareFollowUps?.isEmpty ?? true)
+    XCTAssertTrue(try reopened.reconcileLocalCareResearch(now: nextAt.addingTimeInterval(1)).isEmpty)
+  }
+
+  @MainActor
+  func testClarificationToolCannotWriteAnswersAndReviewedRowsStayScoped() throws {
+    typealias Questions = GalaxySSIHealthCareQuestions
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "question-ledger", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let reading = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-60), value: 110,
+      unitOverride: "mg/dL")
+    try records.write(reading)
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.setHealthOnlinePermission(true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    _ = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    func approval(asks: Bool = false, shares: Bool = false) throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Clarify context",
+        destinationID: "provider", model: model, credential: "fixture-api-key", includesQuestions: shares,
+        asksQuestions: asks, now: now)
+    }
+    func page() throws -> Questions.Page { try records.localCareQuestionPage(id: concern.id, metric: .glucose, now: now) }
+    let pending = try approval(asks: true)
+    let request = try GalaxySSIHealthCareDiscussion.request(pending, key: "fixture-api-key")
+    XCTAssertTrue(String(decoding: try XCTUnwrap(request.httpBody), as: UTF8.self).contains(Questions.tool))
+    let raw: AgentMcpJSONObject = ["key": .string("context.fasting_hours"), "question": .string("How many hours?"),
+      "purpose": .string("Check measurement context")]
+    let args: AgentMcpJSONObject = ["questions": .array([.object(raw)])]
+    XCTAssertThrowsError(try records.saveLocalCareQuestionProposals(pending, arguments: args, now: now))
+    try records.beginLocalCareDiscussionTurn(pending, now: now)
+    var forged = raw
+    forged["answer"] = .string("0")
+    XCTAssertThrowsError(try records.saveLocalCareQuestionProposals(pending,
+      arguments: ["questions": .array([.object(forged)])], now: now))
+    try records.saveLocalCareQuestionProposals(pending, arguments: args, now: now)
+    XCTAssertThrowsError(try records.saveLocalCareQuestionProposals(pending, arguments: args, now: now))
+    let open = try XCTUnwrap(page().rows.first)
+    XCTAssertEqual(open.state, .open)
+    XCTAssertNil(open.answer)
+    func automatic() throws -> GalaxySSIHealthCareDiscussion.Approval {
+      let queued = try XCTUnwrap(records.reconcileLocalCareResearch(now: now).first?.1)
+      let job = try records.transitionLocalCareResearch(queued, concern: concern.id, to: .preparing)
+      return try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Review the current concern",
+        destinationID: "provider", model: model, credential: "fixture-api-key", proposesPlan: true, research: job, now: now)
+    }
+    try records.authorizeLocalCareResearch(approval(), sources: [.labResults], now: now)
+    XCTAssertNil(try automatic().questions)
+    let oldPreview = try approval(shares: true)
+    try records.authorizeLocalCareResearch(oldPreview, sources: [.labResults], now: now)
+    let background = try automatic()
+    XCTAssertEqual(background.questions?.rows.first?.id, open.id)
+    XCTAssertNil(background.questionCursor)
+    try records.reviewLocalCareQuestion(id: concern.id, metric: .glucose, row: open, state: .deferred, now: now)
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(oldPreview, now: now))
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(background, now: now))
+    XCTAssertTrue(try records.reconcileLocalCareResearch(now: now).isEmpty)
+    let deferred = try XCTUnwrap(page().rows.first)
+    XCTAssertEqual(deferred.state, .deferred)
+    XCTAssertThrowsError(try records.reviewLocalCareQuestion(id: concern.id, metric: .glucose, row: deferred,
+      state: .answered, answer: "0", now: now))
+    try records.reviewLocalCareQuestion(id: concern.id, metric: .glucose, row: deferred, state: .open, now: now)
+    let reopened = try XCTUnwrap(page().rows.first)
+    try records.reviewLocalCareQuestion(id: concern.id, metric: .glucose, row: reopened, state: .answered, answer: "0", now: now)
+    XCTAssertNil(try approval().questions)
+    XCTAssertEqual(try approval(shares: true).questions?.payload["items"]?.arrayValue?.first?.objectValue?["reviewed_answer"], .string("0"))
+    XCTAssertEqual(try records.load().localCareQuestions?[concern.id.uuidString]?.revisions[open.id.uuidString]?.count, 4)
+
+    var edited = try XCTUnwrap(records.load().current.first)
+    edited.value = 112
+    try records.write(edited)
+    try records.reconcileLocalCare(now: now)
+    let latest = try page()
+    XCTAssertEqual(latest.rows.first.map(latest.state), .stale)
+    XCTAssertEqual(latest.payload["items"]?.arrayValue?.first?.objectValue?["reviewed_answer"], .null)
+    XCTAssertThrowsError(try records.localCareQuestionPage(id: concern.id, metric: .weight, now: now))
+  }
+
+  @MainActor
+  func testAutomaticResearchQuestionContinuationRequiresSeparateConsent() throws {
+    typealias Questions = GalaxySSIHealthCareQuestions
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "question-pages", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-60), value: 110, unitOverride: "mg/dL"))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.setHealthOnlinePermission(true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    _ = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    func prepare(asks: Bool = false, shares: Bool = false, job: GalaxySSIHealthCareResearch.Job? = nil)
+        throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Review context",
+        destinationID: "provider", model: model, credential: "fixture-api-key", proposesPlan: job != nil,
+        includesQuestions: shares, asksQuestions: asks, research: job, now: now)
+    }
+    for range in [0..<Questions.pageSize, Questions.pageSize..<(Questions.pageSize + 1)] {
+      let turn = try prepare(asks: true)
+      try records.beginLocalCareDiscussionTurn(turn, now: now)
+      let rows: [AgentMcpJSONValue] = range.map { index in
+        .object(["key": .string("context.fixture_\(index)"), "question": .string("What changed?"),
+          "purpose": .string("Check measurement context")])
+      }
+      try records.saveLocalCareQuestionProposals(turn, arguments: ["questions": .array(rows)], now: now)
+    }
+    func automatic() throws -> GalaxySSIHealthCareDiscussion.Approval {
+      let queued = try XCTUnwrap(records.reconcileLocalCareResearch(now: now).first?.1)
+      return try prepare(job: records.transitionLocalCareResearch(queued, concern: concern.id, to: .preparing))
+    }
+    var preview = try prepare(shares: true)
+    try records.authorizeLocalCareResearch(preview, sources: [.labResults], now: now)
+    let firstOnly = try automatic()
+    let next = try XCTUnwrap(firstOnly.questions?.next)
+    XCTAssertEqual(firstOnly.questions?.rows.count, Questions.pageSize)
+    XCTAssertNil(firstOnly.questionCursor)
+    try records.beginLocalCareDiscussionTurn(firstOnly, now: now)
+    XCTAssertThrowsError(try records.readLocalCareDiscussionQuestions(firstOnly, after: next, now: now))
+
+    preview = try prepare(shares: true)
+    preview.allowsStandingQuestionPages = true
+    try records.authorizeLocalCareResearch(preview, sources: [.labResults], now: now)
+    let paged = try automatic()
+    let cursor = try XCTUnwrap(paged.questionCursor)
+    try records.beginLocalCareDiscussionTurn(paged, now: now)
+    let second = try records.readLocalCareDiscussionQuestions(paged, after: cursor.after, now: now)
+    XCTAssertEqual(second.rows.count, 1)
+    XCTAssertNil(second.next)
+    XCTAssertFalse(try XCTUnwrap(paged.questions).rows.contains { $0.id == second.rows.first?.id })
+    try records.revokeLocalCareResearch(concern.id)
+    XCTAssertThrowsError(try records.readLocalCareDiscussionQuestions(paged, after: cursor.after, now: now))
+  }
+
+  @MainActor
+  func testLocalCareDiscussionBindsConsentToConcernTurnAndProvider() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let now = Date()
+    let reading = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-300),
+      value: 110, notes: "Private note excluded", unitOverride: "mg/dL", referenceInterval: "70 - 99")
+    try records.write(reading)
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    let thread = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    XCTAssertTrue(thread.turns.isEmpty)
+    let reopened = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    XCTAssertEqual(try reopened.openLocalCareDiscussion(id: concern.id, metric: .glucose).id, thread.id)
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    func review(_ provider: String = "provider-a") throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Explain this reading",
+        destinationID: provider, model: model, credential: "fixture-api-key", now: now)
+    }
+    XCTAssertThrowsError(try review())
+    try records.setHealthOnlinePermission(true)
+    let approved = try review()
+    XCTAssertFalse(approved.payload.contains(reading.notes))
+    XCTAssertFalse(approved.payload.contains(reading.id.uuidString))
+    let request = try GalaxySSIHealthCareDiscussion.request(approved, key: "fixture-api-key")
+    XCTAssertEqual(request.url, approved.endpoint)
+    XCTAssertThrowsError(try GalaxySSIHealthCareDiscussion.request(approved, key: "different-api-key"))
+    XCTAssertFalse(String(decoding: try XCTUnwrap(request.httpBody), as: UTF8.self).contains("\"tools\""))
+    var otherModel = model
+    otherModel.apiStyle = .gemini
+    otherModel.endpoint = "https://example.test/v1beta/models/other:generateContent"
+    XCTAssertNil(GalaxySSIHealthCareDiscussion.endpoint(for: otherModel))
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(approved, now: now.addingTimeInterval(601)))
+    try records.beginLocalCareDiscussionTurn(approved, now: now)
+    XCTAssertThrowsError(try reopened.beginLocalCareDiscussionTurn(approved, now: now))
+    try records.finishLocalCareDiscussionTurn(approved, answer: "Fixture scoped response", now: now)
+    XCTAssertTrue(try review().payload.contains("Fixture scoped response"))
+    XCTAssertFalse(try review("provider-b").payload.contains("Fixture scoped response"))
+    // JSON escaping can exceed the wire budget even though each saved reply is within its own limit.
+    let replies = ["older", "middle", "newest"].map { $0 + String(repeating: "\t", count: 6_000) }
+    for reply in replies {
+      let next = try review()
+      try records.beginLocalCareDiscussionTurn(next, now: now)
+      try records.finishLocalCareDiscussionTurn(next, answer: reply, now: now)
+    }
+    let bounded = try review()
+    let disclosure = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(bounded.payload.utf8)) as? [String: Any])
+    let previous = try XCTUnwrap(disclosure["previous"] as? [[String: String]])
+    XCTAssertEqual(previous.compactMap { $0["answer"] }, Array(replies.suffix(2)))
+    XCTAssertLessThanOrEqual(bounded.payload.utf8.count, GalaxySSIHealthCareDiscussion.maximumPayloadBytes)
+    XCTAssertEqual(try records.load().localCareDiscussions?[concern.id.uuidString]?.turns.count, 4)
+    let stale = try review()
+    try records.setHealthOnlinePermission(false)
+    try records.setHealthOnlinePermission(true)
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(stale, now: now))
+    let updatedApproval = try review()
+    try records.setLocalCareContext(concern, applicability: .excluded, now: now)
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(updatedApproval, now: now))
+    let updated = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    try records.deleteLocalCare(updated)
+    XCTAssertThrowsError(try records.openLocalCareDiscussion(id: concern.id, metric: .glucose))
+    XCTAssertEqual(try reopened.load().localCareDiscussions?[concern.id.uuidString]?.id, thread.id)
+  }
+
+  @MainActor
+  func testDiscussionHistoryRequiresExactTurnAndNeverAutomaticallyReplaysItsReply() throws {
+    typealias Tool = GalaxySSIHealthCareHistoryTool
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "history-turn", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let rows = (1...32).map { index in
+      GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(Double(-index * 120)),
+        value: index == 1 ? 110 : 98, notes: "Excluded private notes", unitOverride: "mg/dL", referenceInterval: "70 - 99")
+    }
+    for row in rows { try records.write(row) }
+    try records.write(.init(metric: .weight, measuredAt: now, value: 65))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    _ = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    try records.setHealthOnlinePermission(true)
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    func approve(_ allowsHistory: Bool) throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Compare my saved measurements",
+        destinationID: "provider", model: model, credential: "fixture-api-key", allowsHistory: allowsHistory, now: now)
+    }
+    let defaultApproval = try approve(false)
+    XCTAssertNil(defaultApproval.history)
+    XCTAssertFalse(try defaultApproval.providerPayload(now: now).contains("measurement_history"))
+    let approved = try approve(true)
+    let first = try XCTUnwrap(approved.history?.recent)
+    let cursor = try XCTUnwrap(first.cursor)
+    let input = try XCTUnwrap(first.payload["next"]?.objectValue)
+    XCTAssertEqual(first.payload["samples"]?.arrayValue?.count, 30)
+    XCTAssertTrue(first.authorizes(input, turn: approved.id))
+    XCTAssertFalse(first.authorizes(input, turn: defaultApproval.id))
+    XCTAssertFalse(first.authorizes(input.merging(["metric": .string("weight")]) { _, new in new }, turn: approved.id))
+    let preview = try approved.providerPayload(now: now)
+    XCTAssertFalse(preview.contains(rows[0].notes))
+    XCTAssertFalse(rows.contains { preview.localizedCaseInsensitiveContains($0.id.uuidString) })
+    XCTAssertThrowsError(try records.readLocalCareDiscussionHistory(approved, after: cursor, now: now))
+    try records.beginLocalCareDiscussionTurn(approved, now: now)
+    let older = try records.readLocalCareDiscussionHistory(approved, after: cursor, now: now)
+    XCTAssertEqual(older.rows.map(\.id), rows.suffix(2).map(\.id))
+    let last = try Tool.output(older, metric: .glucose, turn: approved.id, remaining: 0)
+    XCTAssertFalse(last.authorizes(input, turn: approved.id))
+    XCTAssertThrowsError(try records.readLocalCareDiscussionHistory(defaultApproval, after: cursor, now: now))
+    try records.finishLocalCareDiscussionTurn(approved, answer: "This answer summarizes private history.", now: now)
+    XCTAssertFalse(try approve(false).providerPayload(now: now).contains("summarizes private history"))
+
+    let next = try approve(true)
+    try records.beginLocalCareDiscussionTurn(next, now: now)
+    var changed = try XCTUnwrap(records.load().current.first { $0.id == rows[31].id })
+    changed.value = 102
+    try records.write(changed)
+    XCTAssertThrowsError(try records.readLocalCareDiscussionHistory(next, after: cursor, now: now))
+    try records.reconcileLocalCare(now: now)
+    let authorized = try approve(true)
+    try records.beginLocalCareDiscussionTurn(authorized, now: now)
+    try records.setHealthOnlinePermission(false)
+    try records.setHealthOnlinePermission(true)
+    XCTAssertThrowsError(try records.readLocalCareDiscussionHistory(authorized, after: cursor, now: now))
+  }
+
+  func testClarificationContinuationPinsWholeLedgerAndUsesSeparateTurnToken() throws {
+    typealias Questions = GalaxySSIHealthCareQuestions
+    typealias Tool = GalaxySSIHealthCareHistoryTool
+    let turn = UUID()
+    let now = Date()
+    var ledger = Questions.Ledger()
+    let questions = (0..<18).map {
+      Questions.Proposal(key: "context.item_\($0)", question: "Question \($0)?", purpose: "Fixture")
+    }
+    try ledger.propose(questions, scope: "selected", basis: "current", known: [:], turn: turn, now: now)
+    let initial = try ledger.page(scope: "selected", basis: "current", known: [:], after: nil)
+    let cursor = try XCTUnwrap(Questions.Cursor(initial, remaining: Questions.maximumContinuations))
+    let args = cursor.arguments(turn: turn)
+    XCTAssertNotEqual(args, cursor.arguments(turn: UUID()))
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(args).contains(cursor.after.uuidString))
+    let second = try ledger.page(scope: "selected", basis: "current", known: [:], after: cursor.after)
+    XCTAssertEqual(initial.rows.count, Questions.pageSize)
+    XCTAssertTrue(Set(initial.rows.map(\.id)).isDisjoint(with: second.rows.map(\.id)))
+    XCTAssertNil(Questions.Cursor(second, remaining: 0))
+    let next = try XCTUnwrap(Questions.Cursor(second, remaining: 1))
+    XCTAssertNotEqual(args, next.arguments(turn: turn))
+    let changed = try XCTUnwrap(second.rows.first)
+    try ledger.review(changed, scope: "selected", basis: "current", state: .deferred, answer: nil, now: now)
+    let updated = try ledger.page(scope: "selected", basis: "current", known: [:], after: nil)
+    XCTAssertEqual(updated.payload, initial.payload)
+    XCTAssertNotEqual(updated.ledgerVersion, initial.ledgerVersion)
+    XCTAssertThrowsError(try ledger.page(scope: "foreign", basis: "current", known: [:], after: cursor.after))
+
+    let function: [String: Any] = ["name": Questions.readTool, "args": ["input_version": turn.uuidString,
+      "cursor": args.string("cursor")]]
+    let wire = try JSONSerialization.data(withJSONObject: ["candidates": [["finishReason": "STOP",
+      "content": ["parts": [["functionCall": function]]]]]])
+    XCTAssertThrowsError(try Tool.call(wire, style: .gemini, proposesPlan: false))
+    let call = try XCTUnwrap(Tool.call(wire, style: .gemini, proposesPlan: false, allowsQuestionRead: true, asksQuestions: true))
+    XCTAssertEqual(call.name, Questions.readTool)
+    XCTAssertEqual(call.arguments, args)
+    var request = URLRequest(url: try XCTUnwrap(URL(string: "https://example.test")))
+    request.httpBody = try JSONSerialization.data(withJSONObject: ["contents": [["role": "user"]]])
+    let result = try Tool.continuing(request, with: call, payload: Questions.Cursor.payload(second, cursor: nil, turn: turn),
+      style: .gemini, proposesPlan: false, historyAvailable: false, allowsMaintenance: false,
+      questionsAvailable: false, asksQuestions: true)
+    let json = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(result.httpBody)) as? [String: Any])
+    let contents = try XCTUnwrap(json["contents"] as? [[String: Any]])
+    let parts = try XCTUnwrap(contents.last?["parts"] as? [[String: Any]])
+    let response = try XCTUnwrap(parts.first?["functionResponse"] as? [String: Any])
+    XCTAssertEqual(response["name"] as? String, Questions.readTool)
+    let tools = String(decoding: try JSONSerialization.data(withJSONObject: XCTUnwrap(json["tools"])), as: UTF8.self)
+    XCTAssertTrue(tools.contains(Questions.tool))
+    XCTAssertFalse(tools.contains(Questions.readTool))
+  }
+
+  func testDiscussionHistoryToolContinuesAllThreeProviderTransportsAndRejectsParallelCalls() throws {
+    typealias Tool = GalaxySSIHealthCareHistoryTool
+    let name = Tool.function
+    let arguments = ["input_version": "turn", "cursor": "page"]
+    let encoded = String(decoding: try JSONSerialization.data(withJSONObject: arguments), as: UTF8.self)
+    let openCall: [String: Any] = ["id": "call-1", "type": "function",
+      "function": ["name": name, "arguments": encoded]]
+    let anthropicCall: [String: Any] = ["id": "call-1", "type": "tool_use", "name": name, "input": arguments]
+    let geminiPart = ["functionCall": ["name": name, "args": arguments] as [String: Any]]
+    let fixtures: [(GalaxySSICloudAPIStyle, String, String, [String: Any])] = [
+      (.openAICompatible, "messages", "tool_call_id",
+        ["choices": [["finish_reason": "tool_calls", "message": ["tool_calls": [openCall]]]]]),
+      (.anthropic, "messages", "tool_result", ["stop_reason": "tool_use", "content": [anthropicCall]]),
+      (.gemini, "contents", "functionResponse",
+        ["candidates": [["finishReason": "STOP", "content": ["parts": [geminiPart]]]]])
+    ]
+    for (style, channel, responseKey, fixture) in fixtures {
+      let call = try XCTUnwrap(Tool.call(JSONSerialization.data(withJSONObject: fixture), style: style, proposesPlan: true))
+      XCTAssertEqual(call.arguments, arguments.mapValues { .string($0) })
+      var request = URLRequest(url: try XCTUnwrap(URL(string: "https://example.test")))
+      request.httpBody = try JSONSerialization.data(withJSONObject: [channel: [["role": "user"]]])
+      let output = Tool.Output(payload: ["samples": .array([.string("complete-sample")])], cursor: nil, token: nil)
+      let followUp = try Tool.continuing(request, with: call, output: output, style: style,
+        proposesPlan: true, historyAvailable: false)
+      let body = try XCTUnwrap(followUp.httpBody)
+      let wire = String(decoding: body, as: UTF8.self)
+      let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+      let messages = try XCTUnwrap(json[channel] as? [[String: Any]])
+      XCTAssertEqual(messages.count, 3)
+      XCTAssertTrue(wire.contains(responseKey))
+      XCTAssertTrue(wire.contains("complete-sample"))
+      let tools = try JSONSerialization.data(withJSONObject: XCTUnwrap(json["tools"]))
+      XCTAssertFalse(String(decoding: tools, as: UTF8.self).contains(name))
+    }
+    let parallel = try JSONSerialization.data(withJSONObject: [
+      "stop_reason": "tool_use", "content": [anthropicCall, anthropicCall]
+    ])
+    XCTAssertThrowsError(try Tool.call(parallel, style: .anthropic, proposesPlan: true))
+  }
+
+  @MainActor
   func testLocalCareRequiresPermissionAndPreservesExactRevisionHistory() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }
@@ -60,6 +1197,108 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     try records.setPrivacy(.localCare, enabled: false)
     XCTAssertThrowsError(try records.localCareHistory(updated.id))
     XCTAssertNil(try Data(contentsOf: file).range(of: Data("glucoseContext".utf8)))
+  }
+
+  func testRecordedBloodPressureUsesEitherComponentAndUnroundedKilopascals() {
+    func warning(_ systolic: Decimal, _ diastolic: Decimal, unit: String = "mmHg") -> Bool {
+      GalaxySSIHealthCarePriority.evaluate(.init(metric: .bloodPressure, value: systolic,
+        diastolic: diastolic, unitOverride: unit)) != nil
+    }
+    XCTAssertFalse(warning(180, 120))
+    XCTAssertTrue(warning(181, 75))
+    XCTAssertTrue(warning(160, 121))
+    XCTAssertFalse(warning(121, 140))
+    XCTAssertFalse(warning(185, 80, unit: "unknown"))
+    XCTAssertFalse(warning(Decimal(string: "23.998032")!, Decimal(string: "15.998688")!, unit: "kPa"))
+    XCTAssertTrue(warning(Decimal(string: "23.998033")!, 14, unit: "kPa"))
+    XCTAssertTrue(warning(22, Decimal(string: "15.998689")!, unit: "kPa"))
+  }
+
+  @MainActor
+  func testBloodPressureReviewIsBoundToLatestRecordAndDoesNotChangeOtherConcerns() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date(timeIntervalSince1970: 1_700_000_000)
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-90), value: 115,
+      unitOverride: "mg/dL", referenceInterval: "70 - 99"))
+    try records.write(.init(metric: .bloodPressure, measuredAt: now.addingTimeInterval(-60), value: 181, diastolic: 90))
+    XCTAssertThrowsError(try records.reconcileLocalCare(now: now))
+    XCTAssertNil(try GalaxySSIHealthRecords.currentCareBloodPressureWarning(records.load(), now: now))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let archive = try records.load()
+    let old = try XCTUnwrap(GalaxySSIHealthRecords.currentCareBloodPressureWarning(archive, now: now))
+    try records.acknowledgeLocalCareBloodPressure(old.warning, now: now)
+    XCTAssertEqual(try records.load().localCare?.acknowledgedBloodPressure, old.warning.record)
+    try records.write(.init(metric: .bloodPressure, measuredAt: now, value: 165, diastolic: 121))
+    XCTAssertNil(try GalaxySSIHealthRecords.currentCareBloodPressureWarning(records.load(), now: now))
+    XCTAssertThrowsError(try records.acknowledgeLocalCareBloodPressure(old.warning, now: now))
+    try records.reconcileLocalCare(now: now)
+    let updated = try records.load()
+    let latest = try XCTUnwrap(GalaxySSIHealthRecords.currentCareBloodPressureWarning(updated, now: now))
+    XCTAssertEqual(latest.concern.id, old.concern.id)
+    XCTAssertNotEqual(updated.localCare?.acknowledgedBloodPressure, latest.warning.record)
+    XCTAssertEqual(updated.localCare?.current["glucose"], archive.localCare?.current["glucose"])
+    try records.setPrivacy(.localCare, enabled: false)
+    XCTAssertNil(try GalaxySSIHealthRecords.currentCareBloodPressureWarning(records.load(), now: now))
+  }
+
+  @MainActor
+  func testLocalCareMeasurementPagesRejectEditedHistoryAndRevokedConsent() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "series", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date(timeIntervalSince1970: 1_700_000_000)
+    var inputs: [GalaxySSIHealthReading] = []
+    for index in 0..<33 {
+      let row = GalaxySSIHealthReading(metric: .glucose,
+        measuredAt: now.addingTimeInterval(Double(index - 34) * 120),
+        value: index == 32 || !index.isMultiple(of: 2) ? 110 : 94, conditions: index == 0 ? "" : "lab",
+        unitOverride: "mg/dL", referenceInterval: "70 - 99")
+      try records.write(row)
+      inputs.append(row)
+    }
+    try records.write(.init(metric: .weight, measuredAt: now, value: 65))
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(120), value: 95))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let unreviewed = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    try records.setLocalCareContext(unreviewed, applicability: .applicable, now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertThrowsError(try records.reviewLocalCare(concern, stage: .maintenance, reason: "No reviewed plan", now: now))
+    try records.write(.init(metric: .weight, measuredAt: now.addingTimeInterval(-1), value: 66))
+    try records.reconcileLocalCare(now: now)
+    XCTAssertEqual(try records.load().localCare?.current["glucose"], concern)
+    let first = try records.localCareMeasurementPage(id: concern.id, metric: .glucose, now: now)
+    XCTAssertEqual(first.rows.count, 30)
+    XCTAssertEqual(first.rows.first?.id, inputs.last?.id)
+    XCTAssertEqual(first.rows.first?.record.revision, 1)
+    XCTAssertEqual(first.rows.first?.gaps, [])
+    let next = try XCTUnwrap(first.next)
+    let earlier = try records.localCareMeasurementPage(id: concern.id, metric: .glucose,
+      expected: first.binding, after: next, now: now)
+    XCTAssertEqual((first.rows + earlier.rows).map(\.id), inputs.reversed().map(\.id))
+    XCTAssertEqual(earlier.rows.last?.gaps, [.methodUnverified, .conditionsUnknown, .contextUnconfirmed])
+    XCTAssertNil(earlier.next)
+    XCTAssertThrowsError(try records.localCareMeasurementPage(id: concern.id, metric: .weight, now: now))
+    XCTAssertThrowsError(try records.localCareMeasurementPage(id: concern.id, metric: .glucose, after: next, now: now))
+
+    var edited = try XCTUnwrap(records.load().current.first { $0.id == inputs[0].id })
+    edited.value = 105
+    try records.write(edited)
+    XCTAssertThrowsError(try records.localCareMeasurementPage(id: concern.id, metric: .glucose,
+      expected: first.binding, after: next, now: now))
+    try records.reconcileLocalCare(now: now)
+    let reassessed = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertEqual(reassessed.assessment, concern.assessment)
+    XCTAssertNil(reassessed.maintenanceHistoryVersion)
+    let updated = try records.localCareMeasurementPage(id: concern.id, metric: .glucose, now: now)
+    try records.setPrivacy(.localCare, enabled: false)
+    XCTAssertThrowsError(try records.localCareMeasurementPage(id: concern.id, metric: .glucose, now: now))
+    try records.setPrivacy(.localCare, enabled: true)
+    XCTAssertThrowsError(try records.localCareMeasurementPage(id: concern.id, metric: .glucose,
+      expected: updated.binding, after: updated.next, now: now))
   }
 
   @MainActor
@@ -200,6 +1439,93 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertThrowsError(try reader.read())
   }
 
+  func testLocalCareComparisonFencesCorrectionsBackfillAndSourceIdentity() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "comparison-fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let origin = "private-sensor-fixture"
+    let first = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-3 * 86_400),
+      value: 110, conditions: "private condition fixture", unitOverride: "mg/dL", referenceInterval: "70 - 99",
+      healthKitSource: .init(key: "private-source-1", origin: origin, name: nil))
+    try records.write(first)
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let initial = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    try records.setLocalCareContext(initial, applicability: .applicable, now: now)
+    let second = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-300), value: 100,
+      conditions: "different condition fixture", unitOverride: "mg/dL", referenceInterval: "70 - 99",
+      healthKitSource: .init(key: "private-source-2", origin: origin, name: nil))
+    try records.write(second)
+    try records.reconcileLocalCare(now: now)
+    let advanced = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    let pair = try XCTUnwrap(advanced.comparison)
+    XCTAssertEqual(pair.kind, .newResult)
+    XCTAssertEqual(pair.before.record.id, first.id)
+    XCTAssertEqual(pair.after.record.id, second.id)
+    XCTAssertEqual(pair.previousContext?.applicability, .applicable)
+    XCTAssertNil(advanced.context)
+    XCTAssertEqual(pair.changes.map(\.delta), ["-10"])
+    XCTAssertTrue(pair.gaps(currentContext: nil).contains(.conditionsDiffer))
+    try records.reconcileLocalCare(now: now)
+    XCTAssertEqual(try records.load().localCare?.current["glucose"], advanced)
+    let sanitized = String(decoding: try JSONEncoder().encode(pair.modelValue(currentContext: nil)), as: UTF8.self)
+    for privateValue in [origin, "private condition fixture", first.id.uuidString, second.id.uuidString] {
+      XCTAssertFalse(sanitized.contains(privateValue))
+    }
+    _ = try records.openLocalCareDiscussion(id: advanced.id, metric: .glucose)
+    try records.setHealthOnlinePermission(true)
+    let model = CloudModelConfig(id: "comparison", displayName: "Comparison", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    func review() throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try records.prepareLocalCareDiscussion(id: advanced.id, metric: .glucose, question: "Compare the readings",
+        destinationID: "provider", model: model, credential: "fixture-api-key", now: now)
+    }
+    func comparison(_ approval: GalaxySSIHealthCareDiscussion.Approval) throws -> [String: Any]? {
+      let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(approval.payload.utf8)) as? [String: Any])
+      return (payload["concern"] as? [String: Any])?["comparison"] as? [String: Any]
+    }
+    let proposed = try review()
+    let preview = try XCTUnwrap(comparison(proposed))
+    XCTAssertEqual((preview["before"] as? [String: Any])?["result"] as? String, "110")
+    XCTAssertEqual(preview["clinicalDirectionVerified"] as? Bool, false)
+    for privateValue in [origin, "private condition fixture", first.id.uuidString, second.id.uuidString] {
+      XCTAssertFalse(proposed.payload.contains(privateValue))
+    }
+    var correction = try XCTUnwrap(records.load().current.first { $0.id == second.id })
+    correction.value = 105
+    try records.write(correction)
+    try records.reconcileLocalCare(now: now)
+    let corrected = try XCTUnwrap(records.load().localCare?.current["glucose"]?.comparison)
+    XCTAssertEqual(corrected.kind, .recordCorrection)
+    XCTAssertTrue(corrected.changes.isEmpty)
+    XCTAssertNil(corrected.modelValue(currentContext: nil).before)
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(proposed, now: now))
+    let correctedPreview = try XCTUnwrap(comparison(review()))
+    XCTAssertNil(correctedPreview["before"])
+    XCTAssertEqual(correctedPreview["gaps"] as? [String], ["methodUnverified"])
+    let backfill = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-86_400),
+      value: 6, unitOverride: "mmol/L", referenceInterval: "4 - 5.5")
+    try records.write(backfill)
+    try records.reconcileLocalCare(now: now)
+    let revisedHistory = try XCTUnwrap(records.load().localCare?.current["glucose"]?.comparison)
+    XCTAssertEqual(revisedHistory.kind, .historyChanged)
+    XCTAssertEqual(revisedHistory.before.record.id, backfill.id)
+    XCTAssertTrue(revisedHistory.gaps(currentContext: nil).contains(.unitsDiffer))
+    let historyPreview = try review()
+    for id in [first.id, backfill.id] {
+      var deleting = try XCTUnwrap(records.load().current.first { $0.id == id })
+      deleting.deleted = true
+      try records.write(deleting)
+    }
+    XCTAssertThrowsError(try review())
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(historyPreview, now: now))
+    try records.reconcileLocalCare(now: now)
+    XCTAssertNil(try records.load().localCare?.current["glucose"]?.comparison)
+    XCTAssertNil(try comparison(review()))
+  }
+
+  @MainActor
   func testAppleHealthTrendPagesOriginsWithinScopeAndPinsExactContributor() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
@@ -268,6 +1594,84 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     ledger.selected.insert(.sleep)
     ledger.readFinished(.sleep, result: .empty, now: now)
     XCTAssertTrue(ledger.active.isEmpty)
+  }
+
+  @MainActor
+  func testCareProfileScopeDisclosesOnlySelectionAndArchivesBeforeReusingDiscussion() throws {
+    typealias Scope = GalaxySSIHealthCareProfileScope
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer {
+      try? FileManager.default.removeItem(at: file)
+      try? FileManager.default.removeItem(at: file.appendingPathExtension("profile"))
+    }
+    let records = GalaxySSIHealthRecords(owner: "profile-scope", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let date = now.addingTimeInterval(-60)
+    let birth = try XCTUnwrap(Calendar.current.date(byAdding: .year, value: -30, to: date.addingTimeInterval(-86_400 * 7)))
+    let selected = GalaxySSIHealthProfile.Background(kind: .medication, title: "Selected fixture", notes: "Selected detail")
+    let excluded = GalaxySSIHealthProfile.Background(kind: .allergy, title: "Excluded entry", notes: "Not selected")
+    var profile = GalaxySSIHealthProfile()
+    profile.name = "Excluded name"
+    profile.birthDate = birth
+    profile.height = 174
+    profile.background = [selected, excluded]
+    try records.writeProfile(profile)
+    try records.write(.init(metric: .glucose, measuredAt: date, value: 110, unitOverride: "mg/dL"))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.setHealthOnlinePermission(true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    let first = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    let link = try Scope.Link(.init(fields: [.birthDate], entries: [selected.id]), profile: records.loadProfile())
+    try records.setLocalCareProfileScope(concern, link: link, now: now)
+    let scoped = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    XCTAssertNotEqual(scoped.id, first.id)
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    func prepare() throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Explain the selected facts",
+        destinationID: "provider", model: model, credential: "fixture-api-key", now: now)
+    }
+    let approval = try prepare()
+    let decoded = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(approval.payload.utf8))
+    let snapshot = try XCTUnwrap(decoded["saved_profile"]?.objectValue)
+    XCTAssertEqual(snapshot["fields"]?.objectValue?["age_at_measurement"]?.objectValue?["value"], .int(30))
+    XCTAssertEqual(snapshot["entries"]?.arrayValue?.count, 1)
+    XCTAssertTrue(approval.payload.contains("Selected detail"))
+    XCTAssertFalse(approval.payload.contains("Excluded"))
+    XCTAssertFalse(approval.payload.contains("birthDate"))
+    XCTAssertFalse(approval.payload.contains("height"))
+    XCTAssertFalse(approval.payload.contains(selected.id.uuidString))
+    try records.beginLocalCareDiscussionTurn(approval, now: now)
+    try records.finishLocalCareDiscussionTurn(approval, answer: "Archived private answer", now: now)
+    let next = try prepare()
+
+    var edited = try records.loadProfile()
+    edited.name = "Changed unselected name"
+    edited.background[1].notes = "Changed unselected entry"
+    try records.writeProfile(edited)
+    XCTAssertEqual(try records.openLocalCareDiscussion(id: concern.id, metric: .glucose).id, scoped.id)
+    XCTAssertNoThrow(try records.validateLocalCareDiscussionApproval(next))
+
+    edited = try records.loadProfile()
+    edited.background.removeAll { $0.id == selected.id }
+    try records.writeProfile(edited)
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(next, now: now))
+    let fresh = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    XCTAssertNotEqual(fresh.id, scoped.id)
+    XCTAssertTrue(fresh.turns.isEmpty)
+    let archive = try records.load()
+    XCTAssertEqual(archive.archivedCareDiscussions?[scoped.id.uuidString]?.turns.first?.answer, "Archived private answer")
+    let replacement = try prepare()
+    XCTAssertFalse(replacement.payload.contains("Archived private answer"))
+    let updated = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(replacement.payload.utf8))
+    XCTAssertEqual(updated["saved_profile"]?.objectValue?["unavailable_selected_entries"], .int(1))
+    let current = try XCTUnwrap(archive.localCare?.current["glucose"])
+    try records.setLocalCareProfileScope(current, link: nil, now: now)
+    XCTAssertFalse(try prepare().payload.contains("saved_profile"))
+    let cleared = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertNotNil(cleared.profileScopeEpoch)
+    XCTAssertNotEqual(cleared.profileScopeEpoch, current.profileScopeEpoch)
   }
 
   @MainActor
@@ -365,6 +1769,51 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     archive.revisions.append(removed)
     XCTAssertTrue(GalaxySSIHealthRecordCenterSnapshot(archive: archive, originals: [original]).confirmed.isEmpty)
   }
+  func testIndividualTargetRequiresCurrentRecordAndRevokesWithoutErasingHistory() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "target-fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let first = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-120),
+      value: 110, unitOverride: "mg/dL", referenceInterval: "70 - 99")
+    try records.write(first)
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let original = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    let exclusive = try GalaxySSIHealthCareTarget.Bounds(low: "", high: "110", lowInclusive: false, highInclusive: false)
+    XCTAssertThrowsError(try records.confirmLocalCareNumericTarget(original, component: .systolic,
+      bounds: exclusive, source: "Fixture source", rationale: "Fixture reason", confirmedBy: "User", now: now))
+    try records.confirmLocalCareNumericTarget(original, component: .value,
+      bounds: exclusive, source: "Fixture source", rationale: "Fixture reason", confirmedBy: "User", now: now)
+    let saved = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertEqual(saved.targetRevision, 1)
+    XCTAssertEqual(records.localCareTargetComparison(saved, now: now), .above)
+    XCTAssertThrowsError(try records.revokeLocalCareTarget(original, now: now))
+
+    try records.write(.init(metric: .glucose, measuredAt: now, value: 105,
+      unitOverride: "mg/dL", referenceInterval: "70 - 99"))
+    XCTAssertEqual(records.localCareTargetComparison(saved, now: now), .reviewRequired)
+    XCTAssertThrowsError(try records.confirmLocalCareNumericTarget(saved, component: .value,
+      bounds: exclusive, source: "Fixture source", rationale: "Fixture reason", confirmedBy: "User", now: now))
+    try records.reconcileLocalCare(now: now)
+    let updated = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertEqual(records.localCareTargetComparison(updated, now: now), .reviewRequired)
+    try records.revokeLocalCareTarget(updated, now: now)
+    let revoked = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertNil(revoked.target)
+    XCTAssertEqual(revoked.targetRevision, 2)
+    XCTAssertTrue(try records.localCareHistory(revoked.id).contains { $0.target?.source == "Fixture source" })
+  }
+
+  func testIndividualTargetRejectsEmptyAndOpenSinglePointBounds() throws {
+    XCTAssertThrowsError(try GalaxySSIHealthCareTarget.Bounds(low: "", high: "", lowInclusive: true, highInclusive: true))
+    XCTAssertThrowsError(try GalaxySSIHealthCareTarget.Bounds(low: "90", high: "90", lowInclusive: true, highInclusive: false))
+    let closed = try GalaxySSIHealthCareTarget.Bounds(low: "90", high: "90", lowInclusive: true, highInclusive: true)
+    XCTAssertEqual(closed.description, ">= 90, <= 90")
+    XCTAssertEqual(GalaxySSIHealthCareTarget.components(for: .bloodPressure), [.systolic, .diastolic])
+  }
+
+  @MainActor
   func testHealthKitPreviewBindsSourceMetadataAndRowMultiplicity() {
     let now = Date()
     let source = GalaxySSIHealthKitImport.Source(key: "sample", origin: "fixture", name: "Original")
@@ -3240,6 +4689,112 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(try Data(contentsOf: sealed), committed)
     XCTAssertEqual(try reopened.readCrop(for: original)?.metadata, saved)
     XCTAssertEqual(try reopened.read(original), png)
+  }
+}
+
+extension GalaxySSIHealthRecordsTests {
+  @MainActor
+  func testAgentHealthDiscussionShortcutKeepsExactThreadWithoutGrantingOnlinePermission() throws {
+    typealias Target = GalaxySSIHealthCare.AgentDiscussionTarget
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "summary", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-60), value: 110,
+      unitOverride: "mg/dL", referenceInterval: "70 - 99"))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let archive = try records.load()
+    let concern = try XCTUnwrap(archive.localCare?.current["glucose"])
+    let target = Target(concern, permission: Target.permission(in: archive))
+    XCTAssertTrue(target.matches(archive))
+    let thread = try records.openLocalCareDiscussion(id: target.id, metric: target.metric)
+    XCTAssertEqual(try records.openLocalCareDiscussion(id: target.id, metric: target.metric).id, thread.id)
+    XCTAssertTrue(thread.turns.isEmpty)
+    XCTAssertNil(try records.load().healthOnlinePermission)
+    try records.setLocalCareContext(concern, applicability: .applicable, now: now)
+    XCTAssertFalse(target.matches(try records.load()))
+    let changed = try records.load()
+    let changedConcern = try XCTUnwrap(changed.localCare?.current["glucose"])
+    let changedTarget = Target(changedConcern, permission: Target.permission(in: changed))
+    XCTAssertTrue(changedTarget.matches(changed))
+    try records.setPrivacy(.localCare, enabled: false)
+    XCTAssertFalse(changedTarget.matches(try records.load()))
+    try records.setPrivacy(.localCare, enabled: true)
+    XCTAssertFalse(changedTarget.matches(try records.load()))
+  }
+
+  @MainActor
+  func testLocalCareGrantSurvivesAuditRolloverButNotRevocation() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let owner = "care-permission-rollover"
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: owner, secrets: secrets, isolatedFile: file)
+    let now = Date()
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-60), value: 110,
+      unitOverride: "mg/dL", referenceInterval: "70 - 99"))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.setHealthOnlinePermission(true)
+    try records.reconcileLocalCare(now: now)
+    let archive = try records.load()
+    let grant = try XCTUnwrap(archive.localCarePermission)
+    let concern = try XCTUnwrap(archive.localCare?.current["glucose"])
+    let auditGrant = UUID()
+    var legacy = archive
+    let index = try XCTUnwrap(legacy.privacyEvents?.lastIndex(where: { $0.scope == .localCare }))
+    legacy.privacyEvents?[index].id = auditGrant
+    let encodedKey = try XCTUnwrap(secrets.string(account: "health.records.v1." + owner))
+    let key = SymmetricKey(data: try XCTUnwrap(Data(base64Encoded: encodedKey)))
+    let context = Data("galaxyssi.health.records.v1:\(owner)".utf8)
+    let box = try AES.GCM.seal(JSONEncoder().encode(legacy), using: key, authenticating: context)
+    try XCTUnwrap(box.combined).write(to: file, options: .atomic)
+
+    _ = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    func review() throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Explain the reading",
+        destinationID: "provider", model: model, credential: "fixture-api-key", now: now)
+    }
+    let approval = try review()
+    XCTAssertEqual(approval.carePermission, grant)
+    for index in 0..<102 { try records.setPrivacy(.profileAnalysis, enabled: index.isMultiple(of: 2)) }
+    let afterRollover = try records.load()
+    XCTAssertFalse(afterRollover.privacyEvents?.contains { $0.scope == .localCare } ?? true)
+    XCTAssertTrue(afterRollover.matchesLocalCarePermission(auditGrant))
+    XCTAssertEqual(try review().carePermission, grant)
+    try records.validateLocalCareDiscussionApproval(approval)
+
+    try records.setPrivacy(.localCare, enabled: false)
+    try records.setPrivacy(.localCare, enabled: true)
+    let regranted = try records.load()
+    XCTAssertFalse(regranted.matchesLocalCarePermission(auditGrant))
+    XCTAssertFalse(regranted.matchesLocalCarePermission(grant))
+    XCTAssertNotEqual(try review().carePermission, grant)
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(approval, now: now))
+  }
+
+  func testAgentHealthSummaryRequiresOptInAndSelectsBoundedActiveConcerns() {
+    typealias Care = GalaxySSIHealthCare
+    func concern(_ metric: GalaxySSIHealthMetric, _ stage: Care.Stage, _ timestamp: TimeInterval) -> Care.Concern {
+      Care.Concern(id: UUID(), metric: metric, revision: 1, updatedAt: Date(timeIntervalSince1970: timestamp),
+        assessment: .removed, stage: stage, context: nil, target: nil, reviewNote: nil)
+    }
+    let active = [
+      concern(.glucose, .verify, 10), concern(.weight, .evidence, 20),
+      concern(.heartRate, .reassess, 30), concern(.cholesterol, .maintenance, 40)
+    ]
+    let excluded = [concern(.bloodPressure, .paused, 50), concern(.hemoglobin, .closed, 60)]
+    var archive = GalaxySSIHealthRecords.Archive()
+    var ledger = Care.Ledger()
+    for item in active + excluded { ledger.publish(item) }
+    archive.localCare = ledger
+    XCTAssertTrue(Care.agentConcerns(in: archive).isEmpty)
+    archive.localCareAllowed = true
+    XCTAssertEqual(Care.agentConcerns(in: archive).map(\.id), Array(active.dropFirst().reversed()).map(\.id))
+    archive.localCareAllowed = false
+    XCTAssertTrue(Care.agentConcerns(in: archive).isEmpty)
   }
 }
 

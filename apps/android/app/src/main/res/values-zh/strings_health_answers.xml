@@ -1,0 +1,11 @@
+<resources>
+    <string name="health_answer_title">确认待保存回答</string>
+    <string name="health_answer_pending">等待你确认</string>
+    <string name="health_answer_empty">没有待确认的回答。</string>
+    <string name="health_answer_notice">请对照你的原话和这个问题核对回答。确认后仅保存为自述，不改动报告、用药或档案字段。已有来源事实会独立保留，存在差异时不会覆盖。</string>
+    <string name="health_answer_quote">你的原话：%1$s</string>
+    <string name="health_answer_previous">之前确认的回答：%1$s</string>
+    <string name="health_answer_stale">来源、共享权限或问题已变化，不能把这份草稿保存为当前回答。请重新查看问题，或丢弃此草稿。</string>
+    <string name="health_answer_discard">丢弃草稿</string>
+    <string name="health_answer_discarded">已丢弃草稿，健康回答未改变。</string>
+</resources>

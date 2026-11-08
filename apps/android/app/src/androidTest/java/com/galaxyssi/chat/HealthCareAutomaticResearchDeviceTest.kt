@@ -33,6 +33,7 @@ class HealthCareAutomaticResearchDeviceTest {
         if (phase == "followup") { followUp(); return }
         if (phase == "outcome") { actionOutcome(); return }
         if (phase == "deadline") { deadline(); return }
+        if (phase == "recheck") recheckCompletedReview()
         if (phase == "full" || phase == "start") start()
         val concern = checkNotNull(markers.getString("concern", null)) { "No isolated research to resume" }
         val turn = checkNotNull(markers.getString("turn", null))
@@ -70,7 +71,9 @@ class HealthCareAutomaticResearchDeviceTest {
             val issue = store.concern(concern)!!
             assertTrue("Research cannot adopt actions", issue.actions.isEmpty())
             assertNull(store.nextReminder())
-            assertEquals("Only the context change may start another research turn", setOf(turn, reviewTurn),
+            val expected = setOfNotNull(turn, reviewTurn, markers.getString("prior_review_turn", null)) +
+                markers.getStringSet("recheck_turns", emptySet()).orEmpty()
+            assertEquals("Only explicit context review or the opt-in regression recheck may create turns", expected,
                 store.researchJobs(concern).map { it.turnId }.toSet())
             val plan = checkNotNull(store.plan(reviewTurn)) { "Evidence research must produce a reviewable plan" }
             assertEquals(HealthCarePlanState.PENDING, plan.state)
@@ -91,6 +94,31 @@ class HealthCareAutomaticResearchDeviceTest {
         val answer = entries.filter { it.role == AgentTranscriptRole.ASSISTANT }.joinToString("\n") { it.text }
         assertTrue("No substantive answer returned to the original conversation", answer.length >= 80)
         values.forEach { assertTrue("The answer lost a required measurement: $it", answer.contains(it)) }
+    }
+
+    private fun recheckCompletedReview() {
+        val concern = checkNotNull(markers.getString("concern", null))
+        val previousTurn = checkNotNull(markers.getString("review_turn", null))
+        check(markers.getString("recheck_version", null) != BuildConfig.VERSION_NAME) {
+            "Recheck already requested for this version; resume it without reauthorizing"
+        }
+        val previous = HealthCareStore(context).use { care ->
+            check(care.researchJobs(concern).all { it.terminal }) { "Do not restart an active review" }
+            check(care.researchJob(previousTurn)?.state == HealthCareResearchState.COMPLETED)
+            care.researchAuthorization(concern)!!.also { care.revokeResearch(concern, it.id, System.currentTimeMillis()) }
+        }
+        val preview = HealthCareResearchRuntime.preview(context, concern)
+        assertEquals(previous.scope.conversationId, preview.grant.conversationId)
+        assertEquals(previous.scope.targetId, preview.grant.targetId)
+        assertEquals(previous.scope.modelId, preview.grant.modelId)
+        check(markers.edit().putString("recheck_version", BuildConfig.VERSION_NAME).commit())
+        HealthCareResearchRuntime.authorize(context, preview, previous.id)
+        await(60_000, "Explicit synthetic regression recheck scheduled") {
+            HealthCareStore(context).use { it.latestResearchJob(concern)?.turnId != previousTurn }
+        }
+        val next = HealthCareStore(context).use { it.latestResearchJob(concern)!!.turnId }
+        val priorTurns = markers.getStringSet("recheck_turns", emptySet()).orEmpty() + previousTurn
+        check(markers.edit().putStringSet("recheck_turns", priorTurns).putString("review_turn", next).commit())
     }
 
     private fun confirmSyntheticContext(concern: String, initialTurn: String, marker: String = "review_turn"): String {

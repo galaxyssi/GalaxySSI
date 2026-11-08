@@ -41,7 +41,7 @@ internal class HealthCarePlanReview(private val activity: Activity, private val 
             val evidenceIssue = if (plan.state == HealthCarePlanState.ACCEPTED)
                 store.revision(issue.id, plan.grant.revision) ?: throw HealthCareConflict() else issue
             Snapshot(plan, evidenceIssue, plan.state == HealthCarePlanState.PENDING && HealthCarePlanPolicy.current(plan, issue, settings, privacy, source) &&
-                plan.sources.all { it.evidence != null })
+                plan.sources.all { it.evidence != null } && HealthCareProfileAccess.current(activity, issue.profileLink, names))
         }
     }
     fun show(id: String) {
@@ -160,6 +160,7 @@ internal class HealthCarePlanReview(private val activity: Activity, private val 
                             val source = HealthRecordStore(activity, names.records).use {
                                 HealthCareEngine.inputVersion(settings.version, privacy.version, it.metricVersion(snapshot.issue.metric))
                             }
+                            if (!HealthCareProfileAccess.current(activity, snapshot.issue.profileLink, names)) throw HealthCareConflict()
                             store.resolvePlan(plan.id, chosen, snapshot.issue.revision, privacy, source, System.currentTimeMillis(), chosenTarget, chosenMaintenance)
                         }
                     }

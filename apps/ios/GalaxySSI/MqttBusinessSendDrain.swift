@@ -35,7 +35,8 @@ actor MqttBusinessSendDrain {
 
   func close() { closed = true }
 
-  func drain(identities: [MqttBusinessIdentity], validatedNetwork: Bool, limit: Int = 16) async throws -> Result {
+  func drain(identities: [MqttBusinessIdentity], validatedNetwork: Bool, limit: Int = 16,
+             authorize: @Sendable (MqttBusinessOutbox.Entry) async throws -> Bool = { _ in true }) async throws -> Result {
     guard (1...64).contains(limit), identities.count <= 10_000,
           Set(identities.map(\.scope)).count == identities.count else { throw MqttRouteError.invalidPayload }
     try identities.forEach { try $0.validate() }
@@ -74,12 +75,17 @@ actor MqttBusinessSendDrain {
         if closed { result.stopped = true; return result }
         result.inspected += 1
         do {
-          let delivery: Publication? = try routes.withOutgoing(identity: identity,
-            topics: [item.message.topic]) {
+          if item.message.blockedByAttachmentTransferIds.isEmpty {
+            guard try await authorize(item) else { continue }
+          }
+          try Task.checkCancellation()
+          if closed { result.stopped = true; return result }
+          let delivery: (String, Publication)? = try routes.withPendingTopic(identity: identity,
+            storedTopic: item.message.topic) { topic in
             // Do not put a ready-route guard before the durable scan: it makes a stalled route
             // invisible forever. Recovery itself retains authentication, epoch and cooldown checks.
-            guard routes.readyForTopic(item.message.topic) else {
-              if routes.recoverBlockedSend(topic: item.message.topic) { result.recoveredRoutes += 1 }
+            guard routes.readyForTopic(topic) else {
+              if routes.recoverBlockedSend(topic: topic) { result.recoveredRoutes += 1 }
               routes.request(identity.scope)
               return nil
             }
@@ -91,7 +97,6 @@ actor MqttBusinessSendDrain {
                 messageID: current.message.messageId, validatedNetwork: validatedNetwork, now: now()) else { return nil }
               current = prepared
             }
-            let topic = current.message.topic
             let wire = Data(current.message.wirePayload.utf8)
             guard let traffic = MqttMultipathPolicy.Traffic(rawValue: current.traffic) else {
               throw MqttRouteError.invalidPayload
@@ -114,16 +119,17 @@ actor MqttBusinessSendDrain {
               prepared = .direct(direct)
             }
             try outbox.updateRetry(identity: identity, messageID: current.message.messageId, published: false, now: now())
-            return prepared
+            return (topic, prepared)
           }
-          guard let delivery else { continue }
+          guard let (topic, delivery) = delivery else { continue }
           let submitted: Bool
           switch delivery {
           case .direct(let packet):
-            _ = try await dispatcher.submit(topic: item.message.topic, delivery: packet)
+            _ = try await dispatcher.submit(topic: topic, delivery: packet)
             submitted = true
           case .fragments(let message, let batch):
-            submitted = try await publishFragments(topic: item.message.topic, identity: identity, message: message, batch: batch)
+            submitted = try await publishFragments(topic: topic, storedTopic: item.message.topic,
+              identity: identity, message: message, batch: batch)
           }
           try Task.checkCancellation()
           if closed { result.stopped = true; return result }
@@ -138,7 +144,7 @@ actor MqttBusinessSendDrain {
     return result
   }
 
-  private func publishFragments(topic: String, identity: MqttBusinessIdentity, message: MqttDeliveryEnvelope.Message,
+  private func publishFragments(topic: String, storedTopic: String, identity: MqttBusinessIdentity, message: MqttDeliveryEnvelope.Message,
                                 batch: MqttOutgoingChunks.Batch) async throws -> Bool {
     var submitted = false
     let query = batch.query
@@ -150,7 +156,7 @@ actor MqttBusinessSendDrain {
         query: query, selection: selection, attempted: batch.attempted(index: index),
         isPending: { [outbox, chunks] in
           guard let entry = try outbox.entry(identity: identity, messageID: message.messageID),
-                entry.isPrepared, entry.wireHash == message.contentHash, entry.message.topic == topic else { return false }
+                entry.isPrepared, entry.wireHash == message.contentHash, entry.message.topic == storedTopic else { return false }
           return try chunks.permits(authenticatedScope: identity.binding, query: query, index: index)
         })
       if let broker {

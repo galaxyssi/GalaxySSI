@@ -136,6 +136,38 @@ class HealthCareResearchDeviceTest {
             assertEquals("measurement_context_changed", handoff.getJSONArray("reasons").getString(0))
         }
     }
+    @Test fun priorRetrievedSourcesSurviveAReviewWithoutNewReadsAndRemainScoped(): Unit = fixture { names, care, value ->
+        authorize(care, value)
+        val first = queue(care, value)
+        val firstGrant = grant(value, first)
+        care.approveDiscussion(firstGrant)
+        val url = "https://example.test/review-source"
+        val hash = "e".repeat(64)
+        val proofs = List(10) { HealthCareEvidence(UUID.randomUUID().toString(), firstGrant, "read-$it", url,
+            "Synthetic source", AgentWebIntelligenceText.citationId(url, hash), hash,
+            "Synthetic source body, not medical guidance.", now, now) }
+        care.recordEvidence(proofs)
+        care.updateResearchJob(care.updateResearchJob(first, HealthCareResearchState.DISPATCHED), HealthCareResearchState.COMPLETED)
+        care.update(value.scope.concernId, first.revision, "fixture_context") {
+            it.copy(context = HealthCareContext(it.assessment.record!!, confirmedAt = now))
+        }
+        val second = queue(care, value)
+        care.updateResearchJob(care.updateResearchJob(second, HealthCareResearchState.DISPATCHED), HealthCareResearchState.COMPLETED)
+        care.update(value.scope.concernId, second.revision, "fixture_context_again") {
+            it.copy(context = it.context!!.copy(adult = HealthCareTruth.YES))
+        }
+        val third = queue(care, value)
+        val current = grant(value, third)
+        HealthCareStore(context, names.care).use { reopened ->
+            val reads = reopened.priorResearchEvidence(third, current)
+            assertEquals(8, reads.size)
+            assertTrue(reads.all { it in proofs })
+            assertTrue(reopened.priorResearchEvidence(third, current.copy(conversationId = UUID.randomUUID().toString())).isEmpty())
+            assertTrue(reopened.priorResearchEvidence(third, current.copy(destination = "b".repeat(64))).isEmpty())
+            assertTrue(reopened.priorResearchEvidence(third, current.copy(privacyVersion = "changed")).isEmpty())
+            assertTrue(reopened.priorResearchEvidence(third.copy(createdAt = first.createdAt - 1), current).isEmpty())
+        }
+    }
     @Test fun renewalInvalidatesPriorQueueAndRequiresCompareAndSet(): Unit = fixture { _, care, value ->
         authorize(care, value); val prior = queue(care, value)
         val next = value.copy(id = UUID.randomUUID().toString())
@@ -216,6 +248,8 @@ class HealthCareResearchDeviceTest {
         val issue = care.concern(value.scope.concernId)
         care.approveDiscussion(value.scope); care.close()
         context.openOrCreateDatabase(names.care, 0, null).use { db ->
+            db.execSQL("DROP TABLE question_history"); db.execSQL("DROP TABLE questions")
+            db.execSQL("DROP TABLE answer_drafts")
             db.execSQL("DROP TABLE research_jobs"); db.execSQL("DROP TABLE research_authorizations"); db.version = 6
         }
         HealthCareStore(context, names.care).use {

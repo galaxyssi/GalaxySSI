@@ -22,6 +22,7 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
     private val targetReview = HealthCareTargetReview(activity, names)
     private val historyReview = HealthCareHistoryReview(activity, names)
     private val researchReview = HealthCareResearchReview(activity, names)
+    private val answerReview = HealthCareAnswerReview(activity, names)
     private var active = false
     private var agentPage = activity.findViewById<View>(R.id.collaborationOutputList).visibility != View.VISIBLE
     private var loading = false
@@ -34,7 +35,7 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
     private var navigationGeneration = 0
     private val deadlineRefresh = Runnable { generation++; reload() }
     private val observer = object : ContentObserver(main) {
-        override fun onChange(selfChange: Boolean) { planReview.clear(); actionReview.clear(); targetReview.clear(); historyReview.clear(); generation++; reload() }
+        override fun onChange(selfChange: Boolean) { planReview.clear(); actionReview.clear(); targetReview.clear(); historyReview.clear(); answerReview.clear(); generation++; reload() }
         override fun onChange(selfChange: Boolean, uri: android.net.Uri?) {
             if (uri != HealthCareStore.changes(activity, names.care)) { researchReview.clear(); navigationGeneration++ }
             onChange(selfChange)
@@ -53,22 +54,22 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
         if (active) activity.contentResolver.unregisterContentObserver(observer)
         active = false; clear()
     }
-    fun clear() { generation++; navigationGeneration++; main.removeCallbacks(deadlineRefresh); expanded = false; visibleConcern = ""; planReview.clear(); actionReview.clear(); targetReview.clear(); historyReview.clear(); researchReview.clear(); host.removeAllViews(); host.visibility = View.GONE }
+    fun clear() { generation++; navigationGeneration++; main.removeCallbacks(deadlineRefresh); expanded = false; visibleConcern = ""; planReview.clear(); actionReview.clear(); targetReview.clear(); historyReview.clear(); researchReview.clear(); answerReview.clear(); host.removeAllViews(); host.visibility = View.GONE }
     fun showForAgent(value: Boolean) {
         agentPage = value
         if (value) reload() else clear()
     }
-    fun destroy() { pause(); planReview.destroy(); actionReview.destroy(); targetReview.destroy(); historyReview.destroy(); researchReview.destroy(); worker.shutdown() }
+    fun destroy() { pause(); planReview.destroy(); actionReview.destroy(); targetReview.destroy(); historyReview.destroy(); researchReview.destroy(); answerReview.destroy(); worker.shutdown() }
     private data class Snapshot(val concerns: List<HealthCareConcern>, val plans: List<HealthCarePlan> = emptyList(),
         val action: HealthCareAction? = null, val reminder: HealthCareReminder? = null, val profile: Boolean = false,
-        val authorization: HealthCareResearchAuthorization? = null, val research: HealthCareResearchJob? = null)
+        val authorization: HealthCareResearchAuthorization? = null, val research: HealthCareResearchJob? = null, val answers: Boolean = false)
     private fun reload() {
         if (!active || !agentPage) return
         val conversation = activity.agentTranscriptStore.activeConversation()
         if (conversation.id != visibleConversation) {
             visibleConversation = conversation.id
             expanded = false; visibleConcern = ""; navigationGeneration++
-            planReview.clear(); actionReview.clear(); targetReview.clear(); historyReview.clear(); researchReview.clear(); generation++
+            planReview.clear(); actionReview.clear(); targetReview.clear(); historyReview.clear(); researchReview.clear(); answerReview.clear(); generation++
         }
         if (loading) { dirty = true; return }
         loading = true; dirty = false; val token = generation
@@ -95,7 +96,8 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
                             Snapshot(concerns, plans,
                                 action, reminders.firstOrNull { it.actionId == action?.id }, profile,
                                 if (profile && issue != null) store.researchAuthorization(issue.id) else null,
-                                if (profile && issue != null) store.latestResearchJob(issue.id) else null)
+                                if (profile && issue != null) store.latestResearchJob(issue.id) else null,
+                                profile && issue != null && store.answers(issue, limit = 1).items.isNotEmpty())
                         }
                     }
                 }
@@ -165,6 +167,9 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
                                 HealthCareResearchPolicy.displayState(item, snapshot.authorization, snapshot.research, System.currentTimeMillis())
                                     ?.titleResource() ?: R.string.health_research_queued)), 13f, muted = true).apply { tag = "agent-health-care-state" })
                         content.addView(details)
+                        if (snapshot.answers) details.addView(ui.profileRow(activity.getString(R.string.health_answer_title),
+                            activity.getString(R.string.health_answer_pending)) { answerReview.show(item.id) }
+                            .apply { tag = "agent-health-care-answers" })
                         if (snapshot.profile) details.addView(ui.profileRow(activity.getString(R.string.health_research_title)) {
                             researchReview.show(item.id)
                         }.apply { tag = "agent-health-care-research" })
