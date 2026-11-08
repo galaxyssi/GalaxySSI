@@ -342,6 +342,78 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(try records.load().localCare?.current["weight"]?.revision, updated.revision)
   }
 
+  func testResearchLedgerRecoversPreparationWithoutResendingDispatch() throws {
+    typealias Research = GalaxySSIHealthCareResearch
+    let now = Date()
+    let process = UUID(), reopened = UUID()
+    let authorization = Research.Authorization(concern: UUID(), metric: .glucose, thread: UUID(),
+      localPermission: UUID(), onlinePermission: UUID(), profileScopeEpoch: nil, contact: "fixture", model: "fixture",
+      endpoint: try XCTUnwrap(URL(string: "https://example.test/v1/chat/completions")), destination: "fixture",
+      sources: [.labResults], authorizedAt: now)
+    let key = authorization.concern.uuidString
+    var ledger = Research.Ledger()
+    ledger.renew(authorization)
+    ledger.reconcile(authorization, trigger: "first", revision: 1, process: process, now: now)
+    let queued = try XCTUnwrap(ledger.jobs[key])
+    try ledger.transition(queued, concern: authorization.concern, to: .preparing, process: process)
+    ledger = try JSONDecoder().decode(Research.Ledger.self, from: JSONEncoder().encode(ledger))
+    ledger.reconcile(authorization, trigger: "first", revision: 1, process: reopened, now: now)
+    XCTAssertEqual(ledger.jobs[key], queued)
+    try ledger.transition(queued, concern: authorization.concern, to: .preparing, process: reopened)
+    let preparing = try XCTUnwrap(ledger.jobs[key])
+    XCTAssertThrowsError(try ledger.transition(preparing, concern: authorization.concern, to: .dispatched, process: process))
+    try ledger.transition(preparing, concern: authorization.concern, to: .dispatched, process: reopened)
+    let dispatched = try XCTUnwrap(ledger.jobs[key])
+    ledger.reconcile(authorization, trigger: "first", revision: 1, process: process, now: now)
+    XCTAssertEqual(ledger.jobs[key]?.state, .interrupted)
+    XCTAssertThrowsError(try ledger.transition(dispatched, concern: authorization.concern, to: .completed, process: reopened))
+    ledger.reconcile(authorization, trigger: "second", revision: 2, process: process, now: now)
+    XCTAssertNotEqual(ledger.jobs[key]?.id, dispatched.id)
+    XCTAssertEqual(ledger.jobs[key]?.state, .queued)
+    ledger.revoke(authorization.concern)
+    XCTAssertEqual(ledger.jobs[key]?.state, .cancelled)
+    XCTAssertNil(ledger.authorizations[key])
+  }
+
+  @MainActor
+  func testStandingResearchRejectsRevocationAndSupersededEvidence() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "research", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-300), value: 110, unitOverride: "mg/dL"))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.setHealthOnlinePermission(true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    let thread = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    XCTAssertTrue(try records.reconcileLocalCareResearch(now: now).isEmpty)
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    func approval(for job: GalaxySSIHealthCareResearch.Job? = nil) throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Review the recorded context",
+        destinationID: "provider", model: model, credential: "fixture-api-key", proposesPlan: job != nil, research: job, now: now)
+    }
+    try records.authorizeLocalCareResearch(approval(), sources: [.labResults], now: now)
+    let (auth, first) = try XCTUnwrap(records.reconcileLocalCareResearch(now: now).first)
+    XCTAssertEqual(auth.thread, thread.id)
+    XCTAssertEqual(try records.reconcileLocalCareResearch(now: now).first?.1, first)
+    let preparing = try records.transitionLocalCareResearch(first, concern: concern.id, to: .preparing)
+    XCTAssertTrue(try records.reconcileLocalCareResearch(now: now).isEmpty)
+    let prepared = try approval(for: preparing)
+    XCTAssertEqual(prepared.id, first.id)
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(prepared, now: now))
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-60), value: 112, unitOverride: "mg/dL"))
+    let next = try XCTUnwrap(records.reconcileLocalCareResearch(now: now).first?.1)
+    XCTAssertNotEqual(next.id, first.id)
+    XCTAssertNil(records.currentLocalCareResearchJob(auth, id: first.id, now: now))
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(prepared, now: now))
+    try records.revokeLocalCareResearch(concern.id)
+    XCTAssertTrue(try records.reconcileLocalCareResearch(now: now).isEmpty)
+    XCTAssertThrowsError(try records.transitionLocalCareResearch(next, concern: concern.id, to: .preparing))
+    XCTAssertTrue(try records.openLocalCareDiscussion(id: concern.id, metric: .glucose).turns.isEmpty)
+  }
+
   @MainActor
   func testLocalCareDiscussionBindsConsentToConcernTurnAndProvider() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

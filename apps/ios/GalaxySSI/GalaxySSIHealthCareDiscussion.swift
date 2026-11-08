@@ -107,6 +107,7 @@ enum GalaxySSIHealthCareDiscussion {
     var history: GalaxySSIHealthCareHistoryTool.Approval?
     var profileScope: GalaxySSIHealthCareProfileScope.Link?
     var profileScopeEpoch: UUID?
+    var research: GalaxySSIHealthCareResearch.Job?
 
     func isCurrent(at now: Date) -> Bool {
       now >= reviewedAt && now.timeIntervalSince(reviewedAt) < GalaxySSIHealthCareDiscussion.approvalLifetime
