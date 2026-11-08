@@ -132,6 +132,22 @@ struct GalaxySSIHealthTrend {
     }
   }
 
+  struct ChartDatum: Identifiable {
+    let point: Point
+    let value: Decimal
+    var id: Int { point.id }
+
+    func matches(_ other: Self) -> Bool {
+      id == other.id && point.day == other.point.day && value == other.value && point.revisions == other.point.revisions
+    }
+  }
+
+  func chartData(_ aggregation: Aggregation, component: Component) -> [ChartDatum] {
+    points.compactMap { point in
+      point.value(aggregation, component: component).map { ChartDatum(point: point, value: $0) }
+    }
+  }
+
   let points: [Point]
   let minimum: Decimal?
   let maximum: Decimal?
@@ -195,6 +211,7 @@ struct GalaxySSIHealthTrendView: View {
   @State private var devices: [GalaxySSIHealthTrendDevice] = []
   @State private var trend: GalaxySSIHealthTrend?
   @State private var selected: GalaxySSIHealthTrend.Point?
+  @State private var showsChartData = false
   @State private var changed = false
   @State private var error = false
   @State private var shown = 30
@@ -272,20 +289,14 @@ struct GalaxySSIHealthTrendView: View {
                 statistic(t("mean", "Mean"), average)
                 statistic(t("min", "Minimum"), minimum)
                 statistic(t("max", "Maximum"), maximum)
-                chart(trend)
-              }
-              Section(t("sources", "Daily source records")) {
-                ForEach(trend.points.reversed().filter { $0.mean != nil }) { point in
-                  Button { openAudit(point) } label: {
-                    HStack {
-                      if focusedDay == point.day {
-                        Image(systemName: "checkmark.circle").foregroundColor(.accentColor).accessibilityHidden(true)
-                      }
-                      Text(point.day, style: .date)
-                      Spacer()
-                      if let value = point.value(aggregation, component: component) { Text(number(value) + " " + unit) }
-                    }
-                  }
+                let data = trend.chartData(aggregation, component: component)
+                chart(trend, data: data)
+                Button { toggleChartData(data) } label: {
+                  Label(t("chart_data", "Chart data"), systemImage: showsChartData ? "chevron.down" : "list.bullet")
+                }
+                .disabled(data.isEmpty)
+                if showsChartData {
+                  ForEach(data.reversed(), content: chartDatumRow)
                 }
               }
             } else {
@@ -302,13 +313,15 @@ struct GalaxySSIHealthTrendView: View {
     .onChange(of: component) { _ in reload() }
     .onChange(of: days) { _ in resetOrigins(); reload() }
     .onChange(of: device) { _ in reload() }
+    .onChange(of: calendar) { _ in reload() }
+    .onChange(of: timeZone) { _ in reload() }
     .onChange(of: scene) { if $0 == .background { device = nil; devices = [] } }
     .onChange(of: source) { _ in resetOrigins(); reload() }
-    .onDisappear { resetOrigins(); selected = nil; trend = nil }
-    .onChange(of: aggregation) { _ in selected = nil; focusedDay = nil }
+    .onDisappear { resetOrigins(); selected = nil; trend = nil; showsChartData = false }
+    .onChange(of: aggregation) { _ in selected = nil; focusedDay = nil; showsChartData = false }
     .onChange(of: scene) { phase in
       if phase == .active { reload() }
-      else { trend = nil; selected = nil; focusedDay = nil; allowed = false; resetOrigins() }
+      else { trend = nil; selected = nil; focusedDay = nil; allowed = false; showsChartData = false; resetOrigins() }
     }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.trendInputsChanged)) { event in
       guard event.object as? String == records.owner, scene == .active else { return }
@@ -371,6 +384,7 @@ struct GalaxySSIHealthTrendView: View {
   private func reload() {
     guard scene == .active else { return }
     selected = nil
+    showsChartData = false
     focusedDay = nil
     trend = nil
     changed = false
@@ -403,21 +417,55 @@ struct GalaxySSIHealthTrendView: View {
       healthOrigin: source == .healthKit ? origin : .all)
   }
 
-  private func openAudit(_ point: GalaxySSIHealthTrend.Point) {
+  private func toggleChartData(_ data: [GalaxySSIHealthTrend.ChartDatum]) {
+    if showsChartData { showsChartData = false; return }
+    guard scene == .active, allowed, !changed, !data.isEmpty else { return }
+    do {
+      let archive = try records.load()
+      guard archive.derivesOverview == true else { invalidate(); return }
+      let fresh = makeTrend(archive.current).chartData(aggregation, component: component)
+      guard data.count == fresh.count, zip(data, fresh).allSatisfy({ $0.0.matches($0.1) })
+      else { invalidate(); return }
+      showsChartData = true
+    } catch { invalidate() }
+  }
+
+  private func chartDatumRow(_ datum: GalaxySSIHealthTrend.ChartDatum) -> some View {
+    Button { openAudit(datum) } label: {
+      VStack(alignment: .leading, spacing: 4) {
+        HStack {
+          if focusedDay == datum.point.day {
+            Image(systemName: "checkmark.circle").foregroundColor(.accentColor).accessibilityHidden(true)
+          }
+          Text(datum.point.day, style: .date)
+          Spacer()
+          Text(number(datum.value) + " " + unit)
+        }
+        Text(componentTitle + " · " + aggregationTitle(aggregation) + " · " +
+          String(format: t("chart_data_count", "Records: %lld"), Int64(datum.point.readings.count)))
+          .font(.caption).foregroundColor(.secondary)
+      }
+    }
+    .accessibilityElement(children: .combine)
+  }
+
+  private func openAudit(_ datum: GalaxySSIHealthTrend.ChartDatum) {
+    guard scene == .active, allowed, !changed else { return }
     do {
       let archive = try records.load()
       guard archive.derivesOverview == true,
-            let fresh = makeTrend(archive.current).points.first(where: { $0.day == point.day }),
-            fresh.revisions == point.revisions else { invalidate(); return }
+            let fresh = makeTrend(archive.current).chartData(aggregation, component: component)
+              .first(where: { $0.id == datum.id }), fresh.matches(datum) else { invalidate(); return }
       shown = 30
       jumpTarget = nil
-      focusedDay = point.day
-      selected = fresh
+      focusedDay = fresh.point.day
+      selected = fresh.point
     } catch { invalidate() }
   }
 
   private func invalidate() {
     selected = nil
+    showsChartData = false
     focusedDay = nil
     trend = nil
     do {
@@ -426,16 +474,17 @@ struct GalaxySSIHealthTrendView: View {
     } catch { allowed = false; error = true; resetOrigins() }
   }
 
-  private func chart(_ trend: GalaxySSIHealthTrend) -> some View {
+  private func chart(_ trend: GalaxySSIHealthTrend, data: [GalaxySSIHealthTrend.ChartDatum]) -> some View {
     GeometryReader { geometry in
       Canvas { context, size in
-        let values = trend.points.compactMap { $0.value(aggregation, component: component).map { NSDecimalNumber(decimal: $0).doubleValue } }
+        let values = data.map { NSDecimalNumber(decimal: $0.value).doubleValue }
         guard let low = values.min(), let high = values.max(), low.isFinite, high.isFinite else { return }
         let range = high - low
         var prior: CGPoint?
-        for point in trend.points {
-          guard let aggregate = point.value(aggregation, component: component) else { prior = nil; continue }
-          let value = NSDecimalNumber(decimal: aggregate).doubleValue
+        var priorID: Int?
+        for (datum, value) in zip(data, values) {
+          let point = datum.point
+          if priorID != point.id - 1 { prior = nil }
           let fraction = range > 0 ? (value - low) / range : 0.5
           let position = CGPoint(x: 8 + CGFloat(point.id) / CGFloat(max(1, trend.points.count - 1)) * (size.width - 16),
                                  y: 8 + CGFloat(1 - fraction) * (size.height - 16))
@@ -450,18 +499,22 @@ struct GalaxySSIHealthTrendView: View {
                                               width: 2 * radius, height: 2 * radius)),
                        with: .color(.accentColor))
           prior = position
+          priorID = point.id
         }
       }
       .contentShape(Rectangle())
       .gesture(DragGesture(minimumDistance: 0).onEnded { event in
         let width = max(1, geometry.size.width - 16)
         let index = Int(((event.location.x - 8) / width * CGFloat(trend.points.count - 1)).rounded())
-        guard trend.points.indices.contains(index), trend.points[index].mean != nil else { return }
-        openAudit(trend.points[index])
+        if let datum = data.first(where: { $0.id == index }) { openAudit(datum) }
       })
     }
     .frame(height: 120)
-    .accessibilityHidden(true)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(Text(t("chart", "Measurement chart")))
+    .accessibilityAction(named: Text(t("chart_data", "Chart data"))) {
+      if !showsChartData { toggleChartData(data) }
+    }
   }
 
   private var unit: String { metric == .bloodPressure && component == .pulse ? "bpm" : (selectedUnit ?? metric.unit) }
