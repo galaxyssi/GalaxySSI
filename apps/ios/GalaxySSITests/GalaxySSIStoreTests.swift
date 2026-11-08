@@ -526,6 +526,64 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertEqual(store.contact(id: "\(link.desktopId):codex")?.setupStatus, "ready")
   }
 
+  @MainActor
+  func testDurableDesktopConnectorRequiresRegisteredTaskAndCurrentDesktopBeforeHandoff() throws {
+    enum FixtureError: Error { case writeFailed }
+    let store = makeStore()
+    let original = try store.addServerLink(from: makePairingQRCode())
+    store.markServerPaired(desktopId: original.desktopId)
+    let link = try XCTUnwrap(store.serverLinks.first { $0.desktopId == original.desktopId })
+    let route = link.routes
+    let binding = MqttPeerBinding(scope: "direct:device", sender: route.localFingerprint, receiver: route.remoteFingerprint,
+      secret: route.linkSecret, sendTopic: route.upTopic, sendTopics: route.sendWindow, receiveTopics: route.receiveWindow)
+    let target = MqttPeerChatProjection.Destination(contactId: "device", conversationId: "device-conversation",
+      peer: .init(binding: binding, remoteSignalName: link.desktopId), routeId: route.clientRouteId, desktop: true, routes: route)
+    let contact = try XCTUnwrap(store.contact(id: "\(link.desktopId):codex"))
+    let identities = AgentTaskIdentityStore(defaults: store.defaults, storageKeyPrefix: "mqtt-connector-fixture")
+    let identity = try MqttBusinessIdentity(binding)
+    let id = UUID().uuidString
+    var reject = true
+    var applied: [String] = []
+    let bridge = MqttDesktopConnectorProjection(store: store, identities: identities, commitResponse: { response, _ in
+      if reject { throw FixtureError.writeFailed }
+      applied.append(response.content)
+    })
+    let payload: [String: Any] = ["type": "text", "message_id": id, "content": "Connector result",
+      "source_message_id": "42", "contact_id": contact.id, "desktop_id": link.desktopId, "agent_id": contact.connectorAgentId,
+      "client_route_id": route.clientRouteId, "conversation_id": "conversation", "task_id": "task", "turn_id": "turn"]
+    func project(_ payload: [String: Any], identity: MqttBusinessIdentity) throws {
+      let item = MqttBusinessInbox.Pending(key: try identity.key(messageID: id), identity: identity, messageID: id,
+        payload: try GalaxySSILinkProtocol.jsonData(payload), createdAt: 1)
+      try bridge.project(item, payload: payload, target: target)
+    }
+    XCTAssertThrowsError(try project(payload, identity: identity))
+    XCTAssertTrue(identities.register(contactId: contact.id, sourceMessageId: 42, identity: .init(
+      clientRouteId: route.clientRouteId, conversationId: "conversation", taskId: "task", turnId: "turn")))
+    let request = try bridge.outgoingRequest(payload, target: target)
+    XCTAssertEqual(request.identity, identity)
+    XCTAssertEqual(request.contactID, contact.id)
+    XCTAssertEqual(request.sourceMessageID, "42")
+    XCTAssertThrowsError(try project(payload, identity: identity)) { error in
+      XCTAssertEqual(error as? FixtureError, .writeFailed)
+    }
+    reject = false
+    var altered = payload
+    altered["agent_id"] = "different"
+    XCTAssertThrowsError(try project(altered, identity: identity))
+    altered = payload
+    altered["turn_id"] = "other-turn"
+    XCTAssertThrowsError(try project(altered, identity: identity))
+    altered = payload
+    altered["result_recovery"] = ["sha256": String(repeating: "f", count: 64)]
+    XCTAssertThrowsError(try project(altered, identity: identity))
+    var other = binding
+    other.secret = Data(repeating: 3, count: 32).base64URLEncodedString()
+    XCTAssertThrowsError(try project(payload, identity: MqttBusinessIdentity(other)))
+    XCTAssertTrue(applied.isEmpty)
+    try project(payload, identity: identity)
+    XCTAssertEqual(applied, ["Connector result"])
+  }
+
   func testServerLinkTracksAndroidCapabilityManifestVersion() throws {
     let store = makeStore()
 

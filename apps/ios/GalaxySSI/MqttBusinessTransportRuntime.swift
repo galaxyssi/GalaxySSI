@@ -33,6 +33,7 @@ final class MqttBusinessTransportRuntime {
   private var configuredDirectPeers: [Peer] = []
   private var incomingAttachments: AgentIncomingAttachmentTransferStore?
   private var outgoingAttachments: AgentOutboundAttachmentTransferStore?
+  private var desktopConnector: MqttDesktopConnectorProjection?
   private let attachmentQueue = DispatchQueue(label: "galaxyssi.mqtt.peer-attachments", qos: .utility)
 
   // The caller must first quiesce legacy Signal, inbox and outbox writers. Once this returns a
@@ -117,6 +118,7 @@ final class MqttBusinessTransportRuntime {
                    pool: GalaxySSIMqttBrokerPool = .init(),
                    incomingAttachments: AgentIncomingAttachmentTransferStore = .init(),
                    outgoingAttachments: AgentOutboundAttachmentTransferStore = .init(),
+                   desktopConnector: MqttDesktopConnectorProjection? = nil,
                    onFailure: @escaping @MainActor (Error) -> Void = { _ in }) throws {
     guard let cutover = try journal.legacyCutover(), cutover.localFingerprint == localFingerprint else {
       throw MqttDeliveryDispatch.Failure.unavailable
@@ -125,11 +127,19 @@ final class MqttBusinessTransportRuntime {
     try self.init(profileName: store.profile.galaxySSIId, journal: journal, routeState: routeState,
       defaults: store.defaults, secrets: store.secrets, pool: pool,
       projectInbound: { _ = try projection.projectInbound($0) },
-      projectCompletion: { try projection.projectCompletion($0) }, onFailure: onFailure)
+      projectCompletion: { event in
+        if let desktopConnector, let target = try projection.currentDestination(event.identity),
+           target.desktop, target.contactId != event.contactID {
+          try desktopConnector.projectCompletion(event, target: target)
+        } else {
+          try projection.projectCompletion(event)
+        }
+      }, onFailure: onFailure)
     guard engine.identity.fingerprint == localFingerprint else { throw MqttRouteError.identityChanged }
     peerChatProjection = projection
     self.incomingAttachments = incomingAttachments
     self.outgoingAttachments = outgoingAttachments
+    self.desktopConnector = desktopConnector
   }
 
   func startDirectPeerChat(configuration: MqttBrokerPathConfiguration) throws {
@@ -164,6 +174,18 @@ final class MqttBusinessTransportRuntime {
       return existing
     }
     guard let entry = try enqueue(requests).last else { throw MqttRouteError.invalidPayload }
+    return entry
+  }
+
+  func enqueueDesktopConnectorRequest(_ payload: [String: Any], desktopId: String) throws -> MqttBusinessOutbox.Entry {
+    guard let projection = peerChatProjection, let desktopConnector else { throw MqttDeliveryDispatch.Failure.unavailable }
+    try refreshDirectPeerBindings()
+    let matches = projection.store.contacts.compactMap { projection.destination(for: $0) }.filter {
+      $0.desktop && $0.peer.remoteSignalName == desktopId
+    }
+    guard matches.count == 1, let target = matches.first else { throw MqttRouteError.identityChanged }
+    let request = try desktopConnector.outgoingRequest(payload, target: target)
+    guard let entry = try enqueue([request]).first else { throw MqttRouteError.invalidPayload }
     return entry
   }
 
@@ -479,6 +501,10 @@ final class MqttBusinessTransportRuntime {
     guard let target = try projection.currentDestination(item.identity),
           payload["message_id"] as? String == item.messageID else { throw MqttRouteError.identityChanged }
     let type = payload.string("type")
+    if target.desktop, let desktopConnector, MqttDesktopConnectorProjection.handles(payload) {
+      try desktopConnector.project(item, payload: payload, target: target)
+      return
+    }
     let localName = engine.identity.name
     let remoteName = target.peer.remoteSignalName
     let route = target.routes
