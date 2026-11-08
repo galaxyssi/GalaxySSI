@@ -84,6 +84,24 @@ final class CloudConversationStreamEngineTests: XCTestCase {
       output: AgentMcpJSONCodec.stringify(forged)))
   }
 
+  func testMethodEvaluationProgressAcceptsAnEmptyAdvancingPageButNotCursorReplay() {
+    typealias Evaluation = AgentCollaborationMethodEvaluations
+    let progress = CloudWebToolLoopProgress()
+    let name = CloudModelStreamMutableConversation.collaborationRecallName
+    let digest = String(repeating: "a", count: 64)
+    let method = AgentCollaborationResearchReference(objectId: digest, revision: 1, sha256: digest)
+    var query = Evaluation.selector(method)
+    let next = Evaluation.Cursor(scope: digest, objectID: digest, revision: 1).encoded
+    let output = AgentMcpJSONCodec.stringify(["status": .string("returned"), "view": .string(Evaluation.view),
+      "trust": .string(Evaluation.trust), "method": .object(Evaluation.reference(method)), "records": .array([]),
+      "quality_effect": .null, "scan_complete": .bool(false), "next_cursor": .string(next)])
+    XCTAssertTrue(progress.record(toolName: name, arguments: query, output: output))
+    query["cursor"] = .string("")
+    XCTAssertFalse(progress.record(toolName: name, arguments: query, output: output))
+    query["cursor"] = .string(next)
+    XCTAssertFalse(progress.record(toolName: name, arguments: query, output: output))
+  }
+
   func testCloudDispatchCancellationIsScopedToExactOwner() throws {
     let registry = AgentCloudDispatchRegistry()
     let first = AgentCloudDispatchIdentity(

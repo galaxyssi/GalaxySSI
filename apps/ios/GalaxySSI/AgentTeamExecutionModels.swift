@@ -705,10 +705,12 @@ enum AgentCollaborationForecastIntake {
 
 enum AgentCollaborationExperimentPlanIntake {
   static func validates(_ draft: AgentCollaborationResearchDraft,
+                        allowWorkflowComparison: Bool = false,
                         current: (AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision?) rethrows -> Bool {
     guard draft.kind == .experimentPlan, draft.objectId?.isBlank != false, draft.baseRevision == 0,
           let spec = draft.body["experiment_plan"]?.objectValue,
-          ["retention_suite", "transfer_study", "team_comparison", "workflow_comparison"].allSatisfy({ spec[$0] == nil }),
+          ["retention_suite", "transfer_study", "team_comparison"].allSatisfy({ spec[$0] == nil }),
+          spec["workflow_comparison"] == nil || allowWorkflowComparison,
           hasText(spec, ["method", "environment", "budget_unit", "prediction_id"]),
           let pointer = spec["report_pointer"]?.stringValue, pointer.isEmpty || pointer.hasPrefix("/"),
           let limit = number(spec["budget_limit"]), limit > 0,
@@ -771,6 +773,7 @@ enum AgentCollaborationExperimentPlanIntake {
   static func measure(_ reports: [AgentMcpJSONObject], plan: AgentCollaborationResearchRevision)
     -> [AgentCollaborationMeasuredCase]? {
     guard let spec = plan.draft.body["experiment_plan"]?.objectValue,
+          spec["workflow_comparison"] == nil || plan.workflowComparison != nil,
           let cases = spec["cases"]?.arrayValue, validatesCases(cases),
           let idea = reference(spec["innovation"]), let baseline = reference(spec["baseline"]),
           let budget = number(spec["budget_limit"]), budget > 0 else { return nil }
@@ -794,6 +797,11 @@ enum AgentCollaborationExperimentPlanIntake {
               let used = number(sample["budget_used"]), used >= 0, used <= budget,
               let value = number(sample["value"]) else { return nil }
         let key = Sample(variant: sample.string("variant"), repetition: repeatIndex)
+        if let binding = plan.workflowComparison {
+          let method = key.variant == "baseline" ? binding.baseline : binding.candidate
+          guard sample.string("workflow_sha256") == method.sha256,
+                sample.string("dataset_sha256") == binding.dataset.sha256 else { return nil }
+        }
         guard values[item.string("id"), default: [:]].updateValue(value, forKey: key) == nil else { return nil }
       }
     }
@@ -936,6 +944,7 @@ struct AgentCollaborationResearchRevision: Codable {
   var measuredCases: [AgentCollaborationMeasuredCase]? = nil
   var trialAuthors: [String]? = nil
   var numericReplay: AgentMcpJSONObject? = nil
+  var workflowComparison: AgentCollaborationWorkflowComparison? = nil
 
   var storageBytesLimit: Int {
     draft.kind == .numericModelTrial && numericReplay != nil
@@ -1067,6 +1076,46 @@ enum AgentTeamMemberDispatchCheckpoint: String, Codable {
   case notStarted = "not_started"
   case dispatching
   case accepted
+}
+
+struct AgentSingleResearchCalibration: Codable, Equatable {
+  static let format = "galaxyssi.single-agent-research-calibration.v1"
+  static let stage = "EXECUTE"
+
+  let scope: AgentCollaborationToolEvidenceScope
+  let targetID: String
+  let modelID: String
+  let reasoningEffort: AgentModelReasoningEffort
+  let objectiveDigest: String
+
+  init?(format: String, scope: AgentCollaborationToolEvidenceScope, selection: AgentModelSelection,
+        objective: String, maximumDispatches: Int) {
+    guard format == Self.format, maximumDispatches == 1, selection.mode == .manual,
+          !selection.targetId.isBlank, !selection.modelId.isBlank, !objective.isBlank,
+          !scope.runId.isBlank, !scope.conversationId.isBlank, !scope.turnId.isBlank,
+          !scope.memberId.isBlank, !scope.sourceId.isBlank else { return nil }
+    self.scope = scope
+    targetID = selection.targetId
+    modelID = selection.modelId
+    reasoningEffort = selection.reasoningEffort
+    objectiveDigest = Self.digest(objective)
+  }
+
+  var recordKey: String { "single-research-calibration:" + scope.ownershipDigest }
+
+  func owns(_ team: AgentTeamExecutionSnapshot, member: AgentTeamMemberSnapshot) -> Bool {
+    team.supervisorRunId == scope.runId && team.conversationId == scope.conversationId && team.taskId == scope.turnId &&
+      team.state == .running && Self.digest(team.goal) == objectiveDigest && team.members == [member] &&
+      team.primaryMemberId == scope.memberId && team.primaryAgentId == targetID &&
+      member.memberId == scope.memberId && member.sourceMessageId == scope.sourceId && member.agentId == targetID &&
+      member.deliveryMode == .respond && member.researchStage == Self.stage &&
+      member.dispatchDependencyMemberIds?.isEmpty != false && !member.status.isTerminal &&
+      (member.dispatchCheckpoint == .dispatching || member.dispatchCheckpoint == .accepted)
+  }
+
+  private static func digest(_ objective: String) -> String {
+    AgentMcpJSONCodec.sha256(["objective": .string(objective.trimmingCharacters(in: .whitespacesAndNewlines))])
+  }
 }
 
 struct AgentTeamMemberSnapshot: Codable, Equatable {

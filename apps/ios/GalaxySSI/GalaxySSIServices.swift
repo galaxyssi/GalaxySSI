@@ -2809,6 +2809,11 @@ final class MessageCoordinator: ObservableObject {
       } catch AgentTeamHistoryDatabase.Failure.corrupt {
         result["status"] = .string("invalid_artifact")
       } catch {}
+    } else if ["method_history", "workspace", "capabilities"].contains(input.string("mode")),
+              var page = try? history.recallCollaborationOriginal(input, scope: scope) {
+      page["success"] = .bool(true)
+      page["status"] = .string("returned")
+      result = page
     } else if let query = route.goalSelector(input, scope: scope, generation: generation),
        var page = try? history.recallCollaborationOriginal(query, scope: scope) {
       let next = page.removeValue(forKey: "next_offset")?.intValue
