@@ -5,21 +5,24 @@ import org.json.JSONObject
 internal data class HealthCareDiscussionGrant(
     val conversationId: String, val turnId: String, val concernId: String, val revision: Int,
     val settingsVersion: String, val privacyVersion: String, val destination: String, val approvedAt: Long,
-    val targetId: String, val modelId: String, val effort: String
+    val targetId: String, val modelId: String, val effort: String, val researchAuthorizationId: String = ""
 ) {
     init {
         require(listOf(conversationId, turnId, concernId).all(HealthProfilePolicy::uuid))
         require(revision > 0 && settingsVersion.isNotBlank() && privacyVersion.isNotBlank())
         require(destination.length == 64 && approvedAt > 0)
         require(targetId.isNotBlank())
+        require(researchAuthorizationId.isEmpty() || HealthProfilePolicy.uuid(researchAuthorizationId))
     }
     fun json() = JSONObject().put("conversation", conversationId).put("turn", turnId).put("concern", concernId)
         .put("revision", revision).put("settings", settingsVersion).put("privacy", privacyVersion)
         .put("destination", destination).put("approved_at", approvedAt).put("target", targetId).put("model", modelId).put("effort", effort)
+        .apply { if (researchAuthorizationId.isNotEmpty()) put("research_authorization", researchAuthorizationId) }
     companion object {
         fun from(j: JSONObject) = HealthCareDiscussionGrant(j.getString("conversation"), j.getString("turn"),
             j.getString("concern"), j.getInt("revision"), j.getString("settings"), j.getString("privacy"),
-            j.getString("destination"), j.getLong("approved_at"), j.getString("target"), j.getString("model"), j.getString("effort"))
+            j.getString("destination"), j.getLong("approved_at"), j.getString("target"), j.getString("model"), j.getString("effort"),
+            j.optString("research_authorization"))
     }
 }
 

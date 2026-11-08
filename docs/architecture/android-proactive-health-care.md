@@ -472,3 +472,58 @@ These are workflow and provenance checks. Quotation verification, numerical
 agreement and user confirmation are not a professional medical assessment.
 Clinical validity, wider longitudinal review and autonomous authorized research
 still require separate acceptance; no medication change is supported.
+
+## Authorized research and background execution
+
+Care schema 7 adds separately encrypted, authenticated standing authorizations
+and research jobs. Existing installations receive empty tables, not implicit
+consent. An authorization binds one concern, its private conversation, privacy
+and settings revisions, provider destination, model, effort and configuration
+fingerprint. Every execution still requires a fresh, separately persisted turn
+grant. A standing authorization does not confer record-writing, reminder or
+clinical-plan confirmation authority.
+
+An indexed unique key admits one turn per authorization and evidence trigger.
+New source versions, confirmed context, target revisions, action outcomes and
+newly due confirmed actions change that trigger. Display revisions, opening a
+conversation, proposals and repeated clock ticks do not. Failed or completed
+turns are not automatically recreated for the same trigger. Updates use exact
+expected-state checks, and the durable turn ID survives database reopening.
+Queue reads are paginated rather than loading every historical job.
+
+Pausing or closing a concern, losing its source, disabling care, replacing or
+revoking authorization cancels its unfinished jobs. Deleting a concern removes
+its authorization and research detail, retaining encrypted routing tombstones
+and a durable cancellation outbox so late results cannot revive deleted data.
+Scoped history reads, evidence
+receipts and plan writes revalidate automatic-turn authorization; ordinary
+explicitly approved discussion turns retain their existing contract.
+
+The Agent surface and concern detail expose a shared consent/status dialog.
+The current provider, model, effort and snapshot are disclosed before a separate,
+initially unchecked consent checkbox can authorize future calls. Opening the
+dialog, enabling local tracking and approving a one-off discussion do not enable
+automatic research. A failed review requires explicit renewed authorization to
+try the same evidence again. Backgrounding clears the dialog and its content.
+
+Source changes, privacy/model changes, startup recovery and the next confirmed
+action deadline enqueue WorkManager reconciliation. Online calls require a
+connected network. Per-turn unique work, a recovery claim and the task journal
+reuse one identity. The normal MobileNativeAgent executes the pinned scoped
+planner; connector responses use the existing delivery and transcript recovery
+path. Recovery waits for an existing request, rather than resubmitting it. An
+interruption without a recoverable execution checkpoint is exposed as a failure
+instead of guessing whether it is safe to send again. No medical data is placed
+in WorkManager input or a notification.
+
+Revocation immediately invalidates the scoped tool grant. Background cancellation
+also stops the local workspace/cloud lease and queues remote cancellation when
+a connector receipt exists. An offline remote cancellation remains pending with
+WorkManager backoff. Previously transmitted data cannot be recalled. Foreground
+and background transcript projections both reject cancelled or obsolete research
+turns. These mechanisms do not guarantee immediate termination of a remote
+provider that has already accepted a request.
+
+No background research is enabled merely by schema migration. Real-provider
+end-to-end acceptance, including device restart during an automatic review,
+remains separate from the isolated storage, policy and UI regression suite.

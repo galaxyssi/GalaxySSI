@@ -77,6 +77,7 @@ class HealthCareWorker(context: Context, parameters: WorkerParameters) : Worker(
     override fun doWork(): Result = try {
         HealthCareEngine.evaluate(applicationContext, cancelled = { isStopped })
         HealthReminderWork.sourceRemindersChanged(applicationContext)
+        HealthCareResearchWork.changed(applicationContext)
         Result.success()
     } catch (_: HealthCareConflict) {
         Result.retry()

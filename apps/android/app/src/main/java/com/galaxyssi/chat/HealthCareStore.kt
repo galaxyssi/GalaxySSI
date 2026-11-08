@@ -32,7 +32,10 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             db.endTransaction()
             if (committed && notify) {
                 app.contentResolver.notifyChange(changes(app, name), null)
-                if (name == DEFAULT_DB) HealthReminderWork.sourceRemindersChanged(app)
+                if (name == DEFAULT_DB) {
+                    HealthReminderWork.sourceRemindersChanged(app)
+                    HealthCareResearchWork.changed(app)
+                }
             }
         }
     }
@@ -53,7 +56,16 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             put("id", 1); put("version", next.version)
             put("payload", pack("settings", next.version, JSONObject().put("enabled", enabled).put("version", next.version)))
         }, SQLiteDatabase.CONFLICT_REPLACE)
-        if (!enabled) invalidateReminders(System.currentTimeMillis(), null)
+        if (!enabled) {
+            invalidateReminders(System.currentTimeMillis(), null)
+            var after = ""
+            while (true) {
+                val page = researchAuthorizations(after)
+                if (page.isEmpty()) break
+                page.filter { it.active }.forEach { revokeResearchInternal(it.scope.concernId, it.id, System.currentTimeMillis()) }
+                after = page.last().scope.concernId
+            }
+        }
         next
     }
     private fun decode(row: Cursor): HealthCareConcern {
@@ -92,6 +104,9 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             put("concern_id", value.id); put("revision", value.revision)
             put("payload", pack("history", "${value.id}:${value.revision}", JSONObject().put("event", event).put("concern", value.json())))
         })
+        if (!HealthCareResearchPolicy.eligible(value)) researchAuthorization(value.id)?.takeIf { it.active }?.let {
+            revokeResearchInternal(value.id, it.id, value.updatedAt)
+        }
         reminders(value.id).filter { reminder ->
             val action = value.actions.firstOrNull { it.id == reminder.actionId }
             action == null || action.state != HealthCareActionState.CONFIRMED ||
@@ -191,7 +206,11 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
     fun approveDiscussion(grant: HealthCareDiscussionGrant) = transaction {
         val current = concern(grant.concernId) ?: throw HealthCareConflict()
         if (discussion(grant.conversationId) != current.id || current.revision != grant.revision ||
-            !settings().enabled || settings().version != grant.settingsVersion) throw HealthCareConflict()
+            !settings().enabled || settings().version != grant.settingsVersion || !researchGrantCurrent(grant)) throw HealthCareConflict()
+        discussionGrant(grant.turnId)?.let {
+            if (it != grant) throw HealthCareConflict()
+            return@transaction
+        }
         db.insertOrThrow("discussion_grants", null, ContentValues().apply {
             put("turn_id", grant.turnId)
             put("payload", pack("discussion_grant", grant.turnId, grant.json()))
@@ -202,6 +221,111 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         "SELECT payload FROM discussion_grants WHERE turn_id=?", arrayOf(turnId)
     ).use { row -> if (!row.moveToFirst()) null else
         HealthCareDiscussionGrant.from(unpack("discussion_grant", turnId, row.getBlob(0))).also { check(it.turnId == turnId) } }
+    fun researchAuthorization(concernId: String): HealthCareResearchAuthorization? = db.rawQuery(
+        "SELECT id,payload FROM research_authorizations WHERE concern_id=?", arrayOf(concernId)).use { row ->
+        if (!row.moveToFirst()) null else HealthCareResearchAuthorization.from(unpack("research_authorization", concernId, row.getBlob(1))).also {
+            check(it.id == row.getString(0) && it.scope.concernId == concernId)
+        }
+    }
+    fun researchAuthorizations(after: String = ""): List<HealthCareResearchAuthorization> = db.rawQuery(
+        "SELECT concern_id,id,payload FROM research_authorizations WHERE concern_id>? ORDER BY concern_id LIMIT 30", arrayOf(after)).use { rows -> buildList {
+        while (rows.moveToNext()) add(HealthCareResearchAuthorization.from(unpack("research_authorization", rows.getString(0), rows.getBlob(2))).also {
+            check(it.scope.concernId == rows.getString(0) && it.id == rows.getString(1))
+        })
+    } }
+    private fun writeResearchAuthorization(value: HealthCareResearchAuthorization) {
+        db.insertWithOnConflict("research_authorizations", null, ContentValues().apply {
+            put("concern_id", value.scope.concernId); put("id", value.id)
+            put("payload", pack("research_authorization", value.scope.concernId, value.json()))
+        }, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+    fun authorizeResearch(value: HealthCareResearchAuthorization, expectedAuthorization: String?) = transaction(true) {
+        val scope = value.scope
+        val issue = concern(scope.concernId) ?: throw HealthCareConflict()
+        if (!value.active || researchAuthorization(issue.id)?.id != expectedAuthorization ||
+            !settings().enabled || settings().version != scope.settingsVersion || issue.revision != scope.revision ||
+            discussion(scope.conversationId) != issue.id || issue.conversationId != scope.conversationId ||
+            !HealthCareResearchPolicy.eligible(issue)) throw HealthCareConflict()
+        researchAuthorization(issue.id)?.let { revokeResearchInternal(issue.id, it.id, System.currentTimeMillis()) }
+        writeResearchAuthorization(value)
+    }
+    fun revokeResearch(concernId: String, expectedId: String, now: Long) = transaction(true) {
+        revokeResearchInternal(concernId, expectedId, now)
+    }
+    private fun revokeResearchInternal(concernId: String, expectedId: String, now: Long) {
+        val value = researchAuthorization(concernId) ?: return
+        if (value.id != expectedId) throw HealthCareConflict()
+        if (value.active) writeResearchAuthorization(value.copy(revokedAt = maxOf(1, now)))
+        var after = ""
+        while (true) {
+            val page = researchJobs(concernId, after, unfinishedOnly = true)
+            if (page.isEmpty()) break
+            page.forEach { writeResearchJob(it.copy(state = HealthCareResearchState.CANCELLED, cancellationPending = true)) }
+            after = page.last().turnId
+        }
+    }
+    private fun decodeResearchJob(row: Cursor): HealthCareResearchJob = HealthCareResearchJob.from(
+        unpack("research_job", row.getString(0), row.getBlob(5))).also {
+        check(it.turnId == row.getString(0) && it.concernId == row.getString(1) && it.authorizationId == row.getString(2) &&
+            it.trigger == row.getString(3) && it.state.name == row.getString(4) && it.createdAt == row.getLong(6) &&
+            it.cancellationPending == (row.getInt(7) == 1))
+    }
+    fun researchJob(turnId: String): HealthCareResearchJob? = db.rawQuery("SELECT $RESEARCH_COLUMNS FROM research_jobs WHERE turn_id=?",
+        arrayOf(turnId)).use { if (it.moveToFirst()) decodeResearchJob(it) else null }
+    fun latestResearchJob(concernId: String): HealthCareResearchJob? = db.rawQuery(
+        "SELECT $RESEARCH_COLUMNS FROM research_jobs WHERE concern_id=? ORDER BY created_at DESC,turn_id DESC LIMIT 1",
+        arrayOf(concernId)).use { if (it.moveToFirst()) decodeResearchJob(it) else null }
+    fun pendingResearchCancellations(after: String = ""): List<HealthCareResearchJob> = db.rawQuery(
+        "SELECT $RESEARCH_COLUMNS FROM research_jobs WHERE cancel_pending=1 AND turn_id>? ORDER BY turn_id LIMIT 30", arrayOf(after)).use { rows ->
+        buildList { while (rows.moveToNext()) add(decodeResearchJob(rows)) }
+    }
+    fun acknowledgeResearchCancellation(expected: HealthCareResearchJob) = transaction {
+        if (researchJob(expected.turnId) != expected) throw HealthCareConflict()
+        writeResearchJob(expected.copy(cancellationPending = false))
+    }
+    fun researchJobs(concernId: String, after: String = "", unfinishedOnly: Boolean = false): List<HealthCareResearchJob> = db.rawQuery(
+        "SELECT $RESEARCH_COLUMNS FROM research_jobs WHERE concern_id=? AND turn_id>?" +
+            (if (unfinishedOnly) " AND state IN ('QUEUED','DISPATCHED')" else "") + " ORDER BY turn_id LIMIT 30", arrayOf(concernId, after)).use { rows ->
+        buildList { while (rows.moveToNext()) add(decodeResearchJob(rows)) }
+    }
+    private fun writeResearchJob(value: HealthCareResearchJob) {
+        db.insertWithOnConflict("research_jobs", null, ContentValues().apply {
+            put("turn_id", value.turnId); put("concern_id", value.concernId); put("authorization_id", value.authorizationId)
+            put("trigger", value.trigger); put("state", value.state.name); put("payload", pack("research_job", value.turnId, value.json()))
+            put("created_at", value.createdAt); put("cancel_pending", if (value.cancellationPending) 1 else 0)
+        }, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+    fun queueResearch(authorizationId: String, concernId: String, now: Long): HealthCareResearchJob = transaction {
+        val authorization = researchAuthorization(concernId) ?: throw HealthCareConflict()
+        val issue = concern(concernId) ?: throw HealthCareConflict()
+        if (authorization.id != authorizationId || !authorization.active || !HealthCareResearchPolicy.eligible(issue) ||
+            issue.conversationId != authorization.scope.conversationId || !settings().enabled ||
+            settings().version != authorization.scope.settingsVersion) throw HealthCareConflict()
+        val trigger = HealthCareResearchPolicy.trigger(issue, now)
+        db.rawQuery("SELECT $RESEARCH_COLUMNS FROM research_jobs WHERE authorization_id=? AND trigger=?",
+            arrayOf(authorizationId, trigger)).use { if (it.moveToFirst()) {
+                val existing = decodeResearchJob(it)
+                return@transaction if (existing.state == HealthCareResearchState.QUEUED && existing.revision != issue.revision &&
+                    discussionGrant(existing.turnId) == null) existing.copy(revision = issue.revision).also(::writeResearchJob) else existing
+            } }
+        HealthCareResearchJob(UUID.randomUUID().toString(), authorizationId, concernId, issue.conversationId, trigger,
+            issue.revision, now).also(::writeResearchJob)
+    }
+    fun updateResearchJob(expected: HealthCareResearchJob, state: HealthCareResearchState, detail: String = expected.detail): HealthCareResearchJob = transaction(true) {
+        if (researchJob(expected.turnId) != expected || !HealthCareResearchPolicy.transition(expected.state, state) ||
+            expected.terminal && detail != expected.detail) throw HealthCareConflict()
+        expected.copy(state = state, detail = detail.take(2000), cancellationPending = expected.cancellationPending ||
+            state in setOf(HealthCareResearchState.CANCELLED, HealthCareResearchState.SUPERSEDED)).also(::writeResearchJob)
+    }
+    fun researchGrantCurrent(grant: HealthCareDiscussionGrant): Boolean {
+        if (grant.researchAuthorizationId.isEmpty()) return true
+        val authorization = researchAuthorization(grant.concernId) ?: return false
+        val job = researchJob(grant.turnId) ?: return false
+        val issue = concern(grant.concernId) ?: return false
+        return authorization.permits(grant) && !job.terminal && job.authorizationId == authorization.id &&
+            job.concernId == grant.concernId && job.conversationId == grant.conversationId && job.revision == grant.revision &&
+            job.trigger == HealthCareResearchPolicy.trigger(issue, System.currentTimeMillis())
+    }
     private fun decodePlan(row: Cursor): HealthCarePlan = HealthCarePlan.from(unpack("plan", row.getString(0), row.getBlob(4))).also {
         check(it.id == row.getString(0) && it.grant.concernId == row.getString(1) && it.createdAt == row.getLong(2) && it.state.name == row.getString(3))
     }
@@ -225,7 +349,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         values.forEach { value ->
             val grant = value.grant
             val issue = concern(grant.concernId) ?: throw HealthCareConflict()
-            if (discussionGrant(grant.turnId) != grant || discussion(grant.conversationId) != issue.id || issue.revision != grant.revision ||
+            if (discussionGrant(grant.turnId) != grant || !researchGrantCurrent(grant) || discussion(grant.conversationId) != issue.id || issue.revision != grant.revision ||
                 !settings().enabled || settings().version != grant.settingsVersion ||
                 issue.stage in setOf(HealthCareStage.PAUSED, HealthCareStage.CLOSED)) throw HealthCareConflict()
             val prior = evidence(value.id)
@@ -239,7 +363,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
     }
     fun proposePlan(value: HealthCarePlan): HealthCarePlan = transaction(true) {
         val grant = value.grant
-        if (discussionGrant(grant.turnId) != grant || discussion(grant.conversationId) != grant.concernId) throw HealthCareConflict()
+        if (discussionGrant(grant.turnId) != grant || !researchGrantCurrent(grant) || discussion(grant.conversationId) != grant.concernId) throw HealthCareConflict()
         val issue = concern(grant.concernId) ?: throw HealthCareConflict()
         if (issue.revision != grant.revision || issue.inputVersion != value.inputVersion || !settings().enabled ||
             settings().version != grant.settingsVersion || value.state != HealthCarePlanState.PENDING) throw HealthCareConflict()
@@ -352,6 +476,16 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         db.delete("plans", "concern_id=?", arrayOf(id))
         db.delete("evidence_reads", "concern_id=?", arrayOf(id))
         db.delete("action_reminders", "concern_id=?", arrayOf(id))
+        // Keep only encrypted routing tombstones so a late result cannot revive deleted health data.
+        var after = ""
+        while (true) {
+            val jobs = researchJobs(id, after)
+            if (jobs.isEmpty()) break
+            jobs.forEach { writeResearchJob(it.copy(state = HealthCareResearchState.CANCELLED, detail = "",
+                cancellationPending = it.cancellationPending || !it.terminal)) }
+            after = jobs.last().turnId
+        }
+        db.delete("research_authorizations", "concern_id=?", arrayOf(id))
         db.delete("concerns", "id=?", arrayOf(id))
         // A policy refresh must not recreate a dismissed issue for unchanged source data.
         evaluation(value.metric)?.let { marker ->
@@ -363,7 +497,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         Unit
     }
     override fun close() = helper.close()
-    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 6) {
+    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 7) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE settings(id INTEGER PRIMARY KEY,version TEXT NOT NULL,payload BLOB NOT NULL)")
@@ -377,6 +511,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             plans(db)
             reminders(db)
             evidence(db)
+            research(db)
         }
         private fun discussions(db: SQLiteDatabase) {
             // Bindings survive concern deletion so an old sensitive conversation cannot become an ordinary chat.
@@ -384,15 +519,27 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             db.execSQL("CREATE TABLE discussion_grants(turn_id TEXT PRIMARY KEY,payload BLOB NOT NULL)")
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            check(oldVersion in 1..5 && newVersion == 6)
+            check(oldVersion in 1..6 && newVersion == 7)
             if (oldVersion < 2) discussions(db)
             if (oldVersion < 3) plans(db)
             if (oldVersion < 4) reminders(db)
             if (oldVersion < 5) evidence(db)
-            db.execSQL("ALTER TABLE concerns ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
-            db.execSQL("DROP INDEX care_open_pages")
-            db.execSQL("DROP INDEX care_all_pages")
-            priorityIndexes(db)
+            if (oldVersion < 6) {
+                db.execSQL("ALTER TABLE concerns ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("DROP INDEX care_open_pages")
+                db.execSQL("DROP INDEX care_all_pages")
+                priorityIndexes(db)
+            }
+            research(db)
+        }
+        private fun research(db: SQLiteDatabase) {
+            db.execSQL("CREATE TABLE research_authorizations(concern_id TEXT PRIMARY KEY,id TEXT NOT NULL UNIQUE,payload BLOB NOT NULL)")
+            db.execSQL("CREATE TABLE research_jobs(turn_id TEXT PRIMARY KEY,concern_id TEXT NOT NULL,authorization_id TEXT NOT NULL," +
+                "trigger TEXT NOT NULL,state TEXT NOT NULL,payload BLOB NOT NULL,created_at INTEGER NOT NULL,cancel_pending INTEGER NOT NULL," +
+                "UNIQUE(authorization_id,trigger))")
+            db.execSQL("CREATE INDEX care_research_concern ON research_jobs(concern_id,turn_id)")
+            db.execSQL("CREATE INDEX care_research_recent ON research_jobs(concern_id,created_at DESC,turn_id DESC)")
+            db.execSQL("CREATE INDEX care_research_cancel ON research_jobs(cancel_pending,turn_id)")
         }
         private fun priorityIndexes(db: SQLiteDatabase) {
             db.execSQL("CREATE INDEX care_open_pages ON concerns(open,priority DESC,updated_at DESC,id DESC)")
@@ -416,6 +563,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         const val DEFAULT_DB = "health_care_v1.db"
         private const val COLUMNS = "id,revision,payload,updated_at,metric_key,open,stage,due_at,priority"
         private const val REMINDER_COLUMNS = "action_id,concern_id,token,due,state,payload"
+        private const val RESEARCH_COLUMNS = "turn_id,concern_id,authorization_id,trigger,state,payload,created_at,cancel_pending"
         fun changes(context: Context, name: String = DEFAULT_DB) = android.net.Uri.parse("content://${context.packageName}.health-originals/changes/care/" + android.net.Uri.encode(name))
     }
 }
