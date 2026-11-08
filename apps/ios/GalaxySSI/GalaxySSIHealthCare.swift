@@ -46,6 +46,7 @@ enum GalaxySSIHealthCare {
     let rationale: String
     let confirmedBy: String
     let confirmedAt: Date
+    var numeric: GalaxySSIHealthCareTarget.Confirmed?
   }
   struct Concern: Codable, Equatable, Identifiable {
     let id: UUID
@@ -58,6 +59,7 @@ enum GalaxySSIHealthCare {
     var stage: Stage
     var context: Context?
     var target: Target?
+    var targetRevision: Int?
     var reviewNote: String?
     var bloodPressureWarning: GalaxySSIHealthCarePriority.Warning?
   }
