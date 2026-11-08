@@ -160,6 +160,8 @@ private extension GalaxySSILinkDiagnosticKind {
       return t("protocol_event_chunk_duplicate", "Chunk Duplicate", language: language)
     case .fragmentRejected:
       return t("protocol_event_fragment_rejected", "Fragment Rejected", language: language)
+    case .publishAdmissionRefused:
+      return t("protocol_event_publish_admission_refused", "Publish Admission Refused", language: language)
     }
   }
 
@@ -171,7 +173,7 @@ private extension GalaxySSILinkDiagnosticKind {
       return "doc.on.doc"
     case .oldCounter, .decryptDeferred:
       return "shield"
-    case .decryptFailure, .fragmentRejected:
+    case .decryptFailure, .fragmentRejected, .publishAdmissionRefused:
       return "exclamationmark.triangle"
     }
   }
@@ -184,7 +186,7 @@ private extension GalaxySSILinkDiagnosticKind {
       return .orange
     case .oldCounter, .decryptDeferred:
       return .purple
-    case .decryptFailure, .fragmentRejected:
+    case .decryptFailure, .fragmentRejected, .publishAdmissionRefused:
       return .red
     }
   }

@@ -9,11 +9,52 @@ final class CloudConversationStreamEngineTests: XCTestCase {
     XCTAssertTrue(progress.requestFormatRepair("arguments:first"))
     XCTAssertTrue(progress.requestFormatRepair("arguments:second"))
     XCTAssertFalse(progress.requestFormatRepair("arguments:third"))
+    XCTAssertFalse(progress.requestPartialSynthesisRepair(after: "citations"))
     XCTAssertTrue(progress.requestRepair("citations"))
+    XCTAssertTrue(progress.requestPartialSynthesisRepair(after: "citations"))
+    XCTAssertFalse(progress.requestPartialSynthesisRepair(after: "citations"))
     for index in 0..<12 {
       XCTAssertTrue(progress.record(toolName: "web_search", arguments: ["query": .string("source \(index)")],
                                     output: "new evidence"))
     }
+  }
+
+  @MainActor
+  func testOnePartialCitationRepairPreservesSupportedProse() async throws {
+    let fixture = try makeFixture()
+    let pack = AgentIOSWebEvidencePack.build(query: "report", status: "completed",
+      documents: [["url": .string("https://example.test/report"), "content": .string("A supported conclusion")]],
+      results: [], receipts: [], generatedAtMillis: 1)
+    let item = try XCTUnwrap(pack["items"]?.arrayValue?.first?.objectValue)
+    let marker = "[[cite:\(item.string("citation_id"))]]"
+    func answer(_ text: String) -> [ModelStreamEvent] {
+      [.textDelta(.init(requestId: "r", sequence: 1, text: text, receivedAtElapsedMs: 1)),
+       .completed(.init(requestId: "r", finishReason: "stop", completedAtElapsedMs: 2))]
+    }
+    let stream = RecordingModelStreamClient(eventBatches: [
+      [.toolCallDelta(.init(requestId: "r", sequence: 1, payload: .init(callId: "search", index: 0,
+          nameDelta: "web_search", argumentsDelta: #"{"query":"report"}"#))),
+       .completed(.init(requestId: "r", finishReason: "tool_calls", completedAtElapsedMs: 2))],
+      answer("Unsupported [Foreign](https://foreign.test/a)."),
+      answer("Still unsupported [[cite:missing]]."),
+      answer("Supported \(marker).\n\nThe other claim is unverified.")
+    ])
+    let executor = RecordingConversationToolExecutor(result: AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)]))
+    let engine = CloudConversationStreamEngine(streamClient: stream, toolExecutor: executor,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    let events = try await collect(engine.streamConversation(contact: fixture.contact, store: fixture.store,
+      turns: fixture.turns, requestId: "partial-citations"))
+    XCTAssertEqual(stream.requests.count, 4)
+    XCTAssertEqual(executor.calls.count, 1)
+    let repairedRequest = try XCTUnwrap(stream.requests.last)
+    XCTAssertTrue(repairedRequest.bodyJson.contains("concise partial answer"))
+    XCTAssertNil(try object(repairedRequest.bodyJson)["tools"])
+    let final = textDeltas(events).map(\.text).joined()
+    XCTAssertTrue(final.contains("Supported [1](<https://example.test/report>)"))
+    XCTAssertTrue(final.contains("other claim is unverified"))
+    XCTAssertFalse(final.contains("foreign.test"))
+    XCTAssertFalse(final.contains("[[cite:"))
+    XCTAssertNotNil(completed(events))
   }
 
   @MainActor
@@ -82,6 +123,24 @@ final class CloudConversationStreamEngineTests: XCTestCase {
     forged["content"] = .string("Not the host contract")
     XCTAssertFalse(CloudWebToolLoopProgress().record(toolName: tool, arguments: args,
       output: AgentMcpJSONCodec.stringify(forged)))
+  }
+
+  func testMethodEvaluationProgressAcceptsAnEmptyAdvancingPageButNotCursorReplay() {
+    typealias Evaluation = AgentCollaborationMethodEvaluations
+    let progress = CloudWebToolLoopProgress()
+    let name = CloudModelStreamMutableConversation.collaborationRecallName
+    let digest = String(repeating: "a", count: 64)
+    let method = AgentCollaborationResearchReference(objectId: digest, revision: 1, sha256: digest)
+    var query = Evaluation.selector(method)
+    let next = Evaluation.Cursor(scope: digest, objectID: digest, revision: 1).encoded
+    let output = AgentMcpJSONCodec.stringify(["status": .string("returned"), "view": .string(Evaluation.view),
+      "trust": .string(Evaluation.trust), "method": .object(Evaluation.reference(method)), "records": .array([]),
+      "quality_effect": .null, "scan_complete": .bool(false), "next_cursor": .string(next)])
+    XCTAssertTrue(progress.record(toolName: name, arguments: query, output: output))
+    query["cursor"] = .string("")
+    XCTAssertFalse(progress.record(toolName: name, arguments: query, output: output))
+    query["cursor"] = .string(next)
+    XCTAssertFalse(progress.record(toolName: name, arguments: query, output: output))
   }
 
   func testCloudDispatchCancellationIsScopedToExactOwner() throws {

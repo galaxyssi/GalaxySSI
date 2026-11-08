@@ -2,6 +2,7 @@ import CryptoKit
 import Foundation
 
 final class AgentIncomingAttachmentTransferStore {
+  static let defaultDirectoryName = "peer-incoming-attachments-v2"
   struct PendingDownload: Equatable {
     var transferId: String
     var sourceId: String
@@ -33,7 +34,7 @@ final class AgentIncomingAttachmentTransferStore {
     let baseURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
       ?? fileManager.temporaryDirectory
     self.rootURL = (rootURL ?? baseURL.appendingPathComponent(
-      "peer-incoming-attachments-v2",
+      Self.defaultDirectoryName,
       isDirectory: true
     )).standardizedFileURL
   }

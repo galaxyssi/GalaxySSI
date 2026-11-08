@@ -1,4 +1,44 @@
+import CryptoKit
 import Foundation
+
+enum AgentIOSWebReadingWindow {
+  static let maximumLength: Int64 = 8_000
+  static let scope = "extracted_readable_body_not_original_page"
+
+  static func requested(_ input: AgentMcpJSONObject) -> Bool {
+    ["offset", "length", "document_sha256"].contains { input[$0] != nil }
+  }
+
+  static func apply(to output: inout AgentMcpJSONObject, input: AgentMcpJSONObject) {
+    guard requested(input), let body = output["text"]?.stringValue, !body.isEmpty else { return }
+    let hash = SHA256.hash(data: Data(body.utf8)).map { String(format: "%02x", $0) }.joined()
+    let changed = input["document_sha256"]?.stringValue.map { $0.lowercased() != hash } ?? false
+    let requestedOffset = max(0, input["offset"]?.intValue ?? 0)
+    let units = Array(body.utf16)
+    var start = changed ? 0 : Int(min(requestedOffset, Int64(units.count)))
+    // A caller-supplied offset may point to the second half of a surrogate pair.
+    if start < units.count, (0xDC00...0xDFFF).contains(units[start]) { start -= 1 }
+    let length = Int(min(max(input["length"]?.intValue ?? 4_000, 256), maximumLength))
+    var end = min(start + length, units.count)
+    if end < units.count, (0xDC00...0xDFFF).contains(units[end]) { end -= 1 }
+    output["reading_window"] = .object([
+      "scope": .string(scope),
+      "offset_unit": .string("utf16_code_unit"),
+      "requested_offset": .int(requestedOffset),
+      "offset": .int(Int64(start)),
+      "end_offset": .int(Int64(end)),
+      "next_offset": end < units.count ? .int(Int64(end)) : .null,
+      "total_chars": .int(Int64(units.count)),
+      "document_sha256": .string(hash),
+      "version_changed": .bool(changed),
+      "semantic_verification": .string("not_independently_verified")
+    ])
+    output["text"] = .string(String(decoding: units[start..<end], as: UTF16.self))
+    output["text_length"] = .int(Int64(end - start))
+    // Do not return another copy of the body from article metadata.
+    output.removeValue(forKey: "article")
+  }
+}
 
 struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolProviding {
   var implementationId: String = "galaxyssi.ios.urlsession_web_intelligence"
@@ -44,7 +84,9 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     case .search:
       return search(input: input, invocation: invocation, operation: operation)
     case .fetch:
-      return fetch(input: input, invocation: invocation, operation: operation)
+      var result = fetch(input: input, invocation: invocation, operation: operation)
+      if result.isSuccess { AgentIOSWebReadingWindow.apply(to: &result.output, input: input) }
+      return result
     case .crawl:
       return crawl(input: input, invocation: invocation)
     case .extract:
@@ -795,7 +837,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       minimum: 2_000,
       maximum: 60_000
     )
-    let earlyComplete = input["early_complete"]?.boolValue ?? true
+    let earlyComplete = input["early_complete"]?.boolValue ?? !AgentIOSWebResearchPlanCodec.isDeepResearch(input)
     let queryPlan = AgentIOSWebResearchPlanCodec.decode(
       primaryQuery: query,
       rawPlan: input["query_plan"],
@@ -814,6 +856,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     var evidenceGroups: [[AgentMcpJSONObject]] = []
     var receiptGroups: [[AgentMcpJSONObject]] = []
     var allReceipts: [AgentMcpJSONObject] = []
+    var executedQueries: [AgentMcpJSONValue] = []
 
     for (index, item) in queryPlan.enumerated() {
       guard !invocation.isCancellationRequested else {
@@ -827,6 +870,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       searchInput["verticals"] = .array((item.verticals.isEmpty ? Set(globalVerticals) : item.verticals).sorted().map(AgentMcpJSONValue.string))
       searchInput["categories"] = .array((item.categories.isEmpty ? Set(globalCategories) : item.categories).sorted().map(AgentMcpJSONValue.string))
       let searched = search(input: searchInput, invocation: invocation, operation: operation)
+      executedQueries.append(.string(item.query))
       guard searched.isSuccess else {
         let receipt: AgentMcpJSONObject = [
           "source_id": .string("research-query-\(index + 1)"),
@@ -996,6 +1040,8 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     output["synthesis_required"] = .bool(true)
     output["research"] = .object([
       "query_plan": .array(queryPlan.map { .object($0.publicValue) }),
+      "executed_queries": .array(executedQueries),
+      "discovered_source_count": .int(Int64(searchResults.count)),
       "coverage": .array(coverage.map { .object($0.publicValue) }),
       "unresolved_queries": .array(coverage.filter { $0.status != "covered" }.map { .string($0.item.query) }),
       "synthesis_contract": .object([
@@ -1008,7 +1054,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     var researchMetadata: AgentMcpJSONObject = [:]
     researchMetadata["autonomous"] = .bool(autonomous)
     researchMetadata["query_plan_source"] = .string(input["query_plan"]?.arrayValue == nil ? "primary_query_only" : "model_supplied")
-    researchMetadata["queries_executed"] = .int(Int64(queryPlan.count))
+    researchMetadata["queries_executed"] = .int(Int64(executedQueries.count))
     researchMetadata["page_read_parallelism"] = .int(Int64(pageReadParallelism))
     researchMetadata["page_read_per_host"] = .int(Int64(perHostParallelism))
     researchMetadata["page_read_candidates"] = .int(Int64(pageReads.candidateCount))

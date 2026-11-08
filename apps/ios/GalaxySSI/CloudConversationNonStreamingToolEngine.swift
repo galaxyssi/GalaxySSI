@@ -20,6 +20,8 @@ struct CloudConversationNonStreamingToolEngine {
     requestId: String
   ) async throws -> String {
     defer { CloudImageAnnotationSession.discard(requestId: requestId) }
+    let disclosureOwner = await MainActor.run { store.profile.identityFingerprint }
+    let researchDisclosure = turns.last?.isMine == true ? AgentLocalResearchCollector() : nil
     let request = try await modelClient.prepareConversationStreamRequest(
       contact: contact,
       store: store,
@@ -62,16 +64,30 @@ struct CloudConversationNonStreamingToolEngine {
           continue
         }
         let candidate = CloudWebGrounding.stripInternalToolProtocol(response.text)
+        if !finalRound, conversation.canRequestBodyReadingReview, progress.performedDeepResearch,
+           let review = CloudWebGrounding.bodyReadingReviewPrompt(candidate, results: evidence),
+           progress.requestRepair("research_body_reading") {
+          conversation.appendBodyReadingReview(draft: candidate, prompt: review)
+          continue
+        }
         if let repair = CloudWebGrounding.citationRepairPrompt(candidate, results: evidence),
            !candidate.isBlank,
            !finalRound,
            progress.requestRepair("nonstream_citations") {
           conversation.appendCitationRepairPrompt(draft: candidate, prompt: repair)
+          progress.requestFinalization()
+          continue
+        }
+        if !candidate.isBlank,
+           let partial = CloudWebGrounding.partialCitationRepairPrompt(candidate, results: evidence),
+           progress.requestPartialSynthesisRepair(after: "nonstream_citations") {
+          conversation.appendCitationRepairPrompt(draft: candidate, prompt: partial)
           continue
         }
         if !candidate.isBlank,
            !CloudWebGrounding.citationValidation(candidate, results: evidence).requiresRepair {
-          return candidate + CloudImageAnnotationSession.artifactSuffix(requestId: requestId)
+          return AgentIOSWebEvidenceVerification.resolveCitations(candidate, encodedToolResults: evidence).text +
+            CloudImageAnnotationSession.artifactSuffix(requestId: requestId)
         }
         return CloudWebGrounding.evidenceFallback(results: evidence) +
           CloudImageAnnotationSession.artifactSuffix(requestId: requestId)
@@ -115,9 +131,14 @@ struct CloudConversationNonStreamingToolEngine {
             requestId: requestId,
             conversationId: turns.last?.conversationId ?? "",
             turnId: turns.last?.turnId ?? requestId,
-            images: images
+            images: images,
+            readOnlyAnalysis: turns.last?.readOnlyAnalysis ?? false,
+            researchDisclosure: researchDisclosure
           )
         )
+        if let source = turns.last, let receipt = researchDisclosure?.drain(), receipt.visible {
+          await MainActor.run { store.persistLocalResearchDisclosure(receipt, source: source, owner: disclosureOwner) }
+        }
         results.append((call, output))
         if progress.record(toolName: call.name, arguments: arguments, output: output) {
           madeProgress = true

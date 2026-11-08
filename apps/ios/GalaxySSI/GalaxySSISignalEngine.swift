@@ -110,6 +110,10 @@ final class GalaxySSISignalDecryptBackoff {
   }
 }
 
+enum GalaxySSIPhoneRouteAgreements {
+  static let cache = GalaxySSIRuntimeCache<String, GalaxySSILinkRoutes>(maxCount: 32, maxCost: 32 * 1024)
+}
+
 #if canImport(LibSignalClient)
 import LibSignalClient
 
@@ -272,7 +276,8 @@ final class GalaxySSISignalEngine {
 
   func derivePhoneRelationshipRoutes(
     remoteIdentityPublicKey: String,
-    expectedRemoteFingerprint: String
+    expectedRemoteFingerprint: String,
+    cacheVerifiedAgreement: Bool = false
   ) -> GalaxySSILinkRoutes? {
     guard let remoteData = Data(base64Encoded: remoteIdentityPublicKey),
           let remoteKey = try? PublicKey(remoteData) else { return nil }
@@ -280,11 +285,16 @@ final class GalaxySSISignalEngine {
     guard remoteFingerprint.caseInsensitiveCompare(expectedRemoteFingerprint) == .orderedSame else {
       return nil
     }
-    let localFingerprint = identity.fingerprint
+    let localFingerprint = Self.sha256(store.identityKeyPair.publicKey.serialize())
     guard localFingerprint.caseInsensitiveCompare(remoteFingerprint) != .orderedSame else {
       return nil
     }
-    let sharedSecret = store.identityKeyPair.privateKey.keyAgreement(with: remoteKey)
+    let cache = GalaxySSIPhoneRouteAgreements.cache
+    let revision = cache.revision
+    let cacheKey = "\(localFingerprint):\(remoteFingerprint)"
+    if cacheVerifiedAgreement, let cached = cache.value(for: cacheKey) { return cached }
+    var sharedSecret = store.identityKeyPair.privateKey.keyAgreement(with: remoteKey)
+    defer { sharedSecret.resetBytes(in: sharedSecret.startIndex..<sharedSecret.endIndex) }
     guard let linkSecret = try? GalaxySSILinkProtocol.deriveIdentityBoundLinkSecret(
       sharedSecret: sharedSecret,
       firstFingerprint: localFingerprint,
@@ -300,7 +310,12 @@ final class GalaxySSISignalEngine {
       localFingerprint: localFingerprint,
       remoteFingerprint: remoteFingerprint
     )
-    return routes.isOpaqueV2Valid ? routes : nil
+    guard routes.isOpaqueV2Valid else { return nil }
+    if cacheVerifiedAgreement {
+      cache.insert(routes, for: cacheKey, cost: cacheKey.utf8.count + routes.linkSecret.utf8.count +
+        routes.clientRouteId.utf8.count + localFingerprint.utf8.count + remoteFingerprint.utf8.count, revision: revision)
+    }
+    return routes
   }
 
   func hasSession(remoteName: String, deviceId: UInt32 = 1) -> Bool {
@@ -568,7 +583,8 @@ final class GalaxySSISignalEngine {
   ) -> Bool { false }
   func derivePhoneRelationshipRoutes(
     remoteIdentityPublicKey: String,
-    expectedRemoteFingerprint: String
+    expectedRemoteFingerprint: String,
+    cacheVerifiedAgreement: Bool = false
   ) -> GalaxySSILinkRoutes? { nil }
   func hasSession(remoteName: String, deviceId: UInt32 = 1) -> Bool { false }
   @discardableResult

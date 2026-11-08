@@ -451,6 +451,8 @@ struct GalaxySSILinkProtocolView: View {
       return t("protocol_event_chunk_duplicate", "Conflicting duplicate chunk rejected")
     case .fragmentRejected:
       return t("protocol_event_fragment_rejected", "Fragmented transfer rejected")
+    case .publishAdmissionRefused:
+      return t("protocol_event_publish_admission_refused", "Publish admission refused")
     }
   }
 
@@ -462,7 +464,7 @@ struct GalaxySSILinkProtocolView: View {
       return "doc.on.doc"
     case .oldCounter, .decryptDeferred:
       return "clock"
-    case .decryptFailure, .fragmentRejected:
+    case .decryptFailure, .fragmentRejected, .publishAdmissionRefused:
       return "exclamationmark.shield"
     }
   }
@@ -475,7 +477,7 @@ struct GalaxySSILinkProtocolView: View {
       return .orange
     case .oldCounter, .decryptDeferred:
       return .purple
-    case .decryptFailure, .fragmentRejected:
+    case .decryptFailure, .fragmentRejected, .publishAdmissionRefused:
       return .red
     }
   }
