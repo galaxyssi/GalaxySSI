@@ -161,6 +161,8 @@ final class GalaxySSISignalEngine {
     return identityKeySignature(payload)?.base64EncodedString()
   }
 
+  func retireLegacyOwner() { store.retireLegacyOwner() }
+
   func verifyPairedDesktopSignature(
     _ payload: Data, signature: String, envelope: [String: Any], link: ServerLink
   ) -> Bool {
@@ -617,6 +619,7 @@ final class GalaxySSISignalEngine {
        secrets: GalaxySSISecretStore = KeychainSecretStore.shared) throws { throw MqttRouteError.invalidPayload }
   var identity: GalaxySSISignalIdentity { GalaxySSISignalIdentity(name: "", fingerprint: "", publicKey: "", bundle: nil) }
   func signContactCard(_ payload: Data) -> String? { nil }
+  func retireLegacyOwner() {}
   func verifyPairedDesktopSignature(
     _ payload: Data, signature: String, envelope: [String: Any], link: ServerLink
   ) -> Bool { false }

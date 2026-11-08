@@ -45,6 +45,18 @@ final class MessageCoordinator: ObservableObject {
   let store: GalaxySSIStore
   let desktopArtifactStore: AgentDesktopArtifactStore
   let deliveryStore: GalaxySSILinkDeliveryStore
+  private enum MqttStartupOwner {
+    case legacy
+    case journal(MqttSignalStateJournal)
+    case blocked
+  }
+  private var mqttStartupOwner: MqttStartupOwner = .legacy
+  private var journalMqttRuntime: MqttBusinessTransportRuntime?
+  private var journalMqttPoll: Task<Void, Never>?
+  var usesLegacyMqtt: Bool {
+    if case .legacy = mqttStartupOwner { return true }
+    return false
+  }
   let attachmentTransferStore: AgentOutboundAttachmentTransferStore
   let incomingAttachmentTransferStore: AgentIncomingAttachmentTransferStore
   var attachmentChunkControlsInFlight = Set<String>()
@@ -422,7 +434,7 @@ final class MessageCoordinator: ObservableObject {
     self.cloudStreamEngine = cloudStreamEngine ?? CloudConversationStreamEngine(disclosureStore: disclosureStore)
     self.mediaNetworkProfileProvider = mediaNetworkProfileProvider
     self.downloadCompletionCoordinator = AgentIOSDownloadCompletionCoordinator(store: store)
-    self.signalEngine = GalaxySSISignalEngine(profileName: store.profile.galaxySSIId)
+    self.signalEngine = GalaxySSISignalEngine(profileName: store.profile.galaxySSIId, defaults: store.defaults, secrets: store.secrets)
     self.mqttClient = mqttClient ?? GalaxySSIMqttClient(diagnosticLedger: diagnosticLedger)
     self.transportConnected = self.mqttClient.isConnected
     let deliveryWake = GlobalProactiveDeliveryWake { _ = store.deliverPendingGlobalProactiveMessages() }
@@ -468,12 +480,13 @@ final class MessageCoordinator: ObservableObject {
     GlobalProactiveDeliveryBus.addListener(globalProactiveDeliveryListener)
     self.mqttClient.onMessage = { [weak self] topic, payload in
       Task { @MainActor in
-        self?.handleIncoming(topic: topic, payload: payload)
+        guard let self, self.usesLegacyMqtt else { return }
+        self.handleIncoming(topic: topic, payload: payload)
       }
     }
     self.mqttClient.onConnectionChanged = { [weak self] connected in
       Task { @MainActor in
-        guard let self else { return }
+        guard let self, self.usesLegacyMqtt else { return }
         self.transportConnected = connected
         self.pendingReplyRecoveryWake.connectionChanged(false)
         if connected {
@@ -495,7 +508,7 @@ final class MessageCoordinator: ObservableObject {
     }
     self.mqttClient.onTransportRecovery = { [weak self] in
       Task { @MainActor in
-        guard let self else { return }
+        guard let self, self.usesLegacyMqtt else { return }
         self.deliveryStore.makePendingImmediatelyRetryable()
         self.scheduleOutboxFlush(after: 0)
         self.pendingReplyRecoveryWake.request(isConnected: self.mqttClient.relationshipSubscriptionsReady)
@@ -503,7 +516,7 @@ final class MessageCoordinator: ObservableObject {
     }
     self.mqttClient.onRelationshipSubscriptionsReady = { [weak self] in
       Task { @MainActor in
-        guard let self else { return }
+        guard let self, self.usesLegacyMqtt else { return }
         self.replayApprovedPhoneContactDecisionsOnce()
         self.wakePairingDeliveries()
         self.restoreContactReminders()
@@ -513,10 +526,80 @@ final class MessageCoordinator: ObservableObject {
       }
     }
     self.mqttClient.onRelationshipSubscriptionReadinessChanged = { [weak self] ready in
-      guard let self else { return }
+      guard let self, self.usesLegacyMqtt else { return }
       self.pendingReplyRecoveryWake.connectionChanged(ready)
       self.transportReceiptReadinessChanged(ready)
       if ready { self.retryDesktopEvidenceJobs() }
+    }
+    configureColdStartMqttOwner(requestCutover: mqttClient == nil &&
+      ProcessInfo.processInfo.arguments.contains("--enable-journal-mqtt"))
+  }
+
+  private func configureColdStartMqttOwner(requestCutover: Bool) {
+    let file = MqttSignalStateJournal.profileFileURL(profileID: store.profile.galaxySSIId)
+    let fingerprint = signalEngine.identity.fingerprint
+    do {
+      if let journal = try MqttSignalStateJournal.openMigrated(fileURL: file, expectedFingerprint: fingerprint,
+        secrets: store.secrets) {
+        mqttStartupOwner = .journal(journal)
+      } else if requestCutover {
+        let peers = MqttPeerChatProjection(store: store, localFingerprint: fingerprint).currentPeers()
+        // The opt-in cold cutover does not migrate unclassified business payloads or pending pairing.
+        guard store.serverLinks.isEmpty, !peers.isEmpty,
+              try deliveryStore.outboxMigrationSnapshot(requireDrainedInbox: true).isEmpty else {
+          throw MqttDeliveryDispatch.Failure.unavailable
+        }
+        let journal = try MqttSignalStateJournal(fileURL: file, secrets: store.secrets)
+        _ = try MqttBusinessTransportRuntime.prepareLegacyCutover(journal: journal, legacyOutbox: deliveryStore,
+          expectedLocalFingerprint: fingerprint, peers: peers, defaults: store.defaults, secrets: store.secrets,
+          classify: { _ in nil })
+        mqttStartupOwner = .journal(journal)
+      }
+    } catch {
+      mqttStartupOwner = .blocked
+      lastError = GalaxySSIError.transportUnavailable.localizedDescription
+    }
+    if !usesLegacyMqtt {
+      signalEngine.retireLegacyOwner()
+      mqttClient.retireLegacyOwner()
+      transportConnected = false
+    }
+  }
+
+  private func startJournalMqttIfInstalled() {
+    guard journalMqttRuntime == nil, case .journal(let journal) = mqttStartupOwner else { return }
+    do {
+      let runtime = try makeJournalBackedMqttRuntime(journal: journal,
+        routeState: MqttRouteState(defaults: store.defaults, secrets: store.secrets), onFailure: { [weak self] _ in
+          self?.lastError = GalaxySSIError.transportUnavailable.localizedDescription
+        })
+      try runtime.startDirectPeerChat(configuration: .init(clientID: mqttClientId,
+        serverLinks: store.serverLinks.filter(\.paired), phoneRoutes: store.phoneOpaqueRoutes(),
+        rendezvousSecrets: [:], rendezvousExpirations: [:]))
+      journalMqttRuntime = runtime
+      let profile = store.profile.galaxySSIId
+      journalMqttPoll = Task { @MainActor [weak self, weak runtime] in
+        while !Task.isCancelled, let runtime {
+          guard self?.store.profile.galaxySSIId == profile else { break }
+          if UIApplication.shared.applicationState == .active {
+            let validated = self?.mediaNetworkProfileProvider().canUploadDeferredMedia == true
+            do { try await runtime.poll(validatedNetwork: validated) }
+            catch is CancellationError { break }
+            catch { self?.lastError = GalaxySSIError.transportUnavailable.localizedDescription }
+            guard !Task.isCancelled else { break }
+            let ready = runtime.hasReadyPeer
+            if let self, self.transportConnected != ready {
+              self.transportConnected = ready
+              NotificationCenter.default.post(name: .galaxySSIAgentRoutingDidUpdate, object: nil, userInfo: ["connected": ready])
+            }
+          }
+          do { try await Task.sleep(nanoseconds: 500_000_000) } catch { break }
+        }
+        if let runtime { await runtime.stop() }
+      }
+    } catch {
+      mqttStartupOwner = .blocked
+      lastError = GalaxySSIError.transportUnavailable.localizedDescription
     }
   }
 
@@ -525,8 +608,10 @@ final class MessageCoordinator: ObservableObject {
   }
 
   func start() {
-    restorePendingPairingClaim()
-    restoreContactReminders()
+    if usesLegacyMqtt {
+      restorePendingPairingClaim()
+      restoreContactReminders()
+    }
     _ = localSkillRuntime.installAvailable(AgentIOSBuiltInSkills.manifests)
     _ = localNativeToolRuntime
     AgentKnowledgeGapResearchBridge.shared.install { [weak self] in
@@ -534,6 +619,18 @@ final class MessageCoordinator: ObservableObject {
       return settings.enabled && settings.autonomousResearchEnabled
     }
     AgentIOSEvalReliabilityHarness.shared.start()
+    if usesLegacyMqtt { startLegacyMqtt() } else { startJournalMqttIfInstalled() }
+    installForegroundRecoveryWake()
+    recoverManagedBrowserMembers()
+    recoverSupervisedBrowserWaits()
+    startAutomationScheduler()
+    backgroundCognitionScheduler.start()
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+      self?.refreshAgentHomeState()
+    }
+  }
+
+  private func startLegacyMqtt() {
     let outboxEligibility = learningOutboxEligibility()
     deliveryStore.holdStaleUnclassified()
     handleInterruptedDeliveries(deliveryStore.recoverInterruptedPublishing(eligible: outboxEligibility))
@@ -547,19 +644,11 @@ final class MessageCoordinator: ObservableObject {
       rendezvousSecrets: phoneRendezvousSecrets(),
       rendezvousExpirations: phoneRendezvousExpirations()
     )
-    installForegroundRecoveryWake()
-    recoverManagedBrowserMembers()
-    recoverSupervisedBrowserWaits()
     startDesktopReplyRecovery()
     pendingReplyRecoveryWake.request(isConnected: mqttClient.relationshipSubscriptionsReady)
     Task {
       await blobOutgoingCoordinator.wake()
       await blobArtifactReceiver.wake()
-    }
-    startAutomationScheduler()
-    backgroundCognitionScheduler.start()
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-      self?.refreshAgentHomeState()
     }
   }
 
@@ -900,7 +989,9 @@ final class MessageCoordinator: ObservableObject {
         self.recoverManagedBrowserMembers()
         self.recoverAcceptedGoalDeliveries()
         self.recoverSupervisedBrowserWaits()
-        self.pendingReplyRecoveryWake.request(isConnected: self.mqttClient.relationshipSubscriptionsReady)
+        if self.usesLegacyMqtt {
+          self.pendingReplyRecoveryWake.request(isConnected: self.mqttClient.relationshipSubscriptionsReady)
+        }
       }
     }
     managedBrowserTeamRecoveryObserver = NotificationCenter.default.addObserver(
@@ -938,6 +1029,8 @@ final class MessageCoordinator: ObservableObject {
   }
 
   deinit {
+    journalMqttPoll?.cancel()
+    if let runtime = journalMqttRuntime { Task { @MainActor in await runtime.stop() } }
     desktopReplyRecoveryTask?.cancel()
     pairingDeliveryTask?.cancel()
     pairingConfirmationTimeoutTask?.cancel()
@@ -14220,6 +14313,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   func pair(using qrText: String) async throws {
+    guard usesLegacyMqtt else { throw GalaxySSIError.transportUnavailable }
     let qr = try GalaxySSILinkProtocol.decodePairingQRCode(from: qrText)
     guard GalaxySSILinkProtocol.hasVerifiedDesktopIdentity(qr) else {
       throw GalaxySSIError.invalidPairingQRCode(
@@ -14365,6 +14459,7 @@ final class MessageCoordinator: ObservableObject {
 
   @discardableResult
   func requestPhoneContactPairing(qrText: String) async -> MqttPublishResult {
+    guard usesLegacyMqtt else { return .failed }
     guard let rawCard = try? GalaxySSIQRCodePayload.decodeObject(from: qrText, label: "Contact QR") else {
       return .failed
     }
@@ -14528,6 +14623,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func requestPhoneContactBundle(for contact: GalaxySSIContact) async -> MqttPublishResult {
+    guard usesLegacyMqtt else { return .failed }
     guard let card = store.verifiedPhoneContactCard(for: contact.galaxySSIId),
           contact.opaquePhoneRoutes != nil else {
       return .failed
@@ -14630,6 +14726,7 @@ final class MessageCoordinator: ObservableObject {
     messageKind: String,
     durationMillis: Int64
   ) async throws -> AgentDisclosureStatus {
+    if !usesLegacyMqtt, journalMqttRuntime == nil { throw GalaxySSIError.transportUnavailable }
     let remoteName = contact.galaxySSIId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard let routes = contact.opaquePhoneRoutes,
           let topic = contact.opaquePhoneRoutes?.upTopic,
@@ -14670,6 +14767,16 @@ final class MessageCoordinator: ObservableObject {
       )
       beginPeerAttachmentTransfers(outboundAttachments, outgoing: outgoing, contact: contact)
       applicationPayload["attachments"] = outboundAttachments.map { $0.descriptor() }
+    }
+    if let runtime = journalMqttRuntime {
+      if outboundAttachments.isEmpty {
+        _ = try runtime.enqueueDirectPeerText(messageId: outgoing.id, contactId: contact.id,
+          messageKind: normalizedKind, durationMillis: durationMillis)
+      } else {
+        _ = try runtime.enqueueDirectPeerAttachments(messageId: outgoing.id, contactId: contact.id,
+          attachments: outboundAttachments, messageKind: normalizedKind, durationMillis: durationMillis)
+      }
+      return .queued
     }
     let wire: (
       messageId: String,
@@ -14875,6 +14982,11 @@ final class MessageCoordinator: ObservableObject {
     codexReplay: AgentDesktopReplyRecoveryRecord? = nil
   ) async throws -> AgentDisclosureStatus {
     try Task.checkCancellation()
+    if !usesLegacyMqtt {
+      guard journalMqttRuntime != nil, attachments.isEmpty, teamContext == nil, codexReplay == nil else {
+        throw GalaxySSIError.transportUnavailable
+      }
+    }
     let requestedDesktopId = contact.desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
     let link = requestedDesktopId.isEmpty
       ? (store.serverLinks.first(where: { $0.paired }) ?? store.serverLinks.first)
@@ -15257,6 +15369,14 @@ final class MessageCoordinator: ObservableObject {
       scheduleOutboxFlush(after: 0)
       return .queued
     }
+    if let runtime = journalMqttRuntime {
+      if peerChat {
+        _ = try runtime.enqueueDirectPeerText(messageId: outgoing.id, contactId: contact.id)
+      } else {
+        _ = try runtime.enqueueDesktopConnectorRequest(payload, desktopId: link.desktopId)
+      }
+      return .queued
+    }
     let wire = try linkWirePayload(payload, link: link)
     deliveryStore.enqueue(
       messageId: wire.messageId,
@@ -15365,6 +15485,13 @@ final class MessageCoordinator: ObservableObject {
     trustedBackgroundCognitionAuthorized: Bool = false,
     backgroundLearning: Bool = false
   ) throws -> String {
+    if !usesLegacyMqtt {
+      guard let runtime = journalMqttRuntime, payload.string("type") == "text", blockedByAttachmentTransferIds.isEmpty,
+            requiresValidatedNetwork != true, !trustedBackgroundCognitionAuthorized, !backgroundLearning else {
+        throw GalaxySSIError.transportUnavailable
+      }
+      return try runtime.enqueueDesktopConnectorRequest(payload, desktopId: link.desktopId).message.messageId
+    }
     let wire = try linkWirePayload(
       payload,
       link: link,
@@ -15429,6 +15556,7 @@ final class MessageCoordinator: ObservableObject {
     link: ServerLink,
     trustedBackgroundCognitionAuthorized: Bool = false
   ) throws -> (messageId: String, wireText: String, wireData: Data) {
+    guard usesLegacyMqtt else { throw GalaxySSIError.transportUnavailable }
     guard !GalaxySSITransportPrivacyPolicy.isLocalOnly(
       payload,
       trustedBackgroundCognitionAuthorized: trustedBackgroundCognitionAuthorized

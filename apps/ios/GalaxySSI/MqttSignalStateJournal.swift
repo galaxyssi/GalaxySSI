@@ -9,6 +9,32 @@ final class MqttSignalStateJournal {
   let incomingChunks: MqttDurableChunks
   let outgoingChunks: MqttOutgoingChunks
 
+  static func profileFileURL(profileID: String, root: URL? = nil) -> URL {
+    let base = root ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ??
+      FileManager.default.temporaryDirectory
+    return base.appendingPathComponent("GalaxySSI/MQTT", isDirectory: true)
+      .appendingPathComponent(MqttRouteProtocol.digest(Data(profileID.utf8)) + ".sqlite3")
+  }
+
+  // An unreadable or partially installed journal must never be treated as an un-migrated profile.
+  static func openMigrated(fileURL: URL, expectedFingerprint: String,
+                           secrets: GalaxySSISecretStore) throws -> MqttSignalStateJournal? {
+    let files = FileManager.default
+    guard files.fileExists(atPath: fileURL.path) else {
+      if ["-wal", "-shm", "-journal"].contains(where: { files.fileExists(atPath: fileURL.path + $0) }) {
+        throw MqttChunkStorageError.corruptState
+      }
+      return nil
+    }
+    let journal = try MqttSignalStateJournal(fileURL: fileURL, secrets: secrets)
+    guard let marker = try journal.legacyCutover() else {
+      guard try journal.load() == nil else { throw MqttChunkStorageError.corruptState }
+      return nil
+    }
+    guard marker.localFingerprint == expectedFingerprint else { throw MqttRouteError.identityChanged }
+    return journal
+  }
+
   init(fileURL: URL, secrets: GalaxySSISecretStore = KeychainSecretStore.shared,
        inboxLimits: MqttBusinessInbox.Limits = .init(), outboxLimits: MqttBusinessOutbox.Limits = .init()) throws {
     database = try MqttChunkDatabase(fileURL: fileURL, secrets: secrets)

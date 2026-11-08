@@ -72,7 +72,7 @@ extension MessageCoordinator {
   }
 
   private func flushPendingOutbox() async {
-    guard !Task.isCancelled else { return }
+    guard usesLegacyMqtt, !Task.isCancelled else { return }
     guard !outboxFlushInProgress else {
       outboxFlushRequested = true
       return
@@ -228,6 +228,7 @@ extension MessageCoordinator {
   }
 
   func scheduleOutboxFlushFromStore() {
+    guard usesLegacyMqtt else { return }
     let mediaProfile = mediaNetworkProfileProvider()
     let now = ProcessInfo.processInfo.systemUptime
     let receiptWindow = outboxReceiptWindow
@@ -251,6 +252,7 @@ extension MessageCoordinator {
   }
 
   func wakeOutboxAfterReceipt() {
+    guard usesLegacyMqtt else { return }
     if outboxFlushInProgress {
       outboxFlushRequested = true
     } else {
@@ -280,6 +282,7 @@ extension MessageCoordinator {
   }
 
   func scheduleOutboxFlush(after delay: TimeInterval) {
+    guard usesLegacyMqtt else { return }
     outboxRetryTask?.cancel()
     outboxRetryTask = Task { [weak self] in
       if delay > 0 {

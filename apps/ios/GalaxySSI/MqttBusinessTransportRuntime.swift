@@ -160,21 +160,27 @@ final class MqttBusinessTransportRuntime {
     configuredDirectPeers = peers
   }
 
-  func enqueueDirectPeerText(messageId: UUID, contactId: String) throws -> MqttBusinessOutbox.Entry {
+  var hasReadyPeer: Bool { started && !stopped && identities.contains { routes.isReady(scope: $0.scope) } }
+
+  func enqueueDirectPeerText(messageId: UUID, contactId: String, messageKind: String = "",
+                             durationMillis: Int64 = 0) throws -> MqttBusinessOutbox.Entry {
     guard let projection = peerChatProjection else { throw MqttDeliveryDispatch.Failure.unavailable }
     try refreshDirectPeerBindings()
-    let request = try projection.outgoingRequest(for: messageId, contactId: contactId)
+    let request = try projection.outgoingRequest(for: messageId, contactId: contactId,
+      messageKind: messageKind, durationMillis: durationMillis)
     guard let entry = try enqueue([request]).first else { throw MqttRouteError.invalidPayload }
     return entry
   }
 
   func enqueueDirectPeerAttachments(messageId: UUID, contactId: String,
-                                    attachments: [AgentPreparedOutboundAttachment]) throws -> MqttBusinessOutbox.Entry {
+                                    attachments: [AgentPreparedOutboundAttachment], messageKind: String = "",
+                                    durationMillis: Int64 = 0) throws -> MqttBusinessOutbox.Entry {
     guard let projection = peerChatProjection, !attachments.isEmpty, started, !stopped else {
       throw MqttDeliveryDispatch.Failure.unavailable
     }
     try refreshDirectPeerBindings()
-    let requests = try projection.outgoingRequests(for: messageId, contactId: contactId, attachments: attachments)
+    let requests = try projection.outgoingRequests(for: messageId, contactId: contactId, attachments: attachments,
+      messageKind: messageKind, durationMillis: durationMillis)
     guard let body = requests.last else { throw MqttRouteError.invalidPayload }
     if let existing = try routes.withOutgoing(identity: body.identity, topics: [body.topic], commit: {
       try journal.outbox.entry(identity: body.identity, messageID: body.messageID)

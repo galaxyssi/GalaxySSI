@@ -45,15 +45,18 @@ struct MqttPeerChatProjection {
     store.contacts.compactMap { destination(for: $0)?.peer }
   }
 
-  func outgoingRequest(for messageId: UUID, contactId: String) throws -> MqttSignalSendRequest {
-    guard let request = try outgoingRequests(for: messageId, contactId: contactId, attachments: []).last else {
+  func outgoingRequest(for messageId: UUID, contactId: String, messageKind: String = "",
+                       durationMillis: Int64 = 0) throws -> MqttSignalSendRequest {
+    guard let request = try outgoingRequests(for: messageId, contactId: contactId, attachments: [],
+      messageKind: messageKind, durationMillis: durationMillis).last else {
       throw MqttRouteError.invalidPayload
     }
     return request
   }
 
   func outgoingRequests(for messageId: UUID, contactId: String,
-                        attachments: [AgentPreparedOutboundAttachment]) throws -> [MqttSignalSendRequest] {
+                        attachments: [AgentPreparedOutboundAttachment], messageKind: String = "",
+                        durationMillis: Int64 = 0) throws -> [MqttSignalSendRequest] {
     guard let contact = store.contact(id: contactId), contact.id == contactId, let target = destination(for: contact),
           let message = store.persistedMessage(id: messageId, contactId: contactId), message.isMine, !message.isSystem,
           [.queued, .failed].contains(message.deliveryStatus),
@@ -75,6 +78,9 @@ struct MqttPeerChatProjection {
       "content": message.content, "time": Int64(timestamp)
     ]
     let identity = try MqttBusinessIdentity(target.peer.binding)
+    let kind = String(messageKind.trimmingCharacters(in: .whitespacesAndNewlines).prefix(32))
+    if !kind.isEmpty { payload["message_kind"] = kind }
+    if durationMillis > 0 { payload["duration_ms"] = min(durationMillis, 3_600_000) }
     let manifests = try attachments.map { transfer in
       guard matches(transfer, target: target, source: source) else { throw MqttRouteError.identityChanged }
       var manifest = transfer.manifestPayload(resume: false, nowMillis: Int64(timestamp))
