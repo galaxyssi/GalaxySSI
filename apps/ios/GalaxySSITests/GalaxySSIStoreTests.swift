@@ -231,8 +231,15 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertEqual(AgentConversationSchedule.revision(run), task.revision)
     XCTAssertNotNil(store.beginAutomationRun(id: run.runId, nowMillis: start))
     XCTAssertNil(store.beginAutomationRun(id: run.runId, nowMillis: start))
+    let messageID = try XCTUnwrap(UUID(uuidString: run.runId))
+    _ = store.appendOutgoing("Scheduled source", to: "hermes", turnId: run.runId, messageId: messageID,
+      conversationOverride: owner.id, sourceTrace: AgentConversationSchedule.occurrenceStage)
+    XCTAssertEqual(store.scheduledReplyAlert(conversationId: owner.id, turnId: run.runId),
+      .scheduled(AgentConversationSchedule.replyAlertIdentifier(task)))
+    XCTAssertEqual(store.scheduledReplyAlert(conversationId: other.id, turnId: run.runId), .ordinary)
     let changed = try store.saveConversationSchedule(conversationId: owner.id, id: task.taskId,
       prompt: "Check tomorrow's weather", trigger: nil, frequency: "", nowMillis: start + 1)
+    XCTAssertEqual(store.scheduledReplyAlert(conversationId: owner.id, turnId: run.runId), .suppressed)
     XCTAssertEqual(store.claimDueAutomationTasks(nowMillis: start + 1), 0)
     XCTAssertTrue(store.finishAutomationRun(id: run.runId, status: .failed,
       resultSummary: "Original result", nowMillis: start + 2))
@@ -242,9 +249,13 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertNotEqual(run.runId, next.runId)
     XCTAssertEqual(AgentConversationSchedule.revision(next), changed.revision)
     XCTAssertTrue(try store.setConversationScheduleEnabled(id: task.taskId, conversationId: owner.id, enabled: false))
+    XCTAssertEqual(store.scheduledReplyAlert(conversationId: owner.id, turnId: next.runId), .suppressed)
     XCTAssertNil(store.beginAutomationRun(id: next.runId, nowMillis: start + 3))
     XCTAssertTrue(try store.setConversationScheduleEnabled(id: task.taskId, conversationId: owner.id, enabled: true))
     XCTAssertEqual(store.automationTask(id: task.taskId)?.lastStatus, .queued)
+    XCTAssertTrue(store.deleteAutomationTask(id: task.taskId))
+    XCTAssertNotNil(store.persistedMessage(id: messageID, contactId: "hermes"))
+    XCTAssertEqual(store.scheduledReplyAlert(conversationId: owner.id, turnId: run.runId), .suppressed)
   }
 
   func testConversationScheduleSpeechUsesLiveCardState() throws {
@@ -262,6 +273,71 @@ final class GalaxySSIStoreTests: XCTestCase {
     let target = try XCTUnwrap(AgentReplySpeechPresentationPolicy.target(projected))
     XCTAssertTrue(target.text.contains("Paused"))
     XCTAssertFalse(target.text.contains("Hidden confirmation"))
+  }
+
+  func testScheduleToolRequiresOwnedUserTurnAndObservedRevision() throws {
+    let store = makeStore()
+    let owner = store.createAgentSession(title: "Schedule owner")
+    let other = store.createAgentSession(title: "Other conversation")
+    let source = store.appendOutgoing("Please check the weather every hour", to: "hermes", conversationOverride: owner.id)
+    let foreign = store.appendOutgoing("Pause it", to: "hermes", conversationOverride: other.id)
+    let occurrence = store.appendOutgoing("Check the weather", to: "hermes", conversationOverride: owner.id,
+      sourceTrace: AgentConversationSchedule.occurrenceStage)
+    let create: AgentMcpJSONObject = ["operation": .string("create"), "prompt": .string("Check the weather"),
+      "schedule_label": .string("Every hour"), "schedule": .object(["kind": .string("interval"), "interval_seconds": .int(3600)])]
+    var changed: [String] = []
+    func call(_ source: ChatMessage, _ input: AgentMcpJSONObject, tool: String = AgentConversationScheduleTools.manage)
+      -> AgentNativeToolExecutionResult {
+      AgentConversationScheduleTools.execute(tool, context: .init(conversationId: source.conversationId,
+        turnId: source.turnId.ifBlank(source.id.uuidString)), input: input, store: store) { task, operation, _ in
+        changed.append("\(task.revision):\(operation.rawValue)")
+      }
+    }
+    XCTAssertFalse(call(occurrence, create).isSuccess)
+    XCTAssertTrue(store.conversationSchedules(owner.id).isEmpty)
+    XCTAssertEqual(call(source, create).output["execution_verified"], .bool(false))
+    XCTAssertTrue(call(source, create).isSuccess)
+    let task = try XCTUnwrap(store.conversationSchedules(owner.id).first)
+    XCTAssertEqual(changed, ["1:create"])
+    XCTAssertEqual(store.conversationSchedules(owner.id).count, 1)
+    XCTAssertEqual(call(foreign, [:], tool: AgentConversationScheduleTools.list).output["tasks"], .array([]))
+    let pause: AgentMcpJSONObject = ["operation": .string("pause"), "task_id": .string(task.taskId),
+      "expected_revision": .int(Int64(task.revision))]
+    XCTAssertFalse(call(foreign, pause).isSuccess)
+    XCTAssertTrue(call(source, pause).isSuccess)
+    XCTAssertFalse(call(source, pause).isSuccess)
+    XCTAssertEqual(changed, ["1:create", "2:pause"])
+    XCTAssertEqual(store.automationTask(id: task.taskId)?.enabled, false)
+  }
+
+  func testScheduleToolRejectsAmbiguousAndInvalidStructuredArguments() throws {
+    XCTAssertFalse(AgentWorkflowRunScheduleCommandRouter.isExplicitChatCommand("list schedules"))
+    XCTAssertFalse(AgentWorkflowRunScheduleCommandRouter.isExplicitChatCommand("pause"))
+    XCTAssertFalse(AgentWorkflowRunScheduleCommandRouter.isExplicitChatCommand("Every day I feel tired"))
+    XCTAssertTrue(AgentWorkflowRunScheduleCommandRouter.isExplicitChatCommand("list workflow schedules"))
+    let create: AgentMcpJSONObject = ["operation": .string("create"), "prompt": .string("Check weather"),
+      "schedule_label": .string("Every minute"),
+      "schedule": .object(["kind": .string("interval"), "interval_seconds": .int(60)])]
+    XCTAssertEqual(try AgentConversationScheduleTools.Request(create, timeZone: "Asia/Shanghai").trigger?.timeZone,
+      "Asia/Shanghai")
+    var invalid = create
+    invalid["schedule"] = .object(["kind": .string("interval"), "interval_seconds": .double(60.5)])
+    XCTAssertThrowsError(try AgentConversationScheduleTools.Request(invalid, timeZone: "UTC"))
+    invalid["schedule"] = .object(["kind": .string("cron"), "cron": .string("not cron")])
+    XCTAssertThrowsError(try AgentConversationScheduleTools.Request(invalid, timeZone: "UTC"))
+    XCTAssertThrowsError(try AgentConversationScheduleTools.Request(["operation": .string("pause"),
+      "task_id": .string("observed")], timeZone: "UTC"))
+  }
+
+  func testScheduleToolsAreAvailableToOrdinaryLocalModelButNotReadOnlyRuns() throws {
+    let definitions = try AgentConversationScheduleTools.executables { _, _ in .success() }
+    let registry = try AgentNativeToolRegistry().registerExecutables(definitions)
+    let ordinary = try AgentIOSLocalModelWebToolRunner.webToolRegistry(registry, readOnlyAnalysis: false,
+      recallScope: nil, database: nil, originalsOnly: true)
+    XCTAssertEqual(Set(ordinary.descriptors().map(\.id)), AgentConversationScheduleTools.ids)
+    let readOnly = try AgentIOSLocalModelWebToolRunner.webToolRegistry(registry, readOnlyAnalysis: true,
+      recallScope: nil, database: nil, originalsOnly: true)
+    XCTAssertTrue(readOnly.descriptors().isEmpty)
   }
 
   func testViewportAnchorUsesPartiallyVisibleRowAndRejectsStaleScrollTicket() {
