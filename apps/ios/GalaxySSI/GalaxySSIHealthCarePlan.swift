@@ -56,6 +56,8 @@ enum GalaxySSIHealthCarePlan {
     let concernRevision: Int
     let assessmentDigest: String
     var sourceContext: GalaxySSIHealthCare.Context? = nil
+    var profileScope: GalaxySSIHealthCareProfileScope.Link?
+    var profileScopeEpoch: UUID?
     let carePermission: UUID
     let onlinePermission: UUID
     let contactID: String

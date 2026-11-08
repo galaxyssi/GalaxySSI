@@ -183,6 +183,9 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) {
       if $0.object as? String == records.owner { refresh() }
     }
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.profileInputsChanged)) {
+      if $0.object as? String == records.owner { refresh() }
+    }
   }
 
   private func actionLabel(_ action: GalaxySSIHealthCarePlan.Action) -> some View {

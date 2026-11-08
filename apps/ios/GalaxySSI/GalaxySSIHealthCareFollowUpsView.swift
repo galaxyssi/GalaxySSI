@@ -118,7 +118,7 @@ struct GalaxySSIHealthCareFollowUpsSection: View {
     }
     actions = concern.adoptedActions ?? []
     eligible = Set(actions.compactMap { action in
-      GalaxySSIHealthRecords.careFollowUpIsCurrent(concernID: concernID, metric: metric, actionID: action.id,
+      records.careFollowUpIsCurrent(concernID: concernID, metric: metric, actionID: action.id,
         archive: archive) ? action.id : nil
     })
     reminders = (archive.localCareFollowUps ?? [:]).filter { $0.value.concernID == concernID && eligible.contains($0.key) }

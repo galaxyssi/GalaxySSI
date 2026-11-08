@@ -306,6 +306,7 @@ private struct GalaxySSIHealthCareDetail: View {
   @State private var failed = false
   @State private var confirmingDelete = false
   @State private var deletionCandidate: GalaxySSIHealthCare.Concern?
+  @State private var scopeCandidate: GalaxySSIHealthCare.Concern?
 
   var body: some View {
     List {
@@ -379,6 +380,14 @@ private struct GalaxySSIHealthCareDetail: View {
           } else { Text(t("none", "Not recorded")) }
         }
         GalaxySSIHealthCareTargetSection(records: records, concern: concern)
+        Section {
+          Button {
+            scopeCandidate = concern
+          } label: {
+            Label(GalaxySSIHealthCareProfileScopeView.text("title", "Profile sharing scope", language: language),
+              systemImage: concern.profileScope == nil ? "person.crop.circle" : "person.crop.circle.badge.checkmark")
+          }
+        }
         Section(t("follow_up", "Improvement and follow-up")) {
           if let note = concern.reviewNote { Text(note) }
           if let review = concern.maintenanceReview { GalaxySSIHealthMaintenanceEvidenceView(review: review) }
@@ -423,6 +432,9 @@ private struct GalaxySSIHealthCareDetail: View {
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in reload() }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) {
       if $0.object as? String == records.owner { reload() }
+    }
+    .sheet(item: $scopeCandidate) { candidate in
+      GalaxySSIHealthCareProfileScopeView(records: records, concern: candidate)
     }
     .confirmationDialog(t("remove", "Delete concern"), isPresented: $confirmingDelete,
                         titleVisibility: .visible, presenting: deletionCandidate) { candidate in
@@ -476,6 +488,7 @@ private struct GalaxySSIHealthCareDetail: View {
 
   private func clearDetail() {
     concern = nil; history = []; measurement = nil; reason = ""
+    scopeCandidate = nil
     bloodPressureWarning = nil; warningReviewed = false
     confirmingDelete = false; deletionCandidate = nil; context = .unknown; answers = .init(); fastingHours = ""
   }
