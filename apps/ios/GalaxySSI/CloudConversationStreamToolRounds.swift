@@ -513,6 +513,11 @@ struct CloudModelStreamMutableConversation {
     appendPlainConversationTurn(role: "user", text: text)
   }
 
+  mutating func appendResearchQualityRepair(draft: String, prompt: String) {
+    appendCitationRepairPrompt(draft: draft, prompt: prompt)
+    body.removeValue(forKey: "toolConfig")
+  }
+
   private mutating func prepareFinalRound() {
     guard !finalRoundPrepared else { return }
     finalRoundPrepared = true

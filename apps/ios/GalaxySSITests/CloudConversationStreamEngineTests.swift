@@ -566,6 +566,89 @@ final class CloudConversationStreamEngineTests: XCTestCase {
     XCTAssertEqual(answer, "synthesis")
   }
 
+  func testResearchContactConfigurationKeepsAndroidKeysAndBoundsValues() throws {
+    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(GalaxySSIContact.hermes())) as? [String: Any])
+    object["cloud_research_limits"] = [
+      "tool_calls": 999, "model_rounds": "6", "active_minutes": -2,
+      "tool_timeout_seconds": 12, "model_timeout_seconds": 10, "evidence_chars": "invalid"
+    ] as [String: Any]
+    let contact = try JSONDecoder().decode(GalaxySSIContact.self, from: JSONSerialization.data(withJSONObject: object))
+    let limits = CloudResearchRuntimeBudget.Limits.configured(contact.cloud_research_limits)
+    XCTAssertEqual(limits.tools, 512)
+    XCTAssertEqual(limits.rounds, 6)
+    XCTAssertEqual(limits.activeMillis, 60_000)
+    XCTAssertEqual(limits.toolMillis, 12_000)
+    XCTAssertEqual(limits.modelMillis, 15_000)
+    XCTAssertEqual(limits.evidenceCharacters, 2_000_000)
+    let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(contact)) as? [String: Any])
+    XCTAssertEqual((encoded["cloud_research_limits"] as? [String: Any])?["model_rounds"] as? Int, 6)
+  }
+
+  func testSharedResearchQualityIsStructuralAndIgnoresQuotedExamples() throws {
+    let quality = try XCTUnwrap(CloudResearchQualityStandard.bundled)
+    let risky = "No authoritative records exist. It is most likely that she was his mentor."
+    let report = quality.assess(risky, researchObserved: true)
+    XCTAssertEqual(report.status, "needs_review")
+    XCTAssertEqual(Set(report.risks), ["unbounded_absence_of_evidence", "speculative_relationship"])
+    XCTAssertEqual(report.semanticVerification, "not_independently_verified")
+    XCTAssertEqual(quality.assess(risky, researchObserved: false).status, "not_applicable")
+    let example = "> \(risky)\n\n```text\n\(risky)\n```\n\n`\(risky)`"
+    XCTAssertEqual(quality.assess(example, researchObserved: true).status, "no_structural_risk_detected")
+    XCTAssertEqual(quality.assess("A plausible but unsupported fact.", researchObserved: true).semanticVerification,
+      "not_independently_verified")
+    XCTAssertTrue(quality.prompt.contains(report.contract))
+  }
+
+  func testResearchQualityUsesCrossPlatformFixtures() throws {
+    struct Fixture: Decodable {
+      let id: String
+      let answer: String
+      let research: Bool
+      let risks: [String]
+    }
+    let quality = try XCTUnwrap(CloudResearchQualityStandard.bundled)
+    let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "quality-cases", withExtension: "json"))
+    let fixtures = try JSONDecoder().decode([Fixture].self, from: Data(contentsOf: url))
+    XCTAssertFalse(fixtures.isEmpty)
+    for fixture in fixtures {
+      let report = quality.assess(fixture.answer, researchObserved: fixture.research)
+      XCTAssertEqual(report.risks, fixture.risks, fixture.id)
+      XCTAssertEqual(report.semanticVerification, "not_independently_verified", fixture.id)
+    }
+  }
+
+  @MainActor
+  func testStructuralRiskDoesNotStreamBeforeOneToolFreeQualityRepair() async throws {
+    let fixture = try makeFixture()
+    let pack = AgentIOSWebEvidencePack.build(query: "report", status: "completed",
+      documents: [["url": .string("https://example.test/report"), "content": .string("No such relation was established by this record.")]],
+      results: [], receipts: [], generatedAtMillis: 1)
+    let executor = RecordingConversationToolExecutor(result: AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)]))
+    func answer(_ text: String) -> [ModelStreamEvent] {
+      [.textDelta(.init(requestId: "answer", sequence: 1, text: text, receivedAtElapsedMs: 5)),
+       .completed(.init(requestId: "answer", finishReason: "stop", completedAtElapsedMs: 6))]
+    }
+    let risky = "No authoritative records exist [source](https://example.test/report).\n\n"
+    let corrected = "This record does not establish the relationship [source](https://example.test/report)."
+    let stream = RecordingModelStreamClient(eventBatches: [
+      toolRound(index: 0, callId: "search", query: "report"), answer(risky), answer(corrected)
+    ])
+    let engine = CloudConversationStreamEngine(streamClient: stream, toolExecutor: executor,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    let events = try await collect(engine.streamConversation(contact: fixture.contact, store: fixture.store,
+      turns: fixture.turns, requestId: "quality-repair"))
+    XCTAssertEqual(executor.calls.count, 1)
+    XCTAssertEqual(stream.requests.count, 3)
+    let repair = try XCTUnwrap(stream.requests.last)
+    XCTAssertNil(try object(repair.bodyJson)["tools"])
+    XCTAssertTrue(repair.bodyJson.contains("unbounded_absence_of_evidence"))
+    XCTAssertEqual(textDeltas(events).last?.text, corrected)
+    XCTAssertFalse(events.contains { event in
+      if case .citationPreview(let preview) = event { return preview.text.contains("No authoritative records exist") }
+      return false
+    })
+  }
+
   @MainActor
   func testSupervisedResearchReturnsOnlyFinalRawControlResponse() async throws {
     let request = ModelStreamRequest(requestId: "plan", provider: .openAICompatible,

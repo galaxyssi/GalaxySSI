@@ -242,7 +242,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       var evidenceResults: [(String, String)] = []
       let evidencePromptLedger = CloudEvidencePromptLedger(query: turns.last?.content ?? "")
       let progress = CloudWebToolLoopProgress()
-      let research = CloudResearchRuntimeBudget()
+      let research = CloudResearchRuntimeBudget(limits: .configured(contact.cloud_research_limits))
       var round = 0
 
       while true {
@@ -519,7 +519,17 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
               prepared.appendCitationRepairPrompt(draft: candidate, prompt: repairPrompt)
               continue
             }
-            let visibleAnswer = !candidate.isBlank && repairPrompt == nil
+            let qualityReview = repairPrompt == nil && !candidate.isBlank
+              ? CloudResearchQualityStandard.repairIfNeeded(candidate, evidence: evidenceResults) : nil
+            if let qualityReview, progress.requestRepair("stream_research_quality") {
+              if previewShown {
+                continuation.yield(.citationPreview(.init(requestId: requestId, text: "", receivedAtElapsedMs: elapsedMillis())))
+              }
+              prepared.appendResearchQualityRepair(draft: candidate, prompt: qualityReview)
+              progress.requestFinalization()
+              continue
+            }
+            let visibleAnswer = !candidate.isBlank && repairPrompt == nil && qualityReview == nil
               ? candidate
               : CloudWebGrounding.evidenceFallback(results: evidenceResults)
             if !visibleAnswer.isBlank {
@@ -643,6 +653,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             requestId: requestId,
             conversationId: conversationId,
             turnId: turnId,
+            researchToolTimeoutMillis: research.limits.toolMillis,
             images: images,
             readOnlyAnalysis: turns.last?.readOnlyAnalysis ?? false
           ),

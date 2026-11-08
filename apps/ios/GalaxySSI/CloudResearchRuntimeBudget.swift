@@ -1,5 +1,38 @@
 import Foundation
 
+struct CloudResearchConfiguration: Codable, Hashable {
+  var toolCalls: Int?
+  var modelRounds: Int?
+  var activeMinutes: Int?
+  var toolTimeoutSeconds: Int?
+  var modelTimeoutSeconds: Int?
+  var evidenceCharacters: Int?
+
+  private enum CodingKeys: String, CodingKey {
+    case toolCalls = "tool_calls"
+    case modelRounds = "model_rounds"
+    case activeMinutes = "active_minutes"
+    case toolTimeoutSeconds = "tool_timeout_seconds"
+    case modelTimeoutSeconds = "model_timeout_seconds"
+    case evidenceCharacters = "evidence_chars"
+  }
+
+  init(from decoder: Decoder) throws {
+    let values = try? decoder.container(keyedBy: CodingKeys.self)
+    func integer(_ key: CodingKeys) -> Int? {
+      if let number = try? values?.decode(Int.self, forKey: key) { return number }
+      if let text = try? values?.decode(String.self, forKey: key) { return Int(text) }
+      return nil
+    }
+    toolCalls = integer(.toolCalls)
+    modelRounds = integer(.modelRounds)
+    activeMinutes = integer(.activeMinutes)
+    toolTimeoutSeconds = integer(.toolTimeoutSeconds)
+    modelTimeoutSeconds = integer(.modelTimeoutSeconds)
+    evidenceCharacters = integer(.evidenceCharacters)
+  }
+}
+
 final class CloudResearchRuntimeBudget {
   struct Limits {
     var tools = 128
@@ -8,6 +41,21 @@ final class CloudResearchRuntimeBudget {
     var toolMillis: Int64 = 45_000
     var modelMillis: Int64 = 120_000
     var evidenceCharacters = 2_000_000
+
+    static func configured(_ configuration: CloudResearchConfiguration?) -> Self {
+      guard let configuration else { return .init() }
+      func limit(_ value: Int?, fallback: Int, range: ClosedRange<Int>) -> Int {
+        min(range.upperBound, max(range.lowerBound, value ?? fallback))
+      }
+      return Self(
+        tools: limit(configuration.toolCalls, fallback: 128, range: 4...512),
+        rounds: limit(configuration.modelRounds, fallback: 64, range: 4...256),
+        activeMillis: Int64(limit(configuration.activeMinutes, fallback: 20, range: 1...120)) * 60_000,
+        toolMillis: Int64(limit(configuration.toolTimeoutSeconds, fallback: 45, range: 5...180)) * 1_000,
+        modelMillis: Int64(limit(configuration.modelTimeoutSeconds, fallback: 120, range: 15...300)) * 1_000,
+        evidenceCharacters: limit(configuration.evidenceCharacters, fallback: 2_000_000, range: 24_000...8_000_000)
+      )
+    }
   }
 
   let limits: Limits

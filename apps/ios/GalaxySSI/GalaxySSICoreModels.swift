@@ -113,6 +113,8 @@ struct GalaxySSIContact: Codable, Identifiable, Equatable, Hashable {
   var devicePlatformVersion: String? = nil
   var deviceProfileName: String? = nil
   var deviceHostName: String? = nil
+  // Keep the Android contact JSON key without changing older iOS keys.
+  var cloud_research_limits: CloudResearchConfiguration? = nil
 
   var selectedCloudModel: CloudModelConfig? {
     cloudModels.first { $0.modelId == selectedCloudModelId } ?? cloudModels.first

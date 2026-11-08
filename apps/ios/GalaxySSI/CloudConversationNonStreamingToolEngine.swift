@@ -30,7 +30,7 @@ struct CloudConversationNonStreamingToolEngine {
     var conversation = try CloudModelStreamMutableConversation(request: request)
     var evidence: [(String, String)] = []
     let progress = CloudWebToolLoopProgress()
-    let research = CloudResearchRuntimeBudget()
+    let research = CloudResearchRuntimeBudget(limits: .configured(contact.cloud_research_limits))
     let evidencePromptLedger = CloudEvidencePromptLedger(query: turns.last?.content ?? "")
     var round = 0
 
@@ -100,6 +100,17 @@ struct CloudConversationNonStreamingToolEngine {
           continue
         }
         if !candidate.isBlank,
+           let qualityReview = CloudResearchQualityStandard.repairIfNeeded(candidate, evidence: evidence),
+           !CloudWebGrounding.citationValidation(candidate, results: evidence).requiresRepair {
+          if progress.requestRepair("nonstream_research_quality") {
+            conversation.appendResearchQualityRepair(draft: candidate, prompt: qualityReview)
+            progress.requestFinalization()
+            continue
+          }
+          return CloudWebGrounding.evidenceFallback(results: evidence) +
+            CloudImageAnnotationSession.artifactSuffix(requestId: requestId)
+        }
+        if !candidate.isBlank,
            !CloudWebGrounding.citationValidation(candidate, results: evidence).requiresRepair {
           return candidate + CloudImageAnnotationSession.artifactSuffix(requestId: requestId)
         }
@@ -157,6 +168,7 @@ struct CloudConversationNonStreamingToolEngine {
             requestId: requestId,
             conversationId: turns.last?.conversationId ?? "",
             turnId: turns.last?.turnId ?? requestId,
+            researchToolTimeoutMillis: research.limits.toolMillis,
             images: images
           )
         )
