@@ -492,6 +492,40 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
     )
   }
 
+  func testExhaustedPeerProjectionSurvivesReopenAndRollsBackIfJournalRejectsWrite() throws {
+    let fixture = try ChunkFixture()
+    let suite = "exhausted-peer-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let journal = GalaxySSIChatHistoryDatabase(fileURL: fixture.url, secrets: fixture.secrets)
+    let delivery = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    let source = UUID()
+    let now = Date(timeIntervalSince1970: 100)
+    let exhaustedAt = now.addingTimeInterval(60)
+    delivery.enqueue(messageId: "peer-wire", topic: "peer/up", wirePayload: "private-ciphertext",
+      clientSourceMessageId: source.uuidString, contactId: "peer", now: now)
+    delivery.markAttempt(messageId: "peer-wire", now: now)
+    XCTAssertNil(delivery.nextRetryDelay(now: exhaustedAt, maxAttempts: 1))
+    XCTAssertEqual(delivery.nextExhaustionDelay(now: exhaustedAt, maxAttempts: 1, attachmentMaxAttempts: 1,
+      eligible: { _ in true }, minimumDelay: { _ in 0 }), 1)
+    let binding: (PendingLinkMessage) -> String? = { $0.topic == "peer/up" ? "verified-binding" : nil }
+    try fixture.execute("CREATE TRIGGER reject_peer_failure BEFORE UPDATE ON link_delivery_state BEGIN SELECT RAISE(ABORT,'forced'); END")
+    XCTAssertTrue(delivery.discardExhausted(maxAttempts: 1, now: exhaustedAt, peerBinding: binding).isEmpty)
+    XCTAssertTrue(delivery.containsOutboxMessage("peer-wire"))
+    XCTAssertTrue(delivery.pendingPeerFailures(now: exhaustedAt).isEmpty)
+    try fixture.execute("DROP TRIGGER reject_peer_failure")
+    XCTAssertTrue(delivery.discardExhausted(maxAttempts: 1, now: exhaustedAt, peerBinding: binding).isEmpty)
+    let reopened = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    let failures = reopened.pendingPeerFailures(now: exhaustedAt)
+    XCTAssertEqual(failures, [.init(messageId: "peer-wire", sourceId: source, contactId: "peer",
+      topic: "peer/up", binding: "verified-binding", attempts: 1, recordedAt: exhaustedAt)])
+    XCTAssertFalse(reopened.containsOutboxMessage("peer-wire"))
+    XCTAssertTrue(reopened.pending(now: exhaustedAt).isEmpty)
+    reopened.retirePeerFailures(failures, now: exhaustedAt)
+    let final = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    XCTAssertTrue(final.pendingPeerFailures(now: exhaustedAt).isEmpty)
+  }
+
   func testExhaustedAttachmentDiscardsWholeSourceMessageGroup() throws {
     let store = makeDeliveryStore()
     let now = Date(timeIntervalSince1970: 100)

@@ -940,6 +940,27 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
     }
   }
 
+  func persistExhaustedPeerDelivery(_ failure: ExhaustedPeerDelivery) throws -> ChatMessage? {
+    try locked {
+      guard execute("PRAGMA synchronous = FULL"), execute("PRAGMA fullfsync = ON"),
+            execute("BEGIN IMMEDIATE TRANSACTION") else { throw MqttChunkStorageError.databaseFailure }
+      var committed = false
+      defer { if !committed { _ = execute("ROLLBACK") } }
+      guard var source = message(id: failure.sourceId), source.contactId == failure.contactId else {
+        if try isLocallyDeleted(contactId: failure.contactId, messageId: failure.sourceId.uuidString,
+          remoteMessageId: "", isMine: true) { return nil }
+        throw MqttChunkStorageError.databaseFailure
+      }
+      guard source.isMine, !source.isSystem, [.queued, .sent].contains(source.deliveryStatus) else { return nil }
+      source.deliveryStatus = .failed
+      source.deliveryTrace.append(DeliveryTraceEvent(stage: "delivery_retry_exhausted",
+        detail: "MQTT delivery failed after \(failure.attempts) attempts."))
+      guard upsert(source), execute("COMMIT") else { throw MqttChunkStorageError.databaseFailure }
+      committed = true
+      return source
+    }
+  }
+
   @discardableResult
   func deleteMessage(id: UUID, contactId: String? = nil) -> ChatMessage? {
     locked {
