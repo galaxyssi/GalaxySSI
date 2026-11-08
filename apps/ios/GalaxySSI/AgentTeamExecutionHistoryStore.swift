@@ -1318,10 +1318,18 @@ final class AgentTeamExecutionHistoryStore {
         } else if draft.kind == .workflowMethod {
           guard references.isEmpty, draft.objectId?.isBlank != false, draft.baseRevision == 0,
                 let method = draft.body["workflow_method"]?.objectValue,
-                method["previous_method"] == nil, method["feedback"] == nil,
                 AgentCollaborationWorkflowIntake.validates(method) else {
             throw AgentTeamHistoryDatabase.Failure.corrupt
           }
+          let valid = try AgentCollaborationWorkflowIntake.validatesLineage(method, parents: draft.parents) { ref in
+            guard !revisedInBatch.contains(ref.objectId),
+                  let saved = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                    conversationId: conversationId, key: "object:" + ref.objectId),
+                  saved.reference == ref, saved.turnId != turnId || (saved.runId == runId && saved.authorId == memberId)
+            else { return nil }
+            return saved
+          }
+          guard valid else { throw AgentTeamHistoryDatabase.Failure.stale }
         } else if draft.kind == .executableTool || draft.kind == .toolTestPlan {
           guard references.isEmpty, draft.objectId?.isBlank != false, draft.baseRevision == 0,
                 let spec = draft.body[draft.kind.rawValue]?.objectValue else {
@@ -1483,7 +1491,8 @@ final class AgentTeamExecutionHistoryStore {
             workflowComparison = binding
           }
           guard try AgentCollaborationExperimentPlanIntake.validates(draft,
-            allowWorkflowComparison: workflowComparison != nil, current: current)
+            allowWorkflowComparison: workflowComparison != nil,
+            freezeComparison: { workflowComparison = $0 }, current: current)
           else { throw AgentTeamHistoryDatabase.Failure.stale }
           if let ref = AgentCollaborationExperimentPlanIntake.reference(draft.body["experiment_plan"]?.objectValue?["retention_suite"]) {
             retentionBank = try current(ref)?.retentionBank
