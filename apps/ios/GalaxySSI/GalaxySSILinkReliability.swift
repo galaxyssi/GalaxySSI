@@ -192,6 +192,16 @@ struct ExhaustedLinkMessage: Equatable, Identifiable {
   var attachmentTransferId: String = ""
 }
 
+struct ExhaustedPeerDelivery: Codable, Equatable {
+  let messageId: String
+  let sourceId: UUID
+  let contactId: String
+  let topic: String
+  let binding: String
+  let attempts: Int
+  let recordedAt: Date
+}
+
 struct PermanentlyRejectedLinkMessage: Equatable, Identifiable {
   var id: String { messageId }
   var messageId: String
@@ -286,6 +296,7 @@ final class GalaxySSILinkDeliveryStore {
     var completedInboxIds: [String]
     var pendingIncoming: [String: PendingIncomingLinkMessage]
     var ciphertextBindings: [String: KnownLinkCiphertext]
+    var exhaustedPeers: [ExhaustedPeerDelivery]?
   }
 
   private let defaults: UserDefaults
@@ -495,6 +506,7 @@ final class GalaxySSILinkDeliveryStore {
     precondition(!epoch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     guard state.transportEpoch != epoch else { return false }
     state.transportEpoch = epoch
+    state.exhaustedPeers = nil
     state.outbox.forEach(deleteWirePayload)
     state.outbox.removeAll()
     payloadStore.clear()
@@ -765,19 +777,35 @@ final class GalaxySSILinkDeliveryStore {
     attachmentMaxAttempts: Int? = nil,
     now: Date = Date(),
     activeMessageIds: Set<String> = [],
-    eligible: (PendingLinkMessage) -> Bool = { _ in true }
+    eligible: (PendingLinkMessage) -> Bool = { _ in true },
+    peerBinding: (PendingLinkMessage) -> String? = { _ in nil }
   ) -> [ExhaustedLinkMessage] {
     guard maxAttempts > 0 else { return [] }
     let attachmentLimit = attachmentMaxAttempts ?? maxAttempts
     guard attachmentLimit >= maxAttempts else { return [] }
     let source = state.outbox
+    var peerFailures = pendingPeerFailures(now: now)
+    var recordedPeerIds = Set<String>()
     let candidates = source.filter { item in
       guard !item.isHeld, eligible(item), !activeMessageIds.contains(item.messageId) else { return false }
-      return item.attempts >= attemptLimit(
+      guard item.attempts >= attemptLimit(
         for: item,
         maxAttempts: maxAttempts,
         attachmentMaxAttempts: attachmentLimit
-      ) && item.nextAttemptAt <= now
+      ), item.nextAttemptAt <= now else { return false }
+      if item.attachmentTransferId.isEmpty, !item.contactId.isBlank,
+         let id = UUID(uuidString: item.clientSourceMessageId.ifBlank(item.messageId)),
+         let binding = peerBinding(item), !binding.isBlank {
+        let existing = peerFailures.contains { $0.messageId == item.messageId && $0.binding == binding &&
+          $0.contactId == item.contactId && $0.topic == item.topic && $0.sourceId == id }
+        guard existing || peerFailures.count < 512 else { return false }
+        if !existing {
+          peerFailures.append(ExhaustedPeerDelivery(messageId: item.messageId, sourceId: id,
+            contactId: item.contactId, topic: item.topic, binding: binding, attempts: item.attempts, recordedAt: now))
+        }
+        recordedPeerIds.insert(item.messageId)
+      }
+      return true
     }
     guard !candidates.isEmpty else { return [] }
 
@@ -801,6 +829,7 @@ final class GalaxySSILinkDeliveryStore {
     var handledSources = Set<String>()
     var handledTransfers = Set<String>()
     for item in candidates {
+      if recordedPeerIds.contains(item.messageId) { continue }
       if !item.attachmentTransferId.isEmpty {
         let sourceId = item.clientSourceMessageId.trimmingCharacters(in: .whitespacesAndNewlines)
         if !sourceId.isEmpty {
@@ -820,6 +849,8 @@ final class GalaxySSILinkDeliveryStore {
       )
     }
 
+    let previous = state
+    var removed: [PendingLinkMessage] = []
     state.outbox = source.filter { item in
       let belongsToSource = exhaustedSourceIds.contains(item.clientSourceMessageId) ||
         exhaustedSourceIds.contains(item.messageId)
@@ -827,11 +858,30 @@ final class GalaxySSILinkDeliveryStore {
         !exhaustedTransferIds.isDisjoint(with: item.blockedByAttachmentTransferIds)
       let shouldRemove = eligible(item) &&
         (ordinaryMessageIds.contains(item.messageId) || belongsToSource || belongsToTransfer)
-      if shouldRemove { deleteOutboxPayload(item) }
+      if shouldRemove { removed.append(item) }
       return !shouldRemove
     }
-    save()
+    state.exhaustedPeers = peerFailures.isEmpty ? nil : peerFailures
+    guard save() else {
+      state = previous
+      return []
+    }
+    removed.forEach(deleteOutboxPayload)
     return exhausted
+  }
+
+  func pendingPeerFailures(now: Date = Date()) -> [ExhaustedPeerDelivery] {
+    let cutoff = now.addingTimeInterval(-maximumPendingAge)
+    return (state.exhaustedPeers ?? []).filter { $0.recordedAt >= cutoff }
+  }
+
+  func retirePeerFailures(_ failures: [ExhaustedPeerDelivery], now: Date = Date()) {
+    guard state.exhaustedPeers != nil else { return }
+    let old = state.exhaustedPeers
+    let next = pendingPeerFailures(now: now).filter { !failures.contains($0) }
+    guard next != old else { return }
+    state.exhaustedPeers = next.isEmpty ? nil : next
+    if !save() { state.exhaustedPeers = old }
   }
 
   @discardableResult
@@ -986,6 +1036,15 @@ final class GalaxySSILinkDeliveryStore {
       }
       .map { max(minimumDelay($0), $0.nextAttemptAt.timeIntervalSince(now)) }
       .min()
+  }
+
+  func nextExhaustionDelay(now: Date = Date(), maxAttempts: Int, attachmentMaxAttempts: Int,
+                           eligible: (PendingLinkMessage) -> Bool,
+                           minimumDelay: (PendingLinkMessage) -> TimeInterval) -> TimeInterval? {
+    state.outbox.lazy.filter {
+      !$0.isHeld && eligible($0) && $0.attempts >= attemptLimit(for: $0, maxAttempts: maxAttempts,
+        attachmentMaxAttempts: attachmentMaxAttempts)
+    }.map { max(1, minimumDelay($0), $0.nextAttemptAt.timeIntervalSince(now)) }.min()
   }
 
   private func attemptLimit(

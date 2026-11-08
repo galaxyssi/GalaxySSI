@@ -14464,12 +14464,16 @@ final class MessageCoordinator: ObservableObject {
     }
     if let authenticationRef, let proof = deliveryStore.authenticatedCiphertextProof(
       digest: replayDigest, authenticationRef: authenticationRef) {
-      if proof.receiptRequired { publishPhoneContactReceipt(contact: contact, receivedMessageId: proof.messageId) }
+      if proof.receiptRequired {
+        publishPhoneContactReceipt(contact: contact, receivedMessageId: proof.messageId, ciphertextDigest: replayDigest, isReplay: true)
+      }
       return
     }
     if !replayDigest.isEmpty, let known = deliveryStore.messageForCiphertext(digest: replayDigest),
        known.contactReminder == true, known.authenticationRef == nil {
-      if known.receiptRequired { publishPhoneContactReceipt(contact: contact, receivedMessageId: known.messageId) }
+      if known.receiptRequired {
+        publishPhoneContactReceipt(contact: contact, receivedMessageId: known.messageId, ciphertextDigest: replayDigest, isReplay: true)
+      }
       return
     }
     let envelope: [String: Any]
@@ -14512,7 +14516,7 @@ final class MessageCoordinator: ObservableObject {
       guard !messageId.isBlank, receiveContactReminder(payload, authenticatedContact: contact) else { return }
       try? deliveryStore.bindCiphertext(digest: replayDigest, messageId: messageId, receiptRequired: true,
         contactReminder: true, authenticationRef: authenticationRef)
-      publishPhoneContactReceipt(contact: contact, receivedMessageId: messageId)
+      publishPhoneContactReceipt(contact: contact, receivedMessageId: messageId, ciphertextDigest: replayDigest)
       return
     }
     if payload.string("type") == "delivery_ack" {
@@ -14523,14 +14527,16 @@ final class MessageCoordinator: ObservableObject {
           let persistedData = try? GalaxySSILinkProtocol.jsonData(wire) else { return }
     let persistedPayload = String(decoding: persistedData, as: UTF8.self)
     if !replayDigest.isEmpty, let known = deliveryStore.messageForCiphertext(digest: replayDigest) {
-      if known.receiptRequired { publishPhoneContactReceipt(contact: contact, receivedMessageId: known.messageId) }
+      if known.receiptRequired {
+        publishPhoneContactReceipt(contact: contact, receivedMessageId: known.messageId, ciphertextDigest: replayDigest, isReplay: true)
+      }
       return
     }
     switch deliveryStore.stageIncoming(messageId: messageId, payload: persistedPayload) {
     case .invalid:
       return
     case .completed, .pending:
-      publishPhoneContactReceipt(contact: contact, receivedMessageId: messageId)
+      publishPhoneContactReceipt(contact: contact, receivedMessageId: messageId, ciphertextDigest: replayDigest, isReplay: true)
       return
     case .staged:
       if !replayDigest.isEmpty {
@@ -14541,7 +14547,7 @@ final class MessageCoordinator: ObservableObject {
           authenticationRef: authenticationRef
         )
       }
-      publishPhoneContactReceipt(contact: contact, receivedMessageId: messageId)
+      publishPhoneContactReceipt(contact: contact, receivedMessageId: messageId, ciphertextDigest: replayDigest)
     }
     if payload.string("type") == "input_attachment_receipt" {
       handlePhoneInputAttachmentReceipt(payload, contact: contact)
@@ -14816,40 +14822,6 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
-  private func publishPhoneContactReceipt(contact: GalaxySSIContact, receivedMessageId: String) {
-    guard let routes = contact.opaquePhoneRoutes, !receivedMessageId.isEmpty else { return }
-    let topic = routes.upTopic
-    let ack: [String: Any] = [
-      "type": "delivery_ack",
-      "transport_message_id": receivedMessageId,
-      "source_message_id": receivedMessageId,
-      "delivery_status": "accepted",
-      "sender": "system",
-      "peer_chat": true,
-      "time": Int64(Date().timeIntervalSince1970 * 1_000)
-    ]
-    guard let envelope = try? GalaxySSILinkProtocol.makeEnvelope(
-      payload: ack,
-      sourceId: signalEngine.identity.name,
-      targetId: contact.galaxySSIId
-    ), let encrypted = signalEngine.encrypt(envelope, remoteName: contact.galaxySSIId),
-      let wire = try? GalaxySSILinkProtocol.jsonData(encrypted) else {
-      return
-    }
-    do {
-      try transportReceiptJournal.enqueue(
-        peerId: contact.id,
-        phonePeer: true,
-        binding: GalaxySSITransportReceiptJournal.binding(peerId: contact.id, routes: routes),
-        receivedMessageId: receivedMessageId,
-        wirePayload: String(decoding: wire, as: UTF8.self)
-      )
-      wakeTransportReceiptDrain()
-    } catch {
-      lastError = error.localizedDescription
-    }
-  }
-
   private func handlePhoneContactDeliveryAck(
     _ payload: [String: Any],
     contact: GalaxySSIContact
@@ -14870,7 +14842,7 @@ final class MessageCoordinator: ObservableObject {
         status: .delivered
       )
     }
-    scheduleOutboxFlushFromStore()
+    wakeOutboxAfterReceipt()
   }
 
   private func handleLocalOnlyTransportPayload(
@@ -15008,7 +14980,10 @@ final class MessageCoordinator: ObservableObject {
       }
       if let authenticationRef, let proof = deliveryStore.authenticatedCiphertextProof(
         digest: replayDigest, authenticationRef: authenticationRef) {
-        if proof.receiptRequired { publishInboundReceipt(link: link, receivedMessageId: proof.messageId) }
+        if proof.receiptRequired {
+          publishInboundReceipt(link: link, receivedMessageId: proof.messageId,
+            ciphertextDigest: desktopReceiptDigest(for: object, topic: topic, link: link), isReplay: true)
+        }
         recordLinkDiagnostic(.encryptedReplay, link: link, topic: topic, messageIdentity: proof.messageId,
           detailCode: "authenticated_storage_proof")
         return
@@ -15017,7 +14992,10 @@ final class MessageCoordinator: ObservableObject {
          object.string("to") == receiverName,
          let known = deliveryStore.messageForCiphertext(digest: replayDigest),
          known.contactReminder == true, known.authenticationRef == nil {
-        if known.receiptRequired { publishInboundReceipt(link: link, receivedMessageId: known.messageId) }
+        if known.receiptRequired {
+          publishInboundReceipt(link: link, receivedMessageId: known.messageId,
+            ciphertextDigest: desktopReceiptDigest(for: object, topic: topic, link: link), isReplay: true)
+        }
         return
       }
       switch pairedSignalResult(object, authenticationRef: authenticationRef) {
@@ -15064,7 +15042,8 @@ final class MessageCoordinator: ObservableObject {
       guard !id.isBlank, receiveContactReminder(appPayload, authenticatedContact: contact) else { return }
       try? deliveryStore.bindCiphertext(digest: ciphertextReplayDigest(for: object), messageId: id,
         receiptRequired: true, contactReminder: true, authenticationRef: authenticationRef)
-      publishInboundReceipt(link: link, receivedMessageId: id)
+      publishInboundReceipt(link: link, receivedMessageId: id,
+        ciphertextDigest: desktopReceiptDigest(for: object, topic: topic, link: link))
       return
     }
     if appPayload.string("type") == "pairing_revoked" {
@@ -15327,10 +15306,12 @@ final class MessageCoordinator: ObservableObject {
     }
     if allowStage, !messageId.isEmpty {
       let digest = ciphertextReplayDigest(for: object)
+      let receiptDigest = desktopReceiptDigest(for: object, topic: topic, link: link, computed: digest)
       if !digest.isEmpty {
         if let known = deliveryStore.messageForCiphertext(digest: digest) {
           if known.receiptRequired {
-            publishInboundReceipt(link: link, receivedMessageId: known.messageId)
+            publishInboundReceipt(link: link, receivedMessageId: known.messageId,
+              ciphertextDigest: receiptDigest, isReplay: true)
           }
           recordLinkDiagnostic(
             .encryptedReplay,
@@ -15346,7 +15327,8 @@ final class MessageCoordinator: ObservableObject {
       case .invalid:
         return
       case .completed:
-        publishInboundReceipt(link: link, receivedMessageId: messageId)
+        publishInboundReceipt(link: link, receivedMessageId: messageId,
+          ciphertextDigest: receiptDigest, isReplay: true)
         recordLinkDiagnostic(
           .duplicateMessage,
           link: link,
@@ -15356,7 +15338,8 @@ final class MessageCoordinator: ObservableObject {
         )
         return
       case .pending:
-        publishInboundReceipt(link: link, receivedMessageId: messageId)
+        publishInboundReceipt(link: link, receivedMessageId: messageId,
+          ciphertextDigest: receiptDigest, isReplay: true)
         recordLinkDiagnostic(
           .pendingReplay,
           link: link,
@@ -15374,7 +15357,7 @@ final class MessageCoordinator: ObservableObject {
             authenticationRef: authenticationRef
           )
         }
-        publishInboundReceipt(link: link, receivedMessageId: messageId)
+        publishInboundReceipt(link: link, receivedMessageId: messageId, ciphertextDigest: receiptDigest)
       }
     }
     let sourceDesktopID = appPayload.string("desktop_id").ifBlank(link?.desktopId ?? "")

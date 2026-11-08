@@ -1538,17 +1538,17 @@ final class GalaxySSIStore: ObservableObject {
       for var partial in replies where receipt.isPartialReply(partial) {
         partial.deliveryStatus = .failed
         partial.deliveryTrace.append(DeliveryTraceEvent(stage: stage, detail: partialDetail))
-        if !persistRecoveredCloudMessage(partial) { savedPartials = false }
+        if !persistExactHistoryMessage(partial) { savedPartials = false }
       }
       guard savedPartials else { continue }
       if completed && ![.delivered, .read].contains(source.deliveryStatus) {
         source.deliveryStatus = .delivered
         source.deliveryTrace.append(DeliveryTraceEvent(stage: "cloud_reply", detail: receipt.modelId))
-        guard persistRecoveredCloudMessage(source) else { continue }
+        guard persistExactHistoryMessage(source) else { continue }
       } else if !completed && source.deliveryStatus != .failed {
         source.deliveryStatus = .failed
         source.deliveryTrace.append(DeliveryTraceEvent(stage: stage, detail: interruption))
-        guard persistRecoveredCloudMessage(source) else { continue }
+        guard persistExactHistoryMessage(source) else { continue }
       }
       if chatHistoryDatabase.retireCloudDispatch(receipt) { count += 1 }
     }
@@ -1565,8 +1565,22 @@ final class GalaxySSIStore: ObservableObject {
     return persistedMessage(id: outgoing.id, contactId: outgoing.contactId)?.manualCloudBinding == binding
   }
 
-  private func persistRecoveredCloudMessage(_ message: ChatMessage) -> Bool {
+  func persistExhaustedPeerDelivery(_ failure: ExhaustedPeerDelivery) -> Bool {
+    do {
+      if let source = try chatHistoryDatabase.persistExhaustedPeerDelivery(failure) {
+        refreshCommittedHistoryMessage(source)
+      }
+      return true
+    } catch { return false }
+  }
+
+  private func persistExactHistoryMessage(_ message: ChatMessage) -> Bool {
     guard chatHistoryDatabase.upsert(message) else { return false }
+    refreshCommittedHistoryMessage(message)
+    return true
+  }
+
+  private func refreshCommittedHistoryMessage(_ message: ChatMessage) {
     if !runtimePlaintextCleared, var cached = messagesByContact[message.contactId],
        let index = cached.firstIndex(where: { $0.id == message.id }) {
       cached[index] = message
@@ -1575,7 +1589,6 @@ final class GalaxySSIStore: ObservableObject {
       defer { suppressMessageDatabaseSync = previous }
       messagesByContact[message.contactId] = cached
     }
-    return true
   }
 
   // The MQTT completion drain consumes its event only after this throws-or-succeeds boundary.

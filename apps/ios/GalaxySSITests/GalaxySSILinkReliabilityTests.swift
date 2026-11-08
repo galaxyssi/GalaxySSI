@@ -4,6 +4,50 @@ import XCTest
 
 @MainActor
 final class GalaxySSILinkReliabilityTests: XCTestCase {
+  func testReceiptReplayCoalescesOnlyBrokerAcknowledgedExactCiphertext() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let cipher = GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    var uptime: TimeInterval = 100
+    let journal = GalaxySSITransportReceiptJournal(applicationSupportDirectory: directory, cipher: cipher, uptime: { uptime })
+    let digest = String(repeating: "a", count: 64)
+    var encryptions = 0
+    func enqueue(_ journal: GalaxySSITransportReceiptJournal, binding: String = "route",
+                 digest: String? = nil, replay: Bool = true, now: Int64 = 1_000) throws -> Bool {
+      try journal.enqueue(peerId: "peer", phonePeer: false, binding: binding, receivedMessageId: "source",
+        receivedCiphertextDigest: digest, isReplay: replay, nowMillis: now) {
+        encryptions += 1
+        return "encrypted-receipt"
+      }
+    }
+    XCTAssertTrue(try enqueue(journal, digest: digest, replay: false))
+    let original = try XCTUnwrap(journal.due(nowMillis: 1_000).first)
+    let work = try XCTUnwrap(journal.claim(id: original.id, nowMillis: 1_000))
+    try journal.acknowledge(id: work.id, attemptToken: "stale-attempt")
+    for _ in 0..<128 { XCTAssertTrue(try enqueue(journal, digest: digest)) }
+    XCTAssertEqual(encryptions, 1)
+    XCTAssertEqual(journal.due(nowMillis: 13_000).first?.wirePayload, "encrypted-receipt")
+    try journal.acknowledge(id: work.id, attemptToken: work.attemptToken)
+    for _ in 0..<128 { XCTAssertFalse(try enqueue(journal, digest: digest)) }
+    XCTAssertEqual(encryptions, 1)
+
+    XCTAssertTrue(try enqueue(journal, binding: "other-route", digest: digest))
+    XCTAssertTrue(try enqueue(journal, digest: String(repeating: "b", count: 64)))
+    for pending in journal.due(nowMillis: 1_000) { try journal.discard(id: pending.id) }
+    XCTAssertEqual(encryptions, 3)
+    XCTAssertFalse(try enqueue(journal, digest: digest))
+    uptime += 2
+    XCTAssertTrue(try enqueue(journal, digest: digest))
+    let next = try XCTUnwrap(journal.due(nowMillis: 1_000).first)
+    let claimed = try XCTUnwrap(journal.claim(id: next.id, nowMillis: 1_000))
+    try journal.acknowledge(id: next.id, attemptToken: claimed.attemptToken)
+    XCTAssertFalse(try enqueue(journal, digest: digest))
+
+    let reopened = GalaxySSITransportReceiptJournal(applicationSupportDirectory: directory, cipher: cipher, uptime: { uptime })
+    XCTAssertTrue(try enqueue(reopened, digest: digest))
+    XCTAssertEqual(encryptions, 5)
+  }
+
   func testAttachmentDeclarationReuseAndSafeStartupCompaction() throws {
     let fixture = try ChunkFixture()
     let suite = "attachment-declaration-" + UUID().uuidString
@@ -320,6 +364,7 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
     var rows = try XCTUnwrap(snapshot["outbox"] as? [[String: Any]])
     for index in rows.indices where rows[index]["messageId"] as? String != "modern" {
       rows[index].removeValue(forKey: "retry_classified")
+      if rows[index]["messageId"] as? String == "legacy" { rows[index]["attempts"] = 1 }
     }
     snapshot["outbox"] = rows
     defaults.set(try JSONSerialization.data(withJSONObject: snapshot), forKey: key)
@@ -331,6 +376,8 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
     let reopened = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: secrets)
     XCTAssertEqual(Set(reopened.pending(now: now).map(\.messageId)), ["tracked", "modern"])
     XCTAssertTrue(reopened.discardExhausted(maxAttempts: 1, now: now).isEmpty)
+    XCTAssertNil(reopened.nextExhaustionDelay(now: now, maxAttempts: 1, attachmentMaxAttempts: 1,
+      eligible: { _ in true }, minimumDelay: { _ in 0 }))
     let held = try XCTUnwrap(reopened.outboxMigrationSnapshot().first { $0.messageId == "legacy" })
     XCTAssertTrue(held.isHeld)
     XCTAssertEqual(held.wirePayload, "legacy-wire")
@@ -647,6 +694,40 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
       store.discardExhausted(maxAttempts: 6, now: now.addingTimeInterval(600)).map(\.messageId),
       ["active"]
     )
+  }
+
+  func testExhaustedPeerProjectionSurvivesReopenAndRollsBackIfJournalRejectsWrite() throws {
+    let fixture = try ChunkFixture()
+    let suite = "exhausted-peer-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let journal = GalaxySSIChatHistoryDatabase(fileURL: fixture.url, secrets: fixture.secrets)
+    let delivery = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    let source = UUID()
+    let now = Date(timeIntervalSince1970: 100)
+    let exhaustedAt = now.addingTimeInterval(60)
+    delivery.enqueue(messageId: "peer-wire", topic: "peer/up", wirePayload: "private-ciphertext",
+      clientSourceMessageId: source.uuidString, contactId: "peer", now: now)
+    delivery.markAttempt(messageId: "peer-wire", now: now)
+    XCTAssertNil(delivery.nextRetryDelay(now: exhaustedAt, maxAttempts: 1))
+    XCTAssertEqual(delivery.nextExhaustionDelay(now: exhaustedAt, maxAttempts: 1, attachmentMaxAttempts: 1,
+      eligible: { _ in true }, minimumDelay: { _ in 0 }), 1)
+    let binding: (PendingLinkMessage) -> String? = { $0.topic == "peer/up" ? "verified-binding" : nil }
+    try fixture.execute("CREATE TRIGGER reject_peer_failure BEFORE UPDATE ON link_delivery_state BEGIN SELECT RAISE(ABORT,'forced'); END")
+    XCTAssertTrue(delivery.discardExhausted(maxAttempts: 1, now: exhaustedAt, peerBinding: binding).isEmpty)
+    XCTAssertTrue(delivery.containsOutboxMessage("peer-wire"))
+    XCTAssertTrue(delivery.pendingPeerFailures(now: exhaustedAt).isEmpty)
+    try fixture.execute("DROP TRIGGER reject_peer_failure")
+    XCTAssertTrue(delivery.discardExhausted(maxAttempts: 1, now: exhaustedAt, peerBinding: binding).isEmpty)
+    let reopened = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    let failures = reopened.pendingPeerFailures(now: exhaustedAt)
+    XCTAssertEqual(failures, [.init(messageId: "peer-wire", sourceId: source, contactId: "peer",
+      topic: "peer/up", binding: "verified-binding", attempts: 1, recordedAt: exhaustedAt)])
+    XCTAssertFalse(reopened.containsOutboxMessage("peer-wire"))
+    XCTAssertTrue(reopened.pending(now: exhaustedAt).isEmpty)
+    reopened.retirePeerFailures(failures, now: exhaustedAt)
+    let final = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    XCTAssertTrue(final.pendingPeerFailures(now: exhaustedAt).isEmpty)
   }
 
   func testExhaustedAttachmentDiscardsWholeSourceMessageGroup() throws {

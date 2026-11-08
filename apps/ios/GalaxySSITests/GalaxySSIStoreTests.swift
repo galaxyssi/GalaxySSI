@@ -191,6 +191,28 @@ extension AgentRuntimePackCatalogEntry {
 
 @MainActor
 final class GalaxySSIStoreTests: XCTestCase {
+  @MainActor
+  func testExhaustedPeerProjectionOnlyUpdatesMatchingPendingOutgoingHistory() throws {
+    let store = makeStore()
+    let source = store.appendOutgoing("Queued message", to: "peer")
+    let failure = ExhaustedPeerDelivery(messageId: "wire", sourceId: source.id, contactId: "peer",
+      topic: "peer/up", binding: "verified-binding", attempts: 6, recordedAt: Date())
+    let wrong = ExhaustedPeerDelivery(messageId: "wire", sourceId: source.id, contactId: "other",
+      topic: "peer/up", binding: "verified-binding", attempts: 6, recordedAt: Date())
+    XCTAssertFalse(store.persistExhaustedPeerDelivery(wrong))
+    XCTAssertEqual(store.persistedMessage(id: source.id, contactId: "peer")?.deliveryStatus, .queued)
+    XCTAssertTrue(store.persistExhaustedPeerDelivery(failure))
+    XCTAssertTrue(store.persistExhaustedPeerDelivery(failure))
+    let failed = try XCTUnwrap(store.persistedMessage(id: source.id, contactId: "peer"))
+    XCTAssertEqual(failed.deliveryStatus, .failed)
+    XCTAssertEqual(failed.deliveryTrace.filter { $0.stage == "delivery_retry_exhausted" }.count, 1)
+    XCTAssertTrue(store.appendDeliveryTrace(source.id, contactId: "peer", stage: "verified-receipt", status: .read))
+    XCTAssertTrue(store.persistExhaustedPeerDelivery(failure))
+    XCTAssertEqual(store.persistedMessage(id: source.id, contactId: "peer")?.deliveryStatus, .read)
+    XCTAssertTrue(store.deleteMessage(source.id, contactId: "peer"))
+    XCTAssertTrue(store.persistExhaustedPeerDelivery(failure))
+    XCTAssertNil(store.persistedMessage(id: source.id, contactId: "peer"))
+  }
   func testConversationScheduleClaimsOnceAndFencesOldRevisions() throws {
     let store = makeStore()
     let owner = store.createAgentSession(title: "Owner")
