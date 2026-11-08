@@ -3318,13 +3318,34 @@ final class MessageCoordinator: ObservableObject {
     }
     guard isAuthorized(),
           (try? history.updateSavedToolExecution(.running(executionID: record.executionID), scope: scope))?.didStart == true else { return }
+    let released = record.releaseTarget != nil
+    let mode = released ? "run" : "test"
     func finish(_ result: AgentMcpJSONObject) {
-      _ = try? history.updateSavedToolExecution(.finish(executionID: record.executionID, result: result), scope: scope)
+      var payload = result
+      payload["execution_mode"] = .string(mode)
+      _ = try? history.updateSavedToolExecution(.finish(executionID: record.executionID, result: payload), scope: scope)
     }
-    guard let prepared = try? history.prepareSavedToolTest(record.plan, timeoutMillis: record.timeoutMillis, scope: scope.assignment),
-          let registry = localNativeToolRuntime?.registry else {
+    guard let registry = localNativeToolRuntime?.registry else {
       finish(["native_status": .string("unavailable"), "passed": .null])
       return
+    }
+    let prepared: (runtimeInput: AgentMcpJSONObject, evidenceInput: AgentMcpJSONObject, originalSource: String,
+      evaluate: (AgentNativeToolResult) -> AgentMcpJSONObject)
+    if let target = record.releaseTarget {
+      guard let parameters = record.parameters,
+            let run = try? history.prepareSavedToolRun(target, reference: record.plan, parameters: parameters,
+              timeoutMillis: record.timeoutMillis, scope: scope.assignment) else {
+        finish(["native_status": .string("rejected"), "passed": .null, "reason": .string("release_or_lineage_unavailable")])
+        return
+      }
+      prepared = (run.runtimeInput, run.evidenceInput, run.originalSource, run.evaluate)
+    } else {
+      guard let test = try? history.prepareSavedToolTest(record.plan, timeoutMillis: record.timeoutMillis,
+        scope: scope.assignment) else {
+        finish(["native_status": .string("unavailable"), "passed": .null])
+        return
+      }
+      prepared = (test.runtimeInput, test.evidenceInput, test.originalSource, test.evaluate)
     }
     let toolId = AgentIOSOnDeviceRuntimeNativeToolCatalog.execute
     guard AgentCollaborationSavedToolExecution.permitsDirectRuntime(source: prepared.originalSource, key: key) else {
@@ -3347,14 +3368,15 @@ final class MessageCoordinator: ObservableObject {
     defer { monitor.cancel() }
     let assignment = scope.assignment
     let context = AgentNativeToolInvocationContext(invocationId: key, sessionId: assignment.runId,
-      conversationId: assignment.conversationId, turnId: assignment.turnId, callerId: "galaxyssi.collaboration.saved_test",
+      conversationId: assignment.conversationId, turnId: assignment.turnId, callerId: "galaxyssi.collaboration.saved_" + mode,
       requestedAtEpochMillis: AgentControlPlaneClock.nowMillis(), idempotencyKey: key,
       grantedPermissions: [AgentIOSOnDeviceRuntimeNativeToolCatalog.runtimePermission,
         AgentIOSOnDeviceRuntimeNativeToolCatalog.workspacePermission],
       attributes: ["workspace_id": String(key.dropFirst("saved-tool-test:".count))])
     let token = cancellation.token
+    let runtimeInput = prepared.runtimeInput
     let result = await Task.detached(priority: .utility) {
-      registry.invoke(toolId, input: prepared.runtimeInput, context: context,
+      registry.invoke(toolId, input: runtimeInput, context: context,
         hooks: AgentNativeToolInvocationHooks(cancellationRequested: { token.isCancellationRequested }))
     }.value
     guard !revoked.token.isCancellationRequested, isAuthorized() else { return }
@@ -3362,10 +3384,11 @@ final class MessageCoordinator: ObservableObject {
     let receipt = try? history.recordNativeObservation(AgentCollaborationNativeToolObservation(runId: assignment.runId,
       conversationId: assignment.conversationId, turnId: assignment.turnId, memberId: assignment.memberId,
       sourceId: assignment.sourceId, input: prepared.evidenceInput, result: result, evaluation: evaluation))
-    let verdict = receipt != nil && evaluation["checks"] != nil ? evaluation["passed"] ?? .null : .null
+    let verdict = receipt != nil && (released || evaluation["checks"] != nil) ? evaluation["passed"] ?? .null : .null
     finish(["native_status": .string(result.status.rawValue), "passed": verdict,
       "native_receipt": result.toJSONObject()["receipt"] ?? .null,
       "galaxyssi_evidence_receipt": receipt.map(AgentMcpJSONValue.object) ?? .null,
+      "reason": evaluation["reason"] ?? .null,
       "error": result.error.map { .object(["code": .string($0.code), "details_in_original_evidence": .bool(receipt != nil)]) } ?? .null])
   }
 

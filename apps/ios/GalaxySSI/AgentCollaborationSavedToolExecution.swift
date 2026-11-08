@@ -6,6 +6,8 @@ enum AgentCollaborationSavedToolExecution {
   static let responseType = "collaboration_tool_test_result"
   static let processID = UUID().uuidString
 
+  enum ReleaseTarget: String, Codable, Equatable { case release = "tool_release", channel = "capability_channel" }
+
   static func permitsDirectRuntime(source: String, key: String) -> Bool {
     let toolId = AgentIOSOnDeviceRuntimeNativeToolCatalog.execute
     let action = AgentAction(id: key, kind: .callNativeTool, target: toolId, risk: .medium,
@@ -21,6 +23,8 @@ enum AgentCollaborationSavedToolExecution {
     let plan: AgentCollaborationResearchReference?
     let timeoutMillis: Int64?
     let inputHash: String
+    let releaseTarget: ReleaseTarget?
+    let parameters: AgentMcpJSONObject?
 
     init?(phase: String, input: AgentMcpJSONObject) {
       guard let mode = Mode(rawValue: phase), input["mode"] == .string(phase),
@@ -31,8 +35,22 @@ enum AgentCollaborationSavedToolExecution {
       executionID = id
       switch mode {
       case .start:
-        guard Set(input.keys) == ["mode", "execution_id", "tool_test_plan", "timeout_ms"],
-              let reference = AgentCollaborationSavedToolTest.reference(input["tool_test_plan"]),
+        let base: Set<String> = ["mode", "execution_id", "timeout_ms"]
+        let key: String
+        if Set(input.keys) == base.union(["tool_test_plan"]) {
+          key = "tool_test_plan"
+          releaseTarget = nil
+          parameters = nil
+        } else {
+          let targets: [ReleaseTarget] = [.release, .channel]
+          guard let target = targets.first(where: { Set(input.keys) == base.union([$0.rawValue, "parameters"]) }),
+                let values = input["parameters"]?.objectValue,
+                AgentMcpJSONCodec.stringify(values).utf8.count <= 4_096 else { return nil }
+          key = target.rawValue
+          releaseTarget = target
+          parameters = values
+        }
+        guard let reference = AgentCollaborationSavedToolTest.reference(input[key]),
               reference.revision <= Int64(Int32.max), case .int(let timeout)? = input["timeout_ms"],
               (100...AgentIOSOnDeviceRuntimeNativeToolCatalog.maxTimeoutMillis).contains(timeout) else { return nil }
         plan = reference
@@ -41,6 +59,8 @@ enum AgentCollaborationSavedToolExecution {
         guard Set(input.keys) == ["mode", "execution_id"] else { return nil }
         plan = nil
         timeoutMillis = nil
+        releaseTarget = nil
+        parameters = nil
       }
       inputHash = AgentMcpJSONCodec.sha256(input)
     }
@@ -82,6 +102,8 @@ enum AgentCollaborationSavedToolExecution {
     var state: State
     var updatedAt: Int64
     var result: AgentMcpJSONObject?
+    var releaseTarget: ReleaseTarget? = nil
+    var parameters: AgentMcpJSONObject? = nil
 
     var response: AgentMcpJSONObject {
       ["success": .bool(true), "status": .string(state.rawValue), "execution_id": .string(executionID),
@@ -145,7 +167,8 @@ enum AgentCollaborationSavedToolExecution {
         }
         guard allowAdmission else { return Outcome(record: nil, busy: true) }
         return Outcome(record: Record(scope: scope, executionID: request.executionID, inputHash: request.inputHash,
-          plan: plan, timeoutMillis: timeoutMillis, ownerProcess: process, state: .queued, updatedAt: now), shouldLaunch: true)
+          plan: plan, timeoutMillis: timeoutMillis, ownerProcess: process, state: .queued, updatedAt: now,
+          releaseTarget: request.releaseTarget, parameters: request.parameters), shouldLaunch: true)
       case .status:
         return Outcome(record: current)
       case .cancel:
