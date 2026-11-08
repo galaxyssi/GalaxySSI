@@ -283,8 +283,36 @@ date, and the snapshot does not claim to include the full local feedback history
 
 Background navigation and privacy withdrawal clear feedback editors and history
 dialogs. Automatic voice-to-feedback writes, correction/retraction workflows,
-model pagination of feedback history, and the full visit/rehabilitation lifecycle
-remain future increments. No software test establishes clinical effectiveness.
+and the full visit/rehabilitation lifecycle remain future increments. No software
+test establishes clinical effectiveness.
+
+### Scoped feedback history for Agent discussions
+
+The existing manual discussion approval now discloses paged access to this
+concern's execution feedback. A persisted per-turn flag authorizes the read-only
+phone tool `galaxyssi.health.feedback.read`; old grants default to false, and
+automatic research does not acquire this additional permission. The Agent main
+layout is unchanged. No feedback is included automatically in the first prompt
+beyond the existing latest action notes. The snapshot names the available tool.
+
+The tool uses indexed revision-keyset pages of at most 30 encrypted receipts,
+including feedback for actions no longer in the current plan. It binds the
+conversation, turn, concern revision, measurement clock, selected profile and
+privacy approval before and after reading. It cannot select another concern or
+write records. New feedback or changed permission/source data requires a fresh
+approval instead of mixing pages from different snapshots. Local-model access
+works offline; remote-model access still requires online-analysis permission.
+
+Feedback outside the current profile-sharing scope is redacted, including its
+action title and timestamp, while its revision keeps pagination continuous.
+Current-plan membership, stale basis, user-reported execution and save time are
+separate facts; no entry proves clinical improvement. Legacy outcome text is not
+fabricated into feedback receipts. Observation compaction retains entire entries
+and advances only past delivered entries; an insufficient budget preserves the
+cursor and explicitly requires a larger budget, not repeated identical reads.
+
+This adds model access to recorded follow-up evidence, not an independently
+verified clinical review, automatic treatment adjustment or background authority.
 
 ## Local visit-preparation preview
 

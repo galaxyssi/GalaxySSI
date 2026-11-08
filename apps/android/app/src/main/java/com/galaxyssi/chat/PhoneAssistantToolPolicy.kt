@@ -10,7 +10,7 @@ internal object PhoneAssistantToolPolicy {
         allowsRemotePhoneTool(id) || AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(id)
 
     fun allowsRemotePhoneTool(id: String): Boolean = id == AgentConversationRecallTool.ID || id == HealthCarePlanTool.ID ||
-        id == HealthCareHistoryTool.ID || id in HealthCareQuestionTools.ids || id in AgentAppControlTools.toolIds ||
+        id == HealthCareHistoryTool.ID || id == HealthCareFeedbackTool.ID || id in HealthCareQuestionTools.ids || id in AgentAppControlTools.toolIds ||
         id in AgentToolInspectionTools.toolIds || id in AgentPhoneUiNativeTools.toolIds ||
         id in AgentScheduleNativeTools.toolIds ||
         id in AgentWebIntelligenceNativeTools.directSearchToolIds ||
