@@ -58,6 +58,31 @@ struct MqttDesktopConnectorProjection {
     return request
   }
 
+  func outgoingCancellation(_ payload: [String: Any],
+                            target: MqttPeerChatProjection.Destination) throws -> MqttSignalSendRequest {
+    let fields: Set<String> = ["type", "task_id", "client_route_id", "conversation_id", "turn_id", "contact_id",
+      "source_message_id", "agent_id", "desktop_id", "time"]
+    let source = payload.string("source_message_id")
+    guard Set(payload.keys) == fields, payload.string("type") == "agent_task_cancel",
+          payload.string("desktop_id") == target.peer.remoteSignalName,
+          try MqttRouteProtocol.integer(payload, "time") > 0,
+          (Int64(source) ?? 0) > 0 || UUID(uuidString: source) != nil else { throw MqttRouteError.invalidPayload }
+    let contact = try contact(payload, target: target)
+    guard contact.trustState == .verified,
+          let registered = identities.identity(contactId: contact.id, sourceMessageId: source),
+          registered.isComplete, registered.clientRouteId == target.routeId,
+          registered.conversationId == payload.string("conversation_id"), registered.turnId == payload.string("turn_id"),
+          registered.taskId == payload.string("task_id") else { throw MqttRouteError.identityChanged }
+    let identity = try MqttBusinessIdentity(target.peer.binding)
+    var application = payload
+    application["source_message_id"] = source
+    let digest = MqttRouteProtocol.digest(try MqttBusinessStorage.payload(application))
+    application["message_id"] = try MqttPeerChatProjection.stableID([identity.binding, "desktop-task-cancel", digest])
+    // Route ownership remains with the paired device even when the task's authorization was revoked.
+    return try MqttSignalSendRequest(identity: identity, payload: application, remoteName: target.peer.remoteSignalName,
+      topic: target.peer.binding.sendTopic, clientRouteID: target.routeId, traffic: .control, contactID: target.contactId)
+  }
+
   func outgoingRequests(_ payload: [String: Any], target: MqttPeerChatProjection.Destination,
                         attachments: [AgentPreparedOutboundAttachment], blobTransfers: Set<String>,
                         ownerContactID: String? = nil) throws -> [MqttSignalSendRequest] {

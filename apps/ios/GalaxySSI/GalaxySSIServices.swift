@@ -2366,6 +2366,18 @@ final class MessageCoordinator: ObservableObject {
       "desktop_id": link.desktopId,
       "time": Int64(Date().timeIntervalSince1970 * 1_000)
     ]
+    if !usesLegacyMqtt {
+      do {
+        guard let journalMqttRuntime else { throw GalaxySSIError.transportUnavailable }
+        var command = payload
+        if snapshot.updatedAtMillis > 0 { command["time"] = snapshot.updatedAtMillis }
+        try journalMqttRuntime.enqueueDesktopConnectorCancellation(command, desktopId: link.desktopId)
+        return true
+      } catch {
+        lastError = "Agent cancellation could not be queued for the original Desktop route"
+        return false
+      }
+    }
     guard let wire = try? linkWirePayload(payload, link: link) else {
       lastError = "Agent cancellation payload could not be encoded"
       return false
