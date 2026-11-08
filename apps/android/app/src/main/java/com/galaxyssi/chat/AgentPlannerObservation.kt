@@ -4,7 +4,8 @@ package com.galaxyssi.chat
 internal object AgentPlannerObservation {
     fun from(action: AgentAction, maximumCharacters: Int): String? {
         if (action.status == AgentActionStatus.COMPLETED &&
-            AgentWebObservation.compact(action.evidence, maximumCharacters) != null) {
+            (HealthCareHistoryObservation.compact(action.evidence, maximumCharacters) != null ||
+                AgentWebObservation.compact(action.evidence, maximumCharacters) != null)) {
             return sanitize(action.evidence, maximumCharacters)
         }
         return sanitize(listOf(action.result, action.evidence), maximumCharacters)
@@ -47,6 +48,7 @@ internal object AgentPlannerObservation {
 
     private fun compact(value: String, maximumCharacters: Int): String {
         if (maximumCharacters <= 0) return ""
+        HealthCareHistoryObservation.compact(value, maximumCharacters)?.let { return it }
         AgentWebObservation.compact(value, maximumCharacters)?.let { return it }
         if (value.length <= maximumCharacters) return value
         if (maximumCharacters <= COMPACTION_MARKER.length + 2) {

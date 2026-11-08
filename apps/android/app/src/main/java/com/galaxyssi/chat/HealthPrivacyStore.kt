@@ -42,6 +42,8 @@ internal class HealthPrivacyStore(private val context: Context, private val name
         if (next.version != expected) {
             context.contentResolver.notifyChange(changes(context, name), null)
             if (name == DEFAULT_DB && option == HealthPrivacyOption.CONFIRMED_METRICS) HealthReminderWork.sleepRecordsChanged(context)
+            if (name == DEFAULT_DB) HealthReminderWork.sourceRemindersChanged(context)
+            if (name == DEFAULT_DB) HealthCareResearchWork.changed(context)
         }
         return next
     }

@@ -2,13 +2,11 @@ import CryptoKit
 import Foundation
 
 enum AgentIOSOriginalHTMLSourceArchive {
-  static func save(_ source: Data, documents: URL? = nil) throws -> URL {
+  static func save(_ source: Data, applicationSupport: URL? = nil) throws -> URL {
     guard !source.isEmpty, source.count <= Int(AgentIOSWebIntelligenceNativeToolCatalog.maxFetchBytes) else {
       throw CocoaError(.fileWriteUnknown)
     }
-    let root = try documents ?? FileManager.default.url(for: .documentDirectory,
-      in: .userDomainMask, appropriateFor: nil, create: true)
-    let directory = root.appendingPathComponent("Downloads", isDirectory: true)
+    let directory = GalaxySSIPrivateChatFiles.directory("OriginalWebSources", applicationSupport: applicationSupport)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let digest = SHA256.hash(data: source).map { String(format: "%02x", $0) }.joined()
     // Use a text extension so the original, unsanitized markup is not opened as an active page.

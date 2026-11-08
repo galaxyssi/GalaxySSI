@@ -32,7 +32,8 @@ internal object AgentSessionPersistencePolicy {
     fun compactText(value: String): String = value.take(MAX_GENERAL_TEXT_CHARACTERS)
 
     fun compactActionText(value: String): String =
-        AgentWebObservation.compact(value, MAX_ACTION_TEXT_CHARACTERS, preserveReceipt = true)
+        HealthCareHistoryObservation.compact(value, MAX_ACTION_TEXT_CHARACTERS, preserveReceipt = true)
+            ?: AgentWebObservation.compact(value, MAX_ACTION_TEXT_CHARACTERS, preserveReceipt = true)
             ?: value.take(MAX_ACTION_TEXT_CHARACTERS)
 
     fun compactAuditText(value: String): String = value.take(MAX_AUDIT_TEXT_CHARACTERS)

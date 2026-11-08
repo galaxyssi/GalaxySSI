@@ -1,0 +1,11 @@
+<resources>
+    <string name="health_care_bp_title">优先核对这次血压读数</string>
+    <string name="health_care_bp_threshold">保存的收缩压超过 180 或舒张压超过 120 mmHg。这不是诊断。</string>
+    <string name="health_care_bp_record">测量于 %1$s：%2$s %3$s</string>
+    <string name="health_care_bp_emergency">如果目前血压仍这样高，并伴有胸痛、气短、背痛、麻木、无力、视力变化或说话困难，请立即联系当地急救服务，不要等待 Agent 回复。</string>
+    <string name="health_care_bp_recheck">如果这是当前读数，且没有上述或其他新出现的令人担忧的症状，至少间隔一分钟再测；仍这样高，应尽快联系医护人员。不要自行调整药物。</string>
+    <string name="health_care_bp_scope">这份指引面向非孕成年人。儿童和孕期需要不同的评估，请及时咨询医护人员，不要套用这个阈值。</string>
+    <string name="health_care_bp_history">请核对测量日期，旧记录不能证明当前正发生急症。App 不知道你此刻的症状，也不能发现所有危险；没有提示不代表安全。</string>
+    <string name="health_care_bp_details">查看处理说明与依据</string>
+    <string name="health_care_bp_source">来源：美国心脏协会 · 2025 年 8 月 14 日审核</string>
+</resources>

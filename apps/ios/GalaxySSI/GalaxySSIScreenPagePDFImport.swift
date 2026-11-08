@@ -295,10 +295,10 @@ extension AgentHomeView {
         let status: String
         if let saved {
           status = String(format: t("galaxyssi.screen_page.pdf_saved",
-            "Saved in Files: On My iPhone > GalaxySSI > Downloads > %@"), saved.lastPathComponent)
+            "Kept in GalaxySSI: %@"), saved.lastPathComponent)
         } else {
           status = t("galaxyssi.screen_page.pdf_save_failed",
-            "Could not save a copy in Files. The original PDF is still attached.")
+            "Could not keep a private copy. The original PDF is still attached.")
         }
         richActionStatus = added + "\n" + status
       } catch {

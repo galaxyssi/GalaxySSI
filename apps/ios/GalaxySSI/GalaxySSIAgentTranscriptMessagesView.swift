@@ -288,20 +288,15 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
 
   private var visibleMessages: [ChatMessage] {
     let runs = Dictionary(store.proactiveRuns.map { ($0.runId, $0) }, uniquingKeysWith: { first, _ in first })
+    let visibility = store.scheduledReplyVisibility()
     return messages.compactMap { message in
       guard !CloudSupervisedResearch.isTranscriptControlReply(message),
+            !visibility.hides(message),
             !message.deliveryTrace.contains(where: { $0.stage == AgentConversationSchedule.occurrenceStage })
       else { return nil }
       if !message.isMine, !message.isSystem, let run = runs[message.turnId],
          let task = store.automationTask(id: run.taskId), task.action.isConversationSchedule,
          task.action.conversationId == message.conversationId {
-        if run.status == .unverified && run.errorCode == "phone_observation_unverified" { return nil }
-        if run.status.terminal,
-           let previous = store.automationRuns(taskId: run.taskId).first(where: {
-             $0.scheduledForMillis < run.scheduledForMillis && [.completed, .failed, .unverified].contains($0.status)
-           }),
-           previous.status == run.status, previous.resultSummary == run.resultSummary,
-           message.richOutputJson.isBlank { return nil }
         return AgentConversationSchedule.remotePresentation(message)
       }
       let task = AgentConversationSchedule.receiptTaskID(message).flatMap { store.automationTask(id: $0) }

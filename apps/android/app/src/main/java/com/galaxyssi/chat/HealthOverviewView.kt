@@ -26,6 +26,9 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
             addView(ui.icon(R.drawable.ic_chat_shortcut_list, R.string.health_overview_sort) { chooseOrder(content, snapshot, firstUse) })
         }
         if (snapshot.hasRecords) content.addView(heading) else firstUse.showIntro(content)
+        ui.add(content, ui.profileRow(label(R.string.health_care_title), label(R.string.health_care_attention)) {
+            activity.startActivity(Intent(activity, HealthCareActivity::class.java).putHealthNavigationFixture(names))
+        }.apply { tag = "health-overview-proactive-care" }, 12)
         if (snapshot.hasRecords || snapshot.attention.isNotEmpty() || snapshot.reviewUnavailable ||
             snapshot.connectionsUnavailable || !snapshot.derived.permitted) {
             val section = ui.column().apply { tag = "health-overview-attention" }

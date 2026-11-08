@@ -105,7 +105,14 @@ struct ContactConversationSummary: Equatable {
 
 @MainActor
 final class GalaxySSIStore: ObservableObject {
-  @Published private(set) var profile: GalaxySSIProfile
+  @Published private(set) var profile: GalaxySSIProfile {
+    didSet {
+      if oldValue.identityFingerprint != profile.identityFingerprint {
+        GalaxySSIPhoneRouteAgreements.cache.clear()
+        AgentInvocationProfile.clearMetadataCache()
+      }
+    }
+  }
   @Published private(set) var contacts: [GalaxySSIContact]
   @Published private(set) var friendRequests: [GalaxySSIFriendRequest]
   @Published internal(set) var messagesByContact: [String: [ChatMessage]] {
@@ -136,7 +143,24 @@ final class GalaxySSIStore: ObservableObject {
     didSet { save() }
   }
   @Published internal(set) var agentTaskRecords: [AgentTaskRecord] {
-    didSet { save() }
+    didSet { if !committingSupervisedBrowserState { save() } }
+  }
+  private var committingSupervisedBrowserState = false
+
+  func commitSupervisedBrowserState(expected: AgentTaskRecord?, updated: AgentTaskRecord) -> Bool {
+    guard !committingSupervisedBrowserState, !updated.taskId.isBlank,
+          agentTask(id: updated.taskId) == expected, expected?.phase != .cancelled,
+          expected == nil || expected?.sessionId == updated.sessionId else { return false }
+    let before = agentTaskRecords
+    let records = before.filter { $0.taskId != updated.taskId } + [updated]
+    committingSupervisedBrowserState = true
+    defer { committingSupervisedBrowserState = false }
+    agentTaskRecords = Array(Self.sortedAgentTasks(records).prefix(200))
+    guard agentTaskRecords.contains(updated), save() else {
+      agentTaskRecords = before
+      return false
+    }
+    return true
   }
   @Published internal(set) var proactiveTasks: [AgentProactiveTask] {
     didSet { if !committingScheduleState { save() } }
@@ -354,6 +378,7 @@ final class GalaxySSIStore: ObservableObject {
   private let phoneContactCardsKey = "galaxyssi.phone_contact_cards"
   private let homeAssistantAccessTokenAccount = "home_assistant.access_token"
   private var runtimePlaintextCleared = false
+  private(set) var runtimePlaintextGeneration: UInt64 = 0
   var canRestoreMessageViewport: Bool { !runtimePlaintextCleared }
   var canReadVoiceReminderSnapshot: Bool { !runtimePlaintextCleared }
   var canReadAgentTranscript: Bool { !runtimePlaintextCleared }
@@ -661,11 +686,12 @@ final class GalaxySSIStore: ObservableObject {
   }
 
   func messages(for contactId: String) -> [ChatMessage] {
-    messagesByContact[contactId] ?? []
+    (messagesByContact[contactId] ?? []).filter(chatHistoryDatabase.admitsAgentTurn)
   }
 
   func persistedMessage(id: UUID, contactId: String) -> ChatMessage? {
-    guard let message = chatHistoryDatabase.message(id: id), message.contactId == contactId else { return nil }
+    guard let message = chatHistoryDatabase.message(id: id), message.contactId == contactId,
+          chatHistoryDatabase.admitsAgentTurn(message) else { return nil }
     return message
   }
 
@@ -754,6 +780,7 @@ final class GalaxySSIStore: ObservableObject {
   func clearRuntimePlaintextForBackground() {
     chatHistoryDatabase.setRowCachingEnabled(false)
     guard !runtimePlaintextCleared else { return }
+    runtimePlaintextGeneration &+= 1
     guard save() else { return }
     runtimePlaintextCleared = true
     wipeRuntimeMessageCache()
@@ -792,20 +819,41 @@ final class GalaxySSIStore: ObservableObject {
     guard !snapshot.isEmpty else { return }
     let identity = profile.identityFingerprint
     let history = chatHistoryDatabase
-    let work = Task.detached(priority: .utility) { () -> [String: [AgentReplyUnreadStore.PendingMarker]] in
+    let visibility = scheduledReplyVisibility()
+    let work = Task.detached(priority: .utility) { () -> ([String: [AgentReplyUnreadStore.PendingMarker]], [String: Set<String>]) in
       var confirmed: [String: [AgentReplyUnreadStore.PendingMarker]] = [:]
+      var quietByConversation: [String: Set<String>] = [:]
       for (conversation, markers) in snapshot {
-        guard !Task.isCancelled else { return [:] }
+        guard !Task.isCancelled else { return ([:], [:]) }
         history.prepareLegacyUnreadIndex(conversationId: conversation)
-        guard let missing = history.missingUnreadTokens(conversationId: conversation,
-          candidates: Set(markers.map(\.token))), !missing.isEmpty else { continue }
-        confirmed[conversation] = markers.filter { missing.contains($0.token) }
+        let tokens = Set(markers.map(\.token))
+        let missing = history.missingUnreadTokens(conversationId: conversation, candidates: tokens) ?? []
+        let quiet = history.quietScheduledUnreadTokens(conversationId: conversation, candidates: tokens, visibility: visibility)
+        if !missing.isEmpty || !quiet.isEmpty {
+          confirmed[conversation] = markers.filter { missing.contains($0.token) || quiet.contains($0.token) }
+        }
+        if !quiet.isEmpty { quietByConversation[conversation] = quiet }
       }
-      return confirmed
+      return (confirmed, quietByConversation)
     }
-    let confirmed = await withTaskCancellationHandler(operation: { await work.value }, onCancel: { work.cancel() })
-    guard !Task.isCancelled, profile.identityFingerprint == identity else { return }
-    agentReplyUnreadStore.discardMissing(confirmed)
+    var (confirmed, quiet) = await withTaskCancellationHandler(operation: { await work.value }, onCancel: { work.cancel() })
+    guard !Task.isCancelled, profile.identityFingerprint == identity, scheduledReplyVisibility() == visibility else { return }
+    for (conversation, tokens) in quiet {
+      let current = history.quietScheduledUnreadTokens(conversationId: conversation, candidates: tokens, visibility: visibility)
+      let noLongerQuiet = tokens.subtracting(current)
+      confirmed[conversation]?.removeAll { noLongerQuiet.contains($0.token) }
+      quiet[conversation] = current
+    }
+    agentReplyUnreadStore.discardMissing(confirmed, quiet: quiet)
+  }
+
+  func discardQuietScheduledUnread(conversationId: String, turnId: String) {
+    let visibility = scheduledReplyVisibility()
+    guard visibility.mayHide(conversation: conversationId, token: turnId) else { return }
+    let markers = agentReplyUnreadStore.pendingSnapshot()[conversationId]?.filter { $0.token == turnId } ?? []
+    guard !markers.isEmpty, chatHistoryDatabase.quietScheduledUnreadTokens(conversationId: conversationId,
+      candidates: [turnId], visibility: visibility).contains(turnId) else { return }
+    agentReplyUnreadStore.discardMissing([conversationId: markers], quiet: [conversationId: [turnId]])
   }
 
   func markAgentRepliesRead(
@@ -910,6 +958,8 @@ final class GalaxySSIStore: ObservableObject {
   @discardableResult
   func deleteContact(id: String, deleteMessages: Bool = false, now: Date = Date()) -> Bool {
     guard id != "system" else { return false }
+    GalaxySSIPhoneRouteAgreements.cache.clear()
+    AgentInvocationProfile.clearMetadataCache()
     let deviceDesktopId = contacts.first { contact in
       (contact.id == id || contact.galaxySSIId == id) && contact.type == "device"
     }?.desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1181,7 +1231,7 @@ final class GalaxySSIStore: ObservableObject {
     remoteMessageId: String = "",
     turnId: String = ""
   ) -> Bool {
-    let existing = runtimeMessageSnapshot(for: contactId)
+    let existing = runtimeMessageSnapshot(for: contactId).filter(chatHistoryDatabase.admitsAgentTurn)
     let normalizedRemoteMessageId = remoteMessageId.trimmingCharacters(in: .whitespacesAndNewlines)
     if !normalizedRemoteMessageId.isEmpty,
        (chatHistoryDatabase.containsIncoming(
@@ -1209,7 +1259,8 @@ final class GalaxySSIStore: ObservableObject {
     turnId: String = "",
     richOutputJson: String = ""
   ) -> ChatMessage {
-    let resolvedConversationId = conversationId.ifBlank(activeConversationId(for: contactId))
+    let owner = chatHistoryDatabase.originalAgentTurnConversation(turnId)
+    let resolvedConversationId = conversationId.ifBlank(owner ?? activeConversationId(for: contactId))
     let createdAt = Date()
     let message = ChatMessage(
       contactId: contactId,
@@ -1223,6 +1274,7 @@ final class GalaxySSIStore: ObservableObject {
       remoteMessageId: remoteMessageId,
       richOutputJson: richOutputJson
     )
+    guard chatHistoryDatabase.admitsAgentTurn(message) else { return message }
     messagesByContact[contactId, default: []].append(message)
     recordAgentConversationActivity(conversationId: resolvedConversationId, contactId: contactId, content: content, at: createdAt)
     save()
@@ -1241,7 +1293,8 @@ final class GalaxySSIStore: ObservableObject {
     var message = pending ?? ChatMessage(contactId: contactId, content: content, isMine: false)
     message.content = content
     message.remoteMessageId = remoteMessageId
-    message.conversationId = conversationId.ifBlank(message.conversationId.ifBlank(activeConversationId(for: contactId)))
+    message.conversationId = conversationId.ifBlank(message.conversationId.ifBlank(
+      chatHistoryDatabase.originalAgentTurnConversation(turnId) ?? activeConversationId(for: contactId)))
     message.turnId = turnId
     message.richOutputJson = richOutputJson
     message.deliveryStatus = .delivered
@@ -1850,7 +1903,8 @@ final class GalaxySSIStore: ObservableObject {
             let remoteCard = verifiedPhoneContactCard(for: remoteId),
             let routes = signalEngine.derivePhoneRelationshipRoutes(
               remoteIdentityPublicKey: remoteCard.string("identity_public_key"),
-              expectedRemoteFingerprint: contact.identityFingerprint
+              expectedRemoteFingerprint: contact.identityFingerprint,
+              cacheVerifiedAgreement: true
             ),
             contact.opaquePhoneRoutes != routes,
             let refreshed = GalaxySSIPhoneRelationshipRouteRefresh.apply(
@@ -2451,6 +2505,7 @@ final class GalaxySSIStore: ObservableObject {
   }
 
   func removeServer(desktopId: String) {
+    AgentInvocationProfile.clearMetadataCache()
     serverLinks.removeAll { $0.desktopId == desktopId }
     if var hermes = contact(id: "hermes") {
       if let activeLink = serverLinks.first(where: \.paired) ?? serverLinks.first {
@@ -2498,6 +2553,7 @@ final class GalaxySSIStore: ObservableObject {
   ) -> Set<String> {
     let cleanDesktopId = desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanDesktopId.isEmpty else { return [] }
+    AgentInvocationProfile.clearMetadataCache()
     let prefix = "\(cleanDesktopId):"
     let matchingContacts = contacts.filter { contact in
       contact.id != "system" && contact.id != "hermes" && (
@@ -2705,7 +2761,9 @@ final class GalaxySSIStore: ObservableObject {
       contact.connectorProtocolFeatures = connectorProtocolFeatures.isEmpty ? nil : connectorProtocolFeatures
       contact.connectorAdapterType = connectorAdapterType.nonEmpty
       contact.connectorProviderProfileJSON = providerProfileJSON(from: payload)
-      if let invocationProfile = invocationProfileJSON(from: payload) {
+      if let invocationProfile = invocationProfileJSON(from: payload),
+         invocationProfile != contact.connectorInvocationProfileJSON {
+        AgentInvocationProfile.clearMetadataCache()
         contact.connectorInvocationProfileJSON = invocationProfile
       }
       contact.deleted = false
@@ -3335,11 +3393,13 @@ final class GalaxySSIStore: ObservableObject {
 
   private func synchronizeMessageCache(previous: [String: [ChatMessage]]) {
     guard !suppressMessageDatabaseSync else { return }
+    let visibility = scheduledReplyVisibility()
     for (contactId, messages) in messagesByContact {
       let oldById = Dictionary(uniqueKeysWithValues: (previous[contactId] ?? []).map { ($0.id, $0) })
       for message in messages where oldById[message.id] != message {
-        if chatHistoryDatabase.upsert(message) {
-          agentReplyUnreadStore.record(message, previous: oldById[message.id])
+        if chatHistoryDatabase.upsert(message), !visibility.hides(message) {
+          let previous = oldById[message.id]
+          agentReplyUnreadStore.record(message, previous: previous.flatMap { visibility.hides($0) ? nil : $0 })
         }
       }
     }
