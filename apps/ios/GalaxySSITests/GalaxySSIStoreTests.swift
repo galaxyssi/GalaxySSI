@@ -790,6 +790,17 @@ final class GalaxySSIStoreTests: XCTestCase {
     replaced.secret = Data(repeating: 8, count: 32).base64URLEncodedString()
     XCTAssertThrowsError(try projection.projectInbound(item(MqttBusinessIdentity(replaced))))
     XCTAssertThrowsError(try projection.projectInbound(item(identity, attachments: [["name": "pending.pdf"]])))
+    let digest = String(repeating: "a", count: 64)
+    var receipt: [String: Any] = ["type": "input_attachment_receipt", "transfer_id": digest,
+      "client_route_id": destination.routeId, "status": "stored", "time": 100]
+    let firstReceipt = try projection.attachmentReceiptRequest(receipt, for: item(identity))
+    receipt["time"] = 200
+    let replayReceipt = try projection.attachmentReceiptRequest(receipt, for: item(identity))
+    XCTAssertEqual(firstReceipt.messageID, replayReceipt.messageID)
+    XCTAssertEqual(try firstReceipt.digest(), try replayReceipt.digest())
+    XCTAssertEqual(firstReceipt.attachmentTransferID, digest)
+    receipt["status"] = "missing"
+    XCTAssertNotEqual(firstReceipt.messageID, try projection.attachmentReceiptRequest(receipt, for: item(identity)).messageID)
     let incoming = try XCTUnwrap(projection.projectInbound(item(identity)))
     XCTAssertEqual(incoming.contactId, contact.id)
     XCTAssertEqual(incoming.conversationId, destination.conversationId)

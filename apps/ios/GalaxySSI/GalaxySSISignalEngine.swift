@@ -297,7 +297,15 @@ final class GalaxySSISignalEngine {
     guard let known = try store.identity(for: address, context: context),
           Self.sha256(known.serialize()) == request.identity.remote,
           store.containsSession(name: request.remoteName, deviceId: request.deviceID) else { throw MqttRouteError.identityChanged }
-    var wire = try encryptPayload(request.payload, remoteName: request.remoteName, deviceID: request.deviceID, now: now)
+    let bytes: Data
+    if request.identity.scope.hasPrefix("direct:") {
+      let envelope = try GalaxySSILinkProtocol.makeEnvelope(payload: request.applicationPayload(),
+        sourceId: localName, targetId: request.remoteName, now: now)
+      bytes = try GalaxySSILinkProtocol.jsonData(envelope)
+    } else {
+      bytes = request.payload
+    }
+    var wire = try encryptPayload(bytes, remoteName: request.remoteName, deviceID: request.deviceID, now: now)
     wire["message_id"] = request.messageID
     if let route = request.clientRouteID { wire["_client_route_id"] = route }
     return String(decoding: try GalaxySSILinkProtocol.jsonData(wire), as: UTF8.self)

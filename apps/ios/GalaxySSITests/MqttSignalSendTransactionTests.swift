@@ -3,6 +3,25 @@ import XCTest
 
 #if canImport(LibSignalClient)
 final class MqttSignalSendTransactionTests: XCTestCase {
+  func testDirectApplicationReceiptUsesInteroperableLinkEnvelope() throws {
+    let f = try SignalSendFixture()
+    let identity = try MqttBusinessIdentity(MqttPeerBinding(scope: "direct:receiver",
+      sender: f.senderIdentity.fingerprint, receiver: f.receiverIdentity.fingerprint,
+      secret: Data(repeating: 7, count: 32).base64URLEncodedString(), sendTopic: sendTopic,
+      sendTopics: [sendTopic], receiveTopics: [String(repeating: "r", count: 43)]))
+    let id = UUID().uuidString
+    let request = try MqttSignalSendRequest(identity: identity, payload: ["type": "input_attachment_receipt",
+      "message_id": id, "status": "stored"], remoteName: f.receiverIdentity.name, topic: sendTopic, traffic: .control)
+    let entry = try f.sender.encryptAndEnqueue(request, now: f.date)
+    let envelope = try f.decrypt(entry)
+    XCTAssertEqual(envelope["source_id"] as? String, f.senderIdentity.name)
+    XCTAssertEqual(envelope["target_id"] as? String, f.receiverIdentity.name)
+    let payload = try XCTUnwrap(GalaxySSILinkProtocol.unwrapEnvelope(envelope, now: f.date))
+    XCTAssertEqual(payload["message_id"] as? String, id)
+    XCTAssertEqual(payload["type"] as? String, "input_attachment_receipt")
+    XCTAssertEqual(payload["status"] as? String, "stored")
+  }
+
   @MainActor
   func testLegacyCutoverPreservesIdentityRatchetAndExactQueuedCiphertext() throws {
     let storage = try ChunkFixture()

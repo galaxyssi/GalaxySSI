@@ -31,6 +31,8 @@ final class MqttBusinessTransportRuntime {
   private var polling = false
   private var peerChatProjection: MqttPeerChatProjection?
   private var configuredDirectPeers: [Peer] = []
+  private var incomingAttachments: AgentIncomingAttachmentTransferStore?
+  private let attachmentQueue = DispatchQueue(label: "galaxyssi.mqtt.peer-attachments", qos: .utility)
 
   // The caller must first quiesce legacy Signal, inbox and outbox writers. Once this returns a
   // marker, that account must reopen the new runtime; it must not restart the old sender.
@@ -111,7 +113,9 @@ final class MqttBusinessTransportRuntime {
 
   convenience init(peerChatStore store: GalaxySSIStore, localFingerprint: String,
                    journal: MqttSignalStateJournal, routeState: MqttRouteState,
-                   pool: GalaxySSIMqttBrokerPool = .init(), onFailure: @escaping @MainActor (Error) -> Void = { _ in }) throws {
+                   pool: GalaxySSIMqttBrokerPool = .init(),
+                   incomingAttachments: AgentIncomingAttachmentTransferStore = .init(),
+                   onFailure: @escaping @MainActor (Error) -> Void = { _ in }) throws {
     guard let cutover = try journal.legacyCutover(), cutover.localFingerprint == localFingerprint else {
       throw MqttDeliveryDispatch.Failure.unavailable
     }
@@ -122,6 +126,7 @@ final class MqttBusinessTransportRuntime {
       projectCompletion: { try projection.projectCompletion($0) }, onFailure: onFailure)
     guard engine.identity.fingerprint == localFingerprint else { throw MqttRouteError.identityChanged }
     peerChatProjection = projection
+    self.incomingAttachments = incomingAttachments
   }
 
   func startDirectPeerChat(configuration: MqttBrokerPathConfiguration) throws {
@@ -346,7 +351,11 @@ final class MqttBusinessTransportRuntime {
         }
         if payload["type"] as? String == "delivery_ack" { continue }
         try routes.withIdentity(item.identity) {}
-        try await projectInbound(item)
+        if let projection = peerChatProjection, let attachments = incomingAttachments {
+          try await projectDirectInbound(item, payload: payload, projection: projection, attachments: attachments)
+        } else {
+          try await projectInbound(item)
+        }
         guard !stopped else { return }
         try routes.withIdentity(item.identity) {
           guard try journal.inbox.complete(identity: item.identity, messageID: item.messageID) else {
@@ -359,5 +368,52 @@ final class MqttBusinessTransportRuntime {
       }
     }
     if page.count < 16 { inboxCursor = "" }
+  }
+
+  private func projectDirectInbound(_ item: MqttBusinessInbox.Pending, payload: [String: Any],
+                                    projection: MqttPeerChatProjection, attachments: AgentIncomingAttachmentTransferStore) async throws {
+    guard let target = try projection.currentDestination(item.identity),
+          payload["message_id"] as? String == item.messageID else { throw MqttRouteError.identityChanged }
+    let type = payload.string("type")
+    let localName = engine.identity.name
+    let remoteName = target.peer.remoteSignalName
+    let route = target.routes
+    if type == "input_attachment_manifest" || type == "input_attachment_chunk" {
+      guard !target.desktop else { throw MqttRouteError.invalidPayload }
+      let receipt: [String: Any]? = try await onAttachmentQueue {
+        try attachments.ingestDurably(payload: payload, sourceId: remoteName, localGalaxySSIId: localName, routes: route)
+      }
+      try Task.checkCancellation()
+      guard !stopped else { throw CancellationError() }
+      try refreshDirectPeerBindings()
+      if let receipt {
+        let request = try projection.attachmentReceiptRequest(receipt, for: item)
+        do { _ = try enqueue([request]) }
+        catch MqttChunkStorageError.alreadyDelivered { }
+      }
+      return
+    }
+    if let descriptors = payload["attachments"] as? [[String: Any]], !descriptors.isEmpty {
+      guard !target.desktop, descriptors.count <= 64, type == "peer_message" || type == "text" else {
+        throw MqttRouteError.invalidPayload
+      }
+      let resolved: [[String: Any]] = try await onAttachmentQueue {
+        guard let value = attachments.resolveMessageAttachments(sourceId: remoteName, payload: payload,
+          routes: route, localGalaxySSIId: localName) else { throw AgentAttachmentTransferError.contentUnavailable }
+        return value
+      }
+      try Task.checkCancellation()
+      guard !stopped else { throw CancellationError() }
+      try refreshDirectPeerBindings()
+      _ = try projection.projectInbound(item, resolvedAttachments: resolved)
+    } else {
+      _ = try projection.projectInbound(item)
+    }
+  }
+
+  private func onAttachmentQueue<T>(_ work: @escaping () throws -> T) async throws -> T {
+    try await withCheckedThrowingContinuation { continuation in
+      attachmentQueue.async { continuation.resume(with: Result { try work() }) }
+    }
   }
 }
