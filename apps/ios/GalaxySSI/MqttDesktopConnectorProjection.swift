@@ -33,6 +33,7 @@ struct MqttDesktopConnectorProjection {
   var resolveTeamOwner: ((String, GalaxySSIContact, AgentTaskIdentity, MqttPeerChatProjection.Destination) throws -> TaskOwner?)? = nil
   var recordTeamAttachmentFailure: ((AgentTeamReplyOwner) throws -> Void)? = nil
   var recordTeamProgress: (([String: Any], AgentTeamReplyOwner) throws -> Bool)? = nil
+  var authorizePrivateHealthSource: ((AgentTaskIdentity, String, Int64, MqttPeerChatProjection.Destination) -> Bool)? = nil
 
   static func handles(_ payload: [String: Any]) -> Bool {
     payload["peer_chat"] as? Bool != true &&
@@ -183,6 +184,10 @@ struct MqttDesktopConnectorProjection {
           contact.deliveryMode.isGalaxySSILinkFamily, !contact.connectorAgentId.isBlank,
           let identity = identities.identity(contactId: contactID, sourceMessageId: source),
           identity.clientRouteId == target.routeId else { return false }
+    if identity.conversationId.hasPrefix(GalaxySSIHealthDesktopResearch.conversationPrefix) {
+      guard let numericSource = Int64(source), numericSource > 0 else { return false }
+      return authorizePrivateHealthSource?(identity, contactID, numericSource, target) == true
+    }
     guard let id = UUID(uuidString: source) else { return (Int64(source) ?? 0) > 0 }
     return (try? taskOwner(source: source, id: id, contact: contact, target: target))?.maySend == true
   }

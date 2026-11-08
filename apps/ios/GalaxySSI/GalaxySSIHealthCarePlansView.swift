@@ -94,7 +94,8 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
           Section(t("uncertainty", "Uncertainty")) {
             Text(proposal.draft.uncertainty)
             Text(proposal.modelID).foregroundColor(.secondary)
-            Text(proposal.endpoint.absoluteString).font(.caption).foregroundColor(.secondary)
+            Text(proposal.endpoint?.absoluteString ?? proposal.pairedDesktop?.connector.desktopId ?? "")
+              .font(.caption).foregroundColor(.secondary)
           }
           Section(t("source_review", "Source reads (applicability not verified)")) {
             ForEach(Array(proposal.draft.sources.indices), id: \.self) { index in
@@ -242,6 +243,9 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
   }
 
   private var currentDestination: String? {
+    if let route = proposal.pairedDesktop {
+      return coordinator.isPrivateHealthDesktopRouteAvailable(route) ? route.digest : nil
+    }
     guard let contact = store.contact(id: proposal.contactID), !contact.deleted, contact.deliveryMode == .cloudAPI,
           let model = contact.selectedCloudModel, let key = store.apiKey(for: model),
           !coordinator.healthDisclosureStore.blockedDestinationIds().contains(contact.id) else { return nil }

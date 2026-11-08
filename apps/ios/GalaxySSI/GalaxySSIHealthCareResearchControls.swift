@@ -16,6 +16,8 @@ struct GalaxySSIHealthCareResearchControls: View {
   @State private var authorization: Research.Authorization?
   @State private var job: Research.Job?
   @State private var provider = ""
+  @State private var desktopModel = ""
+  @State private var desktopEffort = AgentModelReasoningEffort.automatic
   @State private var sources = Set<GalaxySSIHealthCareEvidence.PublicSource>()
   @State private var review: Review?
   @State private var confirmed = false
@@ -32,7 +34,8 @@ struct GalaxySSIHealthCareResearchControls: View {
       if canRead {
         if let authorization {
           Text(authorization.model)
-          Text(authorization.endpoint.absoluteString).font(.caption).foregroundColor(.secondary)
+          Text(authorization.endpoint?.absoluteString ?? authorization.pairedDesktop?.connector.desktopId ?? "")
+            .font(.caption).foregroundColor(.secondary)
           if let job { Text(status(job.state)) }
           Button(t("revoke", "Revoke research authorization"), role: .destructive) {
             do { try records.revokeLocalCareResearch(concern); reload() }
@@ -41,8 +44,20 @@ struct GalaxySSIHealthCareResearchControls: View {
         } else if online {
           Picker(t("provider", "Provider and model"), selection: $provider) {
             Text(t("select", "Select a model")).tag("")
-            ForEach(store.contacts.filter { route($0.id) != nil }) { contact in
-              Text(contact.name + " / " + (contact.selectedCloudModel?.modelId ?? "")).tag(contact.id)
+            ForEach(store.contacts.filter { route($0.id) != nil || coordinator.privateHealthDesktopRoute(contactID: $0.id) != nil }) { contact in
+              Text(contact.name + " / " + (contact.selectedCloudModel?.modelId ??
+                coordinator.privateHealthDesktopRoute(contactID: contact.id)?.connector.modelId ?? "")).tag(contact.id)
+            }
+          }
+          if coordinator.privateHealthDesktopRoute(contactID: provider) != nil,
+             let profile = store.contact(id: provider)?.connectorInvocationProfile {
+            Picker(t("desktop_model", "Desktop model"), selection: $desktopModel) {
+              Text(t("default", "Provider default")).tag("")
+              ForEach(profile.models) { Text($0.displayName).tag($0.id) }
+            }
+            Picker(t("desktop_effort", "Reasoning effort"), selection: $desktopEffort) {
+              Text(t("default", "Provider default")).tag(AgentModelReasoningEffort.automatic)
+              ForEach(profile.reasoningEfforts) { Text($0.rawValue.uppercased()).tag($0) }
             }
           }
           ForEach(GalaxySSIHealthCareEvidence.PublicSource.allCases) { source in
@@ -58,6 +73,7 @@ struct GalaxySSIHealthCareResearchControls: View {
       }
     }
     .onAppear(perform: reload)
+    .onChange(of: provider) { _ in desktopModel = ""; desktopEffort = .automatic }
     .onChange(of: scene) { if $0 == .active { reload() } else { clear() } }
     .onChange(of: store.profile.identityFingerprint) { _ in clear(); reload() }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in clear() }
@@ -70,9 +86,16 @@ struct GalaxySSIHealthCareResearchControls: View {
         List {
           if canRead {
             Section(t("provider", "Provider and model")) {
-              Text(proposed.approval.model.modelId)
-              Text(proposed.approval.endpoint.absoluteString).font(.caption).textSelection(.enabled)
-              Text(t("effort", "Model effort: provider default"))
+              Text(proposed.approval.modelID)
+              Text(proposed.approval.location).font(.caption).textSelection(.enabled)
+              if proposed.approval.pairedDesktop != nil {
+                Text(t("paired_boundary", "This sends the approved Health context to the named paired Desktop and its configured Codex provider. The task is read-only and may be retained in the Desktop task journal."))
+              }
+              if let paired = proposed.approval.pairedDesktop, paired.connector.reasoningEffort != .automatic {
+                Text(t("desktop_effort", "Reasoning effort") + ": " + paired.connector.reasoningEffort.rawValue.uppercased())
+              } else {
+                Text(t("effort", "Model effort: provider default"))
+              }
             }
             Section(t("sources", "Allowed public sources")) {
               ForEach(GalaxySSIHealthCareEvidence.PublicSource.allCases.filter { proposed.sources.contains($0) }) {
@@ -106,12 +129,18 @@ struct GalaxySSIHealthCareResearchControls: View {
   }
 
   private func preview() {
-    guard canRead, online, let (model, key) = route(provider), !sources.isEmpty else { return }
+    guard canRead, online, !sources.isEmpty else { return }
     do {
       _ = try records.openLocalCareDiscussion(id: concern, metric: metric)
-      let approval = try records.prepareLocalCareDiscussion(id: concern, metric: metric,
-        question: t("request", "Review this concern using the research handoff. State missing context. Do not adopt or schedule anything."),
-        destinationID: provider, model: model, credential: key)
+      let question = t("request", "Review this concern using the research handoff. State missing context. Do not adopt or schedule anything.")
+      let approval: GalaxySSIHealthCareDiscussion.Approval
+      if let (model, key) = route(provider) {
+        approval = try records.prepareLocalCareDiscussion(id: concern, metric: metric, question: question,
+          destinationID: provider, model: model, credential: key)
+      } else if let paired = coordinator.privateHealthDesktopRoute(contactID: provider, modelID: desktopModel,
+                   effort: desktopEffort) {
+        approval = try records.prepareLocalCareDesktopDiscussion(id: concern, metric: metric, question: question, route: paired)
+      } else { throw GalaxySSIHealthRecords.Failure.permission }
       confirmed = false
       review = .init(approval: approval, sources: sources)
       failed = false
@@ -120,8 +149,7 @@ struct GalaxySSIHealthCareResearchControls: View {
 
   private func authorize(_ proposed: Review) {
     let approval = proposed.approval
-    guard canRead, confirmed, review?.id == proposed.id, let (model, key) = route(approval.destinationID),
-          model == approval.model, SHA256.hash(data: Data(key.utf8)) == approval.credentialDigest else {
+    guard canRead, confirmed, review?.id == proposed.id, destinationIsCurrent(approval) else {
       review = nil; failed = true; return
     }
     do {
@@ -130,6 +158,15 @@ struct GalaxySSIHealthCareResearchControls: View {
       confirmed = false
       reload()
     } catch { review = nil; failed = true }
+  }
+
+  private func destinationIsCurrent(_ approval: GalaxySSIHealthCareDiscussion.Approval) -> Bool {
+    if let paired = approval.pairedDesktop {
+      return coordinator.privateHealthDesktopRoute(contactID: approval.destinationID, modelID: paired.connector.modelId,
+        effort: paired.connector.reasoningEffort) == paired
+    }
+    guard let (model, key) = route(approval.destinationID) else { return false }
+    return model == approval.model && SHA256.hash(data: Data(key.utf8)) == approval.credentialDigest
   }
 
   private func reload() {
@@ -143,6 +180,7 @@ struct GalaxySSIHealthCareResearchControls: View {
   private func clear() {
     online = false; authorization = nil; job = nil; review = nil; confirmed = false; failed = false
     provider = ""; sources = []
+    desktopModel = ""; desktopEffort = .automatic
   }
 
   private func status(_ state: Research.State) -> String {
