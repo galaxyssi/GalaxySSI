@@ -1,4 +1,29 @@
 import Foundation
+import UIKit
+import UserNotifications
+
+enum GalaxySSIContactReminderPresentationPolicy {
+  enum Route: Equatable { case panel, notification(quiet: Bool) }
+
+  static func route(_ record: GalaxySSIContactReminder, active: Bool, busy: Bool,
+                    backgroundEnabled: Bool, now: Int64) -> Route? {
+    guard !record.outgoing, record.expiresAt > now,
+          record.status == .received || record.status == .quiet else { return nil }
+    let quiet = busy || record.status == .quiet
+    if active, !quiet { return .panel }
+    guard active || backgroundEnabled else { return nil }
+    return .notification(quiet: quiet)
+  }
+
+  static func canPost(_ authorization: UNAuthorizationStatus) -> Bool {
+    [.authorized, .provisional, .ephemeral].contains(authorization)
+  }
+
+  static func canShowPanel(_ record: GalaxySSIContactReminder, explicitlyOpened: Bool, now: Int64) -> Bool {
+    !record.outgoing && !record.status.terminal && record.expiresAt > now &&
+      (record.status != .quiet || explicitlyOpened)
+  }
+}
 
 enum GalaxySSIContactReminderOutbox {
   private static let prefix = "peer-attention:"
@@ -41,6 +66,11 @@ extension MessageCoordinator {
   var contactReminderSoundInSilentMode: Bool {
     get { store.defaults.object(forKey: contactReminderReceivingKey + ".silent-mode-sound") as? Bool ?? true }
     set { store.defaults.set(newValue, forKey: contactReminderReceivingKey + ".silent-mode-sound") }
+  }
+
+  var contactReminderBackgroundNotifications: Bool {
+    get { store.defaults.object(forKey: contactReminderReceivingKey + ".background-notifications") as? Bool ?? true }
+    set { store.defaults.set(newValue, forKey: contactReminderReceivingKey + ".background-notifications") }
   }
 
   private var contactReminderReceivingKey: String {
@@ -102,10 +132,49 @@ extension MessageCoordinator {
     queueContactReminder(accepted.record, contact: authenticatedContact, now: now)
     refreshContactReminderPresentation(now: now)
     if accepted.shouldAlert {
-      contactReminderAlert.show(accepted.record, language: store.languagePolicy.interfaceLanguage,
-        audibleInSilentMode: contactReminderSoundInSilentMode)
+      presentContactReminder(accepted.record, now: now)
     }
     return true
+  }
+
+  private func presentContactReminder(_ record: GalaxySSIContactReminder, now: Int64) {
+    let active = UIApplication.shared.applicationState == .active
+    let route = GalaxySSIContactReminderPresentationPolicy.route(record, active: active,
+      busy: contactReminderAlert.mustBeQuiet, backgroundEnabled: contactReminderBackgroundNotifications, now: now)
+    switch route {
+    case .panel:
+      contactReminderAlert.show(record, language: store.languagePolicy.interfaceLanguage,
+        audibleInSilentMode: contactReminderSoundInSilentMode)
+    case .notification(let quiet):
+      let owner = store.profile.identityFingerprint
+      Task { @MainActor [weak self] in
+        let center = UNUserNotificationCenter.current()
+        let settings = await center.notificationSettings()
+        guard let self, GalaxySSIContactReminderPresentationPolicy.canPost(settings.authorizationStatus),
+              self.canPostContactReminder(record, owner: owner, background: !active) else { return }
+        let quiet = quiet || self.contactReminderAlert.mustBeQuiet
+        let request = GalaxySSIContactReminderNotification.request(record.id,
+          language: self.store.languagePolicy.interfaceLanguage, quiet: quiet, soundAllowed: settings.soundSetting == .enabled)
+        try? await center.add(request)
+        if !self.canPostContactReminder(record, owner: owner, background: !active) {
+          GalaxySSIContactReminderNotification.remove(record.id)
+        }
+      }
+    case nil:
+      break
+    }
+  }
+
+  private func canPostContactReminder(_ record: GalaxySSIContactReminder, owner: String, background: Bool) -> Bool {
+    let isBackground = background || UIApplication.shared.applicationState != .active
+    guard owner == store.profile.identityFingerprint, contactReminderReceivingEnabled,
+          !isBackground || contactReminderBackgroundNotifications,
+          store.contact(id: record.peerID)?.isCommunicable == true,
+          let current = contactReminders.first(where: {
+            $0.id == record.id && $0.peerID == record.peerID && $0.createdAt == record.createdAt
+          }) else { return false }
+    return GalaxySSIContactReminderPresentationPolicy.route(current, active: false, busy: false,
+      backgroundEnabled: true, now: AgentControlPlaneClock.nowMillis()) != nil
   }
 
   func restoreContactReminders() {
