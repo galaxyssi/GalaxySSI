@@ -130,6 +130,12 @@ enum AgentCollaborationRuleTopics {
     Valid failed cases are saved. An exact previous_trial parent can compare the same preserved cases.
     experiment_plan binds exact innovation and baseline parents, prediction_id, method, environment, budget_unit, budget_limit,
     report_pointer, source and cases. experiment_result binds the plan and completely read original measurement observations.
+    To compare workflows, both innovations must parent and reference an exact workflow_method in their domain.
+    Set experiment_plan.workflow_comparison to {dataset:exact artifact reference, controlled_conditions, quality_oracle,
+    cost_accounting, selection_bias}; parent the dataset and include target and regression cases.
+    Each measurement carries workflow_sha256 and dataset_sha256 as well as its innovation variant_sha256.
+    Discover previous comparisons using method_history with view=evaluations. Read original conditions and negative results;
+    an empty scan is unknown history, not evidence that a method works.
     capability_lesson binds exact result and rollback parents; retain requires passing target and regression cases,
     an independent reviewer and full original evidence reads. Reject or revise can preserve historical findings.
     """),
@@ -156,6 +162,8 @@ enum AgentCollaborationRuleTopics {
     and an object input_schema using the existing Skill parameter contract. tool_test_plan binds the exact executable_tool parent
     and matching environment. Include purpose, coverage_gaps, oracle_basis and distinct cases with id, purpose, reason, input
     and expected (explicit null is allowed). Include target and regression cases. Registration neither executes nor releases code.
+    Use capabilities to find unfinished tools and test plans. Follow usage_recall for original test history. A pre-execution
+    rejection belongs only to the requested plan; only an exact runtime-bound test belongs to a candidate.
     """),
     Topic(id: "workflows", purpose: "Register workflow roles, steps and review conditions", prerequisites: ["foundation"], contract: """
     workflow_method includes purpose, domain, bottleneck, change_rationale, applies_when, avoid_when, risks, expected_gain,

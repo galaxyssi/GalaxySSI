@@ -116,6 +116,10 @@ final class GalaxySSIAttachmentAtRestCipher {
     try chatIdentifierIndex(conversationId: conversationId, token: turnId, purpose: "galaxyssi.chat-turn-timing.v1")
   }
 
+  func chatTurnOwnershipIndex(_ turnId: String) throws -> String {
+    try chatIdentifierIndex(conversationId: "", token: turnId, purpose: "galaxyssi.chat-turn-ownership.v1")
+  }
+
   func chatUnreadReplyIndex(conversationId: String, token: String) throws -> String {
     try chatIdentifierIndex(conversationId: conversationId, token: token, purpose: "galaxyssi.chat-unread-reply.v1")
   }

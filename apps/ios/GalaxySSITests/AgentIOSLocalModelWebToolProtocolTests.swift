@@ -48,6 +48,9 @@ final class AgentIOSLocalModelWebToolProtocolTests: XCTestCase {
     XCTAssertTrue(database.upsert(conversation))
     XCTAssertFalse(AgentIOSLocalModelWebToolRunner.collaborationRecallIsAuthorized(scope, database: database))
     conversation.trackingPaused = false
+    conversation.collaborationRoster?.members[1].resourceId = "cloud"
+    XCTAssertTrue(database.upsert(conversation))
+    XCTAssertFalse(AgentIOSLocalModelWebToolRunner.collaborationRecallIsAuthorized(scope, database: database))
     conversation.collaborationRoster = .init(members: [leader], coordinatorId: leader.id)
     XCTAssertTrue(database.upsert(conversation))
     XCTAssertFalse(AgentIOSLocalModelWebToolRunner.collaborationRecallIsAuthorized(scope, database: database))
@@ -63,7 +66,7 @@ final class AgentIOSLocalModelWebToolProtocolTests: XCTestCase {
     let file = folder.appendingPathComponent("team.sqlite")
     let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets, fileURL: file)
     let former = AgentCollaborationRoster.Member(name: "Curator", resourceId: "local-llm")
-    let successor = AgentCollaborationRoster.Member(name: "Author", resourceId: "codex")
+    let successor = AgentCollaborationRoster.Member(name: "Author", resourceId: "local-llm")
     var conversation = AgentConversation(id: "group", title: "Workflow", createdAt: 1, updatedAt: 1,
       collaborationRoster: .init(members: [former, successor], coordinatorId: former.id))
     XCTAssertEqual(conversation.collaborationRoster?.isValid, true)
@@ -106,7 +109,7 @@ final class AgentIOSLocalModelWebToolProtocolTests: XCTestCase {
     }
     func cloud(_ owner: AgentCollaborationToolEvidenceScope) -> AgentMcpJSONObject? {
       CloudConversationStreamEngine.scopedCollaborationRecall(input, scope: owner, allowsResearch: true,
-        session: database.read(owner.conversationId), history: history)
+        resourceID: "local-llm", session: database.read(owner.conversationId), history: history)
     }
     let registry = try nativeRegistry(removed)
     let before = try XCTUnwrap(cloud(removed))

@@ -87,7 +87,7 @@ final class AgentTranscriptEntryStoreTests: XCTestCase {
   }
 
   func testEncryptedRowCacheRequiresIdenticalCiphertextAndEvictsWithinBounds() {
-    var cache = GalaxySSIChatHistoryDatabase.RowCache(maximumRows: 2, maximumBytes: 8)
+    let cache = GalaxySSIChatHistoryDatabase.RowCache(maximumRows: 2, maximumBytes: 8)
     let message = ChatMessage(contactId: "fixture", content: "private", isMine: false)
     var decryptions = 0
     func decode() -> (message: ChatMessage, plaintextBytes: Int)? {
@@ -106,6 +106,37 @@ final class AgentTranscriptEntryStoreTests: XCTestCase {
     cache.clear()
     XCTAssertEqual(cache.read(id: "row-b", ciphertext: Data([1]), decode: decode), message)
     XCTAssertEqual(decryptions, 5)
+  }
+
+  func testRuntimeCacheReadsDoNotRefreshDeadlineAndClearingFencesAnInFlightLoad() {
+    var time: TimeInterval = 0
+    let cache = GalaxySSIRuntimeCache<String, String>(
+      maxCount: 2, maxCost: 32, sensitive: false, now: { time })
+    let revision = cache.revision
+    cache.insert("first", for: "row", cost: 5, revision: revision)
+    time = 599
+    XCTAssertEqual(cache.value(for: "row"), "first")
+    cache.insert("overwrite", for: "row", cost: 9, revision: revision)
+    time = 600
+    XCTAssertNil(cache.value(for: "row"))
+    cache.clear()
+    cache.insert("stale", for: "row", cost: 5, revision: revision)
+    XCTAssertNil(cache.value(for: "row"))
+    cache.insert("current", for: "row", cost: 7, revision: cache.revision)
+    XCTAssertEqual(cache.value(for: "row"), "current")
+  }
+
+  func testRuntimeCacheReleasesExpiredEntryWithoutAnotherRead() {
+    final class LifetimeProbe {
+      let release: XCTestExpectation
+      init(_ release: XCTestExpectation) { self.release = release }
+      deinit { release.fulfill() }
+    }
+    let released = expectation(description: "Idle expiration releases the retained entry")
+    let cache = GalaxySSIRuntimeCache<String, LifetimeProbe>(
+      lifetime: 0.05, maxCount: 1, maxCost: 1, sensitive: false)
+    cache.insert(LifetimeProbe(released), for: "row", cost: 1, revision: cache.revision)
+    withExtendedLifetime(cache) { wait(for: [released], timeout: 3) }
   }
   func testRetainsAndPagesEveryEntryWithoutCountLimits() throws {
     let store = makeStore()
@@ -743,6 +774,52 @@ final class GalaxySSIChatHistoryDatabaseTests: XCTestCase {
     database.setRowCachingEnabled(false)
     let blocked = await database.agentTranscriptWindow(conversationId: "a", limit: 24)
     XCTAssertNil(blocked)
+  }
+
+  func testAgentTurnOwnershipQuarantinesLegacyCopiesWithoutRemovingOriginalRows() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("history.sqlite3")
+    let secrets = InMemorySecretStore()
+    let db = GalaxySSIChatHistoryDatabase(fileURL: file, secrets: secrets)
+    let turn = "non-uuid-voice-turn"
+    let originalID = "ios-agent-original", otherID = "ios-agent-other"
+    let foreign = ChatMessage(contactId: "hermes", content: "Stale copied answer", isMine: false,
+      createdAt: Date(timeIntervalSince1970: 30), conversationId: otherID, turnId: turn, remoteMessageId: "shared-reply")
+    let legitimate = ChatMessage(contactId: "hermes", content: "Other turn", isMine: false,
+      createdAt: Date(timeIntervalSince1970: 20), conversationId: otherID, turnId: "other-turn")
+    XCTAssertTrue(db.upsert(foreign))
+    XCTAssertTrue(db.upsert(legitimate))
+    let request = ChatMessage(contactId: "hermes", content: "Original", isMine: true,
+      createdAt: Date(timeIntervalSince1970: 10), conversationId: originalID, turnId: turn)
+    XCTAssertTrue(db.upsert(request))
+    var moved = request
+    moved.conversationId = otherID
+    XCTAssertFalse(db.upsert(moved))
+    var unrelatedUpdate = foreign
+    unrelatedUpdate.content = "Late cross-conversation projection"
+    XCTAssertFalse(db.upsert(unrelatedUpdate))
+    let reopened = GalaxySSIChatHistoryDatabase(fileURL: file, secrets: secrets)
+    XCTAssertEqual(reopened.originalAgentTurnConversation(turn), originalID)
+    XCTAssertEqual(reopened.messages(conversationId: otherID), [legitimate])
+    XCTAssertEqual(reopened.message(id: foreign.id), foreign)
+    let page = reopened.page(contactId: nil, conversationId: otherID, pageSize: 1)
+    XCTAssertTrue(page.messages.isEmpty)
+    XCTAssertTrue(page.hasMore)
+    XCTAssertEqual(reopened.page(contactId: nil, conversationId: otherID,
+      before: try XCTUnwrap(page.nextCursor), pageSize: 1).messages, [legitimate])
+    XCTAssertEqual(reopened.latestMessage(conversationId: otherID), legitimate)
+    XCTAssertFalse(reopened.containsIncoming(contactId: "hermes", remoteMessageId: "shared-reply"))
+    let delivered = ChatMessage(contactId: "hermes", content: "Actual answer", isMine: false,
+      conversationId: originalID, turnId: turn, remoteMessageId: "shared-reply")
+    XCTAssertEqual(try reopened.persistTransportIncoming(delivered), delivered)
+    XCTAssertEqual(reopened.message(id: foreign.id), foreign)
+    var imported = foreign
+    imported.id = UUID()
+    imported.sourceConversationId = originalID
+    XCTAssertTrue(reopened.upsert(imported))
+    XCTAssertEqual(reopened.originalAgentTurnConversation(turn), originalID)
+    XCTAssertTrue(reopened.messages(conversationId: otherID).contains(imported))
   }
 
   func testPagedTurnTimingUsesTheOriginalRequestAndMigratesLegacyRows() async throws {
