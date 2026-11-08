@@ -4,6 +4,22 @@ import CryptoKit
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testDesktopEvidenceRecoveryOnlyYieldsWhenAnotherQueryIsNeeded() {
+    var longArchive = AgentDesktopEvidenceRecoverySlice()
+    var shortArchive = AgentDesktopEvidenceRecoverySlice()
+    XCTAssertTrue(longArchive.claimQuery())
+    XCTAssertTrue(shortArchive.claimQuery())
+    XCTAssertEqual(shortArchive.outcome(archiveFinal: true, isCancelled: false), .sliceComplete)
+    for _ in 0..<3 { XCTAssertTrue(longArchive.claimQuery()) }
+    XCTAssertEqual(longArchive.outcome(archiveFinal: false, isCancelled: false), .sliceDeferred)
+    XCTAssertFalse(longArchive.claimQuery())
+    XCTAssertEqual(longArchive.outcome(archiveFinal: false, isCancelled: false), .sliceYielded)
+    XCTAssertEqual(longArchive.outcome(archiveFinal: false, isCancelled: true), .sliceDeferred)
+    XCTAssertEqual(longArchive.outcome(archiveFinal: true, isCancelled: true), .sliceComplete)
+    var resumedArchive = AgentDesktopEvidenceRecoverySlice()
+    XCTAssertTrue(resumedArchive.claimQuery())
+  }
+
   func testDesktopEvidenceTraceCorrelatesWithoutLoggingRawRequestID() {
     XCTAssertEqual(AgentDesktopEvidenceQueryTrace.token("nonce"), "78377b525757b494")
     XCTAssertEqual(AgentDesktopEvidenceQueryTrace.token(""), "unavailable")
