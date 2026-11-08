@@ -350,6 +350,108 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testDiscussionHistoryRequiresExactTurnAndNeverAutomaticallyReplaysItsReply() throws {
+    typealias Tool = GalaxySSIHealthCareHistoryTool
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "history-turn", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let rows = (1...32).map { index in
+      GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(Double(-index * 120)),
+        value: index == 1 ? 110 : 98, notes: "Excluded private notes", unitOverride: "mg/dL", referenceInterval: "70 - 99")
+    }
+    for row in rows { try records.write(row) }
+    try records.write(.init(metric: .weight, measuredAt: now, value: 65))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    _ = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    try records.setHealthOnlinePermission(true)
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    func approve(_ allowsHistory: Bool) throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Compare my saved measurements",
+        destinationID: "provider", model: model, credential: "fixture-api-key", allowsHistory: allowsHistory, now: now)
+    }
+    let defaultApproval = try approve(false)
+    XCTAssertNil(defaultApproval.history)
+    XCTAssertFalse(try defaultApproval.providerPayload(now: now).contains("measurement_history"))
+    let approved = try approve(true)
+    let first = try XCTUnwrap(approved.history?.recent)
+    let cursor = try XCTUnwrap(first.cursor)
+    let input = try XCTUnwrap(first.payload["next"]?.objectValue)
+    XCTAssertEqual(first.payload["samples"]?.arrayValue?.count, 30)
+    XCTAssertTrue(first.authorizes(input, turn: approved.id))
+    XCTAssertFalse(first.authorizes(input, turn: defaultApproval.id))
+    XCTAssertFalse(first.authorizes(input.merging(["metric": .string("weight")]) { _, new in new }, turn: approved.id))
+    let preview = try approved.providerPayload(now: now)
+    XCTAssertFalse(preview.contains(rows[0].notes))
+    XCTAssertFalse(rows.contains { preview.localizedCaseInsensitiveContains($0.id.uuidString) })
+    XCTAssertThrowsError(try records.readLocalCareDiscussionHistory(approved, after: cursor, now: now))
+    try records.beginLocalCareDiscussionTurn(approved, now: now)
+    let older = try records.readLocalCareDiscussionHistory(approved, after: cursor, now: now)
+    XCTAssertEqual(older.rows.map(\.id), rows.suffix(2).map(\.id))
+    let last = try Tool.output(older, metric: .glucose, turn: approved.id, remaining: 0)
+    XCTAssertFalse(last.authorizes(input, turn: approved.id))
+    XCTAssertThrowsError(try records.readLocalCareDiscussionHistory(defaultApproval, after: cursor, now: now))
+    try records.finishLocalCareDiscussionTurn(approved, answer: "This answer summarizes private history.", now: now)
+    XCTAssertFalse(try approve(false).providerPayload(now: now).contains("summarizes private history"))
+
+    let next = try approve(true)
+    try records.beginLocalCareDiscussionTurn(next, now: now)
+    var changed = try XCTUnwrap(records.load().current.first { $0.id == rows[31].id })
+    changed.value = 102
+    try records.write(changed)
+    XCTAssertThrowsError(try records.readLocalCareDiscussionHistory(next, after: cursor, now: now))
+    try records.reconcileLocalCare(now: now)
+    let authorized = try approve(true)
+    try records.beginLocalCareDiscussionTurn(authorized, now: now)
+    try records.setHealthOnlinePermission(false)
+    try records.setHealthOnlinePermission(true)
+    XCTAssertThrowsError(try records.readLocalCareDiscussionHistory(authorized, after: cursor, now: now))
+  }
+
+  func testDiscussionHistoryToolContinuesAllThreeProviderTransportsAndRejectsParallelCalls() throws {
+    typealias Tool = GalaxySSIHealthCareHistoryTool
+    let name = Tool.function
+    let arguments = ["input_version": "turn", "cursor": "page"]
+    let encoded = String(decoding: try JSONSerialization.data(withJSONObject: arguments), as: UTF8.self)
+    let openCall: [String: Any] = ["id": "call-1", "type": "function",
+      "function": ["name": name, "arguments": encoded]]
+    let anthropicCall: [String: Any] = ["id": "call-1", "type": "tool_use", "name": name, "input": arguments]
+    let geminiPart = ["functionCall": ["name": name, "args": arguments] as [String: Any]]
+    let fixtures: [(GalaxySSICloudAPIStyle, String, String, [String: Any])] = [
+      (.openAICompatible, "messages", "tool_call_id",
+        ["choices": [["finish_reason": "tool_calls", "message": ["tool_calls": [openCall]]]]]),
+      (.anthropic, "messages", "tool_result", ["stop_reason": "tool_use", "content": [anthropicCall]]),
+      (.gemini, "contents", "functionResponse",
+        ["candidates": [["finishReason": "STOP", "content": ["parts": [geminiPart]]]]])
+    ]
+    for (style, channel, responseKey, fixture) in fixtures {
+      let call = try XCTUnwrap(Tool.call(JSONSerialization.data(withJSONObject: fixture), style: style, proposesPlan: true))
+      XCTAssertEqual(call.arguments, arguments.mapValues { .string($0) })
+      var request = URLRequest(url: try XCTUnwrap(URL(string: "https://example.test")))
+      request.httpBody = try JSONSerialization.data(withJSONObject: [channel: [["role": "user"]]])
+      let output = Tool.Output(payload: ["samples": .array([.string("complete-sample")])], cursor: nil, token: nil)
+      let followUp = try Tool.continuing(request, with: call, output: output, style: style,
+        proposesPlan: true, historyAvailable: false)
+      let body = try XCTUnwrap(followUp.httpBody)
+      let wire = String(decoding: body, as: UTF8.self)
+      let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+      let messages = try XCTUnwrap(json[channel] as? [[String: Any]])
+      XCTAssertEqual(messages.count, 3)
+      XCTAssertTrue(wire.contains(responseKey))
+      XCTAssertTrue(wire.contains("complete-sample"))
+      let tools = try JSONSerialization.data(withJSONObject: XCTUnwrap(json["tools"]))
+      XCTAssertFalse(String(decoding: tools, as: UTF8.self).contains(name))
+    }
+    let parallel = try JSONSerialization.data(withJSONObject: [
+      "stop_reason": "tool_use", "content": [anthropicCall, anthropicCall]
+    ])
+    XCTAssertThrowsError(try Tool.call(parallel, style: .anthropic, proposesPlan: true))
+  }
+
+  @MainActor
   func testLocalCareRequiresPermissionAndPreservesExactRevisionHistory() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }

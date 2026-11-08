@@ -541,7 +541,8 @@ struct GalaxySSIHealthRecords {
   }
 
   func prepareLocalCareDiscussion(id: UUID, metric: GalaxySSIHealthMetric, question: String,
-      destinationID: String, model: CloudModelConfig, credential: String, proposesPlan: Bool = false, now: Date = Date())
+      destinationID: String, model: CloudModelConfig, credential: String, proposesPlan: Bool = false,
+      allowsHistory: Bool = false, now: Date = Date())
       throws -> GalaxySSIHealthCareDiscussion.Approval {
     let archive = try load()
     let concern = try currentDiscussionConcern(id: id, metric: metric, archive: archive, now: now)
@@ -553,18 +554,28 @@ struct GalaxySSIHealthRecords {
     let credentialDigest = SHA256.hash(data: Data(credential.utf8))
     let destination = GalaxySSIHealthCareDiscussion.destination(contactID: destinationID, model: model, endpoint: endpoint,
       credential: credentialDigest)
-    return .init(id: UUID(), owner: owner, threadID: thread.id, priorTurnID: thread.turns.last?.id,
+    let turn = UUID()
+    var approval = GalaxySSIHealthCareDiscussion.Approval(id: turn, owner: owner, threadID: thread.id,
+      priorTurnID: thread.turns.last?.id,
       concernID: id, metric: metric, concernRevision: concern.revision, carePermission: care,
       onlinePermission: online, destinationID: destinationID, destinationDigest: destination,
       credentialDigest: credentialDigest, model: model, endpoint: endpoint,
       question: question, payload: try GalaxySSIHealthCareDiscussion.payload(concern: concern, question: question,
         thread: thread, destination: destination), reviewedAt: now, proposesPlan: proposesPlan)
+    if allowsHistory {
+      let page = try localCareMeasurementPage(id: id, metric: metric, now: now)
+      guard page.binding.revision == concern.revision, page.binding.permission == care else { throw Failure.stale }
+      approval.history = .init(binding: page.binding, recent: try GalaxySSIHealthCareHistoryTool.output(page,
+        metric: metric, turn: turn, remaining: GalaxySSIHealthCareHistoryTool.maximumPages))
+    }
+    return approval
   }
 
   func validateLocalCareDiscussionApproval(_ approval: GalaxySSIHealthCareDiscussion.Approval) throws {
     let archive = try load()
     let thread = try checkedDiscussion(approval, archive: archive, now: Date())
     guard thread.turns.last?.id == approval.priorTurnID else { throw Failure.stale }
+    try validateLocalCareDiscussionHistory(approval, now: Date())
   }
 
   func beginLocalCareDiscussionTurn(_ approval: GalaxySSIHealthCareDiscussion.Approval, now: Date = Date()) throws {
@@ -587,9 +598,10 @@ struct GalaxySSIHealthRecords {
       saved[approval.id.uuidString] = evidence
       archive.localCareEvidence = saved
     } else if !approval.evidence.isEmpty { throw Failure.permission }
+    try validateLocalCareDiscussionHistory(approval, now: now)
     thread.turns.append(.init(id: approval.id, question: approval.question, destination: approval.destinationDigest,
       measurement: concern.assessment.record,
-      planRequested: approval.proposesPlan ? true : nil))
+      planRequested: approval.proposesPlan ? true : nil, historyIncluded: approval.history == nil ? nil : true))
     archive.localCareDiscussions?[approval.concernID.uuidString] = thread
     try persist(archive)
   }
@@ -598,7 +610,22 @@ struct GalaxySSIHealthRecords {
     let thread = try checkedDiscussion(approval, archive: load(), now: now)
     guard thread.turns.last?.id == approval.id, thread.turns.last?.answer == nil,
           thread.turns.last?.proposalID == nil,
-          (thread.turns.last?.planRequested == true) == approval.proposesPlan else { throw Failure.stale }
+          (thread.turns.last?.planRequested == true) == approval.proposesPlan,
+          (thread.turns.last?.historyIncluded == true) == (approval.history != nil) else { throw Failure.stale }
+    try validateLocalCareDiscussionHistory(approval, now: now)
+  }
+
+  private func validateLocalCareDiscussionHistory(_ approval: GalaxySSIHealthCareDiscussion.Approval, now: Date) throws {
+    guard let history = approval.history else { return }
+    _ = try localCareMeasurementPage(id: approval.concernID, metric: approval.metric, expected: history.binding, now: now)
+  }
+
+  func readLocalCareDiscussionHistory(_ approval: GalaxySSIHealthCareDiscussion.Approval,
+      after cursor: GalaxySSIHealthCareSeries.Cursor, now: Date = Date()) throws -> GalaxySSIHealthCareSeries.Page {
+    guard let history = approval.history else { throw Failure.permission }
+    try validateLocalCareDiscussionTurn(approval, now: now)
+    return try localCareMeasurementPage(id: approval.concernID, metric: approval.metric,
+      expected: history.binding, after: cursor, now: now)
   }
 
   func finishLocalCareDiscussionTurn(_ approval: GalaxySSIHealthCareDiscussion.Approval, answer: String,
