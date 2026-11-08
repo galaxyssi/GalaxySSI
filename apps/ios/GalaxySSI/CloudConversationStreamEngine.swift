@@ -126,7 +126,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     images: [CloudImagePayload],
     requestId: String,
     collaborationEvidence: AgentCollaborationToolEvidenceScope?,
-    collaborationModelAudit: AgentCollaborationToolEvidenceScope? = nil
+    collaborationModelAudit: AgentCollaborationToolEvidenceScope? = nil,
+    researchRetrySource: ChatMessage? = nil,
+    retainResearch: Bool = true
   ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
     let conversationRequestId = Self.normalizedRequestId(requestId)
     return AsyncThrowingStream { continuation in
@@ -139,6 +141,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           requestId: conversationRequestId,
           collaborationEvidence: collaborationEvidence,
           collaborationModelAudit: collaborationModelAudit ?? collaborationEvidence,
+          researchRetrySource: researchRetrySource,
+          retainResearch: retainResearch,
           continuation: continuation
         )
       }
@@ -176,6 +180,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     requestId: String,
     collaborationEvidence: AgentCollaborationToolEvidenceScope?,
     collaborationModelAudit: AgentCollaborationToolEvidenceScope?,
+    researchRetrySource: ChatMessage?,
+    retainResearch: Bool,
     continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation
   ) async {
     defer { CloudImageAnnotationSession.discard(requestId: requestId) }
@@ -185,7 +191,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       text: turns.map(\.content).joined(separator: "\n"),
       historyCount: turns.count,
       systemInstructions: true,
-      toolOutput: false,
+      toolOutput: researchRetrySource != nil,
       purpose: "Streaming conversation response",
       attachments: images.map {
         AgentDataDisclosureAttachment(
@@ -244,6 +250,14 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       let evidencePromptLedger = CloudEvidencePromptLedger(query: turns.last?.content ?? "")
       let progress = CloudWebToolLoopProgress()
       let research = CloudResearchRuntimeBudget(limits: .configured(contact.cloud_research_limits))
+      let recovery: CloudResearchObservationRecovery?
+      if retainResearch && images.isEmpty && collaborationRecallScope == nil {
+        recovery = await CloudResearchObservationRecovery.open(store: store, contact: contact, request: request,
+          turns: turns, retrySource: researchRetrySource)
+      } else { recovery = nil }
+      if let recovery {
+        evidenceResults = await recovery.restore(into: &prepared, progress: progress, budget: research, ledger: evidencePromptLedger)
+      }
       var round = 0
 
       while true {
@@ -393,7 +407,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
               receivedAtElapsedMs: elapsedMillis()
             )))
           }
-          if !emittedText && research.toolCalls == 0 && failure.error.code == "STREAM_UNSUPPORTED" {
+          if !emittedText && currentRound == 0 && failure.error.code == "STREAM_UNSUPPORTED" {
             let fallbackAudit = try await beginCollaborationAudit(scope: collaborationModelAudit, round: currentRound,
               request: roundRequest, route: .compatibility, contact: contact, store: store)
             await emitLegacyConversation(
@@ -405,6 +419,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
               sequence: &emittedSequence,
               ticket: ticket,
               audit: fallbackAudit,
+              researchRetrySource: researchRetrySource,
+              retainResearch: retainResearch && collaborationRecallScope == nil,
               continuation: continuation
             )
           } else {
@@ -659,6 +675,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             images: images,
             readOnlyAnalysis: turns.last?.readOnlyAnalysis ?? false
           ),
+          onObservation: { call, output in
+            await recovery?.record(call: call, output: output, store: store)
+          },
           collaborationRecall: collaborationRecallScope.map { scope in
             { arguments in
               await MainActor.run {
@@ -864,6 +883,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     sequence: inout Int64,
     ticket: AgentDisclosureTicket,
     audit: AgentCollaborationModelAdmission?,
+    researchRetrySource: ChatMessage?,
+    retainResearch: Bool,
     continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation
   ) async {
     var auditState: AgentCollaborationModelSettlement.State = .interrupted
@@ -876,12 +897,14 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     }
     do {
       try Task.checkCancellation()
-      let text = try await legacySender.send(
-        contact: contact,
-        store: store,
-        turns: turns,
-        images: images
-      )
+      let text: String
+      if let client = legacySender as? CloudModelClient {
+        text = try await CloudConversationNonStreamingToolEngine(modelClient: client, toolExecutor: toolExecutor).reply(
+          contact: contact, store: store, turns: turns, images: images, requestId: requestId + ":compat",
+          researchRetrySource: researchRetrySource, retainResearch: retainResearch)
+      } else {
+        text = try await legacySender.send(contact: contact, store: store, turns: turns, images: images)
+      }
       let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !cleanText.isEmpty else {
         throw GalaxySSIError.unsupportedResponse
@@ -926,6 +949,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
   private func executeToolCalls(
     _ calls: [AssembledToolCall],
     context: CloudConversationToolExecutionContext,
+    onObservation: ((AssembledToolCall, String) async -> Void)? = nil,
     collaborationRecall: ((AgentMcpJSONObject) async -> AgentMcpJSONObject?)? = nil,
     collaborationPublish: ((AgentMcpJSONObject) async -> AgentMcpJSONObject?)? = nil
   ) async -> [ToolExecutionOutcome] {
@@ -973,6 +997,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
 
         var completed: [ToolExecutionOutcome] = []
         for await outcome in group {
+          if let output = outcome.output { await onObservation?(outcome.call, output) }
           completed.append(outcome)
         }
         return completed.sorted { $0.index < $1.index }

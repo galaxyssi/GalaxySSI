@@ -91,6 +91,39 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(reopened.handoff(conversation: "a", turn: "one", source: source).isEmpty)
   }
 
+  @MainActor
+  func testCloudResearchCheckpointIsEncryptedAndRejectsForeignBindingsAndLateWrites() throws {
+    let name = "cloud-research-checkpoint-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let secrets = InMemorySecretStore()
+    let storage = AgentResearchCheckpointStore(defaults: defaults, secrets: secrets, owner: "owner")
+    let source = UUID()
+    let run = try XCTUnwrap(storage.openCloudRun(conversation: "conversation", turn: "turn", source: source, binding: "same"))
+    let pack = AgentIOSWebEvidencePack.build(query: "fixture", status: "completed",
+      documents: [["url": .string("https://example.test/report"), "content": .string("Encrypted observation body")]],
+      results: [], receipts: [], generatedAtMillis: 1)
+    let output = AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)])
+    let read = AgentResearchCheckpointStore.CloudObservation(tool: "web_search", arguments: ["query": .string("fixture")],
+      output: output)
+    storage.appendCloudObservation(.init(tool: "web_watch", arguments: [:], output: output), to: run)
+    storage.appendCloudObservation(read, to: run)
+    storage.appendCloudObservation(read, to: run)
+    XCTAssertFalse(defaults.dictionaryRepresentation().description.contains("Encrypted observation body"))
+
+    let reopened = AgentResearchCheckpointStore(defaults: defaults, secrets: secrets, owner: "owner")
+    XCTAssertEqual(reopened.openCloudRun(conversation: "conversation", turn: "turn", source: source,
+      binding: "same")?.observations, [read])
+    XCTAssertNil(reopened.openCloudRun(conversation: "conversation", turn: "turn", source: source, binding: "different"))
+    let other = AgentResearchCheckpointStore(defaults: defaults, secrets: secrets, owner: "other")
+    XCTAssertEqual(other.openCloudRun(conversation: "conversation", turn: "turn", source: source,
+      binding: "same")?.observations, [])
+    reopened.remove(conversation: "conversation", turn: "turn", source: source)
+    reopened.appendCloudObservation(read, to: run)
+    XCTAssertEqual(reopened.openCloudRun(conversation: "conversation", turn: "turn", source: source,
+      binding: "same")?.observations, [])
+  }
+
   func testDesktopToolEvidenceRejectsForeignNonceGenerationAndInnerScope() throws {
     let source = UUID().uuidString.lowercased()
     let owner = AgentTeamReplyOwner(supervisorRunId: "run", memberId: "member",

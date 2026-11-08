@@ -17,7 +17,9 @@ struct CloudConversationNonStreamingToolEngine {
     store: GalaxySSIStore,
     turns: [ChatMessage],
     images: [CloudImagePayload],
-    requestId: String
+    requestId: String,
+    researchRetrySource: ChatMessage? = nil,
+    retainResearch: Bool = true
   ) async throws -> String {
     defer { CloudImageAnnotationSession.discard(requestId: requestId) }
     let request = try await modelClient.prepareConversationStreamRequest(
@@ -32,6 +34,14 @@ struct CloudConversationNonStreamingToolEngine {
     let progress = CloudWebToolLoopProgress()
     let research = CloudResearchRuntimeBudget(limits: .configured(contact.cloud_research_limits))
     let evidencePromptLedger = CloudEvidencePromptLedger(query: turns.last?.content ?? "")
+    let recovery: CloudResearchObservationRecovery?
+    if retainResearch && images.isEmpty {
+      recovery = await CloudResearchObservationRecovery.open(store: store, contact: contact, request: request,
+        turns: turns, retrySource: researchRetrySource)
+    } else { recovery = nil }
+    if let recovery {
+      evidence = await recovery.restore(into: &conversation, progress: progress, budget: research, ledger: evidencePromptLedger)
+    }
     var round = 0
 
     while true {
@@ -172,6 +182,7 @@ struct CloudConversationNonStreamingToolEngine {
             images: images
           )
         )
+        await recovery?.record(call: call, output: output, store: store)
         results.append((call, output))
         if progress.record(toolName: call.name, arguments: arguments, output: output) {
           newResearchEvidence = research.observe(tool: call.name, output: output) || newResearchEvidence

@@ -529,6 +529,50 @@ final class CloudConversationStreamEngineTests: XCTestCase {
     XCTAssertNil(failed(events))
   }
 
+  @MainActor
+  func testCloudResearchRetryReusesDurableEvidenceForExactSourceWithoutRepeatingSearch() async throws {
+    let fixture = try makeFixture()
+    let session = fixture.store.createAgentSession(title: "Research")
+    let source = fixture.store.appendOutgoing("Research the report", to: fixture.contact.id,
+      conversationOverride: session.id)
+    let pack = AgentIOSWebEvidencePack.build(query: "report", status: "completed",
+      documents: [["url": .string("https://example.test/report"), "content": .string("Recovered research body")]],
+      results: [], receipts: [], generatedAtMillis: 1)
+    let executor = RecordingConversationToolExecutor(result: AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)]))
+    let first = CloudConversationStreamEngine(streamClient: RecordingModelStreamClient(eventBatches: [
+      toolRound(index: 0, callId: "first-search", query: "report"),
+      [.failed(.init(requestId: "failed", error: .init(code: "ABORTED", message: "Interrupted")))]
+    ]), toolExecutor: executor, disclosureStore: InMemoryAgentDataDisclosureStore())
+    _ = try await collect(first.streamConversation(contact: fixture.contact, store: fixture.store,
+      turns: [source], requestId: "first-attempt"))
+    XCTAssertEqual(executor.calls.count, 1)
+
+    let retry = fixture.store.appendOutgoing(source.content, to: fixture.contact.id, conversationOverride: session.id)
+    let repeated = RecordingModelStreamClient(eventBatches: [
+      toolRound(index: 0, callId: "repeat-search", query: "report"),
+      [.textDelta(.init(requestId: "reply", sequence: 1,
+        text: "Recovered answer [source](https://example.test/report).", receivedAtElapsedMs: 2)),
+       .completed(.init(requestId: "reply", finishReason: "stop", completedAtElapsedMs: 3))]
+    ])
+    let reopened = CloudConversationStreamEngine(streamClient: repeated, toolExecutor: executor,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    let events = try await collect(reopened.streamConversation(contact: fixture.contact, store: fixture.store,
+      turns: [source, retry], images: [], requestId: "second-attempt", collaborationEvidence: nil,
+      researchRetrySource: source))
+    XCTAssertTrue(repeated.requests.first?.bodyJson.contains("Recovered research body") == true)
+    XCTAssertEqual(executor.calls.count, 1)
+    XCTAssertNotNil(completed(events))
+
+    let request = try XCTUnwrap(repeated.requests.first)
+    var changed = source
+    changed.content += " changed"
+    XCTAssertNil(CloudResearchObservationRecovery.open(store: fixture.store, contact: fixture.contact,
+      request: request, turns: [changed, retry], retrySource: source))
+    XCTAssertTrue(fixture.store.deleteMessage(source.id, contactId: source.contactId))
+    XCTAssertNil(CloudResearchObservationRecovery.open(store: fixture.store, contact: fixture.contact,
+      request: request, turns: [source, retry], retrySource: source))
+  }
+
   func testResearchBudgetStopsAtConfiguredLimitAndCountsOnlyNewEvidence() {
     var now: Int64 = 1
     let budget = CloudResearchRuntimeBudget(limits: .init(tools: 4, rounds: 8, activeMillis: 300), clock: { now })

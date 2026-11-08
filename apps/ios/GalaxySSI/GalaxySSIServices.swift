@@ -12149,7 +12149,8 @@ final class MessageCoordinator: ObservableObject {
     }
     do {
       try await dispatchCloudReply(contact: selected, turns: turns, images: [], outgoing: outgoing,
-        modelDetail: binding.modelId, requestDetail: binding.modelId, preserveRoute: true, hadAttachments: false)
+        modelDetail: binding.modelId, requestDetail: binding.modelId, preserveRoute: true, hadAttachments: false,
+        researchRetrySource: current)
       return true
     } catch {
       lastError = error.localizedDescription
@@ -12163,7 +12164,8 @@ final class MessageCoordinator: ObservableObject {
 
   private func dispatchCloudReply(
     contact: GalaxySSIContact, turns: [ChatMessage], images: [CloudImagePayload],
-    outgoing: ChatMessage, modelDetail: String, requestDetail: String, preserveRoute: Bool, hadAttachments: Bool
+    outgoing: ChatMessage, modelDetail: String, requestDetail: String, preserveRoute: Bool, hadAttachments: Bool,
+    researchRetrySource: ChatMessage? = nil
   ) async throws {
     try Task.checkCancellation()
     let receipt = AgentCloudDispatchReceipt(sourceId: outgoing.id, contactId: outgoing.contactId,
@@ -12187,8 +12189,10 @@ final class MessageCoordinator: ObservableObject {
     }
     store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId, stage: "cloud_request",
                               detail: requestDetail, status: .sent)
-    try await receiveCloudStreamReply(contact: contact, turns: turns, images: images, outgoing: outgoing,
-      modelDetail: modelDetail, displayContactId: outgoing.contactId, dispatchLease: lease)
+    let scopedTurns = outgoing.conversationId.isBlank ? turns : turns.filter { $0.conversationId == outgoing.conversationId }
+    try await receiveCloudStreamReply(contact: contact, turns: scopedTurns, images: images, outgoing: outgoing,
+      modelDetail: modelDetail, displayContactId: outgoing.contactId, dispatchLease: lease,
+      researchRetrySource: researchRetrySource, retainResearch: !hadAttachments)
     if recoverable,
        let source = store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId),
        [.delivered, .read].contains(source.deliveryStatus),
@@ -12205,7 +12209,9 @@ final class MessageCoordinator: ObservableObject {
     modelDetail: String,
     displayContactId: String,
     collaborationModelAudit: AgentCollaborationToolEvidenceScope? = nil,
-    dispatchLease: AgentCloudDispatchLease? = nil
+    dispatchLease: AgentCloudDispatchLease? = nil,
+    researchRetrySource: ChatMessage? = nil,
+    retainResearch: Bool = true
   ) async throws {
     var scopedTurns = turns
     if outgoing.readOnlyAnalysis {
@@ -12229,9 +12235,10 @@ final class MessageCoordinator: ObservableObject {
     var completed = false
 
     let events: AsyncThrowingStream<ModelStreamEvent, Error>
-    if let collaborationModelAudit, let engine = cloudStreamEngine as? CloudConversationStreamEngine {
+    if let engine = cloudStreamEngine as? CloudConversationStreamEngine {
       events = engine.streamConversation(contact: contact, store: store, turns: scopedTurns, images: images,
-        requestId: requestId, collaborationEvidence: nil, collaborationModelAudit: collaborationModelAudit)
+        requestId: requestId, collaborationEvidence: nil, collaborationModelAudit: collaborationModelAudit,
+        researchRetrySource: researchRetrySource, retainResearch: retainResearch)
     } else {
       events = cloudStreamEngine.streamConversation(contact: contact, store: store, turns: scopedTurns,
         images: images, requestId: requestId)
