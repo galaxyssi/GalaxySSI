@@ -79,7 +79,7 @@ struct GalaxySSIHealthCareResearchControls: View {
                 Text($0.title)
               }
             }
-            Text(t("scope", "While GalaxySSI is active, this concern may send updated measurements, approved profile context and recent private replies to this model. Research can save drafts only. You can revoke access at any time."))
+            Text(t("scope", "While GalaxySSI is active, this concern may send updated measurements, approved profile context, recent private replies and scoped plan status to this model. Research may save a reply or draft, but cannot adopt steps or schedule reminders. You can revoke access at any time."))
             Text(proposed.approval.payload).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
             Toggle(t("acknowledge", "I authorize automatic research for this concern"), isOn: $confirmed)
             Button(t("authorize", "Authorize research")) { authorize(proposed) }.disabled(!confirmed)
@@ -110,7 +110,7 @@ struct GalaxySSIHealthCareResearchControls: View {
     do {
       _ = try records.openLocalCareDiscussion(id: concern, metric: metric)
       let approval = try records.prepareLocalCareDiscussion(id: concern, metric: metric,
-        question: t("request", "Review this concern using the approved sources and retain only a draft for review. State missing context. Do not adopt or schedule anything."),
+        question: t("request", "Review this concern using the research handoff. State missing context. Do not adopt or schedule anything."),
         destinationID: provider, model: model, credential: key)
       confirmed = false
       review = .init(approval: approval, sources: sources)
@@ -150,7 +150,7 @@ struct GalaxySSIHealthCareResearchControls: View {
     case .queued: return t("queued", "Waiting for research")
     case .preparing: return t("preparing", "Reading public sources")
     case .dispatched: return t("dispatched", "Waiting for the model")
-    case .completed: return t("completed", "Draft ready for review")
+    case .completed: return t("completed", "Research review available in the private discussion")
     case .interrupted: return t("interrupted", "Interrupted request was not resent")
     case .failed: return t("failed", "Research failed")
     case .cancelled: return t("cancelled", "Research cancelled")

@@ -95,14 +95,16 @@ struct GalaxySSIHealthCareResearchLifecycle: ViewModifier {
     else { return }
     do {
       let question = GalaxySSILocalization.string("galaxyssi.health.research.request",
-        fallback: "Review this concern using the approved sources and retain only a draft for review. State missing context. Do not adopt or schedule anything.",
+        fallback: "Review this concern using the research handoff. State missing context. Do not adopt or schedule anything.",
         language: language)
       var approval = try records.prepareLocalCareDiscussion(id: authorization.concern, metric: authorization.metric,
         question: question, destinationID: contact.id, model: model, credential: key, proposesPlan: true, research: job)
-      for source in GalaxySSIHealthCareEvidence.PublicSource.allCases where authorization.sources.contains(source) {
-        try Task.checkCancellation()
-        try records.validateLocalCareDiscussionApproval(approval)
-        approval.evidence.append(try await GalaxySSIHealthCareEvidence.fetch(source, binding: .init(approval)))
+      if approval.proposesPlan {
+        for source in GalaxySSIHealthCareEvidence.PublicSource.allCases where authorization.sources.contains(source) {
+          try Task.checkCancellation()
+          try records.validateLocalCareDiscussionApproval(approval)
+          approval.evidence.append(try await GalaxySSIHealthCareEvidence.fetch(source, binding: .init(approval)))
+        }
       }
       try Task.checkCancellation()
       guard route(authorization, owner: records.owner) != nil else { throw GalaxySSIHealthRecords.Failure.permission }
@@ -126,7 +128,12 @@ struct GalaxySSIHealthCareResearchLifecycle: ViewModifier {
       try Task.checkCancellation()
       guard route(authorization, owner: records.owner) != nil else { throw GalaxySSIHealthRecords.Failure.permission }
       try records.validateLocalCareDiscussionTurn(approval)
-      try records.saveLocalCarePlan(approval, arguments: GalaxySSIHealthCarePlan.arguments(bytes, style: model.apiStyle))
+      if approval.proposesPlan {
+        try records.saveLocalCarePlan(approval, arguments: GalaxySSIHealthCarePlan.arguments(bytes, style: model.apiStyle))
+      } else {
+        try records.finishLocalCareDiscussionTurn(approval,
+          answer: GalaxySSIHealthFollowUpTransport.output(bytes, style: model.apiStyle))
+      }
     } catch {
       guard let current = records.currentLocalCareResearchJob(authorization, id: job.id) else { return }
       let state: Research.State = Task.isCancelled ? (current.state == .dispatched ? .interrupted : .queued) : .failed

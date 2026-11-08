@@ -17,6 +17,7 @@ enum GalaxySSIHealthCareResearch {
     let destination: String
     let sources: Set<GalaxySSIHealthCareEvidence.PublicSource>
     let authorizedAt: Date
+    var handoffVersion: Int?
   }
 
   enum State: String, Codable {
@@ -40,6 +41,7 @@ enum GalaxySSIHealthCareResearch {
     var jobs: [String: Job] = [:]
     // A bounded authorization is renewed explicitly before its deduplication history can be discarded.
     var seen: [String: Set<String>] = [:]
+    var checkpoints: [String: GalaxySSIHealthCareResearchHandoff.Checkpoint]?
 
     mutating func renew(_ authorization: Authorization) {
       let key = authorization.concern.uuidString
@@ -52,6 +54,7 @@ enum GalaxySSIHealthCareResearch {
       let key = concern.uuidString
       authorizations.removeValue(forKey: key)
       seen.removeValue(forKey: key)
+      checkpoints?.removeValue(forKey: key)
       if let job = jobs[key], job.state.active {
         jobs[key]?.state = .cancelled
         jobs[key]?.owner = nil
