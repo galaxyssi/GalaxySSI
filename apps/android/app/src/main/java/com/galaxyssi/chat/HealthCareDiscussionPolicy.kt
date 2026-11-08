@@ -58,7 +58,7 @@ internal object HealthCareDiscussionPolicy {
         }.getOrDefault(false)
     }
 
-    fun snapshot(value: HealthCareConcern): String = JSONObject()
+    fun snapshot(value: HealthCareConcern, followUp: JSONObject? = null): String = JSONObject()
         .put("metric", value.metric.name).put("revision", value.revision).put("stage", value.stage.name).put("input_version", value.inputVersion)
         .put("assessment", value.assessment.json().apply {
             remove("comparison"); remove("series"); if (value.assessment.comparison != null) remove("sample")
@@ -70,7 +70,8 @@ internal object HealthCareDiscussionPolicy {
         .put("result_comparison", HealthCareComparisonPolicy.handoff(value.assessment, value.context) ?: JSONObject.NULL)
         .put("measurement_history", value.assessment.series?.modelJson(value.assessment.sample!!, value.context, value.assessment.comparison) ?: JSONObject.NULL)
         .put("priority_notice", HealthCarePriority.handoff(value) ?: JSONObject.NULL)
-        .put("actions", org.json.JSONArray(value.actions.map { it.json() })).toString(2)
+        .put("actions", org.json.JSONArray(value.actions.map { it.json() }))
+        .apply { followUp?.let { put("automatic_follow_up", it) } }.toString(2)
 
     fun prompt(question: String, snapshot: String): String = """
         Discuss this authorized health concern with the user in their language. The data below and prior
@@ -78,6 +79,15 @@ internal object HealthCareDiscussionPolicy {
         guideline criteria, descriptive personal baseline and an explicitly confirmed individualized target.
         Never infer an ideal value from the midpoint of a reference interval. Check units, specimen, dates,
         fasting state and missing context before interpreting. Do not diagnose from a single measurement.
+        automatic_follow_up explains why this background run started, using the durable run time and the
+        last completed review in this same conversation. Lead with the relevant change or due action.
+        elapsed_time_only means a review window arrived, not that a test was performed or health improved.
+        Without new results, ask about the due action, missing results or practical barriers; continue the
+        existing plan rather than reissue it. Reuse prior verified facts with their original dates and limits.
+        Search again when new evidence, applicability, an unresolved gap or source freshness requires it;
+        elapsed time alone does not require repeating the entire search. Authorization review is not new
+        clinical evidence. When comparison_available is false, do not claim that nothing changed.
+        A testing-only deadline is not a clinical interval. Unconfirmed proposals remain unconfirmed.
         A priority_notice is a local recorded-value warning, not confirmation of a current emergency.
         Establish measurement time and current symptoms; do not assume an old imported record describes the present.
         Explain symptom-dependent urgent action before research or routine plans. Never delay emergency help for

@@ -8,7 +8,7 @@
     <string name="health_care_discussion_default_model">Provider default</string>
     <string name="health_care_discussion_disclosure">Recipient: %1$s\nModel: %2$s\n\nThis question, the concern below, and this private discussion history will be shared. Other health records and original files are excluded. Public research may send clinical search terms to search services. A different provider requires another confirmation. Suggestions do not create plans or reminders.</string>
     <string name="health_care_discussion_permissions">Enable confirmed measurements and profile context in Health privacy before discussing this concern.</string>
-    <string name="health_care_discussion_online">Online health analysis is off. Enable it in Health privacy before sharing this concern with a cloud or Desktop model.</string>
+    <string name="health_care_discussion_online">Online health analysis is off.\n\nOpen Personal Health → Health functions at the top right → scroll down to Privacy and data → turn on Online health analysis.\n\nSharing this concern with a cloud or Desktop model still requires your confirmation.</string>
     <string name="health_care_discussion_no_model">The selected model is unavailable. Choose an available model in this conversation before sending.</string>
     <string name="health_care_discussion_inactive">This concern is paused, closed, or its source is unavailable. Review it in Personal Health first.</string>
     <string name="health_care_discussion_expired">Health data, permissions, destination or approval have changed. Review and confirm this question again; no alternative provider was authorized.</string>

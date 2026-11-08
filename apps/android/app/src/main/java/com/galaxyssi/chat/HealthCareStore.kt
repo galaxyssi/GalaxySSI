@@ -275,6 +275,11 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
     fun latestResearchJob(concernId: String): HealthCareResearchJob? = db.rawQuery(
         "SELECT $RESEARCH_COLUMNS FROM research_jobs WHERE concern_id=? ORDER BY created_at DESC,turn_id DESC LIMIT 1",
         arrayOf(concernId)).use { if (it.moveToFirst()) decodeResearchJob(it) else null }
+    fun previousCompletedResearch(job: HealthCareResearchJob): HealthCareResearchJob? = db.rawQuery(
+        "SELECT $RESEARCH_COLUMNS FROM research_jobs WHERE concern_id=? AND created_at<=? AND turn_id!=? AND state='COMPLETED' " +
+            "ORDER BY created_at DESC,turn_id DESC LIMIT 1", arrayOf(job.concernId, job.createdAt.toString(), job.turnId)).use {
+        if (it.moveToFirst()) decodeResearchJob(it).takeIf { prior -> prior.conversationId == job.conversationId } else null
+    }
     fun pendingResearchCancellations(after: String = ""): List<HealthCareResearchJob> = db.rawQuery(
         "SELECT $RESEARCH_COLUMNS FROM research_jobs WHERE cancel_pending=1 AND turn_id>? ORDER BY turn_id LIMIT 30", arrayOf(after)).use { rows ->
         buildList { while (rows.moveToNext()) add(decodeResearchJob(rows)) }

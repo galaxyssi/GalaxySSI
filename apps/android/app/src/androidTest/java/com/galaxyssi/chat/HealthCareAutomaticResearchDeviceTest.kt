@@ -3,8 +3,13 @@ package com.galaxyssi.chat
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.os.SystemClock
+import android.provider.Settings
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import androidx.work.impl.WorkManagerImpl
+import java.util.UUID
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -27,6 +32,7 @@ class HealthCareAutomaticResearchDeviceTest {
         await(45_000, "Paired transport ready") { GalaxySSIMqttClient.isRequestReplyReady() }
         if (phase == "followup") { followUp(); return }
         if (phase == "outcome") { actionOutcome(); return }
+        if (phase == "deadline") { deadline(); return }
         if (phase == "full" || phase == "start") start()
         val concern = checkNotNull(markers.getString("concern", null)) { "No isolated research to resume" }
         val turn = checkNotNull(markers.getString("turn", null))
@@ -303,6 +309,129 @@ class HealthCareAutomaticResearchDeviceTest {
         println("HEALTH_AUTOMATIC action_outcome=true same_conversation=true pending_only=true no_new_measurement=true")
     }
 
+    private fun deadline() {
+        val concernId = checkNotNull(markers.getString("concern", null))
+        val conversation = checkNotNull(markers.getString("conversation", null))
+        val outcome = checkNotNull(markers.getString("outcome_turn", null))
+        val recordId = checkNotNull(markers.getString("followup_record", null))
+        val args = InstrumentationRegistry.getArguments()
+        val run = args.getString("health_deadline_run")
+        require(run == null || run.matches(Regex("[a-z0-9-]{1,40}")))
+        val markers = if (run == null) this.markers else context.getSharedPreferences("health-runtime-deadline-$run", Context.MODE_PRIVATE)
+        val step = args.getString("health_deadline_step") ?: "full"
+        require(step in setOf("prepare", "resume", "full"))
+        if (step == "resume") {
+            assertTrue("A real device reboot is required", Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT) > markers.getInt("boot_count", Int.MAX_VALUE))
+            assertNotEquals(markers.getString("process", ""), AgentProcessIdentity.instanceId)
+            assertTrue(markers.contains("deadline_scheduled_work"))
+        }
+        assertEquals(HealthCareResearchState.COMPLETED, checkHealthy(outcome).state)
+        var authorizationId = markers.getString("deadline_authorization", null)
+        if (authorizationId == null) {
+            val previous = HealthCareStore(context).use { it.researchAuthorization(concernId)!! }
+            assertFalse("The outcome phase must revoke its synthetic consent", previous.active)
+            val preview = HealthCareResearchRuntime.preview(context, concernId)
+            assertEquals(conversation, preview.grant.conversationId)
+            assertEquals(previous.scope.targetId, preview.grant.targetId)
+            assertEquals(previous.scope.modelId, preview.grant.modelId)
+            HealthCareResearchRuntime.authorize(context, preview, previous.id)
+            authorizationId = HealthCareStore(context).use { it.researchAuthorization(concernId)!!.id }
+            check(markers.edit().putString("deadline_authorization", authorizationId).commit())
+        }
+        val authorization = checkNotNull(authorizationId)
+        var seedTurn = markers.getString("deadline_seed_turn", null)
+        if (seedTurn == null) {
+            await(60_000, "Deadline acceptance authorization scheduled") {
+                HealthCareStore(context).use { it.latestResearchJob(concernId)?.authorizationId == authorization }
+            }
+            seedTurn = HealthCareStore(context).use { it.latestResearchJob(concernId)!!.turnId }
+            check(markers.edit().putString("deadline_seed_turn", seedTurn).commit())
+        }
+        val seed = checkNotNull(seedTurn)
+        await(600_000, "Initial review finishes before the synthetic deadline is scheduled") {
+            checkHealthy(seed).state == HealthCareResearchState.COMPLETED
+        }
+        if (!markers.contains("deadline_action")) {
+            val before = HealthCareStore(context).use { it.concern(concernId)!! }
+            check(markers.edit().putString("deadline_action", UUID.randomUUID().toString())
+                .putString("baseline_actions", AgentNativeJsonCodec.sha256(org.json.JSONArray(before.actions.map { it.json() }).toString()))
+                .putLong("deadline_at", System.currentTimeMillis() + if (step == "prepare") 300_000 else 45_000).commit())
+        }
+        val actionId = markers.getString("deadline_action", "")!!
+        val due = markers.getLong("deadline_at", 0)
+        HealthCareStore(context).use { care ->
+            val issue = care.concern(concernId)!!
+            if (issue.actions.none { it.id == actionId }) {
+                check(System.currentTimeMillis() < due) { "The future deadline must be observed before this probe can pass" }
+                val action = HealthCareAction(actionId, HealthCareActionKind.RECHECK,
+                    "合成后台跟进验收：安排已到期，目前没有新的复查结果。",
+                    "此短时间仅测试系统定时唤醒，不是医学复查周期；不要据此建议频繁检测。",
+                    "隔离的系统验收数据，不属于个人健康档案。", HealthCareActionState.CONFIRMED,
+                    due, due + 60_000, System.currentTimeMillis(), basis = HealthCareFollowUpPolicy.basis(issue))
+                care.update(issue.id, issue.revision, "synthetic_deadline_acceptance") { it.copy(actions = it.actions + action) }
+            }
+        }
+        if (!markers.contains("deadline_scheduled_work")) {
+            val manager = WorkManager.getInstance(context)
+            var scheduled: WorkInfo? = null
+            await(20_000, "Production reconciliation schedules a future deadline") {
+                scheduled = manager.getWorkInfosForUniqueWork("health-research-deadline").get(10, TimeUnit.SECONDS)
+                    .firstOrNull { it.state == WorkInfo.State.ENQUEUED }
+                scheduled != null
+            }
+            assertTrue("The deadline must not already have elapsed", System.currentTimeMillis() < due)
+            HealthCareStore(context).use { assertEquals(seed, it.latestResearchJob(concernId)!!.turnId) }
+            check(markers.edit().putString("deadline_scheduled_work", scheduled!!.id.toString()).commit())
+        }
+        if (step == "prepare") {
+            assertTrue(System.currentTimeMillis() < due)
+            check(markers.edit().putInt("boot_count", Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT))
+                .putString("process", AgentProcessIdentity.instanceId).commit())
+            println("HEALTH_AUTOMATIC ready_for_device_reboot=true future_deadline=true no_active_research=true")
+            return
+        }
+        var deadlineTurn = markers.getString("deadline_turn", null)
+        if (deadlineTurn == null) {
+            // Do not invoke reconciliation or write new records here: only the scheduled work may wake research.
+            await(420_000, "Elapsed deadline alone starts another research turn without an Activity or user message") {
+                HealthCareStore(context).use { it.latestResearchJob(concernId)?.let { job ->
+                    job.authorizationId == authorization && job.turnId != seed
+                } == true }
+            }
+            val job = HealthCareStore(context).use { it.latestResearchJob(concernId)!! }
+            assertTrue("Research must not run before the agreed window", job.createdAt >= due)
+            deadlineTurn = job.turnId
+            check(markers.edit().putString("deadline_turn", deadlineTurn).commit())
+        }
+        val turn = checkNotNull(deadlineTurn)
+        await(600_000, "Deadline research returns to the original conversation") {
+            checkHealthy(turn).state == HealthCareResearchState.COMPLETED
+        }
+        assertAnswer(turn)
+        HealthCareStore(context).use { care ->
+            val issue = care.concern(concernId)!!
+            assertEquals(conversation, issue.conversationId)
+            assertEquals(recordId, issue.assessment.record!!.id)
+            if (markers.contains("baseline_actions")) assertEquals(markers.getString("baseline_actions", ""),
+                AgentNativeJsonCodec.sha256(org.json.JSONArray(issue.actions.filter { it.id != actionId }.map { it.json() }).toString()))
+            assertEquals(HealthCareActionState.CONFIRMED, issue.actions.single { it.id == actionId }.state)
+            assertTrue(issue.open)
+            assertFalse(issue.stage in setOf(HealthCareStage.MAINTENANCE, HealthCareStage.CLOSED))
+            assertNull(issue.target); assertNull(issue.maintenance); assertNull(care.nextReminder())
+            care.plan(turn)?.let { plan ->
+                assertEquals(HealthCarePlanState.PENDING, plan.state)
+                assertTrue(plan.sources.isNotEmpty())
+                assertTrue(plan.sources.all { it.evidence != null && it.quote.isNotBlank() })
+            }
+            assertEquals("Elapsed time cannot adopt the preceding proposal", HealthCarePlanState.PENDING, care.plan(outcome)!!.state)
+            assertEquals(setOf(seed, turn), care.researchJobs(concernId)
+                .filter { it.authorizationId == authorization }.map { it.turnId }.toSet())
+            care.revokeResearch(concernId, authorization, System.currentTimeMillis())
+        }
+        assertFalse(HealthCareResearchWork.allowProjection(context, conversation, turn))
+        println("HEALTH_AUTOMATIC deadline=true scheduled_wakeup=true same_conversation=true pending_only=true reboot=${step == "resume"}")
+    }
+
     private fun openFromAgentSurface() {
         assumeTrue(!context.getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked)
         val concern = checkNotNull(markers.getString("concern", null))
@@ -407,7 +536,8 @@ class HealthCareAutomaticResearchDeviceTest {
     }
 
     private fun diagnose() {
-        val turn = observedTurn ?: markers.getString("outcome_turn", null) ?: markers.getString("followup_review_turn", null) ?: markers.getString("followup_turn", null)
+        val turn = observedTurn ?: markers.getString("deadline_turn", null) ?: markers.getString("deadline_seed_turn", null)
+            ?: markers.getString("outcome_turn", null) ?: markers.getString("followup_review_turn", null) ?: markers.getString("followup_turn", null)
             ?: markers.getString("review_turn", null) ?: markers.getString("turn", "").orEmpty()
         if (turn.isEmpty()) return
         val supervisor = AgentTaskRuntime.supervisor(context)

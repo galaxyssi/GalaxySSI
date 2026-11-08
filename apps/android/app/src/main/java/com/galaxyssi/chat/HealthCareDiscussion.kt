@@ -73,7 +73,13 @@ internal object HealthCareDiscussion {
             if (research != null) check(research.permits(grant) && care.researchGrantCurrent(grant)) {
                 context.getString(R.string.health_care_changed)
             }
-            val snapshot = HealthCareDiscussionPolicy.snapshot(concern)
+            val followUp = if (research == null) null else {
+                val job = checkNotNull(care.researchJob(turnId))
+                val previous = care.previousCompletedResearch(job)
+                HealthCareResearchHandoff.snapshot(concern, job, previous,
+                    previous?.let { care.revision(concern.id, it.revision) })
+            }
+            val snapshot = HealthCareDiscussionPolicy.snapshot(concern, followUp)
             val goal = HealthCareDiscussionPolicy.prompt(question, snapshot)
             val history = AgentTranscriptStore(context).context(conversationId)
             check(history.conversationId == conversationId && history.privateMode && history.trackingPaused) {

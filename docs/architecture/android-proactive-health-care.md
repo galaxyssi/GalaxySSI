@@ -516,6 +516,22 @@ interruption without a recoverable execution checkpoint is exposed as a failure
 instead of guessing whether it is safe to send again. No medical data is placed
 in WorkManager input or a notification.
 
+Automatic reviews include a structured trigger handoff. An indexed query finds
+the previous completed review for the same concern and conversation, and loads
+its exact encrypted concern revision. The handoff distinguishes new/corrected
+measurements, history/context/target changes, action feedback, newly due actions
+and authorization-only review. It uses the durable run timestamp, not the clock
+at every prompt reconstruction. A missing prior revision is explicitly unknown;
+it cannot be described as unchanged. Manual discussions do not acquire this
+automatic trigger field.
+
+The model should lead with the triggering change, continue existing actions and
+reuse previously verified sources with their dates and limits. A deadline without
+new results calls for progress, results or barrier follow-up, not an automatic
+repeat of the entire search or a replacement plan. New evidence, applicability,
+unresolved questions or source freshness may still justify retrieval. This is
+context for the model, not a keyword command router or a ban on further research.
+
 Cold-start reconciliation keeps a connector wait admissible when its saved
 action and durable source-message receipt agree. It does not convert that wait
 into a user pause or redispatch the request. This check uses saved action and
@@ -601,6 +617,37 @@ private conversation, taps the health discussion entry and verifies reuse of the
 original private health conversation without renewing research consent. It needs
 an unlocked display, does not send another provider request, and removes its
 temporary conversation afterward.
+
+The `deadline` phase follows the completed outcome review. It renews consent for
+the same synthetic archive and destination, lets the initial review finish, then
+adds an explicitly synthetic confirmed action with a future deadline. It verifies
+that production WorkManager reconciliation enqueues the deadline before it is
+due. The test then only observes: it does not invoke reconciliation, insert a new
+reading, send a user message, or open an Activity to trigger the follow-up. The
+deadline must yield one additional research turn and a substantive answer in the
+original private conversation. If the model proposes another plan, that draft
+must be source-backed and pending. A focused progress question can be appropriate
+without new measurements; response quality still requires reading the actual
+answer rather than treating transport assertions as semantic validation. It cannot
+complete the action, manufacture a measurement, adopt a target, schedule a
+notification, or close the concern. Durable markers support replay without a new
+deadline or provider request; consent is revoked on success. The 45-second window
+is a scheduler acceptance fixture, explicitly not a clinical review interval or
+proof of real multi-day follow-up.
+
+An optional `health_deadline_run` selects fresh phase markers while preserving
+the original synthetic archive and conversation. `health_deadline_step=prepare`
+waits for the initial review to finish, persists a five-minute synthetic deadline,
+and records the device boot count and process identity. After an explicitly
+authorized device reboot, `health_deadline_step=resume` requires a higher boot
+count and a different process, then observes normal WorkManager restoration and
+delivery without manually reconciling the concern. Existing actions are hashed
+before scheduling and compared after completion; only the new synthetic action
+may have been added. No real personal health data is copied into this probe.
+Because this isolated namespace is initialized by its instrumentation runner,
+this tests device-reboot persistence followed by application initialization, not
+unattended delivery before that namespace is opened. Do not report it as proof
+of production boot-only startup or a multi-day clinical follow-up.
 
 The runner redirects databases, task files and non-pairing preferences into a
 dedicated acceptance namespace before the application and workers initialize.
