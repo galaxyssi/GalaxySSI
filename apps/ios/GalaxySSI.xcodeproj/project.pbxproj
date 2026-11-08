@@ -210,6 +210,7 @@
     A10000000000000000009878 /* GalaxySSIHealthCareResearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009878 /* GalaxySSIHealthCareResearch.swift */; };
     A10000000000000000009879 /* GalaxySSIHealthCareResearchLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009879 /* GalaxySSIHealthCareResearchLifecycle.swift */; };
     A10000000000000000009880 /* GalaxySSIHealthCareResearchControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009880 /* GalaxySSIHealthCareResearchControls.swift */; };
+    A10000000000000000009881 /* GalaxySSIHealthCareResearchHandoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009881 /* GalaxySSIHealthCareResearchHandoff.swift */; };
     A10000000000000000009871 /* GalaxySSIHealthCareSeriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009871 /* GalaxySSIHealthCareSeriesView.swift */; };
     E39090000000000000000001 /* GalaxySSIHealthOCRSourceContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = E39090000000000000000002 /* GalaxySSIHealthOCRSourceContext.swift */; };
     A10000000000000000009834 /* GalaxySSIHealthReviewReminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009834 /* GalaxySSIHealthReviewReminders.swift */; };
@@ -1475,6 +1476,7 @@
     A20000000000000000009878 /* GalaxySSIHealthCareResearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareResearch.swift; sourceTree = "<group>"; };
     A20000000000000000009879 /* GalaxySSIHealthCareResearchLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareResearchLifecycle.swift; sourceTree = "<group>"; };
     A20000000000000000009880 /* GalaxySSIHealthCareResearchControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareResearchControls.swift; sourceTree = "<group>"; };
+    A20000000000000000009881 /* GalaxySSIHealthCareResearchHandoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareResearchHandoff.swift; sourceTree = "<group>"; };
     A20000000000000000009871 /* GalaxySSIHealthCareSeriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareSeriesView.swift; sourceTree = "<group>"; };
     E39090000000000000000002 /* GalaxySSIHealthOCRSourceContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthOCRSourceContext.swift; sourceTree = "<group>"; };
     A20000000000000000009834 /* GalaxySSIHealthReviewReminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReviewReminders.swift; sourceTree = "<group>"; };
@@ -3366,6 +3368,7 @@
         A20000000000000000009878 /* GalaxySSIHealthCareResearch.swift */,
         A20000000000000000009879 /* GalaxySSIHealthCareResearchLifecycle.swift */,
         A20000000000000000009880 /* GalaxySSIHealthCareResearchControls.swift */,
+        A20000000000000000009881 /* GalaxySSIHealthCareResearchHandoff.swift */,
         A20000000000000000009871 /* GalaxySSIHealthCareSeriesView.swift */,
         E39090000000000000000002 /* GalaxySSIHealthOCRSourceContext.swift */,
         A20000000000000000009834 /* GalaxySSIHealthReviewReminders.swift */,
@@ -4766,6 +4769,7 @@
         A10000000000000000009878 /* GalaxySSIHealthCareResearch.swift in Sources */,
         A10000000000000000009879 /* GalaxySSIHealthCareResearchLifecycle.swift in Sources */,
         A10000000000000000009880 /* GalaxySSIHealthCareResearchControls.swift in Sources */,
+        A10000000000000000009881 /* GalaxySSIHealthCareResearchHandoff.swift in Sources */,
         A10000000000000000009871 /* GalaxySSIHealthCareSeriesView.swift in Sources */,
         E39090000000000000000001 /* GalaxySSIHealthOCRSourceContext.swift in Sources */,
         A10000000000000000009834 /* GalaxySSIHealthReviewReminders.swift in Sources */,

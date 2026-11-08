@@ -108,19 +108,21 @@ enum GalaxySSIHealthCareDiscussion {
     var profileScope: GalaxySSIHealthCareProfileScope.Link?
     var profileScopeEpoch: UUID?
     var research: GalaxySSIHealthCareResearch.Job?
+    var researchHandoff: GalaxySSIHealthCareResearchHandoff.Handoff?
 
     func isCurrent(at now: Date) -> Bool {
       now >= reviewedAt && now.timeIntervalSince(reviewedAt) < GalaxySSIHealthCareDiscussion.approvalLifetime
     }
 
     func providerPayload(now: Date = Date()) throws -> String {
-      guard proposesPlan || history != nil else { return payload }
+      guard proposesPlan || history != nil || researchHandoff != nil else { return payload }
       guard !proposesPlan || ((1...3).contains(evidence.count) && Set(evidence.map(\.id)).count == evidence.count &&
             Set(evidence.map(\.url)).count == evidence.count &&
             evidence.allSatisfy({ $0.valid(for: self, now: now) })) else { throw GalaxySSIHealthRecords.Failure.permission }
       var content = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(payload.utf8))
       if proposesPlan { content["native_sources"] = .array(evidence.map { .object($0.modelValue) }) }
       if let history { content["measurement_history"] = .object(history.recent.payload) }
+      if let researchHandoff { content["research_handoff"] = .object(researchHandoff.payload) }
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
       let bytes = try encoder.encode(content)
@@ -213,7 +215,11 @@ enum GalaxySSIHealthCareDiscussion {
       records or verified current external sources. Discuss possible questions for a clinician, not a saved care plan.
       Do not claim to schedule or perform any action. If proposing a plan, report each action's source requirements,
       missing information, and conflicts with a next step. Do not invent facts or treat a matched check as clinical validation.
-      """ + (approval.proposesPlan
+      """ + (approval.researchHandoff == nil ? "" : """
+        \nUse research_handoff to distinguish changed evidence, action feedback and elapsed deadlines. A deadline
+        is not new clinical evidence. Continue the existing plan when this is only a deadline and one exists.
+        Do not claim prior comparison if comparison_available is false, and never invent a new deadline.
+        """) + (approval.proposesPlan
         ? "\nUse exactly one \(GalaxySSIHealthCarePlan.tool) call to propose a draft. Cite only supplied native_sources by " +
           "their exact evidence_id and URL. Copy a short original-language supporting quote from the excerpt. " +
           "When excerpt_truncated is true, do not infer or cite omitted text. " +
