@@ -176,6 +176,7 @@ struct GalaxySSIHealthRecords {
     var profileAnalysisPermission: UUID?
     var profileAnalysisAudit: [ProfileAnalysisAudit]?
     var localCarePermission: UUID?
+    var localCareLegacyPermission: UUID?
     var localCareAllowed: Bool?
     var localCare: GalaxySSIHealthCare.Ledger?
     var localCareLastEvaluatedAt: Date?
@@ -185,6 +186,10 @@ struct GalaxySSIHealthRecords {
     var localCareFollowUps: [String: GalaxySSIHealthCareFollowUp.Reminder]?
 
     var keepsNewImportOriginals: Bool { retainImportOriginals ?? true }
+
+    func matchesLocalCarePermission(_ permission: UUID) -> Bool {
+      localCareAllowed == true && (permission == localCarePermission || permission == localCareLegacyPermission)
+    }
 
     var current: [GalaxySSIHealthReading] {
       var seen = Set<UUID>()
@@ -320,9 +325,15 @@ struct GalaxySSIHealthRecords {
       return Archive()
     }
     let box = try AES.GCM.SealedBox(combined: data)
-    let archive = try JSONDecoder().decode(Archive.self,
+    var archive = try JSONDecoder().decode(Archive.self,
       from: AES.GCM.open(box, using: key(create: false), authenticating: context))
     guard archive.version == 1 else { throw Failure.unavailable }
+    if archive.localCareAllowed == true,
+       let event = archive.privacyEvents?.last(where: { $0.scope == .localCare }), event.enabled {
+      if archive.localCarePermission == nil { archive.localCarePermission = event.id }
+      // Earlier builds issued discussion and reminder permissions from the audit event.
+      if event.id != archive.localCarePermission { archive.localCareLegacyPermission = event.id }
+    }
     return archive
   }
 
@@ -418,12 +429,16 @@ struct GalaxySSIHealthRecords {
     case .localCare:
       previous = archive.localCareAllowed ?? false
       archive.localCareAllowed = enabled
-      if previous != enabled { archive.localCarePermission = enabled ? UUID() : nil }
+      if previous != enabled {
+        archive.localCarePermission = enabled ? UUID() : nil
+        archive.localCareLegacyPermission = nil
+      }
     }
     guard previous != enabled else { return }
     if (previous ?? (scope == .importOriginals)) != enabled {
       var history = archive.privacyEvents ?? []
-      history.append(.init(at: Date(), scope: scope, enabled: enabled))
+      let eventID = scope == .localCare && enabled ? (archive.localCarePermission ?? UUID()) : UUID()
+      history.append(.init(id: eventID, at: Date(), scope: scope, enabled: enabled))
       archive.privacyEvents = Array(history.suffix(100))
     }
     try persist(archive)
@@ -437,6 +452,10 @@ struct GalaxySSIHealthRecords {
     let readings = Dictionary(grouping: archive.current.filter { $0.isValid && $0.measuredAt <= now }, by: \.metric)
     var ledger = archive.localCare ?? .init()
     var changed = false
+    if archive.localCarePermission == nil {
+      archive.localCarePermission = UUID()
+      changed = true
+    }
     let previousConcerns = ledger.current
     for metric in GalaxySSIHealthMetric.allCases {
       let key = metric.rawValue
@@ -526,7 +545,7 @@ struct GalaxySSIHealthRecords {
       throws -> GalaxySSIHealthCareDiscussion.Approval {
     let archive = try load()
     let concern = try currentDiscussionConcern(id: id, metric: metric, archive: archive, now: now)
-    guard let care = archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id,
+    guard let care = archive.localCarePermission,
           let online = archive.healthOnlinePermission, let thread = archive.localCareDiscussions?[id.uuidString],
           thread.turns.count < GalaxySSIHealthCareDiscussion.maximumTurns,
           let endpoint = GalaxySSIHealthCareDiscussion.endpoint(for: model),
@@ -641,7 +660,7 @@ struct GalaxySSIHealthRecords {
             checked.revision == saved.concernRevision, checked.revision < Int.max,
             try GalaxySSIHealthCare.inputDigest(checked.assessment) == saved.assessmentDigest,
             archive.healthOnlinePermission == saved.onlinePermission,
-            archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id == saved.carePermission,
+            archive.matchesLocalCarePermission(saved.carePermission),
             Self.localCarePlanEvidenceMatches(saved, archive: archive, owner: owner),
             !selected.isEmpty, selected.isSubset(of: Set(saved.draft.actions.map(\.id))) else { throw Failure.stale }
       let actions = saved.draft.actions.filter { selected.contains($0.id) }
@@ -672,7 +691,7 @@ struct GalaxySSIHealthRecords {
           concern.revision == proposal.concernRevision,
           try GalaxySSIHealthCare.inputDigest(concern.assessment) == proposal.assessmentDigest,
           archive.healthOnlinePermission == proposal.onlinePermission,
-          archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id == proposal.carePermission,
+          archive.matchesLocalCarePermission(proposal.carePermission),
           Self.localCarePlanEvidenceMatches(proposal, archive: archive, owner: owner)
     else { throw Failure.stale }
   }
@@ -784,7 +803,7 @@ struct GalaxySSIHealthRecords {
           let plan = archive.localCarePlans?[adopted.proposalID.uuidString], plan.concernID == concernID,
           plan.state == .accepted, plan.selected.contains(adopted.action.id),
           archive.healthOnlinePermission == plan.onlinePermission,
-          archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id == plan.carePermission,
+          archive.matchesLocalCarePermission(plan.carePermission),
           concern.context == plan.sourceContext,
           (try? GalaxySSIHealthCare.inputDigest(concern.assessment)) == plan.assessmentDigest else { return false }
     return GalaxySSIHealthCare.assess(archive.current.filter { $0.metric == metric && $0.isValid && $0.measuredAt <= now },
@@ -809,7 +828,7 @@ struct GalaxySSIHealthRecords {
     let concern = try currentDiscussionConcern(id: approval.concernID, metric: approval.metric, archive: archive, now: now)
     guard owner == approval.owner, approval.isCurrent(at: now), concern.revision == approval.concernRevision,
           archive.healthOnlinePermission == approval.onlinePermission,
-          archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id == approval.carePermission,
+          archive.matchesLocalCarePermission(approval.carePermission),
           let thread = archive.localCareDiscussions?[concern.id.uuidString], thread.id == approval.threadID
     else { throw Failure.permission }
     return thread

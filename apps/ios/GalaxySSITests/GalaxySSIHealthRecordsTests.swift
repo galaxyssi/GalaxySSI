@@ -3807,6 +3807,57 @@ extension GalaxySSIHealthRecordsTests {
     XCTAssertFalse(changedTarget.matches(try records.load()))
   }
 
+  @MainActor
+  func testLocalCareGrantSurvivesAuditRolloverButNotRevocation() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let owner = "care-permission-rollover"
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: owner, secrets: secrets, isolatedFile: file)
+    let now = Date()
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-60), value: 110,
+      unitOverride: "mg/dL", referenceInterval: "70 - 99"))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.setHealthOnlinePermission(true)
+    try records.reconcileLocalCare(now: now)
+    let archive = try records.load()
+    let grant = try XCTUnwrap(archive.localCarePermission)
+    let concern = try XCTUnwrap(archive.localCare?.current["glucose"])
+    let auditGrant = UUID()
+    var legacy = archive
+    let index = try XCTUnwrap(legacy.privacyEvents?.lastIndex(where: { $0.scope == .localCare }))
+    legacy.privacyEvents?[index].id = auditGrant
+    let encodedKey = try XCTUnwrap(secrets.string(account: "health.records.v1." + owner))
+    let key = SymmetricKey(data: try XCTUnwrap(Data(base64Encoded: encodedKey)))
+    let context = Data("galaxyssi.health.records.v1:\(owner)".utf8)
+    let box = try AES.GCM.seal(JSONEncoder().encode(legacy), using: key, authenticating: context)
+    try XCTUnwrap(box.combined).write(to: file, options: .atomic)
+
+    _ = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    func review() throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Explain the reading",
+        destinationID: "provider", model: model, credential: "fixture-api-key", now: now)
+    }
+    let approval = try review()
+    XCTAssertEqual(approval.carePermission, grant)
+    for index in 0..<102 { try records.setPrivacy(.profileAnalysis, enabled: index.isMultiple(of: 2)) }
+    let afterRollover = try records.load()
+    XCTAssertFalse(afterRollover.privacyEvents?.contains { $0.scope == .localCare } ?? true)
+    XCTAssertTrue(afterRollover.matchesLocalCarePermission(auditGrant))
+    XCTAssertEqual(try review().carePermission, grant)
+    try records.validateLocalCareDiscussionApproval(approval)
+
+    try records.setPrivacy(.localCare, enabled: false)
+    try records.setPrivacy(.localCare, enabled: true)
+    let regranted = try records.load()
+    XCTAssertFalse(regranted.matchesLocalCarePermission(auditGrant))
+    XCTAssertFalse(regranted.matchesLocalCarePermission(grant))
+    XCTAssertNotEqual(try review().carePermission, grant)
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(approval, now: now))
+  }
+
   func testAgentHealthSummaryRequiresOptInAndSelectsBoundedActiveConcerns() {
     typealias Care = GalaxySSIHealthCare
     func concern(_ metric: GalaxySSIHealthMetric, _ stage: Care.Stage, _ timestamp: TimeInterval) -> Care.Concern {

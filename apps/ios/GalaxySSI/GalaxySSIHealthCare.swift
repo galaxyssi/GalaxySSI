@@ -162,7 +162,7 @@ enum GalaxySSIHealthCare {
     }
 
     static func permission(in archive: GalaxySSIHealthRecords.Archive) -> UUID? {
-      archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id
+      archive.localCarePermission
     }
   }
 
