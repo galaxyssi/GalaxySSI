@@ -599,15 +599,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           collaborationRecall: collaborationRecallScope.map { scope in
             { arguments in
               await MainActor.run {
-                guard collaborationEvidence != nil || ["goal", "dependency"].contains(arguments.string("mode")) else {
-                  return nil
-                }
-                guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
-                      let roster = session.collaborationRoster,
-                      scope.rosterMember(in: roster)?.resourceId == contact.id,
-                      session.mergedIntoConversationId.isBlank,
-                      !session.privateMode, !session.trackingPaused else { return nil }
-                return try? AgentTeamExecutionHistoryStore.shared.recallCollaborationOriginal(arguments, scope: scope)
+                Self.scopedCollaborationRecall(arguments, scope: scope, allowsResearch: collaborationEvidence != nil,
+                  resourceID: contact.id, session: store.agentSession(id: scope.conversationId), history: .shared)
               }
             }
           },
@@ -844,6 +837,18 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       )
       continuation.yield(.failed(ModelStreamFailed(requestId: requestId, error: streamError)))
     }
+  }
+
+  static func scopedCollaborationRecall(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope,
+                                        allowsResearch: Bool, resourceID: String, session: AgentConversation?,
+                                        history: AgentTeamExecutionHistoryStore) -> AgentMcpJSONObject? {
+    guard allowsResearch || ["goal", "dependency"].contains(input.string("mode")),
+          let session, session.id == scope.conversationId,
+          let roster = session.collaborationRoster,
+          scope.rosterMember(in: roster)?.resourceId == resourceID,
+          session.mergedIntoConversationId.isBlank,
+          !session.privateMode, !session.trackingPaused else { return nil }
+    return try? history.recallCollaborationOriginal(input, scope: scope)
   }
 
   private func executeToolCalls(

@@ -323,10 +323,11 @@ enum AgentIOSLocalModelWebToolRunner {
       catalogBinding: registered ? .registeredContracts : nil)
   }
 
-  private static func webToolRegistry(_ registry: AgentNativeToolRegistry, readOnlyAnalysis: Bool,
-                                      recallScope: AgentCollaborationToolEvidenceScope?,
-                                      database: AgentConversationDatabase?, originalsOnly: Bool,
-                                      useRegisteredContracts: Bool) throws -> AgentNativeToolRegistry {
+  static func webToolRegistry(_ registry: AgentNativeToolRegistry, readOnlyAnalysis: Bool,
+                              recallScope: AgentCollaborationToolEvidenceScope?,
+                              database: AgentConversationDatabase?, originalsOnly: Bool,
+                              useRegisteredContracts: Bool = false,
+                              history: AgentTeamExecutionHistoryStore = .shared) throws -> AgentNativeToolRegistry {
     let scoped = try registry.subset(useRegisteredContracts: useRegisteredContracts) {
       AgentIOSLocalModelWebToolProtocol.toolIDs.contains($0.id) &&
         (!readOnlyAnalysis || AgentScreenAnalysisToolPolicy.allows($0))
@@ -334,8 +335,8 @@ enum AgentIOSLocalModelWebToolRunner {
     if !readOnlyAnalysis, let recallScope, let database {
       try scoped.registerExecutable(collaborationRecallTool(originalsOnly: originalsOnly) { input in
         guard collaborationRecallIsAuthorized(recallScope, database: database),
-              AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: recallScope.runId)?.state == .running,
-              let result = try? AgentTeamExecutionHistoryStore.shared.recallCollaborationOriginal(input, scope: recallScope),
+              history.snapshot(supervisorRunId: recallScope.runId)?.state == .running,
+              let result = try? history.recallCollaborationOriginal(input, scope: recallScope),
               collaborationRecallIsAuthorized(recallScope, database: database) else { return nil }
         return result
       })
