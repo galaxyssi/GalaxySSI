@@ -87,19 +87,16 @@ struct ContactConversationSummary: Equatable {
 
   var previewText: String {
     guard let lastMessage else { return "" }
-    let content = lastMessage.content.trimmingCharacters(in: .whitespacesAndNewlines)
-    if !content.isEmpty {
-      return lastMessage.content
-    }
+    let content = lastMessage.isMine ? lastMessage.content : AgentMarkdownArtifactReferences.removingInternalLinks(lastMessage.content)
+    if !content.isBlank { return content }
     for block in AgentRichContentCodec.decode(lastMessage.richOutputJson) {
-      let attachmentName = block.title
-        .ifBlank(block.fallbackText)
+      let attachmentName = AgentMarkdownArtifactReferences.removingInternalLinks(block.title.ifBlank(block.fallbackText))
         .trimmingCharacters(in: .whitespacesAndNewlines)
       if !attachmentName.isEmpty {
         return attachmentName
       }
     }
-    return AgentRichContentCodec.fallbackText(lastMessage.richOutputJson)
+    return AgentMarkdownArtifactReferences.removingInternalLinks(AgentRichContentCodec.fallbackText(lastMessage.richOutputJson))
   }
 }
 

@@ -3,10 +3,11 @@ import UIKit
 
 enum GalaxySSIMessageActionPolicy {
   static func copyText(for message: ChatMessage) -> String {
-    if !message.content.isBlank { return message.content }
+    let visible = message.isMine ? message.content : AgentMarkdownArtifactReferences.removingInternalLinks(message.content)
+    if !visible.isBlank { return visible }
     return AgentRichContentCodec.decode(message.richOutputJson)
       .filter(\.isArtifactBlock)
-      .map { $0.title.ifBlank($0.fallbackText) }
+      .map { AgentMarkdownArtifactReferences.removingInternalLinks($0.title.ifBlank($0.fallbackText)) }
       .filter { !$0.isBlank }
       .joined(separator: "\n")
   }
@@ -92,7 +93,7 @@ struct GalaxySSIMessageActionsView: View {
             .background(heroTint.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
-        Text(String(message.content.prefix(80)))
+        Text(String(GalaxySSIMessageActionPolicy.copyText(for: message).prefix(80)))
           .font(.system(size: 14))
           .foregroundColor(.galaxySSITextSecondary)
           .lineLimit(3)

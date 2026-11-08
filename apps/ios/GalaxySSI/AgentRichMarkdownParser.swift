@@ -1,6 +1,16 @@
 import Foundation
 
 enum AgentMarkdownArtifactReferences {
+  private static let schemePrefix = "galaxyssi-artifact://"
+
+  static func containsInternalScheme(_ text: String) -> Bool {
+    text.range(of: schemePrefix, options: .caseInsensitive) != nil
+  }
+
+  private static func isInternalDestination(_ value: String) -> Bool {
+    value.lowercased().hasPrefix(schemePrefix)
+  }
+
   struct CitationMarkup {
     var text = ""
     var destinations: [String] = []
@@ -109,31 +119,30 @@ enum AgentMarkdownArtifactReferences {
   }
 
   static func removingInternalLinks(_ text: String) -> String {
-    guard text.range(of: "galaxyssi-artifact://", options: .caseInsensitive) != nil else { return text }
+    guard containsInternalScheme(text) else { return text }
     let characters = Array(text)
     var output = ""
     var index = 0
     var fence: (character: Character, count: Int)?
     while index < characters.count {
-      let lineStart = index == 0 || characters[index - 1] == "\n"
-      if lineStart, let marker = fenceMarker(characters, at: index) {
-        if let activeFence = fence,
-           marker.0 == activeFence.character,
-           marker.1 >= activeFence.count {
-          self.appendLine(from: index, characters: characters, to: &output, next: &index)
-          fence = nil
+      if index == 0 || characters[index - 1].isNewline {
+        var edge = index
+        while edge < characters.count, characters[edge] == " " || characters[edge] == ">" { edge += 1 }
+        let quoted = characters[index..<edge].contains(">")
+        let markerEdge = quoted ? edge : index
+        if let marker = fenceMarker(characters, at: markerEdge) {
+          if let active = fence {
+            let line = characters[edge...].prefix { !$0.isNewline }
+            if marker.0 == active.character, marker.1 >= active.count,
+               line.dropFirst(marker.1).allSatisfy(\.isWhitespace) { fence = nil }
+          } else { fence = marker }
+          appendLine(from: index, characters: characters, to: &output, next: &index)
           continue
         }
-        if fence == nil {
-          fence = marker
-          self.appendLine(from: index, characters: characters, to: &output, next: &index)
+        if fence != nil || (!quoted && (edge - index >= 4 || characters[index] == "\t")) {
+          appendLine(from: index, characters: characters, to: &output, next: &index)
           continue
         }
-      }
-      if fence != nil {
-        output.append(characters[index])
-        index += 1
-        continue
       }
       if characters[index] == "`", let end = inlineCodeEnd(characters, at: index) {
         output.append(contentsOf: characters[index..<end])
@@ -146,14 +155,36 @@ enum AgentMarkdownArtifactReferences {
         index += 2
         continue
       }
-      if let link = markdownLink(characters, at: index),
-         link.destination.lowercased().hasPrefix("galaxyssi-artifact://") {
+      if let link = markdownLink(characters, at: index, allowIncompleteInternalDestination: true),
+         isInternalDestination(link.destination) {
         index = link.end
         continue
+      }
+      if characters[index] == "[", index + 1 < characters.count, characters[index + 1] == "!",
+         let image = markdownLink(characters, at: index + 1), isInternalDestination(image.destination),
+         let labelEnd = markdownLabelEnd(characters, at: index), image.end == labelEnd,
+         let wrapper = markdownLink(characters, at: index) {
+        index = wrapper.end
+        continue
+      }
+      if characters[index] == "<" {
+        let start = index + 1
+        let prefixEnd = min(start + schemePrefix.count, characters.count)
+        if isInternalDestination(String(characters[start..<prefixEnd])) {
+          let end = characters[prefixEnd...].firstIndex(where: { $0 == ">" || $0.isWhitespace }) ?? characters.count
+          if end == characters.count || characters[end] == ">" {
+            index = min(end + 1, characters.count)
+            continue
+          }
+        }
       }
       output.append(characters[index])
       index += 1
     }
+    let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+    let unpadded = output.trimmingCharacters(in: .newlines)
+    if isInternalDestination(trimmed), !trimmed.contains(where: \.isWhitespace),
+       !unpadded.hasPrefix("    "), !unpadded.hasPrefix("\t") { return "" }
     return output
   }
 
@@ -208,7 +239,8 @@ enum AgentMarkdownArtifactReferences {
 
   private static func markdownLink(
     _ value: [Character],
-    at start: Int
+    at start: Int,
+    allowIncompleteInternalDestination: Bool = false
   ) -> (destination: String, end: Int)? {
     var labelStart = start
     if value[start] == "!" {
@@ -223,13 +255,18 @@ enum AgentMarkdownArtifactReferences {
     guard index < value.count, value[index] == "(" else { return nil }
     index += 1
     while index < value.count, value[index].isWhitespace { index += 1 }
+    let destinationEdge = index
     let destination: String
     if index < value.count, value[index] == "<" {
       index += 1
       let destinationStart = index
       while index < value.count, value[index] != ">" { index += 1 }
-      guard index < value.count else { return nil }
       destination = String(value[destinationStart..<index])
+      if index == value.count {
+        guard allowIncompleteInternalDestination, isInternalDestination(destination) else { return nil }
+        let end = value[destinationStart...].firstIndex(where: \.isNewline) ?? index
+        return (destination, end)
+      }
       index += 1
     } else {
       let destinationStart = index
@@ -267,6 +304,10 @@ enum AgentMarkdownArtifactReferences {
       }
       index += 1
     }
+    if allowIncompleteInternalDestination, isInternalDestination(destination) {
+      let end = value[destinationEdge...].firstIndex(where: \.isNewline) ?? value.count
+      return (destination, end)
+    }
     return nil
   }
 
@@ -302,9 +343,9 @@ extension AgentRichContentCodec {
     if let pretty = prettyJSON(clean) {
       return [AgentRichBlock(id: markdownID(), type: .json, text: pretty, language: "json")]
     }
-    let visible = AgentMarkdownArtifactReferences.removingInternalLinks(clean)
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !visible.isEmpty else { return [] }
+    let visible = AgentMarkdownArtifactReferences.removingInternalLinks(text)
+      .trimmingCharacters(in: .newlines)
+    guard !visible.isBlank else { return [] }
 
     var blocks: [AgentRichBlock] = []
     var paragraph: [String] = []
@@ -322,6 +363,15 @@ extension AgentRichContentCodec {
     while index < lines.count && blocks.count < maximumBlocks {
       let line = lines[index]
       let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+      if paragraph.isEmpty, line.hasPrefix("    ") || line.hasPrefix("\t") {
+        let example = lines[index...].prefix { $0.hasPrefix("    ") || $0.hasPrefix("\t") }
+        if example.contains(where: AgentMarkdownArtifactReferences.containsInternalScheme) {
+          let code = example.map { String($0.dropFirst($0.hasPrefix("\t") ? 1 : 4)) }.joined(separator: "\n")
+          blocks.append(AgentRichBlock(id: markdownID(), type: .code, text: code))
+          index += example.count
+          continue
+        }
+      }
       if let marker = trimmed.first, marker == "`" || marker == "~",
          trimmed.prefix(while: { $0 == marker }).count >= 3 {
         flushParagraph()
