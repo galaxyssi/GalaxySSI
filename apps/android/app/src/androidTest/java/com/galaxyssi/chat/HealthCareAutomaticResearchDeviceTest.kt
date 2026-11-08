@@ -22,6 +22,7 @@ class HealthCareAutomaticResearchDeviceTest {
         val phase = InstrumentationRegistry.getArguments().getString("health_research_phase") ?: "full"
         if (phase == "inspect") { diagnose(); return }
         AppStore.ensureInitialized(context)
+        if (phase == "surface") { openFromAgentSurface(); return }
         GalaxySSIMqttClient.connect(context)
         await(45_000, "Paired transport ready") { GalaxySSIMqttClient.isRequestReplyReady() }
         if (phase == "followup") { followUp(); return }
@@ -300,6 +301,39 @@ class HealthCareAutomaticResearchDeviceTest {
             care.revokeResearch(concernId, authorization, System.currentTimeMillis())
         }
         println("HEALTH_AUTOMATIC action_outcome=true same_conversation=true pending_only=true no_new_measurement=true")
+    }
+
+    private fun openFromAgentSurface() {
+        assumeTrue(!context.getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked)
+        val concern = checkNotNull(markers.getString("concern", null))
+        val conversation = checkNotNull(markers.getString("conversation", null))
+        val transcripts = AgentTranscriptStore(context)
+        val previous = transcripts.activeConversation().id
+        val temporary = transcripts.createAgentConversation("主动健康讨论入口测试", privateMode = true, trackingPaused = true)
+        try {
+            androidx.test.core.app.ActivityScenario.launch<MainActivity>(android.content.Intent(context, MainActivity::class.java)
+                .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", temporary.id)).use { scenario ->
+                await(20_000, "Production Agent surface opens without submitting research") {
+                    var ready = false
+                    scenario.onActivity { ready = it.agentTranscriptStore.activeConversation().id == temporary.id &&
+                        it.window.decorView.findViewWithTag<android.view.View>("agent-health-care-discuss")?.isShown == true }
+                    ready
+                }
+                scenario.onActivity { it.window.decorView.findViewWithTag<android.view.View>("agent-health-care-discuss").performClick() }
+                await(20_000, "Direct discussion reuses the original private health conversation") {
+                    var ready = false
+                    scenario.onActivity { ready = it.agentTranscriptStore.activeConversation().id == conversation }
+                    ready
+                }
+                val bound = transcripts.conversation(conversation)!!
+                assertTrue(bound.privateMode); assertTrue(bound.trackingPaused)
+                HealthCareStore(context).use { care ->
+                    assertEquals(conversation, care.concern(concern)!!.conversationId)
+                    assertFalse(care.researchAuthorization(concern)!!.active)
+                }
+            }
+        } finally { transcripts.switchConversation(previous); transcripts.deleteConversation(temporary.id) }
+        println("HEALTH_AUTOMATIC agent_surface=true same_private_conversation=true no_authorization_change=true")
     }
 
     private fun start() {

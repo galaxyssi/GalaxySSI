@@ -112,7 +112,11 @@ class HealthCareFollowUpUiDeviceTest {
                     }
                 }
                 await(scenario) { find(it, "agent-health-care-followup") != null }
-                scenario.onActivity { find(it, "agent-health-care-followup")!!.performClick() }
+                scenario.onActivity {
+                    find(it, "agent-health-care-expand")!!.performClick()
+                    assertTrue(find(it, "agent-health-care-followup")!!.isShown)
+                    find(it, "agent-health-care-followup")!!.performClick()
+                }
                 await(scenario) { dialog(review)?.isShowing == true }
                 scenario.onActivity {
                     assertTrue(views(dialog(review)!!.window!!.decorView).any { v -> v.tag == "health-care-followup-schedule" })

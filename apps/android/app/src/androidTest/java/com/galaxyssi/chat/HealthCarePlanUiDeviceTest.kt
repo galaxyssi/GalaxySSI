@@ -71,7 +71,11 @@ class HealthCarePlanUiDeviceTest {
                     }
                 }
                 await(scenario) { find(it, "agent-health-care-plan") != null }
-                scenario.onActivity { find(it, "agent-health-care-plan")!!.performClick() }
+                scenario.onActivity {
+                    find(it, "agent-health-care-expand")!!.performClick()
+                    assertTrue(find(it, "agent-health-care-plan")!!.isShown)
+                    find(it, "agent-health-care-plan")!!.performClick()
+                }
                 await(scenario) { dialog(review)?.isShowing == true }
                 scenario.onActivity {
                     val d = dialog(review)!!
@@ -300,12 +304,14 @@ class HealthCarePlanUiDeviceTest {
                     }
                 }
                 await(scenario) { find(it, "agent-health-care-target") != null }
+                scenario.onActivity { find(it, "agent-health-care-expand")!!.performClick() }
                 capture("health-target-agent-fixture.png")
                 scenario.onActivity { find(it, "agent-health-care-target")!!.performClick() }
                 await(scenario) { targetDialog(review)?.isShowing == true }
                 scenario.moveToState(Lifecycle.State.CREATED); assertNull(targetDialog(review))
                 scenario.moveToState(Lifecycle.State.RESUMED)
                 await(scenario) { find(it, "agent-health-care-target") != null }
+                scenario.onActivity { find(it, "agent-health-care-expand")!!.performClick() }
                 scenario.onActivity { find(it, "agent-health-care-target")!!.performClick() }
                 await(scenario) { targetDialog(review)?.isShowing == true }
                 HealthPrivacyStore(context, names.privacy).use { it.change(HealthPrivacyOption.PROFILE_CONTEXT, false, it.policy().version) }
