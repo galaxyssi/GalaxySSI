@@ -90,7 +90,7 @@ internal object HealthCareDiscussionPolicy {
         .put("result_comparison", HealthCareComparisonPolicy.handoff(value.assessment, value.context) ?: JSONObject.NULL)
         .put("measurement_history", value.assessment.series?.modelJson(value.assessment.sample!!, value.context, value.assessment.comparison) ?: JSONObject.NULL)
         .put("priority_notice", HealthCarePriority.handoff(value) ?: JSONObject.NULL)
-        .put("actions", org.json.JSONArray(value.actions.map { it.json() }))
+        .put("actions", org.json.JSONArray(value.actions.map { HealthCareFeedbackPolicy.modelAction(value, it) }))
         .apply { followUp?.let { put("automatic_follow_up", it) } }.toString(2)
 
     fun prompt(question: String, snapshot: String): String = """
@@ -150,7 +150,15 @@ internal object HealthCareDiscussionPolicy {
         last completed review in this same conversation. Lead with the relevant change or due action.
         elapsed_time_only means a review window arrived, not that a test was performed or health improved.
         When an actual recorded plan exists, ask about its due action, missing results or practical barriers;
-        continue it rather than reissue it. A prior response completing does not prove that research or
+        continue it rather than reissue it. An action's feedback is the latest user-reported execution note, not a measured
+        outcome or the entire feedback history. PARTIAL and BARRIER do not complete the action, cancel its
+        reminder or authorize a stronger treatment plan. Acknowledge the actual difficulty and discuss a
+        feasible adjustment for user review; do not blame the user or silently rewrite the plan. COMPLETED
+        records execution only, not symptom relief, a new measurement or recovery. plan_basis_current=false
+        means this feedback describes an older plan basis. Feedback outside the current sharing scope is
+        unavailable; do not recover its content from old conversation turns. Recording a note does not
+        constitute emergency triage or automatically contact a clinician. recorded_at is the note's save
+        time, not proof of when the action happened. A prior response completing does not prove that research or
         planning was completed. Consult research_progress: if initial_source_review_pending is true, there
         is no available prior source-body context, recorded plan or action. Address that initial evidence
         gap with focused authoritative retrieval once essential measurement context is available, even if

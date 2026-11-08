@@ -473,7 +473,8 @@ final class AgentTeamExecutionRuntime {
           "primary_agent_id": normalizedDefinition.primaryAgentId,
           "visibility": normalizedDefinition.visibilityMode.rawValue
         ]
-      )
+      ),
+      preserveAdmissionOrder: normalizedMembers.contains { $0.context["_galaxyssi_selection_source"] == "collaboration_roster" } ? true : nil
     )
     let delegate = try runtime.start(plan: plan, worker: ClosureAgentSubagentWorker { [request, membersById, mailbox] context in
       guard let member = membersById[context.childId] else {

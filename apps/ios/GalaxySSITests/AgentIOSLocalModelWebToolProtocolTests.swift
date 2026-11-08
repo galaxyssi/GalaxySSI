@@ -16,8 +16,13 @@ final class AgentIOSLocalModelWebToolProtocolTests: XCTestCase {
     XCTAssertTrue(goalOriginals.isSubset(of: all))
     XCTAssertTrue(all.contains("method_history"))
     XCTAssertTrue(all.contains(AgentCollaborationSourceAccess.mode))
+    XCTAssertTrue(all.contains(AgentCollaborationNumericFeedback.mode))
     XCTAssertFalse(originals.contains("workspace"))
     XCTAssertFalse(originals.contains(AgentCollaborationSourceAccess.mode))
+    XCTAssertFalse(originals.contains(AgentCollaborationNumericFeedback.mode))
+    let tool = try AgentIOSLocalModelWebToolRunner.collaborationRecallTool { _ in nil }
+    let filters = tool.descriptor.inputSchema["properties"]?.objectValue?["case_filter"]?.objectValue?["enum"]?.arrayValue
+    XCTAssertEqual(filters, AgentCollaborationNumericFeedback.filters.map(AgentMcpJSONValue.string))
   }
 
   func testDecodeAcceptsAnswerOrReadOnlyWebCalls() throws {

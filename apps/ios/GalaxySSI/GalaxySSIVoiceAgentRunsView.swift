@@ -288,13 +288,15 @@ private struct VoiceAgentRunRow: View {
           .foregroundColor(stateTint)
           .multilineTextAlignment(.trailing)
       }
-      if !AgentPublicProgressPolicy.text(run.progressMessage).isEmpty {
-        Text(AgentPublicProgressPolicy.text(run.progressMessage))
+      let progress = AgentMarkdownArtifactReferences.removingInternalLinks(AgentPublicProgressPolicy.text(run.progressMessage))
+      let partial = AgentMarkdownArtifactReferences.removingInternalLinks(run.partialResult)
+      if !progress.isBlank {
+        Text(progress)
           .font(.caption)
           .foregroundColor(.galaxySSITextSecondary)
           .lineLimit(2)
-      } else if !run.partialResult.isEmpty {
-        Text(run.partialResult)
+      } else if !partial.isBlank {
+        Text(partial)
           .font(.caption)
           .foregroundColor(.galaxySSITextSecondary)
           .lineLimit(2)

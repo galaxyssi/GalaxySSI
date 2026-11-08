@@ -81,6 +81,7 @@ enum GalaxySSIHealthCarePlan {
     let source: Source
     let confirmedAt: Date
     var outcome: GalaxySSIHealthCareFollowUp.Outcome?
+    var feedback: GalaxySSIHealthCareFollowUp.Feedback?
     var id: String { "\(proposalID.uuidString):\(action.id)" }
   }
 

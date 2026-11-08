@@ -249,6 +249,8 @@ struct AgentCollaborationResearchDraft: Codable {
     case transferStudy = "transfer_study"
     case executableTool = "executable_tool"
     case toolTestPlan = "tool_test_plan"
+    case toolRelease = "tool_release"
+    case toolTestComparison = "tool_test_comparison"
     case environmentModel = "task_environment_model"
     case actionForecast = "action_forecast"
     case predictionOutcome = "prediction_outcome"
@@ -575,7 +577,8 @@ enum AgentCollaborationForecastIntake {
   }
 
   static func utilities(_ forecast: AgentMcpJSONObject, actions: Set<String>) -> [String: Double]? {
-    guard hasText(forecast, ["work_id", "executor", "horizon", "decision_rationale", "risk_tradeoff",
+    guard AgentCollaborationQualitativePrediction.Mode(forecast) == .probabilistic,
+          hasText(forecast, ["work_id", "executor", "horizon", "decision_rationale", "risk_tradeoff",
                             "information_value", "revalidate_before_action", "utility_unit"]),
           actions.contains(forecast.string("selected_action")),
           let events = forecast["events"]?.arrayValue, (1...32).contains(events.count),
@@ -606,7 +609,9 @@ enum AgentCollaborationForecastIntake {
 
   static func hypothesisInformation(_ forecast: AgentMcpJSONObject,
                                     carriedPosterior: AgentMcpJSONObject? = nil) -> [String: Double]? {
-    guard let spec = forecast["hypothesis_test"]?.objectValue,
+    guard AgentCollaborationQualitativePrediction.Mode(forecast) == .probabilistic,
+          let spec = forecast["hypothesis_test"]?.objectValue,
+          spec["predictions"] == nil,
           (spec["prior_outcome"] != nil) == (carriedPosterior != nil),
           hasText(spec, ["question", "assumptions", "likelihood_basis", "misspecification_check"]),
           let hypotheses = spec["hypotheses"]?.arrayValue, (2...32).contains(hypotheses.count),
@@ -670,7 +675,8 @@ enum AgentCollaborationForecastIntake {
 
   static func hypothesisFeedback(_ forecast: AgentMcpJSONObject, observed: AgentMcpJSONValue?,
                                  withinValidity: Bool, carriedPosterior: AgentMcpJSONObject? = nil) -> AgentMcpJSONObject? {
-    guard let spec = forecast["hypothesis_test"]?.objectValue,
+    guard AgentCollaborationQualitativePrediction.Mode(forecast) == .probabilistic,
+          let spec = forecast["hypothesis_test"]?.objectValue,
           let ids = spec["event_ids"]?.arrayValue?.compactMap(\.strictStringValue),
           let hypotheses = spec["hypotheses"]?.arrayValue?.compactMap(\.objectValue),
           let likelihoods = spec["likelihoods"]?.objectValue?[forecast.string("selected_action")]?.objectValue,
@@ -1080,6 +1086,61 @@ struct AgentCollaborationResearchEnvelope: Decodable {
   var format: String
   var workspace: [AgentCollaborationResearchDraft]?
   var milestones: [String]?
+  let candidates: [AgentMcpJSONValue]
+  let findings: [AgentMcpJSONValue]
+
+  static let optionalNotesInstructions = "Omit empty top-level candidates and findings, or supply arrays. Candidates need unique id, proposal and criteria; findings need outcome supported, refuted or not_tested. These notes do not replace typed workspace records, independent review, or actual evidence."
+
+  private enum CodingKeys: String, CodingKey { case format, workspace, milestones, candidates, findings }
+
+  struct InvalidNotes: Error {
+    let field: String
+    let requirement: String
+    var problem: AgentMcpJSONObject {
+      ["field": .string(field), "requirement": .string(requirement)]
+    }
+  }
+
+  init(from decoder: Decoder) throws {
+    let fields = try decoder.container(keyedBy: CodingKeys.self)
+    func notes(_ key: CodingKeys) throws -> [AgentMcpJSONValue] {
+      guard fields.contains(key) else { return [] }
+      guard let values = try? fields.decode([AgentMcpJSONValue].self, forKey: key) else {
+        throw InvalidNotes(field: key.rawValue, requirement: "must be an array when supplied")
+      }
+      return values
+    }
+    format = try fields.decode(String.self, forKey: .format)
+    workspace = try fields.decodeIfPresent([AgentCollaborationResearchDraft].self, forKey: .workspace)
+    milestones = try fields.decodeIfPresent([String].self, forKey: .milestones)
+    candidates = try notes(.candidates)
+    findings = try notes(.findings)
+    var candidateIDs: Set<String> = []
+    for (index, entry) in candidates.enumerated() {
+      let path = "candidates[\(index)]"
+      guard let candidate = entry.objectValue else {
+        throw InvalidNotes(field: path, requirement: "must be an object")
+      }
+      guard let id = candidate["id"]?.strictStringValue, !id.isBlank, candidateIDs.insert(id).inserted else {
+        throw InvalidNotes(field: path + ".id", requirement: "must be nonblank and unique")
+      }
+      guard candidate["proposal"]?.strictStringValue?.isBlank == false else {
+        throw InvalidNotes(field: path + ".proposal", requirement: "must be a nonblank string")
+      }
+      guard candidate["criteria"]?.arrayValue != nil else {
+        throw InvalidNotes(field: path + ".criteria", requirement: "must be an array")
+      }
+    }
+    for (index, entry) in findings.enumerated() {
+      guard let finding = entry.objectValue else {
+        throw InvalidNotes(field: "findings[\(index)]", requirement: "must be an object")
+      }
+      guard let outcome = finding["outcome"]?.strictStringValue,
+            ["supported", "refuted", "not_tested"].contains(outcome) else {
+        throw InvalidNotes(field: "findings[\(index)].outcome", requirement: "must be supported, refuted or not_tested")
+      }
+    }
+  }
 
   private struct FormatHeader: Decodable {
     let format: String
@@ -1127,6 +1188,7 @@ struct AgentCollaborationResearchRevision: Codable {
   var frozenNativeReads: [AgentCollaborationFrozenCloudRead]? = nil
   var frozenDesktopReads: [AgentDesktopToolEvidenceWire.FrozenRead]? = nil
   var declaredExpectedUtilities: [String: Double]? = nil
+  var qualitativePrediction: AgentMcpJSONObject? = nil
   var retainedProcedure: AgentCollaborationProcedure? = nil
   var expectedInformationGainBits: [String: Double]? = nil
   var hypothesisFeedback: AgentMcpJSONObject? = nil
@@ -1138,9 +1200,12 @@ struct AgentCollaborationResearchRevision: Codable {
   var trialAuthors: [String]? = nil
   var numericReplay: AgentMcpJSONObject? = nil
   var workflowComparison: AgentCollaborationWorkflowComparison? = nil
+  var testedToolRelease: AgentMcpJSONObject? = nil
+  var toolTestComparison: AgentMcpJSONObject? = nil
 
   var storageBytesLimit: Int {
-    draft.kind == .numericModelTrial && numericReplay != nil
+    if draft.kind == .toolTestComparison && toolTestComparison != nil { return 1_048_576 }
+    return draft.kind == .numericModelTrial && numericReplay != nil
       ? Self.numericReplayStorageBytes : Self.standardStorageBytes
   }
 }
@@ -1149,6 +1214,7 @@ struct AgentCollaborationFrozenCloudRead: Codable {
   var evidenceId: String
   var sha256: String
   var totalCharacters: Int64
+  var hostReadCoverage: AgentMcpJSONObject? = nil
 }
 
 struct AgentCollaborationMilestoneRejection: Codable {
@@ -1162,6 +1228,7 @@ struct AgentCollaborationResearchPublication: Codable {
   var references: [AgentCollaborationResearchReference]
   var milestoneId: String? = nil
   var recordedAtMillis: Int64? = nil
+  var numericTrials: [AgentMcpJSONObject]? = nil
 }
 
 struct AgentCollaborationPublicationRejection: Codable, Equatable {

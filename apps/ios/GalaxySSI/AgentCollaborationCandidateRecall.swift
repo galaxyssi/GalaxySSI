@@ -4,7 +4,9 @@ import Foundation
 enum AgentCollaborationCandidateRecall {
   static let mode = "method_history"
   static let prefix = "native-evidence:"
-  static let instructions = "Use capabilities to find unfinished tools and test plans. Follow usage_recall for exact test history and read_original for diagnostics. Discovery, a replay or a passing test does not release a candidate."
+  static let instructions = "Use capabilities to find tools, test plans and validated releases. Released tool excerpts under tool_* " +
+    "describe the exact source; reviewer conditions still apply. linked_sources is not a full read. Follow usage_recall " +
+    "for exact test history and read_original for diagnostics. Discovery, a replay or a passing test does not release a candidate or grant execution."
 
   static func isCandidate(_ kind: AgentCollaborationResearchDraft.Kind) -> Bool {
     kind == .executableTool || kind == .toolTestPlan

@@ -72,6 +72,19 @@ class HealthCareResearchHandoffTest {
         assertEquals(listOf("action_feedback"), strings(handoff(issue.copy(actions = listOf(done.copy(outcome = "Barrier explained"))), baseline), "reasons"))
     }
 
+    @Test fun partialFeedbackDoesNotPretendAnAlreadyReviewedActionBecameDueAgain() {
+        val old = issue.copy(actions = listOf(action.copy(dueFrom = now - 1000)))
+        val feedback = HealthCareFeedback(UUID.randomUUID().toString(), HealthCareFeedbackKind.BARRIER,
+            "Synthetic barrier", now + 1, old.actions.single().basis, HealthCareQuestionPolicy.scope(old))
+        val current = HealthCareFeedbackPolicy.apply(old, action.id, feedback)
+        val value = handoff(current, old)
+        assertEquals(listOf("action_feedback"), strings(value, "reasons"))
+        assertEquals(listOf(action.id), strings(value, "new_feedback_action_ids"))
+        assertTrue(strings(value, "new_outcome_action_ids").isEmpty())
+        assertTrue(strings(value, "newly_due_action_ids").isEmpty())
+        assertFalse(value.getBoolean("elapsed_time_only"))
+    }
+
     @Test fun ProposedDeclinedAndCompletedActionsAreNotDue() {
         listOf(HealthCareActionState.PROPOSED, HealthCareActionState.DECLINED, HealthCareActionState.DONE).forEach { state ->
             assertTrue(strings(handoff(issue.copy(actions = listOf(action.copy(state = state,

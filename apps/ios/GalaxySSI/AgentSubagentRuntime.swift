@@ -107,17 +107,20 @@ struct AgentSubagentPlan: Codable, Equatable {
   var children: [AgentSubagentChild]
   var failurePolicy: AgentSubagentFailurePolicy
   var provenance: AgentSubagentProvenance
+  var preserveAdmissionOrder: Bool?
 
   init(
     supervisorId: String,
     children: [AgentSubagentChild],
     failurePolicy: AgentSubagentFailurePolicy = .continue,
-    provenance: AgentSubagentProvenance = AgentSubagentProvenance()
+    provenance: AgentSubagentProvenance = AgentSubagentProvenance(),
+    preserveAdmissionOrder: Bool? = nil
   ) {
     self.supervisorId = supervisorId
     self.children = children
     self.failurePolicy = failurePolicy
     self.provenance = provenance
+    self.preserveAdmissionOrder = preserveAdmissionOrder
   }
 }
 
@@ -424,7 +427,11 @@ final class AgentSubagentRuntime {
         )
       }
 
-      while !remaining.isEmpty {
+      if plan.preserveAdmissionOrder {
+        try await executeOrdered(control: control, plan: plan, worker: worker, emitter: emitter,
+          remaining: &remaining, results: &results)
+      }
+      while !plan.preserveAdmissionOrder && !remaining.isEmpty {
         try Task.checkCancellation()
         let ready = plan.children.filter { child in
           remaining.contains(child.childId) && child.dependencies.allSatisfy { results[$0] != nil }
@@ -515,15 +522,69 @@ final class AgentSubagentRuntime {
     }
   }
 
+  private func executeOrdered(control: AgentSubagentRunControl, plan: NormalizedPlan,
+      worker: AgentSubagentWorker, emitter: AgentSubagentEventEmitter,
+      remaining: inout Set<String>, results: inout [String: AgentSubagentChildResult]) async throws {
+    try await withThrowingTaskGroup(of: AgentSubagentChildResult.self) { group in
+      var active = Set<String>()
+      var stopAdmissions = false
+      while !remaining.isEmpty {
+        try Task.checkCancellation()
+        while !stopAdmissions, active.count < limits.maxConcurrency,
+              let child = plan.children.first(where: {
+                remaining.contains($0.childId) && !active.contains($0.childId) &&
+                  $0.dependencies.allSatisfy { results[$0] != nil }
+              }) {
+          try Task.checkCancellation()
+          let dependencies = child.dependencies.compactMap { results[$0] }
+          if child.dependencyPolicy == .requireSuccess && dependencies.contains(where: { $0.status != .succeeded }) {
+            let skipped = try await executeChild(control: control, plan: plan, child: child,
+              dependencies: dependencies, worker: worker, emitter: emitter)
+            results[child.childId] = skipped
+            remaining.remove(child.childId)
+            continue
+          }
+          let startedAt = now()
+          // The parent owns permits and records admissions in order; workers may finish in any order.
+          try await emitChildRunning(plan: plan, child: child, emitter: emitter)
+          active.insert(child.childId)
+          group.addTask {
+            try await self.executeChild(control: control, plan: plan, child: child, dependencies: dependencies,
+              worker: worker, emitter: emitter, admittedAt: startedAt)
+          }
+        }
+        guard !active.isEmpty else {
+          guard stopAdmissions || remaining.isEmpty else {
+            throw AgentSubagentRuntimeError.invalid("Subagent dependency graph could not make progress")
+          }
+          break
+        }
+        guard let result = try await group.next() else {
+          throw AgentSubagentRuntimeError.invalid("Subagent admission lost an active child")
+        }
+        active.remove(result.childId)
+        remaining.remove(result.childId)
+        results[result.childId] = result
+        if plan.failurePolicy == .failFast && result.status == .failed { stopAdmissions = true }
+      }
+    }
+  }
+
+  private func emitChildRunning(plan: NormalizedPlan, child: NormalizedChild, emitter: AgentSubagentEventEmitter) async throws {
+    try await emitter.emit(supervisorId: plan.supervisorId, childId: child.childId,
+      kind: AgentSubagentEventKinds.childRunning, childStatus: .running, provenance: child.provenance)
+  }
+
   private func executeChild(
     control: AgentSubagentRunControl,
     plan: NormalizedPlan,
     child: NormalizedChild,
     dependencies: [AgentSubagentChildResult],
     worker: AgentSubagentWorker,
-    emitter: AgentSubagentEventEmitter
+    emitter: AgentSubagentEventEmitter,
+    admittedAt: Int64? = nil
   ) async throws -> AgentSubagentChildResult {
-    let startedAt = now()
+    let startedAt = admittedAt ?? now()
     try Task.checkCancellation()
     let unsuccessful = dependencies.filter { $0.status != .succeeded }
     if !unsuccessful.isEmpty && child.dependencyPolicy == .requireSuccess {
@@ -547,13 +608,7 @@ final class AgentSubagentRuntime {
       return result
     }
 
-    try await emitter.emit(
-      supervisorId: plan.supervisorId,
-      childId: child.childId,
-      kind: AgentSubagentEventKinds.childRunning,
-      childStatus: .running,
-      provenance: child.provenance
-    )
+    if admittedAt == nil { try await emitChildRunning(plan: plan, child: child, emitter: emitter) }
     do {
       let output = try await worker.execute(context: AgentSubagentExecutionContext(
         supervisorId: plan.supervisorId,
@@ -737,7 +792,7 @@ final class AgentSubagentRuntime {
     guard plan.children.count <= limits.maxChildren else {
       throw AgentSubagentRuntimeError.invalid("Supervisor \(supervisorId) exceeds maxChildren=\(limits.maxChildren)")
     }
-    let children = try plan.children.map { child in
+    var children = try plan.children.map { child in
       let childId = try normalizeId(child.childId, field: "childId")
       guard childId != supervisorId else {
         throw AgentSubagentRuntimeError.invalid("Child ID must differ from supervisor ID")
@@ -755,11 +810,12 @@ final class AgentSubagentRuntime {
         context: child.context,
         provenance: normalizeProvenance(child.provenance)
       )
-    }.sorted { $0.childId < $1.childId }
-    let byId = Dictionary(uniqueKeysWithValues: children.map { ($0.childId, $0) })
-    guard byId.count == children.count else {
+    }
+    if plan.preserveAdmissionOrder != true { children.sort { $0.childId < $1.childId } }
+    guard Set(children.map(\.childId)).count == children.count else {
       throw AgentSubagentRuntimeError.invalid("Child IDs must be unique")
     }
+    let byId = Dictionary(uniqueKeysWithValues: children.map { ($0.childId, $0) })
     for child in children {
       guard child.parentId == supervisorId || byId[child.parentId] != nil else {
         throw AgentSubagentRuntimeError.invalid("Parent \(child.parentId) for child \(child.childId) does not exist")
@@ -774,7 +830,8 @@ final class AgentSubagentRuntime {
       supervisorId: supervisorId,
       children: children.map { $0.withDepth(depths[$0.childId] ?? 0) },
       failurePolicy: plan.failurePolicy,
-      provenance: normalizeProvenance(plan.provenance)
+      provenance: normalizeProvenance(plan.provenance),
+      preserveAdmissionOrder: plan.preserveAdmissionOrder == true
     )
   }
 
@@ -876,6 +933,7 @@ private struct NormalizedPlan {
   var children: [NormalizedChild]
   var failurePolicy: AgentSubagentFailurePolicy
   var provenance: AgentSubagentProvenance
+  var preserveAdmissionOrder: Bool
 }
 
 private struct NormalizedChild {

@@ -128,11 +128,14 @@ class HealthCareAnswerDeviceTest {
     }
     @Test fun versionEightMigrationKeepsExistingQuestions(): Unit = fixture { names, care, grant, _ ->
         val q = question(care, grant); care.close()
-        context.openOrCreateDatabase(names.care, 0, null).use { it.execSQL("DROP TABLE answer_drafts"); it.version = 8 }
+        context.openOrCreateDatabase(names.care, 0, null).use {
+            it.execSQL("DROP TABLE action_feedback"); it.execSQL("DROP TABLE action_agenda"); it.execSQL("DROP TABLE action_agenda_state")
+            it.execSQL("DROP TABLE answer_drafts"); it.version = 8
+        }
         HealthCareStore(context, names.care).use { reopened ->
             assertEquals(q, reopened.question(q.id)); assertTrue(reopened.answers(reopened.concern(q.concernId)!!).items.isEmpty())
         }
-        context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(9, it.version) }
+        context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(11, it.version) }
     }
     @Test fun originalUserLookupIsIndexedAndDoesNotUseAssistantOrForeignTurns() {
         val name = "health-answer-transcript-${id()}.db"

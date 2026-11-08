@@ -1,6 +1,17 @@
 import Foundation
 import OSLog
 
+struct CloudCitationPreviewPresentation {
+  private var visible = ""
+
+  mutating func replace(_ candidate: String) -> String? {
+    let text = candidate.isBlank ? "" : candidate
+    guard text != visible, text.isEmpty || text.utf16.count >= visible.utf16.count else { return nil }
+    visible = text
+    return text
+  }
+}
+
 final class CloudCitationPreview {
   private let evidence: [(String, String)]
   private var text = ""

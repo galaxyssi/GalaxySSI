@@ -22,6 +22,7 @@ enum GalaxySSIHealthCareDiscussion {
     var questionSnapshotVersion: String?
     var answerDraftSourceDigest: String?
     var answerDraftStaged: Bool?
+    var actionFeedbackContextIncluded: Bool?
   }
 
   struct Thread: Codable, Identifiable, Equatable {
@@ -123,6 +124,8 @@ enum GalaxySSIHealthCareDiscussion {
     var asksQuestions = false
     var allowsStandingQuestionPages = false
     var allowsAnswerDraft = false
+    var includesActionFeedback = false
+    var actionFeedbackContextIncluded = false
 
     var model: CloudModelConfig? {
       if case .cloud(let model, _, _) = destination { return model }
@@ -193,10 +196,12 @@ enum GalaxySSIHealthCareDiscussion {
     let question: String
     let previous: [Exchange]
     let savedProfile: AgentMcpJSONObject?
+    let actionFeedback: [AgentMcpJSONValue]?
 
     enum CodingKeys: String, CodingKey {
       case concern, question, previous
       case savedProfile = "saved_profile"
+      case actionFeedback = "latest_action_feedback"
     }
   }
 
@@ -216,12 +221,13 @@ enum GalaxySSIHealthCareDiscussion {
   }
 
   static func payload(concern: GalaxySSIHealthCare.Concern, question: String, thread: Thread, destination: String,
-                      savedProfile: AgentMcpJSONObject? = nil) throws -> String {
+                      savedProfile: AgentMcpJSONObject? = nil, actionFeedback: [AgentMcpJSONValue]? = nil) throws -> String {
     guard thread.concernID == concern.id, !question.isBlank, question.utf8.count <= 2_048
     else { throw GalaxySSIHealthRecords.Failure.invalid }
     // A new turn does not inherit consent to disclose a previous history-derived answer.
     let recent = thread.turns.lazy.filter {
-      $0.destination == destination && $0.answer != nil && $0.historyIncluded != true && $0.questionContextIncluded != true
+      $0.destination == destination && $0.answer != nil && $0.historyIncluded != true &&
+        $0.questionContextIncluded != true && $0.actionFeedbackContextIncluded != true
     }.suffix(3)
     let previous = recent.compactMap { turn in
       turn.answer.map {
@@ -237,7 +243,7 @@ enum GalaxySSIHealthCareDiscussion {
     // Keep a contiguous suffix of complete exchanges; approval covers the exact encoded bytes.
     for count in stride(from: previous.count, through: 0, by: -1) {
       let data = try encoder.encode(Payload(concern: snapshot, question: question, previous: Array(previous.suffix(count)),
-        savedProfile: savedProfile))
+        savedProfile: savedProfile, actionFeedback: actionFeedback))
       if data.count <= maximumPayloadBytes { return String(decoding: data, as: UTF8.self) }
     }
     throw GalaxySSIHealthRecords.Failure.invalid
@@ -263,6 +269,10 @@ enum GalaxySSIHealthCareDiscussion {
       fasting hours from a label, and treat previous exchanges marked historical or unknown as historical context.
       If a previous answer conflicts with a current saved answer, use the current saved answer.
       Current symptoms are not assessed. Use saved_profile only when supplied, as selected self-reported context.
+      latest_action_feedback is self-reported execution, not a new measurement or verified clinical improvement.
+      Partial progress and barriers do not complete actions, cancel reminders, or authorize treatment changes.
+      Discuss practical adjustments for user review without rewriting the saved plan or claiming to contact a clinician.
+      recorded_at is the save time, and plan_basis_current=false means the note refers to an older plan basis.
       An unselected or unavailable field is not a negative finding. Do not infer other medical history or symptoms.
       State missing measurement context and uncertainty. Do not diagnose, change medication, or claim to have accessed
       records or verified current external sources. Discuss possible questions for a clinician, not a saved care plan.

@@ -191,18 +191,19 @@ final class MessageCoordinatorCloudStreamingTests: XCTestCase {
   @MainActor
   func testCitationPreviewIsReplacedInTheSameSilentAssistantRow() async throws {
     let fixture = try makeFixture()
+    let preview = ModelStreamCitationPreview(requestId: "turn", text: "Preview [source](https://example.com)",
+      receivedAtElapsedMs: 1)
     let stream = RecordingCloudConversationStream(events: [
-      .citationPreview(ModelStreamCitationPreview(
-        requestId: "turn",
-        text: "Preview [source](https://example.com)",
-        receivedAtElapsedMs: 1
-      )),
+      .citationPreview(.init(requestId: "foreign", text: "Foreign preview", receivedAtElapsedMs: 0)),
+      .citationPreview(preview),
+      .citationPreview(preview),
       .textDelta(ModelStreamTextDelta(
         requestId: "turn",
         sequence: 1,
         text: "Final answer [source](https://example.com)",
         receivedAtElapsedMs: 2
       )),
+      .citationPreview(.init(requestId: "turn", text: "", receivedAtElapsedMs: 2)),
       .completed(ModelStreamCompleted(requestId: "turn", finishReason: "stop", completedAtElapsedMs: 3))
     ])
     let coordinator = MessageCoordinator(
@@ -340,7 +341,14 @@ private final class RecordingCloudConversationStream: CloudConversationStreaming
   ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
     calls.append(Call(contact: contact, turns: turns, requestId: requestId))
     return AsyncThrowingStream { continuation in
-      events.forEach { continuation.yield($0) }
+      for event in events {
+        if case .citationPreview(var preview) = event, preview.requestId == "turn" {
+          preview.requestId = requestId
+          continuation.yield(.citationPreview(preview))
+        } else {
+          continuation.yield(event)
+        }
+      }
       continuation.finish()
     }
   }

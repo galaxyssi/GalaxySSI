@@ -130,6 +130,31 @@ enum AgentDesktopCollaborationPublicationWire {
     if AgentCollaborationGoalAssessmentPolicy.isCoordinatorMutation(phase) { return !observer }
     return observer || phase == "validate_assessment"
   }
+
+  static func artifactDecodingView(_ envelope: AgentMcpJSONObject) -> String? {
+    guard let items = envelope["workspace"]?.arrayValue, items.count == 1,
+          var item = items.first?.objectValue, item["kind"] == .string("artifact"),
+          item["base_revision"] == nil, item["object_id"] == nil,
+          let format = item["body"]?.objectValue?["format"]?.strictStringValue,
+          ["galaxyssi.file-artifact/1", "galaxyssi.text-artifact/1"].contains(format) else { return nil }
+    // Desktop omits the base revision for a new artifact; only the decoding view changes.
+    item["base_revision"] = .int(0)
+    var view = envelope
+    view["workspace"] = .array([.object(item)])
+    return AgentMcpJSONCodec.stringify(view)
+  }
+
+  static func result(_ value: AgentMcpJSONObject, phase: String) -> AgentMcpJSONObject {
+    guard phase == "publish" || phase == "receipt" else { return value }
+    var response = value
+    response["assignment_completed"] = .bool(false)
+    if value["success"] == .bool(true), let references = value["references"]?.arrayValue,
+       value["status"] == .string(phase == "publish" ? "published" : "recorded") {
+      response["status"] = .string("recorded")
+      response["revisions"] = .array(references)
+    }
+    return response
+  }
 }
 
 struct AgentDesktopCollaborationResponseReplay {
@@ -161,10 +186,11 @@ struct AgentDesktopCollaborationResponseReplay {
     activeByDesktop[desktopId] = remaining > 0 ? remaining : nil
   }
 
-  mutating func lookup(key: String, fingerprint: String, now: Int64) -> Lookup {
+  mutating func lookup(key: String, fingerprint: String, now: Int64, revalidate: Bool = false) -> Lookup {
     prune(now: now)
     guard let existing = entries[key] else { return .missing }
-    return existing.fingerprint == fingerprint ? .response(existing.result) : .identityMismatch
+    guard existing.fingerprint == fingerprint else { return .identityMismatch }
+    return revalidate ? .missing : .response(existing.result)
   }
 
   mutating func remember(_ result: AgentMcpJSONObject, key: String, fingerprint: String,

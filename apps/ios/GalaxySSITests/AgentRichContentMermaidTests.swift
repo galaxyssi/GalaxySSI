@@ -220,6 +220,45 @@ final class AgentRichContentMermaidTests: XCTestCase {
     XCTAssertEqual(AgentRichContentCodec.decode(AgentRichContentCodec.normalize(encoded)), decoded)
   }
 
+  func testInternalArtifactReferencesDoNotLeakThroughPartialOrPlainFallbacks() {
+    let target = "GALAXYSSI-ARTIFACT://blob/transfer/image.png"
+    typealias References = AgentMarkdownArtifactReferences
+    XCTAssertEqual(References.removingInternalLinks("Rendering...\n![Generated](\(target)"), "Rendering...\n")
+    XCTAssertEqual(References.removingInternalLinks("![Generated](\n<\(target)"), "")
+    XCTAssertEqual(References.removingInternalLinks("![Generated](\n\(target)\nNext update"), "\nNext update")
+    XCTAssertEqual(References.removingInternalLinks("Ready <\(target)>"), "Ready ")
+    XCTAssertEqual(References.removingInternalLinks(target), "")
+    XCTAssertEqual(References.removingInternalLinks("[![Generated](\(target))](https://example.com)"), "")
+    let external = "[Source](https://example.com/?next=\(target))"
+    XCTAssertEqual(References.removingInternalLinks(external), external)
+    for example in [
+      "`![Generated](\(target))`",
+      "> ```markdown\n> ![Generated](\(target))\n> ```",
+      "    ![Generated](\(target))"
+    ] {
+      XCTAssertEqual(References.removingInternalLinks(example), example)
+    }
+    let code = AgentRichContentCodec.fromText("    ![Generated](\(target))")
+    XCTAssertEqual(code.first?.type, .code)
+    XCTAssertEqual(code.first?.text, "![Generated](\(target))")
+  }
+
+  func testContactHistoryAndCopyUseAttachmentNameInsteadOfInternalURI() {
+    let uri = "galaxyssi-artifact://blob/transfer/image"
+    let image = AgentRichBlock(id: "image", type: .image, title: "result.png", uri: uri, mimeType: "image/png")
+    let rich = AgentRichContentCodec.encode([image])
+    let content = "![Generated](\(uri))"
+    let attached = ChatMessage(contactId: "peer", content: content, isMine: false, richOutputJson: rich)
+    let missing = ChatMessage(contactId: "peer", content: content, isMine: false)
+    let user = ChatMessage(contactId: "peer", content: content, isMine: true)
+    XCTAssertEqual(ContactConversationSummary(lastMessage: attached, unreadCount: 0).previewText, "result.png")
+    XCTAssertEqual(GalaxySSIMessageActionPolicy.copyText(for: attached), "result.png")
+    XCTAssertEqual(AgentRichContentCodec.presentationBlocks(content: content, richOutputJson: rich).first?.uri, uri)
+    XCTAssertTrue(ContactConversationSummary(lastMessage: missing, unreadCount: 0).previewText.isEmpty)
+    XCTAssertTrue(GalaxySSIMessageActionPolicy.copyText(for: missing).isEmpty)
+    XCTAssertEqual(GalaxySSIMessageActionPolicy.copyText(for: user), content)
+  }
+
   func testRichContentUpdatePolicyIgnoresGeneratedIdsAndKeepsPassiveGroupsStable() {
     let first = [
       AgentRichBlock(id: "one", type: .text, text: "First"),

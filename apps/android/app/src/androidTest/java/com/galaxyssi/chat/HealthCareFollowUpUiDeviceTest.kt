@@ -142,6 +142,7 @@ class HealthCareFollowUpUiDeviceTest {
         scenario.onActivity { views(dialog(review(it))!!.window!!.decorView).first { v -> v.tag == "health-care-followup-complete" }.performClick() }
         scenario.onActivity {
             val d = dialog(review(it))!!; d.getButton(AlertDialog.BUTTON_POSITIVE).performClick(); assertTrue(d.isShowing)
+            views(d.window!!.decorView).first { v -> v.tag == "health-feedback-kind-COMPLETED" }.performClick()
             (views(d.window!!.decorView).first { v -> v.tag == "health-care-followup-outcome" } as EditText).setText("已整理复查问题，隔离测试。")
             d.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
         }
@@ -163,5 +164,77 @@ class HealthCareFollowUpUiDeviceTest {
         HealthPrivacyStore(context, names.privacy).use { it.change(HealthPrivacyOption.CONFIRMED_METRICS, false, it.policy().version) }
         await(scenario) { dialog(review(it)) == null && find(it, "health-care-followup-$id") == null }
         HealthCareStore(context, names.care).use { assertNull(it.reminder(id)); assertEquals(issue, it.concern(issue.id)) }
+    }
+    @Test fun partialFeedbackRequiresSelectionAndRetainsScheduledReminder(): Unit = fixture { names, issue, scenario ->
+        val id = issue.actions.first().id
+        val reminder = HealthCareStore(context, names.care).use { store -> store.scheduleReminder(issue.id, id, issue.revision, null,
+            HealthPrivacyStore(context, names.privacy).use { it.policy() }, issue.inputVersion,
+            System.currentTimeMillis() + 60000, System.currentTimeMillis()) }
+        open(scenario, id)
+        scenario.onActivity { views(dialog(review(it))!!.window!!.decorView).first { v -> v.tag == "health-care-followup-complete" }.performClick() }
+        scenario.onActivity {
+            val d = dialog(review(it))!!
+            (views(d.window!!.decorView).first { v -> v.tag == "health-care-followup-outcome" } as EditText).setText("只整理了部分问题，隔离测试。")
+            d.getButton(AlertDialog.BUTTON_POSITIVE).performClick(); assertTrue(d.isShowing)
+            views(d.window!!.decorView).first { v -> v.tag == "health-feedback-kind-PARTIAL" }.performClick()
+        }
+        HealthCareStore(context, names.care).use { assertEquals(issue, it.concern(issue.id)) }
+        if (InstrumentationRegistry.getArguments().getString("health_feedback_screenshot") == "true") {
+            instrumentation.waitForIdleSync(); SystemClock.sleep(600)
+            instrumentation.uiAutomation.takeScreenshot()?.let { bitmap -> try {
+                File(context.getExternalFilesDir(null), "health-feedback-fixture.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            } finally { bitmap.recycle() } }
+        }
+        scenario.onActivity { dialog(review(it))!!.getButton(AlertDialog.BUTTON_POSITIVE).performClick() }
+        await(scenario) { dialog(review(it)) == null }
+        val end = SystemClock.elapsedRealtime() + 5000
+        while (HealthCareStore(context, names.care).use { it.feedback(issue.id).items.isEmpty() } && SystemClock.elapsedRealtime() < end) SystemClock.sleep(30)
+        HealthCareStore(context, names.care).use {
+            assertEquals(HealthCareFeedbackKind.PARTIAL, it.feedback(issue.id).items.single().feedback.kind)
+            assertEquals(HealthCareActionState.CONFIRMED, it.concern(issue.id)!!.actions.first().state)
+            assertEquals(reminder, it.reminder(id))
+        }
+    }
+    @Test fun feedbackHistoryPagesAndClearsOnBackgroundAndRevocation(): Unit = fixture { names, issue, scenario ->
+        val receipts = mutableListOf<HealthCareFeedbackReceipt>()
+        HealthCareStore(context, names.care).use { store -> repeat(33) { index ->
+            val current = store.concern(issue.id)!!
+            receipts += store.recordActionFeedback(issue.id, current.revision, issue.actions.first().id,
+                HealthCareFeedbackKind.BARRIER, "遇到困难，隔离历史测试 $index", UUID.randomUUID().toString(), System.currentTimeMillis())
+        } }
+        fun shown(activity: HealthCareActivity) = dialog(review(activity))?.window?.decorView?.let(::views).orEmpty()
+        scenario.onActivity { review(it).showHistory(issue.id) }
+        await(scenario) { shown(it).any { view -> view.tag == "health-feedback-row-${receipts.last().feedback.id}" } }
+        scenario.onActivity {
+            assertEquals(30, shown(it).count { view -> view.tag?.toString()?.startsWith("health-feedback-row-") == true })
+            dialog(review(it))!!.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        }
+        await(scenario) { shown(it).any { view -> view.tag == "health-feedback-row-${receipts.first().feedback.id}" } }
+        scenario.onActivity {
+            assertEquals(3, shown(it).count { view -> view.tag?.toString()?.startsWith("health-feedback-row-") == true })
+            dialog(review(it))!!.getButton(AlertDialog.BUTTON_NEUTRAL).performClick()
+        }
+        await(scenario) { shown(it).any { view -> view.tag == "health-feedback-row-${receipts.last().feedback.id}" } }
+        scenario.moveToState(Lifecycle.State.CREATED); scenario.onActivity { assertNull(dialog(review(it))) }
+        scenario.moveToState(Lifecycle.State.RESUMED)
+        scenario.onActivity { review(it).showHistory(issue.id) }
+        await(scenario) { shown(it).any { view -> view.tag == "health-feedback-row-${receipts.last().feedback.id}" } }
+        HealthPrivacyStore(context, names.privacy).use { it.change(HealthPrivacyOption.PROFILE_CONTEXT, false, it.policy().version) }
+        await(scenario) { dialog(review(it)) == null }
+        HealthCareStore(context, names.care).use { assertEquals(30, it.feedback(issue.id).items.size) }
+    }
+    @Test fun unsavedFeedbackIsClearedWhenEditorGoesToBackground(): Unit = fixture { names, issue, scenario ->
+        open(scenario, issue.actions.first().id)
+        lateinit var input: EditText
+        scenario.onActivity {
+            views(dialog(review(it))!!.window!!.decorView).first { v -> v.tag == "health-care-followup-complete" }.performClick()
+            val d = dialog(review(it))!!
+            views(d.window!!.decorView).first { v -> v.tag == "health-feedback-kind-BARRIER" }.performClick()
+            input = views(d.window!!.decorView).first { v -> v.tag == "health-care-followup-outcome" } as EditText
+            input.setText("不保存的隔离测试反馈")
+        }
+        scenario.moveToState(Lifecycle.State.CREATED)
+        scenario.onActivity { assertNull(dialog(review(it))); assertEquals("", input.text.toString()) }
+        HealthCareStore(context, names.care).use { assertTrue(it.feedback(issue.id).items.isEmpty()); assertEquals(issue, it.concern(issue.id)) }
     }
 }

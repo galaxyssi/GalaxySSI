@@ -18,6 +18,7 @@ enum GalaxySSIHealthCareResearchHandoff {
     let targetRevision: Int?
     let due: Set<String>
     let outcomes: [String: String]
+    let latestFeedback: [String: UUID]?
 
     init(_ concern: GalaxySSIHealthCare.Concern, history: String, observedAt: Date,
          actions: [GalaxySSIHealthCarePlan.AdoptedAction]) throws {
@@ -36,6 +37,11 @@ enum GalaxySSIHealthCareResearchHandoff {
         if let outcome = action.outcome { outcomeDigests[action.id] = try digest(outcome) }
       }
       outcomes = outcomeDigests
+      var latest: [String: UUID] = [:]
+      for action in actions {
+        if let feedback = action.feedback, feedback.isInScope(concern) { latest[action.id] = feedback.id }
+      }
+      latestFeedback = latest.isEmpty ? nil : latest
     }
   }
 
@@ -50,7 +56,8 @@ enum GalaxySSIHealthCareResearchHandoff {
       turn != job.id && startedAt <= job.createdAt && authorization.concern == current.concern &&
         authorization.thread == current.thread && authorization.destination == current.destination &&
         authorization.localPermission == current.localPermission && authorization.onlinePermission == current.onlinePermission &&
-        authorization.profileScopeEpoch == current.profileScopeEpoch && authorization.sources == current.sources
+        authorization.profileScopeEpoch == current.profileScopeEpoch && authorization.sources == current.sources &&
+        (authorization.sharesActionFeedback == true) == (current.sharesActionFeedback == true)
     }
   }
 
@@ -98,15 +105,18 @@ enum GalaxySSIHealthCareResearchHandoff {
     var reasons: [Reason] = []
     var newDue = Set<String>()
     var feedback = Set<String>()
+    var outcomes = Set<String>()
     if let before {
       if basis.measurement != before.measurement {
         reasons.append(basis.measurement?.id == before.measurement?.id ? .correction : .newMeasurement)
       } else if basis.history != before.history { reasons.append(.historyChanged) }
       if basis.contextDigest != before.contextDigest { reasons.append(.contextChanged) }
       if basis.targetRevision != before.targetRevision { reasons.append(.targetChanged) }
-      feedback = Set(basis.outcomes.keys.filter { basis.outcomes[$0] != before.outcomes[$0] })
+      outcomes = Set(basis.outcomes.keys.filter { basis.outcomes[$0] != before.outcomes[$0] })
+      let latest = basis.latestFeedback ?? [:]
+      feedback = Set(latest.keys.filter { latest[$0] != before.latestFeedback?[$0] })
       newDue = basis.due.subtracting(before.due)
-      if !feedback.isEmpty { reasons.append(.actionFeedback) }
+      if !feedback.isEmpty || !outcomes.isEmpty { reasons.append(.actionFeedback) }
       if !newDue.isEmpty { reasons.append(.reviewDue) }
       if reasons.isEmpty { reasons = [.authorizationReview] }
     } else {
@@ -145,7 +155,8 @@ enum GalaxySSIHealthCareResearchHandoff {
       "comparison_available": .bool(before != nil), "elapsed_time_only": .bool(elapsedOnly),
       "existing_plan": .bool(plan != nil), "existing_plan_actions": .array(actions), "due_action_ids": tokens(basis.due),
       "newly_due_action_ids": before == nil ? .null : tokens(newDue),
-      "new_outcome_action_ids": before == nil ? .null : tokens(feedback),
+      "new_outcome_action_ids": before == nil ? .null : tokens(outcomes),
+      "new_feedback_action_ids": before == nil ? .null : tokens(feedback),
       "research_progress": .object([
         "prior_response_completed": .bool(previous != nil), "source_context_available": .bool(!sources.isEmpty),
         "recorded_plan_exists": .bool(recordedPlan != nil),

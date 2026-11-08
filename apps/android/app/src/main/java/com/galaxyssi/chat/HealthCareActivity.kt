@@ -133,11 +133,9 @@ class HealthCareActivity : Activity() {
         }
         snapshot.page.next?.let { after -> ui.add(content, ui.command(R.string.health_care_more) { cursor = after; generation++; load() }, 8) }
         heading(content, R.string.health_care_plans)
-        val actions = snapshot.page.items.flatMap { issue -> issue.actions.map { issue to it } }
-        if (actions.isEmpty()) ui.add(content, ui.text(getString(R.string.health_care_no_plan), 14f, muted = true), 8)
-        actions.forEach { (issue, action) -> ui.add(content, ui.profileRow(action.description, getString(action.state.titleResource())) {
-            selected = issue.id; generation++; load()
-        }, 6) }
+        ui.add(content, ui.profileRow(getString(R.string.health_agenda_title), getString(R.string.health_agenda_summary)) {
+            startActivity(Intent(this, HealthCareActionsActivity::class.java).putHealthNavigationFixture(names))
+        }.apply { tag = "health-care-agenda" }, 8)
         heading(content, R.string.health_care_evidence)
         ui.add(content, ui.profileRow(getString(R.string.health_catalog_title)) { open(HealthCatalogActivity::class.java) }, 6)
         ui.add(content, ui.profileRow(getString(R.string.health_export_data_files)) { open(HealthDataFilesActivity::class.java) }, 6)
@@ -153,6 +151,9 @@ class HealthCareActivity : Activity() {
         if (profile) ui.add(content, ui.profileRow(getString(R.string.health_answer_title)) {
             answerReview.show(value.id)
         }.apply { tag = "health-care-answers" }, 8)
+        if (profile) ui.add(content, ui.profileRow(getString(R.string.health_feedback_history)) {
+            actionReview.showHistory(value.id)
+        }.apply { tag = "health-care-feedback-history" }, 8)
         if (profile) ui.add(content, ui.profileRow(getString(R.string.health_care_profile_title),
             value.profileLink?.scope?.let { getString(R.string.health_care_profile_summary, it.fields.size, it.entries.size) }
                 ?: getString(R.string.health_care_profile_none)) { profileReview.show(value.id) }
