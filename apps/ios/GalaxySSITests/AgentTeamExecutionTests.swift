@@ -696,7 +696,7 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(result["acceptance_contract_state"], .string("not_established"))
     let database = try AgentTeamHistoryDatabase(fileURL: file,
       storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
-    XCTAssertTrue(try database.researchObjectKeys(conversationId: scope.conversationId, after: "", limit: 1).isEmpty)
+    XCTAssertTrue(try database.researchObjectHeads(conversationId: scope.conversationId, after: "", limit: 1).isEmpty)
     XCTAssertThrowsError(try history.publishCollaborationMilestone(["mode": .string("status")], scope: scope))
     var forged = input
     forged["member_id"] = .string("other")
@@ -711,7 +711,7 @@ extension GalaxySSIStoreTests {
     team.updatedAtMillis += 1
     XCTAssertTrue(history.upsert(team))
     XCTAssertThrowsError(try history.publishCollaborationMilestone(input, scope: scope))
-    XCTAssertTrue(try database.researchObjectKeys(conversationId: scope.conversationId, after: "", limit: 1).isEmpty)
+    XCTAssertTrue(try database.researchObjectHeads(conversationId: scope.conversationId, after: "", limit: 1).isEmpty)
   }
 
   func testInterimPublicationReopensWithSameReceiptWithoutCompletingAssignment() throws {
