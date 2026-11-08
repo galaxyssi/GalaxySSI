@@ -114,6 +114,7 @@ enum AgentCollaborationRuleTopics {
     Publish galaxyssi.research-artifact.v1 with a workspace array. Each item has id, kind, title, body, base_revision and parents.
     Use base_revision 0 for new records and exact object_id, revision and sha256 for references. Cite original cloud observations
     with evidence_id and sha256 when the record supports citations. Read each page before citing it. Publication is not verification.
+    \(AgentCollaborationTypedRecordValidation.guidance)
     capability_gap records category, symptom, needed_capability, learning_options, chosen_option and rationale.
     innovation records origin, hypothesis, mechanism, difference, prior_art, falsifier, domain, applies_when, risks, alternatives
     and predictions (id, statement, test). Use novelty_scope not_checked. Transfer and combination require exact parent records.
@@ -130,8 +131,15 @@ enum AgentCollaborationRuleTopics {
     Valid failed cases are saved. An exact previous_trial parent can compare the same preserved cases.
     experiment_plan binds exact innovation and baseline parents, prediction_id, method, environment, budget_unit, budget_limit,
     report_pointer, source and cases. experiment_result binds the plan and completely read original measurement observations.
+    To compare workflows, both innovations must parent and reference an exact workflow_method in their domain.
+    Set experiment_plan.workflow_comparison to {dataset:exact artifact reference, controlled_conditions, quality_oracle,
+    cost_accounting, selection_bias}; parent the dataset and include target and regression cases.
+    Each measurement carries workflow_sha256 and dataset_sha256 as well as its innovation variant_sha256.
+    Discover previous comparisons using method_history with view=evaluations. Read original conditions and negative results;
+    an empty scan is unknown history, not evidence that a method works.
     capability_lesson binds exact result and rollback parents; retain requires passing target and regression cases,
     an independent reviewer and full original evidence reads. Reject or revise can preserve historical findings.
+    \(AgentCollaborationExperimentResultFeedback.guidance)
     """),
     Topic(id: "learning", purpose: "Compare and record learning choices", prerequisites: ["foundation"], contract: """
     learning_agenda is immutable. Include goal_alignment, resource_reasoning, selection_reason, reconsider_when and options.
@@ -161,12 +169,32 @@ enum AgentCollaborationRuleTopics {
     and an object input_schema using the existing Skill parameter contract. tool_test_plan binds the exact executable_tool parent
     and matching environment. Include purpose, coverage_gaps, oracle_basis and distinct cases with id, purpose, reason, input
     and expected (explicit null is allowed). Include target and regression cases. Registration neither executes nor releases code.
+    Use capabilities to find unfinished tools and test plans. Follow usage_recall for original test history. A pre-execution
+    rejection belongs only to the requested plan; only an exact runtime-bound test belongs to a candidate.
+    """),
+    Topic(id: "retention", purpose: "Preserve measured capability cases across versions", prerequisites: ["foundation"], contract: """
+    Publish capability_suite with scope, limitations and the exact independently retained lesson as a parent.
+    Every measured case needs an exact dataset artifact. A future experiment_plan.retention_suite must cite the suite
+    as a parent and preserve its dataset, metric, direction, repetitions and tolerance in regression cases.
+    The host checks the original anchor as well as the current control. Extend a passing suite with previous_suite;
+    never remove earlier cases, weaken feasibility thresholds or move their original anchors.
+    capability_channel selects an exact independently reviewed tool release tied to the retained innovation and suite.
+    Use operation initialize or promote with implementation, lesson, suite and reason. Promotion extends the active suite.
+    To roll back, cite target_revision from the same channel. Rollback preserves the latest bank and may require revalidation.
+    A selection grants no permissions and does not rerun or undo work.
     """),
     Topic(id: "workflows", purpose: "Register workflow roles, steps and review conditions", prerequisites: ["foundation"], contract: """
     workflow_method includes purpose, domain, bottleneck, change_rationale, applies_when, avoid_when, risks, expected_gain,
     falsifier, dimensions, roles, inputs and steps. Steps declare id, role, stage, assignment, depends_on, dependency_policy,
     independent_review and optional review_targets. Dependencies must be acyclic, review targets must be dependencies, and
     the reviewed role must differ from the reviewer. Steps cannot override tools, models or permissions.
+    Publish a new method with previous_method and exact feedback parents; keep the same domain.
+    For comparison, link exact workflow_method parents from both innovations. Register experiment_plan.workflow_comparison
+    with dataset, controlled_conditions, quality_oracle, cost_accounting and selection_bias. Include a quality regression case.
+    Each measurement must identify its actual variant's workflow_sha256 and the registered dataset_sha256.
+    A workflow_selection_rule parents an independently retained workflow comparison lesson. Use purpose, domain, condition_basis,
+    limitations, prospective_test, lesson, when_all and unless_any. Each condition has id, input, pointer, operator, value and rationale.
+    \(AgentCollaborationWorkflowCheck.instructions)
     """)
   ]
 
@@ -461,9 +489,16 @@ enum AgentCollaborationGoalAssessmentPolicy {
     var validator: AgentMcpJSONObject? = nil
 
     var hasValidValidatorBinding: Bool {
-      guard let validator else { return true }
-      return verification == .computational && requirement == AgentCollaborationNumericTrial.requirement &&
-        validator["id"] == .string(AgentCollaborationNumericTrial.validatorId)
+      validatorSchemaIssue == nil
+    }
+
+    var validatorSchemaIssue: AgentCollaborationNumericTrial.ValidatorIssue? {
+      guard let validator else { return nil }
+      guard verification == .computational, requirement == AgentCollaborationNumericTrial.requirement else {
+        return .init(path: "", expected: "numeric validator on the exact computational verification requirement",
+          actual: "validator is not bound to the supported requirement")
+      }
+      return AgentCollaborationNumericTrial.validatorIssue(validator)
     }
   }
 
@@ -524,71 +559,11 @@ enum AgentCollaborationGoalAssessmentPolicy {
     case achieved
   }
 
-  static func preflight(_ raw: String, establishedContract: Bool) -> AgentMcpJSONObject {
-    var response: AgentMcpJSONObject = [
-      "success": .bool(false), "status": .string("invalid_assessment"),
-      "json_valid": .bool(false),
-      "acceptance_contract_state": .string(establishedContract ? "established" : "not_established"),
-      "validation_scope": .string("structure_only_not_admission_or_acceptance")
-    ]
-    func fail(_ path: String, _ reason: String, allowed: [String] = []) -> AgentMcpJSONObject {
-      response["field_path"] = .string(path)
-      response["reason"] = .string(reason)
-      if !allowed.isEmpty { response["allowed_values"] = .array(allowed.map(AgentMcpJSONValue.string)) }
-      return response
-    }
-    let data = Data(raw.utf8)
-    guard data.count <= 131_072, (try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data)) != nil else {
-      return fail("$", "expected_bounded_json_object")
-    }
-    response["json_valid"] = .bool(true)
-    func path(_ keys: [CodingKey]) -> String {
-      keys.reduce("$") { value, key in
-        if let index = key.intValue { return value + "[\(index)]" }
-        return value + "." + key.stringValue
-      }
-    }
-    let draft: Assessment
-    do { draft = try JSONDecoder().decode(Assessment.self, from: data) }
-    catch let DecodingError.keyNotFound(key, context) { return fail(path(context.codingPath + [key]), "required_field") }
-    catch let DecodingError.typeMismatch(_, context) { return fail(path(context.codingPath), "wrong_type") }
-    catch let DecodingError.valueNotFound(_, context) { return fail(path(context.codingPath), "required_value") }
-    catch let DecodingError.dataCorrupted(context) { return fail(path(context.codingPath), "invalid_value") }
-    catch { return fail("$", "invalid_assessment") }
-    guard draft.format == "galaxyssi.goal-assessment.v1" else {
-      return fail("$.format", "unexpected_format", allowed: ["galaxyssi.goal-assessment.v1"])
-    }
-    guard !draft.summary.isBlank else { return fail("$.summary", "expected_nonblank_text") }
-    guard !draft.criteria.isEmpty else { return fail("$.criteria", "expected_nonempty_criteria") }
-    var ids = Set<String>()
-    for (index, criterion) in draft.criteria.enumerated() {
-      let root = "$.criteria[\(index)]"
-      guard !criterion.id.isBlank, ids.insert(criterion.id).inserted else { return fail(root + ".id", "expected_unique_id") }
-      guard !criterion.requirement.isBlank else { return fail(root + ".requirement", "expected_nonblank_text") }
-      for (sourceIndex, source) in (criterion.required_observations ?? []).enumerated() {
-        let sourcePath = root + ".required_observations[\(sourceIndex)]"
-        guard RequiredObservation.allowedOrigins.contains(source.origin) else {
-          return fail(sourcePath + ".origin", "unsupported_origin", allowed: RequiredObservation.allowedOrigins)
-        }
-        guard !source.tool.isBlank else { return fail(sourcePath + ".tool", "expected_nonblank_text") }
-      }
-    }
-    response["success"] = .bool(true)
-    response["status"] = .string("valid_structure")
-    return response
-  }
-
   static func evaluate(_ raw: String, preserving contract: [Criterion],
                        authorizedMembers: Set<String>, completedWork: Set<String>,
                        checkedBlockers: Set<String> = [],
                        verified: [String: VerifiedCriterion] = [:]) -> Outcome {
-    guard raw.utf8.count <= 256_000,
-          let assessment = try? JSONDecoder().decode(Assessment.self, from: Data(raw.utf8)),
-          assessment.format == "galaxyssi.goal-assessment.v1",
-          !assessment.summary.isBlank, !assessment.criteria.isEmpty,
-          Set(assessment.criteria.map(\.id)).count == assessment.criteria.count,
-          assessment.criteria.allSatisfy({ !$0.id.isBlank && !$0.requirement.isBlank && $0.hasValidValidatorBinding &&
-            ($0.required_observations ?? []).allSatisfy(\.isValid) }) else {
+    guard case .success(let assessment) = parseAssessment(raw) else {
       return .needsAssessment
     }
     let criteria = Dictionary(uniqueKeysWithValues: assessment.criteria.map { ($0.id, $0) })
@@ -700,8 +675,8 @@ enum AgentCollaborationDocumentaryAcceptance {
                        originalObservation: (String) throws -> OriginalObservation? = { _ in nil })
     -> AgentCollaborationGoalAssessmentPolicy.Outcome {
     typealias Policy = AgentCollaborationGoalAssessmentPolicy
-    guard !conversationId.isBlank, !runId.isBlank, !turnId.isBlank, raw.utf8.count <= 256_000,
-          let assessment = try? JSONDecoder().decode(Policy.Assessment.self, from: Data(raw.utf8)),
+    guard !conversationId.isBlank, !runId.isBlank, !turnId.isBlank,
+          case .success(let assessment) = Policy.parseAssessment(raw),
           assessment.decision == .achieved else { return .needsAssessment }
 
     func current(_ reference: Reference) throws -> Revision? {

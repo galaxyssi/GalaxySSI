@@ -470,9 +470,9 @@ struct AgentIOSSystemNativeToolExecutor {
     ).hasPrefix("zh")
     switch toolId {
     case AgentIOSSystemNativeToolCatalog.downloadEnqueue:
-      localized.message = chinese
-        ? "\u{5DF2}\u{5F00}\u{59CB}\u{4E0B}\u{8F7D}\u{3002}\u{5B8C}\u{6210}\u{540E}\u{6587}\u{4EF6}\u{4F1A}\u{4FDD}\u{5B58}\u{5230} Download/GalaxySSI\u{FF0C}\u{5E76}\u{663E}\u{793A}\u{5728}\u{5F53}\u{524D}\u{4F1A}\u{8BDD}\u{4E2D}\u{3002}"
-        : "Download started. When it finishes, the file will be saved in Download/GalaxySSI and shown in this conversation."
+      localized.message = GalaxySSILocalization.string("galaxyssi.agent.download.private_started",
+        fallback: "Download started. The file will appear in this conversation.",
+        language: chinese ? "zh-Hans" : "en")
     case AgentIOSSystemNativeToolCatalog.downloadQuery:
       let status = downloadStatusLabel(
         result.output["status"]?.intValue ?? 0,
