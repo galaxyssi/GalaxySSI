@@ -68,7 +68,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
 
   private let modelClient: CloudModelClient
   private let streamClient: CloudModelStreamClient
-  private let legacySender: CloudConversationLegacySending
+  private let legacySender: CloudConversationLegacySending?
   private let toolExecutor: CloudConversationToolExecuting
   private let disclosureStore: AgentDataDisclosureStore
   private let elapsedMillis: () -> Int64
@@ -87,7 +87,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
   ) {
     self.modelClient = modelClient
     self.streamClient = streamClient
-    self.legacySender = legacySender ?? modelClient
+    self.legacySender = legacySender
     self.toolExecutor = toolExecutor
     self.disclosureStore = disclosureStore
     self.elapsedMillis = elapsedMillis
@@ -126,7 +126,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     images: [CloudImagePayload],
     requestId: String,
     collaborationEvidence: AgentCollaborationToolEvidenceScope?,
-    collaborationModelAudit: AgentCollaborationToolEvidenceScope? = nil
+    collaborationModelAudit: AgentCollaborationToolEvidenceScope? = nil,
+    researchRetrySource: ChatMessage? = nil,
+    retainResearch: Bool = true
   ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
     let conversationRequestId = Self.normalizedRequestId(requestId)
     return AsyncThrowingStream { continuation in
@@ -139,6 +141,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           requestId: conversationRequestId,
           collaborationEvidence: collaborationEvidence,
           collaborationModelAudit: collaborationModelAudit ?? collaborationEvidence,
+          researchRetrySource: researchRetrySource,
+          retainResearch: retainResearch,
           continuation: continuation
         )
       }
@@ -176,16 +180,30 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     requestId: String,
     collaborationEvidence: AgentCollaborationToolEvidenceScope?,
     collaborationModelAudit: AgentCollaborationToolEvidenceScope?,
+    researchRetrySource: ChatMessage?,
+    retainResearch: Bool,
     continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation
   ) async {
     defer { CloudImageAnnotationSession.discard(requestId: requestId) }
+    if retainResearch, images.isEmpty, collaborationEvidence == nil, collaborationModelAudit == nil,
+       let researchRetrySource,
+       let request = try? await modelClient.prepareConversationStreamRequest(contact: contact, store: store,
+         turns: turns, requestId: requestId),
+       let cached = await CloudResearchObservationRecovery.replay(store: store, contact: contact, request: request,
+         turns: turns, retrySource: researchRetrySource) {
+      let now = elapsedMillis()
+      continuation.yield(.textDelta(.init(requestId: requestId, sequence: 1, text: cached, receivedAtElapsedMs: now)))
+      continuation.yield(.completed(.init(requestId: requestId, finishReason: "recovered_synthesis", completedAtElapsedMs: now)))
+      continuation.finish()
+      return
+    }
     let ticket = AgentDataDisclosureLedger.beginCloudRequest(
       store: disclosureStore,
       destination: AgentDataDisclosureCloudDestination(contact: contact),
       text: turns.map(\.content).joined(separator: "\n"),
       historyCount: turns.count,
       systemInstructions: true,
-      toolOutput: false,
+      toolOutput: researchRetrySource != nil,
       purpose: "Streaming conversation response",
       attachments: images.map {
         AgentDataDisclosureAttachment(
@@ -246,11 +264,26 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       let evidencePromptLedger = CloudEvidencePromptLedger(query: turns.last?.content ?? "")
       let progress = CloudWebToolLoopProgress()
       var visitedWorkflowChecks = Set<String>()
+      let research = CloudResearchRuntimeBudget(limits: .configured(contact.cloud_research_limits))
+      let recovery: CloudResearchObservationRecovery?
+      if retainResearch && images.isEmpty && collaborationRecallScope == nil {
+        recovery = await CloudResearchObservationRecovery.open(store: store, contact: contact, request: request,
+          turns: turns, retrySource: researchRetrySource)
+      } else { recovery = nil }
+      if let recovery {
+        evidenceResults = await recovery.restore(into: &prepared, progress: progress, budget: research, ledger: evidencePromptLedger)
+      }
       var round = 0
+      var useCompleteJSON = false
 
       while true {
+        if !progress.finalizationRequested, let reason = research.stopReason {
+          progress.requestFinalization()
+          prepared.appendResearchGuidance(research.guidance(stopped: reason))
+        }
         let currentRound = round
         round += 1
+        research.beginRound()
         let roundId = "\(requestId):r\(currentRound)"
         let finalRound = progress.finalizationRequested
         let bufferForCitationVerification = !evidenceResults.isEmpty
@@ -258,7 +291,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           ? CloudCitationPreview(evidence: evidenceResults)
           : nil
         var previewShown = false
-        let roundRequest = try prepared.requestForRound(roundId: roundId, finalRound: finalRound)
+        let preparedRound = try prepared.requestForRound(roundId: roundId, finalRound: finalRound)
+        let roundRequest = useCompleteJSON
+          ? try CloudConversationNonStreamingToolEngine.compatibilityRequest(preparedRound) : preparedRound
         let assembler = ToolCallDeltaAssembler()
         let inlineProtocolGuard = InlineToolProtocolStreamGuard()
         var roundCompleted = false
@@ -266,7 +301,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         var observedUsage: ModelUsage?
         var reportedModel: String?
         var audit = try await beginCollaborationAudit(scope: collaborationModelAudit, round: currentRound,
-          request: roundRequest, route: .streaming, contact: contact, store: store)
+          request: roundRequest, route: useCompleteJSON ? .compatibility : .streaming, contact: contact, store: store)
         func finishAudit() {
           guard let admission = audit else { return }
           audit = nil
@@ -279,81 +314,116 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         defer { finishAudit() }
         setActiveRound(roundId, for: requestId)
 
-        for try await event in streamClient.stream(roundRequest) {
-          try Task.checkCancellation()
-          switch event {
-          case .connected(let value):
-            guard !connected else { continue }
-            connected = true
-            continuation.yield(
-              .connected(
-                ModelStreamConnected(
-                  requestId: requestId,
-                  httpStatus: value.httpStatus,
-                  connectedAtElapsedMs: value.connectedAtElapsedMs
-                )
-              )
-            )
-
-          case .textDelta(let value):
-            let visibleText = inlineProtocolGuard.append(value.text)
-            if let preview = citationPreview?.append(visibleText) {
-              previewShown = true
-              continuation.yield(.citationPreview(ModelStreamCitationPreview(
-                requestId: requestId,
-                text: preview,
-                receivedAtElapsedMs: value.receivedAtElapsedMs
-              )))
-            }
-            if !visibleText.isEmpty && !bufferForCitationVerification {
-              emittedText = true
-              emittedSequence += 1
+        do {
+          for try await event in CloudResearchRoundDeadline.stream(streamClient.stream(roundRequest),
+            millis: research.limits.modelMillis) {
+            try Task.checkCancellation()
+            switch event {
+            case .connected(let value):
+              guard !connected else { continue }
+              connected = true
               continuation.yield(
-                .textDelta(
-                  ModelStreamTextDelta(
+                .connected(
+                  ModelStreamConnected(
                     requestId: requestId,
-                    sequence: emittedSequence,
-                    text: visibleText,
-                    receivedAtElapsedMs: value.receivedAtElapsedMs
+                    httpStatus: value.httpStatus,
+                    connectedAtElapsedMs: value.connectedAtElapsedMs
                   )
                 )
               )
-            }
 
-          case .citationPreview:
-            continue
-
-          case .toolCallDelta(let value):
-            assembler.accept(value.payload)
-            emittedSequence += 1
-            continuation.yield(
-              .toolCallDelta(
-                ModelStreamToolCallDelta(
+            case .textDelta(let value):
+              let visibleText = inlineProtocolGuard.append(value.text)
+              if let preview = citationPreview?.append(visibleText) {
+                previewShown = true
+                continuation.yield(.citationPreview(ModelStreamCitationPreview(
                   requestId: requestId,
-                  sequence: emittedSequence,
-                  payload: value.payload
+                  text: preview,
+                  receivedAtElapsedMs: value.receivedAtElapsedMs
+                )))
+              }
+              if !visibleText.isEmpty && !bufferForCitationVerification {
+                emittedText = true
+                emittedSequence += 1
+                continuation.yield(
+                  .textDelta(
+                    ModelStreamTextDelta(
+                      requestId: requestId,
+                      sequence: emittedSequence,
+                      text: visibleText,
+                      receivedAtElapsedMs: value.receivedAtElapsedMs
+                    )
+                  )
+                )
+              }
+
+            case .citationPreview:
+              continue
+
+            case .toolCallDelta(let value):
+              assembler.accept(value.payload)
+              emittedSequence += 1
+              continuation.yield(
+                .toolCallDelta(
+                  ModelStreamToolCallDelta(
+                    requestId: requestId,
+                    sequence: emittedSequence,
+                    payload: value.payload
+                  )
                 )
               )
-            )
 
-          case .usage(let value):
-            if value.usage.inputTokens >= 0, value.usage.outputTokens >= 0,
-               (0...value.usage.inputTokens).contains(value.usage.cachedInputTokens) {
-              observedUsage = value.usage
+            case .usage(let value):
+              if value.usage.inputTokens >= 0, value.usage.outputTokens >= 0,
+                 (0...value.usage.inputTokens).contains(value.usage.cachedInputTokens) {
+                observedUsage = value.usage
+              }
+              continuation.yield(.usage(ModelStreamUsage(requestId: requestId, usage: value.usage)))
+
+            case .completed(let value):
+              roundCompleted = true
+              reportedModel = value.reportedModel
+              lastFinishReason = value.finishReason
+
+            case .failed(let value):
+              roundFailure = ModelStreamFailed(requestId: requestId, error: value.error)
             }
-            continuation.yield(.usage(ModelStreamUsage(requestId: requestId, usage: value.usage)))
-
-          case .completed(let value):
-            roundCompleted = true
-            reportedModel = value.reportedModel
-            lastFinishReason = value.finishReason
-
-          case .failed(let value):
-            roundFailure = ModelStreamFailed(requestId: requestId, error: value.error)
           }
+        } catch is CancellationError {
+          throw CancellationError()
+        } catch {
+          try Task.checkCancellation()
+          roundFailure = ModelStreamFailed(requestId: requestId, error: Self.streamError(from: error, partialResponse: emittedText))
         }
+        try Task.checkCancellation()
         finishAudit()
         setActiveRound(nil, for: requestId)
+
+        if legacySender == nil, !useCompleteJSON, !emittedText, roundFailure?.error.code == "STREAM_UNSUPPORTED" {
+          if previewShown {
+            continuation.yield(.citationPreview(.init(requestId: requestId, text: "", receivedAtElapsedMs: elapsedMillis())))
+          }
+          useCompleteJSON = true
+          continue
+        }
+
+        let incomplete = roundFailure?.error ?? (!roundCompleted ? ModelStreamError(
+          code: "STREAM_INTERRUPTED", message: "The provider stream ended before completion", retryable: true
+        ) : nil)
+        if let incomplete, CloudResearchRuntimeBudget.canRecover(incomplete),
+           CloudResearchRuntimeBudget.hasCitableEvidence(evidenceResults) {
+          if previewShown {
+            continuation.yield(.citationPreview(.init(requestId: requestId, text: "", receivedAtElapsedMs: elapsedMillis())))
+          }
+          if research.requestInterruptedSynthesis(hasEvidence: true, finalizing: finalRound) {
+            progress.requestFinalization()
+            prepared.appendResearchGuidance(research.guidance(stopped: "model_round_interrupted"))
+            continue
+          }
+          finishEvidenceOnly(evidenceResults, requestId: requestId, sequence: emittedSequence + 1,
+            ticket: ticket, continuation: continuation)
+          return
+        }
 
         if let failure = roundFailure {
           if previewShown {
@@ -363,10 +433,11 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
               receivedAtElapsedMs: elapsedMillis()
             )))
           }
-          if !emittedText && failure.error.code == "STREAM_UNSUPPORTED" {
+          if let legacySender, !emittedText && currentRound == 0 && failure.error.code == "STREAM_UNSUPPORTED" {
             let fallbackAudit = try await beginCollaborationAudit(scope: collaborationModelAudit, round: currentRound,
               request: roundRequest, route: .compatibility, contact: contact, store: store)
             await emitLegacyConversation(
+              sender: legacySender,
               contact: contact,
               store: store,
               turns: turns,
@@ -459,6 +530,30 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             prepared.appendInlineToolRepairPrompt(rawRoundText)
             continue
           }
+          if bufferForCitationVerification, !CloudWebGrounding.containsInternalToolProtocol(rawRoundText),
+             research.requestEmptySynthesis(rawRoundText,
+               hasEvidence: CloudResearchRuntimeBudget.hasCitableEvidence(evidenceResults)) {
+            progress.requestFinalization()
+            prepared.appendResearchGuidance(research.guidance(stopped: "empty_synthesis"))
+            continue
+          }
+          if bufferForCitationVerification {
+            let draft = CloudWebGrounding.stripInternalToolProtocol(rawRoundText)
+            if !draft.isBlank, let qualityReview = CloudResearchQualityStandard.repairIfNeeded(draft, evidence: evidenceResults),
+               !CloudWebGrounding.citationValidation(draft, results: evidenceResults).requiresRepair {
+              if previewShown {
+                continuation.yield(.citationPreview(.init(requestId: requestId, text: "", receivedAtElapsedMs: elapsedMillis())))
+              }
+              if progress.requestRepair("stream_research_quality") {
+                prepared.appendResearchQualityRepair(draft: draft, prompt: qualityReview)
+                progress.requestFinalization()
+                continue
+              }
+              finishEvidenceOnly(evidenceResults, requestId: requestId, sequence: emittedSequence + 1,
+                ticket: ticket, continuation: continuation)
+              return
+            }
+          }
           if bufferForCitationVerification {
             let candidate = CloudWebGrounding.stripInternalToolProtocol(rawRoundText)
             if !finalRound, prepared.canRequestBodyReadingReview, progress.performedDeepResearch,
@@ -497,6 +592,11 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             let visibleAnswer = !candidate.isBlank && repairPrompt == nil
               ? AgentIOSWebEvidenceVerification.resolveCitations(candidate, encodedToolResults: evidenceResults).text
               : CloudWebGrounding.evidenceFallback(results: evidenceResults)
+            if !candidate.isBlank, repairPrompt == nil, roundCompleted,
+               !CloudWebGrounding.containsInternalToolProtocol(rawRoundText),
+               CloudImageAnnotationSession.artifactSuffix(requestId: requestId).isEmpty {
+              await recovery?.recordFinal(visibleAnswer, store: store)
+            }
             if !visibleAnswer.isBlank {
               emittedText = true
               emittedSequence += 1
@@ -611,17 +711,26 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           let key = progress.semanticKey(toolName: call.name, arguments: arguments)
           return freshKeys.insert(key).inserted ? call : nil
         }
+        guard research.reserveTools(preparedCalls.count) else {
+          progress.requestFinalization()
+          prepared.appendResearchGuidance(research.guidance(stopped: research.stopReason ?? "tool_batch_limit"))
+          continue
+        }
 
         var outcomes = await executeToolCalls(
           preparedCalls,
           context: CloudConversationToolExecutionContext(
             requestId: requestId,
+            researchToolTimeoutMillis: research.limits.toolMillis,
             conversationId: conversationId,
             turnId: turnId,
             images: images,
             readOnlyAnalysis: turns.last?.readOnlyAnalysis ?? false,
             researchDisclosure: researchDisclosure
           ),
+          onObservation: { call, output in
+            await recovery?.record(call: call, output: output, store: store)
+          },
           collaborationRecall: collaborationRecallScope.map { scope in
             { arguments in
               await MainActor.run {
@@ -686,6 +795,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         }
 
         var madeProgress = false
+        var newResearchEvidence = false
+        let retrievalBatch = parsedCalls.contains { CloudResearchRuntimeBudget.isRetrievalTool($0.0.name) }
         var workflowCheckResults: [String: String] = [:]
         var publicationResults: [String: String] = [:]
         var sourceAccessResults: [String: String] = [:]
@@ -722,6 +833,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             continue
           }
           if progress.record(toolName: outcome.call.name, arguments: arguments, output: output) {
+            newResearchEvidence = research.observe(tool: outcome.call.name, output: output) || newResearchEvidence
             madeProgress = true
             if AgentCollaborationCandidateRecall.isHistoryCall(outcome.call.name, arguments) { continue }
             if outcome.call.name.lowercased() != CloudImageAnnotationPlan.toolName &&
@@ -772,7 +884,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         } else {
           try prepared.appendToolResults(promptResults)
         }
-        if !madeProgress {
+        if retrievalBatch {
+          research.finishRetrievalBatch(madeProgress: newResearchEvidence)
+          if research.stopReason == nil { prepared.appendResearchGuidance(research.guidance()) }
+        } else if !madeProgress {
           progress.requestFinalization()
         }
       }
@@ -789,6 +904,17 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       continuation.yield(.failed(ModelStreamFailed(requestId: requestId, error: streamError)))
     }
     setActiveRound(nil, for: requestId)
+    continuation.finish()
+  }
+
+  private func finishEvidenceOnly(_ evidence: [(String, String)], requestId: String, sequence: Int64,
+    ticket: AgentDisclosureTicket, continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation) {
+    let now = elapsedMillis()
+    let fallback = CloudWebGrounding.evidenceFallback(results: evidence) +
+      CloudImageAnnotationSession.artifactSuffix(requestId: requestId)
+    continuation.yield(.textDelta(.init(requestId: requestId, sequence: sequence, text: fallback, receivedAtElapsedMs: now)))
+    AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .sent)
+    continuation.yield(.completed(.init(requestId: requestId, finishReason: "evidence_only", completedAtElapsedMs: now)))
     continuation.finish()
   }
 
@@ -816,6 +942,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
   }
 
   private func emitLegacyConversation(
+    sender: CloudConversationLegacySending,
     contact: GalaxySSIContact,
     store: GalaxySSIStore,
     turns: [ChatMessage],
@@ -836,12 +963,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     }
     do {
       try Task.checkCancellation()
-      let text = try await legacySender.send(
-        contact: contact,
-        store: store,
-        turns: turns,
-        images: images
-      )
+      let text = try await sender.send(contact: contact, store: store, turns: turns, images: images)
       let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !cleanText.isEmpty else {
         throw GalaxySSIError.unsupportedResponse
@@ -898,6 +1020,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
   private func executeToolCalls(
     _ calls: [AssembledToolCall],
     context: CloudConversationToolExecutionContext,
+    onObservation: ((AssembledToolCall, String) async -> Void)? = nil,
     collaborationRecall: ((AgentMcpJSONObject) async -> AgentMcpJSONObject?)? = nil,
     collaborationPublish: ((AgentMcpJSONObject) async -> AgentMcpJSONObject?)? = nil
   ) async -> [ToolExecutionOutcome] {
@@ -945,6 +1068,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
 
         var completed: [ToolExecutionOutcome] = []
         for await outcome in group {
+          if let output = outcome.output { await onObservation?(outcome.call, output) }
           completed.append(outcome)
         }
         return completed.sorted { $0.index < $1.index }
@@ -993,7 +1117,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     ModelStreamError(
       code: "STREAM_FAILED",
       message: error.localizedDescription.ifBlank(String(describing: error)),
-      retryable: false,
+      retryable: CloudResearchRuntimeBudget.canRecover(error),
       partialResponse: partialResponse
     )
   }

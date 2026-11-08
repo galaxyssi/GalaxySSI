@@ -8,6 +8,7 @@ protocol CloudConversationToolExecuting {
 
 struct CloudConversationToolExecutionContext: Equatable {
   var requestId: String
+  var researchToolTimeoutMillis = CloudResearchRuntimeBudget.Limits().toolMillis
   var conversationId: String
   var turnId: String
   var images: [CloudImagePayload] = []
@@ -353,6 +354,8 @@ struct CloudWebGroundingToolExecutor: CloudConversationToolExecuting {
       turnId: context.turnId,
       callerId: "galaxyssi.ios_cloud_stream",
       requestedAtEpochMillis: nowMillis(),
+      deadlineEpochMillis: CloudResearchRuntimeBudget.isRetrievalTool(call.name)
+        ? AgentControlPlaneClock.nowMillis() + context.researchToolTimeoutMillis : nil,
       idempotencyKey: "\(context.requestId):\(call.callId)",
       grantedPermissions: [AgentIOSWebIntelligenceNativeToolCatalog.networkPermission],
       grantedConsents: [AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent],
@@ -550,6 +553,15 @@ struct CloudModelStreamMutableConversation {
       )
     }
     appendPlainConversationTurn(role: "user", text: CloudWebGrounding.inlineEvidenceMessage(evidence))
+  }
+
+  mutating func appendResearchGuidance(_ text: String) {
+    appendPlainConversationTurn(role: "user", text: text)
+  }
+
+  mutating func appendResearchQualityRepair(draft: String, prompt: String) {
+    appendCitationRepairPrompt(draft: draft, prompt: prompt)
+    body.removeValue(forKey: "toolConfig")
   }
 
   private mutating func prepareFinalRound() {

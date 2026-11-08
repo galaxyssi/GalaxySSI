@@ -29,6 +29,9 @@ final class CloudCitationPreview {
           resolution.unresolved.isEmpty,
           CloudWebGrounding.citationValidation(prefix, results: evidence).valid,
           prefix != published else { return nil }
+    guard CloudResearchQualityStandard.bundled?.assess(prefix, researchObserved: true).risks.isEmpty != false else {
+      return nil
+    }
     published = prefix
     return prefix
   }
@@ -260,7 +263,8 @@ enum CloudWebGrounding {
       "max_results, and only search again when relevant evidence is missing. " +
       "For image-only replies, put a short neutral caption only in each Markdown image alt text; do not repeat captions " +
       "as a list or claim visual details that were not verified. Never infer an unknown update time from today's date. " +
-      "Return a normal final answer after tool use. Never invent links or print tool-call markup."
+      "Return a normal final answer after tool use. Never invent links or print tool-call markup." +
+      (CloudResearchQualityStandard.bundled.map { "\n\n" + $0.prompt } ?? "")
   }
 
   static func openAiTools() -> [AgentMcpJSONObject] {
