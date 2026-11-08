@@ -2434,9 +2434,17 @@ final class AgentTeamExecutionHistoryStore {
     let hash = Self.replyHash(raw)
     do {
       guard let envelope = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8)),
-            !envelope.string("summary").isBlank,
-            let drafts = try? AgentCollaborationResearchEnvelope.publication(in: raw)
+            !envelope.string("summary").isBlank
       else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      let drafts: [AgentCollaborationResearchDraft]
+      do {
+        guard let decoded = try AgentCollaborationResearchEnvelope.publication(in: raw) else {
+          throw AgentTeamHistoryDatabase.Failure.corrupt
+        }
+        drafts = decoded
+      } catch is DecodingError {
+        throw AgentTeamHistoryDatabase.Failure.corrupt
+      }
       let receipt = try publishResearchObjects(drafts, runId: scope.runId, conversationId: scope.conversationId,
         turnId: scope.turnId, memberId: scope.memberId, sourceId: scope.sourceId, milestone: (id, hash))
       return Self.milestoneReceipt(receipt, id: id, status: "published")
@@ -2444,6 +2452,8 @@ final class AgentTeamExecutionHistoryStore {
       return try retainRejectedMilestone(raw, id: id, hash: hash, scope: scope, reason: "rejected", problem: feedback.problem)
     } catch let storage as AgentCollaborationExperimentResultFeedback.StorageFailure {
       throw storage.underlying
+    } catch let error as AgentCollaborationResearchEnvelope.InvalidNotes {
+      return try retainRejectedMilestone(raw, id: id, hash: hash, scope: scope, reason: "invalid_artifact", problem: error.problem)
     } catch AgentTeamHistoryDatabase.Failure.corrupt {
       return try retainRejectedMilestone(raw, id: id, hash: hash, scope: scope, reason: "invalid_artifact")
     } catch AgentTeamHistoryDatabase.Failure.stale {
@@ -2465,6 +2475,12 @@ final class AgentTeamExecutionHistoryStore {
               key: "native-evidence-revoked", revision: 0) != true
       else { throw AgentTeamHistoryDatabase.Failure.stale }
       let base = Self.researchPublicationKey(runId: scope.runId, memberId: scope.memberId, sourceId: scope.sourceId)
+      // A stricter decoder must not invalidate an exact receipt committed by an older app.
+      if let accepted = try database.researchRecord(AgentCollaborationResearchPublication.self,
+        conversationId: scope.conversationId, key: Self.milestoneKey(base, id: id), revision: 0),
+        accepted.requestHash == hash {
+        return Self.milestoneReceipt(accepted, id: id, status: "published")
+      }
       let key = Self.milestoneRejectionKey(base, id: id, hash: hash)
       if let saved = try database.researchRecord(AgentCollaborationMilestoneRejection.self,
         conversationId: scope.conversationId, key: key, revision: 0) {
@@ -2513,6 +2529,9 @@ final class AgentTeamExecutionHistoryStore {
       guard envelope.format == AgentCollaborationResearchEnvelope.wireFormat else { return }
       drafts = envelope.workspace ?? []
       milestones = envelope.milestones ?? []
+    } catch let error as AgentCollaborationResearchEnvelope.InvalidNotes {
+      try recordResearchRejection(raw, scope: scope, reason: .malformedEnvelope, problem: error.problem)
+      throw error
     } catch {
       try recordResearchRejection(raw, scope: scope, reason: .malformedEnvelope)
       throw error
