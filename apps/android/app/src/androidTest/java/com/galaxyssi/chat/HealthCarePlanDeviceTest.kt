@@ -67,6 +67,20 @@ class HealthCarePlanDeviceTest {
         assertTrue(runCatching { store.proposePlan(plan.copy(requestHash = "b".repeat(64))) }.exceptionOrNull() is HealthCareConflict)
         assertEquals(plan, store.plan(plan.id))
     }
+    @Test fun recordedPlanProgressIncludesDismissalsButNotFutureOrForeignPlans(): Unit = fixture { names, store, plan ->
+        val id = plan.grant.concernId
+        assertTrue(store.hasRecordedPlan(id, plan.createdAt))
+        assertFalse(store.hasRecordedPlan(id, plan.createdAt - 1))
+        assertFalse(store.hasRecordedPlan(UUID.randomUUID().toString(), Long.MAX_VALUE))
+        store.dismissPlan(plan.id, System.currentTimeMillis())
+        HealthCareStore(context, names.care).use { reopened ->
+            assertTrue(reopened.hasRecordedPlan(id, Long.MAX_VALUE))
+            assertTrue(reopened.pendingPlans(id).isEmpty())
+            val issue = reopened.concern(id)!!
+            reopened.delete(id, issue.revision)
+            assertFalse(reopened.hasRecordedPlan(id, Long.MAX_VALUE))
+        }
+    }
     @Test fun acceptanceIsAtomicSelectiveAndRejectsDuplicateButtonDelivery(): Unit = fixture { names, store, plan ->
         val before = store.history(plan.grant.concernId).size
         val next = accept(names, store, plan)

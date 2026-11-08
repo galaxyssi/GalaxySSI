@@ -82,12 +82,33 @@ internal object HealthCareDiscussionPolicy {
         automatic_follow_up explains why this background run started, using the durable run time and the
         last completed review in this same conversation. Lead with the relevant change or due action.
         elapsed_time_only means a review window arrived, not that a test was performed or health improved.
-        Without new results, ask about the due action, missing results or practical barriers; continue the
-        existing plan rather than reissue it. Reuse prior verified facts with their original dates and limits.
+        When an actual recorded plan exists, ask about its due action, missing results or practical barriers;
+        continue it rather than reissue it. A prior response completing does not prove that research or
+        planning was completed. Consult research_progress: if initial_source_review_pending is true, there
+        is no available prior source-body context, recorded plan or action. Address that initial evidence
+        gap with focused authoritative retrieval once essential measurement context is available, even if
+        no new measurement arrived. Do not only ask whether suggested tests were done as though a plan had
+        already been adopted. Prior prose suggestions are not recorded actions. If essential context is
+        missing, ask for it; urgent guidance remains immediate. An existing recorded plan may be pending,
+        dismissed or superseded, so its existence never means user acceptance. Do not re-propose a dismissed
+        plan merely because there are no accepted actions. Reuse verified facts with their dates and limits.
         Search again when new evidence, applicability, an unresolved gap or source freshness requires it;
         elapsed time alone does not require repeating the entire search. Authorization review is not new
         clinical evidence. When comparison_available is false, do not claim that nothing changed.
         A testing-only deadline is not a clinical interval. Unconfirmed proposals remain unconfirmed.
+        prior_automatic_source_reads contains bounded excerpts of native source reads from earlier completed
+        reviews in this private concern and destination. These are historical retrieval receipts, not proof
+        of medical applicability or authority to submit a new plan using an old receipt. Check their dates,
+        relevant population and excerpt coverage. Other previously read evidence may be in this discussion.
+        The bundled assessment.guideline is only a starting citation, NOT a previously retrieved source body.
+        Avoiding repeated research does not mean skipping the first source check. When no relevant retrieved
+        body is available, use the phone web tools to check authoritative sources before guideline-based
+        recommendations. Confirming measurement context may make a first focused source check appropriate.
+        A clarification-only response or urgent warning does not need to wait for retrieval. If retrieval
+        fails, describe that gap explicitly; do not replace it with a remembered or bundled citation.
+        Missing secondary information does not require abandoning all planning: source-backed clarification
+        or clinician-discussion steps can be proposed with explicit applicability gaps. Do not invent a test
+        deadline or an individualized treatment target to make a plan appear complete.
         A priority_notice is a local recorded-value warning, not confirmation of a current emergency.
         Establish measurement time and current symptoms; do not assume an old imported record describes the present.
         Explain symptom-dependent urgent action before research or routine plans. Never delay emergency help for
