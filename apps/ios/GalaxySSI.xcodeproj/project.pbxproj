@@ -980,6 +980,7 @@
     A10000000000000000000197 /* AgentTaskRequirementAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000197 /* AgentTaskRequirementAnalyzer.swift */; };
     D12649000000000000000001 /* AgentCodeDiscussionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22649000000000000000001 /* AgentCodeDiscussionPolicy.swift */; };
     A10000000000000000000198 /* AgentDynamicTeamModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000198 /* AgentDynamicTeamModels.swift */; };
+    A10000000000000000000F8D /* AgentCollaborationProcedure.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000F8D /* AgentCollaborationProcedure.swift */; };
     A1000000000000000000E359 /* AgentCollaborationTypedRecordValidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000E359 /* AgentCollaborationTypedRecordValidation.swift */; };
     ED3520000000000000000001 /* AgentCollaborationPromptBudget.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED3520000000000000000002 /* AgentCollaborationPromptBudget.swift */; };
     ED3520000000000000000003 /* AgentCollaborationCapabilityPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED3520000000000000000004 /* AgentCollaborationCapabilityPage.swift */; };
@@ -2187,6 +2188,7 @@
     A20000000000000000000197 /* AgentTaskRequirementAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskRequirementAnalyzer.swift; sourceTree = "<group>"; };
     D22649000000000000000001 /* AgentCodeDiscussionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCodeDiscussionPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000198 /* AgentDynamicTeamModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDynamicTeamModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000F8D /* AgentCollaborationProcedure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationProcedure.swift; sourceTree = "<group>"; };
     A2000000000000000000E359 /* AgentCollaborationTypedRecordValidation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationTypedRecordValidation.swift; sourceTree = "<group>"; };
     ED3520000000000000000002 /* AgentCollaborationPromptBudget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationPromptBudget.swift; sourceTree = "<group>"; };
     ED3520000000000000000004 /* AgentCollaborationCapabilityPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationCapabilityPage.swift; sourceTree = "<group>"; };
@@ -2975,6 +2977,7 @@
         A20000000000000000000197 /* AgentTaskRequirementAnalyzer.swift */,
         D22649000000000000000001 /* AgentCodeDiscussionPolicy.swift */,
         A20000000000000000000198 /* AgentDynamicTeamModels.swift */,
+        A20000000000000000000F8D /* AgentCollaborationProcedure.swift */,
         A2000000000000000000E359 /* AgentCollaborationTypedRecordValidation.swift */,
         ED3520000000000000000002 /* AgentCollaborationPromptBudget.swift */,
         ED3520000000000000000004 /* AgentCollaborationCapabilityPage.swift */,
@@ -4290,6 +4293,7 @@
         A10000000000000000000197 /* AgentTaskRequirementAnalyzer.swift in Sources */,
         D12649000000000000000001 /* AgentCodeDiscussionPolicy.swift in Sources */,
         A10000000000000000000198 /* AgentDynamicTeamModels.swift in Sources */,
+        A10000000000000000000F8D /* AgentCollaborationProcedure.swift in Sources */,
         A1000000000000000000E359 /* AgentCollaborationTypedRecordValidation.swift in Sources */,
         ED3520000000000000000001 /* AgentCollaborationPromptBudget.swift in Sources */,
         ED3520000000000000000003 /* AgentCollaborationCapabilityPage.swift in Sources */,
