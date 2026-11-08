@@ -238,7 +238,8 @@ final class MqttPeerRoutes {
     return await pool.publish(publication, brokerID: packet.ingress.brokerID).accepted
   }
 
-  func publishIngressReply(_ packet: VerifiedPacket, payload: [String: Any]) async throws -> Bool {
+  func publishIngressReply(_ packet: VerifiedPacket, payload: [String: Any],
+                           stillValid: @escaping () throws -> Bool = { true }) async throws -> Bool {
     let publication = try withCurrentIdentity(packet) { identity in
       guard let peer = peers[identity.scope] else { throw MqttRouteError.identityChanged }
       let binding = peer.binding
@@ -246,7 +247,9 @@ final class MqttPeerRoutes {
         generation: packet.ingress.generation, receiveTopics: binding.receiveTopics,
         secretFingerprint: binding.secretFingerprint, authorized: { [weak self, weak peer] in
           guard let self, let peer else { return false }
-          return self.locked { self.current(peer, binding: binding) && self.isCurrent(packet) }
+          return self.locked {
+            self.current(peer, binding: binding) && self.isCurrent(packet) && (try? stillValid()) == true
+          }
         })
     }
     return await pool.publish(publication, brokerID: packet.ingress.brokerID).accepted

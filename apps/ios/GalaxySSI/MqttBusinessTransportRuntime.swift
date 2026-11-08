@@ -43,6 +43,7 @@ final class MqttBusinessTransportRuntime {
     let signal: AsyncStream<AgentMcpJSONObject>.Continuation
   }
   private var evidenceWaiters: [String: EvidenceWaiter] = [:]
+  private final class LogicalReceiptWire { var payload: [String: Any]? }
   private let attachmentQueue = DispatchQueue(label: "galaxyssi.mqtt.peer-attachments", qos: .utility)
 
   // The caller must first quiesce legacy Signal, inbox and outbox writers. Once this returns a
@@ -451,7 +452,8 @@ final class MqttBusinessTransportRuntime {
     }
     guard packet.payload["scheme"] as? String == "signal" else { return }
     let accepted = try routes.decryptAndStore(packet, using: engine, remoteName: remoteName)
-    if let receipt = accepted.receipt, packet.payload[MqttDeliveryEnvelope.field] != nil {
+    guard let receipt = accepted.receipt else { return }
+    if packet.payload[MqttDeliveryEnvelope.field] != nil {
       let frame = try MqttDeliveryEnvelope.parseVerifiedFrame(packet.payload, sender: packet.sender,
         receiver: packet.receiver, ingressBroker: packet.ingress.brokerID)
       _ = await receiptRetry.offer(scope: packet.scope, message: receipt.messageID, attempt: frame.attempt.attemptID,
@@ -459,6 +461,8 @@ final class MqttBusinessTransportRuntime {
           guard let routes else { return false }
           return try await routes.publishStoredReceipt(packet, inbox: journal.inbox)
         }
+    } else {
+      await offerLogicalReceipt(packet, proof: receipt, remoteName: remoteName)
     }
   }
 
@@ -469,13 +473,42 @@ final class MqttBusinessTransportRuntime {
     if let state {
       _ = try await routes.publishIngressReply(packet, payload: state)
     }
-    guard !stopped, let proof else { return }
-    if let wire = try routes.withCurrentIdentity(packet, commit: { identity in
-      try engine.makeStoredReceiptWire(identity: identity, messageID: proof.messageID,
-        wireHash: proof.wireHash, remoteName: remoteName)
-    }) {
-      _ = try await routes.publishIngressReply(packet, payload: wire)
+    if !stopped, let proof { await offerLogicalReceipt(packet, proof: proof, remoteName: remoteName) }
+  }
+
+  private func offerLogicalReceipt(_ packet: MqttPeerRoutes.VerifiedPacket, proof: MqttBusinessInbox.Receipt,
+                                   remoteName: String) async {
+    let cache = LogicalReceiptWire()
+    let ingress = packet.ingress
+    let retryIdentity = [proof.identity.binding, ingress.configurationID, ingress.brokerID,
+      String(ingress.generation), proof.wireHash].joined(separator: "\0")
+    let attempt = "logical:" + MqttRouteProtocol.digest(Data(retryIdentity.utf8))
+    _ = await receiptRetry.offer(scope: packet.scope, message: proof.messageID, attempt: attempt,
+      now: monotonic()) { [weak self] in
+        guard let self else { return false }
+        return try await self.publishLogicalReceipt(packet, proof: proof, remoteName: remoteName, cache: cache)
+      }
+  }
+
+  private func publishLogicalReceipt(_ packet: MqttPeerRoutes.VerifiedPacket, proof: MqttBusinessInbox.Receipt,
+                                     remoteName: String, cache: LogicalReceiptWire) async throws -> Bool {
+    guard !stopped else { return false }
+    let inbox = journal.inbox
+    let stillValid = {
+      try inbox.storedReceipt(identity: proof.identity, messageID: proof.messageID, wireHash: proof.wireHash) != nil
     }
+    let destination = try peerChatProjection?.currentDestination(proof.identity)
+    let peerChat = destination?.desktop == false
+    let payload: [String: Any]? = try routes.withCurrentIdentity(packet) { identity in
+      guard identity == proof.identity, try stillValid() else { return nil }
+      if cache.payload == nil {
+        cache.payload = try engine.makeStoredReceiptWire(identity: identity, messageID: proof.messageID,
+          wireHash: proof.wireHash, remoteName: remoteName, peerChat: peerChat)
+      }
+      return cache.payload
+    }
+    guard let payload else { return false }
+    return try await routes.publishIngressReply(packet, payload: payload, stillValid: stillValid)
   }
 
   private func storeChunks(_ packet: MqttPeerRoutes.VerifiedPacket, identity: MqttBusinessIdentity,

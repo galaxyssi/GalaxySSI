@@ -432,9 +432,9 @@ final class GalaxySSISignalEngine {
     }
   }
 
-  // A lost receipt is replayed by a peer probe, not placed in the business outbox.
+  // A peer replay can regenerate this receipt without putting it in the business outbox.
   func makeStoredReceiptWire(identity: MqttBusinessIdentity, messageID: String, wireHash: String,
-                             remoteName: String) throws -> [String: Any]? {
+                             remoteName: String, peerChat: Bool = false) throws -> [String: Any]? {
     guard let journal, identity.local == Self.sha256(store.identityKeyPair.publicKey.serialize()) else {
       throw MqttRouteError.identityChanged
     }
@@ -448,7 +448,11 @@ final class GalaxySSISignalEngine {
       let id = UUID().uuidString
       var receipt = try MqttDeliveryEnvelope.storedReceipt(messageID: messageID, wireHash: wireHash)
       receipt["message_id"] = id
+      receipt["source_message_id"] = messageID
+      receipt["sender"] = "system"
+      if peerChat { receipt["peer_chat"] = true }
       let now = Date()
+      receipt["time"] = Int64(now.timeIntervalSince1970 * 1000)
       let envelope = try GalaxySSILinkProtocol.makeEnvelope(payload: receipt, sourceId: localName, targetId: remoteName, now: now)
       var wire = try encryptPayload(GalaxySSILinkProtocol.jsonData(envelope), remoteName: remoteName, deviceID: 1, now: now)
       wire["message_id"] = id
@@ -647,7 +651,7 @@ final class GalaxySSISignalEngine {
   func encrypt(_ payload: [String: Any], remoteName: String, deviceId: UInt32 = 1) -> [String: Any]? { nil }
   func makeRecoveryQueryWire(_ request: MqttSignalSendRequest) throws -> Data { throw MqttRouteError.invalidPayload }
   func makeStoredReceiptWire(identity: MqttBusinessIdentity, messageID: String, wireHash: String,
-                             remoteName: String) throws -> [String: Any]? { throw MqttRouteError.invalidPayload }
+                             remoteName: String, peerChat: Bool = false) throws -> [String: Any]? { throw MqttRouteError.invalidPayload }
   func encryptAndEnqueue(_ request: MqttSignalSendRequest, now: Date = Date()) throws -> MqttBusinessOutbox.Entry { throw MqttRouteError.invalidPayload }
   func enqueueBatch(_ requests: [MqttSignalSendRequest], now: Date = Date()) throws -> [MqttBusinessOutbox.Entry] { throw MqttRouteError.invalidPayload }
   func prepareFirstSend(identity: MqttBusinessIdentity, messageID: String, validatedNetwork: Bool,
