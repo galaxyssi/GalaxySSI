@@ -683,15 +683,11 @@ final class AgentTeamExecutionHistoryStore {
     }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
-    func page(_ bytes: Data) throws -> (content: String, end: Int64, total: Int64) {
-      let characters = String(decoding: bytes, as: UTF8.self)
-      let total = Int64(characters.count)
-      guard offset <= total else { throw AgentTeamHistoryDatabase.Failure.corrupt }
-      let content = String(characters.dropFirst(Int(offset)).prefix(2_000))
-      return (content, offset + Int64(content.count), total)
+    func page(_ bytes: Data) throws -> AgentCollaborationEvidenceContent.Page {
+      try AgentCollaborationEvidenceContent.page(bytes, offset: offset, evidence: mode == "evidence")
     }
     let (slice, sourceReference, coverage) = try access { database
-      -> ((content: String, end: Int64, total: Int64), AgentMcpJSONObject?, AgentMcpJSONObject?) in
+      -> (AgentCollaborationEvidenceContent.Page, AgentMcpJSONObject?, AgentMcpJSONObject?) in
       guard let team = try database.snapshots(runId: scope.runId).first,
             team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
             team.members.contains(where: { $0.memberId == scope.memberId &&
@@ -721,7 +717,7 @@ final class AgentTeamExecutionHistoryStore {
       let previous = try database.researchRecord(AgentCollaborationReadCoverage.self,
         conversationId: scope.conversationId, key: key, revision: 0) ?? AgentCollaborationReadCoverage()
       var coverage = previous
-      coverage.include(start: offset, end: slice.end)
+      coverage.include(start: slice.ledgerStart, end: slice.ledgerEnd)
       if coverage != previous {
         try database.insertResearchRecord(coverage, conversationId: scope.conversationId,
           key: key, revision: 0, replaceCoverage: true)
@@ -735,15 +731,18 @@ final class AgentTeamExecutionHistoryStore {
     }
     var result: AgentMcpJSONObject = [
       idKey: .string(id), "sha256": .string(hash), "content": .string(slice.content),
-      "next_offset": slice.end < slice.total ? .int(slice.end) : .null,
+      "next_offset": slice.end < slice.wireTotal ? .int(slice.end) : .null,
       "trust": .string("untrusted_group_evidence")
     ]
-    if let coverage { result["host_read_coverage"] = .object(coverage) }
+    if let coverage { result["host_read_coverage"] = .object(try slice.wireCoverage(coverage)) }
     if let sourceReference {
+      result["offset_unit"] = .string(AgentCollaborationEvidenceContent.offsetUnit)
       result["source_reference"] = .object(sourceReference)
       result["citation_guidance"] = .string(
         "Cite the original observation using source_reference.evidence_id and source_reference.sha256. " +
-        "galaxyssi_evidence_receipt records this read, not the original observation. Follow next_offset until null; " +
+        "galaxyssi_evidence_receipt records this read, not the original observation. Follow next_offset until null. " +
+        "For a file digest, concatenate content pages exactly without reformatting and hash their UTF-8 bytes. " +
+        "Compare host_read_coverage.content_utf8_sha256, not the JSON-string digest content_sha256 or the citation SHA-256; " +
         "reading every page does not verify the claims in the source."
       )
     }

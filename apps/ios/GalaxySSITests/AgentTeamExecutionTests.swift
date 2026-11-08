@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 @testable import GalaxySSI
 
@@ -354,6 +355,13 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(full["first_missing_offset"], .null)
     let content = firstPage.string("content") + secondPage.string("content") + lastPage.string("content")
     XCTAssertTrue(content.contains("web_search"))
+    let fileDigest = SHA256.hash(data: Data(content.utf8)).map { String(format: "%02x", $0) }.joined()
+    XCTAssertEqual(full["content_utf8_sha256"], .string(fileDigest))
+    XCTAssertEqual(partial["content_utf8_sha256"], full["content_utf8_sha256"])
+    XCTAssertNotEqual(full["content_sha256"], full["content_utf8_sha256"])
+    XCTAssertEqual(full["content_sha256_encoding"], .string("galaxyssi_json_string_utf8_v1"))
+    XCTAssertEqual(full["content_digest_scope"], .string("complete_evidence_content"))
+    XCTAssertEqual(firstPage["offset_unit"], .string("utf16_code_units"))
     var invalidScope = scope
     invalidScope.memberId = "foreign-member"
     XCTAssertThrowsError(try reopened.recallCollaborationOriginal(input, scope: invalidScope))
@@ -404,6 +412,48 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(try publish(review).references, reviewPublication.references)
     let savedReview = try XCTUnwrap(reopened.committedResearchRevisions(scope: scope)?.first)
     XCTAssertEqual(savedReview.frozenCloudReads?.first?.evidenceId, source["evidence_id"]?.stringValue)
+  }
+
+  func testEvidenceUTF16PagesPreserveExistingCoverageAndExactBytes() throws {
+    let fragment = "\u{8BC1}\n\"quoted\"\\path\t\u{1F600}e\u{0301}"
+    let content = String(repeating: fragment, count: 340)
+    let bytes = Data(content.utf8)
+    func digest(_ value: String) -> AgentMcpJSONValue {
+      .string(SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined())
+    }
+    let first = try AgentCollaborationEvidenceContent.page(bytes, offset: 0, evidence: true)
+    XCTAssertEqual(first.ledgerEnd, 2_000)
+    XCTAssertEqual(first.end, Int64(first.content.utf16.count))
+    XCTAssertGreaterThan(first.end, first.ledgerEnd)
+    let legacy = Data(#"{"spans":[{"start":0,"end":2000}]}"#.utf8)
+    var coverage = try JSONDecoder().decode(AgentCollaborationReadCoverage.self, from: legacy)
+    let second = try AgentCollaborationEvidenceContent.page(bytes, offset: first.end, evidence: true)
+    XCTAssertEqual(try second.firstMissingOffset(coverage.contiguousEnd), .int(first.end))
+    XCTAssertEqual(second.wireTotal, Int64(content.utf16.count))
+    XCTAssertLessThan(coverage.contiguousEnd, second.total)
+    XCTAssertEqual(.string(second.rawDigest), digest(content))
+    XCTAssertEqual(.string(second.jsonStringDigest), digest(AgentMcpJSONCodec.stringify(.string(content))))
+    XCTAssertNotEqual(.string(second.rawDigest), digest(second.content))
+    XCTAssertEqual(coverage.spans, [.init(start: 0, end: 2_000)])
+    let emoji = try XCTUnwrap(content.firstIndex(of: "\u{1F600}"))
+    XCTAssertThrowsError(try AgentCollaborationEvidenceContent.page(bytes,
+      offset: Int64(emoji.utf16Offset(in: content) + 1), evidence: true))
+    var cursor = first.end
+    var joined = Data(first.content.utf8)
+    while cursor < first.wireTotal {
+      let page = try AgentCollaborationEvidenceContent.page(bytes, offset: cursor, evidence: true)
+      XCTAssertGreaterThan(page.end, cursor)
+      guard page.end > cursor else { return }
+      joined.append(contentsOf: page.content.utf8)
+      coverage.include(start: page.ledgerStart, end: page.ledgerEnd)
+      cursor = page.end
+    }
+    XCTAssertEqual(joined, bytes)
+    XCTAssertEqual(try first.firstMissingOffset(coverage.contiguousEnd), .null)
+    XCTAssertEqual(first.rawDigest, second.rawDigest)
+    XCTAssertEqual(coverage.contiguousEnd, Int64(content.count))
+    let workspace = try AgentCollaborationEvidenceContent.page(bytes, offset: 0, evidence: false)
+    XCTAssertEqual(workspace.end, workspace.ledgerEnd)
   }
 
   func testCommittedPredictionOutcomeRecoveryRequiresMatchingFrozenObservation() throws {
