@@ -3162,7 +3162,8 @@ final class MessageCoordinator: ObservableObject {
       "expires_at": .int(expiry), "phase": .string(phase), "delivery": delivery.map(AgentMcpJSONValue.object) ?? .null
     ]) { current, _ in current })
     let cached: AgentMcpJSONObject?
-    switch desktopCollaborationResponseReplay.lookup(key: key, fingerprint: fingerprint, now: now) {
+    switch desktopCollaborationResponseReplay.lookup(key: key, fingerprint: fingerprint, now: now,
+      revalidate: publishing && phase == "receipt") {
     case .identityMismatch: return
     case .missing: cached = nil
     case .response(let response): cached = response
@@ -3183,7 +3184,7 @@ final class MessageCoordinator: ObservableObject {
       result = page
     } else if publishing {
       do {
-        result = try history.publishCollaborationMilestone(input, scope: scope)
+        result = try history.publishCollaborationMilestone(input, scope: scope, desktopWire: true)
       } catch AgentTeamHistoryDatabase.Failure.corrupt {
         result["status"] = .string("invalid_artifact")
       } catch {}
@@ -3268,6 +3269,7 @@ final class MessageCoordinator: ObservableObject {
         }
       }
     }
+    if publishing { result = publication.result(result, phase: phase) }
     if cached == nil {
       desktopCollaborationResponseReplay.remember(result, key: key, fingerprint: fingerprint,
         expiresAt: expiry, now: AgentControlPlaneClock.nowMillis())
