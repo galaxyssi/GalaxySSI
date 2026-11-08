@@ -1,6 +1,19 @@
 import CryptoKit
 import Foundation
 
+struct LinkAttachmentDeclarationKey: Hashable {
+  let topic: String
+  let contactId: String
+  let sourceMessageId: String
+  let transferId: String
+  let declaration: String
+
+  var isValid: Bool {
+    !topic.isBlank && !contactId.isBlank && !sourceMessageId.isBlank && !declaration.isBlank &&
+      PendingLinkMessage.normalizedTransferIds([transferId]).first == transferId
+  }
+}
+
 struct PendingLinkMessage: Codable, Equatable, Identifiable {
   var id: String { messageId }
   var messageId: String
@@ -19,6 +32,15 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
   var clientSourceMessageId: String
   var contactId: String
   var backgroundLearning: Bool?
+  var attachmentDeclaration: String?
+
+  var pendingAttachmentDeclaration: LinkAttachmentDeclarationKey? {
+    guard ["queued", "publishing", "published"].contains(status), deferredTaskPayload == nil,
+          blockedByAttachmentTransferIds.isEmpty, let attachmentDeclaration else { return nil }
+    let key = LinkAttachmentDeclarationKey(topic: topic, contactId: contactId,
+      sourceMessageId: clientSourceMessageId, transferId: attachmentTransferId, declaration: attachmentDeclaration)
+    return key.isValid ? key : nil
+  }
 
   init(
     messageId: String,
@@ -35,7 +57,8 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     attachmentTransferId: String = "",
     clientSourceMessageId: String = "",
     contactId: String = "",
-    backgroundLearning: Bool = false
+    backgroundLearning: Bool = false,
+    attachmentDeclaration: String? = nil
   ) {
     self.messageId = messageId
     self.topic = topic
@@ -52,6 +75,7 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     self.clientSourceMessageId = clientSourceMessageId
     self.contactId = contactId
     self.backgroundLearning = backgroundLearning
+    self.attachmentDeclaration = attachmentDeclaration
   }
 
   enum CodingKeys: String, CodingKey {
@@ -71,6 +95,7 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     case clientSourceMessageId = "client_source_message_id"
     case contactId = "contact_id"
     case backgroundLearning = "background_learning"
+    case attachmentDeclaration = "attachment_declaration"
   }
 
   init(from decoder: Decoder) throws {
@@ -98,6 +123,7 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     clientSourceMessageId = try container.decodeIfPresent(String.self, forKey: .clientSourceMessageId) ?? ""
     contactId = try container.decodeIfPresent(String.self, forKey: .contactId) ?? ""
     backgroundLearning = try container.decodeIfPresent(Bool.self, forKey: .backgroundLearning)
+    attachmentDeclaration = try container.decodeIfPresent(String.self, forKey: .attachmentDeclaration)
   }
 
   static func normalizedTransferIds(_ transferIds: [String]) -> [String] {
@@ -126,6 +152,7 @@ struct LinkDeliveryEnqueueRequest: Equatable {
   var recoverableEnvelope: String = ""
   var attachmentTransferId: String = ""
   var backgroundLearning = false
+  var attachmentDeclaration: String? = nil
 }
 
 struct PendingIncomingLinkMessage: Codable, Equatable, Identifiable {
@@ -295,6 +322,53 @@ final class GalaxySSILinkDeliveryStore {
     } catch {
       journalHealthy = false
     }
+    compactAttachmentDeclarations()
+  }
+
+  // Untyped encrypted rows cannot be classified safely. Leave them and all attempted rows intact.
+  private func compactAttachmentDeclarations() {
+    guard journalHealthy else { return }
+    var earliest: [LinkAttachmentDeclarationKey: Int] = [:]
+    var removable: [Int] = []
+    for (index, item) in state.outbox.enumerated() {
+      guard let key = item.pendingAttachmentDeclaration, hasWirePayload(item) else { continue }
+      guard let previous = earliest[key] else { earliest[key] = index; continue }
+      let duplicate: Int
+      if item.createdAt < state.outbox[previous].createdAt {
+        earliest[key] = index
+        duplicate = previous
+      } else {
+        duplicate = index
+      }
+      let candidate = state.outbox[duplicate]
+      if candidate.status == "queued" && candidate.attempts == 0 { removable.append(duplicate) }
+    }
+    guard !removable.isEmpty else { return }
+    let original = state.outbox
+    let indices = Set(removable)
+    state.outbox = original.enumerated().compactMap { indices.contains($0.offset) ? nil : $0.element }
+    guard save() else { state.outbox = original; return }
+    for index in removable { deleteOutboxPayload(original[index]) }
+  }
+
+  func enqueueAttachmentDeclaration(
+    _ key: LinkAttachmentDeclarationKey, now: Date = Date(),
+    makeWire: () throws -> (messageId: String, wireText: String)
+  ) throws -> Bool {
+    guard journalHealthy, key.isValid else { return false }
+    if state.outbox.contains(where: { $0.pendingAttachmentDeclaration == key && hasWirePayload($0) }) {
+      return true
+    }
+    let wire = try makeWire()
+    guard !wire.messageId.isBlank, !wire.wireText.isBlank,
+          !state.outbox.contains(where: { $0.messageId == wire.messageId }) else { return false }
+    state.outbox.append(PendingLinkMessage(messageId: wire.messageId, topic: key.topic, wirePayload: wire.wireText,
+      status: "queued", attempts: 0, nextAttemptAt: now, createdAt: now, updatedAt: now,
+      requiresValidatedNetwork: true, attachmentTransferId: key.transferId,
+      clientSourceMessageId: key.sourceMessageId, contactId: key.contactId, attachmentDeclaration: key.declaration))
+    if save() { return true }
+    state.outbox.removeLast()
+    return false
   }
 
   @discardableResult
@@ -346,7 +420,7 @@ final class GalaxySSILinkDeliveryStore {
         createdAt: now, updatedAt: now, requiresValidatedNetwork: request.requiresValidatedNetwork,
         blockedByAttachmentTransferIds: PendingLinkMessage.normalizedTransferIds(request.blockedByAttachmentTransferIds),
         attachmentTransferId: request.attachmentTransferId, clientSourceMessageId: request.clientSourceMessageId,
-        contactId: request.contactId))
+        contactId: request.contactId, attachmentDeclaration: request.attachmentDeclaration))
     }
     if !messageId.isEmpty {
       state.pendingIncoming.removeValue(forKey: messageId)
@@ -376,7 +450,7 @@ final class GalaxySSILinkDeliveryStore {
         createdAt: now, updatedAt: now, requiresValidatedNetwork: request.requiresValidatedNetwork,
         blockedByAttachmentTransferIds: request.blockedByAttachmentTransferIds,
         attachmentTransferId: request.attachmentTransferId, clientSourceMessageId: request.clientSourceMessageId,
-        contactId: request.contactId)
+        contactId: request.contactId, attachmentDeclaration: request.attachmentDeclaration)
       if request.messageId == task.messageId { item.deferredTaskPayload = payload }
       state.outbox.append(item)
     }
@@ -505,7 +579,8 @@ final class GalaxySSILinkDeliveryStore {
           attachmentTransferId: request.attachmentTransferId,
           clientSourceMessageId: request.clientSourceMessageId,
           contactId: request.contactId,
-          backgroundLearning: request.backgroundLearning
+          backgroundLearning: request.backgroundLearning,
+          attachmentDeclaration: request.attachmentDeclaration
         )
       )
       if Data(request.recoverableEnvelope.utf8).count <= Self.maximumRecoverableEnvelopeBytes {
@@ -580,6 +655,7 @@ final class GalaxySSILinkDeliveryStore {
   func markPublished(messageId: String, now: Date = Date()) {
     updateOutbox(messageId: messageId) { item in
       let attempts = max(item.attempts, 1)
+      if item.attachmentDeclaration != nil { item.attempts = attempts }
       item.status = "published"
       item.nextAttemptAt = now.addingTimeInterval(GalaxySSILinkRetryPolicy.delaySeconds(attempt: attempts))
       item.updatedAt = now

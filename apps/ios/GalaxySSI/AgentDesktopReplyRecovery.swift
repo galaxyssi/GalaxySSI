@@ -113,6 +113,7 @@ struct AgentTeamDesktopReplySource: Codable, Equatable {
   var supervisorRunId: String
   var memberId: String
   var sourceMessageId: String
+  var primary: Bool? = nil
 }
 
 enum AgentDesktopCollaborationPublicationWire {
@@ -182,6 +183,32 @@ struct AgentDesktopCollaborationResponseReplay {
 
   private mutating func prune(now: Int64) {
     entries = entries.filter { $0.value.expiresAt > now }
+  }
+}
+
+struct AgentDesktopCollaborationCiphertextReplay {
+  private var expirations: [String: Int64] = [:]
+  private let maximumEntries = 256
+
+  static func key(wire: Data, profile: String, pair: String, route: String, secretFingerprint: String) -> String {
+    AgentMcpJSONCodec.sha256(["wire": .string(MqttRouteProtocol.digest(wire)), "profile": .string(profile),
+      "pair": .string(pair), "route": .string(route), "secret_fingerprint": .string(secretFingerprint)])
+  }
+
+  func contains(_ key: String, now: Int64) -> Bool {
+    expirations[key].map { $0 > now } ?? false
+  }
+
+  // Only call after Signal authentication on the bound Desktop route.
+  mutating func remember(_ key: String, now: Int64, expiresAt: Int64) {
+    guard now >= 0, expiresAt > now, expiresAt - now <= 60_000 else { return }
+    expirations = expirations.filter { $0.value > now }
+    guard expirations[key] == nil else { return }
+    if expirations.count >= maximumEntries,
+       let oldest = expirations.min(by: { $0.value < $1.value }) {
+      expirations.removeValue(forKey: oldest.key)
+    }
+    expirations[key] = expiresAt
   }
 }
 
@@ -269,7 +296,9 @@ struct AgentDesktopReplyBinding: Codable, Equatable {
   var key: String {
     var values = [desktopId, displayContactId] + fields.keys.sorted().map { fields[$0]! }
     if let managedSource { values += [managedSource.ownerRunId, String(managedSource.executionGeneration)] }
-    if let teamSource { values += ["team-observer", teamSource.supervisorRunId, teamSource.memberId] }
+    if let teamSource {
+      values += [teamSource.primary == true ? "team-primary" : "team-observer", teamSource.supervisorRunId, teamSource.memberId]
+    }
     if attemptSourceId != nil { values += ["codex-replay", sourceId.uuidString] }
     let data = (try? JSONEncoder().encode(values)) ?? Data()
     return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -311,6 +340,20 @@ struct AgentDesktopReplyBinding: Codable, Equatable {
       sourceId: source, contactId: owner.contactId, agentId: agentId, identity: identity,
       teamSource: AgentTeamDesktopReplySource(supervisorRunId: owner.supervisorRunId,
         memberId: owner.memberId, sourceMessageId: owner.sourceMessageId))
+    return binding.isValid ? binding : nil
+  }
+
+  static func teamPrimary(owner: AgentTeamReplyOwner, desktopId: String, agentId: String,
+                          identity: AgentTaskIdentity, outgoing: ChatMessage) -> AgentDesktopReplyBinding? {
+    guard owner.deliveryMode == .respond, UUID(uuidString: owner.sourceMessageId) != nil,
+          outgoing.isMine, !outgoing.isSystem, outgoing.conversationId == owner.conversationId,
+          outgoing.turnId.ifBlank(outgoing.id.uuidString) == owner.turnId,
+          identity.conversationId == owner.conversationId, identity.turnId == owner.turnId,
+          identity.taskId == owner.sourceMessageId else { return nil }
+    let binding = AgentDesktopReplyBinding(desktopId: desktopId, displayContactId: outgoing.contactId,
+      sourceId: outgoing.id, contactId: owner.contactId, agentId: agentId, identity: identity,
+      teamSource: AgentTeamDesktopReplySource(supervisorRunId: owner.supervisorRunId,
+        memberId: owner.memberId, sourceMessageId: owner.sourceMessageId, primary: true))
     return binding.isValid ? binding : nil
   }
 }

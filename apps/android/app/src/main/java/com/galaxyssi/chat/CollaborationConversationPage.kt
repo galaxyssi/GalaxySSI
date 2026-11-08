@@ -24,6 +24,7 @@ internal class CollaborationTranscriptRecyclerAdapter(private val host: MainActi
 }
 
 internal fun MainActivity.selectConversationOutputPage(collaboration: Boolean) {
+    healthCareSurface?.showForAgent(!collaboration)
     val target = findViewById<RecyclerView>(if (collaboration) R.id.collaborationOutputList else R.id.agentOutputList)
     val previous = agentOutputList
     findViewById<View>(R.id.agentOutputList).visibility = if (collaboration) View.GONE else View.VISIBLE

@@ -3,6 +3,94 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testSupervisedBrowserWaitBindsOriginalPlanActionMessageAndReceiptAcrossReload() throws {
+    let outgoing = ChatMessage(contactId: "agent", content: "Inspect the website", isMine: true,
+      conversationId: "conversation", turnId: "turn")
+    let scope = AgentPlanContinuationScope(conversationId: outgoing.conversationId, turnId: outgoing.turnId)
+    let action = scope.bind(AgentAction(id: "browser-action", kind: .callNativeTool,
+      target: AgentSupervisedBrowserWait.toolID, risk: .low, status: .proposed, description: "Browser handoff",
+      parameters: ["input_json": "{\"url\":\"https://example.test/login\"}"], requiresConfirmation: false))
+    var plan = AgentPlan(goal: outgoing.content, screen: .init(foregroundApp: "GalaxySSI", pageTitle: "Agent"),
+      steps: [], actions: [action], planId: "plan", revision: 3)
+    var task = AgentTaskRecord(taskId: outgoing.turnId, sessionId: outgoing.conversationId, goal: outgoing.content,
+      phase: .executing, routeKind: .localSystem, targetTitle: "Phone", risk: .low, blocked: false,
+      pendingAction: action, pendingActions: [action], activePlan: plan)
+    let wait = try XCTUnwrap(AgentSupervisedBrowserWait(task: task, outgoing: outgoing, action: action,
+      profileID: "profile", hostProcessID: "original-process"))
+    plan.actions[0].status = .waitingResponse
+    plan.actions[0].parameters[AgentSupervisedBrowserWait.requestReceiptKey] = AgentMcpJSONCodec.stringify(wait.requestReceipt)
+    task.activePlan = plan
+    task.supervisedBrowserWait = wait
+    task.phase = .waitingResponse
+    let restored = try JSONDecoder().decode(AgentTaskRecord.self, from: JSONEncoder().encode(task))
+    XCTAssertEqual(restored.supervisedBrowserWait, wait)
+    XCTAssertNotNil(wait.action(in: restored, outgoing: outgoing, profileID: "profile"))
+    XCTAssertNil(wait.action(in: restored, outgoing: outgoing, profileID: "other-profile"))
+    var wrong = outgoing
+    wrong.id = UUID()
+    XCTAssertNil(wait.action(in: restored, outgoing: wrong, profileID: "profile"))
+    var changed = restored
+    changed.activePlan?.revision = 4
+    XCTAssertNil(wait.action(in: changed, outgoing: outgoing, profileID: "profile"))
+    changed = restored
+    changed.pendingAction = nil
+    XCTAssertNil(wait.action(in: changed, outgoing: outgoing, profileID: "profile"))
+    changed = restored
+    changed.activePlan?.actions[0].parameters["input_json"] = "{\"url\":\"https://example.test/other\"}"
+    XCTAssertNil(wait.action(in: changed, outgoing: outgoing, profileID: "profile"))
+
+    let resolution = AgentSupervisedBrowserWait.Resolution.interrupted(.appProcessChanged)
+    XCTAssertTrue(wait.accepts(resolution))
+    var resolved = wait
+    resolved.resolution = resolution
+    XCTAssertFalse(resolved.accepts(.interrupted(.webContentProcessExited)))
+    XCTAssertEqual(resolved.requestReceipt, wait.requestReceipt)
+    XCTAssertEqual(resolution.output["user_returned_control"], .bool(false))
+    XCTAssertEqual(resolution.output["business_success_verified"], .bool(false))
+    task.pendingAction = nil
+    task.supervisedBrowserWait = resolved
+    task.activePlan?.actions[0].status = .failed
+    task.activePlan?.actions[0].parameters[AgentSupervisedBrowserWait.observationKey] =
+      AgentMcpJSONCodec.stringify(resolution.output)
+    XCTAssertNotNil(resolved.action(in: task, outgoing: outgoing, profileID: "profile"))
+    XCTAssertNil(wait.action(in: task, outgoing: outgoing, profileID: "profile"))
+  }
+
+  func testSupervisedNativeFailureKeepsBoundedRedactedDiagnosticsSeparateFromOutput() throws {
+    var native = nativeToolResult(status: .verificationFailed, invocationId: "verify-effect", idempotencyKey: "effect")
+    native.output = ["outcome_state": .string("unknown"), "safe_value": .int(7)]
+    native.error = AgentNativeToolError(code: "native_verification_failed",
+      message: "Request https://example.test/?token=hidden-url-value", retryable: false, details: [
+        "authorization": .string("hidden-authorization"),
+        "nested": .object(["set-cookie": .string("hidden-cookie")]),
+        "diagnostic": .string(String(repeating: "verbose", count: 900))
+      ])
+    native.verification = .init(status: .failed, message: "Cookie: hidden-verification")
+    let original = native
+    let diagnostic = try XCTUnwrap(AgentNativeFailureObservation.encode(native))
+    let fields = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(diagnostic.utf8))
+    XCTAssertEqual(fields["outcome_unknown"], .bool(true))
+    XCTAssertEqual(fields["details_partial"], .bool(true))
+    XCTAssertEqual(fields["verification_status"], .string("failed"))
+    XCTAssertNotNil(fields["details_sha256"])
+    for secret in ["hidden-url-value", "hidden-authorization", "hidden-cookie", "hidden-verification"] {
+      XCTAssertFalse(diagnostic.contains(secret))
+    }
+    XCTAssertLessThan(diagnostic.utf8.count, 3_000)
+    XCTAssertEqual(native, original)
+    var action = AgentAction(id: "action", kind: .callNativeTool, target: "phone.test.tool", risk: .low,
+      status: .failed, description: "Verify the effect", parameters: [:], requiresConfirmation: false)
+    let output = AgentMcpJSONCodec.stringify(native.output)
+    action.evidence = output
+    AgentCompletionEvidencePolicy.recordObservationEnvelope(.init(actionId: action.id, success: false,
+      message: "Unverified", metadata: [AgentNativeFailureObservation.metadataKey: diagnostic]), action: &action)
+    let summary = try XCTUnwrap(AgentPlannerObservation.nativeFailureSummary(action))
+    XCTAssertEqual(summary["error_code"] as? String, "native_verification_failed")
+    XCTAssertEqual(summary["outcome_unknown"] as? Bool, true)
+    XCTAssertEqual(action.evidence, output)
+    XCTAssertNil(AgentNativeFailureObservation.encode(nativeToolResult(invocationId: "success", idempotencyKey: "other")))
+  }
+
   func testDeviceStateEvidenceRequiresTypedReadbackForTheExactRequest() {
     let tool = AgentIOSSystemNativeToolCatalog.audioVolumeSet
     let input: AgentMcpJSONObject = ["stream": .string("media"), "percent": .int(50)]
