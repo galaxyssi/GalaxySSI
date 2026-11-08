@@ -1,0 +1,17 @@
+<resources>
+    <string name="health_target_plan_pending">目标与计划待确认（%1$d 项行动）</string>
+    <string name="health_target_adopt">采纳此个体化目标</string>
+    <string name="health_target_replace">复核后替换当前目标</string>
+    <string name="health_target_scope">用户确认不等于医生认可。此目标只适用于标明的分项，不代表整个指标或整体健康。一条结果进入目标范围不能证明已经稳定；请勿据此调整药物。</string>
+    <string name="health_target_change_notice">目标变化后，原行动和提醒需要重新评估。旧目标和确认记录保留在加密历史中。</string>
+    <string name="health_target_review_required">目标待复核：报告或检测背景已变化，或缺少原始确认依据。</string>
+    <string name="health_target_not_comparable">本次结果无法与此目标进行数值比较。</string>
+    <string name="health_target_below">本次记录的分项低于已确认目标。</string>
+    <string name="health_target_within">本次记录的分项在已确认目标内，尚不能据此判断稳定。</string>
+    <string name="health_target_above">本次记录的分项高于已确认目标。</string>
+    <string name="health_target_confirmed">用户确认于：%1$s；未经独立医生核验。</string>
+    <string name="health_target_review">查看个体化目标</string>
+    <string name="health_target_discuss">讨论调整</string>
+    <string name="health_target_revoke">撤销目标</string>
+    <string name="health_target_revoke_notice">停止采用此目标并重新评估。相关提醒会取消，行动需重新确认；报告和目标历史会保留。</string>
+</resources>

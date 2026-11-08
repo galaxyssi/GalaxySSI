@@ -6,57 +6,89 @@ import UserNotifications
 struct GalaxySSIHealthSleepReminderLifecycle: ViewModifier {
   @Environment(\.scenePhase) private var scene
   @Environment(\.galaxySSIInterfaceLanguage) private var language
-  let store: GalaxySSIStore
-  @State private var delivering: UUID?
+  @ObservedObject var store: GalaxySSIStore
+  @State private var generation = UUID()
 
   func body(content: Content) -> some View {
     content
       .onAppear(perform: refresh)
       .onChange(of: scene) { if $0 == .active { refresh() } }
+      .onChange(of: store.profile.identityFingerprint) { _ in refresh() }
       .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in refresh() }
       .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.trendInputsChanged)) {
         if $0.object as? String == store.profile.identityFingerprint { refresh() }
       }
+      .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecordingReminders.changed)) {
+        if $0.object as? String == store.profile.identityFingerprint { refresh() }
+      }
+      .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthSleepReminder.changed)) {
+        if $0.object as? String == store.profile.identityFingerprint { refresh() }
+      }
+      .task(id: generation) { await reconcileDelivery() }
   }
 
   private func refresh() {
+    if scene == .active { generation = UUID() }
+  }
+
+  private func reconcileDelivery() async {
     guard scene == .active else { return }
     let records = GalaxySSIHealthRecords(owner: store.profile.identityFingerprint, secrets: store.secrets)
+    let center = UNUserNotificationCenter.current()
+    let status = await center.notificationSettings().authorizationStatus
+    let prefix = GalaxySSIHealthSleepReminder.notificationPrefix
+    let pending = await center.pendingNotificationRequests().filter { $0.identifier.hasPrefix(prefix) }
+    let visible = await center.deliveredNotifications().filter { $0.request.identifier.hasPrefix(prefix) }
+    guard scene == .active, !Task.isCancelled, records.owner == store.profile.identityFingerprint else { return }
     let now = Date()
     let calendar = Calendar.autoupdatingCurrent
-    guard let ledger = try? records.reconcileSleepReminders(at: now, calendar: calendar) else { return }
-    let center = UNUserNotificationCenter.current()
-    let inactive = ledger.episodes.filter { !ledger.preferences.notifications || $0.closed || $0.completed ||
-      ($0.snoozedUntil ?? .distantPast) > now }.map { notificationID($0.id) }
-    center.removeDeliveredNotifications(withIdentifiers: inactive)
-    center.removePendingNotificationRequests(withIdentifiers: inactive)
-    guard ledger.preferences.notifications, !ledger.preferences.isQuiet(at: now, calendar: calendar),
-          let episode = ledger.episodes.first(where: { !$0.closed && !$0.completed && $0.deliveredAt == nil &&
-            ($0.snoozedUntil ?? .distantPast) <= now }), delivering == nil else { return }
-    delivering = episode.id
-    Task {
-      defer { delivering = nil }
-      let settings = await center.notificationSettings()
-      guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional,
-            scene == .active, records.owner == store.profile.identityFingerprint,
-            let fresh = try? records.reconcileSleepReminders(at: Date(), calendar: calendar),
-            fresh.preferences.notifications, !fresh.preferences.isQuiet(at: Date(), calendar: calendar),
-            fresh.episodes.contains(where: { $0.version == episode.version && !$0.closed }) else { return }
-      let content = UNMutableNotificationContent()
-      content.title = GalaxySSIHealthSleepReminderView.text("generic_title", "GalaxySSI reminder", language: language)
-      content.body = GalaxySSIHealthSleepReminderView.text("generic_body", "Open GalaxySSI to review.", language: language)
-      let id = notificationID(episode.id)
-      do {
-        try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
-        try records.updateSleepEpisode(version: episode.version, delivered: Date())
-      } catch {
-        center.removeDeliveredNotifications(withIdentifiers: [id])
+    func remove(keepingPending: String? = nil, keepingVisible: String? = nil) {
+      center.removePendingNotificationRequests(withIdentifiers: pending.map(\.identifier).filter { $0 != keepingPending })
+      center.removeDeliveredNotifications(withIdentifiers: visible.map(\.request.identifier).filter { $0 != keepingVisible })
+    }
+    guard let ledger = try? records.reconcileSleepReminders(at: now, calendar: calendar),
+          let archive = try? records.load() else { return }
+    let settings = archive.recordingReminders?.settings
+    let prefs = ledger.preferences
+    guard GalaxySSIHealthSyncDelivery.permitted(status),
+          let episode = ledger.episodes.first(where: { !$0.closed && !$0.completed }) else { remove(); return }
+    func allowed(_ date: Date) -> Date? {
+      GalaxySSIHealthSleepReminder.deliveryDate(date, episode: episode, preferences: prefs, settings: settings, calendar: calendar)
+    }
+    let id = prefix + episode.id.uuidString
+    let previous = pending.first(where: { $0.identifier == id })
+    let delivered = visible.first(where: { $0.request.identifier == id })
+    let consumed = [episode.deliveredAt, delivered?.date, previous == nil ? episode.notificationDue : nil]
+      .compactMap { $0 }.filter { $0 <= now }.min()
+    if let consumed {
+      remove(keepingVisible: allowed(now) == now ? id : nil)
+      try? records.saveSleepDelivery(episode, preferences: prefs, settings: settings, due: nil, delivered: consumed)
+      return
+    }
+    guard let due = allowed(now.addingTimeInterval(2)) else { remove(); return }
+    if let saved = episode.notificationDue, saved > now, allowed(saved) == saved,
+       let trigger = previous?.trigger as? UNCalendarNotificationTrigger,
+       let next = trigger.nextTriggerDate(), abs(next.timeIntervalSince(saved)) < 1 {
+      remove(keepingPending: id)
+      return
+    }
+    remove()
+    let content = UNMutableNotificationContent()
+    content.title = GalaxySSIHealthSleepReminderView.text("generic_title", "GalaxySSI reminder", language: language)
+    content.body = GalaxySSIHealthSleepReminderView.text("generic_body", "Open GalaxySSI to review.", language: language)
+    let trigger = UNCalendarNotificationTrigger(dateMatching:
+      GalaxySSIHealthRecordingReminders.calendarTriggerDate(due), repeats: false)
+    do {
+      try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+      guard records.owner == store.profile.identityFingerprint else { throw GalaxySSIHealthRecords.Failure.stale }
+      try records.saveSleepDelivery(episode, preferences: prefs, settings: settings, due: due, delivered: nil)
+    } catch {
+      if !Task.isCancelled {
         center.removePendingNotificationRequests(withIdentifiers: [id])
+        center.removeDeliveredNotifications(withIdentifiers: [id])
       }
     }
   }
-
-  private func notificationID(_ id: UUID) -> String { "galaxyssi.health.sleep." + id.uuidString }
 }
 
 @MainActor

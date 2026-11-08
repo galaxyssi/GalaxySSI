@@ -1320,7 +1320,8 @@ internal fun MainActivity.submitAgentGoal(
     attachmentsOverride: List<AgentInputAttachment>? = null,
     displayGoalOverride: String? = null,
     onTurnCreated: ((String) -> Unit)? = null,
-    isSubmissionCancelled: () -> Boolean = { false }
+    isSubmissionCancelled: () -> Boolean = { false },
+    healthCareSubmission: HealthCareDiscussionPreview? = null
 ) {
     if (isSubmissionCancelled()) return
     val submissionStartedAt = SystemClock.elapsedRealtime()
@@ -1345,24 +1346,34 @@ internal fun MainActivity.submitAgentGoal(
         .takeIf(String::isNotBlank)
         ?.let(agentTranscriptStore::conversation)
         ?: agentTranscriptStore.activeConversation()
+    if (healthCareSubmission == null && conversation.globalTopicKey.startsWith(HealthCareDiscussionPolicy.TOPIC_PREFIX)) {
+        healthCareDiscussion.confirm(conversation, goal, attachments) { approved ->
+            if (isSubmissionCancelled()) return@confirm
+            if (goalOverride == null && agentGoalInput.text?.toString()?.trim() != goal) return@confirm
+            submitAgentGoal(voiceTraceId, pendingVoiceDedupeKey, conversation.id, goalOverride,
+                attachmentsOverride, displayGoalOverride, onTurnCreated, isSubmissionCancelled, approved)
+        }
+        return
+    }
     if (!ensureCollaborationLoaded(conversation.id) {
         if (goalOverride != null || (agentTranscriptStore.activeConversation().id == conversation.id &&
             agentGoalInput.text?.toString()?.trim() == goal)) {
             submitAgentGoal(voiceTraceId, pendingVoiceDedupeKey, pendingVoiceConversationId, goalOverride,
-                attachmentsOverride, displayGoalOverride, onTurnCreated, isSubmissionCancelled)
+                attachmentsOverride, displayGoalOverride, onTurnCreated, isSubmissionCancelled, healthCareSubmission)
         }
     }) return
     val requestedMembers = collaborationRequestedMembers(conversation.id, explicitMembers, goalOverride == null)
-    val scheduleCommand = attachments.isEmpty() && ConversationScheduleParser.parse(goal) != null
-    if (!scheduleCommand && CollaborationGroupStore.cached(conversation.id)?.members?.isNotEmpty() == true && requestedMembers.isEmpty()) {
+    if (CollaborationGroupStore.cached(conversation.id)?.members?.isNotEmpty() == true && requestedMembers.isEmpty()) {
         Toast.makeText(this, R.string.collaboration_no_active_members, Toast.LENGTH_LONG).show()
         return
     }
-    if (!scheduleCommand && requestedMembers.size > 12) {
+    if (requestedMembers.size > 12) {
         Toast.makeText(this, getString(R.string.collaboration_dispatch_limit, 12), Toast.LENGTH_LONG).show()
         return
     }
-    val turnId = UUID.randomUUID().toString()
+    val turnId = healthCareSubmission?.grant?.turnId ?: UUID.randomUUID().toString()
+    if (healthCareSubmission != null && (healthCareSubmission.grant.conversationId != conversation.id ||
+            healthCareSubmission.question != goal)) return
     onAgentTurnSubmitted(conversation.id, turnId, goal, attachments)
     onTurnCreated?.invoke(turnId)
     AgentStableAutoRouteStore.beginTurn(this, conversation.id, turnId)
@@ -1376,7 +1387,7 @@ internal fun MainActivity.submitAgentGoal(
         agentTranscriptStore.preparedContext(conversation.id)
     }
     preparedContext?.let { prepared -> agentContextBeforeTurn[turnId] = prepared }
-    val cachedPriorVisualReference = if (attachments.isEmpty() && !scheduleCommand) {
+    val cachedPriorVisualReference = if (attachments.isEmpty()) {
         AgentConversationVisualContext.latest(preparedContext)
             ?: agentTranscriptWindow.takeIf { it.conversationId == conversation.id }?.let { window ->
                 AgentConversationVisualContext.latest(window.entries)
@@ -1465,7 +1476,7 @@ internal fun MainActivity.submitAgentGoal(
             "agent_submit stage=user_persisted turn=${turnId.take(8)} " +
                 "elapsed_ms=${SystemClock.elapsedRealtime() - submissionStartedAt}"
         )
-        val priorVisualReference = if (attachments.isEmpty() && !scheduleCommand) {
+        val priorVisualReference = if (attachments.isEmpty()) {
             cachedPriorVisualReference ?: AgentConversationVisualContext.latest(
                 agentTranscriptStore.context(
                     conversationId = conversation.id,
@@ -1475,9 +1486,24 @@ internal fun MainActivity.submitAgentGoal(
         } else {
             null
         }
+        val healthHistory = healthCareSubmission?.let { agentTranscriptStore.context(conversation.id, excludeTurnId = turnId) }
         runOnUiThread {
             if (isFinishing || isDestroyed) return@runOnUiThread
             if (isSubmissionCancelled()) return@runOnUiThread
+            if (healthCareSubmission != null) {
+                if (healthHistory?.conversationId != conversation.id || !healthHistory.privateMode || !healthHistory.trackingPaused) {
+                    pendingAgentReplyIndicators.remove(turnId)
+                    Toast.makeText(this, R.string.health_care_discussion_expired, Toast.LENGTH_LONG).show()
+                    refreshAgentTranscriptWindow(conversation.id)
+                    return@runOnUiThread
+                }
+                executeDirectSystemAction(healthCareSubmission.action, conversation.id, turnId,
+                    healthHistory,
+                    HealthCareDiscussionPolicy.prompt(goal, healthCareSubmission.snapshot))
+                refreshAgentConversationHeader()
+                refreshAgentTranscriptWindow(conversation.id)
+                return@runOnUiThread
+            }
             if (pendingVoiceDedupeKey.isNotBlank() &&
                 agentTranscriptWindow.conversationId == conversation.id
             ) {
@@ -1519,7 +1545,7 @@ internal fun MainActivity.submitAgentGoal(
             refreshAgentConversationHeader()
             refreshAgentTranscriptWindow(conversation.id)
         }
-        AgentLearningAnalyzer.correctionFeedback(displayGoal)?.let { feedback ->
+        if (!conversation.privateMode && !conversation.trackingPaused) AgentLearningAnalyzer.correctionFeedback(displayGoal)?.let { feedback ->
             agentRunRecorder.addFeedback(conversation.id, feedback)?.let { correctedRun ->
                 agentLearningEngine.observeFeedback(correctedRun, agentRunRecorder.recentRuns())
             }
@@ -1678,12 +1704,10 @@ internal fun MainActivity.continueAgentGoalSubmission(
 ) {
     if (isSubmissionCancelled()) return
     if (!scheduleChecked && forcedAction == null && AgentTurnAttachmentRegistry.current(turnId).isEmpty() &&
-        (ConversationScheduleParser.parse(originalGoal) != null ||
-            AgentDeviceIntent.exactTimerSeconds(originalGoal) != null || AgentDeviceIntent.followup(originalGoal) != null)) {
+        (AgentDeviceIntent.exactTimerSeconds(originalGoal) != null || AgentDeviceIntent.followup(originalGoal) != null)) {
         agentRoutingExecutor.execute {
             if (isSubmissionCancelled()) return@execute
-            if (handleConversationDeviceOperation(originalGoal, conversationId, turnId) ||
-                handleConversationSchedule(originalGoal, conversationId, turnId)) {
+            if (handleConversationDeviceOperation(originalGoal, conversationId, turnId)) {
                 agentContextBeforeTurn.remove(turnId)
                 AgentTurnMentionRegistry.remove(turnId)
             } else runOnUiThread {

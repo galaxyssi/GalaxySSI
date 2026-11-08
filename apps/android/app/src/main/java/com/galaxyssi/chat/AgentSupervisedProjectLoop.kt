@@ -455,18 +455,32 @@ internal object AgentSupervisedProjectLoop {
         append("Preserve requested edits during recovery: copying or re-encoding inputs is not completion. Inspect and repair unavailable tool capabilities (including missing encoders), then verify the requested change. Reuse verified outputs when asked to display/send them.\n")
         if (key.progressLedger.isNotBlank()) append(key.progressLedger)
     }.let { prompt ->
-        AgentSupervisedProjectPromptCodec.preserveLatestObservation(
-            prompt,
-            minOf(key.maximumCharacters, 24_000 + key.conversationTransport.length)
-                .coerceAtLeast(key.minimumBaseCharacters),
-            key.latestObservation
-        )
+        val preserveHealthContext = HealthCareDiscussionPolicy.hasStructuredContext(key.goal)
+        if (preserveHealthContext) {
+            require(prompt.length <= key.maximumCharacters) {
+                "Authorized health context exceeds prompt capacity; refusing to truncate source evidence"
+            }
+            prompt
+        } else {
+            AgentSupervisedProjectPromptCodec.preserveLatestObservation(
+                prompt,
+                minOf(key.maximumCharacters, 24_000 + key.conversationTransport.length)
+                    .coerceAtLeast(key.minimumBaseCharacters),
+                key.latestObservation
+            )
+        }
     }
 
-    private fun compileGoal(goal: String): String =
-        AgentPlannerObservation.sanitize(goal, MAX_GOAL_CHARACTERS).orEmpty()
+    private fun compileGoal(goal: String): String {
+        val structured = HealthCareDiscussionPolicy.hasStructuredContext(goal)
+        require(!structured || goal.length <= MAX_HEALTH_CONTEXT_CHARACTERS) {
+            "Authorized health context exceeds prompt capacity; request a smaller scoped review"
+        }
+        return AgentPlannerObservation.sanitize(goal, if (structured) goal.length else MAX_GOAL_CHARACTERS).orEmpty()
+    }
 
     private const val MAX_GOAL_CHARACTERS = 8_000
+    private const val MAX_HEALTH_CONTEXT_CHARACTERS = 65_536
     // This is a transport working set, not the provider's total context window.
     private const val MAX_CONVERSATION_TOKENS = 32_768
     private const val MAX_TOOL_SCHEMA_CHARACTERS = 240
@@ -596,7 +610,8 @@ internal object AgentSupervisedProjectToolInventory {
                     buildString {
                         append("- ").append(tool.id)
                         append(" | risk=").append(tool.risk.wireValue)
-                        if (tool.id in PhoneAssistantToolPolicy.directActionToolIds || tool.id == AgentConversationRecallTool.ID) {
+                        if (tool.id in PhoneAssistantToolPolicy.directActionToolIds || tool.id == AgentConversationRecallTool.ID ||
+                            tool.id == HealthCarePlanTool.ID && tools.all { it.id in HealthCareDiscussionPolicy.discussionTools }) {
                             append(" | description=").append(tool.description)
                         }
                         if (phoneControl && !tool.requiresEffectClaim) append(" | effect=read_only")
@@ -607,7 +622,8 @@ internal object AgentSupervisedProjectToolInventory {
                         append(" | input=")
                         append(
                             if (tool.id in AgentWebIntelligenceNativeTools.directSearchToolIds ||
-                                tool.id in PhoneAssistantToolPolicy.directActionToolIds || tool.id == AgentConversationRecallTool.ID) {
+                                tool.id in PhoneAssistantToolPolicy.directActionToolIds || tool.id == AgentConversationRecallTool.ID ||
+                                tool.id == HealthCarePlanTool.ID && tools.all { it.id in HealthCareDiscussionPolicy.discussionTools }) {
                                 AgentNativeJsonCodec.stringify(tool.inputSchema.document)
                             } else AgentSupervisedProjectPromptCodec.compactInputSchema(
                                 tool.inputSchema.document,

@@ -85,6 +85,79 @@ final class CloudWebGroundingTests: XCTestCase {
     XCTAssertNil(failed["evidence_pack"])
   }
 
+  func testReadingWindowsRetainUnicodeOffsetsAndOnlyNewCoverageMakesProgress() throws {
+    let url = "https://example.com/report"
+    let body = String(repeating: "a", count: 255) + "\u{1F680}" + String(repeating: "b", count: 600)
+    let first: AgentMcpJSONObject = ["url": .string(url), "length": .int(256)]
+    func output(_ args: AgentMcpJSONObject, body: String) -> AgentMcpJSONObject {
+      var payload: AgentMcpJSONObject = [
+        "url": .string(url), "operation": .string("fetch"), "status": .string("completed"), "text": .string(body)
+      ]
+      AgentIOSWebReadingWindow.apply(to: &payload, input: args)
+      return AgentIOSWebEvidencePack.attach(to: payload, generatedAtMillis: 1)
+    }
+    let firstOutput = output(first, body: body)
+    let window = try XCTUnwrap(firstOutput["reading_window"]?.objectValue)
+    let hash = try XCTUnwrap(window["document_sha256"])
+    XCTAssertEqual(window["next_offset"], .int(255))
+    let second: AgentMcpJSONObject = ["url": .string(url), "offset": .int(255), "length": .int(256), "document_sha256": hash]
+    let secondOutput = output(second, body: body)
+    XCTAssertTrue(try XCTUnwrap(secondOutput["text"]?.stringValue).hasPrefix("\u{1F680}"))
+    let changed = try XCTUnwrap(output(second, body: body + "!")["reading_window"]?.objectValue)
+    XCTAssertEqual(changed["offset"], .int(0))
+    XCTAssertEqual(changed["version_changed"], .bool(true))
+    XCTAssertNotEqual(changed["document_sha256"], hash)
+    let firstEncoded = CloudWebGrounding.boundedModelJson(firstOutput)
+    let secondEncoded = CloudWebGrounding.boundedModelJson(secondOutput)
+    XCTAssertEqual(CloudEvidencePromptLedger().project([firstEncoded, secondEncoded]), [firstEncoded, secondEncoded])
+    let progress = CloudWebToolLoopProgress()
+    let whole: AgentMcpJSONObject = ["url": .string(url)]
+    XCTAssertTrue(progress.record(toolName: "web_fetch", arguments: whole, output: CloudWebGrounding.boundedModelJson(output(whole, body: body))))
+    XCTAssertNil(progress.cached(toolName: "web_fetch", arguments: first))
+    XCTAssertTrue(progress.record(toolName: "web_fetch", arguments: first, output: firstEncoded))
+    XCTAssertNil(progress.cached(toolName: "web_fetch", arguments: second))
+    XCTAssertTrue(progress.record(toolName: "web_fetch", arguments: second, output: secondEncoded))
+    XCTAssertEqual(progress.cached(toolName: "web_fetch", arguments: first), firstEncoded)
+    var overlap = second
+    overlap["offset"] = .int(256)
+    XCTAssertFalse(progress.record(toolName: "web_fetch", arguments: overlap,
+      output: CloudWebGrounding.boundedModelJson(output(overlap, body: body))))
+  }
+
+  func testEscapedReadingWindowReportsOnlyTheDeliveredRange() throws {
+    let text = String(repeating: "\u{1}", count: 8_000)
+    var output: AgentMcpJSONObject = ["operation": .string("fetch"), "status": .string("completed"), "text": .string(text)]
+    AgentIOSWebReadingWindow.apply(to: &output, input: ["length": .int(8_000)])
+    let encoded = CloudWebGrounding.boundedModelJson(output)
+    XCTAssertLessThanOrEqual(encoded.count, 24_000)
+    let result = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(encoded.utf8))
+    let delivered = try XCTUnwrap(result["text"]?.stringValue)
+    let window = try XCTUnwrap(result["reading_window"]?.objectValue)
+    XCTAssertGreaterThan(delivered.utf16.count, 0)
+    XCTAssertLessThan(delivered.utf16.count, text.utf16.count)
+    XCTAssertEqual(window["end_offset"], .int(Int64(delivered.utf16.count)))
+    XCTAssertEqual(window["next_offset"], window["end_offset"])
+  }
+
+  func testResearchBodyReviewTargetsOnlyCitedSnippetSources() throws {
+    let url = "https://example.org/cited"
+    let other = "https://example.org/not-cited"
+    func pack(documents: [AgentMcpJSONObject], results: [AgentMcpJSONObject]) -> String {
+      let pack = AgentIOSWebEvidencePack.build(query: "report", status: "completed", documents: documents,
+        results: results, receipts: [], generatedAtMillis: 1)
+      return AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)])
+    }
+    let snippets = pack(documents: [], results: [
+      ["url": .string(url), "snippet": .string("A lead")], ["url": .string(other), "snippet": .string("Another lead")]
+    ])
+    let answer = "A claim [source](\(url))."
+    let review = try XCTUnwrap(CloudWebGrounding.bodyReadingReviewPrompt(answer, results: [("web_research", snippets)]))
+    XCTAssertTrue(review.contains(url))
+    XCTAssertFalse(review.contains(other))
+    let fetched = pack(documents: [["url": .string(url), "content": .string("Body")]], results: [])
+    XCTAssertNil(CloudWebGrounding.bodyReadingReviewPrompt(answer, results: [("web_research", snippets), ("web_fetch", fetched)]))
+  }
+
   func testCitationPreviewPublishesOnlyVerifiedPassiveParagraphs() throws {
     let url = "https://example.com/report"
     let pack = AgentIOSWebEvidencePack.build(
@@ -352,6 +425,7 @@ final class CloudWebGroundingTests: XCTestCase {
         return AgentNativeToolExecutionResult.success(
           output: [
             "request_id": .string("request-1"),
+            "query": input["query"] ?? .null,
             "results": .array([
               .object([
                 "title": .string("GalaxySSI"),
@@ -368,11 +442,13 @@ final class CloudWebGroundingTests: XCTestCase {
       grantedPermissions: [AgentIOSWebIntelligenceNativeToolCatalog.networkPermission],
       grantedConsents: [AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent]
     )
+    let collector = AgentLocalResearchCollector()
     let encoded = CloudWebGrounding.executeTool(
       provider: provider,
       name: "web_search",
       arguments: ["query": .string("GalaxySSI"), "max_results": .int(6)],
-      context: context
+      context: context,
+      researchDisclosure: collector
     )
     let payload = try XCTUnwrap(decodeObject(encoded))
     let pack = try XCTUnwrap(payload["evidence_pack"]?.objectValue)
@@ -385,6 +461,10 @@ final class CloudWebGroundingTests: XCTestCase {
     XCTAssertEqual(payload["protocol"], .string(AgentIOSWebIntelligenceNativeToolCatalog.protocolId))
     XCTAssertEqual(pack["protocol"], .string(AgentIOSWebEvidencePack.protocolId))
     XCTAssertEqual(pack["stats"]?.objectValue?["item_count"], .int(1))
+    let receipt = collector.drain()
+    XCTAssertEqual(receipt.queries, ["GalaxySSI"])
+    XCTAssertEqual(receipt.sources.map(\.id), ["https://galaxyssi.example/"])
+    XCTAssertNil(payload["research_disclosure"])
     provider.operations.removeAll()
     for tool in ["web_cache", "web_watch"] {
       let rejected = CloudWebGrounding.executeTool(provider: provider, name: tool,
@@ -396,6 +476,56 @@ final class CloudWebGroundingTests: XCTestCase {
     _ = CloudWebGrounding.executeTool(provider: provider, name: "web_search",
       arguments: ["query": .string("GalaxySSI")], context: context, readOnlyAnalysis: true)
     XCTAssertEqual(provider.operations, [.search])
+  }
+
+  func testLocalResearchDisclosureRecordsExecutedQueriesAndRawSourcesOnly() throws {
+    let output: AgentMcpJSONObject = [
+      "operation": .string("research"),
+      "research": .object([
+        "executed_queries": .array([.string("Grid   storage"), .string("grid storage")]),
+        "query_plan": .array([.object(["query": .string("Never executed")])]),
+        "discovered_source_count": .int(30)
+      ]),
+      "results": .array((1...20).map {
+        .object(["url": .string("https://example.org/report?part=\($0)#intro"), "title": .string("Report \($0)")])
+      } + [.object(["url": .string("https://user:secret@example.org/private")]),
+           .object(["url": .string("file:///private/report")])])
+    ]
+    let collector = AgentLocalResearchCollector()
+    collector.record(tool: "web_research", output: output)
+    let receipt = collector.drain()
+    XCTAssertEqual(receipt.queries, ["Grid storage"])
+    XCTAssertEqual(receipt.sources.count, 20)
+    XCTAssertEqual(receipt.sources.first?.id, "https://example.org/report?part=1")
+    XCTAssertTrue(receipt.truncated)
+    XCTAssertFalse(collector.drain().visible)
+    let restored = AgentLocalResearchDisclosure.restored([
+      .assistant("This text [is not a source](https://other.example)."),
+      .tool(.init(callId: "saved", toolId: AgentIOSWebIntelligenceNativeToolCatalog.research,
+        status: "succeeded", output: output))
+    ])
+    XCTAssertEqual(restored, receipt)
+  }
+
+  @MainActor
+  func testLocalResearchDisclosureDoesNotRecreateDeletedSourceOrCrossProfiles() throws {
+    let suite = "local-disclosure-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = GalaxySSIStore(defaults: defaults, secrets: InMemorySecretStore())
+    let session = store.createAgentSession(title: "Research")
+    let source = store.appendOutgoing("Research the grid", to: "hermes", conversationOverride: session.id)
+    let receipt = AgentLocalResearchDisclosure.observed(tool: "web_search", output: ["query": .string("Private query")])
+    let owner = store.profile.identityFingerprint
+    store.persistLocalResearchDisclosure(receipt, source: source, owner: "foreign-profile")
+    XCTAssertFalse(store.localResearchDisclosure(for: source).visible)
+    store.persistLocalResearchDisclosure(receipt, source: source, owner: owner)
+    XCTAssertEqual(store.localResearchDisclosure(for: source), receipt)
+    XCTAssertFalse(defaults.dictionaryRepresentation().description.contains("Private query"))
+    XCTAssertTrue(store.researchRetryHandoff(for: source).isEmpty)
+    XCTAssertTrue(store.deleteMessage(source.id, contactId: source.contactId))
+    store.persistLocalResearchDisclosure(receipt, source: source, owner: owner)
+    XCTAssertFalse(store.localResearchDisclosure(for: source).visible)
   }
 
   func testEvidenceFallbackCollectsBoundedHttpsSources() {
