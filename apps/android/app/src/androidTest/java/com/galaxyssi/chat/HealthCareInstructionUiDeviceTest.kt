@@ -157,6 +157,8 @@ class HealthCareInstructionUiDeviceTest {
         assertEquals(value, f.snapshot(value.id).selected)
     }
     @Test fun landscapeAndNarrowWindowKeepSavedDraftAndWrapVisibleText(): Unit = fixture { f, scenario ->
+        scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
+        await(scenario) { it.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT && find(it, "instruction-sources") != null }
         val value = open(f, scenario)
         scenario.onActivity {
             find(it, "instruction-edit")!!.performClick()

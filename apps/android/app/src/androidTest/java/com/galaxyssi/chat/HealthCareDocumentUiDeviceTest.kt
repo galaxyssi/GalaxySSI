@@ -127,6 +127,8 @@ class HealthCareDocumentUiDeviceTest {
         }
     }
     @Test fun landscapeRecreationClearsPreviewAndNarrowWindowKeepsTheSourceListReadable(): Unit = fixture { f, original, scenario ->
+        scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
+        await(scenario) { it.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT && find(it, "document-add") != null }
         choose(scenario, original)
         scenario.onActivity { find(it, "document-preview")!!.performClick() }
         await(scenario) { find(it, "document-raster") != null }
