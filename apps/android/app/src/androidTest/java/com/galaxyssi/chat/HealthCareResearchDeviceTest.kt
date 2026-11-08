@@ -248,6 +248,7 @@ class HealthCareResearchDeviceTest {
         val issue = care.concern(value.scope.concernId)
         care.approveDiscussion(value.scope); care.close()
         context.openOrCreateDatabase(names.care, 0, null).use { db ->
+            db.execSQL("DROP TABLE question_history"); db.execSQL("DROP TABLE questions")
             db.execSQL("DROP TABLE research_jobs"); db.execSQL("DROP TABLE research_authorizations"); db.version = 6
         }
         HealthCareStore(context, names.care).use {

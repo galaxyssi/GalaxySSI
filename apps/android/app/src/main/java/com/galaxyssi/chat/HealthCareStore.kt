@@ -15,6 +15,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
     private val helper = Database(app, name)
     private val db get() = helper.writableDatabase
     private fun metricKey(metric: HealthMetric) = AgentMemoryIndexKey.token("$name|care-metric|self|${metric.name}")
+    private fun questionRows() = HealthCareQuestionRows(db, ::pack, ::unpack) { AgentMemoryIndexKey.token("$name|care-question|self|$it") }
     private fun aad(kind: String, id: String) = "$name|health-care-v1|self|$kind|$id".toByteArray(Charsets.UTF_8)
     private fun pack(kind: String, id: String, json: JSONObject): ByteArray {
         val plain = json.toString().toByteArray(Charsets.UTF_8)
@@ -144,6 +145,26 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         if (it.context != context) db.delete("evaluations", "metric_key=?", arrayOf(metricKey(it.metric)))
         it.copy(context = context)
     }
+    fun questions(issue: HealthCareConcern, after: String = "", limit: Int = 30) = questionRows().page(issue, after, limit)
+    fun question(id: String) = questionRows().get(id)
+    fun proposeQuestion(grant: HealthCareDiscussionGrant, key: String, question: String, purpose: String, now: Long): HealthCareQuestion = transaction(true) {
+        val issue = concern(grant.concernId) ?: throw HealthCareConflict()
+        if (!grant.questionsShared || discussionGrant(grant.turnId) != grant || discussion(grant.conversationId) != issue.id || issue.revision != grant.revision ||
+            issue.profileLink != grant.profileLink || !settings().enabled || settings().version != grant.settingsVersion ||
+            !researchGrantCurrent(grant) || issue.stage in setOf(HealthCareStage.CLOSED, HealthCareStage.PAUSED)) throw HealthCareConflict()
+        questionRows().propose(issue, grant, key, question, purpose, now)
+    }
+    fun reviewQuestion(id: String, expectedRevision: Int, questionId: String, expectedQuestionRevision: Int,
+        state: HealthCareQuestionState, answer: String, now: Long): HealthCareQuestion = transaction(true) {
+        val issue = concern(id) ?: throw HealthCareConflict()
+        if (issue.revision != expectedRevision || !settings().enabled) throw HealthCareConflict()
+        val before = questionRows().get(questionId) ?: throw HealthCareConflict()
+        val next = questionRows().review(issue, questionId, expectedQuestionRevision, state, answer, now)
+        if (next != before) persist(issue.copy(revision = issue.revision + 1, updatedAt = maxOf(now, issue.updatedAt),
+            questionVersion = UUID.randomUUID().toString(), stage = if (issue.stage in setOf(HealthCareStage.CLOSED, HealthCareStage.PAUSED))
+                issue.stage else HealthCareStage.REASSESS), "question_reviewed")
+        next
+    }
     fun page(after: HealthCareCursor? = null, includeClosed: Boolean = false, limit: Int = 30, includePaused: Boolean = true): HealthCarePage {
         require(limit in 1..30)
         val args = arrayListOf<String>()
@@ -217,6 +238,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
     fun approveDiscussion(grant: HealthCareDiscussionGrant) = transaction {
         val current = concern(grant.concernId) ?: throw HealthCareConflict()
         if (discussion(grant.conversationId) != current.id || current.revision != grant.revision || current.profileLink != grant.profileLink ||
+            !HealthCareDiscussionPolicy.questionScopeCurrent(grant, current) ||
             !settings().enabled || settings().version != grant.settingsVersion || !researchGrantCurrent(grant)) throw HealthCareConflict()
         discussionGrant(grant.turnId)?.let {
             if (it != grant) throw HealthCareConflict()
@@ -254,6 +276,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         val scope = value.scope
         val issue = concern(scope.concernId) ?: throw HealthCareConflict()
         if (!value.active || researchAuthorization(issue.id)?.id != expectedAuthorization ||
+            !HealthCareDiscussionPolicy.questionScopeCurrent(scope, issue) ||
             !settings().enabled || settings().version != scope.settingsVersion || issue.revision != scope.revision ||
             discussion(scope.conversationId) != issue.id || issue.conversationId != scope.conversationId ||
             !HealthCareResearchPolicy.eligible(issue) || issue.profileLink != scope.profileLink) throw HealthCareConflict()
@@ -352,7 +375,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         val authorization = researchAuthorization(grant.concernId) ?: return false
         val job = researchJob(grant.turnId) ?: return false
         val issue = concern(grant.concernId) ?: return false
-        return authorization.permits(grant) && !job.terminal && job.authorizationId == authorization.id &&
+        return authorization.permits(grant) && HealthCareDiscussionPolicy.questionScopeCurrent(grant, issue) && !job.terminal && job.authorizationId == authorization.id &&
             job.concernId == grant.concernId && job.conversationId == grant.conversationId && job.revision == grant.revision &&
             job.trigger == HealthCareResearchPolicy.trigger(issue, System.currentTimeMillis())
     }
@@ -508,6 +531,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         db.delete("plans", "concern_id=?", arrayOf(id))
         db.delete("evidence_reads", "concern_id=?", arrayOf(id))
         db.delete("action_reminders", "concern_id=?", arrayOf(id))
+        questionRows().delete(id)
         // Keep only encrypted routing tombstones so a late result cannot revive deleted health data.
         var after = ""
         while (true) {
@@ -529,7 +553,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         Unit
     }
     override fun close() = helper.close()
-    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 7) {
+    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 8) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE settings(id INTEGER PRIMARY KEY,version TEXT NOT NULL,payload BLOB NOT NULL)")
@@ -544,6 +568,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             reminders(db)
             evidence(db)
             research(db)
+            HealthCareQuestionRows.create(db)
         }
         private fun discussions(db: SQLiteDatabase) {
             // Bindings survive concern deletion so an old sensitive conversation cannot become an ordinary chat.
@@ -551,7 +576,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             db.execSQL("CREATE TABLE discussion_grants(turn_id TEXT PRIMARY KEY,payload BLOB NOT NULL)")
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            check(oldVersion in 1..6 && newVersion == 7)
+            check(oldVersion in 1..7 && newVersion == 8)
             if (oldVersion < 2) discussions(db)
             if (oldVersion < 3) plans(db)
             if (oldVersion < 4) reminders(db)
@@ -562,7 +587,8 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
                 db.execSQL("DROP INDEX care_all_pages")
                 priorityIndexes(db)
             }
-            research(db)
+            if (oldVersion < 7) research(db)
+            HealthCareQuestionRows.create(db)
         }
         private fun research(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE research_authorizations(concern_id TEXT PRIMARY KEY,id TEXT NOT NULL UNIQUE,payload BLOB NOT NULL)")

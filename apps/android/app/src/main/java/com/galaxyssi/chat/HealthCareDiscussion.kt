@@ -69,7 +69,8 @@ internal object HealthCareDiscussion {
             val destination = destination(context, target.id, model)
             val grant = HealthCareDiscussionGrant(conversationId, turnId, id, concern.revision,
                 care.settings().version, privacy.version, destination, System.currentTimeMillis(), target.id, model, effort.wireValue,
-                research?.id.orEmpty(), concern.profileLink)
+                research?.id.orEmpty(), concern.profileLink, questionsShared = research?.scope?.questionsShared ?: true)
+            check(HealthCareDiscussionPolicy.questionScopeCurrent(grant, concern)) { context.getString(R.string.health_care_changed) }
             if (research != null) check(research.permits(grant) && care.researchGrantCurrent(grant)) {
                 context.getString(R.string.health_care_changed)
             }
@@ -84,7 +85,8 @@ internal object HealthCareDiscussion {
                 try { HealthCareProfileAccess.capture(context, link) }
                 catch (_: HealthProfileConflict) { error(context.getString(R.string.health_care_profile_changed)) }
             }
-            val snapshot = HealthCareDiscussionPolicy.snapshot(concern, followUp, profile)
+            val snapshot = HealthCareDiscussionPolicy.snapshot(concern, followUp, profile,
+                if (grant.questionsShared) care.questions(concern, limit = 8) else null)
             val goal = HealthCareDiscussionPolicy.prompt(question, snapshot)
             val history = AgentTranscriptStore(context).context(conversationId)
             check(history.conversationId == conversationId && history.privateMode && history.trackingPaused) {
@@ -93,7 +95,7 @@ internal object HealthCareDiscussion {
             val screen = ScreenContext(context.packageName, pageTitle = "Health discussion")
             val safeRuntime = runtime.copy(goal = goal, screen = screen, memoryCapture = false, memories = emptyList(),
                 knowledgeItems = emptyList(), systemTools = emptyList(), callableTargets = listOf(target),
-                nativeTools = runtime.nativeTools.filter { it.id in HealthCareDiscussionPolicy.discussionTools })
+                nativeTools = runtime.nativeTools.filter { it.id in HealthCareDiscussionPolicy.tools(grant) })
             val request = AgentRequest(goal, screen, listOf(target), memories = emptyList(), runtimeContext = safeRuntime,
                 conversationContext = history, executionTurnId = grant.turnId)
             val base = RuleBasedAgentPlanner(context).supervisedProjectActions(request)?.singleOrNull() ?: error("No health discussion route")
@@ -190,7 +192,7 @@ internal object HealthCareDiscussion {
         val granted = HealthCareStore(context).use { it.discussionGrant(turn) } ?: return context.getString(R.string.health_care_discussion_expired)
         val allowed = when (action.kind) {
             AgentActionKind.DRAFT_PLAN -> true
-            AgentActionKind.CALL_NATIVE_TOOL -> action.parameters["tool_id"] in HealthCareDiscussionPolicy.discussionTools
+            AgentActionKind.CALL_NATIVE_TOOL -> action.parameters["tool_id"] in HealthCareDiscussionPolicy.tools(granted)
             AgentActionKind.CALL_CONNECTOR -> action.parameters["connector_id"] == granted.targetId &&
                 action.parameters["agent_model_id"].orEmpty() == granted.modelId &&
                 action.parameters["agent_reasoning_effort"].orEmpty() == granted.effort &&
@@ -204,8 +206,11 @@ internal object HealthCareDiscussion {
         if (!bound(context, invocation.conversationId)) return null
         return rejection(context, invocation.conversationId, invocation.turnId)
             ?: if (tool.id !in HealthCareDiscussionPolicy.discussionTools) context.getString(R.string.health_care_discussion_scope)
+            else if (tool.id in HealthCareQuestionTools.ids && !HealthCareStore(context).use {
+                it.discussionGrant(invocation.turnId)?.questionsShared == true
+            }) context.getString(R.string.health_care_discussion_scope)
             else if (tool.id !in setOf(AgentToolDiscoveryTools.ID, AgentToolInspectionTools.DESCRIBE, AgentConversationRecallTool.ID,
-                    HealthCarePlanTool.ID, HealthCareHistoryTool.ID) &&
+                    HealthCarePlanTool.ID, HealthCareHistoryTool.ID) && tool.id !in HealthCareQuestionTools.ids &&
                 !HealthPrivacyStore(context).use { it.policy().online }) context.getString(R.string.health_care_discussion_online)
             else null
     }

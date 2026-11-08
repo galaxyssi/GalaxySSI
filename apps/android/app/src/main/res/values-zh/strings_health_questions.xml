@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_questions_disclosure">本次共享包含本健康事项的问题，以及你明确保存的回答。模型可以提出问题，但不能代你保存回答。选择稍后或暂不回答的问题，只有你重新开启后才会继续询问。</string>
+    <string name="health_question_title">问题与已保存回答</string>
+    <string name="health_question_summary">核对待补信息和回答意愿</string>
+    <string name="health_question_empty">当前共享范围内还没有已记录的问题。</string>
+    <string name="health_question_open">尚未回答</string>
+    <string name="health_question_answered">已回答</string>
+    <string name="health_question_deferred">稍后再答，由我重新开启</string>
+    <string name="health_question_declined">暂不愿回答</string>
+    <string name="health_question_conflict">信息存在冲突</string>
+    <string name="health_question_stale">资料已变，待重新核对</string>
+    <string name="health_question_first">返回第一页</string>
+    <string name="health_question_review">核对回答</string>
+    <string name="health_question_record_time">本问题关联的检测时间：%1$s</string>
+    <string name="health_question_current_time">当前检测时间：%1$s</string>
+    <string name="health_question_stale_notice">来源或背景已变化，旧回答不再视为当前事实；保存后，此回答关联当前记录。</string>
+    <string name="health_question_saved_fact">已经保存：%1$s</string>
+    <string name="health_question_answer_notice">回答属于本人陈述，不改写原始档案或医嘱。选择稍后或暂不回答不会创建提醒。</string>
+    <string name="health_question_answer">填写回答或说明冲突之处</string>
+    <string name="health_question_answer_required">请填写回答，或选择其他状态。</string>
+    <string name="health_question_save">保存回答</string>
+    <string name="health_question_saved">已保存到本健康事项</string>
+</resources>

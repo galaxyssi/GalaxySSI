@@ -52,7 +52,7 @@ field and record selection configured inside Personal Health, not a whole-profil
 prompt. Selected saved values are read afresh; name and drafts are excluded and
 birth date is reduced to age on the measurement date. Unselected and unavailable
 entries never imply a negative medical history. A complete persistent question
-ledger still remains to be implemented.
+ledger is being integrated across the remaining interaction paths.
 
 The encrypted concern and turn grant retain dependency tokens, not duplicated
 profile values. A selected source edit invalidates previous results and action
@@ -69,6 +69,42 @@ and permission/source changes; existing Agent layout remains unchanged.
 Scope changes require a new linked private discussion. Older conversations remain
 readable but cannot dispatch under a different scope or supply their history to
 the new request. This prevents recalled answers from reintroducing withdrawn data.
+
+### Question ledger
+
+The care database now has indexed, row-encrypted questions and revision history.
+Each question binds a stable semantic key, purpose, concern, source basis,
+measurement revision/time, originating turn and profile-sharing scope. Native
+tools `galaxyssi.health.questions.propose` and `galaxyssi.health.questions.read`
+record questions or read bounded pages; neither can write an answer or select
+another person/concern. Same-key retries reuse the existing question, including
+its deferred or declined state. Models must reuse semantic keys, not bypass a
+preference with paraphrased questions.
+
+Personal Health offers explicit answered, deferred, declined, conflicting and
+unanswered review. Saved measurement/profile facts are surfaced before asking
+again. User replies remain self-reports and do not rewrite records or clinical
+instructions. Source changes hide stale replies from the current snapshot;
+conflicts retain both assertions without resolving them automatically. A reply
+revision invalidates dependent grants/actions and triggers a new authorized
+review, but does not invalidate unrelated question answers. Paused concerns stay
+paused. Deferral/decline creates no reminder and requires user reopening.
+Permission or refresh clocks alone do not stale answers whose source facts are unchanged.
+
+The Agent base UI is unchanged. Discussion preparation and the phone-native
+tools use the same scoped ledger for manual/Auto models and later conversations.
+New consent explicitly discloses reviewed replies. Legacy grants do not gain
+question-tool access or question snapshots; an answered concern requires renewed
+consent before background research resumes. Initial handoffs include up to eight
+rows and an explicit cursor; native reads use pages of up to thirty rows.
+Observation compaction retains complete rows and advances only past delivered
+questions; insufficient budget is explicit. Question history is encrypted and
+removed with the concern. Database schema 8 migrates existing care data in place.
+
+Remaining ledger acceptance includes conversational/voice answer proposals with
+explicit confirmation, semantic duplicate evaluation across real providers,
+and full process/boot and performance matrices. A model's prose alone must never
+be represented as a saved answer or a completed clinical review.
 
 ## Persistent domain boundaries
 
@@ -137,6 +173,7 @@ unavailable until storage, authorization, and every query enforce isolation.
 - [x] Exact-measurement known/unconfirmed handoff for existing care discussions.
 - [x] Field-scoped independent profile context and source-version invalidation.
 - [ ] Persistent question ledger with answered/deferred/declined/conflict states.
+- [x] Indexed question storage, scoped native tools and explicit Personal Health answer review.
 - [ ] Full issue lifecycle transitions and invalidation across every entry path.
 - [ ] Personal Health overview, comparable trends, and evidence-focused details.
 - [ ] Global indexed action queue, versioned plans, feedback and reminder recovery.

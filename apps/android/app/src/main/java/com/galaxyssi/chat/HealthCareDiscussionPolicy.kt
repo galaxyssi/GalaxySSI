@@ -6,7 +6,7 @@ internal data class HealthCareDiscussionGrant(
     val conversationId: String, val turnId: String, val concernId: String, val revision: Int,
     val settingsVersion: String, val privacyVersion: String, val destination: String, val approvedAt: Long,
     val targetId: String, val modelId: String, val effort: String, val researchAuthorizationId: String = "",
-    val profileLink: HealthCareProfileLink? = null
+    val profileLink: HealthCareProfileLink? = null, val questionsShared: Boolean = false
 ) {
     init {
         require(listOf(conversationId, turnId, concernId).all(HealthProfilePolicy::uuid))
@@ -18,6 +18,7 @@ internal data class HealthCareDiscussionGrant(
     fun json() = JSONObject().put("conversation", conversationId).put("turn", turnId).put("concern", concernId)
         .put("revision", revision).put("settings", settingsVersion).put("privacy", privacyVersion)
         .put("destination", destination).put("approved_at", approvedAt).put("target", targetId).put("model", modelId).put("effort", effort)
+        .put("questions_shared", questionsShared)
         .apply {
             if (researchAuthorizationId.isNotEmpty()) put("research_authorization", researchAuthorizationId)
             profileLink?.let { put("profile_link", it.json()) }
@@ -26,7 +27,7 @@ internal data class HealthCareDiscussionGrant(
         fun from(j: JSONObject) = HealthCareDiscussionGrant(j.getString("conversation"), j.getString("turn"),
             j.getString("concern"), j.getInt("revision"), j.getString("settings"), j.getString("privacy"),
             j.getString("destination"), j.getLong("approved_at"), j.getString("target"), j.getString("model"), j.getString("effort"),
-            j.optString("research_authorization"), j.optJSONObject("profile_link")?.let(HealthCareProfileLink::from))
+            j.optString("research_authorization"), j.optJSONObject("profile_link")?.let(HealthCareProfileLink::from), j.optBoolean("questions_shared"))
     }
 }
 
@@ -41,13 +42,17 @@ internal object HealthCareDiscussionPolicy {
             grant.privacyVersion == privacy.version && grant.destination == destination &&
             now >= grant.approvedAt && now - grant.approvedAt < MAX_APPROVAL_AGE &&
             concern.stage !in setOf(HealthCareStage.PAUSED, HealthCareStage.CLOSED) &&
-            HealthCareSignal.SOURCE_REMOVED !in concern.assessment.signals
+            HealthCareSignal.SOURCE_REMOVED !in concern.assessment.signals && questionScopeCurrent(grant, concern)
+
+    fun questionScopeCurrent(grant: HealthCareDiscussionGrant, issue: HealthCareConcern) =
+        grant.questionsShared || issue.questionVersion.isEmpty()
 
     // No filesystem, contacts, messaging, scheduling or record-writing authority is implied by a discussion.
     val researchTools = setOf("web.search", "web.open", "galaxyssi.web.head", "galaxyssi.web.fetch",
         "galaxyssi.web.intelligence.search", "galaxyssi.web.intelligence.fetch",
         "galaxyssi.tools.discover", "galaxyssi.tools.describe", "galaxyssi.phone.conversation.recall")
-    val discussionTools get() = researchTools + setOf(HealthCarePlanTool.ID, HealthCareHistoryTool.ID)
+    val discussionTools get() = researchTools + setOf(HealthCarePlanTool.ID, HealthCareHistoryTool.ID) + HealthCareQuestionTools.ids
+    fun tools(grant: HealthCareDiscussionGrant) = if (grant.questionsShared) discussionTools else discussionTools - HealthCareQuestionTools.ids
 
     // This is transport detection only. Actual record access still requires the persisted per-turn grant.
     fun hasStructuredContext(prompt: String): Boolean {
@@ -62,7 +67,8 @@ internal object HealthCareDiscussionPolicy {
         }.getOrDefault(false)
     }
 
-    fun snapshot(value: HealthCareConcern, followUp: JSONObject? = null, profile: HealthProfileContext? = null): String = JSONObject()
+    fun snapshot(value: HealthCareConcern, followUp: JSONObject? = null, profile: HealthProfileContext? = null,
+        questions: HealthCareQuestionPage? = null): String = JSONObject()
         .put("metric", value.metric.name).put("revision", value.revision).put("stage", value.stage.name).put("input_version", value.inputVersion)
         .put("assessment", value.assessment.json().apply {
             remove("comparison"); remove("series"); if (value.assessment.comparison != null) remove("sample")
@@ -72,6 +78,7 @@ internal object HealthCareDiscussionPolicy {
         .apply {
             require((value.profileLink == null) == (profile == null))
             profile?.let { put("selected_profile", HealthCareProfilePolicy.snapshot(requireNotNull(value.profileLink), it, value.assessment.measuredAt)) }
+            questions?.let { put("question_ledger", HealthCareQuestionPolicy.snapshot(it, value, profile)) }
         }
         .put("individual_target", value.target?.json() ?: JSONObject.NULL)
         .put("target_comparison", if (value.target == null) JSONObject.NULL else HealthCareTargetPolicy.comparison(value).name)
@@ -113,6 +120,21 @@ internal object HealthCareDiscussionPolicy {
         Age is derived for the measurement date, not a proof of current symptoms or pregnancy status.
         New profile information may conflict with measurement-time context; explain the difference
         and clarify only when it affects the decision. Never silently overwrite either source.
+        question_ledger is durable across conversations and providers within this exact sharing scope.
+        Read further pages with galaxyssi.health.questions.read when next is present; a page is not the full ledger.
+        Reuse saved facts and current reviewed answers. DEFERRED and DECLINED require the user to reopen;
+        do not ask them again just because time passed, the model changed or a new conversation started.
+        STALE and CONFLICT are not current facts: explain the specific changed source or discrepancy before
+        requesting a necessary review, never silently reuse old answers. Reviewed free text does not edit
+        measurements, medication, or profile fields. Do not infer clinical confirmation from a completed form.
+        For a material unanswered gap, use galaxyssi.health.questions.propose with a stable semantic key,
+        one precise question and its decision-relevant purpose. Reuse that key on retries, not paraphrased keys.
+        Saved detection fields use context.adult, context.pregnant, context.diagnosed_diabetes, context.specimen,
+        context.fasting_hours, context.illness_or_glucose_affecting_medication; selected profile fields use
+        profile.height, profile.age_at_measurement, profile.reference_sex, profile.physiological_context.
+        The tool stores a question, not an answer; only a user review produces a saved-answer receipt.
+        Ask only what changes the next decision. An unanswered question must never postpone urgent care.
+        Measurement time and confirmation time are distinct; equality does not prove either timestamp is incorrect.
         automatic_follow_up explains why this background run started, using the durable run time and the
         last completed review in this same conversation. Lead with the relevant change or due action.
         elapsed_time_only means a review window arrived, not that a test was performed or health improved.

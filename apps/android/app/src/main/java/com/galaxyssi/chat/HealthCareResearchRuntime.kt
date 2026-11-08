@@ -37,6 +37,7 @@ internal object HealthCareResearchRuntime {
         val conversation = AgentTranscriptStore(context).conversation(scope.conversationId)
         val issue = HealthCareStore(context).use { it.concern(scope.concernId) } ?: return false
         return value.active && privacy.metrics && privacy.profile && privacy.version == scope.privacyVersion &&
+            HealthCareDiscussionPolicy.questionScopeCurrent(scope, issue) &&
             issue.profileLink?.scope == scope.profileLink?.scope && HealthCareProfileAccess.current(context, issue.profileLink) &&
             (scope.targetId == "local-llm" || privacy.online) && conversation?.status == AgentConversationStatus.ACTIVE &&
             conversation.privateMode && conversation.trackingPaused &&
