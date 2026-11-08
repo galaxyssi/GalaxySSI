@@ -3,6 +3,7 @@ import Foundation
 
 enum GalaxySSIHealthCareDiscussion {
   static let maximumTurns = 200
+  static let maximumPayloadBytes = 32_768
   static let approvalLifetime: TimeInterval = 10 * 60
 
   struct Turn: Codable, Identifiable, Equatable {
@@ -104,9 +105,13 @@ enum GalaxySSIHealthCareDiscussion {
     }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-    let data = try encoder.encode(Payload(concern: Snapshot(concern), question: question, previous: previous))
-    guard data.count <= 32_768 else { throw GalaxySSIHealthRecords.Failure.invalid }
-    return String(decoding: data, as: UTF8.self)
+    let snapshot = Snapshot(concern)
+    // Keep a contiguous suffix of complete exchanges; approval covers the exact encoded bytes.
+    for count in stride(from: previous.count, through: 0, by: -1) {
+      let data = try encoder.encode(Payload(concern: snapshot, question: question, previous: Array(previous.suffix(count))))
+      if data.count <= maximumPayloadBytes { return String(decoding: data, as: UTF8.self) }
+    }
+    throw GalaxySSIHealthRecords.Failure.invalid
   }
 
   static func request(_ approval: Approval, key: String) throws -> URLRequest {

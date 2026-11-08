@@ -48,6 +48,19 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     try records.finishLocalCareDiscussionTurn(approved, answer: "Fixture scoped response", now: now)
     XCTAssertTrue(try review().payload.contains("Fixture scoped response"))
     XCTAssertFalse(try review("provider-b").payload.contains("Fixture scoped response"))
+    // JSON escaping can exceed the wire budget even though each saved reply is within its own limit.
+    let replies = ["older", "middle", "newest"].map { $0 + String(repeating: "\t", count: 6_000) }
+    for reply in replies {
+      let next = try review()
+      try records.beginLocalCareDiscussionTurn(next, now: now)
+      try records.finishLocalCareDiscussionTurn(next, answer: reply, now: now)
+    }
+    let bounded = try review()
+    let disclosure = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(bounded.payload.utf8)) as? [String: Any])
+    let previous = try XCTUnwrap(disclosure["previous"] as? [[String: String]])
+    XCTAssertEqual(previous.compactMap { $0["answer"] }, Array(replies.suffix(2)))
+    XCTAssertLessThanOrEqual(bounded.payload.utf8.count, GalaxySSIHealthCareDiscussion.maximumPayloadBytes)
+    XCTAssertEqual(try records.load().localCareDiscussions?[concern.id.uuidString]?.turns.count, 4)
     let stale = try review()
     try records.setHealthOnlinePermission(false)
     try records.setHealthOnlinePermission(true)
