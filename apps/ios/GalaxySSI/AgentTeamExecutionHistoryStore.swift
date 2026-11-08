@@ -2338,7 +2338,8 @@ final class AgentTeamExecutionHistoryStore {
   func publishCollaborationMilestone(_ input: AgentMcpJSONObject,
                                      scope: AgentCollaborationToolEvidenceScope,
                                      recruitmentTemplates: [String: String] = [:],
-                                     recruitmentRoster: AgentCollaborationRoster? = nil) throws -> AgentMcpJSONObject {
+                                     recruitmentRoster: AgentCollaborationRoster? = nil,
+                                     desktopWire: Bool = false) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
     let id = input.string("milestone_id")
     if mode == AgentCollaborationGoalAssessmentPolicy.establishContractMode {
@@ -2411,20 +2412,35 @@ final class AgentTeamExecutionHistoryStore {
             "next_cursor": keys.count > 32 ? .string(keys[31]) : .null,
             "trust": .string("host_recorded_interim_versions_not_task_completion_or_verification")]
         }
-        let hash = input.string("artifact_sha256")
         guard mode == "receipt", Set(input.keys) == ["mode", "milestone_id", "artifact_sha256"],
+              case .string(let receiptID)? = input["milestone_id"], receiptID == id,
+              case .string(let hash)? = input["artifact_sha256"],
               !id.isBlank, id.utf8.count <= 160, hash.utf8.count == 64,
               hash.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) })
         else { throw AgentTeamHistoryDatabase.Failure.corrupt }
         let saved = try database.researchRecord(AgentCollaborationResearchPublication.self,
           conversationId: scope.conversationId, key: Self.milestoneKey(base, id: id), revision: 0)
-        if let saved, saved.requestHash == hash { return Self.milestoneReceipt(saved, id: id, status: "recorded") }
+        if let saved, saved.requestHash == hash {
+          guard saved.milestoneId == id, !saved.references.isEmpty else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+          for ref in saved.references {
+            guard let original = try database.researchRecord(AgentCollaborationResearchRevision.self,
+              conversationId: scope.conversationId, key: "object:" + ref.objectId, revision: ref.revision),
+              original.reference == ref, original.runId == scope.runId, original.turnId == scope.turnId,
+              original.authorId == scope.memberId, original.sourceId == scope.sourceId else {
+              throw AgentTeamHistoryDatabase.Failure.stale
+            }
+          }
+          var result = Self.milestoneReceipt(saved, id: id, status: "recorded")
+          result["receipt_recovered"] = .bool(true)
+          return result
+        }
         if let rejected = try database.researchRecord(AgentCollaborationMilestoneRejection.self,
           conversationId: scope.conversationId, key: Self.milestoneRejectionKey(base, id: id, hash: hash), revision: 0) {
           return Self.milestoneRejectedReceipt(id: id, hash: hash, reason: rejected.reason, problem: rejected.problem)
         }
         if saved == nil {
-          return ["success": .bool(false), "status": .string("not_recorded")]
+          return ["success": .bool(true), "status": .string("not_recorded"),
+            "milestone_id": .string(id), "artifact_sha256": .string(hash)]
         }
         throw AgentTeamHistoryDatabase.Failure.stale
       }
@@ -2440,7 +2456,8 @@ final class AgentTeamExecutionHistoryStore {
       else { throw AgentTeamHistoryDatabase.Failure.corrupt }
       let drafts: [AgentCollaborationResearchDraft]
       do {
-        guard let decoded = try AgentCollaborationResearchEnvelope.publication(in: raw) else {
+        let view = desktopWire ? AgentDesktopCollaborationPublicationWire.artifactDecodingView(envelope) ?? raw : raw
+        guard let decoded = try AgentCollaborationResearchEnvelope.publication(in: view) else {
           throw AgentTeamHistoryDatabase.Failure.corrupt
         }
         drafts = decoded

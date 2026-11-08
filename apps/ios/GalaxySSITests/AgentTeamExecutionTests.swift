@@ -969,6 +969,77 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(linked.map { $0.draft.id }, ["note"])
   }
 
+  func testDesktopPublicationRecoversExactFrozenArtifactsAndDistinguishesAbsence() throws {
+    let suite = "desktop-publication-receipt-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    func open() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    }
+    let history = open()
+    var team = durableTeamSnapshot("desktop-publication")
+    team.members[1].dispatchCheckpoint = .dispatching
+    XCTAssertTrue(history.upsert(team))
+    let member = team.members[1]
+    let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId, memberId: member.memberId, sourceId: member.sourceMessageId)
+    let wire = AgentDesktopCollaborationPublicationWire.self
+    func sha(_ raw: String) -> String {
+      SHA256.hash(data: Data(raw.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+    func lookup(_ id: String, _ digest: String) -> AgentMcpJSONObject {
+      ["mode": .string("receipt"), "milestone_id": .string(id), "artifact_sha256": .string(digest)]
+    }
+    for kind in ["text", "file"] {
+      let raw = """
+      {"format":"galaxyssi.research-artifact.v1","summary":"Snapshot \u{1F642}","workspace":[
+        {"id":"\(kind)","kind":"artifact","title":"Snapshot","body":{"format":"galaxyssi.\(kind)-artifact/1",
+          "name":"snapshot","content":"Frozen \u{1F642}"},"parents":[]}]}
+      """
+      let request = lookup(kind, sha(raw))
+      let absent = try history.publishCollaborationMilestone(request, scope: scope)
+      XCTAssertEqual(absent["success"], .bool(true))
+      XCTAssertEqual(absent["status"], .string("not_recorded"))
+      XCTAssertEqual(absent["milestone_id"], .string(kind))
+      XCTAssertEqual(absent["artifact_sha256"], .string(sha(raw)))
+      let original: AgentMcpJSONObject = ["mode": .string("publish"), "milestone_id": .string(kind), "artifact": .string(raw)]
+      let submitted = wire.result(try history.publishCollaborationMilestone(original, scope: scope, desktopWire: true),
+        phase: "publish")
+      XCTAssertEqual(submitted["status"], .string("recorded"))
+      XCTAssertEqual(submitted["artifact_sha256"], .string(sha(raw)))
+      XCTAssertEqual(submitted["revisions"]?.arrayValue?.count, 1)
+      let reopened = open()
+      let recovered = wire.result(try reopened.publishCollaborationMilestone(request, scope: scope), phase: "receipt")
+      XCTAssertEqual(recovered["status"], .string("recorded"))
+      XCTAssertEqual(recovered["receipt_recovered"], .bool(true))
+      XCTAssertEqual(recovered["assignment_completed"], .bool(false))
+      XCTAssertEqual(recovered["revisions"], submitted["revisions"])
+      XCTAssertThrowsError(try reopened.publishCollaborationMilestone(lookup(kind, sha(raw + " ")), scope: scope))
+      var foreign = scope
+      foreign.sourceId = "other-source"
+      XCTAssertThrowsError(try reopened.publishCollaborationMilestone(request, scope: foreign))
+    }
+    let database = try AgentTeamHistoryDatabase(fileURL: file,
+      storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    let base = "publication:" + AgentMcpJSONCodec.sha256([
+      "run": .string(scope.runId), "member": .string(scope.memberId), "source": .string(scope.sourceId)
+    ]) + ":milestone:"
+    let invalidDigest = sha("invalid reference fixture")
+    let invalid = AgentCollaborationResearchPublication(requestHash: invalidDigest,
+      references: [.init(objectId: String(repeating: "a", count: 64), revision: 1, sha256: invalidDigest)],
+      milestoneId: "broken", recordedAtMillis: 1)
+    try database.insertResearchRecord(invalid, conversationId: scope.conversationId,
+      key: base + AgentMcpJSONCodec.sha256(["id": .string("broken")]), revision: 0)
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(lookup("broken", invalidDigest), scope: scope))
+    team.state = .cancelled
+    team.updatedAtMillis += 1
+    XCTAssertTrue(history.upsert(team))
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(lookup("missing", invalidDigest), scope: scope))
+  }
+
   func testResearchPublicationNotesDefaultOnlyWhenAbsentAndPreserveExplicitValues() throws {
     typealias Envelope = AgentCollaborationResearchEnvelope
     let base: AgentMcpJSONObject = ["format": .string(Envelope.wireFormat), "summary": .string("Research")]
@@ -3940,6 +4011,10 @@ extension GalaxySSIStoreTests {
     cache.remember(result, key: "nonce", fingerprint: "assignment-1", expiresAt: 20, now: 10)
     XCTAssertEqual(cache.lookup(key: "nonce", fingerprint: "assignment-1", now: 11), .response(result))
     XCTAssertEqual(cache.lookup(key: "nonce", fingerprint: "assignment-2", now: 11), .identityMismatch)
+    let absent: AgentMcpJSONObject = ["success": .bool(true), "status": .string("not_recorded")]
+    cache.remember(absent, key: "receipt-nonce", fingerprint: "assignment-1", expiresAt: 20, now: 10)
+    XCTAssertEqual(cache.lookup(key: "receipt-nonce", fingerprint: "assignment-1", now: 11, revalidate: true), .missing)
+    XCTAssertEqual(cache.lookup(key: "receipt-nonce", fingerprint: "assignment-2", now: 11, revalidate: true), .identityMismatch)
     XCTAssertEqual(cache.lookup(key: "nonce", fingerprint: "assignment-1", now: 20), .missing)
     cache.remember(["success": .bool(false)], key: "failed", fingerprint: "assignment-1", expiresAt: 30, now: 20)
     XCTAssertEqual(cache.lookup(key: "failed", fingerprint: "assignment-1", now: 21), .missing)
