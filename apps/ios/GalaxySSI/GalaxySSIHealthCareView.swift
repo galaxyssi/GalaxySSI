@@ -362,6 +362,12 @@ private struct GalaxySSIHealthCareDetail: View {
               }
             }
             .disabled(!fastingHours.isEmpty && Int(fastingHours).map { (0...72).contains($0) } != true)
+          } else if measurement != nil {
+            collectionPicker
+            Button(t("save_context", "Confirm measurement context")) {
+              perform { try records.setLocalCareContext(concern, applicability: .unknown,
+                answers: .init(collection: answers.collection)) }
+            }
           }
         }
         Section(t("baseline", "Historical observation range")) {
@@ -424,6 +430,7 @@ private struct GalaxySSIHealthCareDetail: View {
 
   private var clarificationFields: some View {
     DisclosureGroup(t("clarification.title", "Recorded answers")) {
+      collectionPicker
       truth(t("clarification.adult", "Adult"), value: $answers.adult)
       truth(t("clarification.pregnant", "Pregnant at measurement"), value: $answers.pregnant)
       truth(t("clarification.diabetes", "Diagnosed diabetes"), value: $answers.diagnosedDiabetes)
@@ -436,6 +443,17 @@ private struct GalaxySSIHealthCareDetail: View {
       TextField(t("clarification.fasting", "Hours without calories (0–72)"), text: $fastingHours)
         .keyboardType(.numberPad)
       truth(t("clarification.illness", "Illness or glucose-affecting medication at measurement"), value: $answers.illnessOrMedication)
+    }
+  }
+
+  private var collectionPicker: some View {
+    typealias Collection = GalaxySSIHealthCare.Context.Answers.Collection
+    return Picker(t("clarification.collection", "Collection condition"), selection: $answers.collection) {
+      Text(t("none", "Not recorded")).tag(Collection?.none)
+      Text(t("clarification.collection.fasting", "Fasting")).tag(Optional(Collection.fasting))
+      Text(t("clarification.collection.after_meal", "After a meal")).tag(Optional(Collection.afterMeal))
+      Text(t("clarification.collection.resting", "Resting")).tag(Optional(Collection.resting))
+      Text(t("clarification.collection.after_activity", "After activity")).tag(Optional(Collection.afterActivity))
     }
   }
 

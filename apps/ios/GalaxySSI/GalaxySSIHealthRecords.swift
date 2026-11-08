@@ -665,6 +665,7 @@ struct GalaxySSIHealthRecords {
             !selected.isEmpty, selected.isSubset(of: Set(saved.draft.actions.map(\.id))) else { throw Failure.stale }
       let actions = saved.draft.actions.filter { selected.contains($0.id) }
       guard actions.allSatisfy({ saved.draft.sources.indices.contains($0.sourceIndex) &&
+        GalaxySSIHealthCareApplicability.canAdopt($0, concern: checked) &&
         $0.dueUntil.map { $0 >= now } != false }) else { throw Failure.stale }
       var adopted = current.adoptedActions ?? []
       guard !adopted.contains(where: { $0.proposalID == saved.id }) else { throw Failure.stale }
@@ -684,7 +685,8 @@ struct GalaxySSIHealthRecords {
     try persist(archive)
   }
 
-  func validateLocalCarePlanReview(_ proposal: GalaxySSIHealthCarePlan.Proposal, now: Date = Date()) throws {
+  func validateLocalCarePlanReview(_ proposal: GalaxySSIHealthCarePlan.Proposal, now: Date = Date()) throws
+    -> GalaxySSIHealthCare.Concern {
     let archive = try load()
     let concern = try currentDiscussionConcern(id: proposal.concernID, metric: proposal.metric, archive: archive, now: now)
     guard archive.localCarePlans?[proposal.id.uuidString] == proposal, proposal.state == .pending,
@@ -694,6 +696,7 @@ struct GalaxySSIHealthRecords {
           archive.matchesLocalCarePermission(proposal.carePermission),
           Self.localCarePlanEvidenceMatches(proposal, archive: archive, owner: owner)
     else { throw Failure.stale }
+    return concern
   }
 
   private static func localCarePlanEvidenceMatches(_ proposal: GalaxySSIHealthCarePlan.Proposal, archive: Archive,
@@ -838,9 +841,14 @@ struct GalaxySSIHealthRecords {
                            applicability: GalaxySSIHealthCare.Context.Applicability,
                            answers: GalaxySSIHealthCare.Context.Answers? = nil, now: Date = Date()) throws {
     if let hours = answers?.fastingHours, !(0...72).contains(hours) { throw Failure.invalid }
+    if concern.metric != .glucose {
+      guard applicability == .unknown,
+            answers.map({ $0 == GalaxySSIHealthCare.Context.Answers(collection: $0.collection) }) != false
+      else { throw Failure.invalid }
+    }
     try updateLocalCare(concern, now: now) { current, archive in
-      let readings = archive.current.filter { $0.metric == .glucose && $0.isValid && $0.measuredAt <= now }
-      guard current.metric == .glucose, let record = current.assessment.record,
+      let readings = archive.current.filter { $0.metric == current.metric && $0.isValid && $0.measuredAt <= now }
+      guard let record = current.assessment.record,
             readings.first.map(GalaxySSIHealthCare.Record.init) == record else { throw Failure.stale }
       let previous = current.context.flatMap { $0.record == record ? $0 : nil }
       var context = GalaxySSIHealthCare.Context(record: record, applicability: applicability)
@@ -850,7 +858,9 @@ struct GalaxySSIHealthRecords {
       guard let assessment = GalaxySSIHealthCare.assess(readings, context: context) else { throw Failure.stale }
       current.context = context
       current.assessment = assessment
-      if current.stage != .paused { current.stage = applicability == .unknown ? .verify : .evidence }
+      if current.metric == .glucose, current.stage != .paused {
+        current.stage = applicability == .unknown ? .verify : .evidence
+      }
     }
   }
 

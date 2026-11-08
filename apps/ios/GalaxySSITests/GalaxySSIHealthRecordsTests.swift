@@ -48,6 +48,20 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(known["fasting_hours"] as? Int, 0)
     XCTAssertNil(known["adult"])
     XCTAssertTrue((current["unconfirmedFields"] as? [String])?.contains("adult") == true)
+    typealias Policy = GalaxySSIHealthCareApplicability
+    let checks: [Policy.Check] = [
+      .init(field: .pregnant, comparison: .equals, expected: "NO", sourceIndex: 0),
+      .init(field: .fasting, comparison: .equals, expected: "0", sourceIndex: 0)
+    ]
+    let matching = Policy.Review(mode: .individualized, checks: checks, missingInformation: [], conflicts: [])
+    XCTAssertEqual(Policy.status(matching, concern: confirmed), .matched)
+    XCTAssertEqual(Policy.result(.init(field: .adult, comparison: .equals, expected: "NO", sourceIndex: 0),
+      concern: confirmed), .unknown)
+    XCTAssertEqual(Policy.result(.init(field: .unit, comparison: .equals, expected: "mmol/L", sourceIndex: 0),
+      concern: confirmed), .mismatch)
+    let conflict = Policy.Review(mode: .individualized, checks: checks, missingInformation: [],
+      conflicts: [.init(sourceIndices: [0, 1], detail: "Fixture conflict", nextStep: "Verify source applicability")])
+    XCTAssertEqual(Policy.status(conflict, concern: confirmed), .conflict)
     var edited = try XCTUnwrap(records.load().current.first)
     edited.value = 115
     try records.write(edited)
@@ -55,6 +69,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     var revised = try XCTUnwrap(records.load().localCare?.current["glucose"])
     XCTAssertNil(revised.context)
     revised.context = confirmed.context
+    XCTAssertEqual(Policy.status(matching, concern: revised), .needsContext)
     let historical = try payload(revised)
     let context = try clarification(historical)
     XCTAssertEqual(context["status"] as? String, "other_record_or_revision")
@@ -116,9 +131,13 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
       {"uncertainty":"Context unconfirmed","sources":[{"title":"Fixture source","url":"\(source.url.absoluteString)",
       "version":"2026","applicability":"Applicability needs review","evidence_id":"\(approval.evidence[0].id.uuidString)",
       "quote":"\(quote)"}],"actions":[
-      {"kind":"CONTEXT","description":"Clarify context","rationale":"Missing context","source_index":0,"due_from":"","due_until":""},
+      {"kind":"CONTEXT","description":"Clarify context","rationale":"Missing context","source_index":0,"due_from":"","due_until":"",
+      "applicability":{"mode":"DISCUSSION_ONLY","checks":[],"missing_information":[],"conflicts":[]}},
       {"kind":"RECHECK","description":"Discuss a recheck","rationale":"Timing needs professional review","source_index":0,
-      "due_from":"","due_until":""}]}
+      "due_from":"","due_until":"","applicability":{"mode":"INDIVIDUALIZED","checks":[{"field":"unit","operator":"EQUALS",
+      "expected":"mg/dL","source_index":0}],"missing_information":[],"conflicts":[]}},
+      {"kind":"LIFESTYLE","description":"Fixture action","rationale":"Requires context","source_index":0,"due_from":"","due_until":"",
+      "applicability":{"mode":"INDIVIDUALIZED","checks":[],"missing_information":["Missing context"],"conflicts":[]}}]}
       """
     let original = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
     let sourceRows = try XCTUnwrap(original["sources"]?.arrayValue)
@@ -167,6 +186,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
       model: model, credential: "changed-api-key"))
     XCTAssertThrowsError(try reopened.resolveLocalCarePlan(draft, selected: [], currentDestination: destination, now: now))
     XCTAssertThrowsError(try reopened.resolveLocalCarePlan(draft, selected: [1], now: now))
+    XCTAssertThrowsError(try reopened.resolveLocalCarePlan(draft, selected: [2], currentDestination: destination, now: now))
     try reopened.resolveLocalCarePlan(draft, selected: [1], currentDestination: destination, now: now)
     let updated = try XCTUnwrap(reopened.load().localCare?.current["glucose"])
     XCTAssertEqual(updated.stage, .waitingResults)

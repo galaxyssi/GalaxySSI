@@ -20,6 +20,9 @@ enum GalaxySSIHealthCare {
   struct Context: Codable, Equatable {
     enum Applicability: String, Codable, Hashable, CaseIterable { case unknown, applicable, excluded }
     struct Answers: Codable, Equatable {
+      enum Collection: String, Codable, Hashable, CaseIterable {
+        case fasting, afterMeal = "after_meal", resting, afterActivity = "after_activity"
+      }
       enum Specimen: String, Codable, Hashable, CaseIterable {
         case labPlasma = "lab_plasma", homeCapillary = "home_capillary", interstitial
       }
@@ -29,17 +32,20 @@ enum GalaxySSIHealthCare {
       var specimen: Specimen?
       var fastingHours: Int?
       var illnessOrMedication: Bool?
+      var collection: Collection?
 
       enum CodingKeys: String, CodingKey {
         case adult, pregnant, specimen
         case diagnosedDiabetes = "diagnosed_diabetes"
         case fastingHours = "fasting_hours"
         case illnessOrMedication = "illness_or_glucose_affecting_medication"
+        case collection = "collection_condition"
       }
 
       var unconfirmed: [String] {
         [(CodingKeys.adult, adult == nil), (.pregnant, pregnant == nil), (.diagnosedDiabetes, diagnosedDiabetes == nil),
-         (.specimen, specimen == nil), (.fastingHours, fastingHours == nil), (.illnessOrMedication, illnessOrMedication == nil)]
+         (.specimen, specimen == nil), (.fastingHours, fastingHours == nil), (.illnessOrMedication, illnessOrMedication == nil),
+         (.collection, collection == nil)]
           .compactMap { $0.1 ? $0.0.rawValue : nil }
       }
 
