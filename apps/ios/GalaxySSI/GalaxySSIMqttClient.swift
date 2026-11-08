@@ -501,6 +501,26 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     }
   }
 
+  func publishConnectedGoalWork(topic: String, payload: Data) async -> Bool {
+    await withCheckedContinuation { continuation in
+      queue.async {
+        guard !self.intentionallyDisconnected, self.hasLiveTransport(), self.pendingPacketPublishes.isEmpty,
+              self.mqttInflightPacketIds.count < Self.maximumMqttInflight,
+              let secret = self.relationshipSecret(forSendingTopic: topic),
+              let packets = try? GalaxySSIMqttWireChunking.encode(wirePayload: String(decoding: payload, as: UTF8.self)),
+              packets.count == 1 else { continuation.resume(returning: false); return }
+        var submitted = false
+        let accepted = self.sendWirePayload(topic: topic, payload: payload, secret: secret,
+          physicallySubmitted: { submitted = $0 })
+        if !submitted {
+          let logicalID = Self.logicalMessageId(payload)
+          self.pendingPacketPublishes.removeAll { $0.logicalMessageId == logicalID }
+        }
+        continuation.resume(returning: accepted && submitted)
+      }
+    }
+  }
+
   /// Live input must never enter a queue that can drain after reconnect.
   func publishDesktopInputOnce(topic: String, payload: Data, expiresAt: Int64) async -> Bool {
     guard !Task.isCancelled else { return false }
