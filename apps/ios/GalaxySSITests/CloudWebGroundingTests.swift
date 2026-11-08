@@ -361,6 +361,49 @@ final class CloudWebGroundingTests: XCTestCase {
     XCTAssertEqual(payload["operation"], .string("research"))
   }
 
+  func testDiscoveredArticleLinksStayOutsideCitationPackThroughCompactionAndProjection() throws {
+    let page = "https://example.test/news"
+    let dated = "https://example.test/2026/9/18/report"
+    let category = "https://example.test/topics/economy"
+    let links = [category, dated, dated + "?utm_source=nav", page + "#top",
+      "http://example.test/insecure", "https://user:secret@example.test/private",
+      "https://example.test/", "https://127.0.0.1/private", "https://printer.local/private",
+      "https://example.test/" + String(repeating: "x", count: 512)]
+    var attached = AgentIOSWebEvidencePack.attach(to: [
+      "operation": .string("fetch"), "status": .string("completed"), "url": .string(page),
+      "text": .string("Retrieved publisher news index."),
+      "links": .array(links.map(AgentMcpJSONValue.string))
+    ], generatedAtMillis: 1)
+    let expected: AgentMcpJSONValue = .array([.string(dated), .string(category)])
+    let encoded = CloudWebGrounding.boundedModelJson(attached)
+    XCTAssertEqual(decodeObject(encoded)?["discovered_links"], expected)
+    XCTAssertEqual(decodeObject(CloudEvidencePromptLedger().project(encoded))?["discovered_links"], expected)
+
+    var oversized = try XCTUnwrap(attached["evidence_pack"]?.objectValue)
+    oversized["fixture"] = .string(String(repeating: "x", count: 25_000))
+    attached["evidence_pack"] = .object(oversized)
+    let compact = CloudWebGrounding.boundedModelJson(attached)
+    XCTAssertLessThanOrEqual(compact.count, 24_000)
+    XCTAssertEqual(decodeObject(compact)?["discovered_links"], expected)
+    let results = [("web_fetch", encoded)]
+    XCTAssertTrue(CloudWebGrounding.citationValidation("Index [source](\(page)).", results: results).valid)
+    XCTAssertFalse(CloudWebGrounding.citationValidation("Article [source](\(dated)).", results: results).valid)
+    XCTAssertFalse(CloudWebGrounding.evidenceFallback(results: results).contains(dated))
+  }
+
+  func testDiscoveredNavigationLinksAreCappedWithDatedLinksAheadOfCategories() throws {
+    let category = (0..<30).map { "https://example.test/topics/\($0)" }
+    let dated = (0..<5).map { "https://example.test/2026/09/18/article-\($0)" }
+    let attached = AgentIOSWebEvidencePack.attach(to: [
+      "operation": .string("fetch"), "status": .string("completed"), "url": .string("https://example.test/news"),
+      "text": .string("Retrieved publisher news index."),
+      "links": .array((category + dated).map(AgentMcpJSONValue.string))
+    ], generatedAtMillis: 1)
+    let encoded = CloudWebGrounding.boundedModelJson(attached)
+    let projected = try XCTUnwrap(decodeObject(encoded)?["discovered_links"]?.arrayValue)
+    XCTAssertEqual(projected.compactMap(\.stringValue), dated + Array(category.prefix(19)))
+  }
+
   func testOversizedEvidencePackRemainsBoundedValidJSON() throws {
     let largePath = String(repeating: "path", count: 1_000)
     let largeTitle = String(repeating: "Title ", count: 200)
