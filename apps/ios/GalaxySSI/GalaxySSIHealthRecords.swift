@@ -755,7 +755,31 @@ struct GalaxySSIHealthRecords {
 
   private func localCareResearchTrigger(_ concern: GalaxySSIHealthCare.Concern, archive: Archive, now: Date) throws -> String {
     let measurements = archive.current.filter { $0.metric == concern.metric && $0.isValid && $0.measuredAt <= now }
-    return try GalaxySSIHealthCareResearch.trigger(concern, history: GalaxySSIHealthCareSeries.version(measurements), now: now)
+    let key = concern.id.uuidString
+    guard let authorization = archive.localCareResearch?.authorizations[key],
+          let thread = archive.localCareDiscussions?[key], thread.id == authorization.thread else { throw Failure.stale }
+    let plans = scopedLocalCareResearchPlans(thread.turns, authorization: authorization, archive: archive)
+    return try GalaxySSIHealthCareResearch.trigger(concern, history: GalaxySSIHealthCareSeries.version(measurements),
+      now: now, scopedActions: scopedLocalCareResearchActions(concern, plans: plans))
+  }
+
+  private func scopedLocalCareResearchPlans(_ turns: [GalaxySSIHealthCareDiscussion.Turn],
+      authorization: GalaxySSIHealthCareResearch.Authorization, archive: Archive) -> [GalaxySSIHealthCareResearchHandoff.PlanContext] {
+    turns.compactMap { turn in
+      guard turn.destination == authorization.destination, let id = turn.proposalID,
+            let plan = archive.localCarePlans?[id.uuidString], plan.concernID == authorization.concern,
+            plan.onlinePermission == authorization.onlinePermission, plan.carePermission == authorization.localPermission,
+            plan.profileScopeEpoch == authorization.profileScopeEpoch, plan.destinationDigest == authorization.destination
+      else { return nil }
+      return .init(proposal: plan, includeDescriptions: turn.historyIncluded != true)
+    }
+  }
+
+  private func scopedLocalCareResearchActions(_ concern: GalaxySSIHealthCare.Concern,
+      plans: [GalaxySSIHealthCareResearchHandoff.PlanContext]) -> [GalaxySSIHealthCarePlan.AdoptedAction] {
+    let selected = Dictionary(plans.filter { $0.proposal.state == .accepted }
+      .map { ($0.proposal.id, $0.proposal.selected) }, uniquingKeysWith: { first, _ in first })
+    return (concern.adoptedActions ?? []).filter { selected[$0.proposalID]?.contains($0.action.id) == true }
   }
 
   private func makeLocalCareResearchHandoff(_ job: GalaxySSIHealthCareResearch.Job, concern: GalaxySSIHealthCare.Concern,
@@ -765,24 +789,32 @@ struct GalaxySSIHealthRecords {
     guard let ledger = archive.localCareResearch, let authorization = ledger.authorizations[key],
           let thread = archive.localCareDiscussions?[key], thread.id == authorization.thread else { throw Failure.stale }
     let measurements = archive.current.filter { $0.metric == concern.metric && $0.isValid && $0.measuredAt <= job.createdAt }
-    let basis = try Handoff.Basis(concern, history: GalaxySSIHealthCareSeries.version(measurements), observedAt: job.createdAt)
     let turns = thread.turns.filter { $0.destination == authorization.destination && $0.id != job.id }
-    let plans: [Handoff.PlanContext] = turns.compactMap { turn in
-      turn.proposalID.flatMap { archive.localCarePlans?[$0.uuidString] }.map {
-        Handoff.PlanContext(proposal: $0, includeDescriptions: turn.historyIncluded != true)
-      }
-    }.filter {
-      let plan = $0.proposal
-      return plan.state != .dismissed && plan.onlinePermission == authorization.onlinePermission &&
-        plan.carePermission == authorization.localPermission && plan.profileScopeEpoch == authorization.profileScopeEpoch &&
-        plan.destinationDigest == authorization.destination
-    }
+    let plans = scopedLocalCareResearchPlans(turns, authorization: authorization, archive: archive)
+    let actions = scopedLocalCareResearchActions(concern, plans: plans)
+    let basis = try Handoff.Basis(concern, history: GalaxySSIHealthCareSeries.version(measurements),
+      observedAt: job.createdAt, actions: actions)
     let plan = plans.last(where: { context in
       let proposal = context.proposal
       return proposal.state == .accepted && proposal.selected.contains { basis.due.contains("\(proposal.id.uuidString):\($0)") }
-    }) ?? plans.last
-    return Handoff.make(job: job, authorization: authorization, basis: basis, prior: ledger.checkpoints?[key],
-      hasEarlierResult: turns.contains { $0.answer != nil || $0.proposalID != nil }, plan: plan)
+    }) ?? plans.last(where: { $0.proposal.state != .dismissed })
+    let checkpoint = ledger.checkpoints?[key]
+    var sources: [GalaxySSIHealthCareEvidence.Receipt] = []
+    for turn in turns.reversed() where (turn.answer != nil || turn.proposalID != nil) &&
+        (turn.automaticResearchCompleted == true || checkpoint?.turn == turn.id) {
+      for receipt in archive.localCareEvidence?[turn.id.uuidString] ?? [] {
+        if Handoff.reusable(receipt, turn: turn.id, owner: owner, authorization: authorization, job: job) {
+          sources.append(receipt)
+        }
+        if sources.count == 8 { break }
+      }
+      if sources.count == 8 { break }
+    }
+    return Handoff.make(job: job, authorization: authorization, basis: basis, prior: checkpoint,
+      hasEarlierResult: turns.contains { $0.answer != nil || $0.proposalID != nil }, plan: plan,
+      recordedPlan: plans.last?.proposal.state, actionCount: actions.count, historicalSources: sources,
+      essentialContextMissing: concern.assessment.signals.contains(.glucoseContext),
+      priorityWarning: concern.bloodPressureWarning != nil)
   }
 
   private func validateLocalCareResearch(_ approval: GalaxySSIHealthCareDiscussion.Approval, archive: Archive,
@@ -892,6 +924,7 @@ struct GalaxySSIHealthRecords {
     if approval.research != nil {
       let concern = try currentDiscussionConcern(id: approval.concernID, metric: approval.metric, archive: archive, now: now)
       try completeLocalCareResearch(approval, concern: concern, archive: &archive, now: now)
+      thread.turns[index].automaticResearchCompleted = true
     }
     thread.turns[index].answer = answer
     archive.localCareDiscussions?[approval.concernID.uuidString] = thread
@@ -922,6 +955,7 @@ struct GalaxySSIHealthRecords {
     let draft = try GalaxySSIHealthCarePlan.parse(arguments, evidence: evidence, now: now, approvedHistory: approvedHistory)
     if approval.research != nil {
       try completeLocalCareResearch(approval, concern: concern, archive: &archive, now: now)
+      thread.turns[index].automaticResearchCompleted = true
     }
     plans[key] = try .init(id: approval.id, concernID: approval.concernID, metric: approval.metric,
       concernRevision: approval.concernRevision, assessmentDigest: GalaxySSIHealthCare.inputDigest(concern.assessment),

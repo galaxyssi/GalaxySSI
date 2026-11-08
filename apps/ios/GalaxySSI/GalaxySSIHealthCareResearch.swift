@@ -21,7 +21,7 @@ enum GalaxySSIHealthCareResearch {
   }
 
   enum State: String, Codable {
-    case queued, preparing, dispatched, completed, interrupted, failed, cancelled, superseded
+    case queued, preparing, dispatched, completed, interrupted, failed, sourceUnavailable, cancelled, superseded
 
     var active: Bool { self == .queued || self == .preparing || self == .dispatched }
   }
@@ -100,6 +100,7 @@ enum GalaxySSIHealthCareResearch {
       switch (current.state, state) {
       case (.queued, .preparing): allowed = true
       case (.preparing, .queued), (.preparing, .dispatched), (.preparing, .failed),
+           (.preparing, .sourceUnavailable),
            (.dispatched, .completed), (.dispatched, .failed), (.dispatched, .interrupted):
         allowed = current.owner == process
       default: allowed = false
@@ -120,8 +121,9 @@ enum GalaxySSIHealthCareResearch {
     let dueActions: [String]
   }
 
-  static func trigger(_ concern: GalaxySSIHealthCare.Concern, history: String, now: Date) throws -> String {
-    let actions = (concern.adoptedActions ?? []).sorted { $0.id < $1.id }
+  static func trigger(_ concern: GalaxySSIHealthCare.Concern, history: String, now: Date,
+                      scopedActions: [GalaxySSIHealthCarePlan.AdoptedAction]) throws -> String {
+    let actions = scopedActions.sorted { $0.id < $1.id }
     let input = Trigger(assessment: concern.assessment, context: concern.context, target: concern.targetRevision,
       history: history, actionOutcomes: actions.filter { $0.outcome != nil },
       dueActions: actions.filter { $0.outcome == nil && $0.action.dueFrom.map { $0 <= now } == true }.map(\.id))

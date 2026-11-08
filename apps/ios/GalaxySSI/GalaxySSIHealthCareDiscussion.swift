@@ -15,6 +15,7 @@ enum GalaxySSIHealthCareDiscussion {
     var proposalID: UUID?
     var planRequested: Bool?
     var historyIncluded: Bool?
+    var automaticResearchCompleted: Bool?
   }
 
   struct Thread: Codable, Identifiable, Equatable {
@@ -219,6 +220,13 @@ enum GalaxySSIHealthCareDiscussion {
         \nUse research_handoff to distinguish changed evidence, action feedback and elapsed deadlines. A deadline
         is not new clinical evidence. Continue the existing plan when this is only a deadline and one exists.
         Do not claim prior comparison if comparison_available is false, and never invent a new deadline.
+        A completed reply does not establish completed research or a recorded plan. Use research_progress.
+        A bundled guideline is not a retrieved source body. When initial_source_review_pending is true and
+        essential_context_missing is true, ask only for the missing context; do not imply a plan exists.
+        Address the initial evidence gap when essential context is available, even without a new measurement.
+        Prior source excerpts are historical and do not establish medical applicability or authorize a new draft.
+        A recorded plan may be pending, accepted, or dismissed; do not recreate a dismissed plan just because
+        there is no accepted action. Never defer a priority warning for routine research.
         """) + (approval.proposesPlan
         ? "\nUse exactly one \(GalaxySSIHealthCarePlan.tool) call to propose a draft. Cite only supplied native_sources by " +
           "their exact evidence_id and URL. Copy a short original-language supporting quote from the excerpt. " +
