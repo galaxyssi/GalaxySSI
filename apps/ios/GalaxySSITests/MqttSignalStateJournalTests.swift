@@ -1,5 +1,8 @@
 import XCTest
 @testable import GalaxySSI
+#if canImport(LibSignalClient)
+import LibSignalClient
+#endif
 
 final class MqttSignalStateJournalTests: XCTestCase {
   private let snapshot = Data("test-ratchet-state".utf8)
@@ -245,6 +248,29 @@ private func signalTestIdentity(local: String = String(repeating: "a", count: 64
 
 #if canImport(LibSignalClient)
 final class MqttSignalAtomicReceiveTests: XCTestCase {
+  func testSignalBackoffClassifiesOnlyAllowlistedErrors() {
+    XCTAssertEqual(GalaxySSISignalEngine.retryableCiphertextFailure(SignalError.invalidMessage("private")), .invalidMessage)
+    XCTAssertEqual(GalaxySSISignalEngine.retryableCiphertextFailure(SignalError.duplicatedMessage("private")), .duplicateMessage)
+    XCTAssertEqual(GalaxySSISignalEngine.retryableCiphertextFailure(SignalError.sessionNotFound("private")), .noSession)
+    XCTAssertNil(GalaxySSISignalEngine.retryableCiphertextFailure(SignalError.ioError("private")))
+    XCTAssertNil(GalaxySSISignalEngine.retryableCiphertextFailure(MqttChunkStorageError.databaseFailure))
+  }
+
+  func testDeferredCiphertextCannotCreateInboxReceiptOrAdvanceSignal() throws {
+    let f = try SignalReceiveFixture()
+    let wire = try f.wire()
+    let identity = try signalTestIdentity(local: f.bobIdentity.fingerprint, remote: f.aliceIdentity.fingerprint)
+    let key = try XCTUnwrap(GalaxySSISignalDecryptBackoff.key(wire, scope: identity.binding))
+    let before = try f.journal.load()
+    f.bob.inboundDecryptBackoff.failed(key, reason: .invalidMessage)
+    XCTAssertThrowsError(try f.receive(wire)) { XCTAssertTrue($0 is GalaxySSISignalDecryptDeferred) }
+    XCTAssertEqual(f.bob.inboundDecryptBackoff.snapshot().deferred, 1)
+    XCTAssertEqual(try f.journal.load(), before)
+    XCTAssertTrue(try f.journal.inbox.pending().isEmpty)
+    f.bob.inboundDecryptBackoff.succeeded(key)
+    XCTAssertNotNil(try f.receive(wire).receipt)
+  }
+
   func testDesktopReceiptSignatureUsesPairedSignalIdentity() throws {
     let f = try SignalReceiveFixture()
     let wire = try f.wire()
@@ -320,8 +346,12 @@ final class MqttSignalAtomicReceiveTests: XCTestCase {
     let wire = try f.wire()
     XCTAssertEqual(try f.receive(wire).stage, .stored)
     try f.reopen()
+    let identity = try signalTestIdentity(local: f.bobIdentity.fingerprint, remote: f.aliceIdentity.fingerprint)
+    let backoffKey = try XCTUnwrap(GalaxySSISignalDecryptBackoff.key(wire, scope: identity.binding))
+    f.bob.inboundDecryptBackoff.failed(backoffKey, reason: .duplicateMessage)
     let saved = try f.journal.load()
     XCTAssertEqual(try f.receive(wire).stage, .pending)
+    XCTAssertEqual(f.bob.inboundDecryptBackoff.snapshot().deferred, 0)
     XCTAssertEqual(try f.journal.load(), saved)
     XCTAssertEqual(try f.journal.inbox.pending().count, 1)
   }
