@@ -69,7 +69,8 @@ internal object HealthCareDiscussion {
             val destination = destination(context, target.id, model)
             val grant = HealthCareDiscussionGrant(conversationId, turnId, id, concern.revision,
                 care.settings().version, privacy.version, destination, System.currentTimeMillis(), target.id, model, effort.wireValue,
-                research?.id.orEmpty(), concern.profileLink, questionsShared = research?.scope?.questionsShared ?: true)
+                research?.id.orEmpty(), concern.profileLink, questionsShared = research?.scope?.questionsShared ?: true,
+                userInputDigest = if (research == null) AgentNativeJsonCodec.sha256(question.trim()) else "")
             check(HealthCareDiscussionPolicy.questionScopeCurrent(grant, concern)) { context.getString(R.string.health_care_changed) }
             if (research != null) check(research.permits(grant) && care.researchGrantCurrent(grant)) {
                 context.getString(R.string.health_care_changed)

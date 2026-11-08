@@ -6,7 +6,7 @@ import org.json.JSONObject
 internal object HealthCareQuestionTools {
     const val READ = "galaxyssi.health.questions.read"
     const val PROPOSE = "galaxyssi.health.questions.propose"
-    val ids = setOf(READ, PROPOSE)
+    val ids = setOf(READ, PROPOSE, HealthCareAnswerTool.ID)
     fun definitions(execute: (String, AgentNativeToolInvocationContext, AgentNativeJsonObject) -> JSONObject) = listOf(READ, PROPOSE).map { id ->
         val read = id == READ
         AgentNativeToolDefinition(AgentNativeToolDescriptor(id, "1.0.0",
@@ -35,7 +35,7 @@ internal object HealthCareQuestionTools {
                 catch (_: IllegalArgumentException) { AgentNativeToolExecutionResult.failure("invalid_health_question",
                     "Read with the exact next cursor, or propose key, question and decision-relevant purpose only. No answer or confirmation fields.") }
             })
-    }
+    } + HealthCareAnswerTool.definitions(execute)
     fun definitions(context: Context) = definitions { id, invocation, input ->
         if (!HealthCareDiscussion.bound(context, invocation.conversationId) ||
             HealthCareDiscussion.rejection(context, invocation.conversationId, invocation.turnId) != null) throw HealthCareConflict()
@@ -44,7 +44,10 @@ internal object HealthCareQuestionTools {
         result
     }
     internal fun execute(context: Context, names: HealthOverviewDatabases, id: String,
-        invocation: AgentNativeToolInvocationContext, input: AgentNativeJsonObject, now: Long = System.currentTimeMillis()): JSONObject {
+        invocation: AgentNativeToolInvocationContext, input: AgentNativeJsonObject, now: Long = System.currentTimeMillis(),
+        userSource: () -> AgentTranscriptEntry? = {
+            if (names.fixture == null) AgentTranscriptStore(context).firstEntryForTurn(invocation.conversationId, invocation.turnId) else null
+        }): JSONObject {
         require(id in ids)
         return HealthCareStore(context, names.care).use { care ->
             val grant = care.discussionGrant(invocation.turnId) ?: throw HealthCareConflict()
@@ -63,7 +66,7 @@ internal object HealthCareQuestionTools {
                 require(input.keys.all { it == "after_id" })
                 HealthCareQuestionPolicy.snapshot(care.questions(issue, input["after_id"] as? String ?: ""), issue, profile)
                     .put("protocol", HealthCareQuestionObservation.PROTOCOL).put("page_start", input["after_id"] ?: JSONObject.NULL)
-            } else {
+            } else if (id == PROPOSE) {
                 require(input.keys == setOf("key", "question", "purpose"))
                 val row = care.proposeQuestion(grant, input["key"] as? String ?: "", input["question"] as? String ?: "",
                     input["purpose"] as? String ?: "", now)
@@ -72,7 +75,7 @@ internal object HealthCareQuestionTools {
                     .put("state", view.getString("state")).put("ask_again", view.getBoolean("ask_again"))
                     .put("user_reopen_required", view.getBoolean("user_reopen_required"))
                     .put("retained", true).put("answer_saved_by_tool", false).put("notification_sent", false)
-            }
+            } else HealthCareAnswerTool.stage(care, grant, input, userSource(), now)
             if (!current()) throw HealthCareConflict()
             result
         }

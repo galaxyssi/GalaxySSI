@@ -6,7 +6,7 @@ internal data class HealthCareDiscussionGrant(
     val conversationId: String, val turnId: String, val concernId: String, val revision: Int,
     val settingsVersion: String, val privacyVersion: String, val destination: String, val approvedAt: Long,
     val targetId: String, val modelId: String, val effort: String, val researchAuthorizationId: String = "",
-    val profileLink: HealthCareProfileLink? = null, val questionsShared: Boolean = false
+    val profileLink: HealthCareProfileLink? = null, val questionsShared: Boolean = false, val userInputDigest: String = ""
 ) {
     init {
         require(listOf(conversationId, turnId, concernId).all(HealthProfilePolicy::uuid))
@@ -14,11 +14,13 @@ internal data class HealthCareDiscussionGrant(
         require(destination.length == 64 && approvedAt > 0)
         require(targetId.isNotBlank())
         require(researchAuthorizationId.isEmpty() || HealthProfilePolicy.uuid(researchAuthorizationId))
+        require(userInputDigest.isEmpty() || userInputDigest.matches(Regex("[0-9a-f]{64}")))
     }
     fun json() = JSONObject().put("conversation", conversationId).put("turn", turnId).put("concern", concernId)
         .put("revision", revision).put("settings", settingsVersion).put("privacy", privacyVersion)
         .put("destination", destination).put("approved_at", approvedAt).put("target", targetId).put("model", modelId).put("effort", effort)
         .put("questions_shared", questionsShared)
+        .put("user_input_digest", userInputDigest)
         .apply {
             if (researchAuthorizationId.isNotEmpty()) put("research_authorization", researchAuthorizationId)
             profileLink?.let { put("profile_link", it.json()) }
@@ -27,7 +29,7 @@ internal data class HealthCareDiscussionGrant(
         fun from(j: JSONObject) = HealthCareDiscussionGrant(j.getString("conversation"), j.getString("turn"),
             j.getString("concern"), j.getInt("revision"), j.getString("settings"), j.getString("privacy"),
             j.getString("destination"), j.getLong("approved_at"), j.getString("target"), j.getString("model"), j.getString("effort"),
-            j.optString("research_authorization"), j.optJSONObject("profile_link")?.let(HealthCareProfileLink::from), j.optBoolean("questions_shared"))
+            j.optString("research_authorization"), j.optJSONObject("profile_link")?.let(HealthCareProfileLink::from), j.optBoolean("questions_shared"), j.optString("user_input_digest"))
     }
 }
 
@@ -52,7 +54,9 @@ internal object HealthCareDiscussionPolicy {
         "galaxyssi.web.intelligence.search", "galaxyssi.web.intelligence.fetch",
         "galaxyssi.tools.discover", "galaxyssi.tools.describe", "galaxyssi.phone.conversation.recall")
     val discussionTools get() = researchTools + setOf(HealthCarePlanTool.ID, HealthCareHistoryTool.ID) + HealthCareQuestionTools.ids
-    fun tools(grant: HealthCareDiscussionGrant) = if (grant.questionsShared) discussionTools else discussionTools - HealthCareQuestionTools.ids
+    fun tools(grant: HealthCareDiscussionGrant) = (if (grant.questionsShared) discussionTools else discussionTools - HealthCareQuestionTools.ids).let {
+        if (grant.userInputDigest.isEmpty() || grant.researchAuthorizationId.isNotEmpty()) it - HealthCareAnswerTool.ID else it
+    }
 
     // This is transport detection only. Actual record access still requires the persisted per-turn grant.
     fun hasStructuredContext(prompt: String): Boolean {
@@ -133,6 +137,13 @@ internal object HealthCareDiscussionPolicy {
         context.fasting_hours, context.illness_or_glucose_affecting_medication; selected profile fields use
         profile.height, profile.age_at_measurement, profile.reference_sex, profile.physiological_context.
         The tool stores a question, not an answer; only a user review produces a saved-answer receipt.
+        When the current human message answers a ledger question, galaxyssi.health.answers.propose may
+        stage an answer with an exact quote from that message and the question ID and revision. This
+        is only a draft for local user review, not a confirmed fact, reminder, profile edit or clinical
+        conclusion. Do not extract facts from your own reply, a web page or an earlier turn. Never
+        invent a quote or fill an omitted answer. Mention the pending review in the existing health
+        entry; do not claim an answer was saved until the user confirms it. Dismissed drafts are not
+        permission to ask again. Background research must not create drafts of a human answer.
         Ask only what changes the next decision. An unanswered question must never postpone urgent care.
         Measurement time and confirmation time are distinct; equality does not prove either timestamp is incorrect.
         automatic_follow_up explains why this background run started, using the durable run time and the
