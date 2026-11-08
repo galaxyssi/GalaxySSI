@@ -7,6 +7,11 @@ final class AgentTeamHistoryDatabase {
   private let namespace: String
   private let cipher: GalaxySSIAttachmentAtRestCipher
   private var database: OpaquePointer?
+  private struct CachedSnapshot {
+    let fingerprint: SHA256.Digest
+    let snapshot: AgentTeamExecutionSnapshot
+  }
+  private let snapshotsCache = GalaxySSIRuntimeCache<String, CachedSnapshot>(maxCount: 32, maxCost: 2 * 1024 * 1024)
 
   init(fileURL: URL, storageKey: String, secrets: GalaxySSISecretStore) throws {
     namespace = Self.digest(storageKey)
@@ -240,11 +245,27 @@ final class AgentTeamHistoryDatabase {
             let conversation = sqlite3_column_text(statement, 4) else { throw Failure.corrupt }
       let runKey = String(cString: key)
       let data = Data(bytes: blob, count: Int(sqlite3_column_bytes(statement, 3)))
-      let snapshot = try JSONDecoder().decode(AgentTeamExecutionSnapshot.self, from: cipher.decrypt(data, purpose: purpose(runKey)))
+      let revision = snapshotsCache.revision
+      let fingerprint = SHA256.hash(data: data)
+      let snapshot: AgentTeamExecutionSnapshot
+      var decodedBytes: Int? = nil
+      if let cached = snapshotsCache.value(for: runKey), cached.fingerprint == fingerprint {
+        snapshot = cached.snapshot
+      } else {
+        snapshotsCache.remove(runKey)
+        var plaintext = try cipher.decrypt(data, purpose: purpose(runKey))
+        defer { plaintext.resetBytes(in: plaintext.startIndex..<plaintext.endIndex) }
+        snapshot = try JSONDecoder().decode(AgentTeamExecutionSnapshot.self, from: plaintext)
+        decodedBytes = plaintext.count
+      }
       guard Self.digest(snapshot.supervisorRunId) == runKey,
             snapshot.updatedAtMillis == sqlite3_column_int64(statement, 1),
             Self.digest(snapshot.conversationId) == String(cString: conversation),
             (snapshot.state.deliverable ? 1 : 0) == sqlite3_column_int(statement, 2) else { throw Failure.corrupt }
+      if let decodedBytes {
+        snapshotsCache.insert(CachedSnapshot(fingerprint: fingerprint, snapshot: snapshot), for: runKey,
+          cost: decodedBytes + 32, revision: revision)
+      }
       result.append(snapshot)
     }
   }
@@ -280,6 +301,7 @@ final class AgentTeamHistoryDatabase {
     _ = encrypted.withUnsafeBytes { sqlite3_bind_blob(statement, 6, $0.baseAddress, Int32($0.count), Self.transient) }
     try finish(statement)
     try recordReplyOwners(snapshot)
+    snapshotsCache.remove(key)
   }
 
   func goalCheckpoints(runId: String, revision: Int64? = nil, newestOnly: Bool = false) throws
@@ -330,6 +352,7 @@ final class AgentTeamHistoryDatabase {
     bind(namespace, at: 1, to: statement)
     if let runId { bind(Self.digest(runId), at: 2, to: statement) }
     try finish(statement)
+    if let runId { snapshotsCache.remove(Self.digest(runId)) } else { snapshotsCache.clear() }
     if runId == nil {
       try removeCloudEvidence(conversationId: nil)
       try removeResearchRecords(conversationId: nil)
@@ -419,23 +442,27 @@ final class AgentTeamHistoryDatabase {
     }
   }
 
-  func researchObjectKeys(conversationId: String, after: String, limit: Int) throws -> [String] {
+  func researchObjectHeads(conversationId: String, after: String, limit: Int)
+    throws -> [AgentCollaborationCapabilityPage.Row] {
     let statement = try prepare("""
-      SELECT DISTINCT record_key FROM collaboration_research_records
+      SELECT record_key, MAX(revision) FROM collaboration_research_records
       WHERE namespace=? AND group_key=? AND record_key>? AND record_key<'object;'
-      ORDER BY record_key LIMIT ?
+      GROUP BY record_key ORDER BY record_key LIMIT ?
       """)
     defer { sqlite3_finalize(statement) }
     bind(namespace, at: 1, to: statement)
     bind(Self.digest(conversationId), at: 2, to: statement)
     bind("object:" + after, at: 3, to: statement)
     sqlite3_bind_int64(statement, 4, Int64(limit))
-    var keys: [String] = []
+    var rows: [AgentCollaborationCapabilityPage.Row] = []
     while true {
       let status = sqlite3_step(statement)
-      if status == SQLITE_DONE { return keys }
+      if status == SQLITE_DONE { return rows }
       guard status == SQLITE_ROW, let key = sqlite3_column_text(statement, 0) else { throw Failure.corrupt }
-      keys.append(String(cString: key))
+      let recordKey = String(cString: key)
+      let revision = sqlite3_column_int64(statement, 1)
+      guard recordKey.hasPrefix("object:"), revision > 0 else { throw Failure.corrupt }
+      rows.append(.init(objectID: String(recordKey.dropFirst("object:".count)), revision: revision))
     }
   }
 
