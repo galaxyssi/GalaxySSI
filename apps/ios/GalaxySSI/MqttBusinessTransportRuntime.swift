@@ -265,7 +265,34 @@ final class MqttBusinessTransportRuntime {
     projected.failures.forEach { onFailure($0.error) }
     guard !stopped else { return }
     try await drainInbound()
+    if !stopped { await pumpDesktopRecoveryQueries() }
     if !stopped { pumpDesktopResultReceipts() }
+  }
+
+  private func pumpDesktopRecoveryQueries() async {
+    guard let projection = peerChatProjection, let connector = desktopConnector,
+          let recoveryQueries = connector.recoveryQueries else { return }
+    let destinations = Dictionary(grouping: projection.store.contacts.compactMap { projection.destination(for: $0) }
+      .filter(\.desktop), by: { $0.peer.remoteSignalName })
+    let work = recoveryQueries { binding in
+      guard let targets = destinations[binding.desktopId], targets.count == 1, let target = targets.first,
+            target.routeId == binding.identity.clientRouteId,
+            let identity = try? MqttBusinessIdentity(target.peer.binding) else { return false }
+      return (try? routes.withIdentity(identity) { routes.readyForTopic(target.peer.binding.sendTopic) }) == true
+    }
+    for payload in work {
+      guard !stopped, !Task.isCancelled else { return }
+      do {
+        try refreshDirectPeerBindings()
+        guard let targets = destinations[payload.string("desktop_id")], targets.count == 1,
+              let target = targets.first else { continue }
+        let request = try connector.recoveryQueryRequest(payload, target: target)
+        let wire = try routes.withOutgoing(identity: request.identity, topics: [request.topic]) {
+          try engine.makeRecoveryQueryWire(request)
+        }
+        _ = await routes.publishTransientControl(topic: request.topic, wire: wire, secret: target.peer.binding.secret)
+      } catch { onFailure(error) }
+    }
   }
 
   private func pumpDesktopResultReceipts() {

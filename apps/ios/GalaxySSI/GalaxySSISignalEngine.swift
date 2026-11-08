@@ -414,6 +414,21 @@ final class GalaxySSISignalEngine {
     return String(decoding: try GalaxySSILinkProtocol.jsonData(wire), as: UTF8.self)
   }
 
+  // Recovery nonces belong to the live owner, not the durable business outbox.
+  func makeRecoveryQueryWire(_ request: MqttSignalSendRequest) throws -> Data {
+    let payload = try request.applicationPayload()
+    guard journal != nil, request.traffic == .control, request.attachmentDependencies.isEmpty,
+          request.identity.local == Self.sha256(store.identityKeyPair.publicKey.serialize()),
+          ["agent_task_recovery_request", "agent_task_result_page_request"].contains(payload.string("type")),
+          payload.string("request_id") == request.messageID, request.payload.count <= 16_384 else {
+      throw MqttRouteError.invalidPayload
+    }
+    return try store.transaction { token in
+      guard token != nil else { throw MqttChunkStorageError.databaseFailure }
+      return Data(try outgoingWire(request, now: Date()).utf8)
+    }
+  }
+
   // A lost receipt is replayed by a peer probe, not placed in the business outbox.
   func makeStoredReceiptWire(identity: MqttBusinessIdentity, messageID: String, wireHash: String,
                              remoteName: String) throws -> [String: Any]? {
@@ -626,6 +641,7 @@ final class GalaxySSISignalEngine {
     throw MqttRouteError.invalidPayload
   }
   func encrypt(_ payload: [String: Any], remoteName: String, deviceId: UInt32 = 1) -> [String: Any]? { nil }
+  func makeRecoveryQueryWire(_ request: MqttSignalSendRequest) throws -> Data { throw MqttRouteError.invalidPayload }
   func makeStoredReceiptWire(identity: MqttBusinessIdentity, messageID: String, wireHash: String,
                              remoteName: String) throws -> [String: Any]? { throw MqttRouteError.invalidPayload }
   func encryptAndEnqueue(_ request: MqttSignalSendRequest, now: Date = Date()) throws -> MqttBusinessOutbox.Entry { throw MqttRouteError.invalidPayload }

@@ -70,6 +70,7 @@ final class MessageCoordinator: ObservableObject {
   private var desktopCollaborationResponseReplay = AgentDesktopCollaborationResponseReplay()
   private var desktopCollaborationCiphertextReplay = AgentDesktopCollaborationCiphertextReplay()
   private lazy var desktopReplyRecoveryOwner = store.profile.identityFingerprint
+  private var journalBackedRecoveryCursor = ""
   private var desktopReplyRecoveryTask: Task<Void, Never>?
   private var desktopReplyRecoverySweepInFlight = false
   private var desktopReplyRecoverySweepRequested = false
@@ -4104,8 +4105,65 @@ final class MessageCoordinator: ObservableObject {
     return .finished
   }
 
-  private func commitJournalBackedDesktopResult(_ payload: [String: Any], receipt: AgentResultReceipt) throws {
+  private func receiveJournalBackedDesktopRecovery(_ payload: [String: Any], desktopId: String) throws {
     guard desktopReplyRecoveryOwner == store.profile.identityFingerprint else { throw MqttRouteError.identityChanged }
+    let now = AgentControlPlaneClock.nowMillis()
+    if payload.string("type") == "agent_task_recovery_result" {
+      // Queries are scoped to this process. A late response after restart is replaced by a new probe.
+      guard let binding = desktopReplyRecovery.expectedBinding(payload) else { return }
+      guard binding.desktopId == desktopId, currentDesktopReplySource(binding) != nil,
+            let record = desktopReplyRecovery.receive(payload, authenticatedDesktopId: desktopId, now: now) else {
+        throw MqttRouteError.invalidPayload
+      }
+      if record.status == "completed", let items = payload["items"] as? [[String: Any]],
+         let page = items.first?.dictionary("result_page"),
+         let manifest = desktopResultRecovery.receiveInline(page, record: record, queryNonce: payload.string("request_id")) {
+        // Inline page zero is optional. If the manifest write fails, fetch it again explicitly.
+        _ = desktopReplyRecovery.attachManifest(manifest, to: record)
+      }
+      return
+    }
+    guard let binding = desktopResultRecovery.expectedBinding(payload) else { return }
+    guard binding.desktopId == desktopId, currentDesktopReplySource(binding) != nil,
+          let record = desktopReplyRecovery.record(for: binding), record.status == "completed",
+          desktopResultRecovery.receive(payload, record: record, now: now, commitManifest: {
+            self.desktopReplyRecovery.attachManifest($0, to: record)
+          }) != nil else { throw MqttRouteError.invalidPayload }
+  }
+
+  private func journalBackedDesktopRecoveryQueries(ready: (AgentDesktopReplyBinding) -> Bool,
+                                                   onFailure: (Error) -> Void) -> [[String: Any]] {
+    guard desktopReplyRecoveryOwner == store.profile.identityFingerprint else { return [] }
+    let now = AgentControlPlaneClock.nowMillis()
+    var requests: [[String: Any]] = []
+    let ordered = desktopReplyRecovery.pending.sorted { $0.binding.key < $1.binding.key }
+    let cursor = journalBackedRecoveryCursor
+    let next = Array(ordered.lazy.filter { $0.binding.key > cursor }.prefix(32))
+    let page = next.isEmpty ? Array(ordered.prefix(32)) : next
+    for record in page {
+      journalBackedRecoveryCursor = record.binding.key
+      guard record.codexDispatchPending != true, record.expiryReason(now: now) == nil,
+            currentDesktopReplySource(record.binding) != nil else { continue }
+      if record.status == "completed", let payload = desktopResultRecovery.assembled(record),
+         let receipt = desktopResultRecovery.receipt(record) {
+        do { try commitJournalBackedDesktopResult(payload, receipt: receipt) }
+        catch { onFailure(error) }
+        continue
+      }
+      guard requests.count < 4, ready(record.binding) else { continue }
+      let request = record.status == "completed" ? desktopResultRecovery.request(record, now: now) :
+        desktopReplyRecovery.request(record.binding, online: true, now: now)
+      if let request { requests.append(request) }
+    }
+    if page.isEmpty { journalBackedRecoveryCursor = "" }
+    return requests
+  }
+
+  private func commitJournalBackedDesktopResult(_ payload: [String: Any], receipt: AgentResultReceipt) throws {
+    guard desktopReplyRecoveryOwner == store.profile.identityFingerprint,
+          AgentResultReceipt.fromPayload(payload, desktopId: receipt.desktopId) == receipt else {
+      throw MqttRouteError.identityChanged
+    }
     let matches = desktopReplyRecovery.pending.filter {
       $0.binding.desktopId == receipt.desktopId && $0.binding.matches(payload)
     }
@@ -15199,6 +15257,11 @@ final class MessageCoordinator: ObservableObject {
       }, resultRecovery: { [weak self] in
         guard let self, self.desktopReplyRecoveryOwner == self.store.profile.identityFingerprint else { return nil }
         return self.desktopResultRecovery
+      }, receiveRecoveryControl: { [weak self] payload, desktopId in
+        guard let self else { throw MqttDeliveryDispatch.Failure.unavailable }
+        try self.receiveJournalBackedDesktopRecovery(payload, desktopId: desktopId)
+      }, recoveryQueries: { [weak self] ready in
+        self?.journalBackedDesktopRecoveryQueries(ready: ready, onFailure: onFailure) ?? []
       })
     return try MqttBusinessTransportRuntime(peerChatStore: store, localFingerprint: signalEngine.identity.fingerprint,
       journal: journal, routeState: routeState, pool: pool, incomingAttachments: incomingAttachmentTransferStore,

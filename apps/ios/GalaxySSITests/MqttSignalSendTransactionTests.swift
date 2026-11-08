@@ -3,6 +3,25 @@ import XCTest
 
 #if canImport(LibSignalClient)
 final class MqttSignalSendTransactionTests: XCTestCase {
+  func testRecoveryQueryEncryptsWithoutCreatingBusinessOutboxRecord() throws {
+    let f = try SignalSendFixture()
+    let identity = try MqttBusinessIdentity(MqttPeerBinding(scope: "direct:receiver",
+      sender: f.senderIdentity.fingerprint, receiver: f.receiverIdentity.fingerprint,
+      secret: Data(repeating: 7, count: 32).base64URLEncodedString(), sendTopic: sendTopic,
+      sendTopics: [sendTopic], receiveTopics: [String(repeating: "r", count: 43)]))
+    let nonce = UUID().uuidString
+    let request = try MqttSignalSendRequest(identity: identity, payload: ["type": "agent_task_result_page_request",
+      "message_id": nonce, "request_id": nonce, "page_index": 1],
+      remoteName: f.receiverIdentity.name, topic: sendTopic, traffic: .control)
+    let bytes = try f.sender.makeRecoveryQueryWire(request)
+    let wire = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+    let envelope = try XCTUnwrap(f.receiver.decrypt(wire))
+    let payload = try XCTUnwrap(GalaxySSILinkProtocol.unwrapEnvelope(envelope))
+    XCTAssertEqual(payload["request_id"] as? String, nonce)
+    XCTAssertEqual(payload["page_index"] as? Int, 1)
+    XCTAssertNil(try f.journal.outbox.entry(identity: identity, messageID: nonce))
+  }
+
   func testDirectApplicationReceiptUsesInteroperableLinkEnvelope() throws {
     let f = try SignalSendFixture()
     let identity = try MqttBusinessIdentity(MqttPeerBinding(scope: "direct:receiver",
