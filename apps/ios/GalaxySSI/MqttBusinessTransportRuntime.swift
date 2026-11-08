@@ -253,19 +253,21 @@ final class MqttBusinessTransportRuntime {
     let target = try desktopBlobDestination(attachment)
     let identity = try MqttBusinessIdentity(target.peer.binding)
     guard identity.binding == binding, let source = attachment.scope.clientMessageId,
-          let sourceID = UUID(uuidString: source), sourceID.uuidString == source,
+          let sourceID = UUID(uuidString: source),
           let projection = peerChatProjection else { return .retire }
     return try routes.withIdentity(identity) {
-      guard let message = projection.store.persistedOutboundTransportSource(id: sourceID)
-      else { return .retire }
-      guard let body = try journal.outbox.entry(identity: identity, messageID: source) else {
-        return try journal.outbox.completions.event(identity: identity, messageID: source) != nil ||
-          message.deliveryStatus == .failed ? .retire : .wait
+      guard let body = try journal.outbox.entry(identity: identity, messageID: sourceID.uuidString) else {
+        if try journal.outbox.completions.event(identity: identity, messageID: sourceID.uuidString) != nil { return .retire }
+        if let message = projection.store.persistedOutboundTransportSource(id: sourceID) {
+          return message.deliveryStatus == .failed ? .retire : .wait
+        }
+        return desktopConnector?.isCurrentSendOwner(contactID: attachment.scope.contactId, source: source, target: target) == true
+          ? .wait : .retire
       }
       guard body.message.clientSourceMessageId == source,
             body.message.blockedByAttachmentTransferIds.contains(attachment.transferId),
             let request = body.deferredRequest, request.blobAttachmentDependencies?.contains(attachment.transferId) == true,
-            try queuedAttachmentOwner(attachment, body: request, target: target, projection: projection) != nil
+            try queuedAttachmentOwner(attachment, body: request, target: target, projection: projection)?.maySend == true
       else { return .retire }
       return .upload
     }
@@ -283,12 +285,13 @@ final class MqttBusinessTransportRuntime {
 
   private func queuedAttachmentOwner(_ transfer: AgentPreparedOutboundAttachment, body: MqttSignalSendRequest,
                                     target: MqttPeerChatProjection.Destination, projection: MqttPeerChatProjection) throws
-    -> ChatMessage? {
+    -> MqttDesktopConnectorProjection.TaskOwner? {
     guard body.attachmentDependencies.contains(transfer.transferId),
           let sourceID = UUID(uuidString: body.sourceMessageID) else { throw MqttRouteError.invalidPayload }
     if body.contactID == target.contactId {
       guard projection.matches(transfer, target: target, source: body.sourceMessageID) else { throw MqttRouteError.identityChanged }
       return projection.store.persistedMessage(id: sourceID, contactId: target.contactId)
+        .map { .init(message: $0) }
     }
     guard target.desktop, let desktopConnector else { throw MqttRouteError.identityChanged }
     return try desktopConnector.attachmentOwner(transfer, body: body, target: target)
@@ -716,16 +719,17 @@ final class MqttBusinessTransportRuntime {
     let transferID = payload.string("transfer_id").lowercased()
     let source = payload.string("source_message_id")
     guard MqttRouteProtocol.hex(transferID, count: 64),
-          let sourceID = UUID(uuidString: source), sourceID.uuidString == source else { throw MqttRouteError.invalidPayload }
+          let sourceID = UUID(uuidString: source) else { throw MqttRouteError.invalidPayload }
+    let bodyID = sourceID.uuidString
     func awaitingAttachment() throws -> MqttSignalSendRequest? {
       try routes.withIdentity(item.identity) {
-        guard let body = try journal.outbox.entry(identity: item.identity, messageID: source),
+        guard let body = try journal.outbox.entry(identity: item.identity, messageID: bodyID),
               body.message.blockedByAttachmentTransferIds.contains(transferID) else { return nil }
         guard let request = body.deferredRequest, request.attachmentDependencies.contains(transferID),
               body.message.clientSourceMessageId == source else {
           throw MqttChunkStorageError.corruptState
         }
-        return projection.store.persistedOutboundTransportSource(id: sourceID) != nil ? request : nil
+        return request
       }
     }
     func complete() throws {
@@ -759,15 +763,26 @@ final class MqttBusinessTransportRuntime {
     if payload.string("status") == "failed" {
       guard blob else { throw MqttRouteError.invalidPayload }
       try routes.withIdentity(item.identity) {
-        try projection.store.projectPeerAttachmentReceipt(transfer, sourceID: sourceID, contactID: owner.contactId, failed: true)
-        try journal.consumeFailedBlobAttachment(item, bodyID: source, transfer: transfer)
+        if let team = owner.team {
+          guard let record = desktopConnector?.recordTeamAttachmentFailure else { throw MqttRouteError.identityChanged }
+          try record(team)
+        }
+        if owner.projectsAttachmentToTranscript {
+          try projection.store.projectPeerAttachmentReceipt(transfer, sourceID: owner.message.id,
+            contactID: owner.message.contactId, failed: true, wireSourceID: source)
+        }
+        try journal.consumeFailedBlobAttachment(item, bodyID: bodyID, transfer: transfer)
       }
       return
     }
+    guard owner.maySend else { try complete(); return }
     if payload.string("status") == "stored" {
       try routes.withIdentity(item.identity) {
-        try projection.store.projectPeerAttachmentReceipt(transfer, sourceID: sourceID, contactID: owner.contactId)
-        try journal.consumeStoredAttachment(item, bodyID: source, transfer: transfer)
+        if owner.projectsAttachmentToTranscript {
+          try projection.store.projectPeerAttachmentReceipt(transfer, sourceID: owner.message.id,
+            contactID: owner.message.contactId, wireSourceID: source)
+        }
+        try journal.consumeStoredAttachment(item, bodyID: bodyID, transfer: transfer)
       }
       return
     }
@@ -786,7 +801,7 @@ final class MqttBusinessTransportRuntime {
       guard !stopped else { throw CancellationError() }
       try refreshDirectPeerBindings()
       guard let current = try awaitingAttachment(),
-            try queuedAttachmentOwner(transfer, body: current, target: target, projection: projection) != nil
+            try queuedAttachmentOwner(transfer, body: current, target: target, projection: projection)?.maySend == true
       else { try complete(); return }
       chunk["message_id"] = id
       if body.contactID == target.contactId { chunk["peer_chat"] = true }

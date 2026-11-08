@@ -688,7 +688,7 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertNil(try declaration.applicationPayload()["peer_chat"])
     XCTAssertEqual(body.attachmentDependencies, transfers.map(\.transferId).sorted())
     XCTAssertEqual(body.blobAttachmentDependencies, [blob.transferId])
-    XCTAssertEqual(try connector.attachmentOwner(blob, body: body, target: target)?.contactId, "hermes")
+    XCTAssertEqual(try connector.attachmentOwner(blob, body: body, target: target)?.message.contactId, "hermes")
     XCTAssertThrowsError(try connector.outgoingRequests(payload, target: target, attachments: transfers,
       blobTransfers: [], ownerContactID: agent.id))
     var wrongTurn = blob
@@ -704,6 +704,79 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertTrue(store.setAgentSessionTrackingPaused(id: session.id, paused: true))
     XCTAssertFalse(connector.isCurrentSendOwner(contactID: agent.id, source: source, target: target))
     XCTAssertNil(try connector.attachmentOwner(blob, body: body, target: target))
+  }
+
+  @MainActor
+  func testDesktopTeamObserverAttachmentUsesMemberUUIDWithoutMarkingParentDelivered() throws {
+    let store = makeStore()
+    let link = try store.addServerLink(from: makePairingQRCode())
+    store.markServerPaired(desktopId: link.desktopId)
+    let desktop = try XCTUnwrap(store.contacts.first { $0.isDesktopDeviceContact && $0.desktopId == link.desktopId })
+    let agent = try XCTUnwrap(store.contact(id: "\(link.desktopId):codex"))
+    let projection = MqttPeerChatProjection(store: store, localFingerprint: link.routes.localFingerprint)
+    let target = try XCTUnwrap(projection.destination(for: desktop))
+    let session = store.createAgentSession(title: "Team attachment conversation")
+    let parent = store.appendOutgoing("Review this file", to: "hermes", turnId: "parent-turn",
+      conversationOverride: session.id)
+    let source = "a0000000-0000-4000-8000-000000000001"
+    let bodyID = try XCTUnwrap(UUID(uuidString: source)).uuidString
+    let owner = AgentTeamReplyOwner(supervisorRunId: "supervisor", memberId: "observer", conversationId: session.id,
+      turnId: parent.turnId, sourceMessageId: source, contactId: agent.id, deliveryMode: .observe)
+    let identities = AgentTaskIdentityStore(defaults: store.defaults, storageKeyPrefix: "team-attachment-fixture")
+    XCTAssertTrue(identities.register(contactId: agent.id, sourceMessageId: source, identity: .init(
+      clientRouteId: target.routeId, conversationId: session.id, taskId: source, turnId: parent.turnId)))
+    var current = true
+    let connector = MqttDesktopConnectorProjection(store: store, identities: identities, commitResponse: { _, _ in },
+      resolveTeamOwner: { sourceID, contact, identity, _ in
+        guard current, sourceID == source, contact.id == owner.contactId, identity.taskId == source else { return nil }
+        return .init(message: parent, team: owner, teamID: "team")
+      })
+    let run = AgentControlPlaneActionExecutor.stableRunId(conversationId: "team", turnId: "supervisor",
+      actionId: "agent-team-member", agentId: "observer")
+    let payload: [String: Any] = ["type": "text", "message_id": source, "client_message_id": source,
+      "content": parent.content, "desktop_id": link.desktopId, "contact_id": agent.id, "agent_id": agent.connectorAgentId,
+      "client_route_id": target.routeId, "conversation_id": session.id, "task_id": source, "turn_id": parent.turnId,
+      "time": 1_000, "agent_team_message": true, "team_id": "team", "agent_instance_id": "observer",
+      "delivery_mode": "observe", "run_id": run]
+    let scope = try AgentAttachmentTransferScope(contactId: agent.id, desktopId: link.desktopId,
+      clientRouteId: target.routeId, conversationId: session.id, taskId: source, turnId: parent.turnId,
+      clientMessageId: source)
+    let fixture = try ChunkFixture()
+    let files = AgentOutboundAttachmentTransferStore(rootURL: fixture.root.appendingPathComponent("team-outbound"),
+      cipher: GalaxySSIAttachmentAtRestCipher(secrets: fixture.secrets))
+    let transfers = try files.prepare(scope: scope,
+      attachments: [.init(displayName: "fixture.bin", mimeType: "application/octet-stream", data: Data([1, 2, 3]))],
+      mediaProfile: AgentMediaNetworkPolicy.profile(for: .normal), preserveOriginalBytes: true)
+    let transfer = try XCTUnwrap(transfers.first)
+    let requests = try connector.outgoingRequests(payload, target: target, attachments: transfers,
+      blobTransfers: [transfer.transferId], ownerContactID: parent.contactId)
+    let body = try XCTUnwrap(requests.last)
+    XCTAssertEqual(body.messageID, bodyID)
+    XCTAssertEqual(body.sourceMessageID, source)
+    XCTAssertEqual(try connector.attachmentOwner(transfer, body: body, target: target)?.projectsAttachmentToTranscript, false)
+    var spoofed = payload
+    spoofed["delivery_mode"] = "respond"
+    XCTAssertThrowsError(try connector.outgoingRequest(spoofed, target: target))
+    let journal = try MqttSignalStateJournal(fileURL: fixture.url, secrets: fixture.secrets)
+    try journal.outbox.enqueueDeferred(body, now: Date())
+    let receiptID = UUID().uuidString
+    var receipt = transfer.manifestPayload(resume: false)
+    receipt["message_id"] = receiptID
+    receipt["type"] = "input_attachment_receipt"
+    receipt["status"] = "stored"
+    receipt["source_message_id"] = source
+    let digest = MqttRouteProtocol.digest(Data(receiptID.utf8))
+    _ = try journal.inbox.accept(identity: body.identity, messageID: receiptID, payload: receipt,
+      ciphertextDigest: digest, wireHash: digest, receiptRequired: true)
+    let item = try XCTUnwrap(journal.inbox.pending().first { $0.messageID == receiptID })
+    try journal.consumeStoredAttachment(item, bodyID: bodyID, transfer: transfer)
+    XCTAssertEqual(try journal.outbox.entry(identity: body.identity, messageID: bodyID)?.message.blockedByAttachmentTransferIds, [])
+    try connector.projectCompletion(.init(identity: body.identity, messageID: bodyID,
+      wireHash: digest, traffic: "message", requestHash: nil, sourceMessageID: source, contactID: agent.id,
+      attachmentTransferID: "", receivedAt: 1_000, consumedAt: nil), target: target)
+    XCTAssertEqual(store.persistedMessage(id: parent.id, contactId: parent.contactId)?.deliveryStatus, .queued)
+    current = false
+    XCTAssertFalse(connector.isCurrentSendOwner(contactID: agent.id, source: source, target: target))
   }
 
   func testServerLinkTracksAndroidCapabilityManifestVersion() throws {

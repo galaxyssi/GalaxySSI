@@ -1587,8 +1587,8 @@ final class GalaxySSIStore: ObservableObject {
   }
 
   func projectPeerAttachmentReceipt(_ transfer: AgentPreparedOutboundAttachment, sourceID: UUID,
-                                     contactID: String, failed: Bool = false) throws {
-    guard transfer.scope.clientMessageId == sourceID.uuidString,
+                                     contactID: String, failed: Bool = false, wireSourceID: String? = nil) throws {
+    guard transfer.scope.clientMessageId == (wireSourceID ?? sourceID.uuidString),
           var message = persistedMessage(id: sourceID, contactId: contactID), message.isMine else {
       throw MqttRouteError.identityChanged
     }

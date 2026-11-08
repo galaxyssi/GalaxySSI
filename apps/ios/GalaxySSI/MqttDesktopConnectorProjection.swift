@@ -2,6 +2,26 @@ import Foundation
 
 @MainActor
 struct MqttDesktopConnectorProjection {
+  struct TaskOwner {
+    let message: ChatMessage
+    var team: AgentTeamReplyOwner? = nil
+    var teamID: String? = nil
+    var maySend = true
+
+    var projectsAttachmentToTranscript: Bool { team?.deliveryMode != .observe }
+
+    func matches(_ payload: [String: Any]) -> Bool {
+      guard let team else { return payload["agent_team_message"] as? Bool != true }
+      guard let teamID else { return false }
+      let run = team.deliveryMode == .respond ? team.supervisorRunId :
+        AgentControlPlaneActionExecutor.stableRunId(conversationId: teamID, turnId: team.supervisorRunId,
+          actionId: "agent-team-member", agentId: team.memberId)
+      return payload["agent_team_message"] as? Bool == true && payload.string("agent_instance_id") == team.memberId &&
+        payload.string("team_id") == teamID && payload.string("delivery_mode") == team.deliveryMode.rawValue &&
+        payload.string("run_id") == run
+    }
+  }
+
   let store: GalaxySSIStore
   let identities: AgentTaskIdentityStore
   let commitResponse: (AgentConnectorResponse, [String: Any]) throws -> Void
@@ -10,6 +30,9 @@ struct MqttDesktopConnectorProjection {
   var receiveRecoveryControl: (([String: Any], String) throws -> Void)? = nil
   var recoveryQueries: (((AgentDesktopReplyBinding) -> Bool) -> [[String: Any]])? = nil
   var resumeEvidenceJobs: ((MqttBusinessTransportRuntime) -> Void)? = nil
+  var resolveTeamOwner: ((String, GalaxySSIContact, AgentTaskIdentity, MqttPeerChatProjection.Destination) throws -> TaskOwner?)? = nil
+  var recordTeamAttachmentFailure: ((AgentTeamReplyOwner) throws -> Void)? = nil
+  var recordTeamProgress: (([String: Any], AgentTeamReplyOwner) throws -> Bool)? = nil
 
   static func handles(_ payload: [String: Any]) -> Bool {
     payload["peer_chat"] as? Bool != true &&
@@ -50,12 +73,13 @@ struct MqttDesktopConnectorProjection {
     let messageID = payload.string("message_id")
     guard let uuid = UUID(uuidString: messageID), !source.isBlank else { throw MqttRouteError.invalidPayload }
     if let sourceID = UUID(uuidString: source) {
-      guard let saved = sourceMessage(sourceID, contactID: contact.id, conversation: payload.string("conversation_id"),
-        turn: payload.string("turn_id")), ownerContactID == nil || saved.contactId == ownerContactID else {
+      guard let owner = try taskOwner(source: source, id: sourceID, contact: contact, target: target,
+        requiresTeam: payload["agent_team_message"] as? Bool == true), owner.maySend,
+            owner.matches(payload), ownerContactID == nil || owner.message.contactId == ownerContactID else {
         throw MqttRouteError.identityChanged
       }
       if !attachments.isEmpty, uuid != sourceID { throw MqttRouteError.invalidPayload }
-    } else if !attachments.isEmpty || (Int64(source) ?? 0) <= 0 {
+    } else if !attachments.isEmpty || payload["agent_team_message"] as? Bool == true || (Int64(source) ?? 0) <= 0 {
       throw MqttRouteError.invalidPayload
     }
     application["message_id"] = uuid.uuidString
@@ -106,15 +130,26 @@ struct MqttDesktopConnectorProjection {
       scope.taskId == payload.string("task_id") && scope.turnId == payload.string("turn_id")
   }
 
+  private func taskOwner(source: String, id: UUID, contact: GalaxySSIContact,
+                         target: MqttPeerChatProjection.Destination, requiresTeam: Bool = false) throws -> TaskOwner? {
+    guard let identity = identities.identity(contactId: contact.id, sourceMessageId: source),
+          identity.clientRouteId == target.routeId else { return nil }
+    if !requiresTeam, let ordinary = sourceMessage(id, contactID: contact.id,
+      conversation: identity.conversationId, turn: identity.turnId) { return TaskOwner(message: ordinary) }
+    return try resolveTeamOwner?(source, contact, identity, target)
+  }
+
   func attachmentOwner(_ attachment: AgentPreparedOutboundAttachment, body: MqttSignalSendRequest,
-                       target: MqttPeerChatProjection.Destination) throws -> ChatMessage? {
+                       target: MqttPeerChatProjection.Destination) throws -> TaskOwner? {
     let payload = try body.applicationPayload()
     let contact = try contact(payload, target: target)
-    guard body.contactID == contact.id, body.messageID == body.sourceMessageID,
-          let id = UUID(uuidString: body.sourceMessageID),
+    guard body.contactID == contact.id, let id = UUID(uuidString: body.sourceMessageID), body.messageID == id.uuidString,
           matchesAttachment(attachment, payload: payload, target: target, contactID: contact.id, source: body.sourceMessageID)
     else { throw MqttRouteError.identityChanged }
-    return sourceMessage(id, contactID: contact.id, conversation: payload.string("conversation_id"), turn: payload.string("turn_id"))
+    guard let owner = try taskOwner(source: body.sourceMessageID, id: id, contact: contact, target: target,
+      requiresTeam: payload["agent_team_message"] as? Bool == true),
+          owner.matches(payload) else { return nil }
+    return owner
   }
 
   func isCurrentSendOwner(contactID: String, source: String, target: MqttPeerChatProjection.Destination) -> Bool {
@@ -124,7 +159,7 @@ struct MqttDesktopConnectorProjection {
           let identity = identities.identity(contactId: contactID, sourceMessageId: source),
           identity.clientRouteId == target.routeId else { return false }
     guard let id = UUID(uuidString: source) else { return (Int64(source) ?? 0) > 0 }
-    return sourceMessage(id, contactID: contactID, conversation: identity.conversationId, turn: identity.turnId) != nil
+    return (try? taskOwner(source: source, id: id, contact: contact, target: target))?.maySend == true
   }
 
   func project(_ item: MqttBusinessInbox.Pending, payload: [String: Any],
@@ -157,17 +192,24 @@ struct MqttDesktopConnectorProjection {
       return
     }
     if payload.string("type") == "agent_task_event" {
-      guard let source = UUID(uuidString: payload.string("source_message_id")),
-            let saved = store.persistedMessage(id: source, contactId: contact.id), saved.isMine,
+      let source = payload.string("source_message_id")
+      guard let id = UUID(uuidString: source), let owner = try taskOwner(source: source, id: id, contact: contact, target: target),
+            owner.maySend else { throw MqttRouteError.invalidPayload }
+      if let team = owner.team {
+        guard let recordTeamProgress, try recordTeamProgress(payload, team) else { return }
+        if team.deliveryMode == .observe { return }
+      }
+      let saved = owner.message
+      guard
             saved.conversationId == payload.string("conversation_id"),
-            saved.turnId.ifBlank(source.uuidString) == payload.string("turn_id"),
+            saved.turnId.ifBlank(saved.id.uuidString) == payload.string("turn_id"),
             let session = store.agentSession(id: saved.conversationId),
             !session.privateMode, !session.trackingPaused else { throw MqttRouteError.invalidPayload }
       let updates = AgentConnectorPublicProgress.entries(payload) { key, fallback in
         GalaxySSILocalization.string(key, fallback: fallback, language: store.languagePolicy.interfaceLanguage)
       }
       guard !updates.isEmpty else { throw MqttRouteError.invalidPayload }
-      guard store.persistConnectorProgress(sourceId: source, conversationId: saved.conversationId,
+      guard store.persistConnectorProgress(sourceId: saved.id, conversationId: saved.conversationId,
         turnId: payload.string("turn_id"), updates: updates) == true else { throw MqttChunkStorageError.databaseFailure }
       return
     }
@@ -176,6 +218,11 @@ struct MqttDesktopConnectorProjection {
        let terminalResult {
       try terminalResult(payload, receipt)
       return
+    }
+    let source = payload.string("source_message_id")
+    if let id = UUID(uuidString: source),
+       try taskOwner(source: source, id: id, contact: contact, target: target)?.team != nil {
+      throw MqttRouteError.invalidPayload
     }
     guard payload["result_recovery"] == nil,
           AgentResultReceipt.fromPayload(payload, desktopId: target.peer.remoteSignalName) == nil,
@@ -251,9 +298,10 @@ struct MqttDesktopConnectorProjection {
           let identity = identities.identity(contactId: contact.id, sourceMessageId: event.sourceMessageID),
           identity.clientRouteId == target.routeId else { throw MqttRouteError.identityChanged }
     guard let id = UUID(uuidString: event.sourceMessageID) else { return }
-    guard let source = sourceMessage(id, contactID: contact.id, conversation: identity.conversationId, turn: identity.turnId)
+    guard let owner = try taskOwner(source: event.sourceMessageID, id: id, contact: contact, target: target),
+          owner.team == nil
     else { return }
-    do { try store.persistTransportDelivery(event, messageContactID: source.contactId) }
+    do { try store.persistTransportDelivery(event, messageContactID: owner.message.contactId) }
     catch GalaxySSIChatHistoryError.locallyDeleted { }
   }
 }

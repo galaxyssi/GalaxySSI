@@ -180,7 +180,8 @@ final class MqttSignalStateJournal {
       guard let saved = try inbox.pending(identity: item.identity, messageID: item.messageID, transaction: token),
             saved.key == item.key, saved.payload == item.payload,
             let payload = try JSONSerialization.jsonObject(with: saved.payload) as? [String: Any],
-            payload.string("type") == "input_attachment_receipt", transfer.scope.clientMessageId == bodyID,
+            payload.string("type") == "input_attachment_receipt", let source = transfer.scope.clientMessageId,
+            source == bodyID || UUID(uuidString: source)?.uuidString == bodyID,
             transfer.matchesStoredReceipt(payload)
       else { throw MqttRouteError.invalidPayload }
       if try outbox.entry(identity: item.identity, messageID: bodyID, transaction: token)?
@@ -203,7 +204,8 @@ final class MqttSignalStateJournal {
             saved.key == item.key, saved.payload == item.payload,
             var proof = try JSONSerialization.jsonObject(with: saved.payload) as? [String: Any],
             proof.string("type") == "input_attachment_receipt", proof.string("status") == "failed",
-            transfer.scope.clientMessageId == bodyID else { throw MqttRouteError.invalidPayload }
+            let source = transfer.scope.clientMessageId,
+            source == bodyID || UUID(uuidString: source)?.uuidString == bodyID else { throw MqttRouteError.invalidPayload }
       proof["status"] = "stored"
       guard transfer.matchesStoredReceipt(proof), AgentBlobProtocol.receiptMatches(attachment: transfer, receipt: proof)
       else { throw MqttRouteError.invalidPayload }

@@ -2865,6 +2865,55 @@ final class MessageCoordinator: ObservableObject {
     return store.persistedMessage(id: source.id, contactId: source.contactId).flatMap { matches($0) ? $0 : nil }
   }
 
+  func journalTeamSendOwner(_ source: String, contact: GalaxySSIContact, identity: AgentTaskIdentity,
+                            target: MqttPeerChatProjection.Destination) throws -> MqttDesktopConnectorProjection.TaskOwner? {
+    guard let context = try AgentTeamExecutionHistoryStore.shared.recoveryContext(source: source,
+      conversation: identity.conversationId, turn: identity.turnId, contact: contact.id),
+      let original = originalTeamPrimarySource(context.team),
+      let message = store.persistedOutboundTransportSource(id: original.id),
+      let roster = store.agentSession(id: identity.conversationId)?.collaborationRoster,
+      AgentCollaborationMemberIdentity(nodeID: context.owner.memberId)?.member(in: roster)?.resourceId == contact.id,
+      context.member.dispatchCheckpoint == .dispatching || context.member.dispatchCheckpoint == .accepted else { return nil }
+    let binding = context.owner.deliveryMode == .respond
+      ? AgentDesktopReplyBinding.teamPrimary(owner: context.owner, desktopId: target.peer.remoteSignalName,
+          agentId: contact.connectorAgentId, identity: identity, outgoing: message)
+      : AgentDesktopReplyBinding.teamObserver(owner: context.owner, desktopId: target.peer.remoteSignalName,
+          agentId: contact.connectorAgentId, identity: identity)
+    guard let binding, try checkedTeamObserverRecovery(binding) != nil else { return nil }
+    return .init(message: message, team: context.owner, teamID: context.team.teamId,
+      maySend: (!context.team.state.isTerminal || context.team.state == .interrupted) &&
+        (!context.member.status.isTerminal || context.member.status == .interrupted))
+  }
+
+  func recordJournalTeamAttachmentFailure(_ owner: AgentTeamReplyOwner) throws {
+    let history = AgentTeamExecutionHistoryStore.shared
+    guard let context = try history.recoveryContext(source: owner.sourceMessageId, conversation: owner.conversationId,
+      turn: owner.turnId, contact: owner.contactId),
+      context.owner.supervisorRunId == owner.supervisorRunId, context.owner.memberId == owner.memberId
+    else { throw MqttRouteError.identityChanged }
+    if context.member.status == .failed { return }
+    guard history.applyReply(supervisorRunId: owner.supervisorRunId, source: owner.sourceMessageId,
+      conversation: owner.conversationId, turn: owner.turnId, task: owner.sourceMessageId, contact: owner.contactId,
+      content: localizedReply("composer_attachment_send_failed", fallback: "Attachment delivery failed."),
+      success: false, now: AgentControlPlaneClock.nowMillis()) != nil else { throw MqttChunkStorageError.databaseFailure }
+    UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: owner.sourceMessageId)
+  }
+
+  func recordJournalTeamProgress(_ payload: [String: Any], owner: AgentTeamReplyOwner) throws -> Bool {
+    let observation = AgentTeamReplyObservation(payload: payload)
+    guard owner.accepts(observation) else { return false }
+    let disposition = try AgentTeamExecutionHistoryStore.shared.consumeOwnedReply(source: owner.sourceMessageId,
+      conversation: owner.conversationId, turn: owner.turnId, task: owner.sourceMessageId, contact: owner.contactId,
+      content: "", richOutputJson: "", terminal: false, success: true, now: AgentControlPlaneClock.nowMillis(),
+      observation: observation)
+    if disposition == .primary || disposition == .observerProgress {
+      UserDefaultsAgentGlobalRunSlotStore.shared.touch(sourceMessageId: owner.sourceMessageId,
+        nowMillis: AgentControlPlaneClock.nowMillis())
+      return true
+    }
+    return false
+  }
+
   func teamRecoveryRetryState(runID: String) -> AgentTeamRecoveryRetryState {
     teamRecoveryRetries.state(run: runID, profile: store.profile.identityFingerprint)
   }
@@ -14995,7 +15044,7 @@ final class MessageCoordinator: ObservableObject {
   ) async throws -> AgentDisclosureStatus {
     try Task.checkCancellation()
     if !usesLegacyMqtt {
-      guard journalMqttRuntime != nil, teamContext == nil, codexReplay == nil else {
+      guard journalMqttRuntime != nil, teamContext?.isManagedCollaboration != false, codexReplay == nil else {
         throw GalaxySSIError.transportUnavailable
       }
     }
@@ -15016,7 +15065,7 @@ final class MessageCoordinator: ObservableObject {
       )
     let turnId = peerChat
       ? AgentPeerChatTransport.turnId(for: sourceMessageId)
-      : outgoing.turnId.ifBlank(sourceMessageId)
+      : outgoing.turnId.ifBlank(teamContext == nil ? sourceMessageId : outgoing.id.uuidString)
     let taskId = peerChat
       ? AgentPeerChatTransport.taskId(for: sourceMessageId)
       : AgentTaskIdentityPolicy.taskId(
@@ -15227,7 +15276,7 @@ final class MessageCoordinator: ObservableObject {
         mediaProfile: mediaProfile,
         preserveOriginalBytes: peerChat
       )
-      if peerChat || journalMqttRuntime != nil {
+      if peerChat || (journalMqttRuntime != nil && teamContext?.member.deliveryMode != .observe) {
         beginPeerAttachmentTransfers(outboundAttachments, outgoing: outgoing,
           contact: store.contact(id: outgoing.contactId) ?? contact)
       }
@@ -15601,6 +15650,14 @@ final class MessageCoordinator: ObservableObject {
         self?.journalBackedDesktopRecoveryQueries(ready: ready, onFailure: onFailure) ?? []
       }, resumeEvidenceJobs: { [weak self] runtime in
         self?.resumeDesktopEvidenceJobs(wrapAtEnd: true, runtime: runtime)
+      }, resolveTeamOwner: { [weak self] source, contact, identity, target in
+        try self?.journalTeamSendOwner(source, contact: contact, identity: identity, target: target)
+      }, recordTeamAttachmentFailure: { [weak self] owner in
+        guard let self else { throw MqttDeliveryDispatch.Failure.unavailable }
+        try self.recordJournalTeamAttachmentFailure(owner)
+      }, recordTeamProgress: { [weak self] payload, owner in
+        guard let self else { throw MqttDeliveryDispatch.Failure.unavailable }
+        return try self.recordJournalTeamProgress(payload, owner: owner)
       })
     return try MqttBusinessTransportRuntime(peerChatStore: store, localFingerprint: signalEngine.identity.fingerprint,
       journal: journal, routeState: routeState, pool: pool, incomingAttachments: incomingAttachmentTransferStore,
@@ -17829,8 +17886,22 @@ final class MessageCoordinator: ObservableObject {
             $0.routes.clientRouteId == manifest.string("client_route_id") }),
           taskIdentityStore.matchesRegistered(payload: manifest),
           !GalaxySSITransportPrivacyPolicy.isLocalOnly(manifest) else { return false }
-    return mayRecoverSavedDesktopSource(conversation: manifest.string("conversation_id"),
-      turn: manifest.string("turn_id"), sourceID: manifest.string("source_message_id"))
+    let source = manifest.string("source_message_id"), conversation = manifest.string("conversation_id")
+    let turn = manifest.string("turn_id")
+    guard mayRecoverSavedDesktopSource(conversation: conversation, turn: turn, sourceID: source) else { return false }
+    do {
+      if try AgentTeamExecutionHistoryStore.shared.recoveryContext(source: source, conversation: conversation,
+        turn: turn, contact: contact.id) != nil {
+        let projection = MqttPeerChatProjection(store: store, localFingerprint: signalEngine.identity.fingerprint)
+        let matches = projection.currentDestinations().filter {
+          $0.desktop && $0.peer.remoteSignalName == desktopId && $0.routeId == manifest.string("client_route_id")
+        }
+        guard matches.count == 1, let target = matches.first,
+              let identity = taskIdentityStore.identity(contactId: contact.id, sourceMessageId: source),
+              try journalTeamSendOwner(source, contact: contact, identity: identity, target: target) != nil else { return false }
+      }
+      return true
+    } catch { return false }
   }
 
   private func blobArtifactIdentity(desktopId: String) -> AgentBlobArtifactReceiver.Identity? {
