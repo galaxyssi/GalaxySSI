@@ -6,7 +6,7 @@ import uuid
 import time
 from dataclasses import replace
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import agent_gateway
 from external_cli_process_pool import ExternalCliProcessPool
@@ -14,6 +14,51 @@ from untrusted_evidence import POLICY_MARKER
 
 
 class AgentCliExecutionTest(unittest.TestCase):
+    def test_codex_stream_targets_managed_parent_without_changing_workspace_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / "fake_codex.py"
+            script.write_text(
+                "import json,sys\nsys.stdin.read()\n"
+                "print(json.dumps({'type':'turn.started'}), flush=True)\n"
+                "print(json.dumps({'type':'item.completed','item':{'id':'1','type':'agent_message','text':'Done.'}}), flush=True)\n",
+                encoding="utf-8",
+            )
+            manager = Mock()
+            manager.get.return_value = None
+            with (
+                patch("codex_cli_stream.supports_json_stream", return_value=True),
+                patch("agent_task_manager.agent_task_manager", manager),
+                patch.object(agent_gateway, "_mark_native_session_synced"),
+                patch.object(agent_gateway, "cli_agent_runtime_config", return_value={"enabled": False, "mode": "one-shot"}),
+            ):
+                reply = agent_gateway._run_cli_agent_process(
+                    agent_gateway.BASE_AGENTS["codex"], [sys.executable, str(script), "exec", "-"],
+                    "test prompt", original_text="test prompt", task_id="child-run", progress_task_id="parent-task",
+                    conversation_id="", response_language="en", restricted_workspace=True,
+                    working_directory=Path(directory),
+                )
+            self.assertEqual("Done.", reply)
+            self.assertEqual("parent-task", manager.record_partial_result.call_args.args[0])
+            self.assertEqual("Done.", manager.record_partial_result.call_args.args[1])
+            self.assertEqual({"child-run", "parent-task"}, {call.args[0] for call in manager.register_process.call_args_list})
+            self.assertEqual("child-run", manager.record_exit_code.call_args.args[0])
+            manager.reset_mock()
+            with (
+                patch("codex_cli_stream.supports_json_stream", return_value=True),
+                patch("agent_task_manager.agent_task_manager", manager),
+                patch.object(agent_gateway, "_mark_native_session_synced"),
+                patch.object(agent_gateway, "cli_agent_runtime_config", return_value={"enabled": False, "mode": "one-shot"}),
+            ):
+                reply = agent_gateway._run_cli_agent_process(
+                    agent_gateway.BASE_AGENTS["codex"], [sys.executable, str(script), "exec", "-"],
+                    "structured prompt", original_text="structured prompt", task_id="child-run",
+                    progress_task_id="parent-task", stream_user_output=False,
+                    conversation_id="", response_language="en", restricted_workspace=True,
+                    working_directory=Path(directory),
+                )
+            self.assertEqual("Done.", reply)
+            manager.record_partial_result.assert_not_called()
+
     def setUp(self):
         self.runtime_directory = tempfile.TemporaryDirectory()
         self.runtime_patch = patch.object(

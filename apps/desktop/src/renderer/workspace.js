@@ -1325,11 +1325,14 @@ function renderTurn(task) {
   const answerText = isEvolution
     ? t(task.result || "The self-evolution run completed.")
     : (task.result || t("Task completed."));
+  const partialText = !isEvolution && task.partial_result?.user_visible === true
+    ? String(task.partial_result.text || "")
+    : "";
   const answer = task.status === "completed"
     ? `<article class="assistant-answer">${renderTaskOutput(task, answerText)}${evolutionMetadata}<div class="assistant-actions"><button data-speak-task="${escapeHtml(task.task_id)}">${escapeHtml(t("Read aloud"))}</button></div></article>${renderArtifacts(task)}`
     : (TERMINAL_STATES.has(task.status)
       ? `<article class="assistant-answer error-answer">${escapeHtml(task.error || task.result || t("The task could not be completed."))}${renderRecoveryActions(task)}</article>`
-      : "");
+      : (partialText ? `<article class="assistant-answer partial-answer">${renderMarkdown(partialText)}</article>` : ""));
   const events = Array.isArray(task?.run_timeline?.events)
     ? task.run_timeline.events
     : (Array.isArray(task.events) ? task.events : []);
@@ -1368,7 +1371,7 @@ function renderTurn(task) {
           <span class="status-pulse"></span>
           <span class="run-summary-copy">
             <strong>${escapeHtml(execution.executor)}</strong>
-            <small>${escapeHtml(taskStatusLabel(task))} · ${escapeHtml(execution.location)} · ${escapeHtml(execution.step)}</small>
+            <small>${escapeHtml(taskStatusLabel(task))} · ${escapeHtml(execution.location)} · ${escapeHtml(t(execution.step))}</small>
           </span>
           <span class="run-duration" data-elapsed-task="${escapeHtml(task.task_id)}">${escapeHtml(formatDuration(taskElapsed(task)))}</span>
           <span class="chevron" aria-hidden="true"></span>
@@ -1395,6 +1398,8 @@ function renderConversation(force = false) {
     task.result?.length,
     task.result_sha256,
     task.result_chunk_count,
+    task.partial_result?.sequence,
+    task.partial_result?.text,
     expandedTaskOutput(task)?.chunks?.length,
     expandedTaskOutput(task)?.done,
     task.output_files?.length,

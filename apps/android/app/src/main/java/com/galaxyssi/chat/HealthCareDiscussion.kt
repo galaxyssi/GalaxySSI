@@ -77,7 +77,8 @@ internal object HealthCareDiscussion {
                 val job = checkNotNull(care.researchJob(turnId))
                 val previous = care.previousCompletedResearch(job)
                 HealthCareResearchHandoff.snapshot(concern, job, previous,
-                    previous?.let { care.revision(concern.id, it.revision) })
+                    previous?.let { care.revision(concern.id, it.revision) }, care.priorResearchEvidence(job, grant),
+                    care.hasRecordedPlan(concern.id, job.createdAt))
             }
             val snapshot = HealthCareDiscussionPolicy.snapshot(concern, followUp)
             val goal = HealthCareDiscussionPolicy.prompt(question, snapshot)
