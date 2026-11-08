@@ -138,6 +138,7 @@ enum AgentCollaborationRuleTopics {
     an empty scan is unknown history, not evidence that a method works.
     capability_lesson binds exact result and rollback parents; retain requires passing target and regression cases,
     an independent reviewer and full original evidence reads. Reject or revise can preserve historical findings.
+    \(AgentCollaborationExperimentResultFeedback.guidance)
     """),
     Topic(id: "learning", purpose: "Compare and record learning choices", prerequisites: ["foundation"], contract: """
     learning_agenda is immutable. Include goal_alignment, resource_reasoning, selection_reason, reconsider_when and options.

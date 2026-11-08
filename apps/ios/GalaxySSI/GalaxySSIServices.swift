@@ -8501,6 +8501,13 @@ final class MessageCoordinator: ObservableObject {
     ]
     let stage = member.context["_galaxyssi_research_stage"] ?? ""
     if !stage.isEmpty { instruction.append("Research stage: \(stage)") }
+    if member.context["_galaxyssi_selection_source"] == "collaboration_roster" {
+      instruction.append(AgentCollaborationExperimentResultFeedback.guidance)
+      if member.deliveryMode == .respond {
+        instruction.append("Match requested record kinds to their host contracts. If reporting evidence cannot satisfy a preregistered comparison, " +
+          "correct the assignment or request a prospective comparison. Preserve original reports, criteria and verification types.")
+      }
+    }
     return instruction
   }
 
