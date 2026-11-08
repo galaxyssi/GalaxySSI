@@ -265,6 +265,11 @@ struct AgentHomeView: View {
               .clipped()
             if screenAssistantCompact { Spacer(minLength: 0) }
           } else {
+            if let session = store.agentSession(id: store.activeAgentConversationId),
+               !session.privateMode, !session.trackingPaused, session.collaborationRoster == nil {
+              GalaxySSIHealthCareEntry(records: .init(owner: store.profile.identityFingerprint, secrets: store.secrets))
+                .id(store.profile.identityFingerprint)
+            }
             agentOutput
           }
         }
@@ -707,7 +712,7 @@ struct AgentHomeView: View {
 
   func retryAgentTask(_ task: AgentTaskRecord, mode: AgentTaskRestartMode) {
     let current = store.agentTask(id: task.taskId) ?? task
-    if !(current.effectRecovery ?? []).isEmpty {
+    if AgentOutcomeContinuation.isUnverified(current) {
       guard retryingAgentTaskIDs.insert(task.taskId).inserted else { return }
       Task { @MainActor in
         _ = await coordinator.replanLocalNativeAction(taskId: task.taskId)

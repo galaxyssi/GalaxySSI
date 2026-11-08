@@ -1,0 +1,5 @@
+<resources>
+    <string name="health_care_evidence_read">原文获取：%1$s · 本次讨论读取：%2$s</string>
+    <string name="health_care_evidence_scope">原文片段已与本机读取回执核对；来源版本、相关性和医学适用性仍需评估。</string>
+    <string name="health_care_evidence_missing">此旧草案没有本机读取回执。请让 Agent 读取来源、更新计划后再确认。</string>
+</resources>

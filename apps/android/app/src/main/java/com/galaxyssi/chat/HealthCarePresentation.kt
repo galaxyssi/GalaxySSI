@@ -20,6 +20,7 @@ internal fun HealthCareSignal.titleResource() = when (this) {
     HealthCareSignal.FALLING_SERIES -> R.string.health_care_falling
     HealthCareSignal.RESULT_NOT_EXACT -> R.string.health_care_non_exact
     HealthCareSignal.SOURCE_REMOVED -> R.string.health_care_removed
+    HealthCareSignal.BLOOD_PRESSURE_ALERT -> R.string.health_care_bp_threshold
 }
 internal fun HealthCareActionState.titleResource() = when (this) {
     HealthCareActionState.PROPOSED -> R.string.health_care_draft_plan

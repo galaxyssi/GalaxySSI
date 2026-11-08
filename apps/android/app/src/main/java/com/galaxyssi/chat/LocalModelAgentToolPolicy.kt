@@ -8,6 +8,7 @@ internal object LocalModelAgentToolPolicy {
             addAll(AgentToolInspectionTools.toolIds)
             addAll(AgentOnDeviceRuntimeTools.toolIds)
             addAll(AgentLinuxSoftwareNativeTools.toolIds)
+            addAll(AgentScheduleNativeTools.toolIds)
             addAll(AgentPhoneNativeToolCatalog.toolIds.filter { it.startsWith("galaxyssi.workspace.") })
         }
     }

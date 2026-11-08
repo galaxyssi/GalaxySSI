@@ -44,7 +44,7 @@
     <string name="health_care_falling">最近三次可比较的跨日测量呈下降变化，不能仅据此判断患病。</string>
     <string name="health_care_non_exact">结果是上下界、区间或定性描述，不能当作精确数值判断。</string>
     <string name="health_care_removed">原始测量记录已不可用，继续前需要重新核对依据。</string>
-    <string name="health_care_changed_result">有了新的检测结果，需要结合已有计划重新评估，不能直接结束跟踪。</string>
+    <string name="health_care_changed_result">检测资料发生变化，需要结合已有计划重新评估，不能直接结束跟踪。</string>
     <string name="health_care_adult">已满18周岁</string>
     <string name="health_care_pregnant">正在妊娠</string>
     <string name="health_care_diabetes">曾确诊糖尿病</string>
@@ -68,4 +68,19 @@
     <string name="health_care_action_confirmed">已确认</string>
     <string name="health_care_action_done">已完成</string>
     <string name="health_care_action_declined">暂不采用</string>
+    <string name="health_care_comparison_title">复查变化</string>
+    <string name="health_care_comparison_values">前次 %1$s → 本次 %2$s</string>
+    <string name="health_care_comparison_correction">记录修订：%1$s → %2$s</string>
+    <string name="health_care_comparison_history">历史资料变化：%1$s → %2$s</string>
+    <string name="health_care_comparison_times">前次采集：%1$s\n本次采集：%2$s</string>
+    <string name="health_care_comparison_units">单位不同，尚未换算，不能直接比较数值。</string>
+    <string name="health_care_comparison_conditions">采集条件或测量部位不同。</string>
+    <string name="health_care_comparison_unknown">采集条件尚未补齐。</string>
+    <string name="health_care_comparison_source">数据来源或测量设备发生变化。</string>
+    <string name="health_care_comparison_reference">报告参考范围发生变化。</string>
+    <string name="health_care_comparison_not_exact">有结果缺失或不是精确数值。</string>
+    <string name="health_care_comparison_context">两次结果需要各自确认检测背景。</string>
+    <string name="health_care_comparison_context_changed">已确认的健康背景不同。</string>
+    <string name="health_care_comparison_method">尚未核实实验室或测量方法是否可比。</string>
+    <string name="health_care_comparison_not_clinical">数值变化不直接代表改善、恶化或稳定。调整跟踪计划前，需要结合依据和已有行动重新评估。</string>
 </resources>

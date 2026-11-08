@@ -49,8 +49,8 @@ class AgentDeviceIntentTest {
     @Test fun repeatingSchedulesAreNotSingleTimers() {
         assertFalse(AgentDeviceIntent.isTimerRequest("每一分钟设置倒计时"))
         assertNull(AgentDeviceIntent.exactTimerSeconds("every 1 minute start timer"))
-        assertNull(ConversationScheduleParser.parse("设置一分钟倒计时"))
-        assertNotNull(ConversationScheduleParser.parse("每分钟打开闹钟"))
+        assertNull(ConversationScheduleParser.parseTime("设置一分钟倒计时"))
+        assertNotNull(ConversationScheduleParser.parseTime("每分钟"))
     }
     @Test fun genericPendingContextRoutesToExecutableModelLoop() {
         for (label in listOf("Pending executable goal:", "Scoped executable goal:")) {

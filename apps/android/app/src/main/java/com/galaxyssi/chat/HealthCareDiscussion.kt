@@ -34,7 +34,8 @@ internal object HealthCareDiscussion {
             ?.startsWith(HealthCareDiscussionPolicy.TOPIC_PREFIX) == true
     }
 
-    fun prepare(context: Context, conversationId: String, question: String, runtime: AgentRuntimeContext): HealthCareDiscussionPreview {
+    fun prepare(context: Context, conversationId: String, question: String, runtime: AgentRuntimeContext,
+        research: HealthCareResearchAuthorization? = null, turnId: String = UUID.randomUUID().toString()): HealthCareDiscussionPreview {
         HealthCareEngine.evaluate(context)
         val privacy = HealthPrivacyStore(context).use { it.policy() }
         check(privacy.metrics && privacy.profile) { context.getString(R.string.health_care_discussion_permissions) }
@@ -47,7 +48,11 @@ internal object HealthCareDiscussion {
             val targets = registry.availableTargets()
             val selection = AgentModelSelectionSettings.selection(context, conversationId)
             val selected = AgentModelSelectionPolicy.selectedTarget(selection, targets)
-            val target = if (selection.mode == AgentModelSelectionMode.MANUAL) selected else {
+            if (research != null) check(research.active && research.scope.concernId == id && research.scope.conversationId == conversationId &&
+                research.configuration == configurationFingerprint(context, conversationId, research.scope.targetId) &&
+                care.researchAuthorization(id) == research) { context.getString(R.string.health_care_changed) }
+            val target = if (research != null) targets.firstOrNull { it.id == research.scope.targetId }
+            else if (selection.mode == AgentModelSelectionMode.MANUAL) selected else {
                 AgentStableAutoRoutePolicy.select(targets, AgentResourceRouter(context).route(question, targets))?.target
             }
             check(target != null && target.status == AgentConnectorStatus.AVAILABLE && target.kind != AgentConnectorKind.DEVICE) {
@@ -55,15 +60,19 @@ internal object HealthCareDiscussion {
             }
             check(target.id == "local-llm" || privacy.online) { context.getString(R.string.health_care_discussion_online) }
             val config = AgentModelSelectionSettings.configurationForTarget(context, conversationId, target.id)
-            val requestedModel = config?.modelId?.takeIf(String::isNotBlank) ?: target.invocationProfile.defaultModelId
+            val requestedModel = research?.scope?.modelId ?: config?.modelId?.takeIf(String::isNotBlank) ?: target.invocationProfile.defaultModelId
             val model = if (AppStore.isCloudApiContact(context, target.id)) {
                 val contact = AppStore.selectedCloudModelContact(context, target.id) ?: error("Cloud model unavailable")
                 CloudModelRequestRoutingPolicy.resolve(contact, requestedModel, false).getString("cloud_model")
             } else requestedModel
-            val effort = config?.reasoningEffort ?: AgentModelReasoningEffort.AUTO
+            val effort = research?.scope?.effort?.let(AgentModelReasoningEffort::fromWireValue) ?: config?.reasoningEffort ?: AgentModelReasoningEffort.AUTO
             val destination = destination(context, target.id, model)
-            val grant = HealthCareDiscussionGrant(conversationId, UUID.randomUUID().toString(), id, concern.revision,
-                care.settings().version, privacy.version, destination, System.currentTimeMillis(), target.id, model, effort.wireValue)
+            val grant = HealthCareDiscussionGrant(conversationId, turnId, id, concern.revision,
+                care.settings().version, privacy.version, destination, System.currentTimeMillis(), target.id, model, effort.wireValue,
+                research?.id.orEmpty())
+            if (research != null) check(research.permits(grant) && care.researchGrantCurrent(grant)) {
+                context.getString(R.string.health_care_changed)
+            }
             val snapshot = HealthCareDiscussionPolicy.snapshot(concern)
             val goal = HealthCareDiscussionPolicy.prompt(question, snapshot)
             val history = AgentTranscriptStore(context).context(conversationId)
@@ -73,7 +82,7 @@ internal object HealthCareDiscussion {
             val screen = ScreenContext(context.packageName, pageTitle = "Health discussion")
             val safeRuntime = runtime.copy(goal = goal, screen = screen, memoryCapture = false, memories = emptyList(),
                 knowledgeItems = emptyList(), systemTools = emptyList(), callableTargets = listOf(target),
-                nativeTools = runtime.nativeTools.filter { it.id in HealthCareDiscussionPolicy.researchTools })
+                nativeTools = runtime.nativeTools.filter { it.id in HealthCareDiscussionPolicy.discussionTools })
             val request = AgentRequest(goal, screen, listOf(target), memories = emptyList(), runtimeContext = safeRuntime,
                 conversationContext = history, executionTurnId = grant.turnId)
             val base = RuleBasedAgentPlanner(context).supervisedProjectActions(request)?.singleOrNull() ?: error("No health discussion route")
@@ -114,7 +123,15 @@ internal object HealthCareDiscussion {
             .put("fingerprint", contact.optString("identity_fingerprint")).toString())
     }
 
-    private fun destination(context: Context, targetId: String, model: String): String {
+    internal fun configurationFingerprint(context: Context, conversationId: String, targetId: String): String {
+        val selection = AgentModelSelectionSettings.selection(context, conversationId)
+        val config = AgentModelSelectionSettings.configurationForTarget(context, conversationId, targetId)
+        return AgentNativeJsonCodec.sha256(JSONObject().put("mode", selection.mode.name).put("target", selection.targetId)
+            .put("model", selection.modelId).put("effort", selection.reasoningEffort.wireValue)
+            .put("target_model", config?.modelId ?: JSONObject.NULL).put("target_effort", config?.reasoningEffort?.wireValue ?: JSONObject.NULL).toString())
+    }
+
+    internal fun destination(context: Context, targetId: String, model: String): String {
         if (targetId == "local-llm") return AgentNativeJsonCodec.sha256("local-llm:$model")
         if (AppStore.isCloudApiContact(context, targetId)) {
             val contact = AppStore.selectedCloudModelContact(context, targetId) ?: error("Cloud model unavailable")
@@ -143,7 +160,10 @@ internal object HealthCareDiscussion {
                 } } == true
                 HealthCareDiscussionPolicy.permitted(grant, conversationId, turnId, concern, settings, privacy,
                     actualDestination ?: destination(context, grant.targetId, grant.modelId), System.currentTimeMillis()) &&
-                    sourceCurrent && (grant.targetId == "local-llm" || privacy.online)
+                    sourceCurrent && (grant.targetId == "local-llm" || privacy.online) && care.researchGrantCurrent(grant) &&
+                    (grant.researchAuthorizationId.isEmpty() || care.researchAuthorization(grant.concernId)?.let {
+                        it.configuration == configurationFingerprint(context, conversationId, grant.targetId)
+                    } == true)
             }
         }.getOrDefault(false)
         return if (allowed) null else context.getString(R.string.health_care_discussion_expired)
@@ -157,7 +177,7 @@ internal object HealthCareDiscussion {
         val granted = HealthCareStore(context).use { it.discussionGrant(turn) } ?: return context.getString(R.string.health_care_discussion_expired)
         val allowed = when (action.kind) {
             AgentActionKind.DRAFT_PLAN -> true
-            AgentActionKind.CALL_NATIVE_TOOL -> action.parameters["tool_id"] in HealthCareDiscussionPolicy.researchTools
+            AgentActionKind.CALL_NATIVE_TOOL -> action.parameters["tool_id"] in HealthCareDiscussionPolicy.discussionTools
             AgentActionKind.CALL_CONNECTOR -> action.parameters["connector_id"] == granted.targetId &&
                 action.parameters["agent_model_id"].orEmpty() == granted.modelId &&
                 action.parameters["agent_reasoning_effort"].orEmpty() == granted.effort &&
@@ -170,8 +190,9 @@ internal object HealthCareDiscussion {
     fun toolRejection(context: Context, tool: AgentNativeToolDescriptor, invocation: AgentNativeToolInvocationContext): String? {
         if (!bound(context, invocation.conversationId)) return null
         return rejection(context, invocation.conversationId, invocation.turnId)
-            ?: if (tool.id !in HealthCareDiscussionPolicy.researchTools) context.getString(R.string.health_care_discussion_scope)
-            else if (tool.id !in setOf(AgentToolDiscoveryTools.ID, AgentToolInspectionTools.DESCRIBE, AgentConversationRecallTool.ID) &&
+            ?: if (tool.id !in HealthCareDiscussionPolicy.discussionTools) context.getString(R.string.health_care_discussion_scope)
+            else if (tool.id !in setOf(AgentToolDiscoveryTools.ID, AgentToolInspectionTools.DESCRIBE, AgentConversationRecallTool.ID,
+                    HealthCarePlanTool.ID, HealthCareHistoryTool.ID) &&
                 !HealthPrivacyStore(context).use { it.policy().online }) context.getString(R.string.health_care_discussion_online)
             else null
     }

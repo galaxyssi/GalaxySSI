@@ -11,14 +11,21 @@ internal object ConversationScheduledTasks {
             it.action.conversationId.isNotBlank() && (conversationId == null || it.action.conversationId == conversationId)
         }
 
-    @Synchronized
     fun save(context: Context, conversationId: String, command: ConversationScheduleCommand,
-        existingId: String? = null): AgentProactiveTask = synchronized(AgentProactiveTaskScheduler) {
+        existingId: String? = null, creationId: String? = null): AgentProactiveTask = synchronized(AgentProactiveTaskScheduler) {
         require(command.operation == ConversationScheduleOperation.SAVE && command.prompt.isNotBlank())
+        if (creationId != null) {
+            require(existingId == null && command.createNew)
+            AgentProactiveTaskStore(context).task(creationId)?.let { saved ->
+                require(saved.action.conversationId == conversationId && saved.action.prompt == command.prompt &&
+                    saved.trigger == command.trigger) { "Schedule creation identity conflicts with saved state." }
+                return@synchronized saved
+            }
+        }
         val existing = existingId?.let { AgentProactiveTaskStore(context).task(it) }
             ?: if (existingId == null && !command.createNew) tasks(context, conversationId).singleOrNull() else null
         require(existingId == null || existing?.action?.conversationId == conversationId)
-        val task = (existing ?: AgentProactiveTask(name = command.prompt.take(120),
+        val task = (existing ?: AgentProactiveTask(taskId = creationId ?: java.util.UUID.randomUUID().toString(), name = command.prompt.take(120),
             trigger = requireNotNull(command.trigger),
             action = AgentProactiveAction(AgentProactiveActionKind.AGENT, targetId = "conversation",
                 prompt = command.prompt, deliveryMode = "notify", conversationId = conversationId),
@@ -32,14 +39,15 @@ internal object ConversationScheduledTasks {
         AgentProactiveTaskScheduler.save(context, task, runImmediately = true)
     }
 
-    @Synchronized
     fun setEnabled(context: Context, taskId: String, enabled: Boolean): AgentProactiveTask? = synchronized(AgentProactiveTaskScheduler) {
         val store = AgentProactiveTaskStore(context)
         val task = store.task(taskId)?.takeIf { it.action.conversationId.isNotBlank() } ?: return@synchronized null
+        if (!enabled) AgentProactiveTaskNotifier.cancel(context, taskId)
         val saved = AgentProactiveTaskScheduler.save(context, task.copy(enabled = enabled,
             consecutiveFailures = 0, revision = task.revision + 1))
-        if (!enabled) store.runs(taskId, 1_000).filter { !it.status.terminal }.forEach {
-            AgentProactiveTaskExecutor.cancel(context, it.runId)
+        if (!enabled) store.recoverableRuns().filter { it.taskId == taskId }.forEach {
+            if (!it.status.terminal) AgentProactiveTaskExecutor.cancel(context, it.runId)
+            else if (!it.deliveryRecorded) store.upsertRun(it.copy(deliveryRecorded = true))
         }
         saved
     }
@@ -54,16 +62,21 @@ internal object ConversationScheduledTasks {
         previous == null || previous.resultSummary.trim() != summary.trim() ||
             (previous.status == AgentProactiveRunStatus.FAILED) != failed
 
-    fun deliver(context: Context, task: AgentProactiveTask, run: AgentProactiveRun): Boolean {
+    fun deliver(context: Context, task: AgentProactiveTask, run: AgentProactiveRun): Boolean = synchronized(AgentProactiveTaskScheduler) {
         val conversationId = task.action.conversationId
-        if (conversationId.isBlank()) return true
-        if (run.deliveryRecorded) return false
+        if (conversationId.isBlank()) return@synchronized true
+        if (run.deliveryRecorded) return@synchronized false
         val store = AgentProactiveTaskStore(context)
+        if (store.run(run.runId)?.deliveryRecorded == true) return@synchronized false
+        if (store.task(task.taskId)?.enabled != true) {
+            store.upsertRun(run.copy(deliveryRecorded = true))
+            return@synchronized false
+        }
         if (run.status == AgentProactiveRunStatus.UNVERIFIED && run.errorCode in setOf(
                 "foreground_observer_unavailable", "foreground_not_verified", "configuration_not_verified") &&
             run.resultRichOutputJson.isBlank()) {
             store.upsertRun(run.copy(deliveryRecorded = true))
-            return false
+            return@synchronized false
         }
         val previous = store.runs(task.taskId, 1_000).firstOrNull {
             it.runId != run.runId && it.completedAtMillis > 0L && it.scheduledForMillis < run.scheduledForMillis &&
@@ -72,12 +85,12 @@ internal object ConversationScheduledTasks {
         val failed = run.status == AgentProactiveRunStatus.FAILED
         if (previous?.status == run.status && !resultShouldPublish(previous, run.resultSummary, failed) && previous.resultRichOutputJson == run.resultRichOutputJson) {
             store.upsertRun(run.copy(deliveryRecorded = true))
-            return false
+            return@synchronized false
         }
         val transcript = AgentTranscriptStore(context)
         if (transcript.conversation(conversationId) == null) {
             store.upsertRun(run.copy(deliveryRecorded = true))
-            return false
+            return@synchronized false
         }
         val text = context.getString(if (failed) R.string.schedule_failed_result else R.string.schedule_result,
             task.name, run.resultSummary.ifBlank { context.getString(R.string.schedule_empty_result) })
@@ -86,7 +99,7 @@ internal object ConversationScheduledTasks {
             turnId = ConversationScheduledReplyPolicy.turnId(conversationId, run.runId),
             taskId = run.runId, richOutputJson = run.resultRichOutputJson)
         store.upsertRun(run.copy(deliveryRecorded = true))
-        return inserted
+        inserted
     }
 
     fun isQuietLegacyStatus(context: Context, entry: AgentTranscriptEntry): Boolean {

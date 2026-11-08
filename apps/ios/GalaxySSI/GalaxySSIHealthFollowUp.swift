@@ -45,6 +45,7 @@ struct GalaxySSIHealthFollowUp {
     let previousMean: String?
     let delta: String?
     let previousObservedDays: Int?
+    let filteredTrend: GalaxySSIHealthTrendAnalysis.Fact?
   }
   private struct Packet: Encodable {
     let question: String
@@ -64,6 +65,8 @@ struct GalaxySSIHealthFollowUp {
   let payload: Data
   private let ids: Set<String>
   private let sourceIDs: Set<String>
+  private let changeIDs: Set<String>
+  private let allowedActions: Set<Action>
 
   static func question(_ raw: String) -> String? {
     let normalized = raw.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
@@ -96,16 +99,20 @@ struct GalaxySSIHealthFollowUp {
       }
       return Fact(id: item.id, metric: value.metric, component: value.component, unit: value.unit,
                   observedDays: value.observedDays, count: value.count, mean: matched[item.id] == nil ? nil : value.mean,
-                  previousMean: matched[item.id]?.mean, delta: matched[item.id]?.delta, previousObservedDays: previousDays)
+                  previousMean: matched[item.id]?.mean, delta: matched[item.id]?.delta ?? analysis.trendFact?.delta,
+                  previousObservedDays: previousDays, filteredTrend: analysis.trendFact)
     }
     comparisons = matched
     ids = Set(facts.map(\.id))
     sourceIDs = Set(analysis.evidence.filter { !$0.readings.isEmpty }.map(\.id))
-    let topics: [Topic] = matched.isEmpty ? [.coverage, .sources] : [.changes, .coverage, .sources]
+    changeIDs = Set(facts.filter { $0.delta != nil }.map(\.id))
+    let topics: [Topic] = changeIDs.isEmpty ? [.coverage, .sources] : [.changes, .coverage, .sources]
+    let actions: [Action] = analysis.trend == nil ? Action.allCases : [.addRecord, .recordReminder]
+    allowedActions = Set(actions)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     payload = try encoder.encode(Packet(question: question, requestedDays: analysis.requestedDays, facts: facts,
-      allowedTopics: topics, allowedActions: Action.allCases,
+      allowedTopics: topics, allowedActions: actions,
       previousAnswer: previous.flatMap { $0.analysisID == analysis.id ? $0.selection : nil }))
   }
 
@@ -126,11 +133,12 @@ struct GalaxySSIHealthFollowUp {
     let result = try JSONDecoder().decode(Selection.self, from: bytes)
     guard Set(result.sections.map(\.topic)).count == result.sections.count,
           result.actions.count <= 2, Set(result.actions).count == result.actions.count,
+          Set(result.actions).isSubset(of: allowedActions),
           (result.sections.isEmpty && result.actions.isEmpty) == (result.status == .outOfScope),
           result.sections.allSatisfy({ section in
             let allowed: Set<String>
             switch section.topic {
-            case .changes: allowed = Set(comparisons.keys)
+            case .changes: allowed = changeIDs
             case .coverage: allowed = ids
             case .sources: allowed = sourceIDs
             }
