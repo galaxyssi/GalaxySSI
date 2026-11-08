@@ -2,6 +2,89 @@ import XCTest
 @testable import GalaxySSI
 
 final class CloudWebGroundingTests: XCTestCase {
+  func testWeatherForecastUsesDestinationDayAcrossMidnightAndDST() throws {
+    let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-03-08T04:30:00Z"))
+    let newYork = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+    let tokyo = try XCTUnwrap(TimeZone(identifier: "Asia/Tokyo"))
+    let daily: AgentMcpJSONObject = [
+      "time": .array(["2026-03-07", "2026-03-08", "2026-03-09"].map(AgentMcpJSONValue.string)),
+      "temperature_2m_max": .array([.int(10), .null, .int(20)])
+    ]
+    let twoDays = try CloudWeatherForecastRange(arguments: ["day_offset": .int(1), "days": .int(2)])
+    XCTAssertEqual(twoDays.providerDays, 3)
+    let selected = try twoDays.select(from: daily, timeZone: newYork, now: now)
+    XCTAssertEqual(selected.firstDate, "2026-03-08")
+    XCTAssertEqual(selected.lastDate, "2026-03-09")
+    XCTAssertFalse(selected.startsToday)
+    XCTAssertEqual(selected.daily["temperature_2m_max"], .array([.null, .int(20)]))
+    let explicit = try CloudWeatherForecastRange(arguments: ["date": .string("2026-03-08")])
+    XCTAssertEqual(explicit.providerDays, 16)
+    XCTAssertTrue(try explicit.select(from: daily, timeZone: tokyo, now: now).startsToday)
+    XCTAssertFalse(try explicit.select(from: daily, timeZone: newYork, now: now).startsToday)
+    XCTAssertThrowsError(try explicit.select(from: ["time": .array([.string("2026-03-07")])],
+      timeZone: newYork, now: now))
+    XCTAssertThrowsError(try explicit.select(from: ["time": daily["time"]!, "weather_code": .array([.int(1)])],
+      timeZone: newYork, now: now))
+    let outside = try CloudWeatherForecastRange(arguments: ["date": .string("2026-03-23")])
+    XCTAssertThrowsError(try outside.select(from: daily, timeZone: newYork, now: now))
+    XCTAssertThrowsError(try CloudWeatherForecastRange(arguments: ["date": .string("2026-02-30")]))
+    XCTAssertThrowsError(try CloudWeatherForecastRange(arguments: ["day_offset": .int(15), "days": .int(2)]))
+    XCTAssertThrowsError(try CloudWeatherForecastRange(arguments: ["day_offset": .double(1.5)]))
+    XCTAssertThrowsError(try CloudWeatherForecastRange(arguments: ["day_offset": .int(0), "date": .string("2026-03-08")]))
+  }
+
+  func testFutureWeatherToolEmitsOnlyRequestedDatesAndNeverCurrentConditions() throws {
+    final class WeatherProvider: AgentIOSWebIntelligenceToolProviding {
+      let implementationId = "fixture.weather"
+      let engineCatalogSize = 1
+      let rankerId = "fixture"
+      var urls: [String] = []
+      var omitTomorrow = false
+
+      func availability(operation: AgentIOSWebIntelligenceOperation) -> AgentNativeToolAvailability { .available }
+
+      func invoke(operation: AgentIOSWebIntelligenceOperation, input: AgentMcpJSONObject,
+                  invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+        let url = input["url"]?.stringValue ?? ""
+        urls.append(url)
+        let payload: String
+        if url.contains("geocoding-api") {
+          payload = #"{"results":[{"name":"Tokyo","country_code":"JP","admin1":"Tokyo","latitude":35.7,"longitude":139.7}]}"#
+        } else if omitTomorrow {
+          payload = #"{"timezone":"Asia/Tokyo","daily":{"time":["2026-03-08"],"temperature_2m_max":[12]}}"#
+        } else {
+          payload = #"{"timezone":"Asia/Tokyo","current":{"temperature_2m":99},"daily":{"time":["2026-03-08","2026-03-09","2026-03-10"],"temperature_2m_max":[12,15,18]}}"#
+        }
+        return .success(output: ["text": .string(payload)])
+      }
+    }
+    let provider = WeatherProvider()
+    let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-03-07T23:30:00Z"))
+    let context = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSWebIntelligenceNativeToolCatalog.networkPermission],
+      grantedConsents: [AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent])
+    func weather() throws -> AgentMcpJSONObject {
+      try XCTUnwrap(decodeObject(CloudWebGrounding.executeTool(provider: provider, name: "web_weather",
+        arguments: ["location": .string("Tokyo"), "region": .string("Tokyo"), "country_code": .string("JP"),
+                    "day_offset": .int(1), "days": .int(2)], context: context, now: { now })))
+    }
+    let response = try weather()
+    XCTAssertEqual(response["status"], .string("completed"))
+    XCTAssertEqual(provider.urls.count, 2)
+    XCTAssertTrue(provider.urls.last?.contains("forecast_days=3") == true)
+    let item = try XCTUnwrap(response["evidence_pack"]?.objectValue?["items"]?.arrayValue?.first?.objectValue)
+    let content = try XCTUnwrap(decodeObject(item["excerpt"]?.stringValue ?? ""))
+    XCTAssertEqual(content["forecast_date"], .string("2026-03-09"))
+    XCTAssertEqual(content["forecast_end_date"], .string("2026-03-10"))
+    XCTAssertEqual(content["daily"]?.objectValue?["temperature_2m_max"], .array([.int(15), .int(18)]))
+    XCTAssertNil(content["current"])
+    provider.omitTomorrow = true
+    let failed = try weather()
+    XCTAssertEqual(failed["status"], .string("failed"))
+    XCTAssertTrue(failed["error"]?.stringValue?.contains("2026-03-09") == true)
+    XCTAssertNil(failed["evidence_pack"])
+  }
+
   func testCitationPreviewPublishesOnlyVerifiedPassiveParagraphs() throws {
     let url = "https://example.com/report"
     let pack = AgentIOSWebEvidencePack.build(
