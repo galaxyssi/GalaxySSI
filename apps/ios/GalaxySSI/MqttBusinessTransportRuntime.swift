@@ -235,18 +235,104 @@ final class MqttBusinessTransportRuntime {
       _ = try await receipts.accept(packet)
       return
     }
-    guard packet.payload["scheme"] as? String == "signal",
-          let remoteName = remoteNames[packet.scope] else { return }
+    guard let remoteName = remoteNames[packet.scope] else { return }
+    switch packet.payload["type"] as? String {
+    case MqttChunkReceipts.state:
+      _ = try routes.withCurrentIdentity(packet) {
+        try journal.outgoingChunks.accept(authenticatedScope: $0.binding, state: packet.payload)
+      }
+      return
+    case MqttChunkReceipts.probe:
+      try await receiveChunks(packet, remoteName: remoteName, probe: true)
+      return
+    default: break
+    }
+    if packet.payload["scheme"] as? String == "signal-chunk" {
+      try await receiveChunks(packet, remoteName: remoteName, probe: false)
+      return
+    }
+    guard packet.payload["scheme"] as? String == "signal" else { return }
     let accepted = try routes.decryptAndStore(packet, using: engine, remoteName: remoteName)
     if let receipt = accepted.receipt, packet.payload[MqttDeliveryEnvelope.field] != nil {
       let frame = try MqttDeliveryEnvelope.parseVerifiedFrame(packet.payload, sender: packet.sender,
-        receiver: packet.receiver, ingressBroker: ingress.brokerID)
+        receiver: packet.receiver, ingressBroker: packet.ingress.brokerID)
       _ = await receiptRetry.offer(scope: packet.scope, message: receipt.messageID, attempt: frame.attempt.attemptID,
         now: monotonic()) { [weak routes = self.routes, journal = self.journal] in
           guard let routes else { return false }
           return try await routes.publishStoredReceipt(packet, inbox: journal.inbox)
         }
     }
+  }
+
+  private func receiveChunks(_ packet: MqttPeerRoutes.VerifiedPacket, remoteName: String, probe: Bool) async throws {
+    let (state, proof) = try routes.withCurrentIdentity(packet) { identity in
+      try storeChunks(packet, identity: identity, remoteName: remoteName, probe: probe)
+    }
+    if let state {
+      _ = try await routes.publishIngressReply(packet, payload: state)
+    }
+    guard !stopped, let proof else { return }
+    if let wire = try routes.withCurrentIdentity(packet, commit: { identity in
+      try engine.makeStoredReceiptWire(identity: identity, messageID: proof.messageID,
+        wireHash: proof.wireHash, remoteName: remoteName)
+    }) {
+      _ = try await routes.publishIngressReply(packet, payload: wire)
+    }
+  }
+
+  private func storeChunks(_ packet: MqttPeerRoutes.VerifiedPacket, identity: MqttBusinessIdentity,
+                           remoteName: String, probe: Bool) throws -> ([String: Any]?, MqttBusinessInbox.Receipt?) {
+    let chunks = journal.incomingChunks
+    let query: MqttChunkReceipts.Query
+    let sendState: Bool
+    let transfer: String
+    let assembled: String?
+    if probe {
+      let request = try MqttChunkReceipts.parse(packet.payload)
+      let snapshot = try chunks.snapshot(authenticatedScope: identity.binding, query: request)
+      if let proof = snapshot.proof {
+        return (snapshot.state, try journal.inbox.storedReceipt(identity: identity,
+          messageID: proof.messageID, wireHash: proof.wireHash))
+      }
+      query = request
+      sendState = true
+      transfer = request.transfer
+      assembled = try chunks.recoverComplete(authenticatedScope: identity.binding, query: request)
+    } else {
+      let chunk = try MqttChunkManifest.parse(packet.payload)
+      guard packet.payload["protocol"] as? String == GalaxySSILinkProtocol.name,
+            try MqttRouteProtocol.integer(packet.payload, "version") == Int64(GalaxySSILinkProtocol.version),
+            chunk.source == remoteName, chunk.target == engine.identity.name else {
+        throw MqttRouteError.invalidPayload
+      }
+      let request = try MqttChunkReceipts.fromChunk(packet.payload)
+      query = try request ?? MqttChunkReceipts.Query(transfer: chunk.transfer, manifest: chunk.manifestHash,
+        count: chunk.count, request: MqttChunkReceipts.newRequest())
+      sendState = request != nil
+      transfer = chunk.transfer
+      assembled = try chunks.accept(authenticatedScope: identity.binding, wire: packet.payload)
+    }
+
+    var proof: MqttBusinessInbox.Receipt?
+    if let assembled {
+      guard let wire = try JSONSerialization.jsonObject(with: Data(assembled.utf8)) as? [String: Any] else {
+        throw MqttRouteError.invalidPayload
+      }
+      let accepted = try engine.decryptAndStore(wire, identity: identity, remoteName: remoteName,
+        ingressBroker: packet.ingress.brokerID)
+      if let receipt = accepted.receipt {
+        proof = try journal.inbox.storedReceipt(identity: identity, messageID: receipt.messageID, wireHash: receipt.wireHash)
+        if let proof {
+          _ = try chunks.releaseAfterStore(authenticatedScope: identity.binding, transfer: transfer,
+            storedWireHash: proof.wireHash, messageID: proof.messageID)
+        }
+      }
+    }
+    let snapshot = try chunks.snapshot(authenticatedScope: identity.binding, query: query)
+    if proof == nil, let saved = snapshot.proof {
+      proof = try journal.inbox.storedReceipt(identity: identity, messageID: saved.messageID, wireHash: saved.wireHash)
+    }
+    return (sendState ? snapshot.state : nil, proof)
   }
 
   private func drainInbound() async throws {

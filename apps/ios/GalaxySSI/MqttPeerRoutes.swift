@@ -238,6 +238,20 @@ final class MqttPeerRoutes {
     return await pool.publish(publication, brokerID: packet.ingress.brokerID).accepted
   }
 
+  func publishIngressReply(_ packet: VerifiedPacket, payload: [String: Any]) async throws -> Bool {
+    let publication = try withCurrentIdentity(packet) { identity in
+      guard let peer = peers[identity.scope] else { throw MqttRouteError.identityChanged }
+      let binding = peer.binding
+      return MqttPathPublication(topic: binding.sendTopic, payload: try GalaxySSILinkProtocol.jsonData(payload),
+        generation: packet.ingress.generation, receiveTopics: binding.receiveTopics,
+        secretFingerprint: binding.secretFingerprint, authorized: { [weak self, weak peer] in
+          guard let self, let peer else { return false }
+          return self.locked { self.current(peer, binding: binding) && self.isCurrent(packet) }
+        })
+    }
+    return await pool.publish(publication, brokerID: packet.ingress.brokerID).accepted
+  }
+
   // Queueing is allowed while offline, but approval, relationship key and destination must still be current.
   func withOutgoing<T>(identity: MqttBusinessIdentity, topics: Set<String>, commit: () throws -> T) throws -> T {
     try locked {

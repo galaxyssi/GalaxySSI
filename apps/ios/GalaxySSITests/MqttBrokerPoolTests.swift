@@ -3,6 +3,110 @@ import XCTest
 
 final class MqttBrokerPoolTests: XCTestCase {
   @MainActor
+  func testChunkProbeRecoversFailedInboxCommitAndReplaysEncryptedReceipt() async throws {
+    guard GalaxySSISignalEngine.isAvailable else { throw XCTSkip("Native Signal unavailable") }
+    let fixture = try ChunkFixture()
+    let suite = "mqtt-chunk-runtime-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let journal = try MqttSignalStateJournal(fileURL: fixture.url, secrets: fixture.secrets)
+    let remote = GalaxySSISignalEngine(profileName: "remote", defaults: defaults, secrets: InMemorySecretStore())
+    var paths: [String: FakeMqttBrokerPath] = [:]
+    let pool = GalaxySSIMqttBrokerPool { endpoint in
+      let path = FakeMqttBrokerPath(id: endpoint.id)
+      paths[endpoint.id] = path
+      return path
+    }
+    let commitFailure = expectation(description: "Inbox commit failed")
+    var expectFailure = false
+    let runtime = try MqttBusinessTransportRuntime(profileName: "local", journal: journal,
+      routeState: MqttRouteState(defaults: defaults, secrets: fixture.secrets), defaults: defaults,
+      secrets: fixture.secrets, pool: pool, projectInbound: { _ in }, projectCompletion: { _ in },
+      onFailure: { error in
+        if expectFailure { commitFailure.fulfill() } else { XCTFail("Unexpected ingress failure: \(error)") }
+      })
+    let local = runtime.engine.identity
+    XCTAssertTrue(remote.processBundle(try XCTUnwrap(local.bundle)))
+    let secret = Data(repeating: 7, count: 32).base64URLEncodedString()
+    let route = GalaxySSILinkRoutes(clientRouteId: String(repeating: "r", count: 22), linkSecret: secret,
+      localFingerprint: local.fingerprint, remoteFingerprint: remote.identity.fingerprint)
+    let binding = MqttPeerBinding(scope: "peer", sender: local.fingerprint, receiver: remote.identity.fingerprint,
+      secret: secret, sendTopic: route.upTopic, sendTopics: route.sendWindow, receiveTopics: route.receiveWindow)
+    let identity = try MqttBusinessIdentity(binding)
+    try runtime.start(configuration: .init(clientID: "chunk-fixture", serverLinks: [], phoneRoutes: [route],
+      rendezvousSecrets: [:], rendezvousExpirations: [:]), peers: [.init(binding: binding, remoteSignalName: remote.identity.name)])
+    _ = await pool.readyGenerations(for: route.receiveWindow)
+    let path = try XCTUnwrap(paths["emqx"])
+    path.currentSecretFingerprint = binding.secretFingerprint
+    path.emit(.init(brokerID: "emqx", generation: 1, connected: true, subscriptions: route.receiveWindow))
+    _ = await pool.readyGenerations(for: route.receiveWindow)
+    let topic = try XCTUnwrap(route.receiveWindow.first)
+    func emit(_ value: [String: Any]) throws {
+      path.emitIngress(.init(brokerID: "emqx", generation: 1, topic: topic,
+        secretFingerprint: binding.secretFingerprint, payload: try GalaxySSILinkProtocol.jsonData(value)))
+    }
+
+    let messageID = UUID().uuidString
+    let envelope = try GalaxySSILinkProtocol.makeEnvelope(payload: ["type": "peer_message", "message_id": messageID],
+      sourceId: remote.identity.name, targetId: local.name)
+    let wire = try XCTUnwrap(remote.encrypt(envelope, remoteName: local.name))
+    let hash = try MqttDeliveryEnvelope.contentHash(wire)
+    let bytes = try GalaxySSILinkProtocol.jsonData(wire)
+    let parts = try GalaxySSIMqttWireChunking.encode(wirePayload: String(decoding: bytes, as: UTF8.self),
+      directLimitBytes: 1, chunkDataBytes: (bytes.count + 1) / 2).map {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any])
+      }
+    XCTAssertEqual(parts.count, 2)
+    let manifest = try MqttChunkManifest.parse(try XCTUnwrap(parts.first))
+    let query = try MqttChunkReceipts.Query(transfer: manifest.transfer, manifest: manifest.manifestHash,
+      count: manifest.count, request: MqttChunkReceipts.newRequest())
+    let partial = expectation(description: "Only the first fragment is acknowledged")
+    path.onPublication = { publication in
+      guard let object = (try? JSONSerialization.jsonObject(with: publication.payload)) as? [String: Any],
+            let state = try? MqttChunkReceipts.parseState(object), state.query == query else { return }
+      XCTAssertEqual(state.storedIndices, [0])
+      partial.fulfill()
+    }
+    var first = try XCTUnwrap(parts.first)
+    first[MqttChunkReceipts.field] = query.wire()
+    try emit(first)
+    await fulfillment(of: [partial], timeout: 2)
+    XCTAssertNil(try journal.inbox.storedReceipt(identity: identity, messageID: messageID, wireHash: hash))
+
+    try fixture.execute("CREATE TRIGGER fail_chunk_inbox BEFORE INSERT ON mqtt_business_inbox BEGIN SELECT RAISE(ABORT,'forced'); END")
+    expectFailure = true
+    try emit(try XCTUnwrap(parts.last))
+    await fulfillment(of: [commitFailure], timeout: 2)
+    expectFailure = false
+    XCTAssertNil(try journal.incomingChunks.snapshot(authenticatedScope: identity.binding, query: query).proof)
+    XCTAssertNil(try journal.inbox.storedReceipt(identity: identity, messageID: messageID, wireHash: hash))
+    try fixture.execute("DROP TRIGGER fail_chunk_inbox")
+
+    for label in ["Recovered receipt", "Compacted receipt replay"] {
+      let receipt = expectation(description: label)
+      path.onPublication = { publication in
+        guard let object = (try? JSONSerialization.jsonObject(with: publication.payload)) as? [String: Any],
+              object["scheme"] as? String == "signal" else { return }
+        defer { receipt.fulfill() }
+        guard let envelope = remote.decrypt(object), let payload = GalaxySSILinkProtocol.unwrapEnvelope(envelope),
+              let ack = try? MqttDeliveryEnvelope.parseStoredReceipt(payload) else {
+          XCTFail("Expected a Link-wrapped Signal receipt")
+          return
+        }
+        XCTAssertEqual(ack.messageID, messageID)
+        XCTAssertEqual(ack.wireHash, hash)
+      }
+      try emit(query.wire())
+      await fulfillment(of: [receipt], timeout: 2)
+      XCTAssertNotNil(try journal.inbox.storedReceipt(identity: identity, messageID: messageID, wireHash: hash))
+      XCTAssertEqual(try journal.incomingChunks.snapshot(authenticatedScope: identity.binding, query: query).proof?.messageID, messageID)
+    }
+    XCTAssertEqual(try journal.inbox.pending().map(\.messageID), [messageID])
+    path.onPublication = nil
+    await runtime.stop()
+  }
+
+  @MainActor
   func testBusinessRuntimeProjectsOnlyCommittedCurrentPeerRowsAndRetriesProjectionFailure() async throws {
     guard GalaxySSISignalEngine.isAvailable else { throw XCTSkip("Native Signal unavailable") }
     enum FixtureError: Error { case writeFailed }
@@ -412,6 +516,7 @@ final class FakeMqttBrokerPath: MqttBrokerPathTransport {
   var onAuthenticatedIngress: ((MqttAuthenticatedIngress) -> Void)?
   var configuration: MqttBrokerPathConfiguration?
   var publications: [MqttPathPublication] = []
+  var onPublication: ((MqttPathPublication) -> Void)?
   var sealedPublications: [MqttSealedPathPublication] = []
   var currentSecretFingerprint = "secret-hash"
   var outstanding: Set<String> = []
@@ -434,6 +539,7 @@ final class FakeMqttBrokerPath: MqttBrokerPathTransport {
     if invalidateBeforePublish { snapshot.generation += 1 }
     guard MqttBrokerPathPolicy.accepts(publication, snapshot: snapshot, currentSecretFingerprint: currentSecretFingerprint) else { return .failed }
     publications.append(publication)
+    onPublication?(publication)
     return .queued
   }
   func outstandingDurableMessageIds() async -> Set<String> { outstanding }
