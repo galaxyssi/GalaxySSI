@@ -63,6 +63,53 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testLocalCareMeasurementPagesRejectEditedHistoryAndRevokedConsent() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "series", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date(timeIntervalSince1970: 1_700_000_000)
+    var inputs: [GalaxySSIHealthReading] = []
+    for index in 0..<33 {
+      let row = GalaxySSIHealthReading(metric: .glucose,
+        measuredAt: now.addingTimeInterval(Double(index - 34) * 120),
+        value: index.isMultiple(of: 2) ? 94 : 110, conditions: index == 0 ? "" : "lab",
+        unitOverride: "mg/dL", referenceInterval: "70 - 99")
+      try records.write(row)
+      inputs.append(row)
+    }
+    try records.write(.init(metric: .weight, measuredAt: now, value: 65))
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(120), value: 95))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    let first = try records.localCareMeasurementPage(id: concern.id, metric: .glucose, now: now)
+    XCTAssertEqual(first.rows.count, 30)
+    XCTAssertEqual(first.rows.first?.id, inputs.last?.id)
+    XCTAssertEqual(first.rows.first?.record.revision, 1)
+    XCTAssertEqual(first.rows.first?.gaps, [])
+    let next = try XCTUnwrap(first.next)
+    let earlier = try records.localCareMeasurementPage(id: concern.id, metric: .glucose,
+      expected: first.binding, after: next, now: now)
+    XCTAssertEqual((first.rows + earlier.rows).map(\.id), inputs.reversed().map(\.id))
+    XCTAssertEqual(earlier.rows.last?.gaps, [.methodUnverified, .conditionsUnknown, .contextUnconfirmed])
+    XCTAssertNil(earlier.next)
+    XCTAssertThrowsError(try records.localCareMeasurementPage(id: concern.id, metric: .weight, now: now))
+    XCTAssertThrowsError(try records.localCareMeasurementPage(id: concern.id, metric: .glucose, after: next, now: now))
+
+    var edited = try XCTUnwrap(records.load().current.first { $0.id == inputs[0].id })
+    edited.value = 105
+    try records.write(edited)
+    XCTAssertThrowsError(try records.localCareMeasurementPage(id: concern.id, metric: .glucose,
+      expected: first.binding, after: next, now: now))
+    let updated = try records.localCareMeasurementPage(id: concern.id, metric: .glucose, now: now)
+    try records.setPrivacy(.localCare, enabled: false)
+    XCTAssertThrowsError(try records.localCareMeasurementPage(id: concern.id, metric: .glucose, now: now))
+    try records.setPrivacy(.localCare, enabled: true)
+    XCTAssertThrowsError(try records.localCareMeasurementPage(id: concern.id, metric: .glucose,
+      expected: updated.binding, after: updated.next, now: now))
+  }
+
+  @MainActor
   func testDataFilesOrdersAndPagesMetadataWithoutReadingPayloads() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
