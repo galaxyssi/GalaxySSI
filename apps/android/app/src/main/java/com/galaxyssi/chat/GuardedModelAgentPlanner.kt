@@ -268,7 +268,6 @@ internal object AgentModelPlanningPrompt {
         val maxBatchActions = settings.maxActions.coerceIn(1, 12)
         return buildString {
         append("Create an executable ActionPlan for the user goal. The phone validates every field locally.\n\n")
-        append(AgentScheduleNativeTools.INTENT_CONTRACT).append('\n')
         append(AgentProblemSolvingPolicy.CONTRACT).append('\n')
         if (PhoneAssistantTaskControl.isBound(request.executionTurnId)) {
             append("Floating phone task: operate this Android phone, never the Desktop screen. ")

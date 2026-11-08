@@ -33,7 +33,6 @@ class AgentPhoneExecutionBoundaryTest {
             assertTrue(prompt.contains("Initial response option:"))
             assertTrue(prompt.contains("not an exact command phrase"))
             assertFalse(prompt.contains("Persistent phone Linux uses Debian"))
-            assertTrue(prompt.contains(AgentScheduleNativeTools.INTENT_CONTRACT))
         }
     }
 

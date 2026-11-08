@@ -9,8 +9,6 @@ internal object AgentScheduleNativeTools {
     const val LIST = "galaxyssi.schedules.list"
     const val MANAGE = "galaxyssi.schedules.manage"
     val toolIds = setOf(LIST, MANAGE)
-    const val INTENT_CONTRACT = "Models decide recurring intent; habits/questions are not schedules. " +
-        "Use phone galaxyssi.schedules tools, not Desktop cron."
     const val MODEL_CONTRACT = "Recurring task intent is a semantic decision for you, not a keyword rule. " +
         "Words such as daily/every day in a question, habit or symptom report do not request automation. " +
         "Answer those normally. Only when the user asks you to arrange future repeated execution, use " +

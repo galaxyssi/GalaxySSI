@@ -68,7 +68,7 @@ class AgentScheduleNativeToolsTest {
 
     @Test fun modelContractDistinguishesQuestionsFromSchedulingAndDoesNotPromiseExecution() {
         val prompt = AgentPhoneInteractionPrompt.render(false)
-        assertTrue(prompt.contains(AgentScheduleNativeTools.INTENT_CONTRACT))
+        assertTrue(prompt.contains("Decide from meaning and context"))
         assertTrue(AgentScheduleNativeTools.MODEL_CONTRACT.contains("question, habit or symptom report"))
         assertTrue(AgentScheduleNativeTools.MODEL_CONTRACT.contains("not that its action succeeded"))
         assertTrue(AgentPhoneNativeToolCatalog.defaultToolIds.containsAll(AgentScheduleNativeTools.toolIds))
