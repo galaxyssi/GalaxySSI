@@ -566,10 +566,16 @@ final class GalaxySSIStoreTests: XCTestCase {
     let id = UUID().uuidString
     var reject = true
     var applied: [String] = []
+    let fixture = try ChunkFixture()
+    let recovery = AgentDesktopResultRecovery(
+      pages: AgentResultPageCheckpointStore(fileURL: fixture.root.appendingPathComponent("pages.sqlite"), secrets: fixture.secrets),
+      receipts: AgentResultReceiptJournal(fileURL: fixture.root.appendingPathComponent("receipts.sqlite"), secrets: fixture.secrets))
     let bridge = MqttDesktopConnectorProjection(store: store, identities: identities, commitResponse: { response, _ in
       if reject { throw FixtureError.writeFailed }
       applied.append(response.content)
-    })
+    }, completedResult: { _, receipt in
+      if reject || !recovery.receipts.insert(receipt) { throw FixtureError.writeFailed }
+    }, resultRecovery: { recovery })
     let payload: [String: Any] = ["type": "text", "message_id": id, "content": "Connector result",
       "source_message_id": "42", "contact_id": contact.id, "desktop_id": link.desktopId, "agent_id": contact.connectorAgentId,
       "client_route_id": route.clientRouteId, "conversation_id": "conversation", "task_id": "task", "turn_id": "turn"]
@@ -604,6 +610,40 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertTrue(applied.isEmpty)
     try project(payload, identity: identity)
     XCTAssertEqual(applied, ["Connector result"])
+
+    let source = UUID().uuidString
+    XCTAssertTrue(identities.register(contactId: contact.id, sourceMessageId: source, identity: .init(
+      clientRouteId: route.clientRouteId, conversationId: "conversation", taskId: "task", turnId: "turn")))
+    var terminal = payload
+    terminal["source_message_id"] = source
+    terminal["task_status"] = "completed"
+    terminal["execution_generation"] = 2
+    terminal["status_sequence"] = 7
+    terminal["sha256"] = String(repeating: "a", count: 64)
+    let receipt = try XCTUnwrap(AgentResultReceipt.fromPayload(terminal, desktopId: link.desktopId))
+    reject = true
+    XCTAssertThrowsError(try project(terminal, identity: identity))
+    XCTAssertNil(recovery.receipts.recordedState(receipt))
+    reject = false
+    try project(terminal, identity: identity)
+    let pending = try XCTUnwrap(recovery.receipts.due(nowMillis: 1).first)
+    let first = try bridge.resultReceiptRequest(pending, target: target)
+    XCTAssertEqual(first.messageID, try bridge.resultReceiptRequest(pending, target: target).messageID)
+    XCTAssertTrue(recovery.receipts.claim(pending, nowMillis: 1))
+    let retry = try XCTUnwrap(recovery.receipts.due(nowMillis: 10_000).first)
+    XCTAssertNotEqual(first.messageID, try bridge.resultReceiptRequest(retry, target: target).messageID)
+    var confirmation = receipt.payload
+    confirmation["type"] = "agent_task_result_receipt_confirmed"
+    confirmation["message_id"] = id
+    confirmation["receipt_id"] = "not-the-receipt"
+    XCTAssertThrowsError(try project(confirmation, identity: identity))
+    XCTAssertEqual(recovery.receipts.recordedState(receipt), .pending)
+    confirmation["receipt_id"] = receipt.id
+    try project(confirmation, identity: identity)
+    XCTAssertEqual(recovery.receipts.recordedState(receipt), .confirmed)
+    try project(confirmation, identity: identity)
+    XCTAssertTrue(recovery.cleanup(receipt))
+    XCTAssertEqual(recovery.receipts.recordedState(receipt), .cleaned)
   }
 
   func testServerLinkTracksAndroidCapabilityManifestVersion() throws {
