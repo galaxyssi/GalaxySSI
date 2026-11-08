@@ -228,6 +228,105 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(reopened.latestCollaborationRun(conversationId: prior.conversationId)?.supervisorRunId, "current")
   }
 
+  func testCandidateDirectoryRecallsExactFailedNativeTestsWithoutExecutionAuthority() throws {
+    let suite = "candidate-recall-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: folder) }
+    let secrets = InMemorySecretStore()
+    let file = folder.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let database = try AgentTeamHistoryDatabase(fileURL: file,
+      storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    let producer = durableTeamSnapshot("candidate-tests")
+    let author = try XCTUnwrap(producer.members.first { !$0.status.isTerminal })
+    XCTAssertTrue(history.upsert(producer))
+    func object(_ number: Int64, kind: AgentCollaborationResearchDraft.Kind, body: AgentMcpJSONObject,
+                parents: [AgentCollaborationResearchReference] = []) -> AgentCollaborationResearchRevision {
+      let ref = AgentCollaborationResearchReference(objectId: String(format: "%064llx", number),
+        revision: 1, sha256: String(format: "%064llx", number + 100))
+      return .init(reference: ref, previousHash: nil, runId: producer.supervisorRunId, turnId: producer.taskId,
+        authorId: author.memberId, sourceId: author.sourceMessageId,
+        draft: .init(id: "item", objectId: nil, baseRevision: 0, kind: kind, title: "Unfinished work",
+          body: [kind.rawValue: .object(body)], parents: parents))
+    }
+    let source = object(1, kind: .executableTool, body: [
+      "name": .string("WeatherNormalizer"), "source": .string("only_in_source_code")
+    ])
+    let sourceReference = AgentCollaborationCandidateRecall.reference(source.reference)
+    let plan = object(2, kind: .toolTestPlan, body: [
+      "executable_tool": .object(sourceReference), "cases": .array([.object(["expected": .string("only_in_expected")])])
+    ], parents: [source.reference])
+    try database.transaction {
+      for row in [source, plan] {
+        try database.insertResearchRecord(row, conversationId: producer.conversationId,
+          key: "object:" + row.reference.objectId, revision: row.reference.revision)
+      }
+    }
+    let planReference = AgentCollaborationCandidateRecall.reference(plan.reference)
+    for index in 0...13 {
+      let runtime: AgentMcpJSONObject = [
+        "mode": .string("test"), "tool_test_plan": .object(planReference), "executable_tool": .object(sourceReference),
+        "passed": .bool(false), "diagnostic": .string("expected 4; got 3")
+      ]
+      let result = AgentNativeToolResult(status: .failed,
+        output: index == 13 ? [:] : ["collaboration_tool_receipt": .object(runtime)], message: "",
+        receipt: .init(invocationId: "test-\(index)", startedAtEpochMillis: 1, finishedAtEpochMillis: 2,
+          durationMillis: 1, status: .failed, inputSha256: "input", outputSha256: "output", replayed: index == 1),
+        provenance: .init(toolId: AgentIOSOnDeviceRuntimeNativeToolCatalog.execute, toolVersion: "1", location: .application,
+          executorId: AgentIOSOnDeviceRuntimeNativeToolCatalog.brokerExecutorId, contractVersion: "1"))
+      _ = try history.recordNativeObservation(.init(runId: producer.supervisorRunId, conversationId: producer.conversationId,
+        turnId: producer.taskId, memberId: author.memberId, sourceId: author.sourceMessageId,
+        input: ["collaboration_tool": .object(["mode": .string("test"), "tool_test_plan": .object(planReference)])],
+        result: result))
+    }
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    var reader = durableTeamSnapshot("candidate-review")
+    reader.taskId = "candidate-review-turn"
+    XCTAssertTrue(reopened.upsert(reader))
+    let member = try XCTUnwrap(reader.members.first { !$0.status.isTerminal })
+    let scope = AgentCollaborationToolEvidenceScope(runId: reader.supervisorRunId, conversationId: reader.conversationId,
+      turnId: reader.taskId, memberId: member.memberId, sourceId: member.sourceMessageId)
+    func search(_ term: String) throws -> [AgentMcpJSONObject] {
+      let found = try reopened.recallCollaborationOriginal(["mode": .string("capabilities"), "query": .string(term)], scope: scope)
+      return found["capabilities"]?.arrayValue?.compactMap(\.objectValue) ?? []
+    }
+    let matches = try search("weathernormalizer")
+    XCTAssertEqual(Set(matches.map { $0.string("kind") }), ["executable_tool", "tool_test_plan"])
+    XCTAssertTrue(try search("only_in_source_code").isEmpty)
+    XCTAssertTrue(try search("only_in_expected").isEmpty)
+    let hit = try XCTUnwrap(matches.first { $0.string("kind") == "executable_tool" })
+    XCTAssertEqual(hit["grants_permissions"], .bool(false))
+    var selector = try XCTUnwrap(hit["usage_recall"]?.objectValue)
+    let first = try reopened.recallCollaborationOriginal(selector, scope: scope)
+    let firstRows = try XCTUnwrap(first["records"]?.arrayValue?.compactMap(\.objectValue))
+    XCTAssertEqual(firstRows.count, 12)
+    XCTAssertTrue(firstRows.allSatisfy { $0["subject_binding"] == .string("runtime_resolved_candidate") })
+    selector["cursor"] = try XCTUnwrap(first["next_cursor"])
+    let last = try reopened.recallCollaborationOriginal(selector, scope: scope)
+    XCTAssertEqual(last["records"]?.arrayValue?.count, 1)
+    var wrongSelector = AgentCollaborationCandidateRecall.selector(plan.reference)
+    wrongSelector["cursor"] = selector["cursor"]
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(wrongSelector, scope: scope))
+    var planSelector = AgentCollaborationCandidateRecall.selector(plan.reference)
+    let planPage = try reopened.recallCollaborationOriginal(planSelector, scope: scope)
+    planSelector["cursor"] = planPage["next_cursor"]
+    let tail = try reopened.recallCollaborationOriginal(planSelector, scope: scope)
+    let rows = (planPage["records"]?.arrayValue ?? []) + (tail["records"]?.arrayValue ?? [])
+    XCTAssertEqual(rows.count, 14)
+    XCTAssertTrue(rows.contains { $0.objectValue?["runtime_report_available"] == .bool(false) })
+    XCTAssertTrue(rows.contains { $0.objectValue?["replayed"] == .bool(true) })
+    let original = try XCTUnwrap(firstRows.first?["read_original"]?.objectValue)
+    let recalled = try reopened.recallCollaborationOriginal(original, scope: scope)
+    XCTAssertTrue(recalled.string("content").contains("expected 4; got 3"))
+    XCTAssertEqual(recalled["source_reference"]?.objectValue?["sha256"], original["sha256"])
+    reopened.removeResearchObjects(conversationId: scope.conversationId)
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(original, scope: scope))
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(selector, scope: scope))
+  }
+
   func testNativeObservationRequiresExactActiveMemberAndRejectsDeletedGroup() throws {
     let suite = "native-evidence-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
