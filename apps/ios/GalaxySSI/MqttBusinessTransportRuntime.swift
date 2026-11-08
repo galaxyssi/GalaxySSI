@@ -265,6 +265,18 @@ final class MqttBusinessTransportRuntime {
     try enqueueExactControl(request)
   }
 
+  func enqueueDesktopConnectorCancellation(_ payload: [String: Any], desktopId: String) throws {
+    guard started, !stopped, let projection = peerChatProjection, let desktopConnector
+    else { throw MqttDeliveryDispatch.Failure.unavailable }
+    try refreshDirectPeerBindings()
+    let matches = projection.currentDestinations().filter {
+      $0.desktop && $0.peer.remoteSignalName == desktopId && $0.routeId == payload.string("client_route_id") &&
+        !revokingScopes.contains($0.peer.binding.scope)
+    }
+    guard matches.count == 1, let target = matches.first else { throw MqttRouteError.identityChanged }
+    try enqueueExactControl(desktopConnector.outgoingCancellation(payload, target: target))
+  }
+
   private func desktopBlobDestination(_ attachment: AgentPreparedOutboundAttachment) throws -> MqttPeerChatProjection.Destination {
     guard started, !stopped, let projection = peerChatProjection else { throw MqttDeliveryDispatch.Failure.unavailable }
     try refreshDirectPeerBindings()
