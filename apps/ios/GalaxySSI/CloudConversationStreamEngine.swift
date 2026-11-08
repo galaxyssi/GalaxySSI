@@ -840,7 +840,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                publishedMilestones.insert(receipt.string("milestone_id")).inserted { madeProgress = true }
             if AgentCollaborationGoalAssessmentPolicy.isCoordinatorMutation(arguments.string("mode")),
                let receipt = try? CloudModelStreamJSON.mcpObject(from: output),
-               ["contract_established", "work_admitted"].contains(receipt.string("status")),
+               ["contract_established", "work_admitted", "verification_route_established"].contains(receipt.string("status")),
                receipt["replayed"] == .bool(false) {
               madeProgress = true
             }
