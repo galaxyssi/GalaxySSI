@@ -505,7 +505,8 @@ struct CloudModelStreamMutableConversation {
       "name": Self.collaborationPublishName,
       "description": assessmentOnly
         ? "Use work_inventory with no other fields to inspect work readiness, review subjects and publication tokens without dispatching. A waiting review is not active. Use validate_assessment with artifact containing the exact goal-assessment JSON to check its structure. Check schema_valid and repair the reported field in this turn; validation alone does not submit or approve it. Read a rejected draft with assessment_repair, draft_sha256 and next_offset. Keep the same draft hash and join content pages. As coordinator, use establish_contract with a continue assessment, open criteria without evidence, and empty work and blockers. Use append_work with a unique milestone_id, expected_revision, and a galaxyssi.work-expansion.v1 JSON artifact. Retry identical requests after an uncertain response. Use check_goal_evidence with an achieved assessment in artifact and the exact expected_revision to verify saved criterion deliveries and independent reviews. Include goal_coverage with exact mapping/review references, parts, or a manifest to also check coverage of the pinned goal source. This does not accept the goal." +
-          (canRunGoalWork ? " An accepted batch starts ready assignments in dependency order. To recruit inside the current run, include recruit:[{id,template_member,role,scope,reason}] in the work expansion. Assign concrete work to member recruit:<id> in the same batch. Use only existing authorized specialists as templates; recruitment grants no new permissions and does not make the template an independent reviewer. Use run_ready_work with no other fields to resume unclaimed assignments. Use run_work with an admitted work_id to retrieve its saved output or run one ready assignment. Desktop work is plan-only. Claimed work is never automatically reexecuted. " + Self.goalAssessmentFinalInstruction : "")
+          (canRunGoalWork ? " " + AgentGoalWorkMilestoneRead.coordinatorInstructions +
+          " An accepted batch starts ready assignments in dependency order. To recruit inside the current run, include recruit:[{id,template_member,role,scope,reason}] in the work expansion. Assign concrete work to member recruit:<id> in the same batch. Use only existing authorized specialists as templates; recruitment grants no new permissions and does not make the template an independent reviewer. Use run_ready_work with no other fields to resume unclaimed assignments. Use run_work with an admitted work_id to retrieve its saved output or run one ready assignment. Desktop work is plan-only. Claimed work is never automatically reexecuted. " + Self.goalAssessmentFinalInstruction : "")
         : "Use status to check availability. Publish interim research with milestone_id and an artifact JSON string containing format, a nonblank summary, and a nonempty workspace. " +
           AgentCollaborationResearchEnvelope.optionalNotesInstructions +
           " After an uncertain publication, use receipt with the same milestone_id and SHA-256 of the exact artifact UTF-8 bytes. Resend the saved artifact only after an explicit not_recorded response matching both fields; a failed lookup leaves the outcome uncertain. Use list with next_cursor to recover saved IDs, then cite them in milestones in your final artifact. Use validate_assessment with artifact to check goal-assessment structure without publishing. Receipts do not verify evidence or complete the assignment."
@@ -523,6 +524,19 @@ struct CloudModelStreamMutableConversation {
       tools.append(["functionDeclarations": [function.merging(["parameters": schema]) { _, new in new }]])
     }
     body["tools"] = tools
+  }
+
+  mutating func installGoalWorkMilestoneRead() throws {
+    let encoded = AgentMcpJSONCodec.stringify(AgentGoalWorkMilestoneRead.schema)
+    guard var schema = try JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? [String: Any]
+    else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    if request.provider == .gemini { schema.removeValue(forKey: "additionalProperties") }
+    body.removeValue(forKey: "tools")
+    body.removeValue(forKey: "tool_choice")
+    body.removeValue(forKey: "tool_config")
+    body.removeValue(forKey: "toolConfig")
+    appendCollaborationFunction(["name": AgentGoalWorkMilestoneRead.toolID,
+      "description": AgentGoalWorkMilestoneRead.instructions], schema: schema)
   }
 
   static let goalAssessmentFinalInstruction = AgentCollaborationGoalAssessmentPolicy.admissionInstructions +

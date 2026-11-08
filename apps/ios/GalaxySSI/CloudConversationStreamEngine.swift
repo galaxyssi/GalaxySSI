@@ -132,6 +132,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     collaborationModelAudit: AgentCollaborationToolEvidenceScope? = nil,
     goalWorkHandler: GoalWorkHandler? = nil,
     goalContinuationHandler: GoalContinuationHandler? = nil,
+    milestoneRead: GoalWorkHandler? = nil,
     desktopEvidenceRefresh: DesktopEvidenceRefresh? = nil,
     researchRetrySource: ChatMessage? = nil,
     retainResearch: Bool = true
@@ -149,6 +150,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           collaborationModelAudit: collaborationModelAudit ?? collaborationEvidence,
           goalWorkHandler: goalWorkHandler,
           goalContinuationHandler: goalContinuationHandler,
+          milestoneRead: milestoneRead,
           desktopEvidenceRefresh: desktopEvidenceRefresh,
           researchRetrySource: researchRetrySource,
           retainResearch: retainResearch,
@@ -191,6 +193,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     collaborationModelAudit: AgentCollaborationToolEvidenceScope?,
     goalWorkHandler: GoalWorkHandler?,
     goalContinuationHandler: GoalContinuationHandler?,
+    milestoneRead: GoalWorkHandler?,
     desktopEvidenceRefresh: DesktopEvidenceRefresh?,
     researchRetrySource: ChatMessage?,
     retainResearch: Bool,
@@ -279,6 +282,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         prepared.installCollaborationPublication(assessmentOnly: collaborationEvidence == nil,
           canRunGoalWork: collaborationEvidence == nil && goalWorkHandler != nil)
       }
+      if milestoneRead != nil { try prepared.installGoalWorkMilestoneRead() }
       let publishName = CloudModelStreamMutableConversation.collaborationPublishName
       var publishedMilestones = Set<String>()
       var evidenceResults: [(String, String)] = []
@@ -736,6 +740,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           onObservation: { call, output in
             await recovery?.record(call: call, output: output, store: store)
           },
+          milestoneRead: milestoneRead,
           collaborationRecall: collaborationRecallScope.map { scope in
             { arguments in
               let sync = await desktopEvidenceRefresh?(arguments, scope)
@@ -1066,6 +1071,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     _ calls: [AssembledToolCall],
     context: CloudConversationToolExecutionContext,
     onObservation: ((AssembledToolCall, String) async -> Void)? = nil,
+    milestoneRead: GoalWorkHandler? = nil,
     collaborationRecall: ((AgentMcpJSONObject) async -> AgentMcpJSONObject?)? = nil,
     collaborationPublish: ((AgentMcpJSONObject) async -> AgentMcpJSONObject?)? = nil
   ) async -> [ToolExecutionOutcome] {
@@ -1081,7 +1087,13 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             let started = AgentControlPlaneClock.nowMillis()
             do {
               let output: String
-              if call.name == CloudModelStreamMutableConversation.collaborationRecallName {
+              if let milestoneRead {
+                guard call.name == AgentGoalWorkMilestoneRead.toolID else {
+                  throw AgentTeamHistoryDatabase.Failure.stale
+                }
+                let args = try CloudModelStreamJSON.mcpObject(from: call.argumentsJson)
+                output = await AgentMcpJSONCodec.stringify(milestoneRead(args))
+              } else if call.name == CloudModelStreamMutableConversation.collaborationRecallName {
                 let args = try CloudModelStreamJSON.mcpObject(from: call.argumentsJson)
                 let recalled = await collaborationRecall?(args)
                 output = AgentMcpJSONCodec.stringify(recalled ?? ["status": .string("unavailable")])
