@@ -21,6 +21,7 @@ private struct AgentBlobOutgoingJob: Codable, Equatable {
   var awaitingReceipt: Bool
   var attempts: Int
   var nextAttemptAt: Date
+  var journalBinding: String? = nil
 }
 
 final class AgentBlobStaging {
@@ -323,6 +324,8 @@ final class AgentBlobHTTPClient {
 
 actor AgentBlobOutgoingCoordinator {
   typealias OfferPublisher = ([String: Any], AgentPreparedOutboundAttachment) async throws -> Void
+  enum JournalDisposition: Sendable, Equatable { case wait, upload, retire }
+  typealias JournalAuthorization = @Sendable (AgentPreparedOutboundAttachment, String) async -> JournalDisposition
 
   private let rootURL: URL
   private let journalURL: URL
@@ -331,6 +334,7 @@ actor AgentBlobOutgoingCoordinator {
   private let cipher: GalaxySSIAttachmentAtRestCipher
   private let fileManager: FileManager
   private let publishOffer: OfferPublisher
+  private let journalAuthorization: JournalAuthorization
   private var running = false
   private var scheduledWake: Task<Void, Never>?
 
@@ -340,6 +344,7 @@ actor AgentBlobOutgoingCoordinator {
     applicationSupportDirectory: URL? = nil,
     cipher: GalaxySSIAttachmentAtRestCipher = .shared,
     fileManager: FileManager = .default,
+    journalAuthorization: @escaping JournalAuthorization = { _, _ in .wait },
     publishOffer: @escaping OfferPublisher
   ) {
     let support = applicationSupportDirectory ?? fileManager.urls(
@@ -353,6 +358,7 @@ actor AgentBlobOutgoingCoordinator {
     self.cipher = cipher
     self.fileManager = fileManager
     self.publishOffer = publishOffer
+    self.journalAuthorization = journalAuthorization
   }
 
   func register(_ attachment: AgentPreparedOutboundAttachment, link: ServerLink) throws -> Bool {
@@ -397,6 +403,61 @@ actor AgentBlobOutgoingCoordinator {
     }
     try saveJobs(jobs)
     wake()
+  }
+
+  func registerJournal(_ attachments: [AgentPreparedOutboundAttachment], link: ServerLink,
+                       binding: String) throws -> Set<String> {
+    guard link.paired, MqttRouteProtocol.hex(binding, count: 64) else {
+      throw AgentBlobFailure.invalid("blob_outgoing_route_mismatch")
+    }
+    let configuration = configurationStore.configuration(for: link)
+    var jobs = try loadJobs()
+    var registered: Set<String> = []
+    var changed = false
+    for attachment in attachments {
+      guard attachment.scope.desktopId == link.desktopId,
+            attachment.scope.clientRouteId == link.routes.clientRouteId,
+            attachment.scope.contactId == link.desktopId else {
+        throw AgentBlobFailure.invalid("blob_outgoing_route_mismatch")
+      }
+      if let existing = jobs.first(where: { $0.transferId == attachment.transferId }) {
+        guard existing.journalBinding == binding, existing.desktopId == link.desktopId,
+              existing.desktopFingerprint == link.routes.remoteFingerprint,
+              existing.clientRouteId == link.routes.clientRouteId else {
+          throw AgentBlobFailure.invalid("blob_outgoing_identity_conflict")
+        }
+      } else {
+        guard let configuration, (1...AgentBlobProtocol.maximumFileBytes).contains(attachment.sizeBytes) else { continue }
+        guard jobs.count < 256 else { throw MqttChunkStorageError.capacityExceeded }
+        jobs.append(.init(transferId: attachment.transferId, desktopId: link.desktopId,
+          desktopFingerprint: link.routes.remoteFingerprint, clientRouteId: link.routes.clientRouteId,
+          origin: configuration.origin, active: true, awaitingReceipt: false, attempts: 0,
+          nextAttemptAt: .distantPast, journalBinding: binding))
+        changed = true
+      }
+      registered.insert(attachment.transferId)
+    }
+    if changed { try saveJobs(jobs) }
+    return registered
+  }
+
+  func retireJournal(_ attachment: AgentPreparedOutboundAttachment, binding: String) throws {
+    var jobs = try loadJobs()
+    guard let index = jobs.firstIndex(where: { $0.transferId == attachment.transferId && $0.journalBinding == binding })
+    else { return }
+    let job = jobs.remove(at: index)
+    let directory = stagingURL(job.transferId)
+    let checkpoint = fileManager.fileExists(atPath: directory.path)
+      ? (try? AgentBlobStaging.openOrPrepare(attachment: attachment, directoryURL: directory,
+        cipher: cipher, fileManager: fileManager))?.checkpoint : nil
+    try saveJobs(jobs)
+    try? fileManager.removeItem(at: directory)
+    if let checkpoint, checkpoint.remoteCreated, let origin = URL(string: job.origin) {
+      Task {
+        _ = try? await AgentBlobHTTPClient(origin: origin).binary(method: "DELETE",
+          path: "/v1/blobs/\(checkpoint.descriptor.blobId)", token: checkpoint.writeToken)
+      }
+    }
   }
 
   func cancel(_ transferIds: Set<String>) throws {
@@ -462,11 +523,10 @@ actor AgentBlobOutgoingCoordinator {
   private func drain() async {
     defer { running = false }
     while true {
-      guard var jobs = try? loadJobs(),
-            let index = jobs.indices.first(where: {
-              jobs[$0].active && jobs[$0].nextAttemptAt <= Date()
-            }) else { return }
-      var job = jobs[index]
+      guard let jobs = try? loadJobs(),
+            let due = jobs.filter(\.active).min(by: { $0.nextAttemptAt < $1.nextAttemptAt }) else { return }
+      if due.nextAttemptAt > Date() { scheduleWake(at: due.nextAttemptAt); return }
+      var job = due
       do {
         try await process(job)
         job.awaitingReceipt = true
@@ -477,13 +537,10 @@ actor AgentBlobOutgoingCoordinator {
         let delay = min(300.0, 2.0 * pow(2.0, Double(min(job.attempts, 8))))
         job.nextAttemptAt = Date().addingTimeInterval(delay)
       }
-      jobs[index] = job
-      try? saveJobs(jobs)
-      if jobs.contains(where: { $0.active && $0.nextAttemptAt <= Date() }) { continue }
-      if let next = jobs.filter(\.active).map(\.nextAttemptAt).min() {
-        scheduleWake(at: next)
-      }
-      return
+      guard var current = try? loadJobs() else { return }
+      guard let index = current.firstIndex(of: due) else { continue }
+      current[index] = job
+      do { try saveJobs(current) } catch { return }
     }
   }
 
@@ -504,8 +561,10 @@ actor AgentBlobOutgoingCoordinator {
 
   private func process(_ job: AgentBlobOutgoingJob) async throws {
     guard let attachment = attachmentStore.find(job.transferId) else {
+      if job.journalBinding != nil { try cancel([job.transferId]); return }
       throw AgentBlobFailure.invalid("blob_source_missing")
     }
+    try await checkCurrent(job, attachment: attachment)
     let directory = stagingURL(job.transferId)
     let staged = try AgentBlobStaging.openOrPrepare(
       attachment: attachment,
@@ -513,6 +572,7 @@ actor AgentBlobOutgoingCoordinator {
       cipher: cipher,
       fileManager: fileManager
     )
+    try await checkCurrent(job, attachment: attachment)
     guard let origin = URL(string: job.origin) else {
       throw AgentBlobFailure.invalid("invalid_blob_relay_origin")
     }
@@ -571,11 +631,13 @@ actor AgentBlobOutgoingCoordinator {
       readToken: staged.checkpoint.readToken,
       descriptor: staged.checkpoint.descriptor
     )
+    try await checkCurrent(job, attachment: attachment)
     try await publishOffer(
       try AgentBlobProtocol.offerPayload(attachment: attachment, offer: offer),
       attachment
     )
     for index in missing {
+      try await checkCurrent(job, attachment: attachment)
       let response = try await client.binary(
         method: "PUT",
         path: "\(path)/chunks/\(index)",
@@ -587,6 +649,7 @@ actor AgentBlobOutgoingCoordinator {
         throw AgentBlobFailure.invalid("invalid_chunk_receipt")
       }
     }
+    try await checkCurrent(job, attachment: attachment)
     let final = try await client.json(
       method: "GET",
       path: "\(path)/missing",
@@ -600,6 +663,22 @@ actor AgentBlobOutgoingCoordinator {
       throw AgentBlobFailure.invalid("relay_upload_incomplete")
     }
     try staged.updateRemote(uploaded: true, transferId: job.transferId)
+  }
+
+  private func checkCurrent(_ job: AgentBlobOutgoingJob, attachment: AgentPreparedOutboundAttachment) async throws {
+    guard let binding = job.journalBinding else { return }
+    let disposition = await journalAuthorization(attachment, binding)
+    guard try loadJobs().contains(job) else { throw CancellationError() }
+    switch disposition {
+    case .upload:
+      let link = ServerLink(desktopId: job.desktopId, desktopName: "", desktopFingerprint: job.desktopFingerprint,
+        signalName: "", routes: .init(clientRouteId: job.clientRouteId, linkSecret: "", localFingerprint: "local",
+        remoteFingerprint: job.desktopFingerprint), paired: true, accessProfile: "", accessScopes: [], updatedAt: Date())
+      if configurationStore.configuration(for: link)?.origin == job.origin { return }
+    case .retire: try retireJournal(attachment, binding: binding)
+    case .wait: break
+    }
+    throw AgentBlobFailure.invalid("blob_outgoing_not_authorized")
   }
 
   private func loadJobs() throws -> [AgentBlobOutgoingJob] {

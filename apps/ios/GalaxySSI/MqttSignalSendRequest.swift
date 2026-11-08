@@ -12,6 +12,7 @@ struct MqttSignalSendRequest: Codable {
   let payload: Data
   let requiresValidatedNetwork: Bool
   let attachmentDependencies: [String]
+  let blobAttachmentDependencies: [String]?
   let attachmentTransferID: String
   let sourceMessageID: String
   let contactID: String
@@ -21,7 +22,7 @@ struct MqttSignalSendRequest: Codable {
        topic: String, clientRouteID: String? = nil, traffic: MqttMultipathPolicy.Traffic = .message,
        requiresValidatedNetwork: Bool = false, attachmentDependencies: [String] = [],
        attachmentTransferID: String = "", sourceMessageID: String = "", contactID: String = "",
-       trustedBackgroundCognitionAuthorized: Bool = false) throws {
+       trustedBackgroundCognitionAuthorized: Bool = false, blobAttachmentDependencies: [String] = []) throws {
     self.identity = identity
     messageID = try MqttDeliveryEnvelope.checkedText(payload["message_id"])
     self.remoteName = remoteName; self.deviceID = deviceID; self.topic = topic; self.clientRouteID = clientRouteID
@@ -29,6 +30,7 @@ struct MqttSignalSendRequest: Codable {
     self.payload = try MqttBusinessStorage.payload(payload)
     self.requiresValidatedNetwork = requiresValidatedNetwork
     self.attachmentDependencies = Array(Set(attachmentDependencies)).sorted()
+    self.blobAttachmentDependencies = blobAttachmentDependencies.isEmpty ? nil : Array(Set(blobAttachmentDependencies)).sorted()
     self.attachmentTransferID = attachmentTransferID
     self.sourceMessageID = sourceMessageID; self.contactID = contactID
     self.trustedBackgroundCognitionAuthorized = trustedBackgroundCognitionAuthorized
@@ -46,6 +48,9 @@ struct MqttSignalSendRequest: Codable {
           clientRouteID.map(GalaxySSILinkProtocol.validRouteId) ?? true,
           attachmentDependencies.count <= 64, attachmentDependencies == Array(Set(attachmentDependencies)).sorted(),
           attachmentDependencies.allSatisfy({ MqttRouteProtocol.hex($0, count: 64) }),
+          (blobAttachmentDependencies ?? []).allSatisfy({ attachmentDependencies.contains($0) }),
+          blobAttachmentDependencies.map({ !$0.isEmpty && $0 == Array(Set($0)).sorted() &&
+            traffic == .message && !sourceMessageID.isEmpty }) ?? true,
           attachmentTransferID.isEmpty || MqttRouteProtocol.hex(attachmentTransferID, count: 64),
           payload.count <= MqttBusinessStorage.maximumPayloadBytes else { throw MqttRouteError.invalidPayload }
     for text in [sourceMessageID, contactID] where !text.isEmpty {
@@ -80,7 +85,8 @@ struct MqttSignalSendRequest: Codable {
       deviceID: deviceID, topic: originalTopic, clientRouteID: clientRouteID, traffic: traffic,
       requiresValidatedNetwork: requiresValidatedNetwork, attachmentDependencies: attachmentDependencies,
       attachmentTransferID: attachmentTransferID, sourceMessageID: sourceMessageID, contactID: contactID,
-      trustedBackgroundCognitionAuthorized: trustedBackgroundCognitionAuthorized)
+      trustedBackgroundCognitionAuthorized: trustedBackgroundCognitionAuthorized,
+      blobAttachmentDependencies: blobAttachmentDependencies ?? [])
     return try original.digest() == storedHash
   }
 

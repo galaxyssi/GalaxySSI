@@ -99,12 +99,14 @@ struct MqttPeerChatProjection {
 
   func outgoingRequests(for messageId: UUID, contactId: String,
                         attachments: [AgentPreparedOutboundAttachment], messageKind: String = "",
-                        durationMillis: Int64 = 0) throws -> [MqttSignalSendRequest] {
+                        durationMillis: Int64 = 0, blobTransfers: Set<String> = []) throws -> [MqttSignalSendRequest] {
     guard let contact = store.contact(id: contactId), contact.id == contactId, let target = destination(for: contact),
           let message = store.persistedMessage(id: messageId, contactId: contactId), message.isMine, !message.isSystem,
           [.queued, .failed].contains(message.deliveryStatus),
           !attachments.isEmpty || (!message.content.isBlank && message.richOutputJson.isBlank),
           attachments.count <= 10, Set(attachments.map(\.transferId)).count == attachments.count
+    else { throw MqttRouteError.invalidPayload }
+    guard blobTransfers.isEmpty || (target.desktop && blobTransfers.isSubset(of: Set(attachments.map(\.transferId))))
     else { throw MqttRouteError.invalidPayload }
     let source = message.id.uuidString
     let timestamp = message.createdAt.timeIntervalSince1970 * 1_000
@@ -124,8 +126,8 @@ struct MqttPeerChatProjection {
     let kind = String(messageKind.trimmingCharacters(in: .whitespacesAndNewlines).prefix(32))
     if !kind.isEmpty { payload["message_kind"] = kind }
     if durationMillis > 0 { payload["duration_ms"] = min(durationMillis, 3_600_000) }
-    let manifests = try attachments.map { transfer in
-      guard matches(transfer, target: target, source: source) else { throw MqttRouteError.identityChanged }
+    guard attachments.allSatisfy({ matches($0, target: target, source: source) }) else { throw MqttRouteError.identityChanged }
+    let manifests = try attachments.filter { !blobTransfers.contains($0.transferId) }.map { transfer in
       var manifest = transfer.manifestPayload(resume: false, nowMillis: Int64(timestamp))
       manifest["message_id"] = try Self.stableID([identity.binding, source, transfer.transferId, "manifest"])
       manifest["peer_chat"] = true
@@ -139,7 +141,7 @@ struct MqttPeerChatProjection {
       remoteName: target.peer.remoteSignalName, topic: target.peer.binding.sendTopic, clientRouteID: target.routeId,
       requiresValidatedNetwork: attachments.contains { $0.requiresValidatedNetwork },
       attachmentDependencies: attachments.map(\.transferId),
-      sourceMessageID: source, contactID: target.contactId)
+      sourceMessageID: source, contactID: target.contactId, blobAttachmentDependencies: Array(blobTransfers))
     return manifests + [body]
   }
 
@@ -198,6 +200,31 @@ struct MqttPeerChatProjection {
     payload["message_id"] = try stableID([identity.binding, discriminator, digest])
     return try MqttSignalSendRequest(identity: identity, payload: payload, remoteName: target.peer.remoteSignalName,
       topic: target.peer.binding.sendTopic, clientRouteID: target.routeId, traffic: .control, contactID: target.contactId)
+  }
+
+  static func desktopBlobOfferRequest(_ payload: [String: Any], attachment: AgentPreparedOutboundAttachment,
+                                      target: Destination) throws -> MqttSignalSendRequest {
+    let scope = attachment.scope
+    guard target.desktop, scope.desktopId == target.peer.remoteSignalName, scope.clientRouteId == target.routeId,
+          scope.contactId == target.peer.remoteSignalName, scope.conversationId == target.conversationId,
+          payload.string("type") == "input_attachment_blob_offer",
+          let offer = payload["blob_offer"] as? [String: Any],
+          let raw = offer["private"] as? [String: Any] else { throw MqttRouteError.identityChanged }
+    let descriptor = try AgentBlobArtifactContract.descriptor(raw)
+    let expected = try AgentBlobProtocol.offerPayload(attachment: attachment, offer: offer)
+    guard try AgentBlobProtocol.canonicalJSON(payload) == AgentBlobProtocol.canonicalJSON(expected),
+          descriptor.size == attachment.sizeBytes, descriptor.sha256 == attachment.sha256,
+          descriptor.bindingSHA256 == (try AgentBlobProtocol.bindingHash(AgentBlobProtocol.binding(for: attachment))),
+          AgentBlobProtocol.validHex(offer.string("read_token"), bytes: 32) else { throw MqttRouteError.invalidPayload }
+    let identity = try MqttBusinessIdentity(target.peer.binding)
+    let digest = MqttRouteProtocol.digest(try MqttBusinessStorage.payload(expected))
+    var wire = payload
+    wire["peer_chat"] = true
+    wire["message_id"] = try stableID([identity.binding, attachment.transferId, "desktop-blob-offer", digest])
+    return try MqttSignalSendRequest(identity: identity, payload: wire, remoteName: target.peer.remoteSignalName,
+      topic: target.peer.binding.sendTopic, clientRouteID: target.routeId, traffic: .control,
+      requiresValidatedNetwork: attachment.requiresValidatedNetwork, attachmentTransferID: attachment.transferId,
+      contactID: target.contactId)
   }
 
   func desktopPeerBlobDescriptors(_ descriptors: [[String: Any]], payload: [String: Any],

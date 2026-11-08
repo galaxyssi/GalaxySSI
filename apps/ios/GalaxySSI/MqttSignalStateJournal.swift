@@ -183,7 +183,31 @@ final class MqttSignalStateJournal {
             payload.string("type") == "input_attachment_receipt", transfer.scope.clientMessageId == bodyID,
             transfer.matchesStoredReceipt(payload)
       else { throw MqttRouteError.invalidPayload }
+      if try outbox.entry(identity: item.identity, messageID: bodyID, transaction: token)?
+        .deferredRequest?.blobAttachmentDependencies?.contains(transfer.transferId) == true {
+        guard AgentBlobProtocol.receiptMatches(attachment: transfer, receipt: payload)
+        else { throw MqttRouteError.invalidPayload }
+      }
       _ = try outbox.releaseAttachment(identity: item.identity, messageID: bodyID,
+        transferID: transfer.transferId, transaction: token)
+      guard try inbox.complete(identity: item.identity, messageID: item.messageID, transaction: token) else {
+        throw MqttChunkStorageError.corruptState
+      }
+    }
+  }
+
+  func consumeFailedBlobAttachment(_ item: MqttBusinessInbox.Pending, bodyID: String,
+                                   transfer: AgentPreparedOutboundAttachment) throws {
+    try database.withTransaction { token in
+      guard let saved = try inbox.pending(identity: item.identity, messageID: item.messageID, transaction: token),
+            saved.key == item.key, saved.payload == item.payload,
+            var proof = try JSONSerialization.jsonObject(with: saved.payload) as? [String: Any],
+            proof.string("type") == "input_attachment_receipt", proof.string("status") == "failed",
+            transfer.scope.clientMessageId == bodyID else { throw MqttRouteError.invalidPayload }
+      proof["status"] = "stored"
+      guard transfer.matchesStoredReceipt(proof), AgentBlobProtocol.receiptMatches(attachment: transfer, receipt: proof)
+      else { throw MqttRouteError.invalidPayload }
+      try outbox.discardDeferredBlobBody(identity: item.identity, messageID: bodyID,
         transferID: transfer.transferId, transaction: token)
       guard try inbox.complete(identity: item.identity, messageID: item.messageID, transaction: token) else {
         throw MqttChunkStorageError.corruptState

@@ -1580,23 +1580,27 @@ final class GalaxySSIStore: ObservableObject {
     return true
   }
 
-  func projectStoredPeerAttachment(_ transfer: AgentPreparedOutboundAttachment, sourceID: UUID,
-                                   contactID: String) throws {
+  func projectPeerAttachmentReceipt(_ transfer: AgentPreparedOutboundAttachment, sourceID: UUID,
+                                     contactID: String, failed: Bool = false) throws {
     guard transfer.scope.clientMessageId == sourceID.uuidString,
           var message = persistedMessage(id: sourceID, contactId: contactID), message.isMine else {
       throw MqttRouteError.identityChanged
     }
     let output = AgentRichContentCodec.decode(message.richOutputJson)
-    guard output.contains(where: { $0.metadata["transfer_id"] == transfer.transferId }),
-          let update = GalaxySSIPeerAttachmentTransferUpdate(payload: [
+    var updated = message.richOutputJson
+    if output.contains(where: { $0.metadata["transfer_id"] == transfer.transferId }),
+       let update = GalaxySSIPeerAttachmentTransferUpdate(payload: [
             "transfer_id": transfer.transferId, "source_message_id": sourceID.uuidString,
             "attachment_ordinal": transfer.ordinal, "name": transfer.originalName, "mime_type": transfer.mimeType,
             "size_bytes": transfer.originalSizeBytes, "sha256": transfer.sha256,
-            "progress": 100, "state": GalaxySSIPeerAttachmentTransferProgress.complete
-          ]) else { return }
-    let updated = GalaxySSIPeerAttachmentTransferProgress.applying(update, to: message.richOutputJson)
-    guard updated != message.richOutputJson else { return }
+            "progress": failed ? 0 : 100,
+            "state": failed ? GalaxySSIPeerAttachmentTransferProgress.failed : GalaxySSIPeerAttachmentTransferProgress.complete
+       ]) {
+      updated = GalaxySSIPeerAttachmentTransferProgress.applying(update, to: message.richOutputJson)
+    }
+    guard updated != message.richOutputJson || (failed && message.deliveryStatus != .failed) else { return }
     message.richOutputJson = updated
+    if failed { message.deliveryStatus = .failed }
     guard persistExactHistoryMessage(message) else { throw MqttChunkStorageError.databaseFailure }
   }
 

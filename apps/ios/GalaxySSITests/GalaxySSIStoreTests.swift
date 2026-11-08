@@ -1088,7 +1088,7 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertNotNil(store.updateMessageContent(outgoing.id, contactId: contact.id, content: outgoing.content,
       richOutputJson: GalaxySSIPeerAttachmentTransferProgress.placeholder(initialProgress)))
     try consume(contactID: link.desktopId)
-    try store.projectStoredPeerAttachment(transfer, sourceID: outgoing.id, contactID: contact.id)
+    try store.projectPeerAttachmentReceipt(transfer, sourceID: outgoing.id, contactID: contact.id)
     let projected = try XCTUnwrap(store.persistedMessage(id: outgoing.id, contactId: contact.id))
     XCTAssertEqual(projected.deliveryStatus, .queued)
     XCTAssertEqual(AgentRichContentCodec.decode(projected.richOutputJson).first?.metadata["transfer_state"],
@@ -1096,6 +1096,82 @@ final class GalaxySSIStoreTests: XCTestCase {
     let released = try XCTUnwrap(journal.outbox.entry(identity: body.identity, messageID: body.messageID))
     XCTAssertTrue(released.message.blockedByAttachmentTransferIds.isEmpty)
     XCTAssertFalse(released.isPrepared)
+  }
+
+  @MainActor
+  func testDesktopPeerBlobPlanRequiresExactReceiptAndNeverFallsBackToChunkControl() throws {
+    let store = makeStore()
+    let local = String(repeating: "b", count: 64)
+    let link = try store.addServerLink(from: makePairingQRCode(), localFingerprint: local)
+    store.markServerPaired(desktopId: link.desktopId)
+    let contact = try XCTUnwrap(store.contacts.first { $0.isDesktopDeviceContact && $0.desktopId == link.desktopId })
+    let projection = MqttPeerChatProjection(store: store, localFingerprint: local)
+    let target = try XCTUnwrap(projection.destination(for: contact))
+    let outgoing = store.appendOutgoing("", to: contact.id)
+    let source = outgoing.id.uuidString
+    let scope = try AgentAttachmentTransferScope(contactId: link.desktopId, desktopId: link.desktopId,
+      clientRouteId: target.routeId, conversationId: target.conversationId,
+      taskId: AgentPeerChatTransport.taskId(for: source), turnId: AgentPeerChatTransport.turnId(for: source), clientMessageId: source)
+    let fixture = try ChunkFixture()
+    let attachments = AgentOutboundAttachmentTransferStore(rootURL: fixture.root.appendingPathComponent("blob-send"),
+      cipher: GalaxySSIAttachmentAtRestCipher(secrets: fixture.secrets))
+    let transfers = try attachments.prepare(scope: scope,
+      attachments: [.init(displayName: "fixture.bin", mimeType: "application/octet-stream", data: Data([1, 2, 3]))],
+      mediaProfile: AgentMediaNetworkPolicy.profile(for: .normal), preserveOriginalBytes: true)
+    let transfer = try XCTUnwrap(transfers.first)
+    let plan = try projection.outgoingRequests(for: outgoing.id, contactId: contact.id, attachments: transfers,
+      blobTransfers: [transfer.transferId])
+    XCTAssertEqual(plan.count, 1)
+    let body = try XCTUnwrap(plan.first)
+    XCTAssertEqual(body.blobAttachmentDependencies, [transfer.transferId])
+    XCTAssertEqual(body.attachmentDependencies, [transfer.transferId])
+    XCTAssertNil(try body.applicationPayload()["blobAttachmentDependencies"])
+    let staging = try AgentBlobStaging.openOrPrepare(attachment: transfer,
+      directoryURL: fixture.root.appendingPathComponent("blob-offer-staging"),
+      cipher: GalaxySSIAttachmentAtRestCipher(secrets: fixture.secrets))
+    let relay = try XCTUnwrap(URL(string: "https://relay.example.test"))
+    let offer = try AgentBlobProtocol.offerPayload(attachment: transfer,
+      offer: AgentBlobProtocol.offer(relay: relay, readToken: staging.checkpoint.readToken,
+        descriptor: staging.checkpoint.descriptor))
+    let request = try MqttPeerChatProjection.desktopBlobOfferRequest(offer, attachment: transfer, target: target)
+    XCTAssertEqual(request.messageID,
+      try MqttPeerChatProjection.desktopBlobOfferRequest(offer, attachment: transfer, target: target).messageID)
+    XCTAssertEqual(request.attachmentTransferID, transfer.transferId)
+    var foreign = offer
+    foreign["client_route_id"] = "foreign"
+    XCTAssertThrowsError(try MqttPeerChatProjection.desktopBlobOfferRequest(foreign, attachment: transfer, target: target))
+    let journal = try MqttSignalStateJournal(fileURL: fixture.url, secrets: fixture.secrets)
+    try journal.outbox.enqueueDeferred(body, now: Date())
+    let reopened = try MqttSignalStateJournal(fileURL: fixture.url, secrets: fixture.secrets)
+    XCTAssertEqual(try reopened.outbox.entry(identity: body.identity, messageID: source)?
+      .deferredRequest?.blobAttachmentDependencies, [transfer.transferId])
+
+    func stage(status: String, size: Int64) throws -> MqttBusinessInbox.Pending {
+      let id = UUID().uuidString
+      var receipt = transfer.manifestPayload(resume: false)
+      receipt["message_id"] = id
+      receipt["type"] = "input_attachment_receipt"
+      receipt["status"] = status
+      receipt["source_message_id"] = source
+      receipt["size_bytes"] = size
+      let hash = MqttRouteProtocol.digest(Data(id.utf8))
+      _ = try journal.inbox.accept(identity: body.identity, messageID: id, payload: receipt,
+        ciphertextDigest: hash, wireHash: hash, receiptRequired: true)
+      return try XCTUnwrap(journal.inbox.pending().first { $0.messageID == id })
+    }
+    let forged = try stage(status: "stored", size: transfer.sizeBytes + 1)
+    XCTAssertThrowsError(try journal.consumeStoredAttachment(forged, bodyID: source, transfer: transfer))
+    let failed = try stage(status: "failed", size: transfer.sizeBytes)
+    XCTAssertThrowsError(try journal.consumeStoredAttachment(failed, bodyID: source, transfer: transfer))
+    XCTAssertEqual(try journal.outbox.entry(identity: body.identity, messageID: source)?
+      .message.blockedByAttachmentTransferIds, [transfer.transferId])
+    try journal.consumeFailedBlobAttachment(failed, bodyID: source, transfer: transfer)
+    XCTAssertNil(try journal.outbox.entry(identity: body.identity, messageID: source))
+    XCTAssertFalse(try journal.inbox.pending().contains { $0.messageID == failed.messageID })
+    try journal.outbox.enqueueDeferred(body, now: Date())
+    try journal.consumeStoredAttachment(stage(status: "stored", size: transfer.sizeBytes), bodyID: source, transfer: transfer)
+    XCTAssertEqual(try journal.outbox.entry(identity: body.identity, messageID: source)?
+      .message.blockedByAttachmentTransferIds, [])
   }
 
   @MainActor

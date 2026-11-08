@@ -93,7 +93,10 @@ final class MessageCoordinator: ObservableObject {
   private let blobArtifactCapabilityPublisher = AgentBlobArtifactCapabilityPublisher()
   lazy var blobOutgoingCoordinator = AgentBlobOutgoingCoordinator(
     configurationStore: blobRelayConfigurationStore,
-    attachmentStore: attachmentTransferStore
+    attachmentStore: attachmentTransferStore,
+    journalAuthorization: { [weak self] attachment, binding in
+      await self?.authorizeJournalBlobUpload(attachment, binding: binding) ?? .wait
+    }
   ) { [weak self] payload, attachment in
     guard let self else { throw GalaxySSIError.transportUnavailable }
     try await self.publishBlobOffer(payload, attachment: attachment)
@@ -598,6 +601,7 @@ final class MessageCoordinator: ObservableObject {
                 await self.blobArtifactCapabilityPublisher.reconnect()
                 await self.refreshBlobArtifactCapabilities()
                 await self.blobArtifactReceiver.wake()
+                await self.blobOutgoingCoordinator.wake()
               }
             }
           }
@@ -15338,8 +15342,15 @@ final class MessageCoordinator: ObservableObject {
     if !outboundAttachments.isEmpty {
       if let runtime = journalMqttRuntime {
         guard peerChat else { throw GalaxySSIError.transportUnavailable }
+        let projection = MqttPeerChatProjection(store: store, localFingerprint: link.routes.localFingerprint)
+        guard let target = projection.destination(for: contact), target.desktop, target.routes == link.routes else {
+          throw MqttRouteError.identityChanged
+        }
+        let binding = try MqttBusinessIdentity(target.peer.binding).binding
+        let blobTransfers = try await blobOutgoingCoordinator.registerJournal(outboundAttachments, link: link, binding: binding)
         _ = try runtime.enqueueDirectPeerAttachments(messageId: outgoing.id, contactId: contact.id,
-          attachments: outboundAttachments)
+          attachments: outboundAttachments, blobTransfers: blobTransfers)
+        if !blobTransfers.isEmpty { await blobOutgoingCoordinator.wake() }
         return .queued
       }
       do {
@@ -15472,6 +15483,16 @@ final class MessageCoordinator: ObservableObject {
         $0.desktopId == attachment.scope.desktopId &&
         $0.routes.clientRouteId == attachment.scope.clientRouteId
     }) else { throw GalaxySSIError.notPaired }
+    if !usesLegacyMqtt {
+      guard let runtime = journalMqttRuntime,
+            let configuration = blobRelayConfigurationStore.configuration(for: link),
+            let offer = payload["blob_offer"] as? [String: Any], offer.string("relay") == configuration.origin,
+            !attachment.requiresValidatedNetwork || mediaNetworkProfileProvider().canUploadDeferredMedia else {
+        throw GalaxySSIError.transportUnavailable
+      }
+      try runtime.enqueueDesktopBlobOffer(payload, attachment: attachment)
+      return
+    }
     let fingerprint = AgentAttachmentTransferProtocol.sha256(try AgentBlobProtocol.canonicalJSON(payload))
     let declaration = LinkAttachmentDeclarationKey(
       topic: link.routes.upTopic,
@@ -15486,6 +15507,18 @@ final class MessageCoordinator: ObservableObject {
     }
     guard queued else { throw GalaxySSIError.transportUnavailable }
     scheduleOutboxFlush(after: 0)
+  }
+
+  func authorizeJournalBlobUpload(_ attachment: AgentPreparedOutboundAttachment, binding: String)
+    -> AgentBlobOutgoingCoordinator.JournalDisposition {
+    guard !usesLegacyMqtt, let runtime = journalMqttRuntime else { return .wait }
+    do {
+      let disposition = try runtime.journalBlobDisposition(attachment, binding: binding)
+      if disposition == .upload, attachment.requiresValidatedNetwork,
+         !mediaNetworkProfileProvider().canUploadDeferredMedia { return .wait }
+      return disposition
+    } catch MqttRouteError.identityChanged { return .retire }
+    catch { return .wait }
   }
 
   @discardableResult
@@ -15574,6 +15607,7 @@ final class MessageCoordinator: ObservableObject {
           try self.blobRelayConfigurationStore.ingest(payload, link: link)
           await self.refreshBlobArtifactCapabilities()
           await self.blobArtifactReceiver.wake()
+          await self.blobOutgoingCoordinator.wake()
           return
         }
         guard self.desktopArtifactStore.supportsStreamedBlobArtifacts,

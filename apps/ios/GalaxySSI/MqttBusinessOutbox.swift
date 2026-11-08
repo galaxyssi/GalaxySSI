@@ -144,6 +144,19 @@ final class MqttBusinessOutbox {
     }
   }
 
+  func discardDeferredBlobBody(identity: MqttBusinessIdentity, messageID: String, transferID: String,
+                               transaction: MqttChunkDatabase.Transaction) throws {
+    let key = try identity.key(messageID: messageID)
+    try database.transaction(joining: transaction) {
+      guard let entry = try read(key), entry.identity == identity, !entry.isPrepared,
+            entry.message.blockedByAttachmentTransferIds.contains(transferID),
+            entry.deferredRequest?.blobAttachmentDependencies?.contains(transferID) == true else {
+        throw MqttRouteError.invalidPayload
+      }
+      try database.run("DELETE FROM mqtt_business_outbox WHERE record_key=?", [.text(key)])
+    }
+  }
+
   // Both the authenticated relationship generation and canonical Signal wire hash must match.
   // No payload cleanup or success notification is legal until this transaction returns.
   @discardableResult
