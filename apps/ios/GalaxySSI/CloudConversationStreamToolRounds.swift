@@ -146,6 +146,7 @@ final class CloudWebToolLoopProgress {
   private var formatRepairs = 0
   private var ruleCoverage: [String: AgentCollaborationReadCoverage] = [:]
   private var readingCoverage: [String: AgentCollaborationReadCoverage] = [:]
+  private var numericCaseCoverage: [String: AgentCollaborationReadCoverage] = [:]
   private(set) var performedDeepResearch = false
   private(set) var finalizationRequested = false
 
@@ -184,6 +185,19 @@ final class CloudWebToolLoopProgress {
       var updated = previous
       updated.include(start: start, end: end)
       readingCoverage[key] = updated
+      return updated != previous
+    }
+    if Self.isNumericCaseRecall(toolName: toolName, arguments: arguments) {
+      guard let request = AgentCollaborationNumericFeedback.Request(arguments), let actual = decode(output),
+            AgentCollaborationNumericFeedback.advances(request, output: actual),
+            case .int(let end)? = actual["end_offset"] else { return false }
+      var selector = arguments
+      selector.removeValue(forKey: "cursor")
+      let key = semanticKey(toolName: toolName, arguments: selector)
+      let previous = numericCaseCoverage[key] ?? .init()
+      var updated = previous
+      updated.include(start: request.offset, end: end)
+      numericCaseCoverage[key] = updated
       return updated != previous
     }
     if Self.isMethodEvaluationRecall(toolName: toolName, arguments: arguments) {
@@ -243,8 +257,14 @@ final class CloudWebToolLoopProgress {
       arguments["mode"] == .string("method_history") && arguments["view"] == .string(AgentCollaborationMethodEvaluations.view)
   }
 
+  static func isNumericCaseRecall(toolName: String, arguments: AgentMcpJSONObject) -> Bool {
+    toolName == CloudModelStreamMutableConversation.collaborationRecallName &&
+      arguments["mode"] == .string(AgentCollaborationNumericFeedback.mode)
+  }
+
   static func isNonEvidenceRecall(toolName: String, arguments: AgentMcpJSONObject) -> Bool {
-    isRuleRecall(toolName: toolName, arguments: arguments) || isMethodEvaluationRecall(toolName: toolName, arguments: arguments)
+    isRuleRecall(toolName: toolName, arguments: arguments) || isMethodEvaluationRecall(toolName: toolName, arguments: arguments) ||
+      isNumericCaseRecall(toolName: toolName, arguments: arguments)
   }
 
   private func canReuseBody(toolName: String, arguments: AgentMcpJSONObject) -> Bool {
@@ -297,6 +317,13 @@ final class CloudWebToolLoopProgress {
     var normalized = arguments
     if Self.isMethodEvaluationRecall(toolName: toolName, arguments: arguments), arguments.string("cursor").isEmpty {
       normalized.removeValue(forKey: "cursor")
+    }
+    if Self.isNumericCaseRecall(toolName: toolName, arguments: arguments) {
+      if arguments["cursor"] == .string("") { normalized.removeValue(forKey: "cursor") }
+      if let request = AgentCollaborationNumericFeedback.Request(arguments), request.offset > 0 {
+        normalized["cursor"] = request.cursor(at: request.offset)
+      }
+      if arguments["case_filter"] == .string("failed") { normalized.removeValue(forKey: "case_filter") }
     }
     if Self.isRuleRecall(toolName: toolName, arguments: arguments) {
       if normalized["topic"] == nil || normalized["topic"] == .string("") { normalized["topic"] = .string("all") }
@@ -414,8 +441,9 @@ struct CloudModelStreamMutableConversation {
   mutating func installCollaborationRecall(originalsOnly: Bool = false) {
     let modes = (originalsOnly ? ["goal", "dependency", "acceptance_record", "native_evidence"] :
       ["workspace", "evidence", "native_evidence", "goal", "dependency", "acceptance_record", "problems", "capabilities", "evolution_rules", "method_history"]) +
-      ["desktop_evidence_list", "desktop_evidence"]
-    let properties: [String: Any] = [
+      ["desktop_evidence_list", "desktop_evidence"] +
+      (originalsOnly ? [] : [AgentCollaborationNumericFeedback.mode])
+    var properties: [String: Any] = [
       "mode": ["type": "string", "enum": originalsOnly ? modes : modes + [AgentCollaborationSourceAccess.mode]],
       "member_id": ["type": "string"],
       "object_id": ["type": "string"], "revision": ["type": "integer"],
@@ -426,6 +454,9 @@ struct CloudModelStreamMutableConversation {
       "query": ["type": "string"],
       "topic": ["type": "string"]
     ]
+    if !originalsOnly {
+      properties["case_filter"] = ["type": "string", "enum": AgentCollaborationNumericFeedback.filters]
+    }
     let scoped = AgentCollaborationCandidateRecall.cloudProperties(properties, enabled: !originalsOnly)
     var schema: [String: Any] = ["type": "object", "properties": scoped, "required": ["mode"]]
     if request.provider != .gemini { schema["additionalProperties"] = false }
@@ -438,7 +469,8 @@ struct CloudModelStreamMutableConversation {
     ]
     var advertised = function
     if !originalsOnly, let description = advertised["description"] as? String {
-      advertised["description"] = description + " Use method_history with exact tool release object_id, revision and sha256 for native outcomes, not quality measures. " + AgentCollaborationSourceAccess.instructions
+      advertised["description"] = description + " Use method_history with exact tool release object_id, revision and sha256 for native outcomes, not quality measures. " +
+        AgentCollaborationSourceAccess.instructions + " " + AgentCollaborationNumericFeedback.instructions
     }
     advertised["description"] = (advertised["description"] as? String ?? "") +
       " Use acceptance_record with an exact current object_id, revision and sha256 to read a saved criterion delivery or review from this run. " +
