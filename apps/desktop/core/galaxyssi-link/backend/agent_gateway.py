@@ -855,6 +855,8 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
                     prompt,
                     attempt_spec,
                     task_id=request.run_id,
+                    progress_task_id=str(request.checkpoint.get("task_id") or request.run_id),
+                    stream_user_output=not structured_connector_response,
                     conversation_id=request.conversation_id,
                     response_language=preferred_language,
                     restricted_workspace=(
@@ -943,7 +945,7 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
                         if artifact_finalization is not None else {}
                     ),
                 )
-                add_phase("verify", "Agent result verified")
+                add_phase("verify", "Response contract checked")
                 harness.progress("finalize", research=research_stage("synthesis_completed", quality=quality_report))
                 if collaboration_context.cursors:
                     agent_collaboration_bus().acknowledge_context(
@@ -2104,6 +2106,8 @@ def _ask_agent_sync_inner(
     codex_video_permissions: str = "",
     image_paths: list[str] | None = None,
     image_source_turns: dict[str, str] | None = None,
+    progress_task_id: str = "",
+    stream_user_output: bool = True,
 ) -> str:
     if spec is None:
         return f"[GalaxySSI] \u672a\u77e5 Agent: {contact_id}"
@@ -2117,6 +2121,8 @@ def _ask_agent_sync_inner(
         spec,
         text,
         task_id=task_id,
+        progress_task_id=progress_task_id,
+        stream_user_output=stream_user_output,
         conversation_id=conversation_id,
         response_language=response_language,
         restricted_workspace=restricted_workspace,
@@ -2298,6 +2304,8 @@ def ask_cli_agent(
     codex_video_permissions: str = "",
     image_paths: list[str] | None = None,
     image_source_turns: dict[str, str] | None = None,
+    progress_task_id: str = "",
+    stream_user_output: bool = True,
 ) -> str:
     command = _command_for(spec)
     if not command:
@@ -2311,6 +2319,8 @@ def ask_cli_agent(
             command,
             text,
             task_id=task_id,
+            progress_task_id=progress_task_id,
+            stream_user_output=stream_user_output,
             conversation_id=conversation_id,
             response_language=response_language,
             restricted_workspace=restricted_workspace,
@@ -2451,6 +2461,8 @@ def _ask_cli_agent_locked(
     codex_video_permissions: str = "",
     image_paths: list[str] | None = None,
     image_source_turns: dict[str, str] | None = None,
+    progress_task_id: str = "",
+    stream_user_output: bool = True,
 ) -> str:
     from agent_conversation_sessions import agent_conversation_sessions
 
@@ -2509,6 +2521,8 @@ def _ask_cli_agent_locked(
         invocation_text,
         original_text=text,
         task_id=task_id,
+        progress_task_id=progress_task_id,
+        stream_user_output=stream_user_output,
         conversation_id=conversation_id,
         response_language=response_language,
         restricted_workspace=restricted_workspace,
@@ -2543,6 +2557,8 @@ def _run_cli_agent_process(
     codex_video_permissions: str = "",
     image_paths: list[str] | None = None,
     image_source_turns: dict[str, str] | None = None,
+    progress_task_id: str = "",
+    stream_user_output: bool = True,
 ) -> str:
     from contextlib import ExitStack
     from agent_vision_cli import cli_input, final_cli_output
@@ -2715,6 +2731,10 @@ def _run_cli_agent_process(
                 original_text,
             )
             return reply
+        from codex_cli_stream import collect_codex_stream, final_codex_answer, supports_json_stream
+        stream_codex = spec.id == "codex" and not plan_only and supports_json_stream(args)
+        if stream_codex and "--json" not in args:
+            args.insert(args.index("exec") + 1, "--json")
         from owned_process import popen as popen_owned
         process = popen_owned(
             args,
@@ -2727,10 +2747,52 @@ def _run_cli_agent_process(
         if task_id:
             from agent_task_manager import agent_task_manager
             agent_task_manager.register_process(task_id, process)
-        stdout, stderr = process.communicate(
-            input=stdin_text.encode("utf-8") if stdin_text is not None else None,
-            timeout=spec.timeout if codex_video_permissions or not task_id else None,
-        )
+        input_bytes = stdin_text.encode("utf-8") if stdin_text is not None else None
+        process_timeout = spec.timeout if codex_video_permissions or not task_id else None
+        if stream_codex:
+            visible_task_id = progress_task_id or task_id
+            expected_execution = None
+            if visible_task_id:
+                from agent_task_manager import agent_task_manager
+                visible_task = agent_task_manager.get(visible_task_id)
+                if visible_task is not None:
+                    expected_execution = agent_task_manager._execution_key(visible_task, visible_task.execution_generation)
+            if visible_task_id and visible_task_id != task_id:
+                from agent_task_manager import agent_task_manager
+                agent_task_manager.register_process(visible_task_id, process)
+            stream_id = uuid.uuid4().hex
+
+            def stream_event(kind: str, answer: str, elapsed_ms: int) -> None:
+                if not visible_task_id:
+                    return
+                from agent_task_manager import agent_task_manager
+                if kind == "answer" and stream_user_output:
+                    from response_policy import sanitize_assistant_response
+                    agent_task_manager.record_partial_result(
+                        visible_task_id, sanitize_assistant_response(answer, image_paths),
+                        event_id=f"codex-cli:{stream_id}:answer:{elapsed_ms}",
+                        expected_execution=expected_execution,
+                    )
+                titles = {
+                    "model_started": "Waiting for Codex response",
+                    "reconnecting": "Codex connection interrupted; reconnecting",
+                    "https_fallback": "Retrying Codex over HTTPS",
+                    "answer": "Codex response received",
+                    "model_completed": "Codex generation completed; checking response",
+                }
+                agent_task_manager.add_event(
+                    visible_task_id, "agent_progress", titles[kind],
+                    event_id=f"codex-cli:{stream_id}:{kind}:{elapsed_ms}", status="running",
+                    metadata={"provider": "codex", "stage": kind, "elapsed_ms": elapsed_ms,
+                              "proxy_source": agent_env.get("GALAXYSSI_CODEX_PROXY_SOURCE", "unknown")},
+                    expected_execution=expected_execution,
+                )
+
+            stdout, stderr = collect_codex_stream(
+                process, input_bytes=input_bytes, timeout=process_timeout, on_event=stream_event,
+            )
+        else:
+            stdout, stderr = process.communicate(input=input_bytes, timeout=process_timeout)
         finish_host_config_guard()
         if task_id:
             agent_task_manager.record_exit_code(task_id, process.returncode)
@@ -2754,6 +2816,8 @@ def _run_cli_agent_process(
                     _command_for(spec) or command,
                     original_text,
                     task_id=task_id,
+                    progress_task_id=progress_task_id,
+                    stream_user_output=stream_user_output,
                     conversation_id=conversation_id,
                     response_language=response_language,
                     restricted_workspace=restricted_workspace,
@@ -2769,6 +2833,8 @@ def _run_cli_agent_process(
                 )
             return f"[{spec.name}] \u8c03\u7528\u5931\u8d25\uff1a{failure[:200]}"
         raw = (stdout_text or stderr_text).strip()
+        if stream_codex:
+            raw = final_codex_answer(stdout_text)
         if not raw:
             return f"[{spec.name}] \u65e0\u54cd\u5e94"
         if image_paths:
@@ -2999,10 +3065,11 @@ def _compiled_cli_prompt(
     )
     from response_policy import response_policy_prompt
 
+    policy = response_policy_prompt(text, response_language)
     fixed_prompt = "\n".join(
         value
         for value in (
-            response_policy_prompt(text, response_language),
+            "" if policy in text else policy,
             _native_tool_policy(spec),
         )
         if value
@@ -3190,14 +3257,8 @@ def _agent_env(spec: AgentSpec, *, restricted_workspace: bool = False) -> dict:
     elif spec.id == "hermes":
         env["HERMES_YOLO_MODE"] = "1"
     if spec.id == "codex":
-        proxy = os.environ.get("GALAXYSSI_CODEX_PROXY", "").strip()
-        if not proxy and _tcp_available("127.0.0.1", 7890):
-            proxy = "http://127.0.0.1:7890"
-        if proxy:
-            for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
-                env[name] = proxy
-            for name in ("NO_PROXY", "no_proxy"):
-                env[name] = "localhost,127.0.0.1,::1"
+        from codex_proxy import codex_proxy_environment
+        env = codex_proxy_environment(env, _tcp_available)
     return env
 
 

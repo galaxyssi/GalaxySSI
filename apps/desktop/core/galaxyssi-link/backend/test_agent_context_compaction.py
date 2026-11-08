@@ -12,6 +12,23 @@ from desktop_agent_adapters import AgentAdapterRequest
 
 
 class AgentContextCompactionTest(unittest.TestCase):
+    def test_cli_does_not_duplicate_an_exact_existing_response_policy(self):
+        from response_policy import response_policy_prompt, TEXT_INTERPRETATION_POLICY
+        with tempfile.TemporaryDirectory() as directory:
+            store = conversation_context.ConversationSummaryStore(Path(directory) / "summaries.json")
+            with patch.object(agent_task_manager.agent_task_manager, "conversation_messages", return_value=[]), \
+                    patch.object(conversation_context, "_summary_store", store):
+                request = "Explain the sentence without changing its meaning."
+                policy = response_policy_prompt(request, "en")
+                compiled = agent_gateway._compiled_cli_prompt(
+                    agent_gateway.BASE_AGENTS["codex"], policy + "\n\n" + request,
+                    "task", "conversation", "en",
+                )
+        self.assertEqual(1, compiled.count(policy))
+        self.assertEqual(1, compiled.count(TEXT_INTERPRETATION_POLICY))
+        self.assertIn(request, compiled)
+        self.assertIn("GalaxySSI", compiled)
+
     def test_stateless_model_receives_phone_context_after_provider_switch(self):
         mobile_payload = {
             "version": 1,
