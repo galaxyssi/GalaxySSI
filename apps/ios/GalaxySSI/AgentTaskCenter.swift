@@ -101,7 +101,8 @@ enum AgentTaskCenterPolicy {
     if task.supervisedBrowserWait != nil { return task.phase == .paused }
     if let wait = task.capturePermission { return task.phase == .paused && !wait.dispatched }
     return task.phase == .paused &&
-      (task.pendingAction != nil || !task.pendingActions.isEmpty)
+      (task.pendingAction != nil || !task.pendingActions.isEmpty ||
+        (task.activePlan?.executionMode != .planOnly && !(task.effectRecovery ?? []).isEmpty))
   }
 
   static func pauseable(_ task: AgentTaskRecord) -> Bool {
