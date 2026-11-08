@@ -144,6 +144,13 @@ final class GalaxySSITransportReceiptJournal {
 
   var nextDueMillis: Int64? { records.map(\.nextAttemptAtMillis).min() }
 
+  func isDrainedForCutover() throws -> Bool {
+    guard records.isEmpty else { return false }
+    guard FileManager.default.fileExists(atPath: fileURL.path) else { return true }
+    let saved = try cipher.read(from: fileURL, purpose: Self.purpose)
+    return try JSONDecoder().decode([GalaxySSITransportReceiptRecord].self, from: saved).isEmpty
+  }
+
   static func binding(peerId: String, routes: GalaxySSILinkRoutes) -> String {
     AgentBlobProtocol.sha256(Data([
       peerId, routes.clientRouteId, routes.localFingerprint,

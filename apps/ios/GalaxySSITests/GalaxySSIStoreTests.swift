@@ -779,6 +779,41 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertFalse(connector.isCurrentSendOwner(contactID: agent.id, source: source, target: target))
   }
 
+  @MainActor
+  func testDesktopMqttCutoverRequiresExactEstablishedRouteAndScopesRevocation() throws {
+    let store = makeStore()
+    let local = String(repeating: "b", count: 64)
+    let pending = try store.addServerLink(from: makePairingQRCode(), localFingerprint: local)
+    store.markServerPaired(desktopId: pending.desktopId)
+    let link = try XCTUnwrap(store.serverLinks.first { $0.desktopId == pending.desktopId })
+    let projection = MqttPeerChatProjection(store: store, localFingerprint: local)
+    let desktop = try XCTUnwrap(store.contacts.first { $0.isDesktopDeviceContact && $0.desktopId == link.desktopId })
+    let target = try XCTUnwrap(projection.destination(for: desktop))
+    XCTAssertTrue(MqttBusinessTransportRuntime.canCutOver([target], serverLinks: [link], phoneRoutes: [],
+      hasPendingPairing: false))
+    XCTAssertFalse(MqttBusinessTransportRuntime.canCutOver([target], serverLinks: [link], phoneRoutes: [],
+      hasPendingPairing: true))
+    XCTAssertFalse(MqttBusinessTransportRuntime.canCutOver([target, target], serverLinks: [link], phoneRoutes: [],
+      hasPendingPairing: false))
+    XCTAssertFalse(MqttBusinessTransportRuntime.canCutOver([target], serverLinks: [pending], phoneRoutes: [],
+      hasPendingPairing: false))
+    var changed = link
+    changed.routes.linkSecret = Data(repeating: 9, count: 32).base64URLEncodedString()
+    XCTAssertFalse(MqttBusinessTransportRuntime.canCutOver([target], serverLinks: [changed], phoneRoutes: [],
+      hasPendingPairing: false))
+    var incoming: [String: Any] = ["type": "pairing_revoked", "desktop_id": link.desktopId]
+    XCTAssertTrue(MqttPeerChatProjection.acceptsDesktopRevocation(incoming, target: target))
+    incoming["client_route_id"] = "foreign"
+    XCTAssertFalse(MqttPeerChatProjection.acceptsDesktopRevocation(incoming, target: target))
+    incoming["client_route_id"] = link.routes.clientRouteId
+    incoming["desktop_id"] = "other-desktop"
+    XCTAssertFalse(MqttPeerChatProjection.acceptsDesktopRevocation(incoming, target: target))
+    let outgoing = try MqttPeerChatProjection.desktopRevocationRequest(target: target)
+    XCTAssertEqual(outgoing.traffic, .control)
+    XCTAssertEqual(outgoing.clientRouteID, link.routes.clientRouteId)
+    XCTAssertEqual(try outgoing.applicationPayload().string("desktop_id"), link.desktopId)
+  }
+
   func testServerLinkTracksAndroidCapabilityManifestVersion() throws {
     let store = makeStore()
 

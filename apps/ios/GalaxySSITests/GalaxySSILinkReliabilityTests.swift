@@ -4,6 +4,25 @@ import XCTest
 
 @MainActor
 final class GalaxySSILinkReliabilityTests: XCTestCase {
+  func testCutoverRequiresReadableAndEmptyLegacyReceiptJournal() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let cipher = GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let journal = GalaxySSITransportReceiptJournal(applicationSupportDirectory: directory, cipher: cipher)
+    XCTAssertTrue(try journal.isDrainedForCutover())
+    XCTAssertTrue(try journal.enqueue(peerId: "peer", phonePeer: false, binding: "route",
+      receivedMessageId: "source", receivedCiphertextDigest: nil, isReplay: false, nowMillis: 1_000) {
+      "encrypted-receipt"
+    })
+    XCTAssertFalse(try journal.isDrainedForCutover())
+    try journal.discard(id: XCTUnwrap(journal.due(nowMillis: 1_000).first).id)
+    XCTAssertTrue(try journal.isDrainedForCutover())
+    let file = directory.appendingPathComponent("transport-receipts-v1").appendingPathComponent("journal.saenc")
+    try Data([1, 2, 3]).write(to: file, options: .atomic)
+    let reopened = GalaxySSITransportReceiptJournal(applicationSupportDirectory: directory, cipher: cipher)
+    XCTAssertThrowsError(try reopened.isDrainedForCutover())
+  }
+
   func testReceiptReplayCoalescesOnlyBrokerAcknowledgedExactCiphertext() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }

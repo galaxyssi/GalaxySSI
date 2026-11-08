@@ -37,6 +37,8 @@ final class MqttBusinessTransportRuntime {
   private var outgoingAttachments: AgentOutboundAttachmentTransferStore?
   private var desktopArtifacts: AgentDesktopArtifactStore?
   private var desktopConnector: MqttDesktopConnectorProjection?
+  private var receiveDesktopRevocation: (@MainActor (MqttPeerChatProjection.Destination) throws -> Void)?
+  private var revokingScopes: Set<String> = []
   private var receiveDesktopBlobControl: (@MainActor ([String: Any], MqttPeerChatProjection.Destination, MqttBusinessIdentity) async throws -> Void)?
   private struct EvidenceWaiter {
     let identity: MqttBusinessIdentity
@@ -66,7 +68,8 @@ final class MqttBusinessTransportRuntime {
     var byTopic: [String: Peer] = [:]
     for peer in peers where peer.binding.enabled {
       try peer.binding.validate()
-      guard peer.binding.sender == expectedLocalFingerprint, !peer.remoteSignalName.isBlank else {
+      guard peer.binding.sender == expectedLocalFingerprint, !peer.remoteSignalName.isBlank,
+            legacy.trustedFingerprints["\(peer.remoteSignalName)|1"] == peer.binding.receiver else {
         throw MqttRouteError.identityChanged
       }
       for topic in peer.binding.sendTopics {
@@ -91,6 +94,21 @@ final class MqttBusinessTransportRuntime {
     #else
     throw MqttDeliveryDispatch.Failure.unavailable
     #endif
+  }
+
+  static func canCutOver(_ destinations: [MqttPeerChatProjection.Destination], serverLinks: [ServerLink],
+                         phoneRoutes: [GalaxySSILinkRoutes], hasPendingPairing: Bool) -> Bool {
+    guard !hasPendingPairing, !destinations.isEmpty,
+          Set(destinations.map { $0.peer.binding.scope }).count == destinations.count,
+          Set(destinations.map(\.routes)).count == destinations.count,
+          serverLinks.allSatisfy(\.paired),
+          Set(serverLinks.map(\.desktopId)).count == serverLinks.count,
+          destinations.filter(\.desktop).count == serverLinks.count,
+          destinations.filter({ !$0.desktop }).count == phoneRoutes.count,
+          Set(destinations.filter({ !$0.desktop }).map(\.routes)) == Set(phoneRoutes) else { return false }
+    return serverLinks.allSatisfy { link in
+      destinations.contains { $0.desktop && $0.peer.remoteSignalName == link.desktopId && $0.routes == link.routes }
+    }
   }
 
   init(profileName: String, journal: MqttSignalStateJournal, routeState: MqttRouteState,
@@ -134,6 +152,7 @@ final class MqttBusinessTransportRuntime {
                    desktopArtifacts: AgentDesktopArtifactStore? = nil,
                    desktopConnector: MqttDesktopConnectorProjection? = nil,
                    receiveDesktopBlobControl: (@MainActor ([String: Any], MqttPeerChatProjection.Destination, MqttBusinessIdentity) async throws -> Void)? = nil,
+                   receiveDesktopRevocation: (@MainActor (MqttPeerChatProjection.Destination) throws -> Void)? = nil,
                    onFailure: @escaping @MainActor (Error) -> Void = { _ in }) throws {
     guard let cutover = try journal.legacyCutover(), cutover.localFingerprint == localFingerprint else {
       throw MqttDeliveryDispatch.Failure.unavailable
@@ -163,11 +182,15 @@ final class MqttBusinessTransportRuntime {
     self.desktopArtifacts = desktopArtifacts
     self.desktopConnector = desktopConnector
     self.receiveDesktopBlobControl = receiveDesktopBlobControl
+    self.receiveDesktopRevocation = receiveDesktopRevocation
   }
 
   func startDirectPeerChat(configuration: MqttBrokerPathConfiguration) throws {
     guard let projection = peerChatProjection else { throw MqttDeliveryDispatch.Failure.unavailable }
     let destinations = projection.currentDestinations()
+    guard Set(destinations.map { $0.peer.binding.scope }).count == destinations.count else {
+      throw MqttRouteError.identityChanged
+    }
     let peers = destinations.map(\.peer)
     try start(configuration: configuration, peers: peers)
     configuredDirectPeers = peers
@@ -176,6 +199,10 @@ final class MqttBusinessTransportRuntime {
   }
 
   var hasReadyPeer: Bool { started && !stopped && identities.contains { routes.isReady(scope: $0.scope) } }
+
+  func isDesktopRevoking(_ desktopID: String) -> Bool {
+    revokingScopes.contains { remoteNames[$0] == desktopID }
+  }
 
   func enqueueDirectPeerText(messageId: UUID, contactId: String, messageKind: String = "",
                              durationMillis: Int64 = 0) throws -> MqttBusinessOutbox.Entry {
@@ -244,7 +271,8 @@ final class MqttBusinessTransportRuntime {
     let matches = projection.currentDestinations().filter {
       $0.desktop && $0.peer.remoteSignalName == attachment.scope.desktopId && $0.routeId == attachment.scope.clientRouteId
     }
-    guard matches.count == 1, let target = matches.first else { throw MqttRouteError.identityChanged }
+    guard matches.count == 1, let target = matches.first, !revokingScopes.contains(target.peer.binding.scope)
+    else { throw MqttRouteError.identityChanged }
     return target
   }
 
@@ -373,7 +401,8 @@ final class MqttBusinessTransportRuntime {
   }
 
   func enqueue(_ requests: [MqttSignalSendRequest]) throws -> [MqttBusinessOutbox.Entry] {
-    guard started, !stopped else { throw MqttDeliveryDispatch.Failure.unavailable }
+    guard started, !stopped, requests.allSatisfy({ !revokingScopes.contains($0.identity.scope) })
+    else { throw MqttDeliveryDispatch.Failure.unavailable }
     return try routes.enqueue(requests, using: engine)
   }
 
@@ -403,7 +432,7 @@ final class MqttBusinessTransportRuntime {
   }
 
   private func authorizeConnectorSend(_ entry: MqttBusinessOutbox.Entry) throws -> Bool {
-    guard !stopped else { return false }
+    guard !stopped, !revokingScopes.contains(entry.identity.scope) else { return false }
     guard let projection = peerChatProjection, entry.identity.scope.hasPrefix("direct:") else { return true }
     guard let target = try projection.currentDestination(entry.identity) else { return false }
     guard target.desktop, target.contactId != entry.message.contactId else { return true }
@@ -411,8 +440,36 @@ final class MqttBusinessTransportRuntime {
       source: entry.message.clientSourceMessageId, target: target) == true
   }
 
+  func notifyDesktopRevocation(_ link: ServerLink) async -> Bool {
+    guard started, !stopped, let projection = peerChatProjection else { return false }
+    do {
+      try refreshDirectPeerBindings()
+      let matches = projection.currentDestinations().filter {
+        $0.desktop && $0.peer.remoteSignalName == link.desktopId && $0.routes == link.routes
+      }
+      guard matches.count == 1, let target = matches.first else { return false }
+      let identity = try MqttBusinessIdentity(target.peer.binding)
+      guard revokingScopes.insert(identity.scope).inserted else { return false }
+      let request = try MqttPeerChatProjection.desktopRevocationRequest(target: target)
+      guard routes.readyForTopic(request.topic) else { return false }
+      let wire = try routes.withOutgoing(identity: identity, topics: [request.topic]) {
+        try engine.makePairingRevocationWire(request)
+      }
+      return await routes.publishTransientControl(topic: request.topic, wire: wire, secret: target.peer.binding.secret) == .published
+    } catch { return false }
+  }
+
+  func finishDesktopRevocation(_ link: ServerLink) throws {
+    try refreshDirectPeerBindings()
+    guard !configuredDirectPeers.contains(where: { $0.remoteSignalName == link.desktopId }) else {
+      throw MqttRouteError.identityChanged
+    }
+    guard engine.forgetRemote(remoteName: link.desktopId) else { throw MqttChunkStorageError.databaseFailure }
+    revokingScopes.formIntersection(configuredDirectPeers.map { $0.binding.scope })
+  }
+
   private func evidenceDestination(_ binding: AgentDesktopReplyBinding) -> MqttPeerChatProjection.Destination? {
-    guard started, !stopped, let projection = peerChatProjection else { return nil }
+    guard started, !stopped, !isDesktopRevoking(binding.desktopId), let projection = peerChatProjection else { return nil }
     let matches = projection.store.contacts.compactMap { projection.destination(for: $0) }.filter {
       $0.desktop && $0.peer.remoteSignalName == binding.desktopId && $0.routeId == binding.identity.clientRouteId
     }
@@ -468,6 +525,7 @@ final class MqttBusinessTransportRuntime {
     let work = recoveryQueries { binding in
       guard let targets = destinations[binding.desktopId], targets.count == 1, let target = targets.first,
             target.routeId == binding.identity.clientRouteId,
+            !revokingScopes.contains(target.peer.binding.scope),
             let identity = try? MqttBusinessIdentity(target.peer.binding) else { return false }
       return (try? routes.withIdentity(identity) { routes.readyForTopic(target.peer.binding.sendTopic) }) == true
     }
@@ -476,7 +534,7 @@ final class MqttBusinessTransportRuntime {
       do {
         try refreshDirectPeerBindings()
         guard let targets = destinations[payload.string("desktop_id")], targets.count == 1,
-              let target = targets.first else { continue }
+              let target = targets.first, !revokingScopes.contains(target.peer.binding.scope) else { continue }
         let request = try connector.recoveryQueryRequest(payload, target: target)
         let wire = try routes.withOutgoing(identity: request.identity, topics: [request.topic]) {
           try engine.makeRecoveryQueryWire(request)
@@ -683,6 +741,7 @@ final class MqttBusinessTransportRuntime {
           throw MqttRouteError.invalidPayload
         }
         if payload["type"] as? String == "delivery_ack" { continue }
+        if revokingScopes.contains(item.identity.scope) && payload.string("type") != "pairing_revoked" { continue }
         try routes.withIdentity(item.identity) {}
         if payload.string("type") == "input_attachment_receipt",
            let projection = peerChatProjection, let attachments = outgoingAttachments {
@@ -699,6 +758,10 @@ final class MqttBusinessTransportRuntime {
           guard try journal.inbox.complete(identity: item.identity, messageID: item.messageID) else {
             throw MqttChunkStorageError.corruptState
           }
+        }
+        if payload.string("type") == "pairing_revoked" {
+          try refreshDirectPeerBindings()
+          revokingScopes.formIntersection(configuredDirectPeers.map { $0.binding.scope })
         }
       } catch DesktopPeerArtifactPending.awaitingChunks {
         continue
@@ -822,6 +885,14 @@ final class MqttBusinessTransportRuntime {
     guard let target = try projection.currentDestination(item.identity),
           payload["message_id"] as? String == item.messageID else { throw MqttRouteError.identityChanged }
     let type = payload.string("type")
+    if type == "pairing_revoked" {
+      guard MqttPeerChatProjection.acceptsDesktopRevocation(payload, target: target),
+            let receiveDesktopRevocation else { throw MqttRouteError.identityChanged }
+      revokingScopes.insert(item.identity.scope)
+      try receiveDesktopRevocation(target)
+      if !engine.forgetRemote(remoteName: target.peer.remoteSignalName) { onFailure(MqttChunkStorageError.databaseFailure) }
+      return
+    }
     if type == AgentBlobRelayConfiguration.payloadType || type == AgentBlobArtifactContract.offerType {
       guard target.desktop, let receiveDesktopBlobControl else { throw MqttRouteError.identityChanged }
       try await receiveDesktopBlobControl(payload, target, item.identity)

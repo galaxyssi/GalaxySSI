@@ -50,6 +50,10 @@ final class MessageCoordinator: ObservableObject {
     case journal(MqttSignalStateJournal)
     case blocked
   }
+  enum JournalMqttCutoverStatus {
+    case legacy, requested, deferred, active, blocked
+  }
+  @Published private(set) var journalMqttCutoverStatus: JournalMqttCutoverStatus = .legacy
   private var mqttStartupOwner: MqttStartupOwner = .legacy
   private var journalMqttRuntime: MqttBusinessTransportRuntime?
   private var journalMqttPoll: Task<Void, Never>?
@@ -538,31 +542,60 @@ final class MessageCoordinator: ObservableObject {
       if ready { self.retryDesktopEvidenceJobs() }
     }
     configureColdStartMqttOwner(requestCutover: mqttClient == nil &&
-      ProcessInfo.processInfo.arguments.contains("--enable-journal-mqtt"))
+      (store.defaults.bool(forKey: journalMqttPreferenceKey) ||
+        ProcessInfo.processInfo.arguments.contains("--enable-journal-mqtt")))
+  }
+
+  private var journalMqttPreferenceKey: String {
+    "galaxyssi.ios.mqtt-cutover." + MqttRouteProtocol.digest(Data(store.profile.galaxySSIId.utf8))
+  }
+
+  func setJournalMqttCutoverRequested(_ requested: Bool) {
+    guard usesLegacyMqtt else { return }
+    store.defaults.set(requested, forKey: journalMqttPreferenceKey)
+    journalMqttCutoverStatus = requested ? .requested : .legacy
   }
 
   private func configureColdStartMqttOwner(requestCutover: Bool) {
     let file = MqttSignalStateJournal.profileFileURL(profileID: store.profile.galaxySSIId)
     let fingerprint = signalEngine.identity.fingerprint
+    func openInstalled() throws -> MqttSignalStateJournal? {
+      try MqttSignalStateJournal.openMigrated(fileURL: file, expectedFingerprint: fingerprint, secrets: store.secrets)
+    }
     do {
-      if let journal = try MqttSignalStateJournal.openMigrated(fileURL: file, expectedFingerprint: fingerprint,
-        secrets: store.secrets) {
+      if let journal = try openInstalled() {
         mqttStartupOwner = .journal(journal)
+        journalMqttCutoverStatus = .active
       } else if requestCutover {
-        let peers = MqttPeerChatProjection(store: store, localFingerprint: fingerprint).currentPeers()
-        // The opt-in cold cutover does not migrate unclassified business payloads or pending pairing.
-        guard store.serverLinks.isEmpty, !peers.isEmpty,
-              try deliveryStore.outboxMigrationSnapshot(requireDrainedInbox: true).isEmpty else {
-          throw MqttDeliveryDispatch.Failure.unavailable
+        do {
+          let destinations = MqttPeerChatProjection(store: store, localFingerprint: fingerprint).currentDestinations()
+          let peers = destinations.map(\.peer)
+          guard MqttBusinessTransportRuntime.canCutOver(destinations, serverLinks: store.serverLinks,
+                  phoneRoutes: store.phoneOpaqueRoutes(), hasPendingPairing: !pairingDeliveries.pending().isEmpty),
+                peers.allSatisfy({ signalEngine.hasSession(remoteName: $0.remoteSignalName) }),
+                try transportReceiptJournal.isDrainedForCutover(),
+                try deliveryStore.outboxMigrationSnapshot(requireDrainedInbox: true).isEmpty else {
+            throw MqttDeliveryDispatch.Failure.unavailable
+          }
+          let journal = try MqttSignalStateJournal(fileURL: file, secrets: store.secrets)
+          _ = try MqttBusinessTransportRuntime.prepareLegacyCutover(journal: journal, legacyOutbox: deliveryStore,
+            expectedLocalFingerprint: fingerprint, peers: peers, defaults: store.defaults, secrets: store.secrets,
+            classify: { _ in nil })
+          mqttStartupOwner = .journal(journal)
+          journalMqttCutoverStatus = .active
+        } catch {
+          // A failed preflight leaves the legacy owner running only when no migration was installed.
+          if let journal = try openInstalled() {
+            mqttStartupOwner = .journal(journal)
+            journalMqttCutoverStatus = .active
+          } else {
+            journalMqttCutoverStatus = .deferred
+          }
         }
-        let journal = try MqttSignalStateJournal(fileURL: file, secrets: store.secrets)
-        _ = try MqttBusinessTransportRuntime.prepareLegacyCutover(journal: journal, legacyOutbox: deliveryStore,
-          expectedLocalFingerprint: fingerprint, peers: peers, defaults: store.defaults, secrets: store.secrets,
-          classify: { _ in nil })
-        mqttStartupOwner = .journal(journal)
       }
     } catch {
       mqttStartupOwner = .blocked
+      journalMqttCutoverStatus = .blocked
       lastError = GalaxySSIError.transportUnavailable.localizedDescription
     }
     if !usesLegacyMqtt {
@@ -611,6 +644,7 @@ final class MessageCoordinator: ObservableObject {
       }
     } catch {
       mqttStartupOwner = .blocked
+      journalMqttCutoverStatus = .blocked
       lastError = GalaxySSIError.transportUnavailable.localizedDescription
     }
   }
@@ -2060,6 +2094,20 @@ final class MessageCoordinator: ObservableObject {
     guard !cleanDesktopId.isEmpty else { return false }
     guard let link = store.serverLinks.first(where: { $0.desktopId == cleanDesktopId }) else {
       return false
+    }
+    if !usesLegacyMqtt {
+      let runtime = journalMqttRuntime
+      let published = await runtime?.notifyDesktopRevocation(link) ?? false
+      guard store.serverLinks.contains(where: { $0.desktopId == link.desktopId && $0.routes == link.routes }) else {
+        return published
+      }
+      let removed = removeDesktopPairingState(desktopId: link.desktopId, deleteMessages: deleteMessages)
+      blobRelayConfigurationStore.remove(desktopId: link.desktopId)
+      remoteWhisperNodeRegistry.remove(desktopID: link.desktopId)
+      recordPairingRevocation(contactIds: removed)
+      do { try runtime?.finishDesktopRevocation(link) }
+      catch { lastError = GalaxySSIError.transportUnavailable.localizedDescription }
+      return published
     }
 
     let payload: [String: Any] = [
@@ -15701,7 +15749,27 @@ final class MessageCoordinator: ObservableObject {
         try await self.blobArtifactReceiver.enqueue(payload: payload, link: link, configuration: configuration,
           conversationId: manifest.string("conversation_id"), peerStorageBinding: peerChat ? identity.binding : nil,
           agentReceiveBinding: peerChat ? nil : identity.binding)
+      }, receiveDesktopRevocation: { [weak self] target in
+        guard let self else { throw MqttDeliveryDispatch.Failure.unavailable }
+        try self.applyJournalDesktopRevocation(target)
       }, onFailure: onFailure)
+  }
+
+  func applyJournalDesktopRevocation(_ target: MqttPeerChatProjection.Destination) throws {
+    let desktopID = target.peer.remoteSignalName
+    guard target.desktop, store.serverLinks.contains(where: {
+      $0.paired && $0.desktopId == desktopID && $0.routes == target.routes
+    }) else { throw MqttRouteError.identityChanged }
+    let removed = removeDesktopPairingState(desktopId: desktopID)
+    guard !store.serverLinks.contains(where: { $0.desktopId == desktopID }) else { throw MqttChunkStorageError.databaseFailure }
+    blobRelayConfigurationStore.remove(desktopId: desktopID)
+    remoteWhisperNodeRegistry.remove(desktopID: desktopID)
+    recordPairingRevocation(contactIds: removed)
+    let content = localizedReply("galaxyssi.mqtt.desktop_revoked", fallback: "Desktop pairing was revoked.")
+    onIncomingMessage?(store.appendSystem(content, to: "system", conversationId: ""))
+    NotificationService.notify(title: "GalaxySSI", body: content, userInfo: [
+      "galaxyssi_notification_type": "pairing_revoked", "desktop_id": desktopID, "revoked_contact_ids": Array(removed).sorted()
+    ])
   }
 
   func linkWirePayload(
@@ -17905,7 +17973,8 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func blobArtifactIdentity(desktopId: String) -> AgentBlobArtifactReceiver.Identity? {
-    guard let link = store.serverLinks.first(where: { $0.desktopId == desktopId && $0.paired }),
+    guard journalMqttRuntime?.isDesktopRevoking(desktopId) != true,
+          let link = store.serverLinks.first(where: { $0.desktopId == desktopId && $0.paired }),
           let configuration = blobRelayConfigurationStore.configuration(for: link) else {
       return nil
     }

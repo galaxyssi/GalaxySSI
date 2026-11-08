@@ -163,6 +163,23 @@ struct MqttPeerChatProjection {
     return source
   }
 
+  static func acceptsDesktopRevocation(_ payload: [String: Any], target: Destination) -> Bool {
+    target.desktop && payload.string("type") == "pairing_revoked" &&
+      payload.string("desktop_id") == target.peer.remoteSignalName &&
+      (payload["client_route_id"] == nil || payload.string("client_route_id") == target.routeId)
+  }
+
+  static func desktopRevocationRequest(target: Destination, now: Date = Date()) throws -> MqttSignalSendRequest {
+    let millis = now.timeIntervalSince1970 * 1_000
+    guard target.desktop, millis.isFinite, millis >= 0, millis <= Double(MqttRouteProtocol.maximumInteger)
+    else { throw MqttRouteError.invalidPayload }
+    return try MqttSignalSendRequest(identity: MqttBusinessIdentity(target.peer.binding), payload: [
+      "type": "client_revoked", "message_id": UUID().uuidString, "desktop_id": target.peer.remoteSignalName,
+      "client_route_id": target.routeId, "reason": "forgotten_by_client", "time": Int64(millis)
+    ], remoteName: target.peer.remoteSignalName, topic: target.peer.binding.sendTopic,
+      clientRouteID: target.routeId, traffic: .control, contactID: target.contactId)
+  }
+
   static func desktopBlobReceiptRequest(_ receipt: [String: Any], target: Destination) throws -> MqttSignalSendRequest {
     let fields = ["type", "version", "status", "transfer_id", "client_route_id", "artifact_id", "sha256",
       "size_bytes", "conversation_id", "task_id", "turn_id", "contact_id", "execution_generation"]
