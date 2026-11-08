@@ -1770,7 +1770,7 @@ extension GalaxySSIStoreTests {
     let legacy: AgentMcpJSONObject = ["draft": .object(["kind": .string("tool_release")])]
     try database.insertResearchRecord(legacy, conversationId: scope.conversationId,
       key: "object:" + String(repeating: "0", count: 64), revision: 1)
-    XCTAssertThrowsError(try AgentCollaborationTypedRecordValidation.validate(reviewed.draft))
+    XCTAssertNil(AgentCollaborationSavedToolRelease.Review(reviewed.draft))
 
     func matches(_ query: String) throws -> [AgentMcpJSONObject] {
       let page = try history.recallCollaborationOriginal(["mode": .string("capabilities"), "query": .string(query)], scope: scope)
@@ -2440,6 +2440,9 @@ extension GalaxySSIStoreTests {
     var running = durableTeamSnapshot("execute-plan")
     running.members[0].dispatchCheckpoint = .dispatching
     running.members[0].dispatchAllowsSavedToolTest = true
+    running.members[1].dispatchCheckpoint = .dispatching
+    running.members.append(AgentTeamMemberSnapshot(agentId: "unread-review", deliveryMode: .observe,
+      sourceMessageId: "unread-review-source"))
     XCTAssertTrue(history.upsert(running))
     let reader = scope(running)
     let prepared = try history.prepareSavedToolTest(reference, timeoutMillis: 1_000, scope: reader)
@@ -2459,11 +2462,13 @@ extension GalaxySSIStoreTests {
       let stdout = AgentMcpJSONCodec.stringify(["format": .string(AgentCollaborationSavedToolTest.reportFormat),
         "runtime": .object(runtime), "environment_matches": .bool(true), "results": .array(rows)])
       let output: AgentMcpJSONObject = ["exit_code": .int(0), "stdout": .string(stdout), "output_truncated": .bool(truncated)]
+      let now = AgentControlPlaneClock.nowMillis()
       return .init(status: .succeeded, output: output, message: "", receipt: .init(invocationId: "fixture",
-        startedAtEpochMillis: 1, finishedAtEpochMillis: 2, durationMillis: 1, status: .succeeded,
+        startedAtEpochMillis: now, finishedAtEpochMillis: now + 1, durationMillis: 1, status: .succeeded,
         inputSha256: AgentMcpJSONCodec.sha256(prepared.runtimeInput), outputSha256: AgentMcpJSONCodec.sha256(output)),
         provenance: .init(toolId: AgentIOSOnDeviceRuntimeNativeToolCatalog.execute,
-          toolVersion: "1", location: .application, executorId: "fixture", contractVersion: "1"))
+          toolVersion: "1", location: .application, executorId: AgentIOSOnDeviceRuntimeNativeToolCatalog.brokerExecutorId,
+          contractVersion: "1"))
     }
     let rows: [AgentMcpJSONValue] = [
       .object(["id": .string("target"), "output": oracle]),
@@ -2483,6 +2488,69 @@ extension GalaxySSIStoreTests {
     var stale = reference
     stale.sha256 = String(repeating: "0", count: 64)
     XCTAssertThrowsError(try history.prepareSavedToolTest(stale, timeoutMillis: 1_000, scope: reader))
+
+    let result = report(rows)
+    let proof = try history.recordNativeObservation(.init(runId: reader.runId, conversationId: reader.conversationId,
+      turnId: reader.turnId, memberId: reader.memberId, sourceId: reader.sourceId, input: prepared.evidenceInput,
+      result: result, evaluation: prepared.evaluate(result)))
+    let citation = proof.filter { ["evidence_id", "sha256", "origin"].contains($0.key) }
+    let reviewer = running.members[1]
+    let reviewScope = AgentCollaborationToolEvidenceScope(runId: reader.runId, conversationId: reader.conversationId,
+      turnId: reader.turnId, memberId: reviewer.memberId, sourceId: reviewer.sourceMessageId)
+    func readOriginal(_ owner: AgentCollaborationToolEvidenceScope, evidence: AgentMcpJSONObject) throws {
+      var offset: Int64? = 0
+      while let position = offset {
+        let page = try history.recallCollaborationOriginal(["mode": .string("native_evidence"),
+          "evidence_id": .string(evidence.string("evidence_id")), "sha256": .string(evidence.string("sha256")),
+          "offset": .int(position)], scope: owner)
+        offset = page["next_offset"]?.intValue
+      }
+    }
+    var replay = result
+    replay.receipt.replayed = true
+    let replayProof = try history.recordNativeObservation(.init(runId: reader.runId, conversationId: reader.conversationId,
+      turnId: reader.turnId, memberId: reader.memberId, sourceId: reader.sourceId, input: prepared.evidenceInput,
+      result: replay, evaluation: prepared.evaluate(replay)))
+    let replayCitation = replayProof.filter { ["evidence_id", "sha256", "origin"].contains($0.key) }
+    try readOriginal(reviewScope, evidence: citation)
+    try readOriginal(reviewScope, evidence: replayCitation)
+    try readOriginal(reader, evidence: citation)
+    running.members[0].status = .succeeded
+    running.members[1].status = .succeeded
+    running.members[2].status = .succeeded
+    XCTAssertTrue(history.upsert(running))
+    func release(_ evidence: AgentMcpJSONObject, as owner: AgentCollaborationToolEvidenceScope)
+        throws -> AgentCollaborationResearchPublication {
+      let spec: AgentMcpJSONObject = ["tool_test_plan": .object(AgentCollaborationCandidateRecall.reference(reference)),
+        "observation": .object(evidence), "review": .string("Reviewed the original test outputs"),
+        "applies_when": .string("Integer inputs"), "avoid_when": .string("Untrusted input"),
+        "limitations": .string("Only registered cases were checked"),
+        "authorization_boundary": .string("Existing runtime permissions"), "unresolved": .array([])]
+      let draft = AgentCollaborationResearchDraft(id: "release", objectId: nil, baseRevision: 0, kind: .toolRelease,
+        title: "Reviewed saved tool", body: ["tool_release": .object(spec)], parents: [reference], observations: [evidence])
+      return try history.publishResearchObjects([draft], runId: owner.runId, conversationId: owner.conversationId,
+        turnId: owner.turnId, memberId: owner.memberId, sourceId: owner.sourceId)
+    }
+    XCTAssertThrowsError(try release(citation, as: reader), "The source author cannot independently release it")
+    let unread = running.members[2]
+    let unreadScope = AgentCollaborationToolEvidenceScope(runId: reader.runId, conversationId: reader.conversationId,
+      turnId: reader.turnId, memberId: unread.memberId, sourceId: unread.sourceMessageId)
+    XCTAssertThrowsError(try release(citation, as: unreadScope), "Coverage belongs to the exact reviewer")
+    XCTAssertThrowsError(try release(replayCitation, as: reviewScope), "A replay cannot validate a release")
+    var forged = citation
+    forged["sha256"] = .string(String(repeating: "a", count: 64))
+    XCTAssertThrowsError(try release(forged, as: reviewScope))
+    let released = try XCTUnwrap(release(citation, as: reviewScope).references.first)
+    var future = durableTeamSnapshot("use-reviewed-tool")
+    future.taskId = "future-turn"
+    XCTAssertTrue(history.upsert(future))
+    let capabilities = try history.recallCollaborationOriginal(["mode": .string("capabilities"), "query": .string("check")],
+      scope: scope(future))
+    let entry = try XCTUnwrap(capabilities["capabilities"]?.arrayValue?.compactMap(\.objectValue)
+      .first { $0.string("object_id") == released.objectId })
+    XCTAssertEqual(entry["state"], .string(AgentCollaborationCapabilityPage.releaseState))
+    XCTAssertEqual(entry["grants_permissions"], .bool(false))
+    XCTAssertEqual(entry["excerpts"]?.objectValue?["tool_name"], .string("Check"))
     history.removeResearchObjects(conversationId: reader.conversationId)
     XCTAssertThrowsError(try history.prepareSavedToolTest(reference, timeoutMillis: 1_000, scope: reader))
   }

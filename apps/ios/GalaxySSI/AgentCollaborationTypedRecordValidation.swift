@@ -5,7 +5,7 @@ struct AgentCollaborationTypedRecordValidation: Error {
 
   static let kinds: Set<String> = [
     "capability_gap", "innovation", "experiment_plan", "experiment_result", "capability_lesson",
-    "learning_agenda", "transfer_study", "executable_tool", "tool_test_plan", "environment_model", "task_environment_model",
+    "learning_agenda", "transfer_study", "executable_tool", "tool_test_plan", "tool_release", "environment_model", "task_environment_model",
     "action_forecast", "numeric_model_trial", "prediction_outcome", "workflow_method", "workflow_selection_rule",
     "team_exchange", "failure_experience", "innovation_opportunity"
   ]
@@ -16,10 +16,6 @@ struct AgentCollaborationTypedRecordValidation: Error {
 
   static func validate(_ draft: AgentCollaborationResearchDraft) throws {
     let kind = draft.kind.rawValue
-    guard draft.kind != .toolRelease else {
-      throw issue("host_tool_release_required", path: "/kind",
-        expected: "host-validated release, not a model publication", actual: kind, draft: draft)
-    }
     guard kinds.contains(kind) else { return }
     guard draft.body[kind]?.objectValue != nil else {
       throw issue("typed_body_required", path: "/body/" + kind,

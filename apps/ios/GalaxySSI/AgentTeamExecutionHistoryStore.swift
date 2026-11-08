@@ -1561,6 +1561,7 @@ final class AgentTeamExecutionHistoryStore {
         var trialAuthors: [String]? = nil
         var numericReplay: AgentMcpJSONObject? = nil
         var workflowComparison: AgentCollaborationWorkflowComparison? = nil
+        var testedToolRelease: AgentMcpJSONObject? = nil
         if draft.kind == .acceptanceReview {
           let parents = draft.parents.map { AgentCollaborationDocumentaryAcceptance.Reference(
             objectId: $0.objectId, revision: $0.revision, sha256: $0.sha256) }
@@ -1603,6 +1604,37 @@ final class AgentTeamExecutionHistoryStore {
             return saved
           }
           guard valid else { throw AgentTeamHistoryDatabase.Failure.stale }
+        } else if draft.kind == .toolRelease {
+          guard let review = AgentCollaborationSavedToolRelease.Review(draft), member.deliveryMode != .ignore else {
+            throw AgentTeamHistoryDatabase.Failure.corrupt
+          }
+          let citations = try Self.acceptanceCitations(references)
+          guard citations.native == [review.observation], citations.cloud.isEmpty, citations.desktop.isEmpty
+          else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+          let scope = AgentCollaborationToolEvidenceScope(runId: runId, conversationId: conversationId,
+            turnId: turnId, memberId: memberId, sourceId: sourceId)
+          func current(_ ref: AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision? {
+            guard !revisedInBatch.contains(ref.objectId),
+                  let saved = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                    conversationId: conversationId, key: "object:" + ref.objectId), saved.reference == ref else { return nil }
+            if saved.turnId == turnId {
+              guard saved.runId == runId,
+                    (saved.authorId == memberId && saved.sourceId == sourceId) ||
+                    (member.dispatchDependencyMemberIds?.contains(saved.authorId) == true &&
+                      snapshot.members.contains(where: { $0.memberId == saved.authorId && $0.sourceMessageId == saved.sourceId &&
+                        $0.deliveryMode != .ignore && $0.status.isTerminal })) else { return nil }
+            }
+            return saved
+          }
+          guard let plan = try current(review.plan),
+                let reference = AgentCollaborationCandidateRecall.linkedTool(plan), let tool = try current(reference),
+                let original = try Self.nativeAcceptanceOriginal(id: review.observation.string("evidence_id"),
+                  scope: scope, team: snapshot, database: database),
+                let receipt = AgentCollaborationSavedToolRelease.receipt(review: review, plan: plan, tool: tool,
+                  original: original, reviewerIdentity: snapshot.reviewIdentity(memberId),
+                  authorIdentity: snapshot.reviewIdentity(tool.authorId)) else { throw AgentTeamHistoryDatabase.Failure.stale }
+          frozenNativeReads = try Self.freezeNativeAcceptanceReads(citations.native, scope: scope, team: snapshot, database: database)
+          testedToolRelease = receipt
         } else if draft.kind == .executableTool || draft.kind == .toolTestPlan {
           guard references.isEmpty, draft.objectId?.isBlank != false, draft.baseRevision == 0,
                 let spec = draft.body[draft.kind.rawValue]?.objectValue else {
@@ -1987,9 +2019,9 @@ final class AgentTeamExecutionHistoryStore {
           carriedHypothesisPosterior: carriedPosterior,
           retentionBank: retentionBank,
           capabilitySelection: capabilitySelection,
-          registeredAtMillis: [.experimentPlan, .actionForecast].contains(draft.kind) ? AgentControlPlaneClock.nowMillis() : nil,
+          registeredAtMillis: [.experimentPlan, .actionForecast, .toolTestPlan].contains(draft.kind) ? AgentControlPlaneClock.nowMillis() : nil,
           measuredCases: measuredCases, trialAuthors: trialAuthors, numericReplay: numericReplay,
-          workflowComparison: workflowComparison)
+          workflowComparison: workflowComparison, testedToolRelease: testedToolRelease)
         let bytes = try encoder.encode(revision)
         // Reserve space for the SHA-256 field populated after the digest.
         guard bytes.count <= revision.storageBytesLimit - 64 else { throw AgentTeamHistoryDatabase.Failure.corrupt }
