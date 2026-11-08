@@ -41,7 +41,7 @@ internal class HealthCareEncounterRepository(private val context: Context, priva
             store.concern(snapshot.issue.id)?.revision != snapshot.issue.revision || store.settings().version != snapshot.settingsVersion ||
             HealthRecordStore(context, names.records).use { it.metricVersion(snapshot.issue.metric) } != snapshot.recordClock) throw HealthCareConflict()
     }
-    private fun <T> commit(snapshot: HealthCareEncounterSnapshot, operation: (HealthCareStore) -> T): T {
+    internal fun <T> commit(snapshot: HealthCareEncounterSnapshot, operation: (HealthCareStore) -> T): T {
         allowed(snapshot.privacy)
         return HealthPrivacyStore(context, names.privacy).use { privacy -> privacy.withCurrentPolicy(snapshot.privacy) {
             HealthCareStore(context, names.care).use { care -> checkCurrent(snapshot, care, privacy.policy()); operation(care) }
