@@ -30,6 +30,11 @@ internal class HealthPrivacyStore(private val context: Context, private val name
         check(it.moveToFirst()) { "Health privacy policy missing" }
         HealthPrivacyPolicy.from(unpack("policy", it.getBlob(0)))
     }
+    /** Serialize a short local commit with consent changes; never run network or model work here. */
+    fun <T> withCurrentPolicy(expected: HealthPrivacyPolicy, operation: () -> T): T = transaction {
+        if (policy() != expected) throw HealthPrivacyConflict()
+        operation()
+    }
     fun change(option: HealthPrivacyOption, enabled: Boolean, expected: String): HealthPrivacyPolicy {
         val next = transaction {
             val current = policy()

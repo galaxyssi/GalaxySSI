@@ -1,0 +1,27 @@
+<resources>
+    <string name="health_encounter_title">就诊记录</string>
+    <string name="health_encounter_entry">就诊计划、已记录预约与就诊历史</string>
+    <string name="health_encounter_notice">这是你自行记录的信息，不是医院预约回执或已核实的医嘱。保存不会改变治疗安排，也不代表健康问题已解决。</string>
+    <string name="health_encounter_add">记录就诊</string>
+    <string name="health_encounter_edit">修改记录</string>
+    <string name="health_encounter_purpose">就诊目的</string>
+    <string name="health_encounter_facility">医院或诊所（选填）</string>
+    <string name="health_encounter_note">备注（选填）</string>
+    <string name="health_encounter_state_planned">计划就诊</string>
+    <string name="health_encounter_state_booked">已记录预约（你提供）</string>
+    <string name="health_encounter_state_attended">已就诊（你提供）</string>
+    <string name="health_encounter_state_cancelled">已取消（你提供）</string>
+    <string name="health_encounter_planned">计划时间</string>
+    <string name="health_encounter_attended">实际就诊时间</string>
+    <string name="health_encounter_recorded">记录更新时间</string>
+    <string name="health_encounter_clear_time">清除时间</string>
+    <string name="health_encounter_unspecified">尚未记录</string>
+    <string name="health_encounter_empty">这项关注还没有就诊记录。</string>
+    <string name="health_encounter_history">修改历史</string>
+    <string name="health_encounter_delete">删除就诊记录</string>
+    <string name="health_encounter_delete_notice">删除这次就诊及其修改历史？测量记录、原始文件和已确认行动仍会保留。</string>
+    <string name="health_encounter_invalid">请填写就诊目的。记录预约需要计划时间；已就诊需要实际时间，且不能晚于现在。</string>
+    <string name="health_encounter_invalid_time">这个当地时间因时钟调整而不存在，请重新选择。</string>
+    <string name="health_encounter_choose_offset">这个时间出现两次，请选择 UTC 时差。</string>
+    <string name="health_encounter_changed">当前资料或授权下未能完成读取或保存，请刷新并重新核对后重试。</string>
+</resources>

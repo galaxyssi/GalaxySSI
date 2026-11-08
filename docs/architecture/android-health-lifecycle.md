@@ -320,5 +320,49 @@ rejected, not truncated. No new database or persisted plaintext snapshot is adde
 
 This increment provides a selected text summary, not a PDF report, symptom intake,
 hospital booking, medical record transmission or post-visit instruction review.
-Agent-triggered preparation, appointment records, reviewed prescriptions and
+Agent-triggered preparation, appointment reminders, reviewed prescriptions and
 rehabilitation follow-up remain separate work in the full lifecycle goal.
+
+## Local encounter records
+
+The next increment introduces local encounter records bound to an existing self
+concern. Planned, user-recorded booking, attended and cancelled are separate
+states. A planned date alone does not imply a booking. Attendance requires an
+explicit non-future date. These records are always user reports, not hospital
+receipts, verified clinician findings, prescriptions or permission to change a
+plan. Correcting a record preserves its original source anchor and creation time.
+
+Schema 12 adds individually authenticated encrypted current records and immutable
+operation receipts. Only opaque IDs and concern revisions are indexed; facility,
+purpose, visit dates, time zone and notes stay encrypted. Updating the concern
+revision, current encounter and history is atomic. Replayed operation IDs return
+the same receipt; changed content, ownership or editor revisions fail closed.
+Recording attendance does not complete existing actions or mark a concern cured.
+
+Current lists and per-encounter history use revision-keyset pages of at most 30
+records. A mutable-list cursor also requires the original concern revision, so
+concurrent edits require a refresh rather than silently losing moved records.
+Deleting an encounter purges its current row and encrypted history; deleting the
+concern purges all its encounters. Old operation retries cannot revive them.
+
+The existing concern detail opens the native list, editor, detail and change
+history. Explicit deletion confirms the removal of this encounter and its history,
+not its measurements or confirmed actions. Editors use native date/time pickers
+and retain the recorded time zone. Nonexistent local times are rejected; ambiguous
+clock-change times require an explicit offset selection. Saving a user-recorded
+booking requires its planned time. Planned and actual times remain distinct.
+
+Repository snapshots bind privacy and settings versions, the concern revision and
+the measurement clock. Changed inputs require a fresh review. Local writes hold a
+short consent transaction so concurrent revocation cannot pass an obsolete check;
+no model or network work runs under that lock. Manual records remain available
+when proactive checking is off, as long as the relevant local permissions remain
+granted. Backgrounding, recreation, source changes, memory pressure and a ten-minute
+TTL clear the editor and loaded plaintext; resuming reloads from encrypted storage.
+Invalidated worker results never render into a newer screen, and current failures
+offer an explicit retry instead of looping.
+
+Appointment reminders, post-visit original import and reviewed clinical
+instructions remain separate increments. This implementation has no external
+booking or clinical execution tool. Device UI, storage migration and privacy
+regression acceptance must pass before it is considered ready for delivery.

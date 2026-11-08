@@ -148,6 +148,9 @@ class HealthCareActivity : Activity() {
         if (profile) ui.add(content, ui.profileRow(getString(R.string.health_visit_title), getString(R.string.health_visit_entry)) {
             startActivity(Intent(this, HealthCareVisitActivity::class.java).putHealthNavigationFixture(names).putExtra("health_care_id", value.id))
         }.apply { tag = "health-care-visit" }, 8)
+        if (profile) ui.add(content, ui.profileRow(getString(R.string.health_encounter_title), getString(R.string.health_encounter_entry)) {
+            startActivity(Intent(this, HealthCareEncountersActivity::class.java).putHealthNavigationFixture(names).putExtra("health_care_id", value.id))
+        }.apply { tag = "health-care-encounters" }, 8)
         if (profile) ui.add(content, ui.profileRow(getString(R.string.health_question_title), getString(R.string.health_question_summary)) {
             questionReview.show(value.id)
         }.apply { tag = "health-care-questions" }, 8)
