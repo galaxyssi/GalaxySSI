@@ -1034,6 +1034,8 @@ final class GalaxySSIStore: ObservableObject {
     deletePrivateAttachmentCopies(in: messages)
     chatHistoryDatabase.deleteContact(contactId)
     for message in messages where message.isMine {
+      researchCheckpointStore.removeLocalDisclosure(conversation: message.conversationId,
+        turn: message.turnId.ifBlank(message.id.uuidString), source: message.id)
       researchCheckpointStore.remove(conversation: message.conversationId,
         turn: message.turnId.ifBlank(message.id.uuidString), source: message.id)
     }
@@ -1051,6 +1053,8 @@ final class GalaxySSIStore: ObservableObject {
       AgentCompletedReplyPlayback.shared.stop()
     }
     if removed.isMine {
+      researchCheckpointStore.removeLocalDisclosure(conversation: removed.conversationId,
+        turn: removed.turnId.ifBlank(removed.id.uuidString), source: removed.id)
       researchCheckpointStore.remove(conversation: removed.conversationId,
         turn: removed.turnId.ifBlank(removed.id.uuidString), source: removed.id)
     }

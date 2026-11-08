@@ -7119,6 +7119,7 @@ final class MessageCoordinator: ObservableObject {
       guard let localNativeToolRuntime else {
         throw AgentIOSLocalModelWebToolError.unavailable
       }
+      let disclosureOwner = store.profile.identityFingerprint
       let completion = try await AgentIOSLocalModelWebToolRunner.run(
         prompt: prompt,
         profile: profile,
@@ -7135,6 +7136,7 @@ final class MessageCoordinator: ObservableObject {
         collaborationConversationDatabase: store.agentConversationDatabase,
         collaborationOriginalsOnly: true
       )
+      store.persistLocalResearchDisclosure(completion.researchDisclosure, source: outgoing, owner: disclosureOwner)
       let response = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !response.isEmpty else {
         throw LocalModelInferenceError.emptyResponse
@@ -9606,6 +9608,7 @@ final class MessageCoordinator: ObservableObject {
       throw AgentIOSLocalModelWebToolError.unavailable
     }
     let recall = validatedLocalCollaborationRecall(collaborationRecallScope)
+    let disclosureOwner = store.profile.identityFingerprint
     let completion = try await AgentIOSLocalModelWebToolRunner.run(
       prompt: prompt,
       profile: profile,
@@ -9622,6 +9625,7 @@ final class MessageCoordinator: ObservableObject {
       collaborationConversationDatabase: store.agentConversationDatabase,
       nativeObservation: nativeObservation
     )
+    store.persistLocalResearchDisclosure(completion.researchDisclosure, source: outgoing, owner: disclosureOwner)
     let text = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { throw LocalModelInferenceError.emptyResponse }
     return text
