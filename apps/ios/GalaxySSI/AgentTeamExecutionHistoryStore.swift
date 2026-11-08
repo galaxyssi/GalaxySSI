@@ -2327,6 +2327,9 @@ final class AgentTeamExecutionHistoryStore {
     if mode == AgentCollaborationGoalAssessmentPolicy.checkGoalEvidenceMode {
       return try checkCollaborationGoalEvidence(input, scope: scope)
     }
+    if mode == AgentCollaborationGoalAssessmentPolicy.assessmentRepairMode {
+      return try readGoalAssessmentRejection(input, scope: scope)
+    }
     if mode == "validate_assessment" {
       guard Set(input.keys) == ["mode", "artifact"], let raw = input["artifact"]?.strictStringValue,
             !raw.isBlank, AgentMcpJSONCodec.stringify(input).utf8.count <= 131_072
@@ -3519,12 +3522,60 @@ final class AgentTeamExecutionHistoryStore {
     try access { try Self.goalCoordinatorRetry(scope, database: $0)?.retryAt }
   }
 
+  private static func goalAssessmentRejectionKey(_ scope: AgentCollaborationToolEvidenceScope) -> String {
+    "goal-assessment-rejection:" + scope.ownershipDigest
+  }
+
+  private static func retainGoalAssessmentRejection(_ raw: String, contractSubmission: Bool,
+      scope: AgentCollaborationToolEvidenceScope, database: AgentTeamHistoryDatabase)
+    throws -> AgentCollaborationGoalAssessmentPolicy.RejectedAssessment? {
+    typealias Policy = AgentCollaborationGoalAssessmentPolicy
+    guard !raw.isBlank, raw.utf8.count <= Policy.assessmentDraftLimit else { return nil }
+    let saved = Policy.RejectedAssessment(bytes: Data(raw.utf8), contractSubmission: contractSubmission)
+    let key = goalAssessmentRejectionKey(scope)
+    let prior = try database.researchRecord(Policy.RejectedAssessment.self, conversationId: scope.conversationId, key: key, revision: 0)
+    if prior != saved {
+      try database.removeResearchRecord(conversationId: scope.conversationId, key: key)
+      try database.insertResearchRecord(saved, conversationId: scope.conversationId, key: key, revision: 0)
+    }
+    return saved
+  }
+
+  private func readGoalAssessmentRejection(_ input: AgentMcpJSONObject,
+      scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+    typealias Policy = AgentCollaborationGoalAssessmentPolicy
+    guard Set(input.keys).isSubset(of: ["mode", "draft_sha256", "offset"]),
+          let hash = input["draft_sha256"]?.strictStringValue, AgentCollaborationSourceAccess.validDigest(hash),
+          case .int(let offset) = input["offset"] ?? .int(0), offset >= 0 else {
+      throw AgentTeamHistoryDatabase.Failure.corrupt
+    }
+    return try access { database in
+      _ = try Self.activeGoalCoordinator(scope, database: database)
+      let checkpoint = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first
+      if let checkpoint {
+        guard checkpoint.phase == .working, checkpoint.conversationId == scope.conversationId,
+              checkpoint.turnId == scope.turnId else { throw AgentTeamHistoryDatabase.Failure.stale }
+      }
+      guard let draft = try database.researchRecord(Policy.RejectedAssessment.self, conversationId: scope.conversationId,
+        key: Self.goalAssessmentRejectionKey(scope), revision: 0), draft.sha256 == hash else {
+        throw AgentTeamHistoryDatabase.Failure.stale
+      }
+      let page = try AgentCollaborationEvidenceContent.page(draft.bytes, offset: offset, evidence: true)
+      guard page.end > offset else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      return ["success": .bool(true), "status": .string("assessment_repair_page"),
+        "draft_sha256": .string(hash), "content": .string(page.content), "offset": .int(offset),
+        "end_offset": .int(page.end), "total_characters": .int(page.wireTotal),
+        "offset_unit": .string(AgentCollaborationEvidenceContent.offsetUnit),
+        "next_offset": page.end < page.wireTotal ? .int(page.end) : .null,
+        "committed": .bool(false), "goal_accepted": .bool(false)]
+    }
+  }
+
   func reserveGoalContinuation(after raw: String, scope: AgentCollaborationToolEvidenceScope,
                                scheduleRetry: Bool = false, now: Int64 = AgentControlPlaneClock.nowMillis())
     throws -> AgentMcpJSONObject? {
     typealias Policy = AgentCollaborationGoalAssessmentPolicy
-    let assessment = raw.utf8.count <= 131_072
-      ? (try? JSONDecoder().decode(Policy.Assessment.self, from: Data(raw.utf8))) : nil
+    let assessment = try? Policy.parseAssessment(raw, limit: Policy.assessmentDraftLimit).get()
     return try access { database in
       let team = try Self.activeGoalCoordinator(scope, database: database)
       let checkpoint = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first
@@ -3586,6 +3637,7 @@ final class AgentTeamExecutionHistoryStore {
         }
       }
       let revision = checkpoint?.revision ?? 0
+      let draft = try Self.retainGoalAssessmentRejection(raw, contractSubmission: false, scope: scope, database: database)
       let digest = AgentMcpJSONCodec.sha256(["revision": .int(revision), "work": .array(states)])
       let key = "goal-continuation:" + scope.ownershipDigest + ":" + digest
       if try database.researchRecord(Bool.self, conversationId: scope.conversationId, key: key, revision: 0) != nil {
@@ -3603,6 +3655,10 @@ final class AgentTeamExecutionHistoryStore {
       var response: AgentMcpJSONObject = ["status": .string(reason), "revision": .int(revision),
         "work_counts": .object(counts.mapValues(AgentMcpJSONValue.int)), "work_examples": .array(examples),
         "resource_resolution": .array(feedback), "goal_accepted": .bool(false)]
+      var repair = draft?.feedback(contract: checkpoint?.contract ?? []) ??
+        Policy.repairFeedback(raw, contract: checkpoint?.contract ?? [], contractSubmission: false)
+      repair["draft_retained"] = .bool(draft != nil)
+      response["assessment_repair"] = .object(repair)
       if let inventory = try? Self.goalWorkInventory(team: team, scope: scope, work: plannedWork, runs: runs,
         revision: revision, now: now, database: database) {
         response["work_inventory"] = .object(inventory)
@@ -3744,6 +3800,10 @@ final class AgentTeamExecutionHistoryStore {
       }
       var response: AgentMcpJSONObject = ["revision": .int(revision), "work_count": .int(Int64(results.count)),
         "recent_work": .array(Array(results.suffix(24)))]
+      if let draft = try database.researchRecord(AgentCollaborationGoalAssessmentPolicy.RejectedAssessment.self,
+        conversationId: scope.conversationId, key: Self.goalAssessmentRejectionKey(scope), revision: 0) {
+        response["assessment_repair"] = .object(draft.feedback(contract: checkpoint?.contract ?? []))
+      }
       if let inventory = try? Self.goalWorkInventory(team: team, scope: scope, work: plannedWork, runs: runs,
         revision: revision, now: now, database: database) {
         response["work_inventory"] = .object(inventory)
@@ -3838,18 +3898,28 @@ final class AgentTeamExecutionHistoryStore {
 
   private func establishCollaborationGoalContract(_ input: AgentMcpJSONObject,
     scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+    typealias Policy = AgentCollaborationGoalAssessmentPolicy
     guard Set(input.keys) == ["mode", "artifact"], let raw = input["artifact"]?.strictStringValue,
-          let contract = AgentCollaborationGoalAssessmentPolicy.initialContract(raw)
+          !raw.isBlank, raw.utf8.count <= Policy.assessmentDraftLimit
     else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     return try access { database in
       _ = try Self.activeGoalCoordinator(scope, database: database)
       let prior = try database.goalCheckpoints(runId: scope.runId, revision: 1, newestOnly: true).first
       if let prior {
-        guard prior.conversationId == scope.conversationId, prior.turnId == scope.turnId, prior.contract == contract
-        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        guard prior.conversationId == scope.conversationId, prior.turnId == scope.turnId else {
+          throw AgentTeamHistoryDatabase.Failure.stale
+        }
       } else {
         guard try database.goalCheckpoints(runId: scope.runId, newestOnly: true).isEmpty
         else { throw AgentTeamHistoryDatabase.Failure.stale }
+      }
+      guard let contract = Policy.initialContract(raw), prior == nil || prior?.contract == contract else {
+        let retained = try Self.retainGoalAssessmentRejection(raw, contractSubmission: true, scope: scope, database: database)
+        return ["success": .bool(false), "status": .string("assessment_rejected"), "goal_accepted": .bool(false),
+          "work_dispatched": .bool(false), "assessment_repair": .object(retained?.feedback(contract: prior?.contract ?? []) ??
+            Policy.repairFeedback(raw, contract: prior?.contract ?? [], contractSubmission: true))]
+      }
+      if prior == nil {
         try database.insertGoalCheckpoint(.init(runId: scope.runId, conversationId: scope.conversationId,
           turnId: scope.turnId, revision: 1, phase: .working, contract: contract, completedWorkIds: []))
       }

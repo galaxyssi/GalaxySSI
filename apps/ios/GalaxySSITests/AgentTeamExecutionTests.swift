@@ -755,6 +755,13 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(invalid["schema_valid"], .bool(false))
     XCTAssertEqual(invalid["field_path"], .string("$.criteria[0].required_observations[0].origin"))
     XCTAssertEqual(invalid["json_valid"], .bool(true))
+    XCTAssertEqual(invalid["failure"]?.objectValue?["actual"], .string("invented"))
+    XCTAssertTrue(invalid["allowed_values"]?.arrayValue?.contains(.string("ios_cloud_tool")) == true)
+    let decision = AgentCollaborationGoalAssessmentPolicy.preflight(
+      raw.replacingOccurrences(of: "\"continue\"", with: "\"proceed\""), establishedContract: false)
+    XCTAssertEqual(decision["field_path"], .string("$.decision"))
+    XCTAssertEqual(decision["failure"]?.objectValue?["actual"], .string("proceed"))
+    XCTAssertTrue(decision["allowed_values"]?.arrayValue?.contains(.string("continue")) == true)
     XCTAssertEqual(invalid["acceptance_contract_state"], .string("not_established"))
     let valid = AgentCollaborationGoalAssessmentPolicy.preflight(
       raw.replacingOccurrences(of: "invented", with: "ios_cloud_tool"), establishedContract: true)
@@ -4479,11 +4486,39 @@ extension GalaxySSIStoreTests {
     XCTAssertThrowsError(try history.publishCollaborationMilestone(request, scope: differentSource))
     var closed = request
     closed["artifact"] = .string(raw.replacingOccurrences(of: "\"open\"", with: "\"met\""))
-    XCTAssertThrowsError(try history.publishCollaborationMilestone(closed, scope: scope(0)))
+    let rejected = try history.publishCollaborationMilestone(closed, scope: scope(0))
+    XCTAssertEqual(rejected["status"], .string("assessment_rejected"))
+    XCTAssertEqual(rejected["assessment_repair"]?.objectValue?["contract_state"], .string("initial_criteria_pending"))
+    XCTAssertEqual(rejected["assessment_repair"]?.objectValue?["field_path"], .string("$.criteria[0].status"))
+    XCTAssertEqual(rejected["work_dispatched"], .bool(false))
+    let oldRead = try XCTUnwrap(rejected["assessment_repair"]?.objectValue?["draft_read"]?.objectValue)
     var work = request
-    work["artifact"] = .string(raw.replacingOccurrences(of: "\"work\":[]",
-      with: "\"work\":[{\"id\":\"new\",\"member\":\"primary\",\"assignment\":\"Run now\"}]"))
-    XCTAssertThrowsError(try history.publishCollaborationMilestone(work, scope: scope(0)))
+    let invalidWork = raw.replacingOccurrences(of: "\"work\":[]",
+      with: "\"work\":[{\"id\":\"new\",\"member\":\"primary\",\"assignment\":\"" +
+        String(repeating: "work-\u{1F9EA}", count: 800) + "\"}]")
+    work["artifact"] = .string(invalidWork)
+    let rejectedWork = try history.publishCollaborationMilestone(work, scope: scope(0))
+    let repair = try XCTUnwrap(rejectedWork["assessment_repair"]?.objectValue)
+    XCTAssertEqual(repair["field_path"], .string("$.work"))
+    XCTAssertNil(repair["draft"])
+    XCTAssertNil(open().goalCheckpoint(runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId))
+    var read = try XCTUnwrap(repair["draft_read"]?.objectValue)
+    XCTAssertThrowsError(try open().publishCollaborationMilestone(read, scope: scope(1)))
+    XCTAssertThrowsError(try open().publishCollaborationMilestone(oldRead, scope: scope(0)))
+    let repairStore = open()
+    var rebuilt = ""
+    var offset: Int64? = 0
+    var pages = 0
+    while let position = offset, pages < 10 {
+      read["offset"] = .int(position)
+      let page = try repairStore.publishCollaborationMilestone(read, scope: scope(0))
+      rebuilt += try XCTUnwrap(page["content"]?.strictStringValue)
+      offset = page["next_offset"]?.intValue
+      pages += 1
+    }
+    XCTAssertNil(offset)
+    XCTAssertGreaterThan(pages, 1)
+    XCTAssertEqual(rebuilt, invalidWork)
     let saved = try history.publishCollaborationMilestone(request, scope: scope(0))
     XCTAssertEqual(saved["replayed"], .bool(false))
     XCTAssertEqual(saved["goal_accepted"], .bool(false))
@@ -4496,7 +4531,9 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(try reopened.publishCollaborationMilestone(request, scope: scope(0))["replayed"], .bool(true))
     var changed = request
     changed["artifact"] = .string(raw.replacingOccurrences(of: "Measure the sample", with: "Replace the criterion"))
-    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(changed, scope: scope(0)))
+    let rejectedChange = try reopened.publishCollaborationMilestone(changed, scope: scope(0))
+    XCTAssertEqual(rejectedChange["assessment_repair"]?.objectValue?["contract_state"], .string("established"))
+    XCTAssertEqual(rejectedChange["assessment_repair"]?.objectValue?["field_path"], .string("$.criteria[0].requirement"))
     let criteria = try reopened.readPinnedCollaborationGoal(scope: scope(0), section: "criteria")
     XCTAssertEqual(criteria["sha256"], saved["criteria_sha256"])
     XCTAssertEqual(reopened.goalCheckpoint(runId: team.supervisorRunId, conversationId: team.conversationId,
