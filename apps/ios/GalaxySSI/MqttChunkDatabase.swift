@@ -162,6 +162,7 @@ final class MqttChunkDatabase {
       """)
     try execute("CREATE INDEX IF NOT EXISTS mqtt_business_outbox_schedule ON mqtt_business_outbox(binding_digest,next_attempt_at)")
     try execute("CREATE TABLE IF NOT EXISTS mqtt_signal_state (id INTEGER PRIMARY KEY CHECK(id=1), encrypted_state BLOB NOT NULL)")
+    try execute("CREATE TABLE IF NOT EXISTS mqtt_legacy_cutover (id INTEGER PRIMARY KEY CHECK(id=1), encrypted_record BLOB NOT NULL)")
     try execute("""
       CREATE TABLE IF NOT EXISTS mqtt_delivery_completions (
         record_key TEXT PRIMARY KEY NOT NULL, binding_digest TEXT NOT NULL, consumed INTEGER NOT NULL,
@@ -241,7 +242,7 @@ final class MqttChunkDatabase {
     if let saved {
       guard try open(saved, purpose: "mqtt-chunk-store-key") == Self.canary else { throw MqttChunkStorageError.corruptState }
     } else {
-      let count = try query("SELECT (SELECT COUNT(*) FROM mqtt_wire_transfers) + (SELECT COUNT(*) FROM mqtt_wire_parts) + (SELECT COUNT(*) FROM mqtt_outgoing_chunks) + (SELECT COUNT(*) FROM mqtt_business_inbox) + (SELECT COUNT(*) FROM mqtt_business_ciphertexts) + (SELECT COUNT(*) FROM mqtt_business_outbox) + (SELECT COUNT(*) FROM mqtt_signal_state) + (SELECT COUNT(*) FROM mqtt_delivery_completions)",
+      let count = try query("SELECT (SELECT COUNT(*) FROM mqtt_wire_transfers) + (SELECT COUNT(*) FROM mqtt_wire_parts) + (SELECT COUNT(*) FROM mqtt_outgoing_chunks) + (SELECT COUNT(*) FROM mqtt_business_inbox) + (SELECT COUNT(*) FROM mqtt_business_ciphertexts) + (SELECT COUNT(*) FROM mqtt_business_outbox) + (SELECT COUNT(*) FROM mqtt_signal_state) + (SELECT COUNT(*) FROM mqtt_delivery_completions) + (SELECT COUNT(*) FROM mqtt_legacy_cutover)",
                             maximumRows: 1) { try $0.number(0) }.first
       guard count == 0 else { throw MqttChunkStorageError.corruptState }
       let encrypted = try seal(Self.canary, purpose: "mqtt-chunk-store-key")

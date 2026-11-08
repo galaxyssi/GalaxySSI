@@ -133,6 +133,8 @@ object AgentPhoneNativeToolCatalog {
             add(DoorAccessNativeTool.ID)
             add(CollaborationRecallNativeTool.ID)
             add(AgentConversationRecallTool.ID)
+            add(HealthCarePlanTool.ID)
+            add(HealthCareHistoryTool.ID)
             addAll(AgentSystemEvidenceNativeTools.toolIds)
             addAll(AgentPhoneUiNativeTools.toolIds)
             addAll(AgentMcpNativeTools.toolIds)
@@ -145,6 +147,7 @@ object AgentPhoneNativeToolCatalog {
             addAll(AgentDesktopRemoteNativeTools.toolIds)
             addAll(AgentToolInspectionTools.toolIds)
             addAll(AgentAppControlTools.toolIds)
+            addAll(AgentScheduleNativeTools.toolIds)
         }
     }
 
@@ -169,10 +172,13 @@ object AgentPhoneNativeToolCatalog {
             clock = clock,
             replayStore = EncryptedAgentNativeToolReplayStore(context),
             auditStore = EncryptedAgentNativeToolAuditStore(context),
-            observationRecorder = CollaborationNativeEvidence(context.applicationContext)
+            observationRecorder = CollaborationNativeEvidence(context.applicationContext),
+            invocationAuthorization = { tool, invocation -> HealthCareDiscussion.toolRejection(context.applicationContext, tool, invocation) }
         )
         return registry.registerAll(
             AgentAppControlTools.definitions(AndroidAppControlPlatform(context.applicationContext))
+        ).registerAll(
+            AgentScheduleNativeTools.definitions(context.applicationContext)
         ).registerAll(
             AgentWebMediaNativeTools.definitions(webMediaServices)
         ).registerAll(
@@ -198,6 +204,10 @@ object AgentPhoneNativeToolCatalog {
             CollaborationRecallNativeTool.definitions(context.applicationContext)
         ).registerAll(
             AgentConversationRecallTool.definitions(context.applicationContext)
+        ).registerAll(
+            HealthCarePlanTool.definitions(context.applicationContext)
+        ).registerAll(
+            HealthCareHistoryTool.definitions(context.applicationContext)
         ).registerAll(
             AgentSystemEvidenceNativeTools.definitions(context.applicationContext)
         ).registerAll(
@@ -236,9 +246,10 @@ object AgentPhoneNativeToolCatalog {
         clock: AgentNativeClock = AgentNativeClock.SYSTEM,
         replayStore: AgentNativeToolReplayStore = InMemoryAgentNativeToolReplayStore(),
         auditStore: AgentNativeToolAuditStore = InMemoryAgentNativeToolAuditStore(),
-        observationRecorder: AgentNativeToolObservationRecorder? = null
+        observationRecorder: AgentNativeToolObservationRecorder? = null,
+        invocationAuthorization: (AgentNativeToolDescriptor, AgentNativeToolInvocationContext) -> String? = { _, _ -> null }
     ): AgentNativeToolRegistry = AgentNativeToolRegistry(clock, replayStore, auditStore,
-        observationRecorder = observationRecorder).registerAll(
+        observationRecorder = observationRecorder, invocationAuthorization = invocationAuthorization).registerAll(
         definitions(
             workspaceFileTools,
             actionExecutor,

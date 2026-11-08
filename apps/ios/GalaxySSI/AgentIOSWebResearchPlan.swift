@@ -51,6 +51,11 @@ struct AgentIOSWebResearchQueryCoverage: Equatable {
 }
 
 enum AgentIOSWebResearchPlanCodec {
+  static func isDeepResearch(_ arguments: AgentMcpJSONObject) -> Bool {
+    arguments["profile"] == .string("deep") ||
+      (arguments["profile"] == nil && !(arguments["query_plan"]?.arrayValue?.isEmpty ?? true))
+  }
+
   static let maximumItems = 32
   static let maximumQueryCharacters = 4_096
   static let maximumPurposeCharacters = 512

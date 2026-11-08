@@ -283,7 +283,7 @@ enum AgentIOSGenericArticleParser {
     }
   }
 
-  private static func links(in source: String, baseURL: URL, limit: Int) -> [String] {
+  static func links(in source: String, baseURL: URL, limit: Int) -> [String] {
     let tags = captures(pattern: #"(?is)<a\b[^>]*>"#, in: source, group: 0, limit: limit * 3)
     return unique(tags.compactMap { publicHTTPSURL(attribute("href", in: $0), baseURL: baseURL) })
       .prefix(limit).map { $0 }

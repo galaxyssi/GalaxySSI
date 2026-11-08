@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_care_plan_title">Review next steps</string>
+    <string name="health_care_plan_pending">Review proposed plan · %1$d items</string>
+    <string name="health_care_plan_notice">Select the steps you want to keep. This is an Agent proposal, not a diagnosis or medication order. Saving it does not schedule notifications.</string>
+    <string name="health_care_plan_model">Proposed by %1$s · %2$s</string>
+    <string name="health_care_plan_stale">The record, context or permission has changed. Discuss the current information before accepting this draft.</string>
+    <string name="health_care_plan_uncertainty">What still needs confirmation</string>
+    <string name="health_care_plan_sources">Model-cited sources · not independently verified</string>
+    <string name="health_care_plan_window">Suggested review window: %1$s – %2$s</string>
+    <string name="health_care_plan_window_expired">This review window has ended. Ask the Agent to reassess it.</string>
+    <string name="health_care_plan_accept">Add selected steps</string>
+    <string name="health_care_plan_dismiss">Do not adopt</string>
+    <string name="health_care_plan_saved">Plan review saved</string>
+    <string name="health_care_plan_changed">The plan or permissions changed, or the plan cannot be saved. Reopen the current concern and review it again.</string>
+</resources>

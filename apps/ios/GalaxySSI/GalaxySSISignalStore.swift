@@ -80,6 +80,26 @@ final class GalaxySSISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
 
   func identityKeyPair(context: StoreContext) throws -> IdentityKeyPair { identityKeyPair }
 
+  struct LegacyMigrationSnapshot {
+    let state: Data
+    let localFingerprint: String
+    let trustedFingerprints: [String: String]
+
+    var localName: String { "galaxyssi:\(localFingerprint.prefix(16))" }
+  }
+
+  static func legacyMigrationSnapshot(defaults: UserDefaults, secrets: GalaxySSISecretStore) throws -> LegacyMigrationSnapshot {
+    guard let state = loadState(defaults: defaults, secrets: secrets, stateKey: "galaxyssi-ios-libsignal-state-v1",
+      encryptionKeyAccount: "signal.libsignal.state.aes256"), (1..<16_384).contains(state.registrationId)
+    else { throw MqttChunkStorageError.corruptState }
+    let identity = try IdentityKeyPair(bytes: state.identityKeyPair)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    return LegacyMigrationSnapshot(state: try encoder.encode(state),
+      localFingerprint: MqttRouteProtocol.digest(identity.publicKey.serialize()),
+      trustedFingerprints: state.identities.mapValues(MqttRouteProtocol.digest))
+  }
+
   init(journal: MqttSignalStateJournal, defaults: UserDefaults = .standard,
        secrets: GalaxySSISecretStore = KeychainSecretStore.shared) throws {
     self.defaults = defaults

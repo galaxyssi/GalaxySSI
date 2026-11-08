@@ -105,9 +105,10 @@ final class MqttBusinessInbox {
     }
   }
 
-  func storedReceipt(identity: MqttBusinessIdentity, messageID: String, wireHash: String) throws -> Receipt? {
+  func storedReceipt(identity: MqttBusinessIdentity, messageID: String, wireHash: String,
+                     transaction: MqttChunkDatabase.Transaction? = nil) throws -> Receipt? {
     let key = try identity.key(messageID: messageID)
-    return try database.transaction {
+    return try database.transaction(joining: transaction) {
       guard let saved = try record(key), saved.identity == identity, saved.receiptRequired,
             saved.aliases.values.contains(wireHash) else { return nil }
       return Receipt(identity: identity, messageID: messageID, wireHash: wireHash, recordKey: key)

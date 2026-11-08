@@ -19,6 +19,65 @@ import org.junit.runner.RunWith
 /** Isolated synthetic schedules. No model dispatch, contact action, or external app launch. */
 @RunWith(AndroidJUnit4::class)
 class ConversationScheduledTasksDeviceTest {
+    @Test fun modelScheduleCreationIsDurableAndDoesNotReexecuteOnReplay() = isolated { context ->
+        val conversation = AgentTranscriptStore(context).createConversation("Model schedule fixture", privateMode = true)
+        val scope = AgentNativeToolInvocationContext(conversationId = conversation.id, turnId = "fixture-turn")
+        val input = mapOf("operation" to "create", "prompt" to "Inspect synthetic state",
+            "schedule_label" to "Every day", "schedule" to mapOf("kind" to "interval", "interval_seconds" to 86400))
+        val created = AgentScheduleNativeTools.apply(context, scope, input)
+        assertTrue(created.error?.message, created.isSuccess)
+        assertEquals(false, created.output["execution_verified"])
+        val store = AgentProactiveTaskStore(context)
+        val task = store.tasks().single()
+        val runs = store.runs(task.taskId)
+        val launches = context.launches
+        assertTrue(AgentScheduleNativeTools.apply(context, scope.copy(invocationId = "retry"), input).isSuccess)
+        assertEquals(1, AgentProactiveTaskStore(context).tasks().size)
+        assertEquals(runs, store.runs(task.taskId))
+        assertEquals(launches, context.launches)
+        assertEquals(1, AgentTranscriptStore(context).list(conversation.id).size)
+    }
+
+    @Test fun modelControlsRejectForeignConversationAndStaleRevision() = isolated { context ->
+        val task = ConversationScheduledTasks.save(context, "owner", command("Inspect fixture"))
+        val input = mapOf("operation" to "pause", "task_id" to task.taskId, "expected_revision" to task.revision)
+        val foreign = AgentScheduleNativeTools.apply(context,
+            AgentNativeToolInvocationContext(conversationId = "foreign", turnId = "turn"), input)
+        assertEquals("schedule_not_found", foreign.error?.code)
+        val owner = AgentNativeToolInvocationContext(conversationId = "owner", turnId = "turn")
+        assertEquals("schedule_revision_conflict", AgentScheduleNativeTools.apply(context, owner,
+            input + ("expected_revision" to task.revision + 1)).error?.code)
+        assertTrue(requireNotNull(AgentProactiveTaskStore(context).task(task.taskId)).enabled)
+        assertTrue(AgentScheduleNativeTools.apply(context, owner, input).isSuccess)
+        assertFalse(requireNotNull(AgentProactiveTaskStore(context).task(task.taskId)).enabled)
+    }
+
+    @Test fun pausedTaskDoesNotRedeliverAnUnacknowledgedOldResult() = isolated { context ->
+        val transcript = AgentTranscriptStore(context)
+        val conversation = transcript.createConversation("Paused delivery fixture", privateMode = true)
+        val task = ConversationScheduledTasks.save(context, conversation.id, command("Inspect fixture"))
+        val store = AgentProactiveTaskStore(context)
+        val result = store.runs(task.taskId).single().copy(status = AgentProactiveRunStatus.COMPLETED,
+            completedAtMillis = System.currentTimeMillis(), resultSummary = "Old synthetic result")
+        store.upsertRun(result)
+        ConversationScheduledTasks.setEnabled(context, task.taskId, false)
+        assertFalse(ConversationScheduledTasks.deliver(context, task, result))
+        assertTrue(transcript.list(conversation.id).isEmpty())
+        assertTrue(requireNotNull(store.run(result.runId)).deliveryRecorded)
+        ConversationScheduledTasks.setEnabled(context, task.taskId, true)
+        assertFalse(ConversationScheduledTasks.deliver(context, task, result))
+        assertTrue(transcript.list(conversation.id).isEmpty())
+    }
+
+    @Test fun scheduledOccurrenceCannotCreateARecursiveSchedule() = isolated { context ->
+        val result = AgentScheduleNativeTools.apply(context,
+            AgentNativeToolInvocationContext(conversationId = "proactive:fixture", turnId = "occurrence"),
+            mapOf("operation" to "create", "prompt" to "Inspect fixture", "schedule_label" to "Every day",
+                "schedule" to mapOf("kind" to "interval", "interval_seconds" to 86400)))
+        assertEquals("nested_schedule_rejected", result.error?.code)
+        assertTrue(AgentProactiveTaskStore(context).tasks().isEmpty())
+    }
+
     @Test fun speechReadsTheVisibleCardAfterLiveStatusChanges() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.runOnMainSync {

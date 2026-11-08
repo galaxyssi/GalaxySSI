@@ -1,0 +1,19 @@
+<resources>
+    <string name="health_applicability_legacy">这份旧草案没有结构化适用性核对，仍可保留信息核对或医生咨询事项。</string>
+    <string name="health_applicability_discussion">仅用于核对或咨询，不代表已经确认医学建议适用。</string>
+    <string name="health_applicability_match">已声明的条件与保存资料相符。这仍是模型评估，未经过独立临床验证。</string>
+    <string name="health_applicability_unknown">适用性待确认，必要信息尚未补齐。</string>
+    <string name="health_applicability_mismatch">已声明的适用条件与保存资料不符。</string>
+    <string name="health_applicability_conflict">来源存在分歧，需要进一步核对。</string>
+    <string name="health_applicability_equals">%1$s</string>
+    <string name="health_applicability_at_least">至少 %1$s</string>
+    <string name="health_applicability_at_most">至多 %1$s</string>
+    <string name="health_applicability_check">%1$s\n来源要求：%2$s · 已保存：%3$s\n依据 %4$d</string>
+    <string name="health_applicability_missing">还需核对\n%1$s</string>
+    <string name="health_applicability_conflict_detail">来源分歧（%1$s）\n%2$s\n下一步：%3$s</string>
+    <string name="health_applicability_blocked">请先讨论或确认缺失信息，再采用这项行动。</string>
+    <string name="health_applicability_metric">检测指标</string>
+    <string name="health_applicability_unit">单位</string>
+    <string name="health_applicability_collection">采集条件</string>
+    <string name="health_applicability_source">%1$d. %2$s</string>
+</resources>

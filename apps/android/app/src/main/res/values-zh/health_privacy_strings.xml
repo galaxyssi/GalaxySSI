@@ -13,7 +13,7 @@
     <string name="health_privacy_profile">健康背景</string>
     <string name="health_privacy_profile_detail">分析时仅使用所选本人自述资料</string>
     <string name="health_privacy_online">在线健康分析</string>
-    <string name="health_privacy_online_detail">在线健康分析尚未接入，此处不会发送数据。</string>
+    <string name="health_privacy_online_detail">允许在确认后，将限定范围的健康资料发送给所选云端或 Desktop Agent。自动跟进仍需对具体健康事项单独授权。</string>
     <string name="health_privacy_images">报告原始图片</string>
     <string name="health_privacy_images_detail">单独授权，在线请求仍需逐次确认</string>
     <string name="health_privacy_storage">本机数据管理</string>

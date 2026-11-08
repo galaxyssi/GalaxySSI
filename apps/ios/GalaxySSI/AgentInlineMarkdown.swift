@@ -44,7 +44,10 @@ enum AgentInlineMarkdown {
         result.append(AgentInlineSegment(text: String(value[cursor..<next.range.lowerBound])))
       }
       if next.style == .link, next.groups.count >= 2 {
-        result.append(AgentInlineSegment(text: next.groups[0], style: next.style, url: next.groups[1]))
+        let destination = next.groups[1]
+        let url = destination.hasPrefix("<") && destination.hasSuffix(">")
+          ? String(destination.dropFirst().dropLast()) : destination
+        result.append(AgentInlineSegment(text: next.groups[0], style: next.style, url: url))
       } else {
         result.append(AgentInlineSegment(text: next.groups.first ?? "", style: next.style))
       }
@@ -90,7 +93,7 @@ enum AgentInlineMarkdown {
   private static let tokens = [
     Token(style: .bold, pattern: #"\*\*([^*\n]+)\*\*"#),
     Token(style: .strike, pattern: #"~~([^~\n]+)~~"#),
-    Token(style: .link, pattern: #"\[([^\]\n]+)\]\((https?://[^\)\s]+)\)"#),
+    Token(style: .link, pattern: #"\[([^\]\n]+)\]\((<https?://[^<>\s]+>|https?://[^)\s<>]+)\)"#),
     Token(style: .code, pattern: #"`([^`\n]+)`"#),
     Token(style: .italic, pattern: #"(?<!\*)\*([^*\n]+)\*(?!\*)"#)
   ]

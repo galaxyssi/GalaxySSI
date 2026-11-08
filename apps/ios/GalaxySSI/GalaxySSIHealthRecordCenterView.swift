@@ -47,8 +47,8 @@ struct GalaxySSIHealthRecordCenterView<Devices: View>: View {
       if scene == .active {
         Section(t("record_center.entry", "Record health data")) {
           NavigationLink {
-            GalaxySSIHealthImportView(store: originals, records: records, initialAction: .scan)
-          } label: { Label(t("record_center.camera", "Scan report"), systemImage: "camera") }
+            GalaxySSIHealthPhotoCaptureView(records: records, originals: originals)
+          } label: { Label(t("record_center.photos", "Capture health photos"), systemImage: "camera") }
           Button { addManual(nil) } label: {
             Label(t("manual", "Record measurement"), systemImage: "square.and.pencil")
           }

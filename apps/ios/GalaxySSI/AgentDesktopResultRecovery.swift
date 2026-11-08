@@ -1,5 +1,57 @@
 import CryptoKit
 import Foundation
+import os
+
+struct AgentDesktopEvidenceQueryTrace {
+  enum Stage: String {
+    case publishStarted = "publish_started", publishAccepted = "publish_accepted", publishRejected = "publish_rejected"
+    case responseReceived = "response_received", responseLate = "response_late", timedOut = "timed_out"
+    case routeMismatch = "paired_route_mismatch", invalidResponse = "invalid_response"
+    case indexValidated = "index_validated", indexRejected = "index_rejected"
+    case pageStaged = "page_staged", pageNotStaged = "page_not_staged"
+  }
+
+  struct LateQueries {
+    private struct Entry {
+      let desktop: String
+      let route: String
+      let started: Int64
+      let expires: Int64
+    }
+    private var entries: [String: Entry] = [:]
+
+    mutating func remember(_ nonce: String, desktop: String, route: String, started: Int64, now: Int64) {
+      guard !nonce.isEmpty, !desktop.isEmpty, !route.isEmpty, started >= 0, now >= started,
+            now <= Int64.max - 60_000 else { return }
+      entries = entries.filter { $0.value.expires > now }
+      if entries.count >= 64, let oldest = entries.min(by: { $0.value.expires < $1.value.expires }) {
+        entries.removeValue(forKey: oldest.key)
+      }
+      entries[nonce] = Entry(desktop: desktop, route: route, started: started, expires: now + 60_000)
+    }
+
+    mutating func consume(_ nonce: String, desktop: String, route: String, now: Int64) -> Int64? {
+      guard let entry = entries[nonce], entry.desktop == desktop, entry.route == route,
+            now >= entry.started, now < entry.expires else { return nil }
+      entries.removeValue(forKey: nonce)
+      return entry.started
+    }
+  }
+
+  private static let logger = Logger(subsystem: "com.galaxyssi.chat.ios", category: "desktop-evidence")
+  static var now: Int64 { Int64(ProcessInfo.processInfo.systemUptime * 1_000) }
+
+  static func token(_ nonce: String) -> String {
+    guard (1...128).contains(nonce.utf8.count) else { return "unavailable" }
+    return SHA256.hash(data: Data(nonce.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
+  }
+
+  static func record(_ stage: Stage, nonce: String, started: Int64) {
+    let correlation = token(nonce)
+    let elapsed = max(0, now - started)
+    logger.info("Evidence query rpc=\(correlation, privacy: .public) stage=\(stage.rawValue, privacy: .public) elapsed_ms=\(elapsed, privacy: .public)")
+  }
+}
 
 enum AgentDesktopToolEvidenceWire {
   static let contract = "galaxyssi.desktop-tool-evidence/1"

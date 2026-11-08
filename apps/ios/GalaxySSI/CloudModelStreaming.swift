@@ -423,7 +423,7 @@ protocol CloudModelStreamClient {
   func cancel(requestId: String, reason: ModelStreamCancelReason) async
 }
 
-struct AssembledToolCall: Codable, Equatable {
+struct AssembledToolCall: Codable, Equatable, Sendable {
   var callId: String
   var index: Int
   var name: String

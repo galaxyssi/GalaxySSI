@@ -48,6 +48,7 @@ final class AgentIOSWebFetchSingleFlightTests: XCTestCase {
     private let lock = NSLock()
     private(set) var invocationCount = 0
     var resolvedURL: String?
+    var body: String?
 
     func availability(operation: AgentIOSWebMediaOperation) -> AgentNativeToolAvailability {
       .available
@@ -64,13 +65,14 @@ final class AgentIOSWebFetchSingleFlightTests: XCTestCase {
       let url = input["url"]?.stringValue ?? ""
       let finalURL = resolvedURL ?? url
       Thread.sleep(forTimeInterval: 0.08)
-      let text = "<html><title>Cached page</title><main>Durable readable content</main></html>"
+      let text = body ?? "<html><title>Cached page</title><main>Durable readable content</main></html>"
       return .success(output: [
         "status_code": .int(200),
         "content_type": .string("text/html"),
         "content_length_bytes": .int(Int64(text.utf8.count)),
         "retrieved_at_epoch_ms": .int(2_000),
         "text": .string(text),
+        "links": .array([.string("https://cache.example/2026/09/18/article")]),
         "html_sha256": .string(String(repeating: "a", count: 64)),
         "source": .object([
           "requested_url": .string(url),
@@ -187,6 +189,8 @@ final class AgentIOSWebFetchSingleFlightTests: XCTestCase {
       nowMillis: { 2_500 }
     )
     let webMedia = FakeWebMediaProvider()
+    let body = String(repeating: "a", count: 256) + String(repeating: "b", count: 256)
+    webMedia.body = body
     let first = AgentIOSURLSessionWebIntelligenceProvider(
       webMediaProvider: webMedia,
       cacheStore: cache,
@@ -216,14 +220,29 @@ final class AgentIOSWebFetchSingleFlightTests: XCTestCase {
       "timeout_ms": .int(30_000)
     ]
 
-    let network = first.invoke(operation: .fetch, input: input, invocation: invocation)
-    let cached = second.invoke(operation: .fetch, input: input, invocation: invocation)
+    var windowInput = input
+    windowInput["length"] = .int(256)
+    let network = first.invoke(operation: .fetch, input: windowInput, invocation: invocation)
+    let window = try XCTUnwrap(network.output["reading_window"]?.objectValue)
+    let version = try XCTUnwrap(window["document_sha256"])
+    windowInput["offset"] = try XCTUnwrap(window["next_offset"])
+    windowInput["document_sha256"] = version
+    let cached = second.invoke(operation: .fetch, input: windowInput, invocation: invocation)
+    let whole = second.invoke(operation: .fetch, input: input, invocation: invocation)
 
     XCTAssertTrue(network.isSuccess)
     XCTAssertTrue(cached.isSuccess)
     XCTAssertEqual(webMedia.invocationCount, 1)
     XCTAssertEqual(cached.output["cache"]?.objectValue?["hit"], .bool(true))
     XCTAssertEqual(cached.output["source"]?.objectValue?["source_id"], .string("local_cache"))
+    let links: AgentMcpJSONValue = .array([.string("https://cache.example/2026/09/18/article")])
+    XCTAssertEqual(network.output["links"], links)
+    XCTAssertEqual(cached.output["links"], links)
+    XCTAssertEqual(network.output["text"], .string(String(repeating: "a", count: 256)))
+    XCTAssertEqual(cached.output["text"], .string(String(repeating: "b", count: 256)))
+    XCTAssertEqual(cached.output["reading_window"]?.objectValue?["document_sha256"], version)
+    XCTAssertEqual(cached.output["reading_window"]?.objectValue?["next_offset"], .null)
+    XCTAssertEqual(whole.output["text"], .string(body))
   }
 
   func testRedirectedFetchCachesUnderRequestedURL() throws {

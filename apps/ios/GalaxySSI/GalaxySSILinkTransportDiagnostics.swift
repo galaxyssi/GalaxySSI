@@ -8,8 +8,10 @@ enum GalaxySSILinkDiagnosticKind: String, Codable, CaseIterable {
   case duplicateReceipt = "duplicate_receipt"
   case oldCounter = "old_counter"
   case decryptFailure = "decrypt_failure"
+  case decryptDeferred = "decrypt_deferred"
   case chunkDuplicate = "chunk_duplicate"
   case fragmentRejected = "fragment_rejected"
+  case publishAdmissionRefused = "publish_admission_refused"
 
   static func fromWireName(_ value: String) -> GalaxySSILinkDiagnosticKind? {
     allCases.first { $0.rawValue == value }
