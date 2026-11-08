@@ -79,4 +79,32 @@ class HealthCareResearchTest {
         assertEquals(job, HealthCareResearchJob.from(job.json()))
         assertFalse(job.json().has("assessment")); assertFalse(job.json().has("snapshot"))
     }
+    @Test fun displayedStateRequiresCurrentEvidenceConsentAndConversation() {
+        val bound = issue.copy(conversationId = grant.conversationId)
+        val completed = HealthCareResearchJob(UUID.randomUUID().toString(), authorization.id, issue.id, grant.conversationId,
+            key(), 1, now, HealthCareResearchState.COMPLETED)
+        fun state(c: HealthCareConcern = bound, a: HealthCareResearchAuthorization? = authorization,
+            job: HealthCareResearchJob? = completed, at: Long = now) = HealthCareResearchPolicy.displayState(c, a, job, at)
+        assertEquals(HealthCareResearchState.COMPLETED, state())
+        assertEquals(HealthCareResearchState.FAILED, state(job = completed.copy(state = HealthCareResearchState.FAILED)))
+        assertNull(state(a = null)); assertNull(state(job = null))
+        assertNull(state(a = authorization.copy(revokedAt = now)))
+        assertNull(state(a = authorization.copy(id = UUID.randomUUID().toString())))
+        assertNull(state(a = authorization.copy(scope = grant.copy(concernId = UUID.randomUUID().toString()))))
+        assertNull(state(c = bound.copy(conversationId = UUID.randomUUID().toString())))
+        assertNull(state(c = bound.copy(inputVersion = "new-measurement")))
+        assertNull(state(c = bound.copy(stage = HealthCareStage.PAUSED)))
+        assertEquals(HealthCareResearchState.COMPLETED, state(c = bound.copy(revision = 2, reviewNote = "Displayed")))
+        assertEquals(HealthCareResearchState.COMPLETED, state(c = bound.copy(actions = listOf(action))))
+        assertNull(state(c = bound.copy(actions = listOf(action)), at = now + 1000))
+    }
+    @Test fun displayRefreshUsesOnlyTheNextFutureDeadlineWithoutPollingPastOnes() {
+        val later = action.copy(id = UUID.randomUUID().toString(), dueFrom = now + 5000, dueUntil = now + 10000)
+        val planned = issue.copy(actions = listOf(later, action))
+        assertEquals(now + 1000, HealthCareResearchPolicy.nextDisplayChange(planned, now))
+        assertEquals(now + 5000, HealthCareResearchPolicy.nextDisplayChange(planned, now + 1000))
+        assertNull(HealthCareResearchPolicy.nextDisplayChange(planned, now + 5000))
+        assertNull(HealthCareResearchPolicy.nextDisplayChange(planned.copy(stage = HealthCareStage.PAUSED), now))
+        assertNull(HealthCareResearchPolicy.nextDisplayChange(issue.copy(actions = listOf(action.copy(state = HealthCareActionState.DECLINED))), now))
+    }
 }

@@ -540,6 +540,17 @@ remains separate from the isolated storage, policy and UI regression suite.
 
 ### Production-path acceptance runner
 
+The Agent landing surface shows a compact reason, workflow next step and direct
+discussion entry. Detailed plan, reminder, target and history controls expand
+inside a height-bounded scroll area instead of consuming the reply viewport.
+The display follows the current authorization and evidence trigger; an old
+completed review cannot describe a newer measurement or newly due action as
+already reviewed. A pending proposal remains separate from accepted actions.
+One foreground callback refreshes the next deadline even without another data
+event; it is removed on pause and is not a periodic background poll.
+Opening the private discussion does not authorize a model call. Backgrounding,
+conversation changes and privacy revocation clear the relevant visible state.
+
 `HealthCareAutomaticResearchDeviceTest` is an explicitly opted-in, paid-provider
 probe. Build the instrumentation APK with `-PhealthResearchAcceptance=true`,
 which selects `HealthResearchAcceptanceRunner`, and run it with
@@ -583,6 +594,13 @@ improvement; no target, maintenance state, closure, additional adopted action or
 reminder may appear. Its consent is revoked on success. Durable markers support
 replay without recording the outcome or submitting the request again. This does
 not substitute for a real elapsed clinical review window or multi-day follow-up.
+
+The `surface` phase uses that isolated archive to exercise the production Agent
+landing entry, rather than a fixture-only view. It opens an unrelated temporary
+private conversation, taps the health discussion entry and verifies reuse of the
+original private health conversation without renewing research consent. It needs
+an unlocked display, does not send another provider request, and removes its
+temporary conversation afterward.
 
 The runner redirects databases, task files and non-pairing preferences into a
 dedicated acceptance namespace before the application and workers initialize.

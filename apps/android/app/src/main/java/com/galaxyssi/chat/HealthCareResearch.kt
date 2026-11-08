@@ -42,6 +42,16 @@ internal data class HealthCareResearchJob(val turnId: String, val authorizationI
 }
 
 internal object HealthCareResearchPolicy {
+    fun displayState(issue: HealthCareConcern, authorization: HealthCareResearchAuthorization?, job: HealthCareResearchJob?, now: Long): HealthCareResearchState? =
+        job?.state?.takeIf {
+            eligible(issue) && authorization?.active == true && job.authorizationId == authorization.id && job.concernId == issue.id &&
+                authorization.scope.concernId == issue.id && authorization.scope.conversationId == issue.conversationId &&
+                job.conversationId == issue.conversationId && job.trigger == trigger(issue, now)
+        }
+
+    fun nextDisplayChange(issue: HealthCareConcern, now: Long): Long? = if (!eligible(issue)) null else issue.actions
+        .filter { it.state == HealthCareActionState.CONFIRMED }.mapNotNull { it.dueFrom }.filter { it > now }.minOrNull()
+
     fun eligible(issue: HealthCareConcern) = issue.open && issue.stage !in setOf(HealthCareStage.PAUSED, HealthCareStage.CLOSED) &&
         issue.assessment.record != null && HealthCareSignal.SOURCE_REMOVED !in issue.assessment.signals
 
