@@ -168,6 +168,13 @@ enum AgentCollaborationReasoningSelection {
           profile.reasoningEfforts.contains(explicit) else { return nil }
     return AgentInvocationRequestJsonCodec.encode(modelId: model, reasoningEffort: explicit)
   }
+
+  static func rosterInvocation(model: String, effort: String?, adapter: String,
+                               profile: AgentInvocationProfile) -> [String: String]? {
+    if let effort { return invocation(model: model, effort: effort, adapter: adapter, profile: profile) }
+    guard adapter == "codex-app-server-or-cli", profile.models.contains(where: { $0.id == model }) else { return nil }
+    return AgentInvocationRequestJsonCodec.encode(modelId: model, reasoningEffort: .automatic)
+  }
 }
 
 enum AgentConnectorKind: String, Codable, CaseIterable, Identifiable {

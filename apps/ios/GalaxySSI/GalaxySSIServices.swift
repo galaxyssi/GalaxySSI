@@ -2776,8 +2776,7 @@ final class MessageCoordinator: ObservableObject {
           let session = store.agentSession(id: identity.conversationId), session.id == identity.conversationId,
           session.mergedIntoConversationId.isBlank, !session.privateMode, !session.trackingPaused,
           let roster = session.collaborationRoster,
-          let person = context.member.memberId.split(separator: ":").first, let personId = UUID(uuidString: String(person)),
-          roster.members.contains(where: { $0.id == personId }),
+          AgentCollaborationMemberIdentity(nodeID: context.member.memberId)?.member(in: roster)?.resourceId == contact,
           let parent = store.agentTask(id: context.team.taskId),
           parent.phase == .executing || parent.phase == .waitingResponse
     else { return }
@@ -4204,7 +4203,8 @@ final class MessageCoordinator: ObservableObject {
     let collaborationPlan: AgentPlan?
     if let session = groupSession,
        let roster = session.collaborationRoster {
-      guard !session.privateMode, !session.trackingPaused, !readOnlyAnalysis, taskExecutionMode == .autoComplete,
+      guard session.mergedIntoConversationId.isBlank, !session.privateMode, !session.trackingPaused,
+            !readOnlyAnalysis, taskExecutionMode == .autoComplete,
             !requestText.isBlank,
             let first = roster.members.first(where: { $0.id == roster.coordinatorId }),
             let plan = requestedAgentPlan(goal: requestText,
@@ -4212,15 +4212,15 @@ final class MessageCoordinator: ObservableObject {
               targets: callableTargets, roster: roster, mentionedMemberIds: groupMentions?.memberIds ?? []),
             let spec = plan.actions.first.flatMap({
               AgentTeamDispatchSpecCodec.decode($0.parameters[agentTeamSpecParameter] ?? "")
-            }), spec.definition.members.allSatisfy({ member in
-              let modelId = member.context["_galaxyssi_member_model_id"] ?? ""
-              guard !modelId.isEmpty else { return true }
-              guard let target = store.contact(id: member.agentId),
-                    let model = target.cloudModels.first(where: { $0.id == modelId }) else { return false }
-              return !(store.apiKey(for: model) ?? "").isEmpty
             }) else {
         lastError = GalaxySSILocalization.string("galaxyssi.collaboration.execution_unavailable",
           fallback: "The group cannot run with its current members or session settings. Your draft has not been sent.",
+          language: store.languagePolicy.interfaceLanguage)
+        return false
+      }
+      guard spec.definition.members.allSatisfy({ collaborationMemberRouteIsCurrent($0, roster: roster) }) else {
+        lastError = GalaxySSILocalization.string("galaxyssi.collaboration.member_binding_invalid",
+          fallback: "A collaboration member or its assigned model changed. Check the group settings and try again.",
           language: store.languagePolicy.interfaceLanguage)
         return false
       }
@@ -7938,6 +7938,12 @@ final class MessageCoordinator: ObservableObject {
 
     let ordered: [AgentTeamMember]
     if isCollaboration {
+      guard let session = store.agentSession(id: outgoing.conversationId), let roster = session.collaborationRoster,
+            session.mergedIntoConversationId.isBlank, !session.privateMode, !session.trackingPaused,
+            spec.definition.members.allSatisfy({ collaborationMemberRouteIsCurrent($0, roster: roster) }) else {
+        throw GalaxySSIError.invalidPayload(localizedReply("galaxyssi.collaboration.member_binding_invalid",
+          fallback: "A collaboration member or its assigned model changed. Check the group settings and try again."))
+      }
       guard let schedule = AgentTeamPlanCompiler.collaborationDispatchOrder(spec.definition.members) else {
         throw GalaxySSIError.invalidPayload("Invalid collaboration stage dependencies")
       }
@@ -7995,6 +8001,12 @@ final class MessageCoordinator: ObservableObject {
       if isCollaboration {
         try Task.checkCancellation()
         guard store.profile.identityFingerprint == profileIdentity else { throw CancellationError() }
+        guard let session = store.agentSession(id: outgoing.conversationId), let roster = session.collaborationRoster,
+              session.mergedIntoConversationId.isBlank, !session.privateMode, !session.trackingPaused,
+              collaborationMemberRouteIsCurrent(member, roster: roster) else {
+          throw GalaxySSIError.invalidPayload(localizedReply("galaxyssi.collaboration.member_binding_invalid",
+            fallback: "A collaboration member or its assigned model changed. Check the group settings and try again."))
+        }
       }
       if recovery != nil {
         let history = AgentTeamExecutionHistoryStore.shared
@@ -8315,6 +8327,23 @@ final class MessageCoordinator: ObservableObject {
     )
     if let frozenDispatch { try managedBrowserContinuations.finishTeamDispatch(frozenDispatch) }
     return primaryPublished
+  }
+
+  private func collaborationMemberRouteIsCurrent(_ member: AgentTeamMember, roster: AgentCollaborationRoster) -> Bool {
+    guard let entry = AgentTeamPlanCompiler.rosterMember(for: member, in: roster) else { return false }
+    if entry.resourceId == "local-llm" { return entry.modelId.isBlank && entry.reasoningEffort == nil }
+    guard let contact = store.contact(id: entry.resourceId), contact.id == entry.resourceId, contact.isCommunicable else {
+      return false
+    }
+    if contact.deliveryMode == .cloudAPI {
+      let model = entry.modelId.isBlank ? contact.selectedCloudModel : contact.cloudModels.first { $0.id == entry.modelId }
+      guard let model, entry.reasoningEffort == nil else { return false }
+      return !(store.apiKey(for: model) ?? "").isBlank
+    }
+    guard contact.deliveryMode.isGalaxySSILinkFamily else { return false }
+    if entry.modelId.isBlank { return entry.reasoningEffort == nil }
+    return AgentCollaborationReasoningSelection.rosterInvocation(model: entry.modelId, effort: entry.reasoningEffort,
+      adapter: contact.connectorAdapterName, profile: contact.connectorInvocationProfile) != nil
   }
 
   private func waitForCollaborationTransport(conversationId: String, profileIdentity: String) async throws {
@@ -9013,8 +9042,7 @@ final class MessageCoordinator: ObservableObject {
     -> AgentCollaborationToolEvidenceScope? {
     guard let scope, let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
           let roster = session.collaborationRoster,
-          let member = scope.memberId.split(separator: ":").first, let memberId = UUID(uuidString: String(member)),
-          roster.members.contains(where: { $0.id == memberId }),
+          scope.rosterMember(in: roster)?.resourceId == "local-llm",
           session.mergedIntoConversationId.isBlank, !session.privateMode, !session.trackingPaused else { return nil }
     return scope
   }
@@ -13063,23 +13091,23 @@ final class MessageCoordinator: ObservableObject {
       payload["_galaxyssi_task_execution_mode"] = executionMode.rawValue
       payload["original_goal"] = String(text.prefix(500))
     }
-    if let member = teamContext?.member, let effort = member.context[AgentCollaborationReasoningSelection.contextKey] {
-      guard !peerChat, member.context["_galaxyssi_selection_source"] == "collaboration_roster",
-            let model = member.context["_galaxyssi_member_model_id"],
-            let invocation = AgentCollaborationReasoningSelection.invocation(model: model, effort: effort,
-              adapter: contact.connectorAdapterName, profile: contact.connectorInvocationProfile) else {
-        throw GalaxySSIError.invalidPayload("The assigned Codex model or reasoning effort is unavailable")
+    if !peerChat, let member = teamContext?.member,
+       member.context["_galaxyssi_selection_source"] == "collaboration_roster" {
+      guard let session, let roster = session.collaborationRoster, session.mergedIntoConversationId.isBlank,
+            !session.privateMode, !session.trackingPaused,
+            let entry = AgentTeamPlanCompiler.rosterMember(for: member, in: roster), entry.resourceId == contact.id else {
+        throw GalaxySSIError.invalidPayload(localizedReply("galaxyssi.collaboration.member_binding_invalid",
+          fallback: "A collaboration member or its assigned model changed. Check the group settings and try again."))
       }
-      payload["agent_invocation"] = invocation
-    } else if !peerChat, let member = teamContext?.member,
-              member.context["_galaxyssi_selection_source"] == "collaboration_roster",
-              contact.connectorAdapterName == "codex-app-server-or-cli",
-              let model = member.context["_galaxyssi_member_model_id"], !model.isBlank {
-      guard contact.connectorInvocationProfile.models.contains(where: { $0.id == model }),
-            let invocation = AgentInvocationRequestJsonCodec.encode(modelId: model, reasoningEffort: .automatic) else {
-        throw GalaxySSIError.invalidPayload("The assigned Codex model is unavailable")
+      if !entry.modelId.isBlank {
+        guard let invocation = AgentCollaborationReasoningSelection.rosterInvocation(model: entry.modelId,
+          effort: entry.reasoningEffort, adapter: contact.connectorAdapterName, profile: contact.connectorInvocationProfile) else {
+          throw GalaxySSIError.invalidPayload("The assigned Codex model or reasoning effort is unavailable")
+        }
+        payload["agent_invocation"] = invocation
       }
-      payload["agent_invocation"] = invocation
+    } else if teamContext?.member.context[AgentCollaborationReasoningSelection.contextKey] != nil {
+      throw GalaxySSIError.invalidPayload("The assigned Codex model or reasoning effort is unavailable")
     } else if let replay = codexReplay?.codexReplay {
       if replay.budget.origin == contact.id, let invocation = replay.invocation {
         payload["agent_invocation"] = invocation
