@@ -29,6 +29,8 @@ final class MqttBusinessTransportRuntime {
   private var started = false
   private var stopped = false
   private var polling = false
+  private var peerChatProjection: MqttPeerChatProjection?
+  private var configuredDirectPeers: [Peer] = []
 
   // The caller must first quiesce legacy Signal, inbox and outbox writers. Once this returns a
   // marker, that account must reopen the new runtime; it must not restart the old sender.
@@ -106,6 +108,52 @@ final class MqttBusinessTransportRuntime {
       apply: { try await projectCompletion($0) })
   }
 
+  convenience init(peerChatStore store: GalaxySSIStore, localFingerprint: String,
+                   journal: MqttSignalStateJournal, routeState: MqttRouteState,
+                   pool: GalaxySSIMqttBrokerPool = .init(), onFailure: @escaping @MainActor (Error) -> Void = { _ in }) throws {
+    guard let cutover = try journal.legacyCutover(), cutover.localFingerprint == localFingerprint else {
+      throw MqttDeliveryDispatch.Failure.unavailable
+    }
+    let projection = MqttPeerChatProjection(store: store, localFingerprint: localFingerprint)
+    try self.init(profileName: store.profile.galaxySSIId, journal: journal, routeState: routeState,
+      defaults: store.defaults, secrets: store.secrets, pool: pool,
+      projectInbound: { _ = try projection.projectInbound($0) },
+      projectCompletion: { try projection.projectCompletion($0) }, onFailure: onFailure)
+    guard engine.identity.fingerprint == localFingerprint else { throw MqttRouteError.identityChanged }
+    peerChatProjection = projection
+  }
+
+  func startDirectPeerChat(configuration: MqttBrokerPathConfiguration) throws {
+    guard let projection = peerChatProjection else { throw MqttDeliveryDispatch.Failure.unavailable }
+    let peers = projection.currentPeers()
+    try start(configuration: configuration, peers: peers)
+    configuredDirectPeers = peers
+  }
+
+  func enqueueDirectPeerText(messageId: UUID, contactId: String) throws -> MqttBusinessOutbox.Entry {
+    guard let projection = peerChatProjection else { throw MqttDeliveryDispatch.Failure.unavailable }
+    try refreshDirectPeerBindings()
+    let request = try projection.outgoingRequest(for: messageId, contactId: contactId)
+    guard let entry = try enqueue([request]).first else { throw MqttRouteError.invalidPayload }
+    return entry
+  }
+
+  // A changed route must be configured by the owner before it can send. Never silently move
+  // an existing durable queue to a different relationship.
+  func refreshDirectPeerBindings() throws {
+    guard let projection = peerChatProjection, started, !stopped, !configuredDirectPeers.isEmpty else { return }
+    let current = Dictionary(grouping: projection.currentPeers(), by: { $0.binding.scope })
+    let retained = configuredDirectPeers.filter { peer in
+      guard let matches = current[peer.binding.scope], matches.count == 1, let match = matches.first else { return false }
+      return match.binding == peer.binding && match.remoteSignalName == peer.remoteSignalName
+    }
+    guard retained.count != configuredDirectPeers.count else { return }
+    let retainedIdentities = try retained.map { try MqttBusinessIdentity($0.binding) }
+    try routes.replace(retained.map(\.binding))
+    configuredDirectPeers = retained
+    identities = retainedIdentities
+  }
+
   func start(configuration: MqttBrokerPathConfiguration, peers: [Peer]) throws {
     guard !started, !stopped else { throw MqttDeliveryDispatch.Failure.unavailable }
     let local = engine.identity.fingerprint
@@ -149,6 +197,7 @@ final class MqttBusinessTransportRuntime {
     polling = true
     defer { polling = false }
     try Task.checkCancellation()
+    try refreshDirectPeerBindings()
     await routes.maintenance()
     guard !stopped else { return }
     await dispatcher.tick()
@@ -179,6 +228,7 @@ final class MqttBusinessTransportRuntime {
   }
 
   private func receive(_ ingress: MqttAuthenticatedIngress) async throws {
+    try refreshDirectPeerBindings()
     let received = try await routes.receive(ingress)
     guard !stopped, !received.handled, let packet = received.packet else { return }
     if packet.payload["type"] as? String == MqttDeliveryEnvelope.receiptType {

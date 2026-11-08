@@ -760,6 +760,67 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertEqual(store.apiKey(for: contact.cloudModels[1]), "key-b")
   }
 
+  @MainActor
+  func testDurablePeerChatProjectionUsesCurrentTrustedRouteAndExactHistory() throws {
+    let store = makeStore()
+    let fingerprint = String(repeating: "b", count: 64)
+    var friend = makeFriendRequest(galaxySSIId: "galaxyssi:remote", name: "Peer")
+    friend.linkClientRouteId = String(repeating: "r", count: 22)
+    friend.linkSecret = Data(repeating: 7, count: 32).base64URLEncodedString()
+    friend.linkLocalFingerprint = fingerprint
+    let request = store.addFriendRequest(friend)
+    XCTAssertTrue(store.approveFriendRequest(id: request.id))
+    let projection = MqttPeerChatProjection(store: store, localFingerprint: fingerprint)
+    let contact = try XCTUnwrap(store.contact(id: friend.galaxySSIId))
+    let destination = try XCTUnwrap(projection.destination(for: contact))
+    let identity = try MqttBusinessIdentity(destination.peer.binding)
+    XCTAssertEqual(projection.currentPeers().map(\.binding.scope), [identity.scope])
+    let wireId = UUID().uuidString
+    let source = UUID().uuidString
+    func item(_ identity: MqttBusinessIdentity, attachments: [[String: Any]] = []) throws -> MqttBusinessInbox.Pending {
+      let payload: [String: Any] = [
+        "type": "peer_message", "message_id": wireId, "source_message_id": source,
+        "contact_id": "hermes", "conversation_id": "wrong-conversation", "turn_id": "wrong-turn",
+        "content": "Durable peer text", "attachments": attachments
+      ]
+      return .init(key: try identity.key(messageID: wireId), identity: identity, messageID: wireId,
+        payload: try GalaxySSILinkProtocol.jsonData(payload), createdAt: 1)
+    }
+    var replaced = destination.peer.binding
+    replaced.secret = Data(repeating: 8, count: 32).base64URLEncodedString()
+    XCTAssertThrowsError(try projection.projectInbound(item(MqttBusinessIdentity(replaced))))
+    XCTAssertThrowsError(try projection.projectInbound(item(identity, attachments: [["name": "pending.pdf"]])))
+    let incoming = try XCTUnwrap(projection.projectInbound(item(identity)))
+    XCTAssertEqual(incoming.contactId, contact.id)
+    XCTAssertEqual(incoming.conversationId, destination.conversationId)
+    XCTAssertEqual(incoming.turnId, AgentPeerChatTransport.turnId(for: source))
+    XCTAssertEqual(try projection.projectInbound(item(identity))?.id, incoming.id)
+    XCTAssertFalse(store.messages(for: "hermes").contains { $0.remoteMessageId == wireId })
+    XCTAssertTrue(store.deleteMessage(incoming.id, contactId: contact.id))
+    XCTAssertNil(try projection.projectInbound(item(identity)))
+
+    let outgoing = store.appendOutgoing("Queued peer text", to: contact.id)
+    let send = try projection.outgoingRequest(for: outgoing.id, contactId: contact.id)
+    XCTAssertEqual(send.identity, identity)
+    XCTAssertEqual(send.sourceMessageID, outgoing.id.uuidString)
+    XCTAssertEqual(send.topic, destination.peer.binding.sendTopic)
+    XCTAssertEqual(try send.applicationPayload()["conversation_id"] as? String, destination.conversationId)
+    XCTAssertThrowsError(try projection.outgoingRequest(for: outgoing.id, contactId: "hermes"))
+    func completion(contactId: String) -> MqttDeliveryCompletions.Event {
+      .init(identity: identity, messageID: send.messageID, wireHash: String(repeating: "c", count: 64),
+        traffic: "message", requestHash: nil, sourceMessageID: outgoing.id.uuidString, contactID: contactId,
+        attachmentTransferID: "", receivedAt: 1, consumedAt: nil)
+    }
+    XCTAssertThrowsError(try projection.projectCompletion(completion(contactId: "hermes")))
+    try projection.projectCompletion(completion(contactId: contact.id))
+    XCTAssertEqual(store.persistedMessage(id: outgoing.id, contactId: contact.id)?.deliveryStatus, .delivered)
+    XCTAssertTrue(store.appendDeliveryTrace(outgoing.id, contactId: contact.id, stage: "read", status: .read))
+    try projection.projectCompletion(completion(contactId: contact.id))
+    XCTAssertEqual(store.persistedMessage(id: outgoing.id, contactId: contact.id)?.deliveryStatus, .read)
+    XCTAssertTrue(store.deleteMessage(outgoing.id, contactId: contact.id))
+    XCTAssertNoThrow(try projection.projectCompletion(completion(contactId: contact.id)))
+  }
+
   func testRenamesContactLocally() {
     let store = makeStore()
     let request = store.addFriendRequest(makeFriendRequest(galaxySSIId: "friend-alice", name: "Alice"))
