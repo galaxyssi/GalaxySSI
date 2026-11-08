@@ -57,6 +57,18 @@ struct AgentTeamReplyOwner: Codable, Equatable {
       max(observedGeneration ?? 0, recallEventGeneration ?? 0) == generation && closedRecallGeneration != generation
   }
 
+  func desktopEvidenceGeneration(member: AgentTeamMemberSnapshot, teamState: AgentTeamExecutionState) -> Int64? {
+    guard deliveryMode == .observe, member.deliveryMode == .observe, teamState != .cancelled,
+          member.memberId == memberId, member.sourceMessageId == sourceMessageId, member.agentId == contactId
+    else { return nil }
+    if member.status == .succeeded { return observedGeneration }
+    let generation = max(observedGeneration ?? 0, recallEventGeneration ?? 0)
+    guard teamState == .running, !member.status.isTerminal,
+          member.dispatchCheckpoint == .dispatching || member.dispatchCheckpoint == .accepted,
+          permitsRecall(generation: generation) else { return nil }
+    return generation
+  }
+
   func observingRecallEvent(_ observation: AgentTeamReplyObservation, terminal: Bool) -> Self {
     guard deliveryMode == .respond || deliveryMode == .observe,
           observation.valid, let generation = observation.generation,
@@ -697,7 +709,7 @@ final class AgentTeamExecutionHistoryStore {
     }
     if mode == "problems" { return try recallCloudProblems(input, scope: scope) }
     if mode == "desktop_evidence" || mode == "desktop_evidence_list" {
-      return try recallDesktopAcceptanceEvidence(input, scope: scope)
+      return try recallDesktopAcceptanceEvidence(input, scope: scope, recordEvidenceCoverage: recordEvidenceCoverage)
     }
     if mode == AgentCollaborationSourceAccess.mode {
       return try access { database in
@@ -1318,9 +1330,9 @@ final class AgentTeamExecutionHistoryStore {
           let owner = try database.replyOwner(source: archive.binding.sourceIdentity, conversation: scope.conversationId,
             turn: scope.turnId, contact: archive.binding.contactId),
           owner.supervisorRunId == scope.runId, owner.memberId == archive.binding.teamSource?.memberId,
-          owner.deliveryMode == .observe, owner.observedGeneration == archive.receipt.generation,
+          owner.deliveryMode == .observe,
           team.members.contains(where: { $0.memberId == owner.memberId && $0.sourceMessageId == owner.sourceMessageId &&
-            $0.agentId == archive.binding.contactId && $0.status == .succeeded }),
+            owner.desktopEvidenceGeneration(member: $0, teamState: team.state) == archive.receipt.generation }),
           archive.receipt.totalBytes > 0, archive.receipt.totalBytes <= AgentDesktopToolEvidenceWire.maximumOriginalBytes,
           archive.receipt.pageCount == (archive.receipt.totalBytes - 1) / AgentDesktopToolEvidenceWire.maximumPageBytes + 1,
           try database.researchRecord(AgentDesktopToolEvidenceWire.ArchiveReceipt.self,
@@ -1341,7 +1353,7 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   private func recallDesktopAcceptanceEvidence(_ input: AgentMcpJSONObject,
-      scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+      scope: AgentCollaborationToolEvidenceScope, recordEvidenceCoverage: Bool) throws -> AgentMcpJSONObject {
     let listing = input.string("mode") == "desktop_evidence_list"
     func validDigest(_ value: String) -> Bool {
       value.utf8.count == 64 && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
@@ -1376,6 +1388,7 @@ final class AgentTeamExecutionHistoryStore {
         }
         let next = keys.count > 32 ? keys.prefix(32).last.map { String($0.dropFirst(prefix.count)) } : nil
         return ["entries": .array(entries), "next_cursor": next.map(AgentMcpJSONValue.string) ?? .null,
+          "archive_state": .string("local_snapshot_not_exhaustive"),
           "trust": .string("execution_observed_not_claim_verified")]
       }
       guard let archive = try Self.desktopAcceptanceArchive(id: id, scope: scope, team: team, database: database),
@@ -1384,6 +1397,11 @@ final class AgentTeamExecutionHistoryStore {
       let data = try Self.desktopAcceptancePage(archive, index: Int(offset) / width,
         conversation: scope.conversationId, database: database)
       let next = offset + Int64(data.count)
+      var response: AgentMcpJSONObject = ["source_reference": .object(reference(archive)),
+        "data_b64": .string(data.base64EncodedString()), "offset": .int(offset),
+        "next_offset": next < Int64(archive.receipt.totalBytes) ? .int(next) : .null,
+        "trust": .string("untrusted_group_evidence")]
+      guard recordEvidenceCoverage else { return response }
       let key = Self.cloudReadCoverageKey(scope: scope, id: id, hash: hash, desktop: true)
       var coverage = try database.researchRecord(AgentCollaborationReadCoverage.self,
         conversationId: scope.conversationId, key: key, revision: 0) ?? .init()
@@ -1392,10 +1410,9 @@ final class AgentTeamExecutionHistoryStore {
       if coverage != previous {
         try database.insertResearchRecord(coverage, conversationId: scope.conversationId, key: key, revision: 0, replaceCoverage: true)
       }
-      return ["source_reference": .object(reference(archive)), "data_b64": .string(data.base64EncodedString()),
-        "offset": .int(offset), "next_offset": next < Int64(archive.receipt.totalBytes) ? .int(next) : .null,
-        "host_read_coverage": .object(AgentCollaborationEvidenceContent.byteCoverage(scope, id: id, hash: hash,
-          total: Int64(archive.receipt.totalBytes), firstMissing: coverage.contiguousEnd)), "trust": .string("untrusted_group_evidence")]
+      response["host_read_coverage"] = .object(AgentCollaborationEvidenceContent.byteCoverage(scope, id: id, hash: hash,
+        total: Int64(archive.receipt.totalBytes), firstMissing: coverage.contiguousEnd))
+      return response
     }
   }
 
@@ -2762,8 +2779,8 @@ final class AgentTeamExecutionHistoryStore {
   func archiveDesktopToolEvidence(request: AgentDesktopToolEvidenceWire.Request,
                                   descriptor: AgentDesktopToolEvidenceWire.Descriptor,
                                   pages: [Data]) throws -> AgentDesktopToolEvidenceWire.ArchiveReceipt {
-    guard let original = request.verifyOriginal(pages, descriptor: descriptor),
-          let source = request.binding.teamSource else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    guard let original = request.verifyOriginal(pages, descriptor: descriptor)
+    else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     let binding = request.binding
     let conversation = binding.identity.conversationId
     let id = request.archiveId(descriptor)
@@ -2773,19 +2790,7 @@ final class AgentTeamExecutionHistoryStore {
     guard let acceptance = AgentDesktopToolEvidenceWire.AcceptanceArchive(receipt: receipt, binding: binding, original: original)
     else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     return try access { database in
-      guard let owner = try database.replyOwner(source: binding.sourceIdentity, conversation: conversation,
-              turn: binding.identity.turnId, contact: binding.contactId),
-            owner.supervisorRunId == source.supervisorRunId, owner.memberId == source.memberId,
-            owner.deliveryMode == .observe, owner.observedGeneration == request.generation,
-            let team = try database.snapshots(runId: owner.supervisorRunId).first,
-            team.conversationId == conversation, team.taskId == binding.identity.turnId,
-            team.state != .cancelled,
-            try database.researchRecord(Bool.self, conversationId: conversation,
-              key: "native-evidence-revoked", revision: 0) != true,
-            team.members.contains(where: { $0.memberId == owner.memberId &&
-              $0.sourceMessageId == owner.sourceMessageId && $0.status == .succeeded }) else {
-        throw AgentTeamHistoryDatabase.Failure.stale
-      }
+      let team = try Self.desktopEvidenceOwner(request, database: database).team
       let key = "desktop-evidence:" + id
       let index = Self.desktopAcceptancePrefix(runID: team.supervisorRunId, turnID: team.taskId) + id
       if let prior = try database.researchRecord(AgentDesktopToolEvidenceWire.AcceptanceArchive.self,
@@ -2809,12 +2814,30 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
+  private static func desktopEvidenceOwner(_ request: AgentDesktopToolEvidenceWire.Request,
+      database: AgentTeamHistoryDatabase) throws -> (team: AgentTeamExecutionSnapshot, member: AgentTeamMemberSnapshot) {
+    let binding = request.binding
+    let conversation = binding.identity.conversationId
+    guard let source = binding.teamSource,
+          let owner = try database.replyOwner(source: binding.sourceIdentity, conversation: conversation,
+            turn: binding.identity.turnId, contact: binding.contactId),
+          owner.supervisorRunId == source.supervisorRunId, owner.memberId == source.memberId,
+          let team = try database.snapshots(runId: owner.supervisorRunId).first,
+          team.conversationId == conversation, team.taskId == binding.identity.turnId,
+          let member = team.members.first(where: { $0.memberId == owner.memberId && $0.sourceMessageId == owner.sourceMessageId }),
+          owner.desktopEvidenceGeneration(member: member, teamState: team.state) == request.generation,
+          try database.researchRecord(Bool.self, conversationId: conversation,
+            key: "native-evidence-revoked", revision: 0) != true else { throw AgentTeamHistoryDatabase.Failure.stale }
+    return (team, member)
+  }
+
   func stageDesktopEvidencePage(_ response: AgentMcpJSONObject, desktopId: String,
                                 request: AgentDesktopToolEvidenceWire.Request,
                                 descriptor: AgentDesktopToolEvidenceWire.Descriptor, index: Int) throws -> Data {
     guard let page = request.verifyPage(response, authenticatedDesktopId: desktopId,
       descriptor: descriptor, index: index) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     return try access { database in
+      _ = try Self.desktopEvidenceOwner(request, database: database)
       let conversation = request.binding.identity.conversationId
       let key = request.stagedPageKey(descriptor)
       let revision = Int64(index + 1)
@@ -2884,6 +2907,8 @@ final class AgentTeamExecutionHistoryStore {
           next > previous || final else { throw AgentTeamHistoryDatabase.Failure.stale }
     try access { database in
       let conversation = request.binding.identity.conversationId
+      let owner = try Self.desktopEvidenceOwner(request, database: database)
+      guard !final || owner.member.status == .succeeded else { throw AgentTeamHistoryDatabase.Failure.stale }
       let current = try database.researchRecord(AgentDesktopToolEvidenceWire.ImportCursor.self,
         conversationId: conversation, key: request.cursorKey) ?? .init()
       guard !current.archiveFinal, current.sequence == previous else { throw AgentTeamHistoryDatabase.Failure.stale }
