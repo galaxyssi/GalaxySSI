@@ -758,8 +758,11 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(wire.accepts(phase: "validate_assessment", input: ["mode": .string("validate_assessment")]))
     for phase in ["publish", "status", "receipt", "list"] {
       XCTAssertTrue(wire.permits(phase: phase, observer: true))
-      XCTAssertFalse(wire.permits(phase: phase, observer: false))
     }
+    XCTAssertTrue(wire.permits(phase: "status", observer: false))
+    XCTAssertTrue(wire.permits(phase: "publish", observer: false))
+    XCTAssertFalse(wire.permits(phase: "receipt", observer: false))
+    XCTAssertFalse(wire.permits(phase: "list", observer: false))
     XCTAssertTrue(wire.permits(phase: "validate_assessment", observer: false))
   }
 
@@ -854,7 +857,19 @@ extension GalaxySSIStoreTests {
     let database = try AgentTeamHistoryDatabase(fileURL: file,
       storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
     XCTAssertTrue(try database.researchObjectHeads(conversationId: scope.conversationId, after: "", limit: 1).isEmpty)
-    XCTAssertThrowsError(try history.publishCollaborationMilestone(["mode": .string("status")], scope: scope))
+    let query: AgentMcpJSONObject = ["mode": .string("status")]
+    let capability = try history.publishCollaborationMilestone(query, scope: scope)
+    XCTAssertEqual(capability["status"], .string("returned"))
+    XCTAssertEqual(capability["capability"]?.objectValue?["publish_allowed"], .bool(false))
+    XCTAssertEqual(capability["capability"]?.objectValue?["grants_authority"], .bool(false))
+    let unavailable = try history.publishCollaborationMilestone(["mode": .string("publish"),
+      "milestone_id": .string("forbidden"), "artifact": .string("{")], scope: scope)
+    XCTAssertEqual(unavailable["error_code"], .string("assignment_not_enrolled"))
+    XCTAssertEqual(unavailable["artifact_validated"], .bool(false))
+    XCTAssertEqual(unavailable["retryable"], .bool(false))
+    XCTAssertNil(unavailable["rejected_draft_preserved"])
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(query.merging(["member_id": .string("other")]) { a, _ in a },
+      scope: scope))
     var forged = input
     forged["member_id"] = .string("other")
     XCTAssertThrowsError(try history.publishCollaborationMilestone(forged, scope: scope))
@@ -891,6 +906,13 @@ extension GalaxySSIStoreTests {
     """
     let input: AgentMcpJSONObject = ["mode": .string("publish"), "milestone_id": .string("first"),
       "artifact": .string(artifact)]
+    let status = try history.publishCollaborationMilestone(["mode": .string("status")], scope: scope)
+    XCTAssertEqual(status["capability"]?.objectValue?["publish_allowed"], .bool(true))
+    XCTAssertEqual(status["assignment_completed"], .bool(false))
+    let denied = try history.publishCollaborationMilestone(input, scope: scope, desktopWire: true,
+      transportAllowsInterim: false)
+    XCTAssertEqual(denied["status"], .string("unavailable"))
+    XCTAssertEqual(try history.publishCollaborationMilestone(["mode": .string("list")], scope: scope)["milestones"], .array([]))
     let receipt = try history.publishCollaborationMilestone(input, scope: scope)
     XCTAssertEqual(receipt["success"], .bool(true))
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,

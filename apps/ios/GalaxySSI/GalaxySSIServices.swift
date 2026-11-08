@@ -3163,7 +3163,8 @@ final class MessageCoordinator: ObservableObject {
     ]) { current, _ in current })
     let cached: AgentMcpJSONObject?
     switch desktopCollaborationResponseReplay.lookup(key: key, fingerprint: fingerprint, now: now,
-      revalidate: publishing && phase == "receipt") {
+      revalidate: publishing && (phase == "receipt" || phase == "status" ||
+        (phase == "publish" && context.owner.deliveryMode != .observe))) {
     case .identityMismatch: return
     case .missing: cached = nil
     case .response(let response): cached = response
@@ -3184,7 +3185,8 @@ final class MessageCoordinator: ObservableObject {
       result = page
     } else if publishing {
       do {
-        result = try history.publishCollaborationMilestone(input, scope: scope, desktopWire: true)
+        result = try history.publishCollaborationMilestone(input, scope: scope, desktopWire: true,
+          transportAllowsInterim: context.owner.deliveryMode == .observe)
       } catch AgentTeamHistoryDatabase.Failure.corrupt {
         result["status"] = .string("invalid_artifact")
       } catch {}
