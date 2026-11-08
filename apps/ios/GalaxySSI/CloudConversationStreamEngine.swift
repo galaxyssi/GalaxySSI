@@ -243,6 +243,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       var visitedSourceAccessPages = Set<String>()
       let evidencePromptLedger = CloudEvidencePromptLedger(query: turns.last?.content ?? "")
       let progress = CloudWebToolLoopProgress()
+      var visitedWorkflowChecks = Set<String>()
       var round = 0
 
       while true {
@@ -580,6 +581,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         var freshKeys = Set<String>()
         let preparedCalls = parsedCalls.compactMap { item -> AssembledToolCall? in
           let (call, arguments) = item
+          if AgentCollaborationWorkflowCheck.isCall(call.name, arguments) {
+            let key = progress.semanticKey(toolName: call.name, arguments: arguments)
+            return freshKeys.insert(key).inserted ? call : nil
+          }
           if call.name == publishName { return call }
           guard AgentCollaborationSourceAccess.matches(tool: call.name, input: arguments) ||
                 progress.cached(toolName: call.name, arguments: arguments) == nil else { return nil }
@@ -657,11 +662,19 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         }
 
         var madeProgress = false
+        var workflowCheckResults: [String: String] = [:]
         var publicationResults: [String: String] = [:]
         var sourceAccessResults: [String: String] = [:]
         for outcome in outcomes {
           guard let output = outcome.output,
                 let arguments = try? CloudModelStreamJSON.mcpObject(from: outcome.call.argumentsJson) else {
+            continue
+          }
+          if AgentCollaborationWorkflowCheck.isCall(outcome.call.name, arguments) {
+            let key = progress.semanticKey(toolName: outcome.call.name, arguments: arguments)
+            workflowCheckResults[key] = output
+            if let result = try? CloudModelStreamJSON.mcpObject(from: output), result["status"] == .string("returned"),
+               visitedWorkflowChecks.insert(key).inserted { madeProgress = true }
             continue
           }
           if outcome.call.name == publishName {
@@ -692,6 +705,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           }
         }
         let results = parsedCalls.compactMap { item -> (AssembledToolCall, String)? in
+          if AgentCollaborationWorkflowCheck.isCall(item.0.name, item.1) {
+            let key = progress.semanticKey(toolName: item.0.name, arguments: item.1)
+            return workflowCheckResults[key].map { (item.0, $0) }
+          }
           let (call, arguments) = item
           if call.name == publishName, let output = publicationResults[call.callId] { return (call, output) }
           if AgentCollaborationSourceAccess.matches(tool: call.name, input: arguments) {
@@ -706,6 +723,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         let rawEvidence = evidenceResults.map(\.1)
         let projectedEvidence = evidencePromptLedger.project(rawEvidence)
         var projectionByOriginal: [String: String] = [:]
+        for output in workflowCheckResults.values { projectionByOriginal[output] = output }
         for (original, projection) in zip(rawEvidence, projectedEvidence) {
           projectionByOriginal[original] = projection
         }

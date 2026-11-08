@@ -627,6 +627,18 @@ final class AgentTeamExecutionHistoryStore {
     if mode == AgentCollaborationCandidateRecall.mode, input["view"] == nil,
        let history = try recallCandidateTestHistory(input, scope: scope) { return history }
     if mode == "dependency" { return try recallDependencyOriginal(input, scope: scope) }
+    if mode == AgentCollaborationWorkflowCheck.mode {
+      return try access { database in
+        guard let team = try database.snapshots(runId: scope.runId).first,
+              team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
+              team.members.contains(where: { $0.memberId == scope.memberId &&
+                $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }),
+              try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+                key: "native-evidence-revoked", revision: 0) != true
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        return try AgentCollaborationWorkflowCheck.inspect(input, scope: scope, database: database)
+      }
+    }
     if mode == "capabilities" { return try recallCapabilities(input, scope: scope) }
     if mode == "method_history" { return try recallMethodEvaluations(input, scope: scope) }
     if mode == "evolution_rules" {
@@ -1164,6 +1176,9 @@ final class AgentTeamExecutionHistoryStore {
               turnId: turnId, memberId: memberId, sourceId: sourceId)
             frozenReads = try Self.freezeCloudReads(references, scope: scope, database: database)
           }
+        } else if draft.kind == .workflowSelectionRule {
+          _ = try AgentCollaborationWorkflowCheck.rule(draft, scope: .init(runId: runId, conversationId: conversationId,
+            turnId: turnId, memberId: memberId, sourceId: sourceId), database: database, changed: revisedInBatch)
         } else if draft.kind == .workflowMethod {
           guard references.isEmpty, draft.objectId?.isBlank != false, draft.baseRevision == 0,
                 let method = draft.body["workflow_method"]?.objectValue,

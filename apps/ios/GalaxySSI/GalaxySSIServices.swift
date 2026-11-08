@@ -2809,6 +2809,11 @@ final class MessageCoordinator: ObservableObject {
     case .response(let response): cached = response
     }
     var result: AgentMcpJSONObject = ["success": .bool(false), "status": .string("unavailable")]
+    if cached == nil, !publishing, phase == "read", input["mode"] == .string(AgentCollaborationWorkflowCheck.mode),
+       var checked = try? history.recallCollaborationOriginal(input, scope: scope) {
+      checked["success"] = .bool(true)
+      result = checked
+    }
     if let cached {
       result = cached
     } else if !publishing, input["mode"] == .string(AgentCollaborationCandidateRecall.mode), input["view"] == nil,
