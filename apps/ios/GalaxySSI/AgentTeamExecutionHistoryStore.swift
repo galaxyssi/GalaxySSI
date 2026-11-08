@@ -743,6 +743,7 @@ final class AgentTeamExecutionHistoryStore {
       try AgentCollaborationEvidenceContent.page(bytes, offset: offset,
         evidence: mode == "evidence" || mode == "native_evidence")
     }
+    var comparisonLineage: AgentMcpJSONObject?
     let (slice, sourceReference, coverage) = try access { database
       -> (AgentCollaborationEvidenceContent.Page, AgentMcpJSONObject?, AgentMcpJSONObject?) in
       guard let team = try database.snapshots(runId: scope.runId).first,
@@ -777,6 +778,7 @@ final class AgentTeamExecutionHistoryStore {
           guard record.toolTestComparison != nil, record.turnId != scope.turnId || record.sourceId == scope.sourceId else {
             throw AgentTeamHistoryDatabase.Failure.stale
           }
+          comparisonLineage = try Self.toolComparisonLineage(record, scope: scope, database: database)
         }
         return (try page(encoder.encode(record)), nil, nil)
       }
@@ -860,6 +862,7 @@ final class AgentTeamExecutionHistoryStore {
       "trust": .string("untrusted_group_evidence")
     ]
     if let coverage { result["host_read_coverage"] = .object(try slice.wireCoverage(coverage)) }
+    if let comparisonLineage { result["comparison_lineage"] = .object(comparisonLineage) }
     if let sourceReference {
       result["offset_unit"] = .string(AgentCollaborationEvidenceContent.offsetUnit)
       result["source_reference"] = .object(sourceReference)
@@ -1143,6 +1146,9 @@ final class AgentTeamExecutionHistoryStore {
           var recall = AgentCollaborationCandidateRecall.reference(head.reference)
           recall["mode"] = .string("workspace")
           entry["comparison_recall"] = .object(recall)
+          if !pinInitial {
+            entry["comparison_lineage"] = .object(try Self.toolComparisonLineage(head, scope: scope, database: database))
+          }
           entry["grants_permissions"] = .bool(false)
         }
         if head.draft.kind == .executableTool || head.draft.kind == .toolTestPlan {
@@ -1185,6 +1191,37 @@ final class AgentTeamExecutionHistoryStore {
         "grants_permissions": .bool(false), "trust": .string("directory_not_execution_authority"),
         "guidance": .string("Procedure linked_sources identify exact excerpt origins, not a full read. Read the original and check current scope and lineage before reuse.")]
     }
+  }
+
+  private static func toolComparisonLineage(_ record: AgentCollaborationResearchRevision,
+      scope: AgentCollaborationToolEvidenceScope, database: AgentTeamHistoryDatabase) throws -> AgentMcpJSONObject {
+    guard let comparison = AgentCollaborationSavedToolTest.Comparison(record.draft),
+          let receipt = record.toolTestComparison, let sides = comparison.lineage(receipt) else {
+      return ["status": .string("requires_revalidation"), "sides": .array([])]
+    }
+    func link(_ ref: AgentCollaborationResearchReference, kind: AgentCollaborationResearchDraft.Kind)
+      throws -> (AgentCollaborationResearchRevision, Bool)? {
+      guard let exact = try database.readableCollaborationRevision(ref, scope: scope),
+            exact.draft.kind == kind, exact.turnId != scope.turnId || exact.sourceId == scope.sourceId else { return nil }
+      let head = try database.researchRecord(AgentCollaborationResearchRevision.self,
+        conversationId: scope.conversationId, key: "object:" + ref.objectId)
+      return (exact, head?.reference == ref)
+    }
+    var result: [AgentMcpJSONValue] = []
+    var allCurrent = comparison.preservesFrozenObservations(record)
+    for side in sides {
+      let plan = try link(side.plan, kind: .toolTestPlan)
+      let tool = try link(side.tool, kind: .executableTool)
+      let related = plan.map { AgentCollaborationCandidateRecall.linkedTool($0.0) == side.tool } == true
+      let current = related && plan?.1 == true && tool?.1 == true
+      allCurrent = allCurrent && current
+      var summary: AgentMcpJSONObject = ["side": .string(side.name),
+        "status": .string(current ? "current_at_read" : "requires_revalidation")]
+      if plan != nil { summary["tool_test_plan"] = .object(AgentCollaborationCandidateRecall.reference(side.plan)) }
+      if related, tool != nil { summary["executable_tool"] = .object(AgentCollaborationCandidateRecall.reference(side.tool)) }
+      result.append(.object(summary))
+    }
+    return ["status": .string(allCurrent ? "current_at_read" : "requires_revalidation"), "sides": .array(result)]
   }
 
   private func recallMethodEvaluations(_ input: AgentMcpJSONObject,
@@ -2646,6 +2683,11 @@ final class AgentTeamExecutionHistoryStore {
           revision.reference == reference, revision.runId == scope.runId, revision.turnId == scope.turnId,
           revision.authorId == scope.memberId, revision.sourceId == scope.sourceId else {
           throw AgentTeamHistoryDatabase.Failure.corrupt
+        }
+        if revision.draft.kind == .toolTestComparison {
+          guard let comparison = AgentCollaborationSavedToolTest.Comparison(revision.draft),
+                comparison.preservesFrozenObservations(revision) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+          return revision
         }
         if let citations = revision.draft.observations, !citations.isEmpty {
           if revision.draft.kind == .acceptanceReview {
