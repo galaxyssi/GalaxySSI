@@ -348,6 +348,61 @@ struct AgentCollaborationCoordinatorRetry: Codable, Equatable {
   }
 }
 
+enum AgentCollaborationWorkRepair {
+  static let guidance = "For rejected or incomplete delivery, use a new work ID, repair_of set to a finished original work ID, and a concrete repair_reason. Execution ending is not goal acceptance. Preserve the original and do not repeat completed side effects. Use explicit dependencies to read original outputs; repair_of grants no access. Omit both fields for ordinary work."
+
+  struct Binding: Codable, Equatable {
+    let repair_of: String
+    let repair_reason: String
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+      lhs.repair_of.utf8.elementsEqual(rhs.repair_of.utf8) &&
+        lhs.repair_reason.utf8.elementsEqual(rhs.repair_reason.utf8)
+    }
+
+    var wire: AgentMcpJSONObject {
+      ["repair_of": .string(repair_of), "repair_reason": .string(repair_reason)]
+    }
+  }
+
+  struct Issue {
+    let workID: String
+    let field: String
+    let expected: String
+    let actual: String
+
+    var response: AgentMcpJSONObject {
+      ["success": .bool(false), "status": .string("work_rejected"), "work_dispatched": .bool(false),
+       "failure": .object(["code": .string("repair_contract_invalid"), "work_id": .string(workID),
+         "field": .string(field), "expected": .string(expected), "actual": .string(actual)]),
+       "guidance": .string(AgentCollaborationWorkRepair.guidance)]
+    }
+  }
+
+  static func shapeIssue(_ raw: String) -> Issue? {
+    guard let root = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8)),
+          let items = root["work"]?.arrayValue else { return nil }
+    for item in items {
+      guard let row = item.objectValue, row["repair_of"] != nil || row["repair_reason"] != nil else { continue }
+      let id = String(decoding: row.string("id").utf8.prefix(160), as: UTF8.self)
+      for (field, limit) in [("repair_of", 160), ("repair_reason", 2_000)] {
+        let value = row[field], text = value?.strictStringValue
+        if let text, !text.isBlank, text.utf8.count <= limit { continue }
+        let actual: String
+        if value == nil { actual = "missing" }
+        else if value == .null { actual = "null" }
+        else if text == nil { actual = "not a string" }
+        else { actual = text?.isBlank == true ? "blank string" : "too long" }
+        return .init(workID: id, field: field, expected: "nonblank string up to \(limit) UTF-8 bytes", actual: actual)
+      }
+      if row.string("repair_of") == row.string("id") {
+        return .init(workID: id, field: "repair_of", expected: "a distinct finished original work ID", actual: "self-reference")
+      }
+    }
+    return nil
+  }
+}
+
 struct AgentCollaborationGoalWorkRun: Codable {
   enum State: String, Codable { case running, succeeded, failed, interrupted }
   struct Target: Codable, Equatable {
@@ -390,6 +445,7 @@ struct AgentCollaborationGoalWorkRun: Codable {
   static let processID = UUID().uuidString
   static let leaseMillis: Int64 = 300_000
 
+  var repair: AgentCollaborationWorkRepair.Binding? = nil
   let workID: String
   let dispatchID: String
   let owner: AgentCollaborationToolEvidenceScope
@@ -419,6 +475,7 @@ struct AgentCollaborationGoalWorkRun: Codable {
       "started_at": .int(startedAt), "finished_at": finishedAt.map(AgentMcpJSONValue.int) ?? .null,
       "output": output.map(AgentMcpJSONValue.string) ?? .null, "output_sha256": outputHash.map(AgentMcpJSONValue.string) ?? .null,
       "output_truncated": .bool(truncated ?? false), "goal_accepted": .bool(false), "automatically_reexecuted": .bool(false)]
+    if let repair { result.merge(repair.wire) { current, _ in current } }
     if let templateMemberID { result["template_member_id"] = .string(templateMemberID) }
     return result
   }
@@ -454,6 +511,15 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     let depends_on: [String]
     let dependency_policy: DependencyPolicy?
     let independent_review: Bool?
+    var repair_of: String? = nil
+    var repair_reason: String? = nil
+
+    var repair: AgentCollaborationWorkRepair.Binding? {
+      guard let repair_of, let repair_reason, !repair_of.isBlank, !repair_reason.isBlank,
+            repair_of != id, repair_of.utf8.count <= 160, repair_reason.utf8.count <= 2_000 else { return nil }
+      return .init(repair_of: repair_of, repair_reason: repair_reason)
+    }
+
     var stage: String? = nil
     var procedure_use: AgentCollaborationProcedure.Use? = nil
     var learning: LearningBinding? = nil
@@ -642,7 +708,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
 
   func appending(_ raw: String, authorizedMembers: Set<String>,
                  historicalAuthors: [String: String], settled: [String: Settlement]) -> Self? {
-    guard raw.utf8.count <= 256_000,
+    guard raw.utf8.count <= 256_000, AgentCollaborationWorkRepair.shapeIssue(raw) == nil,
           let expansion = try? JSONDecoder().decode(Expansion.self, from: Data(raw.utf8)),
           expansion.format == "galaxyssi.work-expansion.v1", !expansion.work.isEmpty,
           expansion.work.allSatisfy({ $0.workflowExecutionId == nil && $0.recruitment == nil &&
@@ -731,6 +797,10 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var byId = Dictionary(work.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     guard byId.count == work.count else { return nil }
     for item in additions {
+      if item.repair_of != nil || item.repair_reason != nil {
+        guard let repair = item.repair, byId[repair.repair_of] != nil || settled[repair.repair_of] != nil,
+              !additions.contains(where: { $0.id == repair.repair_of }) else { return nil }
+      }
       guard !item.id.isBlank, item.id.utf8.count <= 160, !item.assignment.isBlank,
             item.assignment.utf8.count <= 16_000, authorizedMembers.contains(item.member),
             byId[item.id] == nil, settled[item.id] == nil, historicalAuthors[item.id] == nil,
@@ -977,7 +1047,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
   static let runReadyWorkMode = "run_ready_work"
   static let workInventoryMode = "work_inventory"
   static let checkGoalEvidenceMode = "check_goal_evidence"
-  static let admissionInstructions = "List ready research work in the intended admission order. Waiting dependencies do not reserve capacity. Existing learning priorities reorder only their eligible learning positions. Admission order does not guarantee completion order."
+  static let admissionInstructions = "List ready research work in the intended admission order. Waiting dependencies do not reserve capacity. Existing learning priorities reorder only their eligible learning positions. Admission order does not guarantee completion order. " + AgentCollaborationWorkRepair.guidance
 
   static func requiresCoordinator(_ mode: String) -> Bool {
     isCoordinatorMutation(mode) || mode == checkGoalEvidenceMode || mode == workInventoryMode || mode == assessmentRepairMode

@@ -5172,6 +5172,85 @@ extension GalaxySSIStoreTests {
     XCTAssertThrowsError(try reopened.publishCollaborationMilestone(request, scope: scope(0)))
   }
 
+  func testTargetedWorkRepairRejectsInvalidLineageAndArchivesExactOriginWithoutImplicitReads() throws {
+    typealias Policy = AgentCollaborationGoalAssessmentPolicy
+    let suite = "work-repair-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore(), file = root.appendingPathComponent("history.sqlite3")
+    func open() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    }
+    var team = durableTeamSnapshot("repair")
+    team.goal = "Deliver the original measurement with its limitations"
+    team.members[0].dispatchCheckpoint = .accepted
+    XCTAssertTrue(open().upsert(team))
+    let owner = team.members[0], worker = team.members[1]
+    let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId, memberId: owner.memberId, sourceId: owner.sourceMessageId)
+    let contract = #"{"format":"galaxyssi.goal-assessment.v1","summary":"Bind","decision":"continue","criteria":[{"id":"measure","requirement":"Report limitations","verification":"documentary","status":"open","evidence":[]}],"work":[],"blockers":[]}"#
+    XCTAssertEqual(try open().publishCollaborationMilestone(["mode": .string(Policy.establishContractMode),
+      "artifact": .string(contract)], scope: scope)["revision"], .int(1))
+    func row(_ id: String) -> AgentMcpJSONObject {
+      ["id": .string(id), "member": .string(worker.memberId), "assignment": .string("Report only the omitted limitation"),
+       "depends_on": .array([])]
+    }
+    func admission(_ id: String, revision: Int64, rows: [AgentMcpJSONObject]) -> AgentMcpJSONObject {
+      let raw = AgentMcpJSONCodec.stringify(["format": .string("galaxyssi.work-expansion.v1"),
+        "work": .array(rows.map(AgentMcpJSONValue.object))])
+      return ["mode": .string(Policy.appendWorkMode), "artifact": .string(raw), "milestone_id": .string(id),
+        "expected_revision": .int(revision)]
+    }
+    func submit(_ request: AgentMcpJSONObject) throws -> AgentMcpJSONObject {
+      try open().publishCollaborationMilestone(request, scope: scope)
+    }
+    XCTAssertEqual(try submit(admission("initial", revision: 1, rows: [row("original")]))["revision"], .int(2))
+    let original = try open().goalWork("original", scope: scope).0
+    let originalRun = try open().claimGoalWork(original, scope: scope, now: 10)
+    let reason = "Original delivery omitted the measurement limitation."
+    let repair = row("repair").merging(["repair_of": .string("original"), "repair_reason": .string(reason)]) { _, new in new }
+    let request = admission("repair-batch", revision: 2, rows: [repair])
+    let inFlight = try submit(request)
+    XCTAssertEqual(inFlight["failure"]?.objectValue?["field"], .string("repair_of"))
+    XCTAssertEqual(inFlight["work_dispatched"], .bool(false))
+    _ = try open().finishGoalWork(originalRun.run, output: "Unchanged original result", interrupted: false, now: 11)
+    var malformed = repair
+    malformed["id"] = .string("invalid")
+    malformed["repair_reason"] = .null
+    let rejected = try submit(admission("atomic", revision: 2, rows: [repair, malformed]))
+    XCTAssertEqual(rejected["failure"]?.objectValue?["work_id"], .string("invalid"))
+    XCTAssertEqual(rejected["failure"]?.objectValue?["field"], .string("repair_reason"))
+    XCTAssertEqual(rejected["failure"]?.objectValue?["actual"], .string("null"))
+    XCTAssertThrowsError(try open().goalWork("repair", scope: scope))
+    XCTAssertEqual(try submit(admission("duplicate", revision: 2, rows: [row("original")]))["failure"]?.objectValue?["code"],
+      .string("completed_dispatch_reused"))
+    XCTAssertEqual(try submit(request)["revision"], .int(3))
+    XCTAssertEqual(try submit(request)["replayed"], .bool(true))
+    let inventory = try open().goalWorkInventory(scope: scope, now: 12)
+    let visible = try XCTUnwrap(inventory["items"]?.arrayValue?.compactMap(\.objectValue)
+      .first { $0["work_id"] == .string("repair") })
+    XCTAssertEqual(visible["repair_of"], .string("original"))
+    XCTAssertEqual(visible["repair_reason"], .string(reason))
+    XCTAssertEqual(try open().readyGoalWork(scope: scope, excluding: [], limit: 3, now: 12), ["repair"])
+    let saved = try open().goalWork("repair", scope: scope).0
+    let claim = try open().claimGoalWork(saved, scope: scope, now: 12)
+    XCTAssertTrue(claim.claimed)
+    XCTAssertTrue(claim.dependencies.isEmpty, "Repair lineage alone cannot grant access to the original output")
+    let result = try open().finishGoalWork(claim.run, output: "Added limitation only", interrupted: false, now: 13)
+    XCTAssertEqual(result["repair_reason"], .string(reason))
+    var changed = saved
+    changed.repair_reason = "Different identity"
+    XCTAssertThrowsError(try open().claimGoalWork(changed, scope: scope, now: 14))
+    XCTAssertFalse(try open().claimGoalWork(saved, scope: scope, now: 14).claimed)
+    let savedOriginal = try XCTUnwrap(open().goalWork("original", scope: scope).1)
+    XCTAssertEqual(savedOriginal.output, "Unchanged original result")
+    XCTAssertNil(savedOriginal.repair)
+    let archive = try XCTUnwrap(open().goalWork("repair", scope: scope).1)
+    XCTAssertEqual(archive.repair?.repair_of, "original")
+    XCTAssertEqual(archive.output, "Added limitation only")
+  }
+
   func testCancelledLocalGoalWorkDoesNotStartQueuedInference() async {
     let cancellation = AgentModelToolLoopCancellationSource()
     cancellation.cancel()
