@@ -84,6 +84,8 @@ final class MessageCoordinator: ObservableObject {
   private var desktopEvidenceImports: Set<String> = []
   private var desktopEvidenceLiveOffset = 0
   private var desktopEvidenceJobCursor = ""
+  private var desktopEvidenceWrapRequested = false
+  private var yieldedDesktopEvidenceJobs: [(job: AgentDesktopToolEvidenceWire.ImportJob, since: Int64)] = []
   private var desktopCollaborationResponseReplay = AgentDesktopCollaborationResponseReplay()
   private var desktopCollaborationCiphertextReplay = AgentDesktopCollaborationCiphertextReplay()
   private lazy var desktopReplyRecoveryOwner = store.profile.identityFingerprint
@@ -3884,16 +3886,18 @@ final class MessageCoordinator: ObservableObject {
 
   private func resumeDesktopEvidenceJobs(wrapAtEnd: Bool = false, runtime: MqttBusinessTransportRuntime? = nil) {
     let journalBacked = runtime != nil
-    guard GalaxySSISignalEngine.isAvailable, journalBacked || mqttClient.relationshipSubscriptionsReady,
-          desktopEvidenceImports.count < 2 else { return }
+    guard GalaxySSISignalEngine.isAvailable, journalBacked || mqttClient.relationshipSubscriptionsReady else { return }
+    desktopEvidenceWrapRequested = desktopEvidenceWrapRequested || wrapAtEnd
+    guard desktopEvidenceImports.count < 2 else { return }
     let history = AgentTeamExecutionHistoryStore.shared
-    var mayWrap = wrapAtEnd && !desktopEvidenceJobCursor.isEmpty
+    var mayWrap = desktopEvidenceWrapRequested && !desktopEvidenceJobCursor.isEmpty
+    desktopEvidenceWrapRequested = false
     var pagesRemaining = journalBacked ? 4 : Int.max
     while desktopEvidenceImports.count < 2, pagesRemaining > 0 {
       pagesRemaining -= 1
-      guard let batch = try? history.desktopEvidenceJobs(after: desktopEvidenceJobCursor) else { return }
+      guard let batch = try? history.desktopEvidenceJobs(after: desktopEvidenceJobCursor) else { break }
       if batch.isEmpty {
-        guard mayWrap else { return }
+        guard mayWrap else { break }
         mayWrap = false
         desktopEvidenceJobCursor = ""
         continue
@@ -3901,36 +3905,60 @@ final class MessageCoordinator: ObservableObject {
       for job in batch {
         guard desktopEvidenceImports.count < 2 else { return }
         desktopEvidenceJobCursor = job.key
-        let binding = job.binding
-        guard store.profile.identityFingerprint == job.profileIdentity,
-              runtime?.canQueryDesktopEvidence(binding) != false,
-              let context = currentTeamObserverRecovery(binding), context.member.status == .succeeded,
-              context.owner.observedGeneration == job.generation,
-              let session = store.agentSession(id: context.team.conversationId), session.id == context.team.conversationId,
-              session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank,
-              let scope = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: job.generation,
-                nonce: UUID().uuidString),
-              desktopEvidenceImports.insert(job.key).inserted else { continue }
-        mayWrap = false
-        Task { @MainActor [weak self, weak runtime] in
-          guard let self else { return }
-          defer {
-            self.desktopEvidenceImports.remove(job.key)
-            if !journalBacked || runtime != nil { self.resumeDesktopEvidenceJobs(runtime: runtime) }
-          }
-          if journalBacked {
-            guard runtime != nil else { return }
-            await self.importDesktopEvidence(binding, generation: job.generation, profile: job.profileIdentity,
-              query: { [weak runtime] request, payload in await runtime?.queryDesktopEvidence(request, payload: payload) })
-          } else {
-            await self.importDesktopEvidence(binding, generation: job.generation, profile: job.profileIdentity)
-          }
-          if (try? history.desktopEvidenceCursor(scope))?.archiveFinal == true {
-            history.removeDesktopEvidenceJob(job)
-          }
+        if !yieldedDesktopEvidenceJobs.contains(where: { $0.job.key == job.key }),
+           startDesktopEvidenceRecoverySlice(job, runtime: runtime) {
+          mayWrap = false
         }
       }
     }
+    while desktopEvidenceImports.count < 2, !yieldedDesktopEvidenceJobs.isEmpty {
+      let queued = yieldedDesktopEvidenceJobs.removeFirst()
+      startDesktopEvidenceRecoverySlice(queued.job, runtime: runtime, yieldedAt: queued.since)
+    }
+  }
+
+  @discardableResult
+  private func startDesktopEvidenceRecoverySlice(_ job: AgentDesktopToolEvidenceWire.ImportJob,
+      runtime: MqttBusinessTransportRuntime?, yieldedAt: Int64? = nil) -> Bool {
+    let binding = job.binding
+    guard store.profile.identityFingerprint == job.profileIdentity,
+          runtime?.canQueryDesktopEvidence(binding) != false,
+          let context = currentTeamObserverRecovery(binding), context.member.status == .succeeded,
+          context.owner.observedGeneration == job.generation,
+          let session = store.agentSession(id: context.team.conversationId), session.id == context.team.conversationId,
+          session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank,
+          let scope = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: job.generation,
+            nonce: UUID().uuidString),
+          desktopEvidenceImports.insert(job.key).inserted else { return false }
+    let journalBacked = runtime != nil
+    Task { @MainActor [weak self, weak runtime] in
+      guard let self else { return }
+      defer {
+        self.desktopEvidenceImports.remove(job.key)
+        if !journalBacked || runtime != nil { self.resumeDesktopEvidenceJobs(runtime: runtime) }
+      }
+      let history = AgentTeamExecutionHistoryStore.shared
+      let started = AgentDesktopEvidenceQueryTrace.now
+      if let yieldedAt {
+        AgentDesktopEvidenceQueryTrace.record(.sliceWait, nonce: scope.nonce, started: yieldedAt)
+      }
+      var slice = AgentDesktopEvidenceRecoverySlice()
+      await self.importDesktopEvidence(binding, generation: job.generation, profile: job.profileIdentity,
+        query: { request, payload in
+          guard !Task.isCancelled, slice.claimQuery() else { return nil }
+          if journalBacked { return await runtime?.queryDesktopEvidence(request, payload: payload) }
+          return await self.queryDesktopEvidence(request, payload: payload)
+        })
+      let outcome = slice.outcome(archiveFinal: (try? history.desktopEvidenceCursor(scope))?.archiveFinal == true,
+        isCancelled: Task.isCancelled || (journalBacked && runtime == nil))
+      AgentDesktopEvidenceQueryTrace.record(outcome, nonce: scope.nonce, started: started)
+      switch outcome {
+      case .sliceComplete: history.removeDesktopEvidenceJob(job)
+      case .sliceYielded: self.yieldedDesktopEvidenceJobs.append((job, AgentDesktopEvidenceQueryTrace.now))
+      default: break
+      }
+    }
+    return true
   }
 
   private func importDesktopEvidence(_ binding: AgentDesktopReplyBinding, generation: Int64, profile: String,
