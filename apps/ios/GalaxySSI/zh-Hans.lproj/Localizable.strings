@@ -51,6 +51,8 @@
 "galaxyssi.health.research.desktop_effort" = "推理强度";
 "galaxyssi.health.research.default" = "服务商默认";
 "galaxyssi.health.research.share_questions" = "在自动研究中包含已复核的澄清记录";
+"galaxyssi.health.research.share_question_pages" = "允许云端模型继续读取澄清记录";
+"galaxyssi.health.research.question_pages_scope" = "每次自动复核可包含当前关注项的第一页，并最多继续读取 4 页。已复核的答复变化后，需要重新授权。";
 "galaxyssi.health.research.questions_scope" = "每次自动复核最多包含此关注项澄清记录的第一页。已复核的答复变化后，需要重新授权。";
 "galaxyssi.health.research.paired_boundary" = "已授权的健康内容会发给所选配对电脑及其配置的 Codex 服务商。任务仅限读取，电脑任务日志可能保留相关内容。";
 "galaxyssi.health.research.sources" = "允许查阅的公开来源";

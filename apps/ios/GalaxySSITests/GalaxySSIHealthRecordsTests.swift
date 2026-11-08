@@ -866,6 +866,63 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testAutomaticResearchQuestionContinuationRequiresSeparateConsent() throws {
+    typealias Questions = GalaxySSIHealthCareQuestions
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "question-pages", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-60), value: 110, unitOverride: "mg/dL"))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.setHealthOnlinePermission(true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    _ = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    func prepare(asks: Bool = false, shares: Bool = false, job: GalaxySSIHealthCareResearch.Job? = nil)
+        throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Review context",
+        destinationID: "provider", model: model, credential: "fixture-api-key", proposesPlan: job != nil,
+        includesQuestions: shares, asksQuestions: asks, research: job, now: now)
+    }
+    for range in [0..<Questions.pageSize, Questions.pageSize..<(Questions.pageSize + 1)] {
+      let turn = try prepare(asks: true)
+      try records.beginLocalCareDiscussionTurn(turn, now: now)
+      let rows: [AgentMcpJSONValue] = range.map { index in
+        .object(["key": .string("context.fixture_\(index)"), "question": .string("What changed?"),
+          "purpose": .string("Check measurement context")])
+      }
+      try records.saveLocalCareQuestionProposals(turn, arguments: ["questions": .array(rows)], now: now)
+    }
+    func automatic() throws -> GalaxySSIHealthCareDiscussion.Approval {
+      let queued = try XCTUnwrap(records.reconcileLocalCareResearch(now: now).first?.1)
+      return try prepare(job: records.transitionLocalCareResearch(queued, concern: concern.id, to: .preparing))
+    }
+    var preview = try prepare(shares: true)
+    try records.authorizeLocalCareResearch(preview, sources: [.labResults], now: now)
+    let firstOnly = try automatic()
+    let next = try XCTUnwrap(firstOnly.questions?.next)
+    XCTAssertEqual(firstOnly.questions?.rows.count, Questions.pageSize)
+    XCTAssertNil(firstOnly.questionCursor)
+    try records.beginLocalCareDiscussionTurn(firstOnly, now: now)
+    XCTAssertThrowsError(try records.readLocalCareDiscussionQuestions(firstOnly, after: next, now: now))
+
+    preview = try prepare(shares: true)
+    preview.allowsStandingQuestionPages = true
+    try records.authorizeLocalCareResearch(preview, sources: [.labResults], now: now)
+    let paged = try automatic()
+    let cursor = try XCTUnwrap(paged.questionCursor)
+    try records.beginLocalCareDiscussionTurn(paged, now: now)
+    let second = try records.readLocalCareDiscussionQuestions(paged, after: cursor.after, now: now)
+    XCTAssertEqual(second.rows.count, 1)
+    XCTAssertNil(second.next)
+    XCTAssertFalse(try XCTUnwrap(paged.questions).rows.contains { $0.id == second.rows.first?.id })
+    try records.revokeLocalCareResearch(concern.id)
+    XCTAssertThrowsError(try records.readLocalCareDiscussionQuestions(paged, after: cursor.after, now: now))
+  }
+
+  @MainActor
   func testLocalCareDiscussionBindsConsentToConcernTurnAndProvider() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }

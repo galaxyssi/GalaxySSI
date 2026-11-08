@@ -119,6 +119,7 @@ enum GalaxySSIHealthCareDiscussion {
     var questions: GalaxySSIHealthCareQuestions.Page?
     var questionCursor: GalaxySSIHealthCareQuestions.Cursor?
     var asksQuestions = false
+    var allowsStandingQuestionPages = false
 
     var model: CloudModelConfig? {
       if case .cloud(let model, _, _) = destination { return model }
