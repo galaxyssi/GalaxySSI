@@ -203,10 +203,11 @@ struct MqttPeerChatProjection {
   }
 
   static func desktopBlobOfferRequest(_ payload: [String: Any], attachment: AgentPreparedOutboundAttachment,
-                                      target: Destination) throws -> MqttSignalSendRequest {
+                                      target: Destination, peerChat: Bool = true) throws -> MqttSignalSendRequest {
     let scope = attachment.scope
     guard target.desktop, scope.desktopId == target.peer.remoteSignalName, scope.clientRouteId == target.routeId,
-          scope.contactId == target.peer.remoteSignalName, scope.conversationId == target.conversationId,
+          (scope.contactId == target.peer.remoteSignalName) == peerChat,
+          !peerChat || scope.conversationId == target.conversationId,
           payload.string("type") == "input_attachment_blob_offer",
           let offer = payload["blob_offer"] as? [String: Any],
           let raw = offer["private"] as? [String: Any] else { throw MqttRouteError.identityChanged }
@@ -219,12 +220,13 @@ struct MqttPeerChatProjection {
     let identity = try MqttBusinessIdentity(target.peer.binding)
     let digest = MqttRouteProtocol.digest(try MqttBusinessStorage.payload(expected))
     var wire = payload
-    wire["peer_chat"] = true
+    if peerChat { wire["peer_chat"] = true }
     wire["message_id"] = try stableID([identity.binding, attachment.transferId, "desktop-blob-offer", digest])
     return try MqttSignalSendRequest(identity: identity, payload: wire, remoteName: target.peer.remoteSignalName,
       topic: target.peer.binding.sendTopic, clientRouteID: target.routeId, traffic: .control,
       requiresValidatedNetwork: attachment.requiresValidatedNetwork, attachmentTransferID: attachment.transferId,
-      contactID: target.contactId)
+      sourceMessageID: peerChat ? "" : (scope.clientMessageId ?? ""),
+      contactID: peerChat ? target.contactId : scope.contactId)
   }
 
   func desktopPeerBlobDescriptors(_ descriptors: [[String: Any]], payload: [String: Any],

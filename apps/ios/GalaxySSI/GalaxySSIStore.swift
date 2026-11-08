@@ -699,6 +699,12 @@ final class GalaxySSIStore: ObservableObject {
     AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: chatHistoryDatabase)
   }
 
+  func persistedOutboundTransportSource(id: UUID) -> ChatMessage? {
+    guard let message = chatHistoryDatabase.message(id: id), message.isMine, !message.isSystem,
+          chatHistoryDatabase.admitsAgentTurn(message) else { return nil }
+    return message
+  }
+
   func makeLinkDeliveryStore() -> GalaxySSILinkDeliveryStore {
     GalaxySSILinkDeliveryStore(defaults: defaults, secrets: secrets, journal: chatHistoryDatabase)
   }
@@ -1616,8 +1622,8 @@ final class GalaxySSIStore: ObservableObject {
   }
 
   // The MQTT completion drain consumes its event only after this throws-or-succeeds boundary.
-  func persistTransportDelivery(_ event: MqttDeliveryCompletions.Event) throws {
-    let saved = try chatHistoryDatabase.persistTransportDelivery(event)
+  func persistTransportDelivery(_ event: MqttDeliveryCompletions.Event, messageContactID: String? = nil) throws {
+    let saved = try chatHistoryDatabase.persistTransportDelivery(event, messageContactID: messageContactID)
     guard !runtimePlaintextCleared, var cached = messagesByContact[saved.contactId],
           let index = cached.firstIndex(where: { $0.id == saved.id }) else { return }
     cached[index] = saved

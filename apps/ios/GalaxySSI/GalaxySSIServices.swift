@@ -14995,8 +14995,7 @@ final class MessageCoordinator: ObservableObject {
   ) async throws -> AgentDisclosureStatus {
     try Task.checkCancellation()
     if !usesLegacyMqtt {
-      guard journalMqttRuntime != nil, (attachments.isEmpty || contact.isDesktopDeviceContact),
-            teamContext == nil, codexReplay == nil else {
+      guard journalMqttRuntime != nil, teamContext == nil, codexReplay == nil else {
         throw GalaxySSIError.transportUnavailable
       }
     }
@@ -15228,8 +15227,9 @@ final class MessageCoordinator: ObservableObject {
         mediaProfile: mediaProfile,
         preserveOriginalBytes: peerChat
       )
-      if peerChat {
-        beginPeerAttachmentTransfers(outboundAttachments, outgoing: outgoing, contact: contact)
+      if peerChat || journalMqttRuntime != nil {
+        beginPeerAttachmentTransfers(outboundAttachments, outgoing: outgoing,
+          contact: store.contact(id: outgoing.contactId) ?? contact)
       }
       payload["attachments"] = outboundAttachments.map { $0.descriptor() }
     }
@@ -15341,15 +15341,23 @@ final class MessageCoordinator: ObservableObject {
     )
     if !outboundAttachments.isEmpty {
       if let runtime = journalMqttRuntime {
-        guard peerChat else { throw GalaxySSIError.transportUnavailable }
         let projection = MqttPeerChatProjection(store: store, localFingerprint: link.routes.localFingerprint)
-        guard let target = projection.destination(for: contact), target.desktop, target.routes == link.routes else {
+        let matches = projection.currentDestinations().filter {
+          $0.desktop && $0.peer.remoteSignalName == link.desktopId && $0.routes == link.routes
+        }
+        guard matches.count == 1, let target = matches.first else {
           throw MqttRouteError.identityChanged
         }
         let binding = try MqttBusinessIdentity(target.peer.binding).binding
-        let blobTransfers = try await blobOutgoingCoordinator.registerJournal(outboundAttachments, link: link, binding: binding)
-        _ = try runtime.enqueueDirectPeerAttachments(messageId: outgoing.id, contactId: contact.id,
-          attachments: outboundAttachments, blobTransfers: blobTransfers)
+        let blobTransfers = try await blobOutgoingCoordinator.registerJournal(outboundAttachments, link: link,
+          binding: binding, contactID: peerChat ? link.desktopId : contact.id)
+        if peerChat {
+          _ = try runtime.enqueueDirectPeerAttachments(messageId: outgoing.id, contactId: contact.id,
+            attachments: outboundAttachments, blobTransfers: blobTransfers)
+        } else {
+          _ = try runtime.enqueueDesktopConnectorRequest(payload, desktopId: link.desktopId, attachments: outboundAttachments,
+            blobTransfers: blobTransfers, ownerContactID: outgoing.contactId)
+        }
         if !blobTransfers.isEmpty { await blobOutgoingCoordinator.wake() }
         return .queued
       }

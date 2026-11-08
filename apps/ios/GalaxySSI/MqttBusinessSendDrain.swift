@@ -35,7 +35,8 @@ actor MqttBusinessSendDrain {
 
   func close() { closed = true }
 
-  func drain(identities: [MqttBusinessIdentity], validatedNetwork: Bool, limit: Int = 16) async throws -> Result {
+  func drain(identities: [MqttBusinessIdentity], validatedNetwork: Bool, limit: Int = 16,
+             authorize: @Sendable (MqttBusinessOutbox.Entry) async throws -> Bool = { _ in true }) async throws -> Result {
     guard (1...64).contains(limit), identities.count <= 10_000,
           Set(identities.map(\.scope)).count == identities.count else { throw MqttRouteError.invalidPayload }
     try identities.forEach { try $0.validate() }
@@ -74,6 +75,11 @@ actor MqttBusinessSendDrain {
         if closed { result.stopped = true; return result }
         result.inspected += 1
         do {
+          if item.message.blockedByAttachmentTransferIds.isEmpty {
+            guard try await authorize(item) else { continue }
+          }
+          try Task.checkCancellation()
+          if closed { result.stopped = true; return result }
           let delivery: (String, Publication)? = try routes.withPendingTopic(identity: identity,
             storedTopic: item.message.topic) { topic in
             // Do not put a ready-route guard before the durable scan: it makes a stalled route

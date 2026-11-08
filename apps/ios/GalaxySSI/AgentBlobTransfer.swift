@@ -406,7 +406,7 @@ actor AgentBlobOutgoingCoordinator {
   }
 
   func registerJournal(_ attachments: [AgentPreparedOutboundAttachment], link: ServerLink,
-                       binding: String) throws -> Set<String> {
+                       binding: String, contactID: String) throws -> Set<String> {
     guard link.paired, MqttRouteProtocol.hex(binding, count: 64) else {
       throw AgentBlobFailure.invalid("blob_outgoing_route_mismatch")
     }
@@ -417,7 +417,7 @@ actor AgentBlobOutgoingCoordinator {
     for attachment in attachments {
       guard attachment.scope.desktopId == link.desktopId,
             attachment.scope.clientRouteId == link.routes.clientRouteId,
-            attachment.scope.contactId == link.desktopId else {
+            attachment.scope.contactId == contactID else {
         throw AgentBlobFailure.invalid("blob_outgoing_route_mismatch")
       }
       if let existing = jobs.first(where: { $0.transferId == attachment.transferId }) {
