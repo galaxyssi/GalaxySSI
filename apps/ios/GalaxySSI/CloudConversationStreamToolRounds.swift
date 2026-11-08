@@ -526,7 +526,8 @@ struct CloudModelStreamMutableConversation {
   }
 
   static let goalAssessmentFinalInstruction = AgentCollaborationGoalAssessmentPolicy.admissionInstructions +
-    " Return only the galaxyssi.goal-assessment.v1 JSON object. Never claim achieved without exact reviewed criterion deliveries, goal_coverage, and final_delivery. Select final_delivery from a met criterion. Return a non-achieved assessment if evidence is missing. Do not send final deliverable prose; the host loads the reviewed text."
+    " Return only the galaxyssi.goal-assessment.v1 JSON object. Never claim achieved without exact reviewed criterion deliveries, goal_coverage, and final_delivery. Select final_delivery from a met criterion. Return a non-achieved assessment if evidence is missing. Do not send final deliverable prose; the host loads the reviewed text. Do not preclaim or await review of this assessment before submitting it. " +
+    AgentCollaborationPromptBudget.deliveryReviewGuidance
 
   mutating func requestForRound(roundId: String, finalRound: Bool = false, finalInstruction: String? = nil) throws -> ModelStreamRequest {
     if finalRound {
