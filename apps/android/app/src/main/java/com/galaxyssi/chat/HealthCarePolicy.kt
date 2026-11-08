@@ -10,7 +10,7 @@ internal object HealthCarePolicy {
     const val VERSION = "health-care-assessment-1"
     private val guidelineChecked = LocalDate.of(2026, 11, 7).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
 
-    fun assess(metric: HealthMetric, records: List<HealthObservation>, context: HealthCareContext?): HealthCareAssessment? {
+    fun assess(metric: HealthMetric, records: List<HealthObservation>, context: HealthCareContext?, previous: HealthCareAssessment? = null): HealthCareAssessment? {
         val eligible = records.filter { it.profileId == "self" && it.draft.metric == metric &&
             HealthObservationPolicy.validate(it.draft) == null }.sortedWith(compareByDescending<HealthObservation> {
                 it.draft.measuredAt }.thenByDescending { it.id })
@@ -73,8 +73,10 @@ internal object HealthCarePolicy {
             if (points.zipWithNext().all { (new, old) -> new > old }) signals += HealthCareSignal.RISING_SERIES
             if (points.zipWithNext().all { (new, old) -> new < old }) signals += HealthCareSignal.FALLING_SERIES
         }
+        val sample = HealthCareSample.of(latest)
         return HealthCareAssessment(ref, draft.measuredAt, metric.fields.joinToString(" / ") { draft.values[it].orEmpty() },
-            draft.unit, draft.reference, signals, guideline, baseline)
+            draft.unit, draft.reference, signals, guideline, baseline, sample,
+            HealthCareComparisonPolicy.build(sample, eligible, previous, context))
     }
 
     fun reconcile(prior: HealthCareConcern?, metric: HealthMetric, assessment: HealthCareAssessment?,

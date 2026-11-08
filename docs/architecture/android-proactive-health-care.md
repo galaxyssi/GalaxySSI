@@ -102,6 +102,35 @@ context confirmation, original record, guideline link, pause/resume and history.
 
 Local tests and a native overview alone must not be used to mark this goal complete.
 
+## Subsequent-result reassessment
+
+New evaluations retain bounded before/after measurement snapshots, their exact
+record revisions, collection times, component units, collection conditions and
+source identity. Previous context confirmations remain attached to their own
+measurement; they never authorize the next result implicitly. Corrections and
+history changes are distinguished from newly collected follow-up results.
+Source/device identity is kept only in the encrypted local snapshot; model
+handoffs carry source types and comparison-gap flags, not those identifiers.
+
+The Agent landing surface shows the before/after values. Concern details expose
+comparison gaps, and the scoped discussion receives the same structured handoff
+along with existing actions and outcomes. Arithmetic differences do not classify
+clinical improvement, worsening or stability. Method/laboratory comparability is
+explicitly unverified; unit changes are not silently converted. Model reassessment
+must explain applicability, remaining uncertainty and the next justified step.
+One in-range result does not close the concern or enter maintenance.
+
+The engine uses the existing 30-record window plus at most two indexed anchor
+lookups, not a complete-history scan. Deleted or superseded comparison sources
+are removed from the active handoff. Historical revisions remain in the existing
+encrypted audit history. Legacy payloads stay readable without fabricating missing
+measurement metadata; the next measurement event builds the new handoff. Merely
+installing the update does not re-anchor or cancel existing reminders.
+
+This supplies longitudinal evidence, not a clinically validated automatic outcome
+classifier. Broader real-provider applicability, conflicting-source, maintenance
+and complete UI acceptance remain required.
+
 ## Scoped Agent discussion
 
 An issue can open a dedicated private, tracking-paused Agent conversation. Its

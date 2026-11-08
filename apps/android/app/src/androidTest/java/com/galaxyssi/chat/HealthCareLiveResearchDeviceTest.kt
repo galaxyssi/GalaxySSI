@@ -69,7 +69,22 @@ class HealthCareLiveResearchDeviceTest {
                 assertTrue("Follow-up lost units", answer.contains("mmol", true) || answer.contains("\u6beb\u6469"))
                 assertEquals(plan, store.plan(grant.turnId)); assertNull(store.plan(next.turnId))
                 assertTrue(store.concern(concern.id)!!.actions.isEmpty()); assertNull(store.nextDue())
-                println("HEALTH_LIVE research_and_followup=true pending_only=true real_provider=true")
+                HealthRecordStore(context, names.records).use { it.save(HealthDraft(HealthMetric.GLUCOSE,
+                    mapOf("glucose" to "5.4"), "mmol/L", System.currentTimeMillis() - 500, reference = "4-6")) }
+                HealthCareEngine.evaluate(context, names)
+                val updated = store.concern(concern.id)!!
+                assertEquals(HealthCareStage.REASSESS, updated.stage)
+                assertNotNull(updated.assessment.comparison)
+                val followup = next.copy(turnId = UUID.randomUUID().toString(), revision = updated.revision,
+                    approvedAt = System.currentTimeMillis())
+                store.approveDiscussion(followup)
+                val reassessed = runTurn(store, updated, followup, contact,
+                    "\u6211\u521a\u52a0\u5165\u4e86\u4e00\u6761\u5408\u6210\u590d\u67e5\u7ed3\u679c\u3002\u8bf7\u6bd4\u8f83\u524d\u540e\u4e24\u6b21\u6570\u503c\u548c\u5355\u4f4d\uff0c" +
+                        "\u8bf4\u660e\u8fd8\u9700\u6838\u5bf9\u4ec0\u4e48\uff0c\u80fd\u5426\u76f4\u63a5\u5224\u5b9a\u7a33\u5b9a\u5e76\u7ed3\u675f\u8ddf\u8e2a\u3002" +
+                        "\u4e0d\u7528\u518d\u67e5\u7f51\u9875\uff0c\u4e0d\u8981\u65b0\u5efa\u8349\u6848\u6216\u8bbe\u63d0\u9192\u3002", history)
+                assertTrue("Reassessment lost previous/current values", reassessed.contains("6.3") && reassessed.contains("5.4"))
+                assertEquals(updated, store.concern(concern.id)); assertNull(store.plan(followup.turnId)); assertNull(store.nextDue())
+                println("HEALTH_LIVE research_and_followup=true reassessment_context=true pending_only=true real_provider=true")
             }
         } finally {
             reportFile.writeText(report.toString(2))
