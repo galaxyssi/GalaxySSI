@@ -22,48 +22,94 @@ final class MqttSignalStateJournal {
     let traffic: MqttMultipathPolicy.Traffic
   }
 
+  struct LegacyCutover: Codable, Equatable {
+    let localFingerprint: String
+    let legacyStateDigest: String
+    let importedMessages: Int
+  }
+
+  func legacyCutover() throws -> LegacyCutover? {
+    try database.transaction {
+      guard let record = try readCutover() else { return nil }
+      guard try read() != nil else { throw MqttChunkStorageError.corruptState }
+      return record
+    }
+  }
+
+  func activateLegacy(localFingerprint: String, signalState: Data, entries: [LegacyOutboxEntry]) throws -> LegacyCutover {
+    guard MqttRouteProtocol.hex(localFingerprint, count: 64), !signalState.isEmpty,
+          signalState.count <= Self.maximumBytes, entries.count <= 4096,
+          entries.allSatisfy({ $0.identity.local == localFingerprint }) else { throw MqttRouteError.invalidPayload }
+    let (cutover, _) = try commit(expected: nil) { token in
+      guard try readCutover() == nil else { throw MqttChunkStorageError.corruptState }
+      let imported = try importLegacyEntries(entries, token: token)
+      let cutover = LegacyCutover(localFingerprint: localFingerprint, legacyStateDigest: MqttRouteProtocol.digest(signalState),
+        importedMessages: imported)
+      let encoded = try database.seal(JSONEncoder().encode(cutover), purpose: "mqtt-legacy-cutover-v1")
+      try database.run("INSERT INTO mqtt_legacy_cutover(id,encrypted_record) VALUES(1,?)", [.blob(encoded)])
+      return (cutover, signalState)
+    }
+    return cutover
+  }
+
+  private func readCutover() throws -> LegacyCutover? {
+    try database.query("SELECT encrypted_record FROM mqtt_legacy_cutover WHERE id=1", maximumRows: 1) {
+      let data = try database.open($0.data(0, maximum: 8192), purpose: "mqtt-legacy-cutover-v1")
+      let record = try JSONDecoder().decode(LegacyCutover.self, from: data)
+      guard MqttRouteProtocol.hex(record.localFingerprint, count: 64),
+            MqttRouteProtocol.hex(record.legacyStateDigest, count: 64), (0...4096).contains(record.importedMessages)
+      else { throw MqttChunkStorageError.corruptState }
+      return record
+    }.first
+  }
+
   // The owner quiesces legacy writers and holds all current relationship fences. A failed import
   // leaves the whole source queue intact; no ratchet is advanced or ciphertext regenerated.
   func importLegacyOutbox(_ entries: [LegacyOutboxEntry], expectedSignalState: Data) throws -> Int {
     guard entries.count <= 4096 else { throw MqttChunkStorageError.capacityExceeded }
     let (imported, _) = try commit(expected: expectedSignalState) { token in
-      var imported = 0
-      var keys = Set<String>()
-      for entry in entries {
-        let key = try entry.identity.key(messageID: entry.message.messageId)
-        guard keys.insert(key).inserted, entry.message.wirePayloadFile == nil else {
+      guard try readCutover() == nil else { throw MqttChunkStorageError.corruptState }
+      return (try importLegacyEntries(entries, token: token), expectedSignalState)
+    }
+    return imported
+  }
+
+  private func importLegacyEntries(_ entries: [LegacyOutboxEntry], token: MqttChunkDatabase.Transaction) throws -> Int {
+    var imported = 0
+    var keys = Set<String>()
+    for entry in entries {
+      let key = try entry.identity.key(messageID: entry.message.messageId)
+      guard keys.insert(key).inserted, entry.message.wirePayloadFile == nil else {
+        throw MqttChunkStorageError.corruptState
+      }
+      if let completed = try outbox.completions.event(identity: entry.identity,
+        messageID: entry.message.messageId, transaction: token) {
+        guard let wire = try JSONSerialization.jsonObject(with: Data(entry.message.wirePayload.utf8)) as? [String: Any],
+              completed.wireHash == (try MqttDeliveryEnvelope.contentHash(wire)),
+              completed.traffic == entry.traffic.rawValue,
+              completed.sourceMessageID == entry.message.clientSourceMessageId,
+              completed.contactID == entry.message.contactId,
+              completed.attachmentTransferID == entry.message.attachmentTransferId else {
           throw MqttChunkStorageError.corruptState
         }
-        if let completed = try outbox.completions.event(identity: entry.identity,
-          messageID: entry.message.messageId, transaction: token) {
-          guard let wire = try JSONSerialization.jsonObject(with: Data(entry.message.wirePayload.utf8)) as? [String: Any],
-                completed.wireHash == (try MqttDeliveryEnvelope.contentHash(wire)),
-                completed.traffic == entry.traffic.rawValue,
-                completed.sourceMessageID == entry.message.clientSourceMessageId,
-                completed.contactID == entry.message.contactId,
-                completed.attachmentTransferID == entry.message.attachmentTransferId else {
-            throw MqttChunkStorageError.corruptState
-          }
-          continue
-        }
-        if let existing = try outbox.entry(identity: entry.identity, messageID: entry.message.messageId, transaction: token) {
-          guard existing.isPrepared, existing.requestHash == nil, existing.traffic == entry.traffic.rawValue,
-                existing.message.topic == entry.message.topic,
-                existing.message.wirePayload == entry.message.wirePayload,
-                existing.message.clientSourceMessageId == entry.message.clientSourceMessageId,
-                existing.message.contactId == entry.message.contactId,
-                existing.message.attachmentTransferId == entry.message.attachmentTransferId,
-                existing.message.requiresValidatedNetwork == entry.message.requiresValidatedNetwork,
-                Set(existing.message.blockedByAttachmentTransferIds)
-                  .isSubset(of: Set(entry.message.blockedByAttachmentTransferIds)) else {
-            throw MqttChunkStorageError.corruptState
-          }
-          continue
-        }
-        if try outbox.enqueue(identity: entry.identity, message: entry.message,
-          traffic: entry.traffic, transaction: token) { imported += 1 }
+        continue
       }
-      return (imported, expectedSignalState)
+      if let existing = try outbox.entry(identity: entry.identity, messageID: entry.message.messageId, transaction: token) {
+        guard existing.isPrepared, existing.requestHash == nil, existing.traffic == entry.traffic.rawValue,
+              existing.message.topic == entry.message.topic,
+              existing.message.wirePayload == entry.message.wirePayload,
+              existing.message.clientSourceMessageId == entry.message.clientSourceMessageId,
+              existing.message.contactId == entry.message.contactId,
+              existing.message.attachmentTransferId == entry.message.attachmentTransferId,
+              existing.message.requiresValidatedNetwork == entry.message.requiresValidatedNetwork,
+              Set(existing.message.blockedByAttachmentTransferIds)
+                .isSubset(of: Set(entry.message.blockedByAttachmentTransferIds)) else {
+          throw MqttChunkStorageError.corruptState
+        }
+        continue
+      }
+      if try outbox.enqueue(identity: entry.identity, message: entry.message,
+        traffic: entry.traffic, transaction: token) { imported += 1 }
     }
     return imported
   }
@@ -113,7 +159,7 @@ final class MqttSignalStateJournal {
       return state
     }.first
     if saved == nil {
-      let businessRecords = try database.query("SELECT (SELECT COUNT(*) FROM mqtt_business_inbox) + (SELECT COUNT(*) FROM mqtt_business_ciphertexts) + (SELECT COUNT(*) FROM mqtt_business_outbox) + (SELECT COUNT(*) FROM mqtt_delivery_completions)",
+      let businessRecords = try database.query("SELECT (SELECT COUNT(*) FROM mqtt_business_inbox) + (SELECT COUNT(*) FROM mqtt_business_ciphertexts) + (SELECT COUNT(*) FROM mqtt_business_outbox) + (SELECT COUNT(*) FROM mqtt_delivery_completions) + (SELECT COUNT(*) FROM mqtt_legacy_cutover)",
         maximumRows: 1) { try $0.number(0) }.first
       guard businessRecords == 0 else { throw MqttChunkStorageError.corruptState }
     }

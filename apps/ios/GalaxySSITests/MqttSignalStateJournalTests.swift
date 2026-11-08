@@ -5,6 +5,29 @@ final class MqttSignalStateJournalTests: XCTestCase {
   private let snapshot = Data("test-ratchet-state".utf8)
   private let next = Data("advanced-test-ratchet-state".utf8)
 
+  func testLegacyCutoverCommitsSignalStateQueueAndMarkerTogether() throws {
+    let fixture = try ChunkFixture()
+    let journal = try makeJournal(fixture)
+    let entry = try legacyEntry("legacy")
+    try fixture.execute("CREATE TRIGGER fail_cutover_state BEFORE INSERT ON mqtt_signal_state BEGIN SELECT RAISE(ABORT,'forced'); END")
+    XCTAssertThrowsError(try journal.activateLegacy(localFingerprint: entry.identity.local, signalState: snapshot,
+      entries: [entry]))
+    XCTAssertNil(try journal.legacyCutover())
+    XCTAssertNil(try journal.load())
+    XCTAssertNil(try journal.outbox.entry(identity: entry.identity, messageID: "legacy"))
+    try fixture.execute("DROP TRIGGER fail_cutover_state")
+    let marker = try journal.activateLegacy(localFingerprint: entry.identity.local, signalState: snapshot, entries: [entry])
+    XCTAssertEqual(marker.importedMessages, 1)
+    XCTAssertEqual(marker.legacyStateDigest, MqttRouteProtocol.digest(snapshot))
+    let reopened = try makeJournal(fixture)
+    XCTAssertEqual(try reopened.legacyCutover(), marker)
+    XCTAssertEqual(try reopened.load(), snapshot)
+    XCTAssertEqual(try reopened.outbox.entry(identity: entry.identity, messageID: "legacy")?.message, entry.message)
+    XCTAssertThrowsError(try reopened.importLegacyOutbox([entry], expectedSignalState: snapshot))
+    XCTAssertThrowsError(try reopened.activateLegacy(localFingerprint: entry.identity.local, signalState: next, entries: []))
+    XCTAssertEqual(try reopened.load(), snapshot)
+  }
+
   func testLegacyOutboxImportPreservesWireAndRetriesWithoutAdvancingRatchet() throws {
     let f = try ChunkFixture()
     let journal = try makeJournal(f)

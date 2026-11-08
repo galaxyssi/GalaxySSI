@@ -3,6 +3,57 @@ import XCTest
 
 #if canImport(LibSignalClient)
 final class MqttSignalSendTransactionTests: XCTestCase {
+  @MainActor
+  func testLegacyCutoverPreservesIdentityRatchetAndExactQueuedCiphertext() throws {
+    let storage = try ChunkFixture()
+    let suite = "mqtt-cutover-\(UUID().uuidString)", remoteSuite = "mqtt-cutover-remote-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let remoteDefaults = try XCTUnwrap(UserDefaults(suiteName: remoteSuite))
+    defer {
+      defaults.removePersistentDomain(forName: suite)
+      remoteDefaults.removePersistentDomain(forName: remoteSuite)
+    }
+    let legacy = GalaxySSISignalEngine(profileName: "legacy", defaults: defaults, secrets: storage.secrets)
+    let remote = GalaxySSISignalEngine(profileName: "remote", defaults: remoteDefaults, secrets: InMemorySecretStore())
+    XCTAssertTrue(legacy.processBundle(try XCTUnwrap(remote.identity.bundle)))
+    let local = legacy.identity.fingerprint
+    let secret = Data(repeating: 7, count: 32).base64URLEncodedString()
+    let topic = String(repeating: "s", count: 43)
+    let binding = MqttPeerBinding(scope: "peer", sender: local, receiver: remote.identity.fingerprint, secret: secret,
+      sendTopic: topic, sendTopics: [topic], receiveTopics: [String(repeating: "r", count: 43)])
+    let peers = [MqttBusinessTransportRuntime.Peer(binding: binding, remoteSignalName: remote.identity.name)]
+    let identity = try MqttBusinessIdentity(binding)
+    let wire = try XCTUnwrap(legacy.encrypt(["type": "peer_message", "message_id": "pending"], remoteName: remote.identity.name))
+    let bytes = String(decoding: try GalaxySSILinkProtocol.jsonData(wire), as: UTF8.self)
+    let legacyQueue = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: storage.secrets)
+    legacyQueue.enqueue(messageId: "pending", topic: topic, wirePayload: bytes, contactId: "peer")
+    let journal = try MqttSignalStateJournal(fileURL: storage.url, secrets: storage.secrets)
+    XCTAssertEqual(legacyQueue.stageIncoming(messageId: "waiting", payload: "{}"), .staged)
+    XCTAssertThrowsError(try MqttBusinessTransportRuntime.prepareLegacyCutover(journal: journal,
+      legacyOutbox: legacyQueue, expectedLocalFingerprint: local, peers: peers, defaults: defaults,
+      secrets: storage.secrets, classify: { _ in .message }))
+    XCTAssertNil(try journal.legacyCutover())
+    legacyQueue.completeIncoming(messageId: "waiting")
+    let marker = try MqttBusinessTransportRuntime.prepareLegacyCutover(journal: journal,
+      legacyOutbox: legacyQueue, expectedLocalFingerprint: local, peers: peers, defaults: defaults,
+      secrets: storage.secrets, classify: { _ in .message })
+    XCTAssertEqual(marker.localFingerprint, local)
+    XCTAssertEqual(marker.importedMessages, 1)
+    XCTAssertTrue(legacyQueue.containsOutboxMessage("pending"))
+    XCTAssertEqual(try journal.outbox.entry(identity: identity, messageID: "pending")?.message.wirePayload, bytes)
+    let migrated = try GalaxySSISignalEngine(profileName: "legacy", journal: journal, defaults: defaults, secrets: storage.secrets)
+    XCTAssertEqual(migrated.identity.fingerprint, local)
+    XCTAssertEqual(remote.decrypt(wire)?["message_id"] as? String, "pending")
+    let request = try MqttSignalSendRequest(identity: identity, payload: ["type": "peer_message", "message_id": "next"],
+      remoteName: remote.identity.name, topic: topic, sourceMessageID: "source", contactID: "peer")
+    let next = try migrated.encryptAndEnqueue(request)
+    let nextWire = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(next.message.wirePayload.utf8)) as? [String: Any])
+    XCTAssertEqual(remote.decrypt(nextWire)?["message_id"] as? String, "next")
+    XCTAssertEqual(try MqttBusinessTransportRuntime.prepareLegacyCutover(journal: journal,
+      legacyOutbox: legacyQueue, expectedLocalFingerprint: local, peers: [], defaults: defaults,
+      secrets: storage.secrets, classify: { _ in XCTFail("Never replay the legacy queue after cutover"); return nil }), marker)
+  }
+
   func testDeliveredRequestCannotAdvanceRatchetOrRecreateOutbox() throws {
     let f = try SignalSendFixture()
     let request = try f.request()

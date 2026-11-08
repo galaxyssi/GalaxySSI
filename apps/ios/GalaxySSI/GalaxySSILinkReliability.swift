@@ -909,7 +909,7 @@ final class GalaxySSILinkDeliveryStore {
 
   // Call only after the legacy publisher is quiesced. Migration must include blocked/future
   // messages and must not delete file-backed wire bytes before the destination commits.
-  func outboxMigrationSnapshot() throws -> [PendingLinkMessage] {
+  func outboxMigrationSnapshot(requireDrainedInbox: Bool = false) throws -> [PendingLinkMessage] {
     guard journalHealthy else { throw MqttChunkStorageError.corruptState }
     let data: Data?
     if let journal { data = try journal.loadLinkDeliveryState() }
@@ -917,6 +917,7 @@ final class GalaxySSILinkDeliveryStore {
     guard let data,
           let persisted = try? JSONDecoder.linkReliability.decode(PersistedState.self, from: data),
           persisted.transportEpoch == state.transportEpoch,
+          !requireDrainedInbox || (state.pendingIncoming.isEmpty && persisted.pendingIncoming.isEmpty),
           (try? JSONEncoder.linkReliability.encode(persisted.outbox)) == (try? JSONEncoder.linkReliability.encode(state.outbox)),
           state.outbox.count <= 4096,
           Set(state.outbox.map(\.messageId)).count == state.outbox.count else {

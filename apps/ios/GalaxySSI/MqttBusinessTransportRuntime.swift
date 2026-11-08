@@ -30,6 +30,50 @@ final class MqttBusinessTransportRuntime {
   private var stopped = false
   private var polling = false
 
+  // The caller must first quiesce legacy Signal, inbox and outbox writers. Once this returns a
+  // marker, that account must reopen the new runtime; it must not restart the old sender.
+  static func prepareLegacyCutover(journal: MqttSignalStateJournal, legacyOutbox: GalaxySSILinkDeliveryStore,
+                                   expectedLocalFingerprint: String, peers: [Peer], defaults: UserDefaults,
+                                   secrets: GalaxySSISecretStore,
+                                   classify: (PendingLinkMessage) -> MqttMultipathPolicy.Traffic?) throws
+    -> MqttSignalStateJournal.LegacyCutover {
+    if let existing = try journal.legacyCutover() {
+      guard existing.localFingerprint == expectedLocalFingerprint else { throw MqttRouteError.identityChanged }
+      return existing
+    }
+    #if canImport(LibSignalClient)
+    let legacy = try GalaxySSISignalProtocolStore.legacyMigrationSnapshot(defaults: defaults, secrets: secrets)
+    guard legacy.localFingerprint == expectedLocalFingerprint else { throw MqttRouteError.identityChanged }
+    var byTopic: [String: Peer] = [:]
+    for peer in peers where peer.binding.enabled {
+      try peer.binding.validate()
+      guard peer.binding.sender == expectedLocalFingerprint, !peer.remoteSignalName.isBlank else {
+        throw MqttRouteError.identityChanged
+      }
+      for topic in peer.binding.sendTopics {
+        guard byTopic.updateValue(peer, forKey: topic) == nil else { throw MqttRouteError.invalidPayload }
+      }
+    }
+    let queue = try legacyOutbox.outboxMigrationSnapshot(requireDrainedInbox: true)
+    let entries = try queue.map { item -> MqttSignalStateJournal.LegacyOutboxEntry in
+      guard let peer = byTopic[item.topic], let traffic = classify(item), item.deferredTaskPayload == nil,
+            let wire = try JSONSerialization.jsonObject(with: Data(item.wirePayload.utf8)) as? [String: Any],
+            wire["scheme"] as? String == "signal", wire["from"] as? String == legacy.localName,
+            wire["to"] as? String == peer.remoteSignalName,
+            wire["message_id"] == nil || wire["message_id"] as? String == item.messageId,
+            wire[MqttDeliveryEnvelope.field] == nil else { throw MqttRouteError.invalidPayload }
+      let device = try MqttRouteProtocol.integer(wire, "device_id")
+      guard (1...127).contains(device),
+            legacy.trustedFingerprints["\(peer.remoteSignalName)|\(device)"] == peer.binding.receiver
+      else { throw MqttRouteError.identityChanged }
+      return .init(identity: try MqttBusinessIdentity(peer.binding), message: item, traffic: traffic)
+    }
+    return try journal.activateLegacy(localFingerprint: expectedLocalFingerprint, signalState: legacy.state, entries: entries)
+    #else
+    throw MqttDeliveryDispatch.Failure.unavailable
+    #endif
+  }
+
   init(profileName: String, journal: MqttSignalStateJournal, routeState: MqttRouteState,
        defaults: UserDefaults = .standard, secrets: GalaxySSISecretStore = KeychainSecretStore.shared,
        pool: GalaxySSIMqttBrokerPool = .init(),
@@ -45,6 +89,9 @@ final class MqttBusinessTransportRuntime {
     self.projectInbound = projectInbound
     self.onFailure = onFailure
     let engine = try GalaxySSISignalEngine(profileName: profileName, journal: journal, defaults: defaults, secrets: secrets)
+    if let cutover = try journal.legacyCutover(), cutover.localFingerprint != engine.identity.fingerprint {
+      throw MqttRouteError.identityChanged
+    }
     self.engine = engine
     let routes = MqttPeerRoutes(pool: pool, persistence: routeState, wall: wall, now: monotonic,
       onFailure: { _, error in Task { @MainActor in onFailure(error) } })
