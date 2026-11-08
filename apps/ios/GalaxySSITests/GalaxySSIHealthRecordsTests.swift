@@ -367,14 +367,26 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     }
     let source = GalaxySSIHealthCareEvidence.PublicSource.labResults
     try records.authorizeLocalCareResearch(approval(at: now), sources: [source], now: now)
-    var initial = try approval(claim(now), at: now)
+    let clarification = try approval(claim(now), at: now)
+    XCTAssertFalse(clarification.proposesPlan)
+    XCTAssertEqual(clarification.researchHandoff?.payload["reasons"], .array([.string("initial_review")]))
+    try records.beginLocalCareDiscussionTurn(clarification, now: now)
+    try records.finishLocalCareDiscussionTurn(clarification, answer: "Was this collected fasting?", now: now)
+    let confirmedAt = now.addingTimeInterval(1)
+    try records.setLocalCareContext(concern, applicability: .applicable, now: confirmedAt)
+    var initial = try approval(claim(confirmedAt), at: confirmedAt)
     XCTAssertTrue(initial.proposesPlan)
-    XCTAssertEqual(initial.researchHandoff?.payload["reasons"], .array([.string("initial_review")]))
+    XCTAssertEqual(initial.researchHandoff?.payload["reasons"], .array([.string("measurement_context_changed")]))
+    let firstProgress = initial.researchHandoff?.payload["research_progress"]?.objectValue
+    XCTAssertEqual(firstProgress?["prior_response_completed"], .bool(true))
+    XCTAssertEqual(firstProgress?["source_context_available"], .bool(false))
+    XCTAssertEqual(firstProgress?["recorded_plan_exists"], .bool(false))
+    XCTAssertEqual(firstProgress?["initial_source_review_pending"], .bool(true))
     let quote = "This fictional laboratory paragraph is a fixture for testing the extraction and exact passage matching."
     initial.evidence = [try GalaxySSIHealthCareEvidence.fromNativeBody(
       Data("<html><body><article><h1>Fixture</h1><p>\(quote)</p></article></body></html>".utf8),
-      source: source, binding: .init(initial), retrievedAt: now, observedAt: now)]
-    try records.beginLocalCareDiscussionTurn(initial, now: now)
+      source: source, binding: .init(initial), retrievedAt: confirmedAt, observedAt: confirmedAt)]
+    try records.beginLocalCareDiscussionTurn(initial, now: confirmedAt)
     let date = ISO8601DateFormatter().string(from: due)
     let json = """
       {"uncertainty":"Uncertain","sources":[{"title":"Fixture","url":"\(source.url.absoluteString)","version":"1",
@@ -385,9 +397,24 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
       "missing_information":[],"conflicts":[]}}]}
       """
     let arguments = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(json.utf8))
-    try records.saveLocalCarePlan(initial, arguments: arguments, now: now)
+    try records.saveLocalCarePlan(initial, arguments: arguments, now: confirmedAt)
+    let research = try XCTUnwrap(records.load().localCareResearch)
+    let key = concern.id.uuidString
+    let authorization = try XCTUnwrap(research.authorizations[key])
+    let checkpoint = try XCTUnwrap(research.checkpoints?[key])
+    let renewedReview = GalaxySSIHealthCareResearch.Job(authorization: authorization.id, trigger: "reauthorized",
+      revision: checkpoint.revision, createdAt: confirmedAt.addingTimeInterval(1))
+    let dismissed = GalaxySSIHealthCareResearchHandoff.make(job: renewedReview, authorization: authorization,
+      basis: checkpoint.basis, prior: checkpoint, hasEarlierResult: true, plan: nil, recordedPlan: .dismissed,
+      actionCount: 0, historicalSources: [], essentialContextMissing: false, priorityWarning: false)
+    XCTAssertFalse(dismissed.plansOnly)
+    XCTAssertEqual(dismissed.payload["research_progress"]?.objectValue?["recorded_plan_state"], .string("dismissed"))
+    XCTAssertFalse(GalaxySSIHealthCareResearchHandoff.reusable(initial.evidence[0], turn: initial.id,
+      owner: "foreign-owner", authorization: authorization, job: renewedReview))
+    XCTAssertTrue(GalaxySSIHealthCareResearchHandoff.reusable(initial.evidence[0], turn: initial.id,
+      owner: records.owner, authorization: authorization, job: renewedReview))
     let saved = try XCTUnwrap(records.load().localCarePlans?[initial.id.uuidString])
-    try records.resolveLocalCarePlan(saved, selected: [0], currentDestination: initial.destinationDigest, now: now)
+    try records.resolveLocalCarePlan(saved, selected: [0], currentDestination: initial.destinationDigest, now: confirmedAt)
     XCTAssertTrue(try records.reconcileLocalCareResearch(now: due.addingTimeInterval(-1)).isEmpty)
 
     let followUp = try approval(claim(due), at: due)
@@ -397,6 +424,12 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let handoff = try XCTUnwrap(followUp.researchHandoff?.payload)
     XCTAssertEqual(handoff["reasons"], .array([.string("review_due")]))
     XCTAssertEqual(handoff["elapsed_time_only"], .bool(true))
+    let sourceContext = try XCTUnwrap(handoff["prior_automatic_source_reads"]?.arrayValue?.first?.objectValue)
+    XCTAssertEqual(sourceContext["content_sha256"], .string(initial.evidence[0].contentHash))
+    XCTAssertEqual(sourceContext["retrieved_at"], .string(ISO8601DateFormatter().string(from: confirmedAt)))
+    XCTAssertEqual(sourceContext["usable_for_new_plan"], .bool(false))
+    XCTAssertNil(sourceContext["evidence_id"])
+    XCTAssertThrowsError(try GalaxySSIHealthCarePlan.parse(arguments, evidence: [], now: due))
     XCTAssertEqual(handoff["existing_plan_actions"]?.arrayValue?.first?.objectValue?["action_id"],
       handoff["newly_due_action_ids"]?.arrayValue?.first)
     let request = try GalaxySSIHealthCareDiscussion.request(followUp, key: "fixture-api-key")
@@ -481,7 +514,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertTrue(try records.reconcileLocalCareResearch(now: now).isEmpty)
     let prepared = try approval(for: preparing)
     XCTAssertEqual(prepared.id, first.id)
-    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(prepared, now: now))
+    XCTAssertFalse(prepared.proposesPlan)
     try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-60), value: 112, unitOverride: "mg/dL"))
     let next = try XCTUnwrap(records.reconcileLocalCareResearch(now: now).first?.1)
     XCTAssertNotEqual(next.id, first.id)

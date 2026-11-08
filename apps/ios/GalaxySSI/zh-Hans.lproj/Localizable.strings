@@ -36,6 +36,7 @@
 "galaxyssi.health.research.completed" = "已完成复核，可在私密讨论中查看";
 "galaxyssi.health.research.interrupted" = "请求已中断，未自动重发";
 "galaxyssi.health.research.failed" = "研究失败";
+"galaxyssi.health.research.source_unavailable" = "无法查阅已授权的来源，未创建新计划。";
 "galaxyssi.health.research.cancelled" = "研究已取消";
 "galaxyssi.health.research.superseded" = "研究已不适用当前证据";
 "galaxyssi.health.care_profile.title" = "档案共享范围";

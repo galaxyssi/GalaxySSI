@@ -19,7 +19,8 @@ enum GalaxySSIHealthCareResearchHandoff {
     let due: Set<String>
     let outcomes: [String: String]
 
-    init(_ concern: GalaxySSIHealthCare.Concern, history: String, observedAt: Date) throws {
+    init(_ concern: GalaxySSIHealthCare.Concern, history: String, observedAt: Date,
+         actions: [GalaxySSIHealthCarePlan.AdoptedAction]) throws {
       measurement = concern.assessment.record
       self.history = history
       let encoder = JSONEncoder()
@@ -29,7 +30,6 @@ enum GalaxySSIHealthCareResearchHandoff {
       }
       contextDigest = try concern.context.map { try digest($0) }
       targetRevision = concern.targetRevision
-      let actions = concern.adoptedActions ?? []
       due = Set(actions.filter { $0.outcome == nil && $0.action.dueFrom.map { $0 <= observedAt } == true }.map(\.id))
       var outcomeDigests: [String: String] = [:]
       for action in actions {
@@ -65,8 +65,34 @@ enum GalaxySSIHealthCareResearchHandoff {
     let includeDescriptions: Bool
   }
 
+  static func reusable(_ receipt: GalaxySSIHealthCareEvidence.Receipt, turn: UUID, owner: String,
+                       authorization: Research.Authorization, job: Research.Job) -> Bool {
+    let binding = receipt.binding
+    return turn != job.id && binding.turn == turn && binding.owner == owner && binding.thread == authorization.thread &&
+      binding.concern == authorization.concern && binding.destination == authorization.destination &&
+      binding.carePermission == authorization.localPermission && binding.onlinePermission == authorization.onlinePermission &&
+      authorization.sources.contains(where: { $0.url == receipt.url }) &&
+      receipt.retrievedAt <= receipt.observedAt && receipt.observedAt <= job.createdAt && !receipt.modelExcerpt.isEmpty
+  }
+
+  private static func historicalSource(_ receipt: GalaxySSIHealthCareEvidence.Receipt) -> AgentMcpJSONValue {
+    let allowed = receipt.modelExcerpt
+    var size = 0
+    let excerpt = String(allowed.prefix { character in
+      size += String(character).utf8.count
+      return size <= 1_000
+    })
+    return .object(["url": .string(receipt.url.absoluteString), "title": .string(receipt.title),
+      "retrieved_at": .string(ISO8601DateFormatter().string(from: receipt.retrievedAt)),
+      "content_sha256": .string(receipt.contentHash), "excerpt": .string(excerpt),
+      "excerpt_truncated": .bool(receipt.excerptTruncated != false || excerpt != receipt.excerpt),
+      "medical_applicability_verified": .bool(false), "usable_for_new_plan": .bool(false)])
+  }
+
   static func make(job: Research.Job, authorization: Research.Authorization, basis: Basis, prior: Checkpoint?,
-                   hasEarlierResult: Bool, plan: PlanContext?) -> Handoff {
+                   hasEarlierResult: Bool, plan: PlanContext?, recordedPlan: GalaxySSIHealthCarePlan.State?,
+                   actionCount: Int, historicalSources: [GalaxySSIHealthCareEvidence.Receipt],
+                   essentialContextMissing: Bool, priorityWarning: Bool) -> Handoff {
     let previous = prior.flatMap { $0.matches(authorization, job: job) ? $0 : nil }
     let before = previous?.basis
     var reasons: [Reason] = []
@@ -94,6 +120,16 @@ enum GalaxySSIHealthCareResearchHandoff {
     }
     let date = ISO8601DateFormatter()
     let elapsedOnly = reasons == [.reviewDue]
+    let sources = Array(historicalSources.prefix(8))
+    let initialSourceReviewPending = sources.isEmpty && recordedPlan == nil && actionCount == 0
+    let changedEvidence = reasons.contains(where: {
+      switch $0 {
+      case .newMeasurement, .correction, .historyChanged, .contextChanged, .targetChanged, .actionFeedback: return true
+      default: return false
+      }
+    })
+    let needsDraft = !priorityWarning && !(initialSourceReviewPending && essentialContextMissing) &&
+      (changedEvidence || (recordedPlan == nil && !(elapsedOnly && plan != nil)))
     let actions: [AgentMcpJSONValue] = plan.map { plan in
       let proposal = plan.proposal
       return proposal.draft.actions.filter { proposal.state == .pending || proposal.selected.contains($0.id) }.map { action in
@@ -110,10 +146,18 @@ enum GalaxySSIHealthCareResearchHandoff {
       "existing_plan": .bool(plan != nil), "existing_plan_actions": .array(actions), "due_action_ids": tokens(basis.due),
       "newly_due_action_ids": before == nil ? .null : tokens(newDue),
       "new_outcome_action_ids": before == nil ? .null : tokens(feedback),
+      "research_progress": .object([
+        "prior_response_completed": .bool(previous != nil), "source_context_available": .bool(!sources.isEmpty),
+        "recorded_plan_exists": .bool(recordedPlan != nil),
+        "recorded_plan_state": recordedPlan.map { .string($0.rawValue) } ?? .null,
+        "recorded_action_count": .int(Int64(actionCount)), "initial_source_review_pending": .bool(initialSourceReviewPending),
+        "essential_context_missing": .bool(essentialContextMissing), "priority_warning": .bool(priorityWarning)
+      ]),
+      "prior_automatic_source_reads": .array(sources.map(historicalSource)),
       "previous_review": previous.map {
         .object(["revision": .int(Int64($0.revision)), "started_at": .string(date.string(from: $0.startedAt))])
       } ?? .null
     ]
-    return .init(basis: basis, payload: payload, plansOnly: !(elapsedOnly && plan != nil))
+    return .init(basis: basis, payload: payload, plansOnly: needsDraft)
   }
 }
