@@ -2,6 +2,77 @@ import XCTest
 @testable import GalaxySSI
 
 final class MqttBrokerPoolTests: XCTestCase {
+  @MainActor
+  func testBusinessRuntimeProjectsOnlyCommittedCurrentPeerRowsAndRetriesProjectionFailure() async throws {
+    guard GalaxySSISignalEngine.isAvailable else { throw XCTSkip("Native Signal unavailable") }
+    enum FixtureError: Error { case writeFailed }
+    let fixture = try ChunkFixture()
+    let suite = "mqtt-runtime-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let journal = try MqttSignalStateJournal(fileURL: fixture.url, secrets: fixture.secrets)
+    var paths: [String: FakeMqttBrokerPath] = [:]
+    let pool = GalaxySSIMqttBrokerPool { endpoint in
+      let path = FakeMqttBrokerPath(id: endpoint.id)
+      paths[endpoint.id] = path
+      return path
+    }
+    var attempted: [String] = []
+    var committed: [String] = []
+    var reject = true
+    var ingressFailure: XCTestExpectation? = expectation(description: "Malformed authenticated ingress reaches the runtime")
+    let runtime = try MqttBusinessTransportRuntime(profileName: "fixture", journal: journal,
+      routeState: MqttRouteState(defaults: defaults, secrets: fixture.secrets), defaults: defaults,
+      secrets: fixture.secrets, pool: pool, projectInbound: { pending in
+        attempted.append(pending.messageID)
+        if reject { throw FixtureError.writeFailed }
+        committed.append(pending.messageID)
+      }, projectCompletion: { _ in XCTFail("No delivery completion was created") },
+      onFailure: { _ in ingressFailure?.fulfill() })
+    let local = runtime.engine.identity.fingerprint
+    let remote = String(repeating: "b", count: 64)
+    let secret = Data(repeating: 7, count: 32).base64URLEncodedString()
+    let route = GalaxySSILinkRoutes(clientRouteId: String(repeating: "r", count: 22), linkSecret: secret,
+      localFingerprint: local, remoteFingerprint: remote)
+    let binding = MqttPeerBinding(scope: "peer", sender: local, receiver: remote, secret: secret,
+      sendTopic: route.upTopic, sendTopics: route.sendWindow, receiveTopics: route.receiveWindow)
+    var foreign = binding
+    foreign.scope = "unconfigured-peer"
+    let configuration = MqttBrokerPathConfiguration(clientID: "fixture", serverLinks: [], phoneRoutes: [route],
+      rendezvousSecrets: [:], rendezvousExpirations: [:])
+    try runtime.start(configuration: configuration, peers: [.init(binding: binding, remoteSignalName: "peer")])
+    _ = await pool.readyGenerations(for: route.receiveWindow)
+    XCTAssertEqual(Set(paths.keys), ["emqx", "hivemq", "mosquitto"])
+    XCTAssertTrue(paths.values.allSatisfy { $0.configuration?.phoneRoutes == [route] })
+    XCTAssertThrowsError(try runtime.start(configuration: configuration, peers: []))
+    let path = try XCTUnwrap(paths["emqx"])
+    path.emit(.init(brokerID: "emqx", generation: 1, connected: true, subscriptions: route.receiveWindow))
+    let topic = try XCTUnwrap(route.receiveWindow.first)
+    path.emitIngress(.init(brokerID: "emqx", generation: 1, topic: topic,
+      secretFingerprint: binding.secretFingerprint, payload: Data("invalid-json".utf8)))
+    await fulfillment(of: [try XCTUnwrap(ingressFailure)], timeout: 2)
+    ingressFailure = nil
+
+    for (peer, message, byte) in [(binding, "current", "a"), (foreign, "foreign", "c")] {
+      let digest = String(repeating: byte, count: 64)
+      _ = try journal.inbox.accept(identity: MqttBusinessIdentity(peer), messageID: message,
+        payload: ["message_id": message, "type": "peer_message"], ciphertextDigest: digest,
+        wireHash: digest, receiptRequired: true)
+    }
+    try await runtime.poll(validatedNetwork: false)
+    XCTAssertEqual(attempted, ["current"])
+    XCTAssertTrue(committed.isEmpty)
+    XCTAssertEqual(Set(try journal.inbox.pending().map(\.messageID)), ["current", "foreign"])
+    reject = false
+    try await runtime.poll(validatedNetwork: false)
+    XCTAssertEqual(committed, ["current"])
+    XCTAssertEqual(try journal.inbox.pending().map(\.messageID), ["foreign"])
+    await runtime.stop()
+    try await runtime.poll(validatedNetwork: true)
+    XCTAssertEqual(attempted, ["current", "current"])
+    XCTAssertThrowsError(try runtime.start(configuration: configuration, peers: []))
+  }
+
   func testDurableCapacityRefusalDoesNotOwnAnotherPacket() async throws {
     let local = String(repeating: "a", count: 64)
     let remote = String(repeating: "b", count: 64)
