@@ -72,7 +72,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     for index in 0..<33 {
       let row = GalaxySSIHealthReading(metric: .glucose,
         measuredAt: now.addingTimeInterval(Double(index - 34) * 120),
-        value: index.isMultiple(of: 2) ? 94 : 110, conditions: index == 0 ? "" : "lab",
+        value: index == 32 || !index.isMultiple(of: 2) ? 110 : 94, conditions: index == 0 ? "" : "lab",
         unitOverride: "mg/dL", referenceInterval: "70 - 99")
       try records.write(row)
       inputs.append(row)
@@ -81,7 +81,15 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(120), value: 95))
     try records.setPrivacy(.localCare, enabled: true)
     try records.reconcileLocalCare(now: now)
+    let unreviewed = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    try records.setLocalCareContext(unreviewed, applicability: .applicable, now: now)
+    let reviewed = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    try records.reviewLocalCare(reviewed, stage: .maintenance, reason: "Fixture review", now: now)
     let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertEqual(concern.stage, .maintenance)
+    try records.write(.init(metric: .weight, measuredAt: now.addingTimeInterval(-1), value: 66))
+    try records.reconcileLocalCare(now: now)
+    XCTAssertEqual(try records.load().localCare?.current["glucose"], concern)
     let first = try records.localCareMeasurementPage(id: concern.id, metric: .glucose, now: now)
     XCTAssertEqual(first.rows.count, 30)
     XCTAssertEqual(first.rows.first?.id, inputs.last?.id)
@@ -101,6 +109,14 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     try records.write(edited)
     XCTAssertThrowsError(try records.localCareMeasurementPage(id: concern.id, metric: .glucose,
       expected: first.binding, after: next, now: now))
+    try records.reconcileLocalCare(now: now)
+    let reassessed = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertEqual(reassessed.assessment, concern.assessment)
+    XCTAssertEqual(reassessed.stage, .reassess)
+    XCTAssertEqual(reassessed.revision, concern.revision + 1)
+    XCTAssertNil(reassessed.maintenanceHistoryVersion)
+    XCTAssertNil(reassessed.reviewNote)
+    XCTAssertEqual(try records.localCareHistory(concern.id).first?.reviewNote, "Fixture review")
     let updated = try records.localCareMeasurementPage(id: concern.id, metric: .glucose, now: now)
     try records.setPrivacy(.localCare, enabled: false)
     XCTAssertThrowsError(try records.localCareMeasurementPage(id: concern.id, metric: .glucose, now: now))

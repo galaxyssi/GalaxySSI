@@ -20,6 +20,7 @@ struct GalaxySSIHealthCareSeriesLink: View {
 
 @MainActor
 private struct GalaxySSIHealthCareSeriesView: View {
+  @EnvironmentObject private var store: GalaxySSIStore
   @Environment(\.scenePhase) private var scene
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   let records: GalaxySSIHealthRecords
@@ -31,7 +32,7 @@ private struct GalaxySSIHealthCareSeriesView: View {
 
   var body: some View {
     List {
-      if scene == .active {
+      if scene == .active, store.profile.identityFingerprint == records.owner {
         if let page {
           Section {
             Text(t("series_notice", "Numeric agreement does not establish clinical stability."))
@@ -70,6 +71,7 @@ private struct GalaxySSIHealthCareSeriesView: View {
       if phase == .active { loadRecent() }
       else { clear() }
     }
+    .onChange(of: store.profile.identityFingerprint) { _ in clear() }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
       clear()
     }
@@ -84,13 +86,15 @@ private struct GalaxySSIHealthCareSeriesView: View {
   private func clear() { page = nil; start = nil; changed = false }
 
   private func loadRecent() {
-    guard scene == .active, UIApplication.shared.isProtectedDataAvailable else { clear(); return }
+    guard scene == .active, UIApplication.shared.isProtectedDataAvailable,
+          store.profile.identityFingerprint == records.owner else { clear(); return }
     do { try records.reconcileLocalCare(); load(after: nil, expected: nil) }
     catch { clear(); changed = true }
   }
 
   private func load(after: GalaxySSIHealthCareSeries.Cursor?, expected: GalaxySSIHealthCareSeries.Binding?) {
-    guard scene == .active, UIApplication.shared.isProtectedDataAvailable else { clear(); return }
+    guard scene == .active, UIApplication.shared.isProtectedDataAvailable,
+          store.profile.identityFingerprint == records.owner else { clear(); return }
     do {
       page = try records.localCareMeasurementPage(id: id, metric: metric, expected: expected, after: after)
       start = after

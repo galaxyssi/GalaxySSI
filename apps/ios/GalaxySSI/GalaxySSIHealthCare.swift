@@ -57,6 +57,7 @@ enum GalaxySSIHealthCare {
     var context: Context?
     var target: Target?
     var reviewNote: String?
+    var maintenanceHistoryVersion: String?
   }
   struct Ledger: Codable {
     var current: [String: Concern] = [:]
