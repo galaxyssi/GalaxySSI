@@ -25,12 +25,14 @@ internal object HealthCareResearchHandoff {
             it.state == HealthCareActionState.CONFIRMED && it.dueFrom?.let { from -> from <= at } == true
         }
         fun changed(values: List<HealthCareAction>, priorValues: List<HealthCareAction>) = values.filter { value ->
-            priorValues.none { it == value }
+            priorValues.none { it.copy(feedback = null) == value.copy(feedback = null) }
         }.map { it.id }
         val elapsed = due(issue, job.createdAt)
         val newlyDue = changed(elapsed, if (baseline != null) due(baseline, prior!!.createdAt) else emptyList())
         val outcomes = changed(issue.actions.filter { it.state == HealthCareActionState.DONE },
             baseline?.actions?.filter { it.state == HealthCareActionState.DONE }.orEmpty())
+        val feedback = issue.actions.filter { action -> action.feedback != null &&
+            baseline?.actions?.firstOrNull { it.id == action.id }?.feedback?.id != action.feedback.id }.map { it.id }
         val reasons = buildList {
             if (baseline == null) add(if (prior == null) "initial_review" else "prior_context_unavailable")
             else {
@@ -41,7 +43,7 @@ internal object HealthCareResearchHandoff {
                 if (issue.questionVersion != baseline.questionVersion) add("question_response_changed")
                 if (issue.profileLink != baseline.profileLink) add("selected_profile_changed")
                 if (issue.target != baseline.target || issue.targetRevision != baseline.targetRevision) add("reviewed_target_changed")
-                if (outcomes.isNotEmpty()) add("action_feedback")
+                if (outcomes.isNotEmpty() || feedback.isNotEmpty()) add("action_feedback")
                 if (newlyDue.isNotEmpty()) add("review_due")
                 if (isEmpty()) add("authorization_review")
             }
@@ -52,6 +54,7 @@ internal object HealthCareResearchHandoff {
             .put("newly_due_action_ids", if (baseline == null) JSONObject.NULL else JSONArray(newlyDue))
             .put("due_action_ids", JSONArray(elapsed.map { it.id }))
             .put("new_outcome_action_ids", if (baseline == null) JSONObject.NULL else JSONArray(outcomes))
+            .put("new_feedback_action_ids", if (baseline == null) JSONObject.NULL else JSONArray(feedback))
             .put("research_progress", JSONObject().put("prior_response_completed", prior != null)
                 .put("source_context_available", sources.isNotEmpty()).put("recorded_plan_exists", recordedPlanExists)
                 .put("recorded_action_count", issue.actions.size)

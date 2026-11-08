@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_feedback_completed">已完成</string>
+    <string name="health_feedback_partial">部分完成</string>
+    <string name="health_feedback_barrier">遇到困难</string>
+    <string name="health_feedback_choose">请选择本次行动情况</string>
+    <string name="health_feedback_note_hint">记录做了什么、感受如何，或遇到了什么困难</string>
+    <string name="health_feedback_notice">部分完成或遇到困难时，行动与提醒会保留，供后续复评；只有选择已完成才结束本次行动。反馈不代表健康已改善，也不会自动调整治疗。</string>
+    <string name="health_feedback_latest">%1$s · 记录于 %2$s</string>
+    <string name="health_feedback_history">行动反馈记录</string>
+    <string name="health_feedback_empty">暂无反馈记录。旧版完成说明仍保留在原行动中。</string>
+    <string name="health_feedback_history_notice">这是你对当时计划的反馈，不是已验证的健康结论；此时间为记录保存时间。</string>
+    <string name="health_feedback_older">更早的反馈</string>
+    <string name="health_feedback_latest_page">最新反馈</string>
+</resources>

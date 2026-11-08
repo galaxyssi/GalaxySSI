@@ -151,6 +151,9 @@ class HealthCareActivity : Activity() {
         if (profile) ui.add(content, ui.profileRow(getString(R.string.health_answer_title)) {
             answerReview.show(value.id)
         }.apply { tag = "health-care-answers" }, 8)
+        if (profile) ui.add(content, ui.profileRow(getString(R.string.health_feedback_history)) {
+            actionReview.showHistory(value.id)
+        }.apply { tag = "health-care-feedback-history" }, 8)
         if (profile) ui.add(content, ui.profileRow(getString(R.string.health_care_profile_title),
             value.profileLink?.scope?.let { getString(R.string.health_care_profile_summary, it.fields.size, it.entries.size) }
                 ?: getString(R.string.health_care_profile_none)) { profileReview.show(value.id) }

@@ -12,11 +12,14 @@ import android.text.InputType
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.Toast
 import java.text.DateFormat
 import java.util.Calendar
 import java.util.Date
+import java.util.UUID
 import java.util.concurrent.Executors
 
 /** Explicit local actions shared by the Agent page and the durable health concern. */
@@ -93,6 +96,14 @@ internal class HealthCareActionReview(private val activity: Activity, private va
                 .apply { tag = "health-care-followup-complete" }, 12)
         }
         if (value.action.outcome.isNotBlank()) ui.add(content, ui.text(value.action.outcome, 15f), 8)
+        value.action.feedback?.let { feedback ->
+            ui.add(content, ui.text(activity.getString(R.string.health_feedback_latest,
+                activity.getString(feedback.kind.label()), date(feedback.recordedAt)), 14f, muted = true), 8)
+            if (value.action.outcome != feedback.note) ui.add(content, ui.text(feedback.note, 15f), 4)
+        }
+        ui.add(content, ui.profileRow(activity.getString(R.string.health_feedback_history)) {
+            showHistory(value.issue.id, value.action.id)
+        }.apply { tag = "health-feedback-history" }, 8)
         dialog = AlertDialog.Builder(activity).setTitle(R.string.health_care_followup_title)
             .setView(ScrollView(activity).apply { addView(content) }).setNegativeButton(R.string.common_cancel, null).create().also {
                 it.setOnDismissListener { content.removeAllViews() }; it.show()
@@ -134,28 +145,75 @@ internal class HealthCareActionReview(private val activity: Activity, private va
     }
     private fun outcome(value: Snapshot) {
         dialog?.dismiss()
+        val operationId = UUID.randomUUID().toString()
+        val content = ui.column().apply { setPadding(ui.dp(20), ui.dp(8), ui.dp(20), ui.dp(16)) }
+        val choices = RadioGroup(activity)
+        HealthCareFeedbackKind.entries.forEach { kind -> choices.addView(RadioButton(activity).apply {
+            id = kind.ordinal + 1; text = activity.getString(kind.label()); minHeight = ui.dp(48)
+            tag = "health-feedback-kind-${kind.name}"
+        }) }
+        content.addView(choices)
         val input = EditText(activity).apply {
             tag = "health-care-followup-outcome"; isSaveEnabled = false
             importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
             imeOptions = EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
             filters = arrayOf(InputFilter.LengthFilter(2000)); minLines = 3; maxLines = 6
-            hint = activity.getString(R.string.health_care_followup_outcome_hint)
+            hint = activity.getString(R.string.health_feedback_note_hint)
         }
-        dialog = AlertDialog.Builder(activity).setTitle(R.string.health_care_followup_complete).setView(input)
-            .setMessage(R.string.health_care_followup_outcome_notice).setNegativeButton(R.string.common_cancel, null)
+        ui.add(content, input, 8)
+        ui.add(content, ui.text(activity.getString(R.string.health_feedback_notice), 14f, muted = true), 8)
+        dialog = AlertDialog.Builder(activity).setTitle(R.string.health_care_followup_complete)
+            .setView(ScrollView(activity).apply { addView(content) }).setNegativeButton(R.string.common_cancel, null)
             .setPositiveButton(android.R.string.ok, null).create().also { d ->
-                d.setOnDismissListener { input.text.clear() }
+                d.setOnDismissListener { input.text.clear(); content.removeAllViews() }
                 d.setOnShowListener { d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                    val kind = HealthCareFeedbackKind.entries.firstOrNull { it.ordinal + 1 == choices.checkedRadioButtonId }
+                    if (kind == null) {
+                        Toast.makeText(activity, R.string.health_feedback_choose, Toast.LENGTH_SHORT).show(); return@setOnClickListener
+                    }
                     val note = input.text.toString().trim()
-                    if (note.isBlank()) { input.error = activity.getString(R.string.health_care_followup_outcome_hint); return@setOnClickListener }
+                    if (note.isBlank()) { input.error = activity.getString(R.string.health_feedback_note_hint); return@setOnClickListener }
                     change { store ->
                         val permission = HealthPrivacyStore(activity, names.privacy).use { it.policy() }
                         check(permission.metrics && permission.profile)
-                        store.finishAction(value.issue.id, value.issue.revision, value.action.id, note, System.currentTimeMillis())
+                        store.recordActionFeedback(value.issue.id, value.issue.revision, value.action.id, kind, note, operationId, System.currentTimeMillis())
                     }
                 } }; d.show()
             }
+    }
+    fun showHistory(concernId: String, actionId: String? = null, before: Int = Int.MAX_VALUE) {
+        if (busy) return
+        clear(); val token = generation
+        worker.execute {
+            val result = runCatching {
+                val permission = HealthPrivacyStore(activity, names.privacy).use { it.policy() }
+                check(permission.metrics && permission.profile)
+                val page = HealthCareStore(activity, names.care).use { store ->
+                    checkNotNull(store.concern(concernId)); store.feedback(concernId, actionId, before)
+                }
+                check(HealthPrivacyStore(activity, names.privacy).use { it.policy() } == permission)
+                page
+            }
+            main.post { if (token == generation && !activity.isFinishing && !activity.isDestroyed) result.fold({ page ->
+                val content = ui.column().apply { setPadding(ui.dp(20), ui.dp(8), ui.dp(20), ui.dp(16)) }
+                if (page.items.isEmpty()) content.addView(ui.text(activity.getString(R.string.health_feedback_empty), 15f, muted = true))
+                page.items.forEach { receipt -> ui.add(content, ui.profileRow(receipt.actionTitle,
+                    "${activity.getString(receipt.feedback.kind.label())} · ${date(receipt.feedback.recordedAt)}\n${receipt.feedback.note}") {
+                    dialog?.dismiss()
+                    dialog = AlertDialog.Builder(activity).setTitle(receipt.actionTitle)
+                        .setMessage("${activity.getString(receipt.feedback.kind.label())} · ${date(receipt.feedback.recordedAt)}\n\n" +
+                            receipt.feedback.note + "\n\n" + activity.getString(R.string.health_feedback_history_notice))
+                        .setNegativeButton(R.string.health_feedback_history) { _, _ -> showHistory(concernId, actionId, before) }.show()
+                }.apply { tag = "health-feedback-row-${receipt.feedback.id}" }, 8) }
+                dialog = AlertDialog.Builder(activity).setTitle(R.string.health_feedback_history)
+                    .setView(ScrollView(activity).apply { addView(content) }).setNegativeButton(R.string.common_cancel, null)
+                    .apply {
+                        page.next?.let { next -> setPositiveButton(R.string.health_feedback_older) { _, _ -> showHistory(concernId, actionId, next) } }
+                        if (before != Int.MAX_VALUE) setNeutralButton(R.string.health_feedback_latest_page) { _, _ -> showHistory(concernId, actionId) }
+                    }.create().also { it.setOnDismissListener { content.removeAllViews() }; it.show() }
+            }, { error() }) }
+        }
     }
     private fun change(action: (HealthCareStore) -> Unit) {
         if (busy) return
@@ -178,4 +236,10 @@ internal fun HealthCareReminderState.label(): Int = when (this) {
     HealthCareReminderState.SCHEDULED -> R.string.health_care_followup_scheduled
     HealthCareReminderState.DELIVERED -> R.string.health_care_followup_delivered
     HealthCareReminderState.CANCELLED -> R.string.health_care_followup_cancelled
+}
+
+internal fun HealthCareFeedbackKind.label(): Int = when (this) {
+    HealthCareFeedbackKind.COMPLETED -> R.string.health_feedback_completed
+    HealthCareFeedbackKind.PARTIAL -> R.string.health_feedback_partial
+    HealthCareFeedbackKind.BARRIER -> R.string.health_feedback_barrier
 }

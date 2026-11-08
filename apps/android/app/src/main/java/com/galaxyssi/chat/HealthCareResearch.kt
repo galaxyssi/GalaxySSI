@@ -59,6 +59,9 @@ internal object HealthCareResearchPolicy {
     // A due action enters this key once, not on every scheduler wakeup after its deadline.
     fun trigger(issue: HealthCareConcern, now: Long): String = AgentNativeJsonCodec.sha256(JSONObject()
         .put("basis", HealthCareFollowUpPolicy.basis(issue))
+        .apply { issue.actions.filter { it.feedback != null }.takeIf { it.isNotEmpty() }?.let { actions ->
+            put("action_feedback", JSONArray(actions.sortedBy { it.id }.map { it.feedback!!.id }))
+        } }
         .put("outcomes", JSONArray(issue.actions.filter { it.state == HealthCareActionState.DONE }.sortedBy { it.id }.map { it.json() }))
         .put("due", JSONArray(issue.actions.filter { it.state == HealthCareActionState.CONFIRMED && it.dueFrom?.let { due -> due <= now } == true }
             .sortedBy { it.id }.map { it.json() })).toString())
