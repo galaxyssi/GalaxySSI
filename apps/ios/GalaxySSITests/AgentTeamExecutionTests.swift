@@ -2061,6 +2061,67 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(mailbox.pendingMessages(supervisorRunId: "run", instanceId: "reviewer").map(\.messageId), ["new-request"])
   }
 
+  func testOriginalPrimaryRecoveryIsDurableAndRejectsForeignOrConflictingReplies() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suite = "primary-recovery-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = InMemorySecretStore()
+    func history() -> AgentTeamExecutionHistoryStore {
+      AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+        executionStore: SavedTeamRecoveryFixture([]), fileURL: root.appendingPathComponent("team.sqlite3"))
+    }
+    let sourceID = UUID().uuidString
+    var original = durableTeamSnapshot("original-primary")
+    original.state = .interrupted
+    original.members[0].status = .interrupted
+    original.members[0].sourceMessageId = sourceID
+    original.members[0].dispatchCheckpoint = .accepted
+    XCTAssertTrue(history().upsert(original))
+    let store = history()
+    let owner = try XCTUnwrap(store.recoveryContext(source: sourceID, conversation: original.conversationId,
+      turn: original.taskId, contact: original.primaryAgentId)?.owner)
+    let outgoing = ChatMessage(contactId: "hermes", content: "Original request", isMine: true,
+      conversationId: original.conversationId, turnId: original.taskId)
+    let identity = AgentTaskIdentity(clientRouteId: "route", conversationId: original.conversationId,
+      taskId: sourceID, turnId: original.taskId)
+    let binding = try XCTUnwrap(AgentDesktopReplyBinding.teamPrimary(owner: owner,
+      desktopId: "desktop", agentId: "codex", identity: identity, outgoing: outgoing))
+    XCTAssertEqual(binding.sourceIdentity, sourceID)
+    XCTAssertEqual(binding.sourceId, outgoing.id)
+    XCTAssertNil(AgentDesktopReplyBinding.teamPrimary(owner: owner, desktopId: "desktop", agentId: "codex",
+      identity: identity, outgoing: ChatMessage(contactId: "hermes", content: "Wrong turn", isMine: true,
+        conversationId: original.conversationId, turnId: "other")))
+    var wrong = binding
+    wrong.contactId = "foreign"
+    let observed = AgentTeamReplyObservation(generation: 2, sequence: 10)
+    XCTAssertFalse(try store.commitRecoveredPrimary(binding: wrong, content: "Original answer", rich: "",
+      success: true, observation: observed, now: 10))
+    XCTAssertTrue(try store.commitRecoveredPrimary(binding: binding, content: "Original answer", rich: "",
+      success: true, observation: observed, now: 10))
+    let reopened = history()
+    XCTAssertTrue(try reopened.commitRecoveredPrimary(binding: binding, content: "Original answer", rich: "",
+      success: true, observation: observed, now: 11))
+    XCTAssertFalse(try reopened.commitRecoveredPrimary(binding: binding, content: "Conflicting answer", rich: "",
+      success: true, observation: observed, now: 11))
+    XCTAssertFalse(try reopened.commitRecoveredPrimary(binding: binding, content: "Original answer", rich: "",
+      success: true, observation: .init(generation: 1, sequence: 20), now: 11))
+    XCTAssertEqual(reopened.snapshot(supervisorRunId: original.supervisorRunId)?.members[0].replyContent, "Original answer")
+  }
+
+  func testCurrentCollaborationKeepsUnresolvedResearchAheadOfFollowUps() {
+    var research = durableTeamSnapshot("older-research")
+    research.state = .interrupted
+    research.members[1].researchStage = "investigate"
+    var followUp = durableTeamSnapshot("newer-follow-up")
+    followUp.createdAtMillis = research.createdAtMillis + 5
+    followUp.state = .succeeded
+    XCTAssertEqual(AgentTeamExecutionHistoryStore.preferredCollaborationRun([followUp, research]), research)
+    research.state = .succeeded
+    XCTAssertEqual(AgentTeamExecutionHistoryStore.preferredCollaborationRun([followUp, research]), followUp)
+  }
+
   private func durableTeamSnapshot(_ run: String) -> AgentTeamExecutionSnapshot {
     AgentTeamExecutionSnapshot(supervisorRunId: run, teamId: "team", conversationId: "conversation",
       taskId: "turn", primaryAgentId: "primary", state: .running,

@@ -406,6 +406,38 @@ final class AgentTeamExecutionHistoryStore {
     try access { try $0.recoveryPage(after: after, limit: limit) }
   }
 
+  func commitRecoveredPrimary(binding: AgentDesktopReplyBinding, content: String, rich: String,
+                              success: Bool, observation: AgentTeamReplyObservation, now: Int64) throws -> Bool {
+    guard binding.isValid, let source = binding.teamSource, source.primary == true,
+          binding.identity.taskId == source.sourceMessageId, observation.generation != nil,
+          observation.sequence != nil else { return false }
+    var changed = false
+    let committed = try access { database in
+      guard let owner = try database.replyOwner(source: source.sourceMessageId,
+              conversation: binding.identity.conversationId, turn: binding.identity.turnId, contact: binding.contactId),
+            owner.supervisorRunId == source.supervisorRunId, owner.memberId == source.memberId,
+            owner.deliveryMode == .respond, owner.accepts(observation),
+            let team = try database.snapshots(runId: source.supervisorRunId).first,
+            team.state != .cancelled, team.primaryMemberId == owner.memberId,
+            let member = team.members.first(where: { $0.memberId == owner.memberId && $0.agentId == owner.contactId &&
+              $0.sourceMessageId == owner.sourceMessageId &&
+              ($0.dispatchCheckpoint == .dispatching || $0.dispatchCheckpoint == .accepted) }) else { return false }
+      if member.status == (success ? .succeeded : .failed) {
+        return member.replyContent == content && member.richOutputJson == rich
+      }
+      guard let updated = AgentSavedTeamReplyPolicy.apply(to: team, source: owner.sourceMessageId,
+        conversation: owner.conversationId, turn: owner.turnId, task: binding.identity.taskId,
+        contact: owner.contactId, content: content, richOutputJson: rich, success: success, now: now) else { return false }
+      try database.updateReplyOwner(owner.observingPrimaryRecall(observation, terminal: true))
+      try database.put(updated)
+      try database.pruneFinished()
+      changed = true
+      return true
+    }
+    if changed { notify(source.supervisorRunId) }
+    return committed
+  }
+
   func cancelRecoveryForMissingScope(expected: AgentTeamExecutionSnapshot, now: Int64) throws -> AgentTeamExecutionSnapshot? {
     let stopped = try access { database -> AgentTeamExecutionSnapshot? in
       guard var current = try database.snapshots(runId: expected.supervisorRunId).first,
@@ -1914,11 +1946,25 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   func latestCollaborationRun(conversationId: String) -> AgentTeamExecutionSnapshot? {
-    collaborationResults(conversationId: conversationId, limit: Self.maxSnapshots).max { lhs, rhs in
-      let left = lhs.createdAtMillis > 0 ? lhs.createdAtMillis : lhs.updatedAtMillis
-      let right = rhs.createdAtMillis > 0 ? rhs.createdAtMillis : rhs.updatedAtMillis
-      return left == right ? lhs.supervisorRunId < rhs.supervisorRunId : left < right
+    guard !conversationId.isBlank else { return nil }
+    return try? access { database in
+      let pending = try database.snapshots(conversation: conversationId, recoverableOnly: true)
+      let finished = try database.snapshots(conversation: conversationId, deliverableOnly: true, limit: Self.maxSnapshots)
+      return Self.preferredCollaborationRun(pending + finished)
     }
+  }
+
+  static func preferredCollaborationRun(_ runs: [AgentTeamExecutionSnapshot]) -> AgentTeamExecutionSnapshot? {
+    func newest(_ values: [AgentTeamExecutionSnapshot]) -> AgentTeamExecutionSnapshot? {
+      values.max { lhs, rhs in
+        let left = lhs.createdAtMillis > 0 ? lhs.createdAtMillis : lhs.updatedAtMillis
+        let right = rhs.createdAtMillis > 0 ? rhs.createdAtMillis : rhs.updatedAtMillis
+        return left == right ? lhs.supervisorRunId < rhs.supervisorRunId : left < right
+      }
+    }
+    let unresolved = runs.filter { !$0.state.deliverable }
+    return newest(unresolved.filter { $0.members.contains { !($0.researchStage ?? "").isBlank } })
+      ?? newest(unresolved) ?? newest(runs)
   }
 
   func deliverableSnapshots() -> [AgentTeamExecutionSnapshot] {
