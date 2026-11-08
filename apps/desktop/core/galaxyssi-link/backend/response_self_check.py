@@ -141,6 +141,7 @@ def response_self_check_contract(
         "GalaxySSI final response self-check:\n"
         "- The latest user request below supersedes stale goals or plans.\n"
         "- Before finalizing, silently verify that the answer directly addresses it.\n"
+        "- For text interpretation, preserve the supplied wording and check implied polarity, negation and speaker viewpoint; explaining a sentence is not advising what should happen in reality.\n"
         "- Do not return only an acknowledgement, progress promise, or completion claim.\n"
         "- Do not ask the user to resend an attachment that is listed as available.\n"
         "- Preserve verified results and clearly state any unmet requirement.\n"

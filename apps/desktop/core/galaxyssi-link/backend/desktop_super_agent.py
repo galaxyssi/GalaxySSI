@@ -360,7 +360,9 @@ class DesktopSuperAgent:
                     status="succeeded",
                     message=f"Received result from {label}",
                     output={"reply": reply},
-                    verification={"status": "passed", "message": "The Agent returned a non-empty response"},
+                    verification={"status": "passed", "scope": "response_delivery",
+                                  "semantic_verified": False,
+                                  "message": "Received a non-empty response; factual correctness is not independently verified"},
                 )
             except Exception as exc:
                 failure_kind = classify_failure(message=str(exc))
@@ -403,10 +405,11 @@ class DesktopSuperAgent:
             self._phase(
                 task_id,
                 AgentLoopPhase.VERIFY,
-                f"Verified {label}'s result" if observation.verified else f"Could not verify {label}'s result",
+                f"Received {label}'s response" if observation.verified else f"Could not obtain {label}'s response",
                 status="completed" if observation.verified else "failed",
                 iteration=iteration,
-                metadata={"actor_id": delegate, "verified": observation.verified},
+                metadata={"actor_id": delegate, "verified": observation.verified,
+                          "verification_scope": "response_delivery", "semantic_verified": False},
             )
             if observation.verified:
                 artifact_observation = self._verify_required_artifacts(
