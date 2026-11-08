@@ -48,6 +48,23 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
     XCTAssertEqual(encryptions, 5)
   }
 
+  func testVerifiedPhoneReceiptIsNotSuppressedByQueuedLegacyReceipt() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let cipher = GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let journal = GalaxySSITransportReceiptJournal(applicationSupportDirectory: directory, cipher: cipher)
+    let hash = String(repeating: "a", count: 64)
+    func enqueue(_ journal: GalaxySSITransportReceiptJournal, verifiedHash: String?, payload: String) throws -> Bool {
+      try journal.enqueue(peerId: "peer", phonePeer: true, binding: "route", receivedMessageId: "message",
+        verifiedWireHash: verifiedHash, nowMillis: 1_000) { payload }
+    }
+    XCTAssertTrue(try enqueue(journal, verifiedHash: nil, payload: "old"))
+    XCTAssertTrue(try enqueue(journal, verifiedHash: hash, payload: "verified"))
+    let reopened = GalaxySSITransportReceiptJournal(applicationSupportDirectory: directory, cipher: cipher)
+    XCTAssertTrue(try enqueue(reopened, verifiedHash: hash, payload: "duplicate"))
+    XCTAssertEqual(reopened.due(nowMillis: 1_000).map(\.wirePayload).sorted(), ["old", "verified"])
+  }
+
   func testAttachmentDeclarationReuseAndSafeStartupCompaction() throws {
     let fixture = try ChunkFixture()
     let suite = "attachment-declaration-" + UUID().uuidString
@@ -321,6 +338,45 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
     XCTAssertEqual(reopened.authenticatedCiphertextProof(digest: "ciphertext", authenticationRef: "pairing")?.messageId, "message")
     XCTAssertNil(reopened.authenticatedCiphertextProof(digest: "ciphertext", authenticationRef: "rotated"))
     XCTAssertNil(reopened.authenticatedCiphertextProof(digest: "changed", authenticationRef: "pairing"))
+  }
+
+  func testLegacyPhoneStoredHashRequiresExactCommittedCiphertextAndPairing() throws {
+    let fixture = try ChunkFixture()
+    let journal = GalaxySSIChatHistoryDatabase(fileURL: fixture.url, secrets: fixture.secrets)
+    let suite = "phone-receipt-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    let wire: [String: Any] = ["scheme": "signal", "from": "peer", "to": "local", "device_id": 1, "body": "cipher"]
+    let original = String(decoding: try GalaxySSILinkProtocol.jsonData(wire), as: UTF8.self)
+    let digest = GalaxySSILinkCiphertextReplayPolicy.digest(wire: wire)
+    let hash = try MqttDeliveryEnvelope.contentHash(wire)
+    func proof(_ store: GalaxySSILinkDeliveryStore, message: String = "message",
+               pairing: String = "pairing", hash: String) -> String? {
+      store.authenticatedPhoneStoredHash(messageId: message, digest: digest, authenticationRef: pairing, wireHash: hash)
+    }
+    try fixture.execute("CREATE TRIGGER reject_phone_inbox BEFORE UPDATE ON link_delivery_state BEGIN SELECT RAISE(ABORT,'forced'); END")
+    XCTAssertEqual(store.stageIncoming(messageId: "message", payload: original, phoneAuthenticationRef: "pairing"), .invalid)
+    XCTAssertNil(proof(store, hash: hash))
+    XCTAssertTrue(store.pendingIncoming().isEmpty)
+    try fixture.execute("DROP TRIGGER reject_phone_inbox")
+    XCTAssertEqual(store.stageIncoming(messageId: "message", payload: original, phoneAuthenticationRef: "pairing"), .staged)
+    store.completeIncoming(messageId: "message")
+    let reopened = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    XCTAssertEqual(proof(reopened, hash: hash), hash)
+    XCTAssertNil(proof(reopened, message: "different", hash: hash))
+    XCTAssertNil(proof(reopened, pairing: "different", hash: hash))
+    var alternate = wire
+    alternate["device_id"] = 2
+    XCTAssertEqual(GalaxySSILinkCiphertextReplayPolicy.digest(wire: alternate), digest)
+    XCTAssertNil(proof(reopened, hash: try MqttDeliveryEnvelope.contentHash(alternate)))
+    alternate["body"] = "another-cipher"
+    let duplicate = String(decoding: try GalaxySSILinkProtocol.jsonData(alternate), as: UTF8.self)
+    XCTAssertEqual(reopened.stageIncoming(messageId: "message", payload: duplicate,
+      phoneAuthenticationRef: "pairing"), .completed)
+    XCTAssertNil(reopened.authenticatedPhoneStoredHash(messageId: "message",
+      digest: GalaxySSILinkCiphertextReplayPolicy.digest(wire: alternate), authenticationRef: "pairing",
+      wireHash: try MqttDeliveryEnvelope.contentHash(alternate)))
   }
 
   func testReceiptCreditDelayDoesNotModifyDurableRetryBudget() throws {

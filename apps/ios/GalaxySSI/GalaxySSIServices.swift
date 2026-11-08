@@ -15862,17 +15862,24 @@ final class MessageCoordinator: ObservableObject {
       GalaxySSISignalDecryptBackoff.relationshipKey(wire, routes: routes, topic: topic,
         senderNames: [senderId], receiverName: localGalaxySSIId, ciphertextDigest: replayDigest)
     }
+    let wireHash = authenticationRef.flatMap { _ in try? MqttDeliveryEnvelope.contentHash(wire) }
+    func publishReceipt(_ messageId: String, isReplay: Bool = false) {
+      let verifiedWireHash = deliveryStore.authenticatedPhoneStoredHash(messageId: messageId,
+        digest: replayDigest, authenticationRef: authenticationRef, wireHash: wireHash)
+      publishPhoneContactReceipt(contact: contact, receivedMessageId: messageId, ciphertextDigest: replayDigest,
+        verifiedWireHash: verifiedWireHash, isReplay: isReplay)
+    }
     if let authenticationRef, let proof = deliveryStore.authenticatedCiphertextProof(
       digest: replayDigest, authenticationRef: authenticationRef) {
       if proof.receiptRequired {
-        publishPhoneContactReceipt(contact: contact, receivedMessageId: proof.messageId, ciphertextDigest: replayDigest, isReplay: true)
+        publishReceipt(proof.messageId, isReplay: true)
       }
       return
     }
     if !replayDigest.isEmpty, let known = deliveryStore.messageForCiphertext(digest: replayDigest),
        known.contactReminder == true, known.authenticationRef == nil {
       if known.receiptRequired {
-        publishPhoneContactReceipt(contact: contact, receivedMessageId: known.messageId, ciphertextDigest: replayDigest, isReplay: true)
+        publishReceipt(known.messageId, isReplay: true)
       }
       return
     }
@@ -15916,7 +15923,7 @@ final class MessageCoordinator: ObservableObject {
       guard !messageId.isBlank, receiveContactReminder(payload, authenticatedContact: contact) else { return }
       try? deliveryStore.bindCiphertext(digest: replayDigest, messageId: messageId, receiptRequired: true,
         contactReminder: true, authenticationRef: authenticationRef)
-      publishPhoneContactReceipt(contact: contact, receivedMessageId: messageId, ciphertextDigest: replayDigest)
+      publishReceipt(messageId)
       return
     }
     if payload.string("type") == "delivery_ack" {
@@ -15928,18 +15935,19 @@ final class MessageCoordinator: ObservableObject {
     let persistedPayload = String(decoding: persistedData, as: UTF8.self)
     if !replayDigest.isEmpty, let known = deliveryStore.messageForCiphertext(digest: replayDigest) {
       if known.receiptRequired {
-        publishPhoneContactReceipt(contact: contact, receivedMessageId: known.messageId, ciphertextDigest: replayDigest, isReplay: true)
+        publishReceipt(known.messageId, isReplay: true)
       }
       return
     }
-    switch deliveryStore.stageIncoming(messageId: messageId, payload: persistedPayload) {
+    let phoneProofRef = wireHash == nil || (try? MqttDeliveryEnvelope.checkedText(messageId)) == nil ? nil : authenticationRef
+    switch deliveryStore.stageIncoming(messageId: messageId, payload: persistedPayload, phoneAuthenticationRef: phoneProofRef) {
     case .invalid:
       return
     case .completed, .pending:
-      publishPhoneContactReceipt(contact: contact, receivedMessageId: messageId, ciphertextDigest: replayDigest, isReplay: true)
+      publishReceipt(messageId, isReplay: true)
       return
     case .staged:
-      if !replayDigest.isEmpty {
+      if phoneProofRef == nil, !replayDigest.isEmpty {
         try? deliveryStore.bindCiphertext(
           digest: replayDigest,
           messageId: messageId,
@@ -15947,7 +15955,7 @@ final class MessageCoordinator: ObservableObject {
           authenticationRef: authenticationRef
         )
       }
-      publishPhoneContactReceipt(contact: contact, receivedMessageId: messageId, ciphertextDigest: replayDigest)
+      publishReceipt(messageId)
     }
     if payload.string("type") == "input_attachment_receipt" {
       handlePhoneInputAttachmentReceipt(payload, contact: contact)
