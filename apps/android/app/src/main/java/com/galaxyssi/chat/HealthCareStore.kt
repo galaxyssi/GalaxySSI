@@ -61,6 +61,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         check(value.id == row.getString(0) && value.revision == row.getInt(1) && value.updatedAt == row.getLong(3))
         check(metricKey(value.metric) == row.getString(4) && value.open == (row.getInt(5) == 1) && value.stage.name == row.getString(6))
         check(value.nextDue == if (row.isNull(7)) null else row.getLong(7))
+        check(HealthCarePriority.rank(value.assessment) == row.getInt(8))
         return value
     }
     fun concern(id: String): HealthCareConcern? {
@@ -69,10 +70,13 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
     }
     fun forMetric(metric: HealthMetric): HealthCareConcern? = db.rawQuery("SELECT $COLUMNS FROM concerns WHERE metric_key=?",
         arrayOf(metricKey(metric))).use { if (it.moveToFirst()) decode(it) else null }
-    fun evaluated(metric: HealthMetric): String? = db.rawQuery("SELECT token,payload FROM evaluations WHERE metric_key=?", arrayOf(metricKey(metric))).use {
+    fun evaluated(metric: HealthMetric, evaluationVersion: String = ""): String? = evaluation(metric)?.let {
+        if (it.optBoolean("dismissed") || it.optString("assessment_version") == evaluationVersion) it.getString("token") else null
+    }
+    private fun evaluation(metric: HealthMetric): JSONObject? = db.rawQuery("SELECT token,payload FROM evaluations WHERE metric_key=?", arrayOf(metricKey(metric))).use {
         if (!it.moveToFirst()) null else {
             val token = it.getString(0); val j = unpack("evaluation", "${metricKey(metric)}:$token", it.getBlob(1))
-            check(j.getString("metric") == metric.name && j.getString("token") == token); token
+            check(j.getString("metric") == metric.name && j.getString("token") == token); j
         }
     }
     private fun persist(value: HealthCareConcern, event: String) {
@@ -81,6 +85,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         db.insertWithOnConflict("concerns", null, ContentValues().apply {
             put("id", value.id); put("revision", value.revision); put("payload", encrypted); put("updated_at", value.updatedAt)
             put("metric_key", metricKey(value.metric)); put("open", if (value.open) 1 else 0); put("stage", value.stage.name)
+            put("priority", HealthCarePriority.rank(value.assessment))
             if (value.nextDue == null) putNull("due_at") else put("due_at", value.nextDue)
         }, SQLiteDatabase.CONFLICT_REPLACE)
         db.insertOrThrow("history", null, ContentValues().apply {
@@ -95,17 +100,18 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         }.forEach { writeReminder(it.copy(state = HealthCareReminderState.CANCELLED, updatedAt = value.updatedAt)) }
     }
     fun applyEvaluation(metric: HealthMetric, token: String, expectedSettings: String, expectedRevision: Int?,
-        assessment: HealthCareAssessment?, now: Long): HealthCareConcern? = transaction(true) {
+        assessment: HealthCareAssessment?, now: Long, evaluationVersion: String = ""): HealthCareConcern? = transaction(true) {
         val settings = settings()
         if (!settings.enabled || settings.version != expectedSettings) throw HealthCareConflict()
         val prior = forMetric(metric)
         if (prior?.revision != expectedRevision) throw HealthCareConflict()
-        if (evaluated(metric) == token) return@transaction prior
+        if (evaluated(metric, evaluationVersion) == token) return@transaction prior
         val next = HealthCarePolicy.reconcile(prior, metric, assessment, token, now)
         if (next != null && next != prior) persist(next, "measurement_assessed")
         db.insertWithOnConflict("evaluations", null, ContentValues().apply {
             put("metric_key", metricKey(metric)); put("token", token)
-            put("payload", pack("evaluation", "${metricKey(metric)}:$token", JSONObject().put("metric", metric.name).put("token", token)))
+            put("payload", pack("evaluation", "${metricKey(metric)}:$token", JSONObject().put("metric", metric.name).put("token", token)
+                .put("assessment_version", evaluationVersion)))
         }, SQLiteDatabase.CONFLICT_REPLACE)
         next
     }
@@ -129,13 +135,16 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         val where = arrayListOf(if (includeClosed) "1=1" else "open=1")
         if (!includePaused) where += "stage!='PAUSED'"
         if (after != null) {
-            where += "(updated_at<? OR (updated_at=? AND id<?))"
-            args += listOf(after.updatedAt.toString(), after.updatedAt.toString(), after.id)
+            require(after.priority in 0..1)
+            where += "(priority<? OR (priority=? AND (updated_at<? OR (updated_at=? AND id<?))))"
+            args += listOf(after.priority.toString(), after.priority.toString(), after.updatedAt.toString(), after.updatedAt.toString(), after.id)
         }
-        val items = db.rawQuery("SELECT $COLUMNS FROM concerns WHERE ${where.joinToString(" AND ")} ORDER BY updated_at DESC,id DESC LIMIT ${limit + 1}",
+        val items = db.rawQuery("SELECT $COLUMNS FROM concerns WHERE ${where.joinToString(" AND ")} ORDER BY priority DESC,updated_at DESC,id DESC LIMIT ${limit + 1}",
             args.toTypedArray()).use { rows -> buildList { while (rows.moveToNext()) add(decode(rows)) } }
         val visible = items.take(limit)
-        return HealthCarePage(visible, if (items.size > limit) visible.last().let { HealthCareCursor(it.updatedAt, it.id) } else null)
+        return HealthCarePage(visible, if (items.size > limit) visible.last().let {
+            HealthCareCursor(it.updatedAt, it.id, HealthCarePriority.rank(it.assessment))
+        } else null)
     }
     fun history(id: String, beforeRevision: Int = Int.MAX_VALUE): List<HealthCareConcern> {
         require(HealthProfilePolicy.uuid(id))
@@ -326,18 +335,23 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         db.delete("evidence_reads", "concern_id=?", arrayOf(id))
         db.delete("action_reminders", "concern_id=?", arrayOf(id))
         db.delete("concerns", "id=?", arrayOf(id))
-        // Keep the evaluation marker: reopening the page must not immediately recreate a deleted issue.
+        // A policy refresh must not recreate a dismissed issue for unchanged source data.
+        evaluation(value.metric)?.let { marker ->
+            val token = marker.getString("token")
+            db.update("evaluations", ContentValues().apply {
+                put("payload", pack("evaluation", "${metricKey(value.metric)}:$token", marker.put("dismissed", true)))
+            }, "metric_key=?", arrayOf(metricKey(value.metric)))
+        }
         Unit
     }
     override fun close() = helper.close()
-    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 5) {
+    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 6) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE settings(id INTEGER PRIMARY KEY,version TEXT NOT NULL,payload BLOB NOT NULL)")
             db.execSQL("CREATE TABLE concerns(id TEXT PRIMARY KEY,revision INTEGER NOT NULL,payload BLOB NOT NULL,updated_at INTEGER NOT NULL," +
-                "metric_key TEXT NOT NULL UNIQUE,open INTEGER NOT NULL,stage TEXT NOT NULL,due_at INTEGER)")
-            db.execSQL("CREATE INDEX care_open_pages ON concerns(open,updated_at DESC,id DESC)")
-            db.execSQL("CREATE INDEX care_all_pages ON concerns(updated_at DESC,id DESC)")
+                "metric_key TEXT NOT NULL UNIQUE,open INTEGER NOT NULL,stage TEXT NOT NULL,due_at INTEGER,priority INTEGER NOT NULL DEFAULT 0)")
+            priorityIndexes(db)
             db.execSQL("CREATE INDEX care_due ON concerns(open,due_at,id)")
             db.execSQL("CREATE TABLE history(concern_id TEXT NOT NULL,revision INTEGER NOT NULL,payload BLOB NOT NULL,PRIMARY KEY(concern_id,revision))")
             db.execSQL("CREATE TABLE evaluations(metric_key TEXT PRIMARY KEY,token TEXT NOT NULL,payload BLOB NOT NULL)")
@@ -352,11 +366,19 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             db.execSQL("CREATE TABLE discussion_grants(turn_id TEXT PRIMARY KEY,payload BLOB NOT NULL)")
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            check(oldVersion in 1..4 && newVersion == 5)
+            check(oldVersion in 1..5 && newVersion == 6)
             if (oldVersion < 2) discussions(db)
             if (oldVersion < 3) plans(db)
             if (oldVersion < 4) reminders(db)
-            evidence(db)
+            if (oldVersion < 5) evidence(db)
+            db.execSQL("ALTER TABLE concerns ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("DROP INDEX care_open_pages")
+            db.execSQL("DROP INDEX care_all_pages")
+            priorityIndexes(db)
+        }
+        private fun priorityIndexes(db: SQLiteDatabase) {
+            db.execSQL("CREATE INDEX care_open_pages ON concerns(open,priority DESC,updated_at DESC,id DESC)")
+            db.execSQL("CREATE INDEX care_all_pages ON concerns(priority DESC,updated_at DESC,id DESC)")
         }
         private fun evidence(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE evidence_reads(id TEXT PRIMARY KEY,concern_id TEXT NOT NULL,turn_id TEXT NOT NULL,payload BLOB NOT NULL)")
@@ -374,7 +396,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
     }
     companion object {
         const val DEFAULT_DB = "health_care_v1.db"
-        private const val COLUMNS = "id,revision,payload,updated_at,metric_key,open,stage,due_at"
+        private const val COLUMNS = "id,revision,payload,updated_at,metric_key,open,stage,due_at,priority"
         private const val REMINDER_COLUMNS = "action_id,concern_id,token,due,state,payload"
         fun changes(context: Context, name: String = DEFAULT_DB) = android.net.Uri.parse("content://${context.packageName}.health-originals/changes/care/" + android.net.Uri.encode(name))
     }

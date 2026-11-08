@@ -6,7 +6,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 internal enum class HealthCareStage { VERIFY_CONTEXT, REVIEW_EVIDENCE, REVIEW_PLAN, WAITING_RESULTS, REASSESS, MAINTENANCE, PAUSED, CLOSED }
-internal enum class HealthCareSignal { REPORT_LOW, REPORT_HIGH, GLUCOSE_CONTEXT, GUIDELINE_SCOPE, GUIDELINE_REVIEW, RISING_SERIES, FALLING_SERIES, RESULT_NOT_EXACT, SOURCE_REMOVED }
+internal enum class HealthCareSignal { REPORT_LOW, REPORT_HIGH, GLUCOSE_CONTEXT, GUIDELINE_SCOPE, GUIDELINE_REVIEW, RISING_SERIES, FALLING_SERIES, RESULT_NOT_EXACT, SOURCE_REMOVED, BLOOD_PRESSURE_ALERT }
 internal enum class HealthCareTruth { UNKNOWN, YES, NO }
 internal enum class HealthCareSpecimen { UNKNOWN, LAB_PLASMA, HOME_CAPILLARY, INTERSTITIAL }
 internal enum class HealthCareActionKind { LIFESTYLE, CLINICIAN_DISCUSSION, RECHECK, CONTEXT }
@@ -172,6 +172,6 @@ internal data class HealthCareConcern(val id: String, val metric: HealthMetric, 
 }
 
 internal data class HealthCareSettings(val enabled: Boolean = false, val version: String = "")
-internal data class HealthCareCursor(val updatedAt: Long, val id: String)
+internal data class HealthCareCursor(val updatedAt: Long, val id: String, val priority: Int = 0)
 internal data class HealthCarePage(val items: List<HealthCareConcern>, val next: HealthCareCursor?)
 internal class HealthCareConflict : IllegalStateException("Health care state changed; reload before applying this change")

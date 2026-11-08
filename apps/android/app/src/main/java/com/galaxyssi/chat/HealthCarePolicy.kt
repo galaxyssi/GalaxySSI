@@ -39,6 +39,10 @@ internal object HealthCarePolicy {
             }
         }
         var guideline: HealthCareGuideline? = null
+        if (HealthCarePriority.needsReview(draft)) {
+            signals += HealthCareSignal.BLOOD_PRESSURE_ALERT
+            guideline = HealthCarePriority.guideline()
+        }
         if (metric == HealthMetric.GLUCOSE && value != null) {
             // Compare each supported unit to its published threshold; conversion rounding must not decide eligibility.
             val threshold = if (draft.unit == "mg/dL") BigDecimal("100") else BigDecimal("5.6")
@@ -74,7 +78,7 @@ internal object HealthCarePolicy {
             if (points.zipWithNext().all { (new, old) -> new < old }) signals += HealthCareSignal.FALLING_SERIES
         }
         val sample = HealthCareSample.of(latest)
-        return HealthCareAssessment(ref, draft.measuredAt, metric.fields.joinToString(" / ") { draft.values[it].orEmpty() },
+        return HealthCareAssessment(ref, draft.measuredAt, metric.requiredFields.joinToString(" / ") { draft.values[it].orEmpty() },
             draft.unit, draft.reference, signals, guideline, baseline, sample,
             HealthCareComparisonPolicy.build(sample, eligible, previous, context))
     }

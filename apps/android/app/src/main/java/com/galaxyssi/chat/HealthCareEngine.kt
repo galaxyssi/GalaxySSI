@@ -28,7 +28,8 @@ internal object HealthCareEngine {
                         val stamp = versions.getValue(metric)
                         if (stamp.isBlank() && prior == null) continue
                         val key = inputVersion(settings.version, permission.version, stamp)
-                        if (care.evaluated(metric) == key) continue
+                        val evaluationVersion = HealthCarePriority.evaluationVersion(metric)
+                        if (care.evaluated(metric, evaluationVersion) == key) continue
                         val assessment = privacy.track(HealthAccessScope(HealthAccessPurpose.PROACTIVE_CARE, setOf(metric))) {
                             val recent = records.recentSelf(now, 30, metric)
                             // Resolve at most two indexed anchors, never decrypt the complete measurement history.
@@ -39,7 +40,7 @@ internal object HealthCareEngine {
                         }
                         if (cancelled()) return changed
                         if (privacy.policy() != permission || records.metricVersion(metric) != stamp) throw HealthCareConflict()
-                        val value = care.applyEvaluation(metric, key, settings.version, prior?.revision, assessment, now)
+                        val value = care.applyEvaluation(metric, key, settings.version, prior?.revision, assessment, now, evaluationVersion)
                         if (value != prior) changed++
                     }
                     return changed
