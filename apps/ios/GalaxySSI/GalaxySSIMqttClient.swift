@@ -165,6 +165,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   private var liveness = MqttConnectionLiveness()
   private var maintenanceWorkItem: DispatchWorkItem?
   private var intentionallyDisconnected = false
+  private var retiredLegacyOwner = false
   private var configurationID = ""
   private var serverLinks: [ServerLink] = []
   private var phoneRoutes: [GalaxySSILinkRoutes] = []
@@ -261,6 +262,13 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     queue.async { self.stopTransport() }
   }
 
+  func retireLegacyOwner() {
+    queue.async {
+      self.retiredLegacyOwner = true
+      self.stopTransport()
+    }
+  }
+
   // This fences transport writes only. The coordinator must also stop its business/Signal writers
   // before taking a migration snapshot; queued UI callbacks are not a persistence barrier.
   func disconnectAndWait() async {
@@ -334,6 +342,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
       configurationID: configurationID
     )
     queue.async {
+      guard !self.retiredLegacyOwner else { return }
       self.intentionallyDisconnected = false
       self.monitorNetwork()
       let clientIdChanged = self.clientId != nextClientId
@@ -361,6 +370,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     configurationID: String? = nil
   ) {
     queue.async {
+      guard !self.retiredLegacyOwner else { return }
       if let configurationID { self.configurationID = configurationID }
       self.serverLinks = serverLinks.filter { $0.routes.isOpaqueV2Valid }
       if let phoneRoutes { self.phoneRoutes = phoneRoutes.filter(\.isOpaqueV2Valid) }

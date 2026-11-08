@@ -368,6 +368,10 @@ enum AgentVerifiedArtifactSnapshot {
     verifyBinary(data, extension: ext, format: "image_first_frame_decode")
   }
 
+  static func verifiesImage(at url: URL, extension ext: String) -> Bool {
+    verifyImageSource(CGImageSourceCreateWithURL(url as CFURL, nil), extension: ext)
+  }
+
   private static func verifyBinary(_ data: Data, extension ext: String, format: String) -> Bool {
     switch format {
     case "pdf_document_open":
@@ -377,19 +381,7 @@ enum AgentVerifiedArtifactSnapshot {
       let box = page.getBoxRect(.mediaBox)
       return box.width.isFinite && box.height.isFinite && box.width > 0 && box.height > 0
     case "image_first_frame_decode":
-      let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                                      kCGImageSourceThumbnailMaxPixelSize: 1_024,
-                                      kCGImageSourceShouldCacheImmediately: true]
-      guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-            let type = CGImageSourceGetType(source),
-            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-            let width = properties[kCGImagePropertyPixelWidth] as? Int,
-            let height = properties[kCGImagePropertyPixelHeight] as? Int,
-            width > 0, height > 0, width <= 40_000, height <= 40_000, width * height <= 100_000_000,
-            let expectedType = imageTypes[ext], (type as String) == expectedType,
-            let frame = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
-            CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete else { return false }
-      return frame.width > 0 && frame.height > 0
+      return verifyImageSource(CGImageSourceCreateWithData(data as CFData, nil), extension: ext)
     case "office_package_open":
       return (try? AgentOfficeDocumentExtractor.verifyOpenability(data, extension: ext)) != nil
     case "archive_entries_read":
@@ -397,6 +389,22 @@ enum AgentVerifiedArtifactSnapshot {
     default:
       return false
     }
+  }
+
+  private static func verifyImageSource(_ source: CGImageSource?, extension ext: String) -> Bool {
+    let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                    kCGImageSourceThumbnailMaxPixelSize: 1_024,
+                                    kCGImageSourceShouldCacheImmediately: true]
+    guard let source,
+          let type = CGImageSourceGetType(source),
+          let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+          let width = properties[kCGImagePropertyPixelWidth] as? Int,
+          let height = properties[kCGImagePropertyPixelHeight] as? Int,
+          width > 0, height > 0, width <= 40_000, height <= 40_000, width * height <= 100_000_000,
+          let expectedType = imageTypes[ext], (type as String) == expectedType,
+          let frame = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
+          CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete else { return false }
+    return frame.width > 0 && frame.height > 0
   }
 
   private static let imageTypes = ["png": "public.png", "jpg": "public.jpeg", "jpeg": "public.jpeg",

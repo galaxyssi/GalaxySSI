@@ -137,10 +137,24 @@ final class MqttBusinessOutbox {
       guard var saved = try read(key), saved.identity == identity,
             saved.message.blockedByAttachmentTransferIds.contains(transferID) else { return false }
       guard let request = saved.deferredRequest, request.attachmentDependencies.contains(transferID),
-            request.sourceMessageID == messageID else { throw MqttChunkStorageError.corruptState }
+            request.sourceMessageID == messageID || UUID(uuidString: request.sourceMessageID)?.uuidString == messageID
+      else { throw MqttChunkStorageError.corruptState }
       saved.message.blockedByAttachmentTransferIds.removeAll { $0 == transferID }
       try write(saved, key: key)
       return true
+    }
+  }
+
+  func discardDeferredBlobBody(identity: MqttBusinessIdentity, messageID: String, transferID: String,
+                               transaction: MqttChunkDatabase.Transaction) throws {
+    let key = try identity.key(messageID: messageID)
+    try database.transaction(joining: transaction) {
+      guard let entry = try read(key), entry.identity == identity, !entry.isPrepared,
+            entry.message.blockedByAttachmentTransferIds.contains(transferID),
+            entry.deferredRequest?.blobAttachmentDependencies?.contains(transferID) == true else {
+        throw MqttRouteError.invalidPayload
+      }
+      try database.run("DELETE FROM mqtt_business_outbox WHERE record_key=?", [.text(key)])
     }
   }
 

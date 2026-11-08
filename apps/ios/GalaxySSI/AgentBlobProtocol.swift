@@ -1,3 +1,4 @@
+import CoreFoundation
 import CryptoKit
 import Foundation
 import Security
@@ -301,12 +302,12 @@ enum AgentBlobProtocol {
       return try array.map(canonicalString).joined(separator: ",").wrapped(prefix: "[", suffix: "]")
     case let value as String:
       return quoted(value)
-    case let value as Bool:
-      return value ? "true" : "false"
-    case let value as Int:
-      return String(value)
-    case let value as Int64:
-      return String(value)
+    case let number as NSNumber:
+      if CFGetTypeID(number) == CFBooleanGetTypeID() { return number.boolValue ? "true" : "false" }
+      guard !["f", "d"].contains(String(cString: number.objCType)) else {
+        throw AgentBlobFailure.invalid("invalid_canonical_json")
+      }
+      return number.stringValue
     default:
       throw AgentBlobFailure.invalid("invalid_canonical_json")
     }

@@ -148,6 +148,25 @@ extension GalaxySSIStoreTests {
     record.resultManifest = try XCTUnwrap(engine.receive(page, record: record, now: 2_000))
     let restored = try XCTUnwrap(engine.assembled(record))
     let response = try XCTUnwrap(AgentConnectorResponse.fromPayload(restored, nowMillis: 9_000))
+    let receipt = try XCTUnwrap(engine.receipt(record))
+    XCTAssertNil(try ledger.recoveryRecord(owner: child.ownerRunId)?.desktopResultReceipt)
+    let committed = try ledger.commitDesktopResult(response, receipt: receipt, binding: binding)
+    XCTAssertEqual(committed.desktopResultReceipt, receipt)
+    XCTAssertEqual(committed.response, response)
+    let reopened = UserDefaultsAgentManagedResponseLedger(defaults: defaults, nowMillis: { 10_000 },
+      fileURL: root.appendingPathComponent("managed.sqlite3"), secrets: secrets)
+    var replay = response
+    replay.receivedAtMillis += 1
+    XCTAssertEqual(try reopened.commitDesktopResult(replay, receipt: receipt, binding: binding), committed)
+    replay.content = "different result"
+    XCTAssertThrowsError(try reopened.commitDesktopResult(replay, receipt: receipt, binding: binding))
+    var conflict = receipt
+    conflict.resultSHA256 = String(repeating: "f", count: 64)
+    XCTAssertThrowsError(try reopened.commitDesktopResult(response, receipt: conflict, binding: binding))
+    replay = response
+    replay.executionGeneration += 1
+    XCTAssertThrowsError(try reopened.commitDesktopResult(replay, receipt: receipt, binding: binding))
+    XCTAssertEqual(try reopened.recoveryRecord(owner: child.ownerRunId), committed)
     let sink = InMemoryAgentConnectorResponseStore()
     let bus = AgentConnectorResponseBus(registry: AgentManagedConnectorResponseRegistry(), managedLedger: ledger,
       store: sink, terminalStore: InMemoryAgentTerminalDeliveryStore(), nowMillis: { 10_000 })
@@ -158,7 +177,6 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(ledger.completedUnapplied().first?.response?.content, "recovered child")
     XCTAssertEqual(notifications, 0)
     XCTAssertTrue(sink.pending().isEmpty)
-    let receipt = try XCTUnwrap(engine.receipt(record))
     XCTAssertEqual(receipt.sourceMessageId, "73")
     XCTAssertTrue(engine.receipts.insert(receipt))
     XCTAssertFalse(engine.cleanup(receipt))

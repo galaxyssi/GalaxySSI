@@ -214,6 +214,15 @@ extension GalaxySSIStoreTests {
     let descriptor = try XCTUnwrap(AgentDesktopToolEvidenceWire.Descriptor(response))
     XCTAssertEqual(request.verifyPage(response, authenticatedDesktopId: "desktop", descriptor: descriptor, index: 0), body)
     XCTAssertNil(request.verifyPage(response, authenticatedDesktopId: "other", descriptor: descriptor, index: 0))
+    XCTAssertTrue(request.matchesTransportResponse(response, authenticatedDesktopId: "desktop", mode: "page"))
+    XCTAssertFalse(request.matchesTransportResponse(response, authenticatedDesktopId: "desktop", mode: "index"))
+    XCTAssertFalse(request.matchesTransportResponse(response, authenticatedDesktopId: "other", mode: "page"))
+    var delayed = response
+    delayed["request_id"] = .string("old-request")
+    XCTAssertFalse(request.matchesTransportResponse(delayed, authenticatedDesktopId: "desktop", mode: "page"))
+    delayed = response
+    delayed["execution_generation"] = .int(request.generation + 1)
+    XCTAssertFalse(request.matchesTransportResponse(delayed, authenticatedDesktopId: "desktop", mode: "page"))
     XCTAssertEqual(request.verifyOriginal([body], descriptor: descriptor), body)
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -646,6 +655,46 @@ extension GalaxySSIStoreTests {
   }
 
   @MainActor
+  func testTeamRecoveryPinsObserverTerminalResultBeforeOwnerWriteAndAcrossRestart() throws {
+    let suite = "DesktopTeamPinned-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let journal = DesktopReplyRecoveryTestJournal()
+    let secrets = InMemorySecretStore()
+    let source = UUID().uuidString
+    let owner = AgentTeamReplyOwner(supervisorRunId: "team", memberId: "observer", conversationId: "conversation",
+      turnId: "turn", sourceMessageId: source, contactId: "review", deliveryMode: .observe)
+    let identity = AgentTaskIdentity(clientRouteId: "route", conversationId: "conversation", taskId: source, turnId: "turn")
+    let binding = try XCTUnwrap(AgentDesktopReplyBinding.teamObserver(owner: owner, desktopId: "desktop",
+      agentId: "codex", identity: identity))
+    let recovery = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    XCTAssertTrue(recovery.track(binding, now: 1_000))
+    var payload: [String: Any] = binding.fields
+    payload.merge(["type": "text", "task_status": "completed", "execution_generation": 2, "status_sequence": 8,
+      "message_id": "observer-result", "sha256": String(repeating: "a", count: 64)]) { _, new in new }
+    XCTAssertNil(recovery.acceptTerminalReply(payload, binding: binding, content: "Evidence", now: 2_000))
+    journal.rejectWrites = true
+    XCTAssertNil(recovery.pinTeamTerminalReply(payload, binding: binding, content: "Evidence", now: 2_000))
+    XCTAssertNil(recovery.record(for: binding)?.pinnedTeamReply)
+    journal.rejectWrites = false
+    let pinned = try XCTUnwrap(recovery.pinTeamTerminalReply(payload, binding: binding, content: "Evidence", now: 2_000))
+    XCTAssertNil(pinned.acceptedReply)
+    XCTAssertEqual(pinned.pinnedTeamReply?.remoteMessageId, "observer-result")
+    let reopened = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    XCTAssertEqual(reopened.record(for: binding), pinned)
+    XCTAssertEqual(reopened.pinTeamTerminalReply(payload, binding: binding, content: "Evidence", now: 3_000), pinned)
+    XCTAssertNil(reopened.pinTeamTerminalReply(payload, binding: binding, content: "Other evidence", now: 3_000))
+    XCTAssertNil(reopened.pinTeamTerminalReply(payload, binding: binding, content: "Evidence",
+      richOutput: "Other rich output", now: 3_000))
+    var conflict = payload
+    conflict["sha256"] = String(repeating: "b", count: 64)
+    XCTAssertNil(reopened.pinTeamTerminalReply(conflict, binding: binding, content: "Evidence", now: 3_000))
+    conflict = payload
+    conflict["status_sequence"] = 7
+    XCTAssertNil(reopened.pinTeamTerminalReply(conflict, binding: binding, content: "Evidence", now: 3_000))
+  }
+
+  @MainActor
   func testManagedDesktopRecoveryUsesOriginalNumericSourceAndExactGeneration() throws {
     let suite = "ManagedDesktopRecovery-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -1011,6 +1060,41 @@ extension GalaxySSIStoreTests {
   }
 
   @MainActor
+  func testAcceptedDesktopFailureStaysPinnedAndDoesNotBecomeSuccessAfterRestart() throws {
+    let suite = "DesktopAcceptedFailure-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let journal = DesktopReplyRecoveryTestJournal()
+    let secrets = InMemorySecretStore()
+    let binding = desktopReplyJournalBinding()
+    let recovery = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    XCTAssertTrue(recovery.track(binding, now: 1_000))
+    var payload: [String: Any] = binding.fields
+    payload.merge(["type": "text", "task_status": "timed_out", "execution_generation": 2,
+      "status_sequence": 8, "message_id": "reply", "sha256": String(repeating: "b", count: 64)]) { _, new in new }
+    XCTAssertNil(recovery.acceptCompletedReply(payload, binding: binding, content: "Timed out", now: 2_000))
+    journal.rejectWrites = true
+    XCTAssertNil(recovery.acceptTerminalReply(payload, binding: binding, content: "Timed out", now: 2_000))
+    XCTAssertNil(recovery.record(for: binding)?.acceptedReply)
+    journal.rejectWrites = false
+    let accepted = try XCTUnwrap(recovery.acceptTerminalReply(payload, binding: binding, content: "Timed out", now: 2_000))
+    XCTAssertEqual(accepted.acceptedReply?.status, "timed_out")
+    let reopened = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    XCTAssertEqual(reopened.record(for: binding), accepted)
+    XCTAssertEqual(reopened.acceptTerminalReply(payload, binding: binding, content: "Timed out", now: 3_000), accepted)
+    XCTAssertNil(reopened.acceptTerminalReply(payload, binding: binding, content: "Other reply", now: 3_000))
+    var conflict = payload
+    conflict["task_status"] = "completed"
+    XCTAssertFalse(reopened.acceptsFinal(conflict, desktopId: binding.desktopId))
+    conflict = payload
+    conflict["status_sequence"] = 7
+    XCTAssertNil(reopened.acceptTerminalReply(conflict, binding: binding, content: "Timed out", now: 3_000))
+    conflict = payload
+    conflict["execution_generation"] = 3
+    XCTAssertNil(reopened.acceptTerminalReply(conflict, binding: binding, content: "Timed out", now: 3_000))
+  }
+
+  @MainActor
   func testDesktopCommitIsExactAndDoesNotReviveDeletedOrPausedWork() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
@@ -1034,6 +1118,12 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(completed?.phase, .completed)
     XCTAssertEqual(completed?.result, "Exact reply")
     XCTAssertEqual(completed?.updatedAtMillis, 2_000)
+    for terminal in [AgentPhase.failed, .cancelled] {
+      let result = GalaxySSIStore.desktopTaskCompletion(task, binding: binding, message: saved,
+        acceptedAt: 2_000, verification: "Committed", phase: terminal)
+      XCTAssertEqual(result?.phase, terminal)
+      XCTAssertEqual(result?.result, "Exact reply")
+    }
     for phase in [AgentPhase.paused, .cancelled, .failed, .completed] {
       task.phase = phase
       XCTAssertNil(GalaxySSIStore.desktopTaskCompletion(task, binding: binding, message: saved,
