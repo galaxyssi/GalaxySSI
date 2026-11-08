@@ -127,6 +127,16 @@
 "galaxyssi.health.plan.close" = "关闭";
 "galaxyssi.health.plan.window" = "建议复查时间范围";
 "galaxyssi.health.care_follow_up.title" = "行动随访";
+"galaxyssi.health.agenda.title" = "健康行动";
+"galaxyssi.health.agenda.today" = "今天";
+"galaxyssi.health.agenda.later" = "稍后";
+"galaxyssi.health.agenda.review" = "待审核";
+"galaxyssi.health.agenda.recorded" = "已记录";
+"galaxyssi.health.agenda.empty" = "此分类暂无行动";
+"galaxyssi.health.agenda.previous" = "上一页";
+"galaxyssi.health.agenda.next" = "下一页";
+"galaxyssi.health.agenda.disabled" = "本地健康审核已关闭。";
+"galaxyssi.health.agenda.open_concern" = "查看关注事项";
 "galaxyssi.health.care_follow_up.settings" = "健康审核通知设置";
 "galaxyssi.health.care_follow_up.more" = "显示更多";
 "galaxyssi.health.care_follow_up.failed" = "无法更新行动或提醒。";

@@ -284,7 +284,7 @@ struct GalaxySSIHealthCareEntry: View {
 }
 
 @MainActor
-private struct GalaxySSIHealthCareDetail: View {
+struct GalaxySSIHealthCareDetail: View {
   @EnvironmentObject private var store: GalaxySSIStore
   @Environment(\.scenePhase) private var scene
   @Environment(\.dismiss) private var dismiss
@@ -307,6 +307,12 @@ private struct GalaxySSIHealthCareDetail: View {
   @State private var confirmingDelete = false
   @State private var deletionCandidate: GalaxySSIHealthCare.Concern?
   @State private var scopeCandidate: GalaxySSIHealthCare.Concern?
+
+  init(records: GalaxySSIHealthRecords, id: UUID, metric: GalaxySSIHealthMetric) {
+    self.records = records
+    self.id = id
+    self.metric = metric
+  }
 
   var body: some View {
     List {

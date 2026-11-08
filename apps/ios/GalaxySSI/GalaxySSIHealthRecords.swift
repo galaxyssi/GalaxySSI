@@ -187,6 +187,7 @@ struct GalaxySSIHealthRecords {
     var localCareFollowUps: [String: GalaxySSIHealthCareFollowUp.Reminder]?
     var localCareResearch: GalaxySSIHealthCareResearch.Ledger?
     var localCareQuestions: [String: GalaxySSIHealthCareQuestions.Ledger]?
+    var localCareAgenda: Data?
 
     var keepsNewImportOriginals: Bool { retainImportOriginals ?? true }
 
@@ -1347,10 +1348,8 @@ struct GalaxySSIHealthRecords {
     guard archive.localCareAllowed == true, var ledger = archive.localCare, var current = ledger.current[metric.rawValue],
           current.id == concernID, current.stage != .closed, current.revision < Int.max,
           let index = current.adoptedActions?.firstIndex(of: action), action.outcome == nil else { throw Failure.stale }
-    let plan = archive.localCarePlans?[action.proposalID.uuidString]
-    guard plan?.profileScopeEpoch == current.profileScopeEpoch, plan?.profileScope == current.profileScope,
-          plan?.questionRevision == current.questionRevision,
-          localCareProfileIsCurrent(plan?.profileScope) else { throw Failure.stale }
+    guard careOutcomeIsCurrent(action, concern: current, archive: archive,
+      profileCurrent: localCareProfileIsCurrent(current.profileScope)) else { throw Failure.stale }
     current.adoptedActions?[index].outcome = .init(note: note, reportedAt: now)
     if current.stage == .maintenance {
       current.maintenanceReview = nil
@@ -1413,19 +1412,119 @@ struct GalaxySSIHealthRecords {
                                     archive: Archive, now: Date = Date()) -> Bool {
     guard archive.localCareAllowed == true,
           let concern = archive.localCare?.current[metric.rawValue], concern.id == concernID,
-          concern.stage != .paused, concern.stage != .closed, concern.assessment.record != nil,
-          let adopted = concern.adoptedActions?.first(where: { $0.id == actionID && $0.outcome == nil }),
-          let plan = archive.localCarePlans?[adopted.proposalID.uuidString], plan.concernID == concernID,
+          let adopted = concern.adoptedActions?.first(where: { $0.id == actionID }) else { return false }
+    return careActionIsCurrent(adopted, concern: concern, archive: archive,
+      context: careAgendaContext(concern, archive: archive, now: now))
+  }
+
+  private func careAgendaContext(_ concern: GalaxySSIHealthCare.Concern, archive: Archive, now: Date)
+      -> GalaxySSIHealthCareAgenda.Context {
+    let readings = archive.current.filter { $0.metric == concern.metric && $0.isValid && $0.measuredAt <= now }
+    return careAgendaContext(concern, readings: readings)
+  }
+
+  private func careAgendaContext(_ concern: GalaxySSIHealthCare.Concern, readings: [GalaxySSIHealthReading])
+      -> GalaxySSIHealthCareAgenda.Context {
+    return .init(assessmentCurrent: GalaxySSIHealthCare.assess(readings, context: concern.context) == concern.assessment,
+      profileCurrent: localCareProfileIsCurrent(concern.profileScope))
+  }
+
+  private func careActionIsCurrent(_ adopted: GalaxySSIHealthCarePlan.AdoptedAction,
+      concern: GalaxySSIHealthCare.Concern, archive: Archive, context: GalaxySSIHealthCareAgenda.Context) -> Bool {
+    guard adopted.outcome == nil, concern.stage != .paused, concern.stage != .closed, concern.assessment.record != nil,
+          context.assessmentCurrent, context.profileCurrent,
+          let plan = archive.localCarePlans?[adopted.proposalID.uuidString], plan.concernID == concern.id,
           plan.state == .accepted, plan.selected.contains(adopted.action.id),
           concern.profileScopeEpoch == plan.profileScopeEpoch, concern.profileScope == plan.profileScope,
           concern.questionRevision == plan.questionRevision,
-          localCareProfileIsCurrent(plan.profileScope),
           archive.healthOnlinePermission == plan.onlinePermission,
           archive.matchesLocalCarePermission(plan.carePermission),
           concern.context == plan.sourceContext,
           (try? GalaxySSIHealthCare.inputDigest(concern.assessment)) == plan.assessmentDigest else { return false }
-    return GalaxySSIHealthCare.assess(archive.current.filter { $0.metric == metric && $0.isValid && $0.measuredAt <= now },
-      context: concern.context) == concern.assessment
+    return true
+  }
+
+  private func careOutcomeIsCurrent(_ action: GalaxySSIHealthCarePlan.AdoptedAction, concern: GalaxySSIHealthCare.Concern,
+      archive: Archive, profileCurrent: Bool) -> Bool {
+    guard profileCurrent, action.outcome == nil, concern.stage != .closed,
+          let plan = archive.localCarePlans?[action.proposalID.uuidString], plan.concernID == concern.id,
+          plan.state == .accepted, plan.selected.contains(action.action.id),
+          plan.profileScopeEpoch == concern.profileScopeEpoch, plan.profileScope == concern.profileScope,
+          plan.questionRevision == concern.questionRevision else { return false }
+    return true
+  }
+
+  private func careAgendaContexts(_ archive: Archive, now: Date) -> [String: GalaxySSIHealthCareAgenda.Context] {
+    let relevant = (archive.localCare?.current ?? [:]).filter { !($0.value.adoptedActions ?? []).isEmpty }
+    guard !relevant.isEmpty else { return [:] }
+    let readings = Dictionary(grouping: archive.current.filter { $0.isValid && $0.measuredAt <= now }, by: \.metric)
+    return relevant.mapValues { careAgendaContext($0, readings: readings[$0.metric] ?? []) }
+  }
+
+  private func careAgendaRow(_ action: GalaxySSIHealthCarePlan.AdoptedAction, concern: GalaxySSIHealthCare.Concern,
+      archive: Archive, context: GalaxySSIHealthCareAgenda.Context)
+      -> (GalaxySSIHealthCareAgenda.Row, GalaxySSIHealthCareFollowUp.Reminder?) {
+    typealias Agenda = GalaxySSIHealthCareAgenda
+    let current = careActionIsCurrent(action, concern: concern, archive: archive, context: context)
+    let bucket: Agenda.Bucket = action.outcome != nil ? .recorded : (current ? .planned : .review)
+    let reminder = archive.localCareFollowUps?[action.id].flatMap {
+      current && $0.concernID == concern.id && $0.metric == concern.metric && $0.actionID == action.id ? $0 : nil
+    }
+    let key = Agenda.Key(bucket: bucket, due: reminder?.requestedAt ?? action.action.dueFrom,
+      concern: concern.id, action: action.id)
+    let row = Agenda.Row(key: key, metric: concern.metric, revision: concern.revision, reminderID: reminder?.id,
+      submittedFor: reminder?.submittedFor, canRecord: careOutcomeIsCurrent(action, concern: concern, archive: archive,
+        profileCurrent: context.profileCurrent))
+    return (row, reminder)
+  }
+
+  private func makeCareAgenda(_ archive: Archive, context: [String: GalaxySSIHealthCareAgenda.Context])
+      -> GalaxySSIHealthCareAgenda.Projection {
+    let rows = context.flatMap { metric, state -> [GalaxySSIHealthCareAgenda.Row] in
+      guard let concern = archive.localCare?.current[metric] else { return [] }
+      return (concern.adoptedActions ?? []).map { careAgendaRow($0, concern: concern, archive: archive, context: state).0 }
+    }
+    return .init(carePermission: archive.localCarePermission, onlinePermission: archive.healthOnlinePermission,
+      context: context, rows: rows)
+  }
+
+  func localCareAgendaPage(filter: GalaxySSIHealthCareAgenda.Filter?, scope: GalaxySSIHealthCareAgenda.Scope? = nil,
+      after: GalaxySSIHealthCareAgenda.Cursor? = nil, limit: Int = GalaxySSIHealthCareAgenda.pageSize,
+      calendar: Calendar = .autoupdatingCurrent, now: Date = Date()) throws -> GalaxySSIHealthCareAgenda.Page {
+    typealias Agenda = GalaxySSIHealthCareAgenda
+    let archive = try load()
+    guard archive.localCareAllowed == true else { throw Failure.permission }
+    if let scope, archive.localCare?.current[scope.metric.rawValue]?.id != scope.concern { throw Failure.stale }
+    guard let dayEnd = calendar.dateInterval(of: .day, for: now)?.end else { throw Failure.invalid }
+    let context = careAgendaContexts(archive, now: now)
+    let index: Agenda.Projection
+    if let data = archive.localCareAgenda, let saved = try? JSONDecoder().decode(Agenda.Projection.self, from: data),
+       saved.version == Agenda.version, saved.context == context,
+       saved.carePermission == archive.localCarePermission, saved.onlinePermission == archive.healthOnlinePermission {
+      index = saved
+    } else {
+      index = makeCareAgenda(archive, context: context)
+    }
+    let rows = try index.page(filter: filter, scope: scope, dayEnd: dayEnd, after: after, limit: limit)
+    var actionsByMetric: [String: [String: GalaxySSIHealthCarePlan.AdoptedAction]] = [:]
+    let checkedItems = try rows.map { row -> Agenda.Item in
+      guard let concern = archive.localCare?.current[row.metric.rawValue], concern.id == row.key.concern,
+            let state = context[row.metric.rawValue] else { throw Failure.stale }
+      if actionsByMetric[row.metric.rawValue] == nil {
+        actionsByMetric[row.metric.rawValue] = Dictionary((concern.adoptedActions ?? []).map { ($0.id, $0) },
+          uniquingKeysWith: { first, _ in first })
+      }
+      guard let action = actionsByMetric[row.metric.rawValue]?[row.key.action] else { throw Failure.stale }
+      let (checked, reminder) = careAgendaRow(action, concern: concern, archive: archive, context: state)
+      guard checked == row else { throw Failure.stale }
+      return .init(scope: .init(concern: concern.id, metric: concern.metric), action: action, reminder: reminder,
+        plannedAt: row.key.due, bucket: row.key.bucket, canRecord: row.canRecord)
+    }
+    let next = rows.count > limit ? rows.prefix(limit).last.map {
+      Agenda.Cursor(generation: index.generation, filter: filter, scope: scope, dayEnd: dayEnd, key: $0.key)
+    } : nil
+    return .init(items: Array(checkedItems.prefix(limit)), next: next, dayEnd: dayEnd,
+      remindersEnabled: Self.careFollowUpPreferences(archive) != nil)
   }
   private func currentDiscussionConcern(id: UUID, metric: GalaxySSIHealthMetric, archive: Archive,
                                         now: Date) throws -> GalaxySSIHealthCare.Concern {
@@ -2503,6 +2602,12 @@ struct GalaxySSIHealthRecords {
         enabled && careFollowUpIsCurrent(concernID: $0.value.concernID, metric: $0.value.metric,
           actionID: $0.key, archive: archive, now: now)
       }
+    }
+    if archive.localCareAllowed == true {
+      let context = careAgendaContexts(archive, now: Date())
+      archive.localCareAgenda = context.isEmpty ? nil : try JSONEncoder().encode(makeCareAgenda(archive, context: context))
+    } else {
+      archive.localCareAgenda = nil
     }
     let payload = try JSONEncoder().encode(archive)
     guard let sealed = try AES.GCM.seal(payload, using: key(create: true),
