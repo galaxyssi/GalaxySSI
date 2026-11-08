@@ -219,8 +219,12 @@ final class AgentRunRecoveryCoordinator {
 
   private func recover(_ snapshot: AgentRunControlSnapshot) async throws -> AgentRunRecoveryResult {
     try Task.checkCancellation()
-    if let terminal = try reconcileDeliveryFailure(snapshot) { return terminal }
     let run = recordedRun(snapshot.runId)
+    let outcomeWait = snapshot.lastEvent.type == .waitingForUser &&
+      snapshot.lastEvent.payload["loop_outcome_wait"] == .bool(true) &&
+      run?.status == .running && run?.conversationId == snapshot.lastEvent.conversationId &&
+      run?.finalOutput["outcome_unverified"] == .bool(true)
+    if !outcomeWait, let terminal = try reconcileDeliveryFailure(snapshot) { return terminal }
     let decision = AgentRunRecoveryPolicy.decide(
       snapshot: snapshot,
       recordedRun: run,
@@ -250,7 +254,11 @@ final class AgentRunRecoveryCoordinator {
 
     case .restoreLocalWait:
       let current = workspaceFor(snapshot)
+      let reason = outcomeWait
+        ? snapshot.lastEvent.payload["loop_reason"]?.stringValue?.ifBlank(decision.reason) ?? decision.reason
+        : decision.reason
       let status: AgentWorkspaceStatus = {
+        if outcomeWait { return .blocked }
         if let currentStatus = current?.status,
           currentStatus == .waitingConfirmation || currentStatus == .paused {
           return currentStatus
@@ -264,14 +272,14 @@ final class AgentRunRecoveryCoordinator {
         checkpoint: current?.checkpoints.last?.stateJson ?? "",
         remoteHandle: nil,
         remoteSequence: snapshot.lastSequence,
-        reason: decision.reason
+        reason: reason
       )
-      appendLocalWaitRecoveryEvent(snapshot, reason: decision.reason)
+      if !outcomeWait { appendLocalWaitRecoveryEvent(snapshot, reason: reason) }
       return AgentRunRecoveryResult(
         runId: snapshot.runId,
         outcome: .restoredLocalWait,
         lastRemoteEventSequence: snapshot.lastSequence,
-        reason: decision.reason
+        reason: reason
       )
 
     case .reconnectDurableRemote:
@@ -523,7 +531,7 @@ final class AgentRunRecoveryCoordinator {
         updated.agentId = (remoteHandle?.agentId ?? "").ifBlank(checkpointed.agentId)
         updated.remoteRunId = (remoteHandle?.remoteRunId ?? "").ifBlank(checkpointed.remoteRunId)
         updated.lastRemoteEventSequence = max(checkpointed.lastRemoteEventSequence, remoteSequence)
-        if status == .failed {
+        if status == .failed || status == .blocked {
           updated.errorMessage = reason
         }
         updated.revision = checkpointed.revision
