@@ -7,6 +7,62 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testHealthClarificationPreservesNoAndZeroOnlyForExactMeasurement() throws {
+    typealias Care = GalaxySSIHealthCare
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "clarification", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let reading = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-60),
+      value: 110, conditions: "fasting", unitOverride: "mg/dL", referenceInterval: "70 - 99")
+    try records.write(reading)
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let initial = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    var answers = Care.Context.Answers()
+    answers.pregnant = false
+    answers.fastingHours = 0
+    XCTAssertThrowsError(try records.setLocalCareContext(initial, applicability: .applicable, answers: answers, now: now))
+    try records.setLocalCareContext(initial, applicability: .unknown, answers: answers, now: now)
+    let confirmed = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertEqual(confirmed.context?.answers, answers)
+    let targetBasis = try GalaxySSIHealthCareTarget.basis(confirmed)
+    var changedContext = confirmed
+    changedContext.context?.answers?.pregnant = true
+    XCTAssertNotEqual(try GalaxySSIHealthCareTarget.basis(changedContext), targetBasis)
+    var thread = try records.openLocalCareDiscussion(id: confirmed.id, metric: .glucose)
+    thread.turns.append(.init(id: UUID(), question: "Previous question", destination: "fixture",
+      answer: "Previous answer", measurement: confirmed.assessment.record))
+    func payload(_ concern: Care.Concern) throws -> [String: Any] {
+      let json = try GalaxySSIHealthCareDiscussion.payload(concern: concern, question: "Current question",
+        thread: thread, destination: "fixture")
+      XCTAssertFalse(json.contains(reading.id.uuidString))
+      return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+    }
+    func clarification(_ payload: [String: Any]) throws -> [String: Any] {
+      try XCTUnwrap((payload["concern"] as? [String: Any])?["clarification"] as? [String: Any])
+    }
+    let current = try clarification(payload(confirmed))
+    let known = try XCTUnwrap(current["knownAnswers"] as? [String: Any])
+    XCTAssertEqual(known["pregnant"] as? Bool, false)
+    XCTAssertEqual(known["fasting_hours"] as? Int, 0)
+    XCTAssertNil(known["adult"])
+    XCTAssertTrue((current["unconfirmedFields"] as? [String])?.contains("adult") == true)
+    var edited = try XCTUnwrap(records.load().current.first)
+    edited.value = 115
+    try records.write(edited)
+    try records.reconcileLocalCare(now: now)
+    var revised = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertNil(revised.context)
+    revised.context = confirmed.context
+    let historical = try payload(revised)
+    let context = try clarification(historical)
+    XCTAssertEqual(context["status"] as? String, "other_record_or_revision")
+    XCTAssertEqual((context["knownAnswers"] as? [String: Any])?.count, 0)
+    XCTAssertEqual((historical["previous"] as? [[String: String]])?.first?["measurementScope"], "historical_record")
+  }
+
+  @MainActor
   func testLocalCarePlanAdoptsOnlySelectedStepsAndRejectsReplay() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }
@@ -87,6 +143,71 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(updated.adoptedActions?.map(\.action.kind), [.recheck])
     XCTAssertThrowsError(try reopened.resolveLocalCarePlan(draft, selected: [0], currentDestination: destination, now: now))
     XCTAssertNil(try reopened.load().reviewReminderState)
+    let action = try XCTUnwrap(updated.adoptedActions?.first)
+    let firstTime = now.addingTimeInterval(3_600)
+    XCTAssertThrowsError(try reopened.scheduleLocalCareFollowUp(concernID: concern.id, metric: .glucose,
+      actionID: action.id, replacing: nil, at: firstTime, now: now))
+    try reopened.setReviewRemindersEnabled(true)
+    try reopened.setReviewNotificationPreferences(.init(enabled: true, quietStart: 0, quietEnd: 0))
+    XCTAssertThrowsError(try reopened.scheduleLocalCareFollowUp(concernID: concern.id, metric: .glucose,
+      actionID: action.id, replacing: nil, at: now, now: now))
+    try reopened.scheduleLocalCareFollowUp(concernID: concern.id, metric: .glucose, actionID: action.id,
+      replacing: nil, at: firstTime, now: now)
+    let firstReminder = try XCTUnwrap(reopened.load().localCareFollowUps?[action.id])
+    let secondTime = firstTime.addingTimeInterval(3_600)
+    try reopened.scheduleLocalCareFollowUp(concernID: concern.id, metric: .glucose, actionID: action.id,
+      replacing: firstReminder.id, at: secondTime, now: now)
+    XCTAssertThrowsError(try reopened.cancelLocalCareFollowUp(firstReminder))
+    let secondReminder = try XCTUnwrap(reopened.load().localCareFollowUps?[action.id])
+    let delivery = try XCTUnwrap(reopened.localCareFollowUpDelivery(pending: [:], delivered: [],
+      permitted: true, calendar: .current, now: now).pending.first)
+    XCTAssertEqual(delivery.reminder, secondReminder)
+    XCTAssertEqual(delivery.due, secondTime)
+    let calendar = Calendar.current
+    let hour = calendar.component(.hour, from: secondTime)
+    let quiet = GalaxySSIHealthReviewDelivery.Preferences(enabled: true, quietStart: hour, quietEnd: (hour + 1) % 24)
+    let deferred = GalaxySSIHealthCareFollowUp.deliveryPlan(reminders: [secondReminder], preferences: quiet,
+      permitted: true, pending: [:], delivered: [], calendar: calendar, now: now)
+    XCTAssertGreaterThan(try XCTUnwrap(deferred.pending.first?.due), secondTime)
+    XCTAssertTrue(GalaxySSIHealthCareFollowUp.deliveryPlan(reminders: [secondReminder], preferences: quiet,
+      permitted: false, pending: [:], delivered: [], calendar: calendar, now: now).pending.isEmpty)
+    try reopened.markLocalCareFollowUpSubmitted(delivery, calendar: .current, now: now)
+    let staleDelivery = GalaxySSIHealthCareFollowUp.Delivery(reminder: secondReminder,
+      due: secondTime.addingTimeInterval(3_600))
+    XCTAssertThrowsError(try reopened.markLocalCareFollowUpSubmitted(staleDelivery, calendar: .current, now: now))
+    XCTAssertNil(try reopened.localCareFollowUpTarget(token: firstReminder.id, now: secondTime))
+    XCTAssertEqual(try reopened.localCareFollowUpTarget(token: secondReminder.id, now: secondTime)?.id, secondReminder.id)
+    let otherApproval = try addEvidence(reopened.prepareLocalCareDiscussion(id: concern.id, metric: .glucose,
+      question: "A separate step", destinationID: "provider", model: model, credential: "fixture-api-key",
+      proposesPlan: true, now: now))
+    try reopened.beginLocalCareDiscussionTurn(otherApproval, now: now)
+    let otherRaw = raw.replacingOccurrences(of: approval.evidence[0].id.uuidString,
+      with: otherApproval.evidence[0].id.uuidString)
+    try reopened.saveLocalCarePlan(otherApproval,
+      arguments: JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(otherRaw.utf8)), now: now)
+    let otherPlan = try XCTUnwrap(reopened.load().localCarePlans?[otherApproval.id.uuidString])
+    try reopened.resolveLocalCarePlan(otherPlan, selected: [0], currentDestination: otherApproval.destinationDigest, now: now)
+    let otherAction = try XCTUnwrap(reopened.load().localCare?.current["glucose"]?.adoptedActions?.last)
+    try reopened.scheduleLocalCareFollowUp(concernID: concern.id, metric: .glucose, actionID: otherAction.id,
+      replacing: nil, at: firstTime, now: now)
+    XCTAssertThrowsError(try reopened.recordLocalCareOutcome(concernID: concern.id, metric: .glucose,
+      action: action, note: " ", now: now))
+    try reopened.recordLocalCareOutcome(concernID: concern.id, metric: .glucose, action: action,
+      note: "Discussed at appointment", now: now)
+    let recorded = try XCTUnwrap(reopened.load().localCare?.current["glucose"])
+    XCTAssertEqual(recorded.stage, .reassess)
+    XCTAssertEqual(recorded.assessment, updated.assessment)
+    XCTAssertEqual(recorded.adoptedActions?.first?.outcome?.note, "Discussed at appointment")
+    XCTAssertNil(try reopened.load().localCareFollowUps?[action.id])
+    XCTAssertNotNil(try reopened.load().localCareFollowUps?[otherAction.id])
+    XCTAssertNil(try reopened.localCareFollowUpTarget(token: secondReminder.id, now: secondTime))
+    try reopened.reviewLocalCare(recorded, stage: .paused, reason: "Fixture pause", now: now)
+    let paused = try XCTUnwrap(reopened.load().localCare?.current["glucose"])
+    XCTAssertNil(try reopened.load().localCareFollowUps?[otherAction.id])
+    try reopened.reviewLocalCare(paused, stage: .reassess, reason: "Fixture resume", now: now)
+    XCTAssertNil(try reopened.load().localCareFollowUps?[otherAction.id])
+    try reopened.scheduleLocalCareFollowUp(concernID: concern.id, metric: .glucose, actionID: otherAction.id,
+      replacing: nil, at: firstTime, now: now)
     let secondPending = try reopened.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Another draft",
       destinationID: "provider", model: model, credential: "fixture-api-key", proposesPlan: true, now: now)
     var crossTurn = secondPending
@@ -101,11 +222,12 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
       arguments: JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(secondRaw.utf8)), now: now)
     let revoked = try XCTUnwrap(reopened.load().localCarePlans?[second.id.uuidString])
     try reopened.setHealthOnlinePermission(false)
+    XCTAssertNil(try reopened.load().localCareFollowUps?[otherAction.id])
     XCTAssertThrowsError(try reopened.resolveLocalCarePlan(revoked, selected: [0],
       currentDestination: second.destinationDigest, now: now))
     try reopened.resolveLocalCarePlan(revoked, selected: nil, now: now)
     XCTAssertEqual(try reopened.load().localCarePlans?[second.id.uuidString]?.state, .dismissed)
-    XCTAssertEqual(try reopened.load().localCare?.current["glucose"]?.adoptedActions?.count, 1)
+    XCTAssertEqual(try reopened.load().localCare?.current["glucose"]?.adoptedActions?.count, 2)
   }
 
   @MainActor
@@ -512,6 +634,25 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     for privateValue in [origin, "private condition fixture", first.id.uuidString, second.id.uuidString] {
       XCTAssertFalse(sanitized.contains(privateValue))
     }
+    _ = try records.openLocalCareDiscussion(id: advanced.id, metric: .glucose)
+    try records.setHealthOnlinePermission(true)
+    let model = CloudModelConfig(id: "comparison", displayName: "Comparison", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    func review() throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try records.prepareLocalCareDiscussion(id: advanced.id, metric: .glucose, question: "Compare the readings",
+        destinationID: "provider", model: model, credential: "fixture-api-key", now: now)
+    }
+    func comparison(_ approval: GalaxySSIHealthCareDiscussion.Approval) throws -> [String: Any]? {
+      let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(approval.payload.utf8)) as? [String: Any])
+      return (payload["concern"] as? [String: Any])?["comparison"] as? [String: Any]
+    }
+    let proposed = try review()
+    let preview = try XCTUnwrap(comparison(proposed))
+    XCTAssertEqual((preview["before"] as? [String: Any])?["result"] as? String, "110")
+    XCTAssertEqual(preview["clinicalDirectionVerified"] as? Bool, false)
+    for privateValue in [origin, "private condition fixture", first.id.uuidString, second.id.uuidString] {
+      XCTAssertFalse(proposed.payload.contains(privateValue))
+    }
     var correction = try XCTUnwrap(records.load().current.first { $0.id == second.id })
     correction.value = 105
     try records.write(correction)
@@ -520,6 +661,10 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(corrected.kind, .recordCorrection)
     XCTAssertTrue(corrected.changes.isEmpty)
     XCTAssertNil(corrected.modelValue(currentContext: nil).before)
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(proposed, now: now))
+    let correctedPreview = try XCTUnwrap(comparison(review()))
+    XCTAssertNil(correctedPreview["before"])
+    XCTAssertEqual(correctedPreview["gaps"] as? [String], ["methodUnverified"])
     let backfill = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-86_400),
       value: 6, unitOverride: "mmol/L", referenceInterval: "4 - 5.5")
     try records.write(backfill)
@@ -528,13 +673,17 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(revisedHistory.kind, .historyChanged)
     XCTAssertEqual(revisedHistory.before.record.id, backfill.id)
     XCTAssertTrue(revisedHistory.gaps(currentContext: nil).contains(.unitsDiffer))
+    let historyPreview = try review()
     for id in [first.id, backfill.id] {
       var deleting = try XCTUnwrap(records.load().current.first { $0.id == id })
       deleting.deleted = true
       try records.write(deleting)
     }
+    XCTAssertThrowsError(try review())
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(historyPreview, now: now))
     try records.reconcileLocalCare(now: now)
     XCTAssertNil(try records.load().localCare?.current["glucose"]?.comparison)
+    XCTAssertNil(try comparison(review()))
   }
 
   @MainActor

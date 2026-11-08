@@ -49,7 +49,7 @@ enum GalaxySSIHealthCareComparison {
 
     var modelSample: ModelSample {
       .init(measuredAt: ISO8601DateFormatter().string(from: measuredAt), result: result, unit: unit,
-        pulse: pulse.map(Self.number), reportReference: reference, conditionRecorded: !condition.isBlank)
+        pulse: pulse.map(Self.number), referenceRecorded: !reference.isBlank, conditionRecorded: !condition.isBlank)
     }
   }
 
@@ -100,9 +100,9 @@ enum GalaxySSIHealthCareComparison {
     func modelValue(currentContext: GalaxySSIHealthCare.Context?) -> ModelComparison {
       let priorStillLive = kind != .recordCorrection
       return .init(kind: kind, before: priorStillLive ? before.modelSample : nil, after: after.modelSample,
-        previousContext: priorStillLive ? previousContext?.applicability : nil,
+        previousContext: priorStillLive && previousContext?.record == before.record ? previousContext?.applicability : nil,
         currentContext: currentContext?.record == after.record ? currentContext?.applicability : nil,
-        arithmeticOnly: changes, gaps: gaps(currentContext: currentContext))
+        arithmeticOnly: changes, gaps: priorStillLive ? gaps(currentContext: currentContext) : [.methodUnverified])
     }
   }
 
@@ -111,7 +111,7 @@ enum GalaxySSIHealthCareComparison {
     let result: String
     let unit: String
     let pulse: String?
-    let reportReference: String
+    let referenceRecorded: Bool
     let conditionRecorded: Bool
   }
   struct Change: Encodable, Equatable {
