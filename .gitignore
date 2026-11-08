@@ -67,6 +67,7 @@ tasks/
 task-workspaces/
 
 # Local test evidence
+/docs/testing/
 /artifacts/
 /.galaxyssi-evolution-backup/
 /evolution-v2-integration-report.json

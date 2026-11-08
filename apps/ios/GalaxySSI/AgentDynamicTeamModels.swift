@@ -114,6 +114,7 @@ enum AgentCollaborationRuleTopics {
     Publish galaxyssi.research-artifact.v1 with a workspace array. Each item has id, kind, title, body, base_revision and parents.
     Use base_revision 0 for new records and exact object_id, revision and sha256 for references. Cite original cloud observations
     with evidence_id and sha256 when the record supports citations. Read each page before citing it. Publication is not verification.
+    \(AgentCollaborationTypedRecordValidation.guidance)
     capability_gap records category, symptom, needed_capability, learning_options, chosen_option and rationale.
     innovation records origin, hypothesis, mechanism, difference, prior_art, falsifier, domain, applies_when, risks, alternatives
     and predictions (id, statement, test). Use novelty_scope not_checked. Transfer and combination require exact parent records.
@@ -130,8 +131,15 @@ enum AgentCollaborationRuleTopics {
     Valid failed cases are saved. An exact previous_trial parent can compare the same preserved cases.
     experiment_plan binds exact innovation and baseline parents, prediction_id, method, environment, budget_unit, budget_limit,
     report_pointer, source and cases. experiment_result binds the plan and completely read original measurement observations.
+    To compare workflows, both innovations must parent and reference an exact workflow_method in their domain.
+    Set experiment_plan.workflow_comparison to {dataset:exact artifact reference, controlled_conditions, quality_oracle,
+    cost_accounting, selection_bias}; parent the dataset and include target and regression cases.
+    Each measurement carries workflow_sha256 and dataset_sha256 as well as its innovation variant_sha256.
+    Discover previous comparisons using method_history with view=evaluations. Read original conditions and negative results;
+    an empty scan is unknown history, not evidence that a method works.
     capability_lesson binds exact result and rollback parents; retain requires passing target and regression cases,
     an independent reviewer and full original evidence reads. Reject or revise can preserve historical findings.
+    \(AgentCollaborationExperimentResultFeedback.guidance)
     """),
     Topic(id: "learning", purpose: "Compare and record learning choices", prerequisites: ["foundation"], contract: """
     learning_agenda is immutable. Include goal_alignment, resource_reasoning, selection_reason, reconsider_when and options.
@@ -156,12 +164,17 @@ enum AgentCollaborationRuleTopics {
     and an object input_schema using the existing Skill parameter contract. tool_test_plan binds the exact executable_tool parent
     and matching environment. Include purpose, coverage_gaps, oracle_basis and distinct cases with id, purpose, reason, input
     and expected (explicit null is allowed). Include target and regression cases. Registration neither executes nor releases code.
+    Use capabilities to find unfinished tools and test plans. Follow usage_recall for original test history. A pre-execution
+    rejection belongs only to the requested plan; only an exact runtime-bound test belongs to a candidate.
     """),
     Topic(id: "workflows", purpose: "Register workflow roles, steps and review conditions", prerequisites: ["foundation"], contract: """
     workflow_method includes purpose, domain, bottleneck, change_rationale, applies_when, avoid_when, risks, expected_gain,
     falsifier, dimensions, roles, inputs and steps. Steps declare id, role, stage, assignment, depends_on, dependency_policy,
     independent_review and optional review_targets. Dependencies must be acyclic, review targets must be dependencies, and
     the reviewed role must differ from the reviewer. Steps cannot override tools, models or permissions.
+    A workflow_selection_rule parents an independently retained workflow comparison lesson. Use purpose, domain, condition_basis,
+    limitations, prospective_test, lesson, when_all and unless_any. Each condition has id, input, pointer, operator, value and rationale.
+    \(AgentCollaborationWorkflowCheck.instructions)
     """)
   ]
 

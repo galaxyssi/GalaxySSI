@@ -19,6 +19,8 @@ Read current platform versions from their package metadata, not from this docume
 - Use English for code, comments, documentation, commits, pull requests, and release notes.
 - Put user-visible localized strings in the proper i18n resource files.
 - Do not commit secrets, local device state, generated packages, logs, databases, or temporary screenshots.
+- Keep test reports, real-device evidence, and raw experiment data outside every Git worktree. Do not upload them to GitHub commits, pull requests, issues, releases, or workflow artifacts.
+- Do not recreate or force-add `docs/testing/`, or relocate its removed contents elsewhere in the repository. Test code, reusable tools, and deliberately synthetic fixtures remain allowed.
 - Keep protocol changes documented under `docs/protocol`.
 - `npm run check` rejects tracked generated artifacts such as APKs, installers, smoke screenshots, UI dumps, local databases, logs, and pairing state.
 
@@ -41,7 +43,12 @@ npm run smoke:desktop:packaged
 
 Smoke commands that touch the Desktop backend, MQTT broker, packaged app, or Android device must run sequentially because they share the same local backend port and test lock.
 
-Use `docs/testing/README.md` as the release test matrix before publishing a build.
+### Manual Release Checks
+
+Run `npm run audit:release` to list release gates and manual checks. Use
+`npm run audit:release:strict` before publishing a build. Keep detailed reports
+and evidence outside the repository; include only a concise verification
+outcome in the pull request.
 
 ### Focused Node.js tests
 
