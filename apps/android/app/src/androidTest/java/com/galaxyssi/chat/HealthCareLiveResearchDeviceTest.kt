@@ -16,6 +16,7 @@ import org.junit.Test
 class HealthCareLiveResearchDeviceTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val report = JSONArray()
+    private val historyReads = mutableListOf<String>()
     private val reportFile get() = File(context.filesDir, "health-care-live-research.json")
 
     @Test fun pairedModelResearchesAndAnswersFollowupWithoutConfirmingPlan(): Unit = runBlocking {
@@ -52,7 +53,7 @@ class HealthCareLiveResearchDeviceTest {
                     "\u89e3\u91ca\u4e3a\u4ec0\u4e48\u4e0d\u80fd\u7528\u8303\u56f4\u4e2d\u70b9\u4f5c\u4e3a\u6700\u4f73\u503c\uff0c" +
                     "\u63d0\u51fa\u6838\u5bf9\u6761\u4ef6\u548c\u4e0e\u533b\u751f\u8ba8\u8bba\u7684\u5f85\u786e\u8ba4\u8349\u6848\u3002\u4e0d\u8981\u786e\u8bca\u6216\u8bbe\u63d0\u9192\u3002" +
                     "\u8bf7\u7528\u624b\u673a\u5de5\u5177\u771f\u5b9e\u8bfb\u53d6\u6765\u6e90\uff0c\u5e76\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u8ba1\u5212\uff0c\u4e0d\u662f\u53ea\u5728\u56de\u590d\u4e2d\u5217\u51fa\u8349\u6848\u3002"
-                val first = runTurn(store, concern, grant, contact, firstQuestion, history)
+                val first = runTurn(store, concern, grant, contact, firstQuestion, history, names)
                 assertTrue(first.isNotBlank())
                 val plan = store.plan(grant.turnId) ?: error("Real model did not submit a source-grounded draft")
                 assertEquals(HealthCarePlanState.PENDING, plan.state)
@@ -65,7 +66,7 @@ class HealthCareLiveResearchDeviceTest {
                 store.approveDiscussion(next)
                 val answer = runTurn(store, concern, next, contact,
                     "\u5148\u4e0d\u786e\u8ba4\u8ba1\u5212\u3002\u4e0d\u7528\u518d\u67e5\u7f51\u9875\uff0c\u4e5f\u4e0d\u8981\u65b0\u5efa\u8349\u6848\u3002" +
-                        "\u8bf7\u590d\u8ff0\u521a\u624d\u7684\u6570\u503c\u3001\u5355\u4f4d\u548c\u8fd8\u672a\u6838\u5bf9\u7684\u4fe1\u606f\uff0c\u5e76\u8bf4\u660e\u8ba1\u5212\u6709\u6ca1\u6709\u6267\u884c\u3002", history)
+                        "\u8bf7\u590d\u8ff0\u521a\u624d\u7684\u6570\u503c\u3001\u5355\u4f4d\u548c\u8fd8\u672a\u6838\u5bf9\u7684\u4fe1\u606f\uff0c\u5e76\u8bf4\u660e\u8ba1\u5212\u6709\u6ca1\u6709\u6267\u884c\u3002", history, names)
                 assertTrue("Follow-up lost the measurement", answer.contains("6.3"))
                 assertTrue("Follow-up lost units", answer.contains("mmol", true) || answer.contains("\u6beb\u6469"))
                 assertEquals(plan, store.plan(grant.turnId)); assertNull(store.plan(next.turnId))
@@ -82,9 +83,28 @@ class HealthCareLiveResearchDeviceTest {
                 val reassessed = runTurn(store, updated, followup, contact,
                     "\u6211\u521a\u52a0\u5165\u4e86\u4e00\u6761\u5408\u6210\u590d\u67e5\u7ed3\u679c\u3002\u8bf7\u6bd4\u8f83\u524d\u540e\u4e24\u6b21\u6570\u503c\u548c\u5355\u4f4d\uff0c" +
                         "\u8bf4\u660e\u8fd8\u9700\u6838\u5bf9\u4ec0\u4e48\uff0c\u80fd\u5426\u76f4\u63a5\u5224\u5b9a\u7a33\u5b9a\u5e76\u7ed3\u675f\u8ddf\u8e2a\u3002" +
-                        "\u4e0d\u7528\u518d\u67e5\u7f51\u9875\uff0c\u4e0d\u8981\u65b0\u5efa\u8349\u6848\u6216\u8bbe\u63d0\u9192\u3002", history)
+                        "\u4e0d\u7528\u518d\u67e5\u7f51\u9875\uff0c\u4e0d\u8981\u65b0\u5efa\u8349\u6848\u6216\u8bbe\u63d0\u9192\u3002", history, names)
                 assertTrue("Reassessment lost previous/current values", reassessed.contains("6.3") && reassessed.contains("5.4"))
                 assertEquals(updated, store.concern(concern.id)); assertNull(store.plan(followup.turnId)); assertNull(store.nextDue())
+                val now = System.currentTimeMillis()
+                var oldest = ""
+                HealthRecordStore(context, names.records).use { records -> repeat(35) { index ->
+                    val saved = records.save(HealthDraft(HealthMetric.GLUCOSE, mapOf("glucose" to if (index == 34) "6.1" else "6.3"),
+                        "mmol/L", now - (index + 1L) * 86_400_000L, reference = "4-6")) as HealthSaveResult.Saved
+                    if (index == 34) oldest = saved.record.id
+                } }
+                HealthCareEngine.evaluate(context, names)
+                val longitudinal = store.concern(concern.id)!!
+                val historyGrant = followup.copy(turnId = UUID.randomUUID().toString(), revision = longitudinal.revision,
+                    approvedAt = System.currentTimeMillis())
+                store.approveDiscussion(historyGrant)
+                val answerHistory = runTurn(store, longitudinal, historyGrant, contact,
+                    "这仍是隔离合成测试。请用手机健康历史工具读取更早的记录，确认最早一条的数值和单位，并说明检测条件是否完整。" +
+                        "近期页不是全部历史，请翻到最早的记录。不要新建计划、设提醒或判定已经稳定。", emptyList(), names)
+                assertTrue("Real model did not read the older source page", oldest in historyReads)
+                assertTrue("Real model lost the oldest measurement", answerHistory.contains("6.1"))
+                assertEquals(longitudinal, store.concern(concern.id)); assertNull(store.nextDue())
+                println("HEALTH_LIVE scoped_history_pagination=true")
                 println("HEALTH_LIVE research_and_followup=true reassessment_context=true pending_only=true real_provider=true")
             }
         } finally {
@@ -94,7 +114,7 @@ class HealthCareLiveResearchDeviceTest {
     }
 
     private suspend fun runTurn(store: HealthCareStore, concern: HealthCareConcern, grant: HealthCareDiscussionGrant,
-        contact: JSONObject, question: String, turns: List<AgentTranscriptEntry>): String {
+        contact: JSONObject, question: String, turns: List<AgentTranscriptEntry>, names: HealthOverviewDatabases): String {
         val web = AgentBoundedWebService(AgentPinnedOkHttpWebTransport())
         val service = AgentWebIntelligenceService(AgentBoundedWebIntelligenceFetcher(web), AgentInMemoryWebIntelligenceStore())
         val registry = AgentNativeToolRegistry()
@@ -109,6 +129,12 @@ class HealthCareLiveResearchDeviceTest {
         registry.register(HealthCarePlanTool.definition { invocation, input ->
             check(invocation.conversationId == grant.conversationId && invocation.turnId == grant.turnId)
             store.proposePlan(HealthCarePlanPolicy.parse(input, grant, concern, System.currentTimeMillis()))
+        })
+        registry.register(HealthCareHistoryTool.definition { invocation, input ->
+            HealthCareHistoryTool.read(context, names, invocation, input).also { output ->
+                val samples = output.optJSONObject("history")?.optJSONArray("samples") ?: JSONArray()
+                for (index in 0 until samples.length()) historyReads += samples.getJSONObject(index).getJSONObject("record").getString("id")
+            }
         })
         val screen = ScreenContext("Synthetic health acceptance", pageTitle = "Synthetic health concern")
         val goal = HealthCareDiscussionPolicy.prompt(question, HealthCareDiscussionPolicy.snapshot(concern))
@@ -151,7 +177,9 @@ class HealthCareLiveResearchDeviceTest {
                         conversationId = grant.conversationId, turnId = grant.turnId,
                         deadlineEpochMillis = System.currentTimeMillis() + 60_000))
                     val encoded = AgentNativeJsonCodec.stringify(result.output)
-                    val evidence = AgentWebObservation.compact(encoded, 16_000, preserveReceipt = true) ?: result.toJson()
+                    val evidence = AgentNativeActionObservation.evidence(AgentActionResult(action.id, result.isSuccess,
+                        result.message, mapOf("native_tool_output" to encoded,
+                            AgentNativeActionObservation.KEY to AgentNativeActionObservation.from(result).orEmpty())), 16_000)
                     observations += action.copy(id = "round-$round-${action.id}",
                         status = if (result.isSuccess) AgentActionStatus.COMPLETED else AgentActionStatus.FAILED,
                         result = result.message, evidence = evidence)

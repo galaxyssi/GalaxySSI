@@ -112,6 +112,7 @@ class AgentPhoneNativeToolCatalogTest {
             add(CollaborationRecallNativeTool.ID)
             add(AgentConversationRecallTool.ID)
             add(HealthCarePlanTool.ID)
+            add(HealthCareHistoryTool.ID)
             addAll(AgentSystemEvidenceNativeTools.toolIds)
             addAll(AgentPhoneUiNativeTools.toolIds)
             addAll(AgentMcpNativeTools.toolIds)

@@ -28,15 +28,17 @@ internal object HealthCareEngine {
                         val stamp = versions.getValue(metric)
                         if (stamp.isBlank() && prior == null) continue
                         val key = inputVersion(settings.version, permission.version, stamp)
-                        val evaluationVersion = HealthCarePriority.evaluationVersion(metric)
+                        val evaluationVersion = HealthCarePriority.evaluationVersion(metric) + ":" + HealthCareSeries.VERSION
                         if (care.evaluated(metric, evaluationVersion) == key) continue
                         val assessment = privacy.track(HealthAccessScope(HealthAccessPurpose.PROACTIVE_CARE, setOf(metric))) {
-                            val recent = records.recentSelf(now, 30, metric)
+                            val page = records.careHistory(now, metric)
+                            val recent = page.records
                             // Resolve at most two indexed anchors, never decrypt the complete measurement history.
                             val anchors = listOfNotNull(prior?.assessment?.sample?.record, prior?.assessment?.comparison?.before?.record)
                                 .distinctBy { it.id }.filter { ref -> recent.none { it.id == ref.id } }.mapNotNull { records.record(it.id) }
                                 .filter { it.profileId == "self" && it.draft.metric == metric && it.draft.measuredAt <= now }
                             HealthCarePolicy.assess(metric, (recent + anchors).distinctBy { it.id }, prior?.context, prior?.assessment)
+                                ?.copy(series = HealthCareSeries.of(page))
                         }
                         if (cancelled()) return changed
                         if (privacy.policy() != permission || records.metricVersion(metric) != stamp) throw HealthCareConflict()

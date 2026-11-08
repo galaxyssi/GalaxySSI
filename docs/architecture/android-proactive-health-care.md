@@ -1,5 +1,43 @@
 # Proactive health care
 
+## Longitudinal evidence window
+
+Assessments retain a contiguous recent page of up to 30 self-profile measurements,
+including source revision, collection time, units, reference and conditions. An
+explicit `has_earlier` flag distinguishes a page from complete history; comparison
+anchors outside that page remain separate. No result-value filter selects only
+normal readings. The evaluation cache version backfills this evidence without
+changing the source clock or silently changing an individual target.
+
+The Agent main page and concern details expose the same paginated history review.
+Pages are released on background, conversation changes, source updates or privacy
+revocation. `galaxyssi.health.history.read` lets the authorized model read older
+pages on the phone. The host, not model parameters, supplies the concern, metric,
+self profile and granted turn. Every page checks source clock, concern revision,
+privacy and approval. Changed data requires a new review, not mixing stale pages.
+Storage is not limited to 30 records. No unrelated profile, private device/source
+identifier, free-form note or original attachment is included in the model page.
+Observation compaction retains complete rows and moves the continuation cursor
+only past rows delivered to the model. It never silently skips the middle of a
+page. A budget too small for one row reports non-delivery without advancing.
+
+The supervised planner reserves the complete authorized concern snapshot instead
+of applying the generic 8,000-character head/tail truncation. The bounded health
+handoff retains the source version, targets, context and every supplied row; an
+oversized handoff fails explicitly rather than sending partial JSON or losing the
+pagination version. This is a transport rule, not an authorization bypass: native
+reads still validate the persisted per-turn approval and current source clock.
+
+Per-result comparison gaps retain incompatible units, unknown conditions, source
+changes, uncertain numbers and unconfirmed context. Historical context is never
+copied from the latest result. Arithmetic agreement and a fixed count of readings
+do not certify clinical stability. Source-clock changes also invalidate a prior
+maintenance stage even if the changed record lies outside the recent page.
+
+This supplies evidence for a subsequent maintenance-plan review; it does not yet
+implement the complete source-backed maintenance proposal, confirmation and
+long-term clinical validation workflow. No reminder is scheduled by reading history.
+
 ## Product objective
 
 The complete feature is an evidence-based, longitudinal health Agent. The Agent
