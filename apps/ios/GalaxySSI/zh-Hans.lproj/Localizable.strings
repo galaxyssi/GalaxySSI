@@ -6639,3 +6639,18 @@
 "galaxyssi.mqtt.cutover_active" = "已启用";
 "galaxyssi.mqtt.cutover_blocked" = "传输不可用";
 "galaxyssi.mqtt.desktop_revoked" = "Desktop 已撤销配对。";
+
+"galaxyssi.health.care.series_title" = "测量历史";
+"galaxyssi.health.care.series_notice" = "数值相近不代表临床稳定。";
+"galaxyssi.health.care.series_more" = "更早的测量";
+"galaxyssi.health.care.series_end" = "没有更早的测量";
+"galaxyssi.health.care.series_recent" = "最近测量";
+"galaxyssi.health.care.series_changed" = "测量历史或授权已变化。";
+"galaxyssi.health.care.series_gap.unitsDiffer" = "单位不同";
+"galaxyssi.health.care.series_gap.conditionsDiffer" = "测量条件不同";
+"galaxyssi.health.care.series_gap.conditionsUnknown" = "测量条件记录不完整";
+"galaxyssi.health.care.series_gap.sourceDiffers" = "来源不同或未经验证";
+"galaxyssi.health.care.series_gap.referenceDiffers" = "报告参考区间不同";
+"galaxyssi.health.care.series_gap.nonExactResult" = "不是精确数值";
+"galaxyssi.health.care.series_gap.contextUnconfirmed" = "未确认两次血糖测量的背景";
+"galaxyssi.health.care.series_gap.methodUnverified" = "测量方法的可比性尚未验证";

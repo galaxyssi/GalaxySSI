@@ -371,6 +371,7 @@ private struct GalaxySSIHealthCareDetail: View {
             perform { try records.reviewLocalCare(concern, stage: stage, reason: reason); reason = "" }
           }.disabled(reason.isBlank)
         }
+        GalaxySSIHealthCareSeriesLink(records: records, id: id, metric: metric)
         Section(t("history", "Concern history")) {
           ForEach(history, id: \.revision) { version in
             VStack(alignment: .leading, spacing: 4) {
@@ -455,7 +456,7 @@ private struct LabeledCareMeasurement: View {
   }
 }
 
-private enum GalaxySSIHealthCareText {
+enum GalaxySSIHealthCareText {
   static func string(_ key: String, _ fallback: String, language: String) -> String {
     GalaxySSILocalization.string("galaxyssi.health.care." + key, fallback: fallback, language: language)
   }

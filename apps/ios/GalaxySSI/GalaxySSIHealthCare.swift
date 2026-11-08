@@ -61,6 +61,7 @@ enum GalaxySSIHealthCare {
     var target: Target?
     var targetRevision: Int?
     var reviewNote: String?
+    var maintenanceHistoryVersion: String?
     var bloodPressureWarning: GalaxySSIHealthCarePriority.Warning?
   }
   struct Ledger: Codable {
@@ -189,7 +190,7 @@ enum GalaxySSIHealthCare {
     return SHA256.hash(data: try encoder.encode(assessment)).map { String(format: "%02x", $0) }.joined()
   }
 
-  private static func sameSource(_ lhs: GalaxySSIHealthReading, _ rhs: GalaxySSIHealthReading) -> Bool {
+  static func sameSource(_ lhs: GalaxySSIHealthReading, _ rhs: GalaxySSIHealthReading) -> Bool {
     guard lhs.reportSource?.original == rhs.reportSource?.original, lhs.tableSource?.batch == rhs.tableSource?.batch,
           lhs.bluetoothReceipt?.device == rhs.bluetoothReceipt?.device,
           (lhs.healthKitSource == nil) == (rhs.healthKitSource == nil),

@@ -175,6 +175,7 @@ struct GalaxySSIHealthRecords {
     var retainImportOriginals: Bool?
     var profileAnalysisPermission: UUID?
     var profileAnalysisAudit: [ProfileAnalysisAudit]?
+    var localCarePermission: UUID?
     var localCareAllowed: Bool?
     var localCare: GalaxySSIHealthCare.Ledger?
     var localCareLastEvaluatedAt: Date?
@@ -414,6 +415,7 @@ struct GalaxySSIHealthRecords {
     case .localCare:
       previous = archive.localCareAllowed ?? false
       archive.localCareAllowed = enabled
+      if previous != enabled { archive.localCarePermission = enabled ? UUID() : nil }
     }
     guard previous != enabled else { return }
     if (previous ?? (scope == .importOriginals)) != enabled {
@@ -436,13 +438,16 @@ struct GalaxySSIHealthRecords {
     for metric in GalaxySSIHealthMetric.allCases {
       let key = metric.rawValue
       let prior = ledger.current[key]
-      let candidates = readings[metric] ?? []
-      let assessed = GalaxySSIHealthCare.assess(candidates, context: prior?.context)
-      let warning = GalaxySSIHealthCarePriority.evaluate(candidates.first)
+      let series = readings[metric] ?? []
+      let assessed = GalaxySSIHealthCare.assess(series, context: prior?.context)
+      let warning = GalaxySSIHealthCarePriority.evaluate(series.first)
       guard prior != nil || assessed?.signals.isEmpty == false || warning != nil else { continue }
       let next = assessed ?? .removed
       if let prior {
-        guard prior.revision < Int.max, prior.assessment != next || prior.bloodPressureWarning != warning else { continue }
+        let maintenanceChanged = prior.stage == .maintenance &&
+          prior.maintenanceHistoryVersion != GalaxySSIHealthCareSeries.version(series)
+        guard prior.revision < Int.max,
+              prior.assessment != next || maintenanceChanged || prior.bloodPressureWarning != warning else { continue }
         var updated = prior
         updated.revision += 1
         updated.updatedAt = max(prior.updatedAt, now)
@@ -452,6 +457,10 @@ struct GalaxySSIHealthRecords {
         if prior.stage != .paused && !(prior.stage == .closed && next.signals.isEmpty && warning == nil) {
           updated.stage = next.record == nil || next.signals.contains(.glucoseContext) || next.signals.contains(.notExact)
             ? .verify : .reassess
+        }
+        if prior.stage == .maintenance {
+          updated.maintenanceHistoryVersion = nil
+          updated.reviewNote = nil
         }
         ledger.publish(updated)
       } else {
@@ -610,9 +619,12 @@ struct GalaxySSIHealthRecords {
           !reason.isBlank, reason.utf8.count <= 2_048 else { throw Failure.invalid }
     try updateLocalCare(concern, now: now) { current, archive in
       if stage == .maintenance {
-        guard let record = current.assessment.record, archive.current.contains(where: {
-          GalaxySSIHealthCare.Record($0) == record
-        }) else { throw Failure.stale }
+        let series = archive.current.filter { $0.metric == current.metric && $0.isValid && $0.measuredAt <= now }
+        guard let first = series.first, current.assessment.record == GalaxySSIHealthCare.Record(first)
+        else { throw Failure.stale }
+        current.maintenanceHistoryVersion = GalaxySSIHealthCareSeries.version(series)
+      } else {
+        current.maintenanceHistoryVersion = nil
       }
       current.stage = stage
       current.reviewNote = reason
