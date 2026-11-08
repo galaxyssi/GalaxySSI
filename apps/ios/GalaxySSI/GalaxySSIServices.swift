@@ -4104,6 +4104,27 @@ final class MessageCoordinator: ObservableObject {
     return .finished
   }
 
+  private func commitJournalBackedDesktopResult(_ payload: [String: Any], receipt: AgentResultReceipt) throws {
+    guard desktopReplyRecoveryOwner == store.profile.identityFingerprint else { throw MqttRouteError.identityChanged }
+    let matches = desktopReplyRecovery.pending.filter {
+      $0.binding.desktopId == receipt.desktopId && $0.binding.matches(payload)
+    }
+    if matches.isEmpty, desktopResultRecovery.receipts.recordedState(receipt) != nil { return }
+    guard matches.count == 1, let tracked = matches.first, currentDesktopReplySource(tracked.binding) != nil,
+          desktopReplyRecovery.acceptsFinal(payload, desktopId: receipt.desktopId) else {
+      throw MqttRouteError.identityChanged
+    }
+    let rich = richContentMaterializer.materialize(AgentRichContentCodec.normalize(
+      payload.string("rich_output").ifBlank(payload.string("rich_output_json"))))
+    let content = payload.string("content").ifBlank(payload.string("text")).ifBlank(AgentRichContentCodec.fallbackText(rich))
+    guard !content.isBlank || !rich.isBlank,
+          let accepted = desktopReplyRecovery.acceptCompletedReply(payload, binding: tracked.binding, content: content,
+            now: AgentControlPlaneClock.nowMillis()),
+          persistAcceptedDesktopReply(accepted, payload: payload, content: content, rich: rich) else {
+      throw MqttChunkStorageError.databaseFailure
+    }
+  }
+
   private func persistAcceptedDesktopReply(_ record: AgentDesktopReplyRecoveryRecord, payload: [String: Any],
                                            content: String, rich: String) -> Bool {
     guard let accepted = record.acceptedReply else { return false }
@@ -15172,6 +15193,12 @@ final class MessageCoordinator: ObservableObject {
         let committed = managed ? self.managedDesktopResultIsCommitted(response) :
           applied || self.connectorResponseBus.wasRecorded(response)
         guard committed else { throw MqttChunkStorageError.databaseFailure }
+      }, completedResult: { [weak self] payload, receipt in
+        guard let self else { throw MqttDeliveryDispatch.Failure.unavailable }
+        try self.commitJournalBackedDesktopResult(payload, receipt: receipt)
+      }, resultRecovery: { [weak self] in
+        guard let self, self.desktopReplyRecoveryOwner == self.store.profile.identityFingerprint else { return nil }
+        return self.desktopResultRecovery
       })
     return try MqttBusinessTransportRuntime(peerChatStore: store, localFingerprint: signalEngine.identity.fingerprint,
       journal: journal, routeState: routeState, pool: pool, incomingAttachments: incomingAttachmentTransferStore,
