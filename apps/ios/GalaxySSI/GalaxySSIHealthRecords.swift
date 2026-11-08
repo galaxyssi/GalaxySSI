@@ -431,6 +431,7 @@ struct GalaxySSIHealthRecords {
     let readings = Dictionary(grouping: archive.current.filter { $0.isValid && $0.measuredAt <= now }, by: \.metric)
     var ledger = archive.localCare ?? .init()
     var changed = false
+    let previousConcerns = ledger.current
     for metric in GalaxySSIHealthMetric.allCases {
       let key = metric.rawValue
       let prior = ledger.current[key]
@@ -456,7 +457,8 @@ struct GalaxySSIHealthRecords {
       }
       changed = true
     }
-    guard changed || archive.localCareLastEvaluatedAt == nil else { return }
+    let comparisonsChanged = ledger.reconcileComparisons(readings: readings, previous: previousConcerns, now: now)
+    guard changed || comparisonsChanged || archive.localCareLastEvaluatedAt == nil else { return }
     archive.localCare = ledger
     archive.localCareLastEvaluatedAt = now
     try persist(archive)
@@ -513,6 +515,10 @@ struct GalaxySSIHealthRecords {
     let readings = archive.current.filter { $0.metric == concern.metric && $0.isValid && $0.measuredAt <= now }
     guard (GalaxySSIHealthCare.assess(readings, context: concern.context) ?? .removed) == concern.assessment
     else { throw Failure.stale }
+    if concern.measurement != nil || concern.comparison != nil {
+      let (measurement, comparison) = GalaxySSIHealthCareComparison.reconcile(readings, prior: concern)
+      guard concern.measurement == measurement, concern.comparison == comparison else { throw Failure.stale }
+    }
     ledger.deletedInput[key] = try GalaxySSIHealthCare.inputDigest(GalaxySSIHealthCare.assess(readings, context: nil) ?? .removed)
     ledger.current.removeValue(forKey: key)
     ledger.history.removeValue(forKey: concern.id.uuidString)
@@ -529,6 +535,10 @@ struct GalaxySSIHealthRecords {
     let readings = archive.current.filter { $0.metric == concern.metric && $0.isValid && $0.measuredAt <= now }
     guard (GalaxySSIHealthCare.assess(readings, context: current.context) ?? .removed) == current.assessment
     else { throw Failure.stale }
+    if current.measurement != nil || current.comparison != nil {
+      let (measurement, comparison) = GalaxySSIHealthCareComparison.reconcile(readings, prior: current)
+      guard current.measurement == measurement, current.comparison == comparison else { throw Failure.stale }
+    }
     try change(&current, archive)
     guard current != concern else { return }
     current.revision += 1
