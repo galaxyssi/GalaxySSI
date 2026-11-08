@@ -116,7 +116,7 @@ struct GalaxySSIHealthCareEntry: View {
         NavigationLink {
           GalaxySSIHealthCareView(records: records)
         } label: {
-          Label(GalaxySSIHealthCareText.string("title", "Health Care", language: language), systemImage: "heart.text.square")
+          GalaxySSIHealthCareComparisonEntryLabel(records: records)
             .font(.footnote.weight(.semibold))
             .frame(minHeight: 44)
         }
@@ -215,6 +215,7 @@ private struct GalaxySSIHealthCareDetail: View {
         Section(t("report_reference", "Report reference interval")) {
           Text(concern.assessment.reference.ifBlank(t("none", "Not recorded")))
         }
+        GalaxySSIHealthCareComparisonSection(records: records, id: id, metric: metric)
         Section(t("guideline", "Guideline criterion")) {
           if concern.assessment.guidelineVersion != nil {
             Link(t("ada", "ADA 2026: Diagnosis and Classification"), destination: GalaxySSIHealthCare.guidelineURL)

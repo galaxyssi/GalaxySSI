@@ -53,6 +53,8 @@ enum GalaxySSIHealthCare {
     var revision: Int
     var updatedAt: Date
     var assessment: Assessment
+    var measurement: GalaxySSIHealthCareComparison.Sample?
+    var comparison: GalaxySSIHealthCareComparison.Pair?
     var stage: Stage
     var context: Context?
     var target: Target?
@@ -69,6 +71,30 @@ enum GalaxySSIHealthCare {
       let key = next.metric.rawValue
       if let old = current[key] { history[old.id.uuidString, default: []].append(old) }
       current[key] = next
+    }
+
+    mutating func reconcileComparisons(readings: [GalaxySSIHealthMetric: [GalaxySSIHealthReading]],
+                                       previous: [String: Concern], now: Date) -> Bool {
+      var changed = false
+      for (key, concern) in current {
+        let prior = previous[key]
+        let (sample, pair) = GalaxySSIHealthCareComparison.reconcile(readings[concern.metric] ?? [], prior: prior)
+        guard sample != concern.measurement || pair != concern.comparison else { continue }
+        var next = concern
+        next.measurement = sample
+        next.comparison = pair
+        if let prior, prior.revision == concern.revision {
+          guard next.revision < Int.max else { continue }
+          next.revision += 1
+          next.updatedAt = max(next.updatedAt, now)
+          publish(next)
+        } else {
+          // The same evaluation already advanced the concern and retained the preceding revision.
+          current[key] = next
+        }
+        changed = true
+      }
+      return changed
     }
   }
 
