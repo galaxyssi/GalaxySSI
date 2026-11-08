@@ -4,7 +4,7 @@ import Foundation
 enum GalaxySSIHealthCare {
   static let guidelineURL = URL(string: "https://doi.org/10.2337/dc26-s002")!
 
-  enum Stage: String, Codable, Hashable { case verify, evidence, reassess, maintenance, paused, closed }
+  enum Stage: String, Codable, Hashable { case verify, evidence, reviewPlan, waitingResults, reassess, maintenance, paused, closed }
   enum Signal: String, Codable, Equatable {
     case reportLow, reportHigh, notExact, glucoseContext, guidelineReview, guidelineScope, rising, falling, sourceRemoved
   }
@@ -61,7 +61,9 @@ enum GalaxySSIHealthCare {
     var target: Target?
     var targetRevision: Int?
     var reviewNote: String?
+    var maintenanceHistoryVersion: String?
     var bloodPressureWarning: GalaxySSIHealthCarePriority.Warning?
+    var adoptedActions: [GalaxySSIHealthCarePlan.AdoptedAction]?
   }
   struct Ledger: Codable {
     var current: [String: Concern] = [:]
@@ -189,7 +191,7 @@ enum GalaxySSIHealthCare {
     return SHA256.hash(data: try encoder.encode(assessment)).map { String(format: "%02x", $0) }.joined()
   }
 
-  private static func sameSource(_ lhs: GalaxySSIHealthReading, _ rhs: GalaxySSIHealthReading) -> Bool {
+  static func sameSource(_ lhs: GalaxySSIHealthReading, _ rhs: GalaxySSIHealthReading) -> Bool {
     guard lhs.reportSource?.original == rhs.reportSource?.original, lhs.tableSource?.batch == rhs.tableSource?.batch,
           lhs.bluetoothReceipt?.device == rhs.bluetoothReceipt?.device,
           (lhs.healthKitSource == nil) == (rhs.healthKitSource == nil),

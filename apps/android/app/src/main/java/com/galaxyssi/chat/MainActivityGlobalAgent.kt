@@ -955,6 +955,7 @@ internal fun MainActivity.openAgentConversation(conversationId: String) {
 }
 
 internal fun MainActivity.refreshGlobalInsightIndicator() {
+    if (isFinishing || isDestroyed || navigationContentExecutor.isShutdown) return
     if (!isAgentChatShortcutsInitialized()) return
     if (!isGlobalSuperAgentRuntimeInitialized()) return
     if (!globalInsightCountRefreshInProgress.compareAndSet(false, true)) return
