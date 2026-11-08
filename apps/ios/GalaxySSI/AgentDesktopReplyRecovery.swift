@@ -65,6 +65,7 @@ struct AgentTeamDesktopReplySource: Codable, Equatable {
   var supervisorRunId: String
   var memberId: String
   var sourceMessageId: String
+  var primary: Bool? = nil
 }
 
 enum AgentDesktopCollaborationPublicationWire {
@@ -221,7 +222,9 @@ struct AgentDesktopReplyBinding: Codable, Equatable {
   var key: String {
     var values = [desktopId, displayContactId] + fields.keys.sorted().map { fields[$0]! }
     if let managedSource { values += [managedSource.ownerRunId, String(managedSource.executionGeneration)] }
-    if let teamSource { values += ["team-observer", teamSource.supervisorRunId, teamSource.memberId] }
+    if let teamSource {
+      values += [teamSource.primary == true ? "team-primary" : "team-observer", teamSource.supervisorRunId, teamSource.memberId]
+    }
     if attemptSourceId != nil { values += ["codex-replay", sourceId.uuidString] }
     let data = (try? JSONEncoder().encode(values)) ?? Data()
     return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -263,6 +266,20 @@ struct AgentDesktopReplyBinding: Codable, Equatable {
       sourceId: source, contactId: owner.contactId, agentId: agentId, identity: identity,
       teamSource: AgentTeamDesktopReplySource(supervisorRunId: owner.supervisorRunId,
         memberId: owner.memberId, sourceMessageId: owner.sourceMessageId))
+    return binding.isValid ? binding : nil
+  }
+
+  static func teamPrimary(owner: AgentTeamReplyOwner, desktopId: String, agentId: String,
+                          identity: AgentTaskIdentity, outgoing: ChatMessage) -> AgentDesktopReplyBinding? {
+    guard owner.deliveryMode == .respond, UUID(uuidString: owner.sourceMessageId) != nil,
+          outgoing.isMine, !outgoing.isSystem, outgoing.conversationId == owner.conversationId,
+          outgoing.turnId.ifBlank(outgoing.id.uuidString) == owner.turnId,
+          identity.conversationId == owner.conversationId, identity.turnId == owner.turnId,
+          identity.taskId == owner.sourceMessageId else { return nil }
+    let binding = AgentDesktopReplyBinding(desktopId: desktopId, displayContactId: outgoing.contactId,
+      sourceId: outgoing.id, contactId: owner.contactId, agentId: agentId, identity: identity,
+      teamSource: AgentTeamDesktopReplySource(supervisorRunId: owner.supervisorRunId,
+        memberId: owner.memberId, sourceMessageId: owner.sourceMessageId, primary: true))
     return binding.isValid ? binding : nil
   }
 }

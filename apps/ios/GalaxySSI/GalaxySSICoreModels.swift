@@ -173,10 +173,7 @@ struct GalaxySSIContact: Codable, Identifiable, Equatable, Hashable {
 
   var connectorInvocationProfile: AgentInvocationProfile {
     guard let connectorInvocationProfileJSON else { return AgentInvocationProfile() }
-    return (try? JSONDecoder().decode(
-      AgentInvocationProfile.self,
-      from: connectorInvocationProfileJSON
-    )) ?? AgentInvocationProfile()
+    return AgentInvocationProfile.decodeMetadata(connectorInvocationProfileJSON)
   }
 
   static func hermes() -> GalaxySSIContact {
