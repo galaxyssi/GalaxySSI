@@ -108,6 +108,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
           }
         }
         GalaxySSIHealthCarePlansSection(records: records, concernID: concernID)
+        GalaxySSIHealthCareResearchControls(records: records, concern: concernID, metric: metric)
         GalaxySSIHealthCareFollowUpsSection(records: records, concernID: concernID, metric: metric)
       }
       if scene == .active, failed { Text(t("unavailable", "This discussion or request is no longer available.")) }

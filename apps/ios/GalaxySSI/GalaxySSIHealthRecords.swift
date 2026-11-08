@@ -185,6 +185,7 @@ struct GalaxySSIHealthRecords {
     var localCarePlans: [String: GalaxySSIHealthCarePlan.Proposal]?
     var localCareEvidence: [String: [GalaxySSIHealthCareEvidence.Receipt]]?
     var localCareFollowUps: [String: GalaxySSIHealthCareFollowUp.Reminder]?
+    var localCareResearch: GalaxySSIHealthCareResearch.Ledger?
 
     var keepsNewImportOriginals: Bool { retainImportOriginals ?? true }
 
@@ -632,8 +633,9 @@ struct GalaxySSIHealthRecords {
 
   func prepareLocalCareDiscussion(id: UUID, metric: GalaxySSIHealthMetric, question: String,
       destinationID: String, model: CloudModelConfig, credential: String, proposesPlan: Bool = false,
-      allowsHistory: Bool = false, now: Date = Date())
+      allowsHistory: Bool = false, research: GalaxySSIHealthCareResearch.Job? = nil, now: Date = Date())
       throws -> GalaxySSIHealthCareDiscussion.Approval {
+    guard research == nil || (proposesPlan && !allowsHistory) else { throw Failure.invalid }
     let archive = try load()
     let concern = try currentDiscussionConcern(id: id, metric: metric, archive: archive, now: now)
     guard let care = archive.localCarePermission,
@@ -644,7 +646,7 @@ struct GalaxySSIHealthRecords {
     let credentialDigest = SHA256.hash(data: Data(credential.utf8))
     let destination = GalaxySSIHealthCareDiscussion.destination(contactID: destinationID, model: model, endpoint: endpoint,
       credential: credentialDigest)
-    let turn = UUID()
+    let turn = research?.id ?? UUID()
     var approval = GalaxySSIHealthCareDiscussion.Approval(id: turn, owner: owner, threadID: thread.id,
       priorTurnID: thread.turns.last?.id,
       concernID: id, metric: metric, concernRevision: concern.revision, carePermission: care,
@@ -652,7 +654,11 @@ struct GalaxySSIHealthRecords {
       credentialDigest: credentialDigest, model: model, endpoint: endpoint,
       question: question, payload: try GalaxySSIHealthCareDiscussion.payload(concern: concern, question: question,
         thread: thread, destination: destination, savedProfile: localCareProfilePayload(concern)),
-      reviewedAt: now, proposesPlan: proposesPlan, profileScope: concern.profileScope, profileScopeEpoch: concern.profileScopeEpoch)
+      reviewedAt: now, proposesPlan: proposesPlan, profileScope: concern.profileScope,
+      profileScopeEpoch: concern.profileScopeEpoch, research: research)
+    if research != nil {
+      try validateLocalCareResearch(approval, archive: archive, concern: concern, state: .preparing, now: now)
+    }
     if allowsHistory {
       let page = try localCareMeasurementPage(id: id, metric: metric, now: now)
       guard page.binding.revision == concern.revision, page.binding.permission == care else { throw Failure.stale }
@@ -662,11 +668,118 @@ struct GalaxySSIHealthRecords {
     return approval
   }
 
+  func authorizeLocalCareResearch(_ approval: GalaxySSIHealthCareDiscussion.Approval,
+      sources: Set<GalaxySSIHealthCareEvidence.PublicSource>, now: Date = Date()) throws {
+    guard !sources.isEmpty, approval.research == nil, approval.history == nil else { throw Failure.invalid }
+    var archive = try load()
+    let thread = try checkedDiscussion(approval, archive: archive, now: now)
+    guard thread.turns.last?.id == approval.priorTurnID else { throw Failure.stale }
+    var ledger = archive.localCareResearch ?? .init()
+    ledger.renew(.init(concern: approval.concernID, metric: approval.metric, thread: approval.threadID,
+      localPermission: approval.carePermission, onlinePermission: approval.onlinePermission,
+      profileScopeEpoch: approval.profileScopeEpoch,
+      contact: approval.destinationID, model: approval.model.modelId, endpoint: approval.endpoint,
+      destination: approval.destinationDigest, sources: sources, authorizedAt: now))
+    archive.localCareResearch = ledger
+    try persist(archive)
+  }
+
+  func revokeLocalCareResearch(_ concern: UUID) throws {
+    var archive = try load()
+    guard archive.localCareResearch?.authorizations[concern.uuidString] != nil else { return }
+    archive.localCareResearch?.revoke(concern)
+    try persist(archive)
+  }
+
+  func reconcileLocalCareResearch(now: Date = Date()) throws
+      -> [(GalaxySSIHealthCareResearch.Authorization, GalaxySSIHealthCareResearch.Job)] {
+    typealias Research = GalaxySSIHealthCareResearch
+    let initial = try load()
+    guard let saved = initial.localCareResearch, !saved.authorizations.isEmpty else { return [] }
+    if initial.localCareAllowed == true { try reconcileLocalCare(now: now) }
+    var archive = try load()
+    var ledger = archive.localCareResearch ?? .init()
+    let previous = ledger
+    for authorization in Array(ledger.authorizations.values) {
+      guard archive.localCarePermission == authorization.localPermission,
+            archive.healthOnlinePermission == authorization.onlinePermission,
+            archive.localCareDiscussions?[authorization.concern.uuidString]?.id == authorization.thread,
+            let concern = try? currentDiscussionConcern(id: authorization.concern, metric: authorization.metric,
+              archive: archive, now: now), concern.profileScopeEpoch == authorization.profileScopeEpoch,
+            localCareProfileIsCurrent(concern.profileScope) else {
+        ledger.revoke(authorization.concern)
+        continue
+      }
+      ledger.reconcile(authorization, trigger: try localCareResearchTrigger(concern, archive: archive, now: now),
+        revision: concern.revision, process: Research.process, now: now)
+    }
+    if ledger != previous {
+      archive.localCareResearch = ledger
+      try persist(archive)
+    }
+    let queued: [(Research.Authorization, Research.Job)] = ledger.authorizations.values.compactMap { auth in
+      guard let job = ledger.jobs[auth.concern.uuidString], job.state == .queued else { return nil }
+      return (auth, job)
+    }
+    return queued.sorted { ($0.1.createdAt, $0.1.id.uuidString) < ($1.1.createdAt, $1.1.id.uuidString) }
+  }
+
+  func transitionLocalCareResearch(_ job: GalaxySSIHealthCareResearch.Job, concern: UUID,
+      to state: GalaxySSIHealthCareResearch.State) throws -> GalaxySSIHealthCareResearch.Job {
+    var archive = try load()
+    guard var ledger = archive.localCareResearch else { throw Failure.stale }
+    try ledger.transition(job, concern: concern, to: state, process: GalaxySSIHealthCareResearch.process)
+    guard let updated = ledger.jobs[concern.uuidString] else { throw Failure.stale }
+    archive.localCareResearch = ledger
+    try persist(archive)
+    return updated
+  }
+
+  func currentLocalCareResearchJob(_ authorization: GalaxySSIHealthCareResearch.Authorization, id: UUID,
+      now: Date = Date()) -> GalaxySSIHealthCareResearch.Job? {
+    guard let archive = try? load(), archive.localCareResearch?.authorizations[authorization.concern.uuidString] == authorization,
+          archive.localCarePermission == authorization.localPermission,
+          archive.healthOnlinePermission == authorization.onlinePermission,
+          archive.localCareDiscussions?[authorization.concern.uuidString]?.id == authorization.thread,
+          let job = archive.localCareResearch?.jobs[authorization.concern.uuidString], job.id == id,
+          job.state.active, let concern = try? currentDiscussionConcern(id: authorization.concern,
+            metric: authorization.metric, archive: archive, now: now), concern.revision == job.revision,
+          concern.profileScopeEpoch == authorization.profileScopeEpoch, localCareProfileIsCurrent(concern.profileScope),
+          (try? localCareResearchTrigger(concern, archive: archive, now: now)) == job.trigger
+    else { return nil }
+    return job
+  }
+
+  private func localCareResearchTrigger(_ concern: GalaxySSIHealthCare.Concern, archive: Archive, now: Date) throws -> String {
+    let measurements = archive.current.filter { $0.metric == concern.metric && $0.isValid && $0.measuredAt <= now }
+    return try GalaxySSIHealthCareResearch.trigger(concern, history: GalaxySSIHealthCareSeries.version(measurements), now: now)
+  }
+
+  private func validateLocalCareResearch(_ approval: GalaxySSIHealthCareDiscussion.Approval, archive: Archive,
+      concern: GalaxySSIHealthCare.Concern, state: GalaxySSIHealthCareResearch.State, now: Date) throws {
+    let key = approval.concernID.uuidString
+    guard let binding = approval.research, approval.proposesPlan, approval.history == nil,
+          let authorization = archive.localCareResearch?.authorizations[key], authorization.id == binding.authorization,
+          authorization.thread == approval.threadID, authorization.destination == approval.destinationDigest,
+          authorization.model == approval.model.modelId, authorization.endpoint == approval.endpoint,
+          authorization.localPermission == approval.carePermission, authorization.onlinePermission == approval.onlinePermission,
+          authorization.profileScopeEpoch == approval.profileScopeEpoch,
+          let job = archive.localCareResearch?.jobs[key], job.id == approval.id, job.trigger == binding.trigger,
+          job.owner == GalaxySSIHealthCareResearch.process, job.state == state, job.revision == concern.revision,
+          try job.trigger == localCareResearchTrigger(concern, archive: archive, now: now)
+    else { throw Failure.stale }
+  }
+
   func validateLocalCareDiscussionApproval(_ approval: GalaxySSIHealthCareDiscussion.Approval) throws {
     let archive = try load()
-    let thread = try checkedDiscussion(approval, archive: archive, now: Date())
+    let now = Date()
+    let thread = try checkedDiscussion(approval, archive: archive, now: now)
     guard thread.turns.last?.id == approval.priorTurnID else { throw Failure.stale }
-    try validateLocalCareDiscussionHistory(approval, now: Date())
+    try validateLocalCareDiscussionHistory(approval, now: now)
+    if approval.research != nil {
+      let concern = try currentDiscussionConcern(id: approval.concernID, metric: approval.metric, archive: archive, now: now)
+      try validateLocalCareResearch(approval, archive: archive, concern: concern, state: .preparing, now: now)
+    }
   }
 
   func beginLocalCareDiscussionTurn(_ approval: GalaxySSIHealthCareDiscussion.Approval, now: Date = Date()) throws {
@@ -681,6 +794,11 @@ struct GalaxySSIHealthRecords {
           try GalaxySSIHealthCareDiscussion.payload(concern: concern, question: approval.question, thread: thread,
             destination: approval.destinationDigest, savedProfile: localCareProfilePayload(concern)) == approval.payload
     else { throw Failure.stale }
+    if approval.research != nil {
+      try validateLocalCareResearch(approval, archive: archive, concern: concern, state: .preparing, now: now)
+      let sources = archive.localCareResearch?.authorizations[approval.concernID.uuidString]?.sources
+      guard sources.map({ Set($0.map(\.url)) }) == Set(approval.evidence.map(\.url)) else { throw Failure.stale }
+    }
     if approval.proposesPlan {
       let evidence = approval.evidence
       guard (1...3).contains(evidence.count), Set(evidence.map(\.id)).count == evidence.count,
@@ -695,11 +813,20 @@ struct GalaxySSIHealthRecords {
       measurement: concern.assessment.record,
       planRequested: approval.proposesPlan ? true : nil, historyIncluded: approval.history == nil ? nil : true))
     archive.localCareDiscussions?[approval.concernID.uuidString] = thread
+    if let job = approval.research {
+      try archive.localCareResearch?.transition(job, concern: approval.concernID, to: .dispatched,
+        process: GalaxySSIHealthCareResearch.process)
+    }
     try persist(archive)
   }
 
   func validateLocalCareDiscussionTurn(_ approval: GalaxySSIHealthCareDiscussion.Approval, now: Date = Date()) throws {
-    let thread = try checkedDiscussion(approval, archive: load(), now: now)
+    let archive = try load()
+    let thread = try checkedDiscussion(approval, archive: archive, now: now)
+    if approval.research != nil {
+      let concern = try currentDiscussionConcern(id: approval.concernID, metric: approval.metric, archive: archive, now: now)
+      try validateLocalCareResearch(approval, archive: archive, concern: concern, state: .dispatched, now: now)
+    }
     guard thread.turns.last?.id == approval.id, thread.turns.last?.answer == nil,
           thread.turns.last?.proposalID == nil,
           (thread.turns.last?.planRequested == true) == approval.proposesPlan,
@@ -755,6 +882,12 @@ struct GalaxySSIHealthRecords {
       try localCareMeasurementPage(id: approval.concernID, metric: approval.metric, expected: $0.binding, now: now)
     }
     let draft = try GalaxySSIHealthCarePlan.parse(arguments, evidence: evidence, now: now, approvedHistory: approvedHistory)
+    if approval.research != nil {
+      try validateLocalCareResearch(approval, archive: archive, concern: concern, state: .dispatched, now: now)
+      guard let job = archive.localCareResearch?.jobs[approval.concernID.uuidString] else { throw Failure.stale }
+      try archive.localCareResearch?.transition(job, concern: approval.concernID, to: .completed,
+        process: GalaxySSIHealthCareResearch.process)
+    }
     plans[key] = try .init(id: approval.id, concernID: approval.concernID, metric: approval.metric,
       concernRevision: approval.concernRevision, assessmentDigest: GalaxySSIHealthCare.inputDigest(concern.assessment),
       sourceContext: concern.context,

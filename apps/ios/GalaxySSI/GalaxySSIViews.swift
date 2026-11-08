@@ -381,6 +381,7 @@ private struct GalaxySSIRuntimeRoot: View {
       .modifier(GalaxySSIHealthSleepReminderLifecycle(store: runtime.store))
       .modifier(GalaxySSIHealthReviewNotificationLifecycle(store: runtime.store))
       .modifier(GalaxySSIHealthCareFollowUpLifecycle(store: runtime.store))
+      .modifier(GalaxySSIHealthCareResearchLifecycle(store: runtime.store, coordinator: runtime.coordinator))
       .galaxySSITextScale(runtime.store.displaySettings)
       .modifier(GalaxySSIHealthRecordingNotificationLifecycle(store: runtime.store))
       .modifier(GalaxySSIHealthSyncNotificationLifecycle(store: runtime.store))

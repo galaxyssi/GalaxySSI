@@ -4,7 +4,7 @@ import Foundation
 enum GalaxySSIHealthCareEvidence {
   static let maximumModelExcerptBytes = 8_192
 
-  enum PublicSource: String, CaseIterable, Identifiable, Hashable {
+  enum PublicSource: String, Codable, CaseIterable, Identifiable, Hashable {
     case labResults, glucose, pressure
     var id: String { rawValue }
 
