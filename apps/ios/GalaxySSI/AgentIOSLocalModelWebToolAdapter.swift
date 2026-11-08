@@ -145,7 +145,9 @@ enum AgentIOSLocalModelWebToolRunner {
       location: .application, inputSchema: [
         "type": .string("object"), "required": .array([.string("mode")]), "additionalProperties": .bool(false),
         "properties": .object([
-          "mode": .object(["type": .string("string"), "enum": .array(modes.map(AgentMcpJSONValue.string))]),
+          "mode": .object(["type": .string("string"), "enum": .array(
+            (originalsOnly ? modes : modes + [AgentCollaborationSourceAccess.mode]).map(AgentMcpJSONValue.string)),
+            "description": .string(originalsOnly ? "Select an original." : AgentCollaborationSourceAccess.instructions)]),
           "section": .object(["type": .string("string")]), "member_id": .object(["type": .string("string")]),
           "offset": .object(["type": .string("integer")]), "sha256": .object(["type": .string("string")]),
           "object_id": .object(["type": .string("string")]), "revision": .object(["type": .string("integer")]),
@@ -158,7 +160,9 @@ enum AgentIOSLocalModelWebToolRunner {
       definition: AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: collaborationRecallId)
     ) { invocation in
       try invocation.checkpoint()
-      guard modes.contains(invocation.input.string("mode")), let result = read(invocation.input) else {
+      let mode = invocation.input.string("mode")
+      guard modes.contains(mode) || (!originalsOnly && mode == AgentCollaborationSourceAccess.mode),
+            let result = read(invocation.input) else {
         return .failure(code: "collaboration_original_unavailable", message: "The scoped original is unavailable")
       }
       return .success(output: result)
