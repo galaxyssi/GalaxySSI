@@ -2882,6 +2882,10 @@ final class MessageCoordinator: ObservableObject {
           store.serverLinks.contains(where: { $0.paired && $0.desktopId == binding.desktopId &&
             $0.routes.clientRouteId == binding.identity.clientRouteId }),
           !GalaxySSITransportPrivacyPolicy.isLocalOnly(binding.fields) else { return nil }
+    if record.ownerRunId.hasPrefix(GalaxySSIHealthDesktopResearch.ownerPrefix) {
+      guard currentHealthDesktopBinding(binding.identity, contact: record.contactId, source: record.sourceMessageId)?.owner ==
+        record.ownerRunId else { return nil }
+    }
     let probe = AgentConnectorResponse(sourceMessageId: managed.sourceMessageId, contactId: binding.contactId,
       content: "recovery identity", conversationId: record.conversationId, turnId: record.turnId,
       taskId: record.taskId, executionGeneration: managed.executionGeneration)
@@ -3988,10 +3992,16 @@ final class MessageCoordinator: ObservableObject {
           response.taskId == record.taskId, response.executionGeneration == record.executionGeneration,
           let normalized = AgentConnectorResponseNormalizer.normalized(response, nowMillis: AgentControlPlaneClock.nowMillis())
     else { return false }
+    if record.ownerRunId.hasPrefix(GalaxySSIHealthDesktopResearch.ownerPrefix) {
+      guard let identity = taskIdentityStore.identity(contactId: record.contactId, sourceMessageId: String(record.sourceMessageId)),
+            currentHealthDesktopBinding(identity, contact: record.contactId, source: record.sourceMessageId)?.owner ==
+              record.ownerRunId else { return false }
+    }
     return managedDesktopReplyLedger.complete(normalized)?.ownerRunId == record.ownerRunId
   }
 
   private func isPairedPhonePlannerProgress(_ payload: [String: Any]) -> Bool {
+    if payload.string("conversation_id").hasPrefix(GalaxySSIHealthDesktopResearch.conversationPrefix) { return true }
     guard let source = Int64(payload.string("source_message_id").ifBlank(payload.string("client_message_id"))),
           source > 0 else { return false }
     let probe = AgentConnectorResponse(sourceMessageId: source,
@@ -11310,6 +11320,124 @@ final class MessageCoordinator: ObservableObject {
     return store.serverLinks.first { route.accepts(contact: contact, link: $0) }
   }
 
+  private func currentHealthDesktopBinding(_ identity: AgentTaskIdentity, contact contactID: String, source: Int64)
+      -> GalaxySSIHealthDesktopResearch.Binding? {
+    guard UIApplication.shared.isProtectedDataAvailable,
+          let contact = store.contact(id: contactID),
+          let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == contact.desktopId &&
+            $0.routes.clientRouteId == identity.clientRouteId }) else { return nil }
+    let records = GalaxySSIHealthRecords(owner: store.profile.identityFingerprint, secrets: store.secrets)
+    guard let binding = records.currentLocalCareDesktopResearch(identity, contact: contactID, source: source),
+          binding.route.accepts(contact: contact, link: link),
+          !healthDisclosureStore.blockedDestinationIds().contains(contactID) else { return nil }
+    return binding
+  }
+
+  func privateHealthDesktopRoute(contactID: String, modelID: String = "",
+      effort: AgentModelReasoningEffort = .automatic) -> GalaxySSIHealthDesktopResearch.Route? {
+    guard !usesLegacyMqtt, let contact = store.contact(id: contactID),
+          let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == contact.desktopId }) else { return nil }
+    let invocation = contact.connectorInvocationProfile
+    guard modelID.isEmpty || invocation.models.contains(where: { $0.id == modelID }) else { return nil }
+    let route = GalaxySSIHealthDesktopResearch.Route(connector: .init(contactId: contactID, desktopId: link.desktopId,
+      clientRouteId: link.routes.clientRouteId, modelId: invocation.normalizedModelId(modelID), reasoningEffort: effort),
+      desktopFingerprint: link.desktopFingerprint)
+    return isPrivateHealthDesktopRouteAvailable(route) ? route : nil
+  }
+
+  func isPrivateHealthDesktopRouteAvailable(_ route: GalaxySSIHealthDesktopResearch.Route) -> Bool {
+    !usesLegacyMqtt && isPrivateHealthDesktopRouteConfigured(route) && pairedPhonePlannerLink(route.connector) != nil
+  }
+
+  func isPrivateHealthDesktopRouteConfigured(_ route: GalaxySSIHealthDesktopResearch.Route) -> Bool {
+    guard let contact = store.contact(id: route.connector.contactId),
+          store.serverLinks.contains(where: { route.accepts(contact: contact, link: $0) })
+    else { return false }
+    return !healthDisclosureStore.blockedDestinationIds().contains(contact.id)
+  }
+
+  func privateHealthDesktopReply(_ binding: GalaxySSIHealthDesktopResearch.Binding) throws -> AgentConnectorResponse? {
+    guard currentHealthDesktopBinding(binding.identity, contact: binding.route.connector.contactId,
+      source: binding.source) == binding, let link = pairedPhonePlannerLink(binding.route.connector),
+      let contact = store.contact(id: binding.route.connector.contactId) else { throw MqttRouteError.identityChanged }
+    guard let response = try managedDesktopReplyLedger.recoveryRecord(owner: binding.owner)?.response else { return nil }
+    guard binding.matches(response, link: link, contact: contact), response.success,
+          response.taskStatus == "completed", !response.content.isBlank else { throw MqttRouteError.invalidPayload }
+    return response
+  }
+
+  func markPrivateHealthDesktopReplyApplied(_ binding: GalaxySSIHealthDesktopResearch.Binding) {
+    managedDesktopReplyLedger.markApplied(ownerRunId: binding.owner)
+  }
+
+  func queuePrivateHealthDesktopResearch(_ binding: GalaxySSIHealthDesktopResearch.Binding, prompt: String,
+                                         language: String) throws {
+    let route = binding.route.connector
+    guard !usesLegacyMqtt,
+          currentHealthDesktopBinding(binding.identity, contact: route.contactId, source: binding.source) == binding,
+          let link = pairedPhonePlannerLink(route), desktopReplyRecoveryOwner == store.profile.identityFingerprint
+    else { throw GalaxySSIError.transportUnavailable }
+    if let existing = try managedDesktopReplyLedger.recoveryRecord(owner: binding.owner) {
+      guard existing.taskId == binding.identity.taskId, existing.sourceMessageId == binding.source else {
+        throw MqttRouteError.identityChanged
+      }
+      return
+    }
+    let payload = try binding.request(sender: store.profile.galaxySSIId, prompt: prompt, language: language)
+    let ticket = AgentDataDisclosureLedger.beginDesktopRequest(store: disclosureStore, contactId: route.contactId,
+      desktopId: route.desktopId, providerId: "codex", title: "Private Health research", text: prompt, attachments: [],
+      conversationId: binding.identity.conversationId, taskId: binding.identity.taskId, turnId: binding.identity.turnId)
+    guard ticket.allowed else { throw AgentDataDisclosureBlockedError(destination: "Codex") }
+    do {
+      let record = AgentManagedResponseRecord(ownerRunId: binding.owner, supervisorRunId: binding.job.uuidString,
+        agentId: "codex", deliveryMode: .observe, sourceMessageId: binding.source, contactId: route.contactId,
+        conversationId: binding.identity.conversationId, turnId: binding.identity.turnId,
+        taskId: binding.identity.taskId, createdAtMillis: binding.createdAtMillis)
+      try managedDesktopReplyLedger.register(record)
+      let source = String(binding.source)
+      guard taskIdentityStore.register(contactId: route.contactId, sourceMessageId: source, identity: binding.identity),
+            let recovery = AgentDesktopReplyBinding.managed(record: record, desktopId: route.desktopId,
+              agentId: "codex", identity: binding.identity),
+            desktopReplyRecovery.track(recovery, now: binding.createdAtMillis)
+      else { throw GalaxySSIError.transportUnavailable }
+      _ = try enqueueLinkPayload(payload, link: link, topic: link.routes.upTopic,
+        clientSourceMessageId: source, contactId: route.contactId)
+      AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .queued)
+      scheduleOutboxFlushFromStore()
+    } catch {
+      AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .failed,
+        failureReason: "private_health_research_not_queued")
+      throw error
+    }
+  }
+
+  func flushPrivateHealthDesktopCancellations() {
+    guard UIApplication.shared.isProtectedDataAvailable else { return }
+    let records = GalaxySSIHealthRecords(owner: store.profile.identityFingerprint, secrets: store.secrets)
+    for item in ((try? records.pendingLocalCareDesktopCancellations()) ?? []).prefix(8) {
+      let binding = item.binding
+      let route = binding.route.connector
+      let source = String(binding.source)
+      guard let contact = store.contact(id: route.contactId),
+            let link = pairedPhonePlannerLink(route), binding.route.accepts(contact: contact, link: link),
+            taskIdentityStore.identity(contactId: route.contactId, sourceMessageId: source) == binding.identity else { continue }
+      do {
+        if usesLegacyMqtt {
+          var payload = item.payload
+          payload["message_id"] = try MqttPeerChatProjection.stableID([binding.owner, "cancel"])
+          let wire = try linkWirePayload(payload, link: link)
+          deliveryStore.enqueue(messageId: wire.messageId, topic: link.routes.upTopic, wirePayload: wire.wireText,
+            clientSourceMessageId: source, contactId: route.contactId)
+          scheduleOutboxFlushFromStore()
+        } else {
+          guard let journalMqttRuntime else { continue }
+          try journalMqttRuntime.enqueueDesktopConnectorCancellation(item.payload, desktopId: link.desktopId)
+        }
+        try records.markLocalCareDesktopCancellationQueued(item)
+      } catch { continue }
+    }
+  }
+
   private func capturePairedPhonePlannerSnapshot(
     contact: GalaxySSIContact, outgoing: ChatMessage
   ) throws -> AgentPlannerModelSnapshot {
@@ -15649,6 +15777,8 @@ final class MessageCoordinator: ObservableObject {
                    self.managedDesktopResultIsCommitted(normalized)) else { throw MqttChunkStorageError.databaseFailure }
           return
         }
+        guard !response.conversationId.hasPrefix(GalaxySSIHealthDesktopResearch.conversationPrefix)
+        else { throw MqttRouteError.identityChanged }
         let applied = self.connectorResponseBus.publish(response)
         let committed = managed ? self.managedDesktopResultIsCommitted(response) :
           applied || self.connectorResponseBus.wasRecorded(response)
@@ -15674,6 +15804,11 @@ final class MessageCoordinator: ObservableObject {
       }, recordTeamProgress: { [weak self] payload, owner in
         guard let self else { throw MqttDeliveryDispatch.Failure.unavailable }
         return try self.recordJournalTeamProgress(payload, owner: owner)
+      }, authorizePrivateHealthSource: { [weak self] identity, contact, source, target in
+        guard let binding = self?.currentHealthDesktopBinding(identity, contact: contact, source: source)
+        else { return false }
+        return binding.route.connector.desktopId == target.peer.remoteSignalName &&
+          binding.route.desktopFingerprint == target.routes.remoteFingerprint
       })
     return try MqttBusinessTransportRuntime(peerChatStore: store, localFingerprint: signalEngine.identity.fingerprint,
       journal: journal, routeState: routeState, pool: pool, incomingAttachments: incomingAttachmentTransferStore,
@@ -17144,6 +17279,10 @@ final class MessageCoordinator: ObservableObject {
         }
         guard persistPairedPhonePlannerResponse(response, record: pending) else { return }
         acknowledgeManagedDesktopResult(appPayload, response: response, link: link)
+        if !messageId.isEmpty { deliveryStore.completeIncoming(messageId: messageId) }
+        return
+      }
+      if response.conversationId.hasPrefix(GalaxySSIHealthDesktopResearch.conversationPrefix) {
         if !messageId.isEmpty { deliveryStore.completeIncoming(messageId: messageId) }
         return
       }
