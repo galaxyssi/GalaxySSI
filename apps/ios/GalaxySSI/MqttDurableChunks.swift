@@ -43,12 +43,17 @@ final class MqttDurableChunks {
   private let limits: Limits
   private let now: () -> Int64
 
-  init(fileURL: URL, secrets: GalaxySSISecretStore = KeychainSecretStore.shared, limits: Limits = Limits(),
+  convenience init(fileURL: URL, secrets: GalaxySSISecretStore = KeychainSecretStore.shared, limits: Limits = Limits(),
+       now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) throws {
+    try self.init(database: MqttChunkDatabase(fileURL: fileURL, secrets: secrets), limits: limits, now: now)
+  }
+
+  init(database: MqttChunkDatabase, limits: Limits = Limits(),
        now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) throws {
     guard limits.transfers > 0, limits.peerTransfers > 0, limits.bytes > 0, limits.peerBytes > 0 else {
       throw MqttChunkStorageError.capacityExceeded
     }
-    self.database = try MqttChunkDatabase(fileURL: fileURL, secrets: secrets)
+    self.database = database
     self.limits = limits
     self.now = now
   }

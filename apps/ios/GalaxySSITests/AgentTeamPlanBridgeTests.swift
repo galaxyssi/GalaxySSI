@@ -269,6 +269,23 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(result.goal.contains(first.id.uuidString.lowercased()))
   }
 
+  func testIndependentFollowupSelectsExactRespondentWithoutReusingResearchStages() throws {
+    let coordinator = AgentCollaborationRoster.Member(name: "Lead", resourceId: "codex")
+    let reviewer = AgentCollaborationRoster.Member(name: "Reviewer", resourceId: "another",
+      modelId: "selected-model", mentionOnly: true)
+    let original = AgentCollaborationRoster(members: [coordinator, reviewer], coordinatorId: coordinator.id,
+      independentReview: true, workflow: .research)
+    let implicit = try XCTUnwrap(AgentTeamPlanCompiler.followupRoster(original, mentioned: []))
+    XCTAssertEqual(implicit.members.map(\.id), [coordinator.id])
+    let explicit = try XCTUnwrap(AgentTeamPlanCompiler.followupRoster(original, mentioned: [reviewer.id]))
+    XCTAssertEqual(explicit.coordinatorId, reviewer.id)
+    XCTAssertEqual(explicit.members.map(\.modelId), [reviewer.modelId])
+    XCTAssertEqual(explicit.workflow, .parallel)
+    XCTAssertFalse(explicit.independentReview)
+    XCTAssertEqual(original.workflow, .research)
+    XCTAssertNil(AgentTeamPlanCompiler.followupRoster(original, mentioned: [UUID()]))
+  }
+
   func testResourceObservationUsesOnlyTheSelectedRuntimePool() throws {
     var registration = teamRegistration(teamTarget("codex"))
     registration.maxParallelRuns = 2
@@ -349,9 +366,53 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(spec.definition.members.last?.dependsOnAgentIds, [reviewerId])
     registration.maxParallelRuns = 1
     XCTAssertNil(AgentTeamPlanCompiler.compileCollaboration(plan: plan,
-      roster: roster, targets: [target], registrations: [registration]))
+      roster: roster, mentionedMemberIds: [reviewer.id], targets: [target], registrations: [registration]))
     XCTAssertNil(AgentTeamPlanCompiler.compileCollaboration(plan: plan,
       roster: roster, mentionedMemberIds: [UUID()], targets: [target], registrations: [registration]))
+  }
+
+  func testOrdinaryFollowUpWithOneCoordinatorKeepsRosterIdentityAndSelectedCodexModel() throws {
+    var target = teamTarget("codex")
+    target.adapterType = "codex-app-server-or-cli"
+    target.invocationProfile = .init(defaultModelId: "default-model",
+      models: [.init(id: "default-model"), .init(id: "selected-model")])
+    let coordinator = AgentCollaborationRoster.Member(name: "Lead", resourceId: target.id, modelId: "selected-model")
+    let roster = AgentCollaborationRoster(members: [coordinator], coordinatorId: coordinator.id, workflow: .parallel)
+    let plan = teamBridgePlan(goal: "Summarize the existing results", teamAgentAction("follow-up", target.id))
+    let compiled = try XCTUnwrap(AgentTeamPlanCompiler.compileCollaboration(plan: plan,
+      roster: roster, targets: [target], registrations: [teamRegistration(target)]))
+    let spec = try XCTUnwrap(AgentTeamDispatchSpecCodec.decode(compiled.actions[0].parameters[agentTeamSpecParameter] ?? ""))
+    var member = try XCTUnwrap(spec.definition.members.first)
+    XCTAssertEqual(spec.definition.members.count, 1)
+    XCTAssertEqual(spec.definition.primaryMemberId, coordinator.id.uuidString.lowercased())
+    XCTAssertEqual(member.context["_galaxyssi_research_stage"], "")
+    member.context.removeValue(forKey: AgentCollaborationMemberIdentity.contextKey)
+    XCTAssertEqual(AgentTeamPlanCompiler.rosterMember(for: member, in: roster), coordinator)
+    XCTAssertEqual(AgentCollaborationReasoningSelection.rosterInvocation(model: coordinator.modelId, effort: nil,
+      adapter: target.adapterType, profile: target.invocationProfile)?["model_id"], "selected-model")
+    var changed = roster
+    changed.members[0].modelId = "default-model"
+    XCTAssertNil(AgentTeamPlanCompiler.rosterMember(for: member, in: changed))
+    member.context[AgentCollaborationMemberIdentity.contextKey] = UUID().uuidString
+    XCTAssertNil(AgentTeamPlanCompiler.rosterMember(for: member, in: roster))
+    var invalid = spec
+    invalid.definition.members[0].context.removeValue(forKey: "_galaxyssi_selection_source")
+    XCTAssertNil(AgentTeamDispatchSpecCodec.decode(AgentTeamDispatchSpecCodec.encode(invalid)))
+  }
+
+  func testCollaborationEvidenceDistinguishesResearchNodeFromPersistentMember() {
+    let member = AgentCollaborationRoster.Member(name: "Researcher", resourceId: "codex")
+    let roster = AgentCollaborationRoster(members: [member], coordinatorId: member.id)
+    let id = member.id.uuidString.lowercased()
+    let plain = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "group", turnId: "turn",
+      memberId: id, sourceId: "source")
+    var research = plain
+    research.memberId += ":revise"
+    XCTAssertEqual(plain.rosterMember(in: roster), member)
+    XCTAssertEqual(research.rosterMember(in: roster), member)
+    XCTAssertNotEqual(plain.ownershipDigest, research.ownershipDigest)
+    research.memberId = id + ":unknown"
+    XCTAssertNil(research.rosterMember(in: roster))
   }
 
   func testGoalAssessmentPreservesContractAndRequiresMatchingHostEvidence() throws {
@@ -611,5 +672,44 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(primaryPayload["agent_instance_id"] as? String, "codex:mention-1")
     XCTAssertEqual(primaryPayload["run_id"] as? String, "run-1")
     XCTAssertNotEqual(primaryContext.sourceMessageId, observerContext.sourceMessageId)
+  }
+
+  func testWorkspaceResultMarkerRequiresManagedCurrentRosterAndValidWireIDs() {
+    let registered = AgentCollaborationRoster.Member(name: "Reviewer", resourceId: "codex")
+    let id = registered.id.uuidString.lowercased()
+    let roster = AgentCollaborationRoster(members: [registered], coordinatorId: registered.id)
+    let member = AgentTeamMember(agentId: "codex", deliveryMode: .observe,
+      requiredCapabilities: [.code], role: "reviewer", objective: "Review the implementation",
+      dependsOnAgentIds: [], context: ["_galaxyssi_selection_source": "collaboration_roster",
+        "_galaxyssi_roster_member_id": id], instanceId: id + ":recheck")
+    let marker = AgentOutboundTeamContext.workspaceResultContract
+    let managed = AgentOutboundTeamContext(teamId: "team-1", supervisorRunId: "run-1",
+      primaryInstanceId: id, member: member, sourceMessageId: "source-1", isManagedCollaboration: true)
+    func encoded(_ context: AgentOutboundTeamContext, roster: AgentCollaborationRoster?) -> [String: Any] {
+      var payload: [String: Any] = ["content": "result_contract=" + marker, "result_contract": marker]
+      context.apply(to: &payload, workspaceRoster: roster)
+      return payload
+    }
+    let payload = encoded(managed, roster: roster)
+    XCTAssertEqual(payload["result_contract"] as? String, "galaxyssi.collaboration-workspace.v1")
+    XCTAssertEqual(payload["team_id"] as? String, "team-1")
+    XCTAssertEqual(payload["agent_instance_id"] as? String, id + ":recheck")
+    XCTAssertNil(encoded(managed, roster: nil)["result_contract"])
+
+    var unrelated = managed
+    unrelated.isManagedCollaboration = false
+    XCTAssertNil(encoded(unrelated, roster: roster)["result_contract"])
+    unrelated = managed
+    unrelated.teamId = "invalid team id"
+    XCTAssertNil(encoded(unrelated, roster: roster)["result_contract"])
+    unrelated = managed
+    unrelated.member.instanceId = id + ":" + String(repeating: "a", count: 96)
+    XCTAssertNil(encoded(unrelated, roster: roster)["result_contract"])
+    unrelated = managed
+    unrelated.member.agentId = "other"
+    XCTAssertNil(encoded(unrelated, roster: roster)["result_contract"])
+    unrelated = managed
+    unrelated.member.context["_galaxyssi_roster_member_id"] = UUID().uuidString
+    XCTAssertNil(encoded(unrelated, roster: roster)["result_contract"])
   }
 }

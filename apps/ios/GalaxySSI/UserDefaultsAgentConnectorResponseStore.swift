@@ -215,6 +215,23 @@ final class AgentResultReceiptJournal {
     }
   }
 
+  func recordedState(_ receipt: AgentResultReceipt) -> AgentResultReceiptState? {
+    locked {
+      guard let statement = prepare("SELECT state, encrypted_payload FROM result_receipts WHERE receipt_id = ?") else { return nil }
+      defer { sqlite3_finalize(statement) }
+      bind(receipt.id, at: 1, to: statement)
+      guard sqlite3_step(statement) == SQLITE_ROW,
+            let state = AgentResultReceiptState(rawValue: Int(sqlite3_column_int(statement, 0))),
+            state != .corrupt else { return nil }
+      if state == .cleaned { return state }
+      let count = Int(sqlite3_column_bytes(statement, 1))
+      guard count > 0, let bytes = sqlite3_column_blob(statement, 1),
+            let plain = try? cipher.decrypt(Data(bytes: bytes, count: count), expectedPurpose: purpose(receipt.id)),
+            let stored = try? JSONDecoder().decode(AgentResultReceipt.self, from: plain), stored == receipt else { return nil }
+      return state
+    }
+  }
+
   @discardableResult
   func markCleaned(_ receipt: AgentResultReceipt) -> Bool {
     transition(receipt.id, from: .confirmed, to: .cleaned, clearPayload: true)

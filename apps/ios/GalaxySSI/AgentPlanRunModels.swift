@@ -120,6 +120,8 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
   var historyManifest: AgentSessionHistoryManifest?
   var lastNativeActionResult: AgentActionResult?
   var effectRecovery: [AgentEffectRecoveryRecord]? = nil
+  var outcomeContinuation: AgentOutcomeContinuation? = nil
+  var verifiedOutcome: AgentOutcomeContinuation? = nil
   var nativeActionResults: [String]
   var result: String
   var verification: String
@@ -128,6 +130,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
   var teamRecoveryRunId: String? = nil
   var teamResultRichOutput: String? = nil
   var capturePermission: AgentCapturePermissionContinuation? = nil
+  var supervisedBrowserWait: AgentSupervisedBrowserWait? = nil
   var localOperationProcessId: String? = nil
   var createdAtMillis: Int64
   var updatedAtMillis: Int64
@@ -226,6 +229,8 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     case historyManifest = "history_pages"
     case lastNativeActionResult = "last_native_action_result"
     case effectRecovery = "effect_recovery"
+    case outcomeContinuation = "unverified_outcome_continuation"
+    case verifiedOutcome = "verified_outcome"
     case nativeActionResults = "native_action_results"
     case result
     case verification
@@ -234,6 +239,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     case teamRecoveryRunId = "team_recovery_run_id"
     case teamResultRichOutput = "team_result_rich_output"
     case capturePermission = "capture_permission"
+    case supervisedBrowserWait = "supervised_browser_wait"
     case localOperationProcessId = "local_operation_process_id"
     case createdAtMillis = "created_at_millis"
     case updatedAtMillis = "updated_at_millis"
@@ -275,9 +281,12 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
       updatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? 0
     )
     effectRecovery = try container.decodeIfPresent([AgentEffectRecoveryRecord].self, forKey: .effectRecovery)
+    outcomeContinuation = try container.decodeIfPresent(AgentOutcomeContinuation.self, forKey: .outcomeContinuation)
+    verifiedOutcome = try container.decodeIfPresent(AgentOutcomeContinuation.self, forKey: .verifiedOutcome)
     teamRecoveryRunId = try container.decodeIfPresent(String.self, forKey: .teamRecoveryRunId)
     teamResultRichOutput = try container.decodeIfPresent(String.self, forKey: .teamResultRichOutput)
     capturePermission = try container.decodeIfPresent(AgentCapturePermissionContinuation.self, forKey: .capturePermission)
+    supervisedBrowserWait = try container.decodeIfPresent(AgentSupervisedBrowserWait.self, forKey: .supervisedBrowserWait)
     localOperationProcessId = try container.decodeIfPresent(String.self, forKey: .localOperationProcessId)
   }
 }

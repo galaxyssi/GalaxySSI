@@ -245,6 +245,8 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal lateinit var agentSessionTitle: TextView
     internal lateinit var agentSubtitleText: TextView
     internal lateinit var agentOutputList: RecyclerView
+    internal var healthCareSurface: HealthCareAgentSurface? = null
+    internal val healthCareDiscussion by lazy { HealthCareDiscussionController(this) }
     internal lateinit var agentOutputLayout: LinearLayoutManager
     internal lateinit var agentTranscriptAdapter: AgentTranscriptRecyclerAdapter
     internal lateinit var singleAgentTranscriptAdapter: AgentTranscriptRecyclerAdapter
@@ -1116,6 +1118,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         traceStartup("chat_history")
         configureMainTabs()
         configureAgentPage()
+        healthCareSurface = HealthCareAgentSurface(this)
         agentVoiceConversation = AgentVoiceConversation(this)
         traceStartup("agent_page")
         configureMessages()
@@ -1200,6 +1203,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
 
 
     override fun onDestroy() {
+        healthCareSurface?.destroy()
         foregroundAgentReload.invalidate()
         AgentConnectorResponseBus.removeListener(agentConnectorResponseListener)
         if (::conversationWindow.isInitialized) conversationWindow.destroy()
@@ -1313,6 +1317,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             resumeCheckpointAt = now
         }
         super.onResume()
+        healthCareSurface?.resume()
         val restoredRuntimePlaintext = restoreRuntimePlaintextAfterForeground()
         if (::conversationWindow.isInitialized) conversationWindow.resume()
         agentVoiceConversation?.onForeground(true)
@@ -1378,6 +1383,8 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
 
 
     override fun onPause() {
+        healthCareSurface?.pause()
+        healthCareDiscussion.clear()
         ScreenAssistantConnection.removeListener(screenAssistantConnectionListener)
         mainPageBackPressGate.reset()
         foregroundAgentReload.invalidate()
@@ -1419,6 +1426,8 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     }
 
     override fun onTrimMemory(level: Int) {
+        healthCareSurface?.clear()
+        healthCareDiscussion.clear()
         RuntimeSensitiveCaches.clearAll()
         KnowledgeSemanticSearch.clearRuntime()
         AgentEncryptedPreferenceCache.clearAll()

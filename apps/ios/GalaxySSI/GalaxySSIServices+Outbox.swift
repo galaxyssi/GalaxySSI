@@ -14,7 +14,7 @@ struct LinkOutboxReceiptWindow {
     }
     let lane = entries.values.filter { $0.topic == topic && $0.expiresAt > now }
     guard lane.count >= 8, let first = lane.map(\.expiresAt).min() else { return 0 }
-    return min(1, first - now)
+    return first - now
   }
 
   mutating func acquire(topic: String, messageId: String, now: TimeInterval) -> Bool {
@@ -87,6 +87,7 @@ extension MessageCoordinator {
         scheduleOutboxFlushFromStore()
       }
     }
+    reconcileExhaustedPeerDeliveries()
     let discardedTransfers = attachmentTransferStore.prune()
     if !discardedTransfers.isEmpty {
       _ = deliveryStore.discardBlockedByAttachmentTransfers(discardedTransfers)
@@ -94,15 +95,23 @@ extension MessageCoordinator {
     var activeMessageIds = await mqttClient.outstandingDurableMessageIds()
     guard !Task.isCancelled else { return }
     reconcileOutboxReceiptWindow()
+    deliveryStore.holdStaleUnclassified(activeMessageIds: activeMessageIds.union(outboxReceiptWindow.messageIds))
     let eligible = learningOutboxEligibility()
     handleExhaustedDeliveries(
       deliveryStore.discardExhausted(
         maxAttempts: Self.maximumOutboxDeliveryAttempts,
         attachmentMaxAttempts: Self.maximumAttachmentOutboxDeliveryAttempts,
         activeMessageIds: activeMessageIds.union(outboxReceiptWindow.messageIds),
-        eligible: eligible
+        eligible: eligible,
+        peerBinding: { item in
+          guard let source = UUID(uuidString: item.clientSourceMessageId.ifBlank(item.messageId)),
+                let message = store.persistedMessage(id: source, contactId: item.contactId),
+                message.isMine, !message.isSystem else { return nil }
+          return peerDeliveryBinding(contactId: item.contactId, topic: item.topic)
+        }
       )
     )
+    reconcileExhaustedPeerDeliveries()
     let mediaProfile = mediaNetworkProfileProvider()
     let pending = deliveryStore.pending(
       allowValidatedNetworkMessages: mediaProfile.canUploadDeferredMedia,
@@ -222,18 +231,52 @@ extension MessageCoordinator {
     let mediaProfile = mediaNetworkProfileProvider()
     let now = ProcessInfo.processInfo.systemUptime
     let receiptWindow = outboxReceiptWindow
+    let eligible = learningOutboxEligibility()
+    let receiptDelay: (PendingLinkMessage) -> TimeInterval = {
+      receiptWindow.delay(topic: $0.topic, messageId: $0.messageId, now: now)
+    }
     let retryDelay = deliveryStore.nextRetryDelay(
       allowValidatedNetworkMessages: mediaProfile.canUploadDeferredMedia,
       maxAttempts: Self.maximumOutboxDeliveryAttempts,
       attachmentMaxAttempts: Self.maximumAttachmentOutboxDeliveryAttempts,
-      eligible: learningOutboxEligibility(),
-      minimumDelay: { item in
-        receiptWindow.delay(topic: item.topic, messageId: item.messageId, now: now)
-      }
+      eligible: eligible,
+      minimumDelay: receiptDelay
     )
-    if let delay = [retryDelay, receiptWindow.nextExpiryDelay(now: now)].compactMap({ $0 }).min() {
+    let exhaustionDelay = deliveryStore.nextExhaustionDelay(maxAttempts: Self.maximumOutboxDeliveryAttempts,
+      attachmentMaxAttempts: Self.maximumAttachmentOutboxDeliveryAttempts, eligible: eligible, minimumDelay: receiptDelay)
+    let projectionDelay: TimeInterval? = deliveryStore.pendingPeerFailures().isEmpty ? nil : 30
+    if let delay = [retryDelay, exhaustionDelay, receiptWindow.nextExpiryDelay(now: now), projectionDelay].compactMap({ $0 }).min() {
       scheduleOutboxFlush(after: delay)
     }
+  }
+
+  func wakeOutboxAfterReceipt() {
+    if outboxFlushInProgress {
+      outboxFlushRequested = true
+    } else {
+      scheduleOutboxFlush(after: 0)
+    }
+  }
+
+  private func peerDeliveryBinding(contactId: String, topic: String) -> String? {
+    guard let contact = store.contact(id: contactId), contact.id == contactId, contact.isCommunicable else { return nil }
+    let routes: GalaxySSILinkRoutes?
+    if contact.isDesktopDeviceContact {
+      routes = store.serverLinks.first { $0.paired && $0.desktopId == contact.desktopId && $0.routes.upTopic == topic }?.routes
+    } else if contact.type.caseInsensitiveCompare("person") == .orderedSame, contact.desktopId.isBlank {
+      routes = contact.opaquePhoneRoutes
+    } else { return nil }
+    guard let routes, routes.upTopic == topic else { return nil }
+    return GalaxySSITransportReceiptJournal.binding(peerId: contactId, routes: routes)
+  }
+
+  private func reconcileExhaustedPeerDeliveries() {
+    let resolved = deliveryStore.pendingPeerFailures().filter { failure in
+      guard peerDeliveryBinding(contactId: failure.contactId, topic: failure.topic) == failure.binding,
+            !deliveryStore.containsOutboxMessage(failure.messageId) else { return true }
+      return store.persistExhaustedPeerDelivery(failure)
+    }
+    deliveryStore.retirePeerFailures(resolved)
   }
 
   func scheduleOutboxFlush(after delay: TimeInterval) {

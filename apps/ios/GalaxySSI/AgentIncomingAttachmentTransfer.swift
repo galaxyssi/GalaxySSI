@@ -2,6 +2,7 @@ import CryptoKit
 import Foundation
 
 final class AgentIncomingAttachmentTransferStore {
+  static let defaultDirectoryName = "peer-incoming-attachments-v2"
   struct PendingDownload: Equatable {
     var transferId: String
     var sourceId: String
@@ -33,7 +34,7 @@ final class AgentIncomingAttachmentTransferStore {
     let baseURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
       ?? fileManager.temporaryDirectory
     self.rootURL = (rootURL ?? baseURL.appendingPathComponent(
-      "peer-incoming-attachments-v2",
+      Self.defaultDirectoryName,
       isDirectory: true
     )).standardizedFileURL
   }
@@ -44,44 +45,61 @@ final class AgentIncomingAttachmentTransferStore {
     localGalaxySSIId: String,
     routes: GalaxySSILinkRoutes
   ) -> [String: Any]? {
-    locked {
+    try? ingestPacket(payload: payload, sourceId: sourceId, localGalaxySSIId: localGalaxySSIId, routes: routes, strict: false)
+  }
+
+  func ingestDurably(payload: [String: Any], sourceId: String, localGalaxySSIId: String,
+                     routes: GalaxySSILinkRoutes) throws -> [String: Any]? {
+    try ingestPacket(payload: payload, sourceId: sourceId, localGalaxySSIId: localGalaxySSIId, routes: routes, strict: true)
+  }
+
+  private func ingestPacket(payload: [String: Any], sourceId: String, localGalaxySSIId: String,
+                            routes: GalaxySSILinkRoutes, strict: Bool) throws -> [String: Any]? {
+    try locked {
       try? pruneLocked()
       switch payload.string("type") {
       case "input_attachment_manifest":
-        return ingestManifest(
+        return try ingestManifest(
           payload,
           sourceId: sourceId,
           localGalaxySSIId: localGalaxySSIId,
-          routes: routes
+          routes: routes, strict: strict
         )
       case "input_attachment_chunk":
-        return ingestChunk(
+        return try ingestChunk(
           payload,
           sourceId: sourceId,
           localGalaxySSIId: localGalaxySSIId,
           routes: routes
         )
       default:
-        return nil
+        throw MqttRouteError.invalidPayload
       }
     }
   }
 
   func resolveMessageAttachments(
     sourceId: String,
-    payload: [String: Any]
+    payload: [String: Any],
+    routes: GalaxySSILinkRoutes? = nil,
+    localGalaxySSIId: String? = nil
   ) -> [[String: Any]]? {
     locked {
       guard let descriptors = payload["attachments"] as? [[String: Any]] else { return [] }
       var resolvedAttachments: [[String: Any]] = []
       for descriptor in descriptors {
         let transferId = descriptor.string("transfer_id").lowercased()
+        if let routes {
+          guard isDigest(transferId), let manifest = readManifest(transferDirectory(transferId)),
+                manifest.string("client_route_id") == routes.clientRouteId,
+                manifest.string("contact_id") == localGalaxySSIId else { return nil }
+        }
         guard let stored = storedAttachment(transferId: transferId, sourceId: sourceId),
               descriptor.string("sha256").lowercased() == stored.sha256,
               descriptor.int64("size", fallbackKey: "size_bytes") == stored.sizeBytes else {
           return nil
         }
-        var resolved = descriptor
+        var resolved = routes == nil ? descriptor : ["transfer_id": transferId, "sha256": stored.sha256]
         resolved["name"] = stored.name
         resolved["mime_type"] = stored.mimeType
         resolved["size_bytes"] = stored.sizeBytes
@@ -238,21 +256,34 @@ final class AgentIncomingAttachmentTransferStore {
     _ payload: [String: Any],
     sourceId: String,
     localGalaxySSIId: String,
-    routes: GalaxySSILinkRoutes
-  ) -> [String: Any]? {
-    guard let manifest = normalizedManifest(
+    routes: GalaxySSILinkRoutes,
+    strict: Bool
+  ) throws -> [String: Any]? {
+    guard var manifest = normalizedManifest(
       payload,
       sourceId: sourceId,
       localGalaxySSIId: localGalaxySSIId,
       routes: routes
-    ) else { return nil }
+    ) else { throw MqttRouteError.invalidPayload }
     let transferId = manifest.string("transfer_id")
     let directory = transferDirectory(transferId)
-    if let existing = readManifest(directory), !sameTransfer(existing, manifest) {
-      try? fileManager.removeItem(at: directory)
+    let manifestURL = directory.appendingPathComponent(Self.manifestName)
+    if let existing = readManifest(directory) {
+      if strict {
+        guard sameTransfer(existing, manifest), existing.string("client_route_id") == routes.clientRouteId,
+              existing.string("contact_id") == localGalaxySSIId,
+              existing.string("client_message_id") == manifest.string("client_message_id") else {
+          throw MqttRouteError.identityChanged
+        }
+        manifest = existing
+      } else if !sameTransfer(existing, manifest) {
+        try fileManager.removeItem(at: directory)
+      }
+    } else if strict && fileManager.fileExists(atPath: manifestURL.path) {
+      throw MqttChunkStorageError.corruptState
     }
-    try? fileManager.createDirectory(at: chunksDirectory(directory), withIntermediateDirectories: true)
-    guard writeJSON(manifest, to: directory.appendingPathComponent(Self.manifestName)) else { return nil }
+    try fileManager.createDirectory(at: chunksDirectory(directory), withIntermediateDirectories: true)
+    guard writeJSON(manifest, to: manifestURL) else { throw AgentAttachmentTransferError.contentUnavailable }
     if storedAttachment(transferId: transferId, sourceId: sourceId) != nil {
       return receipt(manifest, status: "stored", localGalaxySSIId: localGalaxySSIId)
     }
@@ -271,9 +302,9 @@ final class AgentIncomingAttachmentTransferStore {
     sourceId: String,
     localGalaxySSIId: String,
     routes: GalaxySSILinkRoutes
-  ) -> [String: Any]? {
+  ) throws -> [String: Any]? {
     let transferId = payload.string("transfer_id").lowercased()
-    guard isDigest(transferId) else { return nil }
+    guard isDigest(transferId) else { throw MqttRouteError.invalidPayload }
     let directory = transferDirectory(transferId)
     guard let manifest = readManifest(directory),
           manifestMatches(
@@ -282,31 +313,33 @@ final class AgentIncomingAttachmentTransferStore {
             sourceId: sourceId,
             localGalaxySSIId: localGalaxySSIId,
             routes: routes
-          ) else { return nil }
+          ) else { throw AgentAttachmentTransferError.contentUnavailable }
     let chunkCount = manifest.int("chunk_count")
-    let index = payload.int("chunk_index")
-    guard (0..<chunkCount).contains(index),
-          let bytes = Data(base64Encoded: payload.string("data_b64")) else { return nil }
+    let index = try MqttChunkManifest.integer(payload, "chunk_index", minimum: 0, maximum: chunkCount - 1)
+    guard let bytes = Data(base64Encoded: payload.string("data_b64")) else { throw MqttRouteError.invalidPayload }
     let expectedSize = expectedChunkSize(size: manifest.int64("size_bytes"), index: index)
     guard bytes.count == expectedSize,
           payload.int("chunk_size") == expectedSize,
-          payload.string("chunk_sha256").lowercased() == sha256(bytes) else { return nil }
+          payload.string("chunk_sha256").lowercased() == sha256(bytes) else { throw MqttRouteError.invalidPayload }
+    if storedAttachment(transferId: transferId, sourceId: sourceId) != nil {
+      return receipt(manifest, status: "stored", localGalaxySSIId: localGalaxySSIId)
+    }
     let destination = chunkURL(directory: directory, index: index)
-    try? fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-    guard (try? cipher.write(
+    try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try cipher.write(
       bytes,
       to: destination,
       purpose: chunkPurpose(transferId: transferId, index: index)
-    )) != nil else { return nil }
+    )
     if !missingChunkIndices(directory: directory, manifest: manifest).isEmpty { return nil }
 
     var assembled = Data()
     assembled.reserveCapacity(Int(manifest.int64("size_bytes")))
     for chunkIndex in 0..<chunkCount {
-      guard let data = try? cipher.readMigratingPlaintext(
+      let data = try cipher.readMigratingPlaintext(
         from: chunkURL(directory: directory, index: chunkIndex),
         purpose: chunkPurpose(transferId: transferId, index: chunkIndex)
-      ) else { return nil }
+      )
       assembled.append(data)
     }
     guard Int64(assembled.count) == manifest.int64("size_bytes"),
@@ -319,13 +352,9 @@ final class AgentIncomingAttachmentTransferStore {
     }
     let dataURL = directory.appendingPathComponent(Self.dataName)
     try? fileManager.removeItem(at: dataURL)
-    do {
-      try cipher.write(assembled, to: dataURL, purpose: dataPurpose(transferId))
-      try? fileManager.removeItem(at: chunksDirectory(directory))
-      return receipt(manifest, status: "stored", localGalaxySSIId: localGalaxySSIId)
-    } catch {
-      return nil
-    }
+    try cipher.write(assembled, to: dataURL, purpose: dataPurpose(transferId))
+    try? fileManager.removeItem(at: chunksDirectory(directory))
+    return receipt(manifest, status: "stored", localGalaxySSIId: localGalaxySSIId)
   }
 
   private func normalizedManifest(
@@ -337,13 +366,13 @@ final class AgentIncomingAttachmentTransferStore {
     let transferId = payload.string("transfer_id").lowercased()
     let digest = payload.string("sha256").lowercased()
     let size = payload.int64("size_bytes")
+    guard (1...AgentOutboundAttachmentTransferStore.maxAttachmentBytes).contains(size) else { return nil }
     let chunkCount = payload.int("chunk_count")
     let expectedChunks = Int(
       (size + Int64(AgentOutboundAttachmentTransferStore.chunkBytes) - 1) /
         Int64(AgentOutboundAttachmentTransferStore.chunkBytes)
     )
     guard isDigest(transferId), isDigest(digest),
-          (1...AgentOutboundAttachmentTransferStore.maxAttachmentBytes).contains(size),
           chunkCount == expectedChunks,
           (1...AgentOutboundAttachmentTransferStore.maxChunks).contains(chunkCount),
           payload.string("client_route_id") == routes.clientRouteId,
@@ -591,10 +620,10 @@ final class AgentIncomingAttachmentTransferStore {
     value.range(of: Self.digestPattern, options: .regularExpression) != nil
   }
 
-  private func locked<T>(_ body: () -> T) -> T {
+  private func locked<T>(_ body: () throws -> T) rethrows -> T {
     lock.lock()
     defer { lock.unlock() }
-    return body()
+    return try body()
   }
 }
 

@@ -38,6 +38,9 @@ struct MqttSignalSendRequest: Codable {
   func validate() throws {
     try identity.validate()
     _ = try identity.key(messageID: messageID)
+    if identity.scope.hasPrefix("direct:"), UUID(uuidString: messageID)?.uuidString != messageID {
+      throw MqttRouteError.invalidPayload
+    }
     _ = try MqttDeliveryEnvelope.checkedText(remoteName, maximum: 512)
     guard deviceID > 0, GalaxySSILinkProtocol.validTopic(topic),
           clientRouteID.map(GalaxySSILinkProtocol.validRouteId) ?? true,

@@ -8,6 +8,7 @@ extension GalaxySSIStore {
     guard candidates.count == 1, let task = candidates.first else { return true }
     let verification = "Committed authenticated Desktop result"
     if task.phase == .completed && task.verification == verification && task.result == message.content {
+      if AgentOutcomeContinuation.isUnverified(task) { upsertAgentTask(task) }
       return save()
     }
     guard let next = Self.desktopTaskCompletion(task, binding: binding, message: message,
@@ -33,7 +34,7 @@ extension GalaxySSIStore {
     completed.result = message.content
     completed.verification = verification
     completed.updatedAtMillis = max(task.updatedAtMillis, acceptedAt)
-    return completed
+    return AgentOutcomeContinuation.guardCompletion(completed, previous: task)
   }
 
   func replaceAgentTaskForRecovery(expected: AgentTaskRecord, updated: AgentTaskRecord) -> Bool {
@@ -62,7 +63,8 @@ extension GalaxySSIStore {
 
   func interruptedLocalWorkspaceCancellations() -> [AgentTaskRecord] {
     // The workspace is committed first; a crash can leave the task record at its old phase.
-    let candidates = agentTaskRecords.filter { AgentTaskCenterPolicy.canRequestCancellation($0.phase) }
+    let candidates = agentTaskRecords.filter { AgentTaskCenterPolicy.canRequestCancellation($0.phase) ||
+      AgentTaskCenterPolicy.cancellable($0) }
     guard !candidates.isEmpty else { return [] }
     let cancelled = Dictionary(uniqueKeysWithValues: agentWorkspaceStore.list().lazy
       .filter { $0.status == .cancelled && $0.cancellationRequested }.map { ($0.workspaceId, $0) })
@@ -89,6 +91,10 @@ extension GalaxySSIStore {
     if let previous, previous.phase == .cancelled, updated.phase != .cancelled, !explicitRollback {
       return previous
     }
+    updated = AgentOutcomeContinuation.guardCompletion(updated, previous: previous,
+      message: GalaxySSILocalization.string("galaxyssi.agent.effect_recovery.unavailable",
+        fallback: "The original outcome is still unverified. Inspect it before resuming.",
+        language: languagePolicy.interfaceLanguage))
     var items = agentTaskRecords.filter { $0.taskId != clean }
     items.append(updated)
     agentTaskRecords = Array(Self.sortedAgentTasks(items).prefix(200))
@@ -135,10 +141,17 @@ extension GalaxySSIStore {
       if base.status == .failed && status != .failed && status != .cancelled && previous?.phase == .failed {
         base.status = status
       }
-      let snapshot = AgentWorkspaceExecutionSnapshot(status: status, resultJson: base.resultJson, toolCalls: calls)
+      let reason = AgentBlockedOutcomePolicy.reason(task)
+      if status != .blocked, let previous, previous.phase == .blocked,
+         base.errorMessage == AgentBlockedOutcomePolicy.reason(previous) {
+        base.errorMessage = ""
+      }
+      let snapshot = AgentWorkspaceExecutionSnapshot(status: status, resultJson: base.resultJson,
+        errorMessage: reason, toolCalls: calls)
       var next = AgentWorkspaceExecutionSnapshotReducer.apply(snapshot: snapshot, to: base,
         observedAtMillis: task.updatedAtMillis).workspace
       if let existing, next.status == existing.status && next.toolCalls == existing.toolCalls &&
+        next.errorMessage == existing.errorMessage &&
         next.cancellationRequested == existing.cancellationRequested { return }
       if next.eventJournal.last?.kind == AgentTaskEventKinds.snapshot {
         next.eventJournal[next.eventJournal.count - 1].kind = AgentTaskEventKinds.localToolProjection

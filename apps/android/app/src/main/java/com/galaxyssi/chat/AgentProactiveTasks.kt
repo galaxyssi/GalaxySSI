@@ -655,6 +655,7 @@ object AgentProactiveTaskScheduler {
 
     @Synchronized
     fun cancel(context: Context, taskId: String): Boolean {
+        AgentProactiveTaskNotifier.cancel(context, taskId)
         awakeTimers.remove(taskId)?.cancel()
         alarmManager(context).cancel(taskPendingIntent(context, taskId))
         val store = AgentProactiveTaskStore(context)
@@ -1738,8 +1739,15 @@ object AgentProactiveTaskExecutor {
     }
 }
 
-private object AgentProactiveTaskNotifier {
+internal object AgentProactiveTaskNotifier {
     private const val CHANNEL_ID = "galaxyssi.proactive.tasks"
+
+    internal fun canNotify(task: AgentProactiveTask, current: AgentProactiveTask?): Boolean =
+        current?.enabled == true && current.taskId == task.taskId && current.revision == task.revision
+
+    fun cancel(context: Context, taskId: String) {
+        context.getSystemService(NotificationManager::class.java).cancel(taskId.hashCode())
+    }
 
     fun deliver(
         baseContext: Context,
@@ -1748,6 +1756,7 @@ private object AgentProactiveTaskNotifier {
         failed: Boolean
     ) {
         if (task.action.deliveryMode !in setOf("notify", "mobile")) return
+        if (!canNotify(task, AgentProactiveTaskStore(baseContext).task(task.taskId))) return
         val context = AppLanguage.wrap(baseContext.applicationContext)
         val manager = context.getSystemService(NotificationManager::class.java)
         ensureChannel(context, manager)
@@ -1782,21 +1791,24 @@ private object AgentProactiveTaskNotifier {
             .setContentTitle(context.getString(R.string.app_name))
             .setContentText(context.getString(R.string.automation_proactive_notification_channel))
             .build()
-        manager.notify(
-            task.taskId.hashCode(),
-            builder
-                .setSmallIcon(R.drawable.ic_tab_chat_filled)
-                .setContentTitle(title)
-                .setContentText(safeSummary.take(160))
-                .setStyle(Notification.BigTextStyle().bigText(safeSummary))
-                .setContentIntent(contentIntent)
-                .setPublicVersion(publicNotification)
-                .setVisibility(Notification.VISIBILITY_PRIVATE)
-                .setCategory(if (failed) Notification.CATEGORY_ERROR else Notification.CATEGORY_STATUS)
-                .setOnlyAlertOnce(true)
-                .setAutoCancel(true)
-                .build()
-        )
+        synchronized(AgentProactiveTaskScheduler) {
+            if (!canNotify(task, AgentProactiveTaskStore(baseContext).task(task.taskId))) return
+            manager.notify(
+                task.taskId.hashCode(),
+                builder
+                    .setSmallIcon(R.drawable.ic_tab_chat_filled)
+                    .setContentTitle(title)
+                    .setContentText(safeSummary.take(160))
+                    .setStyle(Notification.BigTextStyle().bigText(safeSummary))
+                    .setContentIntent(contentIntent)
+                    .setPublicVersion(publicNotification)
+                    .setVisibility(Notification.VISIBILITY_PRIVATE)
+                    .setCategory(if (failed) Notification.CATEGORY_ERROR else Notification.CATEGORY_STATUS)
+                    .setOnlyAlertOnce(true)
+                    .setAutoCancel(true)
+                    .build()
+            )
+        }
     }
 
     private fun ensureChannel(context: Context, manager: NotificationManager) {

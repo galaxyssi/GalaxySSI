@@ -50,18 +50,53 @@ final class GalaxySSIPairingDeliveryTests: XCTestCase {
     let store = makeStore()
     XCTAssertTrue(enqueue(payload(), in: store))
     let pending = try XCTUnwrap(store.takeDue().first)
-    let receipt: [String: Any] = ["ack_control_id": pending.controlId, "ack_payload_hash": pending.payloadHash]
+    let receipt: [String: Any] = [
+      "type": "opaque_contact_receipt", "from": "peer", "to": "local",
+      "ack_control_id": pending.controlId, "ack_payload_hash": pending.payloadHash
+    ]
     XCTAssertFalse(store.acknowledge(peer: "wrong-peer", fingerprint: fingerprint, receipt: receipt))
     XCTAssertFalse(store.acknowledge(peer: pending.peer, fingerprint: "wrong-fingerprint", receipt: receipt))
-    XCTAssertFalse(store.acknowledge(peer: pending.peer, fingerprint: fingerprint, receipt: [
-      "ack_control_id": pending.controlId, "ack_payload_hash": "wrong-hash"
-    ]))
-    XCTAssertFalse(store.acknowledge(peer: pending.peer, fingerprint: fingerprint, receipt: [
-      "ack_control_id": UUID().uuidString, "ack_payload_hash": pending.payloadHash
-    ]))
+    for (field, value) in ["type": "opaque_contact_confirm", "from": "another-peer", "to": "other-local",
+                           "ack_control_id": UUID().uuidString, "ack_payload_hash": "wrong-hash"] {
+      var wrong = receipt
+      wrong[field] = value
+      XCTAssertFalse(store.acknowledge(peer: pending.peer, fingerprint: fingerprint, receipt: wrong), field)
+    }
     XCTAssertEqual(store.pending().count, 1)
     XCTAssertTrue(store.acknowledge(peer: pending.peer, fingerprint: fingerprint, receipt: receipt))
     XCTAssertTrue(makeStore().pending().isEmpty)
+  }
+
+  func testFreshControlIDsCannotReopenDecidedRequestsOrRepeatNotices() {
+    let policy = GalaxySSIPhoneContactEventPolicy.self
+    let ledger = makeStore()
+    let outgoing = GalaxySSIFriendRequest(id: "request", galaxySSIId: "peer", name: "Peer",
+      type: "person", identityPublicKey: "", identityFingerprint: fingerprint,
+      mqttTopic: "", mqttInboxTopic: "", direction: .outgoing)
+    for (kind, status) in [(GalaxySSIPhoneContactControl.Kind.approval, GalaxySSIFriendRequestStatus.approved),
+                           (.rejection, .rejected)] {
+      var decided = outgoing
+      decided.status = status
+      var first = payload(kind: kind.rawValue)
+      first["from"] = "peer"
+      first["to"] = "local"
+      XCTAssertTrue(ledger.markAccepted(first))
+      var replay = first
+      replay["control_id"] = UUID().uuidString
+      XCTAssertFalse(ledger.accepted(replay))
+      XCTAssertEqual(policy.decision(kind, previous: outgoing.status, verified: false), .apply)
+      XCTAssertTrue(policy.announces(kind, previous: outgoing, current: decided, previouslyVerified: false))
+      XCTAssertEqual(policy.decision(kind, previous: decided.status, verified: false), .receiptOnly)
+      XCTAssertFalse(policy.announces(kind, previous: decided, current: decided, previouslyVerified: false))
+      XCTAssertEqual(policy.decision(kind, previous: outgoing.status, verified: true), .receiptOnly)
+      XCTAssertFalse(policy.announces(kind, previous: outgoing, current: decided, previouslyVerified: true))
+      XCTAssertEqual(policy.decision(kind, previous: .deleted, verified: false), .ignore)
+      XCTAssertEqual(policy.decision(kind, previous: nil, verified: false), .ignore)
+    }
+    var incoming = outgoing
+    incoming.direction = .incoming
+    XCTAssertTrue(policy.announces(.request, previous: nil, current: incoming, previouslyVerified: false))
+    XCTAssertFalse(policy.announces(.request, previous: incoming, current: incoming, previouslyVerified: false))
   }
 
   func testRetriesBoundedAndExpiredControlsAreNotReplayed() throws {
@@ -133,6 +168,7 @@ final class GalaxySSIPairingDeliveryTests: XCTestCase {
     XCTAssertEqual(pending.clientRouteId, "route-1")
     XCTAssertEqual(pending.desktopName, "Desktop")
     XCTAssertFalse(store.acknowledge(peer: pending.peer, fingerprint: fingerprint, receipt: [
+      "type": "opaque_contact_receipt", "from": pending.peer, "to": "local",
       "ack_control_id": pending.controlId, "ack_payload_hash": pending.payloadHash
     ]))
     XCTAssertTrue(makeStore(identity: "new-local-identity").pending().isEmpty)

@@ -305,6 +305,9 @@ class HealthCenterActivity : Activity() {
             addView(ui.text(getString(R.string.health_management), 20f, bold = true))
             ui.add(this, ui.card().apply {
                 addView(ui.row(getString(R.string.health_title)) { open("overview") })
+                addView(ui.row(getString(R.string.health_care_title)) {
+                    startActivity(android.content.Intent(this@HealthCenterActivity, HealthCareActivity::class.java))
+                }.apply { tag = "health-care-entry" })
                 addView(ui.row(getString(R.string.health_record_center), getString(R.string.health_record_center_note)) {
                     open("record_center")
                 }.apply { tag = "health-functions-record-center" })

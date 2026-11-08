@@ -281,8 +281,10 @@ enum AgentCollaborationDirectedRequests {
                        rosterMemberIds: Set<String>) throws -> [AgentTeamMessageEnvelope] {
     guard raw.contains(AgentCollaborationResearchEnvelope.wireFormat),
           sender.deliveryMode == .observe, sender.researchStage != "DELIVER" else { return [] }
-    guard raw.utf8.count <= 256_000 else { throw AgentTeamMessageError.invalid("Research reply exceeds the team message contract") }
-    let envelope = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    guard let data = AgentCollaborationResearchEnvelope.replyJSON(in: raw) else {
+      throw AgentTeamMessageError.invalid("Research reply exceeds the team message contract")
+    }
+    let envelope = try JSONDecoder().decode(AgentMcpJSONObject.self, from: data)
     guard envelope["format"] == .string(AgentCollaborationResearchEnvelope.wireFormat),
           let field = envelope["requests"] else { return [] }
     guard let requests = field.arrayValue else { throw AgentTeamMessageError.invalid("requests must be an array") }

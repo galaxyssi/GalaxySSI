@@ -3,6 +3,33 @@ import UIKit
 @testable import GalaxySSI
 
 final class GalaxySSIAttachmentTests: XCTestCase {
+  func testDownloadsRetainSameNamedFilesPrivatelyWithoutOverwriting() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let privateDirectory = GalaxySSIPrivateChatFiles.directory("Downloads", applicationSupport: root)
+    let staged = root.appendingPathComponent("staging")
+    let a = Data("first".utf8)
+    let b = Data("second".utf8)
+    try a.write(to: staged)
+    let first = try AgentIOSDownloadFilePolicy.retainDownload(staged, in: privateDirectory, id: 1, fileName: "report.pdf")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: staged.path))
+    try b.write(to: staged)
+    let second = try AgentIOSDownloadFilePolicy.retainDownload(staged, in: privateDirectory, id: 2, fileName: "report.pdf")
+    XCTAssertNotEqual(first, second)
+    XCTAssertTrue(GalaxySSIPrivateChatFiles.contains(first, in: privateDirectory))
+    XCTAssertTrue(GalaxySSIPrivateChatFiles.contains(second, in: privateDirectory))
+    XCTAssertEqual(try Data(contentsOf: first), a)
+    XCTAssertEqual(try Data(contentsOf: second), b)
+    XCTAssertEqual(AgentIOSDownloadFilePolicy.relativePath(for: first.lastPathComponent), "app_private/report.pdf")
+    try a.write(to: staged)
+    XCTAssertThrowsError(try AgentIOSDownloadFilePolicy.retainDownload(staged, in: privateDirectory,
+      id: 3, fileName: "../escape.pdf"))
+    let symlink = privateDirectory.appendingPathComponent("escape.pdf")
+    try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: staged)
+    XCTAssertFalse(GalaxySSIPrivateChatFiles.contains(symlink, in: privateDirectory))
+  }
+
   @MainActor
   func testImageClipboardPreservesEncodedBytesAndDoesNotCopyAPath() throws {
     let clipboard = UIPasteboard.general.items
@@ -33,14 +60,14 @@ final class GalaxySSIAttachmentTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: root) }
     let id = UUID()
     let pdf = screenPagePDF(["Original article"])
-    let saved = try AgentIOSScreenPagePDFDownloads.save(pdf: pdf, captureID: id, documents: root)
-    XCTAssertEqual(saved.deletingLastPathComponent().lastPathComponent, "Downloads")
+    let saved = try AgentIOSScreenPagePDFDownloads.save(pdf: pdf, captureID: id, applicationSupport: root)
+    XCTAssertEqual(saved.deletingLastPathComponent(), GalaxySSIPrivateChatFiles.directory("ScreenPagePDFs", applicationSupport: root))
     XCTAssertEqual(saved.lastPathComponent, "article-\(id.uuidString.lowercased()).pdf")
     XCTAssertEqual(try Data(contentsOf: saved), pdf)
-    XCTAssertEqual(try AgentIOSScreenPagePDFDownloads.save(pdf: pdf, captureID: id, documents: root), saved)
+    XCTAssertEqual(try AgentIOSScreenPagePDFDownloads.save(pdf: pdf, captureID: id, applicationSupport: root), saved)
     XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: saved.deletingLastPathComponent().path),
       [saved.lastPathComponent])
-    XCTAssertThrowsError(try AgentIOSScreenPagePDFDownloads.save(pdf: Data(), captureID: id, documents: root))
+    XCTAssertThrowsError(try AgentIOSScreenPagePDFDownloads.save(pdf: Data(), captureID: id, applicationSupport: root))
     XCTAssertEqual(try Data(contentsOf: saved), pdf)
   }
 
@@ -643,6 +670,16 @@ final class GalaxySSIAttachmentTests: XCTestCase {
       _ in XCTFail("Document must not open image review")
     }, onDocument: { documents.append($0) }, onFailure: { XCTFail("\($0)") })
     XCTAssertEqual(documents.first?.data, pdf)
+    documents.removeAll()
+    current = true
+    imageResults.removeAll()
+    await ComposerFileSelection.deliver([image, image, document], isCurrent: { current },
+      isDocumentCurrent: { true }, onImage: {
+        imageResults.append($0)
+        current = false
+      }, onDocument: { documents.append($0) }, onFailure: { XCTFail("\($0)") })
+    XCTAssertEqual(imageResults.count, 1, "A stale image must not reach the new composer")
+    XCTAssertEqual(documents.map(\.data), [pdf], "The original recipient still receives the document")
   }
 
   func testAgentAttachmentTransferProtocolMatchesAndroidRangesAndStableIdentity() throws {
@@ -1360,6 +1397,49 @@ final class GalaxySSIAttachmentTests: XCTestCase {
         ]
       )
     )
+  }
+
+  func testDurablePeerAttachmentRetriesOutOfOrderAndReplaysStoredWithoutRewriting() throws {
+    let root = temporaryIncomingTransferRoot()
+    defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+    let routes = GalaxySSILinkRoutes(clientRouteId: String(repeating: "e", count: 22),
+      linkSecret: String(repeating: "f", count: 43), localFingerprint: String(repeating: "1", count: 64),
+      remoteFingerprint: String(repeating: "2", count: 64))
+    let bytes = Data("durable attachment".utf8)
+    let digest = AgentAttachmentTransferProtocol.sha256(bytes)
+    let cipher = GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let store = AgentIncomingAttachmentTransferStore(rootURL: root, cipher: cipher)
+    let manifest: [String: Any] = ["type": "input_attachment_manifest", "transfer_id": digest, "sha256": digest,
+      "size_bytes": bytes.count, "chunk_count": 1, "client_route_id": routes.clientRouteId, "contact_id": "local",
+      "client_message_id": "message", "name": "file.txt", "eager_chunks": true]
+    var chunk = manifest
+    chunk["type"] = "input_attachment_chunk"
+    chunk["chunk_index"] = 0
+    chunk["chunk_size"] = bytes.count
+    chunk["chunk_sha256"] = digest
+    chunk["data_b64"] = bytes.base64EncodedString()
+    func ingest(_ payload: [String: Any], source: String = "remote") throws -> [String: Any]? {
+      try store.ingestDurably(payload: payload, sourceId: source, localGalaxySSIId: "local", routes: routes)
+    }
+    XCTAssertThrowsError(try ingest(chunk))
+    XCTAssertNil(try ingest(manifest))
+    XCTAssertThrowsError(try ingest(manifest, source: "other-peer"))
+    XCTAssertEqual(try ingest(chunk)?["status"] as? String, "stored")
+    let descriptor: [String: Any] = ["transfer_id": digest, "sha256": digest, "size": bytes.count,
+      "uri": "https://example.invalid/untrusted", "artifact_id": "untrusted"]
+    let message = ["attachments": [descriptor]]
+    let resolved = try XCTUnwrap(store.resolveMessageAttachments(sourceId: "remote", payload: message,
+      routes: routes, localGalaxySSIId: "local")?.first)
+    let url = try XCTUnwrap(URL(string: resolved.string("uri")))
+    XCTAssertTrue(url.isFileURL)
+    XCTAssertNil(resolved["artifact_id"])
+    XCTAssertNil(store.resolveMessageAttachments(sourceId: "remote", payload: message, routes: routes, localGalaxySSIId: "different"))
+    let before = try Data(contentsOf: url)
+    let reopened = AgentIncomingAttachmentTransferStore(rootURL: root, cipher: cipher)
+    XCTAssertEqual(try reopened.ingestDurably(payload: chunk, sourceId: "remote", localGalaxySSIId: "local",
+      routes: routes)?["status"] as? String, "stored")
+    XCTAssertEqual(try Data(contentsOf: url), before)
+    XCTAssertEqual(try cipher.read(from: url, purpose: "incoming-data:\(digest)"), bytes)
   }
 
   func testDeletingPeerAttachmentRemovesOnlyPrivateTransferCopies() throws {

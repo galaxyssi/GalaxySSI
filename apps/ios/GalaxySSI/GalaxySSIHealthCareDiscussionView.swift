@@ -156,11 +156,18 @@ struct GalaxySSIHealthCareDiscussionView: View {
     let ledger = coordinator.healthDisclosureStore
     do {
       let request = try GalaxySSIHealthCareDiscussion.request(review, key: key)
-      try records.beginLocalCareDiscussionTurn(review)
+      try records.validateLocalCareDiscussionApproval(review)
       let ticket = AgentDataDisclosureLedger.beginCloudRequest(store: ledger, destination: .init(contact: contact),
         text: "", purpose: "Explicit health concern discussion",
         textSummary: .init(characters: review.payload.count, kinds: [.messageText, .systemInstructions, .toolOutput]))
       guard ticket.allowed else { failed = true; return }
+      do {
+        try records.beginLocalCareDiscussionTurn(review)
+      } catch {
+        AgentDataDisclosureLedger.update(store: ledger, ticket: ticket, status: .failed,
+          failureReason: "health_discussion_approval_changed")
+        throw error
+      }
       active = review
       question = ""
       failed = false

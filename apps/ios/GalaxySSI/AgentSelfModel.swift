@@ -111,7 +111,7 @@ struct AgentSelfModelMutation: Equatable {
 
 enum AgentSelfModelReducer {
   static func observe(_ current: AgentSelfModel, task: AgentTaskRecord) -> AgentSelfModelMutation {
-    guard task.phase.isSelfModelTerminal, !task.taskId.isBlank,
+    guard task.phase.isSelfModelTerminal, !AgentBlockedOutcomePolicy.isWaiting(task), !task.taskId.isBlank,
           !current.processedRunIds.contains(task.taskId) else {
       return AgentSelfModelMutation(before: current, after: current, belief: nil)
     }
