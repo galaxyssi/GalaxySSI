@@ -1150,6 +1150,7 @@ final class AgentTeamExecutionHistoryStore {
       let revisedInBatch = Set(drafts.compactMap(\.objectId).filter { !$0.isBlank })
       var replayBytes = 0
       for draft in drafts {
+        try AgentCollaborationTypedRecordValidation.validate(draft)
         guard !draft.id.isBlank, draft.id.utf8.count <= 160, !draft.title.isBlank,
               draft.title.utf8.count <= 960, !draft.body.isEmpty || draft.kind == .experimentResult,
               draft.baseRevision >= 0, draft.baseRevision < Int64.max else { throw AgentTeamHistoryDatabase.Failure.corrupt }
@@ -1794,6 +1795,8 @@ final class AgentTeamExecutionHistoryStore {
       return try retainRejectedMilestone(raw, id: id, hash: hash, scope: scope, reason: "invalid_artifact")
     } catch AgentTeamHistoryDatabase.Failure.stale {
       return try retainRejectedMilestone(raw, id: id, hash: hash, scope: scope, reason: "stale_binding_or_revision")
+    } catch let feedback as AgentCollaborationTypedRecordValidation {
+      return try retainRejectedMilestone(raw, id: id, hash: hash, scope: scope, reason: "rejected", problem: feedback.problem)
     }
   }
 
@@ -1874,6 +1877,9 @@ final class AgentTeamExecutionHistoryStore {
     } catch AgentTeamHistoryDatabase.Failure.stale {
       try recordResearchRejection(raw, scope: scope, reason: .staleBindingOrRevision)
       throw AgentTeamHistoryDatabase.Failure.stale
+    } catch let feedback as AgentCollaborationTypedRecordValidation {
+      try recordResearchRejection(raw, scope: scope, reason: .invalidDraft, problem: feedback.problem)
+      throw feedback
     }
   }
 

@@ -114,6 +114,7 @@ enum AgentCollaborationRuleTopics {
     Publish galaxyssi.research-artifact.v1 with a workspace array. Each item has id, kind, title, body, base_revision and parents.
     Use base_revision 0 for new records and exact object_id, revision and sha256 for references. Cite original cloud observations
     with evidence_id and sha256 when the record supports citations. Read each page before citing it. Publication is not verification.
+    \(AgentCollaborationTypedRecordValidation.guidance)
     capability_gap records category, symptom, needed_capability, learning_options, chosen_option and rationale.
     innovation records origin, hypothesis, mechanism, difference, prior_art, falsifier, domain, applies_when, risks, alternatives
     and predictions (id, statement, test). Use novelty_scope not_checked. Transfer and combination require exact parent records.

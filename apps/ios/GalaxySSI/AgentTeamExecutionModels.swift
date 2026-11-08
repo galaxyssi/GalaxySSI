@@ -262,7 +262,7 @@ enum AgentCollaborationLearningAgendaIntake {
 enum AgentCollaborationEvolutionIntake {
   static func validates(_ draft: AgentCollaborationResearchDraft) -> Bool {
     guard let value = draft.body[draft.kind.rawValue]?.objectValue,
-          draft.body["content"] == nil || !draft.body.string("content").isBlank else { return false }
+          draft.body["content"] == nil || draft.body["content"]?.strictStringValue?.isBlank == false else { return false }
     switch draft.kind {
     case .capabilityGap:
       guard ["knowledge", "tool", "method", "verification", "coordination", "environment",
