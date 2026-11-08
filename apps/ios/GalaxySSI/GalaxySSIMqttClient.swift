@@ -225,7 +225,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
         }
         // Payload is final pair AEAD. Do not seal again, split it, or retry its attempt on another generation.
         self.pendingPacketPublishes.append(PendingPublish(topic: packet.topic, payload: packet.payload,
-          transferId: nil, relationshipBound: true,
+          transferId: publication.fragmentTransferID, relationshipBound: true,
           brokerAckTimeoutSeconds: MqttBrokerAckTimeoutPolicy.timeoutSeconds(wirePayloadBytes: packet.payload.count),
           attemptId: packet.frame.attempt.attemptID, logicalMessageId: packet.frame.message.messageID,
           durableMessageId: packet.frame.message.messageID, enqueuedAtMillis: Self.nowMillis(),

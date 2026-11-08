@@ -5,6 +5,7 @@ struct MqttSealedPathPublication {
   let publication: MqttDeliveryDispatch.Publication
   let completed: (Bool) -> Void
   var configurationID = ""
+  var fragmentTransferID: String? = nil
 
   var authorization: MqttPathPublication {
     MqttPathPublication(topic: publication.topic, payload: Data(), generation: publication.frame.attempt.generation,
@@ -53,6 +54,21 @@ final class MqttDeliveryCompletionRelay {
 }
 
 enum MqttSignalDelivery {
+  static func requiresFragments(topic: String, wire: Data, message: MqttDeliveryEnvelope.Message) throws -> Bool {
+    guard let object = try JSONSerialization.jsonObject(with: wire) as? [String: Any] else {
+      throw MqttRouteError.invalidPayload
+    }
+    let bytes = try framedBytes(object, message: message)
+    guard let sealed = try? GalaxySSILinkProtocol.sealedWirePacketByteCount(payloadBytes: bytes) else { return true }
+    return (try? MqttDeliveryDispatch.packetBytes(topic: topic, payloadBytes: sealed)) == nil
+  }
+
+  private static func framedBytes(_ object: [String: Any], message: MqttDeliveryEnvelope.Message) throws -> Int {
+    let largest = try MqttDeliveryEnvelope.Frame(message: message, attempt: .init(
+      attemptID: String(repeating: "f", count: 32), brokerID: "mosquitto", generation: MqttRouteProtocol.maximumInteger))
+    return try GalaxySSILinkProtocol.jsonData(largest.attach(to: object)).count
+  }
+
   // The caller supplies the currently authorized relationship and authenticated route-session gate.
   static func make(peer: String, topic: String, wire: Data, message: MqttDeliveryEnvelope.Message,
                    secret: String, receiveTopics: Set<String>,
@@ -61,11 +77,8 @@ enum MqttSignalDelivery {
           !receiveTopics.isEmpty, receiveTopics.allSatisfy(GalaxySSILinkProtocol.validTopic),
           let object = try JSONSerialization.jsonObject(with: wire) as? [String: Any] else { throw MqttRouteError.invalidPayload }
     // Longest catalog broker ID and largest permitted generation bound every later physical copy.
-    let largest = try MqttDeliveryEnvelope.Frame(message: message, attempt: .init(
-      attemptID: String(repeating: "f", count: 32), brokerID: "mosquitto", generation: MqttRouteProtocol.maximumInteger))
-    let measured = try GalaxySSILinkProtocol.jsonData(largest.attach(to: object))
     let bound = try MqttDeliveryDispatch.packetBytes(topic: topic,
-      payloadBytes: GalaxySSILinkProtocol.sealedWirePacketByteCount(payloadBytes: measured.count))
+      payloadBytes: GalaxySSILinkProtocol.sealedWirePacketByteCount(payloadBytes: framedBytes(object, message: message)))
     return .init(peer: peer, message: message, receiveTopics: receiveTopics,
       secretFingerprint: MqttRouteProtocol.digest(Data(secret.utf8)), sizeBound: bound,
       encodeAttempt: { frame in

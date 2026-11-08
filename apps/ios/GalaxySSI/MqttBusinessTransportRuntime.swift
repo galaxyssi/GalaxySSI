@@ -101,7 +101,8 @@ final class MqttBusinessTransportRuntime {
     let dispatcher = pool.makeDeliveryDispatcher(brokerCompleted: { _, _ in }, now: monotonic)
     self.dispatcher = dispatcher
     let date = { Date(timeIntervalSince1970: Double(wall()) / 1_000) }
-    sends = MqttBusinessSendDrain(outbox: journal.outbox, routes: routes, dispatcher: dispatcher, engine: engine, now: date)
+    sends = MqttBusinessSendDrain(outbox: journal.outbox, routes: routes, dispatcher: dispatcher,
+      chunks: journal.outgoingChunks, engine: engine, now: date)
     let receipts = MqttBusinessReceipts(routes: routes, outbox: journal.outbox, dispatcher: dispatcher, now: date)
     self.receipts = receipts
     completions = MqttBusinessDeliveryDrain(journal: journal, receipts: receipts, routes: routes, now: wall,
@@ -238,9 +239,7 @@ final class MqttBusinessTransportRuntime {
     guard let remoteName = remoteNames[packet.scope] else { return }
     switch packet.payload["type"] as? String {
     case MqttChunkReceipts.state:
-      _ = try routes.withCurrentIdentity(packet) {
-        try journal.outgoingChunks.accept(authenticatedScope: $0.binding, state: packet.payload)
-      }
+      try routes.acceptChunkState(packet, chunks: journal.outgoingChunks)
       return
     case MqttChunkReceipts.probe:
       try await receiveChunks(packet, remoteName: remoteName, probe: true)

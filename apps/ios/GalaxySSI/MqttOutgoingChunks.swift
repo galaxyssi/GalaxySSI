@@ -131,6 +131,17 @@ final class MqttOutgoingChunks {
     }
   }
 
+  func permits(authenticatedScope: String, query: MqttChunkReceipts.Query, index: Int) throws -> Bool {
+    guard index == -1 || (0..<query.count).contains(index) else { return false }
+    let scope = try scopeKey(authenticatedScope)
+    return try database.transaction {
+      guard let row = try read(scope: scope, transfer: query.transfer), row.expiresAt > (try timestamp()),
+            row.manifest == query.manifest, row.count == query.count, row.request == query.request else { return false }
+      if index == -1 { return true }
+      return row.bitmap[index / 8] & UInt8(1 << (index % 8)) == 0
+    }
+  }
+
   func forget(authenticatedScope: String) throws {
     let scope = try scopeKey(authenticatedScope)
     try database.transaction { try database.run("DELETE FROM mqtt_outgoing_chunks WHERE scope_digest=?", [.text(scope)]) }

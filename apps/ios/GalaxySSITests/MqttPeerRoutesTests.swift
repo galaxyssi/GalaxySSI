@@ -2,6 +2,81 @@ import XCTest
 @testable import GalaxySSI
 
 final class MqttPeerRoutesTests: XCTestCase {
+  func testBusinessSendDrainResendsOnlyMissingFragmentsOnAnotherBrokerThenProbes() async throws {
+    let f = try ReceiptBridgeFixture()
+    let peer = f.peer
+    let identity = f.entry.identity
+    let topic = peer.binding.sendTopic
+    let id = "large-message"
+    let wire = try GalaxySSILinkProtocol.jsonData(["scheme": "signal", "from": "sender", "to": "receiver",
+      "body": String(repeating: "A", count: 560_000)])
+    let date = Date(timeIntervalSince1970: 1)
+    try f.outbox.enqueue(identity: identity, message: PendingLinkMessage(messageId: id, topic: topic,
+      wirePayload: String(decoding: wire, as: UTF8.self), status: "queued", attempts: 0,
+      nextAttemptAt: date, createdAt: date, updatedAt: date), traffic: .message)
+    let entry = try XCTUnwrap(f.outbox.entry(identity: identity, messageID: id))
+    await peer.start()
+    await peer.startSecondPath()
+    try await peer.handshake(twoPaths: true)
+    let drain = f.sendDrain()
+    func collect() throws -> [(String, [String: Any])] {
+      var result: [(String, [String: Any])] = []
+      for path in [peer.path, peer.secondPath] {
+        for packet in path.sealedPublications {
+          let value = try GalaxySSILinkProtocol.openWirePacket(packet.publication.payload, secret: peer.binding.secret)
+          let object = try XCTUnwrap(JSONSerialization.jsonObject(with: value) as? [String: Any])
+          XCTAssertEqual(packet.publication.frame.message.messageID, id)
+          result.append((packet.publication.frame.attempt.brokerID, object))
+          packet.completed(true)
+        }
+        path.sealedPublications.removeAll()
+      }
+      return result
+    }
+    func accept(_ query: MqttChunkReceipts.Query, indices: Set<Int>, revision: Int64) async throws {
+      let response = try query.response(epoch: String(repeating: "a", count: 32), revision: revision, indices: indices)
+      let received = try await peer.routes.receive(peer.ingress(response))
+      try peer.routes.acceptChunkState(try XCTUnwrap(received.packet), chunks: f.journal.outgoingChunks)
+    }
+    let initial = try await drain.drain(identities: [identity], validatedNetwork: true)
+    XCTAssertTrue(initial.failures.isEmpty)
+    let first = try collect()
+    XCTAssertEqual(first.count, 2)
+    let missing = try XCTUnwrap(first.first { $0.1["chunk_index"] as? Int == 1 })
+    let query = try XCTUnwrap(MqttChunkReceipts.fromChunk(missing.1))
+    try await accept(query, indices: [0], revision: 1)
+    XCTAssertNotNil(try f.outbox.entry(identity: identity, messageID: id))
+
+    peer.time += 30_000
+    let retry = try await drain.drain(identities: [identity], validatedNetwork: true)
+    XCTAssertTrue(retry.failures.isEmpty)
+    let resent = try collect()
+    XCTAssertEqual(resent.count, 1)
+    let only = try XCTUnwrap(resent.first)
+    XCTAssertEqual(only.1["chunk_index"] as? Int, 1)
+    XCTAssertNotEqual(only.0, missing.0)
+    let retryQuery = try XCTUnwrap(MqttChunkReceipts.fromChunk(only.1))
+    XCTAssertNotEqual(retryQuery.request, query.request)
+    try await accept(retryQuery, indices: [0, 1], revision: 2)
+    XCTAssertNotNil(try f.outbox.entry(identity: identity, messageID: id))
+
+    peer.time += 30_000
+    let probed = try await drain.drain(identities: [identity], validatedNetwork: true)
+    XCTAssertTrue(probed.failures.isEmpty)
+    let probes = try collect()
+    XCTAssertEqual(probes.count, 1)
+    XCTAssertEqual(probes.first?.1["type"] as? String, MqttChunkReceipts.probe)
+    XCTAssertNotNil(try f.outbox.entry(identity: identity, messageID: id))
+    var receipt = try MqttDeliveryEnvelope.storedReceipt(messageID: id, wireHash: entry.wireHash)
+    receipt["message_id"] = "large-receipt"
+    _ = try f.journal.inbox.accept(identity: identity, messageID: "large-receipt", payload: receipt,
+      ciphertextDigest: String(repeating: "e", count: 64), wireHash: String(repeating: "f", count: 64),
+      receiptRequired: false)
+    let delivered = try await f.receipts.consumeStored(identity: identity, receiptMessageID: "large-receipt", journal: f.journal)
+    XCTAssertEqual(delivered?.messageID, id)
+    XCTAssertNil(try f.outbox.entry(identity: identity, messageID: id))
+  }
+
   func testTransientControlUsesConfirmedPathsAndSharedReserveWithoutBusinessReceipts() async throws {
     let f = try PeerRoutesFixture()
     await f.start()
@@ -1017,7 +1092,7 @@ private final class ReceiptBridgeFixture {
   }
 
   func sendDrain() -> MqttBusinessSendDrain {
-    MqttBusinessSendDrain(outbox: outbox, routes: peer.routes, dispatcher: dispatch,
+    MqttBusinessSendDrain(outbox: outbox, routes: peer.routes, dispatcher: dispatch, chunks: journal.outgoingChunks,
       engine: GalaxySSISignalEngine(profileName: "test", defaults: peer.defaults, secrets: storage.secrets),
       now: { [weak self] in Date(timeIntervalSince1970: Double(self?.peer.time ?? 0) / 1000) })
   }

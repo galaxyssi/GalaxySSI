@@ -319,6 +319,71 @@ final class MqttPeerRoutes {
     }
   }
 
+  func publishChunk(topic: String, identity: MqttBusinessIdentity, message: MqttDeliveryEnvelope.Message,
+                    query: MqttChunkReceipts.Query, selection: MqttOutgoingChunks.Selection, attempted: Set<String>,
+                    isPending: @escaping () throws -> Bool) async throws -> String? {
+    let candidate: (Data, Int, MqttMultipathPolicy.Dispatch, Set<String>, String, (String, Int64) -> Bool)? = try locked {
+      guard outgoing[topic] == identity.scope, let peer = peers[identity.scope], ready(peer),
+            try MqttBusinessIdentity(peer.binding) == identity, let epoch = peer.session.publicationEpoch(),
+            try isPending() else { return nil }
+      let binding = peer.binding
+      let payload = try GalaxySSILinkProtocol.sealWirePacket(GalaxySSILinkProtocol.jsonData(selection.wire), secret: binding.secret)
+      let bytes = try MqttDeliveryDispatch.packetBytes(topic: topic, payloadBytes: payload.count)
+      let eligible = peer.session.verifiedGenerations(generations(binding))
+      let configuration = snapshots.mapValues(\.configurationID)
+      let partKey = query.transfer + ":" + String(selection.index)
+      guard let path = pool.policy.plan(peer: identity.scope, messageID: partKey, traffic: .chunk,
+        wireBytes: bytes, receiveTopics: binding.receiveTopics, now: now(), attempted: attempted, eligible: eligible).first
+      else { return nil }
+      let authorized: (String, Int64) -> Bool = { [weak self, weak peer] broker, generation in
+        guard let self, let peer else { return false }
+        return self.locked {
+          self.current(peer, binding: binding) && peer.session.publicationEpoch() == epoch &&
+            self.snapshots[broker]?.configurationID == configuration[broker] &&
+            peer.session.verifiedGenerations(self.generations(binding))[broker] == generation &&
+            (try? isPending()) == true
+        }
+      }
+      return (payload, bytes, path, binding.receiveTopics, binding.secretFingerprint, authorized)
+    }
+    guard let (payload, bytes, path, receiveTopics, fingerprint, authorized) = candidate else { return nil }
+    let attempt = try MqttDeliveryEnvelope.Attempt(attemptID: MqttChunkReceipts.newRequest(), brokerID: path.brokerID,
+      generation: path.generation)
+    let policy = pool.policy
+    let started = now()
+    let isFragment = selection.index >= 0
+    guard policy.reserve(attemptID: attempt.attemptID, attempt: .init(peer: identity.scope,
+      messageID: message.messageID, contentHash: message.contentHash, brokerID: path.brokerID,
+      generation: path.generation, traffic: .chunk, wireBytes: bytes, startedAt: started)) else { return nil }
+    let observation = MqttChunkThroughput.Chunk(transfer: query.transfer, request: query.request, index: selection.index,
+      sampleEligible: attempted.isEmpty)
+    if isFragment {
+      policy.trackChunk(peer: identity.scope, chunk: observation, broker: path.brokerID,
+        generation: path.generation, bytes: bytes, now: started)
+    }
+    // This frame is local QoS1 attribution only. Chunk wire packets carry a query, not a business frame.
+    let packet = MqttSealedPathPublication(publication: .init(topic: topic, payload: payload,
+      frame: .init(message: message, attempt: attempt), receiveTopics: receiveTopics, secretFingerprint: fingerprint,
+      authorized: authorized), completed: { accepted in
+        policy.discardAttempt(attempt.attemptID)
+        if !accepted, isFragment { policy.discardChunk(peer: identity.scope, chunk: observation) }
+      }, fragmentTransferID: isFragment ? identity.binding + ":" + query.transfer : nil)
+    guard await pool.publishSealed(packet).accepted else {
+      packet.completed(false)
+      return nil
+    }
+    return path.brokerID
+  }
+
+  func acceptChunkState(_ packet: VerifiedPacket, chunks: MqttOutgoingChunks) throws {
+    try withCurrentIdentity(packet) { identity in
+      guard try chunks.accept(authenticatedScope: identity.binding, state: packet.payload) else { return }
+      let state = try MqttChunkReceipts.parseState(packet.payload)
+      pool.policy.confirmChunkState(peer: identity.scope, transfer: state.query.transfer,
+        request: state.query.request, indices: state.storedIndices, now: now())
+    }
+  }
+
   func recoverBlockedSend(topic: String) -> Bool {
     locked {
       guard let scope = outgoing[topic], let peer = peers[scope] else { return false }
