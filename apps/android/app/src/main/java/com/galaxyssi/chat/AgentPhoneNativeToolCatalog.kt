@@ -145,6 +145,7 @@ object AgentPhoneNativeToolCatalog {
             addAll(AgentDesktopRemoteNativeTools.toolIds)
             addAll(AgentToolInspectionTools.toolIds)
             addAll(AgentAppControlTools.toolIds)
+            addAll(AgentScheduleNativeTools.toolIds)
         }
     }
 
@@ -173,6 +174,8 @@ object AgentPhoneNativeToolCatalog {
         )
         return registry.registerAll(
             AgentAppControlTools.definitions(AndroidAppControlPlatform(context.applicationContext))
+        ).registerAll(
+            AgentScheduleNativeTools.definitions(context.applicationContext)
         ).registerAll(
             AgentWebMediaNativeTools.definitions(webMediaServices)
         ).registerAll(

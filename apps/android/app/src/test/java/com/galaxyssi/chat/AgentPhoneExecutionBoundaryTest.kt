@@ -21,7 +21,8 @@ class AgentPhoneExecutionBoundaryTest {
 
     @Test fun allProviderRequestsKeepPhoneOwnershipWithoutRecognizingCommandWords() {
         for (goal in listOf("\u5b9a\u65f61\u5206\u949f", "60 seconds please", "hello",
-                "Find current weather", "Make it quieter", "Do that again")) {
+                "Find current weather", "Make it quieter", "Do that again",
+                "Every day I read a chapter; is that enough", "Check the test report every day")) {
             val request = request(goal)
             val action = requireNotNull(RuleBasedAgentPlanner().supervisedProjectActions(request)).single()
             assertTrue(goal, action.isSupervisedProjectConnector())
@@ -32,6 +33,7 @@ class AgentPhoneExecutionBoundaryTest {
             assertTrue(prompt.contains("Initial response option:"))
             assertTrue(prompt.contains("not an exact command phrase"))
             assertFalse(prompt.contains("Persistent phone Linux uses Debian"))
+            assertTrue(prompt.contains(AgentScheduleNativeTools.MODEL_CONTRACT))
         }
     }
 
