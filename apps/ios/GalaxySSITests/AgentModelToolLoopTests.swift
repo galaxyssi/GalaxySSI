@@ -1058,6 +1058,27 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertEqual(resumed.messages.compactMap(\.toolResult).map(\.toolId), [Self.toolId])
   }
 
+  func testManagedBrowserBusyWakeIsConsumedOnceByExactOwner() {
+    typealias Wakes = AgentManagedBrowserContinuationStore.DeferredWakes
+    var wakes = Wakes()
+    let member = Wakes.Key.member("original-member")
+    let team = Wakes.Key.team(dispatch: "original-team", generation: 42)
+
+    XCTAssertFalse(wakes.canStart(member, busy: true, remember: false))
+    XCTAssertFalse(wakes.take(member, busy: false), "Routine scans must not create a retry loop")
+    XCTAssertFalse(wakes.canStart(member, busy: true, remember: true))
+    XCTAssertFalse(wakes.canStart(member, busy: true, remember: true))
+    XCTAssertFalse(wakes.canStart(team, busy: true, remember: true))
+    XCTAssertFalse(wakes.take(member, busy: true))
+    XCTAssertFalse(wakes.take(team, busy: true), "The outer recovery owner still holds the run")
+    XCTAssertFalse(wakes.take(.member("other-member"), busy: false))
+    XCTAssertFalse(wakes.take(.team(dispatch: "original-team", generation: 43), busy: false))
+    XCTAssertTrue(wakes.take(member, busy: false))
+    XCTAssertFalse(wakes.take(member, busy: false))
+    XCTAssertTrue(wakes.take(team, busy: false))
+    XCTAssertFalse(wakes.take(team, busy: false))
+  }
+
   func testManagedBrowserControlIntentAndStopSurviveRestart() async throws {
     let domain = "managed-browser-control-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
@@ -1088,6 +1109,7 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertEqual(try restarted.control(scope: scope), .pause)
     XCTAssertNil(try restarted.control(scope: foreign))
     XCTAssertEqual(restarted.indexedBindings(scope: scope), [binding])
+    XCTAssertTrue(restarted.hasPendingMember(binding))
     XCTAssertTrue(restarted.indexedBindings(scope: foreign).isEmpty)
     let observation = AgentManagedBrowserHandoff.Observation(address: "https://example.test/",
       title: "Example", text: "Read only")
@@ -1113,6 +1135,7 @@ final class AgentModelToolLoopTests: XCTestCase {
     }
     try stopped.backfillWakeIndex(binding)
     XCTAssertTrue(stopped.indexedBindings(scope: scope).isEmpty)
+    XCTAssertFalse(stopped.hasPendingMember(binding))
     XCTAssertTrue(stopped.pendingBindings(profileID: "profile").isEmpty)
   }
 

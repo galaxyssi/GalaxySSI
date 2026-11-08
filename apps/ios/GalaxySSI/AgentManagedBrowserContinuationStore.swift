@@ -9,6 +9,28 @@ final class AgentManagedBrowserContinuationStore {
   enum Control: String, Codable { case run, pause, stop, unavailable }
   enum Mode: Equatable { case initial, recovery }
 
+  struct DeferredWakes {
+    enum Key: Hashable {
+      case member(String)
+      case team(dispatch: String, generation: Int64)
+    }
+
+    private var pending: Set<Key> = []
+
+    mutating func canStart(_ key: Key, busy: Bool, remember: Bool) -> Bool {
+      if busy {
+        if remember { pending.insert(key) }
+        return false
+      }
+      pending.remove(key)
+      return true
+    }
+
+    mutating func take(_ key: Key, busy: Bool) -> Bool {
+      !busy && pending.remove(key) != nil
+    }
+  }
+
   struct RunScope: Codable, Equatable {
     let profileID: String
     let runID: String
@@ -286,6 +308,10 @@ final class AgentManagedBrowserContinuationStore {
       guard try !owned(binding).delivered else { return }
       try track(binding)
     }
+  }
+
+  func hasPendingMember(_ binding: AgentManagedBrowserDispatchBinding) -> Bool {
+    locked { (try? owned(binding).delivered) == false }
   }
 
   private func indexPrefix(_ scope: RunScope) -> String { namespace + ".wake." + scope.key + "." }
