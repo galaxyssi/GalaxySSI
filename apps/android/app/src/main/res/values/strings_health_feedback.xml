@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_feedback_completed">Completed</string>
+    <string name="health_feedback_partial">Partly completed</string>
+    <string name="health_feedback_barrier">Having difficulty</string>
+    <string name="health_feedback_choose">Select how the action went</string>
+    <string name="health_feedback_note_hint">Record what you did, how you felt, or what made it difficult</string>
+    <string name="health_feedback_notice">Partial completion or difficulty keeps the action and reminder in place for review. Only Completed marks execution finished. Feedback does not establish health improvement or change treatment.</string>
+    <string name="health_feedback_latest">%1$s · Recorded %2$s</string>
+    <string name="health_feedback_history">Action feedback history</string>
+    <string name="health_feedback_empty">No feedback records yet. Older completion notes remain with their original action.</string>
+    <string name="health_feedback_history_notice">This is your report about the plan at that time, not a verified health outcome. The timestamp is when the note was saved.</string>
+    <string name="health_feedback_older">Older feedback</string>
+    <string name="health_feedback_latest_page">Latest feedback</string>
+</resources>

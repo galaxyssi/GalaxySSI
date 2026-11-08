@@ -252,5 +252,36 @@ Opening an action reuses the existing scoped reminder/outcome review. Proposed,
 paused, closed or stale-basis actions require review. Cancelling a reminder does
 not remove the action; delivery does not complete it. Recorded feedback never
 establishes clinical recovery. Privacy withdrawal and background navigation clear
-the visible content and dialogs. Partial-completion/barrier feedback, visit
-instructions and full long-cycle acceptance remain separate increments.
+the visible content and dialogs. Visit instructions and full long-cycle
+acceptance remain separate increments.
+
+## Action execution feedback
+
+The shared action review now requires an explicit completed, partial or barrier
+selection plus a note. Partial progress and barriers keep the action confirmed
+and preserve an otherwise valid reminder. Only completed execution finishes the
+action and cancels its reminder. Feedback requests reassessment without resuming
+paused tracking, changing measurements, confirming improvement or adjusting
+treatment. The agenda retains reminder timing alongside the latest feedback state.
+
+Schema 11 stores authenticated encrypted feedback receipts independently of the
+latest action snapshot. Saving the concern, feedback, reminder effects and agenda
+projection is atomic. An editor operation ID makes retries idempotent and rejects
+changed content or ownership. History is keyset-paged by concern revision, at most
+30 records at a time, including records for actions no longer in the latest plan.
+Opaque IDs and revisions are indexed; notes, titles and timestamps are encrypted.
+Legacy outcomes remain on their original actions without fabricated timestamps
+or migrated feedback events. Deleting a concern deletes its feedback receipts.
+
+The existing authorized Agent snapshot includes the latest feedback, explicitly
+marked self-reported and not a verified clinical result. Its selected-profile
+scope and plan basis are checked; withdrawn-scope notes are excluded, and stale
+plan feedback is marked historical. Feedback can trigger already-authorized
+research once, but does not itself grant network consent. Partial feedback is not
+misreported as a new due date. The saved timestamp is not an asserted execution
+date, and the snapshot does not claim to include the full local feedback history.
+
+Background navigation and privacy withdrawal clear feedback editors and history
+dialogs. Automatic voice-to-feedback writes, correction/retraction workflows,
+model pagination of feedback history, and the full visit/rehabilitation lifecycle
+remain future increments. No software test establishes clinical effectiveness.
