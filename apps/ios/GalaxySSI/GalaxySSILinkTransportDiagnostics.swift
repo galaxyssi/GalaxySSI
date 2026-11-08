@@ -8,6 +8,7 @@ enum GalaxySSILinkDiagnosticKind: String, Codable, CaseIterable {
   case duplicateReceipt = "duplicate_receipt"
   case oldCounter = "old_counter"
   case decryptFailure = "decrypt_failure"
+  case decryptDeferred = "decrypt_deferred"
   case chunkDuplicate = "chunk_duplicate"
   case fragmentRejected = "fragment_rejected"
 

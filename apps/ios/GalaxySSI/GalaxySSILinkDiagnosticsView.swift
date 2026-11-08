@@ -154,6 +154,8 @@ private extension GalaxySSILinkDiagnosticKind {
       return t("protocol_event_old_counter", "Old Counter", language: language)
     case .decryptFailure:
       return t("protocol_event_decrypt_failure", "Decrypt Failure", language: language)
+    case .decryptDeferred:
+      return t("protocol_event_decrypt_deferred", "Repeated decryption deferred", language: language)
     case .chunkDuplicate:
       return t("protocol_event_chunk_duplicate", "Chunk Duplicate", language: language)
     case .fragmentRejected:
@@ -167,7 +169,7 @@ private extension GalaxySSILinkDiagnosticKind {
       return "arrow.clockwise"
     case .duplicateMessage, .duplicateReceipt, .chunkDuplicate:
       return "doc.on.doc"
-    case .oldCounter:
+    case .oldCounter, .decryptDeferred:
       return "shield"
     case .decryptFailure, .fragmentRejected:
       return "exclamationmark.triangle"
@@ -180,7 +182,7 @@ private extension GalaxySSILinkDiagnosticKind {
       return .blue
     case .duplicateMessage, .duplicateReceipt, .chunkDuplicate:
       return .orange
-    case .oldCounter:
+    case .oldCounter, .decryptDeferred:
       return .purple
     case .decryptFailure, .fragmentRejected:
       return .red

@@ -3429,6 +3429,12 @@ final class MessageCoordinator: ObservableObject {
           UIApplication.shared.applicationState == .active else { throw CancellationError() }
   }
 
+  private func pairedSignalResult(_ wire: [String: Any], authenticationRef: String?) -> GalaxySSISignalIngressResult {
+    if let authenticationRef { return signalEngine.decryptAuthenticated(wire, key: authenticationRef) }
+    if let payload = signalEngine.decrypt(wire) { return .decoded(payload) }
+    return .failed(nil)
+  }
+
   private func sweepDesktopResultReceipts(now: Int64) async {
     for work in desktopResultRecovery.receipts.due(nowMillis: now) {
       guard !Task.isCancelled else { return }
@@ -13361,7 +13367,7 @@ final class MessageCoordinator: ObservableObject {
       )
       return
     }
-    handlePhoneContactCiphertext(object, localGalaxySSIId: localGalaxySSIId)
+    handlePhoneContactCiphertext(object, topic: topic, localGalaxySSIId: localGalaxySSIId)
   }
 
   @discardableResult
@@ -13405,6 +13411,7 @@ final class MessageCoordinator: ObservableObject {
 
   private func handlePhoneContactCiphertext(
     _ wire: [String: Any],
+    topic: String,
     localGalaxySSIId: String
   ) {
     let senderId = wire.string("from")
@@ -13416,12 +13423,35 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     let replayDigest = ciphertextReplayDigest(for: wire)
+    let authenticationRef = contact.opaquePhoneRoutes.flatMap { routes in
+      GalaxySSISignalDecryptBackoff.relationshipKey(wire, routes: routes, topic: topic,
+        senderNames: [senderId], receiverName: localGalaxySSIId, ciphertextDigest: replayDigest)
+    }
+    if let authenticationRef, let proof = deliveryStore.authenticatedCiphertextProof(
+      digest: replayDigest, authenticationRef: authenticationRef) {
+      if proof.receiptRequired { publishPhoneContactReceipt(contact: contact, receivedMessageId: proof.messageId) }
+      return
+    }
     if !replayDigest.isEmpty, let known = deliveryStore.messageForCiphertext(digest: replayDigest),
-       known.contactReminder == true {
+       known.contactReminder == true, known.authenticationRef == nil {
       if known.receiptRequired { publishPhoneContactReceipt(contact: contact, receivedMessageId: known.messageId) }
       return
     }
-    guard let envelope = signalEngine.decrypt(wire) else {
+    let envelope: [String: Any]
+    switch pairedSignalResult(wire, authenticationRef: authenticationRef) {
+    case .decoded(let payload):
+      envelope = payload
+    case .deferred(let report):
+      if report {
+        recordLinkDiagnostic(.decryptDeferred, link: nil, topic: topic,
+          messageIdentity: replayDigest, detailCode: "ciphertext_cooldown")
+      }
+      return
+    case .failed(let reason):
+      if let reason {
+        recordLinkDiagnostic(.decryptFailure, link: nil, topic: topic,
+          messageIdentity: replayDigest, detailCode: reason.rawValue)
+      }
       let nowMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
       guard peerSessionRecoveryGate.begin(contactId: contact.id, nowMillis: nowMillis) else {
         return
@@ -13445,7 +13475,8 @@ final class MessageCoordinator: ObservableObject {
     let messageId = payload.string("message_id")
     if payload.string("type") == GalaxySSIContactReminderEnvelope.type {
       guard !messageId.isBlank, receiveContactReminder(payload, authenticatedContact: contact) else { return }
-      try? deliveryStore.bindCiphertext(digest: replayDigest, messageId: messageId, receiptRequired: true, contactReminder: true)
+      try? deliveryStore.bindCiphertext(digest: replayDigest, messageId: messageId, receiptRequired: true,
+        contactReminder: true, authenticationRef: authenticationRef)
       publishPhoneContactReceipt(contact: contact, receivedMessageId: messageId)
       return
     }
@@ -13471,7 +13502,8 @@ final class MessageCoordinator: ObservableObject {
         try? deliveryStore.bindCiphertext(
           digest: replayDigest,
           messageId: messageId,
-          receiptRequired: true
+          receiptRequired: true,
+          authenticationRef: authenticationRef
         )
       }
       publishPhoneContactReceipt(contact: contact, receivedMessageId: messageId)
@@ -13927,25 +13959,47 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     var appPayload: [String: Any]
+    var authenticationRef: String? = nil
     if object.string("scheme") == "signal" {
+      let replayDigest = ciphertextReplayDigest(for: object)
+      let receiverName = allowStage && link?.paired == true ? signalEngine.identity.name : ""
+      if allowStage, let link, link.paired {
+        authenticationRef = GalaxySSISignalDecryptBackoff.relationshipKey(object, routes: link.routes, topic: topic,
+          senderNames: [link.desktopId, link.signalName], receiverName: receiverName, ciphertextDigest: replayDigest)
+      }
+      if let authenticationRef, let proof = deliveryStore.authenticatedCiphertextProof(
+        digest: replayDigest, authenticationRef: authenticationRef) {
+        if proof.receiptRequired { publishInboundReceipt(link: link, receivedMessageId: proof.messageId) }
+        recordLinkDiagnostic(.encryptedReplay, link: link, topic: topic, messageIdentity: proof.messageId,
+          detailCode: "authenticated_storage_proof")
+        return
+      }
       if allowStage, let link, link.paired, object.string("from") == link.desktopId,
-         object.string("to") == signalEngine.identity.name,
-         let known = deliveryStore.messageForCiphertext(digest: ciphertextReplayDigest(for: object)),
-         known.contactReminder == true {
+         object.string("to") == receiverName,
+         let known = deliveryStore.messageForCiphertext(digest: replayDigest),
+         known.contactReminder == true, known.authenticationRef == nil {
         if known.receiptRequired { publishInboundReceipt(link: link, receivedMessageId: known.messageId) }
         return
       }
-      guard let unwrapped = signalEngine.decrypt(object) else {
+      switch pairedSignalResult(object, authenticationRef: authenticationRef) {
+      case .decoded(let unwrapped):
+        appPayload = unwrapped
+      case .deferred(let report):
+        if report {
+          recordLinkDiagnostic(.decryptDeferred, link: link, topic: topic,
+            messageIdentity: replayDigest, detailCode: "ciphertext_cooldown")
+        }
+        return
+      case .failed(let reason):
         recordLinkDiagnostic(
           .decryptFailure,
           link: link,
           topic: topic,
-          messageIdentity: object.string("message_id").ifBlank(ciphertextReplayDigest(for: object)),
-          detailCode: "signal_decrypt_failed"
+          messageIdentity: object.string("message_id").ifBlank(replayDigest),
+          detailCode: reason?.rawValue ?? "signal_decrypt_failed"
         )
         return
       }
-      appPayload = unwrapped
     } else if let envelope = object.dictionary("envelope") {
       guard let unwrapped = GalaxySSILinkProtocol.unwrapEnvelope(envelope) else {
         recordLinkDiagnostic(
@@ -13970,7 +14024,7 @@ final class MessageCoordinator: ObservableObject {
       let id = appPayload.string("message_id")
       guard !id.isBlank, receiveContactReminder(appPayload, authenticatedContact: contact) else { return }
       try? deliveryStore.bindCiphertext(digest: ciphertextReplayDigest(for: object), messageId: id,
-        receiptRequired: true, contactReminder: true)
+        receiptRequired: true, contactReminder: true, authenticationRef: authenticationRef)
       publishInboundReceipt(link: link, receivedMessageId: id)
       return
     }
@@ -14228,7 +14282,8 @@ final class MessageCoordinator: ObservableObject {
           try? deliveryStore.bindCiphertext(
             digest: digest,
             messageId: messageId,
-            receiptRequired: appPayload.string("type") != "delivery_ack"
+            receiptRequired: appPayload.string("type") != "delivery_ack",
+            authenticationRef: authenticationRef
           )
         }
         publishInboundReceipt(link: link, receivedMessageId: messageId)

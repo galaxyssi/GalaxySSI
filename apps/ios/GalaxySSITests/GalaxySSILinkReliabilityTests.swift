@@ -131,6 +131,81 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
     XCTAssertTrue(window.acquire(topic: "a", messageId: "message-2", now: 130))
   }
 
+  func testSignalDecryptBackoffUsesBoundedMonotonicWindowsAndCountsDeferrals() {
+    var now: TimeInterval = 100
+    let cache = GalaxySSISignalDecryptBackoff(capacity: 2, clock: { now })
+    XCTAssertNil(cache.deferral("first"))
+    for delay in [2.0, 4.0, 8.0, 16.0, 30.0, 30.0] {
+      cache.failed("first", reason: .invalidMessage)
+      XCTAssertEqual(cache.deferral("first"), true)
+      XCTAssertEqual(cache.deferral("first"), false)
+      now += delay - 0.01
+      XCTAssertEqual(cache.deferral("first"), false)
+      now += 0.02
+      XCTAssertNil(cache.deferral("first"))
+    }
+    XCTAssertEqual(cache.snapshot().failures, 6)
+    XCTAssertEqual(cache.snapshot().deferred, 18)
+    now += 300
+    cache.failed("first", reason: .noSession)
+    now += 2.01
+    XCTAssertNil(cache.deferral("first"))
+    cache.failed("second", reason: .duplicateMessage)
+    cache.failed("third", reason: .duplicateMessage)
+    XCTAssertEqual(cache.snapshot().tracked, 2)
+    cache.succeeded("second")
+    XCTAssertNil(cache.deferral("second"))
+    XCTAssertEqual(cache.snapshot().lastFailure, .duplicateMessage)
+  }
+
+  func testSignalBackoffKeyIsBoundToEndpointsDeviceCiphertextAndPairingKey() throws {
+    var routes = GalaxySSILinkRoutes(clientRouteId: "route", linkSecret: Data(repeating: 1, count: 32).base64URLEncodedString(),
+      localFingerprint: String(repeating: "a", count: 64), remoteFingerprint: String(repeating: "b", count: 64))
+    let wire: [String: Any] = ["scheme": "signal", "from": "desktop", "to": "phone", "body": "AQID", "device_id": 1]
+    func key(_ value: [String: Any], topic: String? = nil) -> String? {
+      GalaxySSISignalDecryptBackoff.relationshipKey(value, routes: routes, topic: topic ?? routes.downTopic,
+        senderNames: ["desktop"], receiverName: "phone")
+    }
+    let original = try XCTUnwrap(key(wire))
+    XCTAssertNil(key(wire, topic: routes.upTopic))
+    var changed = wire
+    changed["from"] = "another-desktop"
+    XCTAssertNil(key(changed))
+    changed = wire
+    changed["to"] = "another-phone"
+    XCTAssertNil(key(changed))
+    changed = wire
+    changed["device_id"] = 2
+    XCTAssertNotEqual(key(changed), original)
+    changed = wire
+    changed["body"] = "AQIE"
+    XCTAssertNotEqual(key(changed), original)
+    let previousTopic = routes.downTopic
+    routes.linkSecret = Data(repeating: 2, count: 32).base64URLEncodedString()
+    XCTAssertNil(key(wire, topic: previousTopic))
+    XCTAssertNotEqual(key(wire), original)
+  }
+
+  func testScopedCiphertextReplayRequiresCommittedStorageAndSamePairing() throws {
+    let fixture = try ChunkFixture()
+    let journal = GalaxySSIChatHistoryDatabase(fileURL: fixture.url, secrets: fixture.secrets)
+    let defaults = UserDefaults(suiteName: "scoped-replay-\(UUID())")!
+    let store = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    try fixture.execute("CREATE TRIGGER reject_inbox BEFORE UPDATE ON link_delivery_state BEGIN SELECT RAISE(ABORT,'forced'); END")
+    XCTAssertEqual(store.stageIncoming(messageId: "message", payload: "wire"), .invalid)
+    XCTAssertTrue(store.pendingIncoming().isEmpty)
+    XCTAssertThrowsError(try store.bindCiphertext(digest: "ciphertext", messageId: "message",
+      receiptRequired: true, authenticationRef: "pairing"))
+    XCTAssertNil(store.authenticatedCiphertextProof(digest: "ciphertext", authenticationRef: "pairing"))
+    try fixture.execute("DROP TRIGGER reject_inbox")
+    XCTAssertEqual(store.stageIncoming(messageId: "message", payload: "wire"), .staged)
+    try store.bindCiphertext(digest: "ciphertext", messageId: "message", receiptRequired: true, authenticationRef: "pairing")
+    let reopened = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    XCTAssertEqual(reopened.authenticatedCiphertextProof(digest: "ciphertext", authenticationRef: "pairing")?.messageId, "message")
+    XCTAssertNil(reopened.authenticatedCiphertextProof(digest: "ciphertext", authenticationRef: "rotated"))
+    XCTAssertNil(reopened.authenticatedCiphertextProof(digest: "changed", authenticationRef: "pairing"))
+  }
+
   func testReceiptCreditDelayDoesNotModifyDurableRetryBudget() throws {
     let store = makeDeliveryStore()
     let now = Date(timeIntervalSince1970: 1_000)

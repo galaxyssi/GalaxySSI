@@ -140,6 +140,7 @@ struct KnownLinkCiphertext: Codable, Equatable {
   var receiptRequired: Bool
   var createdAt: Date
   var contactReminder: Bool? = nil
+  var authenticationRef: String? = nil
 }
 
 enum IncomingStageResult: Equatable {
@@ -977,7 +978,7 @@ final class GalaxySSILinkDeliveryStore {
   }
 
   func stageIncoming(messageId: String, payload: String, now: Date = Date()) -> IncomingStageResult {
-    guard !messageId.isEmpty, !payload.isEmpty else { return .invalid }
+    guard journalHealthy, !messageId.isEmpty, !payload.isEmpty else { return .invalid }
     prune(now: now)
     if state.completedInboxIds.contains(messageId) {
       return .completed
@@ -985,13 +986,17 @@ final class GalaxySSILinkDeliveryStore {
     if state.pendingIncoming[messageId] != nil {
       return .pending
     }
+    let previous = state.pendingIncoming
     state.pendingIncoming[messageId] = PendingIncomingLinkMessage(
       messageId: messageId,
       payload: payload,
       createdAt: now
     )
     trimPendingIncoming()
-    save()
+    guard state.pendingIncoming[messageId] != nil, save() else {
+      state.pendingIncoming = previous
+      return .invalid
+    }
     return .staged
   }
 
@@ -1012,20 +1017,34 @@ final class GalaxySSILinkDeliveryStore {
   }
 
   func bindCiphertext(digest: String, messageId: String, receiptRequired: Bool,
-                      contactReminder: Bool? = nil, now: Date = Date()) throws {
+                      contactReminder: Bool? = nil, authenticationRef: String? = nil, now: Date = Date()) throws {
     guard !digest.isEmpty, !messageId.isEmpty else { return }
     if let existing = state.ciphertextBindings[digest],
        existing.messageId != messageId {
       throw GalaxySSIError.invalidPayload("ciphertext is already bound to another message.")
     }
+    let previous = state.ciphertextBindings
     state.ciphertextBindings[digest] = KnownLinkCiphertext(
       messageId: messageId,
       receiptRequired: receiptRequired,
       createdAt: state.ciphertextBindings[digest]?.createdAt ?? now,
-      contactReminder: contactReminder
+      contactReminder: contactReminder,
+      authenticationRef: authenticationRef
     )
     trimCiphertextBindings(now: now)
-    save()
+    guard save() else {
+      state.ciphertextBindings = previous
+      throw GalaxySSIError.invalidPayload("Ciphertext receipt binding could not be saved.")
+    }
+  }
+
+  func authenticatedCiphertextProof(digest: String, authenticationRef: String, now: Date = Date()) -> KnownLinkCiphertext? {
+    guard journalHealthy, let binding = state.ciphertextBindings[digest],
+          binding.authenticationRef == authenticationRef,
+          binding.createdAt >= now.addingTimeInterval(-maximumPendingAge),
+          binding.contactReminder == true || state.pendingIncoming[binding.messageId] != nil ||
+            state.completedInboxIds.contains(binding.messageId) else { return nil }
+    return binding
   }
 
   func messageForCiphertext(digest: String, now: Date = Date()) -> KnownLinkCiphertext? {

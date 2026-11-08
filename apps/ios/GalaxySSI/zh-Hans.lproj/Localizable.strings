@@ -3761,6 +3761,7 @@
 "protocol_event_duplicate_receipt" = "已忽略重复回执";
 "protocol_event_old_counter" = "已拒绝旧 Signal 计数器";
 "protocol_event_decrypt_failure" = "Signal 解密失败";
+"protocol_event_decrypt_deferred" = "已暂缓重复解密";
 "protocol_event_chunk_duplicate" = "已拒绝冲突的重复分片";
 "protocol_event_fragment_rejected" = "已拒绝分片传输";
 "protocol_badge_online" = "在线";

@@ -8,6 +8,108 @@ struct GalaxySSISignalIdentity {
   let bundle: [String: Any]?
 }
 
+enum GalaxySSISignalDecryptFailure: String, Equatable {
+  case invalidMessage = "signal_invalid_message"
+  case duplicateMessage = "signal_duplicate_message"
+  case noSession = "signal_no_session"
+}
+
+enum GalaxySSISignalIngressResult {
+  case decoded([String: Any])
+  case deferred(report: Bool)
+  case failed(GalaxySSISignalDecryptFailure?)
+}
+
+struct GalaxySSISignalDecryptDeferred: Error {}
+
+final class GalaxySSISignalDecryptBackoff {
+  struct Snapshot: Equatable {
+    var tracked: Int
+    var failures: Int
+    var deferred: Int
+    var lastFailure: GalaxySSISignalDecryptFailure?
+  }
+
+  private struct Entry {
+    var attempts: Int
+    var until: TimeInterval
+    var reported = false
+  }
+  private let lock = NSLock()
+  private let clock: () -> TimeInterval
+  private let capacity: Int
+  private var entries: [String: Entry] = [:]
+  private var order: [String] = []
+  private var failures = 0
+  private var deferred = 0
+  private var lastFailure: GalaxySSISignalDecryptFailure?
+
+  init(capacity: Int = 1_024, clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
+    precondition((1...1_024).contains(capacity))
+    self.capacity = capacity
+    self.clock = clock
+  }
+
+  // A nil result means the ciphertext can be tried now.
+  func deferral(_ key: String) -> Bool? {
+    lock.lock()
+    defer { lock.unlock() }
+    guard var entry = entries[key], clock() < entry.until else { return nil }
+    deferred += 1
+    let report = !entry.reported
+    entry.reported = true
+    entries[key] = entry
+    return report
+  }
+
+  func failed(_ key: String, reason: GalaxySSISignalDecryptFailure) {
+    lock.lock()
+    defer { lock.unlock() }
+    let now = clock()
+    let previous = entries[key]
+    let attempts = previous.flatMap { now - $0.until < 300 ? min(5, $0.attempts + 1) : nil } ?? 1
+    entries[key] = Entry(attempts: attempts, until: now + min(TimeInterval(1 << attempts), 30))
+    order.removeAll { $0 == key }
+    order.append(key)
+    if order.count > capacity { entries.removeValue(forKey: order.removeFirst()) }
+    failures += 1
+    lastFailure = reason
+  }
+
+  func succeeded(_ key: String) {
+    lock.lock()
+    defer { lock.unlock() }
+    if entries.removeValue(forKey: key) != nil { order.removeAll { $0 == key } }
+  }
+
+  func snapshot() -> Snapshot {
+    lock.lock()
+    defer { lock.unlock() }
+    return Snapshot(tracked: entries.count, failures: failures, deferred: deferred, lastFailure: lastFailure)
+  }
+
+  static func relationshipKey(_ envelope: [String: Any], routes: GalaxySSILinkRoutes, topic: String,
+                              senderNames: Set<String>, receiverName: String, ciphertextDigest: String? = nil) -> String? {
+    guard !topic.isEmpty, routes.receiveWindow.contains(topic), !routes.linkSecret.isBlank,
+          !routes.localFingerprint.isBlank, !routes.remoteFingerprint.isBlank, !receiverName.isBlank,
+          let sender = envelope["from"] as? String, !sender.isBlank, senderNames.contains(sender),
+          envelope.string("to") == receiverName else { return nil }
+    let scope = hash([routes.clientRouteId, routes.localFingerprint, routes.remoteFingerprint, routes.linkSecret])
+    return key(envelope, scope: scope, ciphertextDigest: ciphertextDigest)
+  }
+
+  static func key(_ envelope: [String: Any], scope: String, ciphertextDigest: String? = nil) -> String? {
+    guard envelope.string("scheme") == "signal", let body = envelope["body"] as? String, !body.isEmpty else { return nil }
+    return hash([scope, envelope.string("device_id").ifBlank("1"),
+      ciphertextDigest ?? GalaxySSILinkCiphertextReplayPolicy.digest(wire: envelope)])
+  }
+
+  private static func hash(_ fields: [String]) -> String {
+    let encoded = fields.map { "\($0.utf8.count):\($0)" }.joined()
+    return Data(SHA256.hash(data: Data(encoded.utf8))).hexString()
+  }
+}
+
 #if canImport(LibSignalClient)
 import LibSignalClient
 
@@ -19,6 +121,7 @@ final class GalaxySSISignalEngine {
   private let context = GalaxySSISignalStoreContext()
   private let localName: String
   private let localDeviceId: UInt32 = 1
+  let inboundDecryptBackoff = GalaxySSISignalDecryptBackoff()
 
   init(
     profileName: String,
@@ -306,6 +409,20 @@ final class GalaxySSISignalEngine {
     return try? store.transaction { _ in try decryptPayload(envelope) }
   }
 
+  func decryptAuthenticated(_ envelope: [String: Any], key: String) -> GalaxySSISignalIngressResult {
+    guard journal == nil else { return .failed(nil) }
+    if let report = inboundDecryptBackoff.deferral(key) { return .deferred(report: report) }
+    do {
+      let payload = try store.transaction { _ in try decryptPayload(envelope) }
+      inboundDecryptBackoff.succeeded(key)
+      return .decoded(payload)
+    } catch {
+      let reason = Self.retryableCiphertextFailure(error)
+      if let reason { inboundDecryptBackoff.failed(key, reason: reason) }
+      return .failed(reason)
+    }
+  }
+
   // The coordinator must invoke this under MqttPeerRoutes.withCurrent after pair-AEAD authentication.
   func decryptAndStore(_ envelope: [String: Any], identity: MqttBusinessIdentity,
                        remoteName: String, ingressBroker: String) throws -> MqttBusinessInbox.Accepted {
@@ -328,7 +445,18 @@ final class GalaxySSISignalEngine {
         }
         return replay
       }
-      let decrypted = try decryptPayload(envelope)
+      let backoffKey = GalaxySSISignalDecryptBackoff.key(envelope, scope: identity.binding)
+      if let backoffKey, inboundDecryptBackoff.deferral(backoffKey) != nil { throw GalaxySSISignalDecryptDeferred() }
+      let decrypted: [String: Any]
+      do {
+        decrypted = try decryptPayload(envelope)
+      } catch {
+        if let backoffKey, let reason = Self.retryableCiphertextFailure(error) {
+          inboundDecryptBackoff.failed(backoffKey, reason: reason)
+        }
+        throw error
+      }
+      if let backoffKey { inboundDecryptBackoff.succeeded(backoffKey) }
       let payload: [String: Any]
       if decrypted["protocol"] as? String == GalaxySSILinkProtocol.name, decrypted["payload"] != nil {
         guard decrypted["source_id"] as? String == remoteName,
@@ -357,6 +485,16 @@ final class GalaxySSISignalEngine {
     let id = try MqttRouteProtocol.integer(envelope, "device_id")
     guard id > 0, id <= Int64(UInt32.max) else { throw MqttRouteError.invalidPayload }
     return UInt32(id)
+  }
+
+  static func retryableCiphertextFailure(_ error: Error) -> GalaxySSISignalDecryptFailure? {
+    guard let signal = error as? SignalError else { return nil }
+    switch signal {
+    case .invalidMessage: return .invalidMessage
+    case .duplicatedMessage: return .duplicateMessage
+    case .sessionNotFound: return .noSession
+    default: return nil
+    }
   }
 
   private func decryptPayload(_ envelope: [String: Any]) throws -> [String: Any] {
@@ -445,6 +583,7 @@ final class GalaxySSISignalEngine {
   func prepareFirstSend(identity: MqttBusinessIdentity, messageID: String, validatedNetwork: Bool,
                         now: Date = Date()) throws -> MqttBusinessOutbox.Entry? { throw MqttRouteError.invalidPayload }
   func decrypt(_ envelope: [String: Any]) -> [String: Any]? { nil }
+  func decryptAuthenticated(_ envelope: [String: Any], key: String) -> GalaxySSISignalIngressResult { .failed(nil) }
 }
 #endif
 
