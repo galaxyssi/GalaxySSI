@@ -4714,11 +4714,35 @@ async function revealWorkspace() {
 
 async function deleteConversation() {
   if (!conversationTasks().length) return newTask();
-  if (!window.confirm(t("Delete this conversation and its task history?"))) return;
-  await window.galaxyssi.deleteDesktopConversation(state.currentConversationId);
-  newTask();
-  await refreshTasks(true);
+  return requestConversationDeletion([state.currentConversationId],
+    t("Delete this conversation and its task history?"));
+}
+
+let conversationDeleteConfirmation;
+async function requestConversationDeletion(conversationIds, message) {
+  if (state.conversationDeletionPromise || state.deletingConversationIds.size) return;
+  const ids = [...new Set(conversationIds)].filter(Boolean);
+  if (!ids.length) return;
   $("#workspaceMenu").hidden = true;
+  $("#conversationListMenu").hidden = true;
+  state.openConversationMenuId = "";
+  renderHistory();
+  conversationDeleteConfirmation ||= window.GalaxySSIConversationConfirmation.create({
+    document, dialog: $("#conversationDeleteDialog"), message: $("#conversationDeleteMessage"),
+    confirmButton: $("#confirmConversationDeleteButton"), cancelButton: $("#cancelConversationDeleteButton"),
+    fallbackFocus: () => elements.prompt
+  });
+  let operation;
+  try {
+    if (!await conversationDeleteConfirmation.ask(message)) return;
+    operation = deleteConversationIds(ids);
+    state.conversationDeletionPromise = operation;
+    await operation;
+  } catch (error) {
+    showToast(`${t("Some conversations could not be deleted.")} ${error.message || error}`);
+  } finally {
+    if (operation && state.conversationDeletionPromise === operation) state.conversationDeletionPromise = null;
+  }
 }
 
 function setConversationSelectionMode(enabled) {
@@ -4735,51 +4759,58 @@ async function deleteConversationIds(conversationIds) {
   const groupsById = new Map(unifiedConversationGroups().map((group) => [group.id, group]));
   state.deletingConversationIds = new Set(ids);
   renderConversationSelectionBar();
-  const results = await Promise.allSettled(ids.map(async (id) => {
-    const group = groupsById.get(id);
-    if (!group) throw new Error(`Conversation is no longer available: ${id}`);
-    if (group.kind === "evolution") {
-      state.hiddenEvolutionConversationIds.add(id);
-      return { kind: group.kind, hidden: true };
-    }
-    const response = group.kind === "device"
-      ? await window.galaxyssi.deletePeerConversation(id)
-      : await window.galaxyssi.deleteDesktopConversation(id);
-    const deletedCount = group.kind === "device"
-      ? Number(response?.deleted_messages || 0)
-      : Array.isArray(response?.deleted_task_ids) ? response.deleted_task_ids.length : 0;
-    if (deletedCount <= 0) throw new Error(`Conversation was not deleted: ${id}`);
-    return { kind: group.kind, deletedCount };
-  }));
-  const failedIds = [];
-  ids.forEach((id, index) => {
-    if (results[index]?.status !== "fulfilled") {
-      failedIds.push(id);
-      return;
-    }
-    state.pinnedConversationIds.delete(id);
-    if (groupsById.get(id)?.kind === "device") {
-      state.peerMessages = state.peerMessages.filter((message) => message.client_route_id !== id);
-      if (state.activePeerRouteId === id) {
-        state.activePeerRouteId = "";
-        document.querySelector("#agentApp").classList.remove("peer-mode");
-        newTask();
+  try {
+    const results = await Promise.allSettled(ids.map(async (id) => {
+      const group = groupsById.get(id);
+      if (!group) throw new Error(`Conversation is no longer available: ${id}`);
+      if (group.kind === "evolution") {
+        state.hiddenEvolutionConversationIds.add(id);
+        return { kind: group.kind, hidden: true };
       }
+      const response = group.kind === "device"
+        ? await window.galaxyssi.deletePeerConversation(id)
+        : await window.galaxyssi.deleteDesktopConversation(id);
+      const deletedCount = group.kind === "device"
+        ? Number(response?.deleted_messages || 0)
+        : Array.isArray(response?.deleted_task_ids) ? response.deleted_task_ids.length : 0;
+      if (deletedCount <= 0) throw new Error(`Conversation was not deleted: ${id}`);
+      return { kind: group.kind, deletedCount };
+    }));
+    const failedIds = [];
+    const deletedIds = [];
+    ids.forEach((id, index) => {
+      if (results[index]?.status !== "fulfilled") {
+        failedIds.push(id);
+        return;
+      }
+      deletedIds.push(id);
+      state.pinnedConversationIds.delete(id);
+      if (groupsById.get(id)?.kind === "device") {
+        state.peerMessages = state.peerMessages.filter((message) => message.client_route_id !== id);
+        if (state.activePeerRouteId === id) {
+          state.activePeerRouteId = "";
+          document.querySelector("#agentApp").classList.remove("peer-mode");
+          newTask();
+        }
+      }
+    });
+    persistPinnedConversations();
+    persistHiddenEvolutionConversations();
+    if (deletedIds.includes(state.currentConversationId)) newTask();
+    state.selectedConversationIds = new Set(failedIds);
+    state.deletingConversationIds.clear();
+    if (failedIds.length) {
+      state.conversationSelectionMode = true;
+      renderHistory();
+      showToast(t("Some conversations could not be deleted."));
+    } else {
+      setConversationSelectionMode(false);
     }
-  });
-  persistPinnedConversations();
-  persistHiddenEvolutionConversations();
-  if (ids.includes(state.currentConversationId)) newTask();
-  state.selectedConversationIds = new Set(failedIds);
-  state.deletingConversationIds.clear();
-  if (failedIds.length) {
-    state.conversationSelectionMode = true;
-    renderHistory();
-    showToast(t("Some conversations could not be deleted."));
-  } else {
-    setConversationSelectionMode(false);
+    await Promise.all([refreshTasks(true), refreshPeerMessages()]);
+  } finally {
+    state.deletingConversationIds.clear();
+    renderConversationSelectionBar();
   }
-  await Promise.all([refreshTasks(true), refreshPeerMessages()]);
 }
 
 function updatePeerVoiceHoldUi(cancelPending = state.peerVoiceCancelPending) {
@@ -5245,7 +5276,7 @@ function bindEvents() {
     const deleteButton = event.target.closest("[data-delete-conversation]");
     if (deleteButton) {
       const id = deleteButton.dataset.deleteConversation;
-      if (window.confirm(t("Delete this conversation? The contact or paired device will remain."))) deleteConversationIds([id]);
+      void requestConversationDeletion([id], t("Delete this conversation? The contact or paired device will remain."));
       return;
     }
     const peer = event.target.closest("[data-peer-route]");
@@ -5748,16 +5779,8 @@ function bindEvents() {
     renderHistory();
   });
   $("#deleteSelectedConversationsButton").addEventListener("click", async () => {
-    if (!state.selectedConversationIds.size || state.conversationDeletionPromise) return;
-    if (window.confirm(t("Delete the selected conversations? Contacts and paired devices will remain."))) {
-      const operation = deleteConversationIds([...state.selectedConversationIds]);
-      state.conversationDeletionPromise = operation;
-      try {
-        await operation;
-      } finally {
-        if (state.conversationDeletionPromise === operation) state.conversationDeletionPromise = null;
-      }
-    }
+    await requestConversationDeletion([...state.selectedConversationIds],
+      t("Delete the selected conversations? Contacts and paired devices will remain."));
   });
   $("#cancelRunningTask").addEventListener("click", cancelRunningTask);
   $("#revealWorkspaceButton").addEventListener("click", revealWorkspace);
