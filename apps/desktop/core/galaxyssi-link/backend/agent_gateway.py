@@ -1540,6 +1540,26 @@ def provider_profile_catalog(
     )
 
 
+def agent_selection_snapshot() -> dict:
+    """Select delegates without probing endpoints or enumerating historical runs."""
+    rows = []
+    for spec in visible_agent_specs().values():
+        runtime = _agent_runtime_snapshot(spec.id)
+        if spec.id == "local-llm":
+            cfg = local_model_config()
+            ok = bool(cfg.get("url") and cfg.get("model")) or cfg.get("provider", "auto") == "auto"
+            status = "degraded" if ok else "needs_setup"
+        else:
+            ok, _ = _quick_agent_available(spec)
+            status = "ready" if ok else "needs_setup"
+        if ok and runtime.get("status") in {"busy", "ready", "degraded", "unavailable"}:
+            status = runtime["status"]
+            if status == "unavailable" and float(runtime.get("unavailable_until") or 0) <= time.time():
+                status = "degraded"
+        rows.append({"id": spec.id, "status": status})
+    return {"agents": rows}
+
+
 def connector_diagnostics(quick: bool = False) -> dict:
     agents = []
     for spec in visible_agent_specs().values():
@@ -1689,6 +1709,7 @@ def agent_status(spec: AgentSpec, quick: bool = False) -> dict:
 
 
 def _quick_agent_available(spec: AgentSpec) -> tuple[bool, str]:
+    from command_lookup import which
     if spec.id == "local-llm":
         return _local_model_available()
     if spec.id == "cloud-model":
@@ -1704,7 +1725,7 @@ def _quick_agent_available(spec: AgentSpec) -> tuple[bool, str]:
     if not command:
         return False, "No command"
     executable = command[0]
-    if Path(executable).is_file() or shutil.which(executable):
+    if Path(executable).is_file() or which(executable):
         return True, "Command detected"
     return False, f"{executable} not found"
 
@@ -1819,6 +1840,7 @@ def _apply_selected_agent_model(
 
 
 def _normalize_command(agent_id: str, command: list[str] | None) -> list[str] | None:
+    from command_lookup import which
     if not command:
         return command
     if agent_id == "hermes" and not any("{prompt}" in part for part in command):
@@ -1836,11 +1858,11 @@ def _normalize_command(agent_id: str, command: list[str] | None) -> list[str] | 
         "openclaw": "openclaw.cmd",
     }.get(agent_id)
     if preferred and command[0].lower() == preferred.removesuffix(".cmd"):
-        resolved = shutil.which(preferred)
+        resolved = which(preferred)
         if resolved:
             command[0] = resolved
     elif not os.path.isabs(command[0]):
-        resolved = shutil.which(command[0])
+        resolved = which(command[0])
         if resolved:
             command[0] = resolved
     return command
@@ -2466,6 +2488,26 @@ def _ask_cli_agent_locked(
 ) -> str:
     from agent_conversation_sessions import agent_conversation_sessions
 
+    if (spec.id == "codex" and progress_task_id and stream_user_output
+            and not restricted_workspace and not plan_only and not image_paths
+            and not codex_video_permissions and working_directory is None):
+        from agent_execution_harness import AgentExecutionPolicy, AgentTaskKind
+        from agent_task_manager import agent_task_manager
+        from desktop_codex_turn import native_chat_model
+
+        visible_task = agent_task_manager.get(progress_task_id)
+        runtime = cli_agent_runtime_config(spec.id, command)
+        selected_command = _apply_selected_agent_model(spec, command, agent_model_id)
+        model = native_chat_model(selected_command)
+        policy = AgentExecutionPolicy.from_public(visible_task.execution_policy) if visible_task else None
+        if (model and policy and policy.task_kind == AgentTaskKind.CHAT
+                and visible_task.source_message_id.startswith("desktop:")
+                and runtime["enabled"] and runtime["mode"] == "managed-app-server"):
+            return _run_managed_codex_chat(spec, selected_command, text, task_id=task_id,
+                progress_task_id=progress_task_id, conversation_id=conversation_id,
+                response_language=response_language, model=model, policy=policy,
+                reasoning_effort=agent_reasoning_effort)
+
     sessions = agent_conversation_sessions()
     binding = sessions.get(spec.id, conversation_id)
     has_native_session = (
@@ -2536,6 +2578,65 @@ def _ask_cli_agent_locked(
         **({"image_paths": image_paths} if image_paths else {}),
         **({"image_source_turns": image_source_turns} if image_source_turns else {}),
     )
+
+
+def _run_managed_codex_chat(spec, command, text, *, task_id, progress_task_id,
+                            conversation_id, response_language, model, policy, reasoning_effort):
+    from dataclasses import replace
+    from agent_execution_harness import AgentReasoningEffort
+    from agent_task_manager import agent_task_manager
+    from desktop_codex_turn import run_chat_turn
+    from mqtt_bridge import _codex_server, codex_task_callbacks, codex_task_callbacks_lock
+    from response_policy import sanitize_assistant_response
+    from task_workspace import task_workspace
+
+    visible_task = agent_task_manager.get(progress_task_id)
+    generation = visible_task.execution_generation
+    expected = agent_task_manager._execution_key(visible_task, generation)
+    if reasoning_effort:
+        policy = replace(policy, reasoning_effort=AgentReasoningEffort(reasoning_effort))
+    workspace = task_workspace(task_id, spec.id)
+    server = _codex_server(command[0], _agent_env(spec))
+    event_prefix = uuid.uuid4().hex
+    last_step = ""
+
+    def cancelled():
+        task = agent_task_manager.get(progress_task_id)
+        return (task is None or task.execution_generation != generation or task.cancel_requested
+                or task.pause_requested or task.storage_fenced
+                or task.status in {"completed", "cancelled", "failed", "timed_out", "paused"})
+
+    def register(run_id, callback):
+        with codex_task_callbacks_lock:
+            codex_task_callbacks[run_id] = callback
+
+    def unregister(run_id, callback):
+        with codex_task_callbacks_lock:
+            if codex_task_callbacks.get(run_id) is callback:
+                codex_task_callbacks.pop(run_id, None)
+
+    def on_event(event):
+        nonlocal last_step
+        delta = event.get("output_delta") or {}
+        if delta.get("user_visible") and delta.get("text"):
+            agent_task_manager.record_partial_result(progress_task_id,
+                sanitize_assistant_response(delta["text"]),
+                event_id=f"codex-managed:{event_prefix}:{delta.get('event_id')}", expected_execution=expected)
+        step = str(event.get("current_step") or "")
+        if step and step != last_step:
+            last_step = step
+            agent_task_manager.add_event(progress_task_id, "agent_progress", step, status="running",
+                metadata={"provider": "codex", "transport": "managed-app-server",
+                          "stage": event.get("desktop_stage", "progress"),
+                          "elapsed_ms": event.get("elapsed_ms")}, expected_execution=expected)
+
+    reply = run_chat_turn(server=server, register=register, unregister=unregister,
+        prompt=protect_agent_prompt(_styled_turn_prompt(spec, text, response_language)),
+        fresh_prompt=protect_agent_prompt(_compiled_cli_prompt(spec, text, task_id, conversation_id,
+                                                              response_language=response_language)),
+        conversation_id=conversation_id, cwd=str(workspace), model=model, policy=policy,
+        on_event=on_event, cancelled=cancelled)
+    return clean_agent_output(spec, reply, text)
 
 
 def _run_cli_agent_process(

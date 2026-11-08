@@ -1144,4 +1144,9 @@
 , "Codex generation completed; checking response": "Codex 已生成回复，正在完成检查"
 , "Response contract checked": "已检查回复交付要求"
 , "Received Codex's response": "已收到 Codex 的回复"
+, "Starting Codex turn": "正在开始 Codex 本轮对话"
+, "Codex is responding": "Codex 正在回复"
+, "Codex is working": "Codex 正在处理"
+, "Working": "正在处理"
+, "Working complete": "处理完成"
 }
