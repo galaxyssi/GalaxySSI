@@ -14346,16 +14346,18 @@ final class MessageCoordinator: ObservableObject {
         continue
 
       case .citationPreview(let preview):
-        if goalScope != nil { continue }
+        guard goalScope == nil, preview.requestId == requestId, accumulated.isEmpty else { continue }
+        let previewID = "agent-stream-preview-\(requestId)"
         if preview.text.isEmpty {
           if let current = incoming,
-             current.remoteMessageId.hasPrefix("agent-stream-preview-") {
+             current.remoteMessageId == previewID {
             _ = store.deleteMessage(current.id, contactId: destinationId)
             incoming = nil
           }
           continue
         }
         if let current = incoming {
+          guard current.remoteMessageId == previewID, current.content != preview.text else { continue }
           incoming = store.updateMessageContent(
             current.id,
             contactId: destinationId,
@@ -14366,7 +14368,7 @@ final class MessageCoordinator: ObservableObject {
           incoming = store.appendIncoming(
             preview.text,
             from: destinationId,
-            remoteMessageId: "agent-stream-preview-\(requestId)",
+            remoteMessageId: previewID,
             status: .sent,
             traceStage: "cloud_citation_preview",
             conversationId: outgoing.conversationId,

@@ -790,10 +790,16 @@ final class CloudConversationStreamEngineTests: XCTestCase {
       [.textDelta(.init(requestId: "answer", sequence: 1, text: text, receivedAtElapsedMs: 5)),
        .completed(.init(requestId: "answer", finishReason: "stop", completedAtElapsedMs: 6))]
     }
+    let checked = "This report does not establish the relationship [source](https://example.test/report).\n\n"
     let risky = "No authoritative records exist [source](https://example.test/report).\n\n"
     let corrected = "This record does not establish the relationship [source](https://example.test/report)."
+    let draft: [ModelStreamEvent] = [
+      .textDelta(.init(requestId: "answer", sequence: 1, text: checked, receivedAtElapsedMs: 4)),
+      .textDelta(.init(requestId: "answer", sequence: 2, text: risky, receivedAtElapsedMs: 5)),
+      .completed(.init(requestId: "answer", finishReason: "stop", completedAtElapsedMs: 6))
+    ]
     let stream = RecordingModelStreamClient(eventBatches: [
-      toolRound(index: 0, callId: "search", query: "report"), answer(risky), answer(corrected)
+      toolRound(index: 0, callId: "search", query: "report"), draft, answer(corrected)
     ])
     let engine = CloudConversationStreamEngine(streamClient: stream, toolExecutor: executor,
       disclosureStore: InMemoryAgentDataDisclosureStore())
@@ -805,10 +811,11 @@ final class CloudConversationStreamEngineTests: XCTestCase {
     XCTAssertNil(try object(repair.bodyJson)["tools"])
     XCTAssertTrue(repair.bodyJson.contains("unbounded_absence_of_evidence"))
     XCTAssertEqual(textDeltas(events).last?.text, corrected)
-    XCTAssertFalse(events.contains { event in
-      if case .citationPreview(let preview) = event { return preview.text.contains("No authoritative records exist") }
-      return false
-    })
+    let previews: [String] = events.compactMap {
+      if case .citationPreview(let preview) = $0 { return preview.text }
+      return nil
+    }
+    XCTAssertEqual(previews, [checked], "The verified draft stays visible until final delivery")
   }
 
   @MainActor

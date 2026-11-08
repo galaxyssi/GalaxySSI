@@ -150,6 +150,12 @@ struct AgentTranscriptExecutionProgress: Equatable {
           fallback: AgentProcessClockPolicy.startedAt(request: owned.startedAt, fallback: cached.startedAt))
         return Self(status: cached.status, startedAt: start, updatedAt: cached.updatedAt)
       }
+      if owned.status == .completed, let deliveredAt {
+        let progress = rebased(owned)
+        if deliveredAt >= progress.startedAt {
+          return Self(status: .completed, startedAt: progress.startedAt, updatedAt: deliveredAt)
+        }
+      }
       return rebased(owned)
     }
     guard let cached = cached.map(rebased) else {
@@ -161,7 +167,7 @@ struct AgentTranscriptExecutionProgress: Equatable {
       return Self(status: .completed, startedAt: cached.startedAt, updatedAt: deliveredAt)
     }
     if cached.status == .completed, let deliveredAt, deliveredAt >= cached.startedAt {
-      return Self(status: .completed, startedAt: cached.startedAt, updatedAt: min(cached.updatedAt, deliveredAt))
+      return Self(status: .completed, startedAt: cached.startedAt, updatedAt: deliveredAt)
     }
     return cached
   }
@@ -175,7 +181,12 @@ struct AgentTranscriptExecutionProgress: Equatable {
             return ["interim", "milestone", "partial", "cancelled", "failed", "blocked", "denied"]
               .contains(where: stage.contains)
           }) else { return nil }
-    return Int64(message.createdAt.timeIntervalSince1970 * 1_000)
+    let createdAt = Int64(message.createdAt.timeIntervalSince1970 * 1_000)
+    return message.deliveryTrace.lazy
+      .filter { $0.stage == "cloud_reply_received" || $0.stage == "delivered" }
+      .map { Int64($0.createdAt.timeIntervalSince1970 * 1_000) }
+      .filter { $0 >= createdAt }
+      .min() ?? createdAt
   }
 
   static func finalDeliveryTimes(_ messages: [ChatMessage]) -> [TurnKey: Int64] {

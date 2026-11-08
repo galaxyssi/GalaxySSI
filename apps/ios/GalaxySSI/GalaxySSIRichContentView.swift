@@ -57,7 +57,8 @@ struct GalaxySSIRichContentView: View {
   }
 
   var body: some View {
-    let artifactRevision = coordinator.artifactRevision
+    // Re-resolve artifacts without replacing the table, selection, and expansion subtree.
+    let _ = coordinator.artifactRevision
     let visibleContent = AgentMarkdownArtifactReferences.removingInternalLinks(content)
     let source = resolvedBlocks
     let blocks = source.map { coordinator.desktopArtifactStore.resolveBlock($0) }
@@ -127,7 +128,6 @@ struct GalaxySSIRichContentView: View {
         }
       }
     }
-    .id(artifactRevision)
     .environment(\.agentReplySpeechProse, speech)
     .environment(\.galaxySSIInterfaceLanguage, interfaceLanguage)
     .textSelection(.enabled)
@@ -477,6 +477,38 @@ private struct GalaxySSIRichSectionView: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     GalaxySSILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+private struct GalaxySSIRichTableRow: View, Equatable {
+  let values: [String]
+  let header: Bool
+  let columnCount: Int
+  let columnWidth: CGFloat
+  let rowIndex: Int
+
+  var body: some View {
+    let background = header ? Color.galaxySSISearchBackground :
+      (rowIndex.isMultiple(of: 2) ? Color.galaxySSISurface : Color.galaxySSISearchBackground.opacity(0.35))
+    HStack(spacing: 0) {
+      ForEach(0..<columnCount, id: \.self) { index in
+        let value = index < values.count ? values[index] : ""
+        let numeric = !header && Self.isNumeric(value)
+        Text(value)
+          .font(header ? .caption.weight(.semibold) : .caption)
+          .foregroundColor(.galaxySSITextPrimary)
+          .textSelection(.enabled)
+          .multilineTextAlignment(numeric ? .trailing : .leading)
+          .frame(width: columnWidth, alignment: numeric ? .trailing : .leading)
+          .padding(.horizontal, 8)
+          .padding(.vertical, 7)
+          .background(background)
+      }
+    }
+  }
+
+  static func isNumeric(_ value: String) -> Bool {
+    Double(value.replacingOccurrences(of: ",", with: "")) != nil
   }
 }
 
@@ -843,6 +875,7 @@ private struct GalaxySSIRichBlockView: View {
 
   private var tableBlock: some View {
     let columnCount = tableColumnCount
+    let columnWidth = tableColumnWidth(columnCount)
     let visibleRows = expandedTable ? block.rows : Array(block.rows.prefix(Self.visibleTableRows))
     return VStack(alignment: .leading, spacing: 6) {
       if !block.title.isEmpty {
@@ -853,10 +886,12 @@ private struct GalaxySSIRichBlockView: View {
       ScrollView(.horizontal, showsIndicators: true) {
         VStack(alignment: .leading, spacing: 0) {
           if !block.columns.isEmpty {
-            tableRow(block.columns, header: true, columnCount: columnCount, rowIndex: 0)
+            GalaxySSIRichTableRow(values: block.columns, header: true, columnCount: columnCount,
+              columnWidth: columnWidth, rowIndex: 0).equatable()
           }
           ForEach(Array(visibleRows.enumerated()), id: \.offset) { index, row in
-            tableRow(row, header: false, columnCount: columnCount, rowIndex: index)
+            GalaxySSIRichTableRow(values: row, header: false, columnCount: columnCount,
+              columnWidth: columnWidth, rowIndex: index).equatable()
           }
         }
         .overlay(
@@ -1149,7 +1184,7 @@ private struct GalaxySSIRichBlockView: View {
 
   private var chartBlock: some View {
     let hasNumbers = block.rows.contains { row in
-      row.dropFirst().contains { isNumeric($0) }
+      row.dropFirst().contains(where: GalaxySSIRichTableRow.isNumeric)
     }
     if hasNumbers {
       return AnyView(
@@ -1837,25 +1872,6 @@ private struct GalaxySSIRichBlockView: View {
     }
   }
 
-  @ViewBuilder
-  private func tableRow(_ values: [String], header: Bool, columnCount: Int, rowIndex: Int) -> some View {
-    let columnWidth = tableColumnWidth(columnCount)
-    HStack(spacing: 0) {
-      ForEach(0..<columnCount, id: \.self) { index in
-        let value = index < values.count ? values[index] : ""
-        Text(value)
-          .font(header ? .caption.weight(.semibold) : .caption)
-          .foregroundColor(.galaxySSITextPrimary)
-          .textSelection(.enabled)
-          .multilineTextAlignment(isNumeric(value) && !header ? .trailing : .leading)
-          .frame(width: columnWidth, alignment: isNumeric(value) && !header ? .trailing : .leading)
-          .padding(.horizontal, 8)
-          .padding(.vertical, 7)
-          .background(header ? Color.galaxySSISearchBackground : rowColor(rowIndex))
-      }
-    }
-  }
-
   private func tableColumnWidth(_ columnCount: Int) -> CGFloat {
     let available = max(0, UIScreen.main.bounds.width - 48)
     return min(max(available / CGFloat(max(columnCount, 1)), 120), 280)
@@ -2383,14 +2399,6 @@ private struct GalaxySSIRichBlockView: View {
     let denied = action.value == AgentPermissionChoice.denyAlways.wireValue ||
       action.value.contains("\"decision_scope\":\"\(AgentPermissionChoice.denyAlways.wireValue)\"")
     return !denied
-  }
-
-  private func rowColor(_ index: Int) -> Color {
-    index.isMultiple(of: 2) ? Color.galaxySSISurface : Color.galaxySSISearchBackground.opacity(0.35)
-  }
-
-  private func isNumeric(_ value: String) -> Bool {
-    Double(value.replacingOccurrences(of: ",", with: "")) != nil
   }
 
   private func firstNonEmpty(_ values: [String]) -> String {

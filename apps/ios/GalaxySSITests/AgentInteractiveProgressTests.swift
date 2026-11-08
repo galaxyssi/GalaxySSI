@@ -175,6 +175,23 @@ final class AgentInteractiveProgressTests: XCTestCase {
     XCTAssertEqual(snapshots.count, 2)
   }
 
+  func testStreamingReplyClockUsesFinalDeliveryEventRatherThanPreviewCreation() {
+    let start: Int64 = 1_000
+    let stream = ChatMessage(contactId: "hermes", content: "final", isMine: false,
+      createdAt: Date(timeIntervalSince1970: 2), deliveryStatus: .delivered,
+      deliveryTrace: [
+        DeliveryTraceEvent(stage: "cloud_citation_preview", createdAt: Date(timeIntervalSince1970: 2)),
+        DeliveryTraceEvent(stage: "cloud_reply_received", createdAt: Date(timeIntervalSince1970: 8)),
+        DeliveryTraceEvent(stage: "read", createdAt: Date(timeIntervalSince1970: 12))
+      ], conversationId: "conversation", turnId: "turn")
+    let finalAt = AgentTranscriptExecutionProgress.finalDeliveryTime(stream)
+    XCTAssertEqual(finalAt, 8_000)
+    let local = AgentTranscriptExecutionProgress(status: .completed, startedAt: start, updatedAt: 6_000)
+    let delivered = AgentTranscriptExecutionProgress(status: .completed, startedAt: start, updatedAt: 8_000)
+    XCTAssertEqual(AgentTranscriptExecutionProgress.resolve(owned: local, cached: nil, deliveredAt: finalAt), delivered)
+    XCTAssertEqual(AgentTranscriptExecutionProgress.resolve(owned: nil, cached: local, deliveredAt: finalAt), delivered)
+  }
+
   func testRollingPlanPreservesBatchesAndMarksRecoveredFailureAsAdjusted() {
     let previous = [
       action(id: "inspect", status: .completed, description: "Inspect project structure"),
