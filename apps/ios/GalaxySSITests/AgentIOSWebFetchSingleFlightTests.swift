@@ -72,6 +72,7 @@ final class AgentIOSWebFetchSingleFlightTests: XCTestCase {
         "content_length_bytes": .int(Int64(text.utf8.count)),
         "retrieved_at_epoch_ms": .int(2_000),
         "text": .string(text),
+        "links": .array([.string("https://cache.example/2026/09/18/article")]),
         "html_sha256": .string(String(repeating: "a", count: 64)),
         "source": .object([
           "requested_url": .string(url),
@@ -234,6 +235,9 @@ final class AgentIOSWebFetchSingleFlightTests: XCTestCase {
     XCTAssertEqual(webMedia.invocationCount, 1)
     XCTAssertEqual(cached.output["cache"]?.objectValue?["hit"], .bool(true))
     XCTAssertEqual(cached.output["source"]?.objectValue?["source_id"], .string("local_cache"))
+    let links: AgentMcpJSONValue = .array([.string("https://cache.example/2026/09/18/article")])
+    XCTAssertEqual(network.output["links"], links)
+    XCTAssertEqual(cached.output["links"], links)
     XCTAssertEqual(network.output["text"], .string(String(repeating: "a", count: 256)))
     XCTAssertEqual(cached.output["text"], .string(String(repeating: "b", count: 256)))
     XCTAssertEqual(cached.output["reading_window"]?.objectValue?["document_sha256"], version)

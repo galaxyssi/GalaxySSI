@@ -216,6 +216,7 @@ enum AgentIOSWebEvidencePack {
       "content_type": value["content_type"] ?? .string(""),
       "content_sha256": value["content_sha256"] ?? .string(sha256(content)),
       "retrieved_at_millis": value["retrieved_at_millis"] ?? value["retrieved_at_epoch_ms"] ?? .int(0),
+      "links": value["links"] ?? .array([]),
       "metadata": value["metadata"] ?? .object([:])
     ]
   }

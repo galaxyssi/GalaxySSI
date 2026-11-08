@@ -608,6 +608,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     output["content_type"] = .string(document.contentType)
     output["content_length_bytes"] = .int(Int64(document.content.utf8.count))
     output["text"] = .string(document.content)
+    if !document.links.isEmpty { output["links"] = .array(document.links.map(AgentMcpJSONValue.string)) }
     output["text_length"] = .int(Int64(document.content.count))
     output["content_sha256"] = .string(document.contentSHA256)
     output["source_receipts"] = .array([.object(receipt)])
@@ -974,6 +975,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
           "content_type": fetchResult.output["content_type"] ?? .string(""),
           "content_sha256": hash,
           "retrieved_at_millis": receipt["retrieved_at_epoch_ms"] ?? .int(max(0, self.nowMillis())),
+          "links": fetchResult.output["links"] ?? .array([]),
           "metadata": fetchResult.output["metadata"] ?? .object([:])
         ]
         return AgentIOSWebEvidenceFetchedDocument(
@@ -1132,7 +1134,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       contentSHA256: hash,
       retrievedAtMillis: retrievedAt,
       expiresAtMillis: retrievedAt + ttl,
-      links: [],
+      links: Self.navigationLinks(webResult.output).compactMap(\.stringValue),
       metadata: metadata
     )
   }
@@ -1160,6 +1162,8 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     output["content_sha256"] = webResult.output["html_sha256"] ?? webResult.output["sha256"] ?? .string(AgentMcpJSONCodec.sha256(["text": .string(text)]))
     output["source_receipts"] = .array([.object(receipt)])
     output["source"] = .object(receipt)
+    let links = Self.navigationLinks(webResult.output)
+    if !links.isEmpty { output["links"] = .array(links) }
     output["metadata"] = .object(fetchMetadata(webResult.output, content: text).mapValues { .string($0) })
     if let article = webResult.output["article"]?.objectValue {
       output["article"] = .object(article)
@@ -1169,6 +1173,11 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       "shared_fetch": .bool(false)
     ]) { _, next in next })
     return output
+  }
+
+  private static func navigationLinks(_ output: AgentMcpJSONObject) -> [AgentMcpJSONValue] {
+    let links = output["links"]?.arrayValue ?? output["article"]?.objectValue?["links"]?.arrayValue ?? []
+    return links.prefix(64).filter { ($0.stringValue?.utf8.count ?? 513) <= 512 }
   }
 
   private func fetchMetadata(_ output: AgentMcpJSONObject, content: String) -> [String: String] {
