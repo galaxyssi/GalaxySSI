@@ -72,7 +72,7 @@ class HealthCareInstructionActionDeviceTest {
         assertNotEquals(action.id, replacement.id)
         HealthCareStore(context, f.documents.names.care).use { assertNull(it.reminder(replacement.id)) }
     }
-    @Test fun deletedInstructionCancelsReminderButRetainsActionFeedbackHistory(): Unit = fixture { f ->
+    @Test fun deletedInstructionCancelsReminderButRetainsTheActionForReview(): Unit = fixture { f ->
         val value = reviewedHealthInstruction(f); val action = confirm(f, value); val reminder = schedule(f, action)
         f.repository.delete(f.snapshot(value.id))
         HealthCareStore(context, f.documents.names.care).use { store ->
@@ -149,5 +149,16 @@ class HealthCareInstructionActionDeviceTest {
             assertEquals(before, f.snapshot(value.id).visit.issue)
             HealthCareStore(context, f.documents.names.care).use { assertNull(it.reminder(HealthCareInstructionActionPolicy.actionId(value))) }
         } finally { context.openOrCreateDatabase(f.documents.names.care, 0, null).use { it.execSQL("DROP TRIGGER ignore_confirmed_action") } }
+    }
+    @Test fun visitSummaryPreservesInstructionRevisionAndWarnsAboutChangedSources(): Unit = fixture { f ->
+        val value = reviewedHealthInstruction(f); val action = confirm(f, value)
+        f.repository.update(f.snapshot(value.id), value.draft, UUID.randomUUID().toString())
+        val issue = f.snapshot(value.id).visit.issue
+        val item = HealthCareVisitPresentation(context).items(issue, setOf(HealthCareVisitSection.ACTIONS), emptyList(), null, emptyList())
+            .single { it.key == "action:${action.id}" }
+        assertTrue(item.text.contains(context.getString(R.string.health_visit_stale_action)))
+        assertTrue(item.text.contains(context.getString(R.string.health_instruction_action_provenance)))
+        assertTrue(item.text.contains(context.getString(R.string.health_revision, value.revision)))
+        assertFalse(item.text.contains("user_transcribed"))
     }
 }

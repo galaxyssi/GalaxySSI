@@ -63,8 +63,11 @@ internal class HealthCareVisitPresentation(private val context: Context) {
             add(HealthCareVisitItem("action:${action.id}", HealthCareVisitSection.ACTIONS, action.description, buildList {
                 add(s(action.state.titleResource()))
                 add(s(R.string.health_visit_action_notice))
-                add("${s(R.string.health_visit_source)}: ${action.source}")
-                if (action.basis != HealthCareFollowUpPolicy.basis(issue)) add(s(R.string.health_visit_stale_action))
+                add("${s(R.string.health_visit_source)}: ${if (action.instruction != null) s(R.string.health_instruction_action_provenance) else action.source}")
+                action.instruction?.let { ref -> add(s(R.string.health_revision, ref.revision) + " · " +
+                    s(R.string.health_document_page, ref.original.page!!, ref.original.pageCount!!)) }
+                if (action.basis != HealthCareFollowUpPolicy.basis(issue) || action.instruction?.invalidated == true)
+                    add(s(R.string.health_visit_stale_action))
                 action.dueFrom?.let { add(s(R.string.health_care_plan_window, date(it), date(action.dueUntil!!))) }
                 if (feedback != null) {
                     add(s(R.string.health_feedback_latest, s(feedback.kind.label()), date(feedback.recordedAt)))
