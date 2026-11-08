@@ -32,6 +32,7 @@ final class MqttBusinessTransportRuntime {
   private var peerChatProjection: MqttPeerChatProjection?
   private var configuredDirectPeers: [Peer] = []
   private var incomingAttachments: AgentIncomingAttachmentTransferStore?
+  private var outgoingAttachments: AgentOutboundAttachmentTransferStore?
   private let attachmentQueue = DispatchQueue(label: "galaxyssi.mqtt.peer-attachments", qos: .utility)
 
   // The caller must first quiesce legacy Signal, inbox and outbox writers. Once this returns a
@@ -115,6 +116,7 @@ final class MqttBusinessTransportRuntime {
                    journal: MqttSignalStateJournal, routeState: MqttRouteState,
                    pool: GalaxySSIMqttBrokerPool = .init(),
                    incomingAttachments: AgentIncomingAttachmentTransferStore = .init(),
+                   outgoingAttachments: AgentOutboundAttachmentTransferStore = .init(),
                    onFailure: @escaping @MainActor (Error) -> Void = { _ in }) throws {
     guard let cutover = try journal.legacyCutover(), cutover.localFingerprint == localFingerprint else {
       throw MqttDeliveryDispatch.Failure.unavailable
@@ -127,6 +129,7 @@ final class MqttBusinessTransportRuntime {
     guard engine.identity.fingerprint == localFingerprint else { throw MqttRouteError.identityChanged }
     peerChatProjection = projection
     self.incomingAttachments = incomingAttachments
+    self.outgoingAttachments = outgoingAttachments
   }
 
   func startDirectPeerChat(configuration: MqttBrokerPathConfiguration) throws {
@@ -141,6 +144,26 @@ final class MqttBusinessTransportRuntime {
     try refreshDirectPeerBindings()
     let request = try projection.outgoingRequest(for: messageId, contactId: contactId)
     guard let entry = try enqueue([request]).first else { throw MqttRouteError.invalidPayload }
+    return entry
+  }
+
+  func enqueueDirectPeerAttachments(messageId: UUID, contactId: String,
+                                    attachments: [AgentPreparedOutboundAttachment]) throws -> MqttBusinessOutbox.Entry {
+    guard let projection = peerChatProjection, !attachments.isEmpty, started, !stopped else {
+      throw MqttDeliveryDispatch.Failure.unavailable
+    }
+    try refreshDirectPeerBindings()
+    let requests = try projection.outgoingRequests(for: messageId, contactId: contactId, attachments: attachments)
+    guard let body = requests.last else { throw MqttRouteError.invalidPayload }
+    if let existing = try routes.withOutgoing(identity: body.identity, topics: [body.topic], commit: {
+      try journal.outbox.entry(identity: body.identity, messageID: body.messageID)
+    }) {
+      guard existing.requestHash == (try body.digest()), body.matches(existing.message) else {
+        throw MqttChunkStorageError.corruptState
+      }
+      return existing
+    }
+    guard let entry = try enqueue(requests).last else { throw MqttRouteError.invalidPayload }
     return entry
   }
 
@@ -351,6 +374,11 @@ final class MqttBusinessTransportRuntime {
         }
         if payload["type"] as? String == "delivery_ack" { continue }
         try routes.withIdentity(item.identity) {}
+        if payload.string("type") == "input_attachment_receipt",
+           let projection = peerChatProjection, let attachments = outgoingAttachments {
+          try await processOutgoingAttachmentReceipt(item, payload: payload, projection: projection, attachments: attachments)
+          continue
+        }
         if let projection = peerChatProjection, let attachments = incomingAttachments {
           try await projectDirectInbound(item, payload: payload, projection: projection, attachments: attachments)
         } else {
@@ -368,6 +396,82 @@ final class MqttBusinessTransportRuntime {
       }
     }
     if page.count < 16 { inboxCursor = "" }
+  }
+
+  private func processOutgoingAttachmentReceipt(_ item: MqttBusinessInbox.Pending, payload: [String: Any],
+      projection: MqttPeerChatProjection, attachments: AgentOutboundAttachmentTransferStore) async throws {
+    guard let target = try projection.currentDestination(item.identity), !target.desktop,
+          payload.string("client_route_id") == target.routeId,
+          payload.string("message_id") == item.messageID,
+          ["stored", "missing"].contains(payload.string("status")) else { throw MqttRouteError.invalidPayload }
+    let transferID = payload.string("transfer_id").lowercased()
+    let source = payload.string("source_message_id")
+    guard MqttRouteProtocol.hex(transferID, count: 64),
+          let sourceID = UUID(uuidString: source), sourceID.uuidString == source else { throw MqttRouteError.invalidPayload }
+    func awaitingAttachment() throws -> Bool {
+      try routes.withIdentity(item.identity) {
+        guard let body = try journal.outbox.entry(identity: item.identity, messageID: source),
+              body.message.blockedByAttachmentTransferIds.contains(transferID) else { return false }
+        guard body.deferredRequest?.attachmentDependencies.contains(transferID) == true,
+              body.message.contactId == target.contactId, body.message.clientSourceMessageId == source else {
+          throw MqttChunkStorageError.corruptState
+        }
+        return projection.store.persistedMessage(id: sourceID, contactId: target.contactId) != nil
+      }
+    }
+    func complete() throws {
+      try routes.withIdentity(item.identity) {
+        guard try journal.inbox.complete(identity: item.identity, messageID: item.messageID) else {
+          throw MqttChunkStorageError.corruptState
+        }
+      }
+    }
+    guard try awaitingAttachment() else { try complete(); return }
+    let transfer = try await onAttachmentQueue {
+      guard let value = attachments.find(transferID) else { throw AgentAttachmentTransferError.contentUnavailable }
+      return value
+    }
+    try Task.checkCancellation()
+    guard !stopped else { throw CancellationError() }
+    try refreshDirectPeerBindings()
+    guard try awaitingAttachment() else { try complete(); return }
+    var proof = payload
+    proof["status"] = "stored"
+    guard projection.matches(transfer, target: target, source: source), transfer.matchesStoredReceipt(proof) else {
+      throw MqttRouteError.identityChanged
+    }
+    if payload.string("status") == "stored" {
+      try routes.withIdentity(item.identity) {
+        try journal.consumeStoredAttachment(item, bodyID: source, transfer: transfer)
+      }
+      return
+    }
+
+    let indices = try AgentAttachmentTransferProtocol.expandMissingRanges(payload["missing_ranges"], chunkCount: transfer.chunkCount)
+    guard !indices.isEmpty else { throw MqttRouteError.invalidPayload }
+    var scheduled = 0
+    for index in indices {
+      let id = try MqttPeerChatProjection.stableID([item.key, transferID, String(index), "missing"])
+      if try journal.outbox.entry(identity: item.identity, messageID: id) != nil ||
+        journal.outbox.completions.event(identity: item.identity, messageID: id) != nil { continue }
+      // The durable request and deterministic chunk IDs are the restart cursor.
+      guard scheduled < 4 else { return }
+      var chunk = try await onAttachmentQueue { try transfer.chunkPayload(index: index, nowMillis: item.createdAt) }
+      try Task.checkCancellation()
+      guard !stopped else { throw CancellationError() }
+      try refreshDirectPeerBindings()
+      guard try awaitingAttachment() else { try complete(); return }
+      chunk["message_id"] = id
+      chunk["peer_chat"] = true
+      let request = try MqttSignalSendRequest(identity: item.identity, payload: chunk, remoteName: target.peer.remoteSignalName,
+        topic: target.peer.binding.sendTopic, clientRouteID: target.routeId, traffic: .chunk,
+        requiresValidatedNetwork: transfer.requiresValidatedNetwork, attachmentTransferID: transferID, contactID: target.contactId)
+      do { _ = try enqueue([request]) }
+      catch MqttChunkStorageError.alreadyDelivered { }
+      catch MqttChunkStorageError.capacityExceeded { return }
+      scheduled += 1
+    }
+    try complete()
   }
 
   private func projectDirectInbound(_ item: MqttBusinessInbox.Pending, payload: [String: Any],

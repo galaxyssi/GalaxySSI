@@ -832,6 +832,82 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertNoThrow(try projection.projectCompletion(completion(contactId: contact.id)))
   }
 
+  @MainActor
+  func testDurableOutgoingAttachmentReleasesOnlyItsBodyWithCommittedReceipt() throws {
+    let store = makeStore()
+    let local = String(repeating: "b", count: 64)
+    var friend = makeFriendRequest(galaxySSIId: "galaxyssi:remote", name: "Peer")
+    friend.linkClientRouteId = String(repeating: "r", count: 22)
+    friend.linkSecret = Data(repeating: 7, count: 32).base64URLEncodedString()
+    friend.linkLocalFingerprint = local
+    let contactRequest = store.addFriendRequest(friend)
+    XCTAssertTrue(store.approveFriendRequest(id: contactRequest.id))
+    let projection = MqttPeerChatProjection(store: store, localFingerprint: local)
+    let contact = try XCTUnwrap(store.contact(id: friend.galaxySSIId))
+    let target = try XCTUnwrap(projection.destination(for: contact))
+    let outgoing = store.appendOutgoing("caption", to: contact.id)
+    let source = outgoing.id.uuidString
+    let scope = try AgentAttachmentTransferScope(contactId: friend.galaxySSIId, desktopId: friend.galaxySSIId,
+      clientRouteId: target.routeId, conversationId: target.conversationId,
+      taskId: AgentPeerChatTransport.taskId(for: source), turnId: AgentPeerChatTransport.turnId(for: source), clientMessageId: source)
+    let fixture = try ChunkFixture()
+    let root = fixture.url.deletingLastPathComponent().appendingPathComponent("outgoing-test", isDirectory: true)
+    let attachments = AgentOutboundAttachmentTransferStore(rootURL: root,
+      cipher: GalaxySSIAttachmentAtRestCipher(secrets: fixture.secrets))
+    let transfers = try attachments.prepare(scope: scope, attachments: [
+      .init(displayName: "one.bin", mimeType: "application/octet-stream", data: Data([1])),
+      .init(displayName: "two.bin", mimeType: "application/octet-stream", data: Data([2]))
+    ], mediaProfile: AgentMediaNetworkPolicy.profile(for: .normal), preserveOriginalBytes: true)
+    let requests = try projection.outgoingRequests(for: outgoing.id, contactId: contact.id, attachments: transfers)
+    XCTAssertEqual(requests.count, 3)
+    let manifest = try XCTUnwrap(requests.first)
+    let body = try XCTUnwrap(requests.last)
+    XCTAssertEqual(try manifest.applicationPayload()["type"] as? String, "input_attachment_manifest")
+    XCTAssertEqual(manifest.traffic, .control)
+    XCTAssertEqual(Set(body.attachmentDependencies), Set(transfers.map(\.transferId)))
+    let other = UUID()
+    XCTAssertThrowsError(try projection.outgoingRequests(for: other, contactId: contact.id, attachments: transfers))
+
+    let journal = try MqttSignalStateJournal(fileURL: fixture.url, secrets: fixture.secrets)
+    try journal.outbox.enqueueDeferred(body, now: Date())
+    let otherBody = try MqttSignalSendRequest(identity: body.identity, payload: ["message_id": other.uuidString],
+      remoteName: body.remoteName, topic: body.topic, attachmentDependencies: body.attachmentDependencies,
+      sourceMessageID: other.uuidString, contactID: contact.id)
+    try journal.outbox.enqueueDeferred(otherBody, now: Date())
+    let first = try XCTUnwrap(transfers.first)
+    let second = try XCTUnwrap(transfers.last)
+    func stage(_ transfer: AgentPreparedOutboundAttachment, digest: String? = nil) throws -> MqttBusinessInbox.Pending {
+      let id = UUID().uuidString
+      let payload: [String: Any] = ["type": "input_attachment_receipt", "message_id": id, "status": "stored",
+        "transfer_id": transfer.transferId, "sha256": digest ?? transfer.sha256, "client_route_id": scope.clientRouteId,
+        "conversation_id": scope.conversationId, "task_id": scope.taskId, "turn_id": scope.turnId,
+        "contact_id": scope.contactId, "source_message_id": source]
+      let hash = MqttRouteProtocol.digest(Data(id.utf8))
+      _ = try journal.inbox.accept(identity: body.identity, messageID: id, payload: payload,
+        ciphertextDigest: hash, wireHash: hash, receiptRequired: true)
+      return try XCTUnwrap(journal.inbox.pending().first { $0.messageID == id })
+    }
+    let invalid = try stage(first, digest: String(repeating: "f", count: 64))
+    XCTAssertThrowsError(try journal.consumeStoredAttachment(invalid, bodyID: body.messageID, transfer: first))
+    let receipt = try stage(first)
+    try fixture.execute("CREATE TRIGGER fail_attachment_receipt BEFORE UPDATE ON mqtt_business_inbox WHEN NEW.completed=1 BEGIN SELECT RAISE(ABORT,'forced'); END")
+    XCTAssertThrowsError(try journal.consumeStoredAttachment(receipt, bodyID: body.messageID, transfer: first))
+    XCTAssertEqual(try journal.outbox.entry(identity: body.identity, messageID: body.messageID)?.message.blockedByAttachmentTransferIds,
+      body.attachmentDependencies)
+    XCTAssertTrue(try journal.inbox.pending().contains { $0.messageID == receipt.messageID })
+    try fixture.execute("DROP TRIGGER fail_attachment_receipt")
+    try journal.consumeStoredAttachment(receipt, bodyID: body.messageID, transfer: first)
+    XCTAssertEqual(try journal.outbox.entry(identity: body.identity, messageID: body.messageID)?.message.blockedByAttachmentTransferIds,
+      [second.transferId])
+    XCTAssertFalse(try journal.inbox.pending().contains { $0.messageID == receipt.messageID })
+    try journal.consumeStoredAttachment(stage(second), bodyID: body.messageID, transfer: second)
+    let released = try XCTUnwrap(journal.outbox.entry(identity: body.identity, messageID: body.messageID))
+    XCTAssertTrue(released.message.blockedByAttachmentTransferIds.isEmpty)
+    XCTAssertFalse(released.isPrepared)
+    XCTAssertEqual(try journal.outbox.entry(identity: body.identity, messageID: other.uuidString)?.message.blockedByAttachmentTransferIds,
+      body.attachmentDependencies)
+  }
+
   func testRenamesContactLocally() {
     let store = makeStore()
     let request = store.addFriendRequest(makeFriendRequest(galaxySSIId: "friend-alice", name: "Alice"))

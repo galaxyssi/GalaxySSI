@@ -46,9 +46,19 @@ struct MqttPeerChatProjection {
   }
 
   func outgoingRequest(for messageId: UUID, contactId: String) throws -> MqttSignalSendRequest {
+    guard let request = try outgoingRequests(for: messageId, contactId: contactId, attachments: []).last else {
+      throw MqttRouteError.invalidPayload
+    }
+    return request
+  }
+
+  func outgoingRequests(for messageId: UUID, contactId: String,
+                        attachments: [AgentPreparedOutboundAttachment]) throws -> [MqttSignalSendRequest] {
     guard let contact = store.contact(id: contactId), contact.id == contactId, let target = destination(for: contact),
           let message = store.persistedMessage(id: messageId, contactId: contactId), message.isMine, !message.isSystem,
-          [.queued, .failed].contains(message.deliveryStatus), !message.content.isBlank, message.richOutputJson.isBlank
+          [.queued, .failed].contains(message.deliveryStatus),
+          attachments.isEmpty ? (!message.content.isBlank && message.richOutputJson.isBlank) : !target.desktop,
+          attachments.count <= 10, Set(attachments.map(\.transferId)).count == attachments.count
     else { throw MqttRouteError.invalidPayload }
     let source = message.id.uuidString
     let timestamp = message.createdAt.timeIntervalSince1970 * 1_000
@@ -57,16 +67,39 @@ struct MqttPeerChatProjection {
     }
     let wireId = GalaxySSILinkProtocol.normalizedMessageId(source)
     let sender = "galaxyssi:\(localFingerprint.prefix(16))"
-    let payload: [String: Any] = [
+    var payload: [String: Any] = [
       "type": "peer_message", "peer_chat": true, "message_id": wireId, "source_message_id": source,
       "client_message_id": source, "sender": sender, "contact_id": target.desktop ? target.peer.remoteSignalName : sender,
       "client_route_id": target.routeId, "conversation_id": target.conversationId,
       "task_id": AgentPeerChatTransport.taskId(for: source), "turn_id": AgentPeerChatTransport.turnId(for: source),
       "content": message.content, "time": Int64(timestamp)
     ]
-    return try MqttSignalSendRequest(identity: MqttBusinessIdentity(target.peer.binding), payload: payload,
+    let identity = try MqttBusinessIdentity(target.peer.binding)
+    let manifests = try attachments.map { transfer in
+      guard matches(transfer, target: target, source: source) else { throw MqttRouteError.identityChanged }
+      var manifest = transfer.manifestPayload(resume: false, nowMillis: Int64(timestamp))
+      manifest["message_id"] = try Self.stableID([identity.binding, source, transfer.transferId, "manifest"])
+      manifest["peer_chat"] = true
+      return try MqttSignalSendRequest(identity: identity, payload: manifest, remoteName: target.peer.remoteSignalName,
+        topic: target.peer.binding.sendTopic, clientRouteID: target.routeId, traffic: .control,
+        requiresValidatedNetwork: transfer.requiresValidatedNetwork, attachmentTransferID: transfer.transferId,
+        contactID: target.contactId)
+    }
+    if !attachments.isEmpty { payload["attachments"] = attachments.map { $0.descriptor() } }
+    let body = try MqttSignalSendRequest(identity: identity, payload: payload,
       remoteName: target.peer.remoteSignalName, topic: target.peer.binding.sendTopic, clientRouteID: target.routeId,
+      requiresValidatedNetwork: attachments.contains { $0.requiresValidatedNetwork },
+      attachmentDependencies: attachments.map(\.transferId),
       sourceMessageID: source, contactID: target.contactId)
+    return manifests + [body]
+  }
+
+  func matches(_ transfer: AgentPreparedOutboundAttachment, target: Destination, source: String) -> Bool {
+    !target.desktop && transfer.scope.clientMessageId == source && transfer.scope.clientRouteId == target.routeId &&
+      transfer.scope.contactId == target.peer.remoteSignalName && transfer.scope.desktopId == target.peer.remoteSignalName &&
+      transfer.scope.conversationId == target.conversationId &&
+      transfer.scope.taskId == AgentPeerChatTransport.taskId(for: source) &&
+      transfer.scope.turnId == AgentPeerChatTransport.turnId(for: source)
   }
 
   @discardableResult
@@ -105,7 +138,7 @@ struct MqttPeerChatProjection {
     guard let target = try currentDestination(event.identity), target.contactId == event.contactID else {
       throw MqttRouteError.invalidPayload
     }
-    if event.traffic == MqttMultipathPolicy.Traffic.control.rawValue,
+    if [MqttMultipathPolicy.Traffic.control.rawValue, MqttMultipathPolicy.Traffic.chunk.rawValue].contains(event.traffic),
        !event.attachmentTransferID.isEmpty, event.sourceMessageID.isEmpty { return }
     guard event.traffic == MqttMultipathPolicy.Traffic.message.rawValue, event.attachmentTransferID.isEmpty else {
       throw MqttRouteError.invalidPayload
@@ -120,14 +153,18 @@ struct MqttPeerChatProjection {
     else { throw MqttRouteError.identityChanged }
     var payload = receipt
     payload["time"] = item.createdAt
-    let digest = MqttRouteProtocol.digest(Data(item.key.utf8) + (try GalaxySSILinkProtocol.jsonData(payload)))
-    let hex = Array(digest.prefix(32))
-    let raw = [0..<8, 8..<12, 12..<16, 16..<20, 20..<32].map { String(hex[$0]) }.joined(separator: "-")
-    guard let id = UUID(uuidString: raw) else { throw MqttRouteError.invalidPayload }
-    payload["message_id"] = id.uuidString
+    payload["message_id"] = try Self.stableID([item.key, MqttRouteProtocol.digest(GalaxySSILinkProtocol.jsonData(payload))])
     return try MqttSignalSendRequest(identity: item.identity, payload: payload, remoteName: target.peer.remoteSignalName,
       topic: target.peer.binding.sendTopic, clientRouteID: target.routeId, traffic: .control,
       attachmentTransferID: receipt.string("transfer_id"), contactID: target.contactId)
+  }
+
+  static func stableID(_ components: [String]) throws -> String {
+    let digest = MqttRouteProtocol.digest(try GalaxySSILinkProtocol.jsonData(components))
+    let hex = Array(digest.prefix(32))
+    let raw = [0..<8, 8..<12, 12..<16, 16..<20, 20..<32].map { String(hex[$0]) }.joined(separator: "-")
+    guard let id = UUID(uuidString: raw) else { throw MqttRouteError.invalidPayload }
+    return id.uuidString
   }
 
   func currentDestination(_ identity: MqttBusinessIdentity) throws -> Destination? {

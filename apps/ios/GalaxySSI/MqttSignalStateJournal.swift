@@ -140,6 +140,23 @@ final class MqttSignalStateJournal {
     }
   }
 
+  func consumeStoredAttachment(_ item: MqttBusinessInbox.Pending, bodyID: String,
+                               transfer: AgentPreparedOutboundAttachment) throws {
+    try database.withTransaction { token in
+      guard let saved = try inbox.pending(identity: item.identity, messageID: item.messageID, transaction: token),
+            saved.key == item.key, saved.payload == item.payload,
+            let payload = try JSONSerialization.jsonObject(with: saved.payload) as? [String: Any],
+            payload.string("type") == "input_attachment_receipt", transfer.scope.clientMessageId == bodyID,
+            transfer.matchesStoredReceipt(payload)
+      else { throw MqttRouteError.invalidPayload }
+      _ = try outbox.releaseAttachment(identity: item.identity, messageID: bodyID,
+        transferID: transfer.transferId, transaction: token)
+      guard try inbox.complete(identity: item.identity, messageID: item.messageID, transaction: token) else {
+        throw MqttChunkStorageError.corruptState
+      }
+    }
+  }
+
   // Compare the exact last committed snapshot before invoking libsignal. A stale engine must reopen,
   // not overwrite another engine's ratchet. Neither the result nor its receipt escapes before COMMIT.
   func commit<T>(expected: Data?, _ operation: (MqttChunkDatabase.Transaction) throws -> (T, Data)) throws -> (T, Data) {
