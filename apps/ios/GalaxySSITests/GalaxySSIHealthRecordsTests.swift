@@ -698,6 +698,70 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testClarificationToolCannotWriteAnswersAndReviewedRowsStayScoped() throws {
+    typealias Questions = GalaxySSIHealthCareQuestions
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "question-ledger", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let reading = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-60), value: 110,
+      unitOverride: "mg/dL")
+    try records.write(reading)
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.setHealthOnlinePermission(true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    _ = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    func approval(asks: Bool = false, shares: Bool = false) throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Clarify context",
+        destinationID: "provider", model: model, credential: "fixture-api-key", includesQuestions: shares,
+        asksQuestions: asks, now: now)
+    }
+    func page() throws -> Questions.Page { try records.localCareQuestionPage(id: concern.id, metric: .glucose, now: now) }
+    let pending = try approval(asks: true)
+    let request = try GalaxySSIHealthCareDiscussion.request(pending, key: "fixture-api-key")
+    XCTAssertTrue(String(decoding: try XCTUnwrap(request.httpBody), as: UTF8.self).contains(Questions.tool))
+    let raw: AgentMcpJSONObject = ["key": .string("context.fasting_hours"), "question": .string("How many hours?"),
+      "purpose": .string("Check measurement context")]
+    let args: AgentMcpJSONObject = ["questions": .array([.object(raw)])]
+    XCTAssertThrowsError(try records.saveLocalCareQuestionProposals(pending, arguments: args, now: now))
+    try records.beginLocalCareDiscussionTurn(pending, now: now)
+    var forged = raw
+    forged["answer"] = .string("0")
+    XCTAssertThrowsError(try records.saveLocalCareQuestionProposals(pending,
+      arguments: ["questions": .array([.object(forged)])], now: now))
+    try records.saveLocalCareQuestionProposals(pending, arguments: args, now: now)
+    XCTAssertThrowsError(try records.saveLocalCareQuestionProposals(pending, arguments: args, now: now))
+    let open = try XCTUnwrap(page().rows.first)
+    XCTAssertEqual(open.state, .open)
+    XCTAssertNil(open.answer)
+    let oldPreview = try approval(shares: true)
+    try records.reviewLocalCareQuestion(id: concern.id, metric: .glucose, row: open, state: .deferred, now: now)
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(oldPreview, now: now))
+    let deferred = try XCTUnwrap(page().rows.first)
+    XCTAssertEqual(deferred.state, .deferred)
+    XCTAssertThrowsError(try records.reviewLocalCareQuestion(id: concern.id, metric: .glucose, row: deferred,
+      state: .answered, answer: "0", now: now))
+    try records.reviewLocalCareQuestion(id: concern.id, metric: .glucose, row: deferred, state: .open, now: now)
+    let reopened = try XCTUnwrap(page().rows.first)
+    try records.reviewLocalCareQuestion(id: concern.id, metric: .glucose, row: reopened, state: .answered, answer: "0", now: now)
+    XCTAssertNil(try approval().questions)
+    XCTAssertEqual(try approval(shares: true).questions?.payload["items"]?.arrayValue?.first?.objectValue?["reviewed_answer"], .string("0"))
+    XCTAssertEqual(try records.load().localCareQuestions?[concern.id.uuidString]?.revisions[open.id.uuidString]?.count, 4)
+
+    var edited = try XCTUnwrap(records.load().current.first)
+    edited.value = 112
+    try records.write(edited)
+    try records.reconcileLocalCare(now: now)
+    let latest = try page()
+    XCTAssertEqual(latest.rows.first.map(latest.state), .stale)
+    XCTAssertEqual(latest.payload["items"]?.arrayValue?.first?.objectValue?["reviewed_answer"], .null)
+    XCTAssertThrowsError(try records.localCareQuestionPage(id: concern.id, metric: .weight, now: now))
+  }
+
+  @MainActor
   func testLocalCareDiscussionBindsConsentToConcernTurnAndProvider() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }
