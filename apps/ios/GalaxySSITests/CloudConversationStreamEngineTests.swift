@@ -369,7 +369,7 @@ final class CloudConversationStreamEngineTests: XCTestCase {
     )
     let secondBody = try object(streamClient.requests[1].bodyJson)
     let messages = try XCTUnwrap(secondBody["messages"] as? [[String: Any]])
-    let toolMessage = try XCTUnwrap(messages.last)
+    let toolMessage = try XCTUnwrap(messages.last { $0["role"] as? String == "tool" })
 
     XCTAssertEqual(streamClient.requests.map(\.requestId), ["conversation-tool:r0", "conversation-tool:r1"])
     XCTAssertEqual(toolExecutor.calls.map(\.call.name), ["web_search"])
@@ -401,9 +401,12 @@ final class CloudConversationStreamEngineTests: XCTestCase {
       ),
       .completed(ModelStreamCompleted(requestId: "final", finishReason: "stop", completedAtElapsedMs: 21))
     ]])
-    let toolExecutor = RecordingConversationToolExecutor(
-      result: #"{"results":[{"url":"https://galaxyssi.example"}]}"#
-    )
+    let toolExecutor = RecordingConversationToolExecutor(result: "") { call in
+      let pack = AgentIOSWebEvidencePack.build(query: "report", status: "completed",
+        documents: [["url": .string("https://galaxyssi.example"), "content": .string("Evidence for \(call.callId)")]],
+        results: [], receipts: [], generatedAtMillis: 1)
+      return AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)])
+    }
     let engine = CloudConversationStreamEngine(
       streamClient: streamClient,
       toolExecutor: toolExecutor,
@@ -433,6 +436,7 @@ final class CloudConversationStreamEngineTests: XCTestCase {
     let streamClient = RecordingModelStreamClient(eventBatches: [
       toolRound(index: 0, callId: "call-original", query: "same-query"),
       toolRound(index: 1, callId: "call-repeated", query: "same-query"),
+      toolRound(index: 2, callId: "call-repeated-again", query: "same-query"),
       [
         .textDelta(
           ModelStreamTextDelta(
@@ -468,12 +472,80 @@ final class CloudConversationStreamEngineTests: XCTestCase {
     let finalMessages = try XCTUnwrap(finalBody["messages"] as? [[String: Any]])
 
     XCTAssertEqual(toolExecutor.calls.count, 1)
-    XCTAssertEqual(streamClient.requests.count, 3)
+    XCTAssertEqual(streamClient.requests.count, 4)
     XCTAssertNil(finalBody["tools"])
-    XCTAssertEqual(secondMessages.last?["tool_call_id"] as? String, "call-original")
+    XCTAssertEqual(secondMessages.last { $0["role"] as? String == "tool" }?["tool_call_id"] as? String, "call-original")
     XCTAssertTrue(finalMessages.contains { ($0["tool_call_id"] as? String) == "call-repeated" })
     XCTAssertNil(failed(events))
     XCTAssertNotNil(completed(events))
+  }
+
+  @MainActor
+  func testInterruptedAndEmptySynthesisReuseEvidenceWithoutExecutingMoreTools() async throws {
+    let fixture = try makeFixture()
+    let pack = AgentIOSWebEvidencePack.build(query: "report", status: "completed",
+      documents: [["url": .string("https://example.test/report"), "content": .string("Supported evidence")]],
+      results: [], receipts: [], generatedAtMillis: 1)
+    let executor = RecordingConversationToolExecutor(result: AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)]))
+    let stream = RecordingModelStreamClient(eventBatches: [
+      toolRound(index: 0, callId: "search", query: "report"),
+      [.failed(.init(requestId: "interrupted", error: .init(code: "NETWORK_ERROR", message: "offline", retryable: true)))],
+      [.completed(.init(requestId: "empty", finishReason: "stop", completedAtElapsedMs: 5))],
+      [.textDelta(.init(requestId: "final", sequence: 1,
+          text: "Supported answer [source](https://example.test/report).", receivedAtElapsedMs: 6)),
+       .completed(.init(requestId: "final", finishReason: "stop", completedAtElapsedMs: 7))]
+    ])
+    let engine = CloudConversationStreamEngine(streamClient: stream, toolExecutor: executor,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    let events = try await collect(engine.streamConversation(contact: fixture.contact, store: fixture.store,
+      turns: fixture.turns, requestId: "research-recovery"))
+    XCTAssertEqual(executor.calls.count, 1)
+    XCTAssertEqual(stream.requests.count, 4)
+    for request in stream.requests.suffix(2) {
+      XCTAssertNil(try object(request.bodyJson)["tools"])
+      XCTAssertTrue(request.bodyJson.contains("Supported evidence"))
+    }
+    XCTAssertTrue(stream.requests[2].bodyJson.contains("model_round_interrupted"))
+    XCTAssertTrue(stream.requests[3].bodyJson.contains("empty_synthesis"))
+    XCTAssertEqual(textDeltas(events).last?.text, "Supported answer [source](https://example.test/report).")
+    XCTAssertNil(failed(events))
+  }
+
+  func testResearchBudgetStopsAtConfiguredLimitAndCountsOnlyNewEvidence() {
+    var now: Int64 = 1
+    let budget = CloudResearchRuntimeBudget(limits: .init(tools: 4, rounds: 8, activeMillis: 300), clock: { now })
+    XCTAssertTrue(budget.reserveTools(3))
+    XCTAssertFalse(budget.reserveTools(2))
+    XCTAssertEqual(budget.toolCalls, 3)
+    let pack = AgentIOSWebEvidencePack.build(query: "report", status: "completed",
+      documents: [["url": .string("https://example.test/report"), "content": .string("Evidence")]],
+      results: [], receipts: [], generatedAtMillis: 1)
+    let output = AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)])
+    XCTAssertTrue(budget.observe(tool: "web_search", output: output))
+    XCTAssertFalse(budget.observe(tool: "web_search", output: output))
+    XCTAssertFalse(budget.observe(tool: "web_search", output: #"{"status":"failed"}"#))
+    for _ in 0..<3 { budget.finishRetrievalBatch(madeProgress: false) }
+    XCTAssertEqual(budget.stopReason, "no_new_evidence")
+    budget.finishRetrievalBatch(madeProgress: true)
+    XCTAssertNil(budget.stopReason)
+    now += 301
+    XCTAssertEqual(budget.stopReason, "active_time_limit")
+    XCTAssertTrue(budget.requestEmptySynthesis("", hasEvidence: true))
+    XCTAssertFalse(budget.requestEmptySynthesis("", hasEvidence: true))
+  }
+
+  func testResearchRoundDeadlineCancelsAnUnfinishedModelCall() async throws {
+    do {
+      _ = try await CloudResearchRoundDeadline.run(millis: 15) {
+        try await Task.sleep(nanoseconds: 5_000_000_000)
+        return "late answer"
+      }
+      XCTFail("Expected a model deadline")
+    } catch let error as URLError {
+      XCTAssertEqual(error.code, .timedOut)
+    }
+    let answer = try await CloudResearchRoundDeadline.run(millis: 2_000) { "synthesis" }
+    XCTAssertEqual(answer, "synthesis")
   }
 
   @MainActor
@@ -695,15 +767,17 @@ private final class RecordingConversationToolExecutor: CloudConversationToolExec
   }
 
   var result: String
+  let resultForCall: ((AssembledToolCall) -> String)?
   var calls: [Call] = []
 
-  init(result: String) {
+  init(result: String, resultForCall: ((AssembledToolCall) -> String)? = nil) {
     self.result = result
+    self.resultForCall = resultForCall
   }
 
   func executeTool(call: AssembledToolCall, context: CloudConversationToolExecutionContext) throws -> String {
     calls.append(Call(call: call, context: context))
-    return result
+    return resultForCall?(call) ?? result
   }
 }
 

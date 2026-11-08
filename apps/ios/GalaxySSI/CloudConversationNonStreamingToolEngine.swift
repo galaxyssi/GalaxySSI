@@ -30,17 +30,41 @@ struct CloudConversationNonStreamingToolEngine {
     var conversation = try CloudModelStreamMutableConversation(request: request)
     var evidence: [(String, String)] = []
     let progress = CloudWebToolLoopProgress()
+    let research = CloudResearchRuntimeBudget()
+    let evidencePromptLedger = CloudEvidencePromptLedger(query: turns.last?.content ?? "")
     var round = 0
 
     while true {
+      try Task.checkCancellation()
+      if !progress.finalizationRequested, let reason = research.stopReason {
+        progress.requestFinalization()
+        conversation.appendResearchGuidance(research.guidance(stopped: reason))
+      }
       let currentRound = round
       round += 1
+      research.beginRound()
       let finalRound = progress.finalizationRequested
       let roundRequest = try conversation.requestForRound(
         roundId: "\(requestId):compat-r\(currentRound)",
         finalRound: finalRound
       )
-      let response = try await complete(roundRequest)
+      let response: ParsedResponse
+      do {
+        response = try await CloudResearchRoundDeadline.run(millis: research.limits.modelMillis) {
+          try await complete(roundRequest)
+        }
+      } catch {
+        try Task.checkCancellation()
+        guard CloudResearchRuntimeBudget.canRecover(error) else { throw error }
+        let hasEvidence = CloudResearchRuntimeBudget.hasCitableEvidence(evidence)
+        if research.requestInterruptedSynthesis(hasEvidence: hasEvidence, finalizing: finalRound) {
+          progress.requestFinalization()
+          conversation.appendResearchGuidance(research.guidance(stopped: "model_round_interrupted"))
+          continue
+        }
+        if hasEvidence { return CloudWebGrounding.evidenceFallback(results: evidence) }
+        throw error
+      }
       let inline = response.calls.isEmpty
         ? CloudWebGrounding.parseInlineToolCalls(response.text)
         : []
@@ -54,6 +78,12 @@ struct CloudConversationNonStreamingToolEngine {
         )
       } : response.calls
 
+      if calls.isEmpty, !CloudWebGrounding.containsInternalToolProtocol(response.text),
+         research.requestEmptySynthesis(response.text, hasEvidence: CloudResearchRuntimeBudget.hasCitableEvidence(evidence)) {
+        progress.requestFinalization()
+        conversation.appendResearchGuidance(research.guidance(stopped: "empty_synthesis"))
+        continue
+      }
       if calls.isEmpty {
         if CloudWebGrounding.containsInternalToolProtocol(response.text),
            !finalRound,
@@ -103,7 +133,19 @@ struct CloudConversationNonStreamingToolEngine {
 
       var results: [(AssembledToolCall, String)] = []
       var madeProgress = false
+      var newResearchEvidence = false
+      let retrievalBatch = parsedCalls.contains { CloudResearchRuntimeBudget.isRetrievalTool($0.0.name) }
+      let uncached = Set(parsedCalls.compactMap { call, arguments in
+        progress.cached(toolName: call.name, arguments: arguments) == nil
+          ? progress.semanticKey(toolName: call.name, arguments: arguments) : nil
+      })
+      guard research.reserveTools(uncached.count) else {
+        progress.requestFinalization()
+        conversation.appendResearchGuidance(research.guidance(stopped: research.stopReason ?? "tool_batch_limit"))
+        continue
+      }
       for (call, arguments) in parsedCalls {
+        try Task.checkCancellation()
         if let output = progress.cached(toolName: call.name, arguments: arguments) {
           CloudImageAnnotationSession.selectResult(output, requestId: requestId)
           results.append((call, output))
@@ -120,18 +162,26 @@ struct CloudConversationNonStreamingToolEngine {
         )
         results.append((call, output))
         if progress.record(toolName: call.name, arguments: arguments, output: output) {
+          newResearchEvidence = research.observe(tool: call.name, output: output) || newResearchEvidence
           madeProgress = true
           if call.name.lowercased() != CloudImageAnnotationPlan.toolName {
             evidence.append((call.name, output))
           }
         }
       }
+      let rawEvidence = evidence.map(\.1)
+      let projections = Dictionary(zip(rawEvidence, evidencePromptLedger.project(rawEvidence)),
+        uniquingKeysWith: { first, _ in first })
+      let promptResults = results.map { call, output in (call, projections[output] ?? evidencePromptLedger.project(output)) }
       if usesInline {
-        conversation.appendInlineToolResults(response.text, results: results)
+        conversation.appendInlineToolResults(response.text, results: promptResults)
       } else {
-        try conversation.appendToolResults(results)
+        try conversation.appendToolResults(promptResults)
       }
-      if !madeProgress {
+      if retrievalBatch {
+        research.finishRetrievalBatch(madeProgress: newResearchEvidence)
+        if research.stopReason == nil { conversation.appendResearchGuidance(research.guidance()) }
+      } else if !madeProgress {
         progress.requestFinalization()
       }
     }
@@ -154,6 +204,8 @@ struct CloudConversationNonStreamingToolEngine {
   static func compatibilityBody(_ encoded: String, provider: ModelStreamProvider) throws -> String {
     var body = try CloudModelStreamJSON.object(from: encoded)
     if provider != .gemini { body["stream"] = false }
+    else { body.removeValue(forKey: "stream") }
+    body.removeValue(forKey: "stream_options")
     return try CloudModelStreamJSON.string(body)
   }
 
@@ -240,7 +292,7 @@ struct CloudConversationNonStreamingToolEngine {
     return result
   }
 
-  private struct ParsedResponse {
+  private struct ParsedResponse: Sendable {
     var text: String
     var calls: [AssembledToolCall]
   }
