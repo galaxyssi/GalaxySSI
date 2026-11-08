@@ -144,20 +144,23 @@ final class AgentRunRecoveryCoordinatorTests: XCTestCase {
   }
 
   func testConnectorWaitDoesNotOverridePausedOrCancelledWorkspace() async throws {
-    for status in [AgentWorkspaceStatus.paused, .cancelled] {
-      let workspaces = InMemoryAgentWorkspaceStore(clock: { 1_000 })
-      var workspace = deliveryWorkspace()
-      workspace.status = status
-      workspace.cancellationRequested = status == .cancelled
-      _ = try workspaces.upsert(workspace)
-      let events = RecoveryRunControlStore(event: connectorWaitingEvent())
-      let receipt = connectorWaitingReceipt()
-      let result = try await AgentRunRecoveryCoordinator(runStore: events, workspaceStore: workspaces,
-        recordedRun: { _ in nil }, registration: { _, _ in nil }, adapterResolver: { _ in nil },
-        terminalDeliveries: { [] }, connectorReceipt: { _ in receipt }).recover()
-      XCTAssertEqual(result.single?.outcome, .alreadyCurrent)
-      XCTAssertEqual(workspaces.find("turn-1")?.status, status)
-      XCTAssertTrue(events.appended.isEmpty)
+    for registration in [nil, AgentRunRecoveryRegistration(durableRegistration())] {
+      for status in [AgentWorkspaceStatus.running, .paused, .cancelled, .completed] {
+        let workspaces = InMemoryAgentWorkspaceStore(clock: { 1_000 })
+        var workspace = deliveryWorkspace()
+        workspace.status = status
+        workspace.cancellationRequested = status == .cancelled
+        _ = try workspaces.upsert(workspace)
+        let events = RecoveryRunControlStore(event: connectorWaitingEvent())
+        let receipt = connectorWaitingReceipt()
+        let result = try await AgentRunRecoveryCoordinator(runStore: events, workspaceStore: workspaces,
+          recordedRun: { _ in nil }, registration: { _, _ in registration },
+          adapterResolver: { _ in XCTFail("An exact connector wait must not start an adapter"); return nil },
+          terminalDeliveries: { [] }, connectorReceipt: { _ in receipt }).recover()
+        XCTAssertEqual(result.single?.outcome, status == .running ? .waitingForRemote : .alreadyCurrent)
+        XCTAssertEqual(workspaces.find("turn-1")?.status, status == .running ? .waitingResponse : status)
+        XCTAssertTrue(events.appended.isEmpty)
+      }
     }
   }
 

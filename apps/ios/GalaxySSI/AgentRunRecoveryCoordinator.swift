@@ -286,6 +286,7 @@ final class AgentRunRecoveryCoordinator {
       )
 
     case .reconnectDurableRemote:
+      if let waiting = try preserveConnectorWait(snapshot) { return waiting }
       return try await recoverRemote(snapshot, decision: decision)
 
     case .failNonReplayable:
