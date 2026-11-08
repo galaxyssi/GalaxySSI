@@ -836,6 +836,7 @@
     A10000000000000000000350 /* AgentProviderHealth.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000350 /* AgentProviderHealth.swift */; };
     A1000000000000000000B120 /* AgentConnectorAliasResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000B120 /* AgentConnectorAliasResolver.swift */; };
     A10000000000000000000117 /* AgentPlanRunModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000117 /* AgentPlanRunModels.swift */; };
+    ED3518000000000000000003 /* AgentSupervisedBrowserWait.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED3518000000000000000004 /* AgentSupervisedBrowserWait.swift */; };
     A10000000000000000000671 /* AgentTaskCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000671 /* AgentTaskCenter.swift */; };
     A10000000000000000000118 /* AgentAutomationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000118 /* AgentAutomationModels.swift */; };
     A10000000000000000002008 /* AgentWorkflowTriggers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002008 /* AgentWorkflowTriggers.swift */; };
@@ -920,6 +921,7 @@
     A10000000000000000000154 /* AgentModelToolProtocolGeminiAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000154 /* AgentModelToolProtocolGeminiAdapter.swift */; };
     A10000000000000000000155 /* AgentModelToolLoopModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000155 /* AgentModelToolLoopModels.swift */; };
     A10000000000000000000156 /* AgentModelToolLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000156 /* AgentModelToolLoop.swift */; };
+    ED3518000000000000000001 /* AgentModelUncertainEffectFence.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED3518000000000000000002 /* AgentModelUncertainEffectFence.swift */; };
     A10000000000000000009B35 /* AgentModelObservationHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B35 /* AgentModelObservationHistory.swift */; };
     B10000000000000000000297 /* AgentModelLoopJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000297 /* AgentModelLoopJournal.swift */; };
     B10000000000000000000298 /* AgentInitialPlanningJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000298 /* AgentInitialPlanningJournal.swift */; };
@@ -1957,6 +1959,7 @@
     A20000000000000000000327 /* AgentNativeToolWorkspaceProgressBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolWorkspaceProgressBridge.swift; sourceTree = "<group>"; };
     A2000000000000000000B120 /* AgentConnectorAliasResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorAliasResolver.swift; sourceTree = "<group>"; };
     A20000000000000000000117 /* AgentPlanRunModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPlanRunModels.swift; sourceTree = "<group>"; };
+    ED3518000000000000000004 /* AgentSupervisedBrowserWait.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSupervisedBrowserWait.swift; sourceTree = "<group>"; };
     A20000000000000000000671 /* AgentTaskCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskCenter.swift; sourceTree = "<group>"; };
     A20000000000000000000118 /* AgentAutomationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAutomationModels.swift; sourceTree = "<group>"; };
     A20000000000000000002008 /* AgentWorkflowTriggers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowTriggers.swift; sourceTree = "<group>"; };
@@ -2111,6 +2114,7 @@
     A20000000000000000000154 /* AgentModelToolProtocolGeminiAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelToolProtocolGeminiAdapter.swift; sourceTree = "<group>"; };
     A20000000000000000000155 /* AgentModelToolLoopModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelToolLoopModels.swift; sourceTree = "<group>"; };
     A20000000000000000000156 /* AgentModelToolLoop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelToolLoop.swift; sourceTree = "<group>"; };
+    ED3518000000000000000002 /* AgentModelUncertainEffectFence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelUncertainEffectFence.swift; sourceTree = "<group>"; };
     A20000000000000000009B35 /* AgentModelObservationHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelObservationHistory.swift; sourceTree = "<group>"; };
     B20000000000000000000297 /* AgentModelLoopJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelLoopJournal.swift; sourceTree = "<group>"; };
     B20000000000000000000298 /* AgentInitialPlanningJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInitialPlanningJournal.swift; sourceTree = "<group>"; };
@@ -2672,6 +2676,7 @@
         A20000000000000000000327 /* AgentNativeToolWorkspaceProgressBridge.swift */,
         A2000000000000000000B120 /* AgentConnectorAliasResolver.swift */,
         A20000000000000000000117 /* AgentPlanRunModels.swift */,
+        ED3518000000000000000004 /* AgentSupervisedBrowserWait.swift */,
         A20000000000000000000671 /* AgentTaskCenter.swift */,
         A20000000000000000000427 /* AgentExecutionContinuity.swift */,
         A20000000000000000000118 /* AgentAutomationModels.swift */,
@@ -2883,6 +2888,7 @@
         A20000000000000000000154 /* AgentModelToolProtocolGeminiAdapter.swift */,
         A20000000000000000000155 /* AgentModelToolLoopModels.swift */,
         A20000000000000000000156 /* AgentModelToolLoop.swift */,
+        ED3518000000000000000002 /* AgentModelUncertainEffectFence.swift */,
         A20000000000000000009B35 /* AgentModelObservationHistory.swift */,
         B20000000000000000000297 /* AgentModelLoopJournal.swift */,
         B20000000000000000000298 /* AgentInitialPlanningJournal.swift */,
@@ -3920,6 +3926,7 @@
         A10000000000000000000327 /* AgentNativeToolWorkspaceProgressBridge.swift in Sources */,
         A1000000000000000000B120 /* AgentConnectorAliasResolver.swift in Sources */,
         A10000000000000000000117 /* AgentPlanRunModels.swift in Sources */,
+        ED3518000000000000000003 /* AgentSupervisedBrowserWait.swift in Sources */,
         A10000000000000000000671 /* AgentTaskCenter.swift in Sources */,
         A10000000000000000000427 /* AgentExecutionContinuity.swift in Sources */,
         A10000000000000000000118 /* AgentAutomationModels.swift in Sources */,
@@ -4163,6 +4170,7 @@
         A10000000000000000000154 /* AgentModelToolProtocolGeminiAdapter.swift in Sources */,
         A10000000000000000000155 /* AgentModelToolLoopModels.swift in Sources */,
         A10000000000000000000156 /* AgentModelToolLoop.swift in Sources */,
+        ED3518000000000000000001 /* AgentModelUncertainEffectFence.swift in Sources */,
         A10000000000000000009B35 /* AgentModelObservationHistory.swift in Sources */,
         B10000000000000000000297 /* AgentModelLoopJournal.swift in Sources */,
         B10000000000000000000298 /* AgentInitialPlanningJournal.swift in Sources */,

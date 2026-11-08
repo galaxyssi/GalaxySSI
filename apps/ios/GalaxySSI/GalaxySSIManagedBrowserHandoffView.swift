@@ -8,7 +8,26 @@ struct GalaxySSIManagedBrowserHandoffView: View {
   @EnvironmentObject private var coordinator: MessageCoordinator
   @StateObject private var browser = ManagedBrowserViewSession()
   @State private var failed = false
-  let request: AgentManagedBrowserPresentation
+  private let request: AgentManagedBrowserPresentation?
+  private let supervised: AgentSupervisedBrowserWait?
+
+  init(request: AgentManagedBrowserPresentation) {
+    self.request = request
+    supervised = nil
+  }
+
+  init(supervised: AgentSupervisedBrowserWait) {
+    request = nil
+    self.supervised = supervised
+  }
+
+  private var address: String { request?.handoff.address ?? supervised?.address ?? "" }
+
+  private func isCurrent(_ coordinator: MessageCoordinator) -> Bool {
+    if let request { return coordinator.managedBrowserPresentationIsCurrent(request) }
+    if let supervised { return coordinator.supervisedBrowserRequest(taskID: supervised.taskID) == supervised }
+    return false
+  }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -28,45 +47,71 @@ struct GalaxySSIManagedBrowserHandoffView: View {
         .disabled(!browser.canReturn)
         .padding(.trailing, 12)
       }
-      if failed {
+      if failed || browser.processExitUncommitted {
         Text(t("galaxyssi.managed_browser.failed", "Browser control could not be returned."))
           .font(.footnote).foregroundColor(.secondary).padding(8)
+      }
+      if browser.processExitUncommitted {
+        Button(t("galaxyssi.common.retry", "Retry")) { browser.commitObservedProcessExit() }
       }
       ManagedBrowserWebView(session: browser)
     }
     .onAppear {
+      let managed = request
+      let plan = supervised
       browser.authorize = { [weak coordinator] in
-        coordinator?.managedBrowserPresentationIsCurrent(request) == true
+        guard let coordinator else { return false }
+        if let managed { return coordinator.managedBrowserPresentationIsCurrent(managed) }
+        if let plan { return coordinator.supervisedBrowserRequest(taskID: plan.taskID) == plan }
+        return false
       }
       browser.persistCookies = { [weak coordinator] cookies in
         guard let coordinator else { throw AgentManagedBrowserContinuationStore.Failure.staleTicket }
-        try coordinator.saveManagedBrowserCookies(cookies, for: request)
+        if let managed { try coordinator.saveManagedBrowserCookies(cookies, for: managed) }
+      }
+      browser.reportProcessExit = { [weak coordinator] in
+        guard let coordinator else { throw AgentManagedBrowserContinuationStore.Failure.staleTicket }
+        if let managed { try coordinator.recordManagedBrowserContentExit(managed) }
+        if let plan { try coordinator.resolveSupervisedBrowser(plan, resolution: .interrupted(.webContentProcessExited)) }
       }
       Task { @MainActor in
         do {
-          let cookies = try coordinator.managedBrowserCookies(request)
-          await browser.load(request.handoff.address, restoring: cookies)
+          let cookies = try managed.map { try coordinator.managedBrowserCookies($0) } ?? []
+          await browser.load(address, restoring: cookies)
         } catch { failed = true }
       }
     }
     .onReceive(NotificationCenter.default.publisher(for: AgentManagedBrowserContinuationStore.changed)) { _ in
-      if !coordinator.managedBrowserPresentationIsCurrent(request) { browser.close(); presentation.wrappedValue.dismiss() }
+      closeIfRetired()
     }
     .onReceive(NotificationCenter.default.publisher(for: .galaxySSIAgentTeamExecutionHistoryDidUpdate)) { _ in
-      if !coordinator.managedBrowserPresentationIsCurrent(request) { browser.close(); presentation.wrappedValue.dismiss() }
+      closeIfRetired()
     }
     .onReceive(coordinator.store.$profile) { _ in
-      if !coordinator.managedBrowserPresentationIsCurrent(request) { browser.close(); presentation.wrappedValue.dismiss() }
+      closeIfRetired()
+    }
+    .onReceive(coordinator.store.$agentTaskRecords) { _ in
+      if supervised != nil { Task { @MainActor in closeIfRetired() } }
+    }
+    .onReceive(coordinator.store.$agentSafetySettings) { _ in
+      if supervised != nil { Task { @MainActor in closeIfRetired() } }
     }
     .onDisappear { browser.close() }
+  }
+
+  private func closeIfRetired() {
+    if !isCurrent(coordinator) { browser.close(); presentation.wrappedValue.dismiss() }
   }
 
   private func returnControl() {
     Task { @MainActor in
       do {
         let observation = try await browser.observation()
-        try await browser.flushCookies()
-        try coordinator.returnManagedBrowserControl(request, observation: observation)
+        if let request {
+          try await browser.flushCookies()
+          try coordinator.returnManagedBrowserControl(request, observation: observation)
+        }
+        if let supervised { try coordinator.resolveSupervisedBrowser(supervised, resolution: .returned(observation)) }
         presentation.wrappedValue.dismiss()
       } catch { failed = true }
     }
@@ -90,8 +135,10 @@ private final class ManagedBrowserViewSession: NSObject, ObservableObject, WKNav
   WKHTTPCookieStoreObserver {
   @Published private(set) var currentAddress: URL?
   @Published private(set) var canReturn = false
+  @Published private(set) var processExitUncommitted = false
   var authorize: () -> Bool = { false }
   var persistCookies: ([HTTPCookie]) throws -> Void = { _ in }
+  var reportProcessExit: () throws -> Void = {}
   private var loaded = false
   private var cookieObserverInstalled = false
   private lazy var webView: WKWebView = {
@@ -125,6 +172,7 @@ private final class ManagedBrowserViewSession: NSObject, ObservableObject, WKNav
 
   func close() {
     authorize = { false }
+    reportProcessExit = {}
     canReturn = false
     if cookieObserverInstalled {
       webView.configuration.websiteDataStore.httpCookieStore.remove(self)
@@ -159,7 +207,18 @@ private final class ManagedBrowserViewSession: NSObject, ObservableObject, WKNav
     decisionHandler(.allow)
   }
 
-  func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { canReturn = false }
+  func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+    canReturn = false
+    commitObservedProcessExit()
+  }
+
+  func commitObservedProcessExit() {
+    guard authorize() else { return }
+    do {
+      try reportProcessExit()
+      processExitUncommitted = false
+    } catch { processExitUncommitted = true }
+  }
 
   func cookiesDidChange(in cookieStore: WKHTTPCookieStore) {
     Task { @MainActor [weak self] in try? await self?.flushCookies() }

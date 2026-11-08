@@ -39,12 +39,14 @@ final class AgentManagedBrowserContinuationStore {
   private let defaults: UserDefaults
   private let secrets: GalaxySSISecretStore
   private let namespace: String
+  private let hostProcessID: String
 
   init(defaults: UserDefaults = .standard, secrets: GalaxySSISecretStore = KeychainSecretStore.shared,
-       namespace: String = "galaxyssi.agent.managed-browser.v1") {
+       namespace: String = "galaxyssi.agent.managed-browser.v1", hostProcessID: String = AgentOwnedOperationContext.processId) {
     self.defaults = defaults
     self.secrets = secrets
     self.namespace = namespace
+    self.hostProcessID = hostProcessID
   }
 
   func enroll(_ binding: AgentManagedBrowserDispatchBinding, input: AgentManagedBrowserLoopInput,
@@ -99,7 +101,7 @@ final class AgentManagedBrowserContinuationStore {
       }
       let ticket = AgentManagedBrowserHandoff.Ticket(dispatchKey: binding.key, callID: callID, generation: UUID())
       let handoff = AgentManagedBrowserHandoff(ticket: ticket, address: address, invocationID: invocationID,
-                                               state: .awaitingUser, observation: nil)
+                                               state: .awaitingUser, observation: nil, hostProcessID: hostProcessID)
       record.handoffs[callID] = handoff
       record.activeCallID = callID
       try save(record)
@@ -269,7 +271,7 @@ final class AgentManagedBrowserContinuationStore {
       }
       guard text.utf8.count <= 256 * 1_024,
             state == .cancelled || (!text.isBlank &&
-              record.handoffs.values.allSatisfy { $0.state == .returned }) else { throw Failure.notReady }
+              record.handoffs.values.allSatisfy(\.isResolved)) else { throw Failure.notReady }
       let receipt = AgentManagedBrowserMemberReceipt(id: UUID(), state: state, text: text)
       record.receipt = receipt
       try save(record)
@@ -307,7 +309,7 @@ final class AgentManagedBrowserContinuationStore {
       return .settleCancellation
     }
     if mode == .recovery {
-      guard record.handoffs.values.allSatisfy({ $0.state == .returned }) else { throw Failure.notReady }
+      guard record.handoffs.values.allSatisfy(\.isResolved) else { throw Failure.notReady }
     } else {
       guard record.handoffs.isEmpty else { throw Failure.notReady }
     }
@@ -329,6 +331,39 @@ final class AgentManagedBrowserContinuationStore {
     guard let record = try read(binding.key) else { throw Failure.unavailable }
     guard record.binding == binding else { throw Failure.scopeChanged }
     return record
+  }
+
+  func reconcileHostProcess(_ binding: AgentManagedBrowserDispatchBinding) throws {
+    try locked {
+      var record = try owned(binding)
+      guard let callID = record.activeCallID, let handoff = record.handoffs[callID],
+            let previousHost = handoff.hostProcessID, !previousHost.isBlank,
+            previousHost != hostProcessID else { return }
+      _ = try interrupt(handoff, record: &record, cause: .appProcessChanged)
+    }
+  }
+
+  @discardableResult
+  func recordWebContentExit(_ ticket: AgentManagedBrowserHandoff.Ticket,
+                            binding: AgentManagedBrowserDispatchBinding) throws -> Bool {
+    try locked {
+      var record = try owned(binding)
+      let handoff = try exact(ticket, in: record)
+      return try interrupt(handoff, record: &record, cause: .webContentProcessExited)
+    }
+  }
+
+  private func interrupt(_ handoff: AgentManagedBrowserHandoff, record: inout Record,
+                         cause: AgentManagedBrowserHandoff.Interruption) throws -> Bool {
+    guard record.receipt == nil, record.activeCallID == handoff.ticket.callID,
+          handoff.state == .awaitingUser else { return false }
+    var interrupted = handoff
+    interrupted.state = .interrupted
+    interrupted.observation = nil
+    interrupted.interruption = cause
+    record.handoffs[handoff.ticket.callID] = interrupted
+    try save(record)
+    return true
   }
 
   private func storageKey(_ key: String) -> String { namespace + "." + key }

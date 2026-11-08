@@ -136,7 +136,24 @@ final class GalaxySSIStore: ObservableObject {
     didSet { save() }
   }
   @Published internal(set) var agentTaskRecords: [AgentTaskRecord] {
-    didSet { save() }
+    didSet { if !committingSupervisedBrowserState { save() } }
+  }
+  private var committingSupervisedBrowserState = false
+
+  func commitSupervisedBrowserState(expected: AgentTaskRecord?, updated: AgentTaskRecord) -> Bool {
+    guard !committingSupervisedBrowserState, !updated.taskId.isBlank,
+          agentTask(id: updated.taskId) == expected, expected?.phase != .cancelled,
+          expected == nil || expected?.sessionId == updated.sessionId else { return false }
+    let before = agentTaskRecords
+    let records = before.filter { $0.taskId != updated.taskId } + [updated]
+    committingSupervisedBrowserState = true
+    defer { committingSupervisedBrowserState = false }
+    agentTaskRecords = Array(Self.sortedAgentTasks(records).prefix(200))
+    guard agentTaskRecords.contains(updated), save() else {
+      agentTaskRecords = before
+      return false
+    }
+    return true
   }
   @Published internal(set) var proactiveTasks: [AgentProactiveTask] {
     didSet { if !committingScheduleState { save() } }
