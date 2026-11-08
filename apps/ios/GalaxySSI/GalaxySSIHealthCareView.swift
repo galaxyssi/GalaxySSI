@@ -415,6 +415,7 @@ private struct GalaxySSIHealthCareDetail: View {
         }
         GalaxySSIHealthCarePlansSection(records: records, concernID: id)
         GalaxySSIHealthCareQuestionsView(records: records, concern: id, metric: metric)
+        GalaxySSIHealthCareAnswerDraftsView(records: records, concern: id, metric: metric)
         GalaxySSIHealthCareResearchControls(records: records, concern: id, metric: metric)
         GalaxySSIHealthCareFollowUpsSection(records: records, concernID: id, metric: metric)
         Button(t("remove", "Delete concern"), role: .destructive) {

@@ -22,6 +22,14 @@
 "galaxyssi.health.questions.disclosure" = "最多包含此关注项的 8 条当前问题及已复核的答复。";
 "galaxyssi.health.questions.page_disclosure" = "仅在本次请求中，模型最多可继续读取 4 页。";
 "galaxyssi.health.questions.retained" = "可在个人健康中查看问题。";
+"galaxyssi.health.questions.answer_drafts" = "审核澄清答复";
+"galaxyssi.health.questions.stage_answer" = "从本条消息提取答复，供我审核";
+"galaxyssi.health.questions.draft_disclosure" = "模型可以引用本条消息并提出一条答复草稿。只有你在健康页面确认后，才会保存为你的答复。";
+"galaxyssi.health.questions.draft_staged" = "已生成澄清答复草稿";
+"galaxyssi.health.questions.no_drafts" = "暂无待审核答复";
+"galaxyssi.health.questions.draft_changed" = "此答复或其来源已变更，请重新审核。";
+"galaxyssi.health.questions.source_quote" = "来自你消息的原文";
+"galaxyssi.health.questions.discard_draft" = "丢弃草稿";
 "galaxyssi.health.questions.empty" = "暂无记录的问题";
 "galaxyssi.health.questions.previous" = "上一页";
 "galaxyssi.health.questions.next" = "下一页";

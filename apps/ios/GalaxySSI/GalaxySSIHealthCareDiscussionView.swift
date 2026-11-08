@@ -26,6 +26,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
   @State private var allowsHistory = false
   @State private var includesQuestions = false
   @State private var asksQuestions = false
+  @State private var allowsAnswerDraft = false
   @State private var selectedSources = Set<GalaxySSIHealthCareEvidence.PublicSource>()
   @State private var readingTask: Task<Void, Never>?
   @State private var readingID: UUID?
@@ -57,9 +58,14 @@ struct GalaxySSIHealthCareDiscussionView: View {
             if let answer = turn.answer { Text(answer).textSelection(.enabled) }
             else if turn.proposalID != nil { Text(t("plan_retained", "Draft available in Health plans")) }
             else if turn.questionsRetained == true { Text(q("retained", "Questions are available in Personal Health.")) }
+            else if turn.answerDraftStaged == true { Text(q("draft_staged", "Clarification answer draft created")) }
             else if active?.id == turn.id { ProgressView() }
             else { Text(t("unanswered", "No saved reply")).foregroundColor(.secondary) }
           }
+        }
+        NavigationLink(q("answer_drafts", "Review clarification answers")) {
+          List { GalaxySSIHealthCareAnswerDraftsView(records: records, concern: concernID, metric: metric) }
+            .navigationTitle(q("answer_drafts", "Review clarification answers"))
         }
         Toggle(t("online_permission", "Allow approved online health questions"), isOn: Binding(
           get: { allowed }, set: { enable in
@@ -77,8 +83,12 @@ struct GalaxySSIHealthCareDiscussionView: View {
           Toggle(q("request", "Request clarification questions"), isOn: $asksQuestions).disabled(busy)
           if !asksQuestions {
             Toggle(q("include", "Include reviewed questions in this request"), isOn: $includesQuestions).disabled(busy)
-            Toggle(t("request_plan", "Request a draft plan"), isOn: $proposesPlan).disabled(busy)
-            Toggle(t("allow_history", "Include measurement history for this request"), isOn: $allowsHistory).disabled(busy)
+            if includesQuestions && !proposesPlan && !allowsHistory {
+              Toggle(q("stage_answer", "Extract an answer from this message for my review"), isOn: $allowsAnswerDraft).disabled(busy)
+            }
+            Toggle(t("request_plan", "Request a draft plan"), isOn: $proposesPlan).disabled(busy || allowsAnswerDraft)
+            Toggle(t("allow_history", "Include measurement history for this request"), isOn: $allowsHistory)
+              .disabled(busy || allowsAnswerDraft)
           }
           if proposesPlan && !asksQuestions {
             ForEach(GalaxySSIHealthCareEvidence.PublicSource.allCases) { source in
@@ -130,6 +140,8 @@ struct GalaxySSIHealthCareDiscussionView: View {
     .onChange(of: store.profile.identityFingerprint) { _ in clearSensitive() }
     .onChange(of: models) { _ in validateVisibleApprovals() }
     .onChange(of: provider) { _ in approval = nil }
+    .onChange(of: includesQuestions) { if !$0 { allowsAnswerDraft = false } }
+    .onChange(of: asksQuestions) { if $0 { allowsAnswerDraft = false } }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
       clearSensitive()
     }
@@ -161,6 +173,10 @@ struct GalaxySSIHealthCareDiscussionView: View {
                   .font(.footnote)
                 if review.questionCursor != nil {
                   Text(q("page_disclosure", "The model may read up to four more pages for this request only."))
+                    .font(.footnote)
+                }
+                if review.allowsAnswerDraft {
+                  Text(q("draft_disclosure", "The model may quote this message to propose one answer. Nothing is saved as your answer until you confirm it in Health."))
                     .font(.footnote)
                 }
               }
@@ -201,7 +217,8 @@ struct GalaxySSIHealthCareDiscussionView: View {
             concern.assessment.record != nil else { throw GalaxySSIHealthRecords.Failure.permission }
       let next = archive.localCareDiscussions?[concernID.uuidString]
       if thread != nil, thread?.id != next?.id {
-        clearRequest(); question = ""; allowsHistory = false; includesQuestions = false; asksQuestions = false; limit = 20
+        clearRequest(); question = ""; allowsHistory = false; includesQuestions = false; asksQuestions = false
+        allowsAnswerDraft = false; limit = 20
       }
       thread = next
       archived = (archive.archivedCareDiscussions ?? [:]).values.filter { $0.concernID == concernID }
@@ -216,7 +233,8 @@ struct GalaxySSIHealthCareDiscussionView: View {
     do {
       let pending = try records.prepareLocalCareDiscussion(id: concernID, metric: metric, question: question,
         destinationID: provider, model: model, credential: key, proposesPlan: proposesPlan && !asksQuestions,
-        allowsHistory: allowsHistory && !asksQuestions, includesQuestions: includesQuestions, asksQuestions: asksQuestions)
+        allowsHistory: allowsHistory && !asksQuestions, includesQuestions: includesQuestions, asksQuestions: asksQuestions,
+        allowsAnswerDraft: allowsAnswerDraft && includesQuestions && !asksQuestions)
       failed = false
       if !pending.proposesPlan { approval = pending; return }
       let sources = GalaxySSIHealthCareEvidence.PublicSource.allCases.filter { selectedSources.contains($0) }
@@ -292,6 +310,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
       allowsHistory = false
       includesQuestions = false
       asksQuestions = false
+      allowsAnswerDraft = false
       failed = false
       task = Task {
         var status: AgentDisclosureStatus = .failed
@@ -305,7 +324,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
           try records.validateLocalCareDiscussionTurn(review)
           var bytes = try await GalaxySSIHealthSummaryTransport.responseBytes(request, limit: 65_536)
           status = .sent
-          if review.history != nil || review.questions != nil {
+          if !review.allowsAnswerDraft && (review.history != nil || review.questions != nil) {
             bytes = try await GalaxySSIHealthScopedReadTransport.finish(review, records: records, initial: bytes,
               request: request, style: style, ledger: ledger, currentDestination: {
                 active?.id == review.id ? currentRoute(review)?.0 : nil
@@ -314,7 +333,15 @@ struct GalaxySSIHealthCareDiscussionView: View {
           guard active?.id == review.id, !Task.isCancelled, currentRoute(review) != nil else { return }
           active = nil
           defer { task = nil }
-          if review.asksQuestions {
+          if review.allowsAnswerDraft {
+            let draft = try GalaxySSIHealthCareAnswerDraft.argumentsIfPresent(bytes, style: style)
+            if let draft {
+              try records.stageLocalCareAnswerDraft(review, arguments: draft)
+            } else {
+              let answer = try GalaxySSIHealthFollowUpTransport.output(bytes, style: style)
+              try records.finishLocalCareDiscussionTurn(review, answer: answer)
+            }
+          } else if review.asksQuestions {
             let arguments = try GalaxySSIHealthCarePlan.arguments(bytes, style: style,
               toolName: GalaxySSIHealthCareQuestions.tool)
             try records.saveLocalCareQuestionProposals(review, arguments: arguments)
@@ -338,7 +365,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
     clearRequest(); thread = nil; question = ""; provider = ""; allowed = false; failed = false; proposesPlan = false
     archived = []; archiveLimit = 10
     selectedSources = []; allowsHistory = false
-    includesQuestions = false; asksQuestions = false
+    includesQuestions = false; asksQuestions = false; allowsAnswerDraft = false
   }
   private func t(_ key: String, _ fallback: String) -> String {
     GalaxySSILocalization.string("galaxyssi.health.discussion." + key, fallback: fallback, language: language)
