@@ -4085,7 +4085,7 @@ final class MessageCoordinator: ObservableObject {
             turnId: binding.identity.turnId) else { return .missing }
     if case .message(let message) = disposition {
       guard AgentDesktopAcceptedReply.digest(message.content) == accepted.contentSHA256,
-            store.commitAcceptedDesktopTask(binding, message: message, acceptedAt: accepted.acceptedAt)
+            store.commitAcceptedDesktopTask(binding, message: message, acceptedAt: accepted.acceptedAt, status: accepted.status)
       else { return .retryLocal }
     }
     guard desktopResultRecovery.receipts.insert(accepted.receipt) else { return .retryLocal }
@@ -4097,8 +4097,9 @@ final class MessageCoordinator: ObservableObject {
     liveConnectorSequenceByKey.removeValue(forKey: streamKey)
     connectorResponseBus.markTerminal(AgentTerminalDelivery(sourceMessageId: 0,
       conversationId: binding.identity.conversationId, turnId: binding.identity.turnId,
-      taskId: binding.identity.taskId, contactId: binding.contactId, reason: "completed",
-      executionGeneration: accepted.receipt.executionGeneration))
+      taskId: binding.identity.taskId, contactId: binding.contactId, reason: accepted.status,
+      executionGeneration: accepted.receipt.executionGeneration,
+      isFailure: AgentRemoteOutcomePolicy.isFailure(accepted.status)))
     guard desktopReplyRecovery.retire(binding) else { return .retryLocal }
     agentHomeDisplayContactIdsByTurnId.removeValue(forKey: binding.identity.turnId)
     desktopReplyRecoverySweepRequested = true
@@ -4115,7 +4116,7 @@ final class MessageCoordinator: ObservableObject {
             let record = desktopReplyRecovery.receive(payload, authenticatedDesktopId: desktopId, now: now) else {
         throw MqttRouteError.invalidPayload
       }
-      if record.status == "completed", let items = payload["items"] as? [[String: Any]],
+      if AgentDesktopReplyRecovery.terminalStatuses.contains(record.status), let items = payload["items"] as? [[String: Any]],
          let page = items.first?.dictionary("result_page"),
          let manifest = desktopResultRecovery.receiveInline(page, record: record, queryNonce: payload.string("request_id")) {
         // Inline page zero is optional. If the manifest write fails, fetch it again explicitly.
@@ -4125,7 +4126,7 @@ final class MessageCoordinator: ObservableObject {
     }
     guard let binding = desktopResultRecovery.expectedBinding(payload) else { return }
     guard binding.desktopId == desktopId, currentDesktopReplySource(binding) != nil,
-          let record = desktopReplyRecovery.record(for: binding), record.status == "completed",
+          let record = desktopReplyRecovery.record(for: binding), AgentDesktopReplyRecovery.terminalStatuses.contains(record.status),
           desktopResultRecovery.receive(payload, record: record, now: now, commitManifest: {
             self.desktopReplyRecovery.attachManifest($0, to: record)
           }) != nil else { throw MqttRouteError.invalidPayload }
@@ -4144,14 +4145,17 @@ final class MessageCoordinator: ObservableObject {
       journalBackedRecoveryCursor = record.binding.key
       guard record.codexDispatchPending != true, record.expiryReason(now: now) == nil,
             currentDesktopReplySource(record.binding) != nil else { continue }
-      if record.status == "completed", let payload = desktopResultRecovery.assembled(record),
+      let terminal = AgentDesktopReplyRecovery.terminalStatuses.contains(record.status)
+      if terminal, record.acceptedReply != nil, completeAcceptedDesktopReply(record) != .missing { continue }
+      if terminal, var payload = desktopResultRecovery.assembled(record),
          let receipt = desktopResultRecovery.receipt(record) {
+        if let accepted = record.acceptedReply, accepted.receipt == receipt { payload["message_id"] = accepted.remoteMessageId }
         do { try commitJournalBackedDesktopResult(payload, receipt: receipt) }
         catch { onFailure(error) }
         continue
       }
       guard requests.count < 4, ready(record.binding) else { continue }
-      let request = record.status == "completed" ? desktopResultRecovery.request(record, now: now) :
+      let request = terminal ? desktopResultRecovery.request(record, now: now) :
         desktopReplyRecovery.request(record.binding, online: true, now: now)
       if let request { requests.append(request) }
     }
@@ -4174,13 +4178,18 @@ final class MessageCoordinator: ObservableObject {
     }
     let rich = richContentMaterializer.materialize(AgentRichContentCodec.normalize(
       payload.string("rich_output").ifBlank(payload.string("rich_output_json"))))
-    let content = payload.string("content").ifBlank(payload.string("text")).ifBlank(AgentRichContentCodec.fallbackText(rich))
+    let status = payload.string("task_status")
+    let reply = payload.string("content").ifBlank(payload.string("text")).ifBlank(AgentRichContentCodec.fallbackText(rich))
+    let content = AgentRemoteOutcomePolicy.isFailure(status)
+      ? payload.string("error").ifBlank(payload.string("terminal_reason")).ifBlank(reply).ifBlank(status)
+      : reply
     guard !content.isBlank || !rich.isBlank,
-          let accepted = desktopReplyRecovery.acceptCompletedReply(payload, binding: tracked.binding, content: content,
+          let accepted = desktopReplyRecovery.acceptTerminalReply(payload, binding: tracked.binding, content: content,
             now: AgentControlPlaneClock.nowMillis()),
           persistAcceptedDesktopReply(accepted, payload: payload, content: content, rich: rich) else {
       throw MqttChunkStorageError.databaseFailure
     }
+    if status == "timed_out" { recordConfirmedCodexTimeout(payload, binding: tracked.binding) }
   }
 
   private func persistAcceptedDesktopReply(_ record: AgentDesktopReplyRecoveryRecord, payload: [String: Any],
@@ -15251,7 +15260,7 @@ final class MessageCoordinator: ObservableObject {
         let committed = managed ? self.managedDesktopResultIsCommitted(response) :
           applied || self.connectorResponseBus.wasRecorded(response)
         guard committed else { throw MqttChunkStorageError.databaseFailure }
-      }, completedResult: { [weak self] payload, receipt in
+      }, terminalResult: { [weak self] payload, receipt in
         guard let self else { throw MqttDeliveryDispatch.Failure.unavailable }
         try self.commitJournalBackedDesktopResult(payload, receipt: receipt)
       }, resultRecovery: { [weak self] in

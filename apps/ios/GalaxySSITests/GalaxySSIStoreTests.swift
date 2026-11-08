@@ -573,7 +573,7 @@ final class GalaxySSIStoreTests: XCTestCase {
     let bridge = MqttDesktopConnectorProjection(store: store, identities: identities, commitResponse: { response, _ in
       if reject { throw FixtureError.writeFailed }
       applied.append(response.content)
-    }, completedResult: { _, receipt in
+    }, terminalResult: { _, receipt in
       if reject || !recovery.receipts.insert(receipt) { throw FixtureError.writeFailed }
     }, resultRecovery: { recovery })
     let payload: [String: Any] = ["type": "text", "message_id": id, "content": "Connector result",

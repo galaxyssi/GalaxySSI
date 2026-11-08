@@ -2,25 +2,28 @@ import Foundation
 
 extension GalaxySSIStore {
   func commitAcceptedDesktopTask(_ binding: AgentDesktopReplyBinding, message: ChatMessage,
-                                 acceptedAt: Int64) -> Bool {
+                                 acceptedAt: Int64, status: String = "completed") -> Bool {
+    guard AgentDesktopReplyRecovery.terminalStatuses.contains(status) else { return false }
     let taskIds = Set([binding.identity.taskId, binding.identity.turnId])
     let candidates = taskIds.compactMap { agentTask(id: $0) }.filter { $0.sessionId == binding.identity.conversationId }
     guard candidates.count == 1, let task = candidates.first else { return true }
     let verification = "Committed authenticated Desktop result"
-    if task.phase == .completed && task.verification == verification && task.result == message.content {
-      if AgentOutcomeContinuation.isUnverified(task) { upsertAgentTask(task) }
+    let phase = AgentRemoteTaskStatusPolicy.phase(status)
+    if task.phase == phase && task.verification == verification && task.result == message.content {
+      if phase == .completed, AgentOutcomeContinuation.isUnverified(task) { upsertAgentTask(task) }
       return save()
     }
     guard let next = Self.desktopTaskCompletion(task, binding: binding, message: message,
-      acceptedAt: acceptedAt, verification: verification) else { return true }
+      acceptedAt: acceptedAt, verification: verification, phase: phase) else { return true }
     guard replaceAgentTaskForRecovery(expected: task, updated: next) else { return false }
     return save()
   }
 
   nonisolated static func desktopTaskCompletion(_ task: AgentTaskRecord, binding: AgentDesktopReplyBinding,
-                                               message: ChatMessage, acceptedAt: Int64, verification: String)
+                                               message: ChatMessage, acceptedAt: Int64, verification: String,
+                                               phase: AgentPhase = .completed)
     -> AgentTaskRecord? {
-    guard task.sessionId == binding.identity.conversationId,
+    guard [.completed, .failed, .cancelled].contains(phase), task.sessionId == binding.identity.conversationId,
           [binding.identity.taskId, binding.identity.turnId].contains(task.taskId),
           task.routeKind == .desktopAgent, [.waitingResponse, .executing, .verifying].contains(task.phase),
           !task.blocked, task.planContext == nil, task.activePlan == nil, task.pendingPlanning == nil,
@@ -30,11 +33,11 @@ extension GalaxySSIStore {
           [.delivered, .read].contains(message.deliveryStatus)
     else { return nil }
     var completed = task
-    completed.phase = .completed
+    completed.phase = phase
     completed.result = message.content
     completed.verification = verification
     completed.updatedAtMillis = max(task.updatedAtMillis, acceptedAt)
-    return AgentOutcomeContinuation.guardCompletion(completed, previous: task)
+    return phase == .completed ? AgentOutcomeContinuation.guardCompletion(completed, previous: task) : completed
   }
 
   func replaceAgentTaskForRecovery(expected: AgentTaskRecord, updated: AgentTaskRecord) -> Bool {

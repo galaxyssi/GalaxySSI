@@ -5,7 +5,7 @@ struct MqttDesktopConnectorProjection {
   let store: GalaxySSIStore
   let identities: AgentTaskIdentityStore
   let commitResponse: (AgentConnectorResponse, [String: Any]) throws -> Void
-  var completedResult: (([String: Any], AgentResultReceipt) throws -> Void)? = nil
+  var terminalResult: (([String: Any], AgentResultReceipt) throws -> Void)? = nil
   var resultRecovery: (() -> AgentDesktopResultRecovery?)? = nil
   var receiveRecoveryControl: (([String: Any], String) throws -> Void)? = nil
   var recoveryQueries: (((AgentDesktopReplyBinding) -> Bool) -> [[String: Any]])? = nil
@@ -96,11 +96,11 @@ struct MqttDesktopConnectorProjection {
         turnId: payload.string("turn_id"), updates: updates) == true else { throw MqttChunkStorageError.databaseFailure }
       return
     }
-    if payload.string("type") == "text", payload.string("task_status") == "completed",
+    if payload.string("type") == "text", AgentDesktopReplyRecovery.terminalStatuses.contains(payload.string("task_status")),
        UUID(uuidString: payload.string("source_message_id")) != nil,
        let receipt = AgentResultReceipt.fromPayload(payload, desktopId: target.peer.remoteSignalName),
-       let completedResult {
-      try completedResult(payload, receipt)
+       let terminalResult {
+      try terminalResult(payload, receipt)
       return
     }
     guard payload["result_recovery"] == nil,

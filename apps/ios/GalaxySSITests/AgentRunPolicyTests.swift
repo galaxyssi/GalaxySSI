@@ -1011,6 +1011,41 @@ extension GalaxySSIStoreTests {
   }
 
   @MainActor
+  func testAcceptedDesktopFailureStaysPinnedAndDoesNotBecomeSuccessAfterRestart() throws {
+    let suite = "DesktopAcceptedFailure-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let journal = DesktopReplyRecoveryTestJournal()
+    let secrets = InMemorySecretStore()
+    let binding = desktopReplyJournalBinding()
+    let recovery = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    XCTAssertTrue(recovery.track(binding, now: 1_000))
+    var payload: [String: Any] = binding.fields
+    payload.merge(["type": "text", "task_status": "timed_out", "execution_generation": 2,
+      "status_sequence": 8, "message_id": "reply", "sha256": String(repeating: "b", count: 64)]) { _, new in new }
+    XCTAssertNil(recovery.acceptCompletedReply(payload, binding: binding, content: "Timed out", now: 2_000))
+    journal.rejectWrites = true
+    XCTAssertNil(recovery.acceptTerminalReply(payload, binding: binding, content: "Timed out", now: 2_000))
+    XCTAssertNil(recovery.record(for: binding)?.acceptedReply)
+    journal.rejectWrites = false
+    let accepted = try XCTUnwrap(recovery.acceptTerminalReply(payload, binding: binding, content: "Timed out", now: 2_000))
+    XCTAssertEqual(accepted.acceptedReply?.status, "timed_out")
+    let reopened = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    XCTAssertEqual(reopened.record(for: binding), accepted)
+    XCTAssertEqual(reopened.acceptTerminalReply(payload, binding: binding, content: "Timed out", now: 3_000), accepted)
+    XCTAssertNil(reopened.acceptTerminalReply(payload, binding: binding, content: "Other reply", now: 3_000))
+    var conflict = payload
+    conflict["task_status"] = "completed"
+    XCTAssertFalse(reopened.acceptsFinal(conflict, desktopId: binding.desktopId))
+    conflict = payload
+    conflict["status_sequence"] = 7
+    XCTAssertNil(reopened.acceptTerminalReply(conflict, binding: binding, content: "Timed out", now: 3_000))
+    conflict = payload
+    conflict["execution_generation"] = 3
+    XCTAssertNil(reopened.acceptTerminalReply(conflict, binding: binding, content: "Timed out", now: 3_000))
+  }
+
+  @MainActor
   func testDesktopCommitIsExactAndDoesNotReviveDeletedOrPausedWork() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
@@ -1034,6 +1069,12 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(completed?.phase, .completed)
     XCTAssertEqual(completed?.result, "Exact reply")
     XCTAssertEqual(completed?.updatedAtMillis, 2_000)
+    for terminal in [AgentPhase.failed, .cancelled] {
+      let result = GalaxySSIStore.desktopTaskCompletion(task, binding: binding, message: saved,
+        acceptedAt: 2_000, verification: "Committed", phase: terminal)
+      XCTAssertEqual(result?.phase, terminal)
+      XCTAssertEqual(result?.result, "Exact reply")
+    }
     for phase in [AgentPhase.paused, .cancelled, .failed, .completed] {
       task.phase = phase
       XCTAssertNil(GalaxySSIStore.desktopTaskCompletion(task, binding: binding, message: saved,
