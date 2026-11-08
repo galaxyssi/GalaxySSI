@@ -743,6 +743,7 @@ final class AgentTeamExecutionHistoryStore {
       try AgentCollaborationEvidenceContent.page(bytes, offset: offset,
         evidence: mode == "evidence" || mode == "native_evidence")
     }
+    var comparisonLineage: AgentMcpJSONObject?
     let (slice, sourceReference, coverage) = try access { database
       -> (AgentCollaborationEvidenceContent.Page, AgentMcpJSONObject?, AgentMcpJSONObject?) in
       guard let team = try database.snapshots(runId: scope.runId).first,
@@ -777,6 +778,7 @@ final class AgentTeamExecutionHistoryStore {
           guard record.toolTestComparison != nil, record.turnId != scope.turnId || record.sourceId == scope.sourceId else {
             throw AgentTeamHistoryDatabase.Failure.stale
           }
+          comparisonLineage = try Self.toolComparisonLineage(record, scope: scope, database: database)
         }
         return (try page(encoder.encode(record)), nil, nil)
       }
@@ -860,6 +862,7 @@ final class AgentTeamExecutionHistoryStore {
       "trust": .string("untrusted_group_evidence")
     ]
     if let coverage { result["host_read_coverage"] = .object(try slice.wireCoverage(coverage)) }
+    if let comparisonLineage { result["comparison_lineage"] = .object(comparisonLineage) }
     if let sourceReference {
       result["offset_unit"] = .string(AgentCollaborationEvidenceContent.offsetUnit)
       result["source_reference"] = .object(sourceReference)
@@ -1143,6 +1146,9 @@ final class AgentTeamExecutionHistoryStore {
           var recall = AgentCollaborationCandidateRecall.reference(head.reference)
           recall["mode"] = .string("workspace")
           entry["comparison_recall"] = .object(recall)
+          if !pinInitial {
+            entry["comparison_lineage"] = .object(try Self.toolComparisonLineage(head, scope: scope, database: database))
+          }
           entry["grants_permissions"] = .bool(false)
         }
         if head.draft.kind == .executableTool || head.draft.kind == .toolTestPlan {
@@ -1185,6 +1191,37 @@ final class AgentTeamExecutionHistoryStore {
         "grants_permissions": .bool(false), "trust": .string("directory_not_execution_authority"),
         "guidance": .string("Procedure linked_sources identify exact excerpt origins, not a full read. Read the original and check current scope and lineage before reuse.")]
     }
+  }
+
+  private static func toolComparisonLineage(_ record: AgentCollaborationResearchRevision,
+      scope: AgentCollaborationToolEvidenceScope, database: AgentTeamHistoryDatabase) throws -> AgentMcpJSONObject {
+    guard let comparison = AgentCollaborationSavedToolTest.Comparison(record.draft),
+          let receipt = record.toolTestComparison, let sides = comparison.lineage(receipt) else {
+      return ["status": .string("requires_revalidation"), "sides": .array([])]
+    }
+    func link(_ ref: AgentCollaborationResearchReference, kind: AgentCollaborationResearchDraft.Kind)
+      throws -> (AgentCollaborationResearchRevision, Bool)? {
+      guard let exact = try database.readableCollaborationRevision(ref, scope: scope),
+            exact.draft.kind == kind, exact.turnId != scope.turnId || exact.sourceId == scope.sourceId else { return nil }
+      let head = try database.researchRecord(AgentCollaborationResearchRevision.self,
+        conversationId: scope.conversationId, key: "object:" + ref.objectId)
+      return (exact, head?.reference == ref)
+    }
+    var result: [AgentMcpJSONValue] = []
+    var allCurrent = comparison.preservesFrozenObservations(record)
+    for side in sides {
+      let plan = try link(side.plan, kind: .toolTestPlan)
+      let tool = try link(side.tool, kind: .executableTool)
+      let related = plan.map { AgentCollaborationCandidateRecall.linkedTool($0.0) == side.tool } == true
+      let current = related && plan?.1 == true && tool?.1 == true
+      allCurrent = allCurrent && current
+      var summary: AgentMcpJSONObject = ["side": .string(side.name),
+        "status": .string(current ? "current_at_read" : "requires_revalidation")]
+      if plan != nil { summary["tool_test_plan"] = .object(AgentCollaborationCandidateRecall.reference(side.plan)) }
+      if related, tool != nil { summary["executable_tool"] = .object(AgentCollaborationCandidateRecall.reference(side.tool)) }
+      result.append(.object(summary))
+    }
+    return ["status": .string(allCurrent ? "current_at_read" : "requires_revalidation"), "sides": .array(result)]
   }
 
   private func recallMethodEvaluations(_ input: AgentMcpJSONObject,
@@ -2338,7 +2375,8 @@ final class AgentTeamExecutionHistoryStore {
   func publishCollaborationMilestone(_ input: AgentMcpJSONObject,
                                      scope: AgentCollaborationToolEvidenceScope,
                                      recruitmentTemplates: [String: String] = [:],
-                                     recruitmentRoster: AgentCollaborationRoster? = nil) throws -> AgentMcpJSONObject {
+                                     recruitmentRoster: AgentCollaborationRoster? = nil,
+                                     desktopWire: Bool = false) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
     let id = input.string("milestone_id")
     if mode == AgentCollaborationGoalAssessmentPolicy.establishContractMode {
@@ -2411,20 +2449,35 @@ final class AgentTeamExecutionHistoryStore {
             "next_cursor": keys.count > 32 ? .string(keys[31]) : .null,
             "trust": .string("host_recorded_interim_versions_not_task_completion_or_verification")]
         }
-        let hash = input.string("artifact_sha256")
         guard mode == "receipt", Set(input.keys) == ["mode", "milestone_id", "artifact_sha256"],
+              case .string(let receiptID)? = input["milestone_id"], receiptID == id,
+              case .string(let hash)? = input["artifact_sha256"],
               !id.isBlank, id.utf8.count <= 160, hash.utf8.count == 64,
               hash.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) })
         else { throw AgentTeamHistoryDatabase.Failure.corrupt }
         let saved = try database.researchRecord(AgentCollaborationResearchPublication.self,
           conversationId: scope.conversationId, key: Self.milestoneKey(base, id: id), revision: 0)
-        if let saved, saved.requestHash == hash { return Self.milestoneReceipt(saved, id: id, status: "recorded") }
+        if let saved, saved.requestHash == hash {
+          guard saved.milestoneId == id, !saved.references.isEmpty else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+          for ref in saved.references {
+            guard let original = try database.researchRecord(AgentCollaborationResearchRevision.self,
+              conversationId: scope.conversationId, key: "object:" + ref.objectId, revision: ref.revision),
+              original.reference == ref, original.runId == scope.runId, original.turnId == scope.turnId,
+              original.authorId == scope.memberId, original.sourceId == scope.sourceId else {
+              throw AgentTeamHistoryDatabase.Failure.stale
+            }
+          }
+          var result = Self.milestoneReceipt(saved, id: id, status: "recorded")
+          result["receipt_recovered"] = .bool(true)
+          return result
+        }
         if let rejected = try database.researchRecord(AgentCollaborationMilestoneRejection.self,
           conversationId: scope.conversationId, key: Self.milestoneRejectionKey(base, id: id, hash: hash), revision: 0) {
           return Self.milestoneRejectedReceipt(id: id, hash: hash, reason: rejected.reason, problem: rejected.problem)
         }
         if saved == nil {
-          return ["success": .bool(false), "status": .string("not_recorded")]
+          return ["success": .bool(true), "status": .string("not_recorded"),
+            "milestone_id": .string(id), "artifact_sha256": .string(hash)]
         }
         throw AgentTeamHistoryDatabase.Failure.stale
       }
@@ -2440,7 +2493,8 @@ final class AgentTeamExecutionHistoryStore {
       else { throw AgentTeamHistoryDatabase.Failure.corrupt }
       let drafts: [AgentCollaborationResearchDraft]
       do {
-        guard let decoded = try AgentCollaborationResearchEnvelope.publication(in: raw) else {
+        let view = desktopWire ? AgentDesktopCollaborationPublicationWire.artifactDecodingView(envelope) ?? raw : raw
+        guard let decoded = try AgentCollaborationResearchEnvelope.publication(in: view) else {
           throw AgentTeamHistoryDatabase.Failure.corrupt
         }
         drafts = decoded
@@ -2629,6 +2683,11 @@ final class AgentTeamExecutionHistoryStore {
           revision.reference == reference, revision.runId == scope.runId, revision.turnId == scope.turnId,
           revision.authorId == scope.memberId, revision.sourceId == scope.sourceId else {
           throw AgentTeamHistoryDatabase.Failure.corrupt
+        }
+        if revision.draft.kind == .toolTestComparison {
+          guard let comparison = AgentCollaborationSavedToolTest.Comparison(revision.draft),
+                comparison.preservesFrozenObservations(revision) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+          return revision
         }
         if let citations = revision.draft.observations, !citations.isEmpty {
           if revision.draft.kind == .acceptanceReview {

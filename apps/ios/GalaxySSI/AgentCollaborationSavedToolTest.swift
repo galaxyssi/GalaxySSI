@@ -111,6 +111,37 @@ enum AgentCollaborationSavedToolTest {
       let original: AgentCollaborationNativeToolObservation
     }
 
+    struct LineageSide {
+      let name: String
+      let plan: AgentCollaborationResearchReference
+      let tool: AgentCollaborationResearchReference
+    }
+
+    func lineage(_ receipt: AgentMcpJSONObject) -> [LineageSide]? {
+      guard receipt["state"] == .string("observed_paired_case_outcomes") else { return nil }
+      var output: [LineageSide] = []
+      for (name, declared) in zip(["baseline", "candidate"], sides) {
+        guard let saved = receipt[name]?.objectValue,
+              reference(saved["tool_test_plan"]) == declared.plan,
+              saved["observation"]?.objectValue == declared.observation,
+              let tool = reference(saved["executable_tool"]) else { return nil }
+        output.append(.init(name: name, plan: declared.plan, tool: tool))
+      }
+      return output
+    }
+
+    func preservesFrozenObservations(_ record: AgentCollaborationResearchRevision) -> Bool {
+      guard let receipt = record.toolTestComparison, lineage(receipt) != nil,
+            let citations = record.draft.observations, citations.count == sides.count,
+            let reads = record.frozenNativeReads, reads.count == sides.count else { return false }
+      return sides.allSatisfy { side in
+        let id = side.observation.string("evidence_id"), hash = side.observation.string("sha256")
+        return citations.contains { $0["origin"] == .string("ios_native_tool") &&
+          $0.string("evidence_id") == id && $0.string("sha256") == hash } &&
+          reads.contains { $0.evidenceId == id && $0.sha256 == hash && $0.totalCharacters > 0 }
+      }
+    }
+
     func evaluate(baseline before: Observed, candidate after: Observed) -> AgentMcpJSONObject? {
       guard before.plan.reference == baseline.plan, after.plan.reference == candidate.plan,
             before.original.conversationId == after.original.conversationId,

@@ -969,6 +969,77 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(linked.map { $0.draft.id }, ["note"])
   }
 
+  func testDesktopPublicationRecoversExactFrozenArtifactsAndDistinguishesAbsence() throws {
+    let suite = "desktop-publication-receipt-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    func open() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    }
+    let history = open()
+    var team = durableTeamSnapshot("desktop-publication")
+    team.members[1].dispatchCheckpoint = .dispatching
+    XCTAssertTrue(history.upsert(team))
+    let member = team.members[1]
+    let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId, memberId: member.memberId, sourceId: member.sourceMessageId)
+    let wire = AgentDesktopCollaborationPublicationWire.self
+    func sha(_ raw: String) -> String {
+      SHA256.hash(data: Data(raw.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+    func lookup(_ id: String, _ digest: String) -> AgentMcpJSONObject {
+      ["mode": .string("receipt"), "milestone_id": .string(id), "artifact_sha256": .string(digest)]
+    }
+    for kind in ["text", "file"] {
+      let raw = """
+      {"format":"galaxyssi.research-artifact.v1","summary":"Snapshot \u{1F642}","workspace":[
+        {"id":"\(kind)","kind":"artifact","title":"Snapshot","body":{"format":"galaxyssi.\(kind)-artifact/1",
+          "name":"snapshot","content":"Frozen \u{1F642}"},"parents":[]}]}
+      """
+      let request = lookup(kind, sha(raw))
+      let absent = try history.publishCollaborationMilestone(request, scope: scope)
+      XCTAssertEqual(absent["success"], .bool(true))
+      XCTAssertEqual(absent["status"], .string("not_recorded"))
+      XCTAssertEqual(absent["milestone_id"], .string(kind))
+      XCTAssertEqual(absent["artifact_sha256"], .string(sha(raw)))
+      let original: AgentMcpJSONObject = ["mode": .string("publish"), "milestone_id": .string(kind), "artifact": .string(raw)]
+      let submitted = wire.result(try history.publishCollaborationMilestone(original, scope: scope, desktopWire: true),
+        phase: "publish")
+      XCTAssertEqual(submitted["status"], .string("recorded"))
+      XCTAssertEqual(submitted["artifact_sha256"], .string(sha(raw)))
+      XCTAssertEqual(submitted["revisions"]?.arrayValue?.count, 1)
+      let reopened = open()
+      let recovered = wire.result(try reopened.publishCollaborationMilestone(request, scope: scope), phase: "receipt")
+      XCTAssertEqual(recovered["status"], .string("recorded"))
+      XCTAssertEqual(recovered["receipt_recovered"], .bool(true))
+      XCTAssertEqual(recovered["assignment_completed"], .bool(false))
+      XCTAssertEqual(recovered["revisions"], submitted["revisions"])
+      XCTAssertThrowsError(try reopened.publishCollaborationMilestone(lookup(kind, sha(raw + " ")), scope: scope))
+      var foreign = scope
+      foreign.sourceId = "other-source"
+      XCTAssertThrowsError(try reopened.publishCollaborationMilestone(request, scope: foreign))
+    }
+    let database = try AgentTeamHistoryDatabase(fileURL: file,
+      storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    let base = "publication:" + AgentMcpJSONCodec.sha256([
+      "run": .string(scope.runId), "member": .string(scope.memberId), "source": .string(scope.sourceId)
+    ]) + ":milestone:"
+    let invalidDigest = sha("invalid reference fixture")
+    let invalid = AgentCollaborationResearchPublication(requestHash: invalidDigest,
+      references: [.init(objectId: String(repeating: "a", count: 64), revision: 1, sha256: invalidDigest)],
+      milestoneId: "broken", recordedAtMillis: 1)
+    try database.insertResearchRecord(invalid, conversationId: scope.conversationId,
+      key: base + AgentMcpJSONCodec.sha256(["id": .string("broken")]), revision: 0)
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(lookup("broken", invalidDigest), scope: scope))
+    team.state = .cancelled
+    team.updatedAtMillis += 1
+    XCTAssertTrue(history.upsert(team))
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(lookup("missing", invalidDigest), scope: scope))
+  }
+
   func testResearchPublicationNotesDefaultOnlyWhenAbsentAndPreserveExplicitValues() throws {
     typealias Envelope = AgentCollaborationResearchEnvelope
     let base: AgentMcpJSONObject = ["format": .string(Envelope.wireFormat), "summary": .string("Research")]
@@ -2886,8 +2957,12 @@ extension GalaxySSIStoreTests {
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
-    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: InMemorySecretStore(),
-      executionStore: SavedTeamRecoveryFixture([]), fileURL: root.appendingPathComponent("history.sqlite"))
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite")
+    func open() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    }
+    let history = open()
     func scope(_ team: AgentTeamExecutionSnapshot) -> AgentCollaborationToolEvidenceScope {
       .init(runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
         memberId: team.members[0].memberId, sourceId: team.members[0].sourceMessageId)
@@ -3002,10 +3077,12 @@ extension GalaxySSIStoreTests {
     request["mode"] = .string("workspace")
     var offset: Int64? = 0
     var content = ""
+    var lineage: AgentMcpJSONObject?
     while let position = offset {
       request["offset"] = .int(position)
       let page = try history.recallCollaborationOriginal(request, scope: scope(reader))
       content += try XCTUnwrap(page["content"]?.strictStringValue)
+      lineage = page["comparison_lineage"]?.objectValue
       offset = page["next_offset"]?.intValue
     }
     let revision = try JSONDecoder().decode(AgentCollaborationResearchRevision.self, from: Data(content.utf8))
@@ -3017,6 +3094,37 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(regression?["actual"], .int(0))
     XCTAssertEqual(result["source_changed"], .bool(true))
     XCTAssertEqual(result["grants_permissions"], .bool(false))
+    XCTAssertEqual(lineage?["status"], .string("current_at_read"))
+    let sides = try XCTUnwrap(lineage?["sides"]?.arrayValue)
+    XCTAssertEqual(sides.count, 2)
+    for (entry, plan) in zip(sides, [baseline, candidate]) {
+      XCTAssertEqual(entry.objectValue?["tool_test_plan"], .object(AgentCollaborationCandidateRecall.reference(plan)))
+      XCTAssertNotNil(entry.objectValue?["executable_tool"])
+    }
+    func directory(_ store: AgentTeamExecutionHistoryStore) throws -> AgentMcpJSONObject? {
+      let page = try store.recallCollaborationOriginal(["mode": .string("capabilities"), "query": .string("Paired")],
+        scope: scope(reader))
+      return page["capabilities"]?.arrayValue?.compactMap(\.objectValue).first {
+        $0.string("object_id") == ref.objectId
+      }?["comparison_lineage"]?.objectValue
+    }
+    XCTAssertEqual(try directory(history), lineage)
+    XCTAssertEqual(try open().committedResearchRevisions(scope: owner)?.first?.toolTestComparison, result)
+
+    let database = try AgentTeamHistoryDatabase(fileURL: file,
+      storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    let key = "object:" + baseline.objectId
+    var newer = try XCTUnwrap(database.researchRecord(AgentCollaborationResearchRevision.self,
+      conversationId: owner.conversationId, key: key, revision: baseline.revision))
+    newer.previousHash = baseline.sha256
+    newer.reference.revision += 1
+    newer.reference.sha256 = String(repeating: "1", count: 64)
+    try database.insertResearchRecord(newer, conversationId: owner.conversationId, key: key, revision: newer.reference.revision)
+    let stale = try XCTUnwrap(directory(open()))
+    XCTAssertEqual(stale["status"], .string("requires_revalidation"))
+    XCTAssertEqual(stale["sides"]?.arrayValue?.first?.objectValue?["status"], .string("requires_revalidation"))
+    XCTAssertEqual(stale["sides"]?.arrayValue?.last?.objectValue?["status"], .string("current_at_read"))
+    XCTAssertEqual(try open().committedResearchRevisions(scope: owner)?.first?.toolTestComparison, result)
   }
 
   func testForecastRecomputesUtilityWithoutChoosingAnAction() throws {
@@ -3940,6 +4048,10 @@ extension GalaxySSIStoreTests {
     cache.remember(result, key: "nonce", fingerprint: "assignment-1", expiresAt: 20, now: 10)
     XCTAssertEqual(cache.lookup(key: "nonce", fingerprint: "assignment-1", now: 11), .response(result))
     XCTAssertEqual(cache.lookup(key: "nonce", fingerprint: "assignment-2", now: 11), .identityMismatch)
+    let absent: AgentMcpJSONObject = ["success": .bool(true), "status": .string("not_recorded")]
+    cache.remember(absent, key: "receipt-nonce", fingerprint: "assignment-1", expiresAt: 20, now: 10)
+    XCTAssertEqual(cache.lookup(key: "receipt-nonce", fingerprint: "assignment-1", now: 11, revalidate: true), .missing)
+    XCTAssertEqual(cache.lookup(key: "receipt-nonce", fingerprint: "assignment-2", now: 11, revalidate: true), .identityMismatch)
     XCTAssertEqual(cache.lookup(key: "nonce", fingerprint: "assignment-1", now: 20), .missing)
     cache.remember(["success": .bool(false)], key: "failed", fingerprint: "assignment-1", expiresAt: 30, now: 20)
     XCTAssertEqual(cache.lookup(key: "failed", fingerprint: "assignment-1", now: 21), .missing)
