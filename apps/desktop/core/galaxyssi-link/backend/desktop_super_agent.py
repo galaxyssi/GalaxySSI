@@ -45,6 +45,7 @@ from desktop_mcp import DesktopMcpRegistry, desktop_mcp_registry
 from desktop_skills import DesktopSkillRegistry, desktop_skill_registry
 from response_self_check import evaluate_response
 from untrusted_evidence import wrap_untrusted_evidence
+from command_lookup import command_lookup_scope
 
 
 TEXT_EXTENSIONS = {
@@ -87,6 +88,7 @@ class DesktopSuperAgent:
         task_manager,
         diagnostics: Callable[..., dict],
         deliver: Callable[..., dict],
+        selection_snapshot: Callable[[], dict] | None = None,
         registry: DesktopNativeToolRegistry | None = None,
         memory: DesktopMemoryStore | None = None,
         skills: DesktopSkillRegistry | None = None,
@@ -95,6 +97,7 @@ class DesktopSuperAgent:
     ) -> None:
         self.task_manager = task_manager
         self.diagnostics = diagnostics
+        self.selection_snapshot = selection_snapshot
         self.deliver = deliver
         self.registry = registry or desktop_native_tool_registry()
         self.memory = memory or desktop_memory_store()
@@ -105,6 +108,7 @@ class DesktopSuperAgent:
         self._execution_harness: AgentExecutionHarness | None = None
         self._artifact_finalization = None
 
+    @command_lookup_scope()
     def run(
         self,
         *,
@@ -139,13 +143,18 @@ class DesktopSuperAgent:
             f"{execution_contract(self._execution_harness.policy)}"
         )
         trace = AgentLoopTrace(self.loop_budget)
-        self._phase(
-            task_id,
-            AgentLoopPhase.PLAN,
-            "Understanding the request",
-            status="running",
-            event_id="agent-loop:plan",
+        compact_preparation = (
+            self._execution_harness.policy.task_kind == AgentTaskKind.CHAT
+            and not attachments and not plan_only
         )
+        if not compact_preparation:
+            self._phase(
+                task_id,
+                AgentLoopPhase.PLAN,
+                "Understanding the request",
+                status="running",
+                event_id="agent-loop:plan",
+            )
         self._phase(
             task_id,
             AgentLoopPhase.CONTEXT,
@@ -159,16 +168,18 @@ class DesktopSuperAgent:
             self._event(task_id, "memory", "Using relevant long-term memory")
         for skill in matched_skills:
             self._event(task_id, "skill", f"Applying {skill.name}", metadata={"skill_id": skill.id})
-        self._phase(
-            task_id,
-            AgentLoopPhase.CONTEXT,
-            "Task context is ready",
-            event_id="agent-loop:context",
-            detail=(
-                f"memory={'yes' if memory_context else 'no'}, "
-                f"skills={len(matched_skills)}, attachments={len(attachments)}"
-            ),
+        context_detail = (
+            f"memory={'yes' if memory_context else 'no'}, "
+            f"skills={len(matched_skills)}, attachments={len(attachments)}"
         )
+        if not compact_preparation:
+            self._phase(
+                task_id,
+                AgentLoopPhase.CONTEXT,
+                "Task context is ready",
+                event_id="agent-loop:context",
+                detail=context_detail,
+            )
 
         mcp_connection = None if plan_only else self.mcp.match(prompt)
         calls, direct_kind = self._local_plan(prompt, attachments, task_id)
@@ -187,10 +198,13 @@ class DesktopSuperAgent:
             plan_steps.append("Delegate analysis to an available Agent")
         self._phase(
             task_id,
-            AgentLoopPhase.PLAN,
-            "Plan ready",
-            event_id="agent-loop:plan",
-            detail="\n".join(f"{index + 1}. {step}" for index, step in enumerate(plan_steps)),
+            AgentLoopPhase.CONTEXT if compact_preparation else AgentLoopPhase.PLAN,
+            "Task context is ready" if compact_preparation else "Plan ready",
+            event_id="agent-loop:context" if compact_preparation else "agent-loop:plan",
+            detail="\n".join([
+                *([context_detail] if compact_preparation else []),
+                *(f"{index + 1}. {step}" for index, step in enumerate(plan_steps)),
+            ]),
             metadata={"step_count": len(plan_steps)},
         )
 
@@ -1249,7 +1263,8 @@ class DesktopSuperAgent:
         raise RuntimeError("No installed Desktop Agent is currently available")
 
     def _delegate_candidates(self, prompt: str) -> list[str]:
-        agents = list((self.diagnostics(quick=True) or {}).get("agents") or [])
+        snapshot = self.selection_snapshot() if self.selection_snapshot else self.diagnostics(quick=True)
+        agents = list((snapshot or {}).get("agents") or [])
         healthy = {
             str(item.get("id") or ""): item
             for item in agents

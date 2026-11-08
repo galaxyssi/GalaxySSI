@@ -25,6 +25,7 @@ from agent_gateway import (
     agent_tool_manifest,
     ask_agent_sync,
     connector_diagnostics,
+    agent_selection_snapshot,
     connector_self_test,
     deliver_agent_sync,
     desktop_agent_provider,
@@ -189,6 +190,9 @@ def galaxyssi_pairing_qr(grant_desktop_executor: bool = False) -> dict:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from agent_run_storage import open_run_database_keepalive, run_kernel_database_path
+
+    run_database_keepalive = None
     file_server_process = None
     proactive_runtime = None
     evolution_runtime = None
@@ -202,6 +206,10 @@ async def lifespan(app: FastAPI):
     if instance_lock is not None:
         instance_lock.acquire()
     init_db()
+    try:
+        run_database_keepalive = open_run_database_keepalive(run_kernel_database_path())
+    except Exception as exc:
+        log.warning("Run database keepalive unavailable: %s", exc)
     try:
         from desktop_memory_critic import desktop_memory_critic_runtime
 
@@ -377,6 +385,8 @@ async def lifespan(app: FastAPI):
                 log.warning("Signal sidecar shutdown failed: %s", exc)
         if instance_lock is not None:
             instance_lock.release()
+        if run_database_keepalive is not None:
+            run_database_keepalive.close()
 
 app = FastAPI(title="GalaxySSI Link", lifespan=lifespan)
 from evolution_v2.api import router as evolution_v2_router
@@ -3092,6 +3102,7 @@ def _desktop_resume_runner(task, checkpoint_bundle: dict):
             outcome = DesktopSuperAgent(
                 task_manager=agent_task_manager,
                 diagnostics=connector_diagnostics,
+                selection_snapshot=agent_selection_snapshot,
                 deliver=deliver_agent_sync,
             ).run(
                 task_id=current_task_id,
@@ -3259,6 +3270,7 @@ def api_start_desktop_task(req: DesktopTaskStartReq, request: Request):
             outcome = DesktopSuperAgent(
                 task_manager=agent_task_manager,
                 diagnostics=connector_diagnostics,
+                selection_snapshot=agent_selection_snapshot,
                 deliver=deliver_agent_sync,
             ).run(
                 task_id=task.task_id,
@@ -3897,6 +3909,7 @@ async def desktop_task_stream(ws: WebSocket):
     await ws.accept(subprotocol="galaxyssi-task-stream")
     loop = asyncio.get_running_loop()
     updates: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=64)
+    pending_task_ids: set[str] = set()
     evolution_manager = _desktop_evolution_manager()
     from peer_chat_store import peer_chat_store
 
@@ -3906,11 +3919,17 @@ async def desktop_task_stream(ws: WebSocket):
 
     def offer_update(payload: dict[str, Any]) -> None:
         def offer() -> None:
+            task_id = str(payload.get("_refresh_task_id") or "")
+            if task_id and task_id in pending_task_ids:
+                return
             if updates.full():
                 try:
-                    updates.get_nowait()
+                    dropped = updates.get_nowait()
+                    pending_task_ids.discard(str(dropped.get("_refresh_task_id") or ""))
                 except asyncio.QueueEmpty:
                     pass
+            if task_id:
+                pending_task_ids.add(task_id)
             updates.put_nowait(payload)
 
         try:
@@ -3921,12 +3940,11 @@ async def desktop_task_stream(ws: WebSocket):
     def enqueue_agent_task(snapshot: dict) -> None:
         if not str(snapshot.get("source_message_id") or "").startswith("desktop:"):
             return
-        task = agent_task_manager.get(str(snapshot.get("task_id") or ""))
-        if task is None or not task.source_message_id.startswith("desktop:"):
-            return
-        preview = agent_task_manager.public_preview(task.task_id, include_prompt=True)
-        if preview is not None:
-            offer_update(preview)
+        task_id = str(snapshot.get("task_id") or "")
+        if task_id:
+            # Subscriber callbacks run on the executor. Read the latest durable
+            # preview on the consumer instead of blocking each progress update.
+            offer_update({"_refresh_task_id": task_id})
 
     def enqueue_evolution_task(event: dict) -> None:
         task_id = str((event.get("task") or {}).get("task_id") or "")
@@ -3952,7 +3970,7 @@ async def desktop_task_stream(ws: WebSocket):
     peer_subscription_id = peers.subscribe(enqueue_peer_message)
     reminder_subscription_id = reminders.subscribe(lambda value: offer_update({"type": "desktop_peer_reminder", "reminder": value}))
     try:
-        tasks = _desktop_task_rows(500, evolution_manager)
+        tasks = await asyncio.to_thread(_desktop_task_rows, 500, evolution_manager)
         await ws.send_json({
             "type": "desktop_tasks_snapshot",
             "tasks": tasks,
@@ -3968,6 +3986,12 @@ async def desktop_task_stream(ws: WebSocket):
                     "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
                 })
                 continue
+            task_id = str(task.get("_refresh_task_id") or "")
+            if task_id:
+                pending_task_ids.discard(task_id)
+                task = await asyncio.to_thread(agent_task_manager.public_preview, task_id, include_prompt=True)
+                if task is None or not str(task.get("source_message_id") or "").startswith("desktop:"):
+                    continue
             if task.get("type") in {"desktop_peer_message", "desktop_peer_reminder"}:
                 await ws.send_json(task)
             else:

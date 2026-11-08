@@ -1103,11 +1103,12 @@ class AcpRuntime:
 
     @classmethod
     def _command_available(cls, command: str) -> bool:
+        from command_lookup import which
         parts = cls._split_command(command)
         if not parts:
             return False
         executable = Path(parts[0]).expanduser()
-        return executable.is_file() or shutil.which(parts[0]) is not None
+        return executable.is_file() or which(parts[0]) is not None
 
     @staticmethod
     def _spawn_command(command: list[str]) -> list[str]:

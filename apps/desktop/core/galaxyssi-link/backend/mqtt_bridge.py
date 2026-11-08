@@ -32,7 +32,7 @@ from attachment_request_broker import (
     RESULT_TYPE as INPUT_ATTACHMENT_REQUEST_RESULT_TYPE,
     attachment_request_broker,
 )
-from agent_gateway import ask_agent_sync, connector_diagnostics, deliver_agent_sync
+from agent_gateway import ask_agent_sync, connector_diagnostics, deliver_agent_sync, agent_selection_snapshot
 from agent_task_manager import (
     EXECUTION_LOCATION_CONTRACT,
     MAX_DELIVERY_TRACE_EVENTS,
@@ -5254,6 +5254,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     outcome = DesktopSuperAgent(
                         task_manager=agent_task_manager,
                         diagnostics=connector_diagnostics,
+                        selection_snapshot=agent_selection_snapshot,
                         deliver=deliver_agent_sync,
                     ).run(
                         task_id=task.task_id,
