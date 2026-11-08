@@ -50,4 +50,31 @@ class HealthCareClarificationLiveTest {
         } finally { report.writeText(JSONObject().put("synthetic_only", true).put("cases", reports).toString(2)) }
         assertEquals(2, reports.length())
     }
+
+    @Test fun configuredDeepSeekReadsSelectedProfileWithoutRequestingItsKnownHeightAgain() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("live_health_clarification") == "true")
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val contacts = AppStore.contacts(context)
+        val selected = requireNotNull((0 until contacts.length()).mapNotNull { contacts.optJSONObject(it) }
+            .filter { !it.optBoolean("deleted", false) && it.optString("delivery_mode") == "cloud_api" }
+            .map { AppStore.selectedCloudModelContact(context, it.optString("id")) ?: it }
+            .firstOrNull { it.optString("cloud_model").contains("deepseek", true) && CloudModelCredentialPolicy.isAutoRoutable(it) })
+        val contact = CloudModelRequestRoutingPolicy.resolve(selected, requestedModelId = "", hasImageInput = false)
+        val now = System.currentTimeMillis()
+        val scope = HealthCareProfileScope("", setOf(HealthProfileField.HEIGHT), emptySet())
+        val link = HealthCareProfileLink(scope, HealthProfileStamp("", mapOf("field:HEIGHT" to "synthetic-v1")))
+        val profile = HealthProfileContext(mapOf(HealthProfileField.HEIGHT to HealthProfileInput("170", "cm")), emptyList(), link.stamp)
+        val issue = HealthCareConcern(UUID.randomUUID().toString(), HealthMetric.GLUCOSE, 1, now, now, "synthetic",
+            HealthCareAssessment(HealthCareRecordRef(UUID.randomUUID().toString(), 1), now, "5.9", "mmol/L", "",
+                setOf(HealthCareSignal.GLUCOSE_CONTEXT)), profileLink = link)
+        val prompt = HealthCareDiscussionPolicy.prompt("请核对我已经保存的身高。还读取了我的姓名、完整病史和用药吗？" +
+            "这次只核对资料范围，不做医学判断、不联网、不创建计划。", HealthCareDiscussionPolicy.snapshot(issue, profile = profile))
+        val started = SystemClock.elapsedRealtime()
+        val response = CloudModelClient.sendStructured(context, contact,
+            "Reply in Chinese using only the supplied authorized context.", prompt)
+        File(context.cacheDir, "health-profile-live-report.json").writeText(JSONObject().put("synthetic_only", true)
+            .put("model", contact.optString("cloud_model")).put("elapsed_ms", SystemClock.elapsedRealtime() - started)
+            .put("answer", response).toString(2))
+        assertTrue("The provider did not acknowledge the supplied height", response.contains("170"))
+    }
 }

@@ -5,7 +5,8 @@ import org.json.JSONObject
 internal data class HealthCareDiscussionGrant(
     val conversationId: String, val turnId: String, val concernId: String, val revision: Int,
     val settingsVersion: String, val privacyVersion: String, val destination: String, val approvedAt: Long,
-    val targetId: String, val modelId: String, val effort: String, val researchAuthorizationId: String = ""
+    val targetId: String, val modelId: String, val effort: String, val researchAuthorizationId: String = "",
+    val profileLink: HealthCareProfileLink? = null
 ) {
     init {
         require(listOf(conversationId, turnId, concernId).all(HealthProfilePolicy::uuid))
@@ -17,12 +18,15 @@ internal data class HealthCareDiscussionGrant(
     fun json() = JSONObject().put("conversation", conversationId).put("turn", turnId).put("concern", concernId)
         .put("revision", revision).put("settings", settingsVersion).put("privacy", privacyVersion)
         .put("destination", destination).put("approved_at", approvedAt).put("target", targetId).put("model", modelId).put("effort", effort)
-        .apply { if (researchAuthorizationId.isNotEmpty()) put("research_authorization", researchAuthorizationId) }
+        .apply {
+            if (researchAuthorizationId.isNotEmpty()) put("research_authorization", researchAuthorizationId)
+            profileLink?.let { put("profile_link", it.json()) }
+        }
     companion object {
         fun from(j: JSONObject) = HealthCareDiscussionGrant(j.getString("conversation"), j.getString("turn"),
             j.getString("concern"), j.getInt("revision"), j.getString("settings"), j.getString("privacy"),
             j.getString("destination"), j.getLong("approved_at"), j.getString("target"), j.getString("model"), j.getString("effort"),
-            j.optString("research_authorization"))
+            j.optString("research_authorization"), j.optJSONObject("profile_link")?.let(HealthCareProfileLink::from))
     }
 }
 
@@ -32,7 +36,7 @@ internal object HealthCareDiscussionPolicy {
     fun permitted(grant: HealthCareDiscussionGrant?, conversation: String, turn: String, concern: HealthCareConcern?,
         settings: HealthCareSettings, privacy: HealthPrivacyPolicy, destination: String, now: Long): Boolean =
         grant != null && concern != null && grant.conversationId == conversation && grant.turnId == turn &&
-            grant.concernId == concern.id && grant.revision == concern.revision &&
+            grant.concernId == concern.id && grant.revision == concern.revision && grant.profileLink == concern.profileLink &&
             settings.enabled && grant.settingsVersion == settings.version && privacy.metrics && privacy.profile &&
             grant.privacyVersion == privacy.version && grant.destination == destination &&
             now >= grant.approvedAt && now - grant.approvedAt < MAX_APPROVAL_AGE &&
@@ -58,13 +62,17 @@ internal object HealthCareDiscussionPolicy {
         }.getOrDefault(false)
     }
 
-    fun snapshot(value: HealthCareConcern, followUp: JSONObject? = null): String = JSONObject()
+    fun snapshot(value: HealthCareConcern, followUp: JSONObject? = null, profile: HealthProfileContext? = null): String = JSONObject()
         .put("metric", value.metric.name).put("revision", value.revision).put("stage", value.stage.name).put("input_version", value.inputVersion)
         .put("assessment", value.assessment.json().apply {
             remove("comparison"); remove("series"); if (value.assessment.comparison != null) remove("sample")
             else value.assessment.sample?.let { put("sample", it.modelJson()) }
         }).put("confirmed_context", HealthCareClarificationContext.current(value)?.json() ?: JSONObject.NULL)
-        .put("clarification_context", HealthCareClarificationContext.snapshot(value))
+        .put("clarification_context", HealthCareClarificationContext.snapshot(value).put("separate_profile_included", profile != null))
+        .apply {
+            require((value.profileLink == null) == (profile == null))
+            profile?.let { put("selected_profile", HealthCareProfilePolicy.snapshot(requireNotNull(value.profileLink), it, value.assessment.measuredAt)) }
+        }
         .put("individual_target", value.target?.json() ?: JSONObject.NULL)
         .put("target_comparison", if (value.target == null) JSONObject.NULL else HealthCareTargetPolicy.comparison(value).name)
         .put("maintenance_review", value.maintenance?.json()?.put("clinical_stability_verified", false) ?: JSONObject.NULL)
@@ -94,6 +102,17 @@ internal object HealthCareDiscussionPolicy {
         to Health Center without a write receipt. separate_profile_included=false means other profile
         data is outside this handoff, not that the user has no profile or did not fill it in. Do not claim
         to have searched the whole Health Center or make the user repeat a complete medical history.
+        When selected_profile is present, use its saved self-reported fields and selected history,
+        medication and allergy entries before asking again. UNKNOWN, unselected, unavailable and a
+        recorded negative are different. This is the latest authorized snapshot; older profile values
+        in conversation history are not current. Unselected data is outside the present sharing scope.
+        Unavailable selected entries were removed; never reuse their
+        old values from conversation history. The selection is not a complete medical history or a
+        medication reconciliation. An entry records what the user reported, not a new diagnosis or
+        proof that a medicine is currently being taken. Its update time is not the onset date.
+        Age is derived for the measurement date, not a proof of current symptoms or pregnancy status.
+        New profile information may conflict with measurement-time context; explain the difference
+        and clarify only when it affects the decision. Never silently overwrite either source.
         automatic_follow_up explains why this background run started, using the durable run time and the
         last completed review in this same conversation. Lead with the relevant change or due action.
         elapsed_time_only means a review window arrived, not that a test was performed or health improved.

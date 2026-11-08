@@ -50,7 +50,8 @@ internal data class HealthProfileStamp(val generation: String, val versions: Map
     fun json() = JSONObject().put("generation", generation).put("versions", JSONObject(versions))
     companion object { fun from(j: JSONObject): HealthProfileStamp { val values = j.getJSONObject("versions"); return HealthProfileStamp(j.getString("generation"), values.keys().asSequence().associateWith(values::getString)) } }
 }
-internal data class HealthProfileContext(val fields: Map<HealthProfileField, HealthProfileInput?>, val entries: List<HealthBackgroundEntry>, val stamp: HealthProfileStamp) {
+internal data class HealthProfileContext(val fields: Map<HealthProfileField, HealthProfileInput?>, val entries: List<HealthBackgroundEntry>, val stamp: HealthProfileStamp,
+    val fieldUpdatedAt: Map<HealthProfileField, Long> = emptyMap()) {
     val source = "self_reported"
     val profileId = "self"
 }

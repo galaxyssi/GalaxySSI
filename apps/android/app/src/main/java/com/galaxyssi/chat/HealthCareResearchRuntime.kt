@@ -25,6 +25,7 @@ internal object HealthCareResearchRuntime {
         check(AgentModelSelectionSettings.selection(context, grant.conversationId) == preview.selection &&
             AgentModelSelectionSettings.configurationForTarget(context, grant.conversationId, grant.targetId) == preview.configuration)
         val authorization = HealthCareResearchAuthorization(UUID.randomUUID().toString(), grant, fingerprint)
+        check(HealthCareProfileAccess.current(context, grant.profileLink)) { context.getString(R.string.health_care_profile_changed) }
         check(bindingCurrent(context, authorization)) { context.getString(R.string.health_care_changed) }
         HealthCareStore(context).use { it.authorizeResearch(authorization, expectedId) }
         HealthCareResearchWork.changed(context)
@@ -34,7 +35,9 @@ internal object HealthCareResearchRuntime {
         val scope = value.scope
         val privacy = HealthPrivacyStore(context).use { it.policy() }
         val conversation = AgentTranscriptStore(context).conversation(scope.conversationId)
+        val issue = HealthCareStore(context).use { it.concern(scope.concernId) } ?: return false
         return value.active && privacy.metrics && privacy.profile && privacy.version == scope.privacyVersion &&
+            issue.profileLink?.scope == scope.profileLink?.scope && HealthCareProfileAccess.current(context, issue.profileLink) &&
             (scope.targetId == "local-llm" || privacy.online) && conversation?.status == AgentConversationStatus.ACTIVE &&
             conversation.privateMode && conversation.trackingPaused &&
             value.configuration == HealthCareDiscussion.configurationFingerprint(context, scope.conversationId, scope.targetId) &&

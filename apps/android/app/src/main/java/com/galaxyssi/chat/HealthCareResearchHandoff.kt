@@ -10,6 +10,7 @@ internal object HealthCareResearchHandoff {
         value.grant.concernId == grant.concernId && value.grant.conversationId == grant.conversationId &&
             value.grant.turnId != grant.turnId && value.grant.destination == grant.destination &&
             value.grant.privacyVersion == grant.privacyVersion && value.grant.settingsVersion == grant.settingsVersion &&
+            value.grant.profileLink == grant.profileLink &&
             value.observedAt <= grant.approvedAt
 
     fun snapshot(issue: HealthCareConcern, job: HealthCareResearchJob,
@@ -37,6 +38,7 @@ internal object HealthCareResearchHandoff {
                     if (issue.assessment.record?.id != baseline.assessment.record?.id) "new_measurement" else "record_corrected")
                 else if (issue.inputVersion != baseline.inputVersion) add("measurement_history_changed")
                 if (issue.context != baseline.context) add("measurement_context_changed")
+                if (issue.profileLink != baseline.profileLink) add("selected_profile_changed")
                 if (issue.target != baseline.target || issue.targetRevision != baseline.targetRevision) add("reviewed_target_changed")
                 if (outcomes.isNotEmpty()) add("action_feedback")
                 if (newlyDue.isNotEmpty()) add("review_due")
