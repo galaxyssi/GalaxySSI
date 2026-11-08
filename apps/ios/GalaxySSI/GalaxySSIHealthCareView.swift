@@ -7,6 +7,7 @@ struct GalaxySSIHealthCareView: View {
   let records: GalaxySSIHealthRecords
   @State private var allowed = false
   @State private var concerns: [GalaxySSIHealthCare.Concern] = []
+  @State private var priorityID: UUID?
   @State private var failed = false
   @State private var revision = UUID()
 
@@ -18,11 +19,16 @@ struct GalaxySSIHealthCareView: View {
           catch { failed = true }
         }))
         if allowed {
+          if let priorityID, let priority = concerns.first(where: { $0.id == priorityID }) {
+            Section(GalaxySSILocalization.string("galaxyssi.health.priority.section", fallback: "Review first", language: language)) {
+              rows([priority])
+            }
+          }
           Section(t("attention", "Needs attention")) {
-            rows(concerns.filter { [.verify, .evidence, .reassess].contains($0.stage) })
+            rows(concerns.filter { $0.id != priorityID && [.verify, .evidence, .reassess].contains($0.stage) })
           }
           Section(t("follow_up", "Improvement and follow-up")) {
-            rows(concerns.filter { [.maintenance, .paused, .closed].contains($0.stage) })
+            rows(concerns.filter { $0.id != priorityID && [.maintenance, .paused, .closed].contains($0.stage) })
           }
           Section(t("sources", "Trends and originals")) {
             NavigationLink(t("trends", "Measurement trends")) { GalaxySSIHealthTrendView(records: records) }
@@ -39,6 +45,7 @@ struct GalaxySSIHealthCareView: View {
     .onChange(of: scene) { _ in reload() }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) {
       if $0.object as? String == records.owner {
+        priorityID = nil
         if allowed, (try? records.load().localCareAllowed) != true { allowed = false; concerns = [] }
         revision = UUID()
       }
@@ -65,15 +72,20 @@ struct GalaxySSIHealthCareView: View {
   }
 
   private func reload() {
-    guard scene == .active else { allowed = false; concerns = []; failed = false; return }
+    guard scene == .active else { allowed = false; concerns = []; priorityID = nil; failed = false; return }
     do {
       allowed = try records.load().localCareAllowed == true
       if allowed { try records.reconcileLocalCare() }
-      if allowed, let ledger = try records.load().localCare {
+      let archive = try records.load()
+      priorityID = nil
+      if allowed, let ledger = archive.localCare {
         concerns = ledger.current.values.sorted { ($0.updatedAt, $0.id.uuidString) > ($1.updatedAt, $1.id.uuidString) }
+        if let priority = GalaxySSIHealthRecords.currentCareBloodPressureWarning(archive),
+           ledger.acknowledgedBloodPressure != priority.warning.record,
+           ![.paused, .closed].contains(priority.concern.stage) { priorityID = priority.concern.id }
       } else { concerns = [] }
       failed = false
-    } catch { concerns = []; failed = true }
+    } catch { concerns = []; priorityID = nil; failed = true }
   }
 
   private func t(_ key: String, _ fallback: String) -> String { GalaxySSIHealthCareText.string(key, fallback, language: language) }
@@ -85,11 +97,22 @@ struct GalaxySSIHealthCareEntry: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   let records: GalaxySSIHealthRecords
   @State private var visible = false
+  @State private var warning: GalaxySSIHealthCarePriority.Warning?
+  @State private var warningConcernID: UUID?
   @State private var revision = UUID()
 
   var body: some View {
     Group {
-      if scene == .active, visible {
+      if scene == .active, let warning, let warningConcernID {
+        NavigationLink {
+          GalaxySSIHealthCareDetail(records: records, id: warningConcernID, metric: .bloodPressure)
+        } label: {
+          GalaxySSIHealthCarePriorityNotice(warning: warning, compact: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+      } else if scene == .active, visible {
         NavigationLink {
           GalaxySSIHealthCareView(records: records)
         } label: {
@@ -102,24 +125,34 @@ struct GalaxySSIHealthCareEntry: View {
       }
     }
     .onChange(of: scene) { phase in
-      if phase == .active { revision = UUID() } else { visible = false }
+      if phase == .active { revision = UUID() } else { clear() }
     }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) {
       if $0.object as? String == records.owner {
-        visible = visible && ((try? records.load().localCareAllowed) == true)
+        clear()
         revision = UUID()
       }
     }
     .task(id: revision) {
-      guard scene == .active else { visible = false; return }
+      guard scene == .active else { clear(); return }
       do {
         try await Task.sleep(nanoseconds: 220_000_000)
+        guard !Task.isCancelled, scene == .active else { return }
         try records.reconcileLocalCare()
-        let concerns = try records.load().localCare?.current
-        visible = concerns?.values.contains(where: { [.verify, .evidence, .reassess].contains($0.stage) }) == true
-      } catch { if !Task.isCancelled { visible = false } }
+        let archive = try records.load()
+        guard !Task.isCancelled, scene == .active, archive.localCareAllowed == true else { return }
+        visible = archive.localCare?.current.values.contains(where: { [.verify, .evidence, .reassess].contains($0.stage) }) == true
+        if let priority = GalaxySSIHealthRecords.currentCareBloodPressureWarning(archive),
+           archive.localCare?.acknowledgedBloodPressure != priority.warning.record,
+           ![.paused, .closed].contains(priority.concern.stage) {
+          warning = priority.warning
+          warningConcernID = priority.concern.id
+        }
+      } catch { if !Task.isCancelled { clear() } }
     }
   }
+
+  private func clear() { visible = false; warning = nil; warningConcernID = nil }
 }
 
 @MainActor
@@ -132,6 +165,8 @@ private struct GalaxySSIHealthCareDetail: View {
   let metric: GalaxySSIHealthMetric
   @State private var concern: GalaxySSIHealthCare.Concern?
   @State private var measurement: GalaxySSIHealthReading?
+  @State private var bloodPressureWarning: GalaxySSIHealthCarePriority.Warning?
+  @State private var warningReviewed = false
   @State private var history: [GalaxySSIHealthCare.Concern] = []
   @State private var hasMore = false
   @State private var stage = GalaxySSIHealthCare.Stage.reassess
@@ -148,6 +183,20 @@ private struct GalaxySSIHealthCareDetail: View {
   var body: some View {
     List {
       if scene == .active, let concern {
+        if let bloodPressureWarning {
+          Section {
+            GalaxySSIHealthCarePriorityNotice(warning: bloodPressureWarning)
+            if warningReviewed {
+              Text(GalaxySSILocalization.string("galaxyssi.health.priority.reviewed",
+                fallback: "Marked as reviewed for this reading", language: language)).foregroundColor(.secondary)
+            } else {
+              Button(GalaxySSILocalization.string("galaxyssi.health.priority.review",
+                fallback: "Mark this reading as reviewed", language: language)) {
+                perform { try records.acknowledgeLocalCareBloodPressure(bloodPressureWarning) }
+              }
+            }
+          }
+        }
         Section(t("attention", "Needs attention")) {
           if concern.stage != .paused, concern.stage != .closed, concern.assessment.record != nil {
             NavigationLink(t("discuss", "Discuss this concern")) {
@@ -254,6 +303,8 @@ private struct GalaxySSIHealthCareDetail: View {
   }
 
   private func reload() {
+    bloodPressureWarning = nil
+    warningReviewed = false
     guard scene == .active, let archive = try? records.load(), archive.localCareAllowed == true,
           let current = archive.localCare?.current[metric.rawValue], current.id == id else {
       concern = nil; history = []; measurement = nil; reason = ""; targetValue = ""; targetSource = ""
@@ -261,6 +312,10 @@ private struct GalaxySSIHealthCareDetail: View {
       return
     }
     concern = current
+    if let priority = GalaxySSIHealthRecords.currentCareBloodPressureWarning(archive), priority.concern.id == id {
+      bloodPressureWarning = priority.warning
+      warningReviewed = archive.localCare?.acknowledgedBloodPressure == priority.warning.record
+    }
     context = current.context?.applicability ?? .unknown
     measurement = archive.current.first { GalaxySSIHealthCare.Record($0) == current.assessment.record }
     loadHistory(append: false)

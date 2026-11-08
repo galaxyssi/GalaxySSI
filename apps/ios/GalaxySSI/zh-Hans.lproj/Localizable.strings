@@ -60,6 +60,16 @@
 "galaxyssi.health.care.signal.rising" = "近期可比较的结果呈上升趋势";
 "galaxyssi.health.care.signal.falling" = "近期可比较的结果呈下降趋势";
 "galaxyssi.health.care.signal.sourceRemoved" = "来源测量已不可用";
+"galaxyssi.health.priority.section" = "优先查看";
+"galaxyssi.health.priority.title" = "请优先查看这条血压记录";
+"galaxyssi.health.priority.compact" = "历史记录本身不能判定当前有紧急情况。如果现在血压仍如此高且出现新的严重症状，请立即寻求急救。";
+"galaxyssi.health.priority.threshold" = "记录中的收缩压高于 180 或舒张压高于 120 mmHg，或高于其等效值。";
+"galaxyssi.health.priority.emergency" = "对于非孕成年人：如果当前血压如此高，并伴有胸痛、呼吸困难、背痛、麻木、无力、视力变化或说话困难，请立即联系当地急救服务，不要等待应用回复。";
+"galaxyssi.health.priority.recheck" = "如果这是当前的测量结果，且没有新出现的令人担忧的症状，请至少等待一分钟后复测。如果仍然如此高，请尽快联系医务人员。不要自行调整药物。";
+"galaxyssi.health.priority.scope" = "儿童和孕期需要不同的评估。历史记录不能判定当前有紧急情况。本提示不是诊断，也不是实时监测。";
+"galaxyssi.health.priority.source" = "查看美国心脏协会指南";
+"galaxyssi.health.priority.review" = "将这条测量标为已查看";
+"galaxyssi.health.priority.reviewed" = "这条测量已标为查看";
 "galaxyssi.health.subtitle" = "个人健康测量";
 "galaxyssi.health.sources" = "设备与数据来源";
 "galaxyssi.health.device_sources" = "设备来源";
