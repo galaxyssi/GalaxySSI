@@ -410,6 +410,25 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     for privateValue in [origin, "private condition fixture", first.id.uuidString, second.id.uuidString] {
       XCTAssertFalse(sanitized.contains(privateValue))
     }
+    _ = try records.openLocalCareDiscussion(id: advanced.id, metric: .glucose)
+    try records.setHealthOnlinePermission(true)
+    let model = CloudModelConfig(id: "comparison", displayName: "Comparison", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    func review() throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try records.prepareLocalCareDiscussion(id: advanced.id, metric: .glucose, question: "Compare the readings",
+        destinationID: "provider", model: model, credential: "fixture-api-key", now: now)
+    }
+    func comparison(_ approval: GalaxySSIHealthCareDiscussion.Approval) throws -> [String: Any]? {
+      let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(approval.payload.utf8)) as? [String: Any])
+      return (payload["concern"] as? [String: Any])?["comparison"] as? [String: Any]
+    }
+    let proposed = try review()
+    let preview = try XCTUnwrap(comparison(proposed))
+    XCTAssertEqual((preview["before"] as? [String: Any])?["result"] as? String, "110")
+    XCTAssertEqual(preview["clinicalDirectionVerified"] as? Bool, false)
+    for privateValue in [origin, "private condition fixture", first.id.uuidString, second.id.uuidString] {
+      XCTAssertFalse(proposed.payload.contains(privateValue))
+    }
     var correction = try XCTUnwrap(records.load().current.first { $0.id == second.id })
     correction.value = 105
     try records.write(correction)
@@ -418,6 +437,10 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(corrected.kind, .recordCorrection)
     XCTAssertTrue(corrected.changes.isEmpty)
     XCTAssertNil(corrected.modelValue(currentContext: nil).before)
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(proposed, now: now))
+    let correctedPreview = try XCTUnwrap(comparison(review()))
+    XCTAssertNil(correctedPreview["before"])
+    XCTAssertEqual(correctedPreview["gaps"] as? [String], ["methodUnverified"])
     let backfill = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-86_400),
       value: 6, unitOverride: "mmol/L", referenceInterval: "4 - 5.5")
     try records.write(backfill)
@@ -426,13 +449,17 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(revisedHistory.kind, .historyChanged)
     XCTAssertEqual(revisedHistory.before.record.id, backfill.id)
     XCTAssertTrue(revisedHistory.gaps(currentContext: nil).contains(.unitsDiffer))
+    let historyPreview = try review()
     for id in [first.id, backfill.id] {
       var deleting = try XCTUnwrap(records.load().current.first { $0.id == id })
       deleting.deleted = true
       try records.write(deleting)
     }
+    XCTAssertThrowsError(try review())
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(historyPreview, now: now))
     try records.reconcileLocalCare(now: now)
     XCTAssertNil(try records.load().localCare?.current["glucose"]?.comparison)
+    XCTAssertNil(try comparison(review()))
   }
 
   @MainActor
