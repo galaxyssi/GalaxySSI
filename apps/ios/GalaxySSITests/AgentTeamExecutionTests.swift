@@ -2986,6 +2986,73 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(AgentCollaborationLearningAgendaIntake.matchesSelection(option, work: item))
   }
 
+  @MainActor
+  func testGoalWorkAdmissionKeepsPlannerOrderWithReversedTasksAndCancelledCandidate() async {
+    let gate = AgentGoalWorkAdmissionOrder()
+    let laterTasksArrived = expectation(description: "Later candidates ask for admission first")
+    laterTasksArrived.expectedFulfillmentCount = 2
+    let last = Task { @MainActor in
+      laterTasksArrived.fulfill()
+      await gate.wait(for: 2)
+      gate.finish(2, claimedID: "a-last")
+    }
+    let middle = Task { @MainActor in
+      laterTasksArrived.fulfill()
+      await gate.wait(for: 1)
+      gate.finish(1, claimedID: Task.isCancelled ? nil : "m-cancelled")
+    }
+    middle.cancel()
+    await fulfillment(of: [laterTasksArrived], timeout: 3)
+    XCTAssertTrue(gate.claimedIDs.isEmpty)
+    await gate.wait(for: 0)
+    gate.finish(0, claimedID: "z-first")
+    await last.value
+    await middle.value
+    XCTAssertEqual(gate.claimedIDs, ["z-first", "a-last"])
+  }
+
+  func testResearchSubagentsAdmitReadyWorkInOrderWithoutWaitingForUnrelatedWorker() async throws {
+    let fixture = OrderedSubagentAdmissionFixture()
+    let runtime = AgentSubagentRuntime(limits: .init(maxConcurrency: 2), eventHook: fixture)
+    defer { runtime.close() }
+    let reviewStarted = expectation(description: "Dependent review does not wait for unrelated work")
+    let plan = AgentSubagentPlan(supervisorId: "research", children: [
+      .init(childId: "z-review", dependencies: ["m-producer"]),
+      .init(childId: "m-producer"),
+      .init(childId: "y-unrelated"),
+      .init(childId: "a-last")
+    ], preserveAdmissionOrder: true)
+    let run = try runtime.start(plan: plan, worker: ClosureAgentSubagentWorker { context in
+      if context.childId == "y-unrelated" { await fixture.waitForRelease() }
+      if context.childId == "z-review" { reviewStarted.fulfill() }
+      return .init(content: context.childId)
+    })
+    await fulfillment(of: [reviewStarted], timeout: 3)
+    await fixture.release()
+    let result = try await run.wait()
+    let admitted = await fixture.admitted
+    XCTAssertEqual(admitted, ["m-producer", "y-unrelated", "z-review", "a-last"])
+    XCTAssertEqual(result.status, .succeeded)
+  }
+
+  func testResearchSubagentsSkipFailedPrerequisiteAndAdmitIndependentWork() async throws {
+    let fixture = OrderedSubagentAdmissionFixture()
+    let runtime = AgentSubagentRuntime(limits: .init(maxConcurrency: 1), eventHook: fixture)
+    defer { runtime.close() }
+    let plan = AgentSubagentPlan(supervisorId: "research", children: [
+      .init(childId: "z-review", dependencies: ["m-producer"]),
+      .init(childId: "m-producer"),
+      .init(childId: "a-independent")
+    ], preserveAdmissionOrder: true)
+    let result = try await runtime.execute(plan: plan, worker: ClosureAgentSubagentWorker { context in
+      if context.childId == "m-producer" { throw AgentSubagentRuntimeError.invalid("Synthetic failure") }
+      return .init(content: context.childId)
+    })
+    let admitted = await fixture.admitted
+    XCTAssertEqual(admitted, ["m-producer", "a-independent"])
+    XCTAssertEqual(result["z-review"]?.status, .skipped)
+  }
+
   func testLearningPrioritiesOnlyReorderReadySlotsInSameAgendaAfterReopen() throws {
     let raw = """
     {"format":"galaxyssi.work-expansion.v1","work":[
@@ -5136,6 +5203,26 @@ private final class TeamCompletionFailingSecrets: GalaxySSISecretStore {
 
   func string(account: String) -> String? { backing.string(account: account) }
   func delete(account: String) { backing.delete(account: account) }
+}
+
+private actor OrderedSubagentAdmissionFixture: AgentSubagentEventHook {
+  private(set) var admitted: [String] = []
+  private var released = false
+  private var waiting: CheckedContinuation<Void, Never>?
+
+  func append(_ event: AgentSubagentEvent) async throws {
+    if event.kind == AgentSubagentEventKinds.childRunning { admitted.append(event.childId) }
+  }
+
+  func waitForRelease() async {
+    if !released { await withCheckedContinuation { waiting = $0 } }
+  }
+
+  func release() {
+    released = true
+    waiting?.resume()
+    waiting = nil
+  }
 }
 
 private final class SavedTeamRecoveryFixture: AgentTeamExecutionStore {

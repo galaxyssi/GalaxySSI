@@ -416,6 +416,25 @@ struct AgentCollaborationGoalWorkRun: Codable {
   }
 }
 
+@MainActor
+final class AgentGoalWorkAdmissionOrder {
+  private var next = 0
+  private var waiters: [Int: CheckedContinuation<Void, Never>] = [:]
+  private(set) var claimedIDs: [String] = []
+
+  func wait(for index: Int) async {
+    guard index != next else { return }
+    await withCheckedContinuation { waiters[index] = $0 }
+  }
+
+  func finish(_ index: Int, claimedID: String?) {
+    precondition(index == next)
+    if let claimedID { claimedIDs.append(claimedID) }
+    next += 1
+    waiters.removeValue(forKey: next)?.resume()
+  }
+}
+
 struct AgentCollaborationLiveGraph: Codable, Equatable {
   enum DependencyPolicy: String, Codable { case success, terminal }
   enum Settlement: String, Codable { case succeeded, failed, cancelled, skipped }
@@ -951,6 +970,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
   static let runReadyWorkMode = "run_ready_work"
   static let workInventoryMode = "work_inventory"
   static let checkGoalEvidenceMode = "check_goal_evidence"
+  static let admissionInstructions = "List ready research work in the intended admission order. Waiting dependencies do not reserve capacity. Existing learning priorities reorder only their eligible learning positions. Admission order does not guarantee completion order."
 
   static func requiresCoordinator(_ mode: String) -> Bool {
     isCoordinatorMutation(mode) || mode == checkGoalEvidenceMode || mode == workInventoryMode

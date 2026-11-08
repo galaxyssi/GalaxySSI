@@ -176,7 +176,8 @@ enum AgentIOSLocalModelWebToolRunner {
           "Use append_work with milestone_id, expected_revision and the work-expansion JSON in artifact. " +
           "Work is dispatched by the host after your current model round returns. Use work_result and work_id to read a saved result. " +
           "Use work_inventory with no other fields to inspect readiness, review subjects and publication tokens. A waiting review is not active. " +
-          "Use check_goal_evidence with expected_revision and artifact to check exact reviewed evidence; this does not deliver the goal.",
+          "Use check_goal_evidence with expected_revision and artifact to check exact reviewed evidence; this does not deliver the goal. " +
+          policy.admissionInstructions,
         location: .application, inputSchema: ["type": .string("object"), "required": .array([.string("mode")]),
           "additionalProperties": .bool(false), "properties": .object([
             "mode": .object(["type": .string("string"), "enum": .array(modes.map(AgentMcpJSONValue.string))]),
