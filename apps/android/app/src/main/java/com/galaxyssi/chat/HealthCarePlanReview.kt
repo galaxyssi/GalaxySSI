@@ -54,11 +54,31 @@ internal class HealthCarePlanReview(private val activity: Activity, private val 
         val content = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(20), ui.dp(8), ui.dp(20), ui.dp(16)) }
         val plan = snapshot.plan
         val selected = linkedSetOf<String>()
+        var targetSelected = false
         content.addView(ui.text(activity.getString(R.string.health_care_plan_notice), 14f, muted = true))
         ui.add(content, ui.text(activity.getString(R.string.health_care_plan_model, plan.grant.targetId, plan.grant.modelId), 13f, muted = true), 8)
         if (!snapshot.current) ui.add(content, ui.text(activity.getString(R.string.health_care_plan_stale), 15f, bold = true), 12)
         ui.add(content, ui.text(activity.getString(R.string.health_care_plan_uncertainty), 15f, bold = true), 12)
         ui.add(content, ui.text(plan.uncertainty, 14f), 4)
+        plan.target?.let { target ->
+            ui.add(content, ui.text(activity.getString(R.string.health_care_target), 16f, bold = true), 16)
+            ui.add(content, ui.text(HealthCareTargetPresentation.range(activity, target), 16f, bold = true), 8)
+            ui.add(content, ui.text(target.rationale, 14f), 6)
+            ui.add(content, ui.text(HealthCareApplicabilityPresentation.text(activity, target.applicability, snapshot.issue,
+                HealthCareTargetPolicy.canAccept(target, snapshot.issue)), 14f), 8)
+            ui.add(content, ui.text(activity.getString(R.string.health_target_scope), 13f, muted = true), 8)
+            ui.add(content, ui.text(activity.getString(R.string.health_target_change_notice), 13f, muted = true), 8)
+            snapshot.issue.target?.let { old -> ui.add(content, ui.text(HealthCareTargetPresentation.range(activity, old), 14f), 6) }
+            ui.add(content, CheckBox(activity).apply {
+                text = activity.getString(if (snapshot.issue.target == null) R.string.health_target_adopt else R.string.health_target_replace)
+                minimumHeight = ui.dp(48); tag = "health-plan-target"
+                isEnabled = snapshot.current && HealthCareTargetPolicy.canAccept(target, snapshot.issue)
+                setOnCheckedChangeListener { _, checked ->
+                    targetSelected = checked
+                    dialog?.getButton(AlertDialog.BUTTON_POSITIVE)?.isEnabled = selected.isNotEmpty() || targetSelected
+                }
+            }, 8)
+        }
         val validActions = plan.actions.filter { it.dueUntil == null || it.dueUntil >= System.currentTimeMillis() }.map { it.id }.toSet()
         plan.actions.forEachIndexed { index, action ->
             ui.add(content, CheckBox(activity).apply {
@@ -66,7 +86,7 @@ internal class HealthCarePlanReview(private val activity: Activity, private val 
                 isEnabled = snapshot.current && action.id in validActions && HealthCareApplicabilityPolicy.canAccept(plan, snapshot.issue, action)
                 setOnCheckedChangeListener { _, checked ->
                     if (checked) selected += action.id else selected -= action.id
-                    dialog?.getButton(AlertDialog.BUTTON_POSITIVE)?.isEnabled = selected.isNotEmpty()
+                    dialog?.getButton(AlertDialog.BUTTON_POSITIVE)?.isEnabled = selected.isNotEmpty() || targetSelected
                 }
             }, 12)
             ui.add(content, ui.text(action.rationale, 14f), 4)
@@ -101,7 +121,8 @@ internal class HealthCarePlanReview(private val activity: Activity, private val 
                     d.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
                     d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                         val chosen = selected.toSet()
-                        if (chosen.isEmpty()) return@setOnClickListener
+                        val chosenTarget = targetSelected
+                        if (chosen.isEmpty() && !chosenTarget) return@setOnClickListener
                         d.dismiss()
                         change { store ->
                             val privacy = HealthPrivacyStore(activity, names.privacy).use { it.policy() }
@@ -109,7 +130,7 @@ internal class HealthCarePlanReview(private val activity: Activity, private val 
                             val source = HealthRecordStore(activity, names.records).use {
                                 HealthCareEngine.inputVersion(settings.version, privacy.version, it.metricVersion(snapshot.issue.metric))
                             }
-                            store.resolvePlan(plan.id, chosen, snapshot.issue.revision, privacy, source, System.currentTimeMillis())
+                            store.resolvePlan(plan.id, chosen, snapshot.issue.revision, privacy, source, System.currentTimeMillis(), chosenTarget)
                         }
                     }
                 }

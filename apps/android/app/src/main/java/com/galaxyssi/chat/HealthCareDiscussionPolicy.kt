@@ -49,6 +49,7 @@ internal object HealthCareDiscussionPolicy {
             else value.assessment.sample?.let { put("sample", it.modelJson()) }
         }).put("confirmed_context", value.context?.json() ?: JSONObject.NULL)
         .put("individual_target", value.target?.json() ?: JSONObject.NULL)
+        .put("target_comparison", if (value.target == null) JSONObject.NULL else HealthCareTargetPolicy.comparison(value).name)
         .put("result_comparison", HealthCareComparisonPolicy.handoff(value.assessment, value.context) ?: JSONObject.NULL)
         .put("priority_notice", HealthCarePriority.handoff(value) ?: JSONObject.NULL)
         .put("actions", org.json.JSONArray(value.actions.map { it.json() })).toString(2)
@@ -71,6 +72,12 @@ internal object HealthCareDiscussionPolicy {
         state uncertainty instead of forcing a category. Propose the next justified step using applicable sources.
         One in-range value cannot establish stability, close follow-up or authorize maintenance. Review against an
         explicitly confirmed individual target when applicable; do not replace it with a report midpoint.
+        target_comparison is a component-level numeric comparison, not a clinical outcome. REVIEW_REQUIRED means
+        the measurement/context basis changed or the old target lacks provenance; retain it as historical context,
+        not as a current recommendation. To propose or adjust a justified individual target, use target_proposal
+        in galaxyssi.health.plan.propose with exact bounds, inclusivity, unit, supporting receipt and applicability.
+        Never turn screening criteria into treatment goals or invent clinician confirmation. The user must review
+        it separately. A single value within that target does not establish stability or authorize maintenance.
         For each proposed action, read and cite its population and limitations, not only a numerical threshold.
         Declare source-supported applicability checks separately from actual patient context. Treat UNKNOWN as
         unknown, never as NO. List unsupported factors and material source conflicts with their next resolution step;

@@ -29,6 +29,7 @@ class HealthCareActivity : Activity() {
     private val store by lazy { HealthCareStore(applicationContext, names.care) }
     private val planReview by lazy { HealthCarePlanReview(this, names) }
     private val actionReview by lazy { HealthCareActionReview(this, names) }
+    private val targetReview by lazy { HealthCareTargetReview(this, names) }
     private lateinit var body: LinearLayout
     private var active = false
     private var generation = 0
@@ -39,7 +40,7 @@ class HealthCareActivity : Activity() {
     private var selected: String? = null
     private var cursor: HealthCareCursor? = null
     private val observer = object : ContentObserver(main) {
-        override fun onChange(selfChange: Boolean) { planReview.clear(); actionReview.clear(); generation++; load() }
+        override fun onChange(selfChange: Boolean) { planReview.clear(); actionReview.clear(); targetReview.clear(); generation++; load() }
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,15 +56,15 @@ class HealthCareActivity : Activity() {
         load()
     }
     override fun onStop() {
-        active = false; generation++; dialog?.dismiss(); dialog = null; planReview.clear(); actionReview.clear(); body.removeAllViews()
+        active = false; generation++; dialog?.dismiss(); dialog = null; planReview.clear(); actionReview.clear(); targetReview.clear(); body.removeAllViews()
         contentResolver.unregisterContentObserver(observer); super.onStop()
     }
-    override fun onDestroy() { planReview.destroy(); actionReview.destroy(); worker.execute { store.close() }; worker.shutdown(); super.onDestroy() }
+    override fun onDestroy() { planReview.destroy(); actionReview.destroy(); targetReview.destroy(); worker.execute { store.close() }; worker.shutdown(); super.onDestroy() }
     @Deprecated("Uses the existing native health navigation contract")
     override fun onBackPressed() = back()
     private fun back() { if (selected == null) finish() else { selected = null; cursor = null; generation++; load() } }
     private data class Snapshot(val settings: HealthCareSettings, val permitted: Boolean, val page: HealthCarePage,
-        val item: HealthCareConcern?, val history: List<HealthCareConcern>, val proposals: List<HealthCarePlan>)
+        val item: HealthCareConcern?, val history: List<HealthCareConcern>, val proposals: List<HealthCarePlan>, val profile: Boolean)
     private fun load() {
         if (!active) return
         if (loading || mutating) { dirty = true; return }
@@ -77,7 +78,7 @@ class HealthCareActivity : Activity() {
                 Snapshot(store.settings(), allowed, if (allowed) store.page(after) else HealthCarePage(emptyList(), null),
                     if (allowed && id != null) store.concern(id) else null,
                     if (allowed && id != null) store.history(id) else emptyList(),
-                    if (allowed && privacy.profile && id != null) store.pendingPlans(id) else emptyList())
+                    if (allowed && privacy.profile && id != null) store.pendingPlans(id) else emptyList(), privacy.profile)
             }
             main.post {
                 loading = false
@@ -95,7 +96,7 @@ class HealthCareActivity : Activity() {
             return
         }
         if (selected != null) {
-            snapshot.item?.let { detail(content, it, snapshot.history, snapshot.proposals) } ?: content.addView(ui.text(getString(R.string.health_care_removed)))
+            snapshot.item?.let { detail(content, it, snapshot.history, snapshot.proposals, snapshot.profile) } ?: content.addView(ui.text(getString(R.string.health_care_removed)))
             return
         }
         content.addView(Switch(this).apply {
@@ -131,14 +132,14 @@ class HealthCareActivity : Activity() {
         ui.add(content, ui.profileRow(getString(R.string.health_catalog_title)) { open(HealthCatalogActivity::class.java) }, 6)
         ui.add(content, ui.profileRow(getString(R.string.health_export_data_files)) { open(HealthDataFilesActivity::class.java) }, 6)
     }
-    private fun detail(content: LinearLayout, value: HealthCareConcern, history: List<HealthCareConcern>, proposals: List<HealthCarePlan>) {
+    private fun detail(content: LinearLayout, value: HealthCareConcern, history: List<HealthCareConcern>, proposals: List<HealthCarePlan>, profile: Boolean) {
         content.addView(ui.text(getString(value.metric.titleResource()), 23f, bold = true))
         ui.add(content, ui.text("${value.assessment.value} ${value.assessment.unit}", 22f, bold = true), 8)
         ui.add(content, ui.text(getString(value.stage.titleResource()), 14f, muted = true), 6)
         HealthCarePriorityPresentation.add(this, content, value)
         ui.add(content, ui.command(R.string.health_care_discussion_title_short) { discuss(value) }
             .apply { tag = "health-care-discuss" }, 12)
-        proposals.forEach { plan -> ui.add(content, ui.profileRow(getString(R.string.health_care_plan_pending, plan.actions.size)) {
+        proposals.forEach { plan -> ui.add(content, ui.profileRow(HealthCareTargetPresentation.planTitle(this, plan)) {
             planReview.show(plan.id)
         }.apply { tag = "health-care-plan-${plan.id}" }, 8) }
         heading(content, R.string.health_care_why)
@@ -156,8 +157,9 @@ class HealthCareActivity : Activity() {
         basis(content, R.string.health_care_guideline, value.assessment.guideline?.let { "${it.title}\n${it.applicability}\n${it.statement}" }
             ?: getString(R.string.health_care_no_guideline))
         basis(content, R.string.health_care_baseline, value.assessment.baseline?.let(HealthCarePolicy::baselineText) ?: getString(R.string.health_care_no_baseline))
-        basis(content, R.string.health_care_target, value.target?.let { "${it.low.orEmpty()} - ${it.high.orEmpty()} ${it.unit}\n${it.rationale}\n${it.source}\n${it.confirmedBy}" }
-            ?: getString(R.string.health_care_no_target))
+        if (profile) basis(content, R.string.health_care_target, HealthCareTargetPresentation.details(this, value))
+        if (profile && value.target != null) ui.add(content, ui.profileRow(getString(R.string.health_target_review)) { targetReview.show(value.id) }
+            .apply { tag = "health-care-target" }, 8)
         value.assessment.record?.let { ref -> ui.add(content, ui.profileRow(getString(R.string.health_care_record)) {
             if (names.fixture == null) startActivity(Intent(this, HealthRecordRevisionActivity::class.java)
                 .putExtra("health_record", ref.id).putExtra("health_revision", ref.revision))

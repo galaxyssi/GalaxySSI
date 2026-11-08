@@ -173,4 +173,107 @@ class HealthCarePlanUiDeviceTest {
             }
         } finally { workers.forEach { it.awaitTermination(10, TimeUnit.SECONDS) }; clean(names) }
     }
+    private fun targetReview(activity: HealthCareActivity) = HealthCareActivity::class.java.getDeclaredMethod("getTargetReview")
+        .apply { isAccessible = true }.invoke(activity) as HealthCareTargetReview
+    private fun targetDialog(review: HealthCareTargetReview) = HealthCareTargetReview::class.java.getDeclaredField("dialog")
+        .apply { isAccessible = true }.get(review) as? AlertDialog
+
+    @Test fun targetReviewRequiresExplicitSelectionAndSupportsCancelAndRevoke() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val names = HealthOverviewDatabases(UUID.randomUUID().toString()); val workers = mutableListOf<ExecutorService>()
+        try {
+            val plan = HealthCarePlanTestFixture.propose(context, names) { HealthCareTargetTestFixture.input(it) }
+            val tag = "health-care-plan-${plan.id}"
+            ActivityScenario.launch<HealthCareActivity>(Intent(context, HealthCareActivity::class.java)
+                .putHealthNavigationFixture(names).putExtra("health_care_id", plan.grant.concernId)).use { scenario ->
+                await(scenario) { find(it, tag) != null }
+                scenario.onActivity { workers += worker(it); workers += worker(review(it)); workers += worker(targetReview(it)); find(it, tag)!!.performClick() }
+                await(scenario) { dialog(review(it))?.isShowing == true }
+                scenario.onActivity {
+                    val d = dialog(review(it))!!; val check = views(d.window!!.decorView).single { it.tag == "health-plan-target" } as CheckBox
+                    assertFalse(check.isChecked); assertFalse(d.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled)
+                    check.performClick(); assertTrue(d.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled)
+                }
+                capture("health-target-proposal-fixture.png")
+                scenario.onActivity { dialog(review(it))!!.getButton(AlertDialog.BUTTON_POSITIVE).performClick() }
+                await(scenario) { find(it, tag) == null && find(it, "health-care-target") != null }
+                scenario.onActivity { find(it, "health-care-target")!!.performClick() }
+                await(scenario) { targetDialog(targetReview(it))?.isShowing == true }
+                capture("health-target-details-fixture.png")
+                scenario.onActivity { targetDialog(targetReview(it))!!.getButton(AlertDialog.BUTTON_NEGATIVE).performClick() }
+                scenario.onActivity { targetDialog(targetReview(it))!!.getButton(AlertDialog.BUTTON_NEGATIVE).performClick() }
+                HealthCareStore(context, names.care).use { assertNotNull(it.concern(plan.grant.concernId)!!.target) }
+                scenario.onActivity { find(it, "health-care-target")!!.performClick() }
+                await(scenario) { targetDialog(targetReview(it))?.isShowing == true }
+                scenario.onActivity { targetDialog(targetReview(it))!!.getButton(AlertDialog.BUTTON_NEGATIVE).performClick() }
+                scenario.onActivity { targetDialog(targetReview(it))!!.getButton(AlertDialog.BUTTON_POSITIVE).performClick() }
+                await(scenario) { find(it, "health-care-target") == null }
+                HealthCareStore(context, names.care).use { store ->
+                    assertNull(store.concern(plan.grant.concernId)!!.target)
+                    assertTrue(store.history(plan.grant.concernId).any { it.target != null }); assertNull(store.nextDue())
+                }
+            }
+        } finally { workers.forEach { it.awaitTermination(10, TimeUnit.SECONDS) }; clean(names) }
+    }
+    @Test fun targetApplicabilityGapPreventsSelectionWithoutBlockingDiscussionAction() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val names = HealthOverviewDatabases(UUID.randomUUID().toString()); val workers = mutableListOf<ExecutorService>()
+        try {
+            val plan = HealthCarePlanTestFixture.propose(context, names) { HealthCareTargetTestFixture.input(it, true) }
+            val tag = "health-care-plan-${plan.id}"
+            ActivityScenario.launch<HealthCareActivity>(Intent(context, HealthCareActivity::class.java)
+                .putHealthNavigationFixture(names).putExtra("health_care_id", plan.grant.concernId)).use { scenario ->
+                await(scenario) { find(it, tag) != null }
+                scenario.onActivity { workers += worker(it); workers += worker(review(it)); find(it, tag)!!.performClick() }
+                await(scenario) { dialog(review(it))?.isShowing == true }
+                scenario.onActivity {
+                    val all = views(dialog(review(it))!!.window!!.decorView)
+                    assertFalse(all.single { it.tag == "health-plan-target" }.isEnabled)
+                    assertTrue(all.single { it.tag == "health-plan-action-0" }.isEnabled)
+                }
+                scenario.moveToState(Lifecycle.State.CREATED)
+                scenario.onActivity { assertNull(dialog(review(it))) }
+            }
+        } finally { workers.forEach { it.awaitTermination(10, TimeUnit.SECONDS) }; clean(names) }
+    }
+    @Test fun agentTargetReviewClearsWhenBackgroundedOrPermissionRevoked() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val names = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val transcripts = AgentTranscriptStore(context); val previous = transcripts.activeConversation().id
+        val temporary = transcripts.createAgentConversation("合成目标界面测试", privateMode = true, trackingPaused = true)
+        val workers = mutableListOf<ExecutorService>()
+        try {
+            transcripts.switchConversation(temporary.id)
+            val plan = HealthCarePlanTestFixture.propose(context, names) { HealthCareTargetTestFixture.input(it) }
+            HealthCareStore(context, names.care).use { store -> store.resolvePlan(plan.id, emptySet(), plan.grant.revision,
+                HealthPrivacyStore(context, names.privacy).use { it.policy() }, plan.inputVersion, System.currentTimeMillis(), true) }
+            ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java)
+                .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", temporary.id)).use { scenario ->
+                await(scenario) { it.agentTranscriptStore.activeConversation().id == temporary.id && it.renderedAgentTranscriptSourceEntries.isEmpty() }
+                lateinit var review: HealthCareTargetReview
+                scenario.onActivity { activity ->
+                    activity.healthCareSurface?.destroy()
+                    activity.healthCareSurface = HealthCareAgentSurface(activity, names).also { surface ->
+                        workers += worker(surface)
+                        review = HealthCareAgentSurface::class.java.getDeclaredField("targetReview").apply { isAccessible = true }.get(surface) as HealthCareTargetReview
+                        workers += worker(review); surface.showForAgent(true); surface.resume()
+                    }
+                }
+                await(scenario) { find(it, "agent-health-care-target") != null }
+                capture("health-target-agent-fixture.png")
+                scenario.onActivity { find(it, "agent-health-care-target")!!.performClick() }
+                await(scenario) { targetDialog(review)?.isShowing == true }
+                scenario.moveToState(Lifecycle.State.CREATED); assertNull(targetDialog(review))
+                scenario.moveToState(Lifecycle.State.RESUMED)
+                await(scenario) { find(it, "agent-health-care-target") != null }
+                scenario.onActivity { find(it, "agent-health-care-target")!!.performClick() }
+                await(scenario) { targetDialog(review)?.isShowing == true }
+                HealthPrivacyStore(context, names.privacy).use { it.change(HealthPrivacyOption.PROFILE_CONTEXT, false, it.policy().version) }
+                await(scenario) { targetDialog(review) == null && find(it, "agent-health-care-target") == null }
+            }
+        } finally {
+            workers.forEach { it.awaitTermination(10, TimeUnit.SECONDS) }
+            transcripts.switchConversation(previous); transcripts.deleteConversation(temporary.id); clean(names)
+        }
+    }
 }
