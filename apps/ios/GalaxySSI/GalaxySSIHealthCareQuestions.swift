@@ -5,6 +5,12 @@ enum GalaxySSIHealthCareQuestions {
   static let maximumQuestions = 120
   static let maximumRevisions = 32
   static let tool = "galaxyssi_health_questions_propose"
+  static let readTool = "galaxyssi_health_questions_read"
+  static let maximumContinuations = 4
+  static let readInstruction = """
+    Read only the next page of this concern's reviewed questions. Use the exact input_version and cursor
+    from next in reviewed_questions or the latest question page. Never use a measurement history cursor.
+    """
   static let instruction = """
     Propose only necessary unresolved clarification questions for this concern. Use stable lowercase keys such as
     context.fasting_hours or profile.height for known field categories. Respect answered, deferred and declined
@@ -12,24 +18,13 @@ enum GalaxySSIHealthCareQuestions {
     Return an empty questions array if nothing material remains. This tool cannot make or adopt a treatment plan.
     """
 
-  static func configure(_ body: inout [String: Any], style: GalaxySSICloudAPIStyle) {
+  static var schema: [String: Any] {
     let fields: [String: Any] = ["key": ["type": "string", "maxLength": 80],
       "question": ["type": "string", "maxLength": 500], "purpose": ["type": "string", "maxLength": 1_000]]
     let item: [String: Any] = ["type": "object", "required": fields.keys.sorted(), "properties": fields,
       "additionalProperties": false]
-    let schema: [String: Any] = ["type": "object", "required": ["questions"], "additionalProperties": false,
+    return ["type": "object", "required": ["questions"], "additionalProperties": false,
       "properties": ["questions": ["type": "array", "maxItems": 8, "items": item]]]
-    switch style {
-    case .openAICompatible:
-      body["tools"] = [["type": "function", "function": ["name": tool, "description": instruction, "parameters": schema]]]
-      body["tool_choice"] = ["type": "function", "function": ["name": tool]]
-    case .anthropic:
-      body["tools"] = [["name": tool, "description": instruction, "input_schema": schema]]
-      body["tool_choice"] = ["type": "tool", "name": tool, "disable_parallel_tool_use": true]
-    case .gemini:
-      body["tools"] = [["functionDeclarations": [["name": tool, "description": instruction, "parametersJsonSchema": schema]]]]
-      body["toolConfig"] = ["functionCallingConfig": ["mode": "ANY", "allowedFunctionNames": [tool]]]
-    }
   }
 
   static func parse(_ args: AgentMcpJSONObject) throws -> [Proposal] {
@@ -80,6 +75,7 @@ enum GalaxySSIHealthCareQuestions {
   struct Page {
     let rows: [Row]
     let basis: String
+    let ledgerVersion: String
     let known: AgentMcpJSONObject
     let next: UUID?
 
@@ -97,6 +93,26 @@ enum GalaxySSIHealthCareQuestions {
     }
   }
 
+  struct Cursor {
+    let after: UUID
+    private let token = UUID()
+
+    init?(_ page: Page, remaining: Int) {
+      guard let after = page.next, remaining > 0 else { return nil }
+      self.after = after
+    }
+
+    func arguments(turn: UUID) -> AgentMcpJSONObject {
+      ["input_version": .string(turn.uuidString), "cursor": .string(token.uuidString)]
+    }
+
+    static func payload(_ page: Page, cursor: Cursor?, turn: UUID) -> AgentMcpJSONObject {
+      var payload = page.payload
+      payload["next"] = cursor.map { .object($0.arguments(turn: turn)) } ?? .null
+      return payload
+    }
+  }
+
   struct Ledger: Codable {
     var revisions: [String: [Row]] = [:]
 
@@ -110,7 +126,9 @@ enum GalaxySSIHealthCareQuestions {
         start = index + 1
       } else { start = 0 }
       let rows = Array(current.dropFirst(start).prefix(pageSize))
-      return .init(rows: rows, basis: basis, known: known, next: start + rows.count < current.count ? rows.last?.id : nil)
+      let version = AgentModelLoopRecoveryIdentity.sha256(current.map { "\($0.id.uuidString):\($0.revision)" })
+      return .init(rows: rows, basis: basis, ledgerVersion: version, known: known,
+        next: start + rows.count < current.count ? rows.last?.id : nil)
     }
 
     mutating func propose(_ values: [Proposal], scope: String, basis: String, known: AgentMcpJSONObject,

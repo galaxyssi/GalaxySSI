@@ -18,6 +18,7 @@ struct GalaxySSIHealthCareResearchControls: View {
   @State private var provider = ""
   @State private var desktopModel = ""
   @State private var desktopEffort = AgentModelReasoningEffort.automatic
+  @State private var shareQuestions = false
   @State private var sources = Set<GalaxySSIHealthCareEvidence.PublicSource>()
   @State private var review: Review?
   @State private var confirmed = false
@@ -65,6 +66,7 @@ struct GalaxySSIHealthCareResearchControls: View {
               if $0 { sources.insert(source) } else { sources.remove(source) }
             }))
           }
+          Toggle(t("share_questions", "Include reviewed clarification in automatic research"), isOn: $shareQuestions)
           Button(t("review", "Review authorization"), action: preview).disabled(provider.isEmpty || sources.isEmpty)
         } else {
           Text(t("online_off", "Online Health discussion is off.")).foregroundColor(.secondary)
@@ -103,6 +105,10 @@ struct GalaxySSIHealthCareResearchControls: View {
               }
             }
             Text(t("scope", "While GalaxySSI is active, this concern may send updated measurements, approved profile context, recent private replies and scoped plan status to this model. Research may save a reply or draft, but cannot adopt steps or schedule reminders. You can revoke access at any time."))
+            if let questions = proposed.approval.questions {
+              Text(t("questions_scope", "Each automatic review may include the first page of this concern's clarification record. A changed reviewed reply requires new authorization."))
+              Text(AgentMcpJSONCodec.stringify(questions.payload)).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
+            }
             Text(proposed.approval.payload).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
             Toggle(t("acknowledge", "I authorize automatic research for this concern"), isOn: $confirmed)
             Button(t("authorize", "Authorize research")) { authorize(proposed) }.disabled(!confirmed)
@@ -136,10 +142,11 @@ struct GalaxySSIHealthCareResearchControls: View {
       let approval: GalaxySSIHealthCareDiscussion.Approval
       if let (model, key) = route(provider) {
         approval = try records.prepareLocalCareDiscussion(id: concern, metric: metric, question: question,
-          destinationID: provider, model: model, credential: key)
+          destinationID: provider, model: model, credential: key, includesQuestions: shareQuestions)
       } else if let paired = coordinator.privateHealthDesktopRoute(contactID: provider, modelID: desktopModel,
                    effort: desktopEffort) {
-        approval = try records.prepareLocalCareDesktopDiscussion(id: concern, metric: metric, question: question, route: paired)
+        approval = try records.prepareLocalCareDesktopDiscussion(id: concern, metric: metric, question: question, route: paired,
+          includesQuestions: shareQuestions)
       } else { throw GalaxySSIHealthRecords.Failure.permission }
       confirmed = false
       review = .init(approval: approval, sources: sources)
@@ -181,6 +188,7 @@ struct GalaxySSIHealthCareResearchControls: View {
     online = false; authorization = nil; job = nil; review = nil; confirmed = false; failed = false
     provider = ""; sources = []
     desktopModel = ""; desktopEffort = .automatic
+    shareQuestions = false
   }
 
   private func status(_ state: Research.State) -> String {
