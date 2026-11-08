@@ -2886,8 +2886,12 @@ extension GalaxySSIStoreTests {
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
-    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: InMemorySecretStore(),
-      executionStore: SavedTeamRecoveryFixture([]), fileURL: root.appendingPathComponent("history.sqlite"))
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite")
+    func open() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    }
+    let history = open()
     func scope(_ team: AgentTeamExecutionSnapshot) -> AgentCollaborationToolEvidenceScope {
       .init(runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
         memberId: team.members[0].memberId, sourceId: team.members[0].sourceMessageId)
@@ -3002,10 +3006,12 @@ extension GalaxySSIStoreTests {
     request["mode"] = .string("workspace")
     var offset: Int64? = 0
     var content = ""
+    var lineage: AgentMcpJSONObject?
     while let position = offset {
       request["offset"] = .int(position)
       let page = try history.recallCollaborationOriginal(request, scope: scope(reader))
       content += try XCTUnwrap(page["content"]?.strictStringValue)
+      lineage = page["comparison_lineage"]?.objectValue
       offset = page["next_offset"]?.intValue
     }
     let revision = try JSONDecoder().decode(AgentCollaborationResearchRevision.self, from: Data(content.utf8))
@@ -3017,6 +3023,37 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(regression?["actual"], .int(0))
     XCTAssertEqual(result["source_changed"], .bool(true))
     XCTAssertEqual(result["grants_permissions"], .bool(false))
+    XCTAssertEqual(lineage?["status"], .string("current_at_read"))
+    let sides = try XCTUnwrap(lineage?["sides"]?.arrayValue)
+    XCTAssertEqual(sides.count, 2)
+    for (entry, plan) in zip(sides, [baseline, candidate]) {
+      XCTAssertEqual(entry.objectValue?["tool_test_plan"], .object(AgentCollaborationCandidateRecall.reference(plan)))
+      XCTAssertNotNil(entry.objectValue?["executable_tool"])
+    }
+    func directory(_ store: AgentTeamExecutionHistoryStore) throws -> AgentMcpJSONObject? {
+      let page = try store.recallCollaborationOriginal(["mode": .string("capabilities"), "query": .string("Paired")],
+        scope: scope(reader))
+      return page["capabilities"]?.arrayValue?.compactMap(\.objectValue).first {
+        $0.string("object_id") == ref.objectId
+      }?["comparison_lineage"]?.objectValue
+    }
+    XCTAssertEqual(try directory(history), lineage)
+    XCTAssertEqual(try open().committedResearchRevisions(scope: owner)?.first?.toolTestComparison, result)
+
+    let database = try AgentTeamHistoryDatabase(fileURL: file,
+      storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    let key = "object:" + baseline.objectId
+    var newer = try XCTUnwrap(database.researchRecord(AgentCollaborationResearchRevision.self,
+      conversationId: owner.conversationId, key: key, revision: baseline.revision))
+    newer.previousHash = baseline.sha256
+    newer.reference.revision += 1
+    newer.reference.sha256 = String(repeating: "1", count: 64)
+    try database.insertResearchRecord(newer, conversationId: owner.conversationId, key: key, revision: newer.reference.revision)
+    let stale = try XCTUnwrap(directory(open()))
+    XCTAssertEqual(stale["status"], .string("requires_revalidation"))
+    XCTAssertEqual(stale["sides"]?.arrayValue?.first?.objectValue?["status"], .string("requires_revalidation"))
+    XCTAssertEqual(stale["sides"]?.arrayValue?.last?.objectValue?["status"], .string("current_at_read"))
+    XCTAssertEqual(try open().committedResearchRevisions(scope: owner)?.first?.toolTestComparison, result)
   }
 
   func testForecastRecomputesUtilityWithoutChoosingAnAction() throws {
