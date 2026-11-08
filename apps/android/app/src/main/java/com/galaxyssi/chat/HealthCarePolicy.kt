@@ -10,7 +10,7 @@ internal object HealthCarePolicy {
     const val VERSION = "health-care-assessment-1"
     private val guidelineChecked = LocalDate.of(2026, 11, 7).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
 
-    fun assess(metric: HealthMetric, records: List<HealthObservation>, context: HealthCareContext?): HealthCareAssessment? {
+    fun assess(metric: HealthMetric, records: List<HealthObservation>, context: HealthCareContext?, previous: HealthCareAssessment? = null): HealthCareAssessment? {
         val eligible = records.filter { it.profileId == "self" && it.draft.metric == metric &&
             HealthObservationPolicy.validate(it.draft) == null }.sortedWith(compareByDescending<HealthObservation> {
                 it.draft.measuredAt }.thenByDescending { it.id })
@@ -39,6 +39,10 @@ internal object HealthCarePolicy {
             }
         }
         var guideline: HealthCareGuideline? = null
+        if (HealthCarePriority.needsReview(draft)) {
+            signals += HealthCareSignal.BLOOD_PRESSURE_ALERT
+            guideline = HealthCarePriority.guideline()
+        }
         if (metric == HealthMetric.GLUCOSE && value != null) {
             // Compare each supported unit to its published threshold; conversion rounding must not decide eligibility.
             val threshold = if (draft.unit == "mg/dL") BigDecimal("100") else BigDecimal("5.6")
@@ -73,8 +77,10 @@ internal object HealthCarePolicy {
             if (points.zipWithNext().all { (new, old) -> new > old }) signals += HealthCareSignal.RISING_SERIES
             if (points.zipWithNext().all { (new, old) -> new < old }) signals += HealthCareSignal.FALLING_SERIES
         }
-        return HealthCareAssessment(ref, draft.measuredAt, metric.fields.joinToString(" / ") { draft.values[it].orEmpty() },
-            draft.unit, draft.reference, signals, guideline, baseline)
+        val sample = HealthCareSample.of(latest)
+        return HealthCareAssessment(ref, draft.measuredAt, metric.requiredFields.joinToString(" / ") { draft.values[it].orEmpty() },
+            draft.unit, draft.reference, signals, guideline, baseline, sample,
+            HealthCareComparisonPolicy.build(sample, eligible, previous, context))
     }
 
     fun reconcile(prior: HealthCareConcern?, metric: HealthMetric, assessment: HealthCareAssessment?,
@@ -88,6 +94,7 @@ internal object HealthCarePolicy {
         val changed = prior.assessment != next
         val stage = when {
             prior.stage == HealthCareStage.PAUSED -> HealthCareStage.PAUSED
+            prior.stage == HealthCareStage.MAINTENANCE && prior.inputVersion != inputVersion -> HealthCareStage.REASSESS
             !changed -> prior.stage
             prior.stage == HealthCareStage.CLOSED && next.signals.isEmpty() -> HealthCareStage.CLOSED
             next.record == null || HealthCareSignal.GLUCOSE_CONTEXT in next.signals || HealthCareSignal.RESULT_NOT_EXACT in next.signals -> HealthCareStage.VERIFY_CONTEXT
@@ -101,8 +108,8 @@ internal object HealthCarePolicy {
         require(stage in setOf(HealthCareStage.MAINTENANCE, HealthCareStage.CLOSED, HealthCareStage.PAUSED, HealthCareStage.REASSESS))
         require(reason.isNotBlank() && reviewer.isNotBlank())
         if (stage == HealthCareStage.MAINTENANCE) {
-            require(value.assessment.record != null)
-            require(value.actions.none { it.state == HealthCareActionState.PROPOSED })
+            require(value.stage == HealthCareStage.MAINTENANCE && value.maintenance != null &&
+                !HealthCareMaintenancePolicy.needsReassessment(value, now)) { "Maintenance requires an explicitly accepted source-backed review" }
         }
         return value.copy(stage = stage, reviewNote = reason, reviewedBy = reviewer, updatedAt = maxOf(value.updatedAt, now))
     }

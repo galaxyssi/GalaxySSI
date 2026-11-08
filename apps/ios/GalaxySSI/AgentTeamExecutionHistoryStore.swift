@@ -630,6 +630,8 @@ final class AgentTeamExecutionHistoryStore {
                                    evidenceRead: EvidenceReadMode = .local) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
     guard evidenceRead == .local || mode == "evidence" else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    if mode == AgentCollaborationNativeReleaseHistory.mode, input["view"] == nil,
+       let history = try recallNativeReleaseHistory(input, scope: scope) { return history }
     if mode == AgentCollaborationCandidateRecall.mode, input["view"] == nil,
        let history = try recallCandidateTestHistory(input, scope: scope) { return history }
     if mode == "dependency" { return try recallDependencyOriginal(input, scope: scope) }
@@ -848,6 +850,86 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
+  private func recallNativeReleaseHistory(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope)
+    throws -> AgentMcpJSONObject? {
+    typealias History = AgentCollaborationNativeReleaseHistory
+    guard Set(input.keys).isSubset(of: ["mode", "object_id", "revision", "sha256", "cursor"]),
+          let reference = History.reference(input), case .string(let cursor) = input["cursor"] ?? .string(""),
+          cursor.utf8.count <= 129 else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    return try access { database in
+      guard let team = try database.snapshots(runId: scope.runId).first,
+            team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
+            let reader = team.members.first(where: { $0.memberId == scope.memberId &&
+              $0.sourceMessageId == scope.sourceId && $0.deliveryMode != .ignore && !$0.status.isTerminal }),
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true,
+            let release = try database.researchRecord(History.Release.self, conversationId: scope.conversationId,
+              key: "object:" + reference.objectId, revision: reference.revision),
+            release.reference == reference
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      guard release.draft.kind == "tool_release" else { return nil }
+      guard release.testedToolRelease?["state"] == .string("eligible_for_scoped_tool_execution")
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let dependencies = reader.dispatchDependencyMemberIds ?? []
+      func visible(run: String, turn: String, member: String, source: String) -> Bool {
+        if turn != scope.turnId { return true }
+        guard run == scope.runId else { return false }
+        if member == scope.memberId && source == scope.sourceId { return true }
+        return dependencies.contains(member) && team.members.contains {
+          $0.memberId == member && $0.sourceMessageId == source && $0.deliveryMode != .ignore && $0.status.isTerminal
+        }
+      }
+      guard visible(run: release.runId, turn: release.turnId, member: release.authorId, source: release.sourceId)
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let after: String
+      if cursor.isEmpty {
+        after = ""
+      } else {
+        let id = String(cursor.prefix(64))
+        guard History.validDigest(id), cursor == History.cursor(after: id, release: reference, reader: scope,
+          dependencies: dependencies) else { throw AgentTeamHistoryDatabase.Failure.stale }
+        after = History.prefix + id
+      }
+      let keys = try database.milestoneKeys(conversationId: scope.conversationId, prefix: History.prefix, after: after)
+      let page = keys.prefix(History.pageSize)
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys]
+      var records: [AgentMcpJSONValue] = []
+      for key in page {
+        let id = String(key.dropFirst(History.prefix.count))
+        guard History.validDigest(id),
+              let original = try database.researchRecord(History.Original.self, conversationId: scope.conversationId,
+                key: key, revision: 0) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        let saved = original.observation
+        guard saved.conversationId == scope.conversationId,
+              visible(run: saved.runId, turn: saved.turnId, member: saved.memberId, source: saved.sourceId),
+              saved.input["mode"] == .string("run"),
+              saved.input["tool_release"]?.objectValue == History.fields(reference) else { continue }
+        let hash = try SHA256.hash(data: encoder.encode(original)).map { String(format: "%02x", $0) }.joined()
+        guard id == AgentMcpJSONCodec.sha256(["run": .string(saved.runId), "source": .string(saved.sourceId),
+          "invocation": .string(saved.result.receipt.invocationId), "sha256": .string(hash)])
+        else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        if let record = History.describe(original, release: reference, evidenceID: id, hash: hash) {
+          records.append(.object(record))
+        }
+      }
+      let next = keys.count > page.count ? page.last.map {
+        History.cursor(after: String($0.dropFirst(History.prefix.count)), release: reference,
+          reader: scope, dependencies: dependencies)
+      } : nil
+      return [
+        "method": .object(History.fields(reference)), "records": .array(records),
+        "record_kind": .string("original_native_tool_observation"), "next_cursor": next.map(AgentMcpJSONValue.string) ?? .null,
+        "scan_complete": .bool(next == nil), "snapshot": .bool(false),
+        "coverage": .string("visible_saved_native_observations_live_scan"),
+        "quality_effect": .null, "causal_contribution": .null,
+        "trust": .string("host_execution_observations_not_method_effectiveness"),
+        "guidance": .string("Follow next_cursor even after an empty page. Read the original for full input and outcome. " +
+          "A replay is not a new execution. Success does not establish correctness or quality gain.")
+      ]
+    }
+  }
+
   func initialCollaborationCapabilities(scope: AgentCollaborationToolEvidenceScope) throws -> [AgentMcpJSONValue] {
     try recallCapabilities([:], scope: scope, pinInitial: true)["capabilities"]?.arrayValue ?? []
   }
@@ -901,6 +983,28 @@ final class AgentTeamExecutionHistoryStore {
       for row in rows.prefix(32) {
         scanned += 1
         guard let head = try page.read(row) else { continue }
+        if let procedure = head.retainedProcedure, head.draft.kind == .procedureSkill,
+           let body = head.draft.body["procedure_skill"]?.objectValue {
+          let text = ([head.draft.title, body.string("name"), procedure.domain, procedure.appliesWhen] +
+            (body["keywords"]?.arrayValue ?? []).compactMap(\.strictStringValue)).joined(separator: "\n")
+          func matches(_ term: String) -> Bool {
+            text.range(of: term, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+          }
+          let score = pinInitial ? Set(initialTerms.filter(matches)).count : 0
+          if pinInitial ? score > 0 : terms.allSatisfy(matches) {
+            var entry = AgentCollaborationProcedure.fields(head.reference)
+            entry["kind"] = .string("procedure_skill")
+            entry["state"] = .string("available_scoped_procedure")
+            if pinInitial {
+              ranked.append((score, entry))
+            } else {
+              entry["title"] = .string(head.draft.title)
+              entries.append(.object(entry))
+              if entries.count == 8 { break }
+            }
+          }
+          continue
+        }
         let kind = head.draft.kind.rawValue
         let candidate = AgentCollaborationCandidateRecall.isCandidate(head.draft.kind)
         guard let body = head.draft.body[kind]?.objectValue else { continue }
@@ -929,6 +1033,12 @@ final class AgentTeamExecutionHistoryStore {
         guard pinInitial ? score > 0 : terms.allSatisfy(matches) else { continue }
         let state: String
         switch kind {
+        case "capability_suite":
+          guard head.retentionBank != nil else { continue }
+          state = "protected_measured_cases"
+        case "capability_channel":
+          guard head.capabilitySelection != nil else { continue }
+          state = "selected_scoped_version"
         case "capability_lesson": state = body.string("decision") == "retain" ? "retained_lesson" : "historical_lesson"
         case "failure_experience": state = "observed_failure"
         default: state = "unverified_candidate"
@@ -936,6 +1046,11 @@ final class AgentTeamExecutionHistoryStore {
         var entry: AgentMcpJSONObject = ["object_id": .string(head.reference.objectId), "revision": .int(head.reference.revision),
           "sha256": .string(head.reference.sha256), "kind": .string(kind), "title": .string(head.draft.title),
           "state": .string(state)]
+        if kind == "tool_release" && state == "eligible_for_scoped_tool_execution" {
+          var usage = AgentCollaborationNativeReleaseHistory.fields(head.reference)
+          usage["mode"] = .string(AgentCollaborationNativeReleaseHistory.mode)
+          entry["usage_recall"] = .object(usage)
+        }
         if head.draft.kind == .workflowMethod {
           entry["evaluation_recall"] = .object(AgentCollaborationMethodEvaluations.selector(head.reference))
         }
@@ -946,6 +1061,12 @@ final class AgentTeamExecutionHistoryStore {
           entry.removeValue(forKey: "title")
           ranked.append((score, entry))
           continue
+        }
+        if kind == "capability_suite", let count = head.retentionBank?.anchors.count {
+          entry["protected_case_count"] = .int(Int64(count))
+        }
+        if let selection = head.capabilitySelection {
+          entry["newer_capabilities_require_revalidation"] = .bool(selection.requiresRevalidation)
         }
         if candidate {
           entry["usage_recall"] = .object(AgentCollaborationCandidateRecall.selector(head.reference))
@@ -1197,6 +1318,7 @@ final class AgentTeamExecutionHistoryStore {
         var expectedUtilities: [String: Double]? = nil
         var expectedInformation: [String: Double]? = nil
         var hypothesisFeedback: AgentMcpJSONObject? = nil
+        var retentionBank: AgentCollaborationCapabilityBank? = nil
         var carriedPosterior: AgentMcpJSONObject? = nil
         var measuredCases: [AgentCollaborationMeasuredCase]? = nil
         var trialAuthors: [String]? = nil
@@ -1218,10 +1340,18 @@ final class AgentTeamExecutionHistoryStore {
         } else if draft.kind == .workflowMethod {
           guard references.isEmpty, draft.objectId?.isBlank != false, draft.baseRevision == 0,
                 let method = draft.body["workflow_method"]?.objectValue,
-                method["previous_method"] == nil, method["feedback"] == nil,
                 AgentCollaborationWorkflowIntake.validates(method) else {
             throw AgentTeamHistoryDatabase.Failure.corrupt
           }
+          let valid = try AgentCollaborationWorkflowIntake.validatesLineage(method, parents: draft.parents) { ref in
+            guard !revisedInBatch.contains(ref.objectId),
+                  let saved = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                    conversationId: conversationId, key: "object:" + ref.objectId),
+                  saved.reference == ref, saved.turnId != turnId || (saved.runId == runId && saved.authorId == memberId)
+            else { return nil }
+            return saved
+          }
+          guard valid else { throw AgentTeamHistoryDatabase.Failure.stale }
         } else if draft.kind == .executableTool || draft.kind == .toolTestPlan {
           guard references.isEmpty, draft.objectId?.isBlank != false, draft.baseRevision == 0,
                 let spec = draft.body[draft.kind.rawValue]?.objectValue else {
@@ -1382,9 +1512,24 @@ final class AgentTeamExecutionHistoryStore {
             }
             workflowComparison = binding
           }
-          let valid = try AgentCollaborationExperimentPlanIntake.validates(draft,
-            allowWorkflowComparison: workflowComparison != nil, current: current)
-          guard valid else { throw AgentTeamHistoryDatabase.Failure.stale }
+          guard try AgentCollaborationExperimentPlanIntake.validates(draft,
+            allowWorkflowComparison: workflowComparison != nil,
+            freezeComparison: { workflowComparison = $0 }, current: current)
+          else { throw AgentTeamHistoryDatabase.Failure.stale }
+          if let ref = AgentCollaborationExperimentPlanIntake.reference(draft.body["experiment_plan"]?.objectValue?["retention_suite"]) {
+            retentionBank = try current(ref)?.retentionBank
+          }
+        } else if draft.kind == .capabilitySuite {
+          guard let bank = try AgentCollaborationCapabilityBank.freeze(draft: draft, exact: { ref in
+            guard !revisedInBatch.contains(ref.objectId),
+                  let saved = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                    conversationId: conversationId, key: "object:" + ref.objectId),
+                  saved.reference == ref,
+                  saved.turnId != turnId || (saved.runId == runId && saved.authorId == memberId)
+            else { return nil }
+            return saved
+          }) else { throw AgentTeamHistoryDatabase.Failure.stale }
+          retentionBank = bank
         } else if draft.kind == .numericModelTrial {
           guard draft.objectId?.isBlank != false, draft.baseRevision == 0, references.isEmpty,
                 let trial = draft.body["numeric_model_trial"]?.objectValue,
@@ -1492,6 +1637,29 @@ final class AgentTeamExecutionHistoryStore {
         } else {
           guard existingId == nil, draft.baseRevision == 0 else { throw AgentTeamHistoryDatabase.Failure.stale }
         }
+        var capabilitySelection: AgentCollaborationCapabilitySelection?
+        if draft.kind == .capabilityChannel {
+          func saved(_ ref: AgentCollaborationResearchReference, historical: Bool) throws -> AgentCollaborationResearchRevision? {
+            guard (ref.objectId == objectId || !revisedInBatch.contains(ref.objectId)),
+                  let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                    conversationId: conversationId, key: "object:" + ref.objectId, revision: historical ? ref.revision : nil),
+                  record.reference == ref,
+                  record.turnId != turnId || (record.runId == runId && record.authorId == memberId)
+            else { return nil }
+            return record
+          }
+          capabilitySelection = try AgentCollaborationCapabilitySelection.validate(draft: draft, objectID: objectId,
+            head: head, exact: { try saved($0, historical: false) }, historical: { try saved($0, historical: true) },
+            implementationKind: { ref in
+              guard try saved(ref, historical: false)?.draft.kind.rawValue == "tool_release",
+                    let record = try database.researchRecord(AgentMcpJSONObject.self, conversationId: conversationId,
+                      key: "object:" + ref.objectId, revision: ref.revision),
+                    record["testedToolRelease"]?.objectValue?["state"] == .string("eligible_for_scoped_tool_execution")
+              else { return nil }
+              return "tool_release"
+            })
+          guard capabilitySelection != nil else { throw AgentTeamHistoryDatabase.Failure.stale }
+        }
         for parent in draft.parents + (draft.resolves ?? []) {
           guard let existing = try database.researchRecord(AgentCollaborationResearchRevision.self,
             conversationId: conversationId, key: "object:" + parent.objectId, revision: parent.revision),
@@ -1525,13 +1693,28 @@ final class AgentTeamExecutionHistoryStore {
           }
           guard valid else { throw AgentTeamHistoryDatabase.Failure.stale }
         }
+        var retainedProcedure: AgentCollaborationProcedure?
+        if draft.kind == .procedureSkill {
+          guard let retained = try AgentCollaborationProcedure.freeze(draft, current: { ref in
+            guard !revisedInBatch.contains(ref.objectId),
+                  let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                    conversationId: conversationId, key: "object:" + ref.objectId),
+                  record.reference == ref,
+                  record.turnId != turnId || (record.runId == runId && record.authorId == memberId)
+            else { return nil }
+            return record
+          }) else { throw AgentTeamHistoryDatabase.Failure.stale }
+          retainedProcedure = retained
+        }
         var revision = AgentCollaborationResearchRevision(reference: .init(objectId: objectId,
           revision: draft.baseRevision + 1, sha256: ""), previousHash: head?.reference.sha256,
           runId: runId, turnId: turnId, authorId: memberId, sourceId: sourceId, draft: draft,
           frozenCloudReads: frozenReads, declaredExpectedUtilities: expectedUtilities,
-          expectedInformationGainBits: expectedInformation,
+          retainedProcedure: retainedProcedure, expectedInformationGainBits: expectedInformation,
           hypothesisFeedback: hypothesisFeedback,
           carriedHypothesisPosterior: carriedPosterior,
+          retentionBank: retentionBank,
+          capabilitySelection: capabilitySelection,
           registeredAtMillis: [.experimentPlan, .actionForecast].contains(draft.kind) ? AgentControlPlaneClock.nowMillis() : nil,
           measuredCases: measuredCases, trialAuthors: trialAuthors, numericReplay: numericReplay,
           workflowComparison: workflowComparison)
@@ -2426,10 +2609,51 @@ final class AgentTeamExecutionHistoryStore {
           database: database) else { return false }
         var pinned = checkpoint
         pinned.liveGraph = checkpoint.liveGraph?.pinningLearningPriorities(ranks)
+        guard let procedures = try Self.validatedProcedures(additions, existing: existing,
+          pinned: prior.first?.liveGraph?.procedureBindings ?? [:], snapshot: snapshot, database: database)
+        else { return false }
+        pinned.liveGraph = pinned.liveGraph?.pinningProcedures(procedures)
         try database.insertGoalCheckpoint(pinned)
         return true
       }
     } catch { return false }
+  }
+
+  private static func validatedProcedures(
+    _ additions: ArraySlice<AgentCollaborationLiveGraph.Work>, existing: [AgentCollaborationLiveGraph.Work],
+    pinned: [String: AgentMcpJSONObject], snapshot: AgentTeamExecutionSnapshot, database: AgentTeamHistoryDatabase
+  ) throws -> [String: AgentMcpJSONObject]? {
+    guard existing.allSatisfy({ ($0.procedure_use == nil) == (pinned[$0.id] == nil) }) else { return nil }
+    let requested = additions.filter { $0.procedure_use != nil }
+    guard !requested.isEmpty else { return pinned }
+    guard try database.researchRecord(Bool.self, conversationId: snapshot.conversationId,
+      key: "native-evidence-revoked", revision: 0) != true else { return nil }
+    var bindings = pinned
+    for work in requested {
+      guard let use = work.procedure_use, work.workflowExecutionId == nil,
+            let stage = work.stage, ["EXECUTE", "EXPLORE", "CHALLENGE", "VERIFY", "REVISE"].contains(stage),
+            snapshot.members.contains(where: { $0.memberId == work.member && $0.deliveryMode != .ignore && !$0.status.isTerminal })
+      else { return nil }
+      func lookup(_ ref: AgentCollaborationResearchReference, historical: Bool) throws -> AgentCollaborationResearchRevision? {
+        guard let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                conversationId: snapshot.conversationId, key: "object:" + ref.objectId,
+                revision: historical ? ref.revision : nil), record.reference == ref,
+              record.turnId != snapshot.taskId || (record.runId == snapshot.supervisorRunId &&
+                record.authorId == snapshot.primaryMemberId && record.authorId == work.member)
+        else { return nil }
+        return record
+      }
+      guard let skill = try lookup(use.procedure, historical: false), skill.draft.kind == .procedureSkill,
+            let procedure = skill.retainedProcedure, var binding = try procedure.binding(use,
+              current: { try lookup($0, historical: false) }, visible: { try lookup($0, historical: true) })
+      else { return nil }
+      binding["work_id"] = .string(work.id)
+      binding["member"] = .string(work.member)
+      binding["stage"] = .string(stage)
+      binding["assignment_sha256"] = .string(AgentMcpJSONCodec.sha256(["assignment": .string(work.assignment)]))
+      bindings[work.id] = binding
+    }
+    return bindings
   }
 
   func appendSavedCollaborationWorkflow(_ instance: AgentCollaborationWorkflowInstance,

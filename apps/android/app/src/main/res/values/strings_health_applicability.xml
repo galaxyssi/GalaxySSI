@@ -1,0 +1,19 @@
+<resources>
+    <string name="health_applicability_legacy">This draft has no structured applicability review. Information checks and clinician discussions remain available.</string>
+    <string name="health_applicability_discussion">Discussion only; not confirmation that clinical guidance applies.</string>
+    <string name="health_applicability_match">Declared conditions match the saved facts. This is a model assessment, not independent clinical validation.</string>
+    <string name="health_applicability_unknown">Applicability is uncertain; required information is missing.</string>
+    <string name="health_applicability_mismatch">Declared requirements differ from the saved facts.</string>
+    <string name="health_applicability_conflict">Sources disagree; the recommendation needs review.</string>
+    <string name="health_applicability_equals">%1$s</string>
+    <string name="health_applicability_at_least">at least %1$s</string>
+    <string name="health_applicability_at_most">at most %1$s</string>
+    <string name="health_applicability_check">%1$s\nSource requirement: %2$s · Saved fact: %3$s\nSource %4$d</string>
+    <string name="health_applicability_missing">Still needed\n%1$s</string>
+    <string name="health_applicability_conflict_detail">Source conflict (%1$s)\n%2$s\nNext step: %3$s</string>
+    <string name="health_applicability_blocked">Discuss or confirm the missing information before adopting this action.</string>
+    <string name="health_applicability_metric">Measurement</string>
+    <string name="health_applicability_unit">Unit</string>
+    <string name="health_applicability_collection">Collection conditions</string>
+    <string name="health_applicability_source">%1$d. %2$s</string>
+</resources>

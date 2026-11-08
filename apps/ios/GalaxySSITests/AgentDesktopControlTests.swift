@@ -2,6 +2,43 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testDirectDesktopDraftRevisionAndLetterboxCoordinates() {
+    var draft = AgentDesktopDraft()
+    draft.edit("original")
+    let sent = draft.revision
+    draft.edit("edited while awaiting receipt")
+    draft.confirm(sent)
+    XCTAssertEqual(draft.text, "edited while awaiting receipt")
+    draft.confirm(draft.revision)
+    XCTAssertTrue(draft.text.isEmpty)
+
+    let size = CGSize(width: 300, height: 300)
+    XCTAssertNil(AgentDesktopDirectGesture.coordinate(CGPoint(x: 150, y: 30), in: size, width: 600, height: 300))
+    XCTAssertEqual(AgentDesktopDirectGesture.coordinate(CGPoint(x: 150, y: 150), in: size, width: 600, height: 300),
+      CGPoint(x: 300, y: 150))
+    XCTAssertNil(AgentDesktopDirectGesture.coordinate(CGPoint(x: CGFloat.nan, y: 150), in: size,
+      width: 600, height: 300))
+  }
+
+  func testDirectDesktopFocusBindsOnlyNonPasswordEditableTargets() {
+    let target = String(repeating: "e", count: 64)
+    var focus: AgentMcpJSONObject = ["available": .bool(true), "editable": .bool(true),
+      "password": .bool(false), "target_id": .string(target)]
+    func parse() -> AgentDesktopInputFocus? {
+      AgentDesktopInputFocus.parse(["interactive_input": .bool(true), "input_focus": .object(focus)])
+    }
+    XCTAssertEqual(parse()?.targetId, target)
+    XCTAssertTrue(parse()?.canBindText == true)
+    focus["password"] = .bool(true)
+    XCTAssertFalse(parse()?.canBindText == true)
+    focus["password"] = nil
+    XCTAssertFalse(parse()?.canBindText == true)
+    focus["password"] = .bool(false)
+    focus["target_id"] = .string("not-a-target")
+    XCTAssertFalse(parse()?.canBindText == true)
+    XCTAssertNil(AgentDesktopInputFocus.parse(["input_focus": .object(focus)]))
+  }
+
   func testAgentDesktopControlAuthorizationParsesAndroidRecords() throws {
     let authorization = try XCTUnwrap(AgentDesktopControlAuthorization.parse([
       "authorization_id": .string("dca_test"),
@@ -378,6 +415,23 @@ extension GalaxySSIStoreTests {
       actionId: "action-takeover",
       nowMillis: now
     ))
+    let target = String(repeating: "a", count: 64)
+    let direct = try XCTUnwrap(AgentDesktopControlRequestFactory.typeText(
+      snapshot: active, routing: routing, text: "first\nsecond", interactive: true, targetId: target,
+      actionId: "typing", nowMillis: now
+    ))
+    XCTAssertEqual(direct.actionId, "ios-direct-typing")
+    XCTAssertEqual(direct.input["text"], .string("first\nsecond"))
+    XCTAssertEqual(direct.input["input_target_id"], .string(target))
+    XCTAssertEqual(direct.input["interactive_input"], .bool(true))
+    XCTAssertTrue(direct.pendingRequest.interactiveInput)
+    XCTAssertFalse(direct.durable)
+    XCTAssertLessThanOrEqual(direct.expiresAt, now + AgentDesktopControlRequestFactory.interactiveTTLMillis)
+    let double = try XCTUnwrap(AgentDesktopControlRequestFactory.click(snapshot: active, routing: routing,
+      x: 12, y: 34, coordinateWidth: 640, coordinateHeight: 360, interactive: true, clicks: 2, nowMillis: now))
+    XCTAssertEqual(double.input["clicks"], .int(2))
+    XCTAssertNil(AgentDesktopControlRequestFactory.click(snapshot: active, routing: routing,
+      x: 12, y: 34, interactive: true, button: "right", clicks: 2, nowMillis: now))
 
     XCTAssertEqual(AgentDesktopControlRequestFactory.actionTTLMillis, 30_000)
     XCTAssertEqual(screenshot.payload["type"], .string("desktop_executor_request"))

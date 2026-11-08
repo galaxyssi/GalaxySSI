@@ -10,6 +10,7 @@ struct GalaxySSIHealthAssistantView: View {
   @Environment(\.calendar) private var calendar
   @Environment(\.timeZone) private var timeZone
   let records: GalaxySSIHealthRecords
+  let trendScope: GalaxySSIHealthTrendAnalysis?
   let openRecord: (GalaxySSIHealthMetric?) -> Void
   @State private var from = Calendar.current.date(byAdding: .day, value: -6, to: Date()) ?? Date()
   @State private var to = Date()
@@ -20,8 +21,7 @@ struct GalaxySSIHealthAssistantView: View {
   @State private var enabled = false
   @State private var online: UUID?
   @State private var modelContactID = ""
-  @State private var consent: Consent?
-  @State private var confirming = false
+  @State private var consent: SummaryReview?
   @State private var recommendation: GalaxySSIHealthAnalysis.Recommendation?
   @State private var task: Task<Void, Never>?
   @State private var requestID: UUID?
@@ -51,6 +51,21 @@ struct GalaxySSIHealthAssistantView: View {
     let model: CloudModelConfig
     let endpoint: URL
     let permission: UUID
+  }
+
+  private struct SummaryReview: Identifiable {
+    let id = UUID()
+    let target: Consent
+    let analysisID: UUID
+    let payload: Data
+    let credentialDigest: SHA256.Digest
+  }
+
+  init(records: GalaxySSIHealthRecords, trendScope: GalaxySSIHealthTrendAnalysis? = nil,
+       openRecord: @escaping (GalaxySSIHealthMetric?) -> Void) {
+    self.records = records
+    self.trendScope = trendScope
+    self.openRecord = openRecord
   }
 
   private struct FollowUpReview: Identifiable {
@@ -91,7 +106,7 @@ struct GalaxySSIHealthAssistantView: View {
       if scene == .active {
         if enabled {
           scopeSection
-          profileSelection
+          if trendScope == nil { profileSelection }
           if let analysis {
             analysisSection(analysis)
             if let profileContext { profileResult(profileContext) }
@@ -111,7 +126,10 @@ struct GalaxySSIHealthAssistantView: View {
 
   private var activeAssistant: some View {
     assistantList
-    .onAppear(perform: refreshPermissions)
+    .onAppear {
+      refreshPermissions()
+      if trendScope != nil, enabled { calculate() }
+    }
     .onChange(of: from) { _ in clear() }
     .onChange(of: to) { _ in clear() }
     .onChange(of: calendar) { _ in clear() }
@@ -143,14 +161,24 @@ struct GalaxySSIHealthAssistantView: View {
 
   var body: some View {
     activeAssistant
-    .confirmationDialog(t("confirm", "Send selected aggregates to this provider?"),
-                        isPresented: $confirming, titleVisibility: .visible) {
-      Button(t("send", "Send aggregates"), action: send)
-    } message: {
-      if let consent {
-        Text(consent.endpoint.absoluteString + "\n" + consent.model.modelId + "\n" +
-          t("disclosure", "Only metric aggregates and coverage are sent. No records, dates, notes, profile or chat history."))
-      }
+    .sheet(item: $consent) { review in
+      NavigationView {
+        List {
+          if scene == .active {
+            Text(review.target.model.modelId)
+            Text(review.target.endpoint.absoluteString).font(.footnote)
+            Text(t("disclosure", "Only metric aggregates and coverage are sent. No records, dates, notes, profile or chat history."))
+            Text(String(decoding: review.payload, as: UTF8.self))
+              .font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
+            Button(t("send", "Send aggregates")) { send(review) }
+          }
+        }
+        .navigationTitle(t("confirm", "Send selected aggregates to this provider?"))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .cancellationAction) {
+          Button(t("close", "Close")) { consent = nil }
+        } }
+      }.navigationViewStyle(.stack)
     }
     .sheet(isPresented: $choosingBackground) {
       GalaxySSIHealthBackgroundPicker(records: records, selection: backgroundSelection) { selected in
@@ -210,15 +238,23 @@ struct GalaxySSIHealthAssistantView: View {
 
   private var scopeSection: some View {
     Section(t("scope", "Analysis scope")) {
-      DatePicker(t("from", "From"), selection: $from, in: ...Date(), displayedComponents: .date)
-      DatePicker(t("to", "Through"), selection: $to, in: ...Date(), displayedComponents: .date)
-      Toggle(t("compare_previous", "Include the previous period for comparison"), isOn: $compareInReport)
-      DisclosureGroup(t("metrics", "Measurements")) {
-        ForEach(GalaxySSIHealthMetric.allCases) { metric in
-          Toggle(metric.title(language: language), isOn: Binding(get: { metrics.contains(metric) }, set: {
-            if $0 { metrics.insert(metric) } else { metrics.remove(metric) }
-          }))
-          .disabled(metrics.count >= 6 && !metrics.contains(metric))
+      if let trendScope {
+        Text(trendScope.spec.metric.title(language: language))
+        Text(trendScope.sourceTitle).foregroundColor(.secondary)
+        Text(trendScope.spec.interval.start, style: .date)
+        Text(trendScope.spec.through, style: .date)
+        Text(trendScope.spec.calendar.timeZone.identifier).font(.caption).foregroundColor(.secondary)
+      } else {
+        DatePicker(t("from", "From"), selection: $from, in: ...Date(), displayedComponents: .date)
+        DatePicker(t("to", "Through"), selection: $to, in: ...Date(), displayedComponents: .date)
+        Toggle(t("compare_previous", "Include the previous period for comparison"), isOn: $compareInReport)
+        DisclosureGroup(t("metrics", "Measurements")) {
+          ForEach(GalaxySSIHealthMetric.allCases) { metric in
+            Toggle(metric.title(language: language), isOn: Binding(get: { metrics.contains(metric) }, set: {
+              if $0 { metrics.insert(metric) } else { metrics.remove(metric) }
+            }))
+            .disabled(metrics.count >= 6 && !metrics.contains(metric))
+          }
         }
       }
       Button(t("calculate", "Calculate on this device"), action: calculate).disabled(metrics.isEmpty)
@@ -234,7 +270,9 @@ struct GalaxySSIHealthAssistantView: View {
         let aggregate = item.aggregate
         VStack(alignment: .leading, spacing: 4) {
           Text(item.metric.title(language: language) + component(aggregate.component))
-          if let low = aggregate.minimum, let high = aggregate.maximum, let mean = aggregate.mean {
+          if let fact = analysis.trendFact {
+            trendDetails(analysis, fact: fact)
+          } else if let low = aggregate.minimum, let high = aggregate.maximum, let mean = aggregate.mean {
             Text(String(format: t("range", "Min %@, max %@, mean %@"), low, high, mean) + " " + aggregate.unit)
             Text(String(format: t("coverage", "%lld / %lld days with readings"), Int64(aggregate.observedDays),
                         Int64(analysis.requestedDays))).foregroundColor(.secondary)
@@ -244,6 +282,42 @@ struct GalaxySSIHealthAssistantView: View {
         }
       }
     }
+  }
+
+  private func trendDetails(_ analysis: GalaxySSIHealthAnalysis, fact: GalaxySSIHealthTrendAnalysis.Fact) -> some View {
+    Group {
+      let unit = analysis.trend?.spec.unit ?? ""
+      let label: String = fact.aggregation == "min" ? t("trend_min", "Minimum") :
+        (fact.aggregation == "max" ? t("trend_max", "Maximum") : t("trend_mean", "Mean"))
+      Text(label + " / " + unit)
+      Text(String(format: t("coverage", "%lld / %lld days with readings"), Int64(fact.pointCount),
+        Int64(analysis.requestedDays))).foregroundColor(.secondary)
+      Text(String(format: t("trend_missing", "Days without records: %lld; nonnumeric: %lld; other units: %lld"),
+        Int64(fact.missingDays), Int64(fact.excludedNonNumeric), Int64(fact.excludedOtherUnits)))
+        .font(.caption).foregroundColor(.secondary)
+      if let delta = fact.delta { Text(String(format: t("trend_delta", "First-to-last change: %@"), delta) + " " + unit) }
+      if let first = analysis.trendFirst {
+        trendSource(first, title: t("trend_first", "First point"), value: fact.first.value, analysis: analysis)
+      }
+      if let last = analysis.trendLast, let bucket = fact.last {
+        trendSource(last, title: t("trend_last", "Last point"), value: bucket.value, analysis: analysis)
+      }
+    }
+  }
+
+  private func trendSource(_ item: GalaxySSIHealthAnalysis.Evidence, title: String, value: String,
+                           analysis: GalaxySSIHealthAnalysis) -> some View {
+    Button {
+      refreshPermissions()
+      guard self.analysis?.id == analysis.id else { return }
+      sourceLimit = 30
+      evidence = item
+    } label: {
+      VStack(alignment: .leading, spacing: 3) {
+        Text(title + ": " + value + " " + item.aggregate.unit)
+        if let date = item.readings.first?.measuredAt { Text(date, style: .date).font(.caption) }
+      }
+    }.buttonStyle(.borderless)
   }
 
   private var profileSelection: some View {
@@ -413,7 +487,7 @@ struct GalaxySSIHealthAssistantView: View {
         Button(actionTitle(action)) {
           guard validateFollowUpResult(result) else { return }
           switch action {
-          case .addRecord: openRecord(metrics.count == 1 ? metrics.first : nil)
+          case .addRecord: openRecord(trendScope?.spec.metric ?? (metrics.count == 1 ? metrics.first : nil))
           case .recordReminder: followUpReminder = true
           case .weeklyReport: presentedReport = reportScope
           }
@@ -426,7 +500,9 @@ struct GalaxySSIHealthAssistantView: View {
                             result: FollowUpResult, days: Int) -> some View {
     VStack(alignment: .leading, spacing: 6) {
       Text(item.metric.title(language: language) + component(item.aggregate.component))
-      if topic == .changes, let delta = result.comparisons[item.id], let mean = item.aggregate.mean {
+      if let analysis, let fact = analysis.trendFact, topic == .changes {
+        trendDetails(analysis, fact: fact)
+      } else if topic == .changes, let delta = result.comparisons[item.id], let mean = item.aggregate.mean {
         Text(String(format: t("follow_up.delta", "Mean %@ vs %@; change %@"),
                     mean, delta.mean, delta.delta) + " " + item.aggregate.unit)
         Button(t("follow_up.previous_sources", "Previous period source records")) {
@@ -473,6 +549,13 @@ struct GalaxySSIHealthAssistantView: View {
     do {
       let archive = try records.load()
       guard archive.derivesOverview == true else { refreshPermissions(); return }
+      if let trendScope {
+        guard trendScope.spec.calendar.timeZone == timeZone,
+              let filtered = GalaxySSIHealthAnalysis(trend: trendScope, current: archive.current)
+        else { stale = true; return }
+        analysis = filtered
+        return
+      }
       var local = calendar
       local.timeZone = timeZone
       let first = local.startOfDay(for: from), last = local.startOfDay(for: to)
@@ -524,36 +607,56 @@ struct GalaxySSIHealthAssistantView: View {
   }
 
   private func prepareSend() {
-    guard scene == .active, let permission = online, analysis != nil,
+    guard scene == .active, let permission = online, let analysis,
           let contact = providers.first(where: { $0.id == modelContactID }),
-          let model = contact.selectedCloudModel, let endpoint = GalaxySSIHealthSummaryTransport.endpoint(for: model)
+          let model = contact.selectedCloudModel, let endpoint = GalaxySSIHealthSummaryTransport.endpoint(for: model),
+          let key = store.apiKey(for: model), CloudModelCredentialPolicy.isStoredCredential(key),
+          let payload = try? analysis.requestJSON()
     else { return }
-    consent = Consent(contactID: contact.id, model: model, endpoint: endpoint, permission: permission)
-    confirming = true
+    let target = Consent(contactID: contact.id, model: model, endpoint: endpoint, permission: permission)
+    guard (try? authorized(target, analysis: analysis)) == true else { refreshPermissions(); return }
+    consent = SummaryReview(target: target, analysisID: analysis.id, payload: payload,
+      credentialDigest: SHA256.hash(data: Data(key.utf8)))
   }
 
-  private func send() {
-    guard scene == .active, let consent, let analysis else { return }
+  private func send(_ review: SummaryReview) {
+    guard scene == .active, consent?.id == review.id, let analysis, analysis.id == review.analysisID else { return }
     self.consent = nil
+    let consent = review.target
     do {
       guard try authorized(consent, analysis: analysis), let key = store.apiKey(for: consent.model),
-            CloudModelCredentialPolicy.isStoredCredential(key) else { throw GalaxySSIHealthAnalysis.Failure.invalid }
+            CloudModelCredentialPolicy.isStoredCredential(key),
+            SHA256.hash(data: Data(key.utf8)) == review.credentialDigest,
+            let contact = providers.first(where: { $0.id == consent.contactID })
+      else { throw GalaxySSIHealthAnalysis.Failure.invalid }
       let request = try GalaxySSIHealthSummaryTransport.request(endpoint: consent.endpoint, model: consent.model.modelId,
-                                                                apiKey: key, aggregates: analysis.requestJSON())
+                                                                apiKey: key, aggregates: review.payload)
+      let ledger = coordinator.healthDisclosureStore
+      let ticket = AgentDataDisclosureLedger.beginCloudRequest(store: ledger, destination: .init(contact: contact),
+        text: "", purpose: analysis.trend == nil ? "Explicit health summary" : "Explicit filtered health trend summary",
+        textSummary: .init(characters: String(decoding: review.payload, as: UTF8.self).count,
+          kinds: [.systemInstructions, .toolOutput]))
+      guard ticket.allowed else { error = true; return }
       let id = UUID()
       requestID = id
       error = false
       recommendation = nil
       task = Task {
+        var disclosure: AgentDisclosureStatus = .failed
+        defer {
+          AgentDataDisclosureLedger.update(store: ledger, ticket: ticket, status: disclosure,
+            failureReason: disclosure == .failed ? "health_request_not_completed" : "")
+          if requestID == id { task = nil; requestID = nil }
+        }
         do {
-          guard try authorized(consent, analysis: analysis), !Task.isCancelled else {
+          guard try authorized(consent, analysis: analysis), store.apiKey(for: consent.model) == key, !Task.isCancelled else {
             throw GalaxySSIHealthAnalysis.Failure.invalid
           }
           let response = try await GalaxySSIHealthSummaryTransport.send(request)
+          disclosure = .sent
           guard requestID == id, !Task.isCancelled else { return }
-          guard try authorized(consent, analysis: analysis) else {
+          guard try authorized(consent, analysis: analysis), store.apiKey(for: consent.model) == key else {
             refreshPermissions()
-            task = nil
             stale = true
             return
           }
@@ -562,7 +665,6 @@ struct GalaxySSIHealthAssistantView: View {
           guard requestID == id, !Task.isCancelled else { return }
           error = true
         }
-        task = nil
       }
     } catch { error = true }
   }
@@ -570,7 +672,9 @@ struct GalaxySSIHealthAssistantView: View {
   private func authorized(_ consent: Consent, analysis: GalaxySSIHealthAnalysis) throws -> Bool {
     let archive = try records.load()
     let profileCurrent = try profileIsCurrent(archive)
-    return scene == .active && consent.contactID == modelContactID &&
+    return scene == .active && store.profile.identityFingerprint == records.owner &&
+      !coordinator.healthDisclosureStore.blockedDestinationIds().contains(consent.contactID) &&
+      (trendScope == nil || trendScope?.spec.calendar.timeZone == timeZone) && consent.contactID == modelContactID &&
       providers.first(where: { $0.id == consent.contactID })?.selectedCloudModel == consent.model &&
       archive.derivesOverview == true && archive.healthOnlinePermission == consent.permission &&
       analysis.isCurrent(archive.current) && profileCurrent
@@ -662,6 +766,7 @@ struct GalaxySSIHealthAssistantView: View {
     let archive = try records.load()
     let profileCurrent = try profileIsCurrent(archive)
     return archive.derivesOverview == true && archive.healthOnlinePermission == target.permission &&
+      (trendScope == nil || trendScope?.spec.calendar.timeZone == timeZone) &&
       analysis.isCurrent(archive.current) && comparison?.isCurrent(archive.current) != false &&
       profileCurrent
   }
@@ -696,7 +801,7 @@ struct GalaxySSIHealthAssistantView: View {
   }
 
   private func cancelRequest() {
-    task?.cancel(); task = nil; requestID = nil; consent = nil; confirming = false
+    task?.cancel(); task = nil; requestID = nil; consent = nil
     followUpRequest = nil; followUpReview = nil
   }
 

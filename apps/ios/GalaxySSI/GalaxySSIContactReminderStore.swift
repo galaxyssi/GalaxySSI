@@ -84,6 +84,24 @@ struct GalaxySSIContactReminder: Codable, Equatable, Identifiable {
   }
 }
 
+struct GalaxySSIContactReminderPanelSelection: Equatable {
+  let owner: String
+  let id: String
+  let peerID: String
+
+  func resolve(in records: [GalaxySSIContactReminder], owner currentOwner: String,
+               now: Int64) -> GalaxySSIContactReminder? {
+    guard owner == currentOwner else { return nil }
+    return records.first {
+      $0.id == id && $0.peerID == peerID && $0.outgoing && Self.isVisible($0, now: now)
+    }
+  }
+
+  static func isVisible(_ record: GalaxySSIContactReminder, now: Int64) -> Bool {
+    !record.status.terminal && record.expiresAt > now
+  }
+}
+
 @MainActor
 struct GalaxySSIContactReminderStore {
   enum Failure: Error { case unavailable, capacity }

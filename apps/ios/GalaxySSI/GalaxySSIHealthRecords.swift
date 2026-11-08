@@ -114,13 +114,14 @@ struct GalaxySSIHealthOverview {
 struct GalaxySSIHealthRecords {
   static let trendInputsChanged = Notification.Name("galaxyssi.health.trendInputsChanged")
   static let profileInputsChanged = Notification.Name("galaxyssi.health.profileInputsChanged")
+  private static var activeRecognitionRuns: Set<UUID> = []
 
   enum Failure: Error {
     case invalid, stale, duplicate, unavailable, permission
   }
 
   enum PrivacyScope: String, Codable {
-    case overview, weeklyReport, importOriginals, profileAnalysis
+    case overview, weeklyReport, importOriginals, profileAnalysis, localCare
   }
 
   struct PrivacyEvent: Codable, Identifiable {
@@ -150,6 +151,7 @@ struct GalaxySSIHealthRecords {
     var tableReviews: [GalaxySSIHealthReviewReminders.TableDraft]?
     var reviewReminderState: GalaxySSIHealthReviewReminders.State?
     var recognitionJobs: [GalaxySSIHealthRecognitionJobs.Job]?
+    var photoCaptureDraft: GalaxySSIHealthPhotoDraft.Batch?
     var version = 1
     var recordingReminders: GalaxySSIHealthRecordingReminders.Ledger?
     var restoreReceipts: Set<UUID>?
@@ -173,6 +175,9 @@ struct GalaxySSIHealthRecords {
     var retainImportOriginals: Bool?
     var profileAnalysisPermission: UUID?
     var profileAnalysisAudit: [ProfileAnalysisAudit]?
+    var localCareAllowed: Bool?
+    var localCare: GalaxySSIHealthCare.Ledger?
+    var localCareLastEvaluatedAt: Date?
 
     var keepsNewImportOriginals: Bool { retainImportOriginals ?? true }
 
@@ -405,6 +410,9 @@ struct GalaxySSIHealthRecords {
     case .profileAnalysis:
       previous = archive.profileAnalysisPermission != nil
       archive.profileAnalysisPermission = enabled ? UUID() : nil
+    case .localCare:
+      previous = archive.localCareAllowed ?? false
+      archive.localCareAllowed = enabled
     }
     guard previous != enabled else { return }
     if (previous ?? (scope == .importOriginals)) != enabled {
@@ -415,6 +423,119 @@ struct GalaxySSIHealthRecords {
     try persist(archive)
     if scope == .overview { NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner) }
     if scope == .profileAnalysis { NotificationCenter.default.post(name: Self.profileInputsChanged, object: owner) }
+  }
+
+  func reconcileLocalCare(now: Date = Date()) throws {
+    var archive = try load()
+    guard archive.localCareAllowed == true else { throw Failure.permission }
+    let readings = Dictionary(grouping: archive.current.filter { $0.isValid && $0.measuredAt <= now }, by: \.metric)
+    var ledger = archive.localCare ?? .init()
+    var changed = false
+    for metric in GalaxySSIHealthMetric.allCases {
+      let key = metric.rawValue
+      let prior = ledger.current[key]
+      let assessed = GalaxySSIHealthCare.assess(readings[metric] ?? [], context: prior?.context)
+      guard prior != nil || assessed?.signals.isEmpty == false else { continue }
+      let next = assessed ?? .removed
+      if let prior {
+        guard prior.assessment != next, prior.revision < Int.max else { continue }
+        var updated = prior
+        updated.revision += 1
+        updated.updatedAt = max(prior.updatedAt, now)
+        updated.assessment = next
+        if updated.context?.record != next.record { updated.context = nil }
+        if prior.stage != .paused && !(prior.stage == .closed && next.signals.isEmpty) {
+          updated.stage = next.record == nil || next.signals.contains(.glucoseContext) || next.signals.contains(.notExact)
+            ? .verify : .reassess
+        }
+        ledger.publish(updated)
+      } else {
+        guard try ledger.deletedInput[key] != GalaxySSIHealthCare.inputDigest(next) else { continue }
+        ledger.publish(.init(id: UUID(), metric: metric, revision: 1, updatedAt: now, assessment: next,
+          stage: next.signals.contains(.guidelineReview) ? .evidence : .verify))
+      }
+      changed = true
+    }
+    guard changed || archive.localCareLastEvaluatedAt == nil else { return }
+    archive.localCare = ledger
+    archive.localCareLastEvaluatedAt = now
+    try persist(archive)
+  }
+
+  func localCareHistory(_ id: UUID, before revision: Int = Int.max) throws -> [GalaxySSIHealthCare.Concern] {
+    let archive = try load()
+    guard archive.localCareAllowed == true else { throw Failure.permission }
+    let history = archive.localCare?.history[id.uuidString] ?? []
+    return Array(history.reversed().lazy.filter { $0.revision < revision }.prefix(30))
+  }
+
+  func setLocalCareContext(_ concern: GalaxySSIHealthCare.Concern,
+                           applicability: GalaxySSIHealthCare.Context.Applicability, now: Date = Date()) throws {
+    try updateLocalCare(concern, now: now) { current, archive in
+      let readings = archive.current.filter { $0.metric == .glucose && $0.isValid && $0.measuredAt <= now }
+      guard current.metric == .glucose, let record = current.assessment.record,
+            readings.first.map(GalaxySSIHealthCare.Record.init) == record else { throw Failure.stale }
+      let context = GalaxySSIHealthCare.Context(record: record, applicability: applicability)
+      guard let assessment = GalaxySSIHealthCare.assess(readings, context: context) else { throw Failure.stale }
+      current.context = context
+      current.assessment = assessment
+      if current.stage != .paused { current.stage = applicability == .unknown ? .verify : .evidence }
+    }
+  }
+
+  func reviewLocalCare(_ concern: GalaxySSIHealthCare.Concern, stage: GalaxySSIHealthCare.Stage,
+                       reason: String, now: Date = Date()) throws {
+    guard [.paused, .reassess, .maintenance, .closed].contains(stage),
+          !reason.isBlank, reason.utf8.count <= 2_048 else { throw Failure.invalid }
+    try updateLocalCare(concern, now: now) { current, archive in
+      if stage == .maintenance {
+        guard let record = current.assessment.record, archive.current.contains(where: {
+          GalaxySSIHealthCare.Record($0) == record
+        }) else { throw Failure.stale }
+      }
+      current.stage = stage
+      current.reviewNote = reason
+    }
+  }
+
+  func setLocalCareTarget(_ concern: GalaxySSIHealthCare.Concern, target: GalaxySSIHealthCare.Target) throws {
+    guard [target.value, target.source, target.rationale, target.confirmedBy].allSatisfy({
+      !$0.isBlank && $0.utf8.count <= 1_024
+    }), target.confirmedAt.timeIntervalSinceReferenceDate.isFinite else { throw Failure.invalid }
+    try updateLocalCare(concern, now: target.confirmedAt) { current, _ in current.target = target }
+  }
+
+  func deleteLocalCare(_ concern: GalaxySSIHealthCare.Concern, now: Date = Date()) throws {
+    var archive = try load()
+    guard archive.localCareAllowed == true else { throw Failure.permission }
+    let key = concern.metric.rawValue
+    guard var ledger = archive.localCare, ledger.current[key] == concern else { throw Failure.stale }
+    let readings = archive.current.filter { $0.metric == concern.metric && $0.isValid && $0.measuredAt <= now }
+    guard (GalaxySSIHealthCare.assess(readings, context: concern.context) ?? .removed) == concern.assessment
+    else { throw Failure.stale }
+    ledger.deletedInput[key] = try GalaxySSIHealthCare.inputDigest(GalaxySSIHealthCare.assess(readings, context: nil) ?? .removed)
+    ledger.current.removeValue(forKey: key)
+    ledger.history.removeValue(forKey: concern.id.uuidString)
+    archive.localCare = ledger
+    try persist(archive)
+  }
+
+  private func updateLocalCare(_ concern: GalaxySSIHealthCare.Concern, now: Date,
+                               change: (inout GalaxySSIHealthCare.Concern, Archive) throws -> Void) throws {
+    var archive = try load()
+    guard archive.localCareAllowed == true else { throw Failure.permission }
+    guard var ledger = archive.localCare, var current = ledger.current[concern.metric.rawValue], current == concern,
+          current.revision < Int.max else { throw Failure.stale }
+    let readings = archive.current.filter { $0.metric == concern.metric && $0.isValid && $0.measuredAt <= now }
+    guard (GalaxySSIHealthCare.assess(readings, context: current.context) ?? .removed) == current.assessment
+    else { throw Failure.stale }
+    try change(&current, archive)
+    guard current != concern else { return }
+    current.revision += 1
+    current.updatedAt = max(now, current.updatedAt)
+    ledger.publish(current)
+    archive.localCare = ledger
+    try persist(archive)
   }
 
   func discardDraft(id: UUID) throws {
@@ -495,6 +616,43 @@ struct GalaxySSIHealthRecords {
     try GalaxySSIHealthMetricDeletion.preview(metric, filter: filter, in: load())
   }
 
+  func editPhotoCaptureDraft(expected: UUID, page: UUID?, offset: Int? = nil) throws {
+    var archive = try load()
+    guard var draft = archive.photoCaptureDraft, draft.version == expected else { throw Failure.stale }
+    if let page {
+      try draft.edit(page, offset: offset)
+      archive.photoCaptureDraft = draft
+    } else { archive.photoCaptureDraft = nil }
+    try persist(archive)
+  }
+
+  func persistPhotoCaptureDraft(_ updated: Archive, expected: UUID?) throws {
+    guard try load().photoCaptureDraft?.version == expected else { throw Failure.stale }
+    try persist(updated)
+  }
+
+  func submitPhotoCaptureDraft(expected: UUID, originals: GalaxySSIHealthOriginalStore) throws {
+    guard originals.owner == owner else { throw Failure.invalid }
+    try originals.withRestoreLease { lease in
+      try originals.reconcileRestores(lease: lease)
+      var archive = try load()
+      guard let draft = archive.photoCaptureDraft, draft.version == expected, !draft.pages.isEmpty,
+            draft.pages.count <= GalaxySSIHealthPhotoDraft.maximumPages else { throw Failure.stale }
+      let existing = archive.recognitionJobs ?? []
+      guard existing.count + draft.pages.count <= GalaxySSIHealthRecognitionJobs.maximumJobs else { throw Failure.invalid }
+      let jobs = try draft.pages.enumerated().map { index, page -> GalaxySSIHealthRecognitionJobs.Job in
+        _ = try originals.read(page.original, lease: lease)
+        let crop = try originals.readCrop(for: page.original)?.metadata.revision
+        return .init(original: page.original,
+          captureSource: .init(batchID: draft.id, mode: draft.mode, order: index + 1, cropRevision: crop),
+          addedAt: Date(), pageCount: 1)
+      }
+      archive.photoCaptureDraft = nil
+      archive.recognitionJobs = jobs + existing
+      try persist(archive)
+    }
+  }
+
   func previewBluetoothHistoryDeletion(device: UUID) throws -> GalaxySSIHealthMetricDeletion.Preview {
     try GalaxySSIHealthMetricDeletion.preview(.bloodPressure, filter: .bluetooth, bluetoothDevice: device, in: load())
   }
@@ -537,36 +695,73 @@ struct GalaxySSIHealthRecords {
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
   }
 
-  func enqueueRecognition(original: GalaxySSIHealthOriginalStore.Original, pageCount: Int) throws {
+  @discardableResult
+  func enqueueRecognition(original: GalaxySSIHealthOriginalStore.Original, pageCount: Int,
+                          requiresPDFPassword: Bool = false) throws -> GalaxySSIHealthRecognitionJobs.Job {
     guard (1...GalaxySSIHealthRecognitionJobs.maximumPages).contains(pageCount),
-          original.kind == .pdf || pageCount == 1,
+          original.kind == .pdf || (pageCount == 1 && !requiresPDFPassword),
           GalaxySSIHealthRecognitionJobs.validDigest(original.sha256) else { throw Failure.invalid }
     var archive = try load()
     var jobs = archive.recognitionJobs ?? []
-    guard !jobs.contains(where: { $0.original.id == original.id && $0.original.sha256 == original.sha256 }) else { return }
+    if let existing = jobs.first(where: { $0.original.id == original.id && $0.original.sha256 == original.sha256 }) {
+      guard existing.pageCount == pageCount, (existing.requiresPDFPassword == true) == requiresPDFPassword
+      else { throw Failure.stale }
+      return existing
+    }
     guard jobs.count < GalaxySSIHealthRecognitionJobs.maximumJobs else { throw Failure.invalid }
-    jobs.insert(.init(original: original, addedAt: Date(), pageCount: pageCount), at: 0)
+    let job = GalaxySSIHealthRecognitionJobs.Job(original: original, addedAt: Date(), pageCount: pageCount,
+      requiresPDFPassword: requiresPDFPassword ? true : nil)
+    jobs.insert(job, at: 0)
     archive.recognitionJobs = jobs
     try persist(archive)
+    return job
   }
 
-  func beginRecognitionJob(id: UUID, expected: UUID) throws -> UUID {
+  func reconcileAbandonedRecognitionJobs(process: UUID = GalaxySSIHealthRecognitionJobs.processID) throws {
+    var archive = try load()
+    guard var jobs = archive.recognitionJobs else { return }
+    let abandoned = jobs.indices.filter {
+      let job = jobs[$0]
+      return job.phase == .running &&
+        (job.runProcess != process || job.run.map(Self.activeRecognitionRuns.contains) != true)
+    }
+    guard !abandoned.isEmpty else { return }
+    let abandonedRuns = abandoned.compactMap { jobs[$0].run }
+    for index in abandoned {
+      jobs[index].phase = .interrupted
+      jobs[index].run = nil
+      jobs[index].runProcess = nil
+      jobs[index].version = UUID()
+    }
+    archive.recognitionJobs = jobs
+    try persist(archive)
+    Self.activeRecognitionRuns.subtract(abandonedRuns)
+  }
+
+  func beginRecognitionJob(id: UUID, expected: UUID, unlockedProtectedPDF: Bool = false) throws -> UUID {
     var archive = try load()
     guard let index = archive.recognitionJobs?.firstIndex(where: { $0.id == id && $0.version == expected }),
-          var job = archive.recognitionJobs?[index], job.phase != .cancelled, job.phase != .completed,
+          var job = archive.recognitionJobs?[index], job.phase != .cancelled, job.phase != .completed, job.phase != .running,
           job.pages.count < job.pageCount else { throw Failure.stale }
+    guard job.requiresPDFPassword != true || unlockedProtectedPDF,
+          !unlockedProtectedPDF || job.original.kind == .pdf else { throw Failure.invalid }
     let run = UUID()
+    if unlockedProtectedPDF { job.requiresPDFPassword = true }
     job.run = run
+    job.runProcess = GalaxySSIHealthRecognitionJobs.processID
     job.phase = .running
     job.version = UUID()
     archive.recognitionJobs?[index] = job
-    try persist(archive)
+    Self.activeRecognitionRuns.insert(run)
+    do { try persist(archive) }
+    catch { Self.activeRecognitionRuns.remove(run); throw error }
     return run
   }
 
   func commitRecognitionPage(id: UUID, run: UUID, page: GalaxySSIHealthRecognitionJobs.Page) throws {
     var archive = try load()
-    guard let index = archive.recognitionJobs?.firstIndex(where: { $0.id == id && $0.run == run }),
+    guard Self.activeRecognitionRuns.contains(run),
+          let index = archive.recognitionJobs?.firstIndex(where: { $0.id == id && $0.run == run }),
           var job = archive.recognitionJobs?[index], job.phase == .running,
           page.index == job.pages.count, page.index < job.pageCount,
           page.lines.count <= 150, Set(page.lines.map(\.id)).count == page.lines.count,
@@ -578,18 +773,22 @@ struct GalaxySSIHealthRecords {
     guard currentBytes + page.textBytes <= GalaxySSIHealthRecognitionJobs.maximumTextBytes else { throw Failure.invalid }
     job.pages.append(page)
     job.version = UUID()
-    if job.pages.count == job.pageCount { job.phase = .completed; job.run = nil }
+    if job.pages.count == job.pageCount { job.phase = .completed; job.run = nil; job.runProcess = nil }
     archive.recognitionJobs?[index] = job
     try persist(archive)
+    if job.phase == .completed { Self.activeRecognitionRuns.remove(run) }
   }
 
   func finishRecognitionJob(id: UUID, run: UUID, phase: GalaxySSIHealthRecognitionJobs.Phase) throws {
     guard phase == .cancelled || phase == .failed || phase == .interrupted else { throw Failure.invalid }
+    // A stopped reader must not remain live when protected storage is temporarily unavailable.
+    defer { Self.activeRecognitionRuns.remove(run) }
     var archive = try load()
     guard let index = archive.recognitionJobs?.firstIndex(where: { $0.id == id && $0.run == run && $0.phase == .running })
     else { throw Failure.stale }
     archive.recognitionJobs?[index].phase = phase
     archive.recognitionJobs?[index].run = nil
+    archive.recognitionJobs?[index].runProcess = nil
     archive.recognitionJobs?[index].version = UUID()
     try persist(archive)
   }
@@ -599,18 +798,23 @@ struct GalaxySSIHealthRecords {
     guard let index = archive.recognitionJobs?.firstIndex(where: { $0.id == id && $0.version == expected &&
       $0.phase != .completed && $0.phase != .cancelled })
     else { throw Failure.stale }
+    let run = archive.recognitionJobs?[index].run
     archive.recognitionJobs?[index].phase = .cancelled
     archive.recognitionJobs?[index].run = nil
+    archive.recognitionJobs?[index].runProcess = nil
     archive.recognitionJobs?[index].version = UUID()
     try persist(archive)
+    if let run { Self.activeRecognitionRuns.remove(run) }
   }
 
   func removeRecognitionJob(id: UUID, expected: UUID) throws {
     var archive = try load()
     guard let index = archive.recognitionJobs?.firstIndex(where: { $0.id == id && $0.version == expected })
     else { throw Failure.stale }
+    let run = archive.recognitionJobs?[index].run
     archive.recognitionJobs?.remove(at: index)
     try persist(archive)
+    if let run { Self.activeRecognitionRuns.remove(run) }
   }
 
   func stageReportItem(_ input: GalaxySSIHealthReportReview.Item, replacing expected: UUID?) throws {
@@ -1025,7 +1229,7 @@ struct GalaxySSIHealthRecords {
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
   }
 
-  func updateSleepEpisode(version: UUID, completion: Bool = false, snooze: Date? = nil, delivered: Date? = nil) throws {
+  func updateSleepEpisode(version: UUID, completion: Bool = false, snooze: Date? = nil) throws {
     var archive = try load()
     guard archive.derivesOverview == true, var ledger = archive.sleepReminders, ledger.preferences.enabled,
           let index = ledger.episodes.firstIndex(where: { $0.version == version && !$0.closed }),
@@ -1034,11 +1238,28 @@ struct GalaxySSIHealthRecords {
     if let snooze {
       ledger.episodes[index].snoozedUntil = snooze
       ledger.episodes[index].deliveredAt = nil
+      ledger.episodes[index].notificationDue = nil
     }
-    if let delivered { ledger.episodes[index].deliveredAt = delivered }
     ledger.episodes[index].version = UUID()
     archive.sleepReminders = ledger
     try persist(archive)
+    NotificationCenter.default.post(name: GalaxySSIHealthSleepReminder.changed, object: owner)
+  }
+
+  func saveSleepDelivery(_ episode: GalaxySSIHealthSleepReminder.Episode,
+                         preferences: GalaxySSIHealthSleepReminder.Preferences,
+                         settings: GalaxySSIHealthRecordingReminders.Settings?,
+                         due: Date?, delivered: Date?) throws {
+    var archive = try load()
+    guard archive.derivesOverview == true, archive.recordingReminders?.settings == settings,
+          var ledger = archive.sleepReminders, ledger.preferences == preferences,
+          let index = ledger.episodes.firstIndex(of: episode), !episode.closed, !episode.completed
+    else { throw Failure.stale }
+    ledger.episodes[index].notificationDue = due
+    ledger.episodes[index].deliveredAt = delivered
+    guard ledger.episodes[index] != episode else { return }
+    archive.sleepReminders = ledger
+    try persist(archive, notify: false)
   }
 
   func commitRestore(_ archive: Archive, receipt: UUID, originals: [GalaxySSIHealthOriginalStore.Original] = [],
@@ -1156,7 +1377,8 @@ struct GalaxySSIHealthRecords {
     }
     let plan = GalaxySSIHealthReviewDelivery.plan(
       jobs: jobs, state: state, now: now,
-      calendar: calendar, permitted: permitted, scheduled: scheduled, delivered: delivered)
+      calendar: calendar, permitted: permitted, scheduled: scheduled, delivered: delivered,
+      settings: archive.recordingReminders?.settings)
     if plan.tickets != before {
       state.deliveries = plan.tickets
       archive.reviewReminderState = state
@@ -1174,7 +1396,8 @@ struct GalaxySSIHealthRecords {
     state.enabled, state.notificationPreferences?.enabled == true,
     GalaxySSIHealthReviewDelivery.action(for: job, state: state) != .handled,
     GalaxySSIHealthReviewDelivery.cycle(for: job, state: state) == ticket.cycle,
-    state.notificationPreferences?.nextAllowed(ticket.due, calendar: calendar) == ticket.due
+    state.notificationPreferences?.deliveryDate(ticket.due, settings: archive.recordingReminders?.settings,
+      calendar: calendar) == ticket.due
     else { throw Failure.stale }
     if state.deliveries?[key]?.submitted == true { return }
     state.deliveries?[key]?.submitted = true

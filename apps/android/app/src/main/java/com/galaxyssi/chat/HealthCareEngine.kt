@@ -24,17 +24,29 @@ internal object HealthCareEngine {
                     var changed = 0
                     for (metric in HealthMetric.entries) {
                         if (cancelled()) return changed
-                        val prior = care.forMetric(metric)
+                        var prior = care.forMetric(metric)
+                        if (prior != null && HealthCareMaintenancePolicy.needsReassessment(prior, now)) {
+                            prior = care.reassessMaintenance(prior.id, prior.revision, now)
+                            changed++
+                        }
                         val stamp = versions.getValue(metric)
                         if (stamp.isBlank() && prior == null) continue
                         val key = inputVersion(settings.version, permission.version, stamp)
-                        if (care.evaluated(metric) == key) continue
+                        val evaluationVersion = HealthCarePriority.evaluationVersion(metric) + ":" + HealthCareSeries.VERSION
+                        if (care.evaluated(metric, evaluationVersion) == key) continue
                         val assessment = privacy.track(HealthAccessScope(HealthAccessPurpose.PROACTIVE_CARE, setOf(metric))) {
-                            HealthCarePolicy.assess(metric, records.recentSelf(now, 30, metric), prior?.context)
+                            val page = records.careHistory(now, metric)
+                            val recent = page.records
+                            // Resolve at most two indexed anchors, never decrypt the complete measurement history.
+                            val anchors = listOfNotNull(prior?.assessment?.sample?.record, prior?.assessment?.comparison?.before?.record)
+                                .distinctBy { it.id }.filter { ref -> recent.none { it.id == ref.id } }.mapNotNull { records.record(it.id) }
+                                .filter { it.profileId == "self" && it.draft.metric == metric && it.draft.measuredAt <= now }
+                            HealthCarePolicy.assess(metric, (recent + anchors).distinctBy { it.id }, prior?.context, prior?.assessment)
+                                ?.copy(series = HealthCareSeries.of(page))
                         }
                         if (cancelled()) return changed
                         if (privacy.policy() != permission || records.metricVersion(metric) != stamp) throw HealthCareConflict()
-                        val value = care.applyEvaluation(metric, key, settings.version, prior?.revision, assessment, now)
+                        val value = care.applyEvaluation(metric, key, settings.version, prior?.revision, assessment, now, evaluationVersion)
                         if (value != prior) changed++
                     }
                     return changed
@@ -64,6 +76,8 @@ internal object HealthCareWork {
 class HealthCareWorker(context: Context, parameters: WorkerParameters) : Worker(context, parameters) {
     override fun doWork(): Result = try {
         HealthCareEngine.evaluate(applicationContext, cancelled = { isStopped })
+        HealthReminderWork.sourceRemindersChanged(applicationContext)
+        HealthCareResearchWork.changed(applicationContext)
         Result.success()
     } catch (_: HealthCareConflict) {
         Result.retry()

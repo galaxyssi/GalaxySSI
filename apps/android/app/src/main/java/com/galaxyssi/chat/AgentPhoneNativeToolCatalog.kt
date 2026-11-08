@@ -133,6 +133,8 @@ object AgentPhoneNativeToolCatalog {
             add(DoorAccessNativeTool.ID)
             add(CollaborationRecallNativeTool.ID)
             add(AgentConversationRecallTool.ID)
+            add(HealthCarePlanTool.ID)
+            add(HealthCareHistoryTool.ID)
             addAll(AgentSystemEvidenceNativeTools.toolIds)
             addAll(AgentPhoneUiNativeTools.toolIds)
             addAll(AgentMcpNativeTools.toolIds)
@@ -145,6 +147,7 @@ object AgentPhoneNativeToolCatalog {
             addAll(AgentDesktopRemoteNativeTools.toolIds)
             addAll(AgentToolInspectionTools.toolIds)
             addAll(AgentAppControlTools.toolIds)
+            addAll(AgentScheduleNativeTools.toolIds)
         }
     }
 
@@ -175,6 +178,8 @@ object AgentPhoneNativeToolCatalog {
         return registry.registerAll(
             AgentAppControlTools.definitions(AndroidAppControlPlatform(context.applicationContext))
         ).registerAll(
+            AgentScheduleNativeTools.definitions(context.applicationContext)
+        ).registerAll(
             AgentWebMediaNativeTools.definitions(webMediaServices)
         ).registerAll(
             AgentWebIntelligenceNativeTools.androidDefinitions(
@@ -199,6 +204,10 @@ object AgentPhoneNativeToolCatalog {
             CollaborationRecallNativeTool.definitions(context.applicationContext)
         ).registerAll(
             AgentConversationRecallTool.definitions(context.applicationContext)
+        ).registerAll(
+            HealthCarePlanTool.definitions(context.applicationContext)
+        ).registerAll(
+            HealthCareHistoryTool.definitions(context.applicationContext)
         ).registerAll(
             AgentSystemEvidenceNativeTools.definitions(context.applicationContext)
         ).registerAll(

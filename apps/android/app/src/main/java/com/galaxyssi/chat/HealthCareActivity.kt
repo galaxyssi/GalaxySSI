@@ -27,6 +27,11 @@ class HealthCareActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
     private val names by lazy { intent.healthNavigationDatabases() }
     private val store by lazy { HealthCareStore(applicationContext, names.care) }
+    private val planReview by lazy { HealthCarePlanReview(this, names) }
+    private val actionReview by lazy { HealthCareActionReview(this, names) }
+    private val targetReview by lazy { HealthCareTargetReview(this, names) }
+    private val historyReview by lazy { HealthCareHistoryReview(this, names) }
+    private val researchReview by lazy { HealthCareResearchReview(this, names) }
     private lateinit var body: LinearLayout
     private var active = false
     private var generation = 0
@@ -37,7 +42,11 @@ class HealthCareActivity : Activity() {
     private var selected: String? = null
     private var cursor: HealthCareCursor? = null
     private val observer = object : ContentObserver(main) {
-        override fun onChange(selfChange: Boolean) { generation++; load() }
+        override fun onChange(selfChange: Boolean) { planReview.clear(); actionReview.clear(); targetReview.clear(); historyReview.clear(); generation++; load() }
+        override fun onChange(selfChange: Boolean, uri: Uri?) {
+            if (uri != HealthCareStore.changes(this@HealthCareActivity, names.care)) researchReview.clear()
+            onChange(selfChange)
+        }
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -53,15 +62,15 @@ class HealthCareActivity : Activity() {
         load()
     }
     override fun onStop() {
-        active = false; generation++; dialog?.dismiss(); dialog = null; body.removeAllViews()
+        active = false; generation++; dialog?.dismiss(); dialog = null; planReview.clear(); actionReview.clear(); targetReview.clear(); historyReview.clear(); researchReview.clear(); body.removeAllViews()
         contentResolver.unregisterContentObserver(observer); super.onStop()
     }
-    override fun onDestroy() { worker.execute { store.close() }; worker.shutdown(); super.onDestroy() }
+    override fun onDestroy() { planReview.destroy(); actionReview.destroy(); targetReview.destroy(); historyReview.destroy(); researchReview.destroy(); worker.execute { store.close() }; worker.shutdown(); super.onDestroy() }
     @Deprecated("Uses the existing native health navigation contract")
     override fun onBackPressed() = back()
     private fun back() { if (selected == null) finish() else { selected = null; cursor = null; generation++; load() } }
     private data class Snapshot(val settings: HealthCareSettings, val permitted: Boolean, val page: HealthCarePage,
-        val item: HealthCareConcern?, val history: List<HealthCareConcern>)
+        val item: HealthCareConcern?, val history: List<HealthCareConcern>, val proposals: List<HealthCarePlan>, val profile: Boolean)
     private fun load() {
         if (!active) return
         if (loading || mutating) { dirty = true; return }
@@ -70,10 +79,12 @@ class HealthCareActivity : Activity() {
         worker.execute {
             val result = runCatching {
                 HealthCareEngine.evaluate(applicationContext, names)
-                val allowed = HealthPrivacyStore(applicationContext, names.privacy).use { it.policy().metrics }
+                val privacy = HealthPrivacyStore(applicationContext, names.privacy).use { it.policy() }
+                val allowed = privacy.metrics
                 Snapshot(store.settings(), allowed, if (allowed) store.page(after) else HealthCarePage(emptyList(), null),
                     if (allowed && id != null) store.concern(id) else null,
-                    if (allowed && id != null) store.history(id) else emptyList())
+                    if (allowed && id != null) store.history(id) else emptyList(),
+                    if (allowed && privacy.profile && id != null) store.pendingPlans(id) else emptyList(), privacy.profile)
             }
             main.post {
                 loading = false
@@ -91,7 +102,7 @@ class HealthCareActivity : Activity() {
             return
         }
         if (selected != null) {
-            snapshot.item?.let { detail(content, it, snapshot.history) } ?: content.addView(ui.text(getString(R.string.health_care_removed)))
+            snapshot.item?.let { detail(content, it, snapshot.history, snapshot.proposals, snapshot.profile) } ?: content.addView(ui.text(getString(R.string.health_care_removed)))
             return
         }
         content.addView(Switch(this).apply {
@@ -111,7 +122,7 @@ class HealthCareActivity : Activity() {
         if (!snapshot.settings.enabled) ui.add(content, ui.text(getString(R.string.health_care_disabled), 14f, muted = true), 8)
         if (snapshot.page.items.isEmpty()) ui.add(content, ui.text(getString(R.string.health_care_empty), 14f, muted = true), 8)
         snapshot.page.items.forEach { item ->
-            ui.add(content, ui.profileRow(getString(item.metric.titleResource()),
+            ui.add(content, ui.profileRow(getString(if (HealthCarePriority.rank(item.assessment) > 0) R.string.health_care_bp_title else item.metric.titleResource()),
                 "${item.assessment.value} ${item.assessment.unit} · ${getString(item.stage.titleResource())}") {
                 selected = item.id; generation++; load()
             }.apply { tag = "health-care-item-${item.metric.name}" }, 8)
@@ -127,25 +138,47 @@ class HealthCareActivity : Activity() {
         ui.add(content, ui.profileRow(getString(R.string.health_catalog_title)) { open(HealthCatalogActivity::class.java) }, 6)
         ui.add(content, ui.profileRow(getString(R.string.health_export_data_files)) { open(HealthDataFilesActivity::class.java) }, 6)
     }
-    private fun detail(content: LinearLayout, value: HealthCareConcern, history: List<HealthCareConcern>) {
+    private fun detail(content: LinearLayout, value: HealthCareConcern, history: List<HealthCareConcern>, proposals: List<HealthCarePlan>, profile: Boolean) {
         content.addView(ui.text(getString(value.metric.titleResource()), 23f, bold = true))
         ui.add(content, ui.text("${value.assessment.value} ${value.assessment.unit}", 22f, bold = true), 8)
         ui.add(content, ui.text(getString(value.stage.titleResource()), 14f, muted = true), 6)
+        HealthCarePriorityPresentation.add(this, content, value)
+        if (profile && value.assessment.series != null) ui.add(content, ui.profileRow(getString(R.string.health_series_title),
+            getString(R.string.health_series_summary)) { historyReview.show(value.id) }.apply { tag = "health-care-series" }, 8)
         ui.add(content, ui.command(R.string.health_care_discussion_title_short) { discuss(value) }
             .apply { tag = "health-care-discuss" }, 12)
+        if (profile) ui.add(content, ui.profileRow(getString(R.string.health_research_title)) { researchReview.show(value.id) }
+            .apply { tag = "health-care-research" }, 8)
+        proposals.forEach { plan -> ui.add(content, ui.profileRow(HealthCareTargetPresentation.planTitle(this, plan)) {
+            planReview.show(plan.id)
+        }.apply { tag = "health-care-plan-${plan.id}" }, 8) }
+        if (profile) value.maintenance?.let { review ->
+            ui.add(content, ui.profileRow(getString(R.string.health_maintenance_review_title),
+                getString(if (value.stage == HealthCareStage.MAINTENANCE) R.string.health_maintenance_active else R.string.health_maintenance_reassess)) {
+                planReview.show(review.planId)
+            }.apply { tag = "health-care-maintenance" }, 8)
+            if (value.stage == HealthCareStage.MAINTENANCE) ui.add(content, ui.command(R.string.health_maintenance_reopen) {
+                mutate { store.update(value.id, value.revision, "maintenance_user_reassessment") { it.copy(stage = HealthCareStage.REASSESS) } }
+            }.apply { tag = "health-care-maintenance-reopen" }, 8)
+        }
         heading(content, R.string.health_care_why)
         if (value.assessment.signals.isEmpty()) ui.add(content, ui.text(getString(R.string.health_care_changed_result), 15f), 8)
         value.assessment.signals.forEach { ui.add(content, ui.text(getString(it.titleResource()), 15f), 8) }
         if (value.metric == HealthMetric.GLUCOSE && value.assessment.record != null) {
             ui.add(content, ui.command(R.string.health_care_context) { context(value) }.apply { tag = "health-care-context" }, 12)
         }
+        HealthCareComparisonPresentation.details(this, value)?.let { comparison ->
+            heading(content, R.string.health_care_comparison_title)
+            ui.add(content, ui.text(comparison, 15f).apply { tag = "health-care-comparison" }, 8)
+        }
         heading(content, R.string.health_care_evidence)
         basis(content, R.string.health_care_reference, value.assessment.reportReference.ifBlank { getString(R.string.health_care_reference_missing) })
         basis(content, R.string.health_care_guideline, value.assessment.guideline?.let { "${it.title}\n${it.applicability}\n${it.statement}" }
             ?: getString(R.string.health_care_no_guideline))
         basis(content, R.string.health_care_baseline, value.assessment.baseline?.let(HealthCarePolicy::baselineText) ?: getString(R.string.health_care_no_baseline))
-        basis(content, R.string.health_care_target, value.target?.let { "${it.low.orEmpty()} - ${it.high.orEmpty()} ${it.unit}\n${it.rationale}\n${it.source}\n${it.confirmedBy}" }
-            ?: getString(R.string.health_care_no_target))
+        if (profile) basis(content, R.string.health_care_target, HealthCareTargetPresentation.details(this, value))
+        if (profile && value.target != null) ui.add(content, ui.profileRow(getString(R.string.health_target_review)) { targetReview.show(value.id) }
+            .apply { tag = "health-care-target" }, 8)
         value.assessment.record?.let { ref -> ui.add(content, ui.profileRow(getString(R.string.health_care_record)) {
             if (names.fixture == null) startActivity(Intent(this, HealthRecordRevisionActivity::class.java)
                 .putExtra("health_record", ref.id).putExtra("health_revision", ref.revision))
@@ -162,10 +195,15 @@ class HealthCareActivity : Activity() {
             ui.add(content, ui.text(action.source, 13f, muted = true), 4)
             ui.add(content, ui.text(getString(action.state.titleResource()), 13f, muted = true), 4)
             action.dueFrom?.let { from -> ui.add(content, ui.text("${date(from)} - ${date(action.dueUntil!!)}", 14f), 4) }
+            if (action.state in setOf(HealthCareActionState.CONFIRMED, HealthCareActionState.DONE)) {
+                ui.add(content, ui.profileRow(getString(R.string.health_care_followup_title)) { actionReview.show(value.id, action.id) }
+                    .apply { tag = "health-care-followup-${action.id}" }, 8)
+            }
             if (action.state == HealthCareActionState.PROPOSED) {
                 ui.add(content, ui.command(R.string.health_care_confirm_action) { mutate {
                     store.update(value.id, value.revision, "action_confirmed") { current -> current.copy(actions = current.actions.map {
-                        if (it.id == action.id) it.copy(state = HealthCareActionState.CONFIRMED, confirmedAt = System.currentTimeMillis()) else it
+                        if (it.id == action.id) it.copy(state = HealthCareActionState.CONFIRMED, confirmedAt = System.currentTimeMillis(),
+                            basis = HealthCareFollowUpPolicy.basis(current)) else it
                     }, stage = HealthCareStage.WAITING_RESULTS) }
                 } }, 8)
                 ui.add(content, ui.profileRow(getString(R.string.health_care_decline_action)) { mutate {

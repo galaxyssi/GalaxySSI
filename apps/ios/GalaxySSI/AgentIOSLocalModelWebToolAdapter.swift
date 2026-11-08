@@ -3,6 +3,7 @@ import Foundation
 struct AgentIOSLocalModelWebToolCompletion {
   var text: String
   var inference: LocalModelInferenceResult?
+  var researchDisclosure = AgentLocalResearchDisclosure()
 }
 
 enum AgentIOSLocalModelWebToolError: LocalizedError {
@@ -101,6 +102,9 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
           )
         }
       }
+      response.assistantText = AgentIOSWebEvidenceVerification.resolveCitations(
+        response.assistantText, encodedToolResults: evidence
+      ).text
     }
     return response
   }
@@ -299,7 +303,8 @@ enum AgentIOSLocalModelWebToolRunner {
         outcome.error?.message ?? "The local model web loop did not complete"
       )
     }
-    return AgentIOSLocalModelWebToolCompletion(text: outcome.assistantText, inference: session.lastInference)
+    return AgentIOSLocalModelWebToolCompletion(text: outcome.assistantText, inference: session.lastInference,
+      researchDisclosure: .restored(outcome.messages))
   }
 
   static func prepareManagedInput(prompt: String, systemPrompt: String, hasAttachments: Bool,
