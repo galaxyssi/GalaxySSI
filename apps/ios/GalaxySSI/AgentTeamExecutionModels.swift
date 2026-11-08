@@ -1082,6 +1082,61 @@ struct AgentCollaborationResearchEnvelope: Decodable {
   var format: String
   var workspace: [AgentCollaborationResearchDraft]?
   var milestones: [String]?
+  let candidates: [AgentMcpJSONValue]
+  let findings: [AgentMcpJSONValue]
+
+  static let optionalNotesInstructions = "Omit empty top-level candidates and findings, or supply arrays. Candidates need unique id, proposal and criteria; findings need outcome supported, refuted or not_tested. These notes do not replace typed workspace records, independent review, or actual evidence."
+
+  private enum CodingKeys: String, CodingKey { case format, workspace, milestones, candidates, findings }
+
+  struct InvalidNotes: Error {
+    let field: String
+    let requirement: String
+    var problem: AgentMcpJSONObject {
+      ["field": .string(field), "requirement": .string(requirement)]
+    }
+  }
+
+  init(from decoder: Decoder) throws {
+    let fields = try decoder.container(keyedBy: CodingKeys.self)
+    func notes(_ key: CodingKeys) throws -> [AgentMcpJSONValue] {
+      guard fields.contains(key) else { return [] }
+      guard let values = try? fields.decode([AgentMcpJSONValue].self, forKey: key) else {
+        throw InvalidNotes(field: key.rawValue, requirement: "must be an array when supplied")
+      }
+      return values
+    }
+    format = try fields.decode(String.self, forKey: .format)
+    workspace = try fields.decodeIfPresent([AgentCollaborationResearchDraft].self, forKey: .workspace)
+    milestones = try fields.decodeIfPresent([String].self, forKey: .milestones)
+    candidates = try notes(.candidates)
+    findings = try notes(.findings)
+    var candidateIDs: Set<String> = []
+    for (index, entry) in candidates.enumerated() {
+      let path = "candidates[\(index)]"
+      guard let candidate = entry.objectValue else {
+        throw InvalidNotes(field: path, requirement: "must be an object")
+      }
+      guard let id = candidate["id"]?.strictStringValue, !id.isBlank, candidateIDs.insert(id).inserted else {
+        throw InvalidNotes(field: path + ".id", requirement: "must be nonblank and unique")
+      }
+      guard candidate["proposal"]?.strictStringValue?.isBlank == false else {
+        throw InvalidNotes(field: path + ".proposal", requirement: "must be a nonblank string")
+      }
+      guard candidate["criteria"]?.arrayValue != nil else {
+        throw InvalidNotes(field: path + ".criteria", requirement: "must be an array")
+      }
+    }
+    for (index, entry) in findings.enumerated() {
+      guard let finding = entry.objectValue else {
+        throw InvalidNotes(field: "findings[\(index)]", requirement: "must be an object")
+      }
+      guard let outcome = finding["outcome"]?.strictStringValue,
+            ["supported", "refuted", "not_tested"].contains(outcome) else {
+        throw InvalidNotes(field: "findings[\(index)].outcome", requirement: "must be supported, refuted or not_tested")
+      }
+    }
+  }
 
   private struct FormatHeader: Decodable {
     let format: String

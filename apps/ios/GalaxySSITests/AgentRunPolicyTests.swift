@@ -4,6 +4,22 @@ import CryptoKit
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testDesktopEvidenceRecoveryOnlyYieldsWhenAnotherQueryIsNeeded() {
+    var longArchive = AgentDesktopEvidenceRecoverySlice()
+    var shortArchive = AgentDesktopEvidenceRecoverySlice()
+    XCTAssertTrue(longArchive.claimQuery())
+    XCTAssertTrue(shortArchive.claimQuery())
+    XCTAssertEqual(shortArchive.outcome(archiveFinal: true, isCancelled: false), .sliceComplete)
+    for _ in 0..<3 { XCTAssertTrue(longArchive.claimQuery()) }
+    XCTAssertEqual(longArchive.outcome(archiveFinal: false, isCancelled: false), .sliceDeferred)
+    XCTAssertFalse(longArchive.claimQuery())
+    XCTAssertEqual(longArchive.outcome(archiveFinal: false, isCancelled: false), .sliceYielded)
+    XCTAssertEqual(longArchive.outcome(archiveFinal: false, isCancelled: true), .sliceDeferred)
+    XCTAssertEqual(longArchive.outcome(archiveFinal: true, isCancelled: true), .sliceComplete)
+    var resumedArchive = AgentDesktopEvidenceRecoverySlice()
+    XCTAssertTrue(resumedArchive.claimQuery())
+  }
+
   func testDesktopEvidenceTraceCorrelatesWithoutLoggingRawRequestID() {
     XCTAssertEqual(AgentDesktopEvidenceQueryTrace.token("nonce"), "78377b525757b494")
     XCTAssertEqual(AgentDesktopEvidenceQueryTrace.token(""), "unavailable")
@@ -237,13 +253,31 @@ extension GalaxySSIStoreTests {
       conversationId: "group", taskId: "turn", primaryAgentId: "primary", goal: "Research",
       visibilityMode: .background, state: .running, members: [
         AgentTeamMemberSnapshot(agentId: "review", deliveryMode: .observe, status: .pending,
-          instanceId: "member", sourceMessageId: source),
+          instanceId: "member", sourceMessageId: source, dispatchCheckpoint: .accepted),
         AgentTeamMemberSnapshot(agentId: "primary", deliveryMode: .respond, sourceMessageId: "coordinator",
           dispatchCheckpoint: .accepted),
         AgentTeamMemberSnapshot(agentId: "independent", deliveryMode: .observe, sourceMessageId: "independent-source",
           dispatchCheckpoint: .accepted)
       ], createdAtMillis: 1, updatedAtMillis: 1)
     XCTAssertTrue(history.upsert(snapshot))
+    XCTAssertThrowsError(try history.stageDesktopEvidencePage(response, desktopId: "desktop",
+      request: request, descriptor: descriptor, index: 0))
+    try history.observeDesktopRecallEvent(source: source, conversation: "group", turn: "turn", contact: "review",
+      observation: .init(generation: 2, sequence: 1), terminal: false)
+    XCTAssertEqual(try history.stageDesktopEvidencePage(response, desktopId: "desktop",
+      request: request, descriptor: descriptor, index: 0), body)
+    let liveReceipt = try history.archiveDesktopToolEvidence(request: request, descriptor: descriptor, pages: [body])
+    let liveReader = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "group", turnId: "turn",
+      memberId: "independent", sourceId: "independent-source")
+    let listing = try history.recallCollaborationOriginal(["mode": .string("desktop_evidence_list")], scope: liveReader)
+    XCTAssertEqual(listing["entries"]?.arrayValue?.first?.objectValue?["evidence_id"], .string(liveReceipt.archiveId))
+    XCTAssertEqual(listing["archive_state"], .string("local_snapshot_not_exhaustive"))
+    XCTAssertThrowsError(try history.advanceDesktopEvidenceCursor(request, from: 0, to: 1, final: true))
+    try history.advanceDesktopEvidenceCursor(request, from: 0, to: 1, final: false)
+    let liveQuery: AgentMcpJSONObject = ["mode": .string("desktop_evidence"), "evidence_id": .string(liveReceipt.archiveId),
+      "sha256": .string(liveReceipt.sha256)]
+    let preview = try history.recallCollaborationOriginal(liveQuery, scope: liveReader, recordEvidenceCoverage: false)
+    XCTAssertNil(preview["host_read_coverage"])
     XCTAssertEqual(try history.consumeOwnedReply(source: source, conversation: "group", turn: "turn",
       task: source, contact: "review", content: "Completed", richOutputJson: "", terminal: true,
       success: true, now: 2, observation: AgentTeamReplyObservation(generation: 2, sequence: 1)), .observerCommitted)
@@ -253,11 +287,12 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(try stagingReopen.stagedDesktopEvidencePage(request: request,
       descriptor: descriptor, index: 0), body)
     let receipt = try history.archiveDesktopToolEvidence(request: request, descriptor: descriptor, pages: [body])
+    XCTAssertEqual(receipt, liveReceipt)
     XCTAssertNil(try stagingReopen.stagedDesktopEvidencePage(request: request, descriptor: descriptor, index: 0))
     XCTAssertEqual(receipt.sha256, descriptor.sha256)
     XCTAssertEqual(try history.archiveDesktopToolEvidence(request: request, descriptor: descriptor, pages: [body]), receipt)
     XCTAssertTrue(try history.hasArchivedDesktopEvidence(descriptor, request: request))
-    try history.advanceDesktopEvidenceCursor(request, from: 0, to: 1, final: false)
+    XCTAssertEqual(try history.desktopEvidenceCursor(request), .init(sequence: 1, archiveFinal: false))
     XCTAssertThrowsError(try history.advanceDesktopEvidenceCursor(request, from: 0, to: 2, final: false))
     try history.advanceDesktopEvidenceCursor(request, from: 1, to: 1, final: true)
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets, fileURL: file)
@@ -294,6 +329,19 @@ extension GalaxySSIStoreTests {
     let archived = try reopened.recallCollaborationOriginal(read, scope: reader)
     XCTAssertEqual(Data(base64Encoded: archived.string("data_b64")), body)
     XCTAssertEqual(archived["host_read_coverage"]?.objectValue?["complete"], .bool(true))
+    var replay = AgentDesktopCollaborationResponseReplay()
+    func recall(_ confirmed: Bool) throws -> AgentMcpJSONObject {
+      try reopened.recallCollaborationOriginal(read, scope: reader, recordEvidenceCoverage: confirmed)
+    }
+    let previewPage = try XCTUnwrap(AgentDesktopCollaborationEvidenceDelivery.exchange(input: read,
+      confirmation: nil, binding: "paired", expiresAt: 100, now: 1, replay: &replay, read: recall))
+    XCTAssertNil(previewPage["host_read_coverage"])
+    let confirmation = try XCTUnwrap(previewPage["delivery"]?.objectValue)
+    XCTAssertNil(try AgentDesktopCollaborationEvidenceDelivery.exchange(input: read,
+      confirmation: confirmation, binding: "foreign", expiresAt: 100, now: 2, replay: &replay, read: recall))
+    let confirmed = try AgentDesktopCollaborationEvidenceDelivery.exchange(input: read,
+      confirmation: confirmation, binding: "paired", expiresAt: 100, now: 3, replay: &replay, read: recall)
+    XCTAssertEqual(confirmed?["host_read_coverage"]?.objectValue?["complete"], .bool(true))
     let review = try XCTUnwrap(publishReview().references.first)
     let coordinator = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "group", turnId: "turn",
       memberId: "primary", sourceId: "coordinator")

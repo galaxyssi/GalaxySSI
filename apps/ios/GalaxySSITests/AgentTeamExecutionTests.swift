@@ -917,7 +917,8 @@ extension GalaxySSIStoreTests {
       "cursor": .string("foreign:" + cursor)], scope: scope))
     XCTAssertEqual(reopened.snapshot(supervisorRunId: "run")?.members[1].status, team.members[1].status)
     var changed = input
-    changed["artifact"] = .string(artifact + " ")
+    changed["artifact"] = .string(artifact.replacingOccurrences(of: #""summary":"Interim","#,
+      with: #""summary":"Interim","candidates":[],"findings":[],"#))
     let stale = try reopened.publishCollaborationMilestone(changed, scope: scope)
     XCTAssertEqual(stale["status"], .string("stale_binding_or_revision"))
     var malformed = input
@@ -928,6 +929,30 @@ extension GalaxySSIStoreTests {
     let rejectionLookup: AgentMcpJSONObject = ["mode": .string("receipt"), "milestone_id": .string("invalid"),
       "artifact_sha256": try XCTUnwrap(rejected["artifact_sha256"])]
     XCTAssertEqual(try history.publishCollaborationMilestone(rejectionLookup, scope: scope), rejected)
+    malformed["milestone_id"] = .string("invalid-notes")
+    malformed["artifact"] = .string(artifact.replacingOccurrences(of: #""summary":"Interim","#,
+      with: #""summary":"Interim","findings":null,"#))
+    let invalidNotes = try reopened.publishCollaborationMilestone(malformed, scope: scope)
+    XCTAssertEqual(invalidNotes["status"], .string("invalid_artifact"))
+    XCTAssertEqual(invalidNotes["record_validation"]?.objectValue?["field"], .string("findings"))
+    XCTAssertEqual(try history.publishCollaborationMilestone(["mode": .string("receipt"),
+      "milestone_id": .string("invalid-notes"), "artifact_sha256": try XCTUnwrap(invalidNotes["artifact_sha256"])],
+      scope: scope), invalidNotes)
+    let database = try AgentTeamHistoryDatabase(fileURL: file,
+      storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    let base = "publication:" + AgentMcpJSONCodec.sha256([
+      "run": .string(scope.runId), "member": .string(scope.memberId), "source": .string(scope.sourceId)
+    ]) + ":milestone:"
+    func key(_ id: String) -> String { base + AgentMcpJSONCodec.sha256(["id": .string(id)]) }
+    var legacy = try XCTUnwrap(database.researchRecord(AgentCollaborationResearchPublication.self,
+      conversationId: scope.conversationId, key: key("first"), revision: 0))
+    legacy.milestoneId = "legacy"
+    legacy.requestHash = try XCTUnwrap(invalidNotes["artifact_sha256"]?.strictStringValue)
+    try database.insertResearchRecord(legacy, conversationId: scope.conversationId, key: key("legacy"), revision: 0)
+    malformed["milestone_id"] = .string("legacy")
+    let legacyRetry = try reopened.publishCollaborationMilestone(malformed, scope: scope)
+    XCTAssertEqual(legacyRetry["status"], .string("published"))
+    XCTAssertEqual(legacyRetry["references"], receipt["references"])
     XCTAssertEqual(try history.publishCollaborationMilestone(lookup, scope: scope)["references"], receipt["references"])
     var foreign = scope
     foreign.sourceId = "foreign"
@@ -942,6 +967,35 @@ extension GalaxySSIStoreTests {
     try reopened.publishSavedResearchReply(final, scope: scope)
     let linked = try XCTUnwrap(reopened.committedResearchRevisions(scope: scope))
     XCTAssertEqual(linked.map { $0.draft.id }, ["note"])
+  }
+
+  func testResearchPublicationNotesDefaultOnlyWhenAbsentAndPreserveExplicitValues() throws {
+    typealias Envelope = AgentCollaborationResearchEnvelope
+    let base: AgentMcpJSONObject = ["format": .string(Envelope.wireFormat), "summary": .string("Research")]
+    func decode(_ extra: AgentMcpJSONObject = [:]) throws -> Envelope {
+      let raw = AgentMcpJSONCodec.stringify(base.merging(extra) { _, supplied in supplied })
+      return try JSONDecoder().decode(Envelope.self, from: Data(raw.utf8))
+    }
+    let omitted = try decode()
+    XCTAssertEqual(omitted.candidates, [])
+    XCTAssertEqual(omitted.findings, [])
+    let candidate: AgentMcpJSONValue = .object(["id": .string("C1"), "proposal": .string("Compare methods"),
+      "criteria": .array([.string("Compare on held-out inputs")])])
+    let finding: AgentMcpJSONValue = .object(["outcome": .string("not_tested"), "note": .string("No results yet")])
+    let explicit = try decode(["candidates": .array([candidate]), "findings": .array([finding])])
+    XCTAssertEqual(explicit.candidates, [candidate])
+    XCTAssertEqual(explicit.findings, [finding])
+    let malformed: [(AgentMcpJSONObject, String)] = [
+      (["candidates": .object([:])], "candidates"),
+      (["findings": .null], "findings"),
+      (["candidates": .array([candidate, candidate])], "candidates[1].id"),
+      (["findings": .array([.object(["outcome": .string("unknown")])])], "findings[0].outcome")
+    ]
+    for (extra, field) in malformed {
+      XCTAssertThrowsError(try decode(extra)) { error in
+        XCTAssertEqual((error as? Envelope.InvalidNotes)?.field, field)
+      }
+    }
   }
 
   func testDirectedRequestsKeepLongQuestionsAndSeparateCandidateIdentities() throws {
@@ -1734,6 +1788,89 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(try foreign.read(row, matching: ref))
     XCTAssertNil(try foreign.read(row))
     XCTAssertEqual(reads, 3)
+  }
+
+  func testProcedureRecallFindsExactRetainedLessonWithoutExposingPrivateOrMismatchedSources() throws {
+    let suite = "procedure-recall-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    var team = durableTeamSnapshot("procedure-discovery")
+    team.goal = "Find the frozenmethodneedle"
+    team.members[0].dispatchCheckpoint = .accepted
+    let reader = team.members[0]
+    let other = team.members[1]
+    let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId, memberId: reader.memberId, sourceId: reader.sourceMessageId)
+    XCTAssertTrue(history.upsert(team))
+    let database = try AgentTeamHistoryDatabase(fileURL: file,
+      storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    func ref(_ id: String, digest: String = "f") -> AgentCollaborationResearchReference {
+      .init(objectId: String(repeating: id, count: 64), revision: 1, sha256: String(repeating: digest, count: 64))
+    }
+    func row(_ id: String, _ kind: AgentCollaborationResearchDraft.Kind, _ body: AgentMcpJSONObject)
+      -> AgentCollaborationResearchRevision {
+      .init(reference: ref(id), previousHash: nil, runId: "previous", turnId: "previous-turn", authorId: "previous-author",
+        sourceId: "previous-source", draft: .init(id: id, objectId: nil, baseRevision: 0, kind: kind,
+          title: "Directory fixture", body: [kind.rawValue: .object(body)], parents: []))
+    }
+    let method = String(repeating: "a", count: 220) + " frozenmethodneedle end"
+    var visible = row("a", .capabilityLesson, ["decision": .string("retain"), "procedure": .string(method),
+      "applies_when": .string("comparisonwindow"), "avoid_when": .string("contraindicationneedle"),
+      "transfer_test": .string("transfertestneedle")])
+    visible.frozenCloudReads = [.init(evidenceId: "evidence", sha256: "digest", totalCharacters: 10)]
+    var hidden = visible
+    hidden.reference = ref("b")
+    hidden.runId = scope.runId
+    hidden.turnId = scope.turnId
+    hidden.authorId = other.memberId
+    hidden.sourceId = other.sourceMessageId
+    func skill(_ id: String, _ lesson: AgentCollaborationResearchReference) -> AgentCollaborationResearchRevision {
+      var record = row(id, .procedureSkill, ["name": .string("Review"), "lesson": .object(AgentCollaborationProcedure.fields(lesson)),
+        "inputs": .array([.object(["name": .string("dataset"), "description": .string("inputdescriptionneedle")])])])
+      record.draft.parents = [lesson]
+      record.retainedProcedure = .init(lesson: lesson, innovation: ref("1"), plan: ref("2"), result: ref("3"),
+        rollback: ref("4"), domain: "domainneedle", inputs: [.init(name: "dataset", required: true)], method: method,
+        appliesWhen: "comparisonwindow", avoidWhen: "contraindicationneedle", transferTest: "transfertestneedle",
+        limitations: "Fixture only")
+      return record
+    }
+    let first = skill("c", visible.reference)
+    let second = skill("d", visible.reference)
+    let isolated = skill("e", hidden.reference)
+    let mismatched = skill("f", ref("a", digest: "0"))
+    for original in [visible, hidden, first, second, isolated, mismatched] {
+      try database.insertResearchRecord(original, conversationId: scope.conversationId,
+        key: "object:" + original.reference.objectId, revision: original.reference.revision)
+    }
+    func skills(_ query: String) throws -> [AgentMcpJSONObject] {
+      let output = try history.recallCollaborationOriginal(["mode": .string("capabilities"), "query": .string(query)], scope: scope)
+      return (output["capabilities"]?.arrayValue ?? []).compactMap(\.objectValue).filter { $0.string("kind") == "procedure_skill" }
+    }
+    for query in ["frozenmethodneedle", "comparisonwindow", "contraindicationneedle", "transfertestneedle"] {
+      XCTAssertEqual(try skills(query).map { $0.string("object_id") }, [first.reference.objectId, second.reference.objectId])
+    }
+    let found = try XCTUnwrap(skills("frozenmethodneedle").first)
+    XCTAssertTrue(found["excerpts"]?.objectValue?["procedure"]?.strictStringValue?.contains("frozenmethodneedle") == true)
+    let linked = try XCTUnwrap(found["linked_sources"]?.arrayValue?.first?.objectValue)
+    XCTAssertEqual(linked["source"], .object(AgentCollaborationProcedure.fields(visible.reference)))
+    XCTAssertEqual(linked["complete_read"], .bool(false))
+    XCTAssertEqual(found["grants_permissions"], .bool(false))
+    let byInput = try skills("inputdescriptionneedle domainneedle")
+    XCTAssertEqual(byInput.count, 4)
+    for entry in byInput.suffix(2) { XCTAssertEqual(entry["linked_sources"], .array([])) }
+    let pinned = try history.initialCollaborationCapabilities(scope: scope).compactMap(\.objectValue)
+    XCTAssertEqual(pinned.map { $0.string("object_id") }, [first.reference.objectId, second.reference.objectId])
+    XCTAssertTrue(pinned.allSatisfy { $0["excerpts"] == nil })
+    var reads = 0
+    var page = AgentCollaborationCapabilityPage(scope: scope) { _ in reads += 1; return visible }
+    _ = try page.procedureMetadata(first)
+    _ = try page.procedureMetadata(second)
+    XCTAssertEqual(reads, 1)
   }
 
   func testCapabilityRecallFindsHostValidatedReleasesByExactSourceMetadata() throws {

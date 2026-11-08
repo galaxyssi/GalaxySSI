@@ -95,6 +95,58 @@ struct AgentCollaborationCapabilityPage {
     }
   }
 
+  struct ProcedureMetadata {
+    private static let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
+    let fields: [(name: String, text: String)]
+    var linkedSource: AgentMcpJSONObject?
+
+    func matches(_ term: String) -> Bool {
+      fields.contains { $0.text.range(of: term, options: Self.options) != nil }
+    }
+
+    func excerpts(terms: [String]) -> AgentMcpJSONObject {
+      let candidates = fields.map { field in
+        (field, terms.compactMap { field.text.range(of: $0, options: Self.options) }.first)
+      }
+      let selected = candidates.filter { $0.1 != nil } + candidates.filter { $0.1 == nil }
+      return Dictionary(uniqueKeysWithValues: selected.prefix(5).map { field, match in
+        let start = match.map {
+          field.text.index($0.lowerBound, offsetBy: -48, limitedBy: field.text.startIndex) ?? field.text.startIndex
+        } ?? field.text.startIndex
+        return (field.name, .string(String(field.text[start...].prefix(180))))
+      })
+    }
+  }
+
+  mutating func procedureMetadata(_ skill: AgentCollaborationResearchRevision) throws -> ProcedureMetadata? {
+    guard skill.draft.kind == .procedureSkill, let procedure = skill.retainedProcedure,
+          let spec = skill.draft.body["procedure_skill"]?.objectValue else { return nil }
+    let inputDescriptions = (spec["inputs"]?.arrayValue ?? []).compactMap { input -> String? in
+      guard let item = input.objectValue, let name = item["name"]?.strictStringValue,
+            let description = item["description"]?.strictStringValue else { return nil }
+      return name + " " + description
+    }.joined(separator: "\n")
+    var fields = [("title", skill.draft.title), ("name", spec.string("name")), ("domain", procedure.domain),
+      ("keywords", Self.searchableMetadata(spec, fields: ["keywords"]).first ?? ""),
+      ("limitations", procedure.limitations), ("inputs", inputDescriptions)].filter { !$0.1.isBlank }
+    let ref = procedure.lesson
+    guard skill.draft.parents.contains(ref),
+          spec["lesson"]?.objectValue.flatMap(Self.reference) == ref,
+          let lesson = try read(.init(objectID: ref.objectId, revision: ref.revision), matching: ref),
+          lesson.turnId != scope.turnId || lesson.sourceId == scope.sourceId,
+          lesson.draft.kind == .capabilityLesson, lesson.frozenCloudReads?.isEmpty == false,
+          let body = lesson.draft.body["capability_lesson"]?.objectValue, body["decision"] == .string("retain")
+    else { return .init(fields: fields) }
+    let linked = [("procedure", procedure.method), ("applies_when", procedure.appliesWhen),
+      ("avoid_when", procedure.avoidWhen), ("transfer_test", procedure.transferTest)]
+    guard linked.allSatisfy({ body[$0.0]?.strictStringValue == $0.1 }) else { return .init(fields: fields) }
+    fields += linked
+    return .init(fields: fields, linkedSource: [
+      "source": .object(AgentCollaborationProcedure.fields(ref)),
+      "fields": .array(linked.map { .string($0.0) }), "complete_read": .bool(false)
+    ])
+  }
+
   static let releaseState = "eligible_for_scoped_tool_execution"
   private static let toolFields = ["name", "purpose", "environment", "dependencies", "applies_when", "avoid_when", "side_effects"]
   private static let reviewFields = ["review", "applies_when", "avoid_when", "limitations", "authorization_boundary"]

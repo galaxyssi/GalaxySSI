@@ -82,7 +82,10 @@ final class MessageCoordinator: ObservableObject {
   )] = [:]
   private var desktopEvidenceLateQueries = AgentDesktopEvidenceQueryTrace.LateQueries()
   private var desktopEvidenceImports: Set<String> = []
+  private var desktopEvidenceLiveOffset = 0
   private var desktopEvidenceJobCursor = ""
+  private var desktopEvidenceWrapRequested = false
+  private var yieldedDesktopEvidenceJobs: [(job: AgentDesktopToolEvidenceWire.ImportJob, since: Int64)] = []
   private var desktopCollaborationResponseReplay = AgentDesktopCollaborationResponseReplay()
   private var desktopCollaborationCiphertextReplay = AgentDesktopCollaborationCiphertextReplay()
   private lazy var desktopReplyRecoveryOwner = store.profile.identityFingerprint
@@ -3233,6 +3236,38 @@ final class MessageCoordinator: ObservableObject {
          }) {
       result = page
     }
+    if cached == nil, !publishing,
+       ["desktop_evidence_list", "desktop_evidence"].contains(input.string("mode")) {
+      let profile = store.profile.identityFingerprint
+      let sync = phase == "read" ? await refreshLiveDesktopEvidence(input, scope: scope) : nil
+      if !Task.isCancelled, store.profile.identityFingerprint == profile,
+         let currentContact = store.contact(id: contact), currentContact.desktopId == link.desktopId,
+         currentContact.trustState == .verified, currentContact.connectorAgentId == "codex",
+         currentContact.deliveryMode.isGalaxySSILinkFamily,
+         taskIdentityStore.identity(contactId: contact, sourceMessageId: source) == identity,
+         store.serverLinks.contains(where: { $0.paired && $0.desktopFingerprint == link.desktopFingerprint &&
+           $0.routes.clientRouteId == identity.clientRouteId }),
+         let current = try? history.recoveryContext(source: source, conversation: scope.conversationId,
+           turn: scope.turnId, contact: contact, requireResearchAccess: true),
+         current.owner.permitsRecall(generation: generation),
+         liveEvidenceReader(scope, profile: profile) != nil {
+        if input["mode"] == .string("desktop_evidence"),
+           var page = try? AgentDesktopCollaborationEvidenceDelivery.exchange(input: input, confirmation: delivery,
+             binding: AgentMcpJSONCodec.sha256(assignment), expiresAt: expiry, now: AgentControlPlaneClock.nowMillis(),
+             replay: &desktopCollaborationResponseReplay, read: { recordCoverage in
+               try history.recallCollaborationOriginal(input, scope: scope, recordEvidenceCoverage: recordCoverage)
+             }) {
+          if let sync { page["live_sync"] = .string(sync) }
+          result = page
+        } else if phase == "read", input["mode"] == .string("desktop_evidence_list"),
+                  var page = try? history.recallCollaborationOriginal(input, scope: scope) {
+          page["success"] = .bool(true)
+          page["status"] = .string("returned")
+          if let sync { page["live_sync"] = .string(sync) }
+          result = page
+        }
+      }
+    }
     if cached == nil {
       desktopCollaborationResponseReplay.remember(result, key: key, fingerprint: fingerprint,
         expiresAt: expiry, now: AgentControlPlaneClock.nowMillis())
@@ -3769,18 +3804,100 @@ final class MessageCoordinator: ObservableObject {
     resumeDesktopEvidenceJobs(wrapAtEnd: true)
   }
 
+  private func liveEvidenceReader(_ scope: AgentCollaborationToolEvidenceScope, profile: String) -> AgentTeamExecutionSnapshot? {
+    guard store.profile.identityFingerprint == profile,
+          let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
+          let roster = session.collaborationRoster, !session.privateMode, !session.trackingPaused,
+          session.mergedIntoConversationId.isBlank,
+          let team = AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: scope.runId),
+          team.state == .running, team.conversationId == scope.conversationId, team.taskId == scope.turnId,
+          let reader = team.members.first(where: { $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId }),
+          scope.rosterMember(in: roster)?.resourceId == reader.agentId, reader.deliveryMode != .ignore,
+          !reader.status.isTerminal, reader.dispatchCheckpoint == .accepted || reader.dispatchCheckpoint == .dispatching
+    else { return nil }
+    return team
+  }
+
+  private func refreshLiveDesktopEvidence(_ input: AgentMcpJSONObject,
+      scope: AgentCollaborationToolEvidenceScope) async -> String? {
+    let mode = input.string("mode")
+    if mode == "desktop_evidence_list" {
+      guard Set(input.keys).isSubset(of: ["mode", "cursor"]), input["cursor"] == nil || input["cursor"] == .string("")
+      else { return nil }
+    } else {
+      guard mode == "desktop_evidence", Set(input.keys).isSubset(of: ["mode", "evidence_id", "sha256", "offset"]),
+            input["offset"] == nil || input["offset"] == .int(0),
+            AgentCollaborationSourceAccess.validDigest(input.string("evidence_id")),
+            AgentCollaborationSourceAccess.validDigest(input.string("sha256")) else { return nil }
+      // Already imported pages never need another network query.
+      if (try? AgentTeamExecutionHistoryStore.shared.recallCollaborationOriginal(input, scope: scope,
+            recordEvidenceCoverage: false)) != nil { return nil }
+    }
+    let profile = store.profile.identityFingerprint
+    guard !Task.isCancelled, let team = liveEvidenceReader(scope, profile: profile) else { return nil }
+    let runtime = journalMqttRuntime
+    guard runtime != nil || (usesLegacyMqtt && mqttClient.relationshipSubscriptionsReady) else { return "transport_unavailable" }
+    let history = AgentTeamExecutionHistoryStore.shared
+    let jobs = team.members.compactMap { member -> AgentDesktopToolEvidenceWire.ImportJob? in
+      guard member.deliveryMode == .observe,
+            let contact = store.contact(id: member.agentId), contact.connectorAgentId == "codex",
+            contact.connectorCapabilities?.contains("desktop_codex_tool_evidence_v1") == true,
+            let identity = taskIdentityStore.identity(contactId: contact.id, sourceMessageId: member.sourceMessageId),
+            let context = try? history.recoveryContext(source: member.sourceMessageId, conversation: scope.conversationId,
+              turn: scope.turnId, contact: contact.id, requireResearchAccess: true),
+            context.team.supervisorRunId == scope.runId,
+            let binding = AgentDesktopReplyBinding.teamObserver(owner: context.owner, desktopId: contact.desktopId,
+              agentId: contact.connectorAgentId, identity: identity),
+            currentTeamObserverRecovery(binding) != nil, runtime?.canQueryDesktopEvidence(binding) != false,
+            let generation = context.owner.desktopEvidenceGeneration(member: context.member, teamState: context.team.state),
+            let request = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: generation, nonce: UUID().uuidString),
+            (try? history.desktopEvidenceCursor(request))?.archiveFinal == false else { return nil }
+      return .init(binding: binding, generation: generation, profileIdentity: profile)
+    }
+    guard !jobs.isEmpty else { return "no_pending_authorized_sources" }
+    let start = desktopEvidenceLiveOffset % jobs.count
+    let ordered = Array(jobs[start...]) + Array(jobs[..<start])
+    let count = max(0, 2 - desktopEvidenceImports.count)
+    let selected = ordered.filter { !desktopEvidenceImports.contains($0.key) }.prefix(count)
+    guard !selected.isEmpty else { return "sync_in_progress" }
+    desktopEvidenceLiveOffset = (start + selected.count) % jobs.count
+    let deadline = DispatchTime.now().uptimeNanoseconds + 10_000_000_000
+    for job in selected { desktopEvidenceImports.insert(job.key) }
+    await withTaskGroup(of: Void.self) { group in
+      for job in selected {
+        group.addTask { @MainActor in
+          defer { self.desktopEvidenceImports.remove(job.key) }
+          await self.importDesktopEvidence(job.binding, generation: job.generation, profile: profile, query: { request, payload in
+            let now = DispatchTime.now().uptimeNanoseconds
+            guard !Task.isCancelled, now < deadline, self.liveEvidenceReader(scope, profile: profile) != nil else { return nil }
+            let timeout = min(8_000_000_000, deadline - now)
+            let response: AgentMcpJSONObject?
+            if let runtime { response = await runtime.queryDesktopEvidence(request, payload: payload, timeoutNanoseconds: timeout) }
+            else { response = await self.queryDesktopEvidence(request, payload: payload, timeoutNanoseconds: timeout) }
+            return self.liveEvidenceReader(scope, profile: profile) != nil ? response : nil
+          })
+        }
+      }
+    }
+    // A terminal notification can enqueue this same cursor while the live import owns it.
+    resumeDesktopEvidenceJobs(wrapAtEnd: true, runtime: runtime)
+    return "bounded_refresh_attempted"
+  }
+
   private func resumeDesktopEvidenceJobs(wrapAtEnd: Bool = false, runtime: MqttBusinessTransportRuntime? = nil) {
     let journalBacked = runtime != nil
-    guard GalaxySSISignalEngine.isAvailable, journalBacked || mqttClient.relationshipSubscriptionsReady,
-          desktopEvidenceImports.count < 2 else { return }
+    guard GalaxySSISignalEngine.isAvailable, journalBacked || mqttClient.relationshipSubscriptionsReady else { return }
+    desktopEvidenceWrapRequested = desktopEvidenceWrapRequested || wrapAtEnd
+    guard desktopEvidenceImports.count < 2 else { return }
     let history = AgentTeamExecutionHistoryStore.shared
-    var mayWrap = wrapAtEnd && !desktopEvidenceJobCursor.isEmpty
+    var mayWrap = desktopEvidenceWrapRequested && !desktopEvidenceJobCursor.isEmpty
+    desktopEvidenceWrapRequested = false
     var pagesRemaining = journalBacked ? 4 : Int.max
     while desktopEvidenceImports.count < 2, pagesRemaining > 0 {
       pagesRemaining -= 1
-      guard let batch = try? history.desktopEvidenceJobs(after: desktopEvidenceJobCursor) else { return }
+      guard let batch = try? history.desktopEvidenceJobs(after: desktopEvidenceJobCursor) else { break }
       if batch.isEmpty {
-        guard mayWrap else { return }
+        guard mayWrap else { break }
         mayWrap = false
         desktopEvidenceJobCursor = ""
         continue
@@ -3788,36 +3905,60 @@ final class MessageCoordinator: ObservableObject {
       for job in batch {
         guard desktopEvidenceImports.count < 2 else { return }
         desktopEvidenceJobCursor = job.key
-        let binding = job.binding
-        guard store.profile.identityFingerprint == job.profileIdentity,
-              runtime?.canQueryDesktopEvidence(binding) != false,
-              let context = currentTeamObserverRecovery(binding), context.member.status == .succeeded,
-              context.owner.observedGeneration == job.generation,
-              let session = store.agentSession(id: context.team.conversationId), session.id == context.team.conversationId,
-              session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank,
-              let scope = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: job.generation,
-                nonce: UUID().uuidString),
-              desktopEvidenceImports.insert(job.key).inserted else { continue }
-        mayWrap = false
-        Task { @MainActor [weak self, weak runtime] in
-          guard let self else { return }
-          defer {
-            self.desktopEvidenceImports.remove(job.key)
-            if !journalBacked || runtime != nil { self.resumeDesktopEvidenceJobs(runtime: runtime) }
-          }
-          if journalBacked {
-            guard runtime != nil else { return }
-            await self.importDesktopEvidence(binding, generation: job.generation, profile: job.profileIdentity,
-              query: { [weak runtime] request, payload in await runtime?.queryDesktopEvidence(request, payload: payload) })
-          } else {
-            await self.importDesktopEvidence(binding, generation: job.generation, profile: job.profileIdentity)
-          }
-          if (try? history.desktopEvidenceCursor(scope))?.archiveFinal == true {
-            history.removeDesktopEvidenceJob(job)
-          }
+        if !yieldedDesktopEvidenceJobs.contains(where: { $0.job.key == job.key }),
+           startDesktopEvidenceRecoverySlice(job, runtime: runtime) {
+          mayWrap = false
         }
       }
     }
+    while desktopEvidenceImports.count < 2, !yieldedDesktopEvidenceJobs.isEmpty {
+      let queued = yieldedDesktopEvidenceJobs.removeFirst()
+      startDesktopEvidenceRecoverySlice(queued.job, runtime: runtime, yieldedAt: queued.since)
+    }
+  }
+
+  @discardableResult
+  private func startDesktopEvidenceRecoverySlice(_ job: AgentDesktopToolEvidenceWire.ImportJob,
+      runtime: MqttBusinessTransportRuntime?, yieldedAt: Int64? = nil) -> Bool {
+    let binding = job.binding
+    guard store.profile.identityFingerprint == job.profileIdentity,
+          runtime?.canQueryDesktopEvidence(binding) != false,
+          let context = currentTeamObserverRecovery(binding), context.member.status == .succeeded,
+          context.owner.observedGeneration == job.generation,
+          let session = store.agentSession(id: context.team.conversationId), session.id == context.team.conversationId,
+          session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank,
+          let scope = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: job.generation,
+            nonce: UUID().uuidString),
+          desktopEvidenceImports.insert(job.key).inserted else { return false }
+    let journalBacked = runtime != nil
+    Task { @MainActor [weak self, weak runtime] in
+      guard let self else { return }
+      defer {
+        self.desktopEvidenceImports.remove(job.key)
+        if !journalBacked || runtime != nil { self.resumeDesktopEvidenceJobs(runtime: runtime) }
+      }
+      let history = AgentTeamExecutionHistoryStore.shared
+      let started = AgentDesktopEvidenceQueryTrace.now
+      if let yieldedAt {
+        AgentDesktopEvidenceQueryTrace.record(.sliceWait, nonce: scope.nonce, started: yieldedAt)
+      }
+      var slice = AgentDesktopEvidenceRecoverySlice()
+      await self.importDesktopEvidence(binding, generation: job.generation, profile: job.profileIdentity,
+        query: { request, payload in
+          guard !Task.isCancelled, slice.claimQuery() else { return nil }
+          if journalBacked { return await runtime?.queryDesktopEvidence(request, payload: payload) }
+          return await self.queryDesktopEvidence(request, payload: payload)
+        })
+      let outcome = slice.outcome(archiveFinal: (try? history.desktopEvidenceCursor(scope))?.archiveFinal == true,
+        isCancelled: Task.isCancelled || (journalBacked && runtime == nil))
+      AgentDesktopEvidenceQueryTrace.record(outcome, nonce: scope.nonce, started: started)
+      switch outcome {
+      case .sliceComplete: history.removeDesktopEvidenceJob(job)
+      case .sliceYielded: self.yieldedDesktopEvidenceJobs.append((job, AgentDesktopEvidenceQueryTrace.now))
+      default: break
+      }
+    }
+    return true
   }
 
   private func importDesktopEvidence(_ binding: AgentDesktopReplyBinding, generation: Int64, profile: String,
@@ -3827,11 +3968,13 @@ final class MessageCoordinator: ObservableObject {
       return await queryDesktopEvidence(request, payload: payload)
     }
     func isCurrent() -> Bool {
-      !Task.isCancelled && store.profile.identityFingerprint == profile &&
-        currentTeamObserverRecovery(binding)?.owner.observedGeneration == generation &&
-        store.agentSession(id: binding.identity.conversationId).map {
-          $0.id == binding.identity.conversationId && $0.collaborationRoster != nil && $0.mergedIntoConversationId.isBlank
-        } == true
+      guard !Task.isCancelled, store.profile.identityFingerprint == profile,
+            let context = currentTeamObserverRecovery(binding),
+            context.owner.desktopEvidenceGeneration(member: context.member, teamState: context.team.state) == generation
+      else { return false }
+      return store.agentSession(id: binding.identity.conversationId).map {
+        $0.id == binding.identity.conversationId && $0.collaborationRoster != nil && $0.mergedIntoConversationId.isBlank
+      } == true
     }
     let history = AgentTeamExecutionHistoryStore.shared
     guard let scope = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: generation,
@@ -3888,7 +4031,7 @@ final class MessageCoordinator: ObservableObject {
           _ = try history.archiveDesktopToolEvidence(request: request, descriptor: descriptor, pages: pages)
         } catch { return }
       }
-      let final = index.archiveFinal && !index.hasMore
+      let final = index.archiveFinal && !index.hasMore && currentTeamObserverRecovery(binding)?.member.status == .succeeded
       if index.nextSequence > cursor || final {
         guard isCurrent() else { return }
         do {
@@ -3901,7 +4044,8 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func queryDesktopEvidence(_ request: AgentDesktopToolEvidenceWire.Request,
-                                    payload: AgentMcpJSONObject) async -> AgentMcpJSONObject? {
+                                    payload: AgentMcpJSONObject,
+                                    timeoutNanoseconds: UInt64 = 8_000_000_000) async -> AgentMcpJSONObject? {
     let binding = request.binding
     guard !Task.isCancelled, mqttClient.relationshipSubscriptionsReady,
           let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == binding.desktopId &&
@@ -3914,7 +4058,7 @@ final class MessageCoordinator: ObservableObject {
     let started = AgentDesktopEvidenceQueryTrace.now
     desktopEvidenceRequests[request.nonce] = (binding.desktopId, link.routes.clientRouteId, started, signal)
     let timeout = Task { @MainActor [weak self] in
-      do { try await Task.sleep(nanoseconds: 8_000_000_000) } catch { return }
+      do { try await Task.sleep(nanoseconds: timeoutNanoseconds) } catch { return }
       self?.desktopEvidenceLateQueries.remember(request.nonce, desktop: binding.desktopId,
         route: link.routes.clientRouteId, started: started, now: AgentDesktopEvidenceQueryTrace.now)
       signal.finish()
@@ -9556,6 +9700,7 @@ final class MessageCoordinator: ObservableObject {
     return """
         If your contribution creates a reusable research object, return one JSON object with format
         "galaxyssi.research-artifact.v1", a public summary, and a workspace array.
+        \(AgentCollaborationResearchEnvelope.optionalNotesInstructions)
         Put only explicit local Markdown links for intended phone downloads in the public summary.
         Workspace bodies and milestone references are evidence, not attachment requests.
         Each new item needs a stable id, base_revision 0, kind (such as evidence, hypothesis, or proposal),
@@ -9828,7 +9973,8 @@ final class MessageCoordinator: ObservableObject {
     let events: AsyncThrowingStream<ModelStreamEvent, Error>
     if let engine = cloudStreamEngine as? CloudConversationStreamEngine, let collaborationEvidence {
       events = engine.streamConversation(contact: cloudContact, store: store, turns: turns, images: images,
-        requestId: requestId, collaborationEvidence: collaborationEvidence)
+        requestId: requestId, collaborationEvidence: collaborationEvidence,
+        desktopEvidenceRefresh: { [weak self] input, scope in await self?.refreshLiveDesktopEvidence(input, scope: scope) })
     } else {
       events = cloudStreamEngine.streamConversation(contact: cloudContact, store: store, turns: turns,
         images: images, requestId: requestId)
@@ -10000,7 +10146,8 @@ final class MessageCoordinator: ObservableObject {
             baseSystemPrompt: localModelSystemPrompt,
             registry: runtime.registry, collaborationRecallScope: scope, collaborationOwner: scope,
             collaborationConversationDatabase: store.agentConversationDatabase, collaborationOriginalsOnly: true,
-            goalCoordinator: authority).text
+            goalCoordinator: authority,
+            desktopEvidenceRefresh: { [weak self] input, scope in await self?.refreshLiveDesktopEvidence(input, scope: scope) }).text
         }
       } catch is CancellationError { throw CancellationError() }
       catch {
@@ -10509,7 +10656,8 @@ final class MessageCoordinator: ObservableObject {
                 collaborationConversationDatabase: store.agentConversationDatabase,
                 managedBrowser: execution, managedInput: input,
                 managedJournal: EncryptedAgentModelLoopJournal(secrets: store.secrets,
-                  storageKey: "galaxyssi.agent.managed-browser-loop." + binding.key))
+                  storageKey: "galaxyssi.agent.managed-browser-loop." + binding.key),
+                desktopEvidenceRefresh: { [weak self] input, scope in await self?.refreshLiveDesktopEvidence(input, scope: scope) })
             }
           } catch AgentIOSLocalModelWebToolError.waitingForBrowserControl {
             NotificationCenter.default.post(name: AgentManagedBrowserContinuationStore.changed, object: owner.runId)
@@ -10648,7 +10796,8 @@ final class MessageCoordinator: ObservableObject {
       collaborationRecallScope: recall,
       collaborationOwner: collaborationRecallScope,
       collaborationConversationDatabase: store.agentConversationDatabase,
-      nativeObservation: nativeObservation
+      nativeObservation: nativeObservation,
+      desktopEvidenceRefresh: { [weak self] input, scope in await self?.refreshLiveDesktopEvidence(input, scope: scope) }
     )
     store.persistLocalResearchDisclosure(completion.researchDisclosure, source: outgoing, owner: disclosureOwner)
     let text = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -14362,7 +14511,8 @@ final class MessageCoordinator: ObservableObject {
                   originalGoalSourceExists(scope) else { return nil }
             return self.reserveLiveGoalContinuation(after: raw, scope: scope)
           }
-        }, researchRetrySource: researchRetrySource, retainResearch: retainResearch)
+        }, desktopEvidenceRefresh: { [weak self] input, scope in await self?.refreshLiveDesktopEvidence(input, scope: scope) },
+        researchRetrySource: researchRetrySource, retainResearch: retainResearch)
     } else {
       events = cloudStreamEngine.streamConversation(contact: contact, store: store, turns: scopedTurns,
         images: images, requestId: requestId)

@@ -36,6 +36,7 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
   private let taskID: String
   private let beforeInference: (() throws -> Void)?
   private let goalAssessmentOnly: Bool
+  private let beforeDesktopEvidenceRecall: ((AgentMcpJSONObject) async -> Void)?
   private(set) var lastInference: LocalModelInferenceResult?
 
   init(
@@ -47,7 +48,8 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
     taskID: String,
     beforeInference: (() throws -> Void)? = nil,
     goalAssessmentOnly: Bool = false,
-    currentCatalog: ((AgentModelRequest) throws -> [AgentNativeToolDescriptor])? = nil
+    currentCatalog: ((AgentModelRequest) throws -> [AgentNativeToolDescriptor])? = nil,
+    beforeDesktopEvidenceRecall: ((AgentMcpJSONObject) async -> Void)? = nil
   ) {
     self.catalog = catalog
     self.currentCatalog = currentCatalog
@@ -58,6 +60,7 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
     self.taskID = taskID
     self.beforeInference = beforeInference
     self.goalAssessmentOnly = goalAssessmentOnly
+    self.beforeDesktopEvidenceRecall = beforeDesktopEvidenceRecall
   }
 
   func complete(_ request: AgentModelRequest) async throws -> AgentModelResponse {
@@ -74,6 +77,16 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
     )
     try beforeInference?()
     var response = try AgentIOSLocalModelWebToolProtocol.decode(inference.text, inference: inference)
+    if let beforeDesktopEvidenceRecall, available.contains(where: { $0.id == AgentIOSLocalModelWebToolRunner.collaborationRecallId }),
+       let read = response.toolCalls.first(where: { $0.toolId == AgentIOSLocalModelWebToolRunner.collaborationRecallId &&
+         ["desktop_evidence_list", "desktop_evidence"].contains($0.arguments.string("mode")) }) {
+      try Task.checkCancellation()
+      guard !request.cancellationToken.isCancellationRequested else { throw CancellationError() }
+      await beforeDesktopEvidenceRecall(read.arguments)
+      try Task.checkCancellation()
+      guard !request.cancellationToken.isCancellationRequested else { throw CancellationError() }
+      try beforeInference?()
+    }
     if response.toolCalls.isEmpty && !goalAssessmentOnly {
       let evidence = AgentIOSLocalModelWebToolProtocol.encodedEvidence(request.messages)
       let validation = AgentIOSWebEvidenceVerification.validateAnswer(
@@ -295,7 +308,8 @@ enum AgentIOSLocalModelWebToolRunner {
     managedBrowser: AgentManagedBrowserToolExecution? = nil,
     managedInput: AgentManagedBrowserLoopInput? = nil,
     managedJournal: AgentModelLoopJournal? = nil,
-    goalCoordinator: GoalCoordinator? = nil
+    goalCoordinator: GoalCoordinator? = nil,
+    desktopEvidenceRefresh: CloudConversationStreamEngine.DesktopEvidenceRefresh? = nil
   ) async throws -> AgentIOSLocalModelWebToolCompletion {
     let owner = collaborationOwner ?? collaborationRecallScope
     let effectiveTurn = turnID.ifBlank(taskID)
@@ -384,7 +398,11 @@ enum AgentIOSLocalModelWebToolRunner {
       hasAttachments: hasAttachments, baseSystemPrompt: baseSystemPrompt, taskID: taskID,
       beforeInference: verifyOwner,
       goalAssessmentOnly: goalCoordinator != nil,
-      currentCatalog: catalogSession.map { view in { try view.providerCatalog($0) } }
+      currentCatalog: catalogSession.map { view in { try view.providerCatalog($0) } },
+      beforeDesktopEvidenceRecall: collaborationRecallScope.flatMap { scope -> ((AgentMcpJSONObject) async -> Void)? in
+        guard let desktopEvidenceRefresh else { return nil }
+        return { input in _ = await desktopEvidenceRefresh(input, scope) }
+      }
     )
     let outcome = await AgentModelToolLoop(
       modelAdapter: session,
