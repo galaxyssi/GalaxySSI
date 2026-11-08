@@ -1710,6 +1710,96 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(reads, 3)
   }
 
+  func testCapabilityRecallFindsHostValidatedReleasesByExactSourceMetadata() throws {
+    let suite = "capability-release-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let team = durableTeamSnapshot("release-recall-reader")
+    XCTAssertTrue(history.upsert(team))
+    let reader = team.members[0]
+    let other = team.members[1]
+    let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId, memberId: reader.memberId, sourceId: reader.sourceMessageId)
+    let database = try AgentTeamHistoryDatabase(fileURL: file,
+      storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    func record(_ id: String, kind: AgentCollaborationResearchDraft.Kind, title: String, value: AgentMcpJSONObject,
+                privateCurrent: Bool = false) -> AgentCollaborationResearchRevision {
+      .init(reference: .init(objectId: String(repeating: id, count: 64), revision: 1, sha256: String(repeating: "f", count: 64)),
+        previousHash: nil,
+        runId: privateCurrent ? scope.runId : "previous", turnId: privateCurrent ? scope.turnId : "previous-turn",
+        authorId: privateCurrent ? other.memberId : "previous-author", sourceId: privateCurrent ? other.sourceMessageId : "previous-source",
+        draft: .init(id: id, objectId: nil, baseRevision: 0, kind: kind, title: title,
+          body: [kind.rawValue: .object(value)], parents: []))
+    }
+    func save(_ record: AgentCollaborationResearchRevision, group: String? = nil) throws {
+      try database.insertResearchRecord(record, conversationId: group ?? scope.conversationId,
+        key: "object:" + record.reference.objectId, revision: record.reference.revision)
+    }
+    let source = "def run(input): return 'internal-code-needle'"
+    let digest = SHA256.hash(data: Data(source.utf8)).map { String(format: "%02x", $0) }.joined()
+    let spec: AgentMcpJSONObject = [
+      "name": .string("Stable integer sort"), "purpose": .string("Order arrays"), "environment": .string("standard-library"),
+      "dependencies": .array([.string("Python")]), "applies_when": .string("Comparable values"),
+      "source": .string(source), "cases": .array([.string("private-test-needle")])
+    ]
+    let tool = record("a", kind: .executableTool, title: "Candidate", value: spec)
+    let hidden = record("b", kind: .executableTool, title: "Private", value: spec, privateCurrent: true)
+    try save(tool)
+    try save(hidden)
+    func release(_ id: String, title: String, tool: AgentCollaborationResearchReference, hash: String,
+                 state: String = AgentCollaborationCapabilityPage.releaseState) -> AgentCollaborationResearchRevision {
+      var value = record(id, kind: .toolRelease, title: title, value: ["review": .string("Checked"),
+        "applies_when": .string("Integer lists"), "avoid_when": .string("Unknown element types")])
+      value.testedToolRelease = ["state": .string(state), "executable_tool": .object(AgentCollaborationCandidateRecall.reference(tool)),
+        "source_sha256": .string(hash), "grants_permissions": .bool(false)]
+      return value
+    }
+    let reviewed = release("c", title: "Verified fixture", tool: tool.reference, hash: digest)
+    let stale = release("d", title: "Stale digest fixture", tool: tool.reference, hash: String(repeating: "0", count: 64))
+    let isolated = release("e", title: "Isolated fixture", tool: hidden.reference, hash: digest)
+    let rejected = release("f", title: "Rejected fixture", tool: tool.reference, hash: digest, state: "rejected")
+    let mismatched = release("1", title: "Wrong revision digest fixture",
+      tool: .init(objectId: tool.reference.objectId, revision: tool.reference.revision, sha256: String(repeating: "2", count: 64)),
+      hash: digest)
+    for item in [reviewed, stale, isolated, rejected, mismatched] { try save(item) }
+    let legacy: AgentMcpJSONObject = ["draft": .object(["kind": .string("tool_release")])]
+    try database.insertResearchRecord(legacy, conversationId: scope.conversationId,
+      key: "object:" + String(repeating: "0", count: 64), revision: 1)
+    XCTAssertThrowsError(try AgentCollaborationTypedRecordValidation.validate(reviewed.draft))
+
+    func matches(_ query: String) throws -> [AgentMcpJSONObject] {
+      let page = try history.recallCollaborationOriginal(["mode": .string("capabilities"), "query": .string(query)], scope: scope)
+      return (page["capabilities"]?.arrayValue ?? []).compactMap(\.objectValue)
+    }
+    for query in ["stable", "arrays", "standard-library"] {
+      let released = try matches(query).filter { $0.string("kind") == "tool_release" }
+      XCTAssertEqual(released.map { $0.string("object_id") }, [reviewed.reference.objectId])
+    }
+    let found = try XCTUnwrap(matches("stable").first { $0.string("kind") == "tool_release" })
+    XCTAssertEqual(found["state"], .string(AgentCollaborationCapabilityPage.releaseState))
+    XCTAssertEqual(found["grants_permissions"], .bool(false))
+    XCTAssertEqual(found["requires_scope_and_lineage_check"], .bool(true))
+    XCTAssertEqual(found["excerpts"]?.objectValue?["tool_applies_when"], .string("Comparable values"))
+    XCTAssertEqual(found["excerpts"]?.objectValue?["applies_when"], .string("Integer lists"))
+    let provenance = try XCTUnwrap(found["linked_sources"]?.arrayValue?.first?.objectValue)
+    XCTAssertEqual(provenance["source"], .object(AgentCollaborationCandidateRecall.reference(tool.reference)))
+    XCTAssertEqual(provenance["complete_read"], .bool(false))
+    XCTAssertEqual(found["usage_recall"]?.objectValue?["mode"], .string("method_history"))
+    for query in ["stale", "isolated", "wrong"] {
+      let entry = try XCTUnwrap(matches(query).first)
+      XCTAssertEqual(entry["linked_sources"], .array([]))
+      XCTAssertNil(entry["excerpts"]?.objectValue?["tool_name"])
+    }
+    XCTAssertTrue(try matches("rejected").isEmpty)
+    XCTAssertTrue(try matches("internal-code-needle").isEmpty)
+    XCTAssertTrue(try matches("private-test-needle").isEmpty)
+  }
+
   func testCollaborationSourceMappingPreservesExactUTF16Boundaries() throws {
     let goal = String(repeating: "a", count: 1_023) + "\u{1F642} Next.  "
     let bytes = AgentCollaborationInlineOriginals.source(goal: goal, criteria: Data("[]".utf8))

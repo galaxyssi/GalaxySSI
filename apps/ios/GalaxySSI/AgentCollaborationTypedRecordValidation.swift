@@ -16,6 +16,10 @@ struct AgentCollaborationTypedRecordValidation: Error {
 
   static func validate(_ draft: AgentCollaborationResearchDraft) throws {
     let kind = draft.kind.rawValue
+    guard draft.kind != .toolRelease else {
+      throw issue("host_tool_release_required", path: "/kind",
+        expected: "host-validated release, not a model publication", actual: kind, draft: draft)
+    }
     guard kinds.contains(kind) else { return }
     guard draft.body[kind]?.objectValue != nil else {
       throw issue("typed_body_required", path: "/body/" + kind,

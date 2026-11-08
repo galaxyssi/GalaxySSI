@@ -991,8 +991,8 @@ final class AgentTeamExecutionHistoryStore {
         "member": .string(scope.memberId), "source": .string(scope.sourceId)
       ])
       var page = AgentCollaborationCapabilityPage(scope: scope) { row in
-        try database.researchRecord(AgentCollaborationResearchRevision.self, conversationId: scope.conversationId,
-          key: "object:" + row.objectID, revision: row.revision)
+        try database.researchRecord(AgentCollaborationCapabilityPage.DirectoryRecord.self, conversationId: scope.conversationId,
+          key: "object:" + row.objectID, revision: row.revision)?.revision
       }
       if pinInitial, let saved = try database.researchRecord(AgentMcpJSONObject.self,
         conversationId: scope.conversationId, key: pinKey, revision: 0) {
@@ -1040,9 +1040,12 @@ final class AgentTeamExecutionHistoryStore {
         let kind = head.draft.kind.rawValue
         let candidate = AgentCollaborationCandidateRecall.isCandidate(head.draft.kind)
         guard let body = head.draft.body[kind]?.objectValue else { continue }
+        let release = try (head.draft.kind == .toolRelease ? page.releaseMetadata(head) : nil)
+        if head.draft.kind == .toolRelease, release == nil { continue }
         var metadata = [head.draft.title, kind] + AgentCollaborationCapabilityPage.searchableMetadata(body,
           fields: ["name", "purpose", "domain", "applies_when", "avoid_when", "observed_issue", "rationale",
                    "environment", "dependencies", "side_effects", "coverage_gaps", "oracle_basis"])
+        if let release { metadata.append(contentsOf: release.fields.values) }
         var linked: AgentMcpJSONObject?
         if head.draft.kind == .toolTestPlan,
            let source = body["executable_tool"]?.objectValue,
@@ -1061,7 +1064,11 @@ final class AgentTeamExecutionHistoryStore {
         func matches(_ term: String) -> Bool {
           text.range(of: term, options: [.caseInsensitive, .diacriticInsensitive]) != nil
         }
-        let score = pinInitial ? Set(initialTerms.filter(matches)).count : 0
+        let initialMatches = pinInitial ? Set(initialTerms.filter(matches)) : []
+        let sourceName = release?.fields["tool_name"] ?? ""
+        let score = initialMatches.count + 2 * initialMatches.filter {
+          sourceName.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        }.count
         guard pinInitial ? score > 0 : terms.allSatisfy(matches) else { continue }
         let state: String
         switch kind {
@@ -1073,15 +1080,18 @@ final class AgentTeamExecutionHistoryStore {
           state = "selected_scoped_version"
         case "capability_lesson": state = body.string("decision") == "retain" ? "retained_lesson" : "historical_lesson"
         case "failure_experience": state = "observed_failure"
+        case "tool_release": state = AgentCollaborationCapabilityPage.releaseState
         default: state = "unverified_candidate"
         }
         var entry: AgentMcpJSONObject = ["object_id": .string(head.reference.objectId), "revision": .int(head.reference.revision),
           "sha256": .string(head.reference.sha256), "kind": .string(kind), "title": .string(head.draft.title),
           "state": .string(state)]
-        if kind == "tool_release" && state == "eligible_for_scoped_tool_execution" {
+        if release != nil {
           var usage = AgentCollaborationNativeReleaseHistory.fields(head.reference)
           usage["mode"] = .string(AgentCollaborationNativeReleaseHistory.mode)
           entry["usage_recall"] = .object(usage)
+          entry["grants_permissions"] = .bool(false)
+          entry["requires_scope_and_lineage_check"] = .bool(true)
         }
         if head.draft.kind == .workflowMethod {
           entry["evaluation_recall"] = .object(AgentCollaborationMethodEvaluations.selector(head.reference))
@@ -1105,6 +1115,10 @@ final class AgentTeamExecutionHistoryStore {
           entry["reuse_status"] = .string("candidate_requires_testing_and_independent_release")
           entry["linked_sources"] = .array(linked.map { [.object($0)] } ?? [])
           entry["grants_permissions"] = .bool(false)
+        }
+        if let release {
+          entry["excerpts"] = .object(release.excerpts)
+          entry["linked_sources"] = .array(release.linked.map { [.object($0)] } ?? [])
         }
         entries.append(.object(entry))
         if entries.count == 8 { break }
