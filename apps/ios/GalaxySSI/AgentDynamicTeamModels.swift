@@ -949,10 +949,11 @@ enum AgentCollaborationGoalAssessmentPolicy {
   static let appendWorkMode = "append_work"
   static let runWorkMode = "run_work"
   static let runReadyWorkMode = "run_ready_work"
+  static let workInventoryMode = "work_inventory"
   static let checkGoalEvidenceMode = "check_goal_evidence"
 
   static func requiresCoordinator(_ mode: String) -> Bool {
-    isCoordinatorMutation(mode) || mode == checkGoalEvidenceMode
+    isCoordinatorMutation(mode) || mode == checkGoalEvidenceMode || mode == workInventoryMode
   }
 
   static func dispatchesWork(_ mode: String) -> Bool {

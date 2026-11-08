@@ -2320,6 +2320,10 @@ final class AgentTeamExecutionHistoryStore {
     if mode == AgentCollaborationGoalAssessmentPolicy.appendWorkMode {
       return try admitCollaborationWork(input, scope: scope, recruitmentTemplates: recruitmentTemplates, roster: recruitmentRoster)
     }
+    if mode == AgentCollaborationGoalAssessmentPolicy.workInventoryMode {
+      guard Set(input.keys) == ["mode"] else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      return try goalWorkInventory(scope: scope)
+    }
     if mode == AgentCollaborationGoalAssessmentPolicy.checkGoalEvidenceMode {
       return try checkCollaborationGoalEvidence(input, scope: scope)
     }
@@ -3084,6 +3088,94 @@ final class AgentTeamExecutionHistoryStore {
     state == .succeeded || (policy == .terminal && (state == .failed || state == .interrupted))
   }
 
+  func goalWorkInventory(scope: AgentCollaborationToolEvidenceScope,
+                         now: Int64 = AgentControlPlaneClock.nowMillis()) throws -> AgentMcpJSONObject {
+    try access { database in
+      let team = try Self.activeGoalCoordinator(scope, database: database)
+      let checkpoint = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first
+      if let checkpoint {
+        guard checkpoint.phase == .working, checkpoint.conversationId == scope.conversationId,
+              checkpoint.turnId == scope.turnId else { throw AgentTeamHistoryDatabase.Failure.stale }
+      }
+      let work = checkpoint?.liveGraph?.work ?? []
+      var runs: [String: AgentCollaborationGoalWorkRun] = [:]
+      for item in work {
+        if let run = try database.researchRecord(AgentCollaborationGoalWorkRun.self, conversationId: scope.conversationId,
+          key: Self.goalWorkKey(item.id, scope: scope), revision: 0) {
+          guard run.owner == scope, run.workID == item.id else { throw AgentTeamHistoryDatabase.Failure.stale }
+          runs[item.id] = run
+        }
+      }
+      return try Self.goalWorkInventory(team: team, scope: scope, work: work, runs: runs,
+        revision: checkpoint?.revision ?? 0, now: now, database: database)
+    }
+  }
+
+  private static func goalWorkInventory(team: AgentTeamExecutionSnapshot, scope: AgentCollaborationToolEvidenceScope,
+      work: [AgentCollaborationLiveGraph.Work], runs: [String: AgentCollaborationGoalWorkRun],
+      revision: Int64, now: Int64, database: AgentTeamHistoryDatabase) throws -> AgentMcpJSONObject {
+    func status(_ id: String) -> String { runs[id]?.visibleState(now: now).rawValue ?? "unclaimed" }
+    func bounded<S: Sequence>(_ rows: S, bytes: Int) -> [AgentMcpJSONValue] where S.Element == AgentMcpJSONObject {
+      var budget = bytes
+      var output: [AgentMcpJSONValue] = []
+      for row in rows {
+        let cost = AgentMcpJSONCodec.stringify(row).utf8.count + 1
+        guard cost <= budget else { continue }
+        output.append(.object(row))
+        budget -= cost
+      }
+      return output
+    }
+    let workRows = bounded(work.reversed().lazy.map { item -> AgentMcpJSONObject in
+      let policy = item.dependency_policy ?? .success
+      let targets = item.review_targets ?? (item.independent_review == true ? item.depends_on : [])
+      let waiting = item.depends_on.filter {
+        let state = runs[$0]?.visibleState(now: now)
+        return state == nil || state == .running
+      }
+      let unsuccessful = item.depends_on.filter { id in
+        guard let state = runs[id]?.visibleState(now: now) else { return false }
+        return state == .failed || state == .interrupted
+      }
+      let ready = item.depends_on.allSatisfy { goalWorkDependencyReady(runs[$0]?.visibleState(now: now), policy: policy) }
+      let run = runs[item.id]
+      return ["work_id": .string(item.id), "member_id": .string(item.member), "status": .string(status(item.id)),
+        "result_settled": .bool(run.map { $0.state != .running } ?? false),
+        "stage": item.stage.map(AgentMcpJSONValue.string) ?? .null,
+        "depends_on": .array(item.depends_on.map(AgentMcpJSONValue.string)), "dependency_policy": .string(policy.rawValue),
+        "dependency_state": .string(ready ? "satisfied" : policy == .success && !unsuccessful.isEmpty ? "failed" : "waiting"),
+        "waiting_for": .array(waiting.map { id in .object(["id": .string(id), "status": .string(status(id)),
+          "input_role": .string(targets.contains(id) ? "review_subject" : "prerequisite")]) }),
+        "unsuccessful_dependencies": .array(unsuccessful.map(AgentMcpJSONValue.string)),
+        "independent_review": .bool(item.independent_review == true), "review_subjects": .array(targets.map(AgentMcpJSONValue.string))]
+    }, bytes: 6_000)
+    let members = team.members.filter { $0.deliveryMode != .ignore && $0.memberId != scope.memberId }
+    let memberRows = try members.prefix(16).map { member -> AgentMcpJSONObject in
+      let base = researchPublicationKey(runId: scope.runId, memberId: member.memberId, sourceId: member.sourceMessageId)
+      let keys = try database.milestoneKeys(conversationId: scope.conversationId, prefix: milestonePrefix(base), after: "")
+      let tokens: [AgentMcpJSONValue] = try keys.prefix(4).map { key in
+        guard let receipt = try database.researchRecord(AgentCollaborationResearchPublication.self,
+          conversationId: scope.conversationId, key: key, revision: 0),
+          let id = receipt.milestoneId, milestoneKey(base, id: id) == key, let recorded = receipt.recordedAtMillis
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        let token = AgentMcpJSONCodec.sha256(["publication": .string(key), "artifact_sha256": .string(receipt.requestHash)])
+        return .object(["token": .string(token), "artifact_sha256": .string(receipt.requestHash),
+          "recorded_at": .int(recorded), "revision_count": .int(Int64(receipt.references.count))])
+      }
+      let observed = member.status == .pending && member.dispatchCheckpoint == nil ? "unobserved" : member.status.rawValue.lowercased()
+      return ["member_id": .string(member.memberId), "status": .string(observed),
+        "dispatch_state": member.dispatchCheckpoint.map { .string($0.rawValue) } ?? .null,
+        "result_settled": .bool(member.status.isTerminal), "published_milestones": .array(tokens),
+        "more_milestones": .bool(keys.count > tokens.count)]
+    }
+    let visibleMembers = bounded(memberRows, bytes: 3_000)
+    return ["success": .bool(true), "status": .string("work_inventory"), "revision": .int(revision),
+      "items": .array(workRows), "total": .int(Int64(work.count)), "omitted": .int(Int64(work.count - workRows.count)),
+      "members": .array(visibleMembers), "members_omitted": .int(Int64(members.count - visibleMembers.count)),
+      "grants_access": .bool(false),
+      "note": .string("Host snapshot, not a subscription or quality verdict. A satisfied dependency does not start a review. Running means an active claim or observed dispatch, not a completed result. Milestone tokens identify publications; they do not grant read access. Omitted work is unknown, not absent.")]
+  }
+
   func claimGoalWork(_ work: AgentCollaborationLiveGraph.Work, scope: AgentCollaborationToolEvidenceScope,
                      target: AgentCollaborationGoalWorkRun.Target? = nil,
                      now: Int64 = AgentControlPlaneClock.nowMillis())
@@ -3434,7 +3526,7 @@ final class AgentTeamExecutionHistoryStore {
     let assessment = raw.utf8.count <= 131_072
       ? (try? JSONDecoder().decode(Policy.Assessment.self, from: Data(raw.utf8))) : nil
     return try access { database in
-      _ = try Self.activeGoalCoordinator(scope, database: database)
+      let team = try Self.activeGoalCoordinator(scope, database: database)
       let checkpoint = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first
       if let checkpoint {
         guard checkpoint.phase == .working, checkpoint.conversationId == scope.conversationId,
@@ -3443,13 +3535,14 @@ final class AgentTeamExecutionHistoryStore {
       var states: [AgentMcpJSONValue] = []
       var counts: [String: Int64] = [:]
       var examples: [AgentMcpJSONValue] = []
-      var resolutionRuns: [String: AgentCollaborationGoalWorkRun] = [:]
-      for work in checkpoint?.liveGraph?.work ?? [] {
+      var runs: [String: AgentCollaborationGoalWorkRun] = [:]
+      let plannedWork = checkpoint?.liveGraph?.work ?? []
+      for work in plannedWork {
         let saved = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
           conversationId: scope.conversationId, key: Self.goalWorkKey(work.id, scope: scope), revision: 0)
         guard saved == nil || saved?.owner == scope else { throw AgentTeamHistoryDatabase.Failure.stale }
         let status = saved?.state.rawValue ?? "unclaimed"
-        if work.blockerResolution != nil, let saved { resolutionRuns[work.id] = saved }
+        if let saved { runs[work.id] = saved }
         counts[status, default: 0] += 1
         let state: AgentMcpJSONObject = ["work_id": .string(work.id), "status": .string(status),
           "output_sha256": saved?.outputHash.map(AgentMcpJSONValue.string) ?? .null]
@@ -3466,7 +3559,7 @@ final class AgentTeamExecutionHistoryStore {
         })
         for blocker in draft.blockers {
           guard let binding = Policy.Resolution(blocker) else { continue }
-          let run = resolutionRuns[binding.workID]
+          let run = runs[binding.workID]
           var status = "resolution_not_started"
           if let saved = planned[binding.workID], saved != binding { status = "blocker_binding_changed" }
           else if let run {
@@ -3507,8 +3600,14 @@ final class AgentTeamExecutionHistoryStore {
       if scheduleRetry { try Self.replaceGoalCoordinatorRetry(nil, scope: scope, database: database) }
       let reason = checkpoint == nil ? "contract_missing" :
         (assessment?.decision == .achieved ? "final_delivery_not_verified" : "goal_unfinished")
-      return ["status": .string(reason), "revision": .int(revision), "work_counts": .object(counts.mapValues(AgentMcpJSONValue.int)),
-        "work_examples": .array(examples), "resource_resolution": .array(feedback), "goal_accepted": .bool(false)]
+      var response: AgentMcpJSONObject = ["status": .string(reason), "revision": .int(revision),
+        "work_counts": .object(counts.mapValues(AgentMcpJSONValue.int)), "work_examples": .array(examples),
+        "resource_resolution": .array(feedback), "goal_accepted": .bool(false)]
+      if let inventory = try? Self.goalWorkInventory(team: team, scope: scope, work: plannedWork, runs: runs,
+        revision: revision, now: now, database: database) {
+        response["work_inventory"] = .object(inventory)
+      }
+      return response
     }
   }
 
@@ -3623,10 +3722,13 @@ final class AgentTeamExecutionHistoryStore {
               checkpoint.turnId == scope.turnId else { return nil }
       }
       var results: [AgentMcpJSONValue] = []
-      for work in checkpoint?.liveGraph?.work ?? [] {
+      var runs: [String: AgentCollaborationGoalWorkRun] = [:]
+      let plannedWork = checkpoint?.liveGraph?.work ?? []
+      for work in plannedWork {
         let run = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
           conversationId: scope.conversationId, key: Self.goalWorkKey(work.id, scope: scope), revision: 0)
         guard run == nil || run?.owner == scope else { throw AgentTeamHistoryDatabase.Failure.stale }
+        if let run { runs[work.id] = run }
         results.append(.object(["work_id": .string(work.id), "status": .string(run?.state.rawValue ?? "unclaimed"),
           "output_sha256": run?.outputHash.map(AgentMcpJSONValue.string) ?? .null]))
       }
@@ -3640,8 +3742,13 @@ final class AgentTeamExecutionHistoryStore {
         else { return nil }
         try database.insertResearchRecord(true, conversationId: scope.conversationId, key: key, revision: 0)
       }
-      return ["revision": .int(revision), "work_count": .int(Int64(results.count)),
+      var response: AgentMcpJSONObject = ["revision": .int(revision), "work_count": .int(Int64(results.count)),
         "recent_work": .array(Array(results.suffix(24)))]
+      if let inventory = try? Self.goalWorkInventory(team: team, scope: scope, work: plannedWork, runs: runs,
+        revision: revision, now: now, database: database) {
+        response["work_inventory"] = .object(inventory)
+      }
+      return response
     }
   }
 

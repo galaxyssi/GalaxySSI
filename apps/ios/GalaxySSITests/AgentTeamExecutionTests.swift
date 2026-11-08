@@ -4463,9 +4463,39 @@ extension GalaxySSIStoreTests {
       turnId: team.taskId))
     XCTAssertEqual(latest.liveGraph?.work.map(\.id), ["measure", "verify"])
     XCTAssertEqual(latest.liveGraph?.ready(settled: [:], active: []).map(\.id), ["measure"])
+    let inventoryRequest: AgentMcpJSONObject = ["mode": .string(AgentCollaborationGoalAssessmentPolicy.workInventoryMode)]
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(inventoryRequest, scope: scope(1)))
+    var foreign = scope(0)
+    foreign.sourceId = "other-source"
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(inventoryRequest, scope: foreign))
+    let interim = """
+    {"format":"galaxyssi.research-artifact.v1","summary":"Private interim summary",
+      "workspace":[{"id":"note","base_revision":0,"kind":"artifact","title":"Note",
+      "body":{"content":"Private interim body"},"parents":[]}]}
+    """
+    let published = try reopened.publishCollaborationMilestone(["mode": .string("publish"),
+      "milestone_id": .string("private-interim-id"), "artifact": .string(interim)], scope: scope(1))
+    XCTAssertEqual(published["success"], .bool(true))
+    let inventory = try open().publishCollaborationMilestone(inventoryRequest, scope: scope(0))
+    XCTAssertEqual(inventory["revision"], .int(3))
+    XCTAssertEqual(inventory["grants_access"], .bool(false))
+    let milestone = try XCTUnwrap(inventory["members"]?.arrayValue?.first?.objectValue?["published_milestones"]?
+      .arrayValue?.first?.objectValue)
+    XCTAssertEqual(milestone["artifact_sha256"], published["artifact_sha256"])
+    XCTAssertEqual(milestone["token"]?.strictStringValue?.count, 64)
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(inventory).contains("Private interim"))
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(inventory).contains("private-interim-id"))
+    func item(_ id: String, _ snapshot: AgentMcpJSONObject) throws -> AgentMcpJSONObject {
+      try XCTUnwrap(snapshot["items"]?.arrayValue?.compactMap(\.objectValue).first { $0["work_id"] == .string(id) })
+    }
+    XCTAssertEqual(try item("measure", inventory)["dependency_state"], .string("satisfied"))
+    XCTAssertEqual(try item("verify", inventory)["status"], .string("unclaimed"))
+    XCTAssertEqual(try item("verify", inventory)["dependency_state"], .string("waiting"))
+    XCTAssertEqual(try item("verify", inventory)["waiting_for"]?.arrayValue?.first?.objectValue?["status"], .string("unclaimed"))
     let unfinished = try open().reserveGoalContinuation(after: raw, scope: scope(0))
     XCTAssertEqual(unfinished?["revision"], .int(3))
     XCTAssertEqual(unfinished?["work_counts"]?.objectValue?["unclaimed"], .int(2))
+    XCTAssertEqual(unfinished?["work_inventory"]?.objectValue, inventory)
     XCTAssertNil(try open().reserveGoalContinuation(after: raw + "\n", scope: scope(0)))
     XCTAssertEqual(try open().readyGoalWork(scope: scope(0), excluding: [], limit: 3, now: 10), ["measure"])
     XCTAssertEqual(try open().readyGoalWork(scope: scope(0), excluding: ["measure"], limit: 3, now: 10), [])
@@ -4479,6 +4509,10 @@ extension GalaxySSIStoreTests {
     XCTAssertThrowsError(try reopened.claimGoalWork(measure, scope: scope(0), target: wrongWorker, now: 10))
     let started = try reopened.claimGoalWork(measure, scope: scope(0), target: worker, now: 10)
     XCTAssertTrue(started.claimed)
+    let runningInventory = try open().goalWorkInventory(scope: scope(0), now: 11)
+    XCTAssertEqual(try item("measure", runningInventory)["status"], .string("running"))
+    XCTAssertEqual(try item("measure", runningInventory)["result_settled"], .bool(false))
+    XCTAssertEqual(try item("verify", runningInventory)["waiting_for"]?.arrayValue?.first?.objectValue?["status"], .string("running"))
     XCTAssertEqual(try open().readyGoalWork(scope: scope(0), excluding: [], limit: 3, now: 11), [])
     let duplicate = try open().claimGoalWork(measure, scope: scope(0), target: wrongWorker, now: 11)
     XCTAssertFalse(duplicate.claimed)
@@ -4491,10 +4525,15 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(finished["target"], .object(worker.fields))
     let advanced = try open().reserveGoalContinuation(after: raw, scope: scope(0))
     XCTAssertEqual(advanced?["work_counts"]?.objectValue?["succeeded"], .int(1))
+    let settledInventory = try open().goalWorkInventory(scope: scope(0), now: 13)
+    XCTAssertEqual(try item("verify", settledInventory)["dependency_state"], .string("satisfied"))
+    XCTAssertEqual(try item("verify", settledInventory)["status"], .string("unclaimed"))
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(settledInventory).contains("Observed value"))
     XCTAssertNil(try open().reserveGoalContinuation(after: raw, scope: scope(0)))
     let resumed = try open().claimGoalCoordinatorRecovery(coordinatorRecovery)
     XCTAssertEqual(resumed?["revision"], .int(3))
     XCTAssertEqual(resumed?["recent_work"]?.arrayValue?.first?.objectValue?["status"], .string("succeeded"))
+    XCTAssertEqual(resumed?["work_inventory"]?.objectValue, settledInventory)
     XCTAssertNil(try open().claimGoalCoordinatorRecovery(coordinatorRecovery))
     XCTAssertEqual(try open().readyGoalWork(scope: scope(0), excluding: [], limit: 3, now: 13), ["verify"])
     XCTAssertThrowsError(try reopened.finishGoalWork(started.run, output: "Replace", interrupted: false, now: 13))
@@ -4549,6 +4588,11 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(try open().readyGoalWork(scope: scope(0), excluding: [], limit: 99, now: 15), [])
     XCTAssertEqual(try open().readyGoalWork(scope: scope(0), excluding: [], limit: 99,
       now: 14 + AgentCollaborationGoalWorkRun.leaseMillis), ["recover-a", "recover-b", "recover-c"])
+    let expiredInventory = try open().goalWorkInventory(scope: scope(0), now: 14 + AgentCollaborationGoalWorkRun.leaseMillis)
+    XCTAssertEqual(try item("verify", expiredInventory)["status"], .string("interrupted"))
+    XCTAssertEqual(try item("verify", expiredInventory)["result_settled"], .bool(false))
+    XCTAssertEqual(try item("recover-a", expiredInventory)["dependency_state"], .string("satisfied"))
+    XCTAssertEqual(try item("recover-a", expiredInventory)["unsuccessful_dependencies"], .array([.string("verify")]))
     XCTAssertEqual(try open().readyGoalWork(scope: scope(0), excluding: ["recover-a"], limit: 3,
       now: 14 + AgentCollaborationGoalWorkRun.leaseMillis), ["recover-b", "recover-c", "recover-d"])
     let template = scope(1).memberId
