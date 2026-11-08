@@ -74,7 +74,9 @@ final class AgentDesktopArtifactHandoffTests: XCTestCase {
 
     try await receiver.enqueue(payload: offer(1), link: link, configuration: configuration, conversationId: "conversation")
     await fulfillment(of: [suspended], timeout: 3)
-    try await receiver.enqueue(payload: offer(1), link: link, configuration: configuration, conversationId: "conversation")
+    var replay = offer(1)
+    replay["message_id"] = UUID().uuidString
+    try await receiver.enqueue(payload: replay, link: link, configuration: configuration, conversationId: "conversation")
     do {
       try await receiver.enqueue(payload: offer(1, token: String(repeating: "b", count: 64)),
         link: link, configuration: configuration, conversationId: "conversation")
@@ -135,6 +137,39 @@ final class AgentDesktopArtifactHandoffTests: XCTestCase {
       XCTAssertEqual(error as? AgentDesktopArtifactStoreError, .imageFormatMismatch)
     }
     XCTAssertEqual(artifacts.localFile(for: block), published)
+  }
+
+  @MainActor
+  func testPeerBlobStorageIsScopedToExactPairAndKeepsWireReceiptUnchanged() throws {
+    let artifacts = AgentDesktopArtifactStore(rootURL: temporaryDirectory("peer-blob-scope"))
+    let bytes = Data([17, 31, 47])
+    let digest = sha256(bytes)
+    let source = UUID().uuidString.lowercased()
+    let wireID = String(repeating: "a", count: 64)
+    let transfer = String(repeating: "b", count: 64)
+    let uri = "galaxyssi-artifact://blob/" + digest
+    let manifest: [String: Any] = ["peer_chat": true, "artifact_id": wireID, "transfer_id": transfer,
+      "artifact_uri": uri, "sha256": digest, "size_bytes": bytes.count, "task_id": source, "source_message_id": source,
+      "contact_id": "desktop", "desktop_id": "desktop", "name": "reply.ogg", "mime_type": "audio/ogg"]
+    let own = try AgentBlobPeerStorage(manifest: manifest, binding: String(repeating: "c", count: 64))
+    let foreign = try AgentBlobPeerStorage(manifest: manifest, binding: String(repeating: "d", count: 64))
+    XCTAssertNotEqual(own.localURI, foreign.localURI)
+    var wrong = manifest
+    wrong["task_id"] = UUID().uuidString
+    XCTAssertThrowsError(try AgentBlobPeerStorage(manifest: wrong, binding: String(repeating: "c", count: 64)))
+
+    let staging = try XCTUnwrap(artifacts.stageBlobArtifact())
+    try staging.append(bytes, maximum: own.size)
+    try artifacts.ingestBlobArtifact(manifest: own.storageManifest(manifest), staging: staging)
+    XCTAssertNil(try artifacts.verifiedPeerBlobDescriptor(foreign, durationMillis: 0))
+    let stored = try XCTUnwrap(artifacts.verifiedPeerBlobDescriptor(own, durationMillis: 1_200))
+    XCTAssertEqual(stored.string("artifact_uri"), own.localURI)
+    XCTAssertEqual(stored.string("artifact_id"), own.localID)
+    XCTAssertEqual(stored.int64("duration_ms"), 1_200)
+    XCTAssertFalse(artifacts.hasStoredArtifact(.init(id: wireID, type: .file, title: "reply", uri: uri)))
+    let receipt = AgentBlobArtifactContract.storedReceipt(manifest)
+    XCTAssertEqual(receipt.string("artifact_id"), wireID)
+    XCTAssertEqual(receipt.string("transfer_id"), transfer)
   }
 
   @MainActor

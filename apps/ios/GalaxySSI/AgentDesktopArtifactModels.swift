@@ -460,6 +460,24 @@ final class AgentDesktopArtifactStore {
     return materialized
   }
 
+  func verifiedPeerBlobDescriptor(_ artifact: AgentBlobPeerStorage, durationMillis: Int64) throws -> [String: Any]? {
+    try locked {
+      guard let record = try existingRecord(artifactURI: artifact.localURI) else { return nil }
+      guard record.artifactURI == artifact.localURI, record.artifactId == artifact.localID,
+            record.taskId == artifact.sourceID, record.sha256 == artifact.digest, record.sizeBytes == artifact.size,
+            let file = try artifactFile(record: record),
+            cipher.plaintextSize(of: file, purpose: artifactPurpose(record.artifactId)) == record.sizeBytes else {
+        throw AgentDesktopArtifactStoreError.integrity("Stored peer Blob does not match its descriptor")
+      }
+      var descriptor: [String: Any] = ["artifact_id": record.artifactId, "artifact_uri": record.artifactURI,
+        "name": record.name, "mime_type": record.mimeType, "size_bytes": record.sizeBytes, "sha256": record.sha256]
+      if record.mimeType.hasPrefix("audio/"), durationMillis > 0 {
+        descriptor["duration_ms"] = min(durationMillis, 3_600_000)
+      }
+      return descriptor
+    }
+  }
+
   static func isHTMLArtifact(name: String, mimeType: String) -> Bool {
     let type = mimeType.split(separator: ";", maxSplits: 1).first?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     return type == "text/html" || ["html", "htm"].contains((name as NSString).pathExtension.lowercased())

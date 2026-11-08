@@ -17438,11 +17438,16 @@ final class MessageCoordinator: ObservableObject {
           let configuration = blobRelayConfigurationStore.configuration(for: link) else {
       return nil
     }
+    let projection = MqttPeerChatProjection(store: store, localFingerprint: signalEngine.identity.fingerprint)
+    let peerBinding = store.contacts.first { $0.isDesktopDeviceContact && $0.desktopId == desktopId }
+      .flatMap { projection.destination(for: $0) }
+      .flatMap { try? MqttBusinessIdentity($0.peer.binding).binding }
     return AgentBlobArtifactReceiver.Identity(
       desktopId: desktopId,
       clientRouteId: link.routes.clientRouteId,
       remoteFingerprint: link.routes.remoteFingerprint,
-      origin: configuration.origin
+      origin: configuration.origin,
+      peerBinding: peerBinding
     )
   }
 
