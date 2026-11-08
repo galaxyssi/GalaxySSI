@@ -516,6 +516,16 @@ interruption without a recoverable execution checkpoint is exposed as a failure
 instead of guessing whether it is safe to send again. No medical data is placed
 in WorkManager input or a notification.
 
+Cold-start reconciliation keeps a connector wait admissible when its saved
+action and durable source-message receipt agree. It does not convert that wait
+into a user pause or redispatch the request. This check uses saved action and
+receipt state, not marker text that may have disappeared from a compacted plan.
+A previously paused checkpoint can
+be repaired only when its existing workspace still awaits a reply; explicit
+user pauses, cancellation and terminal states remain excluded. Native actions
+without a remote receipt retain interrupted-execution handling. Reply identity
+checks still run before and after acquiring the workspace recovery lease.
+
 Revocation immediately invalidates the scoped tool grant. Background cancellation
 also stops the local workspace/cloud lease and queues remote cancellation when
 a connector receipt exists. An offline remote cancellation remains pending with
@@ -527,3 +537,39 @@ provider that has already accepted a request.
 No background research is enabled merely by schema migration. Real-provider
 end-to-end acceptance, including device restart during an automatic review,
 remains separate from the isolated storage, policy and UI regression suite.
+
+### Production-path acceptance runner
+
+`HealthCareAutomaticResearchDeviceTest` is an explicitly opted-in, paid-provider
+probe. Build the instrumentation APK with `-PhealthResearchAcceptance=true`,
+which selects `HealthResearchAcceptanceRunner`, and run it with
+`health_automatic_research=true`. Default builds retain the normal test runner.
+It uses the normal authorization,
+WorkManager, MobileNativeAgent, scoped tools and transcript-delivery code rather
+than a test-owned model/tool loop. The `start` phase waits for the durable
+connector receipt; after ending that application process, the `resume` phase
+requires a different process identity and the original research turn. The
+`full` phase performs a continuous execution without injecting an interruption.
+The initial synthetic record deliberately lacks collection context. After its
+original response is recovered, the probe confirms synthetic context through
+the same store and evaluation path as the review UI. Existing authorization
+must react with one new turn that retrieves durable source evidence and leaves
+a pending plan, without adopting actions or scheduling reminders. Both turn IDs
+survive further test-process restarts. The `inspect` phase only diagnoses the
+existing isolated job and receipt admission; it does not submit a new request.
+
+The runner redirects databases, task files and non-pairing preferences into a
+dedicated acceptance namespace before the application and workers initialize.
+It asserts the care, transcript and WorkManager database locations before
+creating synthetic data. Existing contacts, transport pairing and the live
+Signal ratchet remain shared: never clone, restore or roll back ratchet state.
+No personal health archive or transcript is copied into the sandbox. The runner
+is part of the instrumentation APK only, not the shipped application.
+
+Run this probe sequentially while other device testing is stopped. Inspect and
+retain its encrypted synthetic state locally until any queued work is terminal;
+do not clear a live namespace merely to rerun a failed test. Restart the normal
+application after the probe so its normal background scheduling is restored.
+These probes do not replace consent-UI, clinical-validity or real-device-reboot
+acceptance, and a passing storage test is not evidence that the model completed
+an autonomous research task.

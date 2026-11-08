@@ -27,9 +27,12 @@ internal object AgentStartupRecovery {
 /** Failed reconciliation must never allow dispatch of an unreconciled checkpoint. */
 internal class AgentStartupRecoverySequence(
     private val reconcile: () -> Unit,
-    private val dispatch: () -> Unit
+    private val dispatch: () -> Unit,
+    private val reconcileCloud: () -> Unit = {}
 ) {
     fun run() {
+        // Detect vanished phone HTTP requests before cold boot stamps the new process identity.
+        reconcileCloud()
         reconcile()
         dispatch()
     }
@@ -49,11 +52,11 @@ class AgentStartupRecoveryWorker(context: Context, parameters: WorkerParameters)
         AgentMemoryRetractionRecovery.enqueue(applicationContext)
         var reconciled = 0
         AgentStartupRecoverySequence(
+            reconcileCloud = { AgentInterruptedCloudRecovery.reconcile(applicationContext) },
             reconcile = {
                 reconciled = AgentColdBootRecoveryCoordinator.pauseInterruptedTasks(
                     applicationContext, "Task interrupted by a previous app process"
                 )
-                AgentInterruptedCloudRecovery.reconcile(applicationContext)
             },
             dispatch = {
                 HealthCareResearchWork.changed(applicationContext)
