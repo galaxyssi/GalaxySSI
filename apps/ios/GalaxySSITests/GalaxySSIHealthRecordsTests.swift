@@ -7,6 +7,74 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testLocalCareDiscussionBindsConsentToConcernTurnAndProvider() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let now = Date()
+    let reading = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-300),
+      value: 110, notes: "Private note excluded", unitOverride: "mg/dL", referenceInterval: "70 - 99")
+    try records.write(reading)
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    let thread = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    XCTAssertTrue(thread.turns.isEmpty)
+    let reopened = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    XCTAssertEqual(try reopened.openLocalCareDiscussion(id: concern.id, metric: .glucose).id, thread.id)
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    func review(_ provider: String = "provider-a") throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Explain this reading",
+        destinationID: provider, model: model, credential: "fixture-api-key", now: now)
+    }
+    XCTAssertThrowsError(try review())
+    try records.setHealthOnlinePermission(true)
+    let approved = try review()
+    XCTAssertFalse(approved.payload.contains(reading.notes))
+    XCTAssertFalse(approved.payload.contains(reading.id.uuidString))
+    let request = try GalaxySSIHealthCareDiscussion.request(approved, key: "fixture-api-key")
+    XCTAssertEqual(request.url, approved.endpoint)
+    XCTAssertThrowsError(try GalaxySSIHealthCareDiscussion.request(approved, key: "different-api-key"))
+    XCTAssertFalse(String(decoding: try XCTUnwrap(request.httpBody), as: UTF8.self).contains("\"tools\""))
+    var otherModel = model
+    otherModel.apiStyle = .gemini
+    otherModel.endpoint = "https://example.test/v1beta/models/other:generateContent"
+    XCTAssertNil(GalaxySSIHealthCareDiscussion.endpoint(for: otherModel))
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(approved, now: now.addingTimeInterval(601)))
+    try records.beginLocalCareDiscussionTurn(approved, now: now)
+    XCTAssertThrowsError(try reopened.beginLocalCareDiscussionTurn(approved, now: now))
+    try records.finishLocalCareDiscussionTurn(approved, answer: "Fixture scoped response", now: now)
+    XCTAssertTrue(try review().payload.contains("Fixture scoped response"))
+    XCTAssertFalse(try review("provider-b").payload.contains("Fixture scoped response"))
+    // JSON escaping can exceed the wire budget even though each saved reply is within its own limit.
+    let replies = ["older", "middle", "newest"].map { $0 + String(repeating: "\t", count: 6_000) }
+    for reply in replies {
+      let next = try review()
+      try records.beginLocalCareDiscussionTurn(next, now: now)
+      try records.finishLocalCareDiscussionTurn(next, answer: reply, now: now)
+    }
+    let bounded = try review()
+    let disclosure = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(bounded.payload.utf8)) as? [String: Any])
+    let previous = try XCTUnwrap(disclosure["previous"] as? [[String: String]])
+    XCTAssertEqual(previous.compactMap { $0["answer"] }, Array(replies.suffix(2)))
+    XCTAssertLessThanOrEqual(bounded.payload.utf8.count, GalaxySSIHealthCareDiscussion.maximumPayloadBytes)
+    XCTAssertEqual(try records.load().localCareDiscussions?[concern.id.uuidString]?.turns.count, 4)
+    let stale = try review()
+    try records.setHealthOnlinePermission(false)
+    try records.setHealthOnlinePermission(true)
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(stale, now: now))
+    let updatedApproval = try review()
+    try records.setLocalCareContext(concern, applicability: .excluded, now: now)
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(updatedApproval, now: now))
+    let updated = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    try records.deleteLocalCare(updated)
+    XCTAssertThrowsError(try records.openLocalCareDiscussion(id: concern.id, metric: .glucose))
+    XCTAssertEqual(try reopened.load().localCareDiscussions?[concern.id.uuidString]?.id, thread.id)
+  }
+
+  @MainActor
   func testLocalCareRequiresPermissionAndPreservesExactRevisionHistory() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }
