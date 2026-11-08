@@ -185,27 +185,38 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
     fun nextDue(): Long? = db.rawQuery("SELECT MIN(due_at) FROM concerns WHERE open=1", null).use {
         it.moveToFirst(); if (it.isNull(0)) null else it.getLong(0)
     }
-    fun discussion(conversationId: String): String? = db.rawQuery(
+    private fun discussionBinding(conversationId: String): JSONObject? = db.rawQuery(
         "SELECT payload FROM discussions WHERE conversation_id=?", arrayOf(conversationId)
     ).use { row ->
-        if (!row.moveToFirst()) null else unpack("discussion", conversationId, row.getBlob(0)).let {
-            check(it.getString("conversation") == conversationId); it.getString("concern")
+        if (!row.moveToFirst()) null else unpack("discussion", conversationId, row.getBlob(0)).also {
+            check(it.getString("conversation") == conversationId)
         }
+    }
+    fun discussion(conversationId: String): String? = discussionBinding(conversationId)?.let {
+        val id = it.getString("concern")
+        val boundScope = it.optJSONObject("profile_scope")?.let(HealthCareProfileScope::from)
+        val issue = concern(id)
+        if (issue != null && issue.profileLink?.scope != boundScope) null else id
     }
     fun bindDiscussion(id: String, expectedRevision: Int, conversationId: String): HealthCareConcern = transaction(true) {
         require(HealthProfilePolicy.uuid(conversationId))
         val before = concern(id) ?: throw HealthCareConflict()
-        if (before.revision != expectedRevision || discussion(conversationId)?.let { it != id } == true) throw HealthCareConflict()
+        if (before.revision != expectedRevision) throw HealthCareConflict()
+        discussionBinding(conversationId)?.let {
+            if (it.getString("concern") != id || it.optJSONObject("profile_scope")?.let(HealthCareProfileScope::from) != before.profileLink?.scope)
+                throw HealthCareConflict()
+        }
         db.insertWithOnConflict("discussions", null, ContentValues().apply {
             put("conversation_id", conversationId)
-            put("payload", pack("discussion", conversationId, JSONObject().put("conversation", conversationId).put("concern", id)))
+            put("payload", pack("discussion", conversationId, JSONObject().put("conversation", conversationId).put("concern", id)
+                .apply { before.profileLink?.scope?.let { put("profile_scope", it.json()) } }))
         }, SQLiteDatabase.CONFLICT_IGNORE)
         before.copy(conversationId = conversationId, revision = before.revision + 1,
             updatedAt = maxOf(before.updatedAt, System.currentTimeMillis())).also { persist(it, "discussion_bound") }
     }
     fun approveDiscussion(grant: HealthCareDiscussionGrant) = transaction {
         val current = concern(grant.concernId) ?: throw HealthCareConflict()
-        if (discussion(grant.conversationId) != current.id || current.revision != grant.revision ||
+        if (discussion(grant.conversationId) != current.id || current.revision != grant.revision || current.profileLink != grant.profileLink ||
             !settings().enabled || settings().version != grant.settingsVersion || !researchGrantCurrent(grant)) throw HealthCareConflict()
         discussionGrant(grant.turnId)?.let {
             if (it != grant) throw HealthCareConflict()
@@ -245,7 +256,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         if (!value.active || researchAuthorization(issue.id)?.id != expectedAuthorization ||
             !settings().enabled || settings().version != scope.settingsVersion || issue.revision != scope.revision ||
             discussion(scope.conversationId) != issue.id || issue.conversationId != scope.conversationId ||
-            !HealthCareResearchPolicy.eligible(issue)) throw HealthCareConflict()
+            !HealthCareResearchPolicy.eligible(issue) || issue.profileLink != scope.profileLink) throw HealthCareConflict()
         researchAuthorization(issue.id)?.let { revokeResearchInternal(issue.id, it.id, System.currentTimeMillis()) }
         writeResearchAuthorization(value)
     }
@@ -319,7 +330,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         val issue = concern(concernId) ?: throw HealthCareConflict()
         if (authorization.id != authorizationId || !authorization.active || !HealthCareResearchPolicy.eligible(issue) ||
             issue.conversationId != authorization.scope.conversationId || !settings().enabled ||
-            settings().version != authorization.scope.settingsVersion) throw HealthCareConflict()
+            settings().version != authorization.scope.settingsVersion || issue.profileLink?.scope != authorization.scope.profileLink?.scope) throw HealthCareConflict()
         val trigger = HealthCareResearchPolicy.trigger(issue, now)
         db.rawQuery("SELECT $RESEARCH_COLUMNS FROM research_jobs WHERE authorization_id=? AND trigger=?",
             arrayOf(authorizationId, trigger)).use { if (it.moveToFirst()) {

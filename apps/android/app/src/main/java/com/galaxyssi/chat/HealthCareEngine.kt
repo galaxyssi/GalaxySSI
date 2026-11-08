@@ -25,6 +25,17 @@ internal object HealthCareEngine {
                     for (metric in HealthMetric.entries) {
                         if (cancelled()) return changed
                         var prior = care.forMetric(metric)
+                        if (permission.profile && prior?.profileLink != null) {
+                            val issue = prior
+                            val profileStamp = try { HealthCareProfileAccess.stamp(context, issue.profileLink!!.scope, names) }
+                                catch (_: HealthProfileConflict) { null }
+                            if (profileStamp != null && profileStamp != issue.profileLink.stamp) {
+                                prior = care.update(issue.id, issue.revision, "selected_profile_updated") {
+                                    HealthCareProfilePolicy.refreshed(it, profileStamp)
+                                }
+                                changed++
+                            }
+                        }
                         if (prior != null && HealthCareMaintenancePolicy.needsReassessment(prior, now)) {
                             prior = care.reassessMaintenance(prior.id, prior.revision, now)
                             changed++

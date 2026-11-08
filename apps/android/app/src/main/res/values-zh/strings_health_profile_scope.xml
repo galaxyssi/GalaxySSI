@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_care_profile_title">本事项使用的档案</string>
+    <string name="health_care_profile_scope">选择本事项可使用的已保存字段，以及具体的病史、用药或过敏记录。后续讨论读取这些资料的最新版本，不自动加入新记录。出生日期只换算为检测日期时的年龄，不发送姓名和未保存草稿。发送仍需确认本次讨论。改变范围后会使用新的关联讨论，后台研究需要重新授权；原对话保留供查看。</string>
+    <string name="health_care_profile_entries">已选 %1$d 条背景记录</string>
+    <string name="health_care_profile_summary">%1$d 个字段 · %2$d 条背景记录</string>
+    <string name="health_care_profile_none">尚未选择独立档案资料</string>
+    <string name="health_care_profile_remove">移除选择</string>
+    <string name="health_care_profile_changed">所选档案或权限已变化。请到“个人健康 → 主动健康”，进入该事项的“本事项使用的档案”核对后重试。</string>
+    <string name="health_care_profile_shared">同时包含已选的 %1$d 个档案字段和 %2$d 条背景记录。授权后的持续研究仅可使用这些字段、记录及其后续更新。</string>
+    <string name="health_care_profile_discussion_changed">此讨论与当前事项或共享范围已不一致。请从“个人健康 → 主动健康”重新进入该事项并选择“讨论下一步”。原有消息会保留，但不会带入新讨论。</string>
+</resources>

@@ -24,7 +24,10 @@ internal class HealthProfileStore(private val context: Context, private val name
     @Synchronized private fun <T> transaction(notify: Boolean = false, block: () -> T): T {
         db.beginTransactionNonExclusive(); var committed = false
         return try { block().also { db.setTransactionSuccessful(); committed = true } }
-        finally { db.endTransaction(); if (committed && notify) runCatching { context.contentResolver.notifyChange(changes(context, name), null) } }
+        finally { db.endTransaction(); if (committed && notify) runCatching {
+            context.contentResolver.notifyChange(changes(context, name), null)
+            if (name == DEFAULT_DB) HealthCareWork.changed(context)
+        } }
     }
     private fun clock(key: String): String = db.rawQuery("SELECT token,payload FROM clocks WHERE key=?", arrayOf(key)).use {
         if (!it.moveToFirst()) "" else it.getString(0).also { token -> val j = unpack("clock", "$key:$token", it.getBlob(1)); check(j.getString("key") == key && j.getString("token") == token) }
@@ -141,26 +144,35 @@ internal class HealthProfileStore(private val context: Context, private val name
     fun deleteEntry(id: String, token: String, generation: String) = transaction(true) {
         requireGeneration(generation); val entry = entry(id) ?: throw HealthProfileConflict()
         if (entry.token != token) throw HealthProfileConflict()
-        db.delete("entries", "id=?", arrayOf(id)); db.delete("drafts", "id=?", arrayOf("edit:$id")); tick("drafts"); tick("category:${entry.kind.name}"); tick("profile"); Unit
+        db.delete("entries", "id=?", arrayOf(id)); db.delete("drafts", "id=?", arrayOf("edit:$id"))
+        tick("entry:$id"); tick("drafts"); tick("category:${entry.kind.name}"); tick("profile"); Unit
     }
-    fun capture(fields: Set<HealthProfileField>, entryIds: Set<String>, expectedEntries: Map<String, String> = emptyMap()): HealthProfileContext = HealthPrivacyStore.track(context,
+    fun capture(fields: Set<HealthProfileField>, entryIds: Set<String>, expectedEntries: Map<String, String> = emptyMap(),
+        allowMissingEntries: Boolean = false): HealthProfileContext = HealthPrivacyStore.track(context,
         HealthAccessScope(HealthAccessPurpose.PROFILE_CONTEXT, fields = fields, count = entryIds.size.toLong()), privacyDatabase) { transaction {
         require(entryIds.containsAll(expectedEntries.keys))
         val selected = fields.associateWith(::cell)
-        val entries = entryIds.sorted().map { id ->
-            val saved = entry(id) ?: throw HealthProfileConflict()
+        val entries = entryIds.sorted().mapNotNull { id ->
+            val saved = entry(id) ?: if (allowMissingEntries && id !in expectedEntries) return@mapNotNull null else throw HealthProfileConflict()
             if (expectedEntries[id]?.let { it != saved.token } == true) throw HealthProfileConflict()
             saved
         }
         HealthProfileContext(selected.mapValues { it.value.value }, entries, HealthProfileStamp(generation(),
-            selected.mapKeys { "field:${it.key.name}" }.mapValues { it.value.token } + entries.associate { "entry:${it.id}" to it.token }))
+            selected.mapKeys { "field:${it.key.name}" }.mapValues { it.value.token } +
+                entryIds.associate { id -> "entry:$id" to (entries.firstOrNull { it.id == id }?.token ?: clock("entry:$id")) }),
+            selected.mapValues { it.value.updatedAt })
+    } }
+    fun dependencyStamp(fields: Set<HealthProfileField>, entryIds: Set<String>): HealthProfileStamp = HealthPrivacyStore.track(context,
+        HealthAccessScope(HealthAccessPurpose.PROFILE_CONTEXT, fields = fields, count = entryIds.size.toLong()), privacyDatabase) { transaction {
+        HealthProfileStamp(generation(), fields.associate { "field:${it.name}" to clock("field:${it.name}") } +
+            entryIds.associate { "entry:$it" to (entry(it)?.token ?: clock("entry:$it")) })
     } }
     fun isCurrent(stamp: HealthProfileStamp): Boolean = transaction {
         generation() == stamp.generation && stamp.versions.all { (key, token) ->
             when {
                 key.startsWith("field:") -> clock("field:${HealthProfileField.valueOf(key.removePrefix("field:")).name}") == token
                 key.startsWith("category:") -> clock("category:${HealthBackgroundKind.valueOf(key.removePrefix("category:")).name}") == token
-                key.startsWith("entry:") -> entry(key.removePrefix("entry:"))?.token == token
+                key.startsWith("entry:") -> (entry(key.removePrefix("entry:"))?.token ?: clock(key)) == token
                 else -> error("Invalid health profile dependency")
             }
         }

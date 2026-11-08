@@ -46,11 +46,29 @@ bounded queries; never label a single page as the entire archive.
 6. Use the same scoped snapshot for manual model selection, Auto, and recovery.
 7. Never claim a chat answer was saved without a successful write receipt.
 
-The current `clarification_context` increment implements exact-record known and
-unconfirmed collection answers. It does not yet merge the independent personal
-profile, implement the full question ledger, or establish field-level sharing
-for that profile. Those require explicit authorization mappings and tests, not
-blindly appending the whole profile to a model prompt.
+The `clarification_context` handoff preserves exact-record known and unconfirmed
+collection answers. Independent profile context now uses an explicit per-concern
+field and record selection configured inside Personal Health, not a whole-profile
+prompt. Selected saved values are read afresh; name and drafts are excluded and
+birth date is reduced to age on the measurement date. Unselected and unavailable
+entries never imply a negative medical history. A complete persistent question
+ledger still remains to be implemented.
+
+The encrypted concern and turn grant retain dependency tokens, not duplicated
+profile values. A selected source edit invalidates previous results and action
+bases, produces one new research trigger, and leaves paused/closed concerns
+paused/closed. New records and unrelated fields do not expand the selection or
+trigger a new review. A deleted entry is explicitly unavailable; archive deletion
+changes the generation and requires a new selection.
+
+Standing research consent permits updates only within the same selected fields
+and record IDs. A changed selection requires renewed consent, including for old
+authorizations with no profile scope. Manual and Auto discussions use the same
+snapshot and approval/result freshness gates. The picker clears on background
+and permission/source changes; existing Agent layout remains unchanged.
+Scope changes require a new linked private discussion. Older conversations remain
+readable but cannot dispatch under a different scope or supply their history to
+the new request. This prevents recalled answers from reintroducing withdrawn data.
 
 ## Persistent domain boundaries
 
@@ -117,7 +135,8 @@ unavailable until storage, authorization, and every query enforce isolation.
 ## Incremental delivery gates
 
 - [x] Exact-measurement known/unconfirmed handoff for existing care discussions.
-- [ ] Field-scoped independent profile context and persistent question ledger.
+- [x] Field-scoped independent profile context and source-version invalidation.
+- [ ] Persistent question ledger with answered/deferred/declined/conflict states.
 - [ ] Full issue lifecycle transitions and invalidation across every entry path.
 - [ ] Personal Health overview, comparable trends, and evidence-focused details.
 - [ ] Global indexed action queue, versioned plans, feedback and reminder recovery.

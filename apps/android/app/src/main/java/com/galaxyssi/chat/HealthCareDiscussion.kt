@@ -40,7 +40,7 @@ internal object HealthCareDiscussion {
         val privacy = HealthPrivacyStore(context).use { it.policy() }
         check(privacy.metrics && privacy.profile) { context.getString(R.string.health_care_discussion_permissions) }
         return HealthCareStore(context).use { care ->
-            val id = care.discussion(conversationId) ?: throw HealthCareConflict()
+            val id = care.discussion(conversationId) ?: error(context.getString(R.string.health_care_profile_discussion_changed))
             val concern = care.concern(id) ?: throw HealthCareConflict()
             check(care.settings().enabled && concern.stage !in setOf(HealthCareStage.PAUSED, HealthCareStage.CLOSED) &&
                 HealthCareSignal.SOURCE_REMOVED !in concern.assessment.signals) { context.getString(R.string.health_care_discussion_inactive) }
@@ -69,7 +69,7 @@ internal object HealthCareDiscussion {
             val destination = destination(context, target.id, model)
             val grant = HealthCareDiscussionGrant(conversationId, turnId, id, concern.revision,
                 care.settings().version, privacy.version, destination, System.currentTimeMillis(), target.id, model, effort.wireValue,
-                research?.id.orEmpty())
+                research?.id.orEmpty(), concern.profileLink)
             if (research != null) check(research.permits(grant) && care.researchGrantCurrent(grant)) {
                 context.getString(R.string.health_care_changed)
             }
@@ -80,7 +80,11 @@ internal object HealthCareDiscussion {
                     previous?.let { care.revision(concern.id, it.revision) }, care.priorResearchEvidence(job, grant),
                     care.hasRecordedPlan(concern.id, job.createdAt))
             }
-            val snapshot = HealthCareDiscussionPolicy.snapshot(concern, followUp)
+            val profile = concern.profileLink?.let { link ->
+                try { HealthCareProfileAccess.capture(context, link) }
+                catch (_: HealthProfileConflict) { error(context.getString(R.string.health_care_profile_changed)) }
+            }
+            val snapshot = HealthCareDiscussionPolicy.snapshot(concern, followUp, profile)
             val goal = HealthCareDiscussionPolicy.prompt(question, snapshot)
             val history = AgentTranscriptStore(context).context(conversationId)
             check(history.conversationId == conversationId && history.privateMode && history.trackingPaused) {
@@ -110,6 +114,7 @@ internal object HealthCareDiscussion {
             context.getString(R.string.health_care_changed)
         }
         check(destination(context, grant.targetId, grant.modelId) == grant.destination) { context.getString(R.string.health_care_changed) }
+        check(HealthCareProfileAccess.current(context, grant.profileLink)) { context.getString(R.string.health_care_profile_changed) }
         HealthPrivacyStore(context).use { privacy ->
             val policy = privacy.policy()
             check(policy.version == grant.privacyVersion && policy.metrics && policy.profile &&
@@ -167,7 +172,8 @@ internal object HealthCareDiscussion {
                 } } == true
                 HealthCareDiscussionPolicy.permitted(grant, conversationId, turnId, concern, settings, privacy,
                     actualDestination ?: destination(context, grant.targetId, grant.modelId), System.currentTimeMillis()) &&
-                    sourceCurrent && (grant.targetId == "local-llm" || privacy.online) && care.researchGrantCurrent(grant) &&
+                    sourceCurrent && HealthCareProfileAccess.current(context, grant.profileLink) &&
+                    (grant.targetId == "local-llm" || privacy.online) && care.researchGrantCurrent(grant) &&
                     (grant.researchAuthorizationId.isEmpty() || care.researchAuthorization(grant.concernId)?.let {
                         it.configuration == configurationFingerprint(context, conversationId, grant.targetId)
                     } == true)

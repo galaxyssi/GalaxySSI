@@ -104,7 +104,7 @@ internal object HealthCarePlanPolicy {
 
     fun current(plan: HealthCarePlan, issue: HealthCareConcern?, settings: HealthCareSettings, privacy: HealthPrivacyPolicy,
         sourceVersion: String): Boolean = issue != null && issue.id == plan.grant.concernId && issue.revision == plan.grant.revision &&
-        issue.inputVersion == plan.inputVersion && sourceVersion == plan.inputVersion && settings.enabled &&
+        issue.inputVersion == plan.inputVersion && sourceVersion == plan.inputVersion && settings.enabled && issue.profileLink == plan.grant.profileLink &&
         settings.version == plan.grant.settingsVersion && privacy.metrics && privacy.profile && privacy.version == plan.grant.privacyVersion &&
         issue.stage !in setOf(HealthCareStage.PAUSED, HealthCareStage.CLOSED) && HealthCareSignal.SOURCE_REMOVED !in issue.assessment.signals
 

@@ -33,6 +33,9 @@ internal class HealthCareDiscussionController(private val activity: MainActivity
                     body.addView(ui.text(activity.getString(R.string.health_care_discussion_disclosure,
                         preview.target.title, preview.grant.modelId.ifBlank { activity.getString(R.string.health_care_discussion_default_model) }), 15f))
                     ui.add(body, ui.text(question, 16f, bold = true), 16)
+                    preview.grant.profileLink?.scope?.let {
+                        ui.add(body, ui.text(activity.getString(R.string.health_care_profile_summary, it.fields.size, it.entries.size), 14f), 8)
+                    }
                     ui.add(body, ui.text(activity.getString(preview.concern.metric.titleResource()) + " · " +
                         preview.concern.assessment.value + " " + preview.concern.assessment.unit, 17f, bold = true), 12)
                     val raw = ui.text(preview.snapshot, 13f).apply { visibility = android.view.View.GONE }
