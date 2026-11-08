@@ -24,23 +24,59 @@ actor ComposerFileImportWorker {
 @MainActor
 enum ComposerFileSelection {
   static func deliver(
-    _ urls: [URL], isCurrent: () -> Bool,
+    _ urls: [URL], isCurrent: () -> Bool, isDocumentCurrent: (() -> Bool)? = nil,
     onImage: (GalaxySSIDraftAttachment) -> Void,
     onDocument: (GalaxySSIDraftAttachment) async -> Void,
     onFailure: (Error) -> Void
   ) async {
+    func documentCurrent() -> Bool { isDocumentCurrent?() ?? isCurrent() }
     for url in urls.prefix(GalaxySSIAttachmentPayloadBuilder.maximumAttachmentCount) {
-      guard !Task.isCancelled, isCurrent() else { return }
+      guard !Task.isCancelled, isCurrent() || documentCurrent() else { return }
       do {
         var attachment = try await ComposerFileImportWorker.shared.load(url)
         defer { attachment.wipeSensitive() }
-        guard !Task.isCancelled, isCurrent() else { return }
-        if attachment.isImage { onImage(attachment) }
-        else { await onDocument(attachment) }
+        guard !Task.isCancelled else { return }
+        if attachment.isImage {
+          if isCurrent() { onImage(attachment) }
+        } else if documentCurrent() {
+          await onDocument(attachment)
+        }
       } catch {
         if !Task.isCancelled, isCurrent() { onFailure(error) }
       }
     }
+  }
+}
+
+struct ComposerPeerDocumentRoute: Equatable {
+  let contactID: String
+  private let remoteID: String
+  private let fingerprint: String
+  private let desktopID: String
+  private let deliveryMode: GalaxySSIDeliveryMode
+  private let signalBundleRef: String?
+  private let routeBinding: String
+
+  @MainActor
+  init?(contact: GalaxySSIContact, links: [ServerLink]) {
+    guard contact.isCommunicable, contact.deliveryMode.isGalaxySSILinkFamily else { return nil }
+    let route: GalaxySSILinkRoutes?
+    if contact.isDesktopDeviceContact {
+      let link = links.first { $0.desktopId == contact.desktopId.trimmingCharacters(in: .whitespacesAndNewlines) }
+      route = link?.paired == true ? link?.routes : nil
+    } else if contact.type.caseInsensitiveCompare("person") == .orderedSame && contact.desktopId.isBlank {
+      route = contact.opaquePhoneRoutes
+    } else {
+      return nil
+    }
+    guard let route else { return nil }
+    contactID = contact.id
+    remoteID = contact.galaxySSIId
+    fingerprint = contact.identityFingerprint
+    desktopID = contact.desktopId
+    deliveryMode = contact.deliveryMode
+    signalBundleRef = contact.signalBundleRef
+    routeBinding = GalaxySSITransportReceiptJournal.binding(peerId: contact.galaxySSIId, routes: route)
   }
 }
 

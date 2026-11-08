@@ -371,6 +371,7 @@ final class GalaxySSIStore: ObservableObject {
   private let phoneContactCardsKey = "galaxyssi.phone_contact_cards"
   private let homeAssistantAccessTokenAccount = "home_assistant.access_token"
   private var runtimePlaintextCleared = false
+  private(set) var runtimePlaintextGeneration: UInt64 = 0
   var canRestoreMessageViewport: Bool { !runtimePlaintextCleared }
   var canReadVoiceReminderSnapshot: Bool { !runtimePlaintextCleared }
   var canReadAgentTranscript: Bool { !runtimePlaintextCleared }
@@ -771,6 +772,7 @@ final class GalaxySSIStore: ObservableObject {
   func clearRuntimePlaintextForBackground() {
     chatHistoryDatabase.setRowCachingEnabled(false)
     guard !runtimePlaintextCleared else { return }
+    runtimePlaintextGeneration &+= 1
     guard save() else { return }
     runtimePlaintextCleared = true
     wipeRuntimeMessageCache()

@@ -12796,7 +12796,8 @@ final class MessageCoordinator: ObservableObject {
         blockedByAttachmentTransferIds: [],
         clientSourceMessageId: sourceMessageId,
         contactId: contact.id,
-        attachmentTransferId: step.attachment.transferId
+        attachmentTransferId: step.attachment.transferId,
+        attachmentDeclaration: step.declaration
       )
     }
   }
@@ -13254,7 +13255,8 @@ final class MessageCoordinator: ObservableObject {
         blockedByAttachmentTransferIds: [],
         clientSourceMessageId: sourceMessageId,
         contactId: contactId,
-        attachmentTransferId: step.attachment.transferId
+        attachmentTransferId: step.attachment.transferId,
+        attachmentDeclaration: step.declaration
       )
     }
   }
@@ -13268,17 +13270,19 @@ final class MessageCoordinator: ObservableObject {
         $0.desktopId == attachment.scope.desktopId &&
         $0.routes.clientRouteId == attachment.scope.clientRouteId
     }) else { throw GalaxySSIError.notPaired }
-    let wire = try linkWirePayload(payload, link: link)
-    deliveryStore.discardAttachmentTransferMessages(attachment.transferId)
-    deliveryStore.enqueue(
-      messageId: wire.messageId,
+    let fingerprint = AgentAttachmentTransferProtocol.sha256(try AgentBlobProtocol.canonicalJSON(payload))
+    let declaration = LinkAttachmentDeclarationKey(
       topic: link.routes.upTopic,
-      wirePayload: wire.wireText,
-      requiresValidatedNetwork: true,
-      attachmentTransferId: attachment.transferId,
-      clientSourceMessageId: attachment.scope.clientMessageId ?? "",
-      contactId: attachment.scope.contactId
+      contactId: attachment.scope.contactId,
+      sourceMessageId: attachment.scope.clientMessageId ?? "",
+      transferId: attachment.transferId,
+      declaration: "blob:\(fingerprint)"
     )
+    let queued = try deliveryStore.enqueueAttachmentDeclaration(declaration) {
+      let wire = try linkWirePayload(payload, link: link)
+      return (wire.messageId, wire.wireText)
+    }
+    guard queued else { throw GalaxySSIError.transportUnavailable }
     scheduleOutboxFlush(after: 0)
   }
 
