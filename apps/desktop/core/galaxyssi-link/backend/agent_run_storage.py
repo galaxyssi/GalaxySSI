@@ -19,6 +19,23 @@ def run_kernel_database_path() -> Path:
     return desktop_state_root() / RUN_KERNEL_DATABASE_NAME
 
 
+def open_run_database_keepalive(path: Path) -> sqlite3.Connection:
+    """Keep WAL open without holding a transaction or sharing a worker connection.
+
+    Short-lived worker connections still commit independently. Keeping one idle
+    connection avoids a last-connection checkpoint on every progress update;
+    SQLite's normal automatic checkpoints and crash recovery remain enabled.
+    """
+    connection = sqlite3.connect(path, timeout=30.0, isolation_level=None)
+    try:
+        connection.execute("PRAGMA journal_mode = WAL").fetchone()
+        connection.execute("SELECT name FROM sqlite_master LIMIT 1").fetchall()
+        return connection
+    except BaseException:
+        connection.close()
+        raise
+
+
 def require_shared_transaction(connection: sqlite3.Connection, path: Path) -> None:
     if not connection.in_transaction:
         raise ValueError("Run persistence requires an active caller-owned transaction")

@@ -30,6 +30,12 @@ BRIEF_ANSWER_POLICY = """
 - Keep each key point to one sentence. Ordinary replies should usually fit within roughly 150-250 Chinese characters or 80 English words; this is a style target, not a hard truncation limit.
 - Expand only when the user requests detail or completeness, or the task needs it. Preserve essential uncertainty, safety caveats, requested items and supporting citations; brevity must not hide missing evidence.
 """.strip()
+TEXT_INTERPRETATION_POLICY = """
+- For interpretation, translation or grammar questions, reason from the exact supplied wording. Preserve negation, modality, rhetorical force and the speaker's viewpoint; silently check the polarity of your paraphrase against the original sentence.
+- For a rhetorical question, distinguish its grammatical form from its implied assertion: an affirmative-form rhetorical question commonly implies a negative assertion, while a negative-form one commonly implies an affirmative assertion. Check this against the actual wording and context, not a blanket rule or the real-world desirability of the action.
+- Explain what the speaker means, not what would be sensible to do in the real world. Do not substitute a remembered quotation or silently insert a missing negation. If the user identifies a rhetorical question, interpret it as such; mention context only when it genuinely changes the meaning.
+- Self-contained language questions normally need only a direct paraphrase and, if useful, one short explanation; do not browse or use tools unless external context is actually needed.
+""".strip()
 CODEX_STYLE_RESPONSE_POLICY = """
 GalaxySSI response policy:
 - Respond in the user's language; default to Simplified Chinese for Chinese users.
@@ -100,7 +106,7 @@ def _turn_language_policy(prompt: str, preferred_language: str | None = None) ->
 
 
 def response_policy_prompt(prompt: str = "", preferred_language: str | None = None) -> str:
-    return f"{CODEX_STYLE_RESPONSE_POLICY}\n{BRIEF_ANSWER_POLICY}\n{IMAGE_REVIEW_POLICY}\n- {_turn_language_policy(prompt, preferred_language)}\n\n{research_quality_prompt()}"
+    return f"{CODEX_STYLE_RESPONSE_POLICY}\n{BRIEF_ANSWER_POLICY}\n{TEXT_INTERPRETATION_POLICY}\n{IMAGE_REVIEW_POLICY}\n- {_turn_language_policy(prompt, preferred_language)}\n\n{research_quality_prompt()}"
 
 
 def apply_response_policy(prompt: str, preferred_language: str | None = None) -> str:
@@ -114,7 +120,7 @@ def compact_codex_turn_prompt(prompt: str, preferred_language: str | None = None
     """Send only the new request when Codex already owns the conversation thread."""
     value = str(prompt or "").strip()
     request = value.rsplit(CURRENT_REQUEST_MARKER, 1)[1].strip() if CURRENT_REQUEST_MARKER in value else value
-    return f"GalaxySSI turn policy: {_turn_language_policy(request, preferred_language)}\n{BRIEF_ANSWER_POLICY}\n{IMAGE_REVIEW_POLICY}\n\n{research_quality_prompt()}\n\n{request}"
+    return f"GalaxySSI turn policy: {_turn_language_policy(request, preferred_language)}\n{BRIEF_ANSWER_POLICY}\n{TEXT_INTERPRETATION_POLICY}\n{IMAGE_REVIEW_POLICY}\n\n{research_quality_prompt()}\n\n{request}"
 
 
 def sanitize_assistant_response(response: str, hidden_input_paths: list[str] | None = None) -> str:

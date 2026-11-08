@@ -8,6 +8,7 @@ from research_quality import research_quality_prompt
 from response_policy import (
     BRIEF_ANSWER_POLICY,
     IMAGE_REVIEW_POLICY,
+    TEXT_INTERPRETATION_POLICY,
     CODEX_STYLE_RESPONSE_POLICY,
     apply_response_policy,
     attachment_clarification,
@@ -19,6 +20,22 @@ from response_policy import (
     response_language_tag,
     sanitize_assistant_response,
 )
+
+
+class TextInterpretationPolicyTest(unittest.TestCase):
+    def test_fresh_and_resumed_turns_share_wording_and_polarity_checks(self):
+        request = "Explain the supplied rhetorical question."
+        for prompt in (apply_response_policy(request), compact_codex_turn_prompt(request)):
+            self.assertIn(TEXT_INTERPRETATION_POLICY, prompt)
+            self.assertIn("exact supplied wording", prompt)
+            self.assertIn("polarity", prompt)
+            self.assertIn(request, prompt)
+
+    def test_policy_does_not_contain_example_answers_or_force_no_tools(self):
+        self.assertIn("unless external context is actually needed", TEXT_INTERPRETATION_POLICY)
+        self.assertIn("not what would be sensible to do in the real world", TEXT_INTERPRETATION_POLICY)
+        self.assertNotIn("pencil", TEXT_INTERPRETATION_POLICY)
+        self.assertNotIn("insect", TEXT_INTERPRETATION_POLICY)
 
 
 def _cases() -> list[dict]:
