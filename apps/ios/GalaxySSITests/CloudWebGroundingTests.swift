@@ -158,6 +158,22 @@ final class CloudWebGroundingTests: XCTestCase {
     XCTAssertNil(CloudWebGrounding.bodyReadingReviewPrompt(answer, results: [("web_research", snippets), ("web_fetch", fetched)]))
   }
 
+  func testCitationPreviewPresentationPreservesVerifiedDraftAcrossRepairRounds() {
+    var presentation = CloudCitationPreviewPresentation()
+    let prefix = "A verified paragraph.\n\n"
+    let draft = prefix + "The longer checked context.\n\n"
+    XCTAssertEqual(presentation.replace(draft), draft)
+    XCTAssertNil(presentation.replace(prefix))
+    XCTAssertNil(presentation.replace(draft))
+    let revised = draft + "More evidence.\n\n"
+    XCTAssertEqual(presentation.replace(revised), revised)
+    XCTAssertEqual(presentation.replace(""), "")
+    XCTAssertNil(presentation.replace(""))
+    XCTAssertEqual(presentation.replace(prefix), prefix)
+    var anotherTurn = CloudCitationPreviewPresentation()
+    XCTAssertEqual(anotherTurn.replace(prefix), prefix)
+  }
+
   func testCitationPreviewPublishesOnlyVerifiedPassiveParagraphs() throws {
     let url = "https://example.com/report"
     let pack = AgentIOSWebEvidencePack.build(
