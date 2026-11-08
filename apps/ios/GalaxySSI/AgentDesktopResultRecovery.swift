@@ -109,6 +109,7 @@ enum AgentDesktopToolEvidenceWire {
     let evidenceId: String
     let sha256: String
     let totalBytes: Int
+    var hostReadCoverage: AgentMcpJSONObject? = nil
   }
 
   struct ImportCursor: Codable, Equatable {

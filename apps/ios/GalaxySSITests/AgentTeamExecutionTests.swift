@@ -551,6 +551,8 @@ extension GalaxySSIStoreTests {
       return XCTFail("Expected persisted partial coverage")
     }
     XCTAssertEqual(partial["complete"], .bool(false))
+    XCTAssertEqual(partial["mode"], .string("scoped_pages"))
+    XCTAssertEqual(partial["reader"]?.objectValue?["source_id"], .string(scope.sourceId))
     XCTAssertEqual(partial["first_missing_offset"], .int(next))
     var secondInput = input
     secondInput["offset"] = .int(next)
@@ -562,6 +564,8 @@ extension GalaxySSIStoreTests {
       return XCTFail("Expected complete coverage after filling the gap")
     }
     XCTAssertEqual(full["complete"], .bool(true))
+    XCTAssertEqual(full["mode"], .string("scoped_pages"))
+    XCTAssertEqual(full["reader"]?.objectValue?["member_id"], .string(scope.memberId))
     XCTAssertEqual(full["first_missing_offset"], .null)
     let content = firstPage.string("content") + secondPage.string("content") + lastPage.string("content")
     XCTAssertTrue(content.contains("web_search"))
@@ -622,6 +626,21 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(try publish(review).references, reviewPublication.references)
     let savedReview = try XCTUnwrap(reopened.committedResearchRevisions(scope: scope)?.first)
     XCTAssertEqual(savedReview.frozenCloudReads?.first?.evidenceId, source["evidence_id"]?.stringValue)
+    XCTAssertEqual(savedReview.frozenCloudReads?.first?.hostReadCoverage, full)
+    var later = durableTeamSnapshot("later-review")
+    later.taskId = "later-turn"
+    XCTAssertTrue(reopened.upsert(later))
+    let peer = AgentCollaborationToolEvidenceScope(runId: later.supervisorRunId, conversationId: later.conversationId,
+      turnId: later.taskId, memberId: later.members[0].memberId, sourceId: later.members[0].sourceMessageId)
+    var sourceAccess = AgentCollaborationSourceAccess.workspaceReference(savedReview.reference)
+    sourceAccess["mode"] = .string(AgentCollaborationSourceAccess.mode)
+    let peerDirectory = try reopened.recallCollaborationOriginal(sourceAccess, scope: peer)
+    let peerReceipt = try XCTUnwrap(peerDirectory["references"]?.arrayValue?.last?.objectValue?["author_read_coverage"]?.objectValue)
+    XCTAssertEqual(peerReceipt, full)
+    XCTAssertEqual(peerReceipt["transfers_coverage"], .bool(false))
+    let peerFirst = try reopened.recallCollaborationOriginal(input, scope: peer)
+    XCTAssertEqual(peerFirst["host_read_coverage"]?.objectValue?["complete"], .bool(false))
+    XCTAssertEqual(peerFirst["host_read_coverage"]?.objectValue?["reader"]?.objectValue?["member_id"], .string(peer.memberId))
   }
 
   func testEvidenceUTF16PagesPreserveExistingCoverageAndExactBytes() throws {
@@ -3974,6 +3993,9 @@ extension GalaxySSIStoreTests {
     let confirmed = try AgentDesktopCollaborationEvidenceDelivery.exchange(input: original,
       confirmation: delivery, binding: "active", expiresAt: 100, now: 3, replay: &replay, read: read)
     XCTAssertEqual(confirmed?["status"], .string("confirmed"))
+    XCTAssertEqual(confirmed?["host_read_coverage"]?.objectValue?["mode"], .string("scoped_pages"))
+    XCTAssertEqual(confirmed?["host_read_coverage"]?.objectValue?["reader"]?.objectValue?["source_id"], .string(scope.sourceId))
+    XCTAssertEqual(confirmed?["host_read_coverage"]?.objectValue?["sha256"], .string(digest))
     XCTAssertNotNil(try coverage())
     history.removeResearchObjects(conversationId: scope.conversationId)
     XCTAssertThrowsError(try history.recallCollaborationOriginal(input, scope: scope, generation: 1))
@@ -4241,6 +4263,20 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(observationPage["host_read_coverage"]?.objectValue?["complete"], .bool(true))
     XCTAssertEqual(observationPage["source_reference"]?.objectValue?["origin"], .string("ios_native_tool"))
     let review = try publish(reviewDraft, author: 1, id: "review-v1")
+    var reviewRead = ref(review)
+    reviewRead["mode"] = .string("acceptance_record")
+    var reviewJSON = ""
+    var reviewOffset: Int64? = 0
+    while let position = reviewOffset {
+      reviewRead["offset"] = .int(position)
+      let page = try open().recallCollaborationOriginal(reviewRead, scope: scope(3))
+      XCTAssertNil(page["host_read_coverage"])
+      reviewJSON += page.string("content")
+      reviewOffset = page["next_offset"]?.intValue
+    }
+    let peerReview = try JSONDecoder().decode(AgentCollaborationResearchRevision.self, from: Data(reviewJSON.utf8))
+    XCTAssertEqual(peerReview.frozenNativeReads?.first?.hostReadCoverage, observationPage["host_read_coverage"]?.objectValue)
+    XCTAssertThrowsError(try publish(reviewDraft, author: 3, id: "peer-without-own-read"))
     let criterion: AgentMcpJSONObject = ["id": .string("value"), "requirement": .string("Document the value"),
       "verification": .string("documentary"), "status": .string("met"), "evidence_kind": .string("observed"),
       "evidence": .array([.string(delivery.sha256), .string(review.sha256), citation["evidence_id"] ?? .null]),

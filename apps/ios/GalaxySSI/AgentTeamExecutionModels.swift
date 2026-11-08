@@ -1154,6 +1154,7 @@ struct AgentCollaborationFrozenCloudRead: Codable {
   var evidenceId: String
   var sha256: String
   var totalCharacters: Int64
+  var hostReadCoverage: AgentMcpJSONObject? = nil
 }
 
 struct AgentCollaborationMilestoneRejection: Codable {

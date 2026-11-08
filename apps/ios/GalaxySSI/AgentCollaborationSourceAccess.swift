@@ -4,7 +4,7 @@ import Foundation
 enum AgentCollaborationSourceAccess {
   static let mode = "source_access"
   static let pageSize = 20
-  static let instructions = "Use source_access with exact workspace object_id, revision and sha256 to inspect direct sources. Follow next_cursor with the same root. Available means readable now, not read or verified. Read relevant originals or report unavailable evidence. No access is granted."
+  static let instructions = "Use source_access with exact workspace object_id, revision and sha256 to inspect direct sources. Follow next_cursor with the same root. Available means readable now, not read or verified. Author read coverage is frozen at publication and does not credit the current reader. Read relevant originals or report unavailable evidence. No access is granted."
 
   static func matches(tool: String, input: AgentMcpJSONObject) -> Bool {
     tool == CloudModelStreamMutableConversation.collaborationRecallName && input["mode"] == .string(mode)
@@ -75,6 +75,9 @@ enum AgentCollaborationSourceAccess {
         "kind": .string(kind), "source_field": .string(field), "source_index": .int(Int64(index)),
         "reference": .object(reference), "status": .string(available ? "available" : "missing_changed_or_out_of_scope")
       ]
+      if field == "host_observations", let coverage = observations[index].hostReadCoverage {
+        row["author_read_coverage"] = .object(coverage)
+      }
       if available {
         var selector = reference
         selector["mode"] = .string(kind)
