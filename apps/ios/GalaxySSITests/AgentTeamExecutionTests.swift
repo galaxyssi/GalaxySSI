@@ -871,6 +871,74 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(try database.researchObjectHeads(conversationId: scope.conversationId, after: "", limit: 1).isEmpty)
   }
 
+  func testDesktopEvidenceAdmissionRejectsCallableAliasesWithoutChangingLegacyBindings() throws {
+    typealias Policy = AgentCollaborationGoalAssessmentPolicy
+    let suite = "desktop-evidence-admission-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore(), file = root.appendingPathComponent("history.sqlite3")
+    func open() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    }
+    func setup(_ run: String) -> AgentCollaborationToolEvidenceScope {
+      var team = durableTeamSnapshot(run)
+      team.goal = "Document the Desktop result"
+      team.members[0].dispatchCheckpoint = .accepted
+      XCTAssertTrue(open().upsert(team))
+      return .init(runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
+        memberId: team.members[0].memberId, sourceId: team.members[0].sourceMessageId)
+    }
+    func draft(_ tool: String) -> String {
+      let criterion: AgentMcpJSONObject = ["id": .string("result"), "requirement": .string("Document the return value"),
+        "verification": .string("documentary"), "status": .string("open"), "evidence": .array([]),
+        "required_observations": .array([.object(["origin": .string("desktop_codex_tool"), "tool": .string(tool)])])]
+      return AgentMcpJSONCodec.stringify(["format": .string("galaxyssi.goal-assessment.v1"), "summary": .string("Bind"),
+        "decision": .string("continue"), "criteria": .array([.object(criterion)]), "work": .array([]), "blockers": .array([])])
+    }
+    func submit(_ mode: String, tool: String, scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+      try open().publishCollaborationMilestone(["mode": .string(mode), "artifact": .string(draft(tool))], scope: scope)
+    }
+    let scope = setup("recorded-families")
+    let rejected = try submit(Policy.establishContractMode, tool: "exec_command", scope: scope)
+    XCTAssertEqual(rejected["status"], .string("assessment_rejected"))
+    XCTAssertEqual(rejected["work_dispatched"], .bool(false))
+    let repair = try XCTUnwrap(rejected["assessment_repair"]?.objectValue)
+    XCTAssertEqual(repair["reason"], .string("unknown_recorded_tool"))
+    XCTAssertEqual(repair["field_path"], .string("$.criteria[0].required_observations[0].tool"))
+    XCTAssertEqual(repair["draft_retained"], .bool(true))
+    XCTAssertNil(open().goalCheckpoint(runId: scope.runId, conversationId: scope.conversationId, turnId: scope.turnId))
+    for supported in ["codex.commandExecution", "codex.mcpToolCall", "codex.dynamicToolCall", "codex.webSearch"] {
+      XCTAssertEqual(try submit("validate_assessment", tool: supported, scope: scope)["schema_valid"], .bool(true))
+    }
+    for unsupported in ["commandExecution", "codex.commandexecution", "codex.fileChange", "exec_command"] {
+      XCTAssertEqual(try submit("validate_assessment", tool: unsupported, scope: scope)["reason"], .string("unknown_recorded_tool"))
+    }
+    XCTAssertEqual(try submit(Policy.establishContractMode, tool: "codex.commandExecution", scope: scope)["revision"], .int(1))
+    XCTAssertEqual(open().goalCheckpoint(runId: scope.runId, conversationId: scope.conversationId, turnId: scope.turnId)?
+      .bindsRecordedDesktopTools, true)
+    let contaminated = AgentMcpJSONCodec.stringify(["format": .string("galaxyssi.work-expansion.v1"), "criteria": .array([]),
+      "work": .array([.object(["id": .string("not-admitted"), "member": .string("review"),
+        "assignment": .string("Do work"), "depends_on": .array([])])])])
+    let denied = try open().publishCollaborationMilestone(["mode": .string(Policy.appendWorkMode), "expected_revision": .int(1),
+      "milestone_id": .string("criteria-smuggling"), "artifact": .string(contaminated)], scope: scope)
+    XCTAssertEqual(denied["reason"], .string("criteria_not_allowed_in_work_expansion"))
+    XCTAssertThrowsError(try open().goalWork("not-admitted", scope: scope))
+
+    let legacy = setup("legacy-families")
+    let original = try XCTUnwrap(Policy.initialContract(draft("commandExecution")))
+    XCTAssertTrue(open().advanceGoalCheckpoint(.init(runId: legacy.runId, conversationId: legacy.conversationId,
+      turnId: legacy.turnId, revision: 1, phase: .working, contract: original, completedWorkIds: []), expectedRevision: 0))
+    XCTAssertEqual(try submit("validate_assessment", tool: "commandExecution", scope: legacy)["schema_valid"], .bool(true))
+    XCTAssertEqual(try submit(Policy.establishContractMode, tool: "commandExecution", scope: legacy)["replayed"], .bool(true))
+    XCTAssertEqual(try submit(Policy.establishContractMode, tool: "codex.commandExecution", scope: legacy)["status"],
+      .string("assessment_rejected"))
+    let unchanged = try XCTUnwrap(open().goalCheckpoint(runId: legacy.runId,
+      conversationId: legacy.conversationId, turnId: legacy.turnId))
+    XCTAssertEqual(unchanged.contract, original)
+    XCTAssertNil(unchanged.bindsRecordedDesktopTools)
+  }
+
   func testInterimPublicationReopensWithSameReceiptWithoutCompletingAssignment() throws {
     let suite = "milestone-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

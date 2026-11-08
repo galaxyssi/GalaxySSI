@@ -302,6 +302,7 @@ extension GalaxySSIStoreTests {
     let entry = try XCTUnwrap(listed["entries"]?.arrayValue?.first?.objectValue)
     XCTAssertEqual(entry["evidence_id"], .string(receipt.archiveId))
     XCTAssertEqual(entry["tool"], .string("commandExecution"))
+    XCTAssertEqual(entry["recorded_tool"], .string("codex.commandExecution"))
     XCTAssertEqual(entry["status"], .string("returned"))
     var read: AgentMcpJSONObject = ["mode": .string("desktop_evidence"), "evidence_id": .string(receipt.archiveId),
       "sha256": .string(receipt.sha256)]
@@ -345,7 +346,7 @@ extension GalaxySSIStoreTests {
     let review = try XCTUnwrap(publishReview().references.first)
     let coordinator = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "group", turnId: "turn",
       memberId: "primary", sourceId: "coordinator")
-    let required: AgentMcpJSONValue = .array([.object(["origin": .string("desktop_codex_tool"), "tool": .string("commandExecution")])])
+    let required: AgentMcpJSONValue = .array([.object(["origin": .string("desktop_codex_tool"), "tool": .string("codex.commandExecution")])])
     var criterion: AgentMcpJSONObject = ["id": .string("record"), "requirement": .string("Record the returned output"),
       "verification": .string("documentary"), "status": .string("open"), "evidence": .array([]), "required_observations": required]
     var assessment: AgentMcpJSONObject = ["format": .string("galaxyssi.goal-assessment.v1"), "summary": .string("Record"),

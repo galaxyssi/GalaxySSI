@@ -1414,6 +1414,7 @@ final class AgentTeamExecutionHistoryStore {
       func reference(_ archive: AgentDesktopToolEvidenceWire.AcceptanceArchive) -> AgentMcpJSONObject {
         ["evidence_id": .string(archive.receipt.archiveId), "sha256": .string(archive.receipt.sha256),
          "origin": .string("desktop_codex_tool"), "tool": .string(archive.tool),
+         "recorded_tool": archive.recordedTool.map(AgentMcpJSONValue.string) ?? .null,
          "status": .string(archive.returnedOutput ? "returned" : "not_supporting"),
          "total_bytes": .int(Int64(archive.receipt.totalBytes))]
       }
@@ -2430,7 +2431,7 @@ final class AgentTeamExecutionHistoryStore {
       guard Set(input.keys) == ["mode", "artifact"], let raw = input["artifact"]?.strictStringValue,
             !raw.isBlank, AgentMcpJSONCodec.stringify(input).utf8.count <= 131_072
       else { throw AgentTeamHistoryDatabase.Failure.corrupt }
-      let established = try access { database in
+      let contract = try access { database -> [AgentCollaborationGoalAssessmentPolicy.Criterion] in
         guard let team = try database.snapshots(runId: scope.runId).first,
               team.conversationId == scope.conversationId, team.taskId == scope.turnId, team.state == .running,
               team.members.contains(where: { $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId &&
@@ -2439,9 +2440,13 @@ final class AgentTeamExecutionHistoryStore {
               try database.researchRecord(Bool.self, conversationId: scope.conversationId,
                 key: "native-evidence-revoked", revision: 0) != true
         else { throw AgentTeamHistoryDatabase.Failure.stale }
-        return try database.goalCheckpoints(runId: scope.runId, revision: 1, newestOnly: true).first != nil
+        guard let checkpoint = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first
+        else { return [] }
+        guard checkpoint.conversationId == scope.conversationId, checkpoint.turnId == scope.turnId
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        return checkpoint.contract
       }
-      return AgentCollaborationGoalAssessmentPolicy.preflight(raw, establishedContract: established)
+      return AgentCollaborationGoalAssessmentPolicy.preflight(raw, establishedContract: !contract.isEmpty, preserving: contract)
     }
     if ["status", "receipt", "list"].contains(mode) {
       return try access { database in
@@ -3433,6 +3438,11 @@ final class AgentTeamExecutionHistoryStore {
       let graph = checkpoint.liveGraph ?? .init()
       let authorized = Set(team.members.filter { $0.deliveryMode != .ignore }.map(\.memberId))
       let specialists = Set(team.members.filter { $0.deliveryMode == .observe }.map(\.memberId))
+      if let proposal = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8)),
+         proposal["criteria"] != nil {
+        return ["success": .bool(false), "status": .string("work_rejected"), "work_dispatched": .bool(false),
+          "field_path": .string("$.criteria"), "reason": .string("criteria_not_allowed_in_work_expansion")]
+      }
       var busyHistorical = Set<String>()
       if roster != nil, expansion.recruit?.isEmpty == false {
         let projected = Set(team.members.filter { $0.recruitmentTemplateID != nil }.map(\.memberId))
@@ -3516,7 +3526,8 @@ final class AgentTeamExecutionHistoryStore {
       }
       var originals: [String: Gate.OriginalObservation] = [:]
       let outcome = Gate.evaluate(raw, preserving: checkpoint.contract, conversationId: scope.conversationId,
-        runId: scope.runId, turnId: scope.turnId, readRevision: { id, revision in
+        runId: scope.runId, turnId: scope.turnId, bindsRecordedDesktopTools: checkpoint.bindsRecordedDesktopTools == true,
+        readRevision: { id, revision in
           guard id.utf8.count == 64, id.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
                 let saved = try database.researchRecord(AgentCollaborationResearchRevision.self,
                   conversationId: scope.conversationId, key: "object:" + id, revision: revision),
@@ -3559,7 +3570,7 @@ final class AgentTeamExecutionHistoryStore {
                 team: team, database: database), original.returnedOutput else { return nil }
               observed.insert(read.evidenceId)
               originals[read.evidenceId] = .init(origin: "desktop_codex_tool", tool: original.tool,
-                status: "returned", kind: "tool_output_recorded")
+                status: "returned", kind: "tool_output_recorded", recordedDesktopTool: original.recordedTool)
             }
           }
           return Gate.Revision(reference: ref(saved.reference), conversationId: scope.conversationId,
@@ -4057,7 +4068,8 @@ final class AgentTeamExecutionHistoryStore {
         guard try database.goalCheckpoints(runId: scope.runId, newestOnly: true).isEmpty
         else { throw AgentTeamHistoryDatabase.Failure.stale }
       }
-      guard let contract = Policy.initialContract(raw), prior == nil || prior?.contract == contract else {
+      guard let contract = Policy.initialContract(raw), prior == nil || prior?.contract == contract,
+            Policy.newDesktopBindingIssue(contract, preserving: prior?.contract ?? []) == nil else {
         let retained = try Self.retainGoalAssessmentRejection(raw, contractSubmission: true, scope: scope, database: database)
         return ["success": .bool(false), "status": .string("assessment_rejected"), "goal_accepted": .bool(false),
           "work_dispatched": .bool(false), "assessment_repair": .object(retained?.feedback(contract: prior?.contract ?? []) ??
@@ -4065,7 +4077,8 @@ final class AgentTeamExecutionHistoryStore {
       }
       if prior == nil {
         try database.insertGoalCheckpoint(.init(runId: scope.runId, conversationId: scope.conversationId,
-          turnId: scope.turnId, revision: 1, phase: .working, contract: contract, completedWorkIds: []))
+          turnId: scope.turnId, revision: 1, phase: .working, contract: contract, completedWorkIds: [],
+          bindsRecordedDesktopTools: true))
       }
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.sortedKeys]
@@ -4191,6 +4204,9 @@ final class AgentTeamExecutionHistoryStore {
           }) else { return false }
     let existing = prior.first?.liveGraph?.work ?? []
     let updated = checkpoint.liveGraph?.work ?? []
+    if let previous = prior.first, previous.bindsRecordedDesktopTools != checkpoint.bindsRecordedDesktopTools {
+      return false
+    }
     let priorWorkflows = prior.first?.liveGraph?.workflowInstances ?? [:]
     let workflows = checkpoint.liveGraph?.workflowInstances ?? [:]
     let previousRecruits = prior.first?.liveGraph?.recruitments ?? [:]
