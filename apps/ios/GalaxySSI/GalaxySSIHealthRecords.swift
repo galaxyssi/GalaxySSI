@@ -558,6 +558,7 @@ struct GalaxySSIHealthRecords {
           try GalaxySSIHealthCareDiscussion.payload(concern: concern, question: approval.question, thread: thread,
             destination: approval.destinationDigest) == approval.payload else { throw Failure.stale }
     thread.turns.append(.init(id: approval.id, question: approval.question, destination: approval.destinationDigest,
+      measurement: concern.assessment.record,
       planRequested: approval.proposesPlan ? true : nil))
     archive.localCareDiscussions?[approval.concernID.uuidString] = thread
     try persist(archive)
@@ -682,12 +683,18 @@ struct GalaxySSIHealthRecords {
   }
 
   func setLocalCareContext(_ concern: GalaxySSIHealthCare.Concern,
-                           applicability: GalaxySSIHealthCare.Context.Applicability, now: Date = Date()) throws {
+                           applicability: GalaxySSIHealthCare.Context.Applicability,
+                           answers: GalaxySSIHealthCare.Context.Answers? = nil, now: Date = Date()) throws {
+    if let hours = answers?.fastingHours, !(0...72).contains(hours) { throw Failure.invalid }
     try updateLocalCare(concern, now: now) { current, archive in
       let readings = archive.current.filter { $0.metric == .glucose && $0.isValid && $0.measuredAt <= now }
       guard current.metric == .glucose, let record = current.assessment.record,
             readings.first.map(GalaxySSIHealthCare.Record.init) == record else { throw Failure.stale }
-      let context = GalaxySSIHealthCare.Context(record: record, applicability: applicability)
+      let previous = current.context.flatMap { $0.record == record ? $0 : nil }
+      var context = GalaxySSIHealthCare.Context(record: record, applicability: applicability)
+      context.answers = answers == GalaxySSIHealthCare.Context.Answers() ? nil : (answers ?? previous?.answers)
+      guard applicability != .applicable || context.answers?.conflictsWithApplicable != true else { throw Failure.invalid }
+      context.confirmedAt = context.answers.map { $0 == previous?.answers ? (previous?.confirmedAt ?? now) : now }
       guard let assessment = GalaxySSIHealthCare.assess(readings, context: context) else { throw Failure.stale }
       current.context = context
       current.assessment = assessment
