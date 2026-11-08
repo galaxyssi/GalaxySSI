@@ -3591,11 +3591,11 @@ final class MessageCoordinator: ObservableObject {
         observation: AgentTeamReplyObservation(payload: payload))
       guard disposition == .observerCommitted || disposition == .observerDuplicate,
             teamObserverResultIsCommitted(payload, binding: binding) else { return false }
-      if verifiedReceipt != nil { _ = try queueDesktopEvidenceImport(binding) }
+      let queuedEvidence = try queueDesktopEvidenceImport(binding)
       guard recordTeamResultReceipt(receipt, journalBacked: verifiedReceipt != nil) else { return false }
       finalizeSavedCollaborationObserver(source: binding.sourceIdentity, conversation: binding.identity.conversationId,
         turn: binding.identity.turnId, contact: binding.contactId, expectedRunId: binding.teamSource?.supervisorRunId)
-      if verifiedReceipt == nil { startDesktopEvidenceImport(binding) }
+      if verifiedReceipt == nil && queuedEvidence { retryDesktopEvidenceJobs() }
       UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: binding.sourceIdentity)
       let retired = desktopReplyRecovery.retire(binding)
       if retired { desktopReplyRecoverySweepRequested = true }
@@ -3788,6 +3788,12 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func queueDesktopEvidenceImport(_ binding: AgentDesktopReplyBinding) throws -> Bool {
+    guard let job = desktopEvidenceImportJob(binding) else { return false }
+    try AgentTeamExecutionHistoryStore.shared.enqueueDesktopEvidenceJob(job)
+    return true
+  }
+
+  private func desktopEvidenceImportJob(_ binding: AgentDesktopReplyBinding) -> AgentDesktopToolEvidenceWire.ImportJob? {
     guard GalaxySSISignalEngine.isAvailable, binding.agentId == "codex",
           let context = currentTeamObserverRecovery(binding), context.member.status == .succeeded,
           let generation = context.owner.observedGeneration,
@@ -3795,11 +3801,9 @@ final class MessageCoordinator: ObservableObject {
           store.serverLinks.contains(where: { $0.paired && $0.desktopId == binding.desktopId &&
             $0.routes.clientRouteId == binding.identity.clientRouteId }),
           store.contact(id: binding.contactId)?.connectorCapabilities?.contains("desktop_codex_tool_evidence_v1") == true
-    else { return false }
-    let job = AgentDesktopToolEvidenceWire.ImportJob(binding: binding, generation: generation,
+    else { return nil }
+    return AgentDesktopToolEvidenceWire.ImportJob(binding: binding, generation: generation,
       profileIdentity: store.profile.identityFingerprint)
-    try AgentTeamExecutionHistoryStore.shared.enqueueDesktopEvidenceJob(job)
-    return true
   }
 
   private func retryDesktopEvidenceJobs() {
@@ -3984,6 +3988,12 @@ final class MessageCoordinator: ObservableObject {
           let checkpoint = try? history.desktopEvidenceCursor(scope), !checkpoint.archiveFinal else { return }
     var cursor = checkpoint.sequence
     let inlineBytes = AgentDesktopToolEvidenceWire.maximumPageBytes
+    func retrySavedPublication() {
+      finalizeSavedCollaborationObserver(source: binding.sourceIdentity, conversation: binding.identity.conversationId,
+        turn: binding.identity.turnId, contact: binding.contactId,
+        expectedRunId: binding.teamSource?.supervisorRunId, reportFailure: false)
+    }
+    if isCurrent() { retrySavedPublication() }
     while isCurrent() {
       let indexStarted = AgentDesktopEvidenceQueryTrace.now
       guard let request = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: generation,
@@ -4032,6 +4042,7 @@ final class MessageCoordinator: ObservableObject {
         do {
           _ = try history.archiveDesktopToolEvidence(request: request, descriptor: descriptor, pages: pages)
         } catch { return }
+        retrySavedPublication()
       }
       let final = index.archiveFinal && !index.hasMore && currentTeamObserverRecovery(binding)?.member.status == .succeeded
       if index.nextSequence > cursor || final {
@@ -4039,6 +4050,7 @@ final class MessageCoordinator: ObservableObject {
         do {
           try history.advanceDesktopEvidenceCursor(request, from: cursor, to: index.nextSequence, final: final)
         } catch { return }
+        if final { retrySavedPublication() }
       }
       guard index.hasMore else { return }
       cursor = index.nextSequence
@@ -11204,8 +11216,8 @@ final class MessageCoordinator: ObservableObject {
     case .observerCommitted, .observerProgress, .observerDuplicate, .retired: break
     }
     if terminal, tracked, disposition == .observerCommitted || disposition == .observerDuplicate {
-      finalizeSavedCollaborationObserver(source: source, conversation: conversation, turn: turn, contact: contact.id)
       acknowledgeTeamObserverResult(payload, link: link)
+      finalizeSavedCollaborationObserver(source: source, conversation: conversation, turn: turn, contact: contact.id)
     }
     if terminal { UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: source) }
     else { UserDefaultsAgentGlobalRunSlotStore.shared.touch(sourceMessageId: source, nowMillis: AgentControlPlaneClock.nowMillis()) }
@@ -11361,6 +11373,11 @@ final class MessageCoordinator: ObservableObject {
       let scope = AgentCollaborationToolEvidenceScope(runId: context.team.supervisorRunId,
         conversationId: conversation, turnId: turn, memberId: context.member.memberId, sourceId: source)
       guard let raw = context.member.replyContent else { return }
+      if let agent = store.contact(id: contact),
+         let identity = taskIdentityStore.identity(contactId: contact, sourceMessageId: source),
+         let binding = AgentDesktopReplyBinding.teamObserver(owner: context.owner, desktopId: agent.desktopId,
+           agentId: agent.connectorAgentId, identity: identity), let job = desktopEvidenceImportJob(binding),
+         try history.isSavedResearchReplyWaitingForDesktopEvidence(raw, scope: scope, job: job) { return }
       let requests = try AgentCollaborationDirectedRequests.messages(in: raw, team: context.team, sender: context.member,
         rosterMemberIds: Set(roster.members.map { $0.id.uuidString.lowercased() }))
       _ = try UserDefaultsAgentTeamMailbox().appendAll(requests)
