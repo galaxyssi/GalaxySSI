@@ -81,6 +81,7 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
   @State private var selected = Set<Int>()
   @State private var valid = false
   @State private var visible = false
+  @State private var checkedConcern: GalaxySSIHealthCare.Concern?
   @State private var failed = false
   private var legacyPending: Bool { proposal.state == .pending && proposal.draft.sources.contains { $0.provenance == nil } }
 
@@ -97,7 +98,7 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
             ForEach(Array(proposal.draft.sources.indices), id: \.self) { index in
               let source = proposal.draft.sources[index]
               VStack(alignment: .leading, spacing: 4) {
-                Text(source.title)
+                Text(String(format: t("numbered_source", "Source %lld"), Int64(index) + 1) + ": " + source.title)
                 Text(source.version).font(.caption)
                 Text(source.url.absoluteString).font(.caption)
                 Text(source.applicability).foregroundColor(.secondary)
@@ -115,7 +116,7 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
           }
           Section(t("actions", "Suggested steps")) {
             ForEach(proposal.draft.actions) { action in
-              if valid {
+              if valid, let checkedConcern, GalaxySSIHealthCareApplicability.canAdopt(action, concern: checkedConcern) {
                 Toggle(isOn: Binding(get: { selected.contains(action.id) }, set: { checked in
                   if checked { selected.insert(action.id) } else { selected.remove(action.id) }
                 })) { actionLabel(action) }
@@ -123,6 +124,7 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
                 actionLabel(action)
                 if proposal.selected.contains(action.id) { Text(t("adopted", "Adopted")).font(.caption) }
               }
+              GalaxySSIHealthCareApplicabilityDetails(action: action, concern: checkedConcern)
             }
           }
         }
@@ -171,10 +173,15 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
           let archive = try? records.load(), archive.localCareAllowed == true,
           archive.localCarePlans?[proposal.id.uuidString] == proposal,
           archive.localCare?.current[proposal.metric.rawValue]?.id == proposal.concernID
-    else { visible = false; valid = false; selected = []; return }
+    else { visible = false; valid = false; checkedConcern = nil; selected = []; return }
     visible = true
-    valid = currentDestination != nil && (try? records.validateLocalCarePlanReview(proposal)) != nil
-    if !valid { selected = [] }
+    checkedConcern = currentDestination == nil ? nil : (try? records.validateLocalCarePlanReview(proposal))
+    valid = checkedConcern != nil
+    if let checkedConcern {
+      selected = selected.intersection(Set(proposal.draft.actions.filter {
+        GalaxySSIHealthCareApplicability.canAdopt($0, concern: checkedConcern)
+      }.map(\.id)))
+    } else { selected = [] }
   }
 
   private func resolve(_ selected: Set<Int>?) {

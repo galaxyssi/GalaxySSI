@@ -36,6 +36,7 @@ enum GalaxySSIHealthCareDiscussion {
     let baselineHigh: Decimal?
     let confirmedTarget: String?
     let clarification: Clarification?
+    let collectionCondition: GalaxySSIHealthCare.Context.Answers.Collection?
 
     init(_ concern: GalaxySSIHealthCare.Concern) {
       comparison = concern.comparison.flatMap {
@@ -50,6 +51,7 @@ enum GalaxySSIHealthCareDiscussion {
       guideline = concern.assessment.guidelineVersion
       let current = concern.context.flatMap { $0.record == concern.assessment.record ? $0 : nil }
       context = current?.applicability
+      collectionCondition = current?.answers?.collection
       baselineLow = concern.assessment.baseline?.low
       baselineHigh = concern.assessment.baseline?.high
       confirmedTarget = concern.target?.value
@@ -188,7 +190,8 @@ enum GalaxySSIHealthCareDiscussion {
       The separate health profile and current symptoms are not included; do not claim they were never supplied.
       State missing measurement context and uncertainty. Do not diagnose, change medication, or claim to have accessed
       records or verified current external sources. Discuss possible questions for a clinician, not a saved care plan.
-      Do not claim to schedule or perform any action.
+      Do not claim to schedule or perform any action. If proposing a plan, report each action's source requirements,
+      missing information, and conflicts with a next step. Do not invent facts or treat a matched check as clinical validation.
       """ + (approval.proposesPlan
         ? "\nUse exactly one \(GalaxySSIHealthCarePlan.tool) call to propose a draft. Cite only supplied native_sources by " +
           "their exact evidence_id and URL. Copy a short original-language supporting quote from the excerpt. " +
