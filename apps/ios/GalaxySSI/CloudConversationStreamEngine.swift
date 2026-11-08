@@ -57,6 +57,7 @@ extension CloudConversationStreaming {
 final class CloudConversationStreamEngine: CloudModelStreamClient {
   typealias GoalWorkHandler = @MainActor (AgentMcpJSONObject) async -> AgentMcpJSONObject
   typealias GoalContinuationHandler = @MainActor (String) async -> AgentMcpJSONObject?
+  typealias DesktopEvidenceRefresh = @MainActor (AgentMcpJSONObject, AgentCollaborationToolEvidenceScope) async -> String?
   private static let maxParallelToolCalls = 4
 
   private struct ToolExecutionOutcome {
@@ -131,6 +132,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     collaborationModelAudit: AgentCollaborationToolEvidenceScope? = nil,
     goalWorkHandler: GoalWorkHandler? = nil,
     goalContinuationHandler: GoalContinuationHandler? = nil,
+    desktopEvidenceRefresh: DesktopEvidenceRefresh? = nil,
     researchRetrySource: ChatMessage? = nil,
     retainResearch: Bool = true
   ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
@@ -147,6 +149,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           collaborationModelAudit: collaborationModelAudit ?? collaborationEvidence,
           goalWorkHandler: goalWorkHandler,
           goalContinuationHandler: goalContinuationHandler,
+          desktopEvidenceRefresh: desktopEvidenceRefresh,
           researchRetrySource: researchRetrySource,
           retainResearch: retainResearch,
           continuation: continuation
@@ -188,6 +191,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     collaborationModelAudit: AgentCollaborationToolEvidenceScope?,
     goalWorkHandler: GoalWorkHandler?,
     goalContinuationHandler: GoalContinuationHandler?,
+    desktopEvidenceRefresh: DesktopEvidenceRefresh?,
     researchRetrySource: ChatMessage?,
     retainResearch: Bool,
     continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation
@@ -734,9 +738,12 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           },
           collaborationRecall: collaborationRecallScope.map { scope in
             { arguments in
-              await MainActor.run {
-                Self.scopedCollaborationRecall(arguments, scope: scope, allowsResearch: collaborationEvidence != nil,
-                  resourceID: contact.id, session: store.agentSession(id: scope.conversationId), history: .shared)
+              let sync = await desktopEvidenceRefresh?(arguments, scope)
+              return await MainActor.run {
+                guard var result = Self.scopedCollaborationRecall(arguments, scope: scope, allowsResearch: collaborationEvidence != nil,
+                  resourceID: contact.id, session: store.agentSession(id: scope.conversationId), history: .shared) else { return nil }
+                if let sync { result["live_sync"] = .string(sync) }
+                return result
               }
             }
           },

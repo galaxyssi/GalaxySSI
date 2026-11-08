@@ -112,6 +112,7 @@ enum AgentCollaborationRuleTopics {
   private static let topics = [
     Topic(id: "foundation", purpose: "Publish and read scoped research originals", prerequisites: [], contract: """
     Publish galaxyssi.research-artifact.v1 with a workspace array. Each item has id, kind, title, body, base_revision and parents.
+    \(AgentCollaborationResearchEnvelope.optionalNotesInstructions)
     Use base_revision 0 for new records and exact object_id, revision and sha256 for references. Cite original cloud observations
     with evidence_id and sha256 when the record supports citations. Read each page before citing it. Publication is not verification.
     \(AgentCollaborationTypedRecordValidation.guidance)

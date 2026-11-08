@@ -7,6 +7,59 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testHealthVisitPreviewEnforcesSelectionExpiryAndExactSource() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "visit-preview", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let older = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-120),
+      value: 101, conditions: "older fixture", unitOverride: "mg/dL")
+    let recent = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-60),
+      value: 110, conditions: "selected fixture", notes: "private source note", unitOverride: "mg/dL",
+      referenceInterval: "70 - 99")
+    try records.write(older)
+    try records.write(recent)
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    var profile = GalaxySSIHealthProfile()
+    profile.name = "unselected profile name"
+    profile.context = "selected profile context"
+    try records.writeProfile(profile)
+    let selection = GalaxySSIHealthCareProfileScope.Selection(fields: [.context])
+    let link = try GalaxySSIHealthCareProfileScope.Link(selection, profile: records.loadProfile())
+    try records.setLocalCareProfileScope(concern, link: link, now: now)
+    func preview(_ sections: Set<GalaxySSIHealthCareVisit.Section>) throws -> GalaxySSIHealthCareVisit.Preview {
+      try records.localCareVisitPreview(id: concern.id, metric: .glucose, sections: sections, language: "en", now: now)
+    }
+    let basic = try preview([.measurements, .context])
+    let exact = try XCTUnwrap(basic.items.first { $0.record?.id == recent.id })
+    let shared = try basic.text(for: [exact.id])
+    XCTAssertTrue(shared.contains("selected fixture"))
+    XCTAssertFalse(shared.contains("older fixture"))
+    XCTAssertFalse(shared.contains("private source note"))
+    XCTAssertFalse(shared.contains("selected profile context"))
+    XCTAssertThrowsError(try basic.text(for: [exact.id, "foreign"]))
+    let reference = try XCTUnwrap(exact.record)
+    XCTAssertEqual(try records.localCareVisitSource(reference, metric: .glucose).notes, "private source note")
+    XCTAssertNoThrow(try basic.revalidate(preview(basic.sections), at: now))
+    XCTAssertThrowsError(try basic.revalidate(preview(basic.sections), at: now.addingTimeInterval(600)))
+    XCTAssertThrowsError(try basic.revalidate(preview(basic.sections), at: now.addingTimeInterval(-1)))
+    let withProfile = try preview([.profile])
+    let profileText = try withProfile.text(for: Set(withProfile.items.map(\.id)))
+    XCTAssertTrue(profileText.contains("selected profile context"))
+    XCTAssertFalse(profileText.contains("unselected profile name"))
+    var revised = try records.localCareVisitSource(reference, metric: .glucose)
+    revised.value = 115
+    try records.write(revised)
+    try records.reconcileLocalCare(now: now)
+    XCTAssertThrowsError(try records.localCareVisitSource(reference, metric: .glucose))
+    XCTAssertThrowsError(try basic.revalidate(preview(basic.sections), at: now))
+    try records.setPrivacy(.localCare, enabled: false)
+    XCTAssertThrowsError(try preview([.measurements]))
+  }
+
+  @MainActor
   func testHealthClarificationPreservesNoAndZeroOnlyForExactMeasurement() throws {
     typealias Care = GalaxySSIHealthCare
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
