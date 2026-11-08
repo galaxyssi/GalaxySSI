@@ -139,6 +139,7 @@ enum AgentDesktopImageFidelity {
 
 final class AgentDesktopArtifactStore {
   static let defaultRootDirectoryName = "desktop-artifacts-v2"
+  static let maximumMqttArtifactBytes: Int64 = 64 * 1_024 * 1_024
 
   private let rootURL: URL
   private let fileManager: FileManager
@@ -427,6 +428,23 @@ final class AgentDesktopArtifactStore {
             let file = try artifactFile(record: record) else { return false }
       return fileManager.fileExists(atPath: file.path)
     }) == true
+  }
+
+  func verifiedPeerDescriptor(_ artifact: MqttDesktopPeerArtifact, durationMillis: Int64) throws -> [String: Any]? {
+    try locked {
+      guard let record = try existingRecord(artifactURI: artifact.localURI) else { return nil }
+      guard record.artifactId == artifact.localID, record.taskId == artifact.taskID,
+            record.sha256 == artifact.digest, record.sizeBytes == artifact.size,
+            let file = try artifactFile(record: record),
+            cipher.plaintextSize(of: file, purpose: artifactPurpose(record.artifactId)) == record.sizeBytes
+      else { throw AgentDesktopArtifactStoreError.integrity("Stored peer attachment does not match its descriptor") }
+      var result: [String: Any] = ["artifact_id": record.artifactId, "artifact_uri": record.artifactURI,
+        "name": record.name, "mime_type": record.mimeType, "size_bytes": record.sizeBytes, "sha256": record.sha256]
+      if record.mimeType.hasPrefix("audio/"), durationMillis > 0 {
+        result["duration_ms"] = min(durationMillis, 3_600_000)
+      }
+      return result
+    }
   }
 
   func inlineHTML(for block: AgentRichBlock) throws -> String? {
@@ -766,7 +784,7 @@ private struct AgentDesktopArtifactChunkPayload {
     guard AgentDesktopArtifactStore.isGalaxySSIArtifactURI(artifactURI) else {
       throw AgentDesktopArtifactStoreError.invalidPayload("Artifact URI must use galaxyssi-artifact")
     }
-    guard sizeBytes >= 1 && sizeBytes <= Self.maximumArtifactBytes else {
+    guard (1...AgentDesktopArtifactStore.maximumMqttArtifactBytes).contains(sizeBytes) else {
       throw AgentDesktopArtifactStoreError.invalidPayload("Artifact size is outside the safety limit")
     }
     guard originalSizeBytes >= sizeBytes else {
@@ -849,7 +867,6 @@ private struct AgentDesktopArtifactChunkPayload {
     value.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil
   }
 
-  private static let maximumArtifactBytes: Int64 = 64 * 1_024 * 1_024
   private static let maximumChunkBytes: Int64 = 256 * 1_024
   private static let maximumChunkCount = 256
 }

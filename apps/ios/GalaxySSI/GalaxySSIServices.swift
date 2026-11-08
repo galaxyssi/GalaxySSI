@@ -15555,7 +15555,8 @@ final class MessageCoordinator: ObservableObject {
       })
     return try MqttBusinessTransportRuntime(peerChatStore: store, localFingerprint: signalEngine.identity.fingerprint,
       journal: journal, routeState: routeState, pool: pool, incomingAttachments: incomingAttachmentTransferStore,
-      outgoingAttachments: attachmentTransferStore, desktopConnector: connector, onFailure: onFailure)
+      outgoingAttachments: attachmentTransferStore, desktopArtifacts: desktopArtifactStore,
+      desktopConnector: connector, onFailure: onFailure)
   }
 
   func linkWirePayload(

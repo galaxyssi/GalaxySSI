@@ -1098,6 +1098,57 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertFalse(released.isPrepared)
   }
 
+  @MainActor
+  func testDesktopPeerArtifactRequiresExactStoredBytesAndPairBeforeChatProjection() throws {
+    let store = makeStore()
+    let local = String(repeating: "b", count: 64)
+    let link = try store.addServerLink(from: makePairingQRCode(), localFingerprint: local)
+    store.markServerPaired(desktopId: link.desktopId)
+    let contact = try XCTUnwrap(store.contacts.first { $0.isDesktopDeviceContact && $0.desktopId == link.desktopId })
+    let projection = MqttPeerChatProjection(store: store, localFingerprint: local)
+    let target = try XCTUnwrap(projection.destination(for: contact))
+    let identity = try MqttBusinessIdentity(target.peer.binding)
+    let source = UUID().uuidString.lowercased()
+    let bytes = Data([1, 2, 3])
+    let digest = MqttRouteProtocol.digest(bytes)
+    let descriptor: [String: Any] = ["artifact_id": String(repeating: "a", count: 64),
+      "artifact_uri": "galaxyssi-artifact://\(source)/outputs/fixture.bin", "size_bytes": bytes.count, "sha256": digest]
+    let artifact = try MqttDesktopPeerArtifact(descriptor, source: source, identity: identity)
+    XCTAssertThrowsError(try MqttDesktopPeerArtifact(descriptor, source: UUID().uuidString, identity: identity))
+    var foreign = target.peer.binding
+    foreign.secret = Data(repeating: 9, count: 32).base64URLEncodedString()
+    let foreignArtifact = try MqttDesktopPeerArtifact(descriptor, source: source, identity: MqttBusinessIdentity(foreign))
+    XCTAssertNotEqual(artifact.localID, foreignArtifact.localID)
+    XCTAssertNotEqual(artifact.localURI, foreignArtifact.localURI)
+    let fixture = try ChunkFixture()
+    let files = AgentDesktopArtifactStore(rootURL: fixture.root.appendingPathComponent("peer-artifacts"),
+      cipher: GalaxySSIAttachmentAtRestCipher(secrets: fixture.secrets))
+    XCTAssertNil(try files.verifiedPeerDescriptor(artifact, durationMillis: 0))
+
+    var payload: [String: Any] = ["type": "peer_message", "message_id": source, "source_message_id": source,
+      "client_route_id": target.routeId, "conversation_id": target.conversationId, "desktop_id": link.desktopId,
+      "contact_id": link.desktopId, "attachments": [descriptor], "content": ""]
+    XCTAssertEqual(try projection.desktopPeerSource(payload, target: target), source)
+    payload["desktop_id"] = "foreign"
+    XCTAssertThrowsError(try projection.desktopPeerSource(payload, target: target))
+    payload["desktop_id"] = link.desktopId
+    let item = MqttBusinessInbox.Pending(key: try identity.key(messageID: source), identity: identity, messageID: source,
+      payload: try GalaxySSILinkProtocol.jsonData(payload), createdAt: 1)
+    XCTAssertThrowsError(try projection.projectInbound(item))
+
+    let chunk = artifact.storagePayload(["type": "artifact_chunk", "name": "fixture.bin",
+      "mime_type": "application/octet-stream", "size_bytes": bytes.count, "sha256": digest, "chunk_index": 0,
+      "chunk_count": 1, "chunk_size_bytes": bytes.count, "chunk_sha256": digest, "data_b64": bytes.base64EncodedString()])
+    XCTAssertTrue(try files.ingest(chunk).completed)
+    XCTAssertTrue(try files.ingest(chunk).completed)
+    XCTAssertNil(try files.verifiedPeerDescriptor(foreignArtifact, durationMillis: 0))
+    let stored = try XCTUnwrap(files.verifiedPeerDescriptor(artifact, durationMillis: 0))
+    let message = try XCTUnwrap(projection.projectInbound(item, resolvedAttachments: [stored]))
+    let block = try XCTUnwrap(AgentRichContentCodec.decode(message.richOutputJson).first)
+    XCTAssertEqual(block.uri, artifact.localURI)
+    XCTAssertEqual(try Data(contentsOf: XCTUnwrap(files.localFile(for: files.resolveBlock(block)))), bytes)
+  }
+
   func testRenamesContactLocally() {
     let store = makeStore()
     let request = store.addFriendRequest(makeFriendRequest(galaxySSIId: "friend-alice", name: "Alice"))

@@ -35,6 +35,7 @@ final class MqttBusinessTransportRuntime {
   private var directConfiguration: MqttBrokerPathConfiguration?
   private var incomingAttachments: AgentIncomingAttachmentTransferStore?
   private var outgoingAttachments: AgentOutboundAttachmentTransferStore?
+  private var desktopArtifacts: AgentDesktopArtifactStore?
   private var desktopConnector: MqttDesktopConnectorProjection?
   private struct EvidenceWaiter {
     let identity: MqttBusinessIdentity
@@ -44,6 +45,7 @@ final class MqttBusinessTransportRuntime {
   }
   private var evidenceWaiters: [String: EvidenceWaiter] = [:]
   private final class LogicalReceiptWire { var payload: [String: Any]? }
+  private enum DesktopPeerArtifactPending: Error { case awaitingChunks }
   private let attachmentQueue = DispatchQueue(label: "galaxyssi.mqtt.peer-attachments", qos: .utility)
 
   // The caller must first quiesce legacy Signal, inbox and outbox writers. Once this returns a
@@ -128,6 +130,7 @@ final class MqttBusinessTransportRuntime {
                    pool: GalaxySSIMqttBrokerPool = .init(),
                    incomingAttachments: AgentIncomingAttachmentTransferStore = .init(),
                    outgoingAttachments: AgentOutboundAttachmentTransferStore = .init(),
+                   desktopArtifacts: AgentDesktopArtifactStore? = nil,
                    desktopConnector: MqttDesktopConnectorProjection? = nil,
                    onFailure: @escaping @MainActor (Error) -> Void = { _ in }) throws {
     guard let cutover = try journal.legacyCutover(), cutover.localFingerprint == localFingerprint else {
@@ -153,6 +156,7 @@ final class MqttBusinessTransportRuntime {
     peerChatProjection = projection
     self.incomingAttachments = incomingAttachments
     self.outgoingAttachments = outgoingAttachments
+    self.desktopArtifacts = desktopArtifacts
     self.desktopConnector = desktopConnector
   }
 
@@ -594,6 +598,8 @@ final class MqttBusinessTransportRuntime {
             throw MqttChunkStorageError.corruptState
           }
         }
+      } catch DesktopPeerArtifactPending.awaitingChunks {
+        continue
       } catch {
         if error is CancellationError { throw error }
         onFailure(error)
@@ -699,6 +705,10 @@ final class MqttBusinessTransportRuntime {
       try desktopConnector.project(item, payload: payload, target: target)
       return
     }
+    if target.desktop, type == "artifact_chunk" {
+      try await storeDesktopPeerArtifact(item, payload: payload, projection: projection, target: target)
+      return
+    }
     let localName = engine.identity.name
     let remoteName = target.peer.remoteSignalName
     let route = target.routes
@@ -718,6 +728,29 @@ final class MqttBusinessTransportRuntime {
       return
     }
     if let descriptors = payload["attachments"] as? [[String: Any]], !descriptors.isEmpty {
+      if target.desktop {
+        guard type == "peer_message", descriptors.count <= 12, let desktopArtifacts else {
+          throw MqttRouteError.invalidPayload
+        }
+        let source = try projection.desktopPeerSource(payload, target: target)
+        guard UUID(uuidString: source) == UUID(uuidString: item.messageID) else { throw MqttRouteError.identityChanged }
+        let artifacts = try descriptors.map { try MqttDesktopPeerArtifact($0, source: source, identity: item.identity) }
+        guard Set(artifacts.map(\.localID)).count == artifacts.count else { throw MqttRouteError.invalidPayload }
+        let resolved = try await onAttachmentQueue {
+          try zip(artifacts, descriptors).map { artifact, descriptor in
+            guard let stored = try desktopArtifacts.verifiedPeerDescriptor(artifact, durationMillis: descriptor.int64("duration_ms"))
+            else { throw DesktopPeerArtifactPending.awaitingChunks }
+            return stored
+          }
+        }
+        try Task.checkCancellation()
+        guard !stopped else { throw CancellationError() }
+        try refreshDirectPeerBindings()
+        try routes.withIdentity(item.identity) {
+          _ = try projection.projectInbound(item, resolvedAttachments: resolved)
+        }
+        return
+      }
       guard !target.desktop, descriptors.count <= 64, type == "peer_message" || type == "text" else {
         throw MqttRouteError.invalidPayload
       }
@@ -733,6 +766,31 @@ final class MqttBusinessTransportRuntime {
     } else {
       _ = try projection.projectInbound(item)
     }
+  }
+
+  private func storeDesktopPeerArtifact(_ item: MqttBusinessInbox.Pending, payload: [String: Any],
+      projection: MqttPeerChatProjection, target: MqttPeerChatProjection.Destination) async throws {
+    guard let desktopArtifacts, payload["peer_chat"] as? Bool == true, payload["phone_owned"] as? Bool == true,
+          item.payload.count <= 512 * 1_024 else { throw MqttRouteError.invalidPayload }
+    let source = try projection.desktopPeerSource(payload, target: target)
+    guard payload.string("task_id") == source else { throw MqttRouteError.identityChanged }
+    let artifact = try MqttDesktopPeerArtifact(payload, source: source, identity: item.identity)
+    let result = try await onAttachmentQueue {
+      try desktopArtifacts.ingest(artifact.storagePayload(payload))
+    }
+    try Task.checkCancellation()
+    guard !stopped else { throw CancellationError() }
+    try refreshDirectPeerBindings()
+    try routes.withIdentity(item.identity) {}
+    guard result.completed else { return }
+    let id = try MqttPeerChatProjection.stableID([artifact.localID, artifact.digest, "desktop-artifact-stored"])
+    let receipt: [String: Any] = ["type": "artifact_receipt", "message_id": id, "desktop_id": target.peer.remoteSignalName,
+      "artifact_id": artifact.id, "artifact_uri": artifact.uri, "task_id": artifact.taskID, "sha256": artifact.digest,
+      "status": "stored", "client_route_id": target.routeId]
+    let request = try MqttSignalSendRequest(identity: item.identity, payload: receipt, remoteName: target.peer.remoteSignalName,
+      topic: target.peer.binding.sendTopic, clientRouteID: target.routeId, traffic: .control, contactID: target.contactId)
+    do { _ = try enqueue([request]) }
+    catch MqttChunkStorageError.alreadyDelivered { }
   }
 
   private func onAttachmentQueue<T>(_ work: @escaping () throws -> T) async throws -> T {

@@ -1,5 +1,46 @@
 import Foundation
 
+struct MqttDesktopPeerArtifact {
+  let id: String
+  let uri: String
+  let taskID: String
+  let digest: String
+  let size: Int64
+  let localID: String
+  let localURI: String
+
+  init(_ payload: [String: Any], source: String, identity: MqttBusinessIdentity) throws {
+    id = payload.string("artifact_id")
+    uri = payload.string("artifact_uri")
+    digest = payload.string("sha256")
+    size = try MqttRouteProtocol.integer(payload, "size_bytes")
+    taskID = source
+    guard let sourceUUID = UUID(uuidString: source), MqttRouteProtocol.hex(id, count: 64),
+          MqttRouteProtocol.hex(digest, count: 64), (1...AgentDesktopArtifactStore.maximumMqttArtifactBytes).contains(size),
+          uri.utf8.count <= 2_048, let remote = URLComponents(string: uri),
+          remote.scheme == "galaxyssi-artifact", let host = remote.host, UUID(uuidString: host) == sourceUUID,
+          remote.user == nil, remote.password == nil, remote.port == nil,
+          remote.query == nil, remote.fragment == nil, !remote.path.isEmpty else { throw MqttRouteError.invalidPayload }
+    let namespacedID = MqttRouteProtocol.digest(try GalaxySSILinkProtocol.jsonData([identity.binding, id, uri, digest]))
+    localID = namespacedID
+    var components = URLComponents()
+    components.scheme = "galaxyssi-artifact"
+    components.host = "peer-local"
+    let name = AgentDesktopArtifactStore.safeFileName((remote.path as NSString).lastPathComponent)
+    components.path = "/\(namespacedID)/\(name)"
+    guard let local = components.string else { throw MqttRouteError.invalidPayload }
+    localURI = local
+  }
+
+  func storagePayload(_ original: [String: Any]) -> [String: Any] {
+    var payload = original
+    payload["artifact_id"] = localID
+    payload["artifact_uri"] = localURI
+    payload["task_id"] = taskID
+    return payload
+  }
+}
+
 @MainActor
 struct MqttPeerChatProjection {
   struct Destination {
@@ -110,6 +151,16 @@ struct MqttPeerChatProjection {
       transfer.scope.turnId == AgentPeerChatTransport.turnId(for: source)
   }
 
+  func desktopPeerSource(_ payload: [String: Any], target: Destination) throws -> String {
+    let source = payload.string("source_message_id")
+    guard target.desktop, payload.string("desktop_id") == target.peer.remoteSignalName,
+          payload.string("contact_id") == target.peer.remoteSignalName,
+          payload.string("client_route_id") == target.routeId,
+          payload.string("conversation_id") == target.conversationId, UUID(uuidString: source) != nil
+    else { throw MqttRouteError.identityChanged }
+    return source
+  }
+
   @discardableResult
   func projectInbound(_ item: MqttBusinessInbox.Pending, resolvedAttachments: [[String: Any]]? = nil) throws -> ChatMessage? {
     guard let target = try currentDestination(item.identity),
@@ -131,7 +182,7 @@ struct MqttPeerChatProjection {
     let turn = AgentPeerChatTransport.turnId(for: source)
     let richOutput = attachments.isEmpty ? "" : AgentPeerChatTransport.richOutput(for: attachments, context: [
       "client_route_id": target.routeId, "conversation_id": target.conversationId, "contact_id": target.contactId,
-      "task_id": AgentPeerChatTransport.taskId(for: source), "turn_id": turn
+      "task_id": target.desktop ? source : AgentPeerChatTransport.taskId(for: source), "turn_id": turn
     ])
     do {
       return try store.persistTransportIncoming(content, from: target.contactId, remoteMessageId: item.messageID,
