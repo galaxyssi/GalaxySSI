@@ -1078,6 +1078,46 @@ enum AgentTeamMemberDispatchCheckpoint: String, Codable {
   case accepted
 }
 
+struct AgentSingleResearchCalibration: Codable, Equatable {
+  static let format = "galaxyssi.single-agent-research-calibration.v1"
+  static let stage = "EXECUTE"
+
+  let scope: AgentCollaborationToolEvidenceScope
+  let targetID: String
+  let modelID: String
+  let reasoningEffort: AgentModelReasoningEffort
+  let objectiveDigest: String
+
+  init?(format: String, scope: AgentCollaborationToolEvidenceScope, selection: AgentModelSelection,
+        objective: String, maximumDispatches: Int) {
+    guard format == Self.format, maximumDispatches == 1, selection.mode == .manual,
+          !selection.targetId.isBlank, !selection.modelId.isBlank, !objective.isBlank,
+          !scope.runId.isBlank, !scope.conversationId.isBlank, !scope.turnId.isBlank,
+          !scope.memberId.isBlank, !scope.sourceId.isBlank else { return nil }
+    self.scope = scope
+    targetID = selection.targetId
+    modelID = selection.modelId
+    reasoningEffort = selection.reasoningEffort
+    objectiveDigest = Self.digest(objective)
+  }
+
+  var recordKey: String { "single-research-calibration:" + scope.ownershipDigest }
+
+  func owns(_ team: AgentTeamExecutionSnapshot, member: AgentTeamMemberSnapshot) -> Bool {
+    team.supervisorRunId == scope.runId && team.conversationId == scope.conversationId && team.taskId == scope.turnId &&
+      team.state == .running && Self.digest(team.goal) == objectiveDigest && team.members == [member] &&
+      team.primaryMemberId == scope.memberId && team.primaryAgentId == targetID &&
+      member.memberId == scope.memberId && member.sourceMessageId == scope.sourceId && member.agentId == targetID &&
+      member.deliveryMode == .respond && member.researchStage == Self.stage &&
+      member.dispatchDependencyMemberIds?.isEmpty != false && !member.status.isTerminal &&
+      (member.dispatchCheckpoint == .dispatching || member.dispatchCheckpoint == .accepted)
+  }
+
+  private static func digest(_ objective: String) -> String {
+    AgentMcpJSONCodec.sha256(["objective": .string(objective.trimmingCharacters(in: .whitespacesAndNewlines))])
+  }
+}
+
 struct AgentTeamMemberSnapshot: Codable, Equatable {
   static let maxErrorCharacters = 1_000
 

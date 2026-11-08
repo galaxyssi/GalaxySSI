@@ -1075,7 +1075,7 @@ final class AgentTeamExecutionHistoryStore {
             snapshot.conversationId == conversationId, snapshot.taskId == turnId,
             let member = snapshot.members.first(where: { $0.memberId == memberId && $0.sourceMessageId == sourceId }),
             snapshot.state != .cancelled,
-            milestone == nil ? member.status == .succeeded : Self.canPublishMilestone(snapshot, member: member),
+            milestone == nil ? member.status == .succeeded : (try Self.canPublishMilestone(snapshot, member: member, database: database)),
             try database.researchRecord(Bool.self, conversationId: conversationId,
               key: "native-evidence-revoked", revision: 0) != true else {
         throw AgentTeamHistoryDatabase.Failure.stale
@@ -1604,9 +1604,36 @@ final class AgentTeamExecutionHistoryStore {
     milestonePrefix(baseKey) + AgentMcpJSONCodec.sha256(["id": .string(id)])
   }
 
-  private static func canPublishMilestone(_ snapshot: AgentTeamExecutionSnapshot, member: AgentTeamMemberSnapshot) -> Bool {
-    snapshot.state == .running && member.deliveryMode == .observe && !member.status.isTerminal &&
-      (member.dispatchCheckpoint == .dispatching || member.dispatchCheckpoint == .accepted)
+  func enrollSingleResearchCalibration(_ enrollment: AgentSingleResearchCalibration) throws {
+    let scope = enrollment.scope
+    try access { database in
+      guard let team = try database.snapshots(runId: scope.runId).first, let member = team.members.first,
+            enrollment.owns(team, member: member),
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true else { throw AgentTeamHistoryDatabase.Failure.stale }
+      if let saved = try database.researchRecord(AgentSingleResearchCalibration.self,
+        conversationId: scope.conversationId, key: enrollment.recordKey, revision: 0) {
+        guard saved == enrollment else { throw AgentTeamHistoryDatabase.Failure.stale }
+      } else {
+        try database.insertResearchRecord(enrollment, conversationId: scope.conversationId,
+          key: enrollment.recordKey, revision: 0)
+      }
+    }
+  }
+
+  private static func canPublishMilestone(_ snapshot: AgentTeamExecutionSnapshot, member: AgentTeamMemberSnapshot,
+                                          database: AgentTeamHistoryDatabase) throws -> Bool {
+    guard snapshot.state == .running, !member.status.isTerminal,
+          member.dispatchCheckpoint == .dispatching || member.dispatchCheckpoint == .accepted else { return false }
+    if member.deliveryMode == .observe { return true }
+    guard member.deliveryMode == .respond, member.researchStage == AgentSingleResearchCalibration.stage,
+          snapshot.members.count == 1 else { return false }
+    let scope = AgentCollaborationToolEvidenceScope(runId: snapshot.supervisorRunId,
+      conversationId: snapshot.conversationId, turnId: snapshot.taskId,
+      memberId: member.memberId, sourceId: member.sourceMessageId)
+    let enrollment = try database.researchRecord(AgentSingleResearchCalibration.self,
+      conversationId: scope.conversationId, key: "single-research-calibration:" + scope.ownershipDigest, revision: 0)
+    return enrollment?.scope == scope && enrollment?.owns(snapshot, member: member) == true
   }
 
   func publishCollaborationMilestone(_ input: AgentMcpJSONObject,
@@ -1634,7 +1661,7 @@ final class AgentTeamExecutionHistoryStore {
         guard let snapshot = try database.snapshots(runId: scope.runId).first,
               snapshot.conversationId == scope.conversationId, snapshot.taskId == scope.turnId,
               let member = snapshot.members.first(where: { $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId }),
-              Self.canPublishMilestone(snapshot, member: member),
+              try Self.canPublishMilestone(snapshot, member: member, database: database),
               try database.researchRecord(Bool.self, conversationId: scope.conversationId,
                 key: "native-evidence-revoked", revision: 0) != true
         else { throw AgentTeamHistoryDatabase.Failure.stale }
@@ -1710,7 +1737,7 @@ final class AgentTeamExecutionHistoryStore {
       guard let snapshot = try database.snapshots(runId: scope.runId).first,
             snapshot.conversationId == scope.conversationId, snapshot.taskId == scope.turnId,
             let member = snapshot.members.first(where: { $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId }),
-            Self.canPublishMilestone(snapshot, member: member),
+            try Self.canPublishMilestone(snapshot, member: member, database: database),
             try database.researchRecord(Bool.self, conversationId: scope.conversationId,
               key: "native-evidence-revoked", revision: 0) != true
       else { throw AgentTeamHistoryDatabase.Failure.stale }
