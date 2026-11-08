@@ -124,6 +124,35 @@ final class MqttDeliveryCompletionsTests: XCTestCase {
     XCTAssertEqual(try journal.outbox.completions.pending().count, 1)
   }
 
+  func testLegacyAcceptanceRetiresOnlyInboxAndDoesNotBlockVerifiedReceipt() throws {
+    let f = try ChunkFixture()
+    let journal = try MqttSignalStateJournal(fileURL: f.url, secrets: f.secrets)
+    let entry = try enqueue(journal.outbox)
+    let legacy: [String: Any] = ["type": "delivery_ack", "delivery_status": "accepted",
+      "transport_message_id": entry.message.messageId, "message_id": "legacy"]
+    let digest = String(repeating: "a", count: 64)
+    _ = try journal.inbox.accept(identity: entry.identity, messageID: "legacy", payload: legacy,
+      ciphertextDigest: digest, wireHash: digest, receiptRequired: false)
+    try f.execute("CREATE TRIGGER fail_legacy_inbox BEFORE UPDATE ON mqtt_business_inbox BEGIN SELECT RAISE(ABORT,'forced'); END")
+    XCTAssertThrowsError(try journal.consumeStoredReceipt(identity: entry.identity, receiptMessageID: "legacy"))
+    XCTAssertEqual(try journal.inbox.pending().map(\.messageID), ["legacy"])
+    try f.execute("DROP TRIGGER fail_legacy_inbox")
+    XCTAssertNil(try journal.consumeStoredReceipt(identity: entry.identity, receiptMessageID: "legacy"))
+    XCTAssertTrue(try journal.inbox.pending().isEmpty)
+    XCTAssertNotNil(try journal.outbox.entry(identity: entry.identity, messageID: entry.message.messageId))
+    XCTAssertTrue(try journal.outbox.completions.pending().isEmpty)
+
+    let reopened = try MqttSignalStateJournal(fileURL: f.url, secrets: f.secrets)
+    let replay = try XCTUnwrap(reopened.inbox.replay(identity: entry.identity, ciphertextDigest: digest))
+    XCTAssertNil(replay.receipt)
+    XCTAssertTrue(try reopened.inbox.pending().isEmpty)
+    try stageReceipt(reopened, entry: entry)
+    let verified = try reopened.consumeStoredReceipt(identity: entry.identity, receiptMessageID: "ack")
+    XCTAssertEqual(verified?.wireHash, entry.wireHash)
+    XCTAssertNil(try reopened.outbox.entry(identity: entry.identity, messageID: entry.message.messageId))
+    XCTAssertEqual(try reopened.outbox.completions.pending().count, 1)
+  }
+
   func testInboxCompletionFailureRollsBackOutgoingAcknowledgement() throws {
     let f = try ChunkFixture()
     let journal = try MqttSignalStateJournal(fileURL: f.url, secrets: f.secrets)

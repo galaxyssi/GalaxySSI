@@ -9,6 +9,32 @@ final class MqttSignalStateJournal {
   let incomingChunks: MqttDurableChunks
   let outgoingChunks: MqttOutgoingChunks
 
+  static func profileFileURL(profileID: String, root: URL? = nil) -> URL {
+    let base = root ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ??
+      FileManager.default.temporaryDirectory
+    return base.appendingPathComponent("GalaxySSI/MQTT", isDirectory: true)
+      .appendingPathComponent(MqttRouteProtocol.digest(Data(profileID.utf8)) + ".sqlite3")
+  }
+
+  // An unreadable or partially installed journal must never be treated as an un-migrated profile.
+  static func openMigrated(fileURL: URL, expectedFingerprint: String,
+                           secrets: GalaxySSISecretStore) throws -> MqttSignalStateJournal? {
+    let files = FileManager.default
+    guard files.fileExists(atPath: fileURL.path) else {
+      if ["-wal", "-shm", "-journal"].contains(where: { files.fileExists(atPath: fileURL.path + $0) }) {
+        throw MqttChunkStorageError.corruptState
+      }
+      return nil
+    }
+    let journal = try MqttSignalStateJournal(fileURL: fileURL, secrets: secrets)
+    guard let marker = try journal.legacyCutover() else {
+      guard try journal.load() == nil else { throw MqttChunkStorageError.corruptState }
+      return nil
+    }
+    guard marker.localFingerprint == expectedFingerprint else { throw MqttRouteError.identityChanged }
+    return journal
+  }
+
   init(fileURL: URL, secrets: GalaxySSISecretStore = KeychainSecretStore.shared,
        inboxLimits: MqttBusinessInbox.Limits = .init(), outboxLimits: MqttBusinessOutbox.Limits = .init()) throws {
     database = try MqttChunkDatabase(fileURL: fileURL, secrets: secrets)
@@ -128,6 +154,14 @@ final class MqttSignalStateJournal {
         throw MqttRouteError.invalidPayload
       }
       guard payload["type"] as? String == "delivery_ack" else { return nil }
+      if payload["delivery_status"] as? String == "accepted",
+         payload["content_hash"] == nil, payload["content_hash_algorithm"] == nil {
+        // Legacy acceptance is not storage proof. Retire only the incoming control message.
+        guard try inbox.complete(identity: identity, messageID: receiptMessageID, transaction: token) else {
+          throw MqttChunkStorageError.corruptState
+        }
+        return nil
+      }
       let receipt = try MqttDeliveryEnvelope.parseStoredReceipt(payload)
       _ = try outbox.acknowledgeVerified(identity: identity, messageID: receipt.messageID,
         wireHash: receipt.wireHash, now: now, transaction: token)
@@ -146,10 +180,36 @@ final class MqttSignalStateJournal {
       guard let saved = try inbox.pending(identity: item.identity, messageID: item.messageID, transaction: token),
             saved.key == item.key, saved.payload == item.payload,
             let payload = try JSONSerialization.jsonObject(with: saved.payload) as? [String: Any],
-            payload.string("type") == "input_attachment_receipt", transfer.scope.clientMessageId == bodyID,
+            payload.string("type") == "input_attachment_receipt", let source = transfer.scope.clientMessageId,
+            source == bodyID || UUID(uuidString: source)?.uuidString == bodyID,
             transfer.matchesStoredReceipt(payload)
       else { throw MqttRouteError.invalidPayload }
+      if try outbox.entry(identity: item.identity, messageID: bodyID, transaction: token)?
+        .deferredRequest?.blobAttachmentDependencies?.contains(transfer.transferId) == true {
+        guard AgentBlobProtocol.receiptMatches(attachment: transfer, receipt: payload)
+        else { throw MqttRouteError.invalidPayload }
+      }
       _ = try outbox.releaseAttachment(identity: item.identity, messageID: bodyID,
+        transferID: transfer.transferId, transaction: token)
+      guard try inbox.complete(identity: item.identity, messageID: item.messageID, transaction: token) else {
+        throw MqttChunkStorageError.corruptState
+      }
+    }
+  }
+
+  func consumeFailedBlobAttachment(_ item: MqttBusinessInbox.Pending, bodyID: String,
+                                   transfer: AgentPreparedOutboundAttachment) throws {
+    try database.withTransaction { token in
+      guard let saved = try inbox.pending(identity: item.identity, messageID: item.messageID, transaction: token),
+            saved.key == item.key, saved.payload == item.payload,
+            var proof = try JSONSerialization.jsonObject(with: saved.payload) as? [String: Any],
+            proof.string("type") == "input_attachment_receipt", proof.string("status") == "failed",
+            let source = transfer.scope.clientMessageId,
+            source == bodyID || UUID(uuidString: source)?.uuidString == bodyID else { throw MqttRouteError.invalidPayload }
+      proof["status"] = "stored"
+      guard transfer.matchesStoredReceipt(proof), AgentBlobProtocol.receiptMatches(attachment: transfer, receipt: proof)
+      else { throw MqttRouteError.invalidPayload }
+      try outbox.discardDeferredBlobBody(identity: item.identity, messageID: bodyID,
         transferID: transfer.transferId, transaction: token)
       guard try inbox.complete(identity: item.identity, messageID: item.messageID, transaction: token) else {
         throw MqttChunkStorageError.corruptState

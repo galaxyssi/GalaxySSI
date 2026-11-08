@@ -46,6 +46,7 @@ enum GalaxySSIHealthCare {
     let rationale: String
     let confirmedBy: String
     let confirmedAt: Date
+    var numeric: GalaxySSIHealthCareTarget.Confirmed?
   }
   struct Concern: Codable, Equatable, Identifiable {
     let id: UUID
@@ -53,20 +54,49 @@ enum GalaxySSIHealthCare {
     var revision: Int
     var updatedAt: Date
     var assessment: Assessment
+    var measurement: GalaxySSIHealthCareComparison.Sample?
+    var comparison: GalaxySSIHealthCareComparison.Pair?
     var stage: Stage
     var context: Context?
     var target: Target?
+    var targetRevision: Int?
     var reviewNote: String?
+    var bloodPressureWarning: GalaxySSIHealthCarePriority.Warning?
   }
   struct Ledger: Codable {
     var current: [String: Concern] = [:]
     var history: [String: [Concern]] = [:]
     var deletedInput: [String: String] = [:]
+    var acknowledgedBloodPressure: Record?
 
     mutating func publish(_ next: Concern) {
       let key = next.metric.rawValue
       if let old = current[key] { history[old.id.uuidString, default: []].append(old) }
       current[key] = next
+    }
+
+    mutating func reconcileComparisons(readings: [GalaxySSIHealthMetric: [GalaxySSIHealthReading]],
+                                       previous: [String: Concern], now: Date) -> Bool {
+      var changed = false
+      for (key, concern) in current {
+        let prior = previous[key]
+        let (sample, pair) = GalaxySSIHealthCareComparison.reconcile(readings[concern.metric] ?? [], prior: prior)
+        guard sample != concern.measurement || pair != concern.comparison else { continue }
+        var next = concern
+        next.measurement = sample
+        next.comparison = pair
+        if let prior, prior.revision == concern.revision {
+          guard next.revision < Int.max else { continue }
+          next.revision += 1
+          next.updatedAt = max(next.updatedAt, now)
+          publish(next)
+        } else {
+          // The same evaluation already advanced the concern and retained the preceding revision.
+          current[key] = next
+        }
+        changed = true
+      }
+      return changed
     }
   }
 
@@ -76,6 +106,31 @@ enum GalaxySSIHealthCare {
       .filter { $0.stage != .paused && $0.stage != .closed }
       .sorted { ($0.updatedAt, $0.id.uuidString) > ($1.updatedAt, $1.id.uuidString) }
       .prefix(3))
+  }
+
+  struct AgentDiscussionTarget: Identifiable {
+    let id: UUID
+    let metric: GalaxySSIHealthMetric
+    let revision: Int
+    let permission: UUID?
+
+    init(_ concern: Concern, permission: UUID?) {
+      id = concern.id
+      metric = concern.metric
+      revision = concern.revision
+      self.permission = permission
+    }
+
+    func matches(_ archive: GalaxySSIHealthRecords.Archive) -> Bool {
+      guard archive.localCareAllowed == true,
+            let current = archive.localCare?.current[metric.rawValue], current.id == id, current.revision == revision,
+            current.assessment.record != nil, current.stage != .paused, current.stage != .closed else { return false }
+      return permission == Self.permission(in: archive)
+    }
+
+    static func permission(in archive: GalaxySSIHealthRecords.Archive) -> UUID? {
+      archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id
+    }
   }
 
   static func assess(_ readings: [GalaxySSIHealthReading], context: Context?) -> Assessment? {

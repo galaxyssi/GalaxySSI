@@ -48,16 +48,19 @@ final class GalaxySSITransportReceiptJournal {
     binding: String,
     receivedMessageId: String,
     receivedCiphertextDigest: String? = nil,
+    verifiedWireHash: String? = nil,
     isReplay: Bool = false,
     nowMillis: Int64? = nil,
     makeWirePayload: () -> String?
   ) throws -> Bool {
+    guard verifiedWireHash.map({ MqttRouteProtocol.hex($0, count: 64) }) != false else { return false }
     let nowMillis = nowMillis ?? Self.nowMillis()
     let id = Self.receiptId(
       peerId: peerId,
       phonePeer: phonePeer,
       binding: binding,
-      receivedMessageId: receivedMessageId
+      receivedMessageId: receivedMessageId,
+      verifiedWireHash: verifiedWireHash
     )
     if records.contains(where: { $0.id == id }) { return true }
     let digest = receivedCiphertextDigest.flatMap { value in value.utf8.count == 64 ? value : nil }
@@ -141,6 +144,13 @@ final class GalaxySSITransportReceiptJournal {
 
   var nextDueMillis: Int64? { records.map(\.nextAttemptAtMillis).min() }
 
+  func isDrainedForCutover() throws -> Bool {
+    guard records.isEmpty else { return false }
+    guard FileManager.default.fileExists(atPath: fileURL.path) else { return true }
+    let saved = try cipher.read(from: fileURL, purpose: Self.purpose)
+    return try JSONDecoder().decode([GalaxySSITransportReceiptRecord].self, from: saved).isEmpty
+  }
+
   static func binding(peerId: String, routes: GalaxySSILinkRoutes) -> String {
     AgentBlobProtocol.sha256(Data([
       peerId, routes.clientRouteId, routes.localFingerprint,
@@ -160,11 +170,12 @@ final class GalaxySSITransportReceiptJournal {
     peerId: String,
     phonePeer: Bool,
     binding: String,
-    receivedMessageId: String
+    receivedMessageId: String,
+    verifiedWireHash: String?
   ) -> String {
-    AgentBlobProtocol.sha256(Data(
-      "\(phonePeer ? "phone" : "desktop")\u{001f}\(peerId)\u{001f}\(binding)\u{001f}\(receivedMessageId)".utf8
-    ))
+    let legacy = "\(phonePeer ? "phone" : "desktop")\u{001f}\(peerId)\u{001f}\(binding)\u{001f}\(receivedMessageId)"
+    let key = verifiedWireHash.map { "RX_STORED\u{001f}\($0)\u{001f}\(legacy)" } ?? legacy
+    return AgentBlobProtocol.sha256(Data(key.utf8))
   }
 
   private static func nowMillis() -> Int64 {
@@ -399,13 +410,17 @@ extension MessageCoordinator {
   }
 
   func publishPhoneContactReceipt(contact: GalaxySSIContact, receivedMessageId: String,
-                                  ciphertextDigest: String, isReplay: Bool = false) {
+                                  ciphertextDigest: String, verifiedWireHash: String? = nil,
+                                  isReplay: Bool = false) {
     guard let routes = contact.opaquePhoneRoutes, !receivedMessageId.isEmpty else { return }
     do {
       if try transportReceiptJournal.enqueue(peerId: contact.id, phonePeer: true,
         binding: GalaxySSITransportReceiptJournal.binding(peerId: contact.id, routes: routes),
-        receivedMessageId: receivedMessageId, receivedCiphertextDigest: ciphertextDigest, isReplay: isReplay,
-        makeWirePayload: { makePhoneContactReceiptWire(contact: contact, receivedMessageId: receivedMessageId) }) {
+        receivedMessageId: receivedMessageId, receivedCiphertextDigest: ciphertextDigest,
+        verifiedWireHash: verifiedWireHash, isReplay: isReplay,
+        makeWirePayload: {
+          makePhoneContactReceiptWire(contact: contact, receivedMessageId: receivedMessageId, verifiedWireHash: verifiedWireHash)
+        }) {
         wakeTransportReceiptDrain()
       }
     } catch {
@@ -413,16 +428,21 @@ extension MessageCoordinator {
     }
   }
 
-  private func makePhoneContactReceiptWire(contact: GalaxySSIContact, receivedMessageId: String) -> String? {
-    let ack: [String: Any] = [
-      "type": "delivery_ack",
-      "transport_message_id": receivedMessageId,
-      "source_message_id": receivedMessageId,
-      "delivery_status": "accepted",
-      "sender": "system",
-      "peer_chat": true,
-      "time": Int64(Date().timeIntervalSince1970 * 1_000)
-    ]
+  private func makePhoneContactReceiptWire(contact: GalaxySSIContact, receivedMessageId: String,
+                                           verifiedWireHash: String?) -> String? {
+    var ack: [String: Any]
+    if let verifiedWireHash {
+      guard let stored = try? MqttDeliveryEnvelope.storedReceipt(messageID: receivedMessageId, wireHash: verifiedWireHash)
+      else { return nil }
+      ack = stored
+      ack["message_id"] = UUID().uuidString
+    } else {
+      ack = ["type": "delivery_ack", "transport_message_id": receivedMessageId, "delivery_status": "accepted"]
+    }
+    ack["source_message_id"] = receivedMessageId
+    ack["sender"] = "system"
+    ack["peer_chat"] = true
+    ack["time"] = Int64(Date().timeIntervalSince1970 * 1_000)
     guard let envelope = try? GalaxySSILinkProtocol.makeEnvelope(
       payload: ack,
       sourceId: signalEngine.identity.name,

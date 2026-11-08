@@ -19,6 +19,7 @@ final class MqttDeliveryCompletions {
     let attachmentTransferID: String
     let receivedAt: Int64
     var consumedAt: Int64?
+    var topic: String? = nil
     var retainUntil: Int64 { (consumedAt ?? receivedAt) + MqttBusinessStorage.retention }
     var isPending: Bool { consumedAt == nil }
   }
@@ -45,7 +46,7 @@ final class MqttDeliveryCompletions {
     let event = Event(identity: entry.identity, messageID: entry.message.messageId, wireHash: entry.wireHash,
       traffic: entry.traffic, requestHash: entry.requestHash, sourceMessageID: entry.message.clientSourceMessageId,
       contactID: entry.message.contactId, attachmentTransferID: entry.message.attachmentTransferId,
-      receivedAt: try MqttBusinessStorage.timestamp(at), consumedAt: nil)
+      receivedAt: try MqttBusinessStorage.timestamp(at), consumedAt: nil, topic: entry.message.topic)
     try database.transaction(joining: transaction) {
       guard try read(key) == nil else { throw MqttChunkStorageError.corruptState }
       let data = try encode(event)
@@ -116,6 +117,7 @@ final class MqttDeliveryCompletions {
     guard MqttRouteProtocol.hex(event.wireHash, count: 64),
           MqttMultipathPolicy.Traffic(rawValue: event.traffic) != nil,
           event.requestHash.map({ MqttRouteProtocol.hex($0, count: 64) }) ?? true,
+          event.topic.map(GalaxySSILinkProtocol.validTopic) ?? true,
           event.attachmentTransferID.isEmpty || MqttRouteProtocol.hex(event.attachmentTransferID, count: 64) else { throw MqttChunkStorageError.corruptState }
     _ = try MqttBusinessStorage.timestamp(event.receivedAt)
     if let consumed = event.consumedAt {

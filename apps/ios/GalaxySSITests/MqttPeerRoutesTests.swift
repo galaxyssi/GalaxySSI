@@ -2,6 +2,39 @@ import XCTest
 @testable import GalaxySSI
 
 final class MqttPeerRoutesTests: XCTestCase {
+  func testQueuedDirectCiphertextUsesCurrentTopicWithoutChangingItsIdentity() async throws {
+    let f = try ReceiptBridgeFixture(scope: "direct:pair")
+    let peer = f.peer
+    let original = f.entry.message
+    var rotated = peer.binding
+    rotated.sendTopic = String(repeating: "t", count: 43)
+    rotated.sendTopics = [rotated.sendTopic]
+    XCTAssertEqual(try MqttBusinessIdentity(rotated), f.entry.identity)
+    peer.binding = rotated
+    try peer.routes.replace([rotated])
+    await peer.start()
+    try await peer.handshake()
+    let result = try await f.sendDrain().drain(identities: [f.entry.identity], validatedNetwork: true)
+    XCTAssertTrue(result.failures.isEmpty)
+    XCTAssertEqual(f.publications.map(\.topic), [rotated.sendTopic])
+    let saved = try XCTUnwrap(f.outbox.entry(identity: f.entry.identity, messageID: original.messageId))
+    XCTAssertEqual(saved.message.topic, original.topic)
+    XCTAssertEqual(saved.message.wirePayload, original.wirePayload)
+    XCTAssertEqual(saved.wireHash, f.entry.wireHash)
+    let id = UUID().uuidString
+    func intent(topic: String, content: String) throws -> MqttSignalSendRequest {
+      try MqttSignalSendRequest(identity: f.entry.identity, payload: ["message_id": id, "content": content],
+        remoteName: "receiver", topic: topic)
+    }
+    let hash = try intent(topic: original.topic, content: "original").digest()
+    XCTAssertTrue(try intent(topic: rotated.sendTopic, content: "original").matchesIntent(hash, storedTopic: original.topic))
+    XCTAssertFalse(try intent(topic: rotated.sendTopic, content: "changed").matchesIntent(hash, storedTopic: original.topic))
+    var replaced = rotated
+    replaced.secret = Data(repeating: 8, count: 32).base64URLEncodedString()
+    try peer.routes.replace([replaced])
+    XCTAssertThrowsError(try peer.routes.withPendingTopic(identity: f.entry.identity, storedTopic: original.topic) { _ in })
+  }
+
   func testBusinessSendDrainResendsOnlyMissingFragmentsOnAnotherBrokerThenProbes() async throws {
     let f = try ReceiptBridgeFixture()
     let peer = f.peer
@@ -969,13 +1002,13 @@ private final class PeerRoutesFixture {
     now: { [weak self] in self?.time ?? 0 }, onReady: { [weak self] in self?.readyEvents.append($0) },
     onFailure: { [weak self] _, _ in self?.failures += 1 })
 
-  init(enabled: Bool = true) throws {
+  init(enabled: Bool = true, scope: String = "pair") throws {
     let suite = "PeerRoutes-\(UUID().uuidString)"
     self.suite = suite
     let defaults = UserDefaults(suiteName: suite)!
     self.defaults = defaults
     persistence = MqttRouteState(defaults: defaults, secrets: InMemorySecretStore())
-    let binding = MqttPeerBinding(scope: "pair", sender: String(repeating: "a", count: 64), receiver: String(repeating: "b", count: 64),
+    let binding = MqttPeerBinding(scope: scope, sender: String(repeating: "a", count: 64), receiver: String(repeating: "b", count: 64),
       secret: Data(repeating: 7, count: 32).base64URLEncodedString(), sendTopic: String(repeating: "s", count: 43),
       sendTopics: [String(repeating: "s", count: 43)], receiveTopics: [String(repeating: "r", count: 43)], enabled: enabled)
     self.binding = binding
@@ -1061,8 +1094,8 @@ private final class ReceiptBridgeFixture {
   lazy var receipts = MqttBusinessReceipts(routes: peer.routes, outbox: outbox, dispatcher: dispatch,
     now: { Date(timeIntervalSince1970: 1) })
 
-  init() throws {
-    peer = try PeerRoutesFixture()
+  init(scope: String = "pair") throws {
+    peer = try PeerRoutesFixture(scope: scope)
     storage = try ChunkFixture()
     journal = try MqttSignalStateJournal(fileURL: storage.url, secrets: storage.secrets)
     outbox = journal.outbox

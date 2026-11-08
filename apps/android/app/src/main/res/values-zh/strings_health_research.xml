@@ -8,7 +8,7 @@
     <string name="health_research_consent">允许此 Agent 在本事项出现新结果、行动反馈或复查到期时主动查证。它可接收当前资料摘要和相关历史、检索公开医学资料并提出计划；计划和目标仍需你确认。不授权诊断或修改用药。暂停此事项，或变更隐私、模型及接收方设置后，本授权失效。已经传出的资料无法撤回。</string>
     <string name="health_research_acknowledge">我同意按此范围和接收方开展后续查证</string>
     <string name="health_research_destination">Agent：%1$s\n模型：%2$s\n推理强度：%3$s</string>
-    <string name="health_research_question">请根据本轮触发原因和相对上次评估的变化，主动跟进此授权健康事项。接续已有讨论和计划，必要时询问行动进展或缺少的复查结果。核对数据质量和相关历史，按需查阅专业来源，说明不确定性，只提出有依据的下一步。不要诊断、调整用药或把参考范围中点当成目标。请给出有用的答复；确有必要提出新计划时，再通过限定范围的健康工具提交待确认草案。</string>
+    <string name="health_research_question">请根据本轮触发原因、实际研究进度和相对上次评估的变化，主动跟进此授权健康事项。回复结束不代表来源核查或计划已经完成。若首次来源核查仍未完成且关键检测条件已明确，先查阅适用的专业来源，只提出有依据的下一步。若确有已保存的计划或行动，再接续跟进相关进展和缺少的结果；不要假定之前的文字建议已被采纳。核对数据质量和相关历史，说明不确定性，不要诊断、调整用药或把参考范围中点当成目标。请给出有用的答复；确有必要提出新计划时，再通过限定范围的健康工具提交待确认草案。</string>
     <string name="health_research_requested">请查证此健康事项的新证据和下一步。</string>
     <string name="health_research_queued">等待查证</string>
     <string name="health_research_running">正在查证</string>

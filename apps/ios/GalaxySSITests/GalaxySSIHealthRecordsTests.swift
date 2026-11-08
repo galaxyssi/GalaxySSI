@@ -7,6 +7,74 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testLocalCareDiscussionBindsConsentToConcernTurnAndProvider() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let now = Date()
+    let reading = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-300),
+      value: 110, notes: "Private note excluded", unitOverride: "mg/dL", referenceInterval: "70 - 99")
+    try records.write(reading)
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    let thread = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    XCTAssertTrue(thread.turns.isEmpty)
+    let reopened = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    XCTAssertEqual(try reopened.openLocalCareDiscussion(id: concern.id, metric: .glucose).id, thread.id)
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    func review(_ provider: String = "provider-a") throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Explain this reading",
+        destinationID: provider, model: model, credential: "fixture-api-key", now: now)
+    }
+    XCTAssertThrowsError(try review())
+    try records.setHealthOnlinePermission(true)
+    let approved = try review()
+    XCTAssertFalse(approved.payload.contains(reading.notes))
+    XCTAssertFalse(approved.payload.contains(reading.id.uuidString))
+    let request = try GalaxySSIHealthCareDiscussion.request(approved, key: "fixture-api-key")
+    XCTAssertEqual(request.url, approved.endpoint)
+    XCTAssertThrowsError(try GalaxySSIHealthCareDiscussion.request(approved, key: "different-api-key"))
+    XCTAssertFalse(String(decoding: try XCTUnwrap(request.httpBody), as: UTF8.self).contains("\"tools\""))
+    var otherModel = model
+    otherModel.apiStyle = .gemini
+    otherModel.endpoint = "https://example.test/v1beta/models/other:generateContent"
+    XCTAssertNil(GalaxySSIHealthCareDiscussion.endpoint(for: otherModel))
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(approved, now: now.addingTimeInterval(601)))
+    try records.beginLocalCareDiscussionTurn(approved, now: now)
+    XCTAssertThrowsError(try reopened.beginLocalCareDiscussionTurn(approved, now: now))
+    try records.finishLocalCareDiscussionTurn(approved, answer: "Fixture scoped response", now: now)
+    XCTAssertTrue(try review().payload.contains("Fixture scoped response"))
+    XCTAssertFalse(try review("provider-b").payload.contains("Fixture scoped response"))
+    // JSON escaping can exceed the wire budget even though each saved reply is within its own limit.
+    let replies = ["older", "middle", "newest"].map { $0 + String(repeating: "\t", count: 6_000) }
+    for reply in replies {
+      let next = try review()
+      try records.beginLocalCareDiscussionTurn(next, now: now)
+      try records.finishLocalCareDiscussionTurn(next, answer: reply, now: now)
+    }
+    let bounded = try review()
+    let disclosure = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(bounded.payload.utf8)) as? [String: Any])
+    let previous = try XCTUnwrap(disclosure["previous"] as? [[String: String]])
+    XCTAssertEqual(previous.compactMap { $0["answer"] }, Array(replies.suffix(2)))
+    XCTAssertLessThanOrEqual(bounded.payload.utf8.count, GalaxySSIHealthCareDiscussion.maximumPayloadBytes)
+    XCTAssertEqual(try records.load().localCareDiscussions?[concern.id.uuidString]?.turns.count, 4)
+    let stale = try review()
+    try records.setHealthOnlinePermission(false)
+    try records.setHealthOnlinePermission(true)
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(stale, now: now))
+    let updatedApproval = try review()
+    try records.setLocalCareContext(concern, applicability: .excluded, now: now)
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(updatedApproval, now: now))
+    let updated = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    try records.deleteLocalCare(updated)
+    XCTAssertThrowsError(try records.openLocalCareDiscussion(id: concern.id, metric: .glucose))
+    XCTAssertEqual(try reopened.load().localCareDiscussions?[concern.id.uuidString]?.id, thread.id)
+  }
+
+  @MainActor
   func testLocalCareRequiresPermissionAndPreservesExactRevisionHistory() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }
@@ -60,6 +128,51 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     try records.setPrivacy(.localCare, enabled: false)
     XCTAssertThrowsError(try records.localCareHistory(updated.id))
     XCTAssertNil(try Data(contentsOf: file).range(of: Data("glucoseContext".utf8)))
+  }
+
+  func testRecordedBloodPressureUsesEitherComponentAndUnroundedKilopascals() {
+    func warning(_ systolic: Decimal, _ diastolic: Decimal, unit: String = "mmHg") -> Bool {
+      GalaxySSIHealthCarePriority.evaluate(.init(metric: .bloodPressure, value: systolic,
+        diastolic: diastolic, unitOverride: unit)) != nil
+    }
+    XCTAssertFalse(warning(180, 120))
+    XCTAssertTrue(warning(181, 75))
+    XCTAssertTrue(warning(160, 121))
+    XCTAssertFalse(warning(121, 140))
+    XCTAssertFalse(warning(185, 80, unit: "unknown"))
+    XCTAssertFalse(warning(Decimal(string: "23.998032")!, Decimal(string: "15.998688")!, unit: "kPa"))
+    XCTAssertTrue(warning(Decimal(string: "23.998033")!, 14, unit: "kPa"))
+    XCTAssertTrue(warning(22, Decimal(string: "15.998689")!, unit: "kPa"))
+  }
+
+  @MainActor
+  func testBloodPressureReviewIsBoundToLatestRecordAndDoesNotChangeOtherConcerns() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date(timeIntervalSince1970: 1_700_000_000)
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-90), value: 115,
+      unitOverride: "mg/dL", referenceInterval: "70 - 99"))
+    try records.write(.init(metric: .bloodPressure, measuredAt: now.addingTimeInterval(-60), value: 181, diastolic: 90))
+    XCTAssertThrowsError(try records.reconcileLocalCare(now: now))
+    XCTAssertNil(try GalaxySSIHealthRecords.currentCareBloodPressureWarning(records.load(), now: now))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let archive = try records.load()
+    let old = try XCTUnwrap(GalaxySSIHealthRecords.currentCareBloodPressureWarning(archive, now: now))
+    try records.acknowledgeLocalCareBloodPressure(old.warning, now: now)
+    XCTAssertEqual(try records.load().localCare?.acknowledgedBloodPressure, old.warning.record)
+    try records.write(.init(metric: .bloodPressure, measuredAt: now, value: 165, diastolic: 121))
+    XCTAssertNil(try GalaxySSIHealthRecords.currentCareBloodPressureWarning(records.load(), now: now))
+    XCTAssertThrowsError(try records.acknowledgeLocalCareBloodPressure(old.warning, now: now))
+    try records.reconcileLocalCare(now: now)
+    let updated = try records.load()
+    let latest = try XCTUnwrap(GalaxySSIHealthRecords.currentCareBloodPressureWarning(updated, now: now))
+    XCTAssertEqual(latest.concern.id, old.concern.id)
+    XCTAssertNotEqual(updated.localCare?.acknowledgedBloodPressure, latest.warning.record)
+    XCTAssertEqual(updated.localCare?.current["glucose"], archive.localCare?.current["glucose"])
+    try records.setPrivacy(.localCare, enabled: false)
+    XCTAssertNil(try GalaxySSIHealthRecords.currentCareBloodPressureWarning(records.load(), now: now))
   }
 
   @MainActor
@@ -200,6 +313,66 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertThrowsError(try reader.read())
   }
 
+  func testLocalCareComparisonFencesCorrectionsBackfillAndSourceIdentity() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "comparison-fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let origin = "private-sensor-fixture"
+    let first = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-3 * 86_400),
+      value: 110, conditions: "private condition fixture", unitOverride: "mg/dL", referenceInterval: "70 - 99",
+      healthKitSource: .init(key: "private-source-1", origin: origin, name: nil))
+    try records.write(first)
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let initial = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    try records.setLocalCareContext(initial, applicability: .applicable, now: now)
+    let second = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-300), value: 100,
+      conditions: "different condition fixture", unitOverride: "mg/dL", referenceInterval: "70 - 99",
+      healthKitSource: .init(key: "private-source-2", origin: origin, name: nil))
+    try records.write(second)
+    try records.reconcileLocalCare(now: now)
+    let advanced = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    let pair = try XCTUnwrap(advanced.comparison)
+    XCTAssertEqual(pair.kind, .newResult)
+    XCTAssertEqual(pair.before.record.id, first.id)
+    XCTAssertEqual(pair.after.record.id, second.id)
+    XCTAssertEqual(pair.previousContext?.applicability, .applicable)
+    XCTAssertNil(advanced.context)
+    XCTAssertEqual(pair.changes.map(\.delta), ["-10"])
+    XCTAssertTrue(pair.gaps(currentContext: nil).contains(.conditionsDiffer))
+    try records.reconcileLocalCare(now: now)
+    XCTAssertEqual(try records.load().localCare?.current["glucose"], advanced)
+    let sanitized = String(decoding: try JSONEncoder().encode(pair.modelValue(currentContext: nil)), as: UTF8.self)
+    for privateValue in [origin, "private condition fixture", first.id.uuidString, second.id.uuidString] {
+      XCTAssertFalse(sanitized.contains(privateValue))
+    }
+    var correction = try XCTUnwrap(records.load().current.first { $0.id == second.id })
+    correction.value = 105
+    try records.write(correction)
+    try records.reconcileLocalCare(now: now)
+    let corrected = try XCTUnwrap(records.load().localCare?.current["glucose"]?.comparison)
+    XCTAssertEqual(corrected.kind, .recordCorrection)
+    XCTAssertTrue(corrected.changes.isEmpty)
+    XCTAssertNil(corrected.modelValue(currentContext: nil).before)
+    let backfill = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-86_400),
+      value: 6, unitOverride: "mmol/L", referenceInterval: "4 - 5.5")
+    try records.write(backfill)
+    try records.reconcileLocalCare(now: now)
+    let revisedHistory = try XCTUnwrap(records.load().localCare?.current["glucose"]?.comparison)
+    XCTAssertEqual(revisedHistory.kind, .historyChanged)
+    XCTAssertEqual(revisedHistory.before.record.id, backfill.id)
+    XCTAssertTrue(revisedHistory.gaps(currentContext: nil).contains(.unitsDiffer))
+    for id in [first.id, backfill.id] {
+      var deleting = try XCTUnwrap(records.load().current.first { $0.id == id })
+      deleting.deleted = true
+      try records.write(deleting)
+    }
+    try records.reconcileLocalCare(now: now)
+    XCTAssertNil(try records.load().localCare?.current["glucose"]?.comparison)
+  }
+
+  @MainActor
   func testAppleHealthTrendPagesOriginsWithinScopeAndPinsExactContributor() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
@@ -365,6 +538,51 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     archive.revisions.append(removed)
     XCTAssertTrue(GalaxySSIHealthRecordCenterSnapshot(archive: archive, originals: [original]).confirmed.isEmpty)
   }
+  func testIndividualTargetRequiresCurrentRecordAndRevokesWithoutErasingHistory() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "target-fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let first = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-120),
+      value: 110, unitOverride: "mg/dL", referenceInterval: "70 - 99")
+    try records.write(first)
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let original = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    let exclusive = try GalaxySSIHealthCareTarget.Bounds(low: "", high: "110", lowInclusive: false, highInclusive: false)
+    XCTAssertThrowsError(try records.confirmLocalCareNumericTarget(original, component: .systolic,
+      bounds: exclusive, source: "Fixture source", rationale: "Fixture reason", confirmedBy: "User", now: now))
+    try records.confirmLocalCareNumericTarget(original, component: .value,
+      bounds: exclusive, source: "Fixture source", rationale: "Fixture reason", confirmedBy: "User", now: now)
+    let saved = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertEqual(saved.targetRevision, 1)
+    XCTAssertEqual(records.localCareTargetComparison(saved, now: now), .above)
+    XCTAssertThrowsError(try records.revokeLocalCareTarget(original, now: now))
+
+    try records.write(.init(metric: .glucose, measuredAt: now, value: 105,
+      unitOverride: "mg/dL", referenceInterval: "70 - 99"))
+    XCTAssertEqual(records.localCareTargetComparison(saved, now: now), .reviewRequired)
+    XCTAssertThrowsError(try records.confirmLocalCareNumericTarget(saved, component: .value,
+      bounds: exclusive, source: "Fixture source", rationale: "Fixture reason", confirmedBy: "User", now: now))
+    try records.reconcileLocalCare(now: now)
+    let updated = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertEqual(records.localCareTargetComparison(updated, now: now), .reviewRequired)
+    try records.revokeLocalCareTarget(updated, now: now)
+    let revoked = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertNil(revoked.target)
+    XCTAssertEqual(revoked.targetRevision, 2)
+    XCTAssertTrue(try records.localCareHistory(revoked.id).contains { $0.target?.source == "Fixture source" })
+  }
+
+  func testIndividualTargetRejectsEmptyAndOpenSinglePointBounds() throws {
+    XCTAssertThrowsError(try GalaxySSIHealthCareTarget.Bounds(low: "", high: "", lowInclusive: true, highInclusive: true))
+    XCTAssertThrowsError(try GalaxySSIHealthCareTarget.Bounds(low: "90", high: "90", lowInclusive: true, highInclusive: false))
+    let closed = try GalaxySSIHealthCareTarget.Bounds(low: "90", high: "90", lowInclusive: true, highInclusive: true)
+    XCTAssertEqual(closed.description, ">= 90, <= 90")
+    XCTAssertEqual(GalaxySSIHealthCareTarget.components(for: .bloodPressure), [.systolic, .diastolic])
+  }
+
+  @MainActor
   func testHealthKitPreviewBindsSourceMetadataAndRowMultiplicity() {
     let now = Date()
     let source = GalaxySSIHealthKitImport.Source(key: "sample", origin: "fixture", name: "Original")
@@ -3244,6 +3462,37 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
 }
 
 extension GalaxySSIHealthRecordsTests {
+  @MainActor
+  func testAgentHealthDiscussionShortcutKeepsExactThreadWithoutGrantingOnlinePermission() throws {
+    typealias Target = GalaxySSIHealthCare.AgentDiscussionTarget
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "summary", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-60), value: 110,
+      unitOverride: "mg/dL", referenceInterval: "70 - 99"))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let archive = try records.load()
+    let concern = try XCTUnwrap(archive.localCare?.current["glucose"])
+    let target = Target(concern, permission: Target.permission(in: archive))
+    XCTAssertTrue(target.matches(archive))
+    let thread = try records.openLocalCareDiscussion(id: target.id, metric: target.metric)
+    XCTAssertEqual(try records.openLocalCareDiscussion(id: target.id, metric: target.metric).id, thread.id)
+    XCTAssertTrue(thread.turns.isEmpty)
+    XCTAssertNil(try records.load().healthOnlinePermission)
+    try records.setLocalCareContext(concern, applicability: .applicable, now: now)
+    XCTAssertFalse(target.matches(try records.load()))
+    let changed = try records.load()
+    let changedConcern = try XCTUnwrap(changed.localCare?.current["glucose"])
+    let changedTarget = Target(changedConcern, permission: Target.permission(in: changed))
+    XCTAssertTrue(changedTarget.matches(changed))
+    try records.setPrivacy(.localCare, enabled: false)
+    XCTAssertFalse(changedTarget.matches(try records.load()))
+    try records.setPrivacy(.localCare, enabled: true)
+    XCTAssertFalse(changedTarget.matches(try records.load()))
+  }
+
   func testAgentHealthSummaryRequiresOptInAndSelectsBoundedActiveConcerns() {
     typealias Care = GalaxySSIHealthCare
     func concern(_ metric: GalaxySSIHealthMetric, _ stage: Care.Stage, _ timestamp: TimeInterval) -> Care.Concern {

@@ -422,7 +422,10 @@ enum AgentIOSLocalModelWebToolRunner {
                               useRegisteredContracts: Bool = false,
                               history: AgentTeamExecutionHistoryStore = .shared) throws -> AgentNativeToolRegistry {
     let scoped = try registry.subset(useRegisteredContracts: useRegisteredContracts) {
-      AgentIOSLocalModelWebToolProtocol.toolIDs.contains($0.id) &&
+      if AgentConversationScheduleTools.ids.contains($0.id) {
+        return !readOnlyAnalysis && !coordinatorReadOnly && recallScope == nil
+      }
+      return AgentIOSLocalModelWebToolProtocol.toolIDs.contains($0.id) &&
         (!(readOnlyAnalysis || coordinatorReadOnly) || AgentScreenAnalysisToolPolicy.allows($0))
     }
     if !readOnlyAnalysis, let recallScope, let database {

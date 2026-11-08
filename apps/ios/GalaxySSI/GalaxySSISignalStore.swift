@@ -30,6 +30,7 @@ final class GalaxySSISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
   private var journal: MqttSignalStateJournal?
   private var committedState: Data?
   private var inTransaction = false
+  private var retiredLegacyOwner = false
   private var state: State
   let identityKeyPair: IdentityKeyPair
   let registrationId: UInt32
@@ -133,6 +134,7 @@ final class GalaxySSISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
   func transaction<T>(_ operation: (MqttChunkDatabase.Transaction?) throws -> T) throws -> T {
     lock.lock()
     defer { lock.unlock() }
+    guard !retiredLegacyOwner else { throw MqttRouteError.identityChanged }
     guard let journal else { return try operation(nil) }
     guard !inTransaction else { throw MqttChunkStorageError.databaseFailure }
     let previous = state
@@ -154,7 +156,13 @@ final class GalaxySSISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
   }
 
   private func requireMutationContext() throws {
-    guard journal == nil || inTransaction else { throw MqttChunkStorageError.databaseFailure }
+    guard !retiredLegacyOwner, journal == nil || inTransaction else { throw MqttChunkStorageError.databaseFailure }
+  }
+
+  func retireLegacyOwner() {
+    lock.lock()
+    defer { lock.unlock() }
+    if journal == nil { retiredLegacyOwner = true }
   }
 
   func localRegistrationId(context: StoreContext) throws -> UInt32 { registrationId }

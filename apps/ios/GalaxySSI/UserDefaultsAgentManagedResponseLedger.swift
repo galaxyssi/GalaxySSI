@@ -74,6 +74,41 @@ final class UserDefaultsAgentManagedResponseLedger: AgentManagedResponseLedger {
     return record
   }
 
+  func commitDesktopResult(_ response: AgentConnectorResponse, receipt: AgentResultReceipt,
+                           binding: AgentDesktopReplyBinding) throws -> AgentManagedResponseRecord {
+    guard let managed = binding.managedSource, binding.matches(receipt.payload),
+          receipt.desktopId == binding.desktopId,
+          AgentResultReceipt.fromPayload(receipt.payload, desktopId: binding.desktopId) == receipt,
+          receipt.executionGeneration == managed.executionGeneration,
+          response.executionGeneration == managed.executionGeneration,
+          response.sourceMessageId == managed.sourceMessageId, response.contactId == binding.contactId,
+          response.conversationId == binding.identity.conversationId, response.taskId == binding.identity.taskId,
+          response.turnId == binding.identity.turnId, AgentRemoteOutcomePolicy.isTerminal(response.taskStatus) else {
+      throw MqttRouteError.identityChanged
+    }
+    var notify = false
+    let result = try access { database in
+      guard var current = try database.matching(response), current.ownerRunId == managed.ownerRunId,
+            current.desktopResultReceipt == nil || current.desktopResultReceipt == receipt else {
+        throw MqttRouteError.identityChanged
+      }
+      if current.state == .pending {
+        current.state = .completed
+        current.response = response
+        current.completedAtMillis = response.receivedAtMillis
+        notify = true
+      } else if !current.matchesCommittedResult(response) {
+        throw MqttChunkStorageError.corruptState
+      }
+      if current.desktopResultReceipt == receipt { return current }
+      current.desktopResultReceipt = receipt
+      try database.put(current)
+      return current
+    }
+    if notify { AgentLateManagedResponseBus.shared.publish(result) }
+    return result
+  }
+
   func acknowledge(_ response: AgentConnectorResponse) -> AgentManagedResponseRecord? {
     try? access { database -> AgentManagedResponseRecord? in
       guard var current = try database.matching(response) else { return nil }

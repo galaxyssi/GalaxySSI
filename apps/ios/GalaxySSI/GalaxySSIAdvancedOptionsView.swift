@@ -3,8 +3,10 @@ import UIKit
 
 struct GalaxySSIAdvancedOptionsView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var cacheBytes: Int64 = 0
   @State private var maintenanceStatus = ""
+  @State private var confirmingMqttCutover = false
 
   private var webSourceCount: Int {
     AgentIOSWebIntelligenceSourceCatalog.sourceCount
@@ -45,6 +47,13 @@ struct GalaxySSIAdvancedOptionsView: View {
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
     .onAppear(perform: refreshCacheSize)
+    .confirmationDialog(t("galaxyssi.mqtt.cutover_confirm", "Activate experimental MQTT on next launch?"),
+                        isPresented: $confirmingMqttCutover, titleVisibility: .visible) {
+      Button(t("galaxyssi.mqtt.cutover_activate", "Activate")) { coordinator.setJournalMqttCutoverRequested(true) }
+      Button(t("common_cancel", "Cancel"), role: .cancel) {}
+    } message: {
+      Text(t("galaxyssi.mqtt.cutover_warning", "This profile cannot switch back. New Desktop pairing, including pairing again after revocation, and some other Link operations are not yet available."))
+    }
   }
 
   private var diagnosticsSection: some View {
@@ -89,6 +98,17 @@ struct GalaxySSIAdvancedOptionsView: View {
       ) {
         GalaxySSILinkDiagnosticsView()
       }
+      VStack(alignment: .leading, spacing: 4) {
+        Toggle(t("galaxyssi.mqtt.cutover_title", "Experimental MQTT"), isOn: Binding(
+          get: { mqttCutoverSelected },
+          set: { enabled in
+            if enabled { confirmingMqttCutover = true }
+            else { coordinator.setJournalMqttCutoverRequested(false) }
+          }))
+        .disabled(!coordinator.usesLegacyMqtt)
+        Text(mqttCutoverStatus).font(.footnote).foregroundColor(.secondary)
+      }
+      .padding(.vertical, 8)
       GalaxySSISecurityNavigationRow(
         title: t("self_model_title", "Agent self model"),
         subtitle: t(
@@ -113,6 +133,23 @@ struct GalaxySSIAdvancedOptionsView: View {
       ) {
         GalaxySSIAgentEvolutionLabView()
       }
+    }
+  }
+
+  private var mqttCutoverSelected: Bool {
+    switch coordinator.journalMqttCutoverStatus {
+    case .legacy: return false
+    case .requested, .deferred, .active, .blocked: return true
+    }
+  }
+
+  private var mqttCutoverStatus: String {
+    switch coordinator.journalMqttCutoverStatus {
+    case .legacy: return t("galaxyssi.mqtt.cutover_legacy", "Legacy transport")
+    case .requested: return t("galaxyssi.mqtt.cutover_requested", "Pending restart")
+    case .deferred: return t("galaxyssi.mqtt.cutover_deferred", "Activation deferred")
+    case .active: return t("galaxyssi.mqtt.cutover_active", "Active")
+    case .blocked: return t("galaxyssi.mqtt.cutover_blocked", "Transport unavailable")
     }
   }
 

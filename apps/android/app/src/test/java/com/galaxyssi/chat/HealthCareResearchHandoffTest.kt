@@ -122,4 +122,54 @@ class HealthCareResearchHandoffTest {
         assertEquals(listOf("authorization_review"), strings(snapshot.getJSONObject("automatic_follow_up"), "reasons"))
         assertEquals("6.3", snapshot.getJSONObject("assessment").getString("value"))
     }
+
+    private val sourceGrant = HealthCareDiscussionGrant(conversation, prior.turnId, issue.id, 1, "settings", "privacy",
+        "a".repeat(64), now, "fixture-provider", "fixture-model", "high")
+    private fun source(excerpt: String = "Synthetic source body, not medical guidance."): HealthCareEvidence {
+        val url = "https://example.test/source"
+        val hash = "e".repeat(64)
+        return HealthCareEvidence(UUID.randomUUID().toString(), sourceGrant, "fixture-read", url, "Synthetic source",
+            AgentWebIntelligenceText.citationId(url, hash), hash, excerpt, now, now)
+    }
+    @Test fun sourceReuseRequiresSameConcernConversationDestinationAndPrivacy() {
+        val next = sourceGrant.copy(turnId = job.turnId, approvedAt = job.createdAt)
+        val read = source()
+        assertTrue(HealthCareResearchHandoff.reusable(read, next))
+        listOf(next.copy(concernId = UUID.randomUUID().toString()), next.copy(conversationId = UUID.randomUUID().toString()),
+            next.copy(destination = "b".repeat(64)), next.copy(privacyVersion = "other"), next.copy(settingsVersion = "other"),
+            next.copy(turnId = prior.turnId), next.copy(approvedAt = now - 1)).forEach {
+            assertFalse(HealthCareResearchHandoff.reusable(read, it))
+        }
+    }
+    @Test fun sourceHandoffIsBoundedHistoricalAndCannotAuthorizeANewPlan() {
+        val reads = List(10) { source("Synthetic body. ".repeat(90)) }
+        val value = HealthCareResearchHandoff.snapshot(issue, job, prior, issue, reads)
+        val saved = value.getJSONArray("prior_automatic_source_reads")
+        assertEquals(8, saved.length())
+        val first = saved.getJSONObject(0)
+        assertEquals(1000, first.getString("excerpt").length)
+        assertTrue(first.getBoolean("excerpt_truncated"))
+        assertFalse(first.getBoolean("medical_applicability_verified"))
+        assertFalse(first.getBoolean("usable_for_new_plan"))
+        assertFalse(first.has("grant")); assertFalse(first.has("evidence_id"))
+        assertEquals(Instant.ofEpochMilli(now).toString(), first.getString("retrieved_at"))
+        assertEquals(0, handoff().getJSONArray("prior_automatic_source_reads").length())
+    }
+    @Test fun completedResponseDoesNotPretendInitialResearchWasFinished() {
+        val progress = handoff().getJSONObject("research_progress")
+        assertTrue(progress.getBoolean("prior_response_completed"))
+        assertTrue(progress.getBoolean("initial_source_review_pending"))
+        assertFalse(progress.getBoolean("source_context_available"))
+        assertFalse(progress.getBoolean("recorded_plan_exists"))
+        assertEquals(0, progress.getInt("recorded_action_count"))
+    }
+    @Test fun priorSourcePlanOrActionPreventsBlindInitialPlanRecreation() {
+        val withSource = HealthCareResearchHandoff.snapshot(issue, job, prior, issue, listOf(source()))
+        val withPlan = HealthCareResearchHandoff.snapshot(issue, job, prior, issue, recordedPlanExists = true)
+        val withAction = handoff(issue.copy(actions = listOf(action)))
+        listOf(withSource, withPlan, withAction).forEach {
+            assertFalse(it.getJSONObject("research_progress").getBoolean("initial_source_review_pending"))
+        }
+        assertTrue(withPlan.getJSONObject("research_progress").getBoolean("recorded_plan_exists"))
+    }
 }

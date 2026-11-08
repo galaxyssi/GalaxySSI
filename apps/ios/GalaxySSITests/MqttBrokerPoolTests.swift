@@ -3,7 +3,7 @@ import XCTest
 
 final class MqttBrokerPoolTests: XCTestCase {
   @MainActor
-  func testChunkProbeRecoversFailedInboxCommitAndReplaysEncryptedReceipt() async throws {
+  func testChunkProbeAndUnframedSignalReplyWithCommittedEncryptedReceipt() async throws {
     guard GalaxySSISignalEngine.isAvailable else { throw XCTSkip("Native Signal unavailable") }
     let fixture = try ChunkFixture()
     let suite = "mqtt-chunk-runtime-\(UUID().uuidString)"
@@ -102,6 +102,33 @@ final class MqttBrokerPoolTests: XCTestCase {
       XCTAssertEqual(try journal.incomingChunks.snapshot(authenticatedScope: identity.binding, query: query).proof?.messageID, messageID)
     }
     XCTAssertEqual(try journal.inbox.pending().map(\.messageID), [messageID])
+
+    let directID = UUID().uuidString
+    let direct = try GalaxySSILinkProtocol.makeEnvelope(payload: ["type": "peer_message", "message_id": directID],
+      sourceId: remote.identity.name, targetId: local.name)
+    let directWire = try XCTUnwrap(remote.encrypt(direct, remoteName: local.name))
+    let directHash = try MqttDeliveryEnvelope.contentHash(directWire)
+    XCTAssertNil(directWire[MqttDeliveryEnvelope.field])
+    for label in ["Unframed Signal receipt", "Unframed Signal replay receipt"] {
+      let unframedReceipt = expectation(description: label)
+      path.onPublication = { publication in
+        guard let object = (try? JSONSerialization.jsonObject(with: publication.payload)) as? [String: Any],
+              object["scheme"] as? String == "signal" else { return }
+        defer { unframedReceipt.fulfill() }
+        guard let envelope = remote.decrypt(object), let payload = GalaxySSILinkProtocol.unwrapEnvelope(envelope),
+              let ack = try? MqttDeliveryEnvelope.parseStoredReceipt(payload) else {
+          XCTFail("Expected an authenticated logical receipt")
+          return
+        }
+        XCTAssertEqual(ack.messageID, directID)
+        XCTAssertEqual(ack.wireHash, directHash)
+        XCTAssertEqual(payload["source_message_id"] as? String, directID)
+        XCTAssertNotNil(try journal.inbox.storedReceipt(identity: identity, messageID: directID, wireHash: directHash))
+      }
+      try emit(directWire)
+      await fulfillment(of: [unframedReceipt], timeout: 2)
+    }
+    XCTAssertEqual(try journal.inbox.pending().map(\.messageID).sorted(), [messageID, directID].sorted())
     path.onPublication = nil
     await runtime.stop()
   }
