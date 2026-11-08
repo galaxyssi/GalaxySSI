@@ -112,6 +112,30 @@ class HealthCareResearchDeviceTest {
         assertThrows(HealthCareConflict::class.java) { care.updateResearchJob(failed, HealthCareResearchState.QUEUED) }
         assertThrows(HealthCareConflict::class.java) { care.updateResearchJob(queued, HealthCareResearchState.DISPATCHED) }
     }
+    @Test fun previousCompletedReviewIsIndexedScopedAndSurvivesReopen(): Unit = fixture { names, care, value ->
+        authorize(care, value)
+        val first = queue(care, value)
+        assertNull(care.previousCompletedResearch(first))
+        val completed = care.updateResearchJob(care.updateResearchJob(first, HealthCareResearchState.DISPATCHED), HealthCareResearchState.COMPLETED)
+        care.update(value.scope.concernId, value.scope.revision, "fixture_context") {
+            it.copy(context = HealthCareContext(it.assessment.record!!, confirmedAt = now))
+        }
+        val second = queue(care, value)
+        assertNotEquals(first.turnId, second.turnId)
+        assertEquals(completed, care.previousCompletedResearch(second))
+        assertNull(care.previousCompletedResearch(second.copy(createdAt = first.createdAt - 1)))
+        assertNull(care.previousCompletedResearch(second.copy(conversationId = UUID.randomUUID().toString())))
+        assertNull(care.previousCompletedResearch(second.copy(concernId = UUID.randomUUID().toString())))
+        val failed = care.updateResearchJob(second, HealthCareResearchState.FAILED, "Synthetic failure")
+        HealthCareStore(context, names.care).use { reopened ->
+            assertEquals(completed, reopened.previousCompletedResearch(failed))
+            val baseline = reopened.revision(completed.concernId, completed.revision)!!
+            assertEquals(completed.conversationId, baseline.conversationId)
+            assertNull(baseline.context)
+            val handoff = HealthCareResearchHandoff.snapshot(reopened.concern(second.concernId)!!, second, completed, baseline)
+            assertEquals("measurement_context_changed", handoff.getJSONArray("reasons").getString(0))
+        }
+    }
     @Test fun renewalInvalidatesPriorQueueAndRequiresCompareAndSet(): Unit = fixture { _, care, value ->
         authorize(care, value); val prior = queue(care, value)
         val next = value.copy(id = UUID.randomUUID().toString())

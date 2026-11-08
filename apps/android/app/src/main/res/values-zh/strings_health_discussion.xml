@@ -8,7 +8,7 @@
     <string name="health_care_discussion_default_model">提供方默认模型</string>
     <string name="health_care_discussion_disclosure">接收方：%1$s\n模型：%2$s\n\n将发送本次问题、下方关注事项和此独立会话的历史。不包含其他健康记录或原始文件。查证资料时可能向搜索服务发送医学检索词。更换提供方需要再次确认。讨论中的建议不会自动创建计划或提醒。</string>
     <string name="health_care_discussion_permissions">请先在健康隐私中开启已确认指标和档案背景的使用权限。</string>
-    <string name="health_care_discussion_online">联网健康分析尚未开启。向云端或 Desktop 模型发送此事项前，请先在健康隐私中开启。</string>
+    <string name="health_care_discussion_online">联网健康分析尚未开启。\n\n请进入：个人健康 → 右上角“健康中心功能” → 向下找到“隐私与数据” → 开启“在线健康分析”。\n\n开启后，向云端或 Desktop 模型发送此事项仍需你的确认。</string>
     <string name="health_care_discussion_no_model">当前选择的模型不可用，请在此会话中选择可用模型后再发送。</string>
     <string name="health_care_discussion_inactive">此事项已暂停、已关闭或来源不可用，请先在个人健康中核对。</string>
     <string name="health_care_discussion_expired">健康资料、权限、接收方或本次授权已变化，请重新核对并确认问题；未授权切换到其他模型。</string>

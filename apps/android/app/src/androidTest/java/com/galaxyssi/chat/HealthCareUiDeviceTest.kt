@@ -51,6 +51,20 @@ class HealthCareUiDeviceTest {
     private fun clean(names: HealthOverviewDatabases) {
         listOf(names.care, names.records, names.privacy).forEach(context::deleteDatabase)
     }
+    private fun agentScenario(block: (ActivityScenario<MainActivity>) -> Unit) {
+        val transcripts = AgentTranscriptStore(context)
+        val previous = transcripts.activeConversation().id
+        val temporary = transcripts.createAgentConversation("主动健康界面测试", privateMode = true, trackingPaused = true)
+        try {
+            transcripts.switchConversation(temporary.id)
+            ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java)
+                .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", temporary.id)).use { scenario ->
+                await(scenario) { it.agentTranscriptStore.activeConversation().id == temporary.id &&
+                    !it.findViewById<View>(R.id.startupConnectingView).isShown }
+                block(scenario)
+            }
+        } finally { transcripts.switchConversation(previous); transcripts.deleteConversation(temporary.id) }
+    }
     private fun historyReview(activity: HealthCareActivity) = HealthCareActivity::class.java.getDeclaredMethod("getHistoryReview")
         .apply { isAccessible = true }.invoke(activity) as HealthCareHistoryReview
     private fun historyDialog(review: HealthCareHistoryReview) = HealthCareHistoryReview::class.java.getDeclaredField("dialog")
@@ -112,7 +126,7 @@ class HealthCareUiDeviceTest {
             }
             HealthCareEngine.evaluate(context, names)
             val issue = HealthCareStore(context, names.care).use { it.forMetric(HealthMetric.BLOOD_PRESSURE)!! }
-            ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java)).use { scenario ->
+            agentScenario { scenario ->
                 scenario.onActivity { activity ->
                     activity.healthCareSurface?.destroy()
                     activity.healthCareSurface = HealthCareAgentSurface(activity, names).also {
@@ -217,7 +231,7 @@ class HealthCareUiDeviceTest {
         var worker: ExecutorService? = null
         try {
             seed(names)
-            ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java)).use { scenario ->
+            agentScenario { scenario ->
                 scenario.onActivity { activity ->
                     activity.healthCareSurface?.destroy()
                     activity.healthCareSurface = HealthCareAgentSurface(activity, names).also {
