@@ -620,10 +620,15 @@ final class AgentTeamExecutionHistoryStore {
     _ = try? access { try $0.removeCloudEvidence(conversationId: conversationId) }
   }
 
-  func recallCollaborationOriginal(_ input: AgentMcpJSONObject,
-                                   scope: AgentCollaborationToolEvidenceScope, generation: Int64? = nil,
-                                   recordEvidenceCoverage: Bool = true) throws -> AgentMcpJSONObject {
+  enum EvidenceReadMode: Equatable {
+    case local, desktopPreview, desktopConfirm(contentHash: String)
+  }
+
+  func recallCollaborationOriginal(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope,
+                                   generation: Int64? = nil, recordEvidenceCoverage: Bool = true,
+                                   evidenceRead: EvidenceReadMode = .local) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
+    guard evidenceRead == .local || mode == "evidence" else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     if mode == AgentCollaborationCandidateRecall.mode, input["view"] == nil,
        let history = try recallCandidateTestHistory(input, scope: scope) { return history }
     if mode == "dependency" { return try recallDependencyOriginal(input, scope: scope) }
@@ -704,16 +709,11 @@ final class AgentTeamExecutionHistoryStore {
       -> (AgentCollaborationEvidenceContent.Page, AgentMcpJSONObject?, AgentMcpJSONObject?) in
       guard let team = try database.snapshots(runId: scope.runId).first,
             team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
-            team.members.contains(where: { $0.memberId == scope.memberId &&
+            let reader = team.members.first(where: { $0.memberId == scope.memberId &&
               $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }),
             try database.researchRecord(Bool.self, conversationId: scope.conversationId,
               key: "native-evidence-revoked", revision: 0) != true else {
         throw AgentTeamHistoryDatabase.Failure.stale
-      }
-      if mode == "evidence",
-         let original = try AgentCollaborationCandidateRecall.readOriginal(id: id, hash: hash, scope: scope, database: database) {
-        return (try page(original), ["evidence_id": .string(id), "sha256": .string(hash), "origin": .string("ios_native_tool")],
-          ["complete": .bool(false), "mode": .string("not_tracked_for_native_observations")])
       }
       if mode == "workspace" {
         guard case .int(let revision)? = input["revision"], revision > 0,
@@ -722,31 +722,61 @@ final class AgentTeamExecutionHistoryStore {
         else { throw AgentTeamHistoryDatabase.Failure.stale }
         return (try page(encoder.encode(record)), nil, nil)
       }
-      guard let observation = try database.readableCollaborationEvidence(id: id, sha256: hash, scope: scope) else {
+      func evidencePage(_ data: Data, source: AgentMcpJSONObject, key: String)
+        throws -> (AgentCollaborationEvidenceContent.Page, AgentMcpJSONObject?, AgentMcpJSONObject?) {
+        guard SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == hash else {
+          throw AgentTeamHistoryDatabase.Failure.corrupt
+        }
+        let slice = try page(data)
+        if evidenceRead == .desktopPreview || !recordEvidenceCoverage { return (slice, source, nil) }
+        if case .desktopConfirm(let expected) = evidenceRead,
+           AgentDesktopNativeEvidenceDelivery.digest(slice.content) != expected {
+          throw AgentTeamHistoryDatabase.Failure.stale
+        }
+        let previous = try database.researchRecord(AgentCollaborationReadCoverage.self,
+          conversationId: scope.conversationId, key: key, revision: 0) ?? AgentCollaborationReadCoverage()
+        var coverage = previous
+        coverage.include(start: slice.ledgerStart, end: slice.ledgerEnd)
+        if coverage != previous {
+          try database.insertResearchRecord(coverage, conversationId: scope.conversationId,
+            key: key, revision: 0, replaceCoverage: true)
+        }
+        let complete = coverage.contiguousEnd == slice.total
+        return (slice, source, [
+          "complete": .bool(complete), "total_characters": .int(slice.total),
+          "first_missing_offset": complete ? .null : .int(coverage.contiguousEnd),
+          "content_utf8_sha256": .string(hash)
+        ])
+      }
+      if let native = try database.researchRecord(AgentCollaborationNativeToolObservation.self,
+        conversationId: scope.conversationId, key: "native-evidence:" + id, revision: 0) {
+        let sameRun = native.runId == scope.runId && native.turnId == scope.turnId
+        let own = sameRun && native.memberId == scope.memberId && native.sourceId == scope.sourceId
+        let dependency = sameRun && reader.dispatchDependencyMemberIds?.contains(native.memberId) == true &&
+          team.members.contains { $0.memberId == native.memberId && $0.sourceMessageId == native.sourceId &&
+            $0.deliveryMode != .ignore && $0.status.isTerminal }
+        guard native.conversationId == scope.conversationId, own || dependency || native.turnId != scope.turnId,
+              Self.nativeObservationId(native, hash: hash) == id else {
+          throw AgentTeamHistoryDatabase.Failure.stale
+        }
+        let key = "native-read-coverage:" + Self.readCoverageDigest(scope: scope, id: id, hash: hash)
+        return try evidencePage(encoder.encode(native), source: [
+          "evidence_id": .string(id), "sha256": .string(hash), "origin": .string("ios_native_tool"),
+          "tool": .string(native.result.provenance.toolId), "status": .string(native.result.status.rawValue),
+          "tool_version": .string(native.result.provenance.toolVersion),
+          "replayed": .bool(native.result.receipt.replayed)
+        ], key: key)
+      }
+      guard evidenceRead == .local,
+            let observation = try database.readableCollaborationEvidence(id: id, sha256: hash, scope: scope) else {
         throw AgentTeamHistoryDatabase.Failure.stale
       }
       let record = observation.record
-      let slice = try page(observation.bytes)
-      let reference: AgentMcpJSONObject = [
+      let key = Self.cloudReadCoverageKey(scope: scope, id: id, hash: hash)
+      return try evidencePage(observation.bytes, source: [
         "evidence_id": .string(id), "sha256": .string(hash), "origin": .string("ios_cloud_tool"),
         "tool": .string(record.call.name), "status": .string(record.observedFailure ? "failed" : "succeeded")
-      ]
-      if !recordEvidenceCoverage { return (slice, reference, nil) }
-      let key = Self.cloudReadCoverageKey(scope: scope, id: id, hash: hash)
-      let previous = try database.researchRecord(AgentCollaborationReadCoverage.self,
-        conversationId: scope.conversationId, key: key, revision: 0) ?? AgentCollaborationReadCoverage()
-      var coverage = previous
-      coverage.include(start: slice.ledgerStart, end: slice.ledgerEnd)
-      if coverage != previous {
-        try database.insertResearchRecord(coverage, conversationId: scope.conversationId,
-          key: key, revision: 0, replaceCoverage: true)
-      }
-      let complete = coverage.contiguousEnd == slice.total
-      return (slice, reference, [
-        "complete": .bool(complete), "total_characters": .int(slice.total),
-        "first_missing_offset": complete ? .null : .int(coverage.contiguousEnd),
-        "content_utf8_sha256": .string(hash)
-      ])
+      ], key: key)
     }
     var result: AgentMcpJSONObject = [
       idKey: .string(id), "sha256": .string(hash), "content": .string(slice.content),
@@ -1050,7 +1080,11 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   private static func cloudReadCoverageKey(scope: AgentCollaborationToolEvidenceScope, id: String, hash: String) -> String {
-    "cloud-read-coverage:" + AgentMcpJSONCodec.sha256([
+    "cloud-read-coverage:" + readCoverageDigest(scope: scope, id: id, hash: hash)
+  }
+
+  private static func readCoverageDigest(scope: AgentCollaborationToolEvidenceScope, id: String, hash: String) -> String {
+    AgentMcpJSONCodec.sha256([
       "run": .string(scope.runId), "group": .string(scope.conversationId), "turn": .string(scope.turnId),
       "member": .string(scope.memberId), "source": .string(scope.sourceId),
       "evidence": .string(id), "sha256": .string(hash)
@@ -1986,10 +2020,7 @@ final class AgentTeamExecutionHistoryStore {
       throw AgentTeamHistoryDatabase.Failure.corrupt
     }
     let hash = SHA256.hash(data: encoded).map { String(format: "%02x", $0) }.joined()
-    let id = AgentMcpJSONCodec.sha256([
-      "run": .string(observation.runId), "source": .string(observation.sourceId),
-      "invocation": .string(observation.result.receipt.invocationId), "sha256": .string(hash)
-    ])
+    let id = Self.nativeObservationId(observation, hash: hash)
     return try access { database in
       guard try database.researchRecord(Bool.self, conversationId: observation.conversationId,
         key: "native-evidence-revoked", revision: 0) != true,
@@ -2010,6 +2041,13 @@ final class AgentTeamExecutionHistoryStore {
         "trust": .string("execution_observed_not_claim_verified")
       ]
     }
+  }
+
+  private static func nativeObservationId(_ observation: AgentCollaborationNativeToolObservation, hash: String) -> String {
+    AgentMcpJSONCodec.sha256([
+      "run": .string(observation.runId), "source": .string(observation.sourceId),
+      "invocation": .string(observation.result.receipt.invocationId), "sha256": .string(hash)
+    ])
   }
 
   func archiveDesktopToolEvidence(request: AgentDesktopToolEvidenceWire.Request,
