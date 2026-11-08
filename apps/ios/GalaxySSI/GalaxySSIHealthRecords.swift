@@ -720,7 +720,7 @@ struct GalaxySSIHealthRecords {
       priorTurnID: thread.turns.last?.id,
       concernID: id, metric: metric, concernRevision: concern.revision, carePermission: care,
       onlinePermission: online, destinationID: destinationID, destinationDigest: destination,
-      credentialDigest: credentialDigest, model: model, endpoint: endpoint,
+      destination: .cloud(model: model, endpoint: endpoint, credential: credentialDigest),
       question: question, payload: try GalaxySSIHealthCareDiscussion.payload(concern: concern, question: question,
         thread: thread, destination: destination, savedProfile: localCareProfilePayload(concern)),
       reviewedAt: now, proposesPlan: proposesPlan, profileScope: concern.profileScope,
@@ -744,6 +744,45 @@ struct GalaxySSIHealthRecords {
     return approval
   }
 
+  func prepareLocalCareDesktopDiscussion(id: UUID, metric: GalaxySSIHealthMetric, question: String,
+      route: GalaxySSIHealthDesktopResearch.Route, research: GalaxySSIHealthCareResearch.Job? = nil,
+      resume: GalaxySSIHealthDesktopResearch.Binding? = nil, now: Date = Date()) throws -> GalaxySSIHealthCareDiscussion.Approval {
+    let archive = try load()
+    let concern = try currentDiscussionConcern(id: id, metric: metric, archive: archive, now: now)
+    guard let care = archive.localCarePermission, let online = archive.healthOnlinePermission,
+          var thread = archive.localCareDiscussions?[id.uuidString] else { throw Failure.permission }
+    let turn = research?.id ?? UUID()
+    let reviewedAt: Date
+    let effectiveQuestion: String
+    if let resume {
+      guard resume.job == turn, resume.route == route, let active = thread.turns.last, active.id == turn,
+            active.answer == nil, active.proposalID == nil else { throw Failure.stale }
+      thread.turns.removeLast()
+      effectiveQuestion = active.question
+      reviewedAt = Date(timeIntervalSince1970: Double(resume.createdAtMillis) / 1_000)
+    } else {
+      effectiveQuestion = question
+      reviewedAt = now
+    }
+    guard thread.turns.count < GalaxySSIHealthCareDiscussion.maximumTurns else { throw Failure.permission }
+    var approval = GalaxySSIHealthCareDiscussion.Approval(id: turn, owner: owner, threadID: thread.id,
+      priorTurnID: thread.turns.last?.id, concernID: id, metric: metric, concernRevision: concern.revision,
+      carePermission: care, onlinePermission: online, destinationID: route.connector.contactId,
+      destinationDigest: route.digest, destination: .paired(route), question: effectiveQuestion,
+      payload: try GalaxySSIHealthCareDiscussion.payload(concern: concern, question: effectiveQuestion, thread: thread,
+        destination: route.digest, savedProfile: localCareProfilePayload(concern)), reviewedAt: reviewedAt,
+      profileScope: concern.profileScope, profileScopeEpoch: concern.profileScopeEpoch, research: research)
+    if let research {
+      let handoff = try makeLocalCareResearchHandoff(research, concern: concern, archive: archive)
+      approval.researchHandoff = handoff
+      approval.proposesPlan = handoff.plansOnly
+      if resume != nil { approval.evidence = archive.localCareEvidence?[turn.uuidString] ?? [] }
+      try validateLocalCareResearch(approval, archive: archive, concern: concern,
+        state: resume == nil ? .preparing : .dispatched, now: now)
+    }
+    return approval
+  }
+
   func authorizeLocalCareResearch(_ approval: GalaxySSIHealthCareDiscussion.Approval,
       sources: Set<GalaxySSIHealthCareEvidence.PublicSource>, now: Date = Date()) throws {
     guard !sources.isEmpty, approval.research == nil, approval.history == nil, approval.questions == nil else { throw Failure.invalid }
@@ -754,8 +793,9 @@ struct GalaxySSIHealthRecords {
     ledger.renew(.init(concern: approval.concernID, metric: approval.metric, thread: approval.threadID,
       localPermission: approval.carePermission, onlinePermission: approval.onlinePermission,
       profileScopeEpoch: approval.profileScopeEpoch,
-      contact: approval.destinationID, model: approval.model.modelId, endpoint: approval.endpoint,
-      destination: approval.destinationDigest, sources: sources, authorizedAt: now, handoffVersion: 1))
+      contact: approval.destinationID, model: approval.modelID, endpoint: approval.endpoint,
+      destination: approval.destinationDigest, sources: sources, authorizedAt: now, handoffVersion: 1,
+      pairedDesktop: approval.pairedDesktop))
     archive.localCareResearch = ledger
     try persist(archive)
   }
@@ -836,6 +876,65 @@ struct GalaxySSIHealthRecords {
       now: now, scopedActions: scopedLocalCareResearchActions(concern, plans: plans))
   }
 
+  func bindLocalCareDesktopResearch(_ authorization: GalaxySSIHealthCareResearch.Authorization,
+      job: UUID, sender: String, reviewedAt: Date, now: Date = Date()) throws -> GalaxySSIHealthDesktopResearch.Binding {
+    guard let route = authorization.pairedDesktop,
+          let current = currentLocalCareResearchJob(authorization, id: job, now: now), current.state == .dispatched,
+          let at = Int64(exactly: (reviewedAt.timeIntervalSince1970 * 1_000).rounded(.down)) else { throw Failure.stale }
+    var archive = try load()
+    guard var research = archive.localCareResearch,
+          research.authorizations[authorization.concern.uuidString] == authorization,
+          research.jobs[authorization.concern.uuidString] == current else { throw Failure.stale }
+    var transport = research.desktopTransport ?? .init()
+    if let existing = transport.active[job.uuidString] { return existing }
+    let binding = try GalaxySSIHealthDesktopResearch.Binding(route: route, authorization: authorization,
+      job: current, sender: sender, createdAtMillis: at)
+    try transport.bind(binding)
+    research.desktopTransport = transport
+    archive.localCareResearch = research
+    try persist(archive)
+    return binding
+  }
+
+  func dispatchedLocalCareDesktopResearch() throws
+      -> [(GalaxySSIHealthCareResearch.Authorization, GalaxySSIHealthCareResearch.Job, GalaxySSIHealthDesktopResearch.Binding)] {
+    guard let research = try load().localCareResearch else { return [] }
+    return (research.desktopTransport?.active.values.sorted { $0.createdAtMillis < $1.createdAtMillis } ?? []).compactMap {
+      guard let auth = research.authorizations[$0.concern.uuidString], auth.id == $0.authorization,
+            let job = research.jobs[$0.concern.uuidString], job.id == $0.job, job.state == .dispatched else { return nil }
+      return (auth, job, $0)
+    }
+  }
+
+  func currentLocalCareDesktopResearch(_ identity: AgentTaskIdentity, contact: String, source: Int64,
+      now: Date = Date()) -> GalaxySSIHealthDesktopResearch.Binding? {
+    guard identity.conversationId.hasPrefix(GalaxySSIHealthDesktopResearch.conversationPrefix),
+          let job = UUID(uuidString: identity.turnId),
+          let research = (try? load())?.localCareResearch,
+          let binding = research.desktopTransport?.active[job.uuidString], binding.identity == identity,
+          binding.route.connector.contactId == contact, binding.source == source,
+          let authorization = research.authorizations[binding.concern.uuidString],
+          authorization.id == binding.authorization, authorization.pairedDesktop == binding.route,
+          let current = currentLocalCareResearchJob(authorization, id: job, now: now),
+          current.state == .dispatched, current.revision == binding.revision, current.trigger == binding.trigger
+    else { return nil }
+    return binding
+  }
+
+  func pendingLocalCareDesktopCancellations() throws -> [GalaxySSIHealthDesktopResearch.Cancellation] {
+    let pending = try load().localCareResearch?.desktopTransport?.pendingCancellation ?? [:]
+    return pending.values.sorted { ($0.createdAtMillis, $0.binding.owner) < ($1.createdAtMillis, $1.binding.owner) }
+  }
+
+  func markLocalCareDesktopCancellationQueued(_ item: GalaxySSIHealthDesktopResearch.Cancellation) throws {
+    var archive = try load()
+    guard var research = archive.localCareResearch, var transport = research.desktopTransport else { throw Failure.stale }
+    try transport.handedOff(item)
+    research.desktopTransport = transport
+    archive.localCareResearch = research
+    try persist(archive)
+  }
+
   private func scopedLocalCareResearchPlans(_ turns: [GalaxySSIHealthCareDiscussion.Turn],
       authorization: GalaxySSIHealthCareResearch.Authorization, archive: Archive) -> [GalaxySSIHealthCareResearchHandoff.PlanContext] {
     let questionRevision = archive.localCare?.current[authorization.metric.rawValue]?.questionRevision
@@ -900,11 +999,14 @@ struct GalaxySSIHealthRecords {
           let authorization = archive.localCareResearch?.authorizations[key], authorization.id == binding.authorization,
           authorization.handoffVersion == 1,
           authorization.thread == approval.threadID, authorization.destination == approval.destinationDigest,
-          authorization.model == approval.model.modelId, authorization.endpoint == approval.endpoint,
+          authorization.model == approval.modelID, authorization.endpoint == approval.endpoint,
+          authorization.pairedDesktop == approval.pairedDesktop,
           authorization.localPermission == approval.carePermission, authorization.onlinePermission == approval.onlinePermission,
           authorization.profileScopeEpoch == approval.profileScopeEpoch,
           let job = archive.localCareResearch?.jobs[key], job.id == approval.id, job.trigger == binding.trigger,
-          job.owner == GalaxySSIHealthCareResearch.process, job.state == state, job.revision == concern.revision,
+          (job.owner == GalaxySSIHealthCareResearch.process ||
+            (state == .dispatched && archive.localCareResearch?.desktopTransport?.active[job.id.uuidString] != nil)),
+          job.state == state, job.revision == concern.revision,
           try job.trigger == localCareResearchTrigger(concern, archive: archive, now: now),
           try handoff == makeLocalCareResearchHandoff(job, concern: concern, archive: archive)
     else { throw Failure.stale }
@@ -929,8 +1031,7 @@ struct GalaxySSIHealthRecords {
           !thread.turns.contains(where: { $0.id == approval.id }),
           thread.turns.count < GalaxySSIHealthCareDiscussion.maximumTurns,
           let concern = archive.localCare?.current[approval.metric.rawValue],
-          GalaxySSIHealthCareDiscussion.destination(contactID: approval.destinationID, model: approval.model,
-            endpoint: approval.endpoint, credential: approval.credentialDigest) == approval.destinationDigest,
+          approval.computedDestinationDigest == approval.destinationDigest,
           try GalaxySSIHealthCareDiscussion.payload(concern: concern, question: approval.question, thread: thread,
             destination: approval.destinationDigest, savedProfile: localCareProfilePayload(concern)) == approval.payload
     else { throw Failure.stale }
@@ -1043,8 +1144,8 @@ struct GalaxySSIHealthRecords {
       profileScopeEpoch: approval.profileScopeEpoch,
       questionRevision: concern.questionRevision,
       carePermission: approval.carePermission, onlinePermission: approval.onlinePermission, contactID: approval.destinationID,
-      modelID: approval.model.modelId, endpoint: approval.endpoint, destinationDigest: approval.destinationDigest,
-      createdAt: now, requestDigest: digest, draft: draft)
+      modelID: approval.modelID, endpoint: approval.endpoint, destinationDigest: approval.destinationDigest,
+      createdAt: now, requestDigest: digest, draft: draft, pairedDesktop: approval.pairedDesktop)
     thread.turns[index].proposalID = approval.id
     archive.localCarePlans = plans
     archive.localCareDiscussions?[approval.concernID.uuidString] = thread
@@ -1058,6 +1159,9 @@ struct GalaxySSIHealthRecords {
     guard var ledger = archive.localCareResearch, let job = ledger.jobs[key],
           let authorization = ledger.authorizations[key], let handoff = approval.researchHandoff else { throw Failure.stale }
     try ledger.transition(job, concern: approval.concernID, to: .completed, process: GalaxySSIHealthCareResearch.process)
+    if let binding = ledger.desktopTransport?.active[job.id.uuidString] {
+      try ledger.desktopTransport?.finish(binding)
+    }
     var checkpoints = ledger.checkpoints ?? [:]
     checkpoints[key] = .init(authorization: authorization, turn: job.id, revision: job.revision,
       startedAt: job.createdAt, basis: handoff.basis)

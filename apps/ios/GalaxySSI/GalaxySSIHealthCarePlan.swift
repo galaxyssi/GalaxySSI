@@ -4,11 +4,12 @@ import Foundation
 enum GalaxySSIHealthCarePlan {
   static func currentDestination(_ proposal: Proposal, contactID: String, model: CloudModelConfig,
                                  credential: String) -> String? {
-    guard contactID == proposal.contactID, model.modelId == proposal.modelID,
-          GalaxySSIHealthCareDiscussion.endpoint(for: model) == proposal.endpoint,
+    guard proposal.pairedDesktop == nil, let endpoint = proposal.endpoint,
+          contactID == proposal.contactID, model.modelId == proposal.modelID,
+          GalaxySSIHealthCareDiscussion.endpoint(for: model) == endpoint,
           CloudModelCredentialPolicy.isStoredCredential(credential) else { return nil }
     let digest = GalaxySSIHealthCareDiscussion.destination(contactID: contactID, model: model,
-      endpoint: proposal.endpoint, credential: SHA256.hash(data: Data(credential.utf8)))
+      endpoint: endpoint, credential: SHA256.hash(data: Data(credential.utf8)))
     return digest == proposal.destinationDigest ? digest : nil
   }
 
@@ -63,7 +64,7 @@ enum GalaxySSIHealthCarePlan {
     let onlinePermission: UUID
     let contactID: String
     let modelID: String
-    let endpoint: URL
+    let endpoint: URL?
     let destinationDigest: String
     let createdAt: Date
     let requestDigest: String
@@ -72,6 +73,7 @@ enum GalaxySSIHealthCarePlan {
     var selected: Set<Int> = []
     var resolvedAt: Date?
     var maintenanceAccepted: Bool?
+    var pairedDesktop: GalaxySSIHealthDesktopResearch.Route?
   }
   struct AdoptedAction: Codable, Equatable, Identifiable {
     let proposalID: UUID

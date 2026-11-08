@@ -89,6 +89,10 @@ enum GalaxySSIHealthCareDiscussion {
   }
 
   struct Approval: Identifiable {
+    enum Destination {
+      case cloud(model: CloudModelConfig, endpoint: URL, credential: SHA256.Digest)
+      case paired(GalaxySSIHealthDesktopResearch.Route)
+    }
     let id: UUID
     let owner: String
     let threadID: UUID
@@ -100,9 +104,7 @@ enum GalaxySSIHealthCareDiscussion {
     let onlinePermission: UUID
     let destinationID: String
     let destinationDigest: String
-    let credentialDigest: SHA256.Digest
-    let model: CloudModelConfig
-    let endpoint: URL
+    let destination: Destination
     let question: String
     let payload: String
     let reviewedAt: Date
@@ -115,6 +117,34 @@ enum GalaxySSIHealthCareDiscussion {
     var researchHandoff: GalaxySSIHealthCareResearchHandoff.Handoff?
     var questions: GalaxySSIHealthCareQuestions.Page?
     var asksQuestions = false
+
+    var model: CloudModelConfig? {
+      if case .cloud(let model, _, _) = destination { return model }
+      return nil
+    }
+    var endpoint: URL? {
+      if case .cloud(_, let endpoint, _) = destination { return endpoint }
+      return nil
+    }
+    var credentialDigest: SHA256.Digest? {
+      if case .cloud(_, _, let digest) = destination { return digest }
+      return nil
+    }
+    var pairedDesktop: GalaxySSIHealthDesktopResearch.Route? {
+      if case .paired(let route) = destination { return route }
+      return nil
+    }
+    var modelID: String { model?.modelId ?? pairedDesktop?.connector.modelId ?? "" }
+    var location: String { endpoint?.absoluteString ?? pairedDesktop?.connector.desktopId ?? "" }
+
+    var computedDestinationDigest: String {
+      switch destination {
+      case .cloud(let model, let endpoint, let credential):
+        return GalaxySSIHealthCareDiscussion.destination(contactID: destinationID, model: model,
+          endpoint: endpoint, credential: credential)
+      case .paired(let route): return route.digest
+      }
+    }
 
     func isCurrent(at now: Date) -> Bool {
       now >= reviewedAt && now.timeIntervalSince(reviewedAt) < GalaxySSIHealthCareDiscussion.approvalLifetime
@@ -199,10 +229,11 @@ enum GalaxySSIHealthCareDiscussion {
   }
 
   static func request(_ approval: Approval, key: String) throws -> URLRequest {
-    guard endpoint(for: approval.model) == approval.endpoint,
+    guard case .cloud(let model, let endpoint, let credential) = approval.destination,
+          self.endpoint(for: model) == endpoint,
           CloudModelCredentialPolicy.isStoredCredential(key),
-          SHA256.hash(data: Data(key.utf8)) == approval.credentialDigest else { throw GalaxySSIHealthRecords.Failure.permission }
-    var request = URLRequest(url: approval.endpoint, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 60)
+          SHA256.hash(data: Data(key.utf8)) == credential else { throw GalaxySSIHealthRecords.Failure.permission }
+    var request = URLRequest(url: endpoint, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 60)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     let payload = try approval.providerPayload()
@@ -268,11 +299,11 @@ enum GalaxySSIHealthCareDiscussion {
     let structuredTokens: Int? = approval.asksQuestions ? 4_096 : (approval.proposesPlan ? 2_048 : nil)
     let user = ["role": "user", "content": payload]
     var body: [String: Any]
-    switch approval.model.apiStyle {
+    switch model.apiStyle {
     case .anthropic:
       request.setValue(key, forHTTPHeaderField: "x-api-key")
       request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-      body = ["model": approval.model.modelId, "max_tokens": structuredTokens ?? 768,
+      body = ["model": model.modelId, "max_tokens": structuredTokens ?? 768,
               "system": instruction, "messages": [user]]
     case .gemini:
       request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
@@ -281,8 +312,8 @@ enum GalaxySSIHealthCareDiscussion {
               "generationConfig": ["maxOutputTokens": structuredTokens ?? 1_024]]
     case .openAICompatible:
       request.setValue("Bearer " + key, forHTTPHeaderField: "Authorization")
-      let host = approval.endpoint.host?.lowercased()
-      var options: [String: Any] = ["model": approval.model.modelId, "stream": false,
+      let host = endpoint.host?.lowercased()
+      var options: [String: Any] = ["model": model.modelId, "stream": false,
         "messages": [["role": "system", "content": instruction], user]]
       options[host == "api.openai.com" ? "max_completion_tokens" : "max_tokens"] = structuredTokens ?? 1_024
       if host == "api.openai.com" { options["store"] = false }
@@ -290,16 +321,16 @@ enum GalaxySSIHealthCareDiscussion {
       body = options
     }
     if approval.asksQuestions {
-      GalaxySSIHealthCareQuestions.configure(&body, style: approval.model.apiStyle)
+      GalaxySSIHealthCareQuestions.configure(&body, style: model.apiStyle)
     } else if approval.history != nil {
-      GalaxySSIHealthCareHistoryTool.configure(&body, style: approval.model.apiStyle,
+      GalaxySSIHealthCareHistoryTool.configure(&body, style: model.apiStyle,
         proposesPlan: approval.proposesPlan, historyAvailable: approval.history?.recent.cursor != nil,
         allowsMaintenance: true)
     } else if approval.proposesPlan {
       let name = GalaxySSIHealthCarePlan.tool
       let description = GalaxySSIHealthCarePlan.description
       let schema = GalaxySSIHealthCarePlan.schema
-      switch approval.model.apiStyle {
+      switch model.apiStyle {
       case .openAICompatible:
         body["tools"] = [["type": "function", "function": ["name": name, "description": description, "parameters": schema]]]
         body["tool_choice"] = ["type": "function", "function": ["name": name]]

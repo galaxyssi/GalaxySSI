@@ -13,11 +13,12 @@ enum GalaxySSIHealthCareResearch {
     let profileScopeEpoch: UUID?
     let contact: String
     let model: String
-    let endpoint: URL
+    let endpoint: URL?
     let destination: String
     let sources: Set<GalaxySSIHealthCareEvidence.PublicSource>
     let authorizedAt: Date
     var handoffVersion: Int?
+    var pairedDesktop: GalaxySSIHealthDesktopResearch.Route?
   }
 
   enum State: String, Codable {
@@ -42,16 +43,19 @@ enum GalaxySSIHealthCareResearch {
     // A bounded authorization is renewed explicitly before its deduplication history can be discarded.
     var seen: [String: Set<String>] = [:]
     var checkpoints: [String: GalaxySSIHealthCareResearchHandoff.Checkpoint]?
+    var desktopTransport: GalaxySSIHealthDesktopResearch.Ledger?
 
     mutating func renew(_ authorization: Authorization) {
       let key = authorization.concern.uuidString
+      cancelDesktopJob(key, at: authorization.authorizedAt)
       authorizations[key] = authorization
       jobs.removeValue(forKey: key)
       seen[key] = []
     }
 
-    mutating func revoke(_ concern: UUID) {
+    mutating func revoke(_ concern: UUID, now: Date = Date()) {
       let key = concern.uuidString
+      cancelDesktopJob(key, at: now)
       authorizations.removeValue(forKey: key)
       seen.removeValue(forKey: key)
       checkpoints?.removeValue(forKey: key)
@@ -67,8 +71,17 @@ enum GalaxySSIHealthCareResearch {
       guard authorizations[key] == authorization else { return }
       if let job = jobs[key], job.authorization == authorization.id, job.trigger == trigger {
         if job.state == .dispatched, job.revision != revision {
+          cancelDesktopJob(key, at: now)
           jobs[key]?.state = .superseded
           jobs[key]?.owner = nil
+        } else if job.state == .dispatched, let binding = desktopTransport?.active[job.id.uuidString] {
+          if now.timeIntervalSince1970 - Double(binding.createdAtMillis) / 1_000 >= GalaxySSIHealthCareDiscussion.approvalLifetime {
+            cancelDesktopJob(key, at: now)
+            jobs[key]?.state = .interrupted
+            jobs[key]?.owner = nil
+          } else {
+            jobs[key]?.owner = process
+          }
         } else if job.state == .dispatched, job.owner != process {
           jobs[key]?.state = .interrupted
           jobs[key]?.owner = nil
@@ -83,13 +96,21 @@ enum GalaxySSIHealthCareResearch {
       let keys = seen[key] ?? []
       guard keys.count < 128, !keys.contains(trigger) else {
         if jobs[key]?.state.active == true {
+          cancelDesktopJob(key, at: now)
           jobs[key]?.state = .superseded
           jobs[key]?.owner = nil
         }
         return
       }
+      cancelDesktopJob(key, at: now)
       seen[key, default: []].insert(trigger)
       jobs[key] = .init(authorization: authorization.id, trigger: trigger, revision: revision, createdAt: now)
+    }
+
+    private mutating func cancelDesktopJob(_ key: String, at date: Date) {
+      guard let job = jobs[key], let millis = Int64(exactly: (date.timeIntervalSince1970 * 1_000).rounded(.down))
+      else { return }
+      desktopTransport?.cancel(job.id, nowMillis: millis)
     }
 
     mutating func transition(_ job: Job, concern: UUID, to state: State, process: UUID) throws {
@@ -106,6 +127,7 @@ enum GalaxySSIHealthCareResearch {
       default: allowed = false
       }
       guard allowed else { throw GalaxySSIHealthRecords.Failure.stale }
+      if state == .failed || state == .interrupted { cancelDesktopJob(key, at: Date()) }
       current.state = state
       current.owner = state == .preparing || state == .dispatched ? process : nil
       jobs[key] = current

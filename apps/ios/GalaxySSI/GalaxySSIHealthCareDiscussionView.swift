@@ -153,8 +153,8 @@ struct GalaxySSIHealthCareDiscussionView: View {
         List {
           if canRead {
             Section(t("provider", "Provider and model")) {
-              Text(review.model.modelId)
-              Text(review.endpoint.absoluteString).font(.footnote).textSelection(.enabled)
+              Text(review.modelID)
+              Text(review.location).font(.footnote).textSelection(.enabled)
               if review.proposesPlan { Text(t("request_plan", "Request a draft plan")) }
               if review.questions != nil {
                 Text(q("disclosure", "Includes up to eight current questions and reviewed replies for this concern."))
@@ -242,9 +242,9 @@ struct GalaxySSIHealthCareDiscussionView: View {
   private func currentRoute(_ review: GalaxySSIHealthCareDiscussion.Approval) -> (GalaxySSIContact, String)? {
     guard canRead, review.owner == records.owner,
           let contact = contacts.first(where: { $0.id == review.destinationID }),
-          contact.selectedCloudModel == review.model,
-          GalaxySSIHealthCareDiscussion.endpoint(for: review.model) == review.endpoint,
-          let key = store.apiKey(for: review.model), CloudModelCredentialPolicy.isStoredCredential(key),
+          let model = review.model, contact.selectedCloudModel == model,
+          GalaxySSIHealthCareDiscussion.endpoint(for: model) == review.endpoint,
+          let key = store.apiKey(for: model), CloudModelCredentialPolicy.isStoredCredential(key),
           SHA256.hash(data: Data(key.utf8)) == review.credentialDigest,
           !coordinator.healthDisclosureStore.blockedDestinationIds().contains(contact.id)
     else { return nil }
@@ -262,6 +262,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
   }
 
   private func send(_ review: GalaxySSIHealthCareDiscussion.Approval) {
+    guard let style = review.model?.apiStyle else { return }
     guard approval?.id == review.id, task == nil, let (contact, key) = currentRoute(review)
     else { approval = nil; failed = true; return }
     approval = nil
@@ -301,20 +302,20 @@ struct GalaxySSIHealthCareDiscussionView: View {
           var bytes = try await GalaxySSIHealthSummaryTransport.responseBytes(request, limit: 65_536)
           status = .sent
           if let history = review.history {
-            bytes = try await finishHistory(review, recent: history.recent, initial: bytes, request: request)
+            bytes = try await finishHistory(review, recent: history.recent, initial: bytes, request: request, style: style)
           }
           guard active?.id == review.id, !Task.isCancelled, currentRoute(review) != nil else { return }
           active = nil
           defer { task = nil }
           if review.asksQuestions {
-            let arguments = try GalaxySSIHealthCarePlan.arguments(bytes, style: review.model.apiStyle,
+            let arguments = try GalaxySSIHealthCarePlan.arguments(bytes, style: style,
               toolName: GalaxySSIHealthCareQuestions.tool)
             try records.saveLocalCareQuestionProposals(review, arguments: arguments)
           } else if review.proposesPlan {
-            let arguments = try GalaxySSIHealthCarePlan.arguments(bytes, style: review.model.apiStyle)
+            let arguments = try GalaxySSIHealthCarePlan.arguments(bytes, style: style)
             try records.saveLocalCarePlan(review, arguments: arguments)
           } else {
-            let answer = try GalaxySSIHealthFollowUpTransport.output(bytes, style: review.model.apiStyle)
+            let answer = try GalaxySSIHealthFollowUpTransport.output(bytes, style: style)
             try records.finishLocalCareDiscussionTurn(review, answer: answer)
           }
         } catch { if !Task.isCancelled { failed = true } }
@@ -323,7 +324,8 @@ struct GalaxySSIHealthCareDiscussionView: View {
   }
 
   private func finishHistory(_ review: GalaxySSIHealthCareDiscussion.Approval,
-      recent: GalaxySSIHealthCareHistoryTool.Output, initial: Data, request: URLRequest) async throws -> Data {
+      recent: GalaxySSIHealthCareHistoryTool.Output, initial: Data, request: URLRequest,
+      style: GalaxySSICloudAPIStyle) async throws -> Data {
     typealias Tool = GalaxySSIHealthCareHistoryTool
     var bytes = initial
     var page = recent
@@ -333,14 +335,14 @@ struct GalaxySSIHealthCareDiscussionView: View {
       try Task.checkCancellation()
       guard active?.id == review.id, let (contact, _) = currentRoute(review) else { throw CancellationError() }
       try records.validateLocalCareDiscussionTurn(review)
-      guard let call = try Tool.call(bytes, style: review.model.apiStyle, proposesPlan: review.proposesPlan)
+      guard let call = try Tool.call(bytes, style: style, proposesPlan: review.proposesPlan)
       else { return bytes }
       guard remaining > 0, page.authorizes(call.arguments, turn: review.id), let cursor = page.cursor
       else { throw GalaxySSIHealthRecords.Failure.permission }
       remaining -= 1
       let older = try records.readLocalCareDiscussionHistory(review, after: cursor)
       page = try Tool.output(older, metric: review.metric, turn: review.id, remaining: remaining)
-      request = try Tool.continuing(request, with: call, output: page, style: review.model.apiStyle,
+      request = try Tool.continuing(request, with: call, output: page, style: style,
         proposesPlan: review.proposesPlan, historyAvailable: page.cursor != nil, allowsMaintenance: true)
       let ledger = coordinator.healthDisclosureStore
       let ticket = AgentDataDisclosureLedger.beginCloudRequest(store: ledger, destination: .init(contact: contact),
