@@ -40,7 +40,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
   private let cipher: GalaxySSIAttachmentAtRestCipher
   private let lock = NSRecursiveLock()
   private var database: OpaquePointer?
-  private var rowCache = RowCache()
+  private let rowCache = RowCache()
   private var rowCachingEnabled = true
   private var agentOwnerBackfillFinished = false
 
@@ -48,50 +48,29 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
     private struct Entry {
       let ciphertext: Data
       let message: ChatMessage
-      let cost: Int
     }
-    private let maximumRows: Int
-    private let maximumBytes: Int
-    private var entries: [String: Entry] = [:]
-    private var order: [String] = []
-    private var bytes = 0
+    private let cache: GalaxySSIRuntimeCache<String, Entry>
 
-    init(maximumRows: Int = 32, maximumBytes: Int = 512 * 1024) {
-      self.maximumRows = maximumRows
-      self.maximumBytes = maximumBytes
+    init(maximumRows: Int = 32, maximumBytes: Int = 512 * 1024,
+         now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
+      cache = GalaxySSIRuntimeCache(maxCount: maximumRows, maxCost: maximumBytes, now: now)
     }
 
-    mutating func read(id: String, ciphertext: Data,
-                       decode: () -> (message: ChatMessage, plaintextBytes: Int)?) -> ChatMessage? {
-      if let entry = entries[id], entry.ciphertext == ciphertext {
-        order.removeAll { $0 == id }
-        order.append(id)
+    func read(id: String, ciphertext: Data,
+              decode: () -> (message: ChatMessage, plaintextBytes: Int)?) -> ChatMessage? {
+      let revision = cache.revision
+      if let entry = cache.value(for: id), entry.ciphertext == ciphertext {
         return entry.message
       }
       remove(id)
       guard let decoded = decode() else { return nil }
-      let cost = ciphertext.count + decoded.plaintextBytes
-      guard maximumRows > 0, cost <= maximumBytes else { return decoded.message }
-      while let oldest = order.first, entries.count >= maximumRows || bytes > maximumBytes - cost {
-        remove(oldest)
-      }
-      entries[id] = Entry(ciphertext: ciphertext, message: decoded.message, cost: cost)
-      bytes += cost
-      order.append(id)
+      cache.insert(Entry(ciphertext: ciphertext, message: decoded.message), for: id,
+        cost: ciphertext.count + decoded.plaintextBytes, revision: revision)
       return decoded.message
     }
 
-    mutating func remove(_ id: String) {
-      guard let removed = entries.removeValue(forKey: id) else { return }
-      bytes -= removed.cost
-      order.removeAll { $0 == id }
-    }
-
-    mutating func clear() {
-      entries.removeAll()
-      order.removeAll()
-      bytes = 0
-    }
+    func remove(_ id: String) { cache.remove(id) }
+    func clear() { cache.clear() }
   }
 
   init(fileURL: URL, secrets: GalaxySSISecretStore) {

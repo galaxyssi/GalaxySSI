@@ -2,6 +2,25 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testTeamSnapshotCacheRechecksCiphertextFromAnExternalWriterAndDoesNotReviveDeletedRows() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("team.sqlite3")
+    let secrets = InMemorySecretStore()
+    let reader = try AgentTeamHistoryDatabase(fileURL: file, storageKey: "team-cache", secrets: secrets)
+    let writer = try AgentTeamHistoryDatabase(fileURL: file, storageKey: "team-cache", secrets: secrets)
+    let original = durableTeamSnapshot("external-update")
+    try writer.transaction { try writer.put(original) }
+    XCTAssertEqual(try reader.snapshots(runId: original.supervisorRunId), [original])
+    XCTAssertEqual(try reader.snapshots(runId: original.supervisorRunId), [original])
+    var updated = original
+    updated.members[0].output = "Changed without a timestamp update"
+    try writer.transaction { try writer.put(updated) }
+    XCTAssertEqual(try reader.snapshots(runId: original.supervisorRunId), [updated])
+    try writer.transaction { try writer.remove(runId: original.supervisorRunId) }
+    XCTAssertTrue(try reader.snapshots(runId: original.supervisorRunId).isEmpty)
+  }
+
   @MainActor
   func testTeamRecoveryFailureBudgetSurvivesReloadAndOnlyResumesValidScope() throws {
     let suite = "team-recovery-\(UUID().uuidString)"
@@ -623,6 +642,44 @@ extension GalaxySSIStoreTests {
     let pinned = try history.initialCollaborationCapabilities(scope: scope(later))
     XCTAssertEqual(pinned.first?.objectValue?.string("sha256"), publication.references.first?.sha256)
     XCTAssertNil(pinned.first?.objectValue?["title"])
+
+    let toolSpec = """
+    {"language":"python","name":"Optical calibration","purpose":"Check sensors","applies_when":"Fixture","avoid_when":"Unsafe",
+     "environment":"python","dependencies":"None","side_effects":"None","source":"def run(parameters): return parameters # hidden_source",
+     "input_schema":{"type":"object","required":["value"],"properties":{"value":{"type":"integer"}}}}
+    """
+    let candidate = try history.publishResearchObjects([
+      .init(id: "optical-candidate", objectId: nil, baseRevision: 0, kind: .executableTool,
+        title: "Device candidate", body: ["executable_tool": .object(
+          try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(toolSpec.utf8)))], parents: [])
+    ], runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
+      memberId: author.memberId, sourceId: author.sourceMessageId)
+    let toolRef = try XCTUnwrap(candidate.references.first)
+    let testSpec = """
+    {"environment":"python","purpose":"Validate","coverage_gaps":"None known","oracle_basis":"Identity",
+     "cases":[{"id":"target","purpose":"target","reason":"Typical","input":{"value":1},"expected":"hidden_answer"},
+       {"id":"regression","purpose":"regression","reason":"Zero","input":{"value":0},"expected":null}]}
+    """
+    var tests = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(testSpec.utf8))
+    tests["executable_tool"] = .object(["object_id": .string(toolRef.objectId), "revision": .int(toolRef.revision),
+      "sha256": .string(toolRef.sha256)])
+    _ = try history.publishResearchObjects([
+      .init(id: "optical-tests", objectId: nil, baseRevision: 0, kind: .toolTestPlan,
+        title: "Candidate tests", body: ["tool_test_plan": .object(tests)], parents: [toolRef])
+    ], runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
+      memberId: author.memberId, sourceId: author.sourceMessageId)
+    func search(_ query: String) throws -> [AgentMcpJSONValue] {
+      try history.recallCollaborationOriginal(["mode": .string("capabilities"), "query": .string(query)],
+        scope: scope(later))["capabilities"]?.arrayValue ?? []
+    }
+    let linked = try XCTUnwrap(search("optical calibration").compactMap(\.objectValue).first {
+      $0.string("kind") == "tool_test_plan"
+    })
+    XCTAssertEqual(linked.string("state"), "unverified_candidate")
+    XCTAssertEqual(linked["linked_sources"]?.arrayValue?.first?.objectValue?.string("sha256"), toolRef.sha256)
+    XCTAssertEqual(linked["linked_sources"]?.arrayValue?.first?.objectValue?["complete_read"], .bool(false))
+    XCTAssertTrue(try search("hidden_source").isEmpty)
+    XCTAssertTrue(try search("hidden_answer").isEmpty)
   }
 
   func testModelCallAuditPreservesUnsettledAdmissionAndImmutableTerminalReceipt() throws {
@@ -750,6 +807,98 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(AgentCollaborationExperimentPlanIntake.measure([costly], plan: plan))
   }
 
+  func testMethodEvaluationRecallPagesNegativeHistoryAndRequiresVisibleExactCounterparts() throws {
+    typealias Recall = AgentCollaborationMethodEvaluations
+    let suite = "method-evaluations-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("history.sqlite3")
+    let secrets = InMemorySecretStore()
+    let group = "comparison-group"
+    var team = durableTeamSnapshot("recall-evaluations")
+    team.conversationId = group
+    let member = try XCTUnwrap(team.members.first)
+    let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: group,
+      turnId: team.taskId, memberId: member.memberId, sourceId: member.sourceMessageId)
+    func makeHistory() -> AgentTeamExecutionHistoryStore {
+      AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+        executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    }
+    XCTAssertTrue(makeHistory().upsert(team))
+    func record(_ number: Int, _ kind: AgentCollaborationResearchDraft.Kind, _ body: AgentMcpJSONObject = [:],
+                parents: [AgentCollaborationResearchReference] = [], turn: String = "historical")
+      -> AgentCollaborationResearchRevision {
+      let digest = String(format: "%064llx", Int64(number))
+      return .init(reference: .init(objectId: digest, revision: 1, sha256: digest), previousHash: nil,
+        runId: "historical-run", turnId: turn, authorId: "historical-member", sourceId: "historical-source",
+        draft: .init(id: "fixture-\(number)", objectId: nil, baseRevision: 0, kind: kind,
+          title: "Fixture", body: body, parents: parents))
+    }
+    let old = record(40, .workflowMethod, ["workflow_method": .object(["domain": .string("research")])])
+    let new = record(41, .workflowMethod, old.draft.body)
+    let dataset = record(42, .artifact)
+    func idea(_ number: Int, _ method: AgentCollaborationResearchRevision) -> AgentCollaborationResearchRevision {
+      record(number, .innovation, ["innovation": .object(["domain": .string("research"),
+        "workflow_method": .object(Recall.reference(method.reference))])], parents: [method.reference])
+    }
+    let before = idea(43, old), after = idea(44, new)
+    let conditions: AgentMcpJSONObject = ["dataset": .object(Recall.reference(dataset.reference)),
+      "controlled_conditions": .string("same data"), "quality_oracle": .string("measured score"),
+      "cost_accounting": .string("same limit"), "selection_bias": .string("held out")]
+    func comparisonCase(_ purpose: String) -> AgentMcpJSONValue {
+      .object(["id": .string(purpose), "purpose": .string(purpose), "metric": .string("score"),
+        "prediction": .string("Stable"), "direction": .string("maximize"), "minimum_gain": .int(1),
+        "tolerance": .int(0), "repetitions": .int(1)])
+    }
+    var plan = record(45, .experimentPlan, ["experiment_plan": .object([
+      "baseline": .object(Recall.reference(before.reference)), "innovation": .object(Recall.reference(after.reference)),
+      "workflow_comparison": .object(conditions), "environment": .string("fixture"), "budget_unit": .string("calls"),
+      "budget_limit": .int(1), "cases": .array([comparisonCase("target"), comparisonCase("regression")])
+    ])], parents: [before.reference, after.reference, dataset.reference])
+    let inputs = [old, new, before, after, dataset]
+    plan.workflowComparison = try XCTUnwrap(AgentCollaborationWorkflowComparison.resolve(plan.draft) { reference in
+      inputs.first { $0.reference == reference }
+    })
+    XCTAssertEqual(plan.workflowComparison?.candidate, new.reference)
+    var result = record(46, .experimentResult, ["experiment_result": .object([
+      "plan": .object(Recall.reference(plan.reference))])], parents: [plan.reference])
+    result.measuredCases = [.init(id: "regression", purpose: "regression", state: "not_met")]
+    let review = record(47, .capabilityLesson, ["capability_lesson": .object([
+      "decision": .string("reject"), "result": .object(Recall.reference(result.reference))])], parents: [result.reference])
+    let hidden = record(48, .workflowMethod, old.draft.body, turn: scope.turnId)
+    var inaccessible = record(49, .experimentPlan, plan.draft.body, parents: plan.draft.parents)
+    inaccessible.workflowComparison = .init(baseline: hidden.reference, candidate: new.reference, dataset: dataset.reference)
+    let db = try AgentTeamHistoryDatabase(fileURL: file, storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    let filler = (1...33).map { record($0, .artifact) }
+    try db.transaction {
+      for row in filler + inputs + [plan, result, review, hidden, inaccessible] {
+        try db.insertResearchRecord(row, conversationId: group,
+          key: "object:" + row.reference.objectId, revision: row.reference.revision)
+      }
+    }
+    let history = makeHistory()
+    var query = Recall.selector(new.reference)
+    let page = try history.recallCollaborationOriginal(query, scope: scope)
+    XCTAssertEqual(page["records"]?.arrayValue, [])
+    let cursor = try XCTUnwrap(page["next_cursor"]?.stringValue)
+    query["cursor"] = .string(cursor)
+    let rows = try XCTUnwrap(history.recallCollaborationOriginal(query, scope: scope)["records"]?.arrayValue)
+    XCTAssertEqual(rows.compactMap { $0.objectValue?.string("kind") }, ["experiment_plan", "experiment_result", "capability_lesson"])
+    XCTAssertEqual(rows.dropFirst().first?.objectValue?.string("measured_state"), "regressed")
+    XCTAssertEqual(rows.last?.objectValue?.string("review_decision"), "reject")
+    XCTAssertEqual(rows.last?.objectValue?["complete_read"], .bool(false))
+    XCTAssertEqual(rows.last?.objectValue?["read_original"]?.objectValue?.string("mode"), "workspace")
+    var wrong = Recall.selector(old.reference)
+    wrong["cursor"] = .string(cursor)
+    XCTAssertThrowsError(try history.recallCollaborationOriginal(wrong, scope: scope))
+    var otherScope = scope
+    otherScope.sourceId = "foreign"
+    XCTAssertThrowsError(try history.recallCollaborationOriginal(query, scope: otherScope))
+    history.removeResearchObjects(conversationId: group)
+    XCTAssertThrowsError(try history.recallCollaborationOriginal(query, scope: scope))
+  }
+
   func testCapabilityRetentionRequiresPassingTargetAndRegression() {
     let target = AgentCollaborationMeasuredCase(id: "target", purpose: "target", state: "passed")
     var regression = AgentCollaborationMeasuredCase(id: "regression", purpose: "regression", state: "passed")
@@ -784,6 +933,84 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(limited.contains("complete_in"))
     XCTAssertFalse(limited.contains("Partial original"))
     XCTAssertFalse(limited.contains("Oversized criteria"))
+  }
+
+  func testCollaborationPromptReconsidersFullUnicodeGoalAfterReferenceSpaceIsFreed() throws {
+    typealias Budget = AgentCollaborationPromptBudget
+    let goal = String(repeating: "\u{1F642}", count: 2_805)
+    let required: [Budget.Section] = [.init(name: "Assignment", body: "Keep all instructions")]
+    let optional: [Budget.Section] = [
+      .init(name: Budget.goal, body: goal, reference: ["section": .string("goal")]),
+      .init(name: "Small section", body: "Keep", reference: ["reference": .string(String(repeating: "r", count: 2_600))]),
+      .init(name: "Oversized", body: String(repeating: "x", count: 40_000), reference: ["section": .string("source")])
+    ]
+    let result = try Budget.assemble(required: required, optional: optional, maximum: 7_000)
+    XCTAssertEqual(result.included, ["Assignment", Budget.goal, "Small section"])
+    XCTAssertEqual(result.omitted, ["Oversized"])
+    XCTAssertTrue(result.text.contains(goal))
+    XCTAssertTrue(result.text.contains("\"original_goal\":\"complete_inline\""))
+    XCTAssertFalse(result.text.contains(String(repeating: "r", count: 128)))
+    XCTAssertLessThanOrEqual(result.text.utf16.count, 7_000)
+  }
+
+  func testCollaborationPromptUsesExactFooterAndNeverClipsRequiredContext() throws {
+    typealias Budget = AgentCollaborationPromptBudget
+    let originals = [Budget.goal, Budget.criteria, Budget.source].map {
+      Budget.Section(name: $0, body: "complete \($0)", reference: ["section": .string($0)])
+    }
+    let required: [Budget.Section] = [.init(name: "Assignment", body: "Required instructions")]
+    let full = try Budget.assemble(required: required, optional: originals)
+    let exact = try Budget.assemble(required: required, optional: originals, maximum: full.text.utf16.count)
+    XCTAssertEqual(exact.text, full.text)
+    XCTAssertTrue(exact.omitted.isEmpty)
+    let largeGoal = Budget.Section(name: Budget.goal, body: String(repeating: "G", count: 40_000),
+      reference: ["mode": .string("goal"), "section": .string("goal"), "sha256": .string("exact-goal")])
+    func dispatch(recall: Bool) throws -> Budget.Result {
+      try Budget.dispatch(assignment: "Complete assignment", resources: "Complete resources",
+        responseProtocol: "Complete response protocol", originals: [largeGoal],
+        observations: [], canRecall: recall, desktop: false, peerRecipients: "",
+        peerRequests: "", peerRequestsPinned: false)
+    }
+    let referenced = try dispatch(recall: true)
+    XCTAssertTrue(referenced.omitted.contains(Budget.goal))
+    XCTAssertTrue(referenced.text.contains("exact-goal"))
+    XCTAssertTrue(referenced.text.contains("Complete response protocol"))
+    XCTAssertFalse(referenced.text.contains(String(repeating: "G", count: 64)))
+    XCTAssertThrowsError(try dispatch(recall: false)) { error in
+      XCTAssertTrue(error.localizedDescription.contains("model_dispatched=false"))
+    }
+  }
+
+  func testCapabilityPageReusesExactReadsOnlyWithinOneAuthorizedPage() throws {
+    let objectID = String(repeating: "a", count: 64)
+    let digest = String(repeating: "b", count: 64)
+    let ref = AgentCollaborationResearchReference(objectId: objectID, revision: 1, sha256: digest)
+    let row = AgentCollaborationCapabilityPage.Row(objectID: objectID, revision: 1)
+    let original = AgentCollaborationResearchRevision(reference: ref, previousHash: nil, runId: "run",
+      turnId: "turn", authorId: "author", sourceId: "source", draft: .init(id: "tool",
+        objectId: nil, baseRevision: 0, kind: .executableTool, title: "Candidate", body: [:], parents: []))
+    let author = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "group",
+      turnId: "turn", memberId: "author", sourceId: "source")
+    var reads = 0
+    func load(_ requested: AgentCollaborationCapabilityPage.Row) -> AgentCollaborationResearchRevision? {
+      XCTAssertEqual(requested, row)
+      reads += 1
+      return original
+    }
+    var page = AgentCollaborationCapabilityPage(scope: author, load: load)
+    XCTAssertEqual(try page.read(row, matching: ref)?.reference, ref)
+    XCTAssertEqual(try page.read(row)?.reference, ref)
+    XCTAssertNil(try page.read(row, matching: .init(objectId: objectID, revision: 1, sha256: String(repeating: "c", count: 64))))
+    XCTAssertEqual(reads, 1)
+    var next = AgentCollaborationCapabilityPage(scope: author, load: load)
+    XCTAssertEqual(try next.read(row)?.reference, ref)
+    XCTAssertEqual(reads, 2)
+    let peer = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "group",
+      turnId: "turn", memberId: "peer", sourceId: "peer-source")
+    var foreign = AgentCollaborationCapabilityPage(scope: peer, load: load)
+    XCTAssertNil(try foreign.read(row, matching: ref))
+    XCTAssertNil(try foreign.read(row))
+    XCTAssertEqual(reads, 3)
   }
 
   func testCollaborationSourceMappingPreservesExactUTF16Boundaries() throws {
@@ -1251,6 +1478,8 @@ extension GalaxySSIStoreTests {
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
     var team = durableTeamSnapshot("goal-run")
     team.goal = String(repeating: "a", count: 8_191) + "\u{7814}\u{7A76}"
+    let activeIndex = try XCTUnwrap(team.members.firstIndex { !$0.status.isTerminal })
+    team.members[activeIndex].dispatchCheckpoint = .notStarted
     XCTAssertTrue(history.upsert(team))
     let first = AgentCollaborationGoalCheckpoint(runId: team.supervisorRunId,
       conversationId: team.conversationId, turnId: team.taskId, revision: 1, phase: .working,
@@ -1274,6 +1503,11 @@ extension GalaxySSIStoreTests {
       conversationId: team.conversationId, turnId: team.taskId, memberId: member.memberId,
       sourceId: member.sourceMessageId)
     let page = try reopened.readPinnedCollaborationGoal(scope: scope, section: "goal")
+    let promptOriginals = try reopened.collaborationPromptOriginals(scope: scope)
+    XCTAssertEqual(promptOriginals.map(\.name), [AgentCollaborationPromptBudget.goal,
+      AgentCollaborationPromptBudget.criteria, AgentCollaborationPromptBudget.source])
+    XCTAssertEqual(promptOriginals.first?.body, team.goal)
+    XCTAssertEqual(promptOriginals.first?.reference?.string("sha256"), page.string("sha256"))
     let tail = try reopened.readPinnedCollaborationGoal(scope: scope, section: "goal",
       offset: Int(page.int64("next_offset")), expectedHash: page.string("sha256"))
     let headBytes = try XCTUnwrap(Data(base64Encoded: page.string("data_b64")))
@@ -1283,6 +1517,7 @@ extension GalaxySSIStoreTests {
       offset: 8_192, expectedHash: "wrong"))
     scope.sourceId = "foreign-source"
     XCTAssertThrowsError(try reopened.readPinnedCollaborationGoal(scope: scope, section: "criteria"))
+    XCTAssertThrowsError(try reopened.collaborationPromptOriginals(scope: scope))
     var weakened = team
     weakened.goal = "A different goal"
     weakened.updatedAtMillis += 1
@@ -1916,6 +2151,67 @@ extension GalaxySSIStoreTests {
     let batch = try reopened.appendAll([legacy[0], added, added])
     XCTAssertEqual(batch.map(\.sequence), [1, 5_002, 5_002])
     XCTAssertEqual(mailbox.pendingMessages(supervisorRunId: "run", instanceId: "reviewer").map(\.messageId), ["new-request"])
+  }
+
+  func testOriginalPrimaryRecoveryIsDurableAndRejectsForeignOrConflictingReplies() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suite = "primary-recovery-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = InMemorySecretStore()
+    func history() -> AgentTeamExecutionHistoryStore {
+      AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+        executionStore: SavedTeamRecoveryFixture([]), fileURL: root.appendingPathComponent("team.sqlite3"))
+    }
+    let sourceID = UUID().uuidString
+    var original = durableTeamSnapshot("original-primary")
+    original.state = .interrupted
+    original.members[0].status = .interrupted
+    original.members[0].sourceMessageId = sourceID
+    original.members[0].dispatchCheckpoint = .accepted
+    XCTAssertTrue(history().upsert(original))
+    let store = history()
+    let owner = try XCTUnwrap(store.recoveryContext(source: sourceID, conversation: original.conversationId,
+      turn: original.taskId, contact: original.primaryAgentId)?.owner)
+    let outgoing = ChatMessage(contactId: "hermes", content: "Original request", isMine: true,
+      conversationId: original.conversationId, turnId: original.taskId)
+    let identity = AgentTaskIdentity(clientRouteId: "route", conversationId: original.conversationId,
+      taskId: sourceID, turnId: original.taskId)
+    let binding = try XCTUnwrap(AgentDesktopReplyBinding.teamPrimary(owner: owner,
+      desktopId: "desktop", agentId: "codex", identity: identity, outgoing: outgoing))
+    XCTAssertEqual(binding.sourceIdentity, sourceID)
+    XCTAssertEqual(binding.sourceId, outgoing.id)
+    XCTAssertNil(AgentDesktopReplyBinding.teamPrimary(owner: owner, desktopId: "desktop", agentId: "codex",
+      identity: identity, outgoing: ChatMessage(contactId: "hermes", content: "Wrong turn", isMine: true,
+        conversationId: original.conversationId, turnId: "other")))
+    var wrong = binding
+    wrong.contactId = "foreign"
+    let observed = AgentTeamReplyObservation(generation: 2, sequence: 10)
+    XCTAssertFalse(try store.commitRecoveredPrimary(binding: wrong, content: "Original answer", rich: "",
+      success: true, observation: observed, now: 10))
+    XCTAssertTrue(try store.commitRecoveredPrimary(binding: binding, content: "Original answer", rich: "",
+      success: true, observation: observed, now: 10))
+    let reopened = history()
+    XCTAssertTrue(try reopened.commitRecoveredPrimary(binding: binding, content: "Original answer", rich: "",
+      success: true, observation: observed, now: 11))
+    XCTAssertFalse(try reopened.commitRecoveredPrimary(binding: binding, content: "Conflicting answer", rich: "",
+      success: true, observation: observed, now: 11))
+    XCTAssertFalse(try reopened.commitRecoveredPrimary(binding: binding, content: "Original answer", rich: "",
+      success: true, observation: .init(generation: 1, sequence: 20), now: 11))
+    XCTAssertEqual(reopened.snapshot(supervisorRunId: original.supervisorRunId)?.members[0].replyContent, "Original answer")
+  }
+
+  func testCurrentCollaborationKeepsUnresolvedResearchAheadOfFollowUps() {
+    var research = durableTeamSnapshot("older-research")
+    research.state = .interrupted
+    research.members[1].researchStage = "investigate"
+    var followUp = durableTeamSnapshot("newer-follow-up")
+    followUp.createdAtMillis = research.createdAtMillis + 5
+    followUp.state = .succeeded
+    XCTAssertEqual(AgentTeamExecutionHistoryStore.preferredCollaborationRun([followUp, research]), research)
+    research.state = .succeeded
+    XCTAssertEqual(AgentTeamExecutionHistoryStore.preferredCollaborationRun([followUp, research]), followUp)
   }
 
   private func durableTeamSnapshot(_ run: String) -> AgentTeamExecutionSnapshot {

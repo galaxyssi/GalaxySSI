@@ -105,7 +105,14 @@ struct ContactConversationSummary: Equatable {
 
 @MainActor
 final class GalaxySSIStore: ObservableObject {
-  @Published private(set) var profile: GalaxySSIProfile
+  @Published private(set) var profile: GalaxySSIProfile {
+    didSet {
+      if oldValue.identityFingerprint != profile.identityFingerprint {
+        GalaxySSIPhoneRouteAgreements.cache.clear()
+        AgentInvocationProfile.clearMetadataCache()
+      }
+    }
+  }
   @Published private(set) var contacts: [GalaxySSIContact]
   @Published private(set) var friendRequests: [GalaxySSIFriendRequest]
   @Published internal(set) var messagesByContact: [String: [ChatMessage]] {
@@ -136,7 +143,24 @@ final class GalaxySSIStore: ObservableObject {
     didSet { save() }
   }
   @Published internal(set) var agentTaskRecords: [AgentTaskRecord] {
-    didSet { save() }
+    didSet { if !committingSupervisedBrowserState { save() } }
+  }
+  private var committingSupervisedBrowserState = false
+
+  func commitSupervisedBrowserState(expected: AgentTaskRecord?, updated: AgentTaskRecord) -> Bool {
+    guard !committingSupervisedBrowserState, !updated.taskId.isBlank,
+          agentTask(id: updated.taskId) == expected, expected?.phase != .cancelled,
+          expected == nil || expected?.sessionId == updated.sessionId else { return false }
+    let before = agentTaskRecords
+    let records = before.filter { $0.taskId != updated.taskId } + [updated]
+    committingSupervisedBrowserState = true
+    defer { committingSupervisedBrowserState = false }
+    agentTaskRecords = Array(Self.sortedAgentTasks(records).prefix(200))
+    guard agentTaskRecords.contains(updated), save() else {
+      agentTaskRecords = before
+      return false
+    }
+    return true
   }
   @Published internal(set) var proactiveTasks: [AgentProactiveTask] {
     didSet { if !committingScheduleState { save() } }
@@ -354,6 +378,7 @@ final class GalaxySSIStore: ObservableObject {
   private let phoneContactCardsKey = "galaxyssi.phone_contact_cards"
   private let homeAssistantAccessTokenAccount = "home_assistant.access_token"
   private var runtimePlaintextCleared = false
+  private(set) var runtimePlaintextGeneration: UInt64 = 0
   var canRestoreMessageViewport: Bool { !runtimePlaintextCleared }
   var canReadVoiceReminderSnapshot: Bool { !runtimePlaintextCleared }
   var canReadAgentTranscript: Bool { !runtimePlaintextCleared }
@@ -755,6 +780,7 @@ final class GalaxySSIStore: ObservableObject {
   func clearRuntimePlaintextForBackground() {
     chatHistoryDatabase.setRowCachingEnabled(false)
     guard !runtimePlaintextCleared else { return }
+    runtimePlaintextGeneration &+= 1
     guard save() else { return }
     runtimePlaintextCleared = true
     wipeRuntimeMessageCache()
@@ -911,6 +937,8 @@ final class GalaxySSIStore: ObservableObject {
   @discardableResult
   func deleteContact(id: String, deleteMessages: Bool = false, now: Date = Date()) -> Bool {
     guard id != "system" else { return false }
+    GalaxySSIPhoneRouteAgreements.cache.clear()
+    AgentInvocationProfile.clearMetadataCache()
     let deviceDesktopId = contacts.first { contact in
       (contact.id == id || contact.galaxySSIId == id) && contact.type == "device"
     }?.desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1854,7 +1882,8 @@ final class GalaxySSIStore: ObservableObject {
             let remoteCard = verifiedPhoneContactCard(for: remoteId),
             let routes = signalEngine.derivePhoneRelationshipRoutes(
               remoteIdentityPublicKey: remoteCard.string("identity_public_key"),
-              expectedRemoteFingerprint: contact.identityFingerprint
+              expectedRemoteFingerprint: contact.identityFingerprint,
+              cacheVerifiedAgreement: true
             ),
             contact.opaquePhoneRoutes != routes,
             let refreshed = GalaxySSIPhoneRelationshipRouteRefresh.apply(
@@ -2455,6 +2484,7 @@ final class GalaxySSIStore: ObservableObject {
   }
 
   func removeServer(desktopId: String) {
+    AgentInvocationProfile.clearMetadataCache()
     serverLinks.removeAll { $0.desktopId == desktopId }
     if var hermes = contact(id: "hermes") {
       if let activeLink = serverLinks.first(where: \.paired) ?? serverLinks.first {
@@ -2502,6 +2532,7 @@ final class GalaxySSIStore: ObservableObject {
   ) -> Set<String> {
     let cleanDesktopId = desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanDesktopId.isEmpty else { return [] }
+    AgentInvocationProfile.clearMetadataCache()
     let prefix = "\(cleanDesktopId):"
     let matchingContacts = contacts.filter { contact in
       contact.id != "system" && contact.id != "hermes" && (
@@ -2709,7 +2740,9 @@ final class GalaxySSIStore: ObservableObject {
       contact.connectorProtocolFeatures = connectorProtocolFeatures.isEmpty ? nil : connectorProtocolFeatures
       contact.connectorAdapterType = connectorAdapterType.nonEmpty
       contact.connectorProviderProfileJSON = providerProfileJSON(from: payload)
-      if let invocationProfile = invocationProfileJSON(from: payload) {
+      if let invocationProfile = invocationProfileJSON(from: payload),
+         invocationProfile != contact.connectorInvocationProfileJSON {
+        AgentInvocationProfile.clearMetadataCache()
         contact.connectorInvocationProfileJSON = invocationProfile
       }
       contact.deleted = false

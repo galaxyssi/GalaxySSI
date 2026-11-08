@@ -136,10 +136,6 @@
     {
       "path": "apps/desktop/core/galaxyssi-link/backend/web_evidence_pack.py",
       "reason": "Multilingual evidence extraction"
-    },
-    {
-      "path": "docs/testing/PR2632_ANDROID_SM_T575_TEST_PLAN.md",
-      "reason": "Documented multilingual device-test fixtures"
     }
   ]
 }

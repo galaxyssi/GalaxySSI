@@ -81,7 +81,8 @@ npm run smoke:desktop:e2e
 
 Run smoke commands sequentially; they share the local backend port and test lock.
 
-Full test coverage is documented in `docs/testing/README.md`.
+Test and release checks are described in `CONTRIBUTING.md`. Detailed test
+reports and evidence are kept locally outside the repository.
 
 Product requirements are documented in `docs/product/PRODUCT_REQUIREMENTS.md`.
 
