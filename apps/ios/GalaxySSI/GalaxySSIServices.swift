@@ -2436,7 +2436,8 @@ final class MessageCoordinator: ObservableObject {
     desktopControlSnapshots[link.desktopId] = snapshot
     if request.resetsSurfaceState { desktopControlFrameUpdates.send(link.desktopId) }
 
-    if request.durable {
+    let transient = MqttTransientControlPolicy.includes(payload.string("type"))
+    if request.durable && !transient {
       deliveryStore.enqueue(
         messageId: wire.messageId,
         topic: link.routes.controlTopic,
@@ -2444,7 +2445,9 @@ final class MessageCoordinator: ObservableObject {
       )
       deliveryStore.markAttempt(messageId: wire.messageId)
     }
-    let result = await mqttClient.publish(topic: link.routes.controlTopic, payload: wire.wireData)
+    let result = transient
+      ? await mqttClient.publishTransientControl(topic: link.routes.controlTopic, payload: wire.wireData, link: link)
+      : await mqttClient.publish(topic: link.routes.controlTopic, payload: wire.wireData)
     if result.accepted {
       return true
     }
@@ -2809,8 +2812,17 @@ final class MessageCoordinator: ObservableObject {
     case .response(let response): cached = response
     }
     var result: AgentMcpJSONObject = ["success": .bool(false), "status": .string("unavailable")]
+    if cached == nil, !publishing, phase == "read", input["mode"] == .string(AgentCollaborationWorkflowCheck.mode),
+       var checked = try? history.recallCollaborationOriginal(input, scope: scope) {
+      checked["success"] = .bool(true)
+      result = checked
+    }
     if let cached {
       result = cached
+    } else if !publishing, input["mode"] == .string(AgentCollaborationCandidateRecall.mode), input["view"] == nil,
+              var page = try? history.recallCollaborationOriginal(input, scope: scope) {
+      page["success"] = .bool(true)
+      result = page
     } else if publishing {
       do {
         result = try history.publishCollaborationMilestone(input, scope: scope)
@@ -2884,7 +2896,7 @@ final class MessageCoordinator: ObservableObject {
     guard AgentControlPlaneClock.nowMillis() < expiry,
           let object = try? JSONSerialization.jsonObject(with: Data(AgentMcpJSONCodec.stringify(response).utf8)) as? [String: Any],
           let wire = try? linkWirePayload(object, link: link) else { return }
-    _ = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
+    _ = await mqttClient.publishTransientControl(topic: link.routes.upTopic, payload: wire.wireData, link: link)
   }
 
   private func discoverTeamObserverReplies(now: Int64) {
@@ -3083,7 +3095,7 @@ final class MessageCoordinator: ObservableObject {
       return false
     }
     managedDesktopProbes += 1
-    let published = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
+    let published = await mqttClient.publishTransientControl(topic: link.routes.upTopic, payload: wire.wireData, link: link)
     if published == .failed, !Task.isCancelled, profile == store.profile.identityFingerprint {
       teamRecoveryRetries.failure(run: run, profile: profile, progress: progress, now: now)
     }
@@ -3257,7 +3269,7 @@ final class MessageCoordinator: ObservableObject {
       desktopEvidenceRequests.removeValue(forKey: request.nonce)
       signal.finish()
     }
-    guard await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData) == .published else { return nil }
+    guard await mqttClient.publishTransientControl(topic: link.routes.upTopic, payload: wire.wireData, link: link) == .published else { return nil }
     for await response in responses { return response }
     return nil
   }
@@ -3474,7 +3486,7 @@ final class MessageCoordinator: ObservableObject {
               $0.routes.clientRouteId == binding.identity.clientRouteId }),
             let wire = try? linkWirePayload(payload, link: link) else { continue }
       published += 1
-      _ = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
+      _ = await mqttClient.publishTransientControl(topic: link.routes.upTopic, payload: wire.wireData, link: link)
     }
   }
 
@@ -8497,6 +8509,13 @@ final class MessageCoordinator: ObservableObject {
     ]
     let stage = member.context["_galaxyssi_research_stage"] ?? ""
     if !stage.isEmpty { instruction.append("Research stage: \(stage)") }
+    if member.context["_galaxyssi_selection_source"] == "collaboration_roster" {
+      instruction.append(AgentCollaborationExperimentResultFeedback.guidance)
+      if member.deliveryMode == .respond {
+        instruction.append("Match requested record kinds to their host contracts. If reporting evidence cannot satisfy a preregistered comparison, " +
+          "correct the assignment or request a prospective comparison. Preserve original reports, criteria and verification types.")
+      }
+    }
     return instruction
   }
 
@@ -13599,7 +13618,7 @@ final class MessageCoordinator: ObservableObject {
       guard let wire = try? linkWirePayload(payload, link: link) else {
         continue
       }
-      _ = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
+      _ = await mqttClient.publishTransientControl(topic: link.routes.upTopic, payload: wire.wireData, link: link)
     }
   }
 

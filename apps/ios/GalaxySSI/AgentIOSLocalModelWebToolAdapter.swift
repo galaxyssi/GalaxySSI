@@ -156,9 +156,18 @@ enum AgentIOSLocalModelWebToolRunner {
           "view": .object(["type": .string("string"), "enum": .array([.string(AgentCollaborationMethodEvaluations.view)])])
         ])
       ], risk: .low, effect: .readOnly)
+    var scopedDescriptor = descriptor
+    scopedDescriptor.inputSchema = AgentCollaborationCandidateRecall.nativeSchema(descriptor.inputSchema, enabled: !originalsOnly)
     return AgentNativeToolExecutableDefinition(
-      definition: AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: collaborationRecallId)
+      definition: AgentPhoneNativeToolDefinition(descriptor: scopedDescriptor, executorId: collaborationRecallId)
     ) { invocation in
+      if !originalsOnly, invocation.input["mode"] == .string(AgentCollaborationCandidateRecall.mode) {
+        try invocation.checkpoint()
+        guard let result = read(invocation.input) else {
+          return .failure(code: "collaboration_original_unavailable", message: "The scoped original is unavailable")
+        }
+        return .success(output: result)
+      }
       try invocation.checkpoint()
       let mode = invocation.input.string("mode")
       guard modes.contains(mode) || (!originalsOnly && mode == AgentCollaborationSourceAccess.mode),
@@ -314,22 +323,25 @@ enum AgentIOSLocalModelWebToolRunner {
       catalogBinding: registered ? .registeredContracts : nil)
   }
 
-  private static func webToolRegistry(_ registry: AgentNativeToolRegistry, readOnlyAnalysis: Bool,
-                                      recallScope: AgentCollaborationToolEvidenceScope?,
-                                      database: AgentConversationDatabase?, originalsOnly: Bool,
-                                      useRegisteredContracts: Bool) throws -> AgentNativeToolRegistry {
+  static func webToolRegistry(_ registry: AgentNativeToolRegistry, readOnlyAnalysis: Bool,
+                              recallScope: AgentCollaborationToolEvidenceScope?,
+                              database: AgentConversationDatabase?, originalsOnly: Bool,
+                              useRegisteredContracts: Bool = false,
+                              history: AgentTeamExecutionHistoryStore = .shared) throws -> AgentNativeToolRegistry {
     let scoped = try registry.subset(useRegisteredContracts: useRegisteredContracts) {
       AgentIOSLocalModelWebToolProtocol.toolIDs.contains($0.id) &&
         (!readOnlyAnalysis || AgentScreenAnalysisToolPolicy.allows($0))
     }
     if !readOnlyAnalysis, let recallScope, let database {
-      try scoped.registerExecutable(collaborationRecallTool(originalsOnly: originalsOnly) { input in
+      let read: (AgentMcpJSONObject) -> AgentMcpJSONObject? = { input in
         guard collaborationRecallIsAuthorized(recallScope, database: database),
-              AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: recallScope.runId)?.state == .running,
-              let result = try? AgentTeamExecutionHistoryStore.shared.recallCollaborationOriginal(input, scope: recallScope),
+              history.snapshot(supervisorRunId: recallScope.runId)?.state == .running,
+              let result = try? history.recallCollaborationOriginal(input, scope: recallScope),
               collaborationRecallIsAuthorized(recallScope, database: database) else { return nil }
         return result
-      })
+      }
+      let recall = try collaborationRecallTool(originalsOnly: originalsOnly, read: read)
+      try scoped.registerExecutable(originalsOnly ? recall : AgentCollaborationWorkflowCheck.nativeTool(recall, read: read))
     }
     return scoped
   }

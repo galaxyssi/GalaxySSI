@@ -249,6 +249,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       var visitedSourceAccessPages = Set<String>()
       let evidencePromptLedger = CloudEvidencePromptLedger(query: turns.last?.content ?? "")
       let progress = CloudWebToolLoopProgress()
+      var visitedWorkflowChecks = Set<String>()
       let research = CloudResearchRuntimeBudget(limits: .configured(contact.cloud_research_limits))
       let recovery: CloudResearchObservationRecovery?
       if retainResearch && images.isEmpty && collaborationRecallScope == nil {
@@ -653,6 +654,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         var freshKeys = Set<String>()
         let preparedCalls = parsedCalls.compactMap { item -> AssembledToolCall? in
           let (call, arguments) = item
+          if AgentCollaborationWorkflowCheck.isCall(call.name, arguments) {
+            let key = progress.semanticKey(toolName: call.name, arguments: arguments)
+            return freshKeys.insert(key).inserted ? call : nil
+          }
           if call.name == publishName { return call }
           guard AgentCollaborationSourceAccess.matches(tool: call.name, input: arguments) ||
                 progress.cached(toolName: call.name, arguments: arguments) == nil else { return nil }
@@ -681,15 +686,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           collaborationRecall: collaborationRecallScope.map { scope in
             { arguments in
               await MainActor.run {
-                guard collaborationEvidence != nil || ["goal", "dependency"].contains(arguments.string("mode")) else {
-                  return nil
-                }
-                guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
-                      let roster = session.collaborationRoster,
-                      scope.rosterMember(in: roster)?.resourceId == contact.id,
-                      session.mergedIntoConversationId.isBlank,
-                      !session.privateMode, !session.trackingPaused else { return nil }
-                return try? AgentTeamExecutionHistoryStore.shared.recallCollaborationOriginal(arguments, scope: scope)
+                Self.scopedCollaborationRecall(arguments, scope: scope, allowsResearch: collaborationEvidence != nil,
+                  resourceID: contact.id, session: store.agentSession(id: scope.conversationId), history: .shared)
               }
             }
           },
@@ -748,11 +746,19 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         var madeProgress = false
         var newResearchEvidence = false
         let retrievalBatch = parsedCalls.contains { CloudResearchRuntimeBudget.isRetrievalTool($0.0.name) }
+        var workflowCheckResults: [String: String] = [:]
         var publicationResults: [String: String] = [:]
         var sourceAccessResults: [String: String] = [:]
         for outcome in outcomes {
           guard let output = outcome.output,
                 let arguments = try? CloudModelStreamJSON.mcpObject(from: outcome.call.argumentsJson) else {
+            continue
+          }
+          if AgentCollaborationWorkflowCheck.isCall(outcome.call.name, arguments) {
+            let key = progress.semanticKey(toolName: outcome.call.name, arguments: arguments)
+            workflowCheckResults[key] = output
+            if let result = try? CloudModelStreamJSON.mcpObject(from: output), result["status"] == .string("returned"),
+               visitedWorkflowChecks.insert(key).inserted { madeProgress = true }
             continue
           }
           if outcome.call.name == publishName {
@@ -763,6 +769,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                let receipt = try? CloudModelStreamJSON.mcpObject(from: output), receipt["rejected_draft_preserved"] == .bool(true),
                progress.requestRepair("collaboration_milestone_publication") { madeProgress = true }
             if arguments["mode"] == .string("validate_assessment"),
+               let checked = try? CloudModelStreamJSON.mcpObject(from: output), checked["status"] == .string("returned"),
+               checked["success"] == .bool(true),
                progress.requestRepair("collaboration_assessment_preflight") { madeProgress = true }
             continue
           }
@@ -776,6 +784,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           if progress.record(toolName: outcome.call.name, arguments: arguments, output: output) {
             newResearchEvidence = research.observe(tool: outcome.call.name, output: output) || newResearchEvidence
             madeProgress = true
+            if AgentCollaborationCandidateRecall.isHistoryCall(outcome.call.name, arguments) { continue }
             if outcome.call.name.lowercased() != CloudImageAnnotationPlan.toolName &&
                 !CloudWebToolLoopProgress.isNonEvidenceRecall(toolName: outcome.call.name, arguments: arguments) {
               evidenceResults.append((outcome.call.name, output))
@@ -783,6 +792,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           }
         }
         let results = parsedCalls.compactMap { item -> (AssembledToolCall, String)? in
+          if AgentCollaborationWorkflowCheck.isCall(item.0.name, item.1) {
+            let key = progress.semanticKey(toolName: item.0.name, arguments: item.1)
+            return workflowCheckResults[key].map { (item.0, $0) }
+          }
           let (call, arguments) = item
           if call.name == publishName, let output = publicationResults[call.callId] { return (call, output) }
           if AgentCollaborationSourceAccess.matches(tool: call.name, input: arguments) {
@@ -797,10 +810,13 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         let rawEvidence = evidenceResults.map(\.1)
         let projectedEvidence = evidencePromptLedger.project(rawEvidence)
         var projectionByOriginal: [String: String] = [:]
+        for output in workflowCheckResults.values { projectionByOriginal[output] = output }
         for (original, projection) in zip(rawEvidence, projectedEvidence) {
           projectionByOriginal[original] = projection
         }
         let promptResults = results.map { call, output in
+          if let arguments = try? CloudModelStreamJSON.mcpObject(from: call.argumentsJson),
+             AgentCollaborationCandidateRecall.isHistoryCall(call.name, arguments) { return (call, output) }
           if call.name == publishName { return (call, output) }
           if let arguments = try? CloudModelStreamJSON.mcpObject(from: call.argumentsJson),
              CloudWebToolLoopProgress.isNonEvidenceRecall(toolName: call.name, arguments: arguments) {
@@ -944,6 +960,18 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       )
       continuation.yield(.failed(ModelStreamFailed(requestId: requestId, error: streamError)))
     }
+  }
+
+  static func scopedCollaborationRecall(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope,
+                                        allowsResearch: Bool, resourceID: String, session: AgentConversation?,
+                                        history: AgentTeamExecutionHistoryStore) -> AgentMcpJSONObject? {
+    guard allowsResearch || ["goal", "dependency"].contains(input.string("mode")),
+          let session, session.id == scope.conversationId,
+          let roster = session.collaborationRoster,
+          scope.rosterMember(in: roster)?.resourceId == resourceID,
+          session.mergedIntoConversationId.isBlank,
+          !session.privateMode, !session.trackingPaused else { return nil }
+    return try? history.recallCollaborationOriginal(input, scope: scope)
   }
 
   private func executeToolCalls(

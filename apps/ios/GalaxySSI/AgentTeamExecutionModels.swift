@@ -171,6 +171,7 @@ struct AgentCollaborationResearchDraft: Codable {
     case experimentResult = "experiment_result"
     case capabilityLesson = "capability_lesson"
     case workflowMethod = "workflow_method"
+    case workflowSelectionRule = "workflow_selection_rule"
     case candidateEvent = "candidate_event"
     case teamExchange = "team_exchange"
     case capabilityGap = "capability_gap"
@@ -261,7 +262,7 @@ enum AgentCollaborationLearningAgendaIntake {
 enum AgentCollaborationEvolutionIntake {
   static func validates(_ draft: AgentCollaborationResearchDraft) -> Bool {
     guard let value = draft.body[draft.kind.rawValue]?.objectValue,
-          draft.body["content"] == nil || !draft.body.string("content").isBlank else { return false }
+          draft.body["content"] == nil || draft.body["content"]?.strictStringValue?.isBlank == false else { return false }
     switch draft.kind {
     case .capabilityGap:
       guard ["knowledge", "tool", "method", "verification", "coordination", "environment",
@@ -961,6 +962,7 @@ struct AgentCollaborationFrozenCloudRead: Codable {
 struct AgentCollaborationMilestoneRejection: Codable {
   var artifact: Data
   var reason: String
+  var problem: AgentMcpJSONObject? = nil
 }
 
 struct AgentCollaborationResearchPublication: Codable {
@@ -980,6 +982,7 @@ struct AgentCollaborationPublicationRejection: Codable, Equatable {
   var scope: AgentCollaborationToolEvidenceScope
   var replyHash: String
   var reason: Reason
+  var problem: AgentMcpJSONObject? = nil
 }
 
 enum AgentSubagentStatus: String, Codable, CaseIterable, Identifiable {
