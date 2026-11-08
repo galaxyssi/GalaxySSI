@@ -146,6 +146,9 @@ struct GalaxySSIHealthCareEntry: View {
             .accessibilityIdentifier("agent-health-care-discussion")
           }
           if expanded {
+            if let review = concern.maintenanceReview, concern.stage == .maintenance {
+              GalaxySSIHealthMaintenanceEvidenceView(review: review).font(.footnote)
+            }
             details
           }
         }
@@ -378,8 +381,9 @@ private struct GalaxySSIHealthCareDetail: View {
         GalaxySSIHealthCareTargetSection(records: records, concern: concern)
         Section(t("follow_up", "Improvement and follow-up")) {
           if let note = concern.reviewNote { Text(note) }
+          if let review = concern.maintenanceReview { GalaxySSIHealthMaintenanceEvidenceView(review: review) }
           Picker(t("stage", "Review status"), selection: $stage) {
-            ForEach([GalaxySSIHealthCare.Stage.reassess, .paused, .maintenance, .closed], id: \.rawValue) {
+            ForEach([GalaxySSIHealthCare.Stage.reassess, .paused, .closed], id: \.rawValue) {
               Text(GalaxySSIHealthCareText.stage($0, language: language)).tag($0)
             }
           }
@@ -395,6 +399,7 @@ private struct GalaxySSIHealthCareDetail: View {
               Text(GalaxySSIHealthCareText.stage(version.stage, language: language))
               Text(version.updatedAt, style: .date).foregroundColor(.secondary)
               if let note = version.reviewNote { Text(note).font(.caption) }
+              if let review = version.maintenanceReview { GalaxySSIHealthMaintenanceEvidenceView(review: review) }
             }
           }
           if hasMore { Button(t("more", "Show more")) { loadHistory(append: true) } }

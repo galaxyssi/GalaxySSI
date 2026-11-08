@@ -47,6 +47,7 @@ enum GalaxySSIHealthCarePlan {
     let uncertainty: String
     let sources: [Source]
     let actions: [Action]
+    var maintenance: GalaxySSIHealthCareMaintenance.Draft?
   }
   struct Proposal: Codable, Equatable, Identifiable {
     let id: UUID
@@ -67,6 +68,7 @@ enum GalaxySSIHealthCarePlan {
     var state = State.pending
     var selected: Set<Int> = []
     var resolvedAt: Date?
+    var maintenanceAccepted: Bool?
   }
   struct AdoptedAction: Codable, Equatable, Identifiable {
     let proposalID: UUID
@@ -77,7 +79,9 @@ enum GalaxySSIHealthCarePlan {
     var id: String { "\(proposalID.uuidString):\(action.id)" }
   }
 
-  static var schema: [String: Any] {
+  static var schema: [String: Any] { schema(allowsMaintenance: false) }
+
+  static func schema(allowsMaintenance: Bool) -> [String: Any] {
     func string(_ maximum: Int, description: String = "") -> [String: Any] {
       ["type": "string", "maxLength": maximum, "description": description]
     }
@@ -88,7 +92,7 @@ enum GalaxySSIHealthCarePlan {
       ["type": "array", "items": items, "minItems": 1, "maxItems": 8]
     }
     let date = string(40, description: "ISO 8601 with an explicit offset, or empty if no review window applies.")
-    return object([
+    var schema = object([
       "uncertainty": string(2_000, description: "Missing context, limitations and remaining uncertainty."),
       "sources": array(object(["title": string(300), "url": string(1_000, description: "Exact supplied HTTPS source URL."),
         "version": string(80), "applicability": string(2_000, description: "Population, applicability and limitations."),
@@ -99,9 +103,15 @@ enum GalaxySSIHealthCarePlan {
         "source_index": ["type": "integer", "minimum": 0, "maximum": 7], "due_from": date, "due_until": date,
         "applicability": GalaxySSIHealthCareApplicability.schema]))
     ])
+    if allowsMaintenance, var properties = schema["properties"] as? [String: Any] {
+      properties["maintenance"] = GalaxySSIHealthCareMaintenance.schema
+      schema["properties"] = properties
+    }
+    return schema
   }
 
-  static func parse(_ args: AgentMcpJSONObject, evidence: [GalaxySSIHealthCareEvidence.Receipt], now: Date) throws -> Draft {
+  static func parse(_ args: AgentMcpJSONObject, evidence: [GalaxySSIHealthCareEvidence.Receipt], now: Date,
+                    approvedHistory: GalaxySSIHealthCareSeries.Page? = nil) throws -> Draft {
     let invalid = GalaxySSIHealthRecords.Failure.invalid
     func text(_ object: AgentMcpJSONObject, _ key: String, max: Int) throws -> String {
       guard let value = object[key]?.strictStringValue, !value.isBlank, value.utf8.count <= max else { throw invalid }
@@ -118,7 +128,7 @@ enum GalaxySSIHealthCarePlan {
       guard let parsed = formatter.date(from: value) else { throw invalid }
       return parsed
     }
-    guard Set(args.keys) == ["uncertainty", "sources", "actions"],
+    guard Set(args.keys).subtracting(["maintenance"]) == ["uncertainty", "sources", "actions"],
           let rawSources = args["sources"]?.arrayValue, (1...8).contains(rawSources.count),
           let rawActions = args["actions"]?.arrayValue, (1...8).contains(rawActions.count)
     else { throw invalid }
@@ -154,7 +164,14 @@ enum GalaxySSIHealthCarePlan {
         rationale: text(item, "rationale", max: 2_000), sourceIndex: Int(source), dueFrom: from, dueUntil: until,
         applicability: GalaxySSIHealthCareApplicability.parse(review, kind: kind, sourceCount: sources.count))
     }
-    return try .init(uncertainty: text(args, "uncertainty", max: 2_000), sources: sources, actions: actions)
+    let maintenance: GalaxySSIHealthCareMaintenance.Draft?
+    if let raw = args["maintenance"] {
+      guard let history = approvedHistory, let object = raw.objectValue else { throw invalid }
+      maintenance = try GalaxySSIHealthCareMaintenance.parse(object, actions: actions, sourceCount: sources.count,
+        records: history.rows.map(\.record), version: history.binding.historyVersion)
+    } else { maintenance = nil }
+    return try .init(uncertainty: text(args, "uncertainty", max: 2_000), sources: sources, actions: actions,
+      maintenance: maintenance)
   }
 
   static func arguments(_ data: Data, style: GalaxySSICloudAPIStyle) throws -> AgentMcpJSONObject {

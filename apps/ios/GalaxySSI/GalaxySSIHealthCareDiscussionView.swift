@@ -274,7 +274,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
       let older = try records.readLocalCareDiscussionHistory(review, after: cursor)
       page = try Tool.output(older, metric: review.metric, turn: review.id, remaining: remaining)
       request = try Tool.continuing(request, with: call, output: page, style: review.model.apiStyle,
-        proposesPlan: review.proposesPlan, historyAvailable: page.cursor != nil)
+        proposesPlan: review.proposesPlan, historyAvailable: page.cursor != nil, allowsMaintenance: true)
       let ledger = coordinator.healthDisclosureStore
       let ticket = AgentDataDisclosureLedger.beginCloudRequest(store: ledger, destination: .init(contact: contact),
         text: "", purpose: "Approved health measurement history continuation",

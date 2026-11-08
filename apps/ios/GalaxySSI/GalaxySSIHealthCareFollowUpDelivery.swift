@@ -9,6 +9,7 @@ struct GalaxySSIHealthCareFollowUpLifecycle: ViewModifier {
   let store: GalaxySSIStore
   @State private var generation = UUID()
   @State private var destination: Destination?
+  @State private var maintenanceDeadline: Date?
 
   private struct Destination: Identifiable {
     let id: UUID
@@ -19,12 +20,15 @@ struct GalaxySSIHealthCareFollowUpLifecycle: ViewModifier {
   func body(content: Content) -> some View {
     content
       .onChange(of: scene) { phase in
-        if phase != .active { destination = nil }
+        if phase != .active { destination = nil; maintenanceDeadline = nil }
         generation = UUID()
       }
-      .onChange(of: store.profile.identityFingerprint) { _ in destination = nil; generation = UUID() }
+      .onChange(of: store.profile.identityFingerprint) { _ in
+        destination = nil; maintenanceDeadline = nil; generation = UUID()
+      }
       .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
         destination = nil
+        maintenanceDeadline = nil
       }
       .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
         generation = UUID()
@@ -39,6 +43,17 @@ struct GalaxySSIHealthCareFollowUpLifecycle: ViewModifier {
         if $0.object as? String == store.profile.identityFingerprint { generation = UUID() }
       }
       .task(id: generation) { await reconcile() }
+      .task(id: maintenanceDeadline) {
+        guard scene == .active, let maintenanceDeadline else { return }
+        let owner = store.profile.identityFingerprint
+        let delay = min(86_400, max(0, maintenanceDeadline.timeIntervalSinceNow))
+        do { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
+        catch { return }
+        guard scene == .active, !Task.isCancelled, owner == store.profile.identityFingerprint,
+              UIApplication.shared.isProtectedDataAvailable else { return }
+        self.maintenanceDeadline = nil
+        generation = UUID()
+      }
       .sheet(item: $destination) { route in
         NavigationView {
           List {
@@ -60,6 +75,9 @@ struct GalaxySSIHealthCareFollowUpLifecycle: ViewModifier {
   private func reconcile() async {
     let owner = store.profile.identityFingerprint
     let records = GalaxySSIHealthRecords(owner: owner, secrets: store.secrets)
+    if scene == .active, !Task.isCancelled, UIApplication.shared.isProtectedDataAvailable {
+      maintenanceDeadline = try? records.reconcileLocalCareMaintenance()
+    }
     let center = UNUserNotificationCenter.current()
     let authorized = await center.notificationSettings().authorizationStatus
     let scheduled = await center.pendingNotificationRequests()

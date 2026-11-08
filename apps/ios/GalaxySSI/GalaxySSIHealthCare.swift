@@ -99,6 +99,7 @@ enum GalaxySSIHealthCare {
     var targetRevision: Int?
     var reviewNote: String?
     var maintenanceHistoryVersion: String?
+    var maintenanceReview: GalaxySSIHealthCareMaintenance.Review?
     var bloodPressureWarning: GalaxySSIHealthCarePriority.Warning?
     var adoptedActions: [GalaxySSIHealthCarePlan.AdoptedAction]?
   }
