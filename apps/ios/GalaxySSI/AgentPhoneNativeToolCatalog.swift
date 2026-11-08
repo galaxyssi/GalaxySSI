@@ -287,7 +287,18 @@ enum AgentPhoneNativeToolCatalog {
     provider: AgentIOSWebMediaToolProviding
   ) -> [AgentNativeToolExecutableDefinition] {
     let executor = AgentIOSWebMediaNativeToolExecutor(provider: provider)
-    return AgentIOSWebMediaNativeToolCatalog.definitions(provider: provider).map(executor.executableDefinition)
+    return AgentIOSWebMediaNativeToolCatalog.definitions(provider: provider).map { definition in
+      var executable = executor.executableDefinition(definition)
+      if provider is AgentIOSURLSessionWebMediaToolProvider,
+         AgentEffectRecoveryRecord.browserMutationTools.contains(definition.id) {
+        executable.recoveryQuery = { invocation in
+          AgentNativeEffectRecoveryQuery(toolId: AgentIOSWebMediaNativeToolCatalog.browserSessionOperationStatus,
+            toolVersion: AgentPhoneNativeToolCatalog.version,
+            arguments: ["request_id": .string(invocation.context.invocationId)])
+        }
+      }
+      return executable
+    }
   }
 
   static func mediaExecutableDefinitions(

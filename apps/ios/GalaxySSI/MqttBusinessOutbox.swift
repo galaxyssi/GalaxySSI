@@ -129,6 +129,21 @@ final class MqttBusinessOutbox {
     }
   }
 
+  func releaseAttachment(identity: MqttBusinessIdentity, messageID: String, transferID: String,
+                         transaction: MqttChunkDatabase.Transaction) throws -> Bool {
+    guard MqttRouteProtocol.hex(transferID, count: 64) else { throw MqttRouteError.invalidPayload }
+    let key = try identity.key(messageID: messageID)
+    return try database.transaction(joining: transaction) {
+      guard var saved = try read(key), saved.identity == identity,
+            saved.message.blockedByAttachmentTransferIds.contains(transferID) else { return false }
+      guard let request = saved.deferredRequest, request.attachmentDependencies.contains(transferID),
+            request.sourceMessageID == messageID else { throw MqttChunkStorageError.corruptState }
+      saved.message.blockedByAttachmentTransferIds.removeAll { $0 == transferID }
+      try write(saved, key: key)
+      return true
+    }
+  }
+
   // Both the authenticated relationship generation and canonical Signal wire hash must match.
   // No payload cleanup or success notification is legal until this transaction returns.
   @discardableResult

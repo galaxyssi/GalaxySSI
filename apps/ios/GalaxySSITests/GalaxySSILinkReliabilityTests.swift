@@ -1,8 +1,93 @@
+import UserNotifications
 import XCTest
 @testable import GalaxySSI
 
 @MainActor
 final class GalaxySSILinkReliabilityTests: XCTestCase {
+  func testReceiptReplayCoalescesOnlyBrokerAcknowledgedExactCiphertext() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let cipher = GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    var uptime: TimeInterval = 100
+    let journal = GalaxySSITransportReceiptJournal(applicationSupportDirectory: directory, cipher: cipher, uptime: { uptime })
+    let digest = String(repeating: "a", count: 64)
+    var encryptions = 0
+    func enqueue(_ journal: GalaxySSITransportReceiptJournal, binding: String = "route",
+                 digest: String? = nil, replay: Bool = true, now: Int64 = 1_000) throws -> Bool {
+      try journal.enqueue(peerId: "peer", phonePeer: false, binding: binding, receivedMessageId: "source",
+        receivedCiphertextDigest: digest, isReplay: replay, nowMillis: now) {
+        encryptions += 1
+        return "encrypted-receipt"
+      }
+    }
+    XCTAssertTrue(try enqueue(journal, digest: digest, replay: false))
+    let original = try XCTUnwrap(journal.due(nowMillis: 1_000).first)
+    let work = try XCTUnwrap(journal.claim(id: original.id, nowMillis: 1_000))
+    try journal.acknowledge(id: work.id, attemptToken: "stale-attempt")
+    for _ in 0..<128 { XCTAssertTrue(try enqueue(journal, digest: digest)) }
+    XCTAssertEqual(encryptions, 1)
+    XCTAssertEqual(journal.due(nowMillis: 13_000).first?.wirePayload, "encrypted-receipt")
+    try journal.acknowledge(id: work.id, attemptToken: work.attemptToken)
+    for _ in 0..<128 { XCTAssertFalse(try enqueue(journal, digest: digest)) }
+    XCTAssertEqual(encryptions, 1)
+
+    XCTAssertTrue(try enqueue(journal, binding: "other-route", digest: digest))
+    XCTAssertTrue(try enqueue(journal, digest: String(repeating: "b", count: 64)))
+    for pending in journal.due(nowMillis: 1_000) { try journal.discard(id: pending.id) }
+    XCTAssertEqual(encryptions, 3)
+    XCTAssertFalse(try enqueue(journal, digest: digest))
+    uptime += 2
+    XCTAssertTrue(try enqueue(journal, digest: digest))
+    let next = try XCTUnwrap(journal.due(nowMillis: 1_000).first)
+    let claimed = try XCTUnwrap(journal.claim(id: next.id, nowMillis: 1_000))
+    try journal.acknowledge(id: next.id, attemptToken: claimed.attemptToken)
+    XCTAssertFalse(try enqueue(journal, digest: digest))
+
+    let reopened = GalaxySSITransportReceiptJournal(applicationSupportDirectory: directory, cipher: cipher, uptime: { uptime })
+    XCTAssertTrue(try enqueue(reopened, digest: digest))
+    XCTAssertEqual(encryptions, 5)
+  }
+
+  func testAttachmentDeclarationReuseAndSafeStartupCompaction() throws {
+    let fixture = try ChunkFixture()
+    let suite = "attachment-declaration-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let journal = GalaxySSIChatHistoryDatabase(fileURL: fixture.url, secrets: fixture.secrets)
+    let store = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    let transfer = String(repeating: "a", count: 64)
+    let now = Date(timeIntervalSince1970: 100)
+    let key = LinkAttachmentDeclarationKey(topic: "topic/up", contactId: "contact",
+      sourceMessageId: "source", transferId: transfer, declaration: "manifest")
+    func request(_ id: String, topic: String = "topic/up", source: String = "source",
+                 contact: String = "contact", kind: String? = "manifest") -> LinkDeliveryEnqueueRequest {
+      LinkDeliveryEnqueueRequest(messageId: id, topic: topic, wirePayload: id,
+        requiresValidatedNetwork: false, blockedByAttachmentTransferIds: [], clientSourceMessageId: source,
+        contactId: contact, attachmentTransferId: transfer, attachmentDeclaration: kind)
+    }
+    store.enqueueBatch([request("first")], now: now)
+    store.enqueueBatch([request("duplicate"), request("attempted"), request("other-route", topic: "other/up"),
+      request("other-source", source: "other"), request("other-contact", contact: "other"),
+      request("blob", kind: "blob:fingerprint"), request("chunk-or-legacy", kind: nil),
+      request("chat", kind: nil)], now: now.addingTimeInterval(1))
+    store.markAttempt(messageId: "attempted", now: now.addingTimeInterval(2))
+    XCTAssertTrue(try store.enqueueAttachmentDeclaration(key) {
+      XCTFail("A pending declaration must be reused before advancing encryption state")
+      return ("unexpected", "unexpected")
+    })
+
+    try fixture.execute("CREATE TRIGGER reject_compaction BEFORE UPDATE ON link_delivery_state BEGIN SELECT RAISE(ABORT,'forced'); END")
+    let rejected = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    XCTAssertTrue(try rejected.outboxMigrationSnapshot().contains { $0.messageId == "duplicate" })
+    try fixture.execute("DROP TRIGGER reject_compaction")
+    for _ in 0..<2 {
+      let reopened = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+      let ids = Set(try reopened.outboxMigrationSnapshot().map(\.messageId))
+      XCTAssertEqual(ids, ["first", "attempted", "other-route", "other-source", "other-contact",
+                           "blob", "chunk-or-legacy", "chat"])
+    }
+  }
+
   func testPausingLearningKeepsOutboxEntriesWithoutBlockingOrdinaryMessages() throws {
     let fixture = try ChunkFixture()
     let suite = "learning-outbox-" + UUID().uuidString
@@ -30,6 +115,38 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
     let restored = try XCTUnwrap(reopened.pending(now: later).first)
     XCTAssertEqual(restored.backgroundLearning, true)
     XCTAssertEqual(restored.messageId, learning)
+  }
+
+  func testContactReminderPresentationSeparatesPanelAndSystemNotifications() {
+    var record = GalaxySSIContactReminder(id: "reminder-id-123456", peerID: "private-contact", outgoing: false,
+      createdAt: 1_000, expiresAt: 121_000, historyID: nil, status: .received, pendingAction: nil)
+    let policy = GalaxySSIContactReminderPresentationPolicy.self
+    XCTAssertEqual(policy.route(record, active: true, busy: false, backgroundEnabled: false, now: 2_000), .panel)
+    XCTAssertEqual(policy.route(record, active: false, busy: false, backgroundEnabled: true, now: 2_000),
+      .notification(quiet: false))
+    XCTAssertNil(policy.route(record, active: false, busy: false, backgroundEnabled: false, now: 2_000))
+    XCTAssertEqual(policy.route(record, active: true, busy: true, backgroundEnabled: false, now: 2_000),
+      .notification(quiet: true))
+    record.status = .quiet
+    XCTAssertEqual(policy.route(record, active: true, busy: false, backgroundEnabled: false, now: 2_000),
+      .notification(quiet: true))
+    XCTAssertFalse(policy.canShowPanel(record, explicitlyOpened: false, now: 2_000))
+    XCTAssertTrue(policy.canShowPanel(record, explicitlyOpened: true, now: 2_000))
+    XCTAssertFalse(policy.canShowPanel(record, explicitlyOpened: true, now: record.expiresAt))
+    record.status = .muted
+    XCTAssertNil(policy.route(record, active: true, busy: false, backgroundEnabled: true, now: 2_000))
+    XCTAssertFalse(policy.canPost(.denied))
+    XCTAssertFalse(policy.canPost(.notDetermined))
+    XCTAssertTrue(policy.canPost(.authorized))
+    XCTAssertTrue(policy.canPost(.provisional))
+
+    let request = GalaxySSIContactReminderNotification.request(record.id, language: "en", quiet: true, soundAllowed: true)
+    XCTAssertEqual(request.content.interruptionLevel, .passive)
+    XCTAssertNil(request.content.sound)
+    XCTAssertFalse(request.content.body.contains(record.peerID))
+    XCTAssertEqual(request.content.userInfo[GalaxySSIContactReminderNotification.quietKey] as? Bool, true)
+    let noSound = GalaxySSIContactReminderNotification.request(record.id, language: "en", quiet: false, soundAllowed: false)
+    XCTAssertNil(noSound.content.sound)
   }
 
   func testContactReminderOutboxPersistsCiphertextAndRejectsIdentifierReuse() throws {
@@ -118,7 +235,7 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
     for index in 0..<8 {
       XCTAssertTrue(window.acquire(topic: "a", messageId: "message-\(index)", now: 100))
     }
-    XCTAssertEqual(window.delay(topic: "a", messageId: "fresh", now: 101), 1)
+    XCTAssertEqual(window.delay(topic: "a", messageId: "fresh", now: 101), 29)
     XCTAssertEqual(window.delay(topic: "a", messageId: "message-0", now: 101), 29)
     XCTAssertTrue(window.acquire(topic: "b", messageId: "other", now: 101))
     XCTAssertFalse(window.acquire(topic: "a", messageId: "fresh", now: 101))
@@ -131,12 +248,139 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
     XCTAssertTrue(window.acquire(topic: "a", messageId: "message-2", now: 130))
   }
 
+  func testSignalDecryptBackoffUsesBoundedMonotonicWindowsAndCountsDeferrals() {
+    var now: TimeInterval = 100
+    let cache = GalaxySSISignalDecryptBackoff(capacity: 2, clock: { now })
+    XCTAssertNil(cache.deferral("first"))
+    for delay in [2.0, 4.0, 8.0, 16.0, 30.0, 30.0] {
+      cache.failed("first", reason: .invalidMessage)
+      XCTAssertEqual(cache.deferral("first"), true)
+      XCTAssertEqual(cache.deferral("first"), false)
+      now += delay - 0.01
+      XCTAssertEqual(cache.deferral("first"), false)
+      now += 0.02
+      XCTAssertNil(cache.deferral("first"))
+    }
+    XCTAssertEqual(cache.snapshot().failures, 6)
+    XCTAssertEqual(cache.snapshot().deferred, 18)
+    now += 300
+    cache.failed("first", reason: .noSession)
+    now += 2.01
+    XCTAssertNil(cache.deferral("first"))
+    cache.failed("second", reason: .duplicateMessage)
+    cache.failed("third", reason: .duplicateMessage)
+    XCTAssertEqual(cache.snapshot().tracked, 2)
+    cache.succeeded("second")
+    XCTAssertNil(cache.deferral("second"))
+    XCTAssertEqual(cache.snapshot().lastFailure, .duplicateMessage)
+  }
+
+  func testSignalBackoffKeyIsBoundToEndpointsDeviceCiphertextAndPairingKey() throws {
+    var routes = GalaxySSILinkRoutes(clientRouteId: "route", linkSecret: Data(repeating: 1, count: 32).base64URLEncodedString(),
+      localFingerprint: String(repeating: "a", count: 64), remoteFingerprint: String(repeating: "b", count: 64))
+    let wire: [String: Any] = ["scheme": "signal", "from": "desktop", "to": "phone", "body": "AQID", "device_id": 1]
+    func key(_ value: [String: Any], topic: String? = nil) -> String? {
+      GalaxySSISignalDecryptBackoff.relationshipKey(value, routes: routes, topic: topic ?? routes.downTopic,
+        senderNames: ["desktop"], receiverName: "phone")
+    }
+    let original = try XCTUnwrap(key(wire))
+    XCTAssertNil(key(wire, topic: routes.upTopic))
+    var changed = wire
+    changed["from"] = "another-desktop"
+    XCTAssertNil(key(changed))
+    changed = wire
+    changed["to"] = "another-phone"
+    XCTAssertNil(key(changed))
+    changed = wire
+    changed["device_id"] = 2
+    XCTAssertNotEqual(key(changed), original)
+    changed = wire
+    changed["body"] = "AQIE"
+    XCTAssertNotEqual(key(changed), original)
+    let previousTopic = routes.downTopic
+    routes.linkSecret = Data(repeating: 2, count: 32).base64URLEncodedString()
+    XCTAssertNil(key(wire, topic: previousTopic))
+    XCTAssertNotEqual(key(wire), original)
+  }
+
+  func testScopedCiphertextReplayRequiresCommittedStorageAndSamePairing() throws {
+    let fixture = try ChunkFixture()
+    let journal = GalaxySSIChatHistoryDatabase(fileURL: fixture.url, secrets: fixture.secrets)
+    let defaults = UserDefaults(suiteName: "scoped-replay-\(UUID())")!
+    let store = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    try fixture.execute("CREATE TRIGGER reject_inbox BEFORE UPDATE ON link_delivery_state BEGIN SELECT RAISE(ABORT,'forced'); END")
+    XCTAssertEqual(store.stageIncoming(messageId: "message", payload: "wire"), .invalid)
+    XCTAssertTrue(store.pendingIncoming().isEmpty)
+    XCTAssertThrowsError(try store.bindCiphertext(digest: "ciphertext", messageId: "message",
+      receiptRequired: true, authenticationRef: "pairing"))
+    XCTAssertNil(store.authenticatedCiphertextProof(digest: "ciphertext", authenticationRef: "pairing"))
+    try fixture.execute("DROP TRIGGER reject_inbox")
+    XCTAssertEqual(store.stageIncoming(messageId: "message", payload: "wire"), .staged)
+    try store.bindCiphertext(digest: "ciphertext", messageId: "message", receiptRequired: true, authenticationRef: "pairing")
+    let reopened = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    XCTAssertEqual(reopened.authenticatedCiphertextProof(digest: "ciphertext", authenticationRef: "pairing")?.messageId, "message")
+    XCTAssertNil(reopened.authenticatedCiphertextProof(digest: "ciphertext", authenticationRef: "rotated"))
+    XCTAssertNil(reopened.authenticatedCiphertextProof(digest: "changed", authenticationRef: "pairing"))
+  }
+
   func testReceiptCreditDelayDoesNotModifyDurableRetryBudget() throws {
     let store = makeDeliveryStore()
     let now = Date(timeIntervalSince1970: 1_000)
     store.enqueue(messageId: "send", topic: "topic/up", wirePayload: "encrypted-wire", now: now)
     XCTAssertEqual(store.nextRetryDelay(now: now, minimumDelay: { _ in 1 }), 1)
     XCTAssertEqual(try XCTUnwrap(store.pending(now: now).first).attempts, 0)
+  }
+
+  func testReconnectOnlyWakesUnsentRowsAndKeepsAttemptedBackoff() throws {
+    let store = makeDeliveryStore()
+    let now = Date(timeIntervalSince1970: 1_000)
+    store.enqueue(messageId: "sent", topic: "topic/up", wirePayload: "wire", now: now)
+    store.markAttempt(messageId: "sent", now: now)
+    store.markPublished(messageId: "sent", now: now)
+    store.enqueue(messageId: "new", topic: "topic/up", wirePayload: "wire", now: now.addingTimeInterval(100))
+    let deadline = try XCTUnwrap(store.outboxMigrationSnapshot().first { $0.messageId == "sent" }?.nextAttemptAt)
+    store.makePendingImmediatelyRetryable(now: now)
+    XCTAssertEqual(store.pending(now: now).map(\.messageId), ["new"])
+    let attempted = try XCTUnwrap(store.outboxMigrationSnapshot().first { $0.messageId == "sent" })
+    XCTAssertEqual(attempted.nextAttemptAt, deadline)
+    XCTAssertEqual(attempted.status, "published")
+  }
+
+  func testStaleUnclassifiedLegacyOutboxRowIsRetainedWithoutReplaying() throws {
+    let suite = "held-outbox-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = InMemorySecretStore()
+    let old = Date(timeIntervalSince1970: 1_000)
+    let now = old.addingTimeInterval(901)
+    let original = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: secrets)
+    original.enqueue(messageId: "legacy", topic: "topic/up", wirePayload: "legacy-wire", now: old)
+    original.enqueue(messageId: "tracked", topic: "topic/up", wirePayload: "tracked-wire",
+      clientSourceMessageId: "source", now: old)
+    original.enqueue(messageId: "modern", topic: "topic/up", wirePayload: "modern-wire", now: old)
+    let key = "galaxyssi-ios-link-delivery-v1"
+    let data = try XCTUnwrap(defaults.data(forKey: key))
+    var snapshot = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    var rows = try XCTUnwrap(snapshot["outbox"] as? [[String: Any]])
+    for index in rows.indices where rows[index]["messageId"] as? String != "modern" {
+      rows[index].removeValue(forKey: "retry_classified")
+      if rows[index]["messageId"] as? String == "legacy" { rows[index]["attempts"] = 1 }
+    }
+    snapshot["outbox"] = rows
+    defaults.set(try JSONSerialization.data(withJSONObject: snapshot), forKey: key)
+    let restored = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: secrets)
+    XCTAssertEqual(restored.holdStaleUnclassified(now: now, activeMessageIds: ["legacy"]), 0)
+    XCTAssertEqual(restored.holdStaleUnclassified(now: now), 1)
+    restored.makePendingImmediatelyRetryable(now: now)
+    restored.markPublished(messageId: "legacy", now: now)
+    let reopened = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: secrets)
+    XCTAssertEqual(Set(reopened.pending(now: now).map(\.messageId)), ["tracked", "modern"])
+    XCTAssertTrue(reopened.discardExhausted(maxAttempts: 1, now: now).isEmpty)
+    XCTAssertNil(reopened.nextExhaustionDelay(now: now, maxAttempts: 1, attachmentMaxAttempts: 1,
+      eligible: { _ in true }, minimumDelay: { _ in 0 }))
+    let held = try XCTUnwrap(reopened.outboxMigrationSnapshot().first { $0.messageId == "legacy" })
+    XCTAssertTrue(held.isHeld)
+    XCTAssertEqual(held.wirePayload, "legacy-wire")
   }
 
   func testAdmissionDeferralPreservesEarlierAttemptAndCiphertext() throws {
@@ -450,6 +694,40 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
       store.discardExhausted(maxAttempts: 6, now: now.addingTimeInterval(600)).map(\.messageId),
       ["active"]
     )
+  }
+
+  func testExhaustedPeerProjectionSurvivesReopenAndRollsBackIfJournalRejectsWrite() throws {
+    let fixture = try ChunkFixture()
+    let suite = "exhausted-peer-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let journal = GalaxySSIChatHistoryDatabase(fileURL: fixture.url, secrets: fixture.secrets)
+    let delivery = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    let source = UUID()
+    let now = Date(timeIntervalSince1970: 100)
+    let exhaustedAt = now.addingTimeInterval(60)
+    delivery.enqueue(messageId: "peer-wire", topic: "peer/up", wirePayload: "private-ciphertext",
+      clientSourceMessageId: source.uuidString, contactId: "peer", now: now)
+    delivery.markAttempt(messageId: "peer-wire", now: now)
+    XCTAssertNil(delivery.nextRetryDelay(now: exhaustedAt, maxAttempts: 1))
+    XCTAssertEqual(delivery.nextExhaustionDelay(now: exhaustedAt, maxAttempts: 1, attachmentMaxAttempts: 1,
+      eligible: { _ in true }, minimumDelay: { _ in 0 }), 1)
+    let binding: (PendingLinkMessage) -> String? = { $0.topic == "peer/up" ? "verified-binding" : nil }
+    try fixture.execute("CREATE TRIGGER reject_peer_failure BEFORE UPDATE ON link_delivery_state BEGIN SELECT RAISE(ABORT,'forced'); END")
+    XCTAssertTrue(delivery.discardExhausted(maxAttempts: 1, now: exhaustedAt, peerBinding: binding).isEmpty)
+    XCTAssertTrue(delivery.containsOutboxMessage("peer-wire"))
+    XCTAssertTrue(delivery.pendingPeerFailures(now: exhaustedAt).isEmpty)
+    try fixture.execute("DROP TRIGGER reject_peer_failure")
+    XCTAssertTrue(delivery.discardExhausted(maxAttempts: 1, now: exhaustedAt, peerBinding: binding).isEmpty)
+    let reopened = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    let failures = reopened.pendingPeerFailures(now: exhaustedAt)
+    XCTAssertEqual(failures, [.init(messageId: "peer-wire", sourceId: source, contactId: "peer",
+      topic: "peer/up", binding: "verified-binding", attempts: 1, recordedAt: exhaustedAt)])
+    XCTAssertFalse(reopened.containsOutboxMessage("peer-wire"))
+    XCTAssertTrue(reopened.pending(now: exhaustedAt).isEmpty)
+    reopened.retirePeerFailures(failures, now: exhaustedAt)
+    let final = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    XCTAssertTrue(final.pendingPeerFailures(now: exhaustedAt).isEmpty)
   }
 
   func testExhaustedAttachmentDiscardsWholeSourceMessageGroup() throws {

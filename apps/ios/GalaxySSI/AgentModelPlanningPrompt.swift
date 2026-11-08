@@ -529,7 +529,10 @@ enum AgentModelPlanningPrompt {
       header += "For image or news search set verticals to [\"image\"] or [\"news\"]. Keep user-requested drawing/photo style in the query. Public research reads can run independently; runtime consent still applies.\n"
     }
     if tools.contains(where: { $0.id == AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate }) {
-      header += "Browser navigate and back return inline text, links and a revision. Use observation when next_action=use_observation, including readable partial pages. Do not fetch the same page again for known evidence. Query operation_status only for an uncertain dispatch with its original request_id. A browser observation is not proof of an external effect.\n"
+      header += "Browser navigate and back return inline text, links and a revision. Use observation when next_action=use_observation, including readable partial pages. Do not fetch the same page again for known evidence. Query operation_status with the original request_id after uncertain dispatch. A missing receipt does not justify repeating the operation. Verify external state; neither a receipt nor a page observation proves the user's goal.\n"
+    }
+    if tools.contains(where: \.requiresEffectClaim) {
+      header += "For an uncertain effect, use its original read-only recovery_query if available, then verify external state before another write. A receipt is not proof of success.\n"
     }
     let rows = tools.map { tool in
       var line = "- \(tool.id) | \(tool.title.prefixStringForPlanning(100)) | risk=\(tool.risk.rawValue)"
@@ -780,6 +783,7 @@ enum AgentPlanningHistoryContext {
     var fieldIndex: AgentObservedOutputFields.Index?
     if action.kind == .callNativeTool {
       object["tool_id"] = String((action.parameters["tool_id"] ?? action.target).prefix(256))
+      if let failure = AgentPlannerObservation.nativeFailureSummary(action) { object["native_failure"] = failure }
       if AgentPlannerObservation.isWorkspaceExport(action) {
         return artifactExportLine(action, scope: scope, object: object, limit: limit)
       }
@@ -910,8 +914,18 @@ enum AgentPlannerObservation {
 
   static func nativeSources(_ action: AgentAction) -> [String] {
     var seen = Set<String>()
-    return [action.result, action.evidence].map(AgentObservationRedaction.redact)
+    return [action.parameters[AgentNativeFailureObservation.actionParameter] ?? "", action.result, action.evidence,
+      action.parameters[AgentSupervisedBrowserWait.requestReceiptKey] ?? ""]
+      .map(AgentObservationRedaction.redact)
       .filter { !$0.isEmpty && seen.insert($0).inserted }
+  }
+
+  static func nativeFailureSummary(_ action: AgentAction) -> [String: Any]? {
+    guard let raw = action.parameters[AgentNativeFailureObservation.actionParameter], raw.utf8.count <= 8_192,
+          let record = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else { return nil }
+    let keys: Set<String> = ["status", "receipt_status", "error_code", "retryable",
+      "outcome_unknown", "verification_status", "details_partial"]
+    return record.filter { keys.contains($0.key) }
   }
 
   static func observedFields(_ evidence: String) -> AgentObservedOutputFields.Index? {

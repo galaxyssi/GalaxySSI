@@ -2,7 +2,158 @@ import UIKit
 import XCTest
 @testable import GalaxySSI
 
+@MainActor
+final class AgentPendingNativeOutcomeTests: XCTestCase {
+  func testPendingNativeOutcomeRequiresEachExactHostReceiptAndDeclaredPostcondition() throws {
+    let mutation = AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate
+    let observer = AgentEffectRecoveryRecord.browserObserver
+    let descriptor = try XCTUnwrap(AgentIOSWebMediaNativeToolCatalog.definitions().map(\.descriptor).first { $0.id == observer })
+    let scope = AgentNativeEffectScope(sessionId: "session", conversationId: "conversation", taskId: "task", turnId: "turn")
+    let binding = AgentPlanContinuationScope(conversationId: scope.conversationId, turnId: scope.turnId)
+    func fixture(_ name: String, at time: Int64) -> (AgentEffectRecoveryRecord, AgentAction, AgentAction, AgentObservedCompletion) {
+      let invocation = "dispatch-" + name
+      let args: AgentMcpJSONObject = ["request_id": .string(invocation)]
+      let output: AgentMcpJSONObject = ["request_id": .string(invocation), "operation": .string("navigate"),
+        "state": .string("completed"), "observed_at_epoch_ms": .int(time + 1)]
+      let receipt = AgentNativeToolReceipt(invocationId: "read-" + name, startedAtEpochMillis: time + 1,
+        finishedAtEpochMillis: time + 2, durationMillis: 1, status: .succeeded,
+        inputSha256: AgentMcpJSONCodec.sha256(args), outputSha256: AgentMcpJSONCodec.sha256(output))
+      let effect = AgentEffectRecoveryRecord(scope: scope, actionId: name, toolId: mutation, version: descriptor.version,
+        inputDigest: "fixture", invocationId: invocation, uncertainAt: time,
+        query: .init(kind: .browser, toolId: observer, version: descriptor.version, input: args, subject: invocation),
+        observation: .init(scope: scope, toolId: observer, version: descriptor.version, receipt: receipt, output: output))
+      let origin = binding.bind(.init(id: name, kind: .callNativeTool, target: mutation, risk: .medium,
+        status: .failed, description: "Uncertain write", evidence: #"{"outcome":"unknown"}"#))
+      let read = binding.bind(.init(id: receipt.invocationId, kind: .callNativeTool, target: observer, risk: .low,
+        status: .completed, description: "Host readback", evidence: AgentMcpJSONCodec.stringify(output)))
+      let outcome = AgentObservedCompletion(id: "outcome-" + name, toolId: observer, subject: ["/request_id": invocation],
+        checks: ["/state": .string("completed")], afterToolId: mutation)
+      return (effect, origin, read, outcome)
+    }
+    let a = fixture("a", at: 10)
+    let b = fixture("b", at: 20)
+    let full = [a.1, a.2, b.1, b.2]
+    var requirements = AgentCompletionRequirements(publication: .none, phoneLinux: false)
+    requirements.outcomes = [a.3]
+    func assess(_ history: [AgentAction], effects: [AgentEffectRecoveryRecord] = [],
+                available: Bool = true) -> AgentCompletionEvidencePolicy.PendingOutcomes {
+      AgentCompletionEvidencePolicy.pendingOutcomes(requirements: requirements, history: history,
+        effects: effects.isEmpty ? [a.0, b.0] : effects, scope: scope,
+        descriptorFor: { available && $0 == observer ? descriptor : nil })
+    }
+    let partial = assess(full)
+    XCTAssertEqual(partial.settledActionIDs, ["a"])
+    XCTAssertEqual(partial.issues.count, 1)
+    requirements.outcomes = [a.3, b.3]
+    let settled = assess(full)
+    XCTAssertEqual(settled.settledActionIDs, ["a", "b"])
+    XCTAssertTrue(settled.issues.isEmpty)
+    XCTAssertTrue(AgentCompletionEvidencePolicy.missingEvidence(requirements: requirements, history: full,
+      satisfiedPendingOutcomes: settled.satisfiedOutcomeIDs).isEmpty)
+    XCTAssertEqual(assess(full, available: false).issues.count, 2)
+    var foreign = b.2
+    foreign.parameters[AgentPlanContinuationScope.conversationIdKey] = "other"
+    XCTAssertEqual(assess([a.1, a.2, b.1, foreign]).settledActionIDs, ["a"])
+    var newer = b.2
+    newer.id = "later"
+    newer.evidence = #"{"request_id":"dispatch-b","state":"failed"}"#
+    XCTAssertEqual(assess(full + [newer]).settledActionIDs, ["a"])
+    var weakened = b.3
+    weakened.checks = ["/operation": .string("navigate")]
+    requirements.outcomes = [a.3, weakened]
+    XCTAssertEqual(assess(full).settledActionIDs, ["a"])
+  }
+}
+
 extension GalaxySSIStoreTests {
+  func testSupervisedBrowserWaitBindsOriginalPlanActionMessageAndReceiptAcrossReload() throws {
+    let outgoing = ChatMessage(contactId: "agent", content: "Inspect the website", isMine: true,
+      conversationId: "conversation", turnId: "turn")
+    let scope = AgentPlanContinuationScope(conversationId: outgoing.conversationId, turnId: outgoing.turnId)
+    let action = scope.bind(AgentAction(id: "browser-action", kind: .callNativeTool,
+      target: AgentSupervisedBrowserWait.toolID, risk: .low, status: .proposed, description: "Browser handoff",
+      parameters: ["input_json": "{\"url\":\"https://example.test/login\"}"], requiresConfirmation: false))
+    var plan = AgentPlan(goal: outgoing.content, screen: .init(foregroundApp: "GalaxySSI", pageTitle: "Agent"),
+      steps: [], actions: [action], planId: "plan", revision: 3)
+    var task = AgentTaskRecord(taskId: outgoing.turnId, sessionId: outgoing.conversationId, goal: outgoing.content,
+      phase: .executing, routeKind: .localSystem, targetTitle: "Phone", risk: .low, blocked: false,
+      pendingAction: action, pendingActions: [action], activePlan: plan)
+    let wait = try XCTUnwrap(AgentSupervisedBrowserWait(task: task, outgoing: outgoing, action: action,
+      profileID: "profile", hostProcessID: "original-process"))
+    plan.actions[0].status = .waitingResponse
+    plan.actions[0].parameters[AgentSupervisedBrowserWait.requestReceiptKey] = AgentMcpJSONCodec.stringify(wait.requestReceipt)
+    task.activePlan = plan
+    task.supervisedBrowserWait = wait
+    task.phase = .waitingResponse
+    let restored = try JSONDecoder().decode(AgentTaskRecord.self, from: JSONEncoder().encode(task))
+    XCTAssertEqual(restored.supervisedBrowserWait, wait)
+    XCTAssertNotNil(wait.action(in: restored, outgoing: outgoing, profileID: "profile"))
+    XCTAssertNil(wait.action(in: restored, outgoing: outgoing, profileID: "other-profile"))
+    var wrong = outgoing
+    wrong.id = UUID()
+    XCTAssertNil(wait.action(in: restored, outgoing: wrong, profileID: "profile"))
+    var changed = restored
+    changed.activePlan?.revision = 4
+    XCTAssertNil(wait.action(in: changed, outgoing: outgoing, profileID: "profile"))
+    changed = restored
+    changed.pendingAction = nil
+    XCTAssertNil(wait.action(in: changed, outgoing: outgoing, profileID: "profile"))
+    changed = restored
+    changed.activePlan?.actions[0].parameters["input_json"] = "{\"url\":\"https://example.test/other\"}"
+    XCTAssertNil(wait.action(in: changed, outgoing: outgoing, profileID: "profile"))
+
+    let resolution = AgentSupervisedBrowserWait.Resolution.interrupted(.appProcessChanged)
+    XCTAssertTrue(wait.accepts(resolution))
+    var resolved = wait
+    resolved.resolution = resolution
+    XCTAssertFalse(resolved.accepts(.interrupted(.webContentProcessExited)))
+    XCTAssertEqual(resolved.requestReceipt, wait.requestReceipt)
+    XCTAssertEqual(resolution.output["user_returned_control"], .bool(false))
+    XCTAssertEqual(resolution.output["business_success_verified"], .bool(false))
+    task.pendingAction = nil
+    task.supervisedBrowserWait = resolved
+    task.activePlan?.actions[0].status = .failed
+    task.activePlan?.actions[0].parameters[AgentSupervisedBrowserWait.observationKey] =
+      AgentMcpJSONCodec.stringify(resolution.output)
+    XCTAssertNotNil(resolved.action(in: task, outgoing: outgoing, profileID: "profile"))
+    XCTAssertNil(wait.action(in: task, outgoing: outgoing, profileID: "profile"))
+  }
+
+  func testSupervisedNativeFailureKeepsBoundedRedactedDiagnosticsSeparateFromOutput() throws {
+    var native = nativeToolResult(status: .verificationFailed, invocationId: "verify-effect", idempotencyKey: "effect")
+    native.output = ["outcome_state": .string("unknown"), "safe_value": .int(7)]
+    native.error = AgentNativeToolError(code: "native_verification_failed",
+      message: "Request https://example.test/?token=hidden-url-value", retryable: false, details: [
+        "authorization": .string("hidden-authorization"),
+        "nested": .object(["set-cookie": .string("hidden-cookie")]),
+        "diagnostic": .string(String(repeating: "verbose", count: 900))
+      ])
+    native.verification = .init(status: .failed, message: "Cookie: hidden-verification")
+    let original = native
+    let diagnostic = try XCTUnwrap(AgentNativeFailureObservation.encode(native))
+    let fields = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(diagnostic.utf8))
+    XCTAssertEqual(fields["outcome_unknown"], .bool(true))
+    XCTAssertEqual(fields["details_partial"], .bool(true))
+    XCTAssertEqual(fields["verification_status"], .string("failed"))
+    XCTAssertNotNil(fields["details_sha256"])
+    for secret in ["hidden-url-value", "hidden-authorization", "hidden-cookie", "hidden-verification"] {
+      XCTAssertFalse(diagnostic.contains(secret))
+    }
+    XCTAssertLessThan(diagnostic.utf8.count, 3_000)
+    XCTAssertEqual(native, original)
+    var action = AgentAction(id: "action", kind: .callNativeTool, target: "phone.test.tool", risk: .low,
+      status: .failed, description: "Verify the effect", parameters: [:], requiresConfirmation: false)
+    let output = AgentMcpJSONCodec.stringify(native.output)
+    action.evidence = output
+    AgentCompletionEvidencePolicy.recordObservationEnvelope(.init(actionId: action.id, success: false,
+      message: "Unverified", metadata: [AgentNativeFailureObservation.metadataKey: diagnostic]), action: &action)
+    let summary = try XCTUnwrap(AgentPlannerObservation.nativeFailureSummary(action))
+    XCTAssertEqual(summary["error_code"] as? String, "native_verification_failed")
+    XCTAssertEqual(summary["outcome_unknown"] as? Bool, true)
+    XCTAssertEqual(action.evidence, output)
+    XCTAssertNil(AgentNativeFailureObservation.encode(nativeToolResult(invocationId: "success", idempotencyKey: "other")))
+  }
+
   func testDeviceStateEvidenceRequiresTypedReadbackForTheExactRequest() {
     let tool = AgentIOSSystemNativeToolCatalog.audioVolumeSet
     let input: AgentMcpJSONObject = ["stream": .string("media"), "percent": .int(50)]
@@ -217,22 +368,35 @@ extension GalaxySSIStoreTests {
   }
 
   func testBrowserOperationObservationUsesExactRequestAndTurnAndExpires() throws {
-    let browser = AgentIOSURLSessionBrowserSessionStore(ttlMillis: 100)
+    let browser = AgentIOSURLSessionBrowserSessionStore(operationTTLMillis: 100, operationCapacity: 1)
     var context = AgentNativeToolInvocationContext(sessionId: "session", conversationId: "conversation", turnId: "turn",
       attributes: ["recovery_task_id": "task"])
     let scope = AgentIOSURLSessionBrowserSessionScope(context: context)
-    let session = try browser.create(scope: scope, resourceId: "create", currentURL: "", nowMillis: 10)
-    _ = try browser.navigate(browserId: session.browserId, scope: scope, currentURL: "https://example.test/",
-      nowMillis: 12, requestId: "navigate")
-    _ = try browser.close(browserId: session.browserId, scope: scope, nowMillis: 13, requestId: "close")
-    XCTAssertEqual(browser.observeOperation(requestId: "create", scope: scope, nowMillis: 15)?.string("operation"), "create")
-    XCTAssertEqual(browser.observeOperation(requestId: "navigate", scope: scope, nowMillis: 15)?.string("operation"), "navigate")
-    XCTAssertEqual(browser.observeOperation(requestId: "close", scope: scope, nowMillis: 15)?.string("operation"), "close")
-    XCTAssertNil(browser.observeOperation(requestId: "different", scope: scope, nowMillis: 15))
+    let inflight = try browser.beginOperation(requestId: "navigate", scope: scope, name: .navigate, nowMillis: 10)
+    let create = try browser.beginOperation(requestId: "create", scope: scope, name: .create, nowMillis: 12)
+    browser.finishOperation(create, nowMillis: 13)
+    let close = try browser.beginOperation(requestId: "close", scope: scope, name: .close, nowMillis: 14)
+    browser.finishOperation(close, nowMillis: 14)
+    XCTAssertNil(browser.observeOperation(requestId: "create", scope: scope, nowMillis: 15))
+    XCTAssertEqual(browser.observeOperation(requestId: "close", scope: scope, nowMillis: 15)?.string("state"), "completed")
+    XCTAssertEqual(browser.observeOperation(requestId: "navigate", scope: scope, nowMillis: 200)?.string("state"), "running")
+    XCTAssertNil(browser.observeOperation(requestId: "close", scope: scope, nowMillis: 200))
+    XCTAssertThrowsError(try browser.beginOperation(requestId: "navigate", scope: scope, name: .close, nowMillis: 200)) {
+      XCTAssertEqual($0 as? AgentIOSURLSessionBrowserSessionStoreError, .requestAlreadyDispatched)
+    }
     context.turnId = "other-turn"
     XCTAssertNil(browser.observeOperation(requestId: "navigate",
-      scope: AgentIOSURLSessionBrowserSessionScope(context: context), nowMillis: 15))
-    XCTAssertNil(browser.observeOperation(requestId: "close", scope: scope, nowMillis: 113))
+      scope: AgentIOSURLSessionBrowserSessionScope(context: context), nowMillis: 200))
+    browser.finishOperation(inflight, nowMillis: 200, errorCode: "web_media_timeout", outcomeUnknown: true)
+    let failed = try XCTUnwrap(browser.observeOperation(requestId: "navigate", scope: scope, nowMillis: 210))
+    XCTAssertEqual(failed.string("state"), "failed")
+    XCTAssertEqual(failed["outcome_unknown"], .bool(true))
+    XCTAssertNil(failed["executed"])
+    XCTAssertNil(browser.observeOperation(requestId: "navigate", scope: scope, nowMillis: 300))
+    let replacement = try browser.beginOperation(requestId: "navigate", scope: scope, name: .back, nowMillis: 301)
+    browser.finishOperation(inflight, nowMillis: 302)
+    XCTAssertEqual(browser.observeOperation(requestId: "navigate", scope: scope, nowMillis: 302)?.string("state"), "running")
+    browser.finishOperation(replacement, nowMillis: 303)
   }
 
   func testCollaboratorBrowserHandlesAndReceiptsCannotBeAdoptedByAnotherMemberOrParent() throws {
@@ -248,11 +412,12 @@ extension GalaxySSIStoreTests {
     let a = AgentIOSURLSessionBrowserSessionScope(context: first)
     let b = AgentIOSURLSessionBrowserSessionScope(context: second)
     let ordinary = AgentIOSURLSessionBrowserSessionScope(context: parent)
-    let aHandle = try browser.create(scope: a, resourceId: "same-request", currentURL: "", nowMillis: 10,
-      observation: ["source": .string("a")])
-    let bHandle = try browser.create(scope: b, resourceId: "same-request", currentURL: "", nowMillis: 11,
-      observation: ["source": .string("b")])
-    let legacy = try browser.create(scope: ordinary, resourceId: "legacy", currentURL: "", nowMillis: 12)
+    let aOperation = try browser.beginOperation(requestId: "same-request", scope: a, name: .create, nowMillis: 10)
+    let aHandle = try browser.create(scope: a, currentURL: "", nowMillis: 10)
+    browser.finishOperation(aOperation, nowMillis: 10)
+    _ = try browser.beginOperation(requestId: "same-request", scope: b, name: .create, nowMillis: 11)
+    let bHandle = try browser.create(scope: b, currentURL: "", nowMillis: 11)
+    let legacy = try browser.create(scope: ordinary, currentURL: "", nowMillis: 12)
     XCTAssertNotEqual(aHandle.browserId, bHandle.browserId)
     for foreign in [b, ordinary] {
       XCTAssertThrowsError(try browser.validate(browserId: aHandle.browserId, scope: foreign, nowMillis: 13))
@@ -261,10 +426,8 @@ extension GalaxySSIStoreTests {
     XCTAssertThrowsError(try browser.validate(browserId: legacy.browserId, scope: a, nowMillis: 13))
     XCTAssertNoThrow(try browser.validate(browserId: aHandle.browserId, scope: a, nowMillis: 13))
     XCTAssertNoThrow(try browser.validate(browserId: legacy.browserId, scope: ordinary, nowMillis: 13))
-    XCTAssertEqual(browser.observeOperation(requestId: "same-request", scope: a, nowMillis: 13)?
-      .object("observation")?["source"], .string("a"))
-    XCTAssertEqual(browser.observeOperation(requestId: "same-request", scope: b, nowMillis: 13)?
-      .object("observation")?["source"], .string("b"))
+    XCTAssertEqual(browser.observeOperation(requestId: "same-request", scope: a, nowMillis: 13)?.string("state"), "completed")
+    XCTAssertEqual(browser.observeOperation(requestId: "same-request", scope: b, nowMillis: 13)?.string("state"), "running")
     XCTAssertNil(browser.observeOperation(requestId: "same-request", scope: ordinary, nowMillis: 13))
     var forged = parent
     forged.attributes["collaboration_owner"] = owner.ownershipDigest
@@ -276,7 +439,7 @@ extension GalaxySSIStoreTests {
     var wrongTurn = first
     wrongTurn.turnId = "wrong"
     XCTAssertThrowsError(try browser.create(scope: AgentIOSURLSessionBrowserSessionScope(context: wrongTurn),
-      resourceId: "invalid", currentURL: "", nowMillis: 14))
+      currentURL: "", nowMillis: 14))
 
     let contexts = [parent, first, second]
     let entries = contexts.map { context in
@@ -2029,6 +2192,99 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(result.error?.code, "effect_outcome_unknown")
     XCTAssertEqual(result.error?.retryable, false)
     XCTAssertEqual(result.error?.details["original_invocation_id"], .string("interrupted"))
+    XCTAssertNil(result.error?.details["recovery_query"], "Legacy claims must not invent an observation")
+  }
+
+  func testNativeEffectRecoveryQueryIsClaimedBeforeDispatchAndReplaysUncertainResults() throws {
+    let root = try temporaryDirectory("native-effect-query")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("replay.json")
+    let secrets = InMemorySecretStore()
+    let write = try nativeToolDescriptor("galaxyssi.test.recovery.write", idempotency: .idempotencyKeyRequired,
+      effect: .mutation)
+    let read = try nativeToolDescriptor("galaxyssi.test.recovery.read", inputSchema: [
+      "type": .string("object"), "properties": .object(["operation_id": .object(["type": .string("string")])]),
+      "required": .array([.string("operation_id")]), "additionalProperties": .bool(false)
+    ], idempotency: .idempotent, effect: .readOnly)
+    var context = AgentNativeToolInvocationContext(invocationId: "original-private-operation", sessionId: "session",
+      conversationId: "conversation", turnId: "turn", idempotencyKey: "effect",
+      attributes: ["task_id": "task", "goal_id": "goal", "client_route_id": "phone"])
+    let key = AgentNativeToolReplayKey(toolId: write.id, toolVersion: write.version, idempotencyKey: "effect",
+      scope: AgentNativeEffectScope(context: context))
+    let query = AgentNativeEffectRecoveryQuery(toolId: read.id, toolVersion: read.version,
+      arguments: ["operation_id": .string(context.invocationId)])
+    var executions = 0
+    var automaticReads = 0
+    var preparations = 0
+    let store = FileAgentNativeToolReplayStore(fileURL: file, secrets: secrets)
+    func registry(_ storage: AgentNativeToolReplayStore, recipe: AgentNativeEffectRecoveryQuery) throws -> AgentNativeToolRegistry {
+      let observer = AgentNativeToolExecutableDefinition(
+        definition: .init(descriptor: read, executorId: "test.effect_read"),
+        executor: { _ in automaticReads += 1; return .success() })
+      var mutation = AgentNativeToolExecutableDefinition(
+        definition: .init(descriptor: write, executorId: "test.effect_write"),
+        executor: { _ in
+          executions += 1
+          XCTAssertEqual(storage.observe(key)?.recoveryQuery, query)
+          return .failure(code: "lost_response", message: "Response lost",
+            details: ["outcome_unknown": .bool(true), "recovery_query": .string("untrusted")])
+        })
+      mutation.recoveryQuery = { _ in preparations += 1; return recipe }
+      return try AgentNativeToolRegistry(replayStore: storage).registerExecutables([observer, mutation])
+    }
+    let invalid = AgentNativeEffectRecoveryQuery(toolId: write.id, toolVersion: write.version, arguments: [:])
+    for recipe in [invalid, .init(toolId: read.id, toolVersion: "0.0.0", arguments: query.arguments),
+                   .init(toolId: read.id, toolVersion: read.version, arguments: [:])] {
+      let rejected = try registry(store, recipe: recipe).invoke(write.id, input: [:], context: context)
+      XCTAssertEqual(rejected.error?.code, "invalid_effect_recovery_query")
+    }
+    XCTAssertNil(store.observe(key))
+    let original = try registry(store, recipe: query).invoke(write.id, input: [:], context: context)
+    XCTAssertEqual(original.error?.details["recovery_query"], query.json)
+    XCTAssertEqual(executions, 1)
+    XCTAssertEqual(automaticReads, 0)
+    let bytes = try Data(contentsOf: file)
+    XCTAssertFalse(String(decoding: bytes, as: UTF8.self).contains("original-private-operation"))
+
+    let reopened = FileAgentNativeToolReplayStore(fileURL: file, secrets: secrets)
+    context.invocationId = "retry-invocation"
+    let retry = try registry(reopened, recipe: invalid).invoke(write.id, input: [:], context: context)
+    XCTAssertTrue(retry.receipt.replayed)
+    XCTAssertEqual(retry.error?.details["recovery_query"], query.json)
+    XCTAssertEqual(preparations, 4, "Replaying committed results must not reprepare the query")
+    XCTAssertEqual(executions, 1)
+
+    let pendingKey = AgentNativeToolReplayKey(toolId: write.id, toolVersion: write.version, idempotencyKey: "pending",
+      scope: key.scope)
+    _ = try store.claim(pendingKey, inputSha256: AgentMcpJSONCodec.sha256(AgentMcpJSONObject()),
+      invocationId: "original-private-operation", recoveryQuery: query)
+    context.idempotencyKey = "pending"
+    let interrupted = try registry(reopened, recipe: invalid).invoke(write.id, input: [:], context: context)
+    XCTAssertEqual(interrupted.error?.code, "effect_outcome_unknown")
+    XCTAssertEqual(interrupted.receipt.originalInvocationId, "original-private-operation")
+    XCTAssertEqual(interrupted.error?.details["recovery_query"], query.json)
+    let conflict = try registry(reopened, recipe: invalid).invoke(write.id, input: ["changed": .bool(true)], context: context)
+    XCTAssertEqual(conflict.error?.code, "idempotency_key_conflict")
+    XCTAssertNil(conflict.error?.details["recovery_query"])
+    var otherScope = context
+    otherScope.turnId = "foreign"
+    let foreign = try registry(reopened, recipe: invalid).invoke(write.id, input: [:], context: otherScope)
+    XCTAssertEqual(foreign.error?.code, "invalid_effect_recovery_query")
+    XCTAssertNil(foreign.error?.details["recovery_query"])
+    XCTAssertEqual(executions, 1)
+    XCTAssertEqual(automaticReads, 0)
+
+    let noKey = FileAgentNativeToolReplayStore(fileURL: file, secrets: InMemorySecretStore())
+    let inaccessible = try registry(noKey, recipe: query).invoke(write.id, input: [:], context: context)
+    XCTAssertFalse(inaccessible.isSuccess)
+    XCTAssertNil(inaccessible.error?.details["recovery_query"])
+    XCTAssertEqual(executions, 1, "Unreadable claims must not look like a new execution")
+    let corrupt = Data("not a replay journal".utf8)
+    try corrupt.write(to: file, options: .atomic)
+    let damaged = try registry(reopened, recipe: query).invoke(write.id, input: [:], context: context)
+    XCTAssertFalse(damaged.isSuccess)
+    XCTAssertEqual(try Data(contentsOf: file), corrupt)
+    XCTAssertEqual(executions, 1)
   }
 
   func testAgentNativeEffectObservationPrecedesLiveAvailability() throws {

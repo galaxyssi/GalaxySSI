@@ -25,6 +25,7 @@ internal object HealthReminderWork {
     private const val SLEEP_TAG = "health-sleep-change:"
     private const val REPORT_TAG = "health-report-review:"
     private const val SYNC_TAG = "health-sync-incident:"
+    private const val CARE_TAG = "health-care-action:"
     private const val ID = 1
     @Volatile private var sleepEnabled: Boolean? = null
 
@@ -130,7 +131,13 @@ internal object HealthReminderWork {
         val syncNext = runCatching { reconcileSync(context, settings, alerts, now, zone) }
             .onFailure { android.util.Log.w("HealthReminder", "Sync reconciliation failed: ${it.javaClass.simpleName}") }
             .getOrNull()
-        val next = listOfNotNull(nextDaily, nextSnooze, dailyDelivery, sleepWake, sleepDelivery, nextSleepDay, reportNext, syncNext).minOrNull()
+        val careNext = HealthCareReminderRuntime.reconcile(context, settings, now, zone, systemAllowed,
+            activeSourceNotices(alerts, CARE_TAG).keys, post = { reminder ->
+                val intent = Intent(context, HealthCareActivity::class.java).putExtra("health_care_id", reminder.concernId)
+                    .setData(android.net.Uri.parse("galaxyssi://health/care/${reminder.concernId}/${reminder.actionId}"))
+                postSourceNotice(context, alerts, CARE_TAG + reminder.actionId, intent, R.string.health_care_followup_notice, settings)
+            }, cancel = { alerts.cancel(CARE_TAG + it, ID) })
+        val next = listOfNotNull(nextDaily, nextSnooze, dailyDelivery, sleepWake, sleepDelivery, nextSleepDay, reportNext, syncNext, careNext).minOrNull()
         if (next == null) scheduler.cancel(alarm(context))
         else scheduler.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, alarm(context))
         return sleepAllowed

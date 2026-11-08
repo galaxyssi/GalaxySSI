@@ -1,5 +1,57 @@
 import CryptoKit
 import Foundation
+import os
+
+struct AgentDesktopEvidenceQueryTrace {
+  enum Stage: String {
+    case publishStarted = "publish_started", publishAccepted = "publish_accepted", publishRejected = "publish_rejected"
+    case responseReceived = "response_received", responseLate = "response_late", timedOut = "timed_out"
+    case routeMismatch = "paired_route_mismatch", invalidResponse = "invalid_response"
+    case indexValidated = "index_validated", indexRejected = "index_rejected"
+    case pageStaged = "page_staged", pageNotStaged = "page_not_staged"
+  }
+
+  struct LateQueries {
+    private struct Entry {
+      let desktop: String
+      let route: String
+      let started: Int64
+      let expires: Int64
+    }
+    private var entries: [String: Entry] = [:]
+
+    mutating func remember(_ nonce: String, desktop: String, route: String, started: Int64, now: Int64) {
+      guard !nonce.isEmpty, !desktop.isEmpty, !route.isEmpty, started >= 0, now >= started,
+            now <= Int64.max - 60_000 else { return }
+      entries = entries.filter { $0.value.expires > now }
+      if entries.count >= 64, let oldest = entries.min(by: { $0.value.expires < $1.value.expires }) {
+        entries.removeValue(forKey: oldest.key)
+      }
+      entries[nonce] = Entry(desktop: desktop, route: route, started: started, expires: now + 60_000)
+    }
+
+    mutating func consume(_ nonce: String, desktop: String, route: String, now: Int64) -> Int64? {
+      guard let entry = entries[nonce], entry.desktop == desktop, entry.route == route,
+            now >= entry.started, now < entry.expires else { return nil }
+      entries.removeValue(forKey: nonce)
+      return entry.started
+    }
+  }
+
+  private static let logger = Logger(subsystem: "com.galaxyssi.chat.ios", category: "desktop-evidence")
+  static var now: Int64 { Int64(ProcessInfo.processInfo.systemUptime * 1_000) }
+
+  static func token(_ nonce: String) -> String {
+    guard (1...128).contains(nonce.utf8.count) else { return "unavailable" }
+    return SHA256.hash(data: Data(nonce.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
+  }
+
+  static func record(_ stage: Stage, nonce: String, started: Int64) {
+    let correlation = token(nonce)
+    let elapsed = max(0, now - started)
+    logger.info("Evidence query rpc=\(correlation, privacy: .public) stage=\(stage.rawValue, privacy: .public) elapsed_ms=\(elapsed, privacy: .public)")
+  }
+}
 
 enum AgentDesktopToolEvidenceWire {
   static let contract = "galaxyssi.desktop-tool-evidence/1"
@@ -14,6 +66,49 @@ enum AgentDesktopToolEvidenceWire {
     let generation: Int64
     let totalBytes: Int
     let pageCount: Int
+  }
+
+  struct AcceptanceArchive: Codable, Equatable {
+    let receipt: ArchiveReceipt
+    let binding: AgentDesktopReplyBinding
+    let itemType: String
+    let tool: String
+    let returnedOutput: Bool
+
+    init?(receipt: ArchiveReceipt, binding: AgentDesktopReplyBinding, original: Data) {
+      guard let root = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: original),
+            let item = root["observation"]?.objectValue?["item"]?.objectValue else { return nil }
+      let itemType = item.string("type")
+      let tool = item.string("tool").ifBlank(itemType)
+      let toolName = tool.lowercased()
+      let failed = ["failed", "error", "cancelled", "canceled", "declined"].contains(item.string("status").lowercased()) ||
+        AgentCollaborationCloudToolEvidence.reportsFailure(AgentMcpJSONCodec.stringify(item)) ||
+        item["result"]?.objectValue?["isError"] == .bool(true)
+      let hasOutput: Bool
+      switch itemType {
+      case "commandExecution":
+        hasOutput = item["exitCode"] == .int(0) && !item.string("aggregatedOutput").isBlank
+      case "mcpToolCall":
+        hasOutput = item["result"]?.objectValue?.isEmpty == false
+      case "dynamicToolCall":
+        hasOutput = item["success"] == .bool(true) && item["contentItems"]?.arrayValue?.isEmpty == false
+      case "webSearch":
+        hasOutput = item["results"]?.arrayValue?.isEmpty == false
+      default:
+        hasOutput = false
+      }
+      self.receipt = receipt
+      self.binding = binding
+      self.itemType = itemType
+      self.tool = tool
+      self.returnedOutput = !failed && hasOutput && !toolName.contains("collaboration") && !toolName.contains("recall")
+    }
+  }
+
+  struct FrozenRead: Codable {
+    let evidenceId: String
+    let sha256: String
+    let totalBytes: Int
   }
 
   struct ImportCursor: Codable, Equatable {
@@ -323,11 +418,12 @@ final class AgentDesktopResultRecovery {
   }
 
   func receive(_ payload: [String: Any], record: AgentDesktopReplyRecoveryRecord,
-               now: Int64) -> AgentDesktopResultManifest? {
+               now: Int64, commitManifest: (AgentDesktopResultManifest) -> Bool = { _ in true }) -> AgentDesktopResultManifest? {
     let nonce = payload.string("request_id")
     guard let query = queries[nonce], query.binding == record.binding, query.generation == record.generation,
           now >= query.startedAt, now - query.startedAt <= 120_000,
-          let manifest = savePage(payload, record: record, nonce: nonce, page: query.page) else { return nil }
+          let manifest = savePage(payload, record: record, nonce: nonce, page: query.page),
+          commitManifest(manifest) else { return nil }
     queries.removeValue(forKey: nonce)
     return manifest
   }

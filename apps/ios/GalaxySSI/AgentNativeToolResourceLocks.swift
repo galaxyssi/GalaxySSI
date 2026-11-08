@@ -30,6 +30,11 @@ enum AgentNativeToolResourcePolicy {
     input: AgentMcpJSONObject,
     fallbackWorkspaceId: String = ""
   ) -> AgentNativeResourceLockPlan {
+    if descriptor.id == AgentIOSWebMediaNativeToolCatalog.browserSessionOperationStatus,
+       descriptor.effect == .readOnly, descriptor.concurrency == .parallelReadOnly {
+      // The provider only reads its own locked receipt table, even while a browser write is in flight.
+      return AgentNativeResourceLockPlan(requests: [], resourceScoped: true)
+    }
     let operationMode: AgentNativeResourceLockMode = descriptor.concurrency == .parallelReadOnly
       ? .read
       : .write

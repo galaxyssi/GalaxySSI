@@ -77,13 +77,17 @@ final class AgentReplyUnreadStore {
     }
   }
 
-  func discardMissing(_ snapshot: [String: [PendingMarker]]) {
+  func discardMissing(_ snapshot: [String: [PendingMarker]], quiet: [String: Set<String>] = [:]) {
     guard !snapshot.isEmpty else { return }
     update { state in
       for (conversation, markers) in snapshot {
-        for marker in markers where state.positions?[conversation]?[marker.token] == marker.position {
+        for marker in markers where state.positions?[conversation]?[marker.token] == marker.position &&
+          state.pending[conversation]?.contains(marker.token) == true {
           state.pending[conversation]?.remove(marker.token)
           state.positions?[conversation]?.removeValue(forKey: marker.token)
+          if quiet[conversation]?.contains(marker.token) == true {
+            state.seen[conversation]?.remove(marker.token)
+          }
         }
       }
     }

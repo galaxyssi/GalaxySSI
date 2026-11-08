@@ -9,17 +9,26 @@ struct GalaxySSITransportReceiptRecord: Codable, Equatable, Identifiable, Sendab
   var wirePayload: String
   var nextAttemptAtMillis: Int64
   var attemptToken: String
+  var receivedCiphertextDigest: String?
 }
 
 @MainActor
 final class GalaxySSITransportReceiptJournal {
   private let fileURL: URL
   private let cipher: GalaxySSIAttachmentAtRestCipher
+  private let uptime: () -> TimeInterval
   private var records: [GalaxySSITransportReceiptRecord]
+  private var recentlyAcknowledged: [ReplayKey: TimeInterval] = [:]
+
+  private struct ReplayKey: Hashable {
+    let receiptId: String
+    let ciphertextDigest: String
+  }
 
   init(
     applicationSupportDirectory: URL? = nil,
-    cipher: GalaxySSIAttachmentAtRestCipher = .shared
+    cipher: GalaxySSIAttachmentAtRestCipher = .shared,
+    uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
   ) {
     let support = applicationSupportDirectory ?? FileManager.default.urls(
       for: .applicationSupportDirectory, in: .userDomainMask
@@ -28,6 +37,7 @@ final class GalaxySSITransportReceiptJournal {
       .appendingPathComponent("transport-receipts-v1", isDirectory: true)
       .appendingPathComponent("journal.saenc", isDirectory: false)
     self.cipher = cipher
+    self.uptime = uptime
     records = (try? cipher.read(from: fileURL, purpose: Self.purpose))
       .flatMap { try? JSONDecoder().decode([GalaxySSITransportReceiptRecord].self, from: $0) } ?? []
   }
@@ -37,9 +47,11 @@ final class GalaxySSITransportReceiptJournal {
     phonePeer: Bool,
     binding: String,
     receivedMessageId: String,
-    wirePayload: String,
-    nowMillis: Int64? = nil
-  ) throws {
+    receivedCiphertextDigest: String? = nil,
+    isReplay: Bool = false,
+    nowMillis: Int64? = nil,
+    makeWirePayload: () -> String?
+  ) throws -> Bool {
     let nowMillis = nowMillis ?? Self.nowMillis()
     let id = Self.receiptId(
       peerId: peerId,
@@ -47,7 +59,13 @@ final class GalaxySSITransportReceiptJournal {
       binding: binding,
       receivedMessageId: receivedMessageId
     )
-    guard !records.contains(where: { $0.id == id }) else { return }
+    if records.contains(where: { $0.id == id }) { return true }
+    let digest = receivedCiphertextDigest.flatMap { value in value.utf8.count == 64 ? value : nil }
+    if isReplay, let digest,
+       let expires = recentlyAcknowledged[ReplayKey(receiptId: id, ciphertextDigest: digest)], expires > uptime() {
+      return false
+    }
+    guard let wirePayload = makeWirePayload(), !wirePayload.isEmpty else { return false }
     records.append(GalaxySSITransportReceiptRecord(
       id: id,
       peerId: peerId,
@@ -56,9 +74,15 @@ final class GalaxySSITransportReceiptJournal {
       receivedMessageId: receivedMessageId,
       wirePayload: wirePayload,
       nextAttemptAtMillis: nowMillis,
-      attemptToken: ""
+      attemptToken: "",
+      receivedCiphertextDigest: digest
     ))
-    try save()
+    do { try save() }
+    catch {
+      records.removeLast()
+      throw error
+    }
+    return true
   }
 
   func due(nowMillis: Int64? = nil, limit: Int = 4) -> [GalaxySSITransportReceiptRecord] {
@@ -81,9 +105,22 @@ final class GalaxySSITransportReceiptJournal {
   }
 
   func acknowledge(id: String, attemptToken: String) throws {
-    let before = records.count
-    records.removeAll { $0.id == id && $0.attemptToken == attemptToken }
-    if records.count != before { try save() }
+    guard !attemptToken.isEmpty, let index = records.firstIndex(where: { $0.id == id && $0.attemptToken == attemptToken })
+    else { return }
+    let record = records.remove(at: index)
+    do { try save() }
+    catch {
+      records.insert(record, at: index)
+      throw error
+    }
+    if let digest = record.receivedCiphertextDigest {
+      let now = uptime()
+      recentlyAcknowledged = recentlyAcknowledged.filter { $0.value > now }
+      recentlyAcknowledged[ReplayKey(receiptId: id, ciphertextDigest: digest)] = now + 2
+      if recentlyAcknowledged.count > 2_048, let earliest = recentlyAcknowledged.min(by: { $0.value < $1.value }) {
+        recentlyAcknowledged.removeValue(forKey: earliest.key)
+      }
+    }
   }
 
   func discard(id: String) throws {
@@ -93,6 +130,7 @@ final class GalaxySSITransportReceiptJournal {
   }
 
   func reconnect(nowMillis: Int64? = nil) throws {
+    recentlyAcknowledged.removeAll(keepingCapacity: true)
     let nowMillis = nowMillis ?? Self.nowMillis()
     for index in records.indices {
       records[index].attemptToken = ""
@@ -307,11 +345,25 @@ extension MessageCoordinator {
         store.appendDeliveryTrace(uuid, stage: "desktop_broker_ack", detail: "Delivery ACK", status: .delivered)
       }
     }
-    scheduleOutboxFlushFromStore()
+    wakeOutboxAfterReceipt()
   }
 
-  func publishInboundReceipt(link: ServerLink?, receivedMessageId: String) {
+  func publishInboundReceipt(link: ServerLink?, receivedMessageId: String,
+                             ciphertextDigest: String? = nil, isReplay: Bool = false) {
     guard let link, !receivedMessageId.isEmpty else { return }
+    do {
+      if try transportReceiptJournal.enqueue(peerId: link.desktopId, phonePeer: false,
+        binding: GalaxySSITransportReceiptJournal.binding(peerId: link.desktopId, routes: link.routes),
+        receivedMessageId: receivedMessageId, receivedCiphertextDigest: ciphertextDigest, isReplay: isReplay,
+        makeWirePayload: { makeInboundReceiptWire(link: link, receivedMessageId: receivedMessageId) }) {
+        wakeTransportReceiptDrain()
+      }
+    } catch {
+      lastError = error.localizedDescription
+    }
+  }
+
+  private func makeInboundReceiptWire(link: ServerLink, receivedMessageId: String) -> String? {
     let ackPayload: [String: Any] = [
       "type": "delivery_ack",
       "transport_message_id": receivedMessageId,
@@ -343,19 +395,50 @@ extension MessageCoordinator {
     } else {
       wire = nil
     }
-    guard let wire else { return }
+    return wire.map { String(decoding: $0, as: UTF8.self) }
+  }
+
+  func publishPhoneContactReceipt(contact: GalaxySSIContact, receivedMessageId: String,
+                                  ciphertextDigest: String, isReplay: Bool = false) {
+    guard let routes = contact.opaquePhoneRoutes, !receivedMessageId.isEmpty else { return }
     do {
-      try transportReceiptJournal.enqueue(
-        peerId: link.desktopId,
-        phonePeer: false,
-        binding: GalaxySSITransportReceiptJournal.binding(peerId: link.desktopId, routes: link.routes),
-        receivedMessageId: receivedMessageId,
-        wirePayload: String(decoding: wire, as: UTF8.self)
-      )
-      wakeTransportReceiptDrain()
+      if try transportReceiptJournal.enqueue(peerId: contact.id, phonePeer: true,
+        binding: GalaxySSITransportReceiptJournal.binding(peerId: contact.id, routes: routes),
+        receivedMessageId: receivedMessageId, receivedCiphertextDigest: ciphertextDigest, isReplay: isReplay,
+        makeWirePayload: { makePhoneContactReceiptWire(contact: contact, receivedMessageId: receivedMessageId) }) {
+        wakeTransportReceiptDrain()
+      }
     } catch {
       lastError = error.localizedDescription
     }
+  }
+
+  private func makePhoneContactReceiptWire(contact: GalaxySSIContact, receivedMessageId: String) -> String? {
+    let ack: [String: Any] = [
+      "type": "delivery_ack",
+      "transport_message_id": receivedMessageId,
+      "source_message_id": receivedMessageId,
+      "delivery_status": "accepted",
+      "sender": "system",
+      "peer_chat": true,
+      "time": Int64(Date().timeIntervalSince1970 * 1_000)
+    ]
+    guard let envelope = try? GalaxySSILinkProtocol.makeEnvelope(
+      payload: ack,
+      sourceId: signalEngine.identity.name,
+      targetId: contact.galaxySSIId
+    ), let encrypted = signalEngine.encrypt(envelope, remoteName: contact.galaxySSIId),
+      let wire = try? GalaxySSILinkProtocol.jsonData(encrypted) else {
+      return nil
+    }
+    return String(decoding: wire, as: UTF8.self)
+  }
+
+  func desktopReceiptDigest(for wire: [String: Any], topic: String, link: ServerLink?,
+                            computed: String? = nil) -> String? {
+    guard wire.string("scheme") == "signal", let link, link.paired, link.routes.receiveWindow.contains(topic),
+          wire.string("from") == link.desktopId, wire.string("to") == signalEngine.identity.name else { return nil }
+    return computed ?? GalaxySSILinkCiphertextReplayPolicy.digest(wire: wire)
   }
 
   func transportReceiptReadinessChanged(_ ready: Bool) {
@@ -382,7 +465,8 @@ extension MessageCoordinator {
             try? transportReceiptJournal.discard(id: work.id)
             continue
           }
-          let result = await mqttClient.publishTransportReceipt(topic: topic, payload: wire) {
+          let result = await mqttClient.publishTransportReceipt(topic: topic, payload: wire,
+            routes: routes, desktopId: work.phonePeer ? nil : work.peerId) {
             Task { @MainActor [weak self] in
               guard let self else { return }
               try? transportReceiptJournal.acknowledge(

@@ -7,23 +7,20 @@ const path = require("node:path");
 
 const root = path.resolve(__dirname, "..", "..");
 const rootPackageJson = path.join(root, "package.json");
-const testingMatrix = path.join(root, "docs", "testing", "README.md");
+const contributing = path.join(root, "CONTRIBUTING.md");
 const productRequirements = path.join(root, "docs", "product", "PRODUCT_REQUIREMENTS.md");
 const readme = path.join(root, "README.md");
 const trustModel = path.join(root, "docs", "security", "TRUST_MODEL.md");
 const repositoryGuardWorkflow = path.join(root, ".github", "workflows", "repo-guard.yml");
 const evolutionCandidateWorkflow = path.join(root, ".github", "workflows", "evolution-candidate.yml");
 const windowsPackageWorkflow = path.join(root, ".github", "workflows", "windows-package.yml");
-const releaseAuditDoc = path.join(root, "docs", "testing", "RELEASE_AUDIT.md");
 const releaseAuditScript = path.join(root, "tools", "dev", "release-audit.js");
-const agentBenchmarkDoc = path.join(root, "docs", "testing", "AGENT_BENCHMARK.md");
 const agentBenchmarkManifest = path.join(root, "benchmarks", "agent", "manifest.json");
 const agentBenchmarkRunner = path.join(root, "tools", "benchmark", "run-agent-benchmark.mjs");
 const agentRegressionSuite = path.join(root, "benchmarks", "agent", "regression-suite.json");
 const agentRegressionRunner = path.join(root, "tools", "benchmark", "run-agent-regression.mjs");
 const agentRegressionLibrary = path.join(root, "tools", "benchmark", "agent-regression-dsl.mjs");
 const agentRegressionTest = path.join(root, "tools", "benchmark", "agent-regression-dsl.test.mjs");
-const versionHealthDoc = path.join(root, "docs", "testing", "VERSION_HEALTH_SCORE.md");
 const versionHealthPolicy = path.join(root, "benchmarks", "version-health", "policy.json");
 const versionHealthEvidence = path.join(
   root,
@@ -73,6 +70,7 @@ function listTrackedFiles() {
 
 function checkNoTrackedGeneratedArtifacts() {
   const blocked = [
+    { pattern: /^docs\/testing\//i, reason: "local-only test reports and evidence" },
     { pattern: /^apps\/android\/galaxyssi-.*\.xml$/, reason: "Android UI dump" },
     { pattern: /^apps\/android\/.*\.(apk|aab|jks|keystore)$/i, reason: "Android package or signing artifact" },
     { pattern: /^apps\/desktop\/(dist|out|release|ui-smoke)\//, reason: "Desktop generated package or smoke artifact" },
@@ -97,17 +95,9 @@ function checkNoTrackedGeneratedArtifacts() {
   }
 }
 
-function checkTestingMatrix() {
-  if (!fs.existsSync(testingMatrix)) {
-    throw new Error("Missing docs/testing/README.md");
-  }
-
-  const content = fs.readFileSync(testingMatrix, "utf8");
-  const requiredText = [
-    "Testing Matrix",
-    "Required Gates",
-    "Product Coverage",
-    "Manual Release Checks",
+function checkRequiredTestScripts() {
+  const scripts = JSON.parse(fs.readFileSync(rootPackageJson, "utf8")).scripts || {};
+  const requiredCommands = [
     "npm run check",
     "npm run check:android",
     "npm run smoke:android:ui",
@@ -134,9 +124,10 @@ function checkTestingMatrix() {
     "npm run smoke:desktop:packaged"
   ];
 
-  for (const text of requiredText) {
-    if (!content.includes(text)) {
-      throw new Error(`Testing matrix missing: ${text}`);
+  for (const command of requiredCommands) {
+    const name = command.slice("npm run ".length);
+    if (!scripts[name]) {
+      throw new Error(`Required test script missing: ${name}`);
     }
   }
 }
@@ -156,13 +147,10 @@ function checkDocumentedRootScripts() {
 
   const scripts = JSON.parse(fs.readFileSync(rootPackageJson, "utf8")).scripts || {};
   const docs = [
-    testingMatrix,
+    contributing,
     productRequirements,
     trustModel,
-    releaseAuditDoc,
-    releaseAuditScript,
-    agentBenchmarkDoc,
-    versionHealthDoc
+    releaseAuditScript
   ];
   const missing = [];
   for (const file of docs) {
@@ -180,7 +168,6 @@ function checkDocumentedRootScripts() {
 function checkAgentBenchmark() {
   const packageJson = JSON.parse(fs.readFileSync(rootPackageJson, "utf8"));
   const requiredFiles = [
-    agentBenchmarkDoc,
     agentBenchmarkManifest,
     agentBenchmarkRunner,
     agentRegressionSuite,
@@ -302,7 +289,6 @@ function checkEvolutionCandidateGates() {
 function checkVersionHealthScore() {
   const packageJson = JSON.parse(fs.readFileSync(rootPackageJson, "utf8"));
   for (const file of [
-    versionHealthDoc,
     versionHealthPolicy,
     versionHealthEvidence,
     versionHealthRunner,
@@ -355,7 +341,6 @@ function checkMemoryLoCoMoBenchmark() {
   const packageJson = JSON.parse(fs.readFileSync(rootPackageJson, "utf8"));
   const requiredFiles = [
     memoryLoCoMoCorpus,
-    path.join(root, "docs", "testing", "MEMORY_LOCOMO_BENCHMARK.md"),
     path.join(root, "tools", "benchmark", "memory-locomo-lib.mjs"),
     path.join(root, "tools", "benchmark", "memory-locomo.test.mjs"),
     path.join(root, "tools", "benchmark", "run-memory-locomo.mjs"),
@@ -414,7 +399,7 @@ function checkProductRequirements() {
     "Agent contacts",
     "Pairing replacement",
     "npm run smoke:desktop:pairing",
-    "docs/testing/README.md"
+    "CONTRIBUTING.md"
   ];
 
   for (const text of requiredText) {
@@ -833,14 +818,14 @@ function checkTrustedPrReviewPolicy() {
 }
 
 function checkReleaseAudit() {
-  if (!fs.existsSync(releaseAuditDoc)) {
-    throw new Error("Missing docs/testing/RELEASE_AUDIT.md");
+  if (!fs.existsSync(contributing)) {
+    throw new Error("Missing CONTRIBUTING.md");
   }
   if (!fs.existsSync(releaseAuditScript)) {
     throw new Error("Missing tools/dev/release-audit.js");
   }
 
-  const doc = fs.readFileSync(releaseAuditDoc, "utf8");
+  const doc = fs.readFileSync(contributing, "utf8");
   const script = fs.readFileSync(releaseAuditScript, "utf8");
   const requiredText = [
     "npm run audit:release",
@@ -875,8 +860,8 @@ function checkReleaseAudit() {
 
 const checks = [
   {
-    name: "testing matrix",
-    run: checkTestingMatrix
+    name: "required test scripts",
+    run: checkRequiredTestScripts
   },
   {
     name: "documented npm scripts",

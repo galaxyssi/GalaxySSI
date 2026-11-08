@@ -1,9 +1,35 @@
 import XCTest
 @testable import GalaxySSI
+#if canImport(LibSignalClient)
+import LibSignalClient
+#endif
 
 final class MqttSignalStateJournalTests: XCTestCase {
   private let snapshot = Data("test-ratchet-state".utf8)
   private let next = Data("advanced-test-ratchet-state".utf8)
+
+  func testLegacyCutoverCommitsSignalStateQueueAndMarkerTogether() throws {
+    let fixture = try ChunkFixture()
+    let journal = try makeJournal(fixture)
+    let entry = try legacyEntry("legacy")
+    try fixture.execute("CREATE TRIGGER fail_cutover_state BEFORE INSERT ON mqtt_signal_state BEGIN SELECT RAISE(ABORT,'forced'); END")
+    XCTAssertThrowsError(try journal.activateLegacy(localFingerprint: entry.identity.local, signalState: snapshot,
+      entries: [entry]))
+    XCTAssertNil(try journal.legacyCutover())
+    XCTAssertNil(try journal.load())
+    XCTAssertNil(try journal.outbox.entry(identity: entry.identity, messageID: "legacy"))
+    try fixture.execute("DROP TRIGGER fail_cutover_state")
+    let marker = try journal.activateLegacy(localFingerprint: entry.identity.local, signalState: snapshot, entries: [entry])
+    XCTAssertEqual(marker.importedMessages, 1)
+    XCTAssertEqual(marker.legacyStateDigest, MqttRouteProtocol.digest(snapshot))
+    let reopened = try makeJournal(fixture)
+    XCTAssertEqual(try reopened.legacyCutover(), marker)
+    XCTAssertEqual(try reopened.load(), snapshot)
+    XCTAssertEqual(try reopened.outbox.entry(identity: entry.identity, messageID: "legacy")?.message, entry.message)
+    XCTAssertThrowsError(try reopened.importLegacyOutbox([entry], expectedSignalState: snapshot))
+    XCTAssertThrowsError(try reopened.activateLegacy(localFingerprint: entry.identity.local, signalState: next, entries: []))
+    XCTAssertEqual(try reopened.load(), snapshot)
+  }
 
   func testLegacyOutboxImportPreservesWireAndRetriesWithoutAdvancingRatchet() throws {
     let f = try ChunkFixture()
@@ -245,6 +271,29 @@ private func signalTestIdentity(local: String = String(repeating: "a", count: 64
 
 #if canImport(LibSignalClient)
 final class MqttSignalAtomicReceiveTests: XCTestCase {
+  func testSignalBackoffClassifiesOnlyAllowlistedErrors() {
+    XCTAssertEqual(GalaxySSISignalEngine.retryableCiphertextFailure(SignalError.invalidMessage("private")), .invalidMessage)
+    XCTAssertEqual(GalaxySSISignalEngine.retryableCiphertextFailure(SignalError.duplicatedMessage("private")), .duplicateMessage)
+    XCTAssertEqual(GalaxySSISignalEngine.retryableCiphertextFailure(SignalError.sessionNotFound("private")), .noSession)
+    XCTAssertNil(GalaxySSISignalEngine.retryableCiphertextFailure(SignalError.ioError("private")))
+    XCTAssertNil(GalaxySSISignalEngine.retryableCiphertextFailure(MqttChunkStorageError.databaseFailure))
+  }
+
+  func testDeferredCiphertextCannotCreateInboxReceiptOrAdvanceSignal() throws {
+    let f = try SignalReceiveFixture()
+    let wire = try f.wire()
+    let identity = try signalTestIdentity(local: f.bobIdentity.fingerprint, remote: f.aliceIdentity.fingerprint)
+    let key = try XCTUnwrap(GalaxySSISignalDecryptBackoff.key(wire, scope: identity.binding))
+    let before = try f.journal.load()
+    f.bob.inboundDecryptBackoff.failed(key, reason: .invalidMessage)
+    XCTAssertThrowsError(try f.receive(wire)) { XCTAssertTrue($0 is GalaxySSISignalDecryptDeferred) }
+    XCTAssertEqual(f.bob.inboundDecryptBackoff.snapshot().deferred, 1)
+    XCTAssertEqual(try f.journal.load(), before)
+    XCTAssertTrue(try f.journal.inbox.pending().isEmpty)
+    f.bob.inboundDecryptBackoff.succeeded(key)
+    XCTAssertNotNil(try f.receive(wire).receipt)
+  }
+
   func testDesktopReceiptSignatureUsesPairedSignalIdentity() throws {
     let f = try SignalReceiveFixture()
     let wire = try f.wire()
@@ -320,8 +369,12 @@ final class MqttSignalAtomicReceiveTests: XCTestCase {
     let wire = try f.wire()
     XCTAssertEqual(try f.receive(wire).stage, .stored)
     try f.reopen()
+    let identity = try signalTestIdentity(local: f.bobIdentity.fingerprint, remote: f.aliceIdentity.fingerprint)
+    let backoffKey = try XCTUnwrap(GalaxySSISignalDecryptBackoff.key(wire, scope: identity.binding))
+    f.bob.inboundDecryptBackoff.failed(backoffKey, reason: .duplicateMessage)
     let saved = try f.journal.load()
     XCTAssertEqual(try f.receive(wire).stage, .pending)
+    XCTAssertEqual(f.bob.inboundDecryptBackoff.snapshot().deferred, 0)
     XCTAssertEqual(try f.journal.load(), saved)
     XCTAssertEqual(try f.journal.inbox.pending().count, 1)
   }

@@ -662,13 +662,37 @@ extension GalaxySSIStore {
       return agentConversationDatabase.read(session.id)
     }
     guard var session = agentSession(id: conversationId), session.id == conversationId,
-          session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank else { return nil }
+          let current = session.collaborationRoster, session.mergedIntoConversationId.isBlank else { return nil }
+    var roster = roster
+    let handled = Set(roster.handledRecruitmentIDs ?? []).union(current.handledRecruitmentIDs ?? [])
+    roster.handledRecruitmentIDs = handled.isEmpty ? nil : handled.sorted { $0.uuidString < $1.uuidString }
+    for index in roster.members.indices {
+      if let old = current.members.first(where: { $0.id == roster.members[index].id }) {
+        roster.members[index].recruitmentTemplateID = old.recruitmentTemplateID
+      }
+    }
     session.title = title
     session.collaborationRoster = roster
     session.updatedAt = Self.nowMillis()
     guard agentConversationDatabase.upsert(session) else { return nil }
     cacheAgentConversation(session)
     return session
+  }
+
+  func projectAgentCollaborationRecruits(_ projection: AgentCollaborationLiveGraph.DirectoryProjection,
+                                         conversationId: String) -> Bool {
+    guard profile.identityFingerprint == projection.source.profileID,
+          var session = agentSession(id: conversationId), session.id == conversationId,
+          session.status == .active, !session.privateMode, !session.trackingPaused, session.mergedIntoConversationId.isBlank,
+          let roster = session.collaborationRoster else { return false }
+    let updated = projection.applying(to: roster)
+    guard updated != roster else { return true }
+    guard updated.isValid else { return false }
+    session.collaborationRoster = updated
+    session.updatedAt = Self.nowMillis()
+    guard agentConversationDatabase.upsert(session) else { return false }
+    cacheAgentConversation(session)
+    return true
   }
 
   @discardableResult
@@ -973,6 +997,26 @@ extension GalaxySSIStore {
     researchCheckpointStore.merge(rows, conversation: conversation, turn: turn, source: sourceId)
   }
 
+  func persistRemoteResearchReceipt(_ payload: [String: Any], sourceId: UUID, attempt: UUID,
+                                    conversation: String, turn: String, generation: Int64) {
+    guard !conversation.isBlank, !turn.isBlank,
+          let session = agentSession(id: conversation), !session.privateMode, !session.trackingPaused,
+          let source = chatHistoryDatabase.message(id: sourceId), source.isMine, !source.isSystem,
+          !source.deliveryTrace.contains(where: { $0.stage == "screen_analysis_cancelled" }),
+          source.conversationId == conversation, source.turnId.ifBlank(source.id.uuidString) == turn else { return }
+    if researchCheckpointStore.mergeRemoteReceipt(.from(payload), conversation: conversation, turn: turn,
+      source: sourceId, attempt: attempt, generation: generation, mappedAttempt: attempt != sourceId) {
+      objectWillChange.send()
+    }
+  }
+
+  func remoteResearchReceipt(for source: ChatMessage) -> AgentRemoteResearchReceipt? {
+    guard source.isMine, !source.isSystem, let session = agentSession(id: source.conversationId),
+          !session.privateMode, !session.trackingPaused else { return nil }
+    return researchCheckpointStore.remoteReceipt(conversation: source.conversationId,
+      turn: source.turnId.ifBlank(source.id.uuidString), source: source.id)
+  }
+
   func researchRetryHandoff(for source: ChatMessage) -> String {
     let conversation = source.conversationId
     guard source.isMine, !source.isSystem, conversation == activeAgentConversationId,
@@ -980,6 +1024,23 @@ extension GalaxySSIStore {
           let current = chatHistoryDatabase.message(id: source.id), current.isMine, !current.isSystem,
           current.conversationId == conversation, current.turnId == source.turnId, current.content == source.content else { return "" }
     return researchCheckpointStore.handoff(conversation: conversation,
+      turn: source.turnId.ifBlank(source.id.uuidString), source: source.id)
+  }
+
+  func persistLocalResearchDisclosure(_ receipt: AgentLocalResearchDisclosure, source: ChatMessage, owner: String) {
+    guard receipt.visible, owner == profile.identityFingerprint, source.isMine, !source.isSystem,
+          let session = agentSession(id: source.conversationId), !session.privateMode, !session.trackingPaused,
+          session.mergedIntoConversationId.isBlank,
+          let saved = chatHistoryDatabase.message(id: source.id), saved.isMine, !saved.isSystem,
+          saved.conversationId == source.conversationId, saved.turnId == source.turnId,
+          !saved.deliveryTrace.contains(where: { $0.stage == "screen_analysis_cancelled" }) else { return }
+    if researchCheckpointStore.mergeLocalDisclosure(receipt, conversation: source.conversationId,
+      turn: source.turnId.ifBlank(source.id.uuidString), source: source.id) { objectWillChange.send() }
+  }
+
+  func localResearchDisclosure(for source: ChatMessage) -> AgentLocalResearchDisclosure {
+    guard let session = agentSession(id: source.conversationId), !session.privateMode, !session.trackingPaused else { return .init() }
+    return researchCheckpointStore.localDisclosure(conversation: source.conversationId,
       turn: source.turnId.ifBlank(source.id.uuidString), source: source.id)
   }
 

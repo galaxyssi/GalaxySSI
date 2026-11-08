@@ -13,7 +13,7 @@
     <string name="health_privacy_profile">Health background</string>
     <string name="health_privacy_profile_detail">Selected self-reported fields for analysis</string>
     <string name="health_privacy_online">Online health analysis</string>
-    <string name="health_privacy_online_detail">Online health analysis is not connected. No data is sent here.</string>
+    <string name="health_privacy_online_detail">Allows scoped health data to be sent to the selected cloud or Desktop Agent after confirmation. Automatic follow-up requires separate authorization for each concern.</string>
     <string name="health_privacy_images">Original report images</string>
     <string name="health_privacy_images_detail">Separate permission; each online request still needs confirmation</string>
     <string name="health_privacy_storage">Local data management</string>

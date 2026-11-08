@@ -1,5 +1,41 @@
 import SwiftUI
 
+private struct GalaxySSILocalResearchDisclosureRow: View {
+  let receipt: AgentLocalResearchDisclosure
+  let t: (String, String) -> String
+  @State private var expanded = false
+  @State private var page = 1
+
+  var body: some View {
+    let summary = String(format: t("galaxyssi.agent.local_research.summary", "%lld searches, %lld sources found"),
+      Int64(receipt.queries.count), Int64(receipt.sources.count))
+    DisclosureGroup(isExpanded: $expanded) {
+      VStack(alignment: .leading, spacing: 8) {
+        ForEach(Array(receipt.queries.prefix(page * 20)), id: \.self) { query in
+          Text(verbatim: query).textSelection(.enabled)
+        }
+        ForEach(Array(receipt.sources.prefix(page * 50).enumerated()), id: \.offset) { index, source in
+          Link(destination: source.url) {
+            Text(verbatim: "\(index + 1). \(source.title.ifBlank(source.url.host ?? source.id))")
+              .lineLimit(2)
+              .frame(minHeight: 44, alignment: .leading)
+          }
+        }
+        if receipt.queries.count > page * 20 || receipt.sources.count > page * 50 {
+          Button(t("galaxyssi.agent.local_research.more", "Show more")) { page += 1 }
+        }
+      }
+      .padding(.top, 6)
+    } label: {
+      Text(receipt.truncated ? summary + " \u{00B7} " + t("galaxyssi.agent.local_research.partial", "Partial record") : summary)
+        .foregroundColor(.galaxySSITextSecondary)
+    }
+    .font(.footnote)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.vertical, 4)
+  }
+}
+
 struct GalaxySSIAgentTranscriptMessagesView: View {
   @EnvironmentObject private var store: GalaxySSIStore
   @State private var expandedProgress = Set<UUID>()
@@ -42,10 +78,12 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
   var body: some View {
     let latest = latestSpeechTarget
     let deliveredTimes = AgentTranscriptExecutionProgress.finalDeliveryTimes(messages)
-    ForEach(visibleMessages) { message in
+    let visible = visibleMessages
+    let disclosureSources = localResearchPlacements(visible)
+    ForEach(visible) { message in
       let turn = AgentTranscriptExecutionProgress.TurnKey(message)
       messageRow(message, latestSpeechEntryId: latest?.entryId, deliveredAt: deliveredTimes[turn],
-        requestStartedAt: turnStartMillis[turn.turnId])
+        requestStartedAt: turnStartMillis[turn.turnId], researchSource: disclosureSources[message.id])
     }
     .onAppear { observeLatestReply(latest) }
     .onChange(of: latest) { target in
@@ -59,9 +97,22 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
     }
   }
 
+  private func localResearchPlacements(_ visible: [ChatMessage]) -> [UUID: ChatMessage] {
+    typealias Turn = AgentTranscriptExecutionProgress.TurnKey
+    var sources: [Turn: ChatMessage] = [:]
+    var replies: [Turn: UUID] = [:]
+    for message in visible where !message.isSystem {
+      let turn = Turn(message)
+      if message.isMine { sources[turn] = message }
+      else if replies[turn] == nil { replies[turn] = message.id }
+    }
+    return Dictionary(uniqueKeysWithValues: sources.map { (replies[$0.key] ?? $0.value.id, $0.value) })
+  }
+
   @ViewBuilder
   private func messageRow(
-    _ message: ChatMessage, latestSpeechEntryId: String?, deliveredAt: Int64?, requestStartedAt: Int64?
+    _ message: ChatMessage, latestSpeechEntryId: String?, deliveredAt: Int64?, requestStartedAt: Int64?,
+    researchSource: ChatMessage?
   ) -> some View {
     let task = agentTask(message)
     let remote = remoteAgentTask(message).flatMap {
@@ -88,6 +139,9 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
       if !message.isMine, !message.isSystem {
         if let execution { messageExecutionFooter(execution, task: task, remote: remote, voice: voice) }
       }
+      if let researchSource, !message.isMine {
+        localResearchDisclosure(for: researchSource)
+      }
       agentMessageContent(message)
       if message.isMine {
         if let task, let plan, plan.visible {
@@ -104,6 +158,9 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
           )
         } else if let execution, !hasReply(for: message) {
           messageExecutionFooter(execution, task: task, remote: remote, voice: voice)
+        }
+        if let researchSource {
+          localResearchDisclosure(for: researchSource)
         }
         let progress = message.deliveryTrace.filter { $0.stage.hasPrefix(AgentConnectorPublicProgress.tracePrefix) &&
           !AgentPublicProgressPolicy.isInternal($0.detail) }
@@ -133,6 +190,10 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
           }
           .frame(maxWidth: .infinity, alignment: .leading)
           .padding(.vertical, 8)
+        }
+        if let receipt = store.remoteResearchReceipt(for: message) {
+          GalaxySSIRemoteResearchDisclosure(receipt: receipt, t: t)
+            .accessibilityIdentifier("ios.agent.research-disclosure.\(message.id.uuidString)")
         }
       }
       if let target = AgentReplySpeechPresentationPolicy.target(message) {
@@ -185,6 +246,15 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
       ) {
         onRetryMessage(message)
       }
+    }
+  }
+
+  @ViewBuilder
+  private func localResearchDisclosure(for source: ChatMessage) -> some View {
+    let receipt = store.localResearchDisclosure(for: source)
+    if receipt.visible {
+      GalaxySSILocalResearchDisclosureRow(receipt: receipt, t: t)
+        .accessibilityIdentifier("ios.agent.local-research-disclosure.\(source.id.uuidString)")
     }
   }
 
@@ -288,20 +358,15 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
 
   private var visibleMessages: [ChatMessage] {
     let runs = Dictionary(store.proactiveRuns.map { ($0.runId, $0) }, uniquingKeysWith: { first, _ in first })
+    let visibility = store.scheduledReplyVisibility()
     return messages.compactMap { message in
       guard !CloudSupervisedResearch.isTranscriptControlReply(message),
+            !visibility.hides(message),
             !message.deliveryTrace.contains(where: { $0.stage == AgentConversationSchedule.occurrenceStage })
       else { return nil }
       if !message.isMine, !message.isSystem, let run = runs[message.turnId],
          let task = store.automationTask(id: run.taskId), task.action.isConversationSchedule,
          task.action.conversationId == message.conversationId {
-        if run.status == .unverified && run.errorCode == "phone_observation_unverified" { return nil }
-        if run.status.terminal,
-           let previous = store.automationRuns(taskId: run.taskId).first(where: {
-             $0.scheduledForMillis < run.scheduledForMillis && [.completed, .failed, .unverified].contains($0.status)
-           }),
-           previous.status == run.status, previous.resultSummary == run.resultSummary,
-           message.richOutputJson.isBlank { return nil }
         return AgentConversationSchedule.remotePresentation(message)
       }
       let task = AgentConversationSchedule.receiptTaskID(message).flatMap { store.automationTask(id: $0) }
@@ -399,5 +464,52 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
       liveStartedAt: progress.startedAt,
       liveDuration: elapsedDuration
     )
+  }
+}
+
+private struct GalaxySSIRemoteResearchDisclosure: View {
+  let receipt: AgentRemoteResearchReceipt
+  let t: (String, String) -> String
+  @State private var expanded = false
+  @State private var page = 1
+
+  var body: some View {
+    let queries = receipt.recordedQueries
+    let title = String(format: t("galaxyssi.agent.research.disclosure.summary", "%lld searches, %lld sources found"),
+      Int64(queries.count), Int64(receipt.sources.count))
+    DisclosureGroup(isExpanded: $expanded) {
+      VStack(alignment: .leading, spacing: 8) {
+        ForEach(Array(queries.prefix(page * 20)), id: \.self) { query in
+          Text(verbatim: query)
+            .textSelection(.enabled)
+        }
+        ForEach(receipt.sources.prefix(page * 50)) { source in
+          Link(destination: source.url) {
+            VStack(alignment: .leading, spacing: 2) {
+              Text(verbatim: source.title.ifBlank(source.url.host ?? source.url.absoluteString))
+                .lineLimit(2)
+              if source.openingReported {
+                Text(t("galaxyssi.agent.research.disclosure.remote_opening", "Desktop reported opening this page"))
+                  .font(.caption)
+                  .foregroundColor(.galaxySSITextSecondary)
+              }
+            }
+            .frame(minHeight: 44, alignment: .leading)
+          }
+        }
+        if queries.count > page * 20 || receipt.sources.count > page * 50 {
+          Button(t("galaxyssi.agent.research.disclosure.more", "Show more")) { page += 1 }
+        }
+      }
+      .padding(.top, 6)
+    } label: {
+      Text(receipt.truncated
+        ? title + " \u{00B7} " + t("galaxyssi.agent.research.disclosure.partial", "Partial record")
+        : title)
+        .foregroundColor(.galaxySSITextSecondary)
+    }
+    .font(.footnote)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.vertical, 4)
   }
 }

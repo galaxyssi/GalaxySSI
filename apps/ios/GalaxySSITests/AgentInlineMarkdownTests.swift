@@ -26,4 +26,11 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(segments.first { $0.text == "noise" }?.style, .strike)
     XCTAssertEqual(segments.first { $0.text == "keeping this" }?.style, .bold)
   }
+
+  func testAgentInlineMarkdownRendersAngleDelimitedCitationAsOneLink() {
+    let url = "https://example.test/report(part)?a=(1)&b=2"
+    let segments = AgentInlineMarkdown.parse("Claim [1](<\(url)>).")
+    XCTAssertEqual(segments.map(\.text).joined(), "Claim 1.")
+    XCTAssertEqual(segments.first(where: { $0.style == .link })?.url, url)
+  }
 }
