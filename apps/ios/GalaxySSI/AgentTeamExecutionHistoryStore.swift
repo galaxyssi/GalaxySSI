@@ -3305,7 +3305,7 @@ final class AgentTeamExecutionHistoryStore {
           conversationId: scope.conversationId, key: key, revision: 0),
           let id = receipt.milestoneId, milestoneKey(base, id: id) == key, let recorded = receipt.recordedAtMillis
         else { throw AgentTeamHistoryDatabase.Failure.stale }
-        let token = AgentMcpJSONCodec.sha256(["publication": .string(key), "artifact_sha256": .string(receipt.requestHash)])
+        let token = Self.workflowMilestoneToken(key: key, hash: receipt.requestHash)
         return .object(["token": .string(token), "artifact_sha256": .string(receipt.requestHash),
           "recorded_at": .int(recorded), "revision_count": .int(Int64(receipt.references.count))])
       }
@@ -3359,6 +3359,9 @@ final class AgentTeamExecutionHistoryStore {
         }
       }
       var dependencies: [AgentMcpJSONObject] = []
+      if let binding = work.workflowObservedBinding {
+        dependencies.append(["kind": .string("workflow_input_binding"), "binding": .object(binding)])
+      }
       for dependency in work.depends_on {
         guard let source = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
           conversationId: scope.conversationId, key: Self.goalWorkKey(dependency, scope: scope), revision: 0),
@@ -4211,7 +4214,8 @@ final class AgentTeamExecutionHistoryStore {
                     recruits.values.contains(recruit) else { return false }
             }
             guard let id = item.workflowExecutionId else {
-              return item.hasIndependentReviewAuthors({ authors[$0] }, identity: snapshot.reviewIdentity)
+              return item.workflowObservedBinding == nil &&
+                item.hasIndependentReviewAuthors({ authors[$0] }, identity: snapshot.reviewIdentity)
             }
             return priorWorkflows[id] == nil && workflows[id] != nil
           }) else { return false }
@@ -4300,7 +4304,52 @@ final class AgentTeamExecutionHistoryStore {
         conversationId: snapshot.conversationId, key: "object:" + ref.objectId), saved.reference == ref else { return nil }
       return saved
     }
-    guard let method = try current(instance.method), method.draft.kind == .workflowMethod,
+    var chosen = instance.method
+    var binding: AgentMcpJSONObject?
+    var inputNames: Set<String>?
+    var authors = Set<String>()
+    if instance.selectionRule != nil || instance.observedInputs != nil || instance.inputValues != nil {
+      guard let coordinator = snapshot.members.first(where: { $0.memberId == snapshot.primaryMemberId && $0.deliveryMode != .ignore }),
+            try database.researchRecord(Bool.self, conversationId: snapshot.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true else { return nil }
+      let scope = AgentCollaborationToolEvidenceScope(runId: snapshot.supervisorRunId, conversationId: snapshot.conversationId,
+        turnId: snapshot.taskId, memberId: coordinator.memberId, sourceId: coordinator.sourceMessageId)
+      var values = instance.inputValues ?? [:]
+      let observed = instance.observedInputs ?? [:]
+      guard instance.inputs.isEmpty, values.count + observed.count <= 32,
+            Set(values.keys).isDisjoint(with: Set(observed.keys)),
+            values.keys.allSatisfy({ !$0.isBlank && $0.utf8.count <= 160 }),
+            instance.observedInputs == nil || !observed.isEmpty else { return nil }
+      var sources: AgentMcpJSONObject = [:]
+      for (name, selector) in observed {
+        guard !name.isBlank, name.utf8.count <= 160,
+              let selector = AgentCollaborationWorkflowProjection.Selector(selector),
+              let source = try workflowObservation(selector, scope: scope, snapshot: snapshot, database: database) else { return nil }
+        values[name] = source.value
+        sources[name] = .object(source.binding)
+        authors.insert(snapshot.reviewIdentity(source.author))
+      }
+      guard !values.values.contains(.null) else { return nil }
+      inputNames = Set(values.keys)
+      let evidence = sources.isEmpty ? "declared_unverified_not_a_tool_observation" :
+        observed.count == values.count ? "host_bound_original_tool_observations" : "mixed_declared_and_host_bound_observations"
+      var pinned: AgentMcpJSONObject = ["inputs": .object(values), "input_observations": .object(sources),
+        "input_evidence": .string(evidence), "grants_permissions": .bool(false)]
+      if let ref = instance.selectionRule {
+        guard chosen == nil, let saved = try AgentCollaborationWorkflowCheck.current(ref, scope: scope, database: database),
+              saved.draft.kind == .workflowSelectionRule else { return nil }
+        let rule = try AgentCollaborationWorkflowCheck.rule(saved.draft, scope: scope, database: database)
+        guard Set(values.keys) == rule.inputNames,
+              var decision = AgentCollaborationWorkflowCheck.report(rule, reference: ref, values: values)["selection"]?.objectValue,
+              let method = AgentCollaborationExperimentPlanIntake.reference(decision["method"]) else { return nil }
+        chosen = method
+        decision["input_evidence"] = .string(evidence)
+        pinned["method_selection"] = .object(decision)
+      }
+      guard AgentMcpJSONCodec.stringify(pinned).utf8.count <= 8_192 else { return nil }
+      binding = pinned
+    }
+    guard let chosen, let method = try current(chosen), method.draft.kind == .workflowMethod,
           method.turnId != snapshot.taskId ||
             (method.runId == snapshot.supervisorRunId && method.authorId == snapshot.primaryMemberId),
           let body = method.draft.body["workflow_method"]?.objectValue else { return nil }
@@ -4308,7 +4357,87 @@ final class AgentTeamExecutionHistoryStore {
       guard let saved = try current(input), saved.turnId != snapshot.taskId ||
         (saved.runId == snapshot.supervisorRunId && assigned == [saved.authorId]) else { return nil }
     }
-    return instance.compile(body)
+    guard var compiled = instance.compile(body, inputNames: inputNames),
+          compiled.allSatisfy({ $0.independent_review != true || !authors.contains(snapshot.reviewIdentity($0.member)) })
+    else { return nil }
+    for index in compiled.indices { compiled[index].workflowObservedBinding = binding }
+    return compiled
+  }
+
+  private static func workflowMilestoneToken(key: String, hash: String) -> String {
+    AgentMcpJSONCodec.sha256(["publication": .string(key), "artifact_sha256": .string(hash)])
+  }
+
+  private static func workflowObservation(_ selector: AgentCollaborationWorkflowProjection.Selector,
+      scope: AgentCollaborationToolEvidenceScope, snapshot: AgentTeamExecutionSnapshot, database: AgentTeamHistoryDatabase)
+      throws -> (value: AgentMcpJSONValue, binding: AgentMcpJSONObject, author: String)? {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    let ownership: (String, String, String, String)
+    let provenance: (String, String, String)
+    let finished: Int64
+    let output: AgentMcpJSONObject
+    let bytes: Data
+    if let record = try database.cloudEvidence(id: selector.id, conversationId: scope.conversationId),
+       record.scope.conversationId == scope.conversationId {
+      guard let decoded = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(record.output.utf8)) else { return nil }
+      ownership = (record.scope.memberId, record.scope.sourceId, record.scope.runId, record.scope.turnId)
+      provenance = ("ios_cloud_tool", record.call.name, record.observedFailure ? "failed" : "succeeded")
+      finished = record.finishedAtMillis
+      output = decoded
+      bytes = try encoder.encode(record)
+    } else if let record = try database.researchRecord(AgentCollaborationNativeToolObservation.self,
+        conversationId: scope.conversationId, key: "native-evidence:" + selector.id, revision: 0),
+        record.conversationId == scope.conversationId, [.application, .phone].contains(record.result.provenance.location),
+        record.result.output["runtime_invoked"] != .bool(false),
+        nativeObservationId(record, hash: selector.digest) == selector.id {
+      ownership = (record.memberId, record.sourceId, record.runId, record.turnId)
+      provenance = ("ios_native_tool", record.result.provenance.toolId, record.result.status.rawValue)
+      finished = record.result.receipt.finishedAtEpochMillis
+      output = record.result.output
+      bytes = try encoder.encode(record)
+    } else { return nil }
+    let (author, source, run, turn) = ownership
+    let (origin, tool, status) = provenance
+    guard !author.isBlank, !source.isBlank, !tool.isBlank, finished > 0,
+          !tool.lowercased().contains("recall"), !tool.lowercased().contains("assessment"),
+          ![AgentIOSLocalModelWebToolRunner.goalCoordinatorToolID, CloudModelStreamMutableConversation.collaborationPublishName].contains(tool),
+          SHA256.hash(data: bytes).map({ String(format: "%02x", $0) }).joined() == selector.digest else { return nil }
+    if turn == scope.turnId {
+      guard run == scope.runId, let token = selector.milestone,
+            snapshot.members.contains(where: { $0.memberId == author && $0.sourceMessageId == source && $0.deliveryMode != .ignore })
+      else { return nil }
+      let base = researchPublicationKey(runId: run, memberId: author, sourceId: source)
+      let keys = try database.milestoneKeys(conversationId: scope.conversationId, prefix: milestonePrefix(base), after: "")
+      var granted = false
+      for key in keys.prefix(4) {
+        guard let receipt = try database.researchRecord(AgentCollaborationResearchPublication.self,
+          conversationId: scope.conversationId, key: key, revision: 0),
+          let id = receipt.milestoneId, milestoneKey(base, id: id) == key,
+          workflowMilestoneToken(key: key, hash: receipt.requestHash) == token else { continue }
+        for ref in receipt.references {
+          guard let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
+            conversationId: scope.conversationId, key: "object:" + ref.objectId, revision: ref.revision),
+            record.reference == ref, record.runId == run, record.turnId == turn,
+            record.authorId == author, record.sourceId == source else { continue }
+          let reads = origin == "ios_native_tool" ? record.frozenNativeReads : record.frozenCloudReads
+          if reads?.contains(where: { $0.evidenceId == selector.id && $0.sha256 == selector.digest && $0.totalCharacters > 0 }) == true {
+            granted = true
+            break
+          }
+        }
+        break
+      }
+      guard granted else { return nil }
+    } else if selector.milestone != nil { return nil }
+    guard let value = AgentCollaborationWorkflowProjection.select(output, selector: selector), value != .null else { return nil }
+    var binding: AgentMcpJSONObject = ["observation": .object(["evidence_id": .string(selector.id), "sha256": .string(selector.digest)]),
+      "report_pointer": .string(selector.reportPointer), "pointer": .string(selector.pointer),
+      "value_sha256": .string(AgentMcpJSONCodec.sha256(["value": value])), "tool": .string(tool),
+      "origin": .string(origin), "status": .string(status), "run_id": .string(run), "turn_id": .string(turn),
+      "member_id": .string(author), "finished_at": .int(finished), "truth_verified": .bool(false), "freshness_verified": .bool(false)]
+    if let token = selector.milestone { binding["milestone"] = .string(token) }
+    return (value, binding, author)
   }
 
   private static func validatedLearningPriorities(_ work: [AgentCollaborationLiveGraph.Work], existingCount: Int,
