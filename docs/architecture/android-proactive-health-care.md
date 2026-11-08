@@ -131,6 +131,34 @@ This supplies longitudinal evidence, not a clinically validated automatic outcom
 classifier. Broader real-provider applicability, conflicting-source, maintenance
 and complete UI acceptance remain required.
 
+## Action-level applicability review
+
+Every new model-proposed action includes a structured review: discussion-only or
+individualized scope, source-indexed conditions, unresolved information and any
+material source conflicts with a proposed resolution. All referenced passages
+still require same-turn native read receipts. The model declares requirements;
+it cannot provide the actual patient values or a clinical-verification flag.
+
+The phone compares declared requirements with the current measurement and
+revision-bound confirmed context. Unknown is not false, context from a different
+record does not count, and units are not silently converted. Unresolved factors,
+mismatches or source conflicts prevent adoption of that individualized action
+both in the review UI and in the transactional store acceptance path. Other
+information-check and clinician-discussion items remain selectable. Conflicting
+intervals and thresholds are not averaged or automatically resolved.
+
+The Agent and Personal Health share the same confirmation surface. It displays
+declared requirements, saved facts, numbered sources, unknown factors and next
+steps for conflicts. Legacy drafts remain readable; unreviewed clinical actions
+need fresh review, while clarification/discussion remains available. Previously
+confirmed actions and reminders are not changed just by installing this update.
+
+These are checks of **declared** requirements, not a clinical eligibility engine.
+They do not prove that the model identified every contraindication, interpreted
+the source correctly, or found all conflicting literature. A source quote proves
+retrieval, not medical applicability. Clinically validated source interpretation,
+urgency, maintenance criteria and broader real-provider matrices remain required.
+
 ## Scoped Agent discussion
 
 An issue can open a dedicated private, tracking-paused Agent conversation. Its

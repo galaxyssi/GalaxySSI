@@ -56,6 +56,7 @@ class HealthCareLiveResearchDeviceTest {
                 assertTrue(first.isNotBlank())
                 val plan = store.plan(grant.turnId) ?: error("Real model did not submit a source-grounded draft")
                 assertEquals(HealthCarePlanState.PENDING, plan.state)
+                assertEquals(plan.actions.map { it.id }.toSet(), plan.applicability.keys)
                 assertTrue(plan.sources.all { it.evidence != null && it.quote.isNotBlank() })
                 assertTrue(store.concern(concern.id)!!.actions.isEmpty()); assertNull(store.nextDue())
                 history += entry(AgentTranscriptRole.USER, firstQuestion, grant)

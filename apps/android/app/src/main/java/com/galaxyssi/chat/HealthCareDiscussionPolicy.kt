@@ -65,6 +65,12 @@ internal object HealthCareDiscussionPolicy {
         state uncertainty instead of forcing a category. Propose the next justified step using applicable sources.
         One in-range value cannot establish stability, close follow-up or authorize maintenance. Review against an
         explicitly confirmed individual target when applicable; do not replace it with a report midpoint.
+        For each proposed action, read and cite its population and limitations, not only a numerical threshold.
+        Declare source-supported applicability checks separately from actual patient context. Treat UNKNOWN as
+        unknown, never as NO. List unsupported factors and material source conflicts with their next resolution step;
+        do not average different diagnostic thresholds or follow-up intervals. General patient education cannot
+        establish an individualized test schedule. When requirements are unconfirmed or conflicting, prefer explicit
+        clarification or clinician discussion. Matched declared checks are not independent clinical validation.
         Use public web research when needed; use generic clinical terms, not identifying patient information.
         Cite authoritative sources with version/date and applicability; do not present an unread or bundled
         source as freshly verified. Explain uncertainty, appropriate next steps and urgent warning signs when
