@@ -136,10 +136,6 @@ private struct GalaxySSIHealthCareDetail: View {
   @State private var hasMore = false
   @State private var stage = GalaxySSIHealthCare.Stage.reassess
   @State private var reason = ""
-  @State private var targetValue = ""
-  @State private var targetSource = ""
-  @State private var rationale = ""
-  @State private var confirmedBy = ""
   @State private var context = GalaxySSIHealthCare.Context.Applicability.unknown
   @State private var failed = false
   @State private var confirmingDelete = false
@@ -184,26 +180,7 @@ private struct GalaxySSIHealthCareDetail: View {
             Text("\(NSDecimalNumber(decimal: baseline.low).stringValue) - \(NSDecimalNumber(decimal: baseline.high).stringValue) \(concern.assessment.unit)")
           } else { Text(t("none", "Not recorded")) }
         }
-        Section(t("target", "Confirmed individual target")) {
-          if let target = concern.target {
-            Text(target.value)
-            Text(target.source)
-            Text(target.rationale)
-            Text(target.confirmedBy)
-            Text(target.confirmedAt, style: .date)
-          }
-          TextField(t("target", "Confirmed individual target"), text: $targetValue)
-          TextField(t("target_source", "Target source"), text: $targetSource)
-          TextField(t("reason", "Reason"), text: $rationale)
-          TextField(t("confirmed_by", "Confirmed by"), text: $confirmedBy)
-          Button(t("save_target", "Save confirmed target")) {
-            perform {
-              try records.setLocalCareTarget(concern, target: .init(value: targetValue, source: targetSource,
-                rationale: rationale, confirmedBy: confirmedBy, confirmedAt: Date()))
-              targetValue = ""; targetSource = ""; rationale = ""; confirmedBy = ""
-            }
-          }.disabled([targetValue, targetSource, rationale, confirmedBy].contains(where: \.isBlank))
-        }
+        GalaxySSIHealthCareTargetSection(records: records, concern: concern)
         Section(t("follow_up", "Improvement and follow-up")) {
           if let note = concern.reviewNote { Text(note) }
           Picker(t("stage", "Review status"), selection: $stage) {
@@ -251,8 +228,8 @@ private struct GalaxySSIHealthCareDetail: View {
   private func reload() {
     guard scene == .active, let archive = try? records.load(), archive.localCareAllowed == true,
           let current = archive.localCare?.current[metric.rawValue], current.id == id else {
-      concern = nil; history = []; measurement = nil; reason = ""; targetValue = ""; targetSource = ""
-      rationale = ""; confirmedBy = ""; confirmingDelete = false; deletionCandidate = nil; context = .unknown
+      concern = nil; history = []; measurement = nil; reason = ""
+      confirmingDelete = false; deletionCandidate = nil; context = .unknown
       return
     }
     concern = current
