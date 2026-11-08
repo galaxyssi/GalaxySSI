@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import UIKit
 import UniformTypeIdentifiers
 import XCTest
 @testable import GalaxySSI
@@ -244,16 +245,21 @@ final class AgentDesktopArtifactHandoffTests: XCTestCase {
     XCTAssertEqual(try Data(contentsOf: XCTUnwrap(store.localFile(for: block))), bytes)
   }
 
-  func testCompressedArtifactAcceptsCompleteOriginalIdentityAndRejectsMixedVersions() throws {
+  @MainActor
+  func testCompressedImageRequiresItsDeliveredIdentityAndIsNotTheOriginal() throws {
     let cipher = GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())
     let root = temporaryDirectory("compressed-artifact")
     let store = AgentDesktopArtifactStore(rootURL: root, cipher: cipher)
-    let bytes = Data((0..<128).map(UInt8.init))
+    let bytes = UIGraphicsImageRenderer(size: CGSize(width: 24, height: 24)).jpegData(withCompressionQuality: 0.65) {
+      $0.cgContext.setFillColor(UIColor.blue.cgColor)
+      $0.cgContext.fill(CGRect(x: 0, y: 0, width: 24, height: 24))
+    }
     let deliveredDigest = sha256(bytes)
     let originalDigest = sha256(Data("original image".utf8))
     let artifactURI = "galaxyssi-artifact://task/outputs/compressed.jpg"
     let artifactId = sha256(Data("\(artifactURI)\u{0}\(deliveredDigest)".utf8))
-    _ = try store.ingest(payload(
+    let originalSize = bytes.count + 500
+    var chunk = payload(
       artifactId: artifactId,
       artifactURI: artifactURI,
       fullDigest: deliveredDigest,
@@ -261,9 +267,12 @@ final class AgentDesktopArtifactHandoffTests: XCTestCase {
       index: 0,
       count: 1,
       chunk: bytes,
-      originalSize: 500,
+      originalSize: originalSize,
       originalDigest: originalDigest
-    ))
+    )
+    chunk["name"] = "compressed.jpg"
+    chunk["mime_type"] = "image/jpeg"
+    _ = try store.ingest(chunk)
 
     func block(hash: String, size: String, artifact: String = artifactId) -> AgentRichBlock {
       AgentRichBlock(
@@ -280,19 +289,77 @@ final class AgentDesktopArtifactHandoffTests: XCTestCase {
       )
     }
 
-    let original = block(hash: originalDigest, size: "500")
-    XCTAssertNotNil(store.localFile(for: original))
-    XCTAssertEqual(store.resolveBlock(original).metadata["sha256"], deliveredDigest)
-    XCTAssertEqual(store.resolveBlock(original).metadata["original_sha256"], originalDigest)
-    XCTAssertNotNil(store.localFile(for: block(hash: deliveredDigest, size: "128")))
-    XCTAssertNil(store.localFile(for: block(hash: originalDigest, size: "128")))
-    XCTAssertNil(store.localFile(for: block(hash: deliveredDigest, size: "500")))
-    XCTAssertNil(store.localFile(for: block(hash: String(repeating: "f", count: 64), size: "500")))
+    let original = block(hash: originalDigest, size: String(originalSize))
+    XCTAssertNil(store.localFile(for: original))
+    XCTAssertEqual(store.resolveBlock(original), original)
+    let copy = block(hash: deliveredDigest, size: String(bytes.count))
+    XCTAssertEqual(store.resolveBlock(copy).metadata["image_artifact_version"], "transport_copy")
+    XCTAssertEqual(store.resolveBlock(copy).metadata["original_sha256"], originalDigest)
+    XCTAssertEqual(try Data(contentsOf: XCTUnwrap(store.localFile(for: copy))), bytes)
+    XCTAssertNil(store.localFile(for: block(hash: originalDigest, size: String(bytes.count))))
+    XCTAssertNil(store.localFile(for: block(hash: deliveredDigest, size: String(originalSize))))
+    XCTAssertNil(store.localFile(for: block(hash: String(repeating: "f", count: 64), size: String(originalSize))))
+    XCTAssertThrowsError(try store.saveArtifactUriToDownloads(sourceURI: artifactURI, expectedSHA256: originalDigest)) {
+      XCTAssertEqual($0 as? AgentDesktopArtifactStoreError, .imageVersionMismatch)
+    }
     XCTAssertNil(store.localFile(for: block(
       hash: originalDigest,
-      size: "500",
+      size: String(originalSize),
       artifact: String(repeating: "e", count: 64)
     )))
+  }
+
+  @MainActor
+  func testImageDeliveriesRejectMismatchedContainersAndPreserveOriginalBytes() throws {
+    let cipher = GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let store = AgentDesktopArtifactStore(rootURL: temporaryDirectory("image-fidelity"), cipher: cipher)
+    let renderer = UIGraphicsImageRenderer(size: CGSize(width: 24, height: 24))
+    let draw: (UIGraphicsImageRendererContext) -> Void = {
+      $0.cgContext.setFillColor(UIColor.red.cgColor)
+      $0.cgContext.fill(CGRect(x: 0, y: 0, width: 24, height: 24))
+    }
+    let png = renderer.pngData(actions: draw)
+    let jpeg = renderer.jpegData(withCompressionQuality: 0.65, actions: draw)
+    let uri = "galaxyssi-artifact://task/outputs/image.png"
+    let blobURI = "galaxyssi-artifact://blob/image.png"
+    let artifactId = String(repeating: "a", count: 64)
+    func chunk(_ bytes: Data, mime: String) -> [String: Any] {
+      var value = payload(artifactId: artifactId, artifactURI: uri, fullDigest: sha256(bytes),
+        fullSize: bytes.count, index: 0, count: 1, chunk: bytes)
+      value["name"] = "image.png"
+      value["mime_type"] = mime
+      return value
+    }
+    func blob(_ bytes: Data, mime: String) -> [String: Any] {
+      ["artifact_id": String(repeating: "b", count: 64), "artifact_uri": blobURI,
+       "name": "image.png", "mime_type": mime, "size_bytes": bytes.count, "sha256": sha256(bytes)]
+    }
+    XCTAssertThrowsError(try store.ingest(chunk(jpeg, mime: "image/png"))) {
+      XCTAssertEqual($0 as? AgentDesktopArtifactStoreError, .imageFormatMismatch)
+    }
+    XCTAssertThrowsError(try store.ingestBlobArtifact(manifest: blob(png, mime: "image/jpeg"), plaintext: png))
+    XCTAssertThrowsError(try store.ingestBlobArtifact(manifest: blob(jpeg, mime: "image/png"), plaintext: jpeg))
+    var wrongName = blob(png, mime: "image/png")
+    wrongName["name"] = "image.zip"
+    XCTAssertThrowsError(try store.ingestBlobArtifact(manifest: wrongName, plaintext: png))
+    var wrongSize = chunk(png, mime: "image/png")
+    wrongSize["original_size_bytes"] = png.count + 1
+    XCTAssertThrowsError(try store.ingest(wrongSize))
+    XCTAssertTrue(try store.ingest(chunk(png, mime: "image/png")).completed)
+    XCTAssertNoThrow(try store.ingestBlobArtifact(manifest: blob(png, mime: "image/png"), plaintext: png))
+    let reduced = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).pngData { _ in }
+    var legacyCopy = blob(reduced, mime: "image/png")
+    legacyCopy["original_size_bytes"] = png.count
+    legacyCopy["original_sha256"] = sha256(png)
+    XCTAssertThrowsError(try store.ingestBlobArtifact(manifest: legacyCopy, plaintext: reduced)) {
+      XCTAssertEqual($0 as? AgentDesktopArtifactStoreError, .imageVersionMismatch)
+    }
+    for source in [uri, blobURI] {
+      let block = AgentRichBlock(id: source, type: .file, title: "image.png", uri: source, mimeType: "image/png",
+        metadata: ["sha256": sha256(png), "size_bytes": String(png.count)])
+      XCTAssertEqual(store.resolveBlock(block).metadata["image_artifact_version"], "original")
+      XCTAssertEqual(try Data(contentsOf: XCTUnwrap(store.localFile(for: block))), png)
+    }
   }
 
   func testRichContentCodecDeduplicatesArtifactsAndFailsClosed() {

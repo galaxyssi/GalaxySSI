@@ -95,6 +95,39 @@ struct GalaxySSIPhoneContactControl {
   }
 }
 
+enum GalaxySSIPhoneContactEventPolicy {
+  enum DecisionDisposition: Equatable {
+    case apply, receiptOnly, ignore
+  }
+
+  static func decision(_ kind: GalaxySSIPhoneContactControl.Kind, previous: GalaxySSIFriendRequestStatus?,
+                       verified: Bool) -> DecisionDisposition {
+    guard kind == .approval || kind == .rejection else { return .apply }
+    if verified || (kind == .approval && previous == .approved) ||
+      (kind == .rejection && previous == .rejected) {
+      return .receiptOnly
+    }
+    return previous == .pending ? .apply : .ignore
+  }
+
+  static func announces(_ kind: GalaxySSIPhoneContactControl.Kind,
+                        previous: GalaxySSIFriendRequest?, current: GalaxySSIFriendRequest?,
+                        previouslyVerified: Bool) -> Bool {
+    switch kind {
+    case .request:
+      return !previouslyVerified && current?.status == .pending && current?.direction == .incoming &&
+        !(previous?.status == .pending && previous?.direction == .incoming)
+    case .approval, .rejection:
+      return !previouslyVerified && previous?.status == .pending && previous?.direction == .outgoing &&
+        current?.status == (kind == .approval ? .approved : .rejected)
+    case .bundle, .refresh:
+      return true
+    case .receipt:
+      return false
+    }
+  }
+}
+
 enum GalaxySSIPhoneContactBundlePolicy {
   static func replacesExistingSession(
     _ kind: GalaxySSIPhoneContactControl.Kind,

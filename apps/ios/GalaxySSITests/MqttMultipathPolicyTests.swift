@@ -141,10 +141,21 @@ final class MqttMultipathPolicyTests: XCTestCase {
     XCTAssertEqual(policy.diagnostics(now: 100).inflightPackets, 4)
   }
 
+  func testReservationRefusalDoesNotConsumeCapacity() {
+    let policy = ready()
+    XCTAssertEqual(policy.reserveReason(attemptID: "", attempt: attempt()), .invalidAttempt)
+    XCTAssertEqual(policy.reserveReason(attemptID: "old", attempt: attempt(generation: 2)), .pathUnavailable)
+    XCTAssertNil(policy.reserveReason(attemptID: "valid", attempt: attempt()))
+    XCTAssertEqual(policy.reserveReason(attemptID: "valid", attempt: attempt()), .duplicateAttempt)
+    XCTAssertEqual(policy.reserveReason(attemptID: "changed",
+      attempt: attempt(digest: String(repeating: "b", count: 64))), .messageContentConflict)
+    XCTAssertEqual(policy.diagnostics(now: 1_000).inflightPackets, 1)
+  }
+
   func testControlAndFinalMessagesKeepReservedPacketSlots() {
     let policy = ready()
     for index in 0..<10 { XCTAssertTrue(policy.reserve(attemptID: String(index), attempt: attempt(message: String(index)))) }
-    XCTAssertFalse(policy.reserve(attemptID: "ordinary", attempt: attempt(message: "ordinary")))
+    XCTAssertEqual(policy.reserveReason(attemptID: "ordinary", attempt: attempt(message: "ordinary")), .inflightPacketLimit)
     XCTAssertTrue(policy.reserve(attemptID: "control", attempt: attempt(message: "control", traffic: .control)))
     XCTAssertTrue(policy.reserve(attemptID: "final", attempt: attempt(message: "final", traffic: .final)))
     XCTAssertFalse(policy.reserve(attemptID: "over", attempt: attempt(message: "over", traffic: .receipt)))
@@ -156,12 +167,12 @@ final class MqttMultipathPolicyTests: XCTestCase {
     for index in 0..<7 {
       XCTAssertTrue(policy.reserve(attemptID: String(index), attempt: attempt(peer: "peer-\(index)", size: 1_048_576)))
     }
-    XCTAssertFalse(policy.reserve(attemptID: "eighth", attempt: attempt(peer: "peer-8", size: 1_048_576)))
+    XCTAssertEqual(policy.reserveReason(attemptID: "eighth", attempt: attempt(peer: "peer-8", size: 1_048_576)), .inflightByteLimit)
     XCTAssertTrue(policy.reserve(attemptID: "urgent", attempt: attempt(peer: "peer-8", size: 1_048_576, traffic: .control)))
     XCTAssertFalse(policy.reserve(attemptID: "too-large", attempt: attempt(peer: "peer-9", size: 1, traffic: .receipt)))
     let isolated = ready()
     XCTAssertTrue(isolated.reserve(attemptID: "one", attempt: attempt(size: 1_048_576)))
-    XCTAssertFalse(isolated.reserve(attemptID: "two", attempt: attempt(size: 1_048_576)))
+    XCTAssertEqual(isolated.reserveReason(attemptID: "two", attempt: attempt(size: 1_048_576)), .peerByteLimit)
     XCTAssertTrue(isolated.reserve(attemptID: "urgent", attempt: attempt(size: 1_048_576, traffic: .control)))
   }
 

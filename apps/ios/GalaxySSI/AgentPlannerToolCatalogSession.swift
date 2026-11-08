@@ -7,12 +7,14 @@ final class AgentPlannerToolCatalogSession {
   private let registry: AgentNativeToolRegistry
   private let manifestHash: String
   private let contracts: [String: AgentNativeToolDescriptor]
+  private let refreshOnUnavailable: Bool
   private let lock = NSLock()
   private var observedMessageCount = 0
 
-  init(scope: AgentModelLoopScope, registry: AgentNativeToolRegistry) {
+  init(scope: AgentModelLoopScope, registry: AgentNativeToolRegistry, refreshOnUnavailable: Bool = false) {
     self.scope = scope
     self.registry = registry
+    self.refreshOnUnavailable = refreshOnUnavailable
     manifestHash = AgentModelToolProtocolJSON.sha256(registry.catalogJson(
       additionalDescriptors: [AgentModelObservationHistory.descriptor], useRegisteredContracts: true))
     contracts = Dictionary(uniqueKeysWithValues: registry.registeredContracts().map { ($0.id, $0) })
@@ -42,6 +44,7 @@ final class AgentPlannerToolCatalogSession {
     guard let contract = contracts[result.toolId], let native = result.nativeResult,
           !native.receipt.replayed else { return false }
     if result.toolId == AgentIOSOnDeviceRuntimeNativeToolCatalog.status { return true }
+    if refreshOnUnavailable, native.status == .unavailable || native.error?.code == "requires_setup" { return true }
     return contract.effect != .readOnly &&
       !(contract.effect == nil && contract.concurrency == .parallelReadOnly) &&
       [.succeeded, .failed, .verificationFailed, .timedOut].contains(native.status)

@@ -97,6 +97,64 @@ final class AgentReplyUnreadTests: XCTestCase {
     XCTAssertEqual(ledger.count(), 0)
   }
 
+  @MainActor
+  func testQuietScheduleCompletionClearsPersistedUnreadOnlyInItsDestination() async throws {
+    let store = GalaxySSIStore(defaults: defaults, secrets: secrets)
+    let owner = store.createAgentSession(title: "Scheduled")
+    let other = store.createAgentSession(title: "Other")
+    let start: Int64 = 1_000_000
+    _ = try store.saveConversationSchedule(conversationId: owner.id, id: nil, prompt: "Check the phone",
+      trigger: AgentProactiveTrigger(kind: .interval, intervalSeconds: 60), frequency: "Every minute", nowMillis: start)
+    XCTAssertEqual(store.claimDueAutomationTasks(nowMillis: start), 1)
+    let run = try XCTUnwrap(store.queuedAutomationRuns().first)
+    XCTAssertNotNil(store.beginAutomationRun(id: run.runId, nowMillis: start))
+    let quiet = store.appendIncoming("The phone observation could not be verified.", from: "hermes",
+      conversationId: owner.id, turnId: run.runId)
+    _ = store.appendIncoming("Visible reply", from: "hermes", conversationId: other.id, turnId: run.runId)
+    _ = store.appendIncoming("Other turn", from: "hermes", conversationId: owner.id, turnId: "ordinary")
+    XCTAssertEqual(store.agentReplyUnreadCount(conversationId: owner.id), 2)
+    XCTAssertTrue(store.finishAutomationRun(id: run.runId, status: .unverified, resultSummary: "Unverified",
+      errorCode: "phone_observation_unverified", nowMillis: start + 1))
+    XCTAssertEqual(store.agentReplyUnreadCount(conversationId: owner.id), 1)
+    XCTAssertEqual(store.agentReplyUnreadCount(conversationId: other.id), 1)
+    XCTAssertEqual(store.persistedMessage(id: quiet.id, contactId: "hermes")?.turnId, run.runId)
+    _ = store.appendIncoming("Late quiet result", from: "hermes", conversationId: owner.id, turnId: run.runId)
+    XCTAssertEqual(store.agentReplyUnreadCount(conversationId: owner.id), 1)
+
+    // Simulate an upgrade with an older persisted marker for the quiet reply.
+    let legacy = makeLedger()
+    legacy.removeConversations([owner.id])
+    legacy.record(quiet, previous: nil)
+    await store.reconcileAgentReplyUnread()
+    XCTAssertEqual(store.agentReplyUnreadCount(conversationId: owner.id), 0)
+    XCTAssertEqual(store.agentReplyUnreadCount(conversationId: other.id), 1)
+  }
+
+  @MainActor
+  func testQuietRepeatCannotDiscardARichReplySharingItsTurn() throws {
+    let store = GalaxySSIStore(defaults: defaults, secrets: secrets)
+    let session = store.createAgentSession(title: "Scheduled")
+    let task = try store.saveConversationSchedule(conversationId: session.id, id: nil, prompt: "Check weather",
+      trigger: AgentProactiveTrigger(kind: .interval, intervalSeconds: 60), frequency: "Every minute", nowMillis: 1_000)
+    let first = try AgentProactiveRun(runId: "first", taskId: task.taskId, scheduledForMillis: 1_000,
+      status: .completed, resultSummary: "Same result")
+    let repeatRun = try AgentProactiveRun(runId: "repeat", taskId: task.taskId, scheduledForMillis: 61_000,
+      status: .completed, resultSummary: "Same result")
+    let visibility = AgentScheduledReplyVisibility(tasks: [task], runs: [repeatRun, first])
+    let plain = reply(conversation: session.id, turn: repeatRun.runId)
+    var rich = reply(conversation: session.id, turn: repeatRun.runId)
+    rich.richOutputJson = "[]"
+    XCTAssertTrue(visibility.hides(plain))
+    XCTAssertFalse(visibility.hides(rich))
+    let history = store.chatHistoryDatabase
+    XCTAssertTrue(history.upsert(plain))
+    XCTAssertEqual(history.quietScheduledUnreadTokens(conversationId: session.id,
+      candidates: [repeatRun.runId], visibility: visibility), [repeatRun.runId])
+    XCTAssertTrue(history.upsert(rich))
+    XCTAssertTrue(history.quietScheduledUnreadTokens(conversationId: session.id,
+      candidates: [repeatRun.runId], visibility: visibility).isEmpty)
+  }
+
   func testCloudSentDeltasAndProcessEntriesAreNotUnread() {
     var message = reply()
     message.deliveryStatus = .sent

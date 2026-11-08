@@ -20,6 +20,12 @@ struct GalaxySSIHealthCenterView: View {
   @State private var sourceAttention: [GalaxySSIHealthSourceAttention.Incident] = []
   @State private var sourceCoverage: GalaxySSIHealthSourceAttention?
   @State private var sourceAttentionUnavailable = false
+  @State private var initialRecordMetric: GalaxySSIHealthMetric?
+
+  init(records: GalaxySSIHealthRecords, initialRecordMetric: GalaxySSIHealthMetric? = nil) {
+    self.records = records
+    _initialRecordMetric = State(initialValue: initialRecordMetric)
+  }
   @State private var sourceRecovery: GalaxySSIHealthSourceAttention.Incident?
 
   private enum Notice: String, Identifiable {
@@ -33,6 +39,11 @@ struct GalaxySSIHealthCenterView: View {
         recordCenter
       } label: {
         Label(t("record_center.title", "Health Record Center"), systemImage: "square.and.pencil")
+      }
+      NavigationLink {
+        GalaxySSIHealthCareView(records: records)
+      } label: {
+        Label(t("care.title", "Health Care"), systemImage: "heart.text.square")
       }
       NavigationLink {
         GalaxySSIHealthDataFilesView(records: records, metrics: { metricCatalog }, review: { recordCenter })
@@ -186,7 +197,9 @@ struct GalaxySSIHealthCenterView: View {
         Label(t("backup.title", "Health Backup"), systemImage: "externaldrive")
       }
       NavigationLink {
-        GalaxySSIHealthTrendView(records: records)
+        GalaxySSIHealthTrendView(records: records) { metric in
+          editor = (try? records.load())?.draft ?? GalaxySSIHealthDraft(metric: metric)
+        }
       } label: {
         Label(t("trend.title", "Measurement Trends"), systemImage: "chart.xyaxis.line")
       }
@@ -198,7 +211,14 @@ struct GalaxySSIHealthCenterView: View {
     }
     .navigationTitle(t("title", "Health Center"))
     .navigationBarTitleDisplayMode(.inline)
-    .onAppear { if scenePhase == .active { reload() } }
+    .onAppear {
+      guard scenePhase == .active else { return }
+      reload()
+      if let metric = initialRecordMetric {
+        initialRecordMetric = nil
+        editor = archive?.draft ?? GalaxySSIHealthDraft(metric: metric)
+      }
+    }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { notification in
       if notification.object as? String == records.owner, editor == nil, scenePhase == .active { reload() }
     }
@@ -329,6 +349,7 @@ struct GalaxySSIHealthCenterView: View {
     case .weeklyReport: return t("weekly.title", "Weekly Health Report")
     case .importOriginals: return t("privacy.import_originals", "Keep originals of new imports")
     case .profileAnalysis: return t("assistant.profile_permission", "Allow selected profile fields in local analysis")
+    case .localCare: return t("care.permission", "Allow local health review")
     }
   }
 

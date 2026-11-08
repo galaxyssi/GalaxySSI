@@ -207,7 +207,8 @@ enum AgentIOSWebMediaNativeToolCatalog {
     return AgentPhoneNativeToolDefinition(
       descriptor: descriptor,
       executorId: executorId,
-      provenanceMetadata: provenance(operation, provider: provider)
+      provenanceMetadata: provenance(operation, provider: provider),
+      availabilityProvider: AgentNativeToolAvailabilityProvider { _ in availability(provider: provider, operation: operation) }
     )
   }
 

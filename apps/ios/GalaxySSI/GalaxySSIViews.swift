@@ -32,6 +32,12 @@ enum GalaxySSIRuntimePlaintextProtection {
   private static let boundaryLock = NSLock()
   private static var boundaryActive = false
 
+  static var isBoundaryActive: Bool {
+    boundaryLock.lock()
+    defer { boundaryLock.unlock() }
+    return boundaryActive
+  }
+
   static var sensitiveDiagnosticsEnabled: Bool {
 #if DEBUG
     true
@@ -139,7 +145,8 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
   ) {
     if GalaxySSIContactReminderNotification.reminderID(notification.request.identifier) != nil {
-      completionHandler([])
+      let quiet = notification.request.content.userInfo[GalaxySSIContactReminderNotification.quietKey] as? Bool == true
+      completionHandler(quiet ? [.list] : [])
       return
     }
     if notification.request.identifier.hasPrefix(GalaxySSIHealthRecordingReminders.prefix) ||
@@ -575,6 +582,9 @@ struct ConversationView: View {
   @State private var fileImporterPresented = false
   @State private var fileAttachmentOwner: String?
   @State private var fileAttachmentRequest: UUID?
+  @State private var fileDocumentRecipient: ComposerPeerDocumentRoute?
+  @State private var fileDocumentProfile: String?
+  @State private var fileDocumentGeneration: UInt64?
   @State private var cameraPickerPresented = false
   @State private var cameraAttachmentOwner: String?
   @State private var attachmentError = ""
@@ -847,25 +857,6 @@ struct ConversationView: View {
           .padding(.horizontal, 14)
           .padding(.top, 8)
         }
-        if let reminder = coordinator.contactReminders.last(where: {
-          $0.peerID == contact.id && $0.outgoing && !$0.status.terminal
-        }) {
-          HStack {
-            Label(t(reminder.status.localizationKey, reminder.status.defaultTitle), systemImage: "bell.badge")
-              .foregroundColor(.galaxySSITextSecondary)
-            Spacer()
-            Button {
-              coordinator.actOnContactReminder(id: reminder.id, action: .cancelled)
-            } label: {
-              Label(t("galaxyssi.contact_reminder.cancel", "Cancel reminder"), systemImage: "xmark")
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("ios.chat.contact-reminder.cancel")
-          }
-          .font(.footnote)
-          .padding(.horizontal, 14)
-          .padding(.top, 6)
-        }
         GalaxySSIConversationComposer(
           draft: $draft,
           attachments: $attachments,
@@ -953,6 +944,9 @@ struct ConversationView: View {
         if fileAttachmentOwner == composerAttachmentScope { attachmentError = error.localizedDescription }
         fileAttachmentOwner = nil
         fileAttachmentRequest = nil
+        fileDocumentRecipient = nil
+        fileDocumentProfile = nil
+        fileDocumentGeneration = nil
       }
     }
     .onChange(of: composerAttachmentScope) { _ in
@@ -962,6 +956,9 @@ struct ConversationView: View {
     .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
       fileAttachmentOwner = nil
       fileAttachmentRequest = nil
+      fileDocumentRecipient = nil
+      fileDocumentProfile = nil
+      fileDocumentGeneration = nil
     }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
       cameraAttachmentOwner = nil
@@ -1715,17 +1712,40 @@ struct ConversationView: View {
   private func openComposerFilePicker() {
     fileAttachmentOwner = composerAttachmentScope
     fileAttachmentRequest = UUID()
+    fileDocumentRecipient = ComposerPeerDocumentRoute(contact: contact, links: store.serverLinks)
+    fileDocumentProfile = store.profile.identityFingerprint
+    fileDocumentGeneration = store.runtimePlaintextGeneration
     fileImporterPresented = true
   }
 
   private func receiveComposerFiles(_ urls: [URL]) {
-    guard let owner = fileAttachmentOwner, let request = fileAttachmentRequest, owner == composerAttachmentScope else { return }
+    let owner = fileAttachmentOwner, request = fileAttachmentRequest
+    let recipient = fileDocumentRecipient, profile = fileDocumentProfile, generation = fileDocumentGeneration
     fileAttachmentOwner = nil
-    let target = contact
+    fileDocumentRecipient = nil
+    fileDocumentProfile = nil
+    fileDocumentGeneration = nil
+    guard recipient != nil || request != nil else { return }
     Task { @MainActor in
       defer { if fileAttachmentRequest == request { fileAttachmentRequest = nil } }
-      let isCurrent = { fileAttachmentRequest == request && owner == composerAttachmentScope && scenePhase == .active }
-      await ComposerFileSelection.deliver(urls, isCurrent: isCurrent, onImage: appendAttachment, onDocument: { attachment in
+      func runtimeCurrent() -> Bool {
+        UIApplication.shared.applicationState == .active && store.canRestoreMessageViewport &&
+          profile == store.profile.identityFingerprint && generation == store.runtimePlaintextGeneration
+      }
+      func isCurrent() -> Bool {
+        request != nil && fileAttachmentRequest == request && owner == composerAttachmentScope && conversationVisible &&
+          scenePhase == .active && runtimeCurrent()
+      }
+      func documentTarget() -> GalaxySSIContact? {
+        guard runtimeCurrent(), let recipient, let latest = store.contacts.first(where: { $0.id == recipient.contactID }),
+              ComposerPeerDocumentRoute(contact: latest, links: store.serverLinks) == recipient else { return nil }
+        return latest
+      }
+      await ComposerFileSelection.deliver(urls, isCurrent: isCurrent,
+        isDocumentCurrent: { recipient == nil ? isCurrent() : documentTarget() != nil },
+        onImage: appendAttachment, onDocument: { attachment in
+        guard recipient != nil else { appendAttachment(attachment); return }
+        guard let target = documentTarget() else { return }
         if !(await coordinator.send("", to: target, attachments: [attachment])), isCurrent() {
           attachmentError = coordinator.lastError.ifBlank(t("composer_attachment_send_failed", "Could not send the file."))
         }

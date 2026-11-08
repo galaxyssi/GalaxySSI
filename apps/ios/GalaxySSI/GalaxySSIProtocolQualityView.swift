@@ -445,10 +445,14 @@ struct GalaxySSILinkProtocolView: View {
       return t("protocol_event_old_counter", "Old Signal counter rejected")
     case .decryptFailure:
       return t("protocol_event_decrypt_failure", "Signal decryption failed")
+    case .decryptDeferred:
+      return t("protocol_event_decrypt_deferred", "Repeated decryption deferred")
     case .chunkDuplicate:
       return t("protocol_event_chunk_duplicate", "Conflicting duplicate chunk rejected")
     case .fragmentRejected:
       return t("protocol_event_fragment_rejected", "Fragmented transfer rejected")
+    case .publishAdmissionRefused:
+      return t("protocol_event_publish_admission_refused", "Publish admission refused")
     }
   }
 
@@ -458,9 +462,9 @@ struct GalaxySSILinkProtocolView: View {
       return "arrow.counterclockwise"
     case .duplicateMessage, .duplicateReceipt, .chunkDuplicate:
       return "doc.on.doc"
-    case .oldCounter:
+    case .oldCounter, .decryptDeferred:
       return "clock"
-    case .decryptFailure, .fragmentRejected:
+    case .decryptFailure, .fragmentRejected, .publishAdmissionRefused:
       return "exclamationmark.shield"
     }
   }
@@ -471,9 +475,9 @@ struct GalaxySSILinkProtocolView: View {
       return .blue
     case .duplicateMessage, .duplicateReceipt, .chunkDuplicate:
       return .orange
-    case .oldCounter:
+    case .oldCounter, .decryptDeferred:
       return .purple
-    case .decryptFailure, .fragmentRejected:
+    case .decryptFailure, .fragmentRejected, .publishAdmissionRefused:
       return .red
     }
   }

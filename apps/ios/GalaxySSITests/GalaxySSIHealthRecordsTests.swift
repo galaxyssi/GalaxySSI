@@ -7,6 +7,62 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testLocalCareRequiresPermissionAndPreservesExactRevisionHistory() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let now = Date(timeIntervalSince1970: 1_700_000_000)
+    let high = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-1_000),
+      value: 110, conditions: "lab", unitOverride: "mg/dL", referenceInterval: "70 - 99")
+    try records.write(high)
+    XCTAssertThrowsError(try records.reconcileLocalCare(now: now))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let first = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertEqual(first.assessment.signals, [.reportHigh, .glucoseContext])
+    XCTAssertNil(first.target)
+    XCTAssertNil(first.assessment.guidelineVersion)
+    try records.reconcileLocalCare(now: now)
+    XCTAssertEqual(try records.load().localCare?.current["glucose"], first)
+    try records.setLocalCareContext(first, applicability: .applicable, now: now)
+    let verified = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertEqual(verified.assessment.guidelineVersion, "ADA 2026")
+    XCTAssertThrowsError(try records.reviewLocalCare(first, stage: .closed, reason: "Stale revision", now: now))
+    let inRange = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-100),
+      value: 90, conditions: "lab", unitOverride: "mg/dL", referenceInterval: "70 - 99")
+    try records.write(inRange)
+    try records.reconcileLocalCare(now: now)
+    let updated = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertEqual(updated.id, first.id)
+    XCTAssertEqual(updated.stage, .reassess)
+    XCTAssertNil(updated.context)
+    XCTAssertEqual(try records.localCareHistory(updated.id).map(\.revision), [2, 1])
+    var later = high
+    later.id = UUID()
+    later.measuredAt = now.addingTimeInterval(-10)
+    later.value = 113
+    try records.write(later)
+    XCTAssertThrowsError(try records.reviewLocalCare(updated, stage: .closed, reason: "Source changed", now: now))
+    XCTAssertThrowsError(try records.deleteLocalCare(updated, now: now))
+    XCTAssertEqual(try records.load().localCare?.current["glucose"], updated)
+    try records.reconcileLocalCare(now: now)
+    let refreshed = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertEqual(refreshed.assessment.record?.id, later.id)
+    try records.deleteLocalCare(refreshed, now: now)
+    try records.reconcileLocalCare(now: now)
+    XCTAssertNil(try records.load().localCare?.current["glucose"])
+    later.id = UUID()
+    later.measuredAt = now
+    try records.write(later)
+    try records.reconcileLocalCare(now: now)
+    XCTAssertEqual(try records.load().localCare?.current["glucose"]?.assessment.record?.id, later.id)
+    try records.setPrivacy(.localCare, enabled: false)
+    XCTAssertThrowsError(try records.localCareHistory(updated.id))
+    XCTAssertNil(try Data(contentsOf: file).range(of: Data("glucoseContext".utf8)))
+  }
+
+  @MainActor
   func testDataFilesOrdersAndPagesMetadataWithoutReadingPayloads() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -584,6 +640,20 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let episode = try XCTUnwrap(ledger.episodes.first)
     XCTAssertEqual(episode.latest.decrease, 45)
     XCTAssertEqual(episode.latest.days.filter { $0.minutes == nil }.count, 2)
+    var notifications = ledger.preferences
+    notifications.notifications = true
+    let resume = try XCTUnwrap(calendar.date(bySettingHour: 7, minute: 0, second: 0, of: now))
+    let morning = try XCTUnwrap(calendar.date(bySettingHour: 10, minute: 0, second: 0, of: now))
+    let global = GalaxySSIHealthRecordingReminders.Settings(quietStart: 22, quietEnd: 10, pausedUntil: resume)
+    XCTAssertEqual(GalaxySSIHealthSleepReminder.deliveryDate(now.addingTimeInterval(-60), episode: episode,
+      preferences: notifications, settings: global, calendar: calendar), morning)
+    var snoozed = episode
+    snoozed.snoozedUntil = morning.addingTimeInterval(3_600)
+    XCTAssertEqual(GalaxySSIHealthSleepReminder.deliveryDate(now, episode: snoozed,
+      preferences: notifications, settings: global, calendar: calendar), snoozed.snoozedUntil)
+    snoozed.completed = true
+    XCTAssertNil(GalaxySSIHealthSleepReminder.deliveryDate(now, episode: snoozed,
+      preferences: notifications, settings: global, calendar: calendar))
     ledger.reconcile(current: readings, allowed: true, now: now.addingTimeInterval(60), calendar: calendar)
     XCTAssertEqual(ledger.episodes, [episode])
     ledger.reconcile(current: Array(readings.dropFirst(2)), allowed: true, now: now, calendar: calendar)
@@ -768,6 +838,14 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     state.deliveries = adopted.tickets
     ticket = try XCTUnwrap(adopted.tickets[job.key])
     XCTAssertTrue(ticket.submitted)
+    let rolledBack = ticket.due.addingTimeInterval(-60)
+    let globalPause = GalaxySSIHealthRecordingReminders.Settings(pausedUntil: later.addingTimeInterval(1_800))
+    let rearmed = GalaxySSIHealthReviewDelivery.plan(jobs: [job], state: state, now: rolledBack,
+      calendar: calendar, permitted: true, scheduled: [], delivered: [ticket.token], settings: globalPause)
+    XCTAssertEqual(rearmed.pending.first?.due, globalPause.pausedUntil)
+    XCTAssertNotEqual(rearmed.pending.first?.token, ticket.token)
+    XCTAssertTrue(rearmed.keepDelivered.isEmpty)
+    XCTAssertNil(GalaxySSIHealthReviewDelivery.target(for: ticket.token, jobs: [job], state: state, now: rolledBack))
     let dismissed = GalaxySSIHealthReviewDelivery.plan(jobs: [job], state: state, now: later,
       calendar: calendar, permitted: true, scheduled: [], delivered: [])
     XCTAssertTrue(dismissed.pending.isEmpty)
@@ -909,6 +987,60 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testHealthPhotoDraftSubmitsOnlyVerifiedPagesInFinalOrder() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let secrets = HealthFixtureSecrets()
+    let file = root.appendingPathComponent("records")
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets,
+      fixtureDirectory: root, restoreRecordsFile: file)
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    func photo(_ color: UIColor) -> Data {
+      UIGraphicsImageRenderer(size: CGSize(width: 48, height: 48)).pngData { renderer in
+        renderer.cgContext.setFillColor(color.cgColor)
+        renderer.cgContext.fill(CGRect(x: 0, y: 0, width: 48, height: 48))
+      }
+    }
+    let firstBytes = photo(.black)
+    let secondBytes = photo(.white)
+    let replacement = photo(.red)
+    let hints = try GalaxySSIHealthPhotoDraft.inspect(firstBytes)
+    XCTAssertTrue(hints.contains(.small) && hints.contains(.dark))
+    try store.storePhotoCapturePage(firstBytes, name: "first.png", acquisition: .camera, mode: .report,
+      expected: nil, replacing: nil, hints: hints)
+    let initial = try XCTUnwrap(records.load().photoCaptureDraft)
+    let firstPage = try XCTUnwrap(initial.pages.first)
+    XCTAssertThrowsError(try store.storePhotoCapturePage(secondBytes, name: "stale.png", acquisition: .uploaded,
+      mode: .report, expected: nil, replacing: nil, hints: []))
+    try store.storePhotoCapturePage(secondBytes, name: "second.png", acquisition: .uploaded, mode: .report,
+      expected: initial.version, replacing: nil, hints: [])
+    let added = try XCTUnwrap(records.load().photoCaptureDraft)
+    let second = try XCTUnwrap(added.pages.last)
+    try records.editPhotoCaptureDraft(expected: added.version, page: second.id, offset: -1)
+    let moved = try XCTUnwrap(records.load().photoCaptureDraft)
+    try store.storePhotoCapturePage(replacement, name: "replacement.png", acquisition: .camera, mode: .report,
+      expected: moved.version, replacing: firstPage.id, hints: [])
+    let prepared = try XCTUnwrap(records.load().photoCaptureDraft)
+    XCTAssertEqual(prepared.pages.map(\.id), [second.id, firstPage.id])
+    XCTAssertEqual(try store.read(firstPage.original), firstBytes)
+    XCTAssertTrue(try records.load().recognitionJobs?.isEmpty ?? true)
+
+    try FileManager.default.removeItem(at: root.appendingPathComponent(second.original.id.uuidString))
+    XCTAssertThrowsError(try records.submitPhotoCaptureDraft(expected: prepared.version, originals: store))
+    XCTAssertEqual(try records.load().photoCaptureDraft?.version, prepared.version)
+    XCTAssertTrue(try records.load().recognitionJobs?.isEmpty ?? true)
+    try store.repairRecognitionOriginal(second.original, data: secondBytes)
+    try records.submitPhotoCaptureDraft(expected: prepared.version, originals: store)
+    let archive = try records.load()
+    XCTAssertNil(archive.photoCaptureDraft)
+    XCTAssertEqual(archive.recognitionJobs?.compactMap { $0.captureSource?.order }, [1, 2])
+    XCTAssertEqual(archive.recognitionJobs?.map(\.original.id), prepared.pages.map(\.original.id))
+    XCTAssertTrue(archive.current.isEmpty)
+    XCTAssertThrowsError(try records.submitPhotoCaptureDraft(expected: prepared.version, originals: store))
+  }
+
+  @MainActor
   func testRecognitionCheckpointResumesAndCancellationRejectsLatePages() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }
@@ -934,7 +1066,10 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     try records.commitRecognitionPage(id: job.id, run: run, page: first)
     let saved = try XCTUnwrap(records.load().recognitionJobs?.first)
     XCTAssertThrowsError(try records.beginRecognitionJob(id: job.id, expected: job.version))
-    let resumed = try records.beginRecognitionJob(id: job.id, expected: saved.version)
+    XCTAssertThrowsError(try records.beginRecognitionJob(id: job.id, expected: saved.version))
+    try records.reconcileAbandonedRecognitionJobs(process: UUID())
+    let interrupted = try XCTUnwrap(records.load().recognitionJobs?.first)
+    let resumed = try records.beginRecognitionJob(id: job.id, expected: interrupted.version)
     XCTAssertThrowsError(try records.commitRecognitionPage(id: job.id, run: run, page: second))
     try records.finishRecognitionJob(id: job.id, run: resumed, phase: .cancelled)
     XCTAssertThrowsError(try records.commitRecognitionPage(id: job.id, run: resumed, page: second))
@@ -1217,6 +1352,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertThrowsError(try GalaxySSIHealthPDFText.read(pdf, page: 0, password: "fixture-reader")) {
       guard case GalaxySSIHealthPDFText.Failure.extractionRestricted = $0 else { return XCTFail("Expected restricted extraction") }
     }
+    XCTAssertThrowsError(try GalaxySSIHealthRecognitionJobs.pdfPageCount(pdf, password: "fixture-reader"))
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
@@ -1224,6 +1360,71 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     try store.store(pdf, name: "protected.pdf")
     let original = try XCTUnwrap(store.list().originals.first)
     XCTAssertEqual(try store.read(original), pdf)
+  }
+
+  @MainActor
+  func testProtectedRecognitionQueueResumesOnlyAfterUnlockAndHidesPartialResults() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let archive = root.appendingPathComponent("archive")
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: archive)
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: root)
+    let bytes = NSMutableData()
+    let consumer = try XCTUnwrap(CGDataConsumer(data: bytes as CFMutableData))
+    let password = "fixture-queue-password"
+    var bounds = CGRect(x: 0, y: 0, width: 200, height: 120)
+    let context = try XCTUnwrap(CGContext(consumer: consumer, mediaBox: &bounds, [
+      kCGPDFContextUserPassword as String: password, kCGPDFContextAllowsCopying as String: true
+    ] as CFDictionary))
+    for _ in 0..<2 { context.beginPDFPage(nil); context.endPDFPage() }
+    context.closePDF()
+    let pdf = bytes as Data
+    try store.store(pdf, name: "queue-protected.pdf")
+    let original = try XCTUnwrap(store.list().originals.first)
+    XCTAssertEqual(try store.read(original), pdf)
+    XCTAssertThrowsError(try GalaxySSIHealthRecognitionJobs.pdfPageCount(pdf))
+    XCTAssertThrowsError(try GalaxySSIHealthRecognitionJobs.pdfPageCount(pdf, password: "wrong"))
+    let count = try GalaxySSIHealthRecognitionJobs.pdfPageCount(pdf, password: password)
+    XCTAssertEqual(count, 2)
+    let job = try records.enqueueRecognition(original: original, pageCount: count, requiresPDFPassword: true)
+    XCTAssertThrowsError(try records.beginRecognitionJob(id: job.id, expected: job.version))
+    let run = try records.beginRecognitionJob(id: job.id, expected: job.version, unlockedProtectedPDF: true)
+    let first = GalaxySSIHealthRecognitionJobs.Page(index: 0, fromOCR: false, lines: [])
+    let second = GalaxySSIHealthRecognitionJobs.Page(index: 1, fromOCR: false, lines: [])
+    try records.commitRecognitionPage(id: job.id, run: run, page: first)
+    try records.reconcileAbandonedRecognitionJobs()
+    let running = try XCTUnwrap(records.load().recognitionJobs?.first)
+    XCTAssertEqual(running.phase, .running)
+    XCTAssertTrue(running.reviewPages.isEmpty)
+    XCTAssertThrowsError(try records.beginRecognitionJob(id: job.id, expected: running.version, unlockedProtectedPDF: true))
+    let reopened = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: archive)
+    try reopened.reconcileAbandonedRecognitionJobs(process: UUID())
+    let interrupted = try XCTUnwrap(reopened.load().recognitionJobs?.first)
+    XCTAssertEqual(interrupted.phase, .interrupted)
+    XCTAssertEqual(interrupted.pages, [first])
+    XCTAssertTrue(interrupted.reviewPages.isEmpty)
+    XCTAssertThrowsError(try reopened.beginRecognitionJob(id: job.id, expected: interrupted.version))
+    XCTAssertThrowsError(try reopened.commitRecognitionPage(id: job.id, run: run, page: second))
+    XCTAssertEqual(try GalaxySSIHealthRecognitionJobs.pdfPageCount(store.read(original), password: password), count)
+    let resumed = try reopened.beginRecognitionJob(id: job.id, expected: interrupted.version, unlockedProtectedPDF: true)
+    secrets.unavailable = true
+    XCTAssertThrowsError(try reopened.finishRecognitionJob(id: job.id, run: resumed, phase: .interrupted))
+    secrets.unavailable = false
+    XCTAssertEqual(try reopened.load().recognitionJobs?.first?.phase, .running)
+    XCTAssertThrowsError(try reopened.commitRecognitionPage(id: job.id, run: resumed, page: second))
+    try reopened.reconcileAbandonedRecognitionJobs()
+    let unlocked = try XCTUnwrap(reopened.load().recognitionJobs?.first)
+    XCTAssertEqual(unlocked.phase, .interrupted)
+    XCTAssertEqual(unlocked.pages, [first])
+    XCTAssertTrue(unlocked.reviewPages.isEmpty)
+    let recovered = try reopened.beginRecognitionJob(id: job.id, expected: unlocked.version, unlockedProtectedPDF: true)
+    try reopened.commitRecognitionPage(id: job.id, run: recovered, page: second)
+    let completed = try XCTUnwrap(reopened.load().recognitionJobs?.first)
+    XCTAssertEqual(completed.reviewPages, [first, second])
+    XCTAssertTrue(try reopened.load().current.isEmpty)
+    XCTAssertFalse(String(decoding: try JSONEncoder().encode(completed), as: UTF8.self).contains(password))
   }
 
   @MainActor
@@ -1243,6 +1444,14 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let ledger = try records.loadRecordingReminders(at: later, calendar: calendar)
     let first = try XCTUnwrap(ledger.history.first)
     XCTAssertEqual(ledger.history.count, 1)
+    XCTAssertEqual(ledger.keepsDelivered(at: later, calendar: calendar), [first.day])
+    let beforeDue = first.scheduledAt.addingTimeInterval(-60)
+    XCTAssertTrue(ledger.keepsDelivered(at: beforeDue, calendar: calendar).isEmpty)
+    XCTAssertEqual(ledger.upcoming(at: beforeDue, calendar: calendar).first?.1, first.scheduledAt)
+    var paused = ledger
+    paused.settings.pausedUntil = later.addingTimeInterval(3_600)
+    XCTAssertTrue(paused.keepsDelivered(at: later, calendar: calendar).isEmpty)
+    XCTAssertEqual(paused.history, ledger.history)
     try records.updateRecordingReminder(first, complete: false, at: later, calendar: calendar)
     XCTAssertThrowsError(try records.updateRecordingReminder(first, complete: true, at: later, calendar: calendar))
     let refreshed = try records.loadRecordingReminders(at: later, calendar: calendar)
@@ -2598,6 +2807,70 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(trend.mean, Decimal(string: "66.5"))
     XCTAssertEqual(trend.minimum, 64)
     XCTAssertEqual(trend.maximum, 69)
+    let pulse = trend.chartData(.min, component: .pulse)
+    XCTAssertEqual(pulse.map(\.id), [0, 2])
+    XCTAssertEqual(pulse.map(\.value), [64, 69])
+    XCTAssertEqual(pulse.last?.point.revisions, [two.id: 3])
+    let pressure = GalaxySSIHealthTrend(current: [two, one, missing], metric: .bloodPressure,
+      component: .diastolic, now: now, dayCount: 3, calendar: calendar)
+    let diastolic = pressure.chartData(.max, component: .diastolic)
+    XCTAssertEqual(diastolic.map(\.value), [80, 84])
+    XCTAssertEqual(diastolic.last?.point.readings.count, 2)
+    XCTAssertEqual(diastolic.last?.point.extremum(.max, component: .diastolic)?.id, missing.id)
+    var corrected = two
+    corrected.revision += 1
+    let updated = GalaxySSIHealthTrend(current: [corrected, one, missing], metric: .bloodPressure,
+      component: .pulse, now: now, dayCount: 3, calendar: calendar).chartData(.min, component: .pulse)
+    XCTAssertEqual(updated.map(\.value), pulse.map(\.value))
+    XCTAssertTrue(updated[0].matches(pulse[0]))
+    XCTAssertFalse(updated[1].matches(pulse[1]))
+  }
+
+  func testFilteredTrendExplanationUsesChartBucketsAndKeepsRawSourcesLocal() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+    let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 11, day: 5, hour: 12)))
+    let start = try XCTUnwrap(calendar.date(byAdding: .day, value: -2, to: now))
+    let first = GalaxySSIHealthReading(revision: 2, metric: .glucose, measuredAt: start, value: 110,
+      notes: "Private source note", unitOverride: "mg/dL")
+    let high = GalaxySSIHealthReading(revision: 1, metric: .glucose, measuredAt: start, value: 130, unitOverride: "mg/dL")
+    let last = GalaxySSIHealthReading(revision: 3, metric: .glucose, measuredAt: now, value: 125, unitOverride: "mg/dL")
+    let otherUnit = GalaxySSIHealthReading(revision: 1, metric: .glucose, measuredAt: now, value: 4)
+    let unrelated = GalaxySSIHealthReading(revision: 1, metric: .weight, measuredAt: now, value: 72)
+    let current = [first, high, last, otherUnit, unrelated]
+    let spec = GalaxySSIHealthTrendAnalysis.Spec(metric: .glucose, component: .value, unit: "mg/dL",
+      source: .manual, device: nil, origin: .all, aggregation: .min, through: now, days: 3, calendar: calendar)
+    let scope = GalaxySSIHealthTrendAnalysis(spec: spec, versions: spec.versions(current), sourceTitle: "Manual fixture")
+    let analysis = try XCTUnwrap(GalaxySSIHealthAnalysis(trend: scope, current: current))
+    let fact = try XCTUnwrap(analysis.trendFact)
+    XCTAssertEqual(fact.first.index, 1)
+    XCTAssertEqual(fact.first.value, "110")
+    XCTAssertEqual(fact.first.recordCount, 2)
+    XCTAssertEqual(fact.last?.index, 3)
+    XCTAssertEqual(fact.delta, "15")
+    XCTAssertEqual(fact.missingDays, 1)
+    XCTAssertEqual(fact.excludedOtherUnits, 1)
+    XCTAssertEqual(analysis.trendFirst?.readings.first?.revision, 2)
+    XCTAssertEqual(analysis.trendFirst?.readings.first?.id, first.id)
+    let summary = try analysis.requestJSON()
+    let followUp = try GalaxySSIHealthFollowUp(analysis: analysis, baseline: nil, question: "What changed?", previous: nil)
+    for payload in [summary, followUp.payload] {
+      let json = String(decoding: payload, as: UTF8.self)
+      XCTAssertTrue(json.contains("filteredTrend"))
+      for privateValue in [first.id.uuidString, first.notes, scope.sourceTitle, "Asia/Shanghai", "2026-11"] {
+        XCTAssertFalse(json.contains(privateValue))
+      }
+    }
+    XCTAssertNoThrow(try followUp.answer(#"{"status":"ANSWERED","sections":[{"topic":"CHANGES","fact_ids":["e1"]}],"actions":[]}"#))
+    XCTAssertThrowsError(try followUp.answer(#"{"status":"ANSWERED","sections":[],"actions":["WEEKLY_REPORT"]}"#))
+    var edited = first
+    edited.revision += 1
+    XCTAssertFalse(analysis.isCurrent([edited, high, last, otherUnit, unrelated]))
+    XCTAssertNil(GalaxySSIHealthAnalysis(trend: scope, current: [edited, high, last, otherUnit, unrelated]))
+    XCTAssertTrue(analysis.isCurrent([first, high, last, otherUnit]))
+    let newSameDay = GalaxySSIHealthReading(revision: 1, metric: .glucose, measuredAt: now.addingTimeInterval(120),
+      value: 105, unitOverride: "mg/dL")
+    XCTAssertFalse(analysis.isCurrent(current + [newSameDay]))
   }
 
   func testHealthCatalogRefreshAnchorsToSurvivingVisibleRecord() throws {
@@ -2972,7 +3245,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
 
 private final class HealthFixtureSecrets: GalaxySSISecretStore {
   private var values: [String: String] = [:]
+  var unavailable = false
   func setString(_ value: String, account: String) throws { values[account] = value }
-  func string(account: String) -> String? { values[account] }
+  func string(account: String) -> String? { unavailable ? nil : values[account] }
   func delete(account: String) { values.removeValue(forKey: account) }
 }
