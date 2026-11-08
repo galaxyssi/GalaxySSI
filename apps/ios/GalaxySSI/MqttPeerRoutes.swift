@@ -262,6 +262,17 @@ final class MqttPeerRoutes {
     }
   }
 
+  // The journal's identity owns the ciphertext; an expired rotating topic is not a new recipient.
+  func withPendingTopic<T>(identity: MqttBusinessIdentity, storedTopic: String, commit: (String) throws -> T) throws -> T {
+    try locked {
+      guard let peer = peers[identity.scope], peer.active, peer.binding.enabled,
+            try MqttBusinessIdentity(peer.binding) == identity else { throw MqttRouteError.identityChanged }
+      if identity.scope.hasPrefix("direct:") { return try commit(peer.binding.sendTopic) }
+      guard peer.binding.sendTopics.contains(storedTopic) else { throw MqttRouteError.identityChanged }
+      return try commit(storedTopic)
+    }
+  }
+
   func enqueue(_ requests: [MqttSignalSendRequest], using engine: GalaxySSISignalEngine,
                now: Date = Date()) throws -> [MqttBusinessOutbox.Entry] {
     guard let first = requests.first, (1...64).contains(requests.count),

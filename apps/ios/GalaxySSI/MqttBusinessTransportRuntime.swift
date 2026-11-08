@@ -31,6 +31,8 @@ final class MqttBusinessTransportRuntime {
   private var polling = false
   private var peerChatProjection: MqttPeerChatProjection?
   private var configuredDirectPeers: [Peer] = []
+  private var configuredDirectRoutes: [String: GalaxySSILinkRoutes] = [:]
+  private var directConfiguration: MqttBrokerPathConfiguration?
   private var incomingAttachments: AgentIncomingAttachmentTransferStore?
   private var outgoingAttachments: AgentOutboundAttachmentTransferStore?
   private var desktopConnector: MqttDesktopConnectorProjection?
@@ -155,9 +157,12 @@ final class MqttBusinessTransportRuntime {
 
   func startDirectPeerChat(configuration: MqttBrokerPathConfiguration) throws {
     guard let projection = peerChatProjection else { throw MqttDeliveryDispatch.Failure.unavailable }
-    let peers = projection.currentPeers()
+    let destinations = projection.currentDestinations()
+    let peers = destinations.map(\.peer)
     try start(configuration: configuration, peers: peers)
     configuredDirectPeers = peers
+    configuredDirectRoutes = Dictionary(uniqueKeysWithValues: destinations.map { ($0.peer.binding.scope, $0.routes) })
+    directConfiguration = configuration
   }
 
   var hasReadyPeer: Bool { started && !stopped && identities.contains { routes.isReady(scope: $0.scope) } }
@@ -185,7 +190,8 @@ final class MqttBusinessTransportRuntime {
     if let existing = try routes.withOutgoing(identity: body.identity, topics: [body.topic], commit: {
       try journal.outbox.entry(identity: body.identity, messageID: body.messageID)
     }) {
-      guard existing.requestHash == (try body.digest()), body.matches(existing.message) else {
+      guard try body.matchesIntent(existing.requestHash, storedTopic: existing.message.topic),
+            body.matches(existing.message, allowRotatedTopic: true) else {
         throw MqttChunkStorageError.corruptState
       }
       return existing
@@ -206,20 +212,35 @@ final class MqttBusinessTransportRuntime {
     return entry
   }
 
-  // A changed route must be configured by the owner before it can send. Never silently move
-  // an existing durable queue to a different relationship.
+  // Only the topic window may change in place. Approval and relationship material stay pinned.
   func refreshDirectPeerBindings() throws {
     guard let projection = peerChatProjection, started, !stopped, !configuredDirectPeers.isEmpty else { return }
-    let current = Dictionary(grouping: projection.currentPeers(), by: { $0.binding.scope })
-    let retained = configuredDirectPeers.filter { peer in
-      guard let matches = current[peer.binding.scope], matches.count == 1, let match = matches.first else { return false }
-      return match.binding == peer.binding && match.remoteSignalName == peer.remoteSignalName
+    let current = Dictionary(grouping: projection.currentDestinations(), by: { $0.peer.binding.scope })
+    let retained = try configuredDirectPeers.compactMap { peer -> Peer? in
+      guard let matches = current[peer.binding.scope], matches.count == 1, let match = matches.first else { return nil }
+      guard let original = configuredDirectRoutes[peer.binding.scope], match.routes == original,
+            match.peer.remoteSignalName == peer.remoteSignalName,
+            try MqttBusinessIdentity(match.peer.binding) == MqttBusinessIdentity(peer.binding) else { return nil }
+      return match.peer
     }
-    guard retained.count != configuredDirectPeers.count else { return }
+    guard retained.count != configuredDirectPeers.count ||
+          zip(retained, configuredDirectPeers).contains(where: { $0.0.binding != $0.1.binding }) else { return }
+    let removed = retained.count != configuredDirectPeers.count
     let retainedIdentities = try retained.map { try MqttBusinessIdentity($0.binding) }
     try routes.replace(retained.map(\.binding))
     configuredDirectPeers = retained
     identities = retainedIdentities
+    remoteNames = Dictionary(uniqueKeysWithValues: retained.map { ($0.binding.scope, $0.remoteSignalName) })
+    if removed, var configuration = directConfiguration {
+      let scopes = Set(retained.map(\.binding.scope))
+      configuredDirectRoutes = configuredDirectRoutes.filter { scopes.contains($0.key) }
+      let approved = Set(configuredDirectRoutes.values)
+      configuration.serverLinks = configuration.serverLinks.filter { approved.contains($0.routes) }
+      configuration.phoneRoutes = configuration.phoneRoutes.filter { approved.contains($0) }
+      directConfiguration = configuration
+      routes.synchronize([:])
+      pool.connect(configuration)
+    }
   }
 
   func start(configuration: MqttBrokerPathConfiguration, peers: [Peer]) throws {
@@ -375,10 +396,12 @@ final class MqttBusinessTransportRuntime {
         let request = try connector.resultReceiptRequest(work, target: target)
         try routes.withOutgoing(identity: request.identity, topics: [request.topic]) {
           if let event = try journal.outbox.completions.event(identity: request.identity, messageID: request.messageID) {
-            guard event.requestHash == (try request.digest()) else { throw MqttChunkStorageError.corruptState }
+            guard try request.matchesIntent(event.requestHash, storedTopic: event.topic) else { throw MqttChunkStorageError.corruptState }
             _ = recovery.receipts.claim(work, nowMillis: now)
           } else if let existing = try journal.outbox.entry(identity: request.identity, messageID: request.messageID) {
-            guard existing.requestHash == (try request.digest()) else { throw MqttChunkStorageError.corruptState }
+            guard try request.matchesIntent(existing.requestHash, storedTopic: existing.message.topic) else {
+              throw MqttChunkStorageError.corruptState
+            }
           } else {
             _ = try enqueue([request])
           }

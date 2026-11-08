@@ -71,6 +71,19 @@ struct MqttSignalSendRequest: Codable {
     return MqttRouteProtocol.digest(try encoder.encode(self))
   }
 
+  func matchesIntent(_ storedHash: String?, storedTopic: String?) throws -> Bool {
+    guard let storedHash else { return false }
+    let originalTopic = storedTopic ?? topic
+    if originalTopic == topic { return try digest() == storedHash }
+    guard identity.scope.hasPrefix("direct:") else { return false }
+    let original = try Self(identity: identity, payload: applicationPayload(), remoteName: remoteName,
+      deviceID: deviceID, topic: originalTopic, clientRouteID: clientRouteID, traffic: traffic,
+      requiresValidatedNetwork: requiresValidatedNetwork, attachmentDependencies: attachmentDependencies,
+      attachmentTransferID: attachmentTransferID, sourceMessageID: sourceMessageID, contactID: contactID,
+      trustedBackgroundCognitionAuthorized: trustedBackgroundCognitionAuthorized)
+    return try original.digest() == storedHash
+  }
+
   func pendingMessage(wire: String, now: Date) -> PendingLinkMessage {
     PendingLinkMessage(messageId: messageID, topic: topic, wirePayload: wire, status: "queued", attempts: 0,
       nextAttemptAt: now, createdAt: now, updatedAt: now, requiresValidatedNetwork: requiresValidatedNetwork,
@@ -78,8 +91,9 @@ struct MqttSignalSendRequest: Codable {
       clientSourceMessageId: sourceMessageID, contactId: contactID)
   }
 
-  func matches(_ message: PendingLinkMessage) -> Bool {
-    message.messageId == messageID && message.topic == topic && message.wirePayloadFile == nil &&
+  func matches(_ message: PendingLinkMessage, allowRotatedTopic: Bool = false) -> Bool {
+    message.messageId == messageID && (message.topic == topic || (allowRotatedTopic && identity.scope.hasPrefix("direct:"))) &&
+      message.wirePayloadFile == nil &&
       message.requiresValidatedNetwork == requiresValidatedNetwork && message.attachmentTransferId == attachmentTransferID &&
       message.clientSourceMessageId == sourceMessageID && message.contactId == contactID &&
       Set(message.blockedByAttachmentTransferIds).isSubset(of: Set(attachmentDependencies))

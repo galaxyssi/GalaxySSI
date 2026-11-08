@@ -42,8 +42,10 @@ struct MqttPeerChatProjection {
   }
 
   func currentPeers() -> [MqttBusinessTransportRuntime.Peer] {
-    store.contacts.compactMap { destination(for: $0)?.peer }
+    currentDestinations().map(\.peer)
   }
+
+  func currentDestinations() -> [Destination] { store.contacts.compactMap { destination(for: $0) } }
 
   func outgoingRequest(for messageId: UUID, contactId: String, messageKind: String = "",
                        durationMillis: Int64 = 0) throws -> MqttSignalSendRequest {

@@ -361,7 +361,8 @@ final class GalaxySSISignalEngine {
           throw MqttChunkStorageError.alreadyDelivered
         }
         if let existing = try journal.outbox.entry(identity: request.identity, messageID: request.messageID, transaction: token) {
-          guard existing.requestHash == hash, existing.traffic == request.traffic.rawValue, request.matches(existing.message) else {
+          guard try request.matchesIntent(existing.requestHash, storedTopic: existing.message.topic),
+                existing.traffic == request.traffic.rawValue, request.matches(existing.message, allowRotatedTopic: true) else {
             throw MqttChunkStorageError.corruptState
           }
           return existing
