@@ -154,6 +154,14 @@ final class MqttSignalStateJournal {
         throw MqttRouteError.invalidPayload
       }
       guard payload["type"] as? String == "delivery_ack" else { return nil }
+      if payload["delivery_status"] as? String == "accepted",
+         payload["content_hash"] == nil, payload["content_hash_algorithm"] == nil {
+        // Legacy acceptance is not storage proof. Retire only the incoming control message.
+        guard try inbox.complete(identity: identity, messageID: receiptMessageID, transaction: token) else {
+          throw MqttChunkStorageError.corruptState
+        }
+        return nil
+      }
       let receipt = try MqttDeliveryEnvelope.parseStoredReceipt(payload)
       _ = try outbox.acknowledgeVerified(identity: identity, messageID: receipt.messageID,
         wireHash: receipt.wireHash, now: now, transaction: token)
