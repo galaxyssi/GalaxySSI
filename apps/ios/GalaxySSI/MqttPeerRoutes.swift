@@ -238,7 +238,8 @@ final class MqttPeerRoutes {
     return await pool.publish(publication, brokerID: packet.ingress.brokerID).accepted
   }
 
-  func publishIngressReply(_ packet: VerifiedPacket, payload: [String: Any]) async throws -> Bool {
+  func publishIngressReply(_ packet: VerifiedPacket, payload: [String: Any],
+                           stillValid: @escaping () throws -> Bool = { true }) async throws -> Bool {
     let publication = try withCurrentIdentity(packet) { identity in
       guard let peer = peers[identity.scope] else { throw MqttRouteError.identityChanged }
       let binding = peer.binding
@@ -246,7 +247,9 @@ final class MqttPeerRoutes {
         generation: packet.ingress.generation, receiveTopics: binding.receiveTopics,
         secretFingerprint: binding.secretFingerprint, authorized: { [weak self, weak peer] in
           guard let self, let peer else { return false }
-          return self.locked { self.current(peer, binding: binding) && self.isCurrent(packet) }
+          return self.locked {
+            self.current(peer, binding: binding) && self.isCurrent(packet) && (try? stillValid()) == true
+          }
         })
     }
     return await pool.publish(publication, brokerID: packet.ingress.brokerID).accepted
@@ -259,6 +262,17 @@ final class MqttPeerRoutes {
             topics.isSubset(of: peer.binding.sendTopics),
             try MqttBusinessIdentity(peer.binding) == identity else { throw MqttRouteError.identityChanged }
       return try commit()
+    }
+  }
+
+  // The journal's identity owns the ciphertext; an expired rotating topic is not a new recipient.
+  func withPendingTopic<T>(identity: MqttBusinessIdentity, storedTopic: String, commit: (String) throws -> T) throws -> T {
+    try locked {
+      guard let peer = peers[identity.scope], peer.active, peer.binding.enabled,
+            try MqttBusinessIdentity(peer.binding) == identity else { throw MqttRouteError.identityChanged }
+      if identity.scope.hasPrefix("direct:") { return try commit(peer.binding.sendTopic) }
+      guard peer.binding.sendTopics.contains(storedTopic) else { throw MqttRouteError.identityChanged }
+      return try commit(storedTopic)
     }
   }
 

@@ -79,7 +79,7 @@ actor MqttDeliveryDispatch {
           (1...MqttRouteProtocol.packetBytes).contains(delivery.sizeBound) else { throw Failure.unavailable }
     _ = try Self.packetBytes(topic: topic, payloadBytes: 1)
     let key = Key(peer: delivery.peer, message: delivery.message)
-    if let old = jobs[key], expired(old, at: at) { retire(old) }
+    if let old = jobs[key], old.topic != topic || expired(old, at: at) { retire(old) }
     if let old = jobs[key] { return old.token }
     guard !jobs.values.contains(where: {
       $0.key.peer == delivery.peer && $0.key.message.messageID == delivery.message.messageID && $0.key.message != delivery.message

@@ -233,10 +233,15 @@ enum AgentDesktopToolEvidenceWire {
     }
 
     private func matches(_ response: AgentMcpJSONObject, authenticatedDesktopId: String, mode: String) -> Bool {
-      authenticatedDesktopId == binding.desktopId &&
+      matchesTransportResponse(response, authenticatedDesktopId: authenticatedDesktopId, mode: mode) &&
+        response.string("status") == "ready"
+    }
+
+    func matchesTransportResponse(_ response: AgentMcpJSONObject, authenticatedDesktopId: String, mode: String) -> Bool {
+      ["index", "page"].contains(mode) && authenticatedDesktopId == binding.desktopId &&
         response.string("type") == "agent_task_evidence" &&
         response.string("contract") == AgentDesktopToolEvidenceWire.contract &&
-        response.string("mode") == mode && response.string("status") == "ready" &&
+        response.string("mode") == mode &&
         response.string("request_id") == nonce && response["execution_generation"] == .int(generation) &&
         binding.fields.allSatisfy { response[$0.key] == .string($0.value) }
     }
@@ -473,7 +478,8 @@ final class AgentDesktopResultRecovery {
           payload.string("task_status") == record.status,
           AgentDesktopReplyRecovery.integer(payload["execution_generation"], minimum: 1) == record.generation,
           let sequence = AgentDesktopReplyRecovery.integer(payload["status_sequence"], minimum: 0),
-          sequence >= record.sequence || record.acceptedReply?.receipt.resultSHA256 == manifest.digest else { return nil }
+          sequence >= record.sequence ||
+            (record.acceptedReply ?? record.pinnedTeamReply)?.receipt.resultSHA256 == manifest.digest else { return nil }
     payload["desktop_id"] = record.binding.desktopId
     payload["result_recovery"] = ["sha256": manifest.digest]
     if payload.string("message_id").isEmpty { payload["message_id"] = "recovered:\(record.binding.key):\(manifest.digest)" }

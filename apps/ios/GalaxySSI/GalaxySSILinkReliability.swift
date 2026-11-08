@@ -174,6 +174,7 @@ struct KnownLinkCiphertext: Codable, Equatable {
   var createdAt: Date
   var contactReminder: Bool? = nil
   var authenticationRef: String? = nil
+  var storedWireHash: String? = nil
 }
 
 enum IncomingStageResult: Equatable {
@@ -1142,7 +1143,9 @@ final class GalaxySSILinkDeliveryStore {
     return true
   }
 
-  func stageIncoming(messageId: String, payload: String, now: Date = Date()) -> IncomingStageResult {
+  // A verified phone receipt requires the inbox row and its exact ciphertext proof in one save.
+  func stageIncoming(messageId: String, payload: String, phoneAuthenticationRef: String? = nil,
+                     now: Date = Date()) -> IncomingStageResult {
     guard journalHealthy, !messageId.isEmpty, !payload.isEmpty else { return .invalid }
     prune(now: now)
     if state.completedInboxIds.contains(messageId) {
@@ -1152,6 +1155,21 @@ final class GalaxySSILinkDeliveryStore {
       return .pending
     }
     let previous = state.pendingIncoming
+    let previousBindings = state.ciphertextBindings
+    if let phoneAuthenticationRef {
+      guard !phoneAuthenticationRef.isEmpty, (try? MqttDeliveryEnvelope.checkedText(messageId)) != nil,
+            let wire = (try? JSONSerialization.jsonObject(with: Data(payload.utf8))) as? [String: Any],
+            let wireHash = try? MqttDeliveryEnvelope.contentHash(wire) else { return .invalid }
+      let digest = GalaxySSILinkCiphertextReplayPolicy.digest(wire: wire)
+      guard state.ciphertextBindings[digest] == nil else { return .invalid }
+      state.ciphertextBindings[digest] = KnownLinkCiphertext(messageId: messageId, receiptRequired: true,
+        createdAt: now, authenticationRef: phoneAuthenticationRef, storedWireHash: wireHash)
+      trimCiphertextBindings(now: now)
+      guard state.ciphertextBindings[digest]?.storedWireHash == wireHash else {
+        state.ciphertextBindings = previousBindings
+        return .invalid
+      }
+    }
     state.pendingIncoming[messageId] = PendingIncomingLinkMessage(
       messageId: messageId,
       payload: payload,
@@ -1160,6 +1178,7 @@ final class GalaxySSILinkDeliveryStore {
     trimPendingIncoming()
     guard state.pendingIncoming[messageId] != nil, save() else {
       state.pendingIncoming = previous
+      state.ciphertextBindings = previousBindings
       return .invalid
     }
     return .staged
@@ -1210,6 +1229,14 @@ final class GalaxySSILinkDeliveryStore {
           binding.contactReminder == true || state.pendingIncoming[binding.messageId] != nil ||
             state.completedInboxIds.contains(binding.messageId) else { return nil }
     return binding
+  }
+
+  func authenticatedPhoneStoredHash(messageId: String, digest: String, authenticationRef: String?,
+                                    wireHash: String?, now: Date = Date()) -> String? {
+    guard let authenticationRef, let wireHash,
+          let proof = authenticatedCiphertextProof(digest: digest, authenticationRef: authenticationRef, now: now),
+          proof.messageId == messageId, proof.receiptRequired, proof.storedWireHash == wireHash else { return nil }
+    return wireHash
   }
 
   func messageForCiphertext(digest: String, now: Date = Date()) -> KnownLinkCiphertext? {

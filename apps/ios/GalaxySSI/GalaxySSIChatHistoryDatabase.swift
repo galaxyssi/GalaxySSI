@@ -430,9 +430,10 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
 
   // Only chat-message completions belong here. Task and attachment receipts need their own
   // durable writers; never silently consume them as a successful chat update.
-  func persistTransportDelivery(_ event: MqttDeliveryCompletions.Event) throws -> ChatMessage {
+  func persistTransportDelivery(_ event: MqttDeliveryCompletions.Event, messageContactID: String? = nil) throws -> ChatMessage {
     let source = event.sourceMessageID.isEmpty ? event.messageID : event.sourceMessageID
-    guard let id = UUID(uuidString: source), !event.contactID.isBlank,
+    let contactID = messageContactID ?? event.contactID
+    guard let id = UUID(uuidString: source), !contactID.isBlank,
           event.attachmentTransferID.isEmpty, event.traffic == MqttMultipathPolicy.Traffic.message.rawValue else {
       throw MqttRouteError.invalidPayload
     }
@@ -445,10 +446,10 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
             execute("BEGIN IMMEDIATE TRANSACTION") else { throw MqttChunkStorageError.databaseFailure }
       var committed = false
       defer { if !committed { _ = execute("ROLLBACK") } }
-      if try isLocallyDeleted(contactId: event.contactID, messageId: id.uuidString, remoteMessageId: "", isMine: true) {
+      if try isLocallyDeleted(contactId: contactID, messageId: id.uuidString, remoteMessageId: "", isMine: true) {
         throw GalaxySSIChatHistoryError.locallyDeleted
       }
-      guard var saved = message(id: id), saved.contactId == event.contactID, saved.isMine else {
+      guard var saved = message(id: id), saved.contactId == contactID, saved.isMine else {
         throw MqttRouteError.invalidPayload
       }
       if saved.deliveryStatus != .read { saved.deliveryStatus = .delivered }

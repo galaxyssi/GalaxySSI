@@ -23,6 +23,7 @@ struct AgentManagedResponseRecord: Codable, Equatable {
   var response: AgentConnectorResponse?
   var createdAtMillis: Int64
   var completedAtMillis: Int64
+  var desktopResultReceipt: AgentResultReceipt? = nil
 
   init(
     ownerRunId: String,
@@ -73,6 +74,7 @@ struct AgentManagedResponseRecord: Codable, Equatable {
     case response
     case createdAtMillis = "created_at_millis"
     case completedAtMillis = "completed_at_millis"
+    case desktopResultReceipt = "desktop_result_receipt"
   }
 
   init(from decoder: Decoder) throws {
@@ -93,6 +95,7 @@ struct AgentManagedResponseRecord: Codable, Equatable {
       createdAtMillis: try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? 0,
       completedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .completedAtMillis) ?? 0
     )
+    desktopResultReceipt = try container.decodeIfPresent(AgentResultReceipt.self, forKey: .desktopResultReceipt)
   }
 
   func correlates(_ response: AgentConnectorResponse) -> Bool {
@@ -111,6 +114,13 @@ struct AgentManagedResponseRecord: Codable, Equatable {
 
   func isStale(nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)) -> Bool {
     state == .applied && max(createdAtMillis, completedAtMillis) < nowMillis - Self.maxAgeMillis
+  }
+
+  func matchesCommittedResult(_ candidate: AgentConnectorResponse) -> Bool {
+    guard state != .pending, let response else { return false }
+    var compared = candidate
+    compared.receivedAtMillis = response.receivedAtMillis
+    return compared == response
   }
 
   static let maxAgeMillis: Int64 = 7 * 24 * 60 * 60 * 1_000
@@ -301,7 +311,7 @@ enum AgentManagedResponseCodec {
         sourceMessageId > 0 else {
         return nil
       }
-      return AgentManagedResponseRecord(
+      var record = AgentManagedResponseRecord(
         ownerRunId: ownerRunId,
         supervisorRunId: object.string("supervisor_run_id"),
         agentId: object.string("agent_id"),
@@ -317,11 +327,17 @@ enum AgentManagedResponseCodec {
         createdAtMillis: object.int64("created_at_millis"),
         completedAtMillis: object.int64("completed_at_millis")
       )
+      if let receipt = object["desktop_result_receipt"], receipt != .null {
+        guard let decoded = try? JSONDecoder().decode(AgentResultReceipt.self,
+          from: Data(AgentMcpJSONCodec.stringify(receipt).utf8)) else { return nil }
+        record.desktopResultReceipt = decoded
+      }
+      return record
     }
   }
 
   private static func recordObject(_ record: AgentManagedResponseRecord) -> AgentMcpJSONValue {
-    .object([
+    var object: AgentMcpJSONObject = [
       "owner_run_id": .string(record.ownerRunId),
       "supervisor_run_id": .string(record.supervisorRunId),
       "agent_id": .string(record.agentId),
@@ -336,7 +352,12 @@ enum AgentManagedResponseCodec {
       "response": record.response.map { .object(responseObject($0)) } ?? .null,
       "created_at_millis": .int(record.createdAtMillis),
       "completed_at_millis": .int(record.completedAtMillis)
-    ])
+    ]
+    if let receipt = record.desktopResultReceipt, let encoded = try? JSONEncoder().encode(receipt),
+       let value = try? JSONDecoder().decode(AgentMcpJSONValue.self, from: encoded) {
+      object["desktop_result_receipt"] = value
+    }
+    return .object(object)
   }
 
   private static func responseObject(_ response: AgentConnectorResponse) -> AgentMcpJSONObject {

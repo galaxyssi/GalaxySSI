@@ -161,6 +161,8 @@ final class GalaxySSISignalEngine {
     return identityKeySignature(payload)?.base64EncodedString()
   }
 
+  func retireLegacyOwner() { store.retireLegacyOwner() }
+
   func verifyPairedDesktopSignature(
     _ payload: Data, signature: String, envelope: [String: Any], link: ServerLink
   ) -> Bool {
@@ -359,7 +361,8 @@ final class GalaxySSISignalEngine {
           throw MqttChunkStorageError.alreadyDelivered
         }
         if let existing = try journal.outbox.entry(identity: request.identity, messageID: request.messageID, transaction: token) {
-          guard existing.requestHash == hash, existing.traffic == request.traffic.rawValue, request.matches(existing.message) else {
+          guard try request.matchesIntent(existing.requestHash, storedTopic: existing.message.topic),
+                existing.traffic == request.traffic.rawValue, request.matches(existing.message, allowRotatedTopic: true) else {
             throw MqttChunkStorageError.corruptState
           }
           return existing
@@ -419,7 +422,7 @@ final class GalaxySSISignalEngine {
     let payload = try request.applicationPayload()
     guard journal != nil, request.traffic == .control, request.attachmentDependencies.isEmpty,
           request.identity.local == Self.sha256(store.identityKeyPair.publicKey.serialize()),
-          ["agent_task_recovery_request", "agent_task_result_page_request"].contains(payload.string("type")),
+          ["agent_task_recovery_request", "agent_task_result_page_request", "agent_task_evidence_request"].contains(payload.string("type")),
           payload.string("request_id") == request.messageID, request.payload.count <= 16_384 else {
       throw MqttRouteError.invalidPayload
     }
@@ -429,9 +432,22 @@ final class GalaxySSISignalEngine {
     }
   }
 
-  // A lost receipt is replayed by a peer probe, not placed in the business outbox.
+  func makePairingRevocationWire(_ request: MqttSignalSendRequest) throws -> Data {
+    let payload = try request.applicationPayload()
+    guard journal != nil, request.traffic == .control, request.attachmentDependencies.isEmpty,
+          request.identity.local == Self.sha256(store.identityKeyPair.publicKey.serialize()),
+          request.payload.count <= 2_048, payload.string("type") == "client_revoked",
+          payload.string("reason") == "forgotten_by_client", payload.string("desktop_id") == request.remoteName,
+          request.clientRouteID == payload.string("client_route_id") else { throw MqttRouteError.invalidPayload }
+    return try store.transaction { token in
+      guard token != nil else { throw MqttChunkStorageError.databaseFailure }
+      return Data(try outgoingWire(request, now: Date()).utf8)
+    }
+  }
+
+  // A peer replay can regenerate this receipt without putting it in the business outbox.
   func makeStoredReceiptWire(identity: MqttBusinessIdentity, messageID: String, wireHash: String,
-                             remoteName: String) throws -> [String: Any]? {
+                             remoteName: String, peerChat: Bool = false) throws -> [String: Any]? {
     guard let journal, identity.local == Self.sha256(store.identityKeyPair.publicKey.serialize()) else {
       throw MqttRouteError.identityChanged
     }
@@ -445,7 +461,11 @@ final class GalaxySSISignalEngine {
       let id = UUID().uuidString
       var receipt = try MqttDeliveryEnvelope.storedReceipt(messageID: messageID, wireHash: wireHash)
       receipt["message_id"] = id
+      receipt["source_message_id"] = messageID
+      receipt["sender"] = "system"
+      if peerChat { receipt["peer_chat"] = true }
       let now = Date()
+      receipt["time"] = Int64(now.timeIntervalSince1970 * 1000)
       let envelope = try GalaxySSILinkProtocol.makeEnvelope(payload: receipt, sourceId: localName, targetId: remoteName, now: now)
       var wire = try encryptPayload(GalaxySSILinkProtocol.jsonData(envelope), remoteName: remoteName, deviceID: 1, now: now)
       wire["message_id"] = id
@@ -617,6 +637,7 @@ final class GalaxySSISignalEngine {
        secrets: GalaxySSISecretStore = KeychainSecretStore.shared) throws { throw MqttRouteError.invalidPayload }
   var identity: GalaxySSISignalIdentity { GalaxySSISignalIdentity(name: "", fingerprint: "", publicKey: "", bundle: nil) }
   func signContactCard(_ payload: Data) -> String? { nil }
+  func retireLegacyOwner() {}
   func verifyPairedDesktopSignature(
     _ payload: Data, signature: String, envelope: [String: Any], link: ServerLink
   ) -> Bool { false }
@@ -642,8 +663,9 @@ final class GalaxySSISignalEngine {
   }
   func encrypt(_ payload: [String: Any], remoteName: String, deviceId: UInt32 = 1) -> [String: Any]? { nil }
   func makeRecoveryQueryWire(_ request: MqttSignalSendRequest) throws -> Data { throw MqttRouteError.invalidPayload }
+  func makePairingRevocationWire(_ request: MqttSignalSendRequest) throws -> Data { throw MqttRouteError.invalidPayload }
   func makeStoredReceiptWire(identity: MqttBusinessIdentity, messageID: String, wireHash: String,
-                             remoteName: String) throws -> [String: Any]? { throw MqttRouteError.invalidPayload }
+                             remoteName: String, peerChat: Bool = false) throws -> [String: Any]? { throw MqttRouteError.invalidPayload }
   func encryptAndEnqueue(_ request: MqttSignalSendRequest, now: Date = Date()) throws -> MqttBusinessOutbox.Entry { throw MqttRouteError.invalidPayload }
   func enqueueBatch(_ requests: [MqttSignalSendRequest], now: Date = Date()) throws -> [MqttBusinessOutbox.Entry] { throw MqttRouteError.invalidPayload }
   func prepareFirstSend(identity: MqttBusinessIdentity, messageID: String, validatedNetwork: Bool,

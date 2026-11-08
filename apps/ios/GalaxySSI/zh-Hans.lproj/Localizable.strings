@@ -6545,6 +6545,17 @@
 "attention_topic_evaluation_science_title" = "评测与科学验证";
 "attention_topic_evaluation_science_scope" = "新基准、数据集、对照实验方法、失败案例、评测污染和可复现性问题";
 
+"galaxyssi.mqtt.cutover_title" = "试用新 MQTT";
+"galaxyssi.mqtt.cutover_confirm" = "下次启动时启用新 MQTT？";
+"galaxyssi.mqtt.cutover_activate" = "启用";
+"galaxyssi.mqtt.cutover_warning" = "启用后当前账号无法切回旧协议。暂不支持新配对或撤销后重新配对 Desktop，部分其他 Link 操作也暂不可用。";
+"galaxyssi.mqtt.cutover_legacy" = "旧协议";
+"galaxyssi.mqtt.cutover_requested" = "等待重启";
+"galaxyssi.mqtt.cutover_deferred" = "暂未启用";
+"galaxyssi.mqtt.cutover_active" = "已启用";
+"galaxyssi.mqtt.cutover_blocked" = "传输不可用";
+"galaxyssi.mqtt.desktop_revoked" = "Desktop 已撤销配对。";
+
 "galaxyssi.health.care.series_title" = "测量历史";
 "galaxyssi.health.care.series_notice" = "数值相近不代表临床稳定。";
 "galaxyssi.health.care.series_more" = "更早的测量";
