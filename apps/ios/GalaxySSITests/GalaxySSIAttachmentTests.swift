@@ -1399,6 +1399,49 @@ final class GalaxySSIAttachmentTests: XCTestCase {
     )
   }
 
+  func testDurablePeerAttachmentRetriesOutOfOrderAndReplaysStoredWithoutRewriting() throws {
+    let root = temporaryIncomingTransferRoot()
+    defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+    let routes = GalaxySSILinkRoutes(clientRouteId: String(repeating: "e", count: 22),
+      linkSecret: String(repeating: "f", count: 43), localFingerprint: String(repeating: "1", count: 64),
+      remoteFingerprint: String(repeating: "2", count: 64))
+    let bytes = Data("durable attachment".utf8)
+    let digest = AgentAttachmentTransferProtocol.sha256(bytes)
+    let cipher = GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let store = AgentIncomingAttachmentTransferStore(rootURL: root, cipher: cipher)
+    let manifest: [String: Any] = ["type": "input_attachment_manifest", "transfer_id": digest, "sha256": digest,
+      "size_bytes": bytes.count, "chunk_count": 1, "client_route_id": routes.clientRouteId, "contact_id": "local",
+      "client_message_id": "message", "name": "file.txt", "eager_chunks": true]
+    var chunk = manifest
+    chunk["type"] = "input_attachment_chunk"
+    chunk["chunk_index"] = 0
+    chunk["chunk_size"] = bytes.count
+    chunk["chunk_sha256"] = digest
+    chunk["data_b64"] = bytes.base64EncodedString()
+    func ingest(_ payload: [String: Any], source: String = "remote") throws -> [String: Any]? {
+      try store.ingestDurably(payload: payload, sourceId: source, localGalaxySSIId: "local", routes: routes)
+    }
+    XCTAssertThrowsError(try ingest(chunk))
+    XCTAssertNil(try ingest(manifest))
+    XCTAssertThrowsError(try ingest(manifest, source: "other-peer"))
+    XCTAssertEqual(try ingest(chunk)?["status"] as? String, "stored")
+    let descriptor: [String: Any] = ["transfer_id": digest, "sha256": digest, "size": bytes.count,
+      "uri": "https://example.invalid/untrusted", "artifact_id": "untrusted"]
+    let message = ["attachments": [descriptor]]
+    let resolved = try XCTUnwrap(store.resolveMessageAttachments(sourceId: "remote", payload: message,
+      routes: routes, localGalaxySSIId: "local")?.first)
+    let url = try XCTUnwrap(URL(string: resolved.string("uri")))
+    XCTAssertTrue(url.isFileURL)
+    XCTAssertNil(resolved["artifact_id"])
+    XCTAssertNil(store.resolveMessageAttachments(sourceId: "remote", payload: message, routes: routes, localGalaxySSIId: "different"))
+    let before = try Data(contentsOf: url)
+    let reopened = AgentIncomingAttachmentTransferStore(rootURL: root, cipher: cipher)
+    XCTAssertEqual(try reopened.ingestDurably(payload: chunk, sourceId: "remote", localGalaxySSIId: "local",
+      routes: routes)?["status"] as? String, "stored")
+    XCTAssertEqual(try Data(contentsOf: url), before)
+    XCTAssertEqual(try cipher.read(from: url, purpose: "incoming-data:\(digest)"), bytes)
+  }
+
   func testDeletingPeerAttachmentRemovesOnlyPrivateTransferCopies() throws {
     let root = temporaryIncomingTransferRoot()
     let container = root.deletingLastPathComponent()

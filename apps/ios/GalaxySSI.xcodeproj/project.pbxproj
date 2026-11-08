@@ -73,6 +73,9 @@
     F13234000000000000000042 /* MqttDeliveryCompletionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000042 /* MqttDeliveryCompletionsTests.swift */; };
     F13234000000000000000043 /* MqttBusinessReceipts.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000043 /* MqttBusinessReceipts.swift */; };
     F13234000000000000000044 /* MqttBusinessSendDrain.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000044 /* MqttBusinessSendDrain.swift */; };
+    A1000000000000000000F345 /* MqttBusinessTransportRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F345 /* MqttBusinessTransportRuntime.swift */; };
+    A1000000000000000000F346 /* MqttPeerChatProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F346 /* MqttPeerChatProjection.swift */; };
+    A1000000000000000000F347 /* MqttDesktopConnectorProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F347 /* MqttDesktopConnectorProjection.swift */; };
     F13228000000000000000001 /* AgentReplyUnreadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23228000000000000000001 /* AgentReplyUnreadStore.swift */; };
     F13228000000000000000002 /* GalaxySSIConversationFocusProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23228000000000000000002 /* GalaxySSIConversationFocusProbe.swift */; };
     F13228000000000000000003 /* AgentReplyUnreadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23228000000000000000003 /* AgentReplyUnreadTests.swift */; };
@@ -1297,6 +1300,9 @@
     F23234000000000000000042 /* MqttDeliveryCompletionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttDeliveryCompletionsTests.swift; sourceTree = "<group>"; };
     F23234000000000000000043 /* MqttBusinessReceipts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttBusinessReceipts.swift; sourceTree = "<group>"; };
     F23234000000000000000044 /* MqttBusinessSendDrain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttBusinessSendDrain.swift; sourceTree = "<group>"; };
+    A2000000000000000000F345 /* MqttBusinessTransportRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttBusinessTransportRuntime.swift; sourceTree = "<group>"; };
+    A2000000000000000000F346 /* MqttPeerChatProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttPeerChatProjection.swift; sourceTree = "<group>"; };
+    A2000000000000000000F347 /* MqttDesktopConnectorProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttDesktopConnectorProjection.swift; sourceTree = "<group>"; };
     F23228000000000000000001 /* AgentReplyUnreadStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReplyUnreadStore.swift; sourceTree = "<group>"; };
     F23228000000000000000002 /* GalaxySSIConversationFocusProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIConversationFocusProbe.swift; sourceTree = "<group>"; };
     F23228000000000000000003 /* AgentReplyUnreadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReplyUnreadTests.swift; sourceTree = "<group>"; };
@@ -2530,6 +2536,9 @@
         F23234000000000000000041 /* MqttDeliveryCompletions.swift */,
         F23234000000000000000043 /* MqttBusinessReceipts.swift */,
         F23234000000000000000044 /* MqttBusinessSendDrain.swift */,
+        A2000000000000000000F345 /* MqttBusinessTransportRuntime.swift */,
+        A2000000000000000000F346 /* MqttPeerChatProjection.swift */,
+        A2000000000000000000F347 /* MqttDesktopConnectorProjection.swift */,
         F23228000000000000000001 /* AgentReplyUnreadStore.swift */,
         F23228000000000000000002 /* GalaxySSIConversationFocusProbe.swift */,
         F22678000000000000000002 /* AgentReplySpeechRuntime.swift */,
@@ -4155,6 +4164,9 @@
         F13234000000000000000041 /* MqttDeliveryCompletions.swift in Sources */,
         F13234000000000000000043 /* MqttBusinessReceipts.swift in Sources */,
         F13234000000000000000044 /* MqttBusinessSendDrain.swift in Sources */,
+        A1000000000000000000F345 /* MqttBusinessTransportRuntime.swift in Sources */,
+        A1000000000000000000F346 /* MqttPeerChatProjection.swift in Sources */,
+        A1000000000000000000F347 /* MqttDesktopConnectorProjection.swift in Sources */,
         F13228000000000000000001 /* AgentReplyUnreadStore.swift in Sources */,
         F13228000000000000000002 /* GalaxySSIConversationFocusProbe.swift in Sources */,
         F12678000000000000000002 /* AgentReplySpeechRuntime.swift in Sources */,

@@ -445,6 +445,9 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
             execute("BEGIN IMMEDIATE TRANSACTION") else { throw MqttChunkStorageError.databaseFailure }
       var committed = false
       defer { if !committed { _ = execute("ROLLBACK") } }
+      if try isLocallyDeleted(contactId: event.contactID, messageId: id.uuidString, remoteMessageId: "", isMine: true) {
+        throw GalaxySSIChatHistoryError.locallyDeleted
+      }
       guard var saved = message(id: id), saved.contactId == event.contactID, saved.isMine else {
         throw MqttRouteError.invalidPayload
       }

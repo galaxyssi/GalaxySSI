@@ -14152,6 +14152,28 @@ final class MessageCoordinator: ObservableObject {
     return wire.messageId
   }
 
+  func makeJournalBackedMqttRuntime(journal: MqttSignalStateJournal, routeState: MqttRouteState,
+                                    pool: GalaxySSIMqttBrokerPool = .init(),
+                                    onFailure: @escaping @MainActor (Error) -> Void = { _ in }) throws -> MqttBusinessTransportRuntime {
+    let connector = MqttDesktopConnectorProjection(store: store, identities: taskIdentityStore,
+      commitResponse: { [weak self] response, _ in
+        guard let self else { throw MqttDeliveryDispatch.Failure.unavailable }
+        if self.connectorResponseBus.isTerminal(response) { return }
+        let managed = try self.managedDesktopReplyLedger.ownsResponse(response)
+        if managed, let record = try self.managedDesktopReplyLedger.recoveryRecord(matching: response),
+           record.ownerRunId.hasPrefix(AgentPairedPhonePlannerRoute.ownerPrefix) {
+          throw MqttDeliveryDispatch.Failure.unavailable
+        }
+        let applied = self.connectorResponseBus.publish(response)
+        let committed = managed ? self.managedDesktopResultIsCommitted(response) :
+          applied || self.connectorResponseBus.wasRecorded(response)
+        guard committed else { throw MqttChunkStorageError.databaseFailure }
+      })
+    return try MqttBusinessTransportRuntime(peerChatStore: store, localFingerprint: signalEngine.identity.fingerprint,
+      journal: journal, routeState: routeState, pool: pool, incomingAttachments: incomingAttachmentTransferStore,
+      outgoingAttachments: attachmentTransferStore, desktopConnector: connector, onFailure: onFailure)
+  }
+
   func linkWirePayload(
     _ payload: [String: Any],
     link: ServerLink,

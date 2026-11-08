@@ -45,10 +45,15 @@ final class MqttOutgoingChunks {
   private let now: () -> Int64
   private let limits: Limits
 
-  init(fileURL: URL, secrets: GalaxySSISecretStore = KeychainSecretStore.shared, limits: Limits = Limits(),
+  convenience init(fileURL: URL, secrets: GalaxySSISecretStore = KeychainSecretStore.shared, limits: Limits = Limits(),
+       now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) throws {
+    try self.init(database: MqttChunkDatabase(fileURL: fileURL, secrets: secrets), limits: limits, now: now)
+  }
+
+  init(database: MqttChunkDatabase, limits: Limits = Limits(),
        now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) throws {
     guard limits.transfers > 0, limits.peerTransfers > 0 else { throw MqttChunkStorageError.capacityExceeded }
-    self.database = try MqttChunkDatabase(fileURL: fileURL, secrets: secrets)
+    self.database = database
     self.now = now
     self.limits = limits
   }
@@ -123,6 +128,17 @@ final class MqttOutgoingChunks {
       row.paths[index] |= UInt8(1 << bit)
       try save(row)
       return true
+    }
+  }
+
+  func permits(authenticatedScope: String, query: MqttChunkReceipts.Query, index: Int) throws -> Bool {
+    guard index == -1 || (0..<query.count).contains(index) else { return false }
+    let scope = try scopeKey(authenticatedScope)
+    return try database.transaction {
+      guard let row = try read(scope: scope, transfer: query.transfer), row.expiresAt > (try timestamp()),
+            row.manifest == query.manifest, row.count == query.count, row.request == query.request else { return false }
+      if index == -1 { return true }
+      return row.bitmap[index / 8] & UInt8(1 << (index % 8)) == 0
     }
   }
 
