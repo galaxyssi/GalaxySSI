@@ -67,6 +67,14 @@ class AgentStartupRecoveryTest {
         assertEquals(1, dispatches)
     }
 
+    @Test fun failedCloudReconciliationCannotRestampSessionsOrDispatch() {
+        val calls = mutableListOf<String>()
+        val sequence = AgentStartupRecoverySequence(reconcileCloud = { calls += "cloud"; error("Inbox unavailable") },
+            reconcile = { calls += "sessions" }, dispatch = { calls += "dispatch" })
+        assertThrows(IllegalStateException::class.java) { sequence.run() }
+        assertEquals(listOf("cloud"), calls)
+    }
+
     @Test fun terminalAndExplicitlyPausedSessionsCannotResumeFromStaleWorkspace() {
         val interrupted = AgentActionResult("agent-interrupted", false, "Previous interruption")
         listOf(AgentPhase.COMPLETED, AgentPhase.CANCELLED, AgentPhase.FAILED).forEach { phase ->
