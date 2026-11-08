@@ -52,9 +52,17 @@ enum GalaxySSIHealthCareTarget {
   }
 
   static func basis(_ concern: GalaxySSIHealthCare.Concern) throws -> String {
-    AgentModelLoopRecoveryIdentity.sha256([
+    var context = concern.context?.applicability.rawValue ?? ""
+    if let answers = concern.context?.answers {
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys]
+      context += ":" + AgentModelLoopRecoveryIdentity.sha256([
+        "answers": String(decoding: try encoder.encode(answers), as: UTF8.self)
+      ])
+    }
+    return AgentModelLoopRecoveryIdentity.sha256([
       "assessment": try GalaxySSIHealthCare.inputDigest(concern.assessment),
-      "context": concern.context?.applicability.rawValue ?? ""
+      "context": context
     ])
   }
 

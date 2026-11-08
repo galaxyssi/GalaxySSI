@@ -7,6 +7,23 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HealthCareStoreDeviceTest {
+    @Test fun savedContextRemainsKnownAfterReopenWithoutFillingUnknownFields(): Unit = fixture { names, store ->
+        val issue = add(store)
+        val answers = HealthCareContext(issue.assessment.record!!, adult = HealthCareTruth.YES,
+            diagnosedDiabetes = HealthCareTruth.NO, specimen = HealthCareSpecimen.HOME_CAPILLARY,
+            illnessOrMedication = HealthCareTruth.NO, confirmedAt = now)
+        store.confirmContext(issue.id, issue.revision, answers)
+        HealthCareStore(context, names.care).use { reopened ->
+            val saved = reopened.concern(issue.id)!!
+            val result = org.json.JSONObject(HealthCareDiscussionPolicy.snapshot(saved)).getJSONObject("clarification_context")
+            assertEquals(4, result.getJSONObject("known_answers").length())
+            assertEquals("NO", result.getJSONObject("known_answers").getString("diagnosed_diabetes"))
+            val missing = result.getJSONArray("unconfirmed_fields")
+            assertEquals(setOf("pregnant", "fasting_hours"), (0 until missing.length()).map(missing::getString).toSet())
+            assertEquals(answers, saved.context)
+            assertTrue(saved.actions.isEmpty()); assertNull(reopened.nextReminder())
+        }
+    }
     @Test fun discussionOpensPrivateAndResumesWithoutSendingAQuestion(): Unit = fixture { names, store ->
         val issue = add(store)
         val transcript = AgentTranscriptStore(context)

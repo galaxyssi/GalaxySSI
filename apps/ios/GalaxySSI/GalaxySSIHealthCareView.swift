@@ -29,7 +29,9 @@ struct GalaxySSIHealthCareView: View {
             rows(concerns.filter { $0.id != priorityID && [.verify, .evidence, .reassess].contains($0.stage) })
           }
           Section(t("follow_up", "Improvement and follow-up")) {
-            rows(concerns.filter { $0.id != priorityID && [.maintenance, .paused, .closed].contains($0.stage) })
+            rows(concerns.filter {
+              $0.id != priorityID && [.reviewPlan, .waitingResults, .maintenance, .paused, .closed].contains($0.stage)
+            })
           }
           Section(t("sources", "Trends and originals")) {
             NavigationLink(t("trends", "Measurement trends")) { GalaxySSIHealthTrendView(records: records) }
@@ -262,7 +264,7 @@ struct GalaxySSIHealthCareEntry: View {
 
   private func nextStep(_ stage: GalaxySSIHealthCare.Stage) -> String {
     switch stage {
-    case .verify, .evidence:
+    case .verify, .evidence, .reviewPlan, .waitingResults:
       return GalaxySSIHealthCareText.stage(stage, language: language)
     case .reassess:
       return t("agent.next_reassess", "Review what changed in the recorded results")
@@ -391,6 +393,7 @@ private struct GalaxySSIHealthCareDetail: View {
           }
           if hasMore { Button(t("more", "Show more")) { loadHistory(append: true) } }
         }
+        GalaxySSIHealthCarePlansSection(records: records, concernID: id)
         Button(t("remove", "Delete concern"), role: .destructive) {
           deletionCandidate = concern
           confirmingDelete = true
@@ -518,6 +521,8 @@ enum GalaxySSIHealthCareText {
     switch stage {
     case .verify: label = "Verify context"
     case .evidence: label = "Review evidence"
+    case .reviewPlan: label = "Review plan"
+    case .waitingResults: label = "Waiting for results"
     case .reassess: label = "Reassess"
     case .maintenance: label = "Maintenance"
     case .paused: label = "Paused"

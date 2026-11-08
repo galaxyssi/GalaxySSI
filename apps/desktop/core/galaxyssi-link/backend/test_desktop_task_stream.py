@@ -95,6 +95,27 @@ class FakeTaskStream:
 
 
 class DesktopTaskStreamTests(unittest.IsolatedAsyncioTestCase):
+    async def test_progress_does_not_read_database_on_executor_and_coalesces_to_final(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manager = AgentTaskManager(state_path=Path(temp_dir) / "tasks.sqlite3")
+            with patch.object(manager, "public_preview", wraps=manager.public_preview) as preview:
+                def progress_burst():
+                    task = manager.create_external("codex", "codex", "desktop:burst", "Question",
+                        lambda _snapshot: None, task_id="burst")
+                    for index in range(8):
+                        manager.add_event(task.task_id, "progress", str(index), status="running")
+                    manager.update(task.task_id, "completed", result="Final answer")
+                    preview.assert_not_called()
+
+                stream = FakeTaskStream(manager, on_snapshot=progress_burst)
+                with patch.object(main, "agent_task_manager", manager), \
+                        patch.object(main, "_desktop_evolution_manager", return_value=FakeEvolutionManager()), \
+                        patch.dict(os.environ, {"GALAXYSSI_DESKTOP_TASK_STREAM_TOKEN": "stream-test-token"}):
+                    await main.desktop_task_stream(stream)
+                preview.assert_called_once_with("burst", include_prompt=True)
+                self.assertEqual("completed", stream.messages[1]["task"]["status"])
+                self.assertEqual("Final answer", stream.messages[1]["task"]["result"])
+
     async def test_stream_sends_large_task_preview_instead_of_complete_output(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             manager = AgentTaskManager(state_path=Path(temp_dir) / "tasks.sqlite3")

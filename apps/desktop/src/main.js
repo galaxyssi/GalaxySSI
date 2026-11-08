@@ -347,7 +347,6 @@ async function runUiSmoke() {
         const originalConversationId = state.currentConversationId;
         const originalEmptyIntent = state.emptyConversationIntent;
         const originalHiddenIds = new Set(state.hiddenEvolutionConversationIds);
-        const originalConfirm = window.confirm;
         const now = Date.now();
         state.tasks = ["one", "two"].map((suffix, index) => ({
           task_id: "smoke-delete-" + suffix,
@@ -362,12 +361,16 @@ async function runUiSmoke() {
         state.hiddenEvolutionConversationIds.clear();
         state.currentConversationId = "evolution:smoke-delete-one";
         state.emptyConversationIntent = false;
-        window.confirm = () => true;
         renderHistory();
         setConversationSelectionMode(true);
         document.querySelector("#selectAllConversationsButton").click();
         const selectedBeforeDelete = state.selectedConversationIds.size;
         document.querySelector("#deleteSelectedConversationsButton").click();
+        const confirmationClosed = new Promise((resolve) => {
+          document.querySelector("#conversationDeleteDialog").addEventListener("close", resolve, { once: true });
+        });
+        document.querySelector("#confirmConversationDeleteButton").click();
+        await confirmationClosed;
         if (state.conversationDeletionPromise) await state.conversationDeletionPromise;
         const result = {
           selectedBeforeDelete,
@@ -380,7 +383,6 @@ async function runUiSmoke() {
             group.id.startsWith("evolution:smoke-delete-")
           ).length
         };
-        window.confirm = originalConfirm;
         state.tasks = originalTasks;
         state.currentConversationId = originalConversationId;
         state.emptyConversationIntent = originalEmptyIntent;

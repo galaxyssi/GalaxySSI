@@ -621,6 +621,7 @@ internal fun MainActivity.runDebugControlCenterRoundtrip(token: String) {
 }
 
 internal fun MainActivity.scheduleDebugOutgoing(contactId: String, content: String, attempt: Int) {
+    if (isFinishing || isDestroyed) return
     val key = "$contactId|$content"
     if (attempt == 0) {
         if (lastDebugSendKey == key) return
@@ -628,6 +629,7 @@ internal fun MainActivity.scheduleDebugOutgoing(contactId: String, content: Stri
     }
     val delayMs = if (attempt == 0) 300L else 1000L
     handler.postDelayed({
+        if (isFinishing || isDestroyed) return@postDelayed
         val contact = contactById(contactId)
         val raw = AppStore.contactById(this, contact.id)
         if (raw?.optString("delivery_mode") == "cloud_api") {
@@ -655,7 +657,9 @@ internal fun MainActivity.scheduleDebugAgentGoal(
     newConversation: Boolean,
     attachment: DebugAgentAttachment? = null
 ) {
+    if (isFinishing || isDestroyed) return
     handler.postDelayed({
+        if (isFinishing || isDestroyed) return@postDelayed
         if (newConversation) createAgentConversation()
         showMainTab(PAGE_AGENT)
         val conversationId = agentTranscriptStore.activeConversation().id

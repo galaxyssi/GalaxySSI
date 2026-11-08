@@ -162,6 +162,21 @@ class AgentLatencyTest(unittest.TestCase):
         self.assertEqual(100, result["metrics"]["desktop_model_first_output_ms"]["p95_ms"])
         self.assertEqual(200, result["metrics"]["desktop_model_submit_ms"]["p95_ms"])
 
+    def test_post_model_metric_does_not_count_remaining_generation_as_cleanup(self):
+        result = summarize([
+            self.point("desktop_request_received", 0),
+            self.point("desktop_model_submitted", 500),
+            self.point("desktop_first_output", 1_000),
+            self.point("desktop_model_completed", 15_000),
+            self.point("desktop_task_completed", 15_100),
+            self.point("desktop_response_enqueued", 15_200),
+        ])["metrics"]
+        self.assertEqual(500, result["desktop_receive_to_model_ms"]["p95_ms"])
+        self.assertEqual(100, result["desktop_post_model_ms"]["p95_ms"])
+        self.assertEqual(200, result["desktop_model_to_enqueue_ms"]["p95_ms"])
+        old = summarize([self.point("desktop_first_output", 0), self.point("desktop_task_completed", 20)])
+        self.assertEqual(0, old["metrics"]["desktop_post_model_ms"]["count"])
+
     def test_lifecycle_and_tool_mapping_omit_all_content(self):
         task = SimpleNamespace(task_id="t", agent_id="codex", delegate_agent_id="")
         with patch("agent_latency_hooks.record_task") as record:
@@ -177,6 +192,8 @@ class AgentLatencyTest(unittest.TestCase):
             self.assertEqual(previous, record.call_count)
             trace_stage("t", "codex_turn_submitted")
             self.assertEqual("desktop_model_submitted", record.call_args.args[1])
+            trace_stage("t", "codex_completed")
+            self.assertEqual("desktop_model_completed", record.call_args.args[1])
 
     def test_journal_reopens_without_reloading_on_snapshot(self):
         with tempfile.TemporaryDirectory() as directory:
