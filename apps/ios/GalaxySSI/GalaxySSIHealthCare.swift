@@ -70,6 +70,14 @@ enum GalaxySSIHealthCare {
     }
   }
 
+  static func agentConcerns(in archive: GalaxySSIHealthRecords.Archive) -> [Concern] {
+    guard archive.localCareAllowed == true, let ledger = archive.localCare else { return [] }
+    return Array(ledger.current.values
+      .filter { $0.stage != .paused && $0.stage != .closed }
+      .sorted { ($0.updatedAt, $0.id.uuidString) > ($1.updatedAt, $1.id.uuidString) }
+      .prefix(3))
+  }
+
   static func assess(_ readings: [GalaxySSIHealthReading], context: Context?) -> Assessment? {
     guard let latest = readings.first else { return nil }
     let record = Record(latest)

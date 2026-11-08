@@ -268,7 +268,7 @@ struct AgentHomeView: View {
             if let session = store.agentSession(id: store.activeAgentConversationId),
                !session.privateMode, !session.trackingPaused, session.collaborationRoster == nil {
               GalaxySSIHealthCareEntry(records: .init(owner: store.profile.identityFingerprint, secrets: store.secrets))
-                .id(store.profile.identityFingerprint)
+                .id([store.profile.identityFingerprint, session.id])
             }
             agentOutput
           }

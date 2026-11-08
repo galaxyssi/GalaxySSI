@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @MainActor
 struct GalaxySSIHealthCareView: View {
@@ -84,41 +85,121 @@ struct GalaxySSIHealthCareEntry: View {
   @Environment(\.scenePhase) private var scene
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   let records: GalaxySSIHealthRecords
-  @State private var visible = false
+  @State private var concerns: [GalaxySSIHealthCare.Concern] = []
+  @State private var expanded = false
   @State private var revision = UUID()
 
   var body: some View {
     Group {
-      if scene == .active, visible {
-        NavigationLink {
-          GalaxySSIHealthCareView(records: records)
-        } label: {
-          Label(GalaxySSIHealthCareText.string("title", "Health Care", language: language), systemImage: "heart.text.square")
-            .font(.footnote.weight(.semibold))
-            .frame(minHeight: 44)
+      if scene == .active, let concern = concerns.first {
+        VStack(alignment: .leading, spacing: 6) {
+          HStack(spacing: 8) {
+            concernLink(concern, primary: true)
+            Button { expanded.toggle() } label: {
+              Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(expanded ? t("agent.collapse", "Hide Health details") : t("agent.expand", "Show Health details"))
+            .accessibilityIdentifier("agent-health-care-details")
+          }
+          let reason = concern.assessment.signals.first.map { GalaxySSIHealthCareText.signal($0, language: language) }
+            ?? t("agent.local_follow_up", "Local health follow-up")
+          summaryLine(t("agent.reason", "Reason"), reason)
+            .accessibilityIdentifier("agent-health-care-reason")
+          summaryLine(t("agent.next", "Next step"), nextStep(concern.stage))
+            .accessibilityIdentifier("agent-health-care-next")
+          if expanded {
+            details
+          }
         }
+        .padding(.bottom, 8)
         .padding(.horizontal, 12)
-        .frame(maxWidth: .infinity, alignment: .trailing)
+        .frame(maxWidth: .infinity, alignment: .leading)
       }
     }
     .onChange(of: scene) { phase in
-      if phase == .active { revision = UUID() } else { visible = false }
+      if phase != .active { clear() }
+      revision = UUID()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
+      clear()
+      revision = UUID()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
+      revision = UUID()
     }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) {
-      if $0.object as? String == records.owner {
-        visible = visible && ((try? records.load().localCareAllowed) == true)
-        revision = UUID()
-      }
+      guard $0.object as? String == records.owner else { return }
+      if !concerns.isEmpty, (!canRead || (try? records.load().localCareAllowed) != true) { clear() }
+      revision = UUID()
     }
     .task(id: revision) {
-      guard scene == .active else { visible = false; return }
+      guard canRead else { clear(); return }
       do {
         try await Task.sleep(nanoseconds: 220_000_000)
+        guard canRead else { clear(); return }
         try records.reconcileLocalCare()
-        let concerns = try records.load().localCare?.current
-        visible = concerns?.values.contains(where: { [.verify, .evidence, .reassess].contains($0.stage) }) == true
-      } catch { if !Task.isCancelled { visible = false } }
+        let current = GalaxySSIHealthCare.agentConcerns(in: try records.load())
+        try Task.checkCancellation()
+        if current.first?.id != concerns.first?.id { expanded = false }
+        concerns = current
+      } catch { if !Task.isCancelled { clear() } }
     }
+  }
+
+  private var canRead: Bool { scene == .active && UIApplication.shared.isProtectedDataAvailable }
+
+  private func clear() { concerns = []; expanded = false }
+
+  private var details: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 0) {
+        ForEach(concerns.dropFirst()) { concern in concernLink(concern, primary: false) }
+        NavigationLink {
+          GalaxySSIHealthCareView(records: records)
+        } label: {
+          Label(t("title", "Health Care"), systemImage: "heart.text.square")
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        }
+      }
+      .font(.footnote)
+    }
+    .frame(height: CGFloat(concerns.count) * 44)
+  }
+
+  private func concernLink(_ concern: GalaxySSIHealthCare.Concern, primary: Bool) -> some View {
+    NavigationLink {
+      GalaxySSIHealthCareDetail(records: records, id: concern.id, metric: concern.metric)
+    } label: {
+      Label(concern.metric.title(language: language), systemImage: primary ? "heart.text.square" : "chevron.right")
+        .font(.footnote.weight(primary ? .semibold : .regular))
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+    }
+  }
+
+  private func summaryLine(_ label: String, _ value: String) -> some View {
+    (Text(label + ": ").fontWeight(.semibold) + Text(value))
+      .font(.caption)
+      .foregroundColor(.secondary)
+      .lineLimit(2)
+  }
+
+  private func nextStep(_ stage: GalaxySSIHealthCare.Stage) -> String {
+    switch stage {
+    case .verify, .evidence:
+      return GalaxySSIHealthCareText.stage(stage, language: language)
+    case .reassess:
+      return t("agent.next_reassess", "Review what changed in the recorded results")
+    case .maintenance:
+      return t("agent.next_maintenance", "Review the ongoing follow-up")
+    case .paused, .closed:
+      return GalaxySSIHealthCareText.stage(stage, language: language)
+    }
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    GalaxySSIHealthCareText.string(key, fallback, language: language)
   }
 }
 
