@@ -646,6 +646,46 @@ extension GalaxySSIStoreTests {
   }
 
   @MainActor
+  func testTeamRecoveryPinsObserverTerminalResultBeforeOwnerWriteAndAcrossRestart() throws {
+    let suite = "DesktopTeamPinned-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let journal = DesktopReplyRecoveryTestJournal()
+    let secrets = InMemorySecretStore()
+    let source = UUID().uuidString
+    let owner = AgentTeamReplyOwner(supervisorRunId: "team", memberId: "observer", conversationId: "conversation",
+      turnId: "turn", sourceMessageId: source, contactId: "review", deliveryMode: .observe)
+    let identity = AgentTaskIdentity(clientRouteId: "route", conversationId: "conversation", taskId: source, turnId: "turn")
+    let binding = try XCTUnwrap(AgentDesktopReplyBinding.teamObserver(owner: owner, desktopId: "desktop",
+      agentId: "codex", identity: identity))
+    let recovery = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    XCTAssertTrue(recovery.track(binding, now: 1_000))
+    var payload: [String: Any] = binding.fields
+    payload.merge(["type": "text", "task_status": "completed", "execution_generation": 2, "status_sequence": 8,
+      "message_id": "observer-result", "sha256": String(repeating: "a", count: 64)]) { _, new in new }
+    XCTAssertNil(recovery.acceptTerminalReply(payload, binding: binding, content: "Evidence", now: 2_000))
+    journal.rejectWrites = true
+    XCTAssertNil(recovery.pinTeamTerminalReply(payload, binding: binding, content: "Evidence", now: 2_000))
+    XCTAssertNil(recovery.record(for: binding)?.pinnedTeamReply)
+    journal.rejectWrites = false
+    let pinned = try XCTUnwrap(recovery.pinTeamTerminalReply(payload, binding: binding, content: "Evidence", now: 2_000))
+    XCTAssertNil(pinned.acceptedReply)
+    XCTAssertEqual(pinned.pinnedTeamReply?.remoteMessageId, "observer-result")
+    let reopened = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    XCTAssertEqual(reopened.record(for: binding), pinned)
+    XCTAssertEqual(reopened.pinTeamTerminalReply(payload, binding: binding, content: "Evidence", now: 3_000), pinned)
+    XCTAssertNil(reopened.pinTeamTerminalReply(payload, binding: binding, content: "Other evidence", now: 3_000))
+    XCTAssertNil(reopened.pinTeamTerminalReply(payload, binding: binding, content: "Evidence",
+      richOutput: "Other rich output", now: 3_000))
+    var conflict = payload
+    conflict["sha256"] = String(repeating: "b", count: 64)
+    XCTAssertNil(reopened.pinTeamTerminalReply(conflict, binding: binding, content: "Evidence", now: 3_000))
+    conflict = payload
+    conflict["status_sequence"] = 7
+    XCTAssertNil(reopened.pinTeamTerminalReply(conflict, binding: binding, content: "Evidence", now: 3_000))
+  }
+
+  @MainActor
   func testManagedDesktopRecoveryUsesOriginalNumericSourceAndExactGeneration() throws {
     let suite = "ManagedDesktopRecovery-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

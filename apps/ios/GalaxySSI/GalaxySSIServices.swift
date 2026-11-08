@@ -3269,11 +3269,13 @@ final class MessageCoordinator: ObservableObject {
     return context.member.status == expected
   }
 
-  private func persistRecoveredTeamObserver(_ payload: [String: Any], record: AgentDesktopReplyRecoveryRecord) -> Bool {
+  private func persistRecoveredTeamObserver(_ payload: [String: Any], record: AgentDesktopReplyRecoveryRecord,
+                                            verifiedReceipt: AgentResultReceipt? = nil) -> Bool {
     let binding = record.binding
-    guard currentTeamObserverRecovery(binding) != nil, let receipt = desktopResultRecovery.receipt(record) else { return false }
+    guard currentTeamObserverRecovery(binding) != nil,
+          let receipt = verifiedReceipt ?? desktopResultRecovery.receipt(record) else { return false }
     if binding.teamSource?.primary == true {
-      return persistRecoveredTeamPrimary(payload, binding: binding, receipt: receipt)
+      return persistRecoveredTeamPrimary(payload, binding: binding, receipt: receipt, journalBacked: verifiedReceipt != nil)
     }
     do {
       let disposition = try AgentTeamExecutionHistoryStore.shared.consumeOwnedReply(source: binding.sourceIdentity,
@@ -3283,10 +3285,11 @@ final class MessageCoordinator: ObservableObject {
         terminal: true, success: !AgentRemoteOutcomePolicy.isFailure(record.status), now: AgentControlPlaneClock.nowMillis(),
         observation: AgentTeamReplyObservation(payload: payload))
       guard disposition == .observerCommitted || disposition == .observerDuplicate,
-            teamObserverResultIsCommitted(payload, binding: binding), desktopResultRecovery.receipts.insert(receipt) else { return false }
+            teamObserverResultIsCommitted(payload, binding: binding),
+            recordTeamResultReceipt(receipt, journalBacked: verifiedReceipt != nil) else { return false }
       finalizeSavedCollaborationObserver(source: binding.sourceIdentity, conversation: binding.identity.conversationId,
         turn: binding.identity.turnId, contact: binding.contactId, expectedRunId: binding.teamSource?.supervisorRunId)
-      startDesktopEvidenceImport(binding)
+      if verifiedReceipt == nil { startDesktopEvidenceImport(binding) }
       UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: binding.sourceIdentity)
       let retired = desktopReplyRecovery.retire(binding)
       if retired { desktopReplyRecoverySweepRequested = true }
@@ -3297,8 +3300,13 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
+  private func recordTeamResultReceipt(_ receipt: AgentResultReceipt, journalBacked: Bool) -> Bool {
+    (journalBacked && desktopResultRecovery.receipts.recordedState(receipt) != nil) ||
+      desktopResultRecovery.receipts.insert(receipt)
+  }
+
   private func persistRecoveredTeamPrimary(_ payload: [String: Any], binding: AgentDesktopReplyBinding,
-                                           receipt: AgentResultReceipt) -> Bool {
+                                           receipt: AgentResultReceipt, journalBacked: Bool = false) -> Bool {
     guard let context = currentTeamObserverRecovery(binding), context.owner.deliveryMode == .respond,
           payload.string("type") == "text", AgentDesktopReplyRecovery.terminalStatuses.contains(payload.string("task_status")),
           binding.matches(payload), receipt.desktopId == binding.desktopId,
@@ -3341,12 +3349,13 @@ final class MessageCoordinator: ObservableObject {
       }
       guard try history.commitRecoveredPrimary(binding: binding, content: content, rich: rich, success: success,
         observation: observation, now: AgentControlPlaneClock.nowMillis()),
-        desktopResultRecovery.receipts.insert(receipt) else { return false }
+        recordTeamResultReceipt(receipt, journalBacked: journalBacked) else { return false }
       UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: binding.sourceIdentity)
       finishPendingAgentReply(turnId: binding.identity.turnId)
       reconcileSavedTeamParents(runId: context.team.supervisorRunId)
-      if desktopReplyRecovery.retire(binding) { desktopReplyRecoverySweepRequested = true }
-      return true
+      let retired = desktopReplyRecovery.retire(binding)
+      if retired { desktopReplyRecoverySweepRequested = true }
+      return retired || !journalBacked
     } catch { return false }
   }
 
@@ -4114,11 +4123,12 @@ final class MessageCoordinator: ObservableObject {
       // Queries are scoped to this process. A late response after restart is replaced by a new probe.
       guard let binding = desktopReplyRecovery.expectedBinding(payload) else { return }
       guard binding.desktopId == desktopId, journalBackedDesktopBindingIsCurrent(binding),
+            let items = payload["items"] as? [[String: Any]], let item = items.first,
+            teamRecoveryObservationIsCurrent(binding, item: item),
             let record = desktopReplyRecovery.receive(payload, authenticatedDesktopId: desktopId, now: now) else {
         throw MqttRouteError.invalidPayload
       }
-      if AgentDesktopReplyRecovery.terminalStatuses.contains(record.status), let items = payload["items"] as? [[String: Any]],
-         let page = items.first?.dictionary("result_page"),
+      if AgentDesktopReplyRecovery.terminalStatuses.contains(record.status), let page = item.dictionary("result_page"),
          let manifest = desktopResultRecovery.receiveInline(page, record: record, queryNonce: payload.string("request_id")) {
         // Inline page zero is optional. If the manifest write fails, fetch it again explicitly.
         _ = desktopReplyRecovery.attachManifest(manifest, to: record)
@@ -4134,7 +4144,8 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func journalBackedDesktopBindingIsCurrent(_ binding: AgentDesktopReplyBinding) -> Bool {
-    guard binding.teamSource == nil, binding.goalWork != true else { return false }
+    guard binding.goalWork != true else { return false }
+    if binding.teamSource != nil { return currentTeamObserverRecovery(binding) != nil }
     return binding.managedSource == nil ? currentDesktopReplySource(binding) != nil :
       currentManagedDesktopReply(binding, allowCommitted: true) != nil
   }
@@ -4144,6 +4155,7 @@ final class MessageCoordinator: ObservableObject {
     guard desktopReplyRecoveryOwner == store.profile.identityFingerprint else { return [] }
     let now = AgentControlPlaneClock.nowMillis()
     discoverManagedDesktopReplies(now: now)
+    discoverTeamObserverReplies(now: now)
     var requests: [[String: Any]] = []
     let ordered = desktopReplyRecovery.pending.sorted { $0.binding.key < $1.binding.key }
     let cursor = journalBackedRecoveryCursor
@@ -4152,6 +4164,10 @@ final class MessageCoordinator: ObservableObject {
     for record in page {
       journalBackedRecoveryCursor = record.binding.key
       guard record.codexDispatchPending != true, journalBackedDesktopBindingIsCurrent(record.binding) else { continue }
+      if let team = record.binding.teamSource {
+        let retry = teamRecoveryRetryState(runID: team.supervisorRunId)
+        guard !retry.stalled, retry.retryAtMillis <= now else { continue }
+      }
       if let managed = currentManagedDesktopReply(record.binding, allowCommitted: true),
          let receipt = managed.desktopResultReceipt {
         do { try finishJournalBackedManagedReceipt(receipt, binding: record.binding) }
@@ -4163,7 +4179,9 @@ final class MessageCoordinator: ObservableObject {
       if terminal, record.acceptedReply != nil, completeAcceptedDesktopReply(record) != .missing { continue }
       if terminal, var payload = desktopResultRecovery.assembled(record),
          let receipt = desktopResultRecovery.receipt(record) {
-        if let accepted = record.acceptedReply, accepted.receipt == receipt { payload["message_id"] = accepted.remoteMessageId }
+        if let accepted = record.acceptedReply ?? record.pinnedTeamReply, accepted.receipt == receipt {
+          payload["message_id"] = accepted.remoteMessageId
+        }
         do { try commitJournalBackedDesktopResult(payload, receipt: receipt) }
         catch { onFailure(error) }
         continue
@@ -4184,6 +4202,11 @@ final class MessageCoordinator: ObservableObject {
     }
     if Int64(receipt.sourceMessageId) != nil {
       try commitJournalBackedManagedResult(payload, receipt: receipt)
+      return
+    }
+    if let team = try AgentTeamExecutionHistoryStore.shared.recoveryContext(source: receipt.sourceMessageId,
+      conversation: receipt.conversationId, turn: receipt.turnId, contact: receipt.contactId) {
+      try commitJournalBackedTeamResult(payload, receipt: receipt, context: team)
       return
     }
     let matches = desktopReplyRecovery.pending.filter {
@@ -4208,6 +4231,38 @@ final class MessageCoordinator: ObservableObject {
       throw MqttChunkStorageError.databaseFailure
     }
     if status == "timed_out" { recordConfirmedCodexTimeout(payload, binding: tracked.binding) }
+  }
+
+  private func commitJournalBackedTeamResult(_ payload: [String: Any], receipt: AgentResultReceipt,
+                                             context: AgentTeamReplyRecoveryContext) throws {
+    guard let identity = taskIdentityStore.identity(contactId: receipt.contactId, sourceMessageId: receipt.sourceMessageId),
+          let contact = store.contact(id: receipt.contactId), contact.connectorAgentId == receipt.agentId else {
+      throw MqttRouteError.identityChanged
+    }
+    let binding = context.owner.deliveryMode == .respond ? originalTeamPrimarySource(context.team).flatMap {
+      AgentDesktopReplyBinding.teamPrimary(owner: context.owner, desktopId: receipt.desktopId,
+        agentId: receipt.agentId, identity: identity, outgoing: $0)
+    } : AgentDesktopReplyBinding.teamObserver(owner: context.owner, desktopId: receipt.desktopId,
+      agentId: receipt.agentId, identity: identity)
+    guard let binding, let current = try checkedTeamObserverRecovery(binding),
+          binding.matches(payload), current.owner.accepts(AgentTeamReplyObservation(payload: payload)) else {
+      throw MqttRouteError.identityChanged
+    }
+    if desktopReplyRecovery.record(for: binding) == nil {
+      if desktopResultRecovery.receipts.recordedState(receipt) != nil { return }
+      guard !current.member.status.isTerminal || current.member.status == .interrupted,
+            desktopReplyRecovery.track(binding, now: AgentControlPlaneClock.nowMillis()) else {
+        throw MqttRouteError.identityChanged
+      }
+    }
+    let rich = payload.string("rich_output").ifBlank(payload.string("rich_output_json"))
+    let content = binding.teamSource?.primary == true
+      ? teamReplyContent(payload).ifBlank(AgentRichContentCodec.fallbackText(rich)) : teamReplyContent(payload)
+    guard let pinned = desktopReplyRecovery.pinTeamTerminalReply(payload, binding: binding, content: content, richOutput: rich,
+      now: AgentControlPlaneClock.nowMillis()),
+      persistRecoveredTeamObserver(payload, record: pinned, verifiedReceipt: receipt) else {
+      throw MqttChunkStorageError.databaseFailure
+    }
   }
 
   private func journalBackedManagedBinding(_ response: AgentConnectorResponse, desktopId: String)
