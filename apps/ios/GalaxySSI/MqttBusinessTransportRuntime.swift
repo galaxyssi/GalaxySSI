@@ -128,9 +128,13 @@ final class MqttBusinessTransportRuntime {
       defaults: store.defaults, secrets: store.secrets, pool: pool,
       projectInbound: { _ = try projection.projectInbound($0) },
       projectCompletion: { event in
-        if let desktopConnector, let target = try projection.currentDestination(event.identity),
-           target.desktop, target.contactId != event.contactID {
-          try desktopConnector.projectCompletion(event, target: target)
+        if let desktopConnector, let target = try projection.currentDestination(event.identity), target.desktop {
+          if target.contactId != event.contactID {
+            try desktopConnector.projectCompletion(event, target: target)
+          } else if event.traffic != MqttMultipathPolicy.Traffic.control.rawValue ||
+                      !event.sourceMessageID.isEmpty || !event.attachmentTransferID.isEmpty {
+            try projection.projectCompletion(event)
+          }
         } else {
           try projection.projectCompletion(event)
         }
@@ -261,6 +265,36 @@ final class MqttBusinessTransportRuntime {
     projected.failures.forEach { onFailure($0.error) }
     guard !stopped else { return }
     try await drainInbound()
+    if !stopped { pumpDesktopResultReceipts() }
+  }
+
+  private func pumpDesktopResultReceipts() {
+    guard let projection = peerChatProjection, let connector = desktopConnector,
+          let recovery = connector.resultRecovery?() else { return }
+    let now = Int64(Date().timeIntervalSince1970 * 1_000)
+    let destinations = Dictionary(grouping: projection.store.contacts.compactMap { projection.destination(for: $0) }
+      .filter(\.desktop), by: { $0.peer.remoteSignalName })
+    for work in recovery.receipts.due(nowMillis: now) {
+      guard let targets = destinations[work.receipt.desktopId], targets.count == 1, let target = targets.first else { continue }
+      do {
+        if work.state == .confirmed {
+          try connector.validateResultReceipt(work.receipt, target: target)
+          try routes.withIdentity(MqttBusinessIdentity(target.peer.binding)) { _ = recovery.cleanup(work.receipt) }
+          continue
+        }
+        let request = try connector.resultReceiptRequest(work, target: target)
+        try routes.withOutgoing(identity: request.identity, topics: [request.topic]) {
+          if let event = try journal.outbox.completions.event(identity: request.identity, messageID: request.messageID) {
+            guard event.requestHash == (try request.digest()) else { throw MqttChunkStorageError.corruptState }
+            _ = recovery.receipts.claim(work, nowMillis: now)
+          } else if let existing = try journal.outbox.entry(identity: request.identity, messageID: request.messageID) {
+            guard existing.requestHash == (try request.digest()) else { throw MqttChunkStorageError.corruptState }
+          } else {
+            _ = try enqueue([request])
+          }
+        }
+      } catch { onFailure(error) }
+    }
   }
 
   func stop() async {

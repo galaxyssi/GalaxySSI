@@ -5,9 +5,12 @@ struct MqttDesktopConnectorProjection {
   let store: GalaxySSIStore
   let identities: AgentTaskIdentityStore
   let commitResponse: (AgentConnectorResponse, [String: Any]) throws -> Void
+  var completedResult: (([String: Any], AgentResultReceipt) throws -> Void)? = nil
+  var resultRecovery: (() -> AgentDesktopResultRecovery?)? = nil
 
   static func handles(_ payload: [String: Any]) -> Bool {
-    payload["peer_chat"] as? Bool != true && ["agent_task_event", "text", "agent_response"].contains(payload.string("type"))
+    payload["peer_chat"] as? Bool != true &&
+      ["agent_task_event", "text", "agent_response", "agent_task_result_receipt_confirmed"].contains(payload.string("type"))
   }
 
   private func contact(_ payload: [String: Any], target: MqttPeerChatProjection.Destination) throws -> GalaxySSIContact {
@@ -54,6 +57,13 @@ struct MqttDesktopConnectorProjection {
       throw MqttRouteError.invalidPayload
     }
     let contact = try contact(payload, target: target)
+    if payload.string("type") == "agent_task_result_receipt_confirmed" {
+      guard let recovery = resultRecovery?(),
+            let receipt = AgentResultReceipt.confirmedPayload(payload, desktopId: target.peer.remoteSignalName),
+            let state = recovery.receipts.recordedState(receipt) else { throw MqttRouteError.unsolicitedAcknowledgement }
+      if state == .pending, !recovery.receipts.confirm(receipt) { throw MqttChunkStorageError.databaseFailure }
+      return
+    }
     if payload.string("type") == "agent_task_event" {
       guard let source = UUID(uuidString: payload.string("source_message_id")),
             let saved = store.persistedMessage(id: source, contactId: contact.id), saved.isMine,
@@ -69,12 +79,36 @@ struct MqttDesktopConnectorProjection {
         turnId: payload.string("turn_id"), updates: updates) == true else { throw MqttChunkStorageError.databaseFailure }
       return
     }
+    if payload.string("type") == "text", payload.string("task_status") == "completed",
+       UUID(uuidString: payload.string("source_message_id")) != nil,
+       let receipt = AgentResultReceipt.fromPayload(payload, desktopId: target.peer.remoteSignalName),
+       let completedResult {
+      try completedResult(payload, receipt)
+      return
+    }
     guard payload["result_recovery"] == nil,
           AgentResultReceipt.fromPayload(payload, desktopId: target.peer.remoteSignalName) == nil,
           let response = AgentConnectorResponse.fromPayload(payload, nowMillis: item.createdAt) else {
       throw MqttRouteError.invalidPayload
     }
     try commitResponse(response, payload)
+  }
+
+  func validateResultReceipt(_ receipt: AgentResultReceipt, target: MqttPeerChatProjection.Destination) throws {
+    guard receipt.desktopId == target.peer.remoteSignalName else { throw MqttRouteError.identityChanged }
+    _ = try contact(receipt.payload, target: target)
+  }
+
+  func resultReceiptRequest(_ work: AgentResultReceiptWork, target: MqttPeerChatProjection.Destination) throws -> MqttSignalSendRequest {
+    let receipt = work.receipt
+    guard work.state == .pending, (0...30).contains(work.attempts) else { throw MqttRouteError.invalidPayload }
+    try validateResultReceipt(receipt, target: target)
+    let identity = try MqttBusinessIdentity(target.peer.binding)
+    var payload = receipt.payload
+    payload["message_id"] = try MqttPeerChatProjection.stableID(
+      [identity.binding, receipt.id, String(work.attempts), String(work.dueAtMillis), "result-receipt"])
+    return try MqttSignalSendRequest(identity: identity, payload: payload, remoteName: target.peer.remoteSignalName,
+      topic: target.peer.binding.sendTopic, clientRouteID: target.routeId, traffic: .control, contactID: target.contactId)
   }
 
   func projectCompletion(_ event: MqttDeliveryCompletions.Event, target: MqttPeerChatProjection.Destination) throws {
