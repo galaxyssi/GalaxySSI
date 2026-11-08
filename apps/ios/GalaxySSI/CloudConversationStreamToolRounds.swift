@@ -277,6 +277,10 @@ final class CloudWebToolLoopProgress {
     return true
   }
 
+  func requestPartialSynthesisRepair(after initialRepair: String) -> Bool {
+    requestedRepairs.contains(initialRepair) && requestRepair("partial_synthesis")
+  }
+
   @discardableResult
   func requestFinalization() -> Bool {
     guard !finalizationRequested else { return false }
@@ -518,6 +522,7 @@ struct CloudModelStreamMutableConversation {
     appendPlainConversationTurn(role: "user", text: prompt)
     body.removeValue(forKey: "tools")
     body.removeValue(forKey: "tool_choice")
+    body.removeValue(forKey: "toolConfig")
     finalRoundPrepared = true
   }
 
