@@ -857,7 +857,8 @@ class AgentNativeToolRegistry(
     private val replayStore: AgentNativeToolReplayStore = InMemoryAgentNativeToolReplayStore(),
     private val auditStore: AgentNativeToolAuditStore = InMemoryAgentNativeToolAuditStore(),
     private val descriptorCacheTtlMillis: Long = DEFAULT_DESCRIPTOR_CACHE_TTL_MILLIS,
-    private val observationRecorder: AgentNativeToolObservationRecorder? = null
+    private val observationRecorder: AgentNativeToolObservationRecorder? = null,
+    private val invocationAuthorization: (AgentNativeToolDescriptor, AgentNativeToolInvocationContext) -> String? = { _, _ -> null }
 ) {
     private val definitions = LinkedHashMap<String, AgentNativeToolDefinition>()
     private var descriptorSnapshot: DescriptorSnapshot? = null
@@ -908,7 +909,7 @@ class AgentNativeToolRegistry(
     /** Creates an independent registry view without exposing executor implementations to callers. */
     @Synchronized
     fun subset(predicate: (AgentNativeToolDescriptor) -> Boolean): AgentNativeToolRegistry =
-        AgentNativeToolRegistry(clock, replayStore, auditStore, descriptorCacheTtlMillis, observationRecorder).registerAll(
+        AgentNativeToolRegistry(clock, replayStore, auditStore, descriptorCacheTtlMillis, observationRecorder, invocationAuthorization).registerAll(
             definitions.values.filter { predicate(resolvedDescriptor(it)) }
         )
 
@@ -1171,6 +1172,11 @@ class AgentNativeToolRegistry(
 
         try {
             invocation.checkpoint()
+
+            invocationAuthorization(descriptor, context)?.let { reason ->
+                return finish(AgentNativeToolResultStatus.REJECTED,
+                    error = AgentNativeToolError("scope_confirmation_required", reason, retryable = false))
+            }
 
             val replayKey = effectiveKey?.let {
                 AgentNativeToolReplayKey(descriptor.id, descriptor.version, it, AgentNativeEffectScope.from(context))

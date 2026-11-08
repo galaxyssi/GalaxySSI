@@ -25,6 +25,11 @@ enum AgentAttachmentPublishOrder {
       chunkIndex == nil ? "input_attachment_manifest" : "input_attachment_chunk"
     }
 
+    var declaration: String? {
+      guard chunkIndex == nil else { return nil }
+      return eagerChunks ? "manifest:eager" : "manifest"
+    }
+
     func payload() throws -> [String: Any] {
       if let chunkIndex {
         return try attachment.chunkPayload(index: chunkIndex)
