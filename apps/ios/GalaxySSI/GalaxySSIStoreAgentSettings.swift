@@ -76,6 +76,7 @@ extension GalaxySSIStore {
     var next = modelPlannerSettings
     mutate(&next)
     modelPlannerSettings = next.normalized
+    AgentInvocationProfile.clearMetadataCache()
   }
 
   func updateGlobalAgentSettings(_ mutate: (inout GlobalAgentSettings) -> Void) {

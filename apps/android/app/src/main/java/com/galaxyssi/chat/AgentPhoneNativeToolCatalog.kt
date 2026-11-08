@@ -169,7 +169,8 @@ object AgentPhoneNativeToolCatalog {
             clock = clock,
             replayStore = EncryptedAgentNativeToolReplayStore(context),
             auditStore = EncryptedAgentNativeToolAuditStore(context),
-            observationRecorder = CollaborationNativeEvidence(context.applicationContext)
+            observationRecorder = CollaborationNativeEvidence(context.applicationContext),
+            invocationAuthorization = { tool, invocation -> HealthCareDiscussion.toolRejection(context.applicationContext, tool, invocation) }
         )
         return registry.registerAll(
             AgentAppControlTools.definitions(AndroidAppControlPlatform(context.applicationContext))
@@ -236,9 +237,10 @@ object AgentPhoneNativeToolCatalog {
         clock: AgentNativeClock = AgentNativeClock.SYSTEM,
         replayStore: AgentNativeToolReplayStore = InMemoryAgentNativeToolReplayStore(),
         auditStore: AgentNativeToolAuditStore = InMemoryAgentNativeToolAuditStore(),
-        observationRecorder: AgentNativeToolObservationRecorder? = null
+        observationRecorder: AgentNativeToolObservationRecorder? = null,
+        invocationAuthorization: (AgentNativeToolDescriptor, AgentNativeToolInvocationContext) -> String? = { _, _ -> null }
     ): AgentNativeToolRegistry = AgentNativeToolRegistry(clock, replayStore, auditStore,
-        observationRecorder = observationRecorder).registerAll(
+        observationRecorder = observationRecorder, invocationAuthorization = invocationAuthorization).registerAll(
         definitions(
             workspaceFileTools,
             actionExecutor,

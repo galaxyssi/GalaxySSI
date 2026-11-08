@@ -952,7 +952,7 @@ enum AgentIOSSystemNativeToolCatalog {
   private static var downloadAvailability: AgentNativeToolAvailability {
     AgentNativeToolAvailability(
       status: .available,
-      reason: "iOS executor uses URLSession to manage bounded public HTTPS downloads inside the Files-visible app Documents directory."
+      reason: "iOS executor uses URLSession to manage bounded public HTTPS downloads in private app storage."
     )
   }
 

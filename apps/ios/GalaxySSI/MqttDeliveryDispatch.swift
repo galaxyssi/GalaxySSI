@@ -40,6 +40,7 @@ actor MqttDeliveryDispatch {
     var accepted = false
     var publishing = false
     var finished = false
+    var reportedRefusals = Set<String>()
 
     init(topic: String, delivery: Delivery, at: Int64, plans: [MqttMultipathPolicy.Dispatch]) {
       self.key = Key(peer: delivery.peer, message: delivery.message)
@@ -53,6 +54,7 @@ actor MqttDeliveryDispatch {
   private let policy: MqttMultipathPolicy
   private let publish: (Publication) async -> Bool
   private let completed: (String, Bool) -> Void
+  private let admissionRefused: (MqttMultipathPolicy.ReservationRefusal) -> Void
   private let now: () -> Int64
   private var jobs: [Key: Job] = [:]
   private var order: [Key] = []
@@ -61,10 +63,12 @@ actor MqttDeliveryDispatch {
 
   init(policy: MqttMultipathPolicy, publish: @escaping (Publication) async -> Bool,
        brokerCompleted: @escaping (String, Bool) -> Void,
+       admissionRefused: @escaping (MqttMultipathPolicy.ReservationRefusal) -> Void = { _ in },
        now: @escaping () -> Int64 = { Int64(ProcessInfo.processInfo.systemUptime * 1000) }) {
     self.policy = policy
     self.publish = publish
     self.completed = brokerCompleted
+    self.admissionRefused = admissionRefused
     self.now = now
   }
 
@@ -229,9 +233,10 @@ actor MqttDeliveryDispatch {
         let bytes = try Self.packetBytes(topic: job.topic, payloadBytes: payload.count)
         guard bytes <= delivery.sizeBound else { throw Failure.invalidPacket }
         guard delivery.authorized(path.brokerID, path.generation) else { continue }
-        guard policy.reserve(attemptID: id, attempt: .init(peer: delivery.peer, messageID: delivery.message.messageID,
+        if let refusal = policy.reserveReason(attemptID: id, attempt: .init(peer: delivery.peer, messageID: delivery.message.messageID,
           contentHash: delivery.message.contentHash, brokerID: path.brokerID, generation: path.generation,
-          wireBytes: bytes, traffic: Self.traffic(delivery.message), startedAt: now())) else {
+          wireBytes: bytes, traffic: Self.traffic(delivery.message), startedAt: now())) {
+          if job.reportedRefusals.insert(refusal.code).inserted { admissionRefused(refusal) }
           job.scheduled.insert(Scheduled(due: at + 250, path: path), at: 0)
           break
         }

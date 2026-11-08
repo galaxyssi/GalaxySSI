@@ -8,6 +8,7 @@ struct GalaxySSIAgentRecentTasksView: View {
   var initialTask: AgentTaskRecord? = nil
   @State private var searchText = ""
   @State private var selectedTask: AgentTaskRecord?
+  @State private var supervisedBrowser: AgentSupervisedBrowserWait?
   @State private var deletingTask: AgentTaskRecord?
   @State private var statusText = ""
   @State private var initialTaskPresented = false
@@ -143,6 +144,10 @@ struct GalaxySSIAgentRecentTasksView: View {
         }
       )
     }
+    .sheet(item: $supervisedBrowser) { wait in
+      GalaxySSIManagedBrowserHandoffView(supervised: wait)
+        .environmentObject(coordinator)
+    }
     .alert(t("galaxyssi.agent_task_center.delete_title", "Delete task?"), isPresented: deleteAlertPresented) {
       Button(t("galaxyssi.common.cancel", "Cancel"), role: .cancel) {
         deletingTask = nil
@@ -176,6 +181,13 @@ struct GalaxySSIAgentRecentTasksView: View {
   @ViewBuilder
   private func taskMenu(_ task: AgentTaskRecord) -> some View {
     Menu {
+      if coordinator.supervisedBrowserRequest(taskID: task.taskId) != nil {
+        Button {
+          supervisedBrowser = coordinator.supervisedBrowserRequest(taskID: task.taskId)
+        } label: {
+          Label(t("galaxyssi.managed_browser.open", "Take browser control"), systemImage: "safari")
+        }
+      }
       ForEach(AgentTaskCenterPolicy.actions(task)) { action in
         Button(actionLabel(action)) {
           handleAction(action, task: task)
