@@ -218,6 +218,33 @@ final class MessageCoordinator: ObservableObject {
     }) {
       _ = try? runtime.registry.registerExecutables(appTools)
     }
+    if let schedules = try? AgentConversationScheduleTools.executables(invoke: { [weak self] tool, invocation in
+      let execute: @MainActor () -> AgentNativeToolExecutionResult = {
+        guard let self else {
+          return .failure(code: "schedule_context_missing", message: "The schedule runtime is unavailable.")
+        }
+        return AgentConversationScheduleTools.execute(tool, context: invocation.context, input: invocation.input,
+          store: self.store) { task, operation, source in
+          let receipt = "schedule-tool:\(task.taskId):\(task.revision)"
+          let text = [task.name, task.action.scheduleText, AgentConversationSchedule.state(task,
+            language: self.store.languagePolicy.interfaceLanguage)].filter { !$0.isBlank }.joined(separator: "\n")
+          if !self.store.hasIncomingDuplicate(text, from: source.contactId, remoteMessageId: receipt) {
+            let reply = self.store.appendIncoming(text, from: source.contactId, remoteMessageId: receipt,
+              traceStage: AgentConversationSchedule.receiptStage, detail: task.taskId,
+              conversationId: source.conversationId, turnId: source.turnId.ifBlank(source.id.uuidString))
+            self.onIncomingMessage?(reply)
+          }
+          if operation == .update || operation == .pause { self.cancelLocalScheduleRuns(task.taskId) }
+          if operation == .create || operation == .update || operation == .resume {
+            Task { @MainActor [weak self] in await self?.runAutomationSchedulerCycle() }
+          }
+        }
+      }
+      if Thread.isMainThread { return MainActor.assumeIsolated { execute() } }
+      return DispatchQueue.main.sync { execute() }
+    }) {
+      _ = try? runtime.registry.registerExecutables(schedules)
+    }
     return runtime
   }()
   private lazy var globalRealtimeContextProvider = GlobalRealtimeContextProvider()
@@ -4936,9 +4963,6 @@ final class MessageCoordinator: ObservableObject {
     }
     if !readOnlyAnalysis, taskExecutionMode != .planOnly,
        contact.deliveryMode == .local, effectiveAttachments.isEmpty,
-       contact.id == "hermes", handleConversationSchedule(displayText, outgoing: outgoing) { return true }
-    if !readOnlyAnalysis, taskExecutionMode != .planOnly,
-       contact.deliveryMode == .local, effectiveAttachments.isEmpty,
        handleConversationWorkflowSchedule(displayText, outgoing: outgoing) { return true }
     if contact.id == "hermes" {
       let previousSessionMessages = store.agentSessionMessages(outgoing.conversationId)
@@ -5600,69 +5624,9 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
-  private func handleConversationSchedule(_ request: String, outgoing: ChatMessage) -> Bool {
-    guard let command = AgentConversationSchedule.parse(request) else { return false }
-    let conversation = outgoing.conversationId
-    let tasks = store.conversationSchedules(conversation)
-    let turn = outgoing.turnId.ifBlank(outgoing.id.uuidString)
-    let stage = AgentConversationSchedule.receiptStage
-    let scoped = AgentScheduleFollowupPolicy.target(before: outgoing, messages: store.agentSessionMessages(conversation),
-      liveTaskIds: Set(tasks.map(\.taskId)), stage: stage)
-    var task: AgentProactiveTask?
-    var text = ""
-    var runNow = false
-    do {
-      switch command {
-      case .save(let prompt, let trigger, let frequency, let new):
-        let id = new ? nil : scoped ?? (tasks.count == 1 ? tasks.first?.taskId : nil)
-        if trigger == nil && id == nil { return false }
-        task = try store.saveConversationSchedule(conversationId: conversation, id: id, prompt: prompt,
-          trigger: trigger, frequency: frequency)
-        if let id { cancelLocalScheduleRuns(id) }
-        runNow = true
-      case .pause, .resume:
-        let bare = ["stop", "pause", "\u{505c}\u{6b62}", "\u{6682}\u{505c}", "\u{66ab}\u{505c}"]
-          .contains(request.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)))
-        guard let id = scoped ?? (!bare && tasks.count == 1 ? tasks.first?.taskId : nil),
-              let existing = tasks.first(where: { $0.taskId == id }) else {
-          if bare || tasks.isEmpty { return false }
-          text = localizedReply("galaxyssi.schedule.choose", fallback: "Select a task in Scheduled Tasks.")
-          break
-        }
-        if try setConversationScheduleEnabled(existing, enabled: command == .resume) {
-          task = store.automationTask(id: id)
-        } else {
-          text = localizedReply("galaxyssi.schedule.save_failed", fallback: "The schedule could not be updated.")
-        }
-      case .list:
-        text = localizedReply("galaxyssi.schedule.title", fallback: "Scheduled Tasks")
-      }
-    } catch {
-      text = localizedReply("galaxyssi.schedule.save_failed", fallback: "The schedule could not be updated.")
-    }
-    if let task {
-      text = [task.name, task.action.scheduleText, AgentConversationSchedule.state(task,
-        language: store.languagePolicy.interfaceLanguage)].filter { !$0.isBlank }.joined(separator: "\n")
-    }
-    let resultStage = task == nil && command != .list ? stage + "_error" : stage
-    store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId, stage: resultStage,
-      detail: task?.taskId ?? "", status: .delivered)
-    let replyID = AgentScheduleFollowupPolicy.receiptId(turnId: turn)
-    if !store.hasIncomingDuplicate(text, from: outgoing.contactId, remoteMessageId: replyID) {
-      let reply = store.appendIncoming(text, from: outgoing.contactId, remoteMessageId: replyID,
-        traceStage: resultStage, detail: task?.taskId ?? "", conversationId: conversation, turnId: turn)
-      onIncomingMessage?(reply)
-    }
-    if runNow { Task { @MainActor [weak self] in await self?.runAutomationSchedulerCycle() } }
-    return true
-  }
-
   private func handleConversationWorkflowSchedule(_ request: String, outgoing: ChatMessage) -> Bool {
-    guard let result = AgentWorkflowRunScheduleCommandRouter.handle(request, store: store, scopedTaskId: {
-      let tasks = Set(store.automationTasks().map(\.taskId))
-      return AgentScheduleFollowupPolicy.target(before: outgoing,
-        messages: store.agentSessionMessages(outgoing.conversationId), liveTaskIds: tasks)
-    }) else { return false }
+    guard AgentWorkflowRunScheduleCommandRouter.isExplicitChatCommand(request),
+          let result = AgentWorkflowRunScheduleCommandRouter.handle(request, store: store) else { return false }
     let turn = outgoing.turnId.ifBlank(outgoing.id.uuidString)
     store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId,
       stage: result.actionId, detail: "Local workflow execution command", status: .delivered)

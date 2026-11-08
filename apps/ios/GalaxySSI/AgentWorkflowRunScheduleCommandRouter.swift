@@ -299,6 +299,12 @@ enum AgentScheduleFollowupPolicy {
 
 @MainActor
 enum AgentWorkflowRunScheduleCommandRouter {
+  static func isExplicitChatCommand(_ input: String) -> Bool {
+    let normalized = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return ["workflow schedules", "list workflow schedules", "show workflow schedules"].contains(normalized) ||
+      ["run workflow ", "start workflow ", "schedule workflow "].contains { normalized.hasPrefix($0) }
+  }
+
   struct Result {
     let text: String
     let actionId: String
@@ -579,7 +585,8 @@ enum AgentWorkflowRunScheduleCommandRouter {
   }
 
   private static func isScheduleListCommand(_ normalized: String) -> Bool {
-    ["schedules", "list schedules", "show schedules", "workflow schedules"].contains(normalized)
+    ["schedules", "list schedules", "show schedules", "workflow schedules",
+     "list workflow schedules", "show workflow schedules"].contains(normalized)
   }
 
   private static func isManagementCommand(_ normalized: String) -> Bool {

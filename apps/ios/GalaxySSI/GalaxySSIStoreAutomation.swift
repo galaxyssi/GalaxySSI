@@ -14,10 +14,16 @@ extension GalaxySSIStore {
   @discardableResult
   func saveConversationSchedule(conversationId: String, id: String?, prompt: String,
                                 trigger: AgentProactiveTrigger?, frequency: String,
-                                nowMillis: Int64? = nil) throws -> AgentProactiveTask {
+                                nowMillis: Int64? = nil, creationId: String? = nil) throws -> AgentProactiveTask {
     let now = nowMillis ?? Self.nowMillis()
     let old = id.flatMap { automationTask(id: $0) }
     let goal = prompt.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(old?.action.prompt ?? "")
+    if let creationId, let saved = automationTask(id: creationId) {
+      guard id == nil, saved.action.isConversationSchedule, saved.action.conversationId == conversationId else {
+        throw AgentProactiveTaskError.invalid("Schedule identity is already in use")
+      }
+      return saved
+    }
     guard let session = agentSession(id: conversationId), session.status == .active, !session.privateMode, !session.trackingPaused,
           session.collaborationRoster == nil, conversationId.count <= 256,
           id == nil || (old?.action.isConversationSchedule == true && old?.action.conversationId == conversationId),
@@ -31,7 +37,7 @@ extension GalaxySSIStore {
     let action = try AgentProactiveAction(kind: .agent, targetId: "conversation", prompt: goal,
       deliveryMode: "notify", contactId: "hermes", conversationId: conversationId,
       scheduleText: frequency.ifBlank(old?.action.scheduleText ?? ""))
-    let saved = try AgentProactiveTask(taskId: old?.taskId ?? UUID().uuidString, name: String(goal.prefix(120)),
+    let saved = try AgentProactiveTask(taskId: old?.taskId ?? creationId ?? UUID().uuidString, name: String(goal.prefix(120)),
       trigger: trigger, action: action, policy: policy, nextRunAtMillis: now,
       lastRunAtMillis: old?.lastRunAtMillis ?? 0, runCount: old?.runCount ?? 0,
       revision: (old?.revision ?? 0) + 1, createdAtMillis: old?.createdAtMillis ?? now, updatedAtMillis: now)
