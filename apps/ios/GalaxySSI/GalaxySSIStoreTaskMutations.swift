@@ -8,6 +8,7 @@ extension GalaxySSIStore {
     guard candidates.count == 1, let task = candidates.first else { return true }
     let verification = "Committed authenticated Desktop result"
     if task.phase == .completed && task.verification == verification && task.result == message.content {
+      if AgentOutcomeContinuation.isUnverified(task) { upsertAgentTask(task) }
       return save()
     }
     guard let next = Self.desktopTaskCompletion(task, binding: binding, message: message,
@@ -33,7 +34,7 @@ extension GalaxySSIStore {
     completed.result = message.content
     completed.verification = verification
     completed.updatedAtMillis = max(task.updatedAtMillis, acceptedAt)
-    return completed
+    return AgentOutcomeContinuation.guardCompletion(completed, previous: task)
   }
 
   func replaceAgentTaskForRecovery(expected: AgentTaskRecord, updated: AgentTaskRecord) -> Bool {
@@ -89,6 +90,10 @@ extension GalaxySSIStore {
     if let previous, previous.phase == .cancelled, updated.phase != .cancelled, !explicitRollback {
       return previous
     }
+    updated = AgentOutcomeContinuation.guardCompletion(updated, previous: previous,
+      message: GalaxySSILocalization.string("galaxyssi.agent.effect_recovery.unavailable",
+        fallback: "The original outcome is still unverified. Inspect it before resuming.",
+        language: languagePolicy.interfaceLanguage))
     var items = agentTaskRecords.filter { $0.taskId != clean }
     items.append(updated)
     agentTaskRecords = Array(Self.sortedAgentTasks(items).prefix(200))

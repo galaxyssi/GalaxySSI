@@ -138,7 +138,10 @@ extension UserDefaultsAgentRecordedRunStore {
     run.agentPlan = projection.plan
     run.toolCalls = projection.calls
     run.finalOutput = ["message": .string(String(task.result.prefix(2_000)))]
-    let unresolved = projection.calls.contains { $0.result["outcome_unverified"]?.boolValue == true }
+    let verified = task.verifiedOutcome != nil && !AgentOutcomeContinuation.isUnverified(task)
+    let unresolved = AgentOutcomeContinuation.isUnverified(task) || (!verified &&
+      projection.calls.contains { $0.result["outcome_unverified"]?.boolValue == true })
+    if unresolved { run.finalOutput["outcome_unverified"] = .bool(true) }
     run.status = unresolved && status != .cancelled ? .running : status
     run.completedAtMillis = run.status == .running ? 0 :
       (previous?.status == run.status ? previous?.completedAtMillis ?? now : now)

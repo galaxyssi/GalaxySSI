@@ -70,7 +70,7 @@ enum AgentTaskCenterPolicy {
       actions.append(.cancel)
     }
     if terminalPhases.contains(task.phase), isReusableGoal(task.goal) {
-      if (task.effectRecovery ?? []).isEmpty {
+      if !AgentOutcomeContinuation.isUnverified(task) {
         actions.append(.retry)
       } else if [.failed, .blocked].contains(task.phase) {
         actions.append(.inspectEffect)
