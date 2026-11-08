@@ -794,7 +794,12 @@ final class AgentTeamExecutionHistoryStore {
               Self.nativeObservationId(native, hash: hash) == id else {
           throw AgentTeamHistoryDatabase.Failure.stale
         }
-        let key = "native-read-coverage:" + Self.readCoverageDigest(scope: scope, id: id, hash: hash)
+        // The Desktop confirmation path uses mode=evidence for saved native test observations.
+        let savedTest = sameRun && native.input["mode"] == .string("test") &&
+          native.result.provenance.executorId == AgentIOSOnDeviceRuntimeNativeToolCatalog.brokerExecutorId &&
+          native.result.provenance.toolId == AgentIOSOnDeviceRuntimeNativeToolCatalog.execute
+        let key = savedTest ? Self.cloudReadCoverageKey(scope: scope, id: id, hash: hash, native: true) :
+          "native-read-coverage:" + Self.readCoverageDigest(scope: scope, id: id, hash: hash)
         return try evidencePage(encoder.encode(native), source: [
           "evidence_id": .string(id), "sha256": .string(hash), "origin": .string("ios_native_tool"),
           "tool": .string(native.result.provenance.toolId), "status": .string(native.result.status.rawValue),
@@ -2564,8 +2569,8 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
-  func prepareSavedToolTest(_ reference: AgentCollaborationResearchReference, timeoutMillis: Int64,
-                            scope: AgentCollaborationToolEvidenceScope) throws -> AgentCollaborationSavedToolTest.Prepared {
+  private func withSavedToolRecords<T>(scope: AgentCollaborationToolEvidenceScope,
+      _ use: ((AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision?) throws -> T) throws -> T {
     try access { database in
       guard let team = try database.snapshots(runId: scope.runId).first,
             team.state == .running, team.conversationId == scope.conversationId, team.taskId == scope.turnId,
@@ -2574,24 +2579,52 @@ final class AgentTeamExecutionHistoryStore {
             member.dispatchCheckpoint == .dispatching || member.dispatchCheckpoint == .accepted,
             try database.researchRecord(Bool.self, conversationId: scope.conversationId,
               key: "native-evidence-revoked", revision: 0) != true else { throw AgentTeamHistoryDatabase.Failure.stale }
-      func current(_ ref: AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision {
+      func current(_ ref: AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision? {
         guard let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
                 conversationId: scope.conversationId, key: "object:" + ref.objectId),
-              record.reference == ref else { throw AgentTeamHistoryDatabase.Failure.stale }
+              record.reference == ref else { return nil }
         if record.turnId == scope.turnId {
           guard record.runId == scope.runId, (record.authorId == scope.memberId && record.sourceId == scope.sourceId) ||
             (member.dispatchDependencyMemberIds?.contains(record.authorId) == true &&
               team.members.contains(where: { $0.memberId == record.authorId && $0.sourceMessageId == record.sourceId &&
-                $0.deliveryMode != .ignore && $0.status.isTerminal })) else { throw AgentTeamHistoryDatabase.Failure.stale }
+                $0.deliveryMode != .ignore && $0.status.isTerminal })) else { return nil }
         }
         return record
       }
-      let plan = try current(reference)
-      guard plan.draft.kind == .toolTestPlan,
+      return try use(current)
+    }
+  }
+
+  func prepareSavedToolTest(_ reference: AgentCollaborationResearchReference, timeoutMillis: Int64,
+                            scope: AgentCollaborationToolEvidenceScope) throws -> AgentCollaborationSavedToolTest.Prepared {
+    try withSavedToolRecords(scope: scope) { current in
+      guard let plan = try current(reference), plan.draft.kind == .toolTestPlan,
             let test = plan.draft.body["tool_test_plan"]?.objectValue,
-            let tool = AgentCollaborationSavedToolTest.reference(test["executable_tool"]),
-            let prepared = AgentCollaborationSavedToolTest.prepare(plan: plan, tool: try current(tool),
+            let toolRef = AgentCollaborationSavedToolTest.reference(test["executable_tool"]),
+            let tool = try current(toolRef),
+            let prepared = AgentCollaborationSavedToolTest.prepare(plan: plan, tool: tool,
               timeoutMillis: timeoutMillis) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      return prepared
+    }
+  }
+
+  func prepareSavedToolRun(_ target: AgentCollaborationSavedToolExecution.ReleaseTarget,
+      reference: AgentCollaborationResearchReference, parameters: AgentMcpJSONObject, timeoutMillis: Int64,
+      scope: AgentCollaborationToolEvidenceScope) throws -> AgentCollaborationReleasedToolRun.Prepared {
+    try withSavedToolRecords(scope: scope) { current in
+      let releaseReference: AgentCollaborationResearchReference
+      if target == .channel {
+        guard let selection = try AgentCollaborationCapabilitySelection.resolve(reference, current: current),
+              !selection.requiresRevalidation else { throw AgentTeamHistoryDatabase.Failure.stale }
+        releaseReference = selection.implementation
+      } else { releaseReference = reference }
+      guard let release = try current(releaseReference), let stamp = release.testedToolRelease,
+            let planRef = AgentCollaborationSavedToolTest.reference(stamp["tool_test_plan"]),
+            let toolRef = AgentCollaborationSavedToolTest.reference(stamp["executable_tool"]),
+            let plan = try current(planRef), let tool = try current(toolRef),
+            let prepared = AgentCollaborationReleasedToolRun.prepare(release: release, plan: plan, tool: tool,
+              channel: target == .channel ? reference : nil, parameters: parameters, timeoutMillis: timeoutMillis)
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
       return prepared
     }
   }

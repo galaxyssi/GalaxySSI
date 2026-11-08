@@ -189,6 +189,9 @@ enum AgentCollaborationRuleTopics {
     Use the exact tool_test_plan as a parent and include tool_test_plan, observation, review, applies_when, avoid_when,
     limitations, authorization_boundary and an empty unresolved list. Cite the same observation in observations
     with only evidence_id, sha256 and origin ios_native_tool. Host validation never grants runtime permissions.
+    An authorized Desktop member can use collaboration_run_tool with the exact release or capability channel,
+    new parameters and a stable execution ID. The phone checks the current lineage and tested Python identity
+    before running. Use status with the same ID to recover the original result; discovery never authorizes execution.
     """),
     Topic(id: "retention", purpose: "Preserve measured capability cases across versions", prerequisites: ["foundation"], contract: """
     Publish capability_suite with scope, limitations and the exact independently retained lesson as a parent.

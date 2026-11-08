@@ -2330,6 +2330,21 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(start("tool\n"))
     XCTAssertNil(start("tool", timeout: .string("2000")))
     XCTAssertNil(start("tool", extra: true))
+    var runInput: AgentMcpJSONObject = ["mode": .string("start"), "execution_id": .string("run-tool"),
+      "tool_release": .object(["object_id": .string(String(repeating: "c", count: 64)),
+        "sha256": .string(String(repeating: "d", count: 64)), "revision": .int(1)]),
+      "parameters": .object(["value": .int(21)]), "timeout_ms": .int(2_000)]
+    let requestedRun = try XCTUnwrap(Execution.Request(phase: "start", input: runInput))
+    let runAdmission = try history.updateSavedToolExecution(.request(requestedRun), scope: scope(), process: "a", now: 1)
+    XCTAssertTrue(runAdmission.shouldLaunch)
+    XCTAssertEqual(runAdmission.record?.releaseTarget, .release)
+    XCTAssertEqual(runAdmission.record?.parameters?["value"], .int(21))
+    XCTAssertFalse(try history.updateSavedToolExecution(.request(requestedRun), scope: scope(), process: "a", now: 2).shouldLaunch)
+    runInput["parameters"] = .object(["value": .int(22)])
+    XCTAssertThrowsError(try history.updateSavedToolExecution(.request(try XCTUnwrap(
+      Execution.Request(phase: "start", input: runInput))), scope: scope(), process: "a", now: 2))
+    runInput["source"] = .string("override")
+    XCTAssertNil(Execution.Request(phase: "start", input: runInput))
     XCTAssertNil(Execution.Request(phase: "cancel", input: ["mode": .string("status"), "execution_id": .string("tool")]))
     let original = try XCTUnwrap(start("tool"))
     XCTAssertTrue(Execution.permitsDirectRuntime(source: "def run(parameters): return parameters", key: "saved-test"))
@@ -2441,6 +2456,7 @@ extension GalaxySSIStoreTests {
     running.members[0].dispatchCheckpoint = .dispatching
     running.members[0].dispatchAllowsSavedToolTest = true
     running.members[1].dispatchCheckpoint = .dispatching
+    running.members[1].dispatchDependencyMemberIds = [running.members[0].memberId]
     running.members.append(AgentTeamMemberSnapshot(agentId: "unread-review", deliveryMode: .observe,
       sourceMessageId: "unread-review-source"))
     XCTAssertTrue(history.upsert(running))
@@ -2497,10 +2513,10 @@ extension GalaxySSIStoreTests {
     let reviewer = running.members[1]
     let reviewScope = AgentCollaborationToolEvidenceScope(runId: reader.runId, conversationId: reader.conversationId,
       turnId: reader.turnId, memberId: reviewer.memberId, sourceId: reviewer.sourceMessageId)
-    func readOriginal(_ owner: AgentCollaborationToolEvidenceScope, evidence: AgentMcpJSONObject) throws {
+    func readOriginal(_ owner: AgentCollaborationToolEvidenceScope, evidence: AgentMcpJSONObject, mode: String) throws {
       var offset: Int64? = 0
       while let position = offset {
-        let page = try history.recallCollaborationOriginal(["mode": .string("native_evidence"),
+        let page = try history.recallCollaborationOriginal(["mode": .string(mode),
           "evidence_id": .string(evidence.string("evidence_id")), "sha256": .string(evidence.string("sha256")),
           "offset": .int(position)], scope: owner)
         offset = page["next_offset"]?.intValue
@@ -2512,10 +2528,11 @@ extension GalaxySSIStoreTests {
       turnId: reader.turnId, memberId: reader.memberId, sourceId: reader.sourceId, input: prepared.evidenceInput,
       result: replay, evaluation: prepared.evaluate(replay)))
     let replayCitation = replayProof.filter { ["evidence_id", "sha256", "origin"].contains($0.key) }
-    try readOriginal(reviewScope, evidence: citation)
-    try readOriginal(reviewScope, evidence: replayCitation)
-    try readOriginal(reader, evidence: citation)
+    try readOriginal(reader, evidence: citation, mode: "native_evidence")
     running.members[0].status = .succeeded
+    XCTAssertTrue(history.upsert(running))
+    try readOriginal(reviewScope, evidence: citation, mode: "evidence")
+    try readOriginal(reviewScope, evidence: replayCitation, mode: "evidence")
     running.members[1].status = .succeeded
     running.members[2].status = .succeeded
     XCTAssertTrue(history.upsert(running))
@@ -2543,6 +2560,8 @@ extension GalaxySSIStoreTests {
     let released = try XCTUnwrap(release(citation, as: reviewScope).references.first)
     var future = durableTeamSnapshot("use-reviewed-tool")
     future.taskId = "future-turn"
+    future.members[0].dispatchCheckpoint = .accepted
+    future.members[0].dispatchAllowsSavedToolTest = true
     XCTAssertTrue(history.upsert(future))
     let capabilities = try history.recallCollaborationOriginal(["mode": .string("capabilities"), "query": .string("check")],
       scope: scope(future))
@@ -2551,6 +2570,33 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(entry["state"], .string(AgentCollaborationCapabilityPage.releaseState))
     XCTAssertEqual(entry["grants_permissions"], .bool(false))
     XCTAssertEqual(entry["excerpts"]?.objectValue?["tool_name"], .string("Check"))
+    let run = try history.prepareSavedToolRun(.release, reference: released, parameters: ["value": .int(21)],
+      timeoutMillis: 1_000, scope: scope(future))
+    XCTAssertEqual(run.runtimeInput["network_enabled"], .bool(false))
+    XCTAssertEqual(run.evidenceInput["tool_release"], .object(AgentCollaborationCandidateRecall.reference(released)))
+    XCTAssertEqual(run.evidenceInput["parameters"], .object(["value": .int(21)]))
+    XCTAssertThrowsError(try history.prepareSavedToolRun(.release, reference: released, parameters: ["value": .string("21")],
+      timeoutMillis: 1_000, scope: scope(future)))
+    XCTAssertThrowsError(try history.prepareSavedToolRun(.channel, reference: released, parameters: ["value": .int(21)],
+      timeoutMillis: 1_000, scope: scope(future)))
+    var noGrant = scope(future)
+    noGrant.sourceId = "different-source"
+    XCTAssertThrowsError(try history.prepareSavedToolRun(.release, reference: released, parameters: ["value": .int(21)],
+      timeoutMillis: 1_000, scope: noGrant))
+    func runReport(runtime: AgentMcpJSONObject) -> AgentNativeToolResult {
+      var native = result
+      native.output = ["exit_code": .int(0), "stdout": .string(AgentMcpJSONCodec.stringify([
+        "format": .string(AgentCollaborationReleasedToolRun.format), "environment_matches": .bool(true),
+        "runtime": .object(runtime), "output": .int(21)
+      ]))]
+      native.receipt.inputSha256 = AgentMcpJSONCodec.sha256(run.runtimeInput)
+      native.receipt.outputSha256 = AgentMcpJSONCodec.sha256(native.output)
+      return native
+    }
+    XCTAssertEqual(run.evaluate(runReport(runtime: run.runtime))["passed"], .bool(true))
+    var changedRuntime = run.runtime
+    changedRuntime["machine"] = .string("different")
+    XCTAssertEqual(run.evaluate(runReport(runtime: changedRuntime))["reason"], .string("runtime_identity_changed"))
     history.removeResearchObjects(conversationId: reader.conversationId)
     XCTAssertThrowsError(try history.prepareSavedToolTest(reference, timeoutMillis: 1_000, scope: reader))
   }
