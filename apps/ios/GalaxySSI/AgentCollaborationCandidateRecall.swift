@@ -102,13 +102,19 @@ enum AgentCollaborationCandidateRecall {
     let plan: AgentCollaborationResearchReference
     let candidate: AgentCollaborationResearchReference?
     let runtimeReportedPassed: Bool?
+    var bindsPreparedReceipt = false
   }
 
   static func test(_ observation: AgentCollaborationNativeToolObservation) -> Test? {
     guard observation.result.provenance.toolId == AgentIOSOnDeviceRuntimeNativeToolCatalog.execute,
           observation.result.provenance.executorId == AgentIOSOnDeviceRuntimeNativeToolCatalog.brokerExecutorId,
-          observation.result.provenance.location == .application,
-          let request = observation.input["collaboration_tool"]?.objectValue, request["mode"] == .string("test"),
+          observation.result.provenance.location == .application else { return nil }
+    if observation.input["mode"] == .string("test"),
+       let plan = observation.input["tool_test_plan"]?.objectValue.flatMap(reference),
+       let source = observation.input["executable_tool"]?.objectValue.flatMap(reference), observation.evaluation != nil {
+      return .init(plan: plan, candidate: source, runtimeReportedPassed: nil, bindsPreparedReceipt: true)
+    }
+    guard let request = observation.input["collaboration_tool"]?.objectValue, request["mode"] == .string("test"),
           let plan = request["tool_test_plan"]?.objectValue.flatMap(reference) else { return nil }
     guard let report = observation.result.output["collaboration_tool_receipt"] else {
       guard !observation.result.isSuccess else { return nil }
@@ -132,11 +138,14 @@ enum AgentCollaborationCandidateRecall {
   static func describe(_ observation: AgentCollaborationNativeToolObservation, test: Test, binding: String,
                        id: String, hash: String) -> AgentMcpJSONValue {
     let receipt = observation.result.receipt
+    let reportAvailable = test.candidate != nil &&
+      (observation.input["mode"] != .string("test") || observation.evaluation?["checks"] != nil)
     return .object([
       "evidence_id": .string(id), "sha256": .string(hash), "origin": .string("ios_native_tool"),
       "subject_binding": .string(binding), "test_plan": .object(reference(test.plan)),
-      "runtime_report_available": .bool(test.candidate != nil),
+      "runtime_report_available": .bool(reportAvailable),
       "runtime_reported_passed": test.runtimeReportedPassed.map(AgentMcpJSONValue.bool) ?? .null,
+      "first_problem": AgentCollaborationSavedToolTest.firstProblem(observation.evaluation),
       "native_status": .string(observation.result.status.rawValue), "replayed": .bool(receipt.replayed),
       "native_invocation_id": .string(receipt.invocationId),
       "original_invocation_id": receipt.originalInvocationId.map(AgentMcpJSONValue.string) ?? .null,
@@ -180,11 +189,11 @@ enum AgentCollaborationCandidateRecall {
       scanned += 1
       guard let row = try database.researchRecord(AgentCollaborationNativeToolObservation.self,
         conversationId: scope.conversationId, key: key, revision: 0),
-        visible(row, scope: scope), let test = test(row),
-        test.plan == ref || test.candidate == ref,
-        let plan = try exact(test.plan, scope: scope, database: database),
-        let matched = match(test, subject: subject, visiblePlan: plan),
-        try runtimeSourceVisible(test, plan: plan, scope: scope, database: database) else { continue }
+        visible(row, scope: scope), let proposed = test(row),
+        proposed.plan == ref || proposed.candidate == ref,
+        let plan = try exact(proposed.plan, scope: scope, database: database),
+        let test = try resolved(proposed, observation: row, plan: plan, scope: scope, database: database),
+        let matched = match(test, subject: subject, visiblePlan: plan) else { continue }
       let identity = try encoded(row)
       guard key == prefix + identity.id else { throw AgentTeamHistoryDatabase.Failure.corrupt }
       records.append(describe(row, test: test, binding: matched, id: identity.id, hash: identity.hash))
@@ -207,18 +216,61 @@ enum AgentCollaborationCandidateRecall {
       conversationId: scope.conversationId, key: prefix + id, revision: 0) else { return nil }
     guard visible(row, scope: scope), let test = test(row),
           let plan = try exact(test.plan, scope: scope, database: database), plan.draft.kind == .toolTestPlan,
-          try runtimeSourceVisible(test, plan: plan, scope: scope, database: database)
+          try resolved(test, observation: row, plan: plan, scope: scope, database: database) != nil
     else { throw AgentTeamHistoryDatabase.Failure.stale }
     let identity = try encoded(row)
     guard identity.id == id, identity.hash == hash else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     return identity.bytes
   }
 
-  private static func runtimeSourceVisible(_ test: Test, plan: AgentCollaborationResearchRevision,
-                                           scope: AgentCollaborationToolEvidenceScope,
-                                           database: AgentTeamHistoryDatabase) throws -> Bool {
-    guard let source = test.candidate else { return true }
-    guard linkedTool(plan) == source else { return false }
-    return try exact(source, scope: scope, database: database)?.draft.kind == .executableTool
+  static func problems(scope: AgentCollaborationToolEvidenceScope, cursor: String,
+                       database: AgentTeamHistoryDatabase) throws -> AgentMcpJSONObject {
+    let binding = AgentMcpJSONCodec.sha256(["scope": .string(scope.ownershipDigest), "origin": .string("ios_native_tool")])
+    var after = ""
+    if !cursor.isEmpty {
+      let parts = cursor.split(separator: ":", omittingEmptySubsequences: false)
+      guard parts.count == 2, String(parts[0]) == binding, validDigest(String(parts[1])) else {
+        throw AgentTeamHistoryDatabase.Failure.corrupt
+      }
+      after = prefix + String(parts[1])
+    }
+    let keys = try database.milestoneKeys(conversationId: scope.conversationId, prefix: prefix, after: after)
+    var entries: [AgentMcpJSONValue] = []
+    var scanned = 0
+    for key in keys.prefix(32) {
+      scanned += 1
+      guard let row = try database.researchRecord(AgentCollaborationNativeToolObservation.self,
+        conversationId: scope.conversationId, key: key, revision: 0),
+        visible(row, scope: scope), let proposed = test(row),
+        let plan = try exact(proposed.plan, scope: scope, database: database),
+        let test = try resolved(proposed, observation: row, plan: plan, scope: scope, database: database),
+        row.evaluation?["passed"] == .bool(false) || test.runtimeReportedPassed == false || !row.result.isSuccess
+      else { continue }
+      let identity = try encoded(row)
+      guard key == prefix + identity.id else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      entries.append(describe(row, test: test, binding: test.candidate == nil ? "requested_test_plan" : "runtime_resolved_candidate",
+        id: identity.id, hash: identity.hash))
+      if entries.count == 8 { break }
+    }
+    let next = scanned < keys.count && scanned > 0 ? binding + ":" + String(keys[scanned - 1].dropFirst(prefix.count)) : nil
+    return ["problems": .array(entries), "next_cursor": next.map(AgentMcpJSONValue.string) ?? .null,
+      "origin": .string("ios_native_tool"), "guidance": .string("Follow next_cursor even on empty pages; read_original retains the exact report.")]
+  }
+
+  private static func resolved(_ test: Test, observation: AgentCollaborationNativeToolObservation,
+      plan: AgentCollaborationResearchRevision, scope: AgentCollaborationToolEvidenceScope,
+      database: AgentTeamHistoryDatabase) throws -> Test? {
+    guard let source = test.candidate else { return test }
+    let unbound = Test(plan: test.plan, candidate: nil, runtimeReportedPassed: nil)
+    guard plan.draft.kind == .toolTestPlan, linkedTool(plan) == source,
+          let tool = try exact(source, scope: scope, database: database), tool.draft.kind == .executableTool else { return nil }
+    guard test.bindsPreparedReceipt else { return test }
+    guard let prepared = AgentCollaborationSavedToolTest.boundPrepared(observation, plan: plan, tool: tool),
+          let recorded = observation.evaluation,
+          recorded["diagnostics_version"] == nil || recorded["diagnostics_version"] == .int(2),
+          prepared.evaluate(observation.result, detailed: recorded["diagnostics_version"] != nil) == recorded else {
+      return unbound
+    }
+    return Test(plan: test.plan, candidate: source, runtimeReportedPassed: recorded["passed"]?.boolValue)
   }
 }

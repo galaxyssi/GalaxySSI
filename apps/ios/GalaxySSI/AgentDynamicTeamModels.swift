@@ -188,6 +188,8 @@ enum AgentCollaborationRuleTopics {
     and expected (explicit null is allowed). Include target and regression cases. Registration neither executes nor releases code.
     Use capabilities to find unfinished tools and test plans. Follow usage_recall for original test history. A pre-execution
     rejection belongs only to the requested plan; only an exact runtime-bound test belongs to a candidate.
+    Use problems with origin ios_native_tool to find saved test failures and read their original reports. Problem paths and
+    observed values are diagnostics, not a diagnosed cause or authorization to retry.
     Publish an immutable tool_test_comparison with purpose, interpretation, limitations and baseline/candidate, each containing
     tool_test_plan (exact parent) and observation (evidence_id and sha256). Cite both originals in observations with
     origin ios_native_tool. Read both complete native reports from this run with mode native_evidence. Preserve environment, purpose, oracle_basis,

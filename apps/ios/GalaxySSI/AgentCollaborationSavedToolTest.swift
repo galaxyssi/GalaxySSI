@@ -47,7 +47,113 @@ enum AgentCollaborationSavedToolRelease {
 
 enum AgentCollaborationSavedToolTest {
   static let reportFormat = "galaxyssi.executable-tool-output.v1"
-  private static let maximumReportBytes = 96 * 1_024
+  static let maximumReportBytes = 96 * 1_024
+
+  static func firstProblem(_ evaluation: AgentMcpJSONObject?) -> AgentMcpJSONValue {
+    guard let item = evaluation?["problems"]?.arrayValue?.first?.objectValue else { return .null }
+    let fields = ["code", "path", "case_id"]
+    return .object(item.filter { fields.contains($0.key) }.mapValues { value in
+      .string(String((value.strictStringValue ?? "").prefix(200)))
+    })
+  }
+
+  static func boundCapture(_ output: AgentMcpJSONObject, stdoutLimit: Int = maximumReportBytes,
+                           stderrLimit: Int = 16 * 1_024) -> AgentMcpJSONObject {
+    var result = output
+    let previouslyTruncated = output["output_truncated"] == .bool(true)
+    var truncated = previouslyTruncated
+    for (stream, limit) in [("stdout", stdoutLimit), ("stderr", stderrLimit)] {
+      guard let text = output[stream]?.strictStringValue else { continue }
+      let count = Int64(text.utf16.count)
+      let countKey = stream + "_original_chars"
+      let flagKey = stream + "_truncated"
+      let recorded: Int64?
+      if case .int(let value)? = output[countKey], value >= 0 { recorded = value } else { recorded = nil }
+      let knownTruncation = output[flagKey] == .bool(true) || (recorded.map { $0 > count } ?? false)
+      if let recorded { result[countKey] = .int(max(recorded, count)) }
+      else if !previouslyTruncated && !knownTruncation { result[countKey] = .int(count) }
+      let bytes = text.utf8
+      let clipped = bytes.count > limit
+      if clipped {
+        var end = bytes.index(bytes.startIndex, offsetBy: max(0, limit))
+        while end != bytes.startIndex, (bytes[end] & 0xC0) == 0x80 { bytes.formIndex(before: &end) }
+        result[stream] = .string(String(decoding: bytes[..<end], as: UTF8.self))
+      }
+      result[flagKey] = .bool(knownTruncation || clipped)
+      truncated = truncated || knownTruncation || clipped
+    }
+    if result["output_truncated"] == nil || result["output_truncated"]?.boolValue != nil {
+      result["output_truncated"] = .bool(truncated)
+    }
+    return result
+  }
+
+  static func captureProblem(_ output: AgentMcpJSONObject) -> AgentMcpJSONObject? {
+    guard let stdout = output["stdout"]?.strictStringValue else {
+      return problem("report_stdout_required", "/stdout", expected: .string("text"), actual: describe(output["stdout"]))
+    }
+    for stream in ["stdout", "stderr"] {
+      let text = output[stream]?.strictStringValue ?? ""
+      let count = Int64(text.utf16.count)
+      let field = stream + "_original_chars"
+      if let original = output[field] {
+        guard case .int(let known) = original, known >= 0 else {
+          return problem("invalid_capture_count", "/" + field, expected: .string("nonnegative UTF-16 count"), actual: describe(original))
+        }
+        if known > count {
+          return problem("report_" + stream + "_truncated", "/" + stream, expected: .int(known), actual: .int(count))
+        }
+      }
+      if output[stream + "_truncated"] == .bool(true) {
+        return problem("report_" + stream + "_truncated", "/" + stream,
+          expected: .string("complete capture"), actual: .int(count))
+      }
+    }
+    if output["output_truncated"] != nil && output["output_truncated"] != .bool(false) {
+      return problem("report_capture_truncated", "/output_truncated", expected: .bool(false),
+        actual: describe(output["output_truncated"]))
+    }
+    if stdout.utf8.count > maximumReportBytes {
+      return problem("report_stdout_too_large", "/stdout", expected: .int(Int64(maximumReportBytes)), actual: .int(Int64(stdout.utf8.count)))
+    }
+    return nil
+  }
+
+  private static func problem(_ code: String, _ path: String, expected: AgentMcpJSONValue,
+                              actual: AgentMcpJSONValue) -> AgentMcpJSONObject {
+    ["code": .string(code), "path": .string(path), "expected": expected, "actual": actual, "cause": .string("not_diagnosed")]
+  }
+
+  private static func describe(_ value: AgentMcpJSONValue?) -> AgentMcpJSONValue {
+    guard let value else { return .string("missing") }
+    switch value {
+    case .string(let text): return .string(String(text.prefix(160)))
+    case .object, .array: return .string(type(value))
+    default: return value
+    }
+  }
+
+  private static func type(_ value: AgentMcpJSONValue) -> String {
+    switch value {
+    case .null: return "null"
+    case .string: return "string"
+    case .int, .double: return "number"
+    case .bool: return "boolean"
+    case .object: return "object"
+    case .array: return "array"
+    }
+  }
+
+  static func boundPrepared(_ original: AgentCollaborationNativeToolObservation,
+      plan: AgentCollaborationResearchRevision, tool: AgentCollaborationResearchRevision) -> Prepared? {
+    let result = original.result
+    guard result.provenance.location == .application,
+          result.provenance.executorId == AgentIOSOnDeviceRuntimeNativeToolCatalog.brokerExecutorId,
+          case .int(let timeout)? = original.input["timeout_ms"],
+          let prepared = prepare(plan: plan, tool: tool, timeoutMillis: timeout),
+          original.input == prepared.evidenceInput, prepared.matchesReceipt(result) else { return nil }
+    return prepared
+  }
 
   static func verifyOriginal(_ original: AgentCollaborationNativeToolObservation,
       plan: AgentCollaborationResearchRevision, tool: AgentCollaborationResearchRevision) -> AgentMcpJSONObject? {
@@ -56,12 +162,10 @@ enum AgentCollaborationSavedToolTest {
           result.receipt.startedAtEpochMillis >= registered,
           result.receipt.finishedAtEpochMillis >= result.receipt.startedAtEpochMillis,
           !result.receipt.replayed, result.receipt.originalInvocationId == nil,
-          result.provenance.location == .application,
-          result.provenance.executorId == AgentIOSOnDeviceRuntimeNativeToolCatalog.brokerExecutorId,
-          case .int(let timeout)? = original.input["timeout_ms"],
-          let prepared = prepare(plan: plan, tool: tool, timeoutMillis: timeout),
-          original.input == prepared.evidenceInput else { return nil }
-    let evaluation = prepared.evaluate(result)
+          let prepared = boundPrepared(original, plan: plan, tool: tool) else { return nil }
+    let version = original.evaluation?["diagnostics_version"]
+    guard version == nil || version == .int(2) else { return nil }
+    let evaluation = prepared.evaluate(result, detailed: version != nil)
     guard evaluation["runtime"] != nil, evaluation["checks"] != nil, evaluation == original.evaluation else { return nil }
     return evaluation
   }
@@ -163,26 +267,58 @@ enum AgentCollaborationSavedToolTest {
     let originalSource: String
     fileprivate let cases: [AgentMcpJSONObject]
 
-    func evaluate(_ result: AgentNativeToolResult) -> AgentMcpJSONObject {
-      func failure(_ code: String, _ path: String) -> AgentMcpJSONObject {
-        ["passed": .bool(false), "problems": .array([.object(["code": .string(code), "path": .string(path)])])]
+    func matchesReceipt(_ result: AgentNativeToolResult) -> Bool {
+      result.provenance.toolId == AgentIOSOnDeviceRuntimeNativeToolCatalog.execute &&
+        result.receipt.inputSha256 == AgentMcpJSONCodec.sha256(runtimeInput) &&
+        result.receipt.outputSha256 == AgentMcpJSONCodec.sha256(result.output)
+    }
+
+    func evaluate(_ result: AgentNativeToolResult, detailed: Bool = true) -> AgentMcpJSONObject {
+      func failure(_ code: String, _ path: String, expected: AgentMcpJSONValue = .null,
+                   actual: AgentMcpJSONValue = .null) -> AgentMcpJSONObject {
+        let item = detailed ? problem(code, path, expected: expected, actual: actual) :
+          ["code": .string(code), "path": .string(path)]
+        var failed: AgentMcpJSONObject = ["passed": .bool(false), "problems": .array([.object(item)])]
+        if detailed { failed["diagnostics_version"] = .int(2) }
+        return failed
       }
-      guard result.provenance.toolId == AgentIOSOnDeviceRuntimeNativeToolCatalog.execute,
-            result.receipt.inputSha256 == AgentMcpJSONCodec.sha256(runtimeInput),
-            result.receipt.outputSha256 == AgentMcpJSONCodec.sha256(result.output) else {
-        return failure("runtime_receipt_mismatch", "/receipt")
+      guard matchesReceipt(result) else {
+        return failure("runtime_receipt_mismatch", "/receipt", expected: .string("matching tool, input and output hashes"),
+          actual: .string("unbound receipt"))
       }
       guard result.status == .succeeded, result.receipt.status == .succeeded,
-            result.output["exit_code"] == .int(0) else { return failure("runtime_not_successful", "/exit_code") }
+            result.output["exit_code"] == .int(0) else {
+        return failure("runtime_not_successful", "/exit_code", expected: .int(0),
+          actual: result.output["exit_code"].map { describe($0) } ?? .string(result.error?.code ?? result.status.rawValue))
+      }
+      if detailed, let capture = captureProblem(result.output) {
+        return ["passed": .bool(false), "diagnostics_version": .int(2), "problems": .array([.object(capture)])]
+      }
       guard let stdout = result.output["stdout"]?.strictStringValue,
             stdout.utf8.count <= AgentCollaborationSavedToolTest.maximumReportBytes,
             result.output["output_truncated"] != .bool(true),
             (result.output["stdout_original_chars"]?.intValue ?? 0) <= Int64(stdout.utf16.count) else {
         return failure("report_stdout_truncated", "/stdout")
       }
-      guard let report = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(stdout.utf8)),
-            report["format"] == .string(AgentCollaborationSavedToolTest.reportFormat) else {
-        return failure("report_format_mismatch", "/format")
+      let bytes = Data(stdout.utf8)
+      if detailed {
+        guard let parsed = try? JSONSerialization.jsonObject(with: bytes, options: [.fragmentsAllowed]) else {
+          return failure("report_json_unparseable", "/stdout", expected: .string("one complete JSON object"),
+            actual: .string("invalid JSON"))
+        }
+        guard parsed is [String: Any] else {
+          return failure("report_object_required", "/stdout", expected: .string("object"),
+            actual: .string(parsed is [Any] ? "array" : "scalar"))
+        }
+      }
+      guard let report = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: bytes),
+            report["format"] == .string(reportFormat) else {
+        let received = (try? JSONDecoder().decode(AgentMcpJSONObject.self, from: bytes))?["format"]
+        return failure("report_format_mismatch", "/format", expected: .string(reportFormat), actual: describe(received))
+      }
+      if detailed, report["environment_matches"] != .bool(true) {
+        return failure("runtime_environment_mismatch", "/environment_matches", expected: .bool(true),
+          actual: describe(report["environment_matches"]))
       }
       guard report["environment_matches"] == .bool(true), let runtime = report["runtime"]?.objectValue,
             let version = runtime["python"]?.arrayValue, version.count == 3,
@@ -192,18 +328,22 @@ enum AgentCollaborationSavedToolTest {
             }),
             runtime["implementation"]?.strictStringValue?.isBlank == false,
             runtime["machine"]?.strictStringValue?.isBlank == false else {
-        return failure("runtime_identity_missing", "/runtime")
+        return failure("runtime_identity_missing", "/runtime",
+          expected: .string("Python version, implementation and machine"), actual: describe(report["runtime"]))
       }
       guard let results = report["results"]?.arrayValue, results.count == cases.count else {
-        return failure("case_coverage_mismatch", "/results")
+        return failure("case_coverage_mismatch", "/results", expected: .int(Int64(cases.count)),
+          actual: report["results"]?.arrayValue.map { .int(Int64($0.count)) } ?? describe(report["results"]))
       }
       var rows: [String: (AgentMcpJSONObject, Int)] = [:]
       for (index, value) in results.enumerated() {
         guard let row = value.objectValue, let id = row["id"]?.strictStringValue, !id.isBlank else {
-          return failure("case_id_required", "/results/\(index)/id")
+          return failure("case_id_required", "/results/\(index)/id", expected: .string("nonblank registered case ID"),
+            actual: describe(value.objectValue?["id"]))
         }
         guard rows.updateValue((row, index), forKey: id) == nil else {
-          return failure("duplicate_case_results", "/results/\(index)/id")
+          return failure("duplicate_case_results", "/results/\(index)/id", expected: .string("unique case ID"),
+            actual: .string(String(id.prefix(160))))
         }
       }
       var checks: [AgentMcpJSONValue] = []
@@ -211,32 +351,38 @@ enum AgentCollaborationSavedToolTest {
       for test in cases {
         let id = test.string("id")
         guard let (row, index) = rows[id], let expected = test["expected"] else {
-          return failure("case_coverage_mismatch", "/results")
+          return failure("case_coverage_mismatch", "/results", expected: .string(id), actual: .string("missing registered result"))
         }
         let path = "/results/\(index)"
         let actual = row["output"]
-        let problem: (String, String)?
+        let mismatch: AgentMcpJSONObject?
         if row["error"] != nil {
-          problem = ("case_execution_error", path + "/error")
+          mismatch = problem("case_execution_error", path + "/error", expected: .string("case output"), actual: describe(row["error"]))
         } else if let actual {
-          problem = AgentCollaborationSavedToolTest.difference(expected, actual, at: path + "/output")
-            .map { ("case_value_mismatch", $0) }
+          mismatch = difference(expected, actual, at: path + "/output")
         } else {
-          problem = ("case_output_missing", path + "/output")
+          mismatch = problem("case_output_missing", path + "/output", expected: .string("present"), actual: .string("missing"))
         }
         var check: AgentMcpJSONObject = ["id": .string(id), "purpose": test["purpose"] ?? .null,
-          "passed": .bool(problem == nil), "expected": expected, "actual": actual ?? .null,
+          "passed": .bool(mismatch == nil), "expected": expected, "actual": actual ?? .null,
           "actual_present": .bool(actual != nil)]
-        if let (code, pointer) = problem {
-          let details: AgentMcpJSONValue = .object(["code": .string(code), "path": .string(pointer), "case_id": .string(id)])
+        if var mismatch {
+          if !detailed {
+            let oldCode = row["error"] != nil ? "case_execution_error" : (actual == nil ? "case_output_missing" : "case_value_mismatch")
+            mismatch = ["code": .string(oldCode), "path": mismatch["path"] ?? .string(path)]
+          }
+          mismatch["case_id"] = .string(id)
+          let details = AgentMcpJSONValue.object(mismatch)
           check["problem"] = details
           problems.append(details)
         }
         if let error = row["error"] { check["error"] = error }
         checks.append(.object(check))
       }
-      return ["passed": .bool(problems.isEmpty), "runtime": .object(runtime),
+      var evaluation: AgentMcpJSONObject = ["passed": .bool(problems.isEmpty), "runtime": .object(runtime),
         "checks": .array(checks), "problems": .array(problems), "replayed": .bool(result.receipt.replayed)]
+      if detailed { evaluation["diagnostics_version"] = .int(2) }
+      return evaluation
     }
   }
 
@@ -305,25 +451,29 @@ enum AgentCollaborationSavedToolTest {
     SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
   }
 
-  private static func difference(_ a: AgentMcpJSONValue, _ b: AgentMcpJSONValue, at path: String) -> String? {
+  private static func difference(_ a: AgentMcpJSONValue, _ b: AgentMcpJSONValue, at path: String) -> AgentMcpJSONObject? {
     switch (a, b) {
     case (.int(let n), .double(let d)), (.double(let d), .int(let n)):
-      return Int64(exactly: d) == n ? nil : path
+      return Int64(exactly: d) == n ? nil : problem("value_mismatch", path, expected: describe(a), actual: describe(b))
     case (.object(let lhs), .object(let rhs)):
       for key in Set(lhs.keys).union(rhs.keys).sorted() {
         let child = path + "/" + key.replacingOccurrences(of: "~", with: "~0").replacingOccurrences(of: "/", with: "~1")
-        guard let x = lhs[key], let y = rhs[key] else { return child }
+        guard let x = lhs[key] else { return problem("unexpected_key", child, expected: .string("absent"), actual: .string("present")) }
+        guard let y = rhs[key] else { return problem("missing_key", child, expected: .string("present"), actual: .string("absent")) }
         if let mismatch = difference(x, y, at: child) { return mismatch }
       }
       return nil
     case (.array(let lhs), .array(let rhs)):
-      guard lhs.count == rhs.count else { return path }
+      guard lhs.count == rhs.count else {
+        return problem("array_length_mismatch", path, expected: .int(Int64(lhs.count)), actual: .int(Int64(rhs.count)))
+      }
       for (index, pair) in zip(lhs, rhs).enumerated() {
         if let mismatch = difference(pair.0, pair.1, at: path + "/\(index)") { return mismatch }
       }
       return nil
     default:
-      return a == b ? nil : path
+      return a == b ? nil : problem(type(a) == type(b) ? "value_mismatch" : "type_mismatch", path,
+        expected: .string(type(a)), actual: .string(type(b)))
     }
   }
 }

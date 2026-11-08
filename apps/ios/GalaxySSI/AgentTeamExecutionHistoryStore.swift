@@ -1249,10 +1249,12 @@ final class AgentTeamExecutionHistoryStore {
 
   private func recallCloudProblems(_ input: AgentMcpJSONObject,
                                    scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
-    guard Set(input.keys).isSubset(of: ["mode", "cursor"]),
+    guard Set(input.keys).isSubset(of: ["mode", "cursor", "origin"]),
           case .string(let cursor) = input["cursor"] ?? .string(""),
-          cursor.isEmpty || (cursor.utf8.count == 64 &&
-            cursor.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }) else {
+          case .string(let origin) = input["origin"] ?? .string("ios_cloud_tool"),
+          ["ios_cloud_tool", "ios_native_tool"].contains(origin),
+          (origin == "ios_native_tool" ? cursor.utf8.count <= 129 :
+            (cursor.isEmpty || AgentCollaborationCandidateRecall.validDigest(cursor))) else {
       throw AgentTeamHistoryDatabase.Failure.corrupt
     }
     return try access { database in
@@ -1263,6 +1265,9 @@ final class AgentTeamExecutionHistoryStore {
             try database.researchRecord(Bool.self, conversationId: scope.conversationId,
               key: "native-evidence-revoked", revision: 0) != true else {
         throw AgentTeamHistoryDatabase.Failure.stale
+      }
+      if origin == "ios_native_tool" {
+        return try AgentCollaborationCandidateRecall.problems(scope: scope, cursor: cursor, database: database)
       }
       let ids = try database.cloudProblemIds(scope: scope, after: cursor, limit: 9)
       let page = ids.prefix(8)
