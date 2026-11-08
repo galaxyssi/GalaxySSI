@@ -280,6 +280,20 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             "ORDER BY created_at DESC,turn_id DESC LIMIT 1", arrayOf(job.concernId, job.createdAt.toString(), job.turnId)).use {
         if (it.moveToFirst()) decodeResearchJob(it).takeIf { prior -> prior.conversationId == job.conversationId } else null
     }
+    fun priorResearchEvidence(job: HealthCareResearchJob, grant: HealthCareDiscussionGrant): List<HealthCareEvidence> =
+        db.rawQuery("SELECT e.id,e.turn_id,e.payload FROM research_jobs r JOIN evidence_reads e " +
+            "ON e.concern_id=r.concern_id AND e.turn_id=r.turn_id WHERE r.concern_id=? AND r.created_at<=? " +
+            "AND r.turn_id!=? AND r.state='COMPLETED' ORDER BY r.created_at DESC,r.turn_id DESC,e.id LIMIT 8",
+            arrayOf(job.concernId, job.createdAt.toString(), job.turnId)).use { rows ->
+            buildList {
+                while (rows.moveToNext()) {
+                    val id = rows.getString(0)
+                    val value = HealthCareEvidence.from(unpack("evidence", id, rows.getBlob(2)))
+                    check(value.id == id && value.grant.concernId == job.concernId && value.grant.turnId == rows.getString(1))
+                    if (HealthCareResearchHandoff.reusable(value, grant)) add(value)
+                }
+            }
+        }
     fun pendingResearchCancellations(after: String = ""): List<HealthCareResearchJob> = db.rawQuery(
         "SELECT $RESEARCH_COLUMNS FROM research_jobs WHERE cancel_pending=1 AND turn_id>? ORDER BY turn_id LIMIT 30", arrayOf(after)).use { rows ->
         buildList { while (rows.moveToNext()) add(decodeResearchJob(rows)) }
@@ -340,6 +354,8 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
     fun pendingPlans(id: String): List<HealthCarePlan> = db.rawQuery(
         "SELECT id,concern_id,created_at,state,payload FROM plans WHERE concern_id=? AND state='PENDING' ORDER BY created_at DESC,id DESC LIMIT 30",
         arrayOf(id)).use { rows -> buildList { while (rows.moveToNext()) add(decodePlan(rows)) } }
+    fun hasRecordedPlan(id: String, at: Long): Boolean = db.rawQuery(
+        "SELECT 1 FROM plans WHERE concern_id=? AND created_at<=? LIMIT 1", arrayOf(id, at.toString())).use { it.moveToFirst() }
     private fun persistPlan(value: HealthCarePlan) {
         db.insertWithOnConflict("plans", null, ContentValues().apply {
             put("id", value.id); put("concern_id", value.grant.concernId); put("created_at", value.createdAt)
