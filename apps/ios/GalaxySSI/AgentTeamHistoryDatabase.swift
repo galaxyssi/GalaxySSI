@@ -493,11 +493,21 @@ final class AgentTeamHistoryDatabase {
     }
   }
 
-  func milestoneKeys(conversationId: String, prefix: String, after: String) throws -> [String] {
+  static let recordOnlyMilestonePrefix = "record-only:"
+
+  func milestoneKeys(conversationId: String, prefix: String, after: String,
+                     coordinationOnly: Bool = false) throws -> [String] {
     guard prefix.hasSuffix(":") else { throw Failure.corrupt }
+    let exclusion = coordinationOnly ? """
+      AND NOT EXISTS (
+        SELECT 1 FROM collaboration_research_records AS marker
+        WHERE marker.namespace=entry.namespace AND marker.group_key=entry.group_key
+          AND marker.record_key='\(Self.recordOnlyMilestonePrefix)' || entry.record_key AND marker.revision=0)
+      """ : ""
     let statement = try prepare("""
-      SELECT record_key FROM collaboration_research_records
+      SELECT record_key FROM collaboration_research_records AS entry
       WHERE namespace=? AND group_key=? AND record_key>? AND record_key<? AND revision=0
+      \(exclusion)
       ORDER BY record_key LIMIT 33
       """)
     defer { sqlite3_finalize(statement) }

@@ -969,6 +969,108 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(linked.map { $0.draft.id }, ["note"])
   }
 
+  func testDecisionMilestonesFilterPrivateRecordsAndLinkExactOriginalsAfterReopen() throws {
+    let suite = "decision-milestone-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore(), file = root.appendingPathComponent("history.sqlite3")
+    func open() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    }
+    var team = durableTeamSnapshot("decision")
+    team.goal = "Compare two hypotheses"
+    team.members[0].dispatchCheckpoint = .accepted
+    team.members[1].dispatchCheckpoint = .accepted
+    XCTAssertTrue(open().upsert(team))
+    func scope(_ index: Int) -> AgentCollaborationToolEvidenceScope {
+      .init(runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
+        memberId: team.members[index].memberId, sourceId: team.members[index].sourceMessageId)
+    }
+    func publish(_ id: String, _ artifact: AgentMcpJSONObject) throws -> AgentMcpJSONObject {
+      try open().publishCollaborationMilestone(["mode": .string("publish"), "milestone_id": .string(id),
+        "artifact": .string(AgentMcpJSONCodec.stringify(artifact))], scope: scope(1))
+    }
+    let base: AgentMcpJSONObject = ["format": .string("galaxyssi.research-artifact.v1"), "summary": .string("Measurements")]
+    let privateMode: AgentMcpJSONValue = .object(["mode": .string("record_only")])
+    var original: AgentMcpJSONObject?
+    for index in 0..<35 {
+      var evidence = base
+      evidence["workspace"] = .array([.object(["id": .string("sample-\(index)"), "base_revision": .int(0),
+        "kind": .string("artifact"), "title": .string("Original"), "parents": .array([]),
+        "body": .object(["content": .string("Private original measurements")])])])
+      evidence["coordination"] = privateMode
+      let receipt = try publish("record-\(index)", evidence)
+      XCTAssertEqual(receipt["status"], .string("published"))
+      if index == 0 { original = receipt }
+    }
+    let history = open()
+    func inventory() throws -> [AgentMcpJSONValue] {
+      let snapshot = try open().goalWorkInventory(scope: scope(0))
+      return snapshot["members"]?.arrayValue?.first?.objectValue?["published_milestones"]?.arrayValue ?? []
+    }
+    XCTAssertTrue(try inventory().isEmpty)
+    let audit = try history.publishCollaborationMilestone(["mode": .string("list")], scope: scope(1))
+    XCTAssertEqual(audit["milestones"]?.arrayValue?.count, 32)
+    let cursor = try XCTUnwrap(audit["next_cursor"]?.strictStringValue)
+    let tail = try history.publishCollaborationMilestone(["mode": .string("list"), "cursor": .string(cursor)], scope: scope(1))
+    XCTAssertEqual(tail["milestones"]?.arrayValue?.count, 3)
+    let originalReceipt = try XCTUnwrap(original)
+    let recovered = try history.publishCollaborationMilestone(["mode": .string("receipt"), "milestone_id": .string("record-0"),
+      "artifact_sha256": try XCTUnwrap(originalReceipt["artifact_sha256"])], scope: scope(1))
+    XCTAssertEqual(recovered["coordination"], privateMode)
+    var request = base
+    request["workspace"] = .array([])
+    request["milestones"] = .array([.string("record-0")])
+    request["coordination"] = privateMode
+    XCTAssertEqual(try publish("not-an-offer", request)["status"], .string("invalid_artifact"))
+    let decision: AgentMcpJSONValue = .object(["mode": .string("request"), "decision": .string("Choose the next sample"),
+      "why_now": .string("The next measurement can distinguish the alternatives")])
+    request["coordination"] = decision
+    let offer = try publish("decision", request)
+    XCTAssertEqual(offer["references"], originalReceipt["references"])
+    XCTAssertEqual(try publish("decision", request), offer)
+    let rows = try inventory()
+    XCTAssertEqual(rows.count, 1)
+    let row = try XCTUnwrap(rows.first?.objectValue)
+    XCTAssertEqual(row["coordination"], decision)
+    let query: AgentMcpJSONObject = ["mode": .string(AgentCollaborationMilestoneCoordination.readMode),
+      "token": try XCTUnwrap(row["token"])]
+    XCTAssertThrowsError(try open().publishCollaborationMilestone(query, scope: scope(1)))
+    let available = try open().publishCollaborationMilestone(query, scope: scope(0))
+    XCTAssertEqual(available["references"], originalReceipt["references"])
+    let ref = try XCTUnwrap(available["references"]?.arrayValue?.first?.objectValue)
+    var exact = query
+    exact["object_id"] = ref["object_id"]
+    exact["revision"] = ref["revision"]
+    exact["artifact_sha256"] = ref["sha256"]
+    exact["offset"] = .int(0)
+    let page = try open().publishCollaborationMilestone(exact, scope: scope(0))
+    let bytes = try XCTUnwrap(Data(base64Encoded: page.string("data_b64")))
+    XCTAssertEqual(page["next_offset"], .null)
+    let record = try JSONDecoder().decode(AgentCollaborationResearchRevision.self, from: bytes)
+    XCTAssertEqual(record.draft.body["content"], .string("Private original measurements"))
+    exact["revision"] = .int(2)
+    XCTAssertThrowsError(try open().publishCollaborationMilestone(exact, scope: scope(0)))
+    var foreign = scope(0)
+    foreign.sourceId = "other-source"
+    XCTAssertThrowsError(try open().publishCollaborationMilestone(query, scope: foreign))
+    let author = scope(1)
+    team.members[1].status = .succeeded
+    team.updatedAtMillis += 1
+    XCTAssertTrue(history.upsert(team))
+    let final = try open().publishResearchObjects([], runId: author.runId, conversationId: author.conversationId,
+      turnId: author.turnId, memberId: author.memberId, sourceId: author.sourceId, finalMilestones: ["record-0"])
+    XCTAssertEqual(final.references.first, record.reference)
+    history.removeResearchObjects(conversationId: team.conversationId)
+    XCTAssertThrowsError(try open().publishCollaborationMilestone(query, scope: scope(0)))
+    let database = try AgentTeamHistoryDatabase(fileURL: file,
+      storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    let key = AgentCollaborationMilestoneCoordination.requestPrefix + query.string("token")
+    XCTAssertNil(try database.researchRecord(AgentCollaborationMilestoneCoordination.RequestIndex.self,
+      conversationId: team.conversationId, key: key, revision: 0))
+  }
+
   func testDesktopPublicationRecoversExactFrozenArtifactsAndDistinguishesAbsence() throws {
     let suite = "desktop-publication-receipt-\(UUID())"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

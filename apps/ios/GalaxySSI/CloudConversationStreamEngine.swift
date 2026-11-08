@@ -749,7 +749,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           },
           collaborationPublish: collaborationRecallScope.map { scope in
             { arguments in
-              let mode = arguments.string("mode")
+              let requestedMode = arguments.string("mode")
+              let mode = requestedMode == AgentCollaborationMilestoneCoordination.readMode
+                ? AgentCollaborationGoalAssessmentPolicy.workInventoryMode : requestedMode
               if AgentCollaborationGoalAssessmentPolicy.dispatchesWork(mode), let goalWorkHandler {
                 guard collaborationEvidence == nil, collaborationModelAudit == scope else { return nil }
                 return await goalWorkHandler(arguments)
