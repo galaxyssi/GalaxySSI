@@ -3,6 +3,50 @@ import XCTest
 
 @MainActor
 final class GalaxySSILinkReliabilityTests: XCTestCase {
+  func testReceiptReplayCoalescesOnlyBrokerAcknowledgedExactCiphertext() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let cipher = GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    var uptime: TimeInterval = 100
+    let journal = GalaxySSITransportReceiptJournal(applicationSupportDirectory: directory, cipher: cipher, uptime: { uptime })
+    let digest = String(repeating: "a", count: 64)
+    var encryptions = 0
+    func enqueue(_ journal: GalaxySSITransportReceiptJournal, binding: String = "route",
+                 digest: String? = nil, replay: Bool = true, now: Int64 = 1_000) throws -> Bool {
+      try journal.enqueue(peerId: "peer", phonePeer: false, binding: binding, receivedMessageId: "source",
+        receivedCiphertextDigest: digest, isReplay: replay, nowMillis: now) {
+        encryptions += 1
+        return "encrypted-receipt"
+      }
+    }
+    XCTAssertTrue(try enqueue(journal, digest: digest, replay: false))
+    let original = try XCTUnwrap(journal.due(nowMillis: 1_000).first)
+    let work = try XCTUnwrap(journal.claim(id: original.id, nowMillis: 1_000))
+    try journal.acknowledge(id: work.id, attemptToken: "stale-attempt")
+    for _ in 0..<128 { XCTAssertTrue(try enqueue(journal, digest: digest)) }
+    XCTAssertEqual(encryptions, 1)
+    XCTAssertEqual(journal.due(nowMillis: 13_000).first?.wirePayload, "encrypted-receipt")
+    try journal.acknowledge(id: work.id, attemptToken: work.attemptToken)
+    for _ in 0..<128 { XCTAssertFalse(try enqueue(journal, digest: digest)) }
+    XCTAssertEqual(encryptions, 1)
+
+    XCTAssertTrue(try enqueue(journal, binding: "other-route", digest: digest))
+    XCTAssertTrue(try enqueue(journal, digest: String(repeating: "b", count: 64)))
+    for pending in journal.due(nowMillis: 1_000) { try journal.discard(id: pending.id) }
+    XCTAssertEqual(encryptions, 3)
+    XCTAssertFalse(try enqueue(journal, digest: digest))
+    uptime += 2
+    XCTAssertTrue(try enqueue(journal, digest: digest))
+    let next = try XCTUnwrap(journal.due(nowMillis: 1_000).first)
+    let claimed = try XCTUnwrap(journal.claim(id: next.id, nowMillis: 1_000))
+    try journal.acknowledge(id: next.id, attemptToken: claimed.attemptToken)
+    XCTAssertFalse(try enqueue(journal, digest: digest))
+
+    let reopened = GalaxySSITransportReceiptJournal(applicationSupportDirectory: directory, cipher: cipher, uptime: { uptime })
+    XCTAssertTrue(try enqueue(reopened, digest: digest))
+    XCTAssertEqual(encryptions, 5)
+  }
+
   func testAttachmentDeclarationReuseAndSafeStartupCompaction() throws {
     let fixture = try ChunkFixture()
     let suite = "attachment-declaration-" + UUID().uuidString

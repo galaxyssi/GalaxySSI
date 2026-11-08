@@ -249,6 +249,14 @@ extension MessageCoordinator {
     }
   }
 
+  func wakeOutboxAfterReceipt() {
+    if outboxFlushInProgress {
+      outboxFlushRequested = true
+    } else {
+      scheduleOutboxFlush(after: 0)
+    }
+  }
+
   private func peerDeliveryBinding(contactId: String, topic: String) -> String? {
     guard let contact = store.contact(id: contactId), contact.id == contactId, contact.isCommunicable else { return nil }
     let routes: GalaxySSILinkRoutes?
