@@ -62,6 +62,51 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertNil(try Data(contentsOf: file).range(of: Data("glucoseContext".utf8)))
   }
 
+  func testRecordedBloodPressureUsesEitherComponentAndUnroundedKilopascals() {
+    func warning(_ systolic: Decimal, _ diastolic: Decimal, unit: String = "mmHg") -> Bool {
+      GalaxySSIHealthCarePriority.evaluate(.init(metric: .bloodPressure, value: systolic,
+        diastolic: diastolic, unitOverride: unit)) != nil
+    }
+    XCTAssertFalse(warning(180, 120))
+    XCTAssertTrue(warning(181, 75))
+    XCTAssertTrue(warning(160, 121))
+    XCTAssertFalse(warning(121, 140))
+    XCTAssertFalse(warning(185, 80, unit: "unknown"))
+    XCTAssertFalse(warning(Decimal(string: "23.998032")!, Decimal(string: "15.998688")!, unit: "kPa"))
+    XCTAssertTrue(warning(Decimal(string: "23.998033")!, 14, unit: "kPa"))
+    XCTAssertTrue(warning(22, Decimal(string: "15.998689")!, unit: "kPa"))
+  }
+
+  @MainActor
+  func testBloodPressureReviewIsBoundToLatestRecordAndDoesNotChangeOtherConcerns() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date(timeIntervalSince1970: 1_700_000_000)
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-90), value: 115,
+      unitOverride: "mg/dL", referenceInterval: "70 - 99"))
+    try records.write(.init(metric: .bloodPressure, measuredAt: now.addingTimeInterval(-60), value: 181, diastolic: 90))
+    XCTAssertThrowsError(try records.reconcileLocalCare(now: now))
+    XCTAssertNil(try GalaxySSIHealthRecords.currentCareBloodPressureWarning(records.load(), now: now))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let archive = try records.load()
+    let old = try XCTUnwrap(GalaxySSIHealthRecords.currentCareBloodPressureWarning(archive, now: now))
+    try records.acknowledgeLocalCareBloodPressure(old.warning, now: now)
+    XCTAssertEqual(try records.load().localCare?.acknowledgedBloodPressure, old.warning.record)
+    try records.write(.init(metric: .bloodPressure, measuredAt: now, value: 165, diastolic: 121))
+    XCTAssertNil(try GalaxySSIHealthRecords.currentCareBloodPressureWarning(records.load(), now: now))
+    XCTAssertThrowsError(try records.acknowledgeLocalCareBloodPressure(old.warning, now: now))
+    try records.reconcileLocalCare(now: now)
+    let updated = try records.load()
+    let latest = try XCTUnwrap(GalaxySSIHealthRecords.currentCareBloodPressureWarning(updated, now: now))
+    XCTAssertEqual(latest.concern.id, old.concern.id)
+    XCTAssertNotEqual(updated.localCare?.acknowledgedBloodPressure, latest.warning.record)
+    XCTAssertEqual(updated.localCare?.current["glucose"], archive.localCare?.current["glucose"])
+    try records.setPrivacy(.localCare, enabled: false)
+    XCTAssertNil(try GalaxySSIHealthRecords.currentCareBloodPressureWarning(records.load(), now: now))
+  }
+
   @MainActor
   func testDataFilesOrdersAndPagesMetadataWithoutReadingPayloads() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

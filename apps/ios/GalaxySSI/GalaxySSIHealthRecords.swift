@@ -434,17 +434,20 @@ struct GalaxySSIHealthRecords {
     for metric in GalaxySSIHealthMetric.allCases {
       let key = metric.rawValue
       let prior = ledger.current[key]
-      let assessed = GalaxySSIHealthCare.assess(readings[metric] ?? [], context: prior?.context)
-      guard prior != nil || assessed?.signals.isEmpty == false else { continue }
+      let candidates = readings[metric] ?? []
+      let assessed = GalaxySSIHealthCare.assess(candidates, context: prior?.context)
+      let warning = GalaxySSIHealthCarePriority.evaluate(candidates.first)
+      guard prior != nil || assessed?.signals.isEmpty == false || warning != nil else { continue }
       let next = assessed ?? .removed
       if let prior {
-        guard prior.assessment != next, prior.revision < Int.max else { continue }
+        guard prior.revision < Int.max, prior.assessment != next || prior.bloodPressureWarning != warning else { continue }
         var updated = prior
         updated.revision += 1
         updated.updatedAt = max(prior.updatedAt, now)
         updated.assessment = next
+        updated.bloodPressureWarning = warning
         if updated.context?.record != next.record { updated.context = nil }
-        if prior.stage != .paused && !(prior.stage == .closed && next.signals.isEmpty) {
+        if prior.stage != .paused && !(prior.stage == .closed && next.signals.isEmpty && warning == nil) {
           updated.stage = next.record == nil || next.signals.contains(.glucoseContext) || next.signals.contains(.notExact)
             ? .verify : .reassess
         }
@@ -452,13 +455,34 @@ struct GalaxySSIHealthRecords {
       } else {
         guard try ledger.deletedInput[key] != GalaxySSIHealthCare.inputDigest(next) else { continue }
         ledger.publish(.init(id: UUID(), metric: metric, revision: 1, updatedAt: now, assessment: next,
-          stage: next.signals.contains(.guidelineReview) ? .evidence : .verify))
+          stage: next.signals.contains(.guidelineReview) ? .evidence : .verify, bloodPressureWarning: warning))
       }
       changed = true
     }
     guard changed || archive.localCareLastEvaluatedAt == nil else { return }
     archive.localCare = ledger
     archive.localCareLastEvaluatedAt = now
+    try persist(archive)
+  }
+
+  static func currentCareBloodPressureWarning(_ archive: Archive, now: Date = Date())
+      -> (concern: GalaxySSIHealthCare.Concern, warning: GalaxySSIHealthCarePriority.Warning)? {
+    guard archive.localCareAllowed == true,
+          let concern = archive.localCare?.current[GalaxySSIHealthMetric.bloodPressure.rawValue],
+          let warning = concern.bloodPressureWarning,
+          GalaxySSIHealthCarePriority.evaluate(archive.current.first(where: {
+            $0.metric == .bloodPressure && $0.isValid && $0.measuredAt <= now
+          })) == warning else { return nil }
+    return (concern, warning)
+  }
+
+  func acknowledgeLocalCareBloodPressure(_ warning: GalaxySSIHealthCarePriority.Warning, now: Date = Date()) throws {
+    var archive = try load()
+    guard var ledger = archive.localCare, Self.currentCareBloodPressureWarning(archive, now: now)?.warning == warning
+    else { throw Failure.stale }
+    guard ledger.acknowledgedBloodPressure != warning.record else { return }
+    ledger.acknowledgedBloodPressure = warning.record
+    archive.localCare = ledger
     try persist(archive)
   }
 
