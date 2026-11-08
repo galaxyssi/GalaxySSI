@@ -21,6 +21,7 @@ enum GalaxySSIHealthCareDiscussion {
     var id = UUID()
     let concernID: UUID
     var turns: [Turn] = []
+    var archivedAt: Date?
   }
 
   struct Snapshot: Encodable {
@@ -39,7 +40,7 @@ enum GalaxySSIHealthCareDiscussion {
     let clarification: Clarification?
     let collectionCondition: GalaxySSIHealthCare.Context.Answers.Collection?
 
-    init(_ concern: GalaxySSIHealthCare.Concern) {
+    init(_ concern: GalaxySSIHealthCare.Concern, includesSavedProfile: Bool = false) {
       comparison = concern.comparison.flatMap {
         $0.after.record == concern.assessment.record ? $0.modelValue(currentContext: concern.context) : nil
       }
@@ -56,13 +57,14 @@ enum GalaxySSIHealthCareDiscussion {
       baselineLow = concern.assessment.baseline?.low
       baselineHigh = concern.assessment.baseline?.high
       confirmedTarget = concern.target?.value
-      clarification = concern.metric == .glucose && concern.assessment.record != nil ? .init(concern, current: current) : nil
+      clarification = concern.metric == .glucose && concern.assessment.record != nil
+        ? .init(concern, current: current, includesSavedProfile: includesSavedProfile) : nil
     }
   }
 
   struct Clarification: Encodable {
     let source = "saved_health_center"
-    let separateProfileIncluded = false
+    let separateProfileIncluded: Bool
     let currentSymptomsAssessed = false
     let status: String
     let knownAnswers: GalaxySSIHealthCare.Context.Answers
@@ -70,8 +72,9 @@ enum GalaxySSIHealthCareDiscussion {
     let measuredAt: Date?
     let confirmedAt: Date?
 
-    init(_ concern: GalaxySSIHealthCare.Concern, current: GalaxySSIHealthCare.Context?) {
+    init(_ concern: GalaxySSIHealthCare.Concern, current: GalaxySSIHealthCare.Context?, includesSavedProfile: Bool) {
       let answers = current?.answers ?? .init()
+      separateProfileIncluded = includesSavedProfile
       status = current?.answers != nil ? "current_record" : (current == nil && concern.context != nil
         ? "other_record_or_revision" : "not_confirmed")
       knownAnswers = answers
@@ -102,6 +105,8 @@ enum GalaxySSIHealthCareDiscussion {
     var proposesPlan = false
     var evidence: [GalaxySSIHealthCareEvidence.Receipt] = []
     var history: GalaxySSIHealthCareHistoryTool.Approval?
+    var profileScope: GalaxySSIHealthCareProfileScope.Link?
+    var profileScopeEpoch: UUID?
 
     func isCurrent(at now: Date) -> Bool {
       now >= reviewedAt && now.timeIntervalSince(reviewedAt) < GalaxySSIHealthCareDiscussion.approvalLifetime
@@ -132,6 +137,12 @@ enum GalaxySSIHealthCareDiscussion {
     let concern: Snapshot
     let question: String
     let previous: [Exchange]
+    let savedProfile: AgentMcpJSONObject?
+
+    enum CodingKeys: String, CodingKey {
+      case concern, question, previous
+      case savedProfile = "saved_profile"
+    }
   }
 
   static func endpoint(for model: CloudModelConfig) -> URL? {
@@ -149,7 +160,8 @@ enum GalaxySSIHealthCareDiscussion {
       "credential": credential.map { String(format: "%02x", $0) }.joined()])
   }
 
-  static func payload(concern: GalaxySSIHealthCare.Concern, question: String, thread: Thread, destination: String) throws -> String {
+  static func payload(concern: GalaxySSIHealthCare.Concern, question: String, thread: Thread, destination: String,
+                      savedProfile: AgentMcpJSONObject? = nil) throws -> String {
     guard thread.concernID == concern.id, !question.isBlank, question.utf8.count <= 2_048
     else { throw GalaxySSIHealthRecords.Failure.invalid }
     // A new turn does not inherit consent to disclose a previous history-derived answer.
@@ -166,10 +178,11 @@ enum GalaxySSIHealthCareDiscussion {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     encoder.dateEncodingStrategy = .iso8601
-    let snapshot = Snapshot(concern)
+    let snapshot = Snapshot(concern, includesSavedProfile: savedProfile != nil)
     // Keep a contiguous suffix of complete exchanges; approval covers the exact encoded bytes.
     for count in stride(from: previous.count, through: 0, by: -1) {
-      let data = try encoder.encode(Payload(concern: snapshot, question: question, previous: Array(previous.suffix(count))))
+      let data = try encoder.encode(Payload(concern: snapshot, question: question, previous: Array(previous.suffix(count)),
+        savedProfile: savedProfile))
       if data.count <= maximumPayloadBytes { return String(decoding: data, as: UTF8.self) }
     }
     throw GalaxySSIHealthRecords.Failure.invalid
@@ -193,7 +206,8 @@ enum GalaxySSIHealthCareDiscussion {
       answers, not unknowns. Do not repeat answered questions. Ask only materially unresolved questions, do not infer
       fasting hours from a label, and treat previous exchanges marked historical or unknown as historical context.
       If a previous answer conflicts with a current saved answer, use the current saved answer.
-      The separate health profile and current symptoms are not included; do not claim they were never supplied.
+      Current symptoms are not assessed. Use saved_profile only when supplied, as selected self-reported context.
+      An unselected or unavailable field is not a negative finding. Do not infer other medical history or symptoms.
       State missing measurement context and uncertainty. Do not diagnose, change medication, or claim to have accessed
       records or verified current external sources. Discuss possible questions for a clinician, not a saved care plan.
       Do not claim to schedule or perform any action. If proposing a plan, report each action's source requirements,

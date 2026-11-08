@@ -911,6 +911,84 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testCareProfileScopeDisclosesOnlySelectionAndArchivesBeforeReusingDiscussion() throws {
+    typealias Scope = GalaxySSIHealthCareProfileScope
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer {
+      try? FileManager.default.removeItem(at: file)
+      try? FileManager.default.removeItem(at: file.appendingPathExtension("profile"))
+    }
+    let records = GalaxySSIHealthRecords(owner: "profile-scope", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let date = now.addingTimeInterval(-60)
+    let birth = try XCTUnwrap(Calendar.current.date(byAdding: .year, value: -30, to: date.addingTimeInterval(-86_400 * 7)))
+    let selected = GalaxySSIHealthProfile.Background(kind: .medication, title: "Selected fixture", notes: "Selected detail")
+    let excluded = GalaxySSIHealthProfile.Background(kind: .allergy, title: "Excluded entry", notes: "Not selected")
+    var profile = GalaxySSIHealthProfile()
+    profile.name = "Excluded name"
+    profile.birthDate = birth
+    profile.height = 174
+    profile.background = [selected, excluded]
+    try records.writeProfile(profile)
+    try records.write(.init(metric: .glucose, measuredAt: date, value: 110, unitOverride: "mg/dL"))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.setHealthOnlinePermission(true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    let first = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    let link = try Scope.Link(.init(fields: [.birthDate], entries: [selected.id]), profile: records.loadProfile())
+    try records.setLocalCareProfileScope(concern, link: link, now: now)
+    let scoped = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    XCTAssertNotEqual(scoped.id, first.id)
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    func prepare() throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Explain the selected facts",
+        destinationID: "provider", model: model, credential: "fixture-api-key", now: now)
+    }
+    let approval = try prepare()
+    let decoded = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(approval.payload.utf8))
+    let snapshot = try XCTUnwrap(decoded["saved_profile"]?.objectValue)
+    XCTAssertEqual(snapshot["fields"]?.objectValue?["age_at_measurement"]?.objectValue?["value"], .int(30))
+    XCTAssertEqual(snapshot["entries"]?.arrayValue?.count, 1)
+    XCTAssertTrue(approval.payload.contains("Selected detail"))
+    XCTAssertFalse(approval.payload.contains("Excluded"))
+    XCTAssertFalse(approval.payload.contains("birthDate"))
+    XCTAssertFalse(approval.payload.contains("height"))
+    XCTAssertFalse(approval.payload.contains(selected.id.uuidString))
+    try records.beginLocalCareDiscussionTurn(approval, now: now)
+    try records.finishLocalCareDiscussionTurn(approval, answer: "Archived private answer", now: now)
+    let next = try prepare()
+
+    var edited = try records.loadProfile()
+    edited.name = "Changed unselected name"
+    edited.background[1].notes = "Changed unselected entry"
+    try records.writeProfile(edited)
+    XCTAssertEqual(try records.openLocalCareDiscussion(id: concern.id, metric: .glucose).id, scoped.id)
+    XCTAssertNoThrow(try records.validateLocalCareDiscussionApproval(next))
+
+    edited = try records.loadProfile()
+    edited.background.removeAll { $0.id == selected.id }
+    try records.writeProfile(edited)
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(next, now: now))
+    let fresh = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    XCTAssertNotEqual(fresh.id, scoped.id)
+    XCTAssertTrue(fresh.turns.isEmpty)
+    let archive = try records.load()
+    XCTAssertEqual(archive.archivedCareDiscussions?[scoped.id.uuidString]?.turns.first?.answer, "Archived private answer")
+    let replacement = try prepare()
+    XCTAssertFalse(replacement.payload.contains("Archived private answer"))
+    let updated = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(replacement.payload.utf8))
+    XCTAssertEqual(updated["saved_profile"]?.objectValue?["unavailable_selected_entries"], .int(1))
+    let current = try XCTUnwrap(archive.localCare?.current["glucose"])
+    try records.setLocalCareProfileScope(current, link: nil, now: now)
+    XCTAssertFalse(try prepare().payload.contains("saved_profile"))
+    let cleared = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertNotNil(cleared.profileScopeEpoch)
+    XCTAssertNotEqual(cleared.profileScopeEpoch, current.profileScopeEpoch)
+  }
+
+  @MainActor
   func testAppleHealthCoverageKeepsSelectionQueryAndImportHistoryIndependent() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

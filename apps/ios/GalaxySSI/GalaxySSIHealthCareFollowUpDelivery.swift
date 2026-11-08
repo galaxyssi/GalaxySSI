@@ -38,6 +38,9 @@ struct GalaxySSIHealthCareFollowUpLifecycle: ViewModifier {
       .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) {
         if $0.object as? String == store.profile.identityFingerprint { generation = UUID() }
       }
+      .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.profileInputsChanged)) {
+        if $0.object as? String == store.profile.identityFingerprint { generation = UUID() }
+      }
       .task(id: generation) { await reconcile() }
       .sheet(item: $destination) { route in
         NavigationView {

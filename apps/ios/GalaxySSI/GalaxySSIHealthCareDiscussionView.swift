@@ -1,5 +1,6 @@
 import CryptoKit
 import SwiftUI
+import UIKit
 
 @MainActor
 struct GalaxySSIHealthCareDiscussionView: View {
@@ -11,6 +12,8 @@ struct GalaxySSIHealthCareDiscussionView: View {
   let concernID: UUID
   let metric: GalaxySSIHealthMetric
   @State private var thread: GalaxySSIHealthCareDiscussion.Thread?
+  @State private var archived: [GalaxySSIHealthCareDiscussion.Thread] = []
+  @State private var archiveLimit = 10
   @State private var question = ""
   @State private var provider = ""
   @State private var allowed = false
@@ -26,6 +29,9 @@ struct GalaxySSIHealthCareDiscussionView: View {
   @State private var readingID: UUID?
 
   private var busy: Bool { task != nil || readingTask != nil }
+  private var canRead: Bool {
+    scene == .active && UIApplication.shared.isProtectedDataAvailable && store.profile.identityFingerprint == records.owner
+  }
 
   private var contacts: [GalaxySSIContact] {
     store.contacts.filter {
@@ -39,7 +45,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
 
   var body: some View {
     List {
-      if scene == .active, let thread {
+      if canRead, let thread {
         if thread.turns.count > limit {
           Button(t("more", "Show earlier messages")) { limit += 20 }
         }
@@ -81,6 +87,26 @@ struct GalaxySSIHealthCareDiscussionView: View {
         }
         if readingTask != nil { ProgressView(t("reading_sources", "Reading public sources")) }
         if busy { Button(t("stop", "Cancel request"), role: .cancel) { clearRequest() } }
+        if !archived.isEmpty {
+          Section(scopeText("archived", "Earlier private discussions")) {
+            ForEach(archived.prefix(archiveLimit)) { previous in
+              DisclosureGroup {
+                ForEach(previous.turns) { turn in
+                  VStack(alignment: .leading, spacing: 4) {
+                    Text(turn.question).font(.body.weight(.semibold))
+                    if let answer = turn.answer { Text(answer).textSelection(.enabled) }
+                  }
+                }
+              } label: {
+                if let date = previous.archivedAt { Text(date, format: .dateTime) }
+                else { Text(scopeText("archived", "Earlier private discussions")) }
+              }
+            }
+            if archived.count > archiveLimit {
+              Button(scopeText("older", "Show more discussions")) { archiveLimit += 10 }
+            }
+          }
+        }
         GalaxySSIHealthCarePlansSection(records: records, concernID: concernID)
         GalaxySSIHealthCareFollowUpsSection(records: records, concernID: concernID, metric: metric)
       }
@@ -96,6 +122,18 @@ struct GalaxySSIHealthCareDiscussionView: View {
     .onChange(of: store.profile.identityFingerprint) { _ in clearSensitive() }
     .onChange(of: models) { _ in validateVisibleApprovals() }
     .onChange(of: provider) { _ in approval = nil }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
+      clearSensitive()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
+      refresh(open: true)
+    }
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.profileInputsChanged)) {
+      if $0.object as? String == records.owner {
+        validateVisibleApprovals()
+        refresh(open: true)
+      }
+    }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) {
       if $0.object as? String == records.owner {
         validateVisibleApprovals()
@@ -105,11 +143,15 @@ struct GalaxySSIHealthCareDiscussionView: View {
     .sheet(item: $approval) { review in
       NavigationView {
         List {
-          if scene == .active {
+          if canRead {
             Section(t("provider", "Provider and model")) {
               Text(review.model.modelId)
               Text(review.endpoint.absoluteString).font(.footnote).textSelection(.enabled)
               if review.proposesPlan { Text(t("request_plan", "Request a draft plan")) }
+              if review.profileScope != nil {
+                Text(scopeText("preview", "Includes only the saved profile fields and entries selected for this concern."))
+                  .font(.footnote)
+              }
               if review.history != nil {
                 Text(t("history_scope", "Includes the 30 most recent measurements for this concern at most. This model can request up to four older pages of 30 measurements each for this request only."))
                   .font(.footnote)
@@ -134,20 +176,26 @@ struct GalaxySSIHealthCareDiscussionView: View {
   }
 
   private func refresh(open: Bool) {
-    guard scene == .active, store.profile.identityFingerprint == records.owner else { clearSensitive(); return }
+    guard canRead else { clearSensitive(); return }
     do {
-      if open { thread = try records.openLocalCareDiscussion(id: concernID, metric: metric) }
+      if open { _ = try records.openLocalCareDiscussion(id: concernID, metric: metric) }
       let archive = try records.load()
       guard archive.localCareAllowed == true, let concern = archive.localCare?.current[metric.rawValue],
             concern.id == concernID, concern.stage != .paused, concern.stage != .closed,
             concern.assessment.record != nil else { throw GalaxySSIHealthRecords.Failure.permission }
-      thread = archive.localCareDiscussions?[concernID.uuidString]
+      let next = archive.localCareDiscussions?[concernID.uuidString]
+      if thread != nil, thread?.id != next?.id {
+        clearRequest(); question = ""; allowsHistory = false; limit = 20
+      }
+      thread = next
+      archived = (archive.archivedCareDiscussions ?? [:]).values.filter { $0.concernID == concernID }
+        .sorted { ($0.archivedAt ?? .distantPast, $0.id.uuidString) > ($1.archivedAt ?? .distantPast, $1.id.uuidString) }
       allowed = archive.healthOnlinePermission != nil
     } catch { clearSensitive(); failed = true }
   }
 
   private func preview() {
-    guard scene == .active, store.profile.identityFingerprint == records.owner, let model = models[provider],
+    guard canRead, let model = models[provider],
           let key = store.apiKey(for: model), !busy else { failed = true; return }
     do {
       let pending = try records.prepareLocalCareDiscussion(id: concernID, metric: metric, question: question,
@@ -179,7 +227,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
   }
 
   private func currentRoute(_ review: GalaxySSIHealthCareDiscussion.Approval) -> (GalaxySSIContact, String)? {
-    guard scene == .active, store.profile.identityFingerprint == records.owner, review.owner == records.owner,
+    guard canRead, review.owner == records.owner,
           let contact = contacts.first(where: { $0.id == review.destinationID }),
           contact.selectedCloudModel == review.model,
           GalaxySSIHealthCareDiscussion.endpoint(for: review.model) == review.endpoint,
@@ -300,9 +348,14 @@ struct GalaxySSIHealthCareDiscussionView: View {
   }
   private func clearSensitive() {
     clearRequest(); thread = nil; question = ""; provider = ""; allowed = false; failed = false; proposesPlan = false
+    archived = []; archiveLimit = 10
     selectedSources = []; allowsHistory = false
   }
   private func t(_ key: String, _ fallback: String) -> String {
     GalaxySSILocalization.string("galaxyssi.health.discussion." + key, fallback: fallback, language: language)
+  }
+
+  private func scopeText(_ key: String, _ fallback: String) -> String {
+    GalaxySSIHealthCareProfileScopeView.text(key, fallback, language: language)
   }
 }

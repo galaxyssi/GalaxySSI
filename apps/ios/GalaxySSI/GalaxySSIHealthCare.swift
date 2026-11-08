@@ -91,6 +91,8 @@ enum GalaxySSIHealthCare {
     var revision: Int
     var updatedAt: Date
     var assessment: Assessment
+    var profileScope: GalaxySSIHealthCareProfileScope.Link?
+    var profileScopeEpoch: UUID?
     var measurement: GalaxySSIHealthCareComparison.Sample?
     var comparison: GalaxySSIHealthCareComparison.Pair?
     var stage: Stage
