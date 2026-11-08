@@ -664,10 +664,14 @@ struct GalaxySSIHealthRecords {
   private func currentDiscussionConcern(id: UUID, metric: GalaxySSIHealthMetric, archive: Archive,
                                         now: Date) throws -> GalaxySSIHealthCare.Concern {
     guard archive.localCareAllowed == true else { throw Failure.permission }
+    let readings = archive.current.filter { $0.metric == metric && $0.isValid && $0.measuredAt <= now }
     guard let concern = archive.localCare?.current[metric.rawValue], concern.id == id,
           concern.stage != .paused && concern.stage != .closed, concern.assessment.record != nil,
-          GalaxySSIHealthCare.assess(archive.current.filter { $0.metric == metric && $0.isValid && $0.measuredAt <= now },
-            context: concern.context) == concern.assessment else { throw Failure.stale }
+          GalaxySSIHealthCare.assess(readings, context: concern.context) == concern.assessment else { throw Failure.stale }
+    if let saved = concern.comparison {
+      let (sample, comparison) = GalaxySSIHealthCareComparison.reconcile(readings, prior: concern)
+      guard sample == saved.after, comparison == saved else { throw Failure.stale }
+    }
     return concern
   }
 
