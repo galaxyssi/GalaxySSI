@@ -176,16 +176,61 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         "SELECT payload FROM discussion_grants WHERE turn_id=?", arrayOf(turnId)
     ).use { row -> if (!row.moveToFirst()) null else
         HealthCareDiscussionGrant.from(unpack("discussion_grant", turnId, row.getBlob(0))).also { check(it.turnId == turnId) } }
+    private fun decodePlan(row: Cursor): HealthCarePlan = HealthCarePlan.from(unpack("plan", row.getString(0), row.getBlob(4))).also {
+        check(it.id == row.getString(0) && it.grant.concernId == row.getString(1) && it.createdAt == row.getLong(2) && it.state.name == row.getString(3))
+    }
+    fun plan(id: String): HealthCarePlan? = db.rawQuery("SELECT id,concern_id,created_at,state,payload FROM plans WHERE id=?", arrayOf(id)).use {
+        if (it.moveToFirst()) decodePlan(it) else null
+    }
+    fun pendingPlans(id: String): List<HealthCarePlan> = db.rawQuery(
+        "SELECT id,concern_id,created_at,state,payload FROM plans WHERE concern_id=? AND state='PENDING' ORDER BY created_at DESC,id DESC LIMIT 30",
+        arrayOf(id)).use { rows -> buildList { while (rows.moveToNext()) add(decodePlan(rows)) } }
+    private fun persistPlan(value: HealthCarePlan) {
+        db.insertWithOnConflict("plans", null, ContentValues().apply {
+            put("id", value.id); put("concern_id", value.grant.concernId); put("created_at", value.createdAt)
+            put("state", value.state.name); put("payload", pack("plan", value.id, value.json()))
+        }, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+    fun proposePlan(value: HealthCarePlan): HealthCarePlan = transaction(true) {
+        val grant = value.grant
+        if (discussionGrant(grant.turnId) != grant || discussion(grant.conversationId) != grant.concernId) throw HealthCareConflict()
+        val issue = concern(grant.concernId) ?: throw HealthCareConflict()
+        if (issue.revision != grant.revision || issue.inputVersion != value.inputVersion || !settings().enabled ||
+            settings().version != grant.settingsVersion || value.state != HealthCarePlanState.PENDING) throw HealthCareConflict()
+        plan(value.id)?.let { prior ->
+            if (prior.requestHash != value.requestHash || prior.grant != grant) throw HealthCareConflict()
+            return@transaction prior
+        }
+        persistPlan(value)
+        value
+    }
+    fun resolvePlan(id: String, selected: Set<String>, expectedRevision: Int, privacy: HealthPrivacyPolicy,
+        sourceVersion: String, now: Long): HealthCareConcern = transaction(true) {
+        val proposed = plan(id) ?: throw HealthCareConflict()
+        val issue = concern(proposed.grant.concernId) ?: throw HealthCareConflict()
+        if (proposed.state != HealthCarePlanState.PENDING || issue.revision != expectedRevision ||
+            !HealthCarePlanPolicy.current(proposed, issue, settings(), privacy, sourceVersion)) throw HealthCareConflict()
+        val next = HealthCarePlanPolicy.accept(proposed, issue, selected, now)
+            .copy(revision = issue.revision + 1, updatedAt = maxOf(issue.updatedAt, now))
+        persist(next, "agent_plan_confirmed")
+        persistPlan(proposed.copy(state = HealthCarePlanState.ACCEPTED, selected = selected, resolvedAt = now))
+        next
+    }
+    fun dismissPlan(id: String, now: Long) = transaction(true) {
+        val proposed = plan(id) ?: throw HealthCareConflict()
+        if (proposed.state == HealthCarePlanState.PENDING) persistPlan(proposed.copy(state = HealthCarePlanState.DISMISSED, resolvedAt = now))
+    }
     fun delete(id: String, expectedRevision: Int) = transaction(true) {
         val value = concern(id) ?: throw HealthCareConflict()
         if (value.revision != expectedRevision) throw HealthCareConflict()
         db.delete("history", "concern_id=?", arrayOf(id))
+        db.delete("plans", "concern_id=?", arrayOf(id))
         db.delete("concerns", "id=?", arrayOf(id))
         // Keep the evaluation marker: reopening the page must not immediately recreate a deleted issue.
         Unit
     }
     override fun close() = helper.close()
-    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 2) {
+    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 3) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE settings(id INTEGER PRIMARY KEY,version TEXT NOT NULL,payload BLOB NOT NULL)")
@@ -197,6 +242,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             db.execSQL("CREATE TABLE history(concern_id TEXT NOT NULL,revision INTEGER NOT NULL,payload BLOB NOT NULL,PRIMARY KEY(concern_id,revision))")
             db.execSQL("CREATE TABLE evaluations(metric_key TEXT PRIMARY KEY,token TEXT NOT NULL,payload BLOB NOT NULL)")
             discussions(db)
+            plans(db)
         }
         private fun discussions(db: SQLiteDatabase) {
             // Bindings survive concern deletion so an old sensitive conversation cannot become an ordinary chat.
@@ -204,7 +250,13 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             db.execSQL("CREATE TABLE discussion_grants(turn_id TEXT PRIMARY KEY,payload BLOB NOT NULL)")
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            check(oldVersion == 1 && newVersion == 2); discussions(db)
+            check(oldVersion in 1..2 && newVersion == 3)
+            if (oldVersion < 2) discussions(db)
+            plans(db)
+        }
+        private fun plans(db: SQLiteDatabase) {
+            db.execSQL("CREATE TABLE plans(id TEXT PRIMARY KEY,concern_id TEXT NOT NULL,created_at INTEGER NOT NULL,state TEXT NOT NULL,payload BLOB NOT NULL)")
+            db.execSQL("CREATE INDEX care_pending_plans ON plans(concern_id,state,created_at DESC,id DESC)")
         }
     }
     companion object {

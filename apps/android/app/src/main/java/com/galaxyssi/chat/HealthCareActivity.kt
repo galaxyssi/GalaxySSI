@@ -27,6 +27,7 @@ class HealthCareActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
     private val names by lazy { intent.healthNavigationDatabases() }
     private val store by lazy { HealthCareStore(applicationContext, names.care) }
+    private val planReview by lazy { HealthCarePlanReview(this, names) }
     private lateinit var body: LinearLayout
     private var active = false
     private var generation = 0
@@ -37,7 +38,7 @@ class HealthCareActivity : Activity() {
     private var selected: String? = null
     private var cursor: HealthCareCursor? = null
     private val observer = object : ContentObserver(main) {
-        override fun onChange(selfChange: Boolean) { generation++; load() }
+        override fun onChange(selfChange: Boolean) { planReview.clear(); generation++; load() }
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -53,15 +54,15 @@ class HealthCareActivity : Activity() {
         load()
     }
     override fun onStop() {
-        active = false; generation++; dialog?.dismiss(); dialog = null; body.removeAllViews()
+        active = false; generation++; dialog?.dismiss(); dialog = null; planReview.clear(); body.removeAllViews()
         contentResolver.unregisterContentObserver(observer); super.onStop()
     }
-    override fun onDestroy() { worker.execute { store.close() }; worker.shutdown(); super.onDestroy() }
+    override fun onDestroy() { planReview.destroy(); worker.execute { store.close() }; worker.shutdown(); super.onDestroy() }
     @Deprecated("Uses the existing native health navigation contract")
     override fun onBackPressed() = back()
     private fun back() { if (selected == null) finish() else { selected = null; cursor = null; generation++; load() } }
     private data class Snapshot(val settings: HealthCareSettings, val permitted: Boolean, val page: HealthCarePage,
-        val item: HealthCareConcern?, val history: List<HealthCareConcern>)
+        val item: HealthCareConcern?, val history: List<HealthCareConcern>, val proposals: List<HealthCarePlan>)
     private fun load() {
         if (!active) return
         if (loading || mutating) { dirty = true; return }
@@ -70,10 +71,12 @@ class HealthCareActivity : Activity() {
         worker.execute {
             val result = runCatching {
                 HealthCareEngine.evaluate(applicationContext, names)
-                val allowed = HealthPrivacyStore(applicationContext, names.privacy).use { it.policy().metrics }
+                val privacy = HealthPrivacyStore(applicationContext, names.privacy).use { it.policy() }
+                val allowed = privacy.metrics
                 Snapshot(store.settings(), allowed, if (allowed) store.page(after) else HealthCarePage(emptyList(), null),
                     if (allowed && id != null) store.concern(id) else null,
-                    if (allowed && id != null) store.history(id) else emptyList())
+                    if (allowed && id != null) store.history(id) else emptyList(),
+                    if (allowed && privacy.profile && id != null) store.pendingPlans(id) else emptyList())
             }
             main.post {
                 loading = false
@@ -91,7 +94,7 @@ class HealthCareActivity : Activity() {
             return
         }
         if (selected != null) {
-            snapshot.item?.let { detail(content, it, snapshot.history) } ?: content.addView(ui.text(getString(R.string.health_care_removed)))
+            snapshot.item?.let { detail(content, it, snapshot.history, snapshot.proposals) } ?: content.addView(ui.text(getString(R.string.health_care_removed)))
             return
         }
         content.addView(Switch(this).apply {
@@ -127,12 +130,15 @@ class HealthCareActivity : Activity() {
         ui.add(content, ui.profileRow(getString(R.string.health_catalog_title)) { open(HealthCatalogActivity::class.java) }, 6)
         ui.add(content, ui.profileRow(getString(R.string.health_export_data_files)) { open(HealthDataFilesActivity::class.java) }, 6)
     }
-    private fun detail(content: LinearLayout, value: HealthCareConcern, history: List<HealthCareConcern>) {
+    private fun detail(content: LinearLayout, value: HealthCareConcern, history: List<HealthCareConcern>, proposals: List<HealthCarePlan>) {
         content.addView(ui.text(getString(value.metric.titleResource()), 23f, bold = true))
         ui.add(content, ui.text("${value.assessment.value} ${value.assessment.unit}", 22f, bold = true), 8)
         ui.add(content, ui.text(getString(value.stage.titleResource()), 14f, muted = true), 6)
         ui.add(content, ui.command(R.string.health_care_discussion_title_short) { discuss(value) }
             .apply { tag = "health-care-discuss" }, 12)
+        proposals.forEach { plan -> ui.add(content, ui.profileRow(getString(R.string.health_care_plan_pending, plan.actions.size)) {
+            planReview.show(plan.id)
+        }.apply { tag = "health-care-plan-${plan.id}" }, 8) }
         heading(content, R.string.health_care_why)
         if (value.assessment.signals.isEmpty()) ui.add(content, ui.text(getString(R.string.health_care_changed_result), 15f), 8)
         value.assessment.signals.forEach { ui.add(content, ui.text(getString(it.titleResource()), 15f), 8) }

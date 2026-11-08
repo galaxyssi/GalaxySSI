@@ -133,6 +133,7 @@ object AgentPhoneNativeToolCatalog {
             add(DoorAccessNativeTool.ID)
             add(CollaborationRecallNativeTool.ID)
             add(AgentConversationRecallTool.ID)
+            add(HealthCarePlanTool.ID)
             addAll(AgentSystemEvidenceNativeTools.toolIds)
             addAll(AgentPhoneUiNativeTools.toolIds)
             addAll(AgentMcpNativeTools.toolIds)
@@ -199,6 +200,8 @@ object AgentPhoneNativeToolCatalog {
             CollaborationRecallNativeTool.definitions(context.applicationContext)
         ).registerAll(
             AgentConversationRecallTool.definitions(context.applicationContext)
+        ).registerAll(
+            HealthCarePlanTool.definitions(context.applicationContext)
         ).registerAll(
             AgentSystemEvidenceNativeTools.definitions(context.applicationContext)
         ).registerAll(
