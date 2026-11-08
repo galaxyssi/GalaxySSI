@@ -50,7 +50,7 @@ enum GalaxySSIHealthCareHistoryTool {
   }
 
   static func configure(_ body: inout [String: Any], style: GalaxySSICloudAPIStyle,
-                        proposesPlan: Bool, historyAvailable: Bool) {
+                        proposesPlan: Bool, historyAvailable: Bool, allowsMaintenance: Bool = false) {
     for key in ["tools", "tool_choice", "toolConfig", "parallel_tool_calls"] { body.removeValue(forKey: key) }
     let plan = GalaxySSIHealthCarePlan.tool
     let schema: [String: Any] = [
@@ -59,7 +59,10 @@ enum GalaxySSIHealthCareHistoryTool {
     ]
     var tools: [(String, String, [String: Any])] = []
     if historyAvailable { tools.append((function, instructions, schema)) }
-    if proposesPlan { tools.append((plan, GalaxySSIHealthCarePlan.description, GalaxySSIHealthCarePlan.schema)) }
+    if proposesPlan {
+      tools.append((plan, GalaxySSIHealthCarePlan.description,
+        GalaxySSIHealthCarePlan.schema(allowsMaintenance: allowsMaintenance)))
+    }
     guard !tools.isEmpty else { return }
     switch style {
     case .openAICompatible:
@@ -146,7 +149,7 @@ enum GalaxySSIHealthCareHistoryTool {
   }
 
   static func continuing(_ request: URLRequest, with call: Call, output: Output, style: GalaxySSICloudAPIStyle,
-                         proposesPlan: Bool, historyAvailable: Bool) throws -> URLRequest {
+                         proposesPlan: Bool, historyAvailable: Bool, allowsMaintenance: Bool = false) throws -> URLRequest {
     guard let bytes = request.httpBody, var body = try JSONSerialization.jsonObject(with: bytes) as? [String: Any]
     else { throw invalid }
     let channel = style == .gemini ? "contents" : "messages"
@@ -169,7 +172,8 @@ enum GalaxySSIHealthCareHistoryTool {
       messages.append(["role": "user", "parts": [["functionResponse": result]]])
     }
     body[channel] = messages
-    configure(&body, style: style, proposesPlan: proposesPlan, historyAvailable: historyAvailable)
+    configure(&body, style: style, proposesPlan: proposesPlan, historyAvailable: historyAvailable,
+      allowsMaintenance: allowsMaintenance)
     let data = try JSONSerialization.data(withJSONObject: body)
     guard data.count <= requestBudget else { throw invalid }
     var next = request

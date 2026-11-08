@@ -467,7 +467,10 @@ struct GalaxySSIHealthRecords {
       let next = assessed ?? .removed
       if let prior {
         let maintenanceChanged = prior.stage == .maintenance &&
-          prior.maintenanceHistoryVersion != GalaxySSIHealthCareSeries.version(series)
+          (prior.maintenanceHistoryVersion != GalaxySSIHealthCareSeries.version(series) ||
+            (archive.localCarePermission.flatMap {
+              GalaxySSIHealthCareMaintenance.nextDue(prior, permission: $0)
+            }.map { $0 <= now } ?? true))
         guard prior.revision < Int.max,
               prior.assessment != next || maintenanceChanged || prior.bloodPressureWarning != warning else { continue }
         var updated = prior
@@ -481,7 +484,9 @@ struct GalaxySSIHealthRecords {
             ? .verify : .reassess
         }
         if prior.stage == .maintenance {
+          updated.stage = .reassess
           updated.maintenanceHistoryVersion = nil
+          updated.maintenanceReview = nil
           updated.reviewNote = nil
         }
         ledger.publish(updated)
@@ -497,6 +502,18 @@ struct GalaxySSIHealthRecords {
     archive.localCare = ledger
     archive.localCareLastEvaluatedAt = now
     try persist(archive)
+  }
+
+  func reconcileLocalCareMaintenance(now: Date = Date()) throws -> Date? {
+    let before = try load()
+    guard before.localCareAllowed == true,
+          before.localCare?.current.values.contains(where: { $0.stage == .maintenance }) == true else { return nil }
+    try reconcileLocalCare(now: now)
+    let after = try load()
+    guard let permission = after.localCarePermission, let ledger = after.localCare else { return nil }
+    return ledger.current.values.compactMap {
+      GalaxySSIHealthCareMaintenance.nextDue($0, permission: permission)
+    }.filter { $0 > now }.min()
   }
 
   static func currentCareBloodPressureWarning(_ archive: Archive, now: Date = Date())
@@ -659,7 +676,10 @@ struct GalaxySSIHealthRecords {
           let concern = archive.localCare?.current[approval.metric.rawValue] else { throw Failure.stale }
     guard let evidence = archive.localCareEvidence?[key], !evidence.isEmpty, evidence == approval.evidence,
           evidence.allSatisfy({ $0.valid(for: approval, now: now) }) else { throw Failure.permission }
-    let draft = try GalaxySSIHealthCarePlan.parse(arguments, evidence: evidence, now: now)
+    let approvedHistory = try approval.history.map {
+      try localCareMeasurementPage(id: approval.concernID, metric: approval.metric, expected: $0.binding, now: now)
+    }
+    let draft = try GalaxySSIHealthCarePlan.parse(arguments, evidence: evidence, now: now, approvedHistory: approvedHistory)
     plans[key] = try .init(id: approval.id, concernID: approval.concernID, metric: approval.metric,
       concernRevision: approval.concernRevision, assessmentDigest: GalaxySSIHealthCare.inputDigest(concern.assessment),
       sourceContext: concern.context,
@@ -674,7 +694,9 @@ struct GalaxySSIHealthRecords {
 
   func resolveLocalCarePlan(_ proposal: GalaxySSIHealthCarePlan.Proposal, selected: Set<Int>?,
                             currentDestination: String? = nil,
+                            acceptMaintenance: Bool = false,
                             now: Date = Date()) throws {
+    guard selected != nil || !acceptMaintenance else { throw Failure.invalid }
     var archive = try load()
     guard archive.localCareAllowed == true,
           var ledger = archive.localCare, var current = ledger.current[proposal.metric.rawValue],
@@ -696,10 +718,31 @@ struct GalaxySSIHealthRecords {
         $0.dueUntil.map { $0 >= now } != false }) else { throw Failure.stale }
       var adopted = current.adoptedActions ?? []
       guard !adopted.contains(where: { $0.proposalID == saved.id }) else { throw Failure.stale }
+      let review: GalaxySSIHealthCareMaintenance.Review?
+      if acceptMaintenance {
+        guard let draft = saved.draft.maintenance, selected.contains(draft.recheckIndex),
+              let recheck = actions.first(where: { $0.id == draft.recheckIndex }), let due = recheck.dueFrom
+        else { throw Failure.stale }
+        let evaluation = try localCareMaintenanceEvaluation(saved, concern: checked, archive: archive, now: now)
+        guard evaluation.gaps.isEmpty else { throw Failure.stale }
+        review = try .init(proposalID: saved.id, actionID: "\(saved.id.uuidString):\(draft.recheckIndex)",
+          historyVersion: draft.historyVersion, contextBasis: GalaxySSIHealthCareTarget.basis(checked),
+          targetRevision: checked.targetRevision, carePermission: saved.carePermission, confirmedAt: now,
+          due: due, basis: draft.basis, rationale: draft.rationale, source: saved.draft.sources[draft.sourceIndex],
+          samples: evaluation.samples)
+      } else { review = nil }
       adopted += actions.map { .init(proposalID: saved.id, action: $0, source: saved.draft.sources[$0.sourceIndex],
         confirmedAt: now) }
       current.adoptedActions = adopted
+      if current.stage == .maintenance { current.reviewNote = nil }
       current.stage = actions.contains(where: { $0.kind == .recheck }) ? .waitingResults : .reviewPlan
+      current.maintenanceReview = review
+      current.maintenanceHistoryVersion = review?.historyVersion
+      if let review {
+        current.stage = .maintenance
+        current.reviewNote = review.rationale
+        saved.maintenanceAccepted = true
+      }
       current.revision += 1
       current.updatedAt = max(current.updatedAt, now)
       ledger.publish(current)
@@ -724,6 +767,25 @@ struct GalaxySSIHealthRecords {
           Self.localCarePlanEvidenceMatches(proposal, archive: archive, owner: owner)
     else { throw Failure.stale }
     return concern
+  }
+
+  func localCareMaintenancePreview(_ proposal: GalaxySSIHealthCarePlan.Proposal, now: Date = Date())
+      throws -> GalaxySSIHealthCareMaintenance.Evaluation {
+    let concern = try validateLocalCarePlanReview(proposal, now: now)
+    return try localCareMaintenanceEvaluation(proposal, concern: concern, archive: load(), now: now)
+  }
+
+  private func localCareMaintenanceEvaluation(_ proposal: GalaxySSIHealthCarePlan.Proposal,
+      concern: GalaxySSIHealthCare.Concern, archive: Archive, now: Date) throws -> GalaxySSIHealthCareMaintenance.Evaluation {
+    guard let draft = proposal.draft.maintenance, archive.matchesLocalCarePermission(proposal.carePermission)
+    else { throw Failure.stale }
+    let readings = archive.current.filter { $0.metric == concern.metric && $0.isValid && $0.measuredAt <= now }
+    let version = GalaxySSIHealthCareSeries.version(readings)
+    let binding = GalaxySSIHealthCareSeries.Binding(concern: concern.id, revision: concern.revision,
+      historyVersion: version, permission: proposal.carePermission)
+    let page = try GalaxySSIHealthCareSeries.page(readings, binding: binding, after: nil)
+    return GalaxySSIHealthCareMaintenance.evaluate(proposal.draft, draft: draft, concern: concern,
+      readings: readings, page: page, now: now)
   }
 
   private static func localCarePlanEvidenceMatches(_ proposal: GalaxySSIHealthCarePlan.Proposal, archive: Archive,
@@ -772,6 +834,11 @@ struct GalaxySSIHealthRecords {
           current.id == concernID, current.stage != .closed, current.revision < Int.max,
           let index = current.adoptedActions?.firstIndex(of: action), action.outcome == nil else { throw Failure.stale }
     current.adoptedActions?[index].outcome = .init(note: note, reportedAt: now)
+    if current.stage == .maintenance {
+      current.maintenanceReview = nil
+      current.maintenanceHistoryVersion = nil
+      current.reviewNote = nil
+    }
     if current.stage != .paused { current.stage = .reassess }
     current.revision += 1
     current.updatedAt = max(current.updatedAt, now)
@@ -885,7 +952,12 @@ struct GalaxySSIHealthRecords {
       guard let assessment = GalaxySSIHealthCare.assess(readings, context: context) else { throw Failure.stale }
       current.context = context
       current.assessment = assessment
-      if current.metric == .glucose, current.stage != .paused {
+      if current.stage == .maintenance, current.maintenanceReview != nil, context != previous {
+        current.stage = .reassess
+        current.maintenanceReview = nil
+        current.maintenanceHistoryVersion = nil
+        current.reviewNote = nil
+      } else if current.metric == .glucose, current.stage != .paused, current.stage != .maintenance {
         current.stage = applicability == .unknown ? .verify : .evidence
       }
     }
@@ -893,17 +965,11 @@ struct GalaxySSIHealthRecords {
 
   func reviewLocalCare(_ concern: GalaxySSIHealthCare.Concern, stage: GalaxySSIHealthCare.Stage,
                        reason: String, now: Date = Date()) throws {
-    guard [.paused, .reassess, .maintenance, .closed].contains(stage),
+    guard [.paused, .reassess, .closed].contains(stage),
           !reason.isBlank, reason.utf8.count <= 2_048 else { throw Failure.invalid }
-    try updateLocalCare(concern, now: now) { current, archive in
-      if stage == .maintenance {
-        let series = archive.current.filter { $0.metric == current.metric && $0.isValid && $0.measuredAt <= now }
-        guard let first = series.first, current.assessment.record == GalaxySSIHealthCare.Record(first)
-        else { throw Failure.stale }
-        current.maintenanceHistoryVersion = GalaxySSIHealthCareSeries.version(series)
-      } else {
-        current.maintenanceHistoryVersion = nil
-      }
+    try updateLocalCare(concern, now: now) { current, _ in
+      current.maintenanceHistoryVersion = nil
+      current.maintenanceReview = nil
       current.stage = stage
       current.reviewNote = reason
     }
@@ -953,6 +1019,12 @@ struct GalaxySSIHealthRecords {
     let prior = concern.targetRevision ?? 0
     guard (0..<Int.max).contains(prior) else { throw Failure.invalid }
     concern.targetRevision = prior + 1
+    if concern.stage == .maintenance, concern.maintenanceReview != nil {
+      concern.stage = .reassess
+      concern.maintenanceReview = nil
+      concern.maintenanceHistoryVersion = nil
+      concern.reviewNote = nil
+    }
   }
 
   func localCareTargetComparison(_ concern: GalaxySSIHealthCare.Concern, now: Date = Date())

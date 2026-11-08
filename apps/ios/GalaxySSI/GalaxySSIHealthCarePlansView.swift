@@ -83,6 +83,8 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
   @State private var visible = false
   @State private var checkedConcern: GalaxySSIHealthCare.Concern?
   @State private var failed = false
+  @State private var maintenance: GalaxySSIHealthCareMaintenance.Evaluation?
+  @State private var confirmingMaintenance = false
   private var legacyPending: Bool { proposal.state == .pending && proposal.draft.sources.contains { $0.provenance == nil } }
 
   var body: some View {
@@ -127,6 +129,22 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
               GalaxySSIHealthCareApplicabilityDetails(action: action, concern: checkedConcern)
             }
           }
+          if let draft = proposal.draft.maintenance {
+            Section(t("maintenance", "Maintenance review")) {
+              Text(draft.rationale)
+              if let maintenance {
+                ForEach(maintenance.samples, id: \.record.id) { sample in
+                  Text(sample.measuredAt, format: .dateTime) + Text("  " + sample.result + " " + sample.unit)
+                }
+                ForEach(GalaxySSIHealthCareMaintenance.Gap.allCases.filter { maintenance.gaps.contains($0) }, id: \.self) {
+                  Text(maintenanceGap($0)).foregroundColor(.secondary)
+                }
+              }
+              if proposal.maintenanceAccepted == true { Text(t("maintenance_accepted", "Maintenance review confirmed")) }
+              Text(t("maintenance_boundary", "This review does not establish clinical stability or schedule a reminder."))
+                .foregroundColor(.secondary)
+            }
+          }
         }
         if proposal.state == .pending {
           if !valid {
@@ -136,6 +154,10 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
           }
           if valid {
             Button(t("accept", "Accept selected steps")) { resolve(selected) }.disabled(selected.isEmpty)
+            if let draft = proposal.draft.maintenance, maintenance?.gaps.isEmpty == true {
+              Button(t("maintenance_review", "Review maintenance and next assessment")) { confirmingMaintenance = true }
+                .disabled(!selected.contains(draft.recheckIndex))
+            }
             Text(t("not_scheduled", "Accepting steps does not schedule reminders.")).foregroundColor(.secondary)
           }
           Button(t("discard", "Discard draft"), role: .destructive) { resolve(nil) }
@@ -150,6 +172,14 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
     .onAppear(perform: refresh)
     .onChange(of: scene) { _ in refresh() }
     .onChange(of: currentDestination) { _ in refresh() }
+    .confirmationDialog(t("maintenance_review", "Review maintenance and next assessment"),
+      isPresented: $confirmingMaintenance, titleVisibility: .visible) {
+      Button(t("maintenance_confirm", "Confirm maintenance and selected steps")) {
+        resolve(selected, acceptMaintenance: true)
+      }
+    } message: {
+      Text(t("maintenance_boundary", "This review does not establish clinical stability or schedule a reminder."))
+    }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) {
       if $0.object as? String == records.owner { refresh() }
     }
@@ -173,10 +203,11 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
           let archive = try? records.load(), archive.localCareAllowed == true,
           archive.localCarePlans?[proposal.id.uuidString] == proposal,
           archive.localCare?.current[proposal.metric.rawValue]?.id == proposal.concernID
-    else { visible = false; valid = false; checkedConcern = nil; selected = []; return }
+    else { visible = false; valid = false; checkedConcern = nil; selected = []; maintenance = nil; return }
     visible = true
     checkedConcern = currentDestination == nil ? nil : (try? records.validateLocalCarePlanReview(proposal))
     valid = checkedConcern != nil
+    maintenance = valid && proposal.draft.maintenance != nil ? (try? records.localCareMaintenancePreview(proposal)) : nil
     if let checkedConcern {
       selected = selected.intersection(Set(proposal.draft.actions.filter {
         GalaxySSIHealthCareApplicability.canAdopt($0, concern: checkedConcern)
@@ -184,14 +215,27 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
     } else { selected = [] }
   }
 
-  private func resolve(_ selected: Set<Int>?) {
+  private func resolve(_ selected: Set<Int>?, acceptMaintenance: Bool = false) {
     guard scene == .active, visible, UIApplication.shared.isProtectedDataAvailable,
           store.profile.identityFingerprint == records.owner else { return }
     do {
-      try records.resolveLocalCarePlan(proposal, selected: selected, currentDestination: currentDestination)
+      try records.resolveLocalCarePlan(proposal, selected: selected, currentDestination: currentDestination,
+        acceptMaintenance: acceptMaintenance)
       dismiss()
     }
     catch { failed = true; refresh() }
+  }
+
+  private func maintenanceGap(_ gap: GalaxySSIHealthCareMaintenance.Gap) -> String {
+    switch gap {
+    case .target: return t("maintenance_gap_target", "The saved target does not match this review.")
+    case .history: return t("maintenance_gap_history", "The consecutive history window is incomplete or changed.")
+    case .comparability: return t("maintenance_gap_comparability", "The measurements are not comparable.")
+    case .applicability: return t("maintenance_gap_applicability", "Source applicability is unresolved.")
+    case .openActions: return t("maintenance_gap_openActions", "Previous actions are still open.")
+    case .recheck: return t("maintenance_gap_recheck", "A separate future reassessment is required.")
+    case .priority: return t("maintenance_gap_priority", "A priority warning requires review first.")
+    }
   }
 
   private var currentDestination: String? {
@@ -201,6 +245,23 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
     return GalaxySSIHealthCarePlan.currentDestination(proposal, contactID: contact.id, model: model, credential: key)
   }
   private func t(_ key: String, _ fallback: String) -> String { GalaxySSIHealthPlanText.string(key, fallback, language: language) }
+}
+
+struct GalaxySSIHealthMaintenanceEvidenceView: View {
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  let review: GalaxySSIHealthCareMaintenance.Review
+
+  var body: some View {
+    DisclosureGroup(GalaxySSIHealthPlanText.string("maintenance", "Maintenance review", language: language)) {
+      Text(review.rationale)
+      Text(review.source.title)
+      if let quote = review.source.provenance?.quote { Text(quote).textSelection(.enabled) }
+      Text(review.due, format: .dateTime)
+      ForEach(review.samples, id: \.record.id) { sample in
+        Text(sample.measuredAt, format: .dateTime) + Text("  " + sample.result + " " + sample.unit)
+      }
+    }
+  }
 }
 
 private enum GalaxySSIHealthPlanText {
