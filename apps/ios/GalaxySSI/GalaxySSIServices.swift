@@ -62,6 +62,7 @@ final class MessageCoordinator: ObservableObject {
   private var desktopEvidenceImports: Set<String> = []
   private var desktopEvidenceJobCursor = ""
   private var desktopCollaborationResponseReplay = AgentDesktopCollaborationResponseReplay()
+  private var desktopCollaborationCiphertextReplay = AgentDesktopCollaborationCiphertextReplay()
   private lazy var desktopReplyRecoveryOwner = store.profile.identityFingerprint
   private var desktopReplyRecoveryTask: Task<Void, Never>?
   private var desktopReplyRecoverySweepInFlight = false
@@ -14363,7 +14364,11 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     var appPayload: [String: Any]
+    let controlCiphertextKey = allowStage ? desktopCollaborationCiphertextKey(
+      wire: object, original: originalPayload, topic: topic, link: link) : nil
     if object.string("scheme") == "signal" {
+      if let controlCiphertextKey,
+         desktopCollaborationCiphertextReplay.contains(controlCiphertextKey, now: AgentControlPlaneClock.nowMillis()) { return }
       if allowStage, let link, link.paired, object.string("from") == link.desktopId,
          object.string("to") == signalEngine.identity.name,
          let known = deliveryStore.messageForCiphertext(digest: ciphertextReplayDigest(for: object)),
@@ -14526,6 +14531,11 @@ final class MessageCoordinator: ObservableObject {
     if [AgentDesktopCollaborationArchiveRecall.requestType, AgentDesktopCollaborationPublicationWire.requestType]
       .contains(appPayload.string("type")) {
       if object.string("scheme") == "signal", let link {
+        if let controlCiphertextKey, appPayload.string("client_route_id") == link.routes.clientRouteId,
+           let expires = AgentTeamReplyObservation.integer(appPayload["expires_at"]) {
+          desktopCollaborationCiphertextReplay.remember(controlCiphertextKey, now: AgentControlPlaneClock.nowMillis(),
+            expiresAt: expires)
+        }
         Task { @MainActor [weak self] in
           await self?.handleDesktopCollaborationExchange(appPayload, link: link)
         }
@@ -16366,6 +16376,15 @@ final class MessageCoordinator: ObservableObject {
       return ""
     }
     return GalaxySSILinkCiphertextReplayPolicy.digest(wire: wire)
+  }
+
+  private func desktopCollaborationCiphertextKey(wire: [String: Any], original: String,
+                                                  topic: String, link: ServerLink?) -> String? {
+    guard wire.string("scheme") == "signal", let link, link.paired, link.routes.receiveWindow.contains(topic),
+          wire.string("from") == link.desktopId, wire.string("to") == signalEngine.identity.name else { return nil }
+    return AgentDesktopCollaborationCiphertextReplay.key(wire: Data(original.utf8), profile: store.profile.identityFingerprint,
+      pair: link.desktopFingerprint, route: link.routes.clientRouteId,
+      secretFingerprint: MqttRouteProtocol.digest(Data(link.routes.linkSecret.utf8)))
   }
 
   private func cloudPrompt(text: String, attachments: [GalaxySSIDraftAttachment]) -> String {
