@@ -173,10 +173,11 @@ class HealthCareQuestionDeviceTest {
                 saved = it.configure(true, ""); HealthCareEngine.evaluate(context, names); concern = it.forMetric(HealthMetric.GLUCOSE)!!
             }
             context.openOrCreateDatabase(names.care, 0, null).use {
+                it.execSQL("DROP TABLE action_agenda"); it.execSQL("DROP TABLE action_agenda_state")
                 it.execSQL("DROP TABLE answer_drafts"); it.execSQL("DROP TABLE question_history"); it.execSQL("DROP TABLE questions"); it.version = 7
             }
             HealthCareStore(context, names.care).use { assertEquals(saved, it.settings()); assertEquals(concern, it.concern(concern.id)) }
-            context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(9, it.version) }
+            context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(10, it.version) }
         } finally { listOf(names.care, names.records, names.privacy).forEach(context::deleteDatabase) }
     }
 

@@ -177,7 +177,8 @@ unavailable until storage, authorization, and every query enforce isolation.
 - [x] Current-turn answer drafts with explicit local review and atomic saved-answer receipts.
 - [ ] Full issue lifecycle transitions and invalidation across every entry path.
 - [ ] Personal Health overview, comparable trends, and evidence-focused details.
-- [ ] Global indexed action queue, versioned plans, feedback and reminder recovery.
+- [x] Global indexed action pages and shared action/reminder review inside Personal Health.
+- [ ] Complete versioned-plan feedback and reminder recovery acceptance.
 - [ ] Previewable visit summary and explicitly reviewed clinician instructions.
 - [ ] Treatment/rehabilitation follow-up and next-cycle prevention integration.
 - [ ] Cross-provider, offline, process/boot, privacy and notification acceptance.
@@ -227,3 +228,29 @@ change. Reviews clear on background, navigation and observed privacy/source
 changes. Drafts survive process death, but expired source evidence cannot be
 silently accepted after reopening. Real-provider extraction and continuous voice
 acceptance remain distinct from synthetic tool/storage/UI regression tests.
+
+## Global action agenda
+
+Personal Health now links to an independent, globally paged action agenda rather
+than flattening every action from the current concern page. The Agent main page
+is unchanged. Today, later, review and recorded views use keyset pages of at most
+thirty actions. Today includes unfinished actions with an existing planned window
+or explicit reminder before the next local midnight; unscheduled actions remain
+under later. A started window is not automatically a missed clinical deadline.
+Day boundaries follow the local time zone, including daylight-saving transitions.
+
+Schema 10 adds a rebuildable metadata-only action projection in the same care
+database. Descriptions, rationale, sources and outcomes stay in authenticated
+encrypted concern records. Concern and reminder writes update the projection in
+the same transaction; readers validate selected index fields against those
+canonical records. Existing databases backfill in resumable batches of at most
+thirty concerns on a worker, not during UI/database-open work. An unfinished
+backfill is shown as loading rather than an empty healthy state. Changed queue
+generations or day boundaries invalidate a cursor and restart the visible page.
+
+Opening an action reuses the existing scoped reminder/outcome review. Proposed,
+paused, closed or stale-basis actions require review. Cancelling a reminder does
+not remove the action; delivery does not complete it. Recorded feedback never
+establishes clinical recovery. Privacy withdrawal and background navigation clear
+the visible content and dialogs. Partial-completion/barrier feedback, visit
+instructions and full long-cycle acceptance remain separate increments.

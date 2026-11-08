@@ -29,6 +29,9 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
         ui.add(content, ui.profileRow(label(R.string.health_care_title), label(R.string.health_care_attention)) {
             activity.startActivity(Intent(activity, HealthCareActivity::class.java).putHealthNavigationFixture(names))
         }.apply { tag = "health-overview-proactive-care" }, 12)
+        ui.add(content, ui.profileRow(label(R.string.health_agenda_title), label(R.string.health_agenda_summary)) {
+            activity.startActivity(Intent(activity, HealthCareActionsActivity::class.java).putHealthNavigationFixture(names))
+        }.apply { tag = "health-overview-action-agenda" }, 8)
         if (snapshot.hasRecords || snapshot.attention.isNotEmpty() || snapshot.reviewUnavailable ||
             snapshot.connectionsUnavailable || !snapshot.derived.permitted) {
             val section = ui.column().apply { tag = "health-overview-attention" }

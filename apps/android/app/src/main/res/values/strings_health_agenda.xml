@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_agenda_title">Health actions</string>
+    <string name="health_agenda_summary">Today, upcoming, review and recorded outcomes</string>
+    <string name="health_agenda_today">Today</string>
+    <string name="health_agenda_later">Later</string>
+    <string name="health_agenda_review">Review</string>
+    <string name="health_agenda_recorded">Recorded</string>
+    <string name="health_agenda_loading">Preparing saved actions…</string>
+    <string name="health_agenda_empty">No actions in this category. This does not mean all health concerns are resolved.</string>
+    <string name="health_agenda_refreshed">Actions changed. Showing the first page of the updated list.</string>
+    <string name="health_agenda_recorded_note">An action record is not a clinical recovery assessment.</string>
+    <string name="health_agenda_review_note">Proposed, paused or changed plan. Review the related concern before proceeding.</string>
+    <string name="health_agenda_unscheduled">No time scheduled</string>
+    <string name="health_agenda_reminder">Reminder: %1$s</string>
+    <string name="health_agenda_reminded">Reminded: %1$s · Outcome not recorded</string>
+    <string name="health_agenda_concern">View related concern and evidence</string>
+    <string name="health_agenda_previous">Previous page</string>
+    <string name="health_agenda_next">Next page</string>
+    <string name="health_agenda_retry">Reload</string>
+</resources>
