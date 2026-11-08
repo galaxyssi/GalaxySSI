@@ -439,7 +439,7 @@ final class AgentTeamExecutionHistoryStore {
     return committed
   }
 
-  func cancelRecoveryForMissingScope(expected: AgentTeamExecutionSnapshot, now: Int64) throws -> AgentTeamExecutionSnapshot? {
+  func cancelRecovery(expected: AgentTeamExecutionSnapshot, now: Int64) throws -> AgentTeamExecutionSnapshot? {
     let stopped = try access { database -> AgentTeamExecutionSnapshot? in
       guard var current = try database.snapshots(runId: expected.supervisorRunId).first,
             current == expected, !current.state.deliverable else { return nil }

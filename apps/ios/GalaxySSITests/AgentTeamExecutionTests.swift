@@ -2971,6 +2971,36 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(final.members[1], sibling)
   }
 
+  func testTeamRecoveryCancellationPersistsOnlyForExactPendingSnapshot() throws {
+    let suite = "team-recovery-stop-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let first = durableTeamSnapshot("stopping")
+    let sibling = durableTeamSnapshot("untouched")
+    XCTAssertTrue(history.upsert(first))
+    XCTAssertTrue(history.upsert(sibling))
+    let original = try XCTUnwrap(history.snapshot(supervisorRunId: first.supervisorRunId))
+    var changed = original
+    changed.updatedAtMillis += 1
+    XCTAssertTrue(history.upsert(changed))
+    XCTAssertNil(try history.cancelRecovery(expected: original, now: changed.updatedAtMillis + 1))
+    let current = try XCTUnwrap(history.snapshot(supervisorRunId: first.supervisorRunId))
+    XCTAssertNotEqual(current, original)
+    let stopped = try XCTUnwrap(history.cancelRecovery(expected: current, now: changed.updatedAtMillis + 2))
+    XCTAssertEqual(stopped.state, .cancelled)
+    XCTAssertEqual(stopped.members, current.members)
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertEqual(reopened.snapshot(supervisorRunId: first.supervisorRunId), stopped)
+    XCTAssertEqual(reopened.snapshot(supervisorRunId: sibling.supervisorRunId)?.state, sibling.state)
+    XCTAssertNil(try reopened.cancelRecovery(expected: stopped, now: changed.updatedAtMillis + 3))
+  }
+
   func testTeamRecoveryCursorCoversPendingTeamsExactlyOnce() throws {
     let suite = "team-recovery-page-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
