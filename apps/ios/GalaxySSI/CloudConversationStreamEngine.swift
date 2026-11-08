@@ -849,6 +849,16 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                let checked = try? CloudModelStreamJSON.mcpObject(from: output), checked["status"] == .string("returned"),
                checked["success"] == .bool(true),
                progress.requestRepair("collaboration_assessment_preflight") { madeProgress = true }
+            if arguments["mode"] == .string(AgentCollaborationGoalAssessmentPolicy.establishContractMode),
+               let receipt = try? CloudModelStreamJSON.mcpObject(from: output),
+               receipt["status"] == .string("assessment_rejected"),
+               progress.requestRepair("collaboration_initial_assessment") { madeProgress = true }
+            if arguments["mode"] == .string(AgentCollaborationGoalAssessmentPolicy.assessmentRepairMode),
+               let page = try? CloudModelStreamJSON.mcpObject(from: output),
+               page["status"] == .string("assessment_repair_page"), let offset = page["offset"]?.intValue,
+               visitedSourceAccessPages.insert("assessment:" + page.string("draft_sha256") + ":" + String(offset)).inserted {
+              madeProgress = true
+            }
             continue
           }
           if AgentCollaborationSourceAccess.matches(tool: outcome.call.name, input: arguments) {

@@ -947,8 +947,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
   }
 
   static func blockerAssessment(_ raw: String, preserving contract: [Criterion]) -> Assessment? {
-    guard !contract.isEmpty, raw.utf8.count <= 131_072,
-          let draft = try? JSONDecoder().decode(Assessment.self, from: Data(raw.utf8)),
+    guard !contract.isEmpty, case .success(let draft) = parseAssessment(raw, limit: assessmentDraftLimit),
           draft.format == "galaxyssi.goal-assessment.v1", draft.decision == .blocked, !draft.summary.isBlank,
           draft.work.isEmpty, draft.recruit?.isEmpty != false, (1...16).contains(draft.blockers.count),
           Set(draft.blockers.map(\.id)).count == draft.blockers.count,
@@ -973,7 +972,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
   static let admissionInstructions = "List ready research work in the intended admission order. Waiting dependencies do not reserve capacity. Existing learning priorities reorder only their eligible learning positions. Admission order does not guarantee completion order."
 
   static func requiresCoordinator(_ mode: String) -> Bool {
-    isCoordinatorMutation(mode) || mode == checkGoalEvidenceMode || mode == workInventoryMode
+    isCoordinatorMutation(mode) || mode == checkGoalEvidenceMode || mode == workInventoryMode || mode == assessmentRepairMode
   }
 
   static func dispatchesWork(_ mode: String) -> Bool {
@@ -985,8 +984,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
   }
 
   static func initialContract(_ raw: String) -> [Criterion]? {
-    guard raw.utf8.count <= 131_072,
-          let draft = try? JSONDecoder().decode(Assessment.self, from: Data(raw.utf8)),
+    guard case .success(let draft) = parseAssessment(raw, limit: assessmentDraftLimit),
           draft.format == "galaxyssi.goal-assessment.v1", !draft.summary.isBlank,
           draft.decision == .continue, draft.work.isEmpty, draft.blockers.isEmpty, draft.recruit?.isEmpty != false,
           (1...64).contains(draft.criteria.count),
