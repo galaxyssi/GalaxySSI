@@ -56,13 +56,16 @@ struct AgentManagedBrowserToolExecution {
      "business_success_verified": .bool(false)]
   }
 
-  func resolve(call: AgentModelToolCall, result: AgentNativeToolResult) throws -> AgentManagedBrowserHandoff {
+  func ticket(call: AgentModelToolCall, result: AgentNativeToolResult) throws -> AgentManagedBrowserHandoff.Ticket {
     try validateCurrentOwner()
     guard call.toolId == Self.toolID, result.isSuccess, let generation = UUID(uuidString: result.output.string("handoff_id")) else {
       throw AgentManagedBrowserContinuationStore.Failure.staleTicket
     }
-    let handoff = try store.handoff(.init(dispatchKey: binding.key, callID: call.callId, generation: generation),
-                                   binding: binding)
+    return .init(dispatchKey: binding.key, callID: call.callId, generation: generation)
+  }
+
+  func resolve(_ ticket: AgentManagedBrowserHandoff.Ticket, result: AgentNativeToolResult) throws -> AgentManagedBrowserHandoff {
+    let handoff = try store.handoff(ticket, binding: binding)
     guard handoff.invocationID == (result.receipt.originalInvocationId ?? result.receipt.invocationId) else {
       throw AgentManagedBrowserContinuationStore.Failure.scopeChanged
     }

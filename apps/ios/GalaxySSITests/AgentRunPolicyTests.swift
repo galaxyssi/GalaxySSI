@@ -4,6 +4,25 @@ import CryptoKit
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testDesktopEvidenceTraceCorrelatesWithoutLoggingRawRequestID() {
+    XCTAssertEqual(AgentDesktopEvidenceQueryTrace.token("nonce"), "78377b525757b494")
+    XCTAssertEqual(AgentDesktopEvidenceQueryTrace.token(""), "unavailable")
+    XCTAssertEqual(AgentDesktopEvidenceQueryTrace.token(String(repeating: "x", count: 129)), "unavailable")
+  }
+
+  func testDesktopEvidenceLateTraceIsBoundedScopedAndOneShot() {
+    var late = AgentDesktopEvidenceQueryTrace.LateQueries()
+    for index in 0...64 {
+      late.remember(String(index), desktop: "desktop", route: "route", started: 1_000, now: 9_000 + Int64(index))
+    }
+    XCTAssertNil(late.consume("0", desktop: "desktop", route: "route", now: 10_000))
+    XCTAssertNil(late.consume("64", desktop: "other", route: "route", now: 10_000))
+    XCTAssertNil(late.consume("64", desktop: "desktop", route: "rotated", now: 10_000))
+    XCTAssertEqual(late.consume("64", desktop: "desktop", route: "route", now: 10_000), 1_000)
+    XCTAssertNil(late.consume("64", desktop: "desktop", route: "route", now: 10_001))
+    XCTAssertNil(late.consume("63", desktop: "desktop", route: "route", now: 69_063))
+  }
+
   func testDesktopReceiptRecoverySkipsCancelledOrMissingAgentSessions() {
     XCTAssertFalse(AgentDesktopReplyDiscoveryPolicy.mayRecover(
       conversationID: "ios-agent-deleted", savedSessionExists: false, taskCancelled: false))
@@ -217,6 +236,72 @@ extension GalaxySSIStoreTests {
     let foreign = Data(AgentMcpJSONCodec.stringify(original).utf8)
     let foreignDescriptor = try XCTUnwrap(AgentDesktopToolEvidenceWire.Descriptor(page(for: foreign)))
     XCTAssertNil(request.verifyOriginal([foreign], descriptor: foreignDescriptor))
+  }
+
+  func testRemoteResearchReceiptDecodesLiveTerminalAndReplayWithoutClaimingVerification() throws {
+    let live: [String: Any] = ["queries": ["Solar   capacity", "Solar capacity ..."], "sources": [
+      ["url": "https://Example.org:443/report#intro"],
+      ["url": "https://user:secret@example.org/private"],
+      ["url": "file:///private/report.pdf"]
+    ]]
+    let terminal: [String: Any] = ["queries": ["solar capacity", "Grid study"], "sources": [
+      ["url": "https://example.org/report#table", "title": "Capacity report", "status": "open_reported"],
+      ["url": "https://example.org/grid", "title": "Grid study", "status": "verified"]
+    ], "truncated": true]
+    let payload: [String: Any] = [
+      "research_trace": terminal,
+      "progress_event": ["metadata": ["research_trace": live]],
+      "events": [42, ["metadata": ["research_trace": live]]]
+    ]
+    let receipt = AgentRemoteResearchReceipt.from(payload)
+    XCTAssertEqual(receipt.recordedQueries, ["solar capacity", "Grid study"])
+    XCTAssertEqual(receipt.sources.map(\.id), ["https://example.org/report", "https://example.org/grid"])
+    XCTAssertEqual(receipt.sources.map(\.openingReported), [true, false])
+    XCTAssertEqual(receipt.sources.first?.title, "Capacity report")
+    XCTAssertTrue(receipt.truncated)
+    XCTAssertEqual(AgentRemoteResearchReceipt.from(["events": [["metadata": ["research_trace": live]]]])
+      .recordedQueries, ["Solar capacity"])
+    XCTAssertFalse(AgentRemoteResearchReceipt.from(["content": "Not a research receipt"]).visible)
+  }
+
+  @MainActor
+  func testRemoteResearchReceiptPersistsBeforeReplyAndRejectsStaleGenerationAndAttempt() throws {
+    let suite = "research-disclosure-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = InMemorySecretStore()
+    let source = UUID()
+    let replay = UUID()
+    let store = AgentResearchCheckpointStore(defaults: defaults, secrets: secrets, owner: "owner")
+    let live = AgentRemoteResearchReceipt(queries: ["Private query"])
+    let terminal = AgentRemoteResearchReceipt.from(["research_trace": ["sources": [
+      ["url": "https://example.org/evidence", "title": "Remote result"]
+    ]]])
+    XCTAssertTrue(store.mergeRemoteReceipt(live, conversation: "one", turn: "turn", source: source,
+      attempt: source, generation: 2, mappedAttempt: false))
+    let reopened = AgentResearchCheckpointStore(defaults: defaults, secrets: secrets, owner: "owner")
+    XCTAssertTrue(reopened.mergeRemoteReceipt(terminal, conversation: "one", turn: "turn", source: source,
+      attempt: source, generation: 2, mappedAttempt: false))
+    XCTAssertFalse(reopened.mergeRemoteReceipt(terminal, conversation: "one", turn: "turn", source: source,
+      attempt: source, generation: 2, mappedAttempt: false))
+    XCTAssertFalse(reopened.mergeRemoteReceipt(.init(queries: ["Stale generation"]), conversation: "one", turn: "turn",
+      source: source, attempt: source, generation: 1, mappedAttempt: false))
+    XCTAssertEqual(reopened.remoteReceipt(conversation: "one", turn: "turn", source: source)?.queries, ["Private query"])
+    XCTAssertNil(reopened.remoteReceipt(conversation: "two", turn: "turn", source: source))
+    XCTAssertNil(reopened.remoteReceipt(conversation: "one", turn: "other", source: source))
+    XCTAssertFalse(defaults.dictionaryRepresentation().description.contains("Private query"))
+    XCTAssertTrue(reopened.handoff(conversation: "one", turn: "turn", source: source).isEmpty)
+    XCTAssertTrue(reopened.mergeRemoteReceipt(.init(), conversation: "one", turn: "turn", source: source,
+      attempt: replay, generation: 1, mappedAttempt: true))
+    XCTAssertFalse(reopened.mergeRemoteReceipt(live, conversation: "one", turn: "turn", source: source,
+      attempt: source, generation: 3, mappedAttempt: false))
+    XCTAssertEqual(reopened.remoteReceipt(conversation: "one", turn: "turn", source: source)?.queries, ["Private query"])
+    XCTAssertTrue(reopened.mergeRemoteReceipt(.init(queries: ["Retry query"]), conversation: "one", turn: "turn", source: source,
+      attempt: replay, generation: 1, mappedAttempt: true))
+    XCTAssertEqual(reopened.remoteReceipt(conversation: "one", turn: "turn", source: source)?.queries,
+      ["Private query", "Retry query"])
+    reopened.remove(conversation: "one", turn: "turn", source: source)
+    XCTAssertNil(reopened.remoteReceipt(conversation: "one", turn: "turn", source: source))
   }
 
   @MainActor
@@ -1796,6 +1881,63 @@ extension GalaxySSIStoreTests {
     store.recordNativeExecution([.init(action: action, result: result)], task: task, outgoing: foreign,
       status: .completed, events: events)
     XCTAssertEqual(store.runs(), [run])
+  }
+
+  func testBlockedNativeOutcomeRetainsRunAndAppendsOneScopedWait() async throws {
+    let scope = AgentPlanContinuationScope(conversationId: "conversation", turnId: "turn")
+    let action = scope.bind(AgentAction(id: "write", kind: .callNativeTool, target: "tool.write",
+      risk: .low, status: .failed, description: "Change state"))
+    var task = AgentTaskRecord(taskId: "turn", sessionId: "conversation", goal: "Change state",
+      phase: .blocked, routeKind: .localSystem, targetTitle: "Phone", risk: .low, blocked: true,
+      verification: "Affected state could not be verified", updatedAtMillis: 20)
+    task.activePlan = AgentPlan(goal: task.goal, screen: AgentScreenContext(foregroundApp: "GalaxySSI"),
+      steps: [], actions: [action], planId: "plan")
+    task.effectRecovery = [.init(scope: .init(sessionId: "conversation", conversationId: "conversation",
+      taskId: "turn", turnId: "turn"), actionId: action.id, toolId: action.target, version: "1",
+      inputDigest: "digest", invocationId: "invocation", uncertainAt: 20, query: nil, observation: nil)]
+    let outgoing = ChatMessage(contactId: "hermes", content: task.goal, isMine: true,
+      conversationId: scope.conversationId, turnId: scope.turnId)
+    let domain = "AgentBlockedOutcome.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+    defer { defaults.removePersistentDomain(forName: domain) }
+    let store = UserDefaultsAgentRecordedRunStore(defaults: defaults)
+    let events = UserDefaultsAgentRunEventStore(defaults: defaults)
+    for _ in 0..<2 {
+      store.recordNativeExecution(task: task, outgoing: outgoing, status: .failed, events: events)
+    }
+    let run = try XCTUnwrap(store.runs().first)
+    XCTAssertEqual(run.status, .running)
+    XCTAssertEqual(run.completedAtMillis, 0)
+    XCTAssertEqual(run.finalOutput["outcome_unverified"], .bool(true))
+    let waits = events.events(runId: run.runId).filter { $0.type == .waitingForUser }
+    XCTAssertEqual(waits.count, 1)
+    XCTAssertEqual(waits.first?.payload["loop_reason"], .string(task.verification))
+    XCTAssertTrue(AgentTaskCenterPolicy.actions(task).contains(.inspectEffect))
+    XCTAssertTrue(AgentTaskCenterPolicy.actions(task).contains(.cancel))
+    XCTAssertFalse(AgentTaskCenterPolicy.actions(task).contains(.delete))
+    XCTAssertFalse(AgentSelfModelReducer.observe(AgentSelfModel(), task: task).changed)
+
+    let workspaces = InMemoryAgentWorkspaceStore(initialWorkspaces: [
+      AgentWorkspace(workspaceId: run.runId, sessionId: scope.conversationId,
+        conversationId: scope.conversationId, taskId: task.taskId, goal: task.goal)
+    ])
+    let recovery = AgentRunRecoveryCoordinator(runStore: events, workspaceStore: workspaces,
+      recordedRun: { _ in run }, registration: { _, _ in nil }, adapterResolver: { _ in
+        XCTFail("Outcome recovery must not dispatch a remote adapter")
+        return nil
+      }, terminalDeliveries: { [] })
+    let restored = try await recovery.recover()
+    XCTAssertEqual(restored.first?.outcome, .restoredLocalWait)
+    XCTAssertEqual(workspaces.find(run.runId)?.status, .blocked)
+    XCTAssertEqual(workspaces.find(run.runId)?.errorMessage, task.verification)
+    XCTAssertEqual(events.events(runId: run.runId).filter { $0.type == .waitingForUser }, waits)
+
+    var foreign = try XCTUnwrap(waits.first)
+    foreign.turnId = "foreign"
+    XCTAssertNil(AgentBlockedOutcomePolicy.waitEvent(task: task, runId: run.runId, scope: scope, root: foreign))
+    task.activePlan?.safetyReview = AgentSafetyReview(blocked: true, reason: "Policy denied")
+    XCTAssertEqual(AgentBlockedOutcomePolicy.reason(task), "Policy denied")
+    XCTAssertFalse(AgentTaskCenterPolicy.actions(task).contains(.inspectEffect))
   }
 
   func testRecordedExecutionLifecycleRespectsPreDispatchCancellationAndCurrentAttempt() {

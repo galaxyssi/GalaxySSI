@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_maintenance_review_title">Maintenance review</string>
+    <string name="health_maintenance_basis_target">Basis: reviewed individual target</string>
+    <string name="health_maintenance_basis_risk">Basis: risk assessment without a numerical target</string>
+    <string name="health_maintenance_pending">Maintenance proposal · %1$d steps</string>
+    <string name="health_maintenance_scope">Results within a target do not prove clinical stability. Review the observation period, source applicability and next assessment with a health professional. Existing reminders are not cancelled, and no new notification is authorized here.</string>
+    <string name="health_maintenance_records">Evidence window: %1$d consecutive results, not the entire archive</string>
+    <string name="health_maintenance_adopt">I reviewed the evidence and want maintenance follow-up; also select the next reassessment below</string>
+    <string name="health_maintenance_active">Reviewed follow-up · next assessment remains required</string>
+    <string name="health_maintenance_reassess">Previous maintenance review · reassessment required</string>
+    <string name="health_maintenance_reopen">Reassess now</string>
+    <string name="health_maintenance_saved_history">Saved review history, not a new recommendation</string>
+    <string name="health_maintenance_gap_target">Review the current individualized target and results first.</string>
+    <string name="health_maintenance_gap_history">The selected records do not establish a complete consecutive observation window.</string>
+    <string name="health_maintenance_gap_comparison">Measurement conditions or comparability remain unresolved.</string>
+    <string name="health_maintenance_gap_applicability">Source applicability or conflicts still need review.</string>
+    <string name="health_maintenance_gap_actions">Existing actions remain unfinished; they cannot be silently replaced.</string>
+    <string name="health_maintenance_gap_recheck">A source-supported future reassessment window is required.</string>
+    <string name="health_maintenance_gap_priority">Review the priority notice before considering maintenance.</string>
+</resources>
