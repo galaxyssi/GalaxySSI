@@ -28,6 +28,7 @@ enum GalaxySSIHealthRecognitionJobs {
     var id = UUID()
     var version = UUID()
     let original: GalaxySSIHealthOriginalStore.Original
+    var captureSource: GalaxySSIHealthPhotoDraft.Source?
     let addedAt: Date
     let pageCount: Int
     var phase = Phase.queued
@@ -81,6 +82,7 @@ struct GalaxySSIHealthRecognitionJobsView: View {
   @Environment(\.timeZone) private var timeZone
   let records: GalaxySSIHealthRecords
   let store: GalaxySSIHealthOriginalStore
+  var automaticPhotoBatch: UUID? = nil
   @State private var jobs: [GalaxySSIHealthRecognitionJobs.Job] = []
   @State private var originals: [GalaxySSIHealthOriginalStore.Original] = []
   @State private var task: Task<Void, Never>?
@@ -106,6 +108,10 @@ struct GalaxySSIHealthRecognitionJobsView: View {
             } label: {
               VStack(alignment: .leading, spacing: 4) {
                 Text(job.original.name)
+                if let capture = job.captureSource {
+                  Text(String(format: t("document_order", "Document page %lld"), Int64(capture.order)))
+                    .font(.caption).foregroundColor(.secondary)
+                }
                 Text(phase(job)).foregroundColor(.secondary)
               }
             }
@@ -126,6 +132,7 @@ struct GalaxySSIHealthRecognitionJobsView: View {
         if failed { Text(t("failed", "The original or recognition job is unavailable.")) }
       }
     }
+    .task(id: scene) { await runPhotoBatch() }
     .navigationTitle(t("title", "Local Report Recognition"))
     .navigationBarTitleDisplayMode(.inline)
     .onAppear(perform: enterQueue)
@@ -223,7 +230,7 @@ struct GalaxySSIHealthRecognitionJobsView: View {
           NavigationLink {
             GalaxySSIHealthReportItemEditor(records: records, source: .init(original: job.original.id,
               sha256: job.original.sha256, page: page.index, region: line.ordinal, fromOCR: page.fromOCR,
-              evidenceKey: line.id), excerpt: line.text, sourceContext: sourceContext)
+              evidenceKey: line.id, captureSource: job.captureSource), excerpt: line.text, sourceContext: sourceContext)
           } label: { Text(line.text) }
         }
         NavigationLink {
@@ -282,7 +289,15 @@ struct GalaxySSIHealthRecognitionJobsView: View {
     failed = false; restricted = false
     do {
       let bytes: Data
-      do { bytes = try store.read(job.original) }
+      do {
+        let original = try store.read(job.original)
+        if let revision = job.captureSource?.cropRevision {
+          guard let crop = try store.readCrop(for: job.original), crop.metadata.revision == revision else {
+            throw GalaxySSIHealthRecords.Failure.stale
+          }
+          bytes = crop.png
+        } else { bytes = original }
+      }
       catch { missingSource = job.id; throw error }
       if job.original.kind == .pdf {
         guard try GalaxySSIHealthRecognitionJobs.pdfPageCount(bytes, password: password) == job.pageCount
@@ -306,6 +321,10 @@ struct GalaxySSIHealthRecognitionJobsView: View {
               missingSource = job.id
               throw GalaxySSIHealthRecords.Failure.stale
             }
+            if let revision = job.captureSource?.cropRevision,
+               try store.readCrop(for: job.original)?.metadata.revision != revision {
+              throw GalaxySSIHealthRecords.Failure.stale
+            }
             try records.commitRecognitionPage(id: job.id, run: run, page: page)
             reload()
           }
@@ -325,6 +344,23 @@ struct GalaxySSIHealthRecognitionJobsView: View {
       if password == nil { requestUnlock(job.original, job: job) }
       else { unlock = nil; restricted = true }
     } catch { unlock = nil; failed = true }
+  }
+
+  private func runPhotoBatch() async {
+    guard scene == .active, let automaticPhotoBatch else { return }
+    reload()
+    while !Task.isCancelled, scene == .active {
+      if task == nil {
+        guard let next = jobs.filter({ $0.captureSource?.batchID == automaticPhotoBatch &&
+          $0.phase != .completed && $0.phase != .cancelled })
+          .min(by: { ($0.captureSource?.order ?? 0) < ($1.captureSource?.order ?? 0) }),
+          next.phase == .queued else { return }
+        run(next)
+        if task == nil { return }
+      }
+      do { try await Task.sleep(nanoseconds: 250_000_000) }
+      catch { return }
+    }
   }
 
   private func stop(cancelled: Bool) {
