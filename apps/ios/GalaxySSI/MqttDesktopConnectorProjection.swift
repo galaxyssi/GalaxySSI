@@ -97,7 +97,6 @@ struct MqttDesktopConnectorProjection {
       return
     }
     if payload.string("type") == "text", AgentDesktopReplyRecovery.terminalStatuses.contains(payload.string("task_status")),
-       UUID(uuidString: payload.string("source_message_id")) != nil,
        let receipt = AgentResultReceipt.fromPayload(payload, desktopId: target.peer.remoteSignalName),
        let terminalResult {
       try terminalResult(payload, receipt)

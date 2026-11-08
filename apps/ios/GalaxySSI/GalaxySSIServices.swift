@@ -2675,7 +2675,7 @@ final class MessageCoordinator: ObservableObject {
     return source
   }
 
-  private func currentManagedDesktopReply(_ binding: AgentDesktopReplyBinding) -> AgentManagedResponseRecord? {
+  private func currentManagedDesktopReply(_ binding: AgentDesktopReplyBinding, allowCommitted: Bool = false) -> AgentManagedResponseRecord? {
     guard let managed = binding.managedSource,
           mayRecoverSavedDesktopSource(conversation: binding.identity.conversationId,
             turn: binding.identity.turnId, sourceID: binding.sourceId.uuidString),
@@ -2693,8 +2693,9 @@ final class MessageCoordinator: ObservableObject {
     let probe = AgentConnectorResponse(sourceMessageId: managed.sourceMessageId, contactId: binding.contactId,
       content: "recovery identity", conversationId: record.conversationId, turnId: record.turnId,
       taskId: record.taskId, executionGeneration: managed.executionGeneration)
-    guard !connectorResponseBus.isTerminal(probe),
-          (try? managedDesktopReplyLedger.ownsResponse(probe)) == true else { return nil }
+    guard (try? managedDesktopReplyLedger.ownsResponse(probe)) == true else { return nil }
+    if allowCommitted, record.state != .pending, record.response != nil { return record }
+    guard !connectorResponseBus.isTerminal(probe) else { return nil }
     if let task = store.agentTask(id: record.turnId), [.cancelled, .failed].contains(task.phase) { return nil }
     return record
   }
@@ -4112,7 +4113,7 @@ final class MessageCoordinator: ObservableObject {
     if payload.string("type") == "agent_task_recovery_result" {
       // Queries are scoped to this process. A late response after restart is replaced by a new probe.
       guard let binding = desktopReplyRecovery.expectedBinding(payload) else { return }
-      guard binding.desktopId == desktopId, currentDesktopReplySource(binding) != nil,
+      guard binding.desktopId == desktopId, journalBackedDesktopBindingIsCurrent(binding),
             let record = desktopReplyRecovery.receive(payload, authenticatedDesktopId: desktopId, now: now) else {
         throw MqttRouteError.invalidPayload
       }
@@ -4125,17 +4126,24 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     guard let binding = desktopResultRecovery.expectedBinding(payload) else { return }
-    guard binding.desktopId == desktopId, currentDesktopReplySource(binding) != nil,
+    guard binding.desktopId == desktopId, journalBackedDesktopBindingIsCurrent(binding),
           let record = desktopReplyRecovery.record(for: binding), AgentDesktopReplyRecovery.terminalStatuses.contains(record.status),
           desktopResultRecovery.receive(payload, record: record, now: now, commitManifest: {
             self.desktopReplyRecovery.attachManifest($0, to: record)
           }) != nil else { throw MqttRouteError.invalidPayload }
   }
 
+  private func journalBackedDesktopBindingIsCurrent(_ binding: AgentDesktopReplyBinding) -> Bool {
+    guard binding.teamSource == nil, binding.goalWork != true else { return false }
+    return binding.managedSource == nil ? currentDesktopReplySource(binding) != nil :
+      currentManagedDesktopReply(binding, allowCommitted: true) != nil
+  }
+
   private func journalBackedDesktopRecoveryQueries(ready: (AgentDesktopReplyBinding) -> Bool,
                                                    onFailure: (Error) -> Void) -> [[String: Any]] {
     guard desktopReplyRecoveryOwner == store.profile.identityFingerprint else { return [] }
     let now = AgentControlPlaneClock.nowMillis()
+    discoverManagedDesktopReplies(now: now)
     var requests: [[String: Any]] = []
     let ordered = desktopReplyRecovery.pending.sorted { $0.binding.key < $1.binding.key }
     let cursor = journalBackedRecoveryCursor
@@ -4143,8 +4151,14 @@ final class MessageCoordinator: ObservableObject {
     let page = next.isEmpty ? Array(ordered.prefix(32)) : next
     for record in page {
       journalBackedRecoveryCursor = record.binding.key
-      guard record.codexDispatchPending != true, record.expiryReason(now: now) == nil,
-            currentDesktopReplySource(record.binding) != nil else { continue }
+      guard record.codexDispatchPending != true, journalBackedDesktopBindingIsCurrent(record.binding) else { continue }
+      if let managed = currentManagedDesktopReply(record.binding, allowCommitted: true),
+         let receipt = managed.desktopResultReceipt {
+        do { try finishJournalBackedManagedReceipt(receipt, binding: record.binding) }
+        catch { onFailure(error) }
+        continue
+      }
+      guard record.expiryReason(now: now) == nil else { continue }
       let terminal = AgentDesktopReplyRecovery.terminalStatuses.contains(record.status)
       if terminal, record.acceptedReply != nil, completeAcceptedDesktopReply(record) != .missing { continue }
       if terminal, var payload = desktopResultRecovery.assembled(record),
@@ -4168,6 +4182,10 @@ final class MessageCoordinator: ObservableObject {
           AgentResultReceipt.fromPayload(payload, desktopId: receipt.desktopId) == receipt else {
       throw MqttRouteError.identityChanged
     }
+    if Int64(receipt.sourceMessageId) != nil {
+      try commitJournalBackedManagedResult(payload, receipt: receipt)
+      return
+    }
     let matches = desktopReplyRecovery.pending.filter {
       $0.binding.desktopId == receipt.desktopId && $0.binding.matches(payload)
     }
@@ -4190,6 +4208,53 @@ final class MessageCoordinator: ObservableObject {
       throw MqttChunkStorageError.databaseFailure
     }
     if status == "timed_out" { recordConfirmedCodexTimeout(payload, binding: tracked.binding) }
+  }
+
+  private func journalBackedManagedBinding(_ response: AgentConnectorResponse, desktopId: String)
+    throws -> (AgentDesktopReplyBinding, AgentManagedResponseRecord) {
+    guard let owner = try managedDesktopReplyLedger.recoveryRecord(matching: response),
+          let contact = store.contact(id: owner.contactId), contact.desktopId == desktopId,
+          let identity = taskIdentityStore.identity(contactId: owner.contactId, sourceMessageId: String(owner.sourceMessageId)),
+          let binding = AgentDesktopReplyBinding.managed(record: owner, desktopId: desktopId,
+            agentId: contact.connectorAgentId, identity: identity),
+          let current = currentManagedDesktopReply(binding, allowCommitted: true) else {
+      throw MqttRouteError.identityChanged
+    }
+    return (binding, current)
+  }
+
+  private func commitJournalBackedManagedResult(_ payload: [String: Any], receipt: AgentResultReceipt) throws {
+    guard let response = AgentConnectorResponse.fromPayload(payload),
+          let normalized = AgentConnectorResponseNormalizer.normalized(response, nowMillis: AgentControlPlaneClock.nowMillis()),
+          AgentDesktopReplyRecovery.integer(payload["execution_generation"], minimum: 1) == receipt.executionGeneration,
+          AgentDesktopReplyRecovery.integer(payload["status_sequence"], minimum: 0) != nil else {
+      throw MqttRouteError.invalidPayload
+    }
+    let (binding, owner) = try journalBackedManagedBinding(normalized, desktopId: receipt.desktopId)
+    guard binding.matches(payload), desktopReplyRecovery.acceptsFinal(payload, desktopId: receipt.desktopId) else {
+      throw MqttRouteError.identityChanged
+    }
+    let planner = owner.ownerRunId.hasPrefix(AgentPairedPhonePlannerRoute.ownerPrefix)
+    if planner, binding.agentId != "codex" || payload.string("desktop_id") != receipt.desktopId {
+      throw MqttRouteError.identityChanged
+    }
+    _ = try managedDesktopReplyLedger.commitDesktopResult(normalized, receipt: receipt, binding: binding)
+    if !planner {
+      _ = connectorResponseBus.publish(normalized)
+    }
+    try finishJournalBackedManagedReceipt(receipt, binding: binding)
+  }
+
+  private func finishJournalBackedManagedReceipt(_ receipt: AgentResultReceipt, binding: AgentDesktopReplyBinding) throws {
+    guard receipt.desktopId == binding.desktopId, binding.matches(receipt.payload),
+          currentManagedDesktopReply(binding, allowCommitted: true)?.desktopResultReceipt == receipt else {
+      throw MqttRouteError.identityChanged
+    }
+    if desktopResultRecovery.receipts.recordedState(receipt) == nil,
+       !desktopResultRecovery.receipts.insert(receipt) { throw MqttChunkStorageError.databaseFailure }
+    if desktopReplyRecovery.record(for: binding) != nil, !desktopReplyRecovery.retire(binding) {
+      throw MqttChunkStorageError.databaseFailure
+    }
   }
 
   private func persistAcceptedDesktopReply(_ record: AgentDesktopReplyRecoveryRecord, payload: [String: Any],
@@ -15248,13 +15313,19 @@ final class MessageCoordinator: ObservableObject {
                                     pool: GalaxySSIMqttBrokerPool = .init(),
                                     onFailure: @escaping @MainActor (Error) -> Void = { _ in }) throws -> MqttBusinessTransportRuntime {
     let connector = MqttDesktopConnectorProjection(store: store, identities: taskIdentityStore,
-      commitResponse: { [weak self] response, _ in
+      commitResponse: { [weak self] response, payload in
         guard let self else { throw MqttDeliveryDispatch.Failure.unavailable }
         if self.connectorResponseBus.isTerminal(response) { return }
         let managed = try self.managedDesktopReplyLedger.ownsResponse(response)
         if managed, let record = try self.managedDesktopReplyLedger.recoveryRecord(matching: response),
            record.ownerRunId.hasPrefix(AgentPairedPhonePlannerRoute.ownerPrefix) {
-          throw MqttDeliveryDispatch.Failure.unavailable
+          let (binding, current) = try self.journalBackedManagedBinding(response, desktopId: payload.string("desktop_id"))
+          guard binding.agentId == "codex", payload.string("type") == "text", binding.matches(payload),
+                let normalized = AgentConnectorResponseNormalizer.normalized(response, nowMillis: AgentControlPlaneClock.nowMillis()),
+                current.matchesCommittedResult(normalized) ||
+                  (current.state == .pending && self.persistPairedPhonePlannerResponse(normalized, record: current) &&
+                   self.managedDesktopResultIsCommitted(normalized)) else { throw MqttChunkStorageError.databaseFailure }
+          return
         }
         let applied = self.connectorResponseBus.publish(response)
         let committed = managed ? self.managedDesktopResultIsCommitted(response) :
