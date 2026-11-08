@@ -84,6 +84,7 @@ internal class HealthCareResearchReview(private val activity: Activity, private 
             preview.grant.modelId.ifBlank { activity.getString(R.string.health_care_discussion_default_model) },
             preview.grant.effort.ifBlank { activity.getString(R.string.health_care_unknown) }), 15f, bold = true))
         ui.add(content, ui.text(activity.getString(R.string.health_research_consent), 14f), 12)
+        if (preview.grant.questionsShared) ui.add(content, ui.text(activity.getString(R.string.health_questions_disclosure), 14f), 8)
         preview.grant.profileLink?.scope?.let {
             ui.add(content, ui.text(activity.getString(R.string.health_care_profile_shared, it.fields.size, it.entries.size), 14f), 8)
         }

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_questions_disclosure">This sharing scope includes questions and replies you explicitly save for this health concern. The model may propose questions, but cannot save answers on your behalf. Deferred or declined questions stay closed until you reopen them.</string>
+    <string name="health_question_title">Questions and saved replies</string>
+    <string name="health_question_summary">Review information gaps and your reply preferences</string>
+    <string name="health_question_empty">No questions have been recorded in this sharing scope.</string>
+    <string name="health_question_open">Unanswered</string>
+    <string name="health_question_answered">Answered</string>
+    <string name="health_question_deferred">Answer later when I reopen it</string>
+    <string name="health_question_declined">Prefer not to answer</string>
+    <string name="health_question_conflict">Conflicting information</string>
+    <string name="health_question_stale">Source changed; review needed</string>
+    <string name="health_question_first">First page</string>
+    <string name="health_question_review">Review reply</string>
+    <string name="health_question_record_time">Measurement discussed: %1$s</string>
+    <string name="health_question_current_time">Current measurement: %1$s</string>
+    <string name="health_question_stale_notice">The source or context changed. The previous answer is not current; saving applies your reply to the current record.</string>
+    <string name="health_question_saved_fact">Already saved: %1$s</string>
+    <string name="health_question_answer_notice">Replies are self-reported and do not overwrite original records or medical instructions. Deferring or declining will not create a reminder.</string>
+    <string name="health_question_answer">Your answer or the discrepancy</string>
+    <string name="health_question_answer_required">Enter an answer or select another status.</string>
+    <string name="health_question_save">Save reply</string>
+    <string name="health_question_saved">Reply saved for this health concern</string>
+</resources>

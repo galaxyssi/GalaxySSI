@@ -32,6 +32,7 @@ internal class HealthCareDiscussionController(private val activity: MainActivity
                     val body = ui.column().apply { setPadding(ui.dp(20), ui.dp(8), ui.dp(20), ui.dp(12)) }
                     body.addView(ui.text(activity.getString(R.string.health_care_discussion_disclosure,
                         preview.target.title, preview.grant.modelId.ifBlank { activity.getString(R.string.health_care_discussion_default_model) }), 15f))
+                    if (preview.grant.questionsShared) ui.add(body, ui.text(activity.getString(R.string.health_questions_disclosure), 14f), 8)
                     ui.add(body, ui.text(question, 16f, bold = true), 16)
                     preview.grant.profileLink?.scope?.let {
                         ui.add(body, ui.text(activity.getString(R.string.health_care_profile_summary, it.fields.size, it.entries.size), 14f), 8)
