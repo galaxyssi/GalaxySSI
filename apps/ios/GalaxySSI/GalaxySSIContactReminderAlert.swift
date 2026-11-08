@@ -1,6 +1,7 @@
 import AVFoundation
 import CallKit
 import Combine
+import OSLog
 import UIKit
 import UserNotifications
 
@@ -53,28 +54,81 @@ enum GalaxySSIContactReminderNotification {
   }
 }
 
+enum GalaxySSIContactReminderAudioPolicy {
+  static func duration(for record: GalaxySSIContactReminder, currentID: String?, now: Int64,
+                       busy: Bool) -> Int64? {
+    guard !busy, record.id != currentID, !record.outgoing, record.status == .received,
+          record.expiresAt > now, now > 0 else { return nil }
+    return min(record.expiresAt - now, GalaxySSIContactReminderEnvelope.soundDuration)
+  }
+
+  static func tone(duration: Int64) -> Data {
+    let frames = Int(max(0, min(duration, GalaxySSIContactReminderEnvelope.soundDuration))) * 16
+    let bytes = frames * 2
+    var data = Data()
+    data.reserveCapacity(44 + bytes)
+    func text(_ value: String) { data.append(contentsOf: value.utf8) }
+    func number<T: FixedWidthInteger>(_ value: T) {
+      var littleEndian = value.littleEndian
+      withUnsafeBytes(of: &littleEndian) { data.append(contentsOf: $0) }
+    }
+    text("RIFF"); number(UInt32(36 + bytes)); text("WAVEfmt "); number(UInt32(16))
+    number(UInt16(1)); number(UInt16(1)); number(UInt32(16_000)); number(UInt32(32_000))
+    number(UInt16(2)); number(UInt16(16)); text("data"); number(UInt32(bytes))
+    var remaining = bytes
+    while remaining > 0 {
+      let count = min(remaining, cycle.count)
+      data.append(contentsOf: cycle.prefix(count))
+      remaining -= count
+    }
+    return data
+  }
+
+  private static let cycle: Data = {
+    var pcm = Data(capacity: 64_000)
+    for sample in 0..<32_000 {
+      let t = Double(sample) / 16_000
+      let offset = t < 0.36 ? t : t - 0.36
+      let frequency = t < 0.36 ? 660.0 : 880.0
+      let gain = max(0, min(1, offset * 80, (0.22 - offset) * 20))
+      var value = Int16(sin(2 * .pi * frequency * offset) * gain * 8_000).littleEndian
+      withUnsafeBytes(of: &value) { pcm.append(contentsOf: $0) }
+    }
+    return pcm
+  }()
+}
+
 @MainActor
 final class GalaxySSIContactReminderAlert {
+  private enum StopReason: String {
+    case explicitAction, replaced, interrupted, busy, deadline, recordChanged, playbackError
+  }
+
   private let calls = CXCallObserver()
   private var audio: AVAudioPlayer?
   private var audioID: String?
   private var stopTask: Task<Void, Never>?
   private var audioSession: (previous: AVAudioSession.Category, mode: AVAudioSession.Mode,
     options: AVAudioSession.CategoryOptions, applied: AVAudioSession.Category, appliedOptions: AVAudioSession.CategoryOptions)?
+  private var activatedSession = false
   private var observations = Set<AnyCancellable>()
 
   init() {
     NotificationCenter.default.publisher(for: .galaxySSIVoiceRecordingWillStart)
       .sink { [weak self] _ in
-        if Thread.isMainThread { MainActor.assumeIsolated { self?.stop() } }
-        else { DispatchQueue.main.sync { self?.stop() } }
+        if Thread.isMainThread { MainActor.assumeIsolated { self?.stop(.busy) } }
+        else { DispatchQueue.main.sync { self?.stop(.busy) } }
       }.store(in: &observations)
+    NotificationCenter.default.publisher(for: AVAudioSession.mediaServicesWereResetNotification)
+      .receive(on: RunLoop.main)
+      .sink { [weak self] _ in self?.stop(.interrupted) }
+      .store(in: &observations)
     NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)
       .receive(on: RunLoop.main)
       .sink { [weak self] notification in
         guard notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt ==
           AVAudioSession.InterruptionType.began.rawValue else { return }
-        self?.stop()
+        self?.stop(.interrupted)
       }.store(in: &observations)
   }
 
@@ -84,13 +138,16 @@ final class GalaxySSIContactReminderAlert {
   }
 
   func show(_ record: GalaxySSIContactReminder, language: String, audibleInSilentMode: Bool) {
-    let remaining = record.expiresAt - AgentControlPlaneClock.nowMillis()
-    guard remaining > 0, !record.status.terminal else { return }
+    let now = AgentControlPlaneClock.nowMillis()
+    guard record.expiresAt > now, !record.outgoing, !record.status.terminal, record.status != .muted else { return }
     let quiet = record.status == .quiet || mustBeQuiet
     if UIApplication.shared.applicationState == .active {
-      if !quiet, audioID == nil {
-        play(id: record.id, duration: min(remaining, GalaxySSIContactReminderEnvelope.soundDuration),
-          audibleInSilentMode: audibleInSilentMode)
+      if let duration = GalaxySSIContactReminderAudioPolicy.duration(for: record, currentID: audioID,
+        now: now, busy: quiet) {
+        stop(.replaced)
+        play(id: record.id, expiresAt: record.expiresAt, duration: duration, audibleInSilentMode: audibleInSilentMode)
+      } else {
+        diagnostic(quiet ? "Skipped: call, recording, spoken playback, or quiet reminder" : "Skipped: already playing")
       }
       return
     }
@@ -106,12 +163,17 @@ final class GalaxySSIContactReminderAlert {
   }
 
   func reconcile(_ records: [GalaxySSIContactReminder]) {
-    if let audioID, !records.contains(where: { $0.id == audioID && !$0.status.terminal && $0.status != .muted }) {
-      stop()
+    let now = AgentControlPlaneClock.nowMillis()
+    if let audioID, !records.contains(where: { $0.id == audioID &&
+      GalaxySSIContactReminderAudioPolicy.duration(for: $0, currentID: nil, now: now, busy: false) != nil }) {
+      stop(.recordChanged)
     }
   }
 
-  func stop() {
+  func stop() { stop(.explicitAction) }
+
+  private func stop(_ reason: StopReason) {
+    if audioID != nil || audioSession != nil { diagnostic("Stopped: " + reason.rawValue) }
     stopTask?.cancel()
     stopTask = nil
     audio?.stop()
@@ -121,56 +183,60 @@ final class GalaxySSIContactReminderAlert {
       let session = AVAudioSession.sharedInstance()
       if session.category == configuration.applied && session.mode == .default &&
         session.categoryOptions == configuration.appliedOptions {
-        try? session.setActive(false, options: .notifyOthersOnDeactivation)
+        if activatedSession { try? session.setActive(false, options: .notifyOthersOnDeactivation) }
         try? session.setCategory(configuration.previous, mode: configuration.mode, options: configuration.options)
       }
       audioSession = nil
     }
+    activatedSession = false
   }
 
-  private func play(id: String, duration: Int64, audibleInSilentMode: Bool) {
+  private func play(id: String, expiresAt: Int64, duration: Int64, audibleInSilentMode: Bool) {
     let session = AVAudioSession.sharedInstance()
     let category: AVAudioSession.Category = audibleInSilentMode ? .playback : .ambient
     let options: AVAudioSession.CategoryOptions = audibleInSilentMode ? .mixWithOthers : []
     let previous = (session.category, session.mode, session.categoryOptions)
     do {
-      let player = try AVAudioPlayer(data: Self.tone())
       try session.setCategory(category, mode: .default, options: options)
       audioSession = (previous.0, previous.1, previous.2, session.category, session.categoryOptions)
       try session.setActive(true)
-      player.numberOfLoops = -1
+      activatedSession = true
+      let available = min(duration, expiresAt - AgentControlPlaneClock.nowMillis())
+      guard available > 0 else { stop(.deadline); return }
+      guard !mustBeQuiet else { stop(.busy); return }
+      // The clip itself is bounded even when the app cannot run its watchdog.
+      let deadline = DispatchTime.now().uptimeNanoseconds + UInt64(available) * 1_000_000
+      let player = try AVAudioPlayer(data: GalaxySSIContactReminderAudioPolicy.tone(duration: available))
       player.volume = 0.65
-      guard player.play() else { stop(); return }
+      guard DispatchTime.now().uptimeNanoseconds < deadline else { stop(.deadline); return }
+      guard player.play() else { stop(.playbackError); return }
       audio = player
       audioID = id
+      diagnostic("Playback accepted by audio session")
       stopTask = Task { @MainActor [weak self] in
-        do { try await Task.sleep(nanoseconds: UInt64(duration) * 1_000_000) }
-        catch { return }
-        self?.stop()
+        while !Task.isCancelled {
+          let now = DispatchTime.now().uptimeNanoseconds
+          if now >= deadline { self?.stop(.deadline); return }
+          do { try await Task.sleep(nanoseconds: min(500_000_000, deadline - now)) }
+          catch { return }
+          guard !Task.isCancelled, let self, self.audioID == id else { return }
+          if self.mustBeQuiet { self.stop(.busy); return }
+          if self.audio?.isPlaying != true || AgentControlPlaneClock.nowMillis() >= expiresAt {
+            self.stop(.deadline)
+            return
+          }
+        }
       }
-    } catch { stop() }
+    } catch {
+      diagnostic("Playback could not start")
+      stop(.playbackError)
+    }
   }
 
-  private static func tone() -> Data {
-    let sampleRate = 16_000
-    let samples = sampleRate * 2
-    var data = Data()
-    func text(_ value: String) { data.append(contentsOf: value.utf8) }
-    func number<T: FixedWidthInteger>(_ value: T) {
-      var littleEndian = value.littleEndian
-      withUnsafeBytes(of: &littleEndian) { data.append(contentsOf: $0) }
-    }
-    text("RIFF"); number(UInt32(36 + samples * 2)); text("WAVEfmt "); number(UInt32(16))
-    number(UInt16(1)); number(UInt16(1)); number(UInt32(sampleRate)); number(UInt32(sampleRate * 2))
-    number(UInt16(2)); number(UInt16(16)); text("data"); number(UInt32(samples * 2))
-    for sample in 0..<samples {
-      let t = Double(sample) / Double(sampleRate)
-      let offset = t < 0.36 ? t : t - 0.36
-      let frequency = t < 0.36 ? 660.0 : 880.0
-      let gain = max(0, min(1, offset * 80, (0.22 - offset) * 20))
-      number(Int16(sin(2 * .pi * frequency * offset) * gain * 8_000))
-    }
-    return data
+  private func diagnostic(_ message: String) {
+    #if DEBUG
+    Logger(subsystem: "com.galaxyssi.ios", category: "contact-reminder-audio").debug("\(message, privacy: .public)")
+    #endif
   }
 }
 
