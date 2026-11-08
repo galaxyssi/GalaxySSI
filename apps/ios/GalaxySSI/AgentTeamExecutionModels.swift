@@ -1202,6 +1202,7 @@ struct AgentCollaborationResearchRevision: Codable {
   var workflowComparison: AgentCollaborationWorkflowComparison? = nil
   var testedToolRelease: AgentMcpJSONObject? = nil
   var toolTestComparison: AgentMcpJSONObject? = nil
+  var desktopFile: AgentDesktopCollaborationFileHandoff.Binding? = nil
 
   var storageBytesLimit: Int {
     if draft.kind == .toolTestComparison && toolTestComparison != nil { return 1_048_576 }
