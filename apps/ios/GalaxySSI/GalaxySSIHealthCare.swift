@@ -100,6 +100,39 @@ enum GalaxySSIHealthCare {
     }
   }
 
+  static func agentConcerns(in archive: GalaxySSIHealthRecords.Archive) -> [Concern] {
+    guard archive.localCareAllowed == true, let ledger = archive.localCare else { return [] }
+    return Array(ledger.current.values
+      .filter { $0.stage != .paused && $0.stage != .closed }
+      .sorted { ($0.updatedAt, $0.id.uuidString) > ($1.updatedAt, $1.id.uuidString) }
+      .prefix(3))
+  }
+
+  struct AgentDiscussionTarget: Identifiable {
+    let id: UUID
+    let metric: GalaxySSIHealthMetric
+    let revision: Int
+    let permission: UUID?
+
+    init(_ concern: Concern, permission: UUID?) {
+      id = concern.id
+      metric = concern.metric
+      revision = concern.revision
+      self.permission = permission
+    }
+
+    func matches(_ archive: GalaxySSIHealthRecords.Archive) -> Bool {
+      guard archive.localCareAllowed == true,
+            let current = archive.localCare?.current[metric.rawValue], current.id == id, current.revision == revision,
+            current.assessment.record != nil, current.stage != .paused, current.stage != .closed else { return false }
+      return permission == Self.permission(in: archive)
+    }
+
+    static func permission(in archive: GalaxySSIHealthRecords.Archive) -> UUID? {
+      archive.privacyEvents?.last(where: { $0.scope == .localCare && $0.enabled })?.id
+    }
+  }
+
   static func assess(_ readings: [GalaxySSIHealthReading], context: Context?) -> Assessment? {
     guard let latest = readings.first else { return nil }
     let record = Record(latest)

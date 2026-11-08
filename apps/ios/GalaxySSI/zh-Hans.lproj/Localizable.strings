@@ -98,6 +98,14 @@
 "galaxyssi.health.care.more" = "显示更多";
 "galaxyssi.health.care.remove" = "删除关注项";
 "galaxyssi.health.care.stage.verify" = "核对背景";
+"galaxyssi.health.care.agent.reason" = "关注原因";
+"galaxyssi.health.care.agent.next" = "下一步";
+"galaxyssi.health.care.agent.discuss" = "私密讨论";
+"galaxyssi.health.care.agent.local_follow_up" = "本地健康跟进";
+"galaxyssi.health.care.agent.next_reassess" = "查看记录结果的变化";
+"galaxyssi.health.care.agent.next_maintenance" = "查看正在进行的跟进";
+"galaxyssi.health.care.agent.expand" = "展开健康详情";
+"galaxyssi.health.care.agent.collapse" = "收起健康详情";
 "galaxyssi.health.care.stage.evidence" = "审核证据";
 "galaxyssi.health.care.stage.reassess" = "重新评估";
 "galaxyssi.health.care.stage.maintenance" = "维持观察";

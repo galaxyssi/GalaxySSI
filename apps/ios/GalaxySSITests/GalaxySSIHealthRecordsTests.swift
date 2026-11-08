@@ -3461,6 +3461,61 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 }
 
+extension GalaxySSIHealthRecordsTests {
+  @MainActor
+  func testAgentHealthDiscussionShortcutKeepsExactThreadWithoutGrantingOnlinePermission() throws {
+    typealias Target = GalaxySSIHealthCare.AgentDiscussionTarget
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "summary", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-60), value: 110,
+      unitOverride: "mg/dL", referenceInterval: "70 - 99"))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let archive = try records.load()
+    let concern = try XCTUnwrap(archive.localCare?.current["glucose"])
+    let target = Target(concern, permission: Target.permission(in: archive))
+    XCTAssertTrue(target.matches(archive))
+    let thread = try records.openLocalCareDiscussion(id: target.id, metric: target.metric)
+    XCTAssertEqual(try records.openLocalCareDiscussion(id: target.id, metric: target.metric).id, thread.id)
+    XCTAssertTrue(thread.turns.isEmpty)
+    XCTAssertNil(try records.load().healthOnlinePermission)
+    try records.setLocalCareContext(concern, applicability: .applicable, now: now)
+    XCTAssertFalse(target.matches(try records.load()))
+    let changed = try records.load()
+    let changedConcern = try XCTUnwrap(changed.localCare?.current["glucose"])
+    let changedTarget = Target(changedConcern, permission: Target.permission(in: changed))
+    XCTAssertTrue(changedTarget.matches(changed))
+    try records.setPrivacy(.localCare, enabled: false)
+    XCTAssertFalse(changedTarget.matches(try records.load()))
+    try records.setPrivacy(.localCare, enabled: true)
+    XCTAssertFalse(changedTarget.matches(try records.load()))
+  }
+
+  func testAgentHealthSummaryRequiresOptInAndSelectsBoundedActiveConcerns() {
+    typealias Care = GalaxySSIHealthCare
+    func concern(_ metric: GalaxySSIHealthMetric, _ stage: Care.Stage, _ timestamp: TimeInterval) -> Care.Concern {
+      Care.Concern(id: UUID(), metric: metric, revision: 1, updatedAt: Date(timeIntervalSince1970: timestamp),
+        assessment: .removed, stage: stage, context: nil, target: nil, reviewNote: nil)
+    }
+    let active = [
+      concern(.glucose, .verify, 10), concern(.weight, .evidence, 20),
+      concern(.heartRate, .reassess, 30), concern(.cholesterol, .maintenance, 40)
+    ]
+    let excluded = [concern(.bloodPressure, .paused, 50), concern(.hemoglobin, .closed, 60)]
+    var archive = GalaxySSIHealthRecords.Archive()
+    var ledger = Care.Ledger()
+    for item in active + excluded { ledger.publish(item) }
+    archive.localCare = ledger
+    XCTAssertTrue(Care.agentConcerns(in: archive).isEmpty)
+    archive.localCareAllowed = true
+    XCTAssertEqual(Care.agentConcerns(in: archive).map(\.id), Array(active.dropFirst().reversed()).map(\.id))
+    archive.localCareAllowed = false
+    XCTAssertTrue(Care.agentConcerns(in: archive).isEmpty)
+  }
+}
+
 private final class HealthFixtureSecrets: GalaxySSISecretStore {
   private var values: [String: String] = [:]
   var unavailable = false
