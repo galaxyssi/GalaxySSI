@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.widget.CheckBox
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import java.util.UUID
 import java.util.concurrent.Executors
 
@@ -18,6 +19,7 @@ class HealthCareInstructionsActivity : Activity() {
     private val names by lazy { intent.healthNavigationDatabases() }
     private val repository by lazy { HealthCareInstructionRepository(applicationContext, names) }
     private val editor by lazy { HealthCareInstructionEditor(this) }
+    private val actions by lazy { HealthCareActionReview(this, names) }
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     private lateinit var body: LinearLayout
@@ -68,7 +70,7 @@ class HealthCareInstructionsActivity : Activity() {
         if (::body.isInitialized) { active = false; clear(); reset(); contentResolver.unregisterContentObserver(observer) }
         super.onStop()
     }
-    override fun onDestroy() { editor.clear(); worker.shutdown(); super.onDestroy() }
+    override fun onDestroy() { editor.clear(); actions.destroy(); worker.shutdown(); super.onDestroy() }
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         if (::body.isInitialized && level >= TRIM_MEMORY_RUNNING_LOW) { clear(); reset(); if (active) load() }
@@ -83,7 +85,7 @@ class HealthCareInstructionsActivity : Activity() {
     }
     private fun clear() {
         generation++; signal.cancel(); signal = CancellationSignal(); snapshot = null; reading = null
-        editor.clear(); dialog?.dismiss(); dialog = null; sourceDialog?.dismiss(); sourceDialog = null
+        editor.clear(); actions.clear(); dialog?.dismiss(); dialog = null; sourceDialog?.dismiss(); sourceDialog = null
         main.removeCallbacks(expiry); body.removeAllViews(); selectedLines.clear(); lineStart = 0
     }
     private fun reset() {
@@ -164,6 +166,13 @@ class HealthCareInstructionsActivity : Activity() {
             value.selected != null -> {
                 val entry = value.selected
                 details(content, entry)
+                val mapped = value.visit.issue.actions.firstOrNull { it.id == HealthCareInstructionActionPolicy.actionId(entry) }
+                if (mapped != null) ui.add(content, ui.command(R.string.health_instruction_action_open) {
+                    actions.show(value.visit.issue.id, mapped.id)
+                }.apply { tag = "instruction-action-open" }, 16)
+                else if (value.available && HealthCareInstructionActionPolicy.eligible(entry)) ui.add(content,
+                    ui.command(R.string.health_instruction_action_add) { confirmAction(value) }.apply { tag = "instruction-action-add" }, 16)
+                else ui.add(content, ui.text(getString(R.string.health_instruction_action_incomplete), 14f, muted = true), 12)
                 if (value.available) ui.add(content, ui.command(R.string.health_instruction_edit) {
                     if (busy) return@command
                     val operation = UUID.randomUUID().toString()
@@ -190,6 +199,35 @@ class HealthCareInstructionsActivity : Activity() {
                 value.page.next?.let { next -> ui.add(content, ui.command(R.string.health_agenda_next) { previous += cursor; cursor = next; load() }, 12) }
             }
         }
+    }
+    private fun confirmAction(value: HealthCareInstructionSnapshot) {
+        if (busy) return
+        val entry = value.selected ?: return
+        val content = ui.column().apply { setPadding(ui.dp(20), ui.dp(8), ui.dp(20), ui.dp(16)) }
+        details(content, entry)
+        ui.add(content, ui.text(getString(R.string.health_instruction_action_notice), 14f, muted = true), 16)
+        val checked = CheckBox(this).apply {
+            text = getString(R.string.health_instruction_action_check); setTextColor(getColor(R.color.text_primary))
+            tag = "instruction-action-checked"
+        }
+        ui.add(content, checked, 12)
+        dialog = AlertDialog.Builder(this).setTitle(R.string.health_instruction_action_add)
+            .setView(ScrollView(this).apply { addView(content) }).setNegativeButton(R.string.common_cancel, null)
+            .setPositiveButton(R.string.health_instruction_action_confirm, null).create().also { d ->
+                d.setOnDismissListener { content.removeAllViews() }
+                d.setOnShowListener {
+                    val button = d.getButton(AlertDialog.BUTTON_POSITIVE)
+                    button.isEnabled = false
+                    checked.setOnCheckedChangeListener { _, enabled -> button.isEnabled = enabled }
+                    button.setOnClickListener {
+                        if (!checked.isChecked || busy) return@setOnClickListener
+                        val cancellation = signal
+                        d.dismiss()
+                        work({ repository.confirmAction(value, cancellation) }) { load() }
+                    }
+                }
+                d.show()
+            }
     }
     private fun details(content: LinearLayout, entry: HealthCareInstruction) {
         ui.add(content, ui.text("${getString(entry.draft.kind.label())}\n${getString(entry.draft.label())}", 17f, bold = true), 16)

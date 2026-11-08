@@ -42,7 +42,7 @@ internal object HealthCareFollowUpPolicy {
         settings.enabled && privacy.metrics && privacy.profile && issue.assessment.record != null &&
             issue.stage !in setOf(HealthCareStage.PAUSED, HealthCareStage.CLOSED) &&
             issue.inputVersion == sourceVersion && action in issue.actions && action.state == HealthCareActionState.CONFIRMED &&
-            action.basis == basis(issue)
+            action.basis == basis(issue) && action.instruction?.invalidated != true
 
     fun current(reminder: HealthCareReminder, issue: HealthCareConcern, settings: HealthCareSettings,
         privacy: HealthPrivacyPolicy, sourceVersion: String): Boolean {

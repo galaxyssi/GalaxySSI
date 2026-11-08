@@ -76,4 +76,18 @@ internal class HealthCareInstructionRepository(private val context: Context, pri
         val value = snapshot.selected ?: throw HealthCareConflict()
         care.deleteInstruction(value.concernId, snapshot.visit.issue.revision, value.id, value.revision, System.currentTimeMillis())
     }
+    fun confirmAction(snapshot: HealthCareInstructionSnapshot, signal: CancellationSignal,
+        now: Long = System.currentTimeMillis()): HealthCareAction {
+        val value = snapshot.selected ?: throw HealthCareConflict()
+        require(HealthCareInstructionActionPolicy.eligible(value))
+        val original = originals().use { it.original(value.source.original.originalId) } ?: throw HealthCareConflict()
+        require(value.source.original.matches(original))
+        documents.prepare(snapshot.visit, original, value.source.original.page, signal)
+        signal.throwIfCanceled()
+        return encounters.commit(snapshot.visit) { store ->
+            signal.throwIfCanceled()
+            if (!HealthCareInstructionAccess.available(context, names, HealthCareInstructionActionRef.of(value))) throw HealthCareConflict()
+            store.confirmInstructionAction(value.concernId, snapshot.visit.issue.revision, value.id, value.revision, now)
+        }
+    }
 }

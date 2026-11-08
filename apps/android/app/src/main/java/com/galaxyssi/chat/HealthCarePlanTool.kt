@@ -14,7 +14,7 @@ internal object HealthCarePlanTool {
             description = "Short exact original-language passage from that receipt's excerpt supporting the proposed action. Do not translate or combine nonadjacent sentences.")
     ), required = setOf("title", "url", "version", "applicability", "evidence_id", "supporting_quote"), additionalProperties = false)
     private val action = AgentNativeJsonSchema.objectSchema(properties = mapOf(
-        "kind" to AgentNativeJsonSchema.string(enumValues = HealthCareActionKind.entries.map { it.name }),
+        "kind" to AgentNativeJsonSchema.string(enumValues = HealthCareActionKind.entries.filter { it != HealthCareActionKind.CLINICAL_INSTRUCTION }.map { it.name }),
         "description" to text(1000), "rationale" to text(2000, "Reason for this action and any suggested time window."),
         "source_index" to AgentNativeJsonSchema.integer(minimum = 0, maximum = 7),
         "applicability" to HealthCareApplicabilitySchema.schema,

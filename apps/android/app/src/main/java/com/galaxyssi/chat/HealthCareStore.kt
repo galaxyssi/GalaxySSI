@@ -552,10 +552,12 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         }
     }
     fun scheduleReminder(concernId: String, actionId: String, expectedRevision: Int, expectedToken: String?,
-        privacy: HealthPrivacyPolicy, sourceVersion: String, at: Long, now: Long): HealthCareReminder = transaction(true) {
+        privacy: HealthPrivacyPolicy, sourceVersion: String, at: Long, now: Long,
+        instructionAvailable: (HealthCareInstructionActionRef) -> Boolean = { false }): HealthCareReminder = transaction(true) {
         val issue = concern(concernId) ?: throw HealthCareConflict()
         if (issue.revision != expectedRevision || reminder(actionId)?.token != expectedToken) throw HealthCareConflict()
         val action = issue.actions.firstOrNull { it.id == actionId } ?: throw HealthCareConflict()
+        if (!instructionCurrent(issue, action) || action.instruction?.let { !instructionAvailable(it) } == true) throw HealthCareConflict()
         HealthCareFollowUpPolicy.schedule(issue, action, settings(), privacy, sourceVersion, at, now).also { writeReminder(it) }
     }
     fun cancelReminder(actionId: String, expectedToken: String, now: Long) = transaction(true) {
@@ -639,7 +641,8 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         val issue = concern(id) ?: throw HealthCareConflict()
         val before = encounterRows().get(encounterId) ?: throw HealthCareConflict()
         if (issue.revision != expectedRevision || before.concernId != id || before.revision != expectedEncounterRevision) throw HealthCareConflict()
-        persist(issue.copy(revision = issue.revision + 1, updatedAt = maxOf(now, issue.updatedAt)), "encounter_deleted")
+        persist(HealthCareInstructionActionPolicy.invalidate(issue) { it.encounterId == encounterId }
+            .copy(revision = issue.revision + 1, updatedAt = maxOf(now, issue.updatedAt)), "encounter_deleted")
         encounterRows().delete(id, encounterId)
         documentRows().purge(id, encounterId)
         instructionRows().purge(id, encounterId)
@@ -693,7 +696,8 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         val value = HealthCareInstruction(instructionId, id, encounterId, Math.addExact(issue.revision, 1), source, draft,
             before?.createdAt ?: time, time)
         val receipt = HealthCareInstructionReceipt(operationId, issue.revision, before?.revision, value)
-        persist(issue.copy(revision = value.revision, updatedAt = time), "instruction_review_saved")
+        persist(HealthCareInstructionActionPolicy.invalidate(issue) { it.instructionId == instructionId }
+            .copy(revision = value.revision, updatedAt = time), "instruction_review_saved")
         instructionRows().write(receipt)
         receipt
     }
@@ -702,8 +706,35 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         val issue = concern(id) ?: throw HealthCareConflict()
         val value = instructionRows().get(instructionId) ?: throw HealthCareConflict()
         if (issue.revision != expectedRevision || value.concernId != id || value.revision != expectedInstruction) throw HealthCareConflict()
-        persist(issue.copy(revision = Math.addExact(issue.revision, 1), updatedAt = maxOf(now, issue.updatedAt)), "instruction_deleted")
+        persist(HealthCareInstructionActionPolicy.invalidate(issue) { it.instructionId == instructionId }
+            .copy(revision = Math.addExact(issue.revision, 1), updatedAt = maxOf(now, issue.updatedAt)), "instruction_deleted")
         instructionRows().purge(id, instructionId = instructionId)
+    }
+    fun instructionCurrent(issue: HealthCareConcern, action: HealthCareAction): Boolean {
+        val ref = action.instruction ?: return true
+        val value = instruction(ref.instructionId) ?: return false
+        val link = encounterDocument(ref.documentId) ?: return false
+        return action in issue.actions && ref.matches(value) && value.concernId == issue.id &&
+            encounter(ref.encounterId)?.concernId == issue.id && link.concernId == issue.id && link.encounterId == ref.encounterId &&
+            link.source.copy(page = ref.original.page, pageCount = ref.original.pageCount) == ref.original &&
+            (link.source.page == null || link.source == ref.original) && HealthCareInstructionActionPolicy.eligible(value)
+    }
+    fun confirmInstructionAction(id: String, expectedRevision: Int, instructionId: String, expectedInstruction: Int,
+        now: Long): HealthCareAction = transaction(true) {
+        val issue = concern(id) ?: throw HealthCareConflict()
+        val value = instruction(instructionId) ?: throw HealthCareConflict()
+        if (value.concernId != id || value.revision != expectedInstruction) throw HealthCareConflict()
+        val action = HealthCareInstructionActionPolicy.confirm(issue, value, now)
+        if (!instructionCurrent(issue.copy(actions = issue.actions.filterNot { it.id == action.id } + action), action)) throw HealthCareConflict()
+        issue.actions.firstOrNull { it.id == action.id }?.let {
+            if (it.instruction != action.instruction) throw HealthCareConflict()
+            return@transaction it
+        }
+        if (issue.revision != expectedRevision) throw HealthCareConflict()
+        persist(issue.copy(actions = issue.actions + action, revision = Math.addExact(issue.revision, 1),
+            updatedAt = maxOf(now, issue.updatedAt)), "instruction_action_confirmed")
+        check(concern(id)?.actions?.singleOrNull { it.id == action.id } == action)
+        action
     }
     fun delete(id: String, expectedRevision: Int) = transaction(true) {
         val value = concern(id) ?: throw HealthCareConflict()
@@ -740,7 +771,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         Unit
     }
     override fun close() = helper.close()
-    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 14) {
+    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 15) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE settings(id INTEGER PRIMARY KEY,version TEXT NOT NULL,payload BLOB NOT NULL)")
@@ -769,7 +800,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             db.execSQL("CREATE TABLE discussion_grants(turn_id TEXT PRIMARY KEY,payload BLOB NOT NULL)")
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            check(oldVersion in 1..13 && newVersion == 14)
+            check(oldVersion in 1..14 && newVersion == 15)
             if (oldVersion < 2) discussions(db)
             if (oldVersion < 3) plans(db)
             if (oldVersion < 4) reminders(db)
@@ -787,7 +818,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             if (oldVersion < 11) HealthCareFeedbackRows.create(db)
             if (oldVersion < 12) HealthCareEncounterRows.create(db)
             if (oldVersion < 13) HealthCareDocumentRows.create(db)
-            HealthCareInstructionRows.create(db)
+            if (oldVersion < 14) HealthCareInstructionRows.create(db)
         }
         private fun research(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE research_authorizations(concern_id TEXT PRIMARY KEY,id TEXT NOT NULL UNIQUE,payload BLOB NOT NULL)")
