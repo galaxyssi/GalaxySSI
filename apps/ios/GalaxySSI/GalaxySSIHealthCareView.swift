@@ -280,6 +280,7 @@ struct GalaxySSIHealthCareEntry: View {
 
 @MainActor
 private struct GalaxySSIHealthCareDetail: View {
+  @EnvironmentObject private var store: GalaxySSIStore
   @Environment(\.scenePhase) private var scene
   @Environment(\.dismiss) private var dismiss
   @Environment(\.galaxySSIInterfaceLanguage) private var language
@@ -295,13 +296,15 @@ private struct GalaxySSIHealthCareDetail: View {
   @State private var stage = GalaxySSIHealthCare.Stage.reassess
   @State private var reason = ""
   @State private var context = GalaxySSIHealthCare.Context.Applicability.unknown
+  @State private var answers = GalaxySSIHealthCare.Context.Answers()
+  @State private var fastingHours = ""
   @State private var failed = false
   @State private var confirmingDelete = false
   @State private var deletionCandidate: GalaxySSIHealthCare.Concern?
 
   var body: some View {
     List {
-      if scene == .active, let concern {
+      if canRead, let concern {
         if let bloodPressureWarning {
           Section {
             GalaxySSIHealthCarePriorityNotice(warning: bloodPressureWarning)
@@ -348,9 +351,15 @@ private struct GalaxySSIHealthCareDetail: View {
               Text(t("context_excluded", "This screening context does not apply"))
                 .tag(GalaxySSIHealthCare.Context.Applicability.excluded)
             }
+            clarificationFields
             Button(t("save_context", "Confirm measurement context")) {
-              perform { try records.setLocalCareContext(concern, applicability: context) }
+              perform {
+                var saved = answers
+                saved.fastingHours = Int(fastingHours)
+                try records.setLocalCareContext(concern, applicability: context, answers: saved)
+              }
             }
+            .disabled(!fastingHours.isEmpty && Int(fastingHours).map { (0...72).contains($0) } != true)
           }
         }
         Section(t("baseline", "Historical observation range")) {
@@ -392,6 +401,11 @@ private struct GalaxySSIHealthCareDetail: View {
     .navigationTitle(metric.title(language: language))
     .onAppear(perform: reload)
     .onChange(of: scene) { _ in reload() }
+    .onChange(of: store.profile.identityFingerprint) { _ in reload() }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
+      clearDetail()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in reload() }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) {
       if $0.object as? String == records.owner { reload() }
     }
@@ -404,21 +418,60 @@ private struct GalaxySSIHealthCareDetail: View {
     }
   }
 
+  private var clarificationFields: some View {
+    DisclosureGroup(t("clarification.title", "Recorded answers")) {
+      truth(t("clarification.adult", "Adult"), value: $answers.adult)
+      truth(t("clarification.pregnant", "Pregnant at measurement"), value: $answers.pregnant)
+      truth(t("clarification.diabetes", "Diagnosed diabetes"), value: $answers.diagnosedDiabetes)
+      Picker(t("clarification.specimen", "Sample type"), selection: $answers.specimen) {
+        Text(t("none", "Not recorded")).tag(GalaxySSIHealthCare.Context.Answers.Specimen?.none)
+        Text(t("clarification.plasma", "Laboratory plasma")).tag(Optional(GalaxySSIHealthCare.Context.Answers.Specimen.labPlasma))
+        Text(t("clarification.capillary", "Home capillary")).tag(Optional(GalaxySSIHealthCare.Context.Answers.Specimen.homeCapillary))
+        Text(t("clarification.interstitial", "Interstitial")).tag(Optional(GalaxySSIHealthCare.Context.Answers.Specimen.interstitial))
+      }
+      TextField(t("clarification.fasting", "Hours without calories (0–72)"), text: $fastingHours)
+        .keyboardType(.numberPad)
+      truth(t("clarification.illness", "Illness or glucose-affecting medication at measurement"), value: $answers.illnessOrMedication)
+    }
+  }
+
+  private func truth(_ label: String, value: Binding<Bool?>) -> some View {
+    Picker(label, selection: value) {
+      Text(t("none", "Not recorded")).tag(Bool?.none)
+      Text(t("clarification.yes", "Yes")).tag(Optional(true))
+      Text(t("clarification.no", "No")).tag(Optional(false))
+    }
+  }
+
+  private var canRead: Bool {
+    scene == .active && UIApplication.shared.isProtectedDataAvailable && store.profile.identityFingerprint == records.owner
+  }
+
+  private func clearDetail() {
+    concern = nil; history = []; measurement = nil; reason = ""
+    bloodPressureWarning = nil; warningReviewed = false
+    confirmingDelete = false; deletionCandidate = nil; context = .unknown; answers = .init(); fastingHours = ""
+  }
+
   private func reload() {
     bloodPressureWarning = nil
     warningReviewed = false
-    guard scene == .active, let archive = try? records.load(), archive.localCareAllowed == true,
+    guard canRead, let archive = try? records.load(), archive.localCareAllowed == true,
           let current = archive.localCare?.current[metric.rawValue], current.id == id else {
-      concern = nil; history = []; measurement = nil; reason = ""
-      confirmingDelete = false; deletionCandidate = nil; context = .unknown
+      clearDetail()
       return
+    }
+    if concern != current {
+      let saved = current.context.flatMap { $0.record == current.assessment.record ? $0 : nil }
+      context = saved?.applicability ?? .unknown
+      answers = saved?.answers ?? .init()
+      fastingHours = answers.fastingHours.map { String($0) } ?? ""
     }
     concern = current
     if let priority = GalaxySSIHealthRecords.currentCareBloodPressureWarning(archive), priority.concern.id == id {
       bloodPressureWarning = priority.warning
       warningReviewed = archive.localCare?.acknowledgedBloodPressure == priority.warning.record
     }
-    context = current.context?.applicability ?? .unknown
     measurement = archive.current.first { GalaxySSIHealthCare.Record($0) == current.assessment.record }
     loadHistory(append: false)
   }
@@ -432,7 +485,7 @@ private struct GalaxySSIHealthCareDetail: View {
   }
 
   private func perform(_ action: () throws -> Void) {
-    guard scene == .active else { return }
+    guard canRead else { return }
     do { try action(); failed = false; reload() }
     catch GalaxySSIHealthRecords.Failure.stale { try? records.reconcileLocalCare(); failed = true; reload() }
     catch { failed = true; reload() }

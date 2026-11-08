@@ -7,6 +7,58 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testHealthClarificationPreservesNoAndZeroOnlyForExactMeasurement() throws {
+    typealias Care = GalaxySSIHealthCare
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "clarification", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let reading = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-60),
+      value: 110, conditions: "fasting", unitOverride: "mg/dL", referenceInterval: "70 - 99")
+    try records.write(reading)
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let initial = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    var answers = Care.Context.Answers()
+    answers.pregnant = false
+    answers.fastingHours = 0
+    XCTAssertThrowsError(try records.setLocalCareContext(initial, applicability: .applicable, answers: answers, now: now))
+    try records.setLocalCareContext(initial, applicability: .unknown, answers: answers, now: now)
+    let confirmed = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertEqual(confirmed.context?.answers, answers)
+    var thread = try records.openLocalCareDiscussion(id: confirmed.id, metric: .glucose)
+    thread.turns.append(.init(id: UUID(), question: "Previous question", destination: "fixture",
+      answer: "Previous answer", measurement: confirmed.assessment.record))
+    func payload(_ concern: Care.Concern) throws -> [String: Any] {
+      let json = try GalaxySSIHealthCareDiscussion.payload(concern: concern, question: "Current question",
+        thread: thread, destination: "fixture")
+      XCTAssertFalse(json.contains(reading.id.uuidString))
+      return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+    }
+    func clarification(_ payload: [String: Any]) throws -> [String: Any] {
+      try XCTUnwrap((payload["concern"] as? [String: Any])?["clarification"] as? [String: Any])
+    }
+    let current = try clarification(payload(confirmed))
+    let known = try XCTUnwrap(current["knownAnswers"] as? [String: Any])
+    XCTAssertEqual(known["pregnant"] as? Bool, false)
+    XCTAssertEqual(known["fasting_hours"] as? Int, 0)
+    XCTAssertNil(known["adult"])
+    XCTAssertTrue((current["unconfirmedFields"] as? [String])?.contains("adult") == true)
+    var edited = try XCTUnwrap(records.load().current.first)
+    edited.value = 115
+    try records.write(edited)
+    try records.reconcileLocalCare(now: now)
+    var revised = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    XCTAssertNil(revised.context)
+    revised.context = confirmed.context
+    let historical = try payload(revised)
+    let context = try clarification(historical)
+    XCTAssertEqual(context["status"] as? String, "other_record_or_revision")
+    XCTAssertEqual((context["knownAnswers"] as? [String: Any])?.count, 0)
+    XCTAssertEqual((historical["previous"] as? [[String: String]])?.first?["measurementScope"], "historical_record")
+  }
+
+  @MainActor
   func testLocalCareDiscussionBindsConsentToConcernTurnAndProvider() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }
