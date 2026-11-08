@@ -106,7 +106,7 @@ class HealthCarePlanDeviceTest {
     }
     @Test fun schemaTwoUpgradePreservesExistingDiscussionAndConcern(): Unit = fixture { names, store, plan ->
         val issue = store.concern(plan.grant.concernId); store.close()
-        context.openOrCreateDatabase(names.care, 0, null).use { db -> db.execSQL("DROP TABLE plans"); db.version = 2 }
+        context.openOrCreateDatabase(names.care, 0, null).use { db -> db.execSQL("DROP TABLE action_reminders"); db.execSQL("DROP TABLE plans"); db.version = 2 }
         HealthCareStore(context, names.care).use {
             assertEquals(issue, it.concern(plan.grant.concernId)); assertEquals(plan.grant, it.discussionGrant(plan.id))
             assertEquals(plan, it.proposePlan(plan))

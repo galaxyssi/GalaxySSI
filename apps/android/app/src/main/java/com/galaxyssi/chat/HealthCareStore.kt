@@ -30,7 +30,10 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         return try { block().also { db.setTransactionSuccessful(); committed = true } }
         finally {
             db.endTransaction()
-            if (committed && notify) app.contentResolver.notifyChange(changes(app, name), null)
+            if (committed && notify) {
+                app.contentResolver.notifyChange(changes(app, name), null)
+                if (name == DEFAULT_DB) HealthReminderWork.sourceRemindersChanged(app)
+            }
         }
     }
     fun settings(): HealthCareSettings = db.rawQuery("SELECT version,payload FROM settings WHERE id=1", null).use {
@@ -50,6 +53,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             put("id", 1); put("version", next.version)
             put("payload", pack("settings", next.version, JSONObject().put("enabled", enabled).put("version", next.version)))
         }, SQLiteDatabase.CONFLICT_REPLACE)
+        if (!enabled) invalidateReminders(System.currentTimeMillis(), null)
         next
     }
     private fun decode(row: Cursor): HealthCareConcern {
@@ -83,6 +87,12 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             put("concern_id", value.id); put("revision", value.revision)
             put("payload", pack("history", "${value.id}:${value.revision}", JSONObject().put("event", event).put("concern", value.json())))
         })
+        reminders(value.id).filter { reminder ->
+            val action = value.actions.firstOrNull { it.id == reminder.actionId }
+            action == null || action.state != HealthCareActionState.CONFIRMED ||
+                value.stage in setOf(HealthCareStage.PAUSED, HealthCareStage.CLOSED) ||
+                reminder.anchor != HealthCareFollowUpPolicy.anchor(value, action)
+        }.forEach { writeReminder(it.copy(state = HealthCareReminderState.CANCELLED, updatedAt = value.updatedAt)) }
     }
     fun applyEvaluation(metric: HealthMetric, token: String, expectedSettings: String, expectedRevision: Int?,
         assessment: HealthCareAssessment?, now: Long): HealthCareConcern? = transaction(true) {
@@ -220,17 +230,78 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         val proposed = plan(id) ?: throw HealthCareConflict()
         if (proposed.state == HealthCarePlanState.PENDING) persistPlan(proposed.copy(state = HealthCarePlanState.DISMISSED, resolvedAt = now))
     }
+    private fun decodeReminder(row: Cursor): HealthCareReminder = HealthCareReminder.from(
+        unpack("reminder", row.getString(0), row.getBlob(5))).also {
+        check(it.actionId == row.getString(0) && it.concernId == row.getString(1) && it.token == row.getString(2) &&
+            it.dueAt == row.getLong(3) && it.state.name == row.getString(4))
+    }
+    fun reminder(actionId: String): HealthCareReminder? = db.rawQuery(
+        "SELECT $REMINDER_COLUMNS FROM action_reminders WHERE action_id=?", arrayOf(actionId)
+    ).use { if (it.moveToFirst()) decodeReminder(it) else null }
+    fun reminders(concernId: String): List<HealthCareReminder> = db.rawQuery(
+        "SELECT $REMINDER_COLUMNS FROM action_reminders WHERE concern_id=? ORDER BY due,action_id LIMIT 30", arrayOf(concernId)
+    ).use { rows -> buildList { while (rows.moveToNext()) add(decodeReminder(rows)) } }
+    private fun writeReminder(value: HealthCareReminder) {
+        db.insertWithOnConflict("action_reminders", null, ContentValues().apply {
+            put("action_id", value.actionId); put("concern_id", value.concernId); put("token", value.token)
+            put("due", value.dueAt); put("state", value.state.name); put("payload", pack("reminder", value.actionId, value.json()))
+        }, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+    fun scheduleReminder(concernId: String, actionId: String, expectedRevision: Int, expectedToken: String?,
+        privacy: HealthPrivacyPolicy, sourceVersion: String, at: Long, now: Long): HealthCareReminder = transaction(true) {
+        val issue = concern(concernId) ?: throw HealthCareConflict()
+        if (issue.revision != expectedRevision || reminder(actionId)?.token != expectedToken) throw HealthCareConflict()
+        val action = issue.actions.firstOrNull { it.id == actionId } ?: throw HealthCareConflict()
+        HealthCareFollowUpPolicy.schedule(issue, action, settings(), privacy, sourceVersion, at, now).also(::writeReminder)
+    }
+    fun cancelReminder(actionId: String, expectedToken: String, now: Long) = transaction(true) {
+        val value = reminder(actionId) ?: return@transaction
+        if (value.token != expectedToken) throw HealthCareConflict()
+        if (value.state != HealthCareReminderState.CANCELLED) writeReminder(value.copy(state = HealthCareReminderState.CANCELLED, updatedAt = now))
+    }
+    fun markReminderDelivered(actionId: String, expectedToken: String, now: Long) = transaction(true) {
+        val value = reminder(actionId) ?: throw HealthCareConflict()
+        if (value.token != expectedToken || value.state != HealthCareReminderState.SCHEDULED) throw HealthCareConflict()
+        writeReminder(value.copy(state = HealthCareReminderState.DELIVERED, updatedAt = now))
+    }
+    fun cancelReminders(now: Long, keepPrivacyVersion: String? = null): Int = transaction {
+        invalidateReminders(now, keepPrivacyVersion)
+    }.also { if (it > 0) app.contentResolver.notifyChange(changes(app, name), null) }
+    private fun invalidateReminders(now: Long, keepPrivacyVersion: String?): Int {
+        var changed = 0
+        var after = ""
+        while (true) {
+            val page = db.rawQuery("SELECT $REMINDER_COLUMNS FROM action_reminders WHERE action_id>? AND state!='CANCELLED' ORDER BY action_id LIMIT 30",
+                arrayOf(after)).use { rows -> buildList { while (rows.moveToNext()) add(decodeReminder(rows)) } }
+            if (page.isEmpty()) break
+            page.filter { keepPrivacyVersion == null || it.privacyVersion != keepPrivacyVersion }.forEach {
+                writeReminder(it.copy(state = HealthCareReminderState.CANCELLED, updatedAt = now))
+                changed++
+            }
+            after = page.last().actionId
+        }
+        return changed
+    }
+    fun dueReminders(now: Long): List<HealthCareReminder> = db.rawQuery(
+        "SELECT $REMINDER_COLUMNS FROM action_reminders WHERE state='SCHEDULED' AND due<=? ORDER BY due,action_id LIMIT 30",
+        arrayOf(now.toString())).use { rows -> buildList { while (rows.moveToNext()) add(decodeReminder(rows)) } }
+    fun nextReminder(): Long? = db.rawQuery("SELECT MIN(due) FROM action_reminders WHERE state='SCHEDULED'", null).use {
+        it.moveToFirst(); if (it.isNull(0)) null else it.getLong(0)
+    }
+    fun finishAction(id: String, expectedRevision: Int, actionId: String, outcome: String, now: Long) =
+        update(id, expectedRevision, "action_outcome_recorded") { HealthCareFollowUpPolicy.finish(it, actionId, outcome, now) }
     fun delete(id: String, expectedRevision: Int) = transaction(true) {
         val value = concern(id) ?: throw HealthCareConflict()
         if (value.revision != expectedRevision) throw HealthCareConflict()
         db.delete("history", "concern_id=?", arrayOf(id))
         db.delete("plans", "concern_id=?", arrayOf(id))
+        db.delete("action_reminders", "concern_id=?", arrayOf(id))
         db.delete("concerns", "id=?", arrayOf(id))
         // Keep the evaluation marker: reopening the page must not immediately recreate a deleted issue.
         Unit
     }
     override fun close() = helper.close()
-    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 3) {
+    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 4) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE settings(id INTEGER PRIMARY KEY,version TEXT NOT NULL,payload BLOB NOT NULL)")
@@ -243,6 +314,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             db.execSQL("CREATE TABLE evaluations(metric_key TEXT PRIMARY KEY,token TEXT NOT NULL,payload BLOB NOT NULL)")
             discussions(db)
             plans(db)
+            reminders(db)
         }
         private fun discussions(db: SQLiteDatabase) {
             // Bindings survive concern deletion so an old sensitive conversation cannot become an ordinary chat.
@@ -250,18 +322,25 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             db.execSQL("CREATE TABLE discussion_grants(turn_id TEXT PRIMARY KEY,payload BLOB NOT NULL)")
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            check(oldVersion in 1..2 && newVersion == 3)
+            check(oldVersion in 1..3 && newVersion == 4)
             if (oldVersion < 2) discussions(db)
-            plans(db)
+            if (oldVersion < 3) plans(db)
+            reminders(db)
         }
         private fun plans(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE plans(id TEXT PRIMARY KEY,concern_id TEXT NOT NULL,created_at INTEGER NOT NULL,state TEXT NOT NULL,payload BLOB NOT NULL)")
             db.execSQL("CREATE INDEX care_pending_plans ON plans(concern_id,state,created_at DESC,id DESC)")
         }
+        private fun reminders(db: SQLiteDatabase) {
+            db.execSQL("CREATE TABLE action_reminders(action_id TEXT PRIMARY KEY,concern_id TEXT NOT NULL,token TEXT NOT NULL,due INTEGER NOT NULL,state TEXT NOT NULL,payload BLOB NOT NULL)")
+            db.execSQL("CREATE INDEX care_reminder_due ON action_reminders(state,due,action_id)")
+            db.execSQL("CREATE INDEX care_reminder_concern ON action_reminders(concern_id,due,action_id)")
+        }
     }
     companion object {
         const val DEFAULT_DB = "health_care_v1.db"
         private const val COLUMNS = "id,revision,payload,updated_at,metric_key,open,stage,due_at"
+        private const val REMINDER_COLUMNS = "action_id,concern_id,token,due,state,payload"
         fun changes(context: Context, name: String = DEFAULT_DB) = android.net.Uri.parse("content://${context.packageName}.health-originals/changes/care/" + android.net.Uri.encode(name))
     }
 }
