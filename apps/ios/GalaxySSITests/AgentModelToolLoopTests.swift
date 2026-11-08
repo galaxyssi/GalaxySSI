@@ -160,6 +160,41 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertEqual(mutations, 1)
   }
 
+  func testUncertainWriteRemainsFencedAfterRestartAndAnUnrelatedRead() async throws {
+    let domain = "uncertain-write-fence-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+    defer { defaults.removePersistentDomain(forName: domain) }
+    let secrets = InMemorySecretStore()
+    var writes = 0
+    var reads = 0
+    let registry = try registry { _ in
+      writes += 1
+      return .failure(code: "effect_outcome_unknown", message: "Uncertain.")
+    }
+    let unrelated = "phone.test.unrelated_read"
+    let reader = try descriptor(id: unrelated, inputSchema: AgentNativeToolDescriptor.objectSchema(),
+      idempotency: .idempotent, effect: .readOnly)
+    try registry.registerExecutable(.init(definition: .init(descriptor: reader, executorId: "test.unrelated"),
+      executor: { _ in reads += 1; return .success(output: ["state": .string("healthy")]) }))
+    let input = request(loopId: "uncertain-write-restart")
+    let interrupted = await loop(adapter: ContinuationTestModelAdapter { turn in
+      if turn.round == 1 { return AgentModelResponse(toolCalls: [self.call("first-write")]) }
+      throw AgentModelToolProtocolError(code: "interrupted", message: "Stop after uncertain write.")
+    }, registry: registry, journal: EncryptedAgentModelLoopJournal(defaults: defaults, secrets: secrets)).run(input)
+    XCTAssertEqual(interrupted.status, .modelFailed)
+    let restored = await loop(adapter: ScriptedModelAdapter(
+      AgentModelResponse(toolCalls: [.init(callId: "unrelated-read", toolId: unrelated)]),
+      AgentModelResponse(toolCalls: [call("second-write")]),
+      AgentModelResponse(assistantText: "Still requires external observation.")
+    ), registry: registry, journal: EncryptedAgentModelLoopJournal(defaults: defaults, secrets: secrets)).run(input)
+    XCTAssertEqual(restored.status, .completed)
+    XCTAssertEqual(writes, 1)
+    XCTAssertEqual(reads, 1)
+    let blocked = restored.messages.compactMap(\.toolResult).last
+    XCTAssertEqual(blocked?.error?.code, "effect_outcome_unknown")
+    XCTAssertNil(blocked?.nativeResult)
+  }
+
   func testNonIdempotentModelCallReceivesStableDerivedEffectKey() async throws {
     var capturedKeys: [String?] = []
     let registry = try registry(idempotency: .nonIdempotent) { invocation in
@@ -880,6 +915,113 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertTrue(callJSON.contains(#""depth":2"#))
   }
 
+  func testLocalRegisteredCatalogResumesAfterSetupAndNeverRepeatsTheInstall() async throws {
+    let domain = "local-contract-catalog-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+    defer { defaults.removePersistentDomain(forName: domain) }
+    let secrets = InMemorySecretStore()
+    let setup = "phone.test.catalog_setup"
+    let verify = "phone.test.catalog_verify"
+    var ready = false
+    var tick: Int64 = 10
+    var readinessProbes = 0
+    var setups = 0
+    var verifications = 0
+    func registry(includeVerification: Bool = true, verifyEffect: AgentNativeToolEffect = .readOnly)
+      throws -> AgentNativeToolRegistry {
+      let setupTool = try descriptor(id: setup, inputSchema: AgentNativeToolDescriptor.objectSchema(),
+        idempotency: .idempotencyKeyRequired, effect: .mutation)
+      let verificationTool = try descriptor(id: verify, inputSchema: AgentNativeToolDescriptor.objectSchema(),
+        idempotency: .idempotent, effect: verifyEffect)
+      let tools = try AgentNativeToolRegistry().registerExecutable(.init(
+        definition: .init(descriptor: setupTool, executorId: "test.catalog_setup"),
+        executor: { _ in
+          setups += 1
+          ready = true
+          return .success()
+        }))
+      if includeVerification {
+        try tools.registerExecutable(.init(
+          definition: .init(descriptor: verificationTool, executorId: "test.catalog_verify",
+            availabilityProvider: AgentNativeToolAvailabilityProvider { _ in
+              readinessProbes += 1
+              return AgentNativeToolAvailability(status: ready ? .available : .requiresSetup,
+                reason: ready ? "Ready" : "Dependency missing", checkedAtEpochMillis: tick)
+            }),
+          executor: { _ in
+            verifications += 1
+            return .success(output: ["verified": .bool(ready)])
+          }))
+      }
+      try AgentLocalModelToolCatalog.installDiscovery(in: tools) { _ in }
+      return tools
+    }
+    let first = try registry()
+    let fingerprint = AgentLocalModelToolCatalog.fingerprint(first, binding: .registeredContracts)
+    XCTAssertEqual(readinessProbes, 0)
+    let discovery = first.invoke(AgentLocalModelToolCatalog.discoveryID, input: ["tool_id": .string(verify)],
+      context: AgentNativeToolInvocationContext())
+    XCTAssertEqual(discovery.output.string("status"), "requires_setup")
+    XCTAssertEqual(discovery.output["grants_permissions"], .bool(false))
+
+    var input = request(loopId: "local-recovery-after-setup")
+    input.messages = [.user("Verify the original task. \u{68C0}\u{67E5}")]
+    input.observationHistoryEnabled = true
+    input.plannerRegisteredCatalog = true
+    let scope = AgentModelLoopScope(request: input)
+    let firstCatalog = AgentPlannerToolCatalogSession(scope: scope, registry: first, refreshOnUnavailable: true)
+    let interrupted = await loop(adapter: ContinuationTestModelAdapter { turn in
+      let visible = try firstCatalog.providerCatalog(turn).map(\.id)
+      if turn.round == 1 {
+        XCTAssertFalse(visible.contains(verify))
+        XCTAssertTrue(visible.contains(AgentLocalModelToolCatalog.discoveryID))
+        return AgentModelResponse(toolCalls: [.init(callId: "setup-once", toolId: setup)])
+      }
+      XCTAssertTrue(visible.contains(verify))
+      throw AgentModelToolProtocolError(code: "interrupted", message: "Stop after the committed setup.")
+    }, registry: first, journal: EncryptedAgentModelLoopJournal(defaults: defaults, secrets: secrets)).run(input)
+    XCTAssertEqual(interrupted.status, .modelFailed)
+    XCTAssertEqual(setups, 1)
+    tick = 20
+    let recreated = try registry()
+    XCTAssertEqual(AgentLocalModelToolCatalog.fingerprint(recreated, binding: .registeredContracts), fingerprint)
+    XCTAssertNotEqual(AgentLocalModelToolCatalog.fingerprint(try registry(includeVerification: false),
+      binding: .registeredContracts), fingerprint)
+    XCTAssertNotEqual(AgentLocalModelToolCatalog.fingerprint(try registry(verifyEffect: .mutation),
+      binding: .registeredContracts), fingerprint)
+    let refreshed = AgentPlannerToolCatalogSession(scope: scope, registry: recreated, refreshOnUnavailable: true)
+    let resumed = await loop(adapter: ContinuationTestModelAdapter { turn in
+      XCTAssertTrue(try refreshed.providerCatalog(turn).contains { $0.id == verify })
+      XCTAssertTrue(turn.messages.contains { $0.role == .user && $0.text == input.messages.first?.text })
+      if turn.round == 2 {
+        XCTAssertEqual(turn.messages.last?.toolResult?.toolId, setup)
+        return AgentModelResponse(toolCalls: [.init(callId: "verify-original", toolId: verify)])
+      }
+      XCTAssertEqual(turn.messages.last?.toolResult?.output["verified"], .bool(true))
+      return AgentModelResponse(assistantText: "Verified.")
+    }, registry: recreated, journal: EncryptedAgentModelLoopJournal(defaults: defaults, secrets: secrets)).run(input)
+    XCTAssertEqual(resumed.status, .completed)
+    XCTAssertEqual(setups, 1)
+    XCTAssertEqual(verifications, 1)
+
+    var legacy = input
+    legacy.loopId = "legacy-snapshot"
+    legacy.plannerRegisteredCatalog = false
+    ready = false
+    let original = try registry()
+    let legacyInterrupted = await loop(adapter: ContinuationTestModelAdapter { _ in
+      throw AgentModelToolProtocolError(code: "interrupted", message: "Preserve the old snapshot.")
+    }, registry: original, journal: EncryptedAgentModelLoopJournal(defaults: defaults, secrets: secrets)).run(legacy)
+    XCTAssertEqual(legacyInterrupted.status, .modelFailed)
+    ready = true
+    tick = 30
+    let unused = ScriptedModelAdapter(AgentModelResponse(assistantText: "Must not migrate."))
+    let changed = await loop(adapter: unused, registry: try registry(),
+      journal: EncryptedAgentModelLoopJournal(defaults: defaults, secrets: secrets)).run(legacy)
+    XCTAssertEqual(changed.error?.code, "model_loop_history_catalog_changed")
+    XCTAssertTrue(unused.requests.isEmpty)
+  }
+
   func testCanonicalJournalReopensThroughProviderWireAliasesWithoutExecutingAgain() async throws {
     let domain = "provider-wire-names-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
@@ -936,7 +1078,17 @@ final class AgentModelToolLoopTests: XCTestCase {
     let input = AgentManagedBrowserLoopInput(loopID: request.loopId, inputIdentity: "immutable",
       toolManifestHash: "pinned", systemPrompt: "", prompt: "Original member input", hasAttachments: false)
     XCTAssertThrowsError(try dispatch.enroll(binding, input: input, legacyLoopExists: true))
+    XCTAssertNil(try dispatch.existingCatalogBinding(binding))
     try dispatch.enroll(binding, input: input, legacyLoopExists: false)
+    XCTAssertEqual(try dispatch.existingCatalogBinding(binding), .availableSnapshot)
+    var newInput = input
+    newInput.catalogBinding = .registeredContracts
+    XCTAssertThrowsError(try dispatch.enroll(binding, input: newInput, legacyLoopExists: false))
+    let newNamespace = domain + ".registered"
+    try AgentManagedBrowserContinuationStore(defaults: defaults, secrets: secrets, namespace: newNamespace)
+      .enroll(binding, input: newInput, legacyLoopExists: false)
+    let reopenedDispatch = AgentManagedBrowserContinuationStore(defaults: defaults, secrets: secrets, namespace: newNamespace)
+    XCTAssertEqual(try reopenedDispatch.existingCatalogBinding(binding), .registeredContracts)
     let call = AgentModelToolCall(callId: "handoff", toolId: AgentManagedBrowserToolExecution.toolID,
       arguments: ["url": .string("https://example.test/")])
     let initialAdapter = ScriptedModelAdapter(AgentModelResponse(toolCalls: [call]))
@@ -1000,6 +1152,93 @@ final class AgentModelToolLoopTests: XCTestCase {
     }
     try await dispatch.withLease(binding: binding, mode: .recovery, control: .run) { _, work in
       guard case .alreadyDelivered = work else { return XCTFail("Acknowledged receipt must not be delivered twice.") }
+    }
+  }
+
+  func testManagedBrowserProcessChangeResumesWithDurableInterruptionNotReturn() async throws {
+    let domain = "browser-process-interruption-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+    defer { defaults.removePersistentDomain(forName: domain) }
+    let secrets = InMemorySecretStore()
+    let original = AgentManagedBrowserContinuationStore(defaults: defaults, secrets: secrets, namespace: domain,
+      hostProcessID: "original-process")
+    var request = self.request(loopId: "interrupted-browser-loop")
+    let owner = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: request.conversationId,
+      turnId: request.turnId, memberId: "member", sourceId: "source")
+    request.collaborationOwner = owner
+    let member = AgentTeamMemberSnapshot(agentId: "local-model", status: .running, instanceId: owner.memberId,
+      sourceMessageId: owner.sourceId, dispatchCheckpoint: .accepted)
+    let team = AgentTeamExecutionSnapshot(supervisorRunId: owner.runId, teamId: "team",
+      conversationId: owner.conversationId, taskId: owner.turnId, primaryAgentId: "other",
+      state: .running, members: [member])
+    let binding = try XCTUnwrap(AgentManagedBrowserDispatchBinding(owner: owner, team: team,
+      profileID: "profile", modelID: "model", hostContextDigest: "context"))
+    let input = AgentManagedBrowserLoopInput(loopID: request.loopId, inputIdentity: "immutable",
+      toolManifestHash: "pinned", systemPrompt: "", prompt: "Keep the original goal", hasAttachments: false)
+    try original.enroll(binding, input: input, legacyLoopExists: false)
+    let toolID = AgentManagedBrowserToolExecution.toolID
+    let call = AgentModelToolCall(callId: "handoff", toolId: toolID, arguments: ["url": .string("https://example.test/")])
+    var executions = 0
+    func run(_ store: AgentManagedBrowserContinuationStore, mode: AgentManagedBrowserContinuationStore.Mode,
+             adapter: AgentModelAdapter) async throws -> AgentModelToolLoopOutcome {
+      try await store.withLease(binding: binding, mode: mode, control: .run) { lease, _ in
+        let control = AgentManagedBrowserToolExecution(store: store, binding: binding, lease: lease)
+        var executable = try control.executable()
+        let perform = executable.executor
+        executable.executor = { invocation in executions += 1; return try perform(invocation) }
+        let registry = try AgentNativeToolRegistry().registerExecutable(executable)
+        return await AgentModelToolLoop(modelAdapter: adapter, toolRegistry: registry,
+          journal: EncryptedAgentModelLoopJournal(defaults: defaults, secrets: secrets), browserHandoff: control).run(request)
+      }
+    }
+    let waiting = try await run(original, mode: .initial,
+      adapter: ScriptedModelAdapter(AgentModelResponse(toolCalls: [call])))
+    XCTAssertEqual(waiting.status, .waitingForBrowserControl)
+    let ticket = try XCTUnwrap(original.awaitingHandoff(binding: binding)?.ticket)
+    try original.reconcileHostProcess(binding)
+    XCTAssertEqual(try original.awaitingHandoff(binding: binding)?.ticket, ticket)
+    let reopened = AgentManagedBrowserContinuationStore(defaults: defaults, secrets: secrets, namespace: domain,
+      hostProcessID: "replacement-process")
+    try reopened.reconcileHostProcess(binding)
+    XCTAssertNil(try reopened.awaitingHandoff(binding: binding))
+    let event = try reopened.handoff(ticket, binding: binding)
+    XCTAssertEqual(event.state, .interrupted)
+    XCTAssertEqual(event.interruption, .appProcessChanged)
+    XCTAssertFalse(try reopened.recordWebContentExit(ticket, binding: binding))
+    XCTAssertThrowsError(try reopened.returnControl(ticket, binding: binding,
+      observation: .init(address: "https://example.test/", title: "", text: "Stale result")))
+    func inspect(_ turn: AgentModelRequest) {
+      XCTAssertEqual(turn.round, 2)
+      let outcome = turn.messages.last?.toolResult
+      XCTAssertEqual(outcome?.output["state"], .string("interrupted"))
+      XCTAssertEqual(outcome?.output["user_returned_control"], .bool(false))
+      XCTAssertEqual(outcome?.output["authentication_verified"], .bool(false))
+      XCTAssertNil(outcome?.nativeResult)
+    }
+    let once = try await run(reopened, mode: .recovery, adapter: ContinuationTestModelAdapter { turn in
+      inspect(turn)
+      throw AgentModelToolProtocolError(code: "interrupted", message: "Stop after the interruption was committed.")
+    })
+    XCTAssertEqual(once.status, .modelFailed)
+    let journal = EncryptedAgentModelLoopJournal(defaults: defaults, secrets: secrets)
+    try await journal.withLease(scope: AgentModelLoopScope(request: request)) { records in
+      let checkpoint = AgentModelLoopCheckpoint(records: records)
+      XCTAssertEqual(try checkpoint.browserResolution(ticket: ticket, invocationID: event.invocationID, round: 1), event)
+      XCTAssertThrowsError(try checkpoint.browserResolution(ticket: ticket, invocationID: "foreign-invocation", round: 1))
+    }
+    let twice = try await run(reopened, mode: .recovery, adapter: ContinuationTestModelAdapter { turn in
+      inspect(turn)
+      return AgentModelResponse(assistantText: "The browser needs fresh verification.")
+    })
+    XCTAssertEqual(twice.status, .completed)
+    XCTAssertEqual(executions, 1)
+    try await reopened.withLease(binding: binding, mode: .recovery, control: .run) { lease, _ in
+      let replacement = try reopened.requestControl(lease: lease, binding: binding, callID: "replacement",
+        invocationID: "new-invocation", address: "https://example.test/")
+      XCTAssertFalse(try reopened.recordWebContentExit(ticket, binding: binding))
+      XCTAssertEqual(try reopened.awaitingHandoff(binding: binding)?.ticket, replacement.ticket)
+      XCTAssertTrue(try reopened.recordWebContentExit(replacement.ticket, binding: binding))
+      XCTAssertEqual(try reopened.handoff(replacement.ticket, binding: binding).interruption, .webContentProcessExited)
     }
   }
 

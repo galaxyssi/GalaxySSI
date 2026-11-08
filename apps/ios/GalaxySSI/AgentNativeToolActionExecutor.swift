@@ -375,6 +375,7 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
     if let recovery, let data = try? JSONEncoder().encode(recovery) {
       actionResult.metadata[AgentEffectRecoveryRecord.metadataKey] = String(decoding: data, as: UTF8.self)
     }
+    actionResult.metadata[AgentNativeFailureObservation.metadataKey] = AgentNativeFailureObservation.encode(result)
     return actionResult
   }
 
@@ -439,5 +440,73 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
   private enum InputParseResult {
     case success(AgentMcpJSONObject)
     case failure(String)
+  }
+}
+
+enum AgentNativeFailureObservation {
+  static let metadataKey = "native_failure_observation"
+  static let actionParameter = "_galaxyssi_observed_native_failure_observation"
+
+  static func encode(_ result: AgentNativeToolResult) -> String? {
+    guard !result.isSuccess else { return nil }
+    let error = result.error
+    let unknown = error?.code == "effect_outcome_unknown" || error?.details["outcome_unknown"] == .bool(true) ||
+      result.output["outcome_unknown"] == .bool(true) || result.output.string("outcome_state") == "unknown" ||
+      error?.details.string("outcome_state") == "unknown"
+    var observation: AgentMcpJSONObject = [
+      "status": .string(result.status.rawValue), "receipt_status": .string(result.receipt.status.rawValue),
+      "error_code": .string(String(redactText(error?.code ?? "").prefix(120))),
+      "retryable": .bool(error?.retryable == true), "outcome_unknown": .bool(unknown),
+      "message": .string(String(redactText(error?.message ?? result.message).prefix(384)))
+    ]
+    if let verification = result.verification {
+      observation["verification_status"] = .string(verification.status.rawValue)
+      observation["verification_message"] = .string(String(redactText(verification.message).prefix(256)))
+    }
+    if let error, !error.details.isEmpty {
+      let cleaned = sanitize(.object(error.details), depth: 0)
+      let serialized = AgentObservationRedaction.redact(AgentMcpJSONCodec.stringify(cleaned))
+      if serialized.utf8.count <= 1_600,
+         let details = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(serialized.utf8)) {
+        observation["details"] = .object(details)
+      } else {
+        observation["details_partial"] = .bool(true)
+        observation["details_sha256"] = .string(AgentModelToolProtocolJSON.sha256(serialized))
+        observation["details_excerpt"] = .string(String(serialized.prefix(480)))
+      }
+    }
+    return AgentMcpJSONCodec.stringify(observation)
+  }
+
+  private static func sanitize(_ value: AgentMcpJSONValue, depth: Int) -> AgentMcpJSONValue {
+    guard depth < 16 else { return .string("[nested data omitted]") }
+    switch value {
+    case .object(let object):
+      return .object(object.reduce(into: [:]) { output, pair in
+        output[pair.key] = isCredential(pair.key) ? .string("[redacted]") : sanitize(pair.value, depth: depth + 1)
+      })
+    case .array(let values):
+      return .array(values.map { sanitize($0, depth: depth + 1) })
+    case .string(let text):
+      return .string(redactText(text))
+    default: return value
+    }
+  }
+
+  private static func redactText(_ text: String) -> String {
+    AgentObservationRedaction.redact(text)
+      .replacingOccurrences(of: #"(?i)\b(?:set-cookie|cookie)\s*[:=]\s*[^\r\n]+"#,
+                            with: "cookie=[redacted]", options: .regularExpression)
+      .replacingOccurrences(of: #"(?i)([?&](?:token|key|session|signature|credential)=)[^&#\s]+"#,
+                            with: "$1[redacted]", options: .regularExpression)
+      .replacingOccurrences(of: #"(?i)(https?://)[^/\s@]+:[^/\s@]+@"#,
+                            with: "$1[redacted]@", options: .regularExpression)
+  }
+
+  private static func isCredential(_ key: String) -> Bool {
+    let normalized = key.lowercased().replacingOccurrences(of: "-", with: "_")
+    return ["cookie", "cookies", "set_cookie", "token", "access_token", "refresh_token", "session_token",
+      "auth_token", "authorization", "password", "api_key", "apikey", "secret", "client_secret",
+      "private_key", "seed_phrase", "credentials"].contains(normalized)
   }
 }

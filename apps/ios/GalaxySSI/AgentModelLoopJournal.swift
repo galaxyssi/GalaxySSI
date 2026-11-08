@@ -389,11 +389,26 @@ final class AgentModelLoopCheckpoint {
     write(ModelRecord(binding: modelBinding(request), response: response), operation: "model:\(request.round)")
   }
 
-  func commitBrowserReturn(_ handoff: AgentManagedBrowserHandoff, round: Int) throws {
-    guard handoff.state == .returned, handoff.observation?.isValid == true else {
+  private func browserResolutionOperation(callID: String, round: Int) -> String {
+    "browser-return:\(round):\(AgentModelToolProtocolJSON.sha256(callID))"
+  }
+
+  func browserResolution(ticket: AgentManagedBrowserHandoff.Ticket, invocationID: String,
+                         round: Int) throws -> AgentManagedBrowserHandoff? {
+    let operation = browserResolutionOperation(callID: ticket.callID, round: round)
+    guard let data = try records.read(operation) else { return nil }
+    let saved = try AgentModelLoopCodec.decode(AgentManagedBrowserHandoff.self, data: data)
+    guard saved.ticket == ticket, saved.invocationID == invocationID, saved.isResolved else {
+      throw AgentModelLoopRecoveryError(code: "model_loop_browser_return_changed")
+    }
+    return saved
+  }
+
+  func commitBrowserResolution(_ handoff: AgentManagedBrowserHandoff, round: Int) throws {
+    guard handoff.isResolved else {
       throw AgentModelLoopRecoveryError(code: "model_loop_browser_return_invalid")
     }
-    let operation = "browser-return:\(round):\(AgentModelToolProtocolJSON.sha256(handoff.ticket.callID))"
+    let operation = browserResolutionOperation(callID: handoff.ticket.callID, round: round)
     let value = try AgentModelLoopCodec.encode(handoff)
     if let saved = try records.read(operation) {
       guard saved == value else { throw AgentModelLoopRecoveryError(code: "model_loop_browser_return_changed") }

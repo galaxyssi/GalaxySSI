@@ -3,6 +3,46 @@ import XCTest
 
 @MainActor
 final class GalaxySSILinkReliabilityTests: XCTestCase {
+  func testAttachmentDeclarationReuseAndSafeStartupCompaction() throws {
+    let fixture = try ChunkFixture()
+    let suite = "attachment-declaration-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let journal = GalaxySSIChatHistoryDatabase(fileURL: fixture.url, secrets: fixture.secrets)
+    let store = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    let transfer = String(repeating: "a", count: 64)
+    let now = Date(timeIntervalSince1970: 100)
+    let key = LinkAttachmentDeclarationKey(topic: "topic/up", contactId: "contact",
+      sourceMessageId: "source", transferId: transfer, declaration: "manifest")
+    func request(_ id: String, topic: String = "topic/up", source: String = "source",
+                 contact: String = "contact", kind: String? = "manifest") -> LinkDeliveryEnqueueRequest {
+      LinkDeliveryEnqueueRequest(messageId: id, topic: topic, wirePayload: id,
+        requiresValidatedNetwork: false, blockedByAttachmentTransferIds: [], clientSourceMessageId: source,
+        contactId: contact, attachmentTransferId: transfer, attachmentDeclaration: kind)
+    }
+    store.enqueueBatch([request("first")], now: now)
+    store.enqueueBatch([request("duplicate"), request("attempted"), request("other-route", topic: "other/up"),
+      request("other-source", source: "other"), request("other-contact", contact: "other"),
+      request("blob", kind: "blob:fingerprint"), request("chunk-or-legacy", kind: nil),
+      request("chat", kind: nil)], now: now.addingTimeInterval(1))
+    store.markAttempt(messageId: "attempted", now: now.addingTimeInterval(2))
+    XCTAssertTrue(try store.enqueueAttachmentDeclaration(key) {
+      XCTFail("A pending declaration must be reused before advancing encryption state")
+      return ("unexpected", "unexpected")
+    })
+
+    try fixture.execute("CREATE TRIGGER reject_compaction BEFORE UPDATE ON link_delivery_state BEGIN SELECT RAISE(ABORT,'forced'); END")
+    let rejected = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    XCTAssertTrue(try rejected.outboxMigrationSnapshot().contains { $0.messageId == "duplicate" })
+    try fixture.execute("DROP TRIGGER reject_compaction")
+    for _ in 0..<2 {
+      let reopened = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+      let ids = Set(try reopened.outboxMigrationSnapshot().map(\.messageId))
+      XCTAssertEqual(ids, ["first", "attempted", "other-route", "other-source", "other-contact",
+                           "blob", "chunk-or-legacy", "chat"])
+    }
+  }
+
   func testPausingLearningKeepsOutboxEntriesWithoutBlockingOrdinaryMessages() throws {
     let fixture = try ChunkFixture()
     let suite = "learning-outbox-" + UUID().uuidString
