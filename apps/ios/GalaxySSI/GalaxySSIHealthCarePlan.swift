@@ -58,6 +58,7 @@ enum GalaxySSIHealthCarePlan {
     var sourceContext: GalaxySSIHealthCare.Context? = nil
     var profileScope: GalaxySSIHealthCareProfileScope.Link?
     var profileScopeEpoch: UUID?
+    var questionRevision: UUID?
     let carePermission: UUID
     let onlinePermission: UUID
     let contactID: String
@@ -176,7 +177,7 @@ enum GalaxySSIHealthCarePlan {
       maintenance: maintenance)
   }
 
-  static func arguments(_ data: Data, style: GalaxySSICloudAPIStyle) throws -> AgentMcpJSONObject {
+  static func arguments(_ data: Data, style: GalaxySSICloudAPIStyle, toolName: String = tool) throws -> AgentMcpJSONObject {
     let invalid = GalaxySSIHealthRecords.Failure.invalid
     let root = try JSONDecoder().decode(AgentMcpJSONObject.self, from: data)
     switch style {
@@ -185,7 +186,7 @@ enum GalaxySSIHealthCarePlan {
             choice.string("finish_reason") == "tool_calls",
             let calls = choice["message"]?.objectValue?["tool_calls"]?.arrayValue, calls.count == 1,
             let call = calls.first?.objectValue, call.string("type") == "function",
-            let function = call["function"]?.objectValue, function.string("name") == tool,
+            let function = call["function"]?.objectValue, function.string("name") == toolName,
             let raw = function["arguments"]?.strictStringValue else { throw invalid }
       return try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
     case .anthropic:
@@ -193,7 +194,7 @@ enum GalaxySSIHealthCarePlan {
             let content = root["content"]?.arrayValue, (1...8).contains(content.count) else { throw invalid }
       let calls = content.compactMap(\.objectValue).filter { $0.string("type") == "tool_use" }
       guard content.allSatisfy({ ["text", "tool_use"].contains($0.objectValue?.string("type") ?? "") }),
-            calls.count == 1, let call = calls.first, call.string("name") == tool,
+            calls.count == 1, let call = calls.first, call.string("name") == toolName,
             let input = call["input"]?.objectValue else { throw invalid }
       return input
     case .gemini:
@@ -206,7 +207,7 @@ enum GalaxySSIHealthCarePlan {
         guard let object = part.objectValue else { return false }
         return object["functionCall"]?.objectValue != nil || object["text"]?.strictStringValue != nil
       }), calls.count == 1, let function = calls.first,
-            function.string("name") == tool, let input = function["args"]?.objectValue else { throw invalid }
+            function.string("name") == toolName, let input = function["args"]?.objectValue else { throw invalid }
       return input
     }
   }
