@@ -37,6 +37,7 @@ final class MqttBusinessTransportRuntime {
   private var outgoingAttachments: AgentOutboundAttachmentTransferStore?
   private var desktopArtifacts: AgentDesktopArtifactStore?
   private var desktopConnector: MqttDesktopConnectorProjection?
+  private var receiveDesktopRelayConfiguration: (@MainActor ([String: Any], MqttPeerChatProjection.Destination) throws -> Void)?
   private struct EvidenceWaiter {
     let identity: MqttBusinessIdentity
     let request: AgentDesktopToolEvidenceWire.Request
@@ -132,6 +133,7 @@ final class MqttBusinessTransportRuntime {
                    outgoingAttachments: AgentOutboundAttachmentTransferStore = .init(),
                    desktopArtifacts: AgentDesktopArtifactStore? = nil,
                    desktopConnector: MqttDesktopConnectorProjection? = nil,
+                   receiveDesktopRelayConfiguration: (@MainActor ([String: Any], MqttPeerChatProjection.Destination) throws -> Void)? = nil,
                    onFailure: @escaping @MainActor (Error) -> Void = { _ in }) throws {
     guard let cutover = try journal.legacyCutover(), cutover.localFingerprint == localFingerprint else {
       throw MqttDeliveryDispatch.Failure.unavailable
@@ -158,6 +160,7 @@ final class MqttBusinessTransportRuntime {
     self.outgoingAttachments = outgoingAttachments
     self.desktopArtifacts = desktopArtifacts
     self.desktopConnector = desktopConnector
+    self.receiveDesktopRelayConfiguration = receiveDesktopRelayConfiguration
   }
 
   func startDirectPeerChat(configuration: MqttBrokerPathConfiguration) throws {
@@ -215,6 +218,24 @@ final class MqttBusinessTransportRuntime {
     let request = try desktopConnector.outgoingRequest(payload, target: target)
     guard let entry = try enqueue([request]).first else { throw MqttRouteError.invalidPayload }
     return entry
+  }
+
+  func enqueueDesktopBlobReceipt(_ receipt: [String: Any], desktopId: String) throws {
+    guard let projection = peerChatProjection else { throw MqttDeliveryDispatch.Failure.unavailable }
+    try refreshDirectPeerBindings()
+    let candidates = projection.currentDestinations().filter {
+      $0.desktop && $0.peer.remoteSignalName == desktopId && $0.routeId == receipt.string("client_route_id")
+    }
+    guard candidates.count == 1, let target = candidates.first else { throw MqttRouteError.identityChanged }
+    let request = try MqttPeerChatProjection.desktopBlobReceiptRequest(receipt, target: target)
+    do {
+      guard try enqueue([request]).count == 1 else { throw MqttChunkStorageError.corruptState }
+    } catch MqttChunkStorageError.alreadyDelivered {
+      guard let event = try journal.outbox.completions.event(identity: request.identity, messageID: request.messageID),
+            try request.matchesIntent(event.requestHash, storedTopic: event.topic) else {
+        throw MqttChunkStorageError.corruptState
+      }
+    }
   }
 
   // Only the topic window may change in place. Approval and relationship material stay pinned.
@@ -690,6 +711,11 @@ final class MqttBusinessTransportRuntime {
     guard let target = try projection.currentDestination(item.identity),
           payload["message_id"] as? String == item.messageID else { throw MqttRouteError.identityChanged }
     let type = payload.string("type")
+    if type == AgentBlobRelayConfiguration.payloadType {
+      guard target.desktop, let receiveDesktopRelayConfiguration else { throw MqttRouteError.identityChanged }
+      try receiveDesktopRelayConfiguration(payload, target)
+      return
+    }
     if type == "agent_task_evidence" {
       guard target.desktop else { throw MqttRouteError.identityChanged }
       guard let pending = evidenceWaiters[payload.string("request_id")] else { return }

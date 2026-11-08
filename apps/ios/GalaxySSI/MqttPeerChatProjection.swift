@@ -161,6 +161,27 @@ struct MqttPeerChatProjection {
     return source
   }
 
+  static func desktopBlobReceiptRequest(_ receipt: [String: Any], target: Destination) throws -> MqttSignalSendRequest {
+    let fields = ["type", "version", "status", "transfer_id", "client_route_id", "artifact_id", "sha256",
+      "size_bytes", "conversation_id", "task_id", "turn_id", "contact_id", "execution_generation"]
+    guard target.desktop, receipt.string("client_route_id") == target.routeId else { throw MqttRouteError.identityChanged }
+    guard Set(receipt.keys) == Set(fields), receipt.string("type") == AgentBlobArtifactContract.receiptType,
+          receipt.string("status") == "stored", try MqttRouteProtocol.integer(receipt, "version") == 1,
+          (1...AgentBlobProtocol.maximumFileBytes).contains(try MqttRouteProtocol.integer(receipt, "size_bytes")),
+          try MqttRouteProtocol.integer(receipt, "execution_generation") > 0,
+          ["transfer_id", "artifact_id", "sha256"].allSatisfy({ MqttRouteProtocol.hex(receipt.string($0), count: 64) })
+    else { throw MqttRouteError.invalidPayload }
+    for key in ["conversation_id", "task_id", "turn_id", "contact_id"] {
+      _ = try MqttDeliveryEnvelope.checkedText(receipt[key], maximum: 256)
+    }
+    let identity = try MqttBusinessIdentity(target.peer.binding)
+    let digest = MqttRouteProtocol.digest(try MqttBusinessStorage.payload(receipt))
+    var payload = receipt
+    payload["message_id"] = try stableID([identity.binding, "desktop-blob-stored", digest])
+    return try MqttSignalSendRequest(identity: identity, payload: payload, remoteName: target.peer.remoteSignalName,
+      topic: target.peer.binding.sendTopic, clientRouteID: target.routeId, traffic: .control, contactID: target.contactId)
+  }
+
   @discardableResult
   func projectInbound(_ item: MqttBusinessInbox.Pending, resolvedAttachments: [[String: Any]]? = nil) throws -> ChatMessage? {
     guard let target = try currentDestination(item.identity),

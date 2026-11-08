@@ -591,6 +591,7 @@ final class MessageCoordinator: ObservableObject {
             if let self, self.transportConnected != ready {
               self.transportConnected = ready
               NotificationCenter.default.post(name: .galaxySSIAgentRoutingDidUpdate, object: nil, userInfo: ["connected": ready])
+              if ready { await self.blobArtifactReceiver.wake() }
             }
           }
           do { try await Task.sleep(nanoseconds: 500_000_000) } catch { break }
@@ -15556,7 +15557,15 @@ final class MessageCoordinator: ObservableObject {
     return try MqttBusinessTransportRuntime(peerChatStore: store, localFingerprint: signalEngine.identity.fingerprint,
       journal: journal, routeState: routeState, pool: pool, incomingAttachments: incomingAttachmentTransferStore,
       outgoingAttachments: attachmentTransferStore, desktopArtifacts: desktopArtifactStore,
-      desktopConnector: connector, onFailure: onFailure)
+      desktopConnector: connector, receiveDesktopRelayConfiguration: { [weak self] payload, target in
+        guard let self else { throw MqttDeliveryDispatch.Failure.unavailable }
+        let links = self.store.serverLinks.filter {
+          $0.paired && $0.desktopId == target.peer.remoteSignalName && $0.routes == target.routes
+        }
+        guard links.count == 1, let link = links.first else { throw MqttRouteError.identityChanged }
+        try self.blobRelayConfigurationStore.ingest(payload, link: link)
+        Task { await self.blobArtifactReceiver.wake() }
+      }, onFailure: onFailure)
   }
 
   func linkWirePayload(
@@ -17750,7 +17759,18 @@ final class MessageCoordinator: ObservableObject {
     _ receipt: [String: Any],
     desktopId: String
   ) -> Bool {
-    guard let link = store.serverLinks.first(where: { $0.desktopId == desktopId && $0.paired }) else {
+    if !usesLegacyMqtt {
+      guard let runtime = journalMqttRuntime else { return false }
+      do {
+        try runtime.enqueueDesktopBlobReceipt(receipt, desktopId: desktopId)
+        return true
+      } catch {
+        return false
+      }
+    }
+    guard let link = store.serverLinks.first(where: {
+      $0.desktopId == desktopId && $0.paired && $0.routes.clientRouteId == receipt.string("client_route_id")
+    }) else {
       return false
     }
     publishDesktopArtifactControl(receipt, link: link)

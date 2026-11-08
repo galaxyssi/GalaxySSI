@@ -1149,6 +1149,42 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertEqual(try Data(contentsOf: XCTUnwrap(files.localFile(for: files.resolveBlock(block)))), bytes)
   }
 
+  @MainActor
+  func testDesktopBlobReceiptUsesStableIdentityAndExactStoredFields() throws {
+    let store = makeStore()
+    let local = String(repeating: "b", count: 64)
+    let link = try store.addServerLink(from: makePairingQRCode(), localFingerprint: local)
+    store.markServerPaired(desktopId: link.desktopId)
+    let contact = try XCTUnwrap(store.contacts.first { $0.isDesktopDeviceContact && $0.desktopId == link.desktopId })
+    let projection = MqttPeerChatProjection(store: store, localFingerprint: local)
+    let target = try XCTUnwrap(projection.destination(for: contact))
+    let receipt = AgentBlobArtifactContract.storedReceipt([
+      "transfer_id": String(repeating: "a", count: 64), "client_route_id": target.routeId,
+      "artifact_id": String(repeating: "b", count: 64), "sha256": String(repeating: "c", count: 64),
+      "size_bytes": 31, "conversation_id": target.conversationId, "task_id": "source",
+      "turn_id": "turn", "contact_id": link.desktopId, "execution_generation": 1
+    ])
+    let first = try MqttPeerChatProjection.desktopBlobReceiptRequest(receipt, target: target)
+    let replay = try MqttPeerChatProjection.desktopBlobReceiptRequest(receipt, target: target)
+    XCTAssertEqual(first.messageID, replay.messageID)
+    XCTAssertEqual(first.traffic, .control)
+    XCTAssertEqual(first.contactID, contact.id)
+    XCTAssertEqual(first.clientRouteID, target.routeId)
+    let wire = try first.applicationPayload()
+    XCTAssertEqual(wire.string("type"), AgentBlobArtifactContract.receiptType)
+    XCTAssertEqual(wire.string("transfer_id"), receipt.string("transfer_id"))
+    XCTAssertEqual(wire.string("sha256"), receipt.string("sha256"))
+    XCTAssertEqual(wire.string("message_id"), first.messageID)
+    var changed = receipt
+    changed["sha256"] = String(repeating: "d", count: 64)
+    XCTAssertNotEqual(first.messageID, try MqttPeerChatProjection.desktopBlobReceiptRequest(changed, target: target).messageID)
+    for (key, value) in [("client_route_id", "foreign"), ("read_token", "secret"), ("status", "downloaded")] {
+      var invalid = receipt
+      invalid[key] = value
+      XCTAssertThrowsError(try MqttPeerChatProjection.desktopBlobReceiptRequest(invalid, target: target))
+    }
+  }
+
   func testRenamesContactLocally() {
     let store = makeStore()
     let request = store.addFriendRequest(makeFriendRequest(galaxySSIId: "friend-alice", name: "Alice"))
