@@ -1,8 +1,104 @@
 import CryptoKit
+import SQLite3
 import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testScopedTeamHistoryRoutesExactReadsWithoutJoiningDefaultRecovery() throws {
+    let suite = "scoped-team-history-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore(), file = root.appendingPathComponent("history.sqlite3")
+    func history(_ key: String = AgentTeamExecutionHistoryStore.defaultStorageKey) -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, storageKey: key, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    }
+    let standard = history(), isolated = history("fixture-scoped-pilot"), other = history("fixture-other-pilot")
+    let legacy = durableTeamSnapshot("existing-default")
+    XCTAssertTrue(standard.upsert(legacy))
+    XCTAssertFalse(isolated.upsert(legacy))
+    var run = durableTeamSnapshot("isolated-live")
+    run.goal = "Read exact fixture"
+    run.members[0].dispatchCheckpoint = .accepted
+    run.members[1].dispatchCheckpoint = .dispatching
+    XCTAssertTrue(isolated.upsert(run))
+    XCTAssertTrue(history("fixture-scoped-pilot").upsert(run))
+    XCTAssertFalse(standard.upsert(run))
+    XCTAssertFalse(other.upsert(run))
+    var replacement = run
+    replacement.teamId = "different-team"
+    XCTAssertFalse(isolated.upsert(replacement))
+    XCTAssertFalse(standard.recoverable(conversationId: run.conversationId).contains { $0.supervisorRunId == run.supervisorRunId })
+    XCTAssertNil(standard.snapshot(supervisorRunId: run.supervisorRunId))
+
+    let member = run.members[0]
+    let scope = AgentCollaborationToolEvidenceScope(runId: run.supervisorRunId, conversationId: run.conversationId,
+      turnId: run.taskId, memberId: member.memberId, sourceId: member.sourceMessageId)
+    XCTAssertTrue(isolated.advanceGoalCheckpoint(.init(runId: scope.runId, conversationId: scope.conversationId,
+      turnId: scope.turnId, revision: 1, phase: .working,
+      contract: [.init(id: "check", requirement: "Check the fixture", verification: .documentary, status: .open,
+        evidence_kind: nil, evidence: [])], completedWorkIds: []), expectedRevision: 0))
+    let evidence = try isolated.recordCloudEvidence(.init(scope: scope, round: 1,
+      call: .init(callId: "probe", name: "fixture_probe", argumentsJson: "{}"),
+      output: "{\"fixture\":true}", succeeded: true, startedAtMillis: 2, finishedAtMillis: 3))
+    var selector = evidence.filter { ["evidence_id", "sha256"].contains($0.key) }
+    selector["mode"] = .string("evidence")
+    let reopened = history()
+    XCTAssertEqual(try reopened.goalWorkInventory(scope: scope)["revision"], .int(1))
+    let page = try reopened.recallCollaborationOriginal(selector, scope: scope, evidenceRead: .desktopPreview)
+    XCTAssertNil(page["host_read_coverage"])
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(selector, scope: scope,
+      evidenceRead: .desktopConfirm(contentHash: "wrong")))
+    let confirmation = try reopened.recallCollaborationOriginal(selector, scope: scope,
+      evidenceRead: .desktopConfirm(contentHash: AgentDesktopNativeEvidenceDelivery.digest(page.string("content"))))
+    XCTAssertNotNil(confirmation["host_read_coverage"])
+    var foreign = scope
+    foreign.sourceId = "wrong-source"
+    XCTAssertThrowsError(try reopened.goalWorkInventory(scope: foreign))
+    XCTAssertThrowsError(try other.recallCollaborationOriginal(selector, scope: scope))
+    XCTAssertNil(try reopened.recoveryContext(source: scope.sourceId, conversation: scope.conversationId,
+      turn: scope.turnId, contact: member.agentId))
+    XCTAssertEqual(try reopened.recoveryContext(source: scope.sourceId, conversation: scope.conversationId,
+      turn: scope.turnId, contact: member.agentId, requireResearchAccess: true)?.team.supervisorRunId, scope.runId)
+
+    var paused = run
+    paused.state = .waitingResponse
+    paused.updatedAtMillis += 1
+    XCTAssertTrue(isolated.upsert(paused))
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(selector, scope: scope))
+    run.updatedAtMillis = paused.updatedAtMillis + 1
+    XCTAssertTrue(isolated.upsert(run))
+    let defaultDatabase = try AgentTeamHistoryDatabase(fileURL: file,
+      storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    try defaultDatabase.transaction {
+      try defaultDatabase.insertResearchRecord(true, conversationId: scope.conversationId,
+        key: "native-evidence-revoked", revision: 0)
+    }
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(selector, scope: scope))
+    XCTAssertThrowsError(try isolated.recallCollaborationOriginal(selector, scope: scope))
+    try defaultDatabase.transaction {
+      try defaultDatabase.removeResearchRecord(conversationId: scope.conversationId, key: "native-evidence-revoked")
+    }
+    let disposable = durableTeamSnapshot("other-isolated")
+    XCTAssertTrue(other.upsert(disposable))
+    other.remove(supervisorRunId: scope.runId)
+    other.clear()
+    XCTAssertTrue(standard.upsert(disposable))
+    XCTAssertEqual(try reopened.goalWorkInventory(scope: scope)["revision"], .int(1))
+    let runKey = SHA256.hash(data: Data(scope.runId.utf8)).map { String(format: "%02x", $0) }.joined()
+    var connection: OpaquePointer?
+    XCTAssertEqual(sqlite3_open(file.path, &connection), SQLITE_OK)
+    defer { sqlite3_close(connection) }
+    XCTAssertEqual(sqlite3_exec(connection, "DELETE FROM team_history WHERE run_key='\(runKey)'", nil, nil, nil), SQLITE_OK)
+    XCTAssertThrowsError(try reopened.goalWorkInventory(scope: scope))
+    XCTAssertFalse(standard.upsert(run))
+    XCTAssertTrue(isolated.upsert(run))
+    XCTAssertEqual(sqlite3_exec(connection,
+      "UPDATE team_execution_locations SET encrypted_payload=x'00' WHERE run_key='\(runKey)'", nil, nil, nil), SQLITE_OK)
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(selector, scope: scope))
+    XCTAssertFalse(standard.upsert(run))
+  }
+
   func testTeamSnapshotCacheRechecksCiphertextFromAnExternalWriterAndDoesNotReviveDeletedRows() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }

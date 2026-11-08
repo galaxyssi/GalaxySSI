@@ -3127,6 +3127,7 @@ final class MessageCoordinator: ObservableObject {
           let roster = session.collaborationRoster,
           AgentCollaborationMemberIdentity(nodeID: context.member.memberId)?.member(in: roster)?.resourceId == contact,
           let parent = store.agentTask(id: context.team.taskId),
+          !parent.blocked, !PhoneExecutionAuthority.isCancelled(taskId: parent.taskId),
           parent.phase == .executing || parent.phase == .waitingResponse
     else { return }
     if publishing, AgentCollaborationGoalAssessmentPolicy.isCoordinatorMutation(phase) {

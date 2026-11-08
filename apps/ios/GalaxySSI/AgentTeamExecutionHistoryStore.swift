@@ -120,8 +120,10 @@ final class AgentTeamExecutionHistoryStore {
   private let defaults: UserDefaults
   private let storageKey: String
   private let secrets: GalaxySSISecretStore
+  private let fileURL: URL
   private let executionStore: AgentTeamExecutionStore
   private let database: AgentTeamHistoryDatabase?
+  private var locatedResearchScope: AgentCollaborationToolEvidenceScope?
 
   init(defaults: UserDefaults = .standard, storageKey: String = AgentTeamExecutionHistoryStore.defaultStorageKey,
        secrets: GalaxySSISecretStore = KeychainSecretStore.shared, executionStore: AgentTeamExecutionStore? = nil,
@@ -129,7 +131,9 @@ final class AgentTeamExecutionHistoryStore {
     self.defaults = defaults
     self.storageKey = storageKey
     self.secrets = secrets
-    self.executionStore = executionStore ?? UserDefaultsAgentTeamExecutionStore(defaults: defaults, secrets: secrets)
+    self.fileURL = fileURL
+    let liveKey = storageKey == Self.defaultStorageKey ? UserDefaultsAgentTeamExecutionStore.defaultKey : storageKey + ".live"
+    self.executionStore = executionStore ?? UserDefaultsAgentTeamExecutionStore(defaults: defaults, key: liveKey, secrets: secrets)
     database = try? AgentTeamHistoryDatabase(fileURL: fileURL, storageKey: storageKey, secrets: secrets)
   }
 
@@ -152,7 +156,18 @@ final class AgentTeamExecutionHistoryStore {
     incoming.supervisorRunId = incoming.supervisorRunId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !incoming.supervisorRunId.isEmpty else { return false }
     do {
+      if storageKey != Self.defaultStorageKey {
+        let defaultLive = UserDefaultsAgentTeamExecutionStore(defaults: defaults, secrets: secrets)
+        guard defaultLive.snapshot(supervisorRunId: incoming.supervisorRunId) == nil else { return false }
+        if defaults.object(forKey: Self.defaultStorageKey) != nil || defaults.object(forKey: Self.defaultStorageKey + ".encrypted.v1") != nil {
+          let legacy = Self(defaults: defaults, secrets: secrets, fileURL: fileURL)
+          try legacy.access { _ in }
+        }
+      }
       let changed = try access { database -> Bool in
+        guard try database.ownsLocalExecutionSlot(run: incoming.supervisorRunId) else {
+          throw AgentTeamHistoryDatabase.Failure.stale
+        }
         if let current = try database.snapshots(runId: incoming.supervisorRunId).first {
           guard current.teamId == incoming.teamId, current.conversationId == incoming.conversationId,
                 current.taskId == incoming.taskId else { throw AgentTeamHistoryDatabase.Failure.stale }
@@ -490,33 +505,47 @@ final class AgentTeamExecutionHistoryStore {
   func observeDesktopRecallEvent(source: String, conversation: String, turn: String, contact: String,
                                  observation: AgentTeamReplyObservation, terminal: Bool) throws {
     try access { database in
-      guard let owner = try database.replyOwner(source: source, conversation: conversation, turn: turn, contact: contact)
-      else { return }
-      let next = owner.observingRecallEvent(observation, terminal: terminal)
-      if next != owner { try database.updateReplyOwner(next) }
+      try database.withExecutionSource(source: source, conversation: conversation, turn: turn, contact: contact) { mapped in
+        guard let owner = try database.replyOwner(source: source, conversation: conversation, turn: turn, contact: contact),
+              mapped == nil || mapped?.supervisorRunId == owner.supervisorRunId else { return }
+        let next = owner.observingRecallEvent(observation, terminal: terminal)
+        if next != owner { try database.updateReplyOwner(next) }
+      }
     }
   }
 
   func recoveryContext(source: String, conversation: String, turn: String, contact: String,
                        requireResearchAccess: Bool = false) throws -> AgentTeamReplyRecoveryContext? {
     try access { database in
-      if requireResearchAccess,
-         try database.researchRecord(Bool.self, conversationId: conversation,
-           key: "native-evidence-revoked", revision: 0) == true { return nil }
-      guard let owner = try database.replyOwner(source: source, conversation: conversation, turn: turn, contact: contact),
-            let team = try database.snapshots(runId: owner.supervisorRunId).first,
-            team.conversationId == conversation, team.taskId == turn,
-            let member = team.members.first(where: { $0.memberId == owner.memberId &&
-              $0.sourceMessageId == source && $0.agentId == contact && $0.deliveryMode == owner.deliveryMode }) else { return nil }
-      return (owner, team, member)
+      func read(_ mapped: AgentTeamExecutionSnapshot?) throws -> AgentTeamReplyRecoveryContext? {
+        if requireResearchAccess,
+           try database.researchRecord(Bool.self, conversationId: conversation,
+             key: "native-evidence-revoked", revision: 0) == true { return nil }
+        guard let owner = try database.replyOwner(source: source, conversation: conversation, turn: turn, contact: contact),
+              let team = try mapped ?? database.snapshots(runId: owner.supervisorRunId).first,
+              team.supervisorRunId == owner.supervisorRunId, team.conversationId == conversation, team.taskId == turn,
+              let member = team.members.first(where: { $0.memberId == owner.memberId &&
+                $0.sourceMessageId == source && $0.agentId == contact && $0.deliveryMode == owner.deliveryMode }),
+              mapped == nil || Self.canReadLocatedExecution(team, member: member) else { return nil }
+        return (owner, team, member)
+      }
+      if requireResearchAccess {
+        guard try !database.defaultResearchRevoked(conversation: conversation) else { return nil }
+        return try database.withExecutionSource(source: source, conversation: conversation, turn: turn, contact: contact, read)
+      }
+      return try read(nil)
     }
   }
 
   func recent(_ limit: Int = AgentTeamExecutionHistoryStore.defaultRecentLimit) -> [AgentTeamExecutionSnapshot] {
-    guard limit > 0, let saved = try? access({ try $0.snapshots(limit: limit) }) else { return [] }
+    guard limit > 0, let (saved, live) = try? access({ database in
+      let saved = try database.snapshots(limit: limit)
+      let live = executionStore.snapshots().filter { (try? database.ownsLocalExecutionSlot(run: $0.supervisorRunId)) == true }
+      return (saved, live)
+    }) else { return [] }
     var combined = Dictionary(uniqueKeysWithValues: saved.map { ($0.supervisorRunId, $0) })
-    for live in executionStore.snapshots() {
-      combined[live.supervisorRunId] = newer(combined[live.supervisorRunId], live)
+    for item in live {
+      combined[item.supervisorRunId] = newer(combined[item.supervisorRunId], item)
     }
     return combined.values.sorted {
       $0.updatedAtMillis == $1.updatedAtMillis ? $0.supervisorRunId > $1.supervisorRunId : $0.updatedAtMillis > $1.updatedAtMillis
@@ -640,6 +669,17 @@ final class AgentTeamExecutionHistoryStore {
   func recallCollaborationOriginal(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope,
                                    generation: Int64? = nil, recordEvidenceCoverage: Bool = true,
                                    evidenceRead: EvidenceReadMode = .local) throws -> AgentMcpJSONObject {
+    Self.processLock.lock()
+    // Recall helpers each open their own short transaction; keep the authenticated location on each one.
+    let previous = locatedResearchScope
+    locatedResearchScope = scope
+    defer { locatedResearchScope = previous; Self.processLock.unlock() }
+    return try readCollaborationOriginal(input, scope: scope, generation: generation,
+      recordEvidenceCoverage: recordEvidenceCoverage, evidenceRead: evidenceRead)
+  }
+
+  private func readCollaborationOriginal(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope,
+      generation: Int64?, recordEvidenceCoverage: Bool, evidenceRead: EvidenceReadMode) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
     guard evidenceRead == .local || mode == "evidence" else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     if mode == AgentCollaborationNativeReleaseHistory.mode, input["view"] == nil,
@@ -3087,7 +3127,12 @@ final class AgentTeamExecutionHistoryStore {
   func snapshot(supervisorRunId: String) -> AgentTeamExecutionSnapshot? {
     let run = supervisorRunId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !run.isEmpty else { return nil }
-    do { return newer(try access { try $0.snapshots(runId: run).first }, executionStore.snapshot(supervisorRunId: run)) }
+    do {
+      return try access { database in
+        guard try database.ownsLocalExecutionSlot(run: run) else { return nil }
+        return newer(try database.snapshots(runId: run).first, executionStore.snapshot(supervisorRunId: run))
+      }
+    }
     catch { return nil }
   }
 
@@ -3237,7 +3282,7 @@ final class AgentTeamExecutionHistoryStore {
 
   func goalWorkInventory(scope: AgentCollaborationToolEvidenceScope,
                          now: Int64 = AgentControlPlaneClock.nowMillis()) throws -> AgentMcpJSONObject {
-    try access { database in
+    try access(location: scope) { database in
       let team = try Self.activeGoalCoordinator(scope, database: database)
       let checkpoint = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first
       if let checkpoint {
@@ -4400,7 +4445,13 @@ final class AgentTeamExecutionHistoryStore {
     return saved.updatedAtMillis >= live.updatedAtMillis ? saved : live
   }
 
-  private func access<T>(_ operation: (AgentTeamHistoryDatabase) throws -> T) throws -> T {
+  private static func canReadLocatedExecution(_ team: AgentTeamExecutionSnapshot, member: AgentTeamMemberSnapshot) -> Bool {
+    team.state == .running && !member.status.isTerminal && member.deliveryMode != .ignore &&
+      (member.dispatchCheckpoint == .dispatching || member.dispatchCheckpoint == .accepted)
+  }
+
+  private func access<T>(location: AgentCollaborationToolEvidenceScope? = nil,
+                         _ operation: (AgentTeamHistoryDatabase) throws -> T) throws -> T {
     Self.processLock.lock()
     defer { Self.processLock.unlock() }
     guard let database else { throw AgentTeamHistoryDatabase.Failure.unavailable }
@@ -4424,7 +4475,17 @@ final class AgentTeamExecutionHistoryStore {
         try database.markInitialized()
         try database.pruneFinished()
       }
-      return try operation(database)
+      guard let scope = location ?? locatedResearchScope else { return try operation(database) }
+      guard try !database.defaultResearchRevoked(conversation: scope.conversationId) else {
+        throw AgentTeamHistoryDatabase.Failure.stale
+      }
+      return try database.withExecutionLocation(run: scope.runId, conversation: scope.conversationId, turn: scope.turnId) { mapped in
+        if let mapped {
+          guard let member = mapped.members.first(where: { $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId }),
+                Self.canReadLocatedExecution(mapped, member: member) else { throw AgentTeamHistoryDatabase.Failure.stale }
+        }
+        return try operation(database)
+      }
     }
     if defaults.object(forKey: storageKey) != nil || defaults.object(forKey: storageKey + ".encrypted.v1") != nil {
       GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: storageKey, secrets: secrets)
