@@ -148,7 +148,12 @@ enum AgentCollaborationRuleTopics {
     reconsider_when and resource_estimates. Estimates name unit, status and basis; unknown estimates have no numeric value.
     A saved agenda does not execute work or grant resources.
     """),
-    Topic(id: "procedures", purpose: "Preserve observed failure experience", prerequisites: ["foundation"], contract: """
+    Topic(id: "procedures", purpose: "Reuse retained procedures and observed failure experience", prerequisites: ["foundation"], contract: """
+    Publish procedure_skill with the exact retained lesson as a parent, name, keywords, limitations and inputs
+    (name, description and required). The original method comes from the lesson; replacement text is rejected.
+    Use capabilities to find an exact procedure_skill. For a work expansion, procedure_use contains procedure,
+    inputs, applicability (why, conditions_checked and remaining_uncertainty), and exact failure experience references.
+    This is task data, not a global Skill installation or a permission grant.
     failure_experience is immutable and requires completely read original cloud observations, including at least one observed
     failure. Include observed_issue, interpretation, uncertainty, applies_when, avoid_repetition, reconsider_when and
     recovery_options. A recorded failure is not proof of a cause and is not a permanent prohibition.
@@ -167,11 +172,26 @@ enum AgentCollaborationRuleTopics {
     Use capabilities to find unfinished tools and test plans. Follow usage_recall for original test history. A pre-execution
     rejection belongs only to the requested plan; only an exact runtime-bound test belongs to a candidate.
     """),
+    Topic(id: "retention", purpose: "Preserve measured capability cases across versions", prerequisites: ["foundation"], contract: """
+    Publish capability_suite with scope, limitations and the exact independently retained lesson as a parent.
+    Every measured case needs an exact dataset artifact. A future experiment_plan.retention_suite must cite the suite
+    as a parent and preserve its dataset, metric, direction, repetitions and tolerance in regression cases.
+    The host checks the original anchor as well as the current control. Extend a passing suite with previous_suite;
+    never remove earlier cases, weaken feasibility thresholds or move their original anchors.
+    capability_channel selects an exact independently reviewed tool release tied to the retained innovation and suite.
+    Use operation initialize or promote with implementation, lesson, suite and reason. Promotion extends the active suite.
+    To roll back, cite target_revision from the same channel. Rollback preserves the latest bank and may require revalidation.
+    A selection grants no permissions and does not rerun or undo work.
+    """),
     Topic(id: "workflows", purpose: "Register workflow roles, steps and review conditions", prerequisites: ["foundation"], contract: """
     workflow_method includes purpose, domain, bottleneck, change_rationale, applies_when, avoid_when, risks, expected_gain,
     falsifier, dimensions, roles, inputs and steps. Steps declare id, role, stage, assignment, depends_on, dependency_policy,
     independent_review and optional review_targets. Dependencies must be acyclic, review targets must be dependencies, and
     the reviewed role must differ from the reviewer. Steps cannot override tools, models or permissions.
+    Publish a new method with previous_method and exact feedback parents; keep the same domain.
+    For comparison, link exact workflow_method parents from both innovations. Register experiment_plan.workflow_comparison
+    with dataset, controlled_conditions, quality_oracle, cost_accounting and selection_bias. Include a quality regression case.
+    Each measurement must identify its actual variant's workflow_sha256 and the registered dataset_sha256.
     A workflow_selection_rule parents an independently retained workflow comparison lesson. Use purpose, domain, condition_basis,
     limitations, prospective_test, lesson, when_all and unless_any. Each condition has id, input, pointer, operator, value and rationale.
     \(AgentCollaborationWorkflowCheck.instructions)
@@ -228,6 +248,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     let dependency_policy: DependencyPolicy?
     let independent_review: Bool?
     var stage: String? = nil
+    var procedure_use: AgentCollaborationProcedure.Use? = nil
     var learning: LearningBinding? = nil
     var review_targets: [String]? = nil
     var workflowExecutionId: String? = nil
@@ -291,6 +312,13 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
   private(set) var work: [Work] = []
   private(set) var workflowInstances: [String: AgentCollaborationWorkflowInstance]? = nil
   private(set) var learningPriorities: [String: Int64]? = nil
+  private(set) var procedureBindings: [String: AgentMcpJSONObject]? = nil
+
+  func pinningProcedures(_ bindings: [String: AgentMcpJSONObject]) -> Self {
+    var next = self
+    next.procedureBindings = bindings.isEmpty ? nil : bindings
+    return next
+  }
 
   func pinningLearningPriorities(_ ranks: [String: Int64]) -> Self {
     var next = self

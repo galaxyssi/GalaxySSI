@@ -238,6 +238,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     var lastFinishReason: String?
     let conversationId = turns.last?.conversationId ?? ""
     let turnId = turns.last?.turnId.ifBlank(requestId) ?? requestId
+    let disclosureOwner = await MainActor.run { store.profile.identityFingerprint }
+    let researchDisclosure = turns.last?.isMine == true ? AgentLocalResearchCollector() : nil
 
     do {
       let request = try await modelClient.prepareConversationStreamRequest(
@@ -285,7 +287,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         let roundId = "\(requestId):r\(currentRound)"
         let finalRound = progress.finalizationRequested
         let bufferForCitationVerification = !evidenceResults.isEmpty
-        let citationPreview = bufferForCitationVerification
+        let citationPreview = bufferForCitationVerification && !progress.performedDeepResearch
           ? CloudCitationPreview(evidence: evidenceResults)
           : nil
         var previewShown = false
@@ -554,6 +556,12 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           }
           if bufferForCitationVerification {
             let candidate = CloudWebGrounding.stripInternalToolProtocol(rawRoundText)
+            if !finalRound, prepared.canRequestBodyReadingReview, progress.performedDeepResearch,
+               let review = CloudWebGrounding.bodyReadingReviewPrompt(candidate, results: evidenceResults),
+               progress.requestRepair("research_body_reading") {
+              prepared.appendBodyReadingReview(draft: candidate, prompt: review)
+              continue
+            }
             let repairPrompt = CloudWebGrounding.citationRepairPrompt(candidate, results: evidenceResults)
             if !candidate.isBlank,
                let repairPrompt,
@@ -567,10 +575,22 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                 )))
               }
               prepared.appendCitationRepairPrompt(draft: candidate, prompt: repairPrompt)
+              progress.requestFinalization()
+              continue
+            }
+            if !candidate.isBlank, repairPrompt != nil,
+               let partial = CloudWebGrounding.partialCitationRepairPrompt(candidate, results: evidenceResults),
+               progress.requestPartialSynthesisRepair(after: "stream_citations") {
+              if previewShown {
+                continuation.yield(.citationPreview(ModelStreamCitationPreview(
+                  requestId: requestId, text: "", receivedAtElapsedMs: elapsedMillis()
+                )))
+              }
+              prepared.appendCitationRepairPrompt(draft: candidate, prompt: partial)
               continue
             }
             let visibleAnswer = !candidate.isBlank && repairPrompt == nil
-              ? candidate
+              ? AgentIOSWebEvidenceVerification.resolveCitations(candidate, encodedToolResults: evidenceResults).text
               : CloudWebGrounding.evidenceFallback(results: evidenceResults)
             if !candidate.isBlank, repairPrompt == nil, roundCompleted,
                !CloudWebGrounding.containsInternalToolProtocol(rawRoundText),
@@ -705,7 +725,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             conversationId: conversationId,
             turnId: turnId,
             images: images,
-            readOnlyAnalysis: turns.last?.readOnlyAnalysis ?? false
+            readOnlyAnalysis: turns.last?.readOnlyAnalysis ?? false,
+            researchDisclosure: researchDisclosure
           ),
           onObservation: { call, output in
             await recovery?.record(call: call, output: output, store: store)
@@ -753,6 +774,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
               outcomes[index].output = Self.cloudEvidenceOutput(output, receipt: receipt)
             }
           }
+        }
+        if let source = turns.last, let receipt = researchDisclosure?.drain(), receipt.visible {
+          await MainActor.run { store.persistLocalResearchDisclosure(receipt, source: source, owner: disclosureOwner) }
         }
         if let failedOutcome = outcomes.first(where: { $0.errorMessage != nil }) {
           let streamError = ModelStreamError(

@@ -39,6 +39,17 @@ class AgentCloudDispatchRegistryTest {
         assertThrows(CancellationException::class.java) { lease.runRequest { error("Must not call model") } }
     }
 
+    @Test fun cancellingTurnBeforeReceiptExistsDoesNotCancelOtherConversationsOrTurns() {
+        val ids = listOf(identity, identity.copy(actionId = "next"), identity.copy(conversationId = "another"), identity.copy(turnId = "another"))
+        val leases = ids.map(AgentCloudDispatchRegistry::register)
+        try {
+            AgentCloudDispatchRegistry.cancelTurn(identity.conversationId, identity.turnId)
+            assertTrue(leases[0].isCancelled); assertTrue(leases[1].isCancelled)
+            assertFalse(leases[2].isCancelled); assertFalse(leases[3].isCancelled)
+            assertThrows(IllegalArgumentException::class.java) { AgentCloudDispatchRegistry.cancelTurn("", "") }
+        } finally { ids.zip(leases).forEach { (id, lease) -> AgentCloudDispatchRegistry.release(id, lease) } }
+    }
+
     @Test fun completedReplyCannotBeCancelledAfterwards() {
         val lease = AgentCloudDispatchLease()
         assertTrue(lease.claimCompletion())

@@ -1,0 +1,20 @@
+<resources>
+    <string name="health_research_title">Automatic evidence review</string>
+    <string name="health_research_off">Not authorized</string>
+    <string name="health_research_on">Authorized for this health concern</string>
+    <string name="health_research_enable">Review authorization</string>
+    <string name="health_research_revoke">Stop automatic review</string>
+    <string name="health_research_open">Open Agent conversation</string>
+    <string name="health_research_consent">Allow this Agent to review new results, recorded outcomes and due follow-ups for this concern. It may receive the current snapshot and relevant history, search public medical sources and propose a plan. Plans and targets still require your review. No diagnosis or medication change is authorized. Pausing this concern or changing privacy, model or destination settings invalidates this authorization. Already delivered data cannot be recalled.</string>
+    <string name="health_research_acknowledge">I authorize this scope and destination for future reviews</string>
+    <string name="health_research_destination">Agent: %1$s\nModel: %2$s\nReasoning: %3$s</string>
+    <string name="health_research_question">Review this health concern and its new evidence. Check data quality and relevant history, search applicable professional sources, explain uncertainty and propose only justified next steps. Do not diagnose, change medication or target the midpoint of a reference range. Return a useful answer and, when evidence is sufficient, a reviewable plan through the scoped health tools.</string>
+    <string name="health_research_requested">Review the new evidence and next steps for this health concern.</string>
+    <string name="health_research_queued">Queued</string>
+    <string name="health_research_running">Review in progress</string>
+    <string name="health_research_completed">Review complete</string>
+    <string name="health_research_failed">Review failed</string>
+    <string name="health_research_cancelled">Review stopped</string>
+    <string name="health_research_superseded">Evidence changed; previous review stopped</string>
+    <string name="health_research_interrupted">Execution was interrupted before a recoverable checkpoint. Review authorization to try again; no duplicate request was sent.</string>
+</resources>

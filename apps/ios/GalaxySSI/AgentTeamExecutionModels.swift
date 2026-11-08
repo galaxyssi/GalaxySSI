@@ -8,6 +8,7 @@ struct AgentCollaborationNativeToolObservation: Codable {
   var sourceId: String
   var input: AgentMcpJSONObject
   var result: AgentNativeToolResult
+  var evaluation: AgentMcpJSONObject? = nil
 }
 
 struct AgentCollaborationToolEvidenceScope: Codable, Equatable {
@@ -31,6 +32,91 @@ struct AgentCollaborationToolEvidenceScope: Codable, Equatable {
   func matchesBrowserInvocation(conversation: String, turn: String) -> Bool {
     !runId.isBlank && !memberId.isBlank && !sourceId.isBlank &&
       !conversationId.isBlank && !turnId.isBlank && conversationId == conversation && turnId == turn
+  }
+}
+
+enum AgentCollaborationNativeReleaseHistory {
+  static let mode = "method_history"
+  static let prefix = "native-evidence:"
+  static let pageSize = 20
+
+  struct Release: Decodable {
+    struct Draft: Decodable { let kind: String }
+    let reference: AgentCollaborationResearchReference
+    let runId: String
+    let turnId: String
+    let authorId: String
+    let sourceId: String
+    let draft: Draft
+    let testedToolRelease: AgentMcpJSONObject?
+  }
+
+  struct Original: Codable {
+    let observation: AgentCollaborationNativeToolObservation
+    let evaluation: AgentMcpJSONObject?
+    private enum Key: String, CodingKey { case evaluation }
+
+    init(from decoder: Decoder) throws {
+      observation = try AgentCollaborationNativeToolObservation(from: decoder)
+      evaluation = try decoder.container(keyedBy: Key.self).decodeIfPresent(AgentMcpJSONObject.self, forKey: .evaluation)
+    }
+
+    func encode(to encoder: Encoder) throws {
+      try observation.encode(to: encoder)
+      if let evaluation {
+        var values = encoder.container(keyedBy: Key.self)
+        try values.encode(evaluation, forKey: .evaluation)
+      }
+    }
+  }
+
+  static func validDigest(_ value: String) -> Bool {
+    value.utf8.count == 64 && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
+  }
+
+  static func fields(_ ref: AgentCollaborationResearchReference) -> AgentMcpJSONObject {
+    ["object_id": .string(ref.objectId), "revision": .int(ref.revision), "sha256": .string(ref.sha256)]
+  }
+
+  static func reference(_ value: AgentMcpJSONObject) -> AgentCollaborationResearchReference? {
+    guard let id = value["object_id"]?.strictStringValue, let hash = value["sha256"]?.strictStringValue,
+          validDigest(id), validDigest(hash), case .int(let revision)? = value["revision"],
+          (1...Int64(Int32.max)).contains(revision) else { return nil }
+    return .init(objectId: id, revision: revision, sha256: hash)
+  }
+
+  static func cursor(after id: String, release: AgentCollaborationResearchReference,
+                     reader: AgentCollaborationToolEvidenceScope, dependencies: [String]) -> String {
+    id + "." + AgentMcpJSONCodec.sha256([
+      "after": .string(id), "release": .object(fields(release)), "reader": .string(reader.ownershipDigest),
+      "dependencies": .array(dependencies.sorted().map(AgentMcpJSONValue.string))
+    ])
+  }
+
+  static func describe(_ original: Original, release: AgentCollaborationResearchReference,
+                       evidenceID: String, hash: String) -> AgentMcpJSONObject? {
+    let saved = original.observation
+    guard saved.result.provenance.toolId == AgentIOSOnDeviceRuntimeNativeToolCatalog.execute,
+          saved.input["mode"] == .string("run"),
+          let selected = saved.input["tool_release"]?.objectValue, selected == fields(release) else { return nil }
+    let receipt = saved.result.receipt
+    let runtime = original.evaluation?["runtime"]?.objectValue
+    let originalSelector: AgentMcpJSONObject = [
+      "mode": .string("evidence"), "evidence_id": .string(evidenceID), "sha256": .string(hash)
+    ]
+    return [
+      "evidence_id": .string(evidenceID), "sha256": .string(hash), "origin": .string("ios_native_tool"),
+      "read_original": .object(originalSelector), "release_binding": .string(
+        saved.input["capability_channel"] == nil ? "requested_release" : "runtime_resolved_channel_release"),
+      "parameters_sha256": saved.input["parameters"]?.objectValue.map { .string(AgentMcpJSONCodec.sha256($0)) } ?? .null,
+      "native_status": .string(saved.result.status.rawValue), "runtime_report_available": .bool(runtime != nil),
+      "runtime_reported_passed": original.evaluation?["passed"] ?? .null, "replayed": .bool(receipt.replayed),
+      "native_invocation_id": .string(receipt.invocationId),
+      "original_invocation_id": receipt.originalInvocationId.map(AgentMcpJSONValue.string) ?? .null,
+      "run_id": .string(saved.runId), "turn_id": .string(saved.turnId), "member_id": .string(saved.memberId),
+      "started_at": .int(receipt.startedAtEpochMillis), "finished_at": .int(receipt.finishedAtEpochMillis),
+      "quality_effect": .null
+    ]
   }
 }
 
@@ -170,9 +256,12 @@ struct AgentCollaborationResearchDraft: Codable {
     case experimentPlan = "experiment_plan"
     case experimentResult = "experiment_result"
     case capabilityLesson = "capability_lesson"
+    case capabilitySuite = "capability_suite"
+    case capabilityChannel = "capability_channel"
     case workflowMethod = "workflow_method"
     case workflowSelectionRule = "workflow_selection_rule"
     case candidateEvent = "candidate_event"
+    case procedureSkill = "procedure_skill"
     case teamExchange = "team_exchange"
     case capabilityGap = "capability_gap"
     case innovation
@@ -705,13 +794,43 @@ enum AgentCollaborationForecastIntake {
 }
 
 enum AgentCollaborationExperimentPlanIntake {
+  typealias WorkflowComparison = AgentCollaborationWorkflowComparison
+
+  private static func bindWorkflowComparison(
+    _ spec: AgentMcpJSONObject, draft: AgentCollaborationResearchDraft,
+    baseline: AgentCollaborationResearchRevision, candidate: AgentCollaborationResearchRevision,
+    current: (AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision?
+  ) rethrows -> WorkflowComparison? {
+    guard baseline.draft.kind == .innovation, candidate.draft.kind == .innovation,
+          let old = reference(baseline.draft.body["innovation"]?.objectValue?["workflow_method"]),
+          let next = reference(candidate.draft.body["innovation"]?.objectValue?["workflow_method"]),
+          old != next, baseline.draft.parents.contains(old), candidate.draft.parents.contains(next),
+          let savedOld = try current(old), savedOld.reference == old, savedOld.draft.kind == .workflowMethod,
+          let savedNext = try current(next), savedNext.reference == next, savedNext.draft.kind == .workflowMethod,
+          let oldMethod = savedOld.draft.body["workflow_method"]?.objectValue,
+          let nextMethod = savedNext.draft.body["workflow_method"]?.objectValue,
+          let domain = oldMethod["domain"]?.strictStringValue, !domain.isBlank, nextMethod["domain"] == .string(domain),
+          let comparison = spec["workflow_comparison"]?.objectValue,
+          Set(comparison.keys) == ["dataset", "controlled_conditions", "quality_oracle", "cost_accounting", "selection_bias"],
+          hasText(comparison, ["controlled_conditions", "quality_oracle", "cost_accounting", "selection_bias"]),
+          let dataset = reference(comparison["dataset"]), draft.parents.contains(dataset),
+          let savedDataset = try current(dataset), savedDataset.reference == dataset, savedDataset.draft.kind == .artifact,
+          let cases = spec["cases"]?.arrayValue,
+          cases.contains(where: { $0.objectValue?["purpose"] == .string("regression") }),
+          cases.allSatisfy({ value in
+            guard let item = value.objectValue else { return false }
+            return item["dataset"] == nil || reference(item["dataset"]) == dataset
+          }) else { return nil }
+    return WorkflowComparison(baseline: old, candidate: next, dataset: dataset)
+  }
+
   static func validates(_ draft: AgentCollaborationResearchDraft,
                         allowWorkflowComparison: Bool = false,
+                        freezeComparison: (WorkflowComparison) -> Void = { _ in },
                         current: (AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision?) rethrows -> Bool {
     guard draft.kind == .experimentPlan, draft.objectId?.isBlank != false, draft.baseRevision == 0,
           let spec = draft.body["experiment_plan"]?.objectValue,
-          ["retention_suite", "transfer_study", "team_comparison"].allSatisfy({ spec[$0] == nil }),
-          spec["workflow_comparison"] == nil || allowWorkflowComparison,
+          ["transfer_study", "team_comparison"].allSatisfy({ spec[$0] == nil }),
           hasText(spec, ["method", "environment", "budget_unit", "prediction_id"]),
           let pointer = spec["report_pointer"]?.stringValue, pointer.isEmpty || pointer.hasPrefix("/"),
           let limit = number(spec["budget_limit"]), limit > 0,
@@ -726,11 +845,24 @@ enum AgentCollaborationExperimentPlanIntake {
           let predictions = savedIdea.draft.body["innovation"]?.objectValue?["predictions"]?.arrayValue,
           predictions.contains(where: { $0.objectValue?.string("id") == spec.string("prediction_id") }),
           let cases = spec["cases"]?.arrayValue, validatesCases(cases) else { return false }
+    if let value = spec["retention_suite"] {
+      guard let ref = reference(value), draft.parents.contains(ref),
+            let suite = try current(ref), suite.draft.kind == .capabilitySuite, let bank = suite.retentionBank,
+            let domain = savedIdea.draft.body["innovation"]?.objectValue?["domain"]?.strictStringValue,
+            bank.admits(spec, domain: domain) else { return false }
+    }
     for raw in cases {
       if let item = raw.objectValue, item["dataset"] != nil {
         guard let dataset = reference(item["dataset"]), draft.parents.contains(dataset),
               try current(dataset)?.draft.kind == .artifact else { return false }
       }
+    }
+    if spec["workflow_comparison"] != nil ||
+        savedIdea.draft.body["innovation"]?.objectValue?["workflow_method"] != nil ||
+        savedBaseline.draft.body["innovation"]?.objectValue?["workflow_method"] != nil {
+      guard let binding = try bindWorkflowComparison(spec, draft: draft, baseline: savedBaseline,
+        candidate: savedIdea, current: current) else { return false }
+      freezeComparison(binding)
     }
     return true
   }
@@ -763,7 +895,7 @@ enum AgentCollaborationExperimentPlanIntake {
     fields.allSatisfy { object[$0]?.stringValue?.isBlank == false }
   }
 
-  private static func number(_ value: AgentMcpJSONValue?) -> Double? {
+  static func number(_ value: AgentMcpJSONValue?) -> Double? {
     switch value {
     case .some(.int(let number)): return Double(number)
     case .some(.double(let number)) where number.isFinite: return number
@@ -778,7 +910,13 @@ enum AgentCollaborationExperimentPlanIntake {
           let cases = spec["cases"]?.arrayValue, validatesCases(cases),
           let idea = reference(spec["innovation"]), let baseline = reference(spec["baseline"]),
           let budget = number(spec["budget_limit"]), budget > 0 else { return nil }
+    guard (spec["retention_suite"] == nil) == (plan.retentionBank == nil) else { return nil }
+    if let bank = plan.retentionBank, !bank.admits(spec, domain: bank.domain) { return nil }
+    let protected = plan.retentionBank?.anchors ?? []
+    guard Set(protected.map(\.id)).count == protected.count else { return nil }
+    let anchors = Dictionary(uniqueKeysWithValues: protected.map { ($0.id, $0) })
     let definitions = Dictionary(uniqueKeysWithValues: cases.compactMap(\.objectValue).map { ($0.string("id"), $0) })
+    guard (spec["workflow_comparison"] == nil) == (plan.workflowComparison == nil) else { return nil }
     struct Sample: Hashable { var variant: String; var repetition: Int64 }
     var values: [String: [Sample: Double]] = [:]
     for report in reports {
@@ -792,6 +930,7 @@ enum AgentCollaborationExperimentPlanIntake {
               ["baseline", "candidate"].contains(sample.string("variant")),
               sample.string("variant_sha256") == (sample.string("variant") == "baseline" ? baseline.sha256 : idea.sha256),
               sample.string("metric") == item.string("metric"),
+              plan.workflowComparison?.matches(sample) != false,
               item["dataset"] == nil || sample.string("dataset_sha256") == reference(item["dataset"])?.sha256,
               case .int(let repeatIndex)? = sample["repetition"], repeatIndex > 0,
               case .int(let count)? = item["repetitions"], repeatIndex <= count,
@@ -832,8 +971,9 @@ enum AgentCollaborationExperimentPlanIntake {
         passed = maximize ? candidate >= threshold : candidate <= threshold
       default: passed = gain > 0 && gain >= (number(item["minimum_gain"]) ?? 0)
       }
-      results.append(.init(id: id, purpose: purpose, state: passed ? "passed" : "not_met",
-        baseline: control, candidate: candidate, gain: gain))
+      let anchorMet = anchors[id]?.passes(candidate, case: item)
+      results.append(.init(id: id, purpose: purpose, state: passed && anchorMet != false ? "passed" : "not_met",
+        baseline: control, candidate: candidate, gain: gain, originalAnchorMet: anchorMet))
     }
     return results
   }
@@ -846,6 +986,7 @@ struct AgentCollaborationMeasuredCase: Codable, Equatable {
   var baseline: Double? = nil
   var candidate: Double? = nil
   var gain: Double? = nil
+  var originalAnchorMet: Bool? = nil
 
   static func supportsRetention(_ cases: [Self]) -> Bool {
     cases.contains { $0.purpose == "target" } &&
@@ -855,6 +996,28 @@ struct AgentCollaborationMeasuredCase: Codable, Equatable {
 }
 
 enum AgentCollaborationWorkflowIntake {
+  static func validatesLineage(
+    _ method: AgentMcpJSONObject, parents: [AgentCollaborationResearchReference],
+    current: (AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision?
+  ) rethrows -> Bool {
+    guard method["previous_method"] != nil else { return method["feedback"] == nil }
+    let reference = AgentCollaborationExperimentPlanIntake.reference
+    guard let prior = reference(method["previous_method"]), parents.contains(prior),
+          let saved = try current(prior), saved.reference == prior, saved.draft.kind == .workflowMethod,
+          let domain = method["domain"]?.strictStringValue, !domain.isBlank,
+          saved.draft.body["workflow_method"]?.objectValue?["domain"] == .string(domain),
+          let feedback = method["feedback"]?.arrayValue, (1...32).contains(feedback.count)
+    else { return false }
+    var seen = Set<String>()
+    for entry in feedback {
+      guard let exact = reference(entry), exact != prior, seen.insert(exact.objectId).inserted, parents.contains(exact),
+            let record = try current(exact), record.reference == exact,
+            [.artifact, .experimentResult, .failureExperience, .predictionOutcome].contains(record.draft.kind)
+      else { return false }
+    }
+    return true
+  }
+
   static func validates(_ method: AgentMcpJSONObject) -> Bool {
     guard ["purpose", "domain", "bottleneck", "change_rationale", "applies_when", "avoid_when", "risks",
            "expected_gain", "falsifier"].allSatisfy({ method[$0]?.stringValue?.isBlank == false }),
@@ -913,13 +1076,37 @@ enum AgentCollaborationWorkflowIntake {
 
 struct AgentCollaborationResearchEnvelope: Decodable {
   static let wireFormat = "galaxyssi.research-artifact.v1"
+  static let maximumReplyBytes = 256_000
   var format: String
   var workspace: [AgentCollaborationResearchDraft]?
   var milestones: [String]?
 
+  private struct FormatHeader: Decodable {
+    let format: String
+  }
+
+  // Parse a view of the reply; hashing and persistence still use the original bytes.
+  static func replyJSON(in raw: String) -> Data? {
+    guard raw.utf8.count <= maximumReplyBytes, raw.contains(wireFormat) else { return nil }
+    let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    if text.hasPrefix("```"), text.hasSuffix("```"),
+       let newline = text.firstIndex(where: { $0.isNewline }),
+       ["```", "```json"].contains(text[..<newline].lowercased()) {
+      let end = text.index(text.endIndex, offsetBy: -3)
+      let start = text.index(after: newline)
+      if start <= end { return Data(text[start..<end].utf8) }
+    }
+    return Data(text.utf8)
+  }
+
+  static func isCompleteReply(_ raw: String) -> Bool {
+    guard let data = replyJSON(in: raw) else { return false }
+    return (try? JSONDecoder().decode(FormatHeader.self, from: data))?.format == wireFormat
+  }
+
   static func publication(in raw: String) throws -> [AgentCollaborationResearchDraft]? {
-    guard raw.utf8.count <= 256_000, raw.contains(wireFormat) else { return nil }
-    let envelope = try JSONDecoder().decode(Self.self, from: Data(raw.utf8))
+    guard let data = replyJSON(in: raw) else { return nil }
+    let envelope = try JSONDecoder().decode(Self.self, from: data)
     guard envelope.format == wireFormat, let workspace = envelope.workspace, !workspace.isEmpty else { return nil }
     return workspace
   }
@@ -938,9 +1125,12 @@ struct AgentCollaborationResearchRevision: Codable {
   var draft: AgentCollaborationResearchDraft
   var frozenCloudReads: [AgentCollaborationFrozenCloudRead]? = nil
   var declaredExpectedUtilities: [String: Double]? = nil
+  var retainedProcedure: AgentCollaborationProcedure? = nil
   var expectedInformationGainBits: [String: Double]? = nil
   var hypothesisFeedback: AgentMcpJSONObject? = nil
   var carriedHypothesisPosterior: AgentMcpJSONObject? = nil
+  var retentionBank: AgentCollaborationCapabilityBank? = nil
+  var capabilitySelection: AgentCollaborationCapabilitySelection? = nil
   var registeredAtMillis: Int64? = nil
   var measuredCases: [AgentCollaborationMeasuredCase]? = nil
   var trialAuthors: [String]? = nil
@@ -1138,6 +1328,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
   var dispatchCheckpoint: AgentTeamMemberDispatchCheckpoint?
   var dispatchDependencyMemberIds: [String]? = nil
   var dispatchResourceObservation: AgentMcpJSONObject? = nil
+  var dispatchAllowsSavedToolTest: Bool? = nil
   var displayName: String?
   var researchStage: String?
   var executionStartedAtMillis: Int64?
@@ -1193,6 +1384,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     case dispatchCheckpoint = "dispatch_checkpoint"
     case dispatchDependencyMemberIds = "dispatch_dependency_member_ids"
     case dispatchResourceObservation = "dispatch_resource_observation"
+    case dispatchAllowsSavedToolTest = "dispatch_allows_saved_tool_test"
     case displayName = "display_name"
     case researchStage = "research_stage"
     case executionStartedAtMillis = "execution_started_at_millis"
@@ -1220,6 +1412,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     )
     dispatchDependencyMemberIds = try container.decodeIfPresent([String].self, forKey: .dispatchDependencyMemberIds)
     dispatchResourceObservation = try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .dispatchResourceObservation)
+    dispatchAllowsSavedToolTest = try container.decodeIfPresent(Bool.self, forKey: .dispatchAllowsSavedToolTest)
   }
 
   func elapsedExecutionMillis(now: Int64, team: AgentTeamExecutionSnapshot) -> Int64? {
