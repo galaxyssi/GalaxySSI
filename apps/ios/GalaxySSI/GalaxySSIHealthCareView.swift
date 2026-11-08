@@ -394,6 +394,7 @@ private struct GalaxySSIHealthCareDetail: View {
           if hasMore { Button(t("more", "Show more")) { loadHistory(append: true) } }
         }
         GalaxySSIHealthCarePlansSection(records: records, concernID: id)
+        GalaxySSIHealthCareFollowUpsSection(records: records, concernID: id, metric: metric)
         Button(t("remove", "Delete concern"), role: .destructive) {
           deletionCandidate = concern
           confirmingDelete = true
