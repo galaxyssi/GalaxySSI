@@ -2,7 +2,8 @@ import Foundation
 
 struct AgentCollaborationCapabilityPage {
   private static let directoryKinds: Set<String> = [
-    "workflow_method", "executable_tool", "tool_test_plan", "failure_experience", "capability_lesson"
+    "workflow_method", "executable_tool", "tool_test_plan", "failure_experience", "capability_lesson",
+    "capability_suite", "capability_channel"
   ]
   struct Row: Hashable {
     let objectID: String
