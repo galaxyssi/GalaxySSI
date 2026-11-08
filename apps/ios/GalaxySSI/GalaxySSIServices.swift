@@ -15,6 +15,7 @@ final class MessageCoordinator: ObservableObject {
   @Published private(set) var pendingAgentReplyTurnIds: Set<String> = []
   @Published private(set) var pendingPeerSendContactIds: Set<String> = []
   @Published var contactReminders: [GalaxySSIContactReminder] = []
+  @Published var outgoingContactReminderPanel: GalaxySSIContactReminderPanelSelection?
   var contactReminderExpiryTask: Task<Void, Never>?
   lazy var contactReminderAlert = GalaxySSIContactReminderAlert()
   private var pendingCollaborationConversations: Set<String> = []
