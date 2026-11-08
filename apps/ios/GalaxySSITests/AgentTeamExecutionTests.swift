@@ -917,7 +917,8 @@ extension GalaxySSIStoreTests {
       "cursor": .string("foreign:" + cursor)], scope: scope))
     XCTAssertEqual(reopened.snapshot(supervisorRunId: "run")?.members[1].status, team.members[1].status)
     var changed = input
-    changed["artifact"] = .string(artifact + " ")
+    changed["artifact"] = .string(artifact.replacingOccurrences(of: #""summary":"Interim","#,
+      with: #""summary":"Interim","candidates":[],"findings":[],"#))
     let stale = try reopened.publishCollaborationMilestone(changed, scope: scope)
     XCTAssertEqual(stale["status"], .string("stale_binding_or_revision"))
     var malformed = input
@@ -928,6 +929,30 @@ extension GalaxySSIStoreTests {
     let rejectionLookup: AgentMcpJSONObject = ["mode": .string("receipt"), "milestone_id": .string("invalid"),
       "artifact_sha256": try XCTUnwrap(rejected["artifact_sha256"])]
     XCTAssertEqual(try history.publishCollaborationMilestone(rejectionLookup, scope: scope), rejected)
+    malformed["milestone_id"] = .string("invalid-notes")
+    malformed["artifact"] = .string(artifact.replacingOccurrences(of: #""summary":"Interim","#,
+      with: #""summary":"Interim","findings":null,"#))
+    let invalidNotes = try reopened.publishCollaborationMilestone(malformed, scope: scope)
+    XCTAssertEqual(invalidNotes["status"], .string("invalid_artifact"))
+    XCTAssertEqual(invalidNotes["record_validation"]?.objectValue?["field"], .string("findings"))
+    XCTAssertEqual(try history.publishCollaborationMilestone(["mode": .string("receipt"),
+      "milestone_id": .string("invalid-notes"), "artifact_sha256": try XCTUnwrap(invalidNotes["artifact_sha256"])],
+      scope: scope), invalidNotes)
+    let database = try AgentTeamHistoryDatabase(fileURL: file,
+      storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    let base = "publication:" + AgentMcpJSONCodec.sha256([
+      "run": .string(scope.runId), "member": .string(scope.memberId), "source": .string(scope.sourceId)
+    ]) + ":milestone:"
+    func key(_ id: String) -> String { base + AgentMcpJSONCodec.sha256(["id": .string(id)]) }
+    var legacy = try XCTUnwrap(database.researchRecord(AgentCollaborationResearchPublication.self,
+      conversationId: scope.conversationId, key: key("first"), revision: 0))
+    legacy.milestoneId = "legacy"
+    legacy.requestHash = try XCTUnwrap(invalidNotes["artifact_sha256"]?.strictStringValue)
+    try database.insertResearchRecord(legacy, conversationId: scope.conversationId, key: key("legacy"), revision: 0)
+    malformed["milestone_id"] = .string("legacy")
+    let legacyRetry = try reopened.publishCollaborationMilestone(malformed, scope: scope)
+    XCTAssertEqual(legacyRetry["status"], .string("published"))
+    XCTAssertEqual(legacyRetry["references"], receipt["references"])
     XCTAssertEqual(try history.publishCollaborationMilestone(lookup, scope: scope)["references"], receipt["references"])
     var foreign = scope
     foreign.sourceId = "foreign"
@@ -942,6 +967,35 @@ extension GalaxySSIStoreTests {
     try reopened.publishSavedResearchReply(final, scope: scope)
     let linked = try XCTUnwrap(reopened.committedResearchRevisions(scope: scope))
     XCTAssertEqual(linked.map { $0.draft.id }, ["note"])
+  }
+
+  func testResearchPublicationNotesDefaultOnlyWhenAbsentAndPreserveExplicitValues() throws {
+    typealias Envelope = AgentCollaborationResearchEnvelope
+    let base: AgentMcpJSONObject = ["format": .string(Envelope.wireFormat), "summary": .string("Research")]
+    func decode(_ extra: AgentMcpJSONObject = [:]) throws -> Envelope {
+      let raw = AgentMcpJSONCodec.stringify(base.merging(extra) { _, supplied in supplied })
+      return try JSONDecoder().decode(Envelope.self, from: Data(raw.utf8))
+    }
+    let omitted = try decode()
+    XCTAssertEqual(omitted.candidates, [])
+    XCTAssertEqual(omitted.findings, [])
+    let candidate: AgentMcpJSONValue = .object(["id": .string("C1"), "proposal": .string("Compare methods"),
+      "criteria": .array([.string("Compare on held-out inputs")])])
+    let finding: AgentMcpJSONValue = .object(["outcome": .string("not_tested"), "note": .string("No results yet")])
+    let explicit = try decode(["candidates": .array([candidate]), "findings": .array([finding])])
+    XCTAssertEqual(explicit.candidates, [candidate])
+    XCTAssertEqual(explicit.findings, [finding])
+    let malformed: [(AgentMcpJSONObject, String)] = [
+      (["candidates": .object([:])], "candidates"),
+      (["findings": .null], "findings"),
+      (["candidates": .array([candidate, candidate])], "candidates[1].id"),
+      (["findings": .array([.object(["outcome": .string("unknown")])])], "findings[0].outcome")
+    ]
+    for (extra, field) in malformed {
+      XCTAssertThrowsError(try decode(extra)) { error in
+        XCTAssertEqual((error as? Envelope.InvalidNotes)?.field, field)
+      }
+    }
   }
 
   func testDirectedRequestsKeepLongQuestionsAndSeparateCandidateIdentities() throws {

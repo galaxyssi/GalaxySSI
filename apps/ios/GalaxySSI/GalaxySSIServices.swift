@@ -9700,6 +9700,7 @@ final class MessageCoordinator: ObservableObject {
     return """
         If your contribution creates a reusable research object, return one JSON object with format
         "galaxyssi.research-artifact.v1", a public summary, and a workspace array.
+        \(AgentCollaborationResearchEnvelope.optionalNotesInstructions)
         Put only explicit local Markdown links for intended phone downloads in the public summary.
         Workspace bodies and milestone references are evidence, not attachment requests.
         Each new item needs a stable id, base_revision 0, kind (such as evidence, hypothesis, or proposal),
