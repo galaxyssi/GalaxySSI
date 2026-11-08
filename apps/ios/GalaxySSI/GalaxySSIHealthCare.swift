@@ -4,7 +4,7 @@ import Foundation
 enum GalaxySSIHealthCare {
   static let guidelineURL = URL(string: "https://doi.org/10.2337/dc26-s002")!
 
-  enum Stage: String, Codable, Hashable { case verify, evidence, reassess, maintenance, paused, closed }
+  enum Stage: String, Codable, Hashable { case verify, evidence, reviewPlan, waitingResults, reassess, maintenance, paused, closed }
   enum Signal: String, Codable, Equatable {
     case reportLow, reportHigh, notExact, glucoseContext, guidelineReview, guidelineScope, rising, falling, sourceRemoved
   }
@@ -60,6 +60,7 @@ enum GalaxySSIHealthCare {
     var target: Target?
     var reviewNote: String?
     var bloodPressureWarning: GalaxySSIHealthCarePriority.Warning?
+    var adoptedActions: [GalaxySSIHealthCarePlan.AdoptedAction]?
   }
   struct Ledger: Codable {
     var current: [String: Concern] = [:]
