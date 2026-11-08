@@ -1085,13 +1085,15 @@ final class GalaxySSIStore: ObservableObject {
     messageId: UUID,
     contactId: String
   ) -> Bool {
-    guard var messages = messagesByContact[contactId],
-          let index = messages.firstIndex(where: { $0.id == messageId }) else {
-      return false
+    guard var message = persistedMessage(id: messageId, contactId: contactId), !message.isSystem else { return false }
+    message.voiceTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard chatHistoryDatabase.upsert(message) else { return false }
+    if let index = messagesByContact[contactId]?.firstIndex(where: { $0.id == messageId }) {
+      let previous = suppressMessageDatabaseSync
+      suppressMessageDatabaseSync = true
+      defer { suppressMessageDatabaseSync = previous }
+      messagesByContact[contactId]?[index] = message
     }
-    messages[index].voiceTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-    messagesByContact[contactId] = messages
-    save()
     return true
   }
 

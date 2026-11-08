@@ -607,6 +607,7 @@ struct ConversationView: View {
   @State private var composerTextModeActive = false
   @State private var retryingMessageIDs: Set<UUID> = []
   @State private var transcribingVoiceMessageIDs: Set<UUID> = []
+  @State private var peerMessageActions: GalaxySSIPeerMessageActionTarget?
   @State private var peerVoiceTranscriptionError = ""
   @State private var cloudModelSwitchPresented = false
   @State private var runtimeArtifactPreview: GalaxySSIRuntimeArtifactPreview?
@@ -916,16 +917,19 @@ struct ConversationView: View {
       resumeMessageViewport()
       refreshVisibleContactReadState()
     }
+    .onChange(of: peerMessageActionScope) { _ in peerMessageActions = nil }
     .onChange(of: composerAttachmentScope) { _ in
       resetMessageWindowIfNeeded()
       refreshVisibleContactReadState()
     }
     .onChange(of: fileImporterPresented || cameraPickerPresented, perform: attachmentPickerViewportChanged)
     .onChange(of: scenePhase) { phase in
+      if phase != .active { peerMessageActions = nil }
       if phase == .active { resumeMessageViewport() } else { suspendMessageViewport() }
       refreshVisibleContactReadState()
     }
     .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
+      peerMessageActions = nil
       suspendMessageViewport()
     }
     .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextDidRestore)) { _ in
@@ -933,6 +937,7 @@ struct ConversationView: View {
     }
     .onChange(of: conversationWindowFocused) { _ in refreshVisibleContactReadState() }
     .onDisappear {
+      peerMessageActions = nil
       conversationVisible = false
       if fileImporterPresented || cameraPickerPresented { pickerViewportDetached = true }
       loadingOlderMessages = false
@@ -946,6 +951,11 @@ struct ConversationView: View {
     }
     .sheet(isPresented: $contactReminderSettingsPresented) {
       GalaxySSIContactReminderSettingsView(coordinator: coordinator, t: t)
+    }
+    .confirmationDialog(t("message_actions_title", "Message Actions"), isPresented: Binding(
+      get: { peerMessageActions != nil }, set: { if !$0 { peerMessageActions = nil } }),
+      titleVisibility: .visible, presenting: peerMessageActions) { target in
+      peerMessageActionButtons(target)
     }
     .fileImporter(
       isPresented: $fileImporterPresented,
@@ -1085,6 +1095,7 @@ struct ConversationView: View {
         language: interfaceLanguage
       )
     }
+    let target = GalaxySSIPeerMessageActionTarget(scope: peerMessageActionScope, contactID: contact.id, messageID: message.id)
     MessageBubble(
       message: message,
       myAvatarData: store.profile.avatarData,
@@ -1094,22 +1105,13 @@ struct ConversationView: View {
       isVoiceTranscriptionPending: transcribingVoiceMessageIDs.contains(message.id),
       isRetrying: retryingMessageIDs.contains(message.id),
       onRetry: { retryMessage(message) },
-      onDelete: { store.deleteMessage(message.id, contactId: contact.id) }
+      onDelete: { performPeerMessageAction(.delete, target: target) },
+      onMore: {
+        if resolvePeerMessage(target) != nil { peerMessageActions = target }
+      },
+      onCopy: { performPeerMessageAction(.copy, target: target) },
+      onTranscribe: { performPeerMessageAction(.transcribe, target: target) }
     )
-      .contextMenu {
-        if !message.isSystem {
-          Button {
-            UIPasteboard.general.string = GalaxySSIMessageActionPolicy.copyText(for: message)
-          } label: {
-            Label(t("galaxyssi.common.copy", "Copy"), systemImage: "doc.on.doc")
-          }
-          Button(role: .destructive) {
-            store.deleteMessage(message.id, contactId: contact.id)
-          } label: {
-            Label(t("galaxyssi.message.delete", "Delete Message"), systemImage: "trash")
-          }
-        }
-      }
     if waitingMessageIDs.contains(message.id) {
       AgentReplyWaitingIndicatorView()
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1121,6 +1123,44 @@ struct ConversationView: View {
         .onAppear {
           loadOlderMessages(anchorID: message.id, proxy: proxy)
         }
+    }
+  }
+
+  private var peerMessageActionScope: String { store.profile.identityFingerprint + ":" + composerAttachmentScope }
+
+  private func resolvePeerMessage(_ target: GalaxySSIPeerMessageActionTarget) -> ChatMessage? {
+    guard conversationVisible, scenePhase == .active else { return nil }
+    return target.resolve(scope: peerMessageActionScope, contactID: contact.id) {
+      store.persistedMessage(id: $0, contactId: $1)
+    }
+  }
+
+  private func performPeerMessageAction(_ action: GalaxySSIPeerMessageAction, target: GalaxySSIPeerMessageActionTarget) {
+    guard let message = resolvePeerMessage(target), GalaxySSIPeerMessageActionPolicy.actions(for: message).contains(action)
+    else { return }
+    switch action {
+    case .copy: UIPasteboard.general.string = GalaxySSIMessageActionPolicy.copyText(for: message)
+    case .transcribe: transcribePeerVoiceMessage(message)
+    case .delete: store.deleteMessage(message.id, contactId: message.contactId)
+    }
+  }
+
+  @ViewBuilder
+  private func peerMessageActionButtons(_ target: GalaxySSIPeerMessageActionTarget) -> some View {
+    if let message = resolvePeerMessage(target) {
+      let actions = GalaxySSIPeerMessageActionPolicy.actions(for: message)
+      if actions.contains(.copy) {
+        Button(t("galaxyssi.common.copy", "Copy")) { performPeerMessageAction(.copy, target: target) }
+      }
+      if actions.contains(.transcribe) {
+        Button(t("peer_voice_transcribe", "Transcribe")) { performPeerMessageAction(.transcribe, target: target) }
+          .disabled(transcribingVoiceMessageIDs.contains(target.messageID))
+      }
+      if actions.contains(.delete) {
+        Button(t("galaxyssi.message.delete", "Delete Message"), role: .destructive) {
+          performPeerMessageAction(.delete, target: target)
+        }
+      }
     }
   }
 
@@ -1507,23 +1547,19 @@ struct ConversationView: View {
   private func transcribePeerVoiceMessage(_ message: ChatMessage) {
     guard transcribingVoiceMessageIDs.insert(message.id).inserted else { return }
     let settings = store.voiceSettings
+    let profile = store.profile.identityFingerprint
+    let scope = peerMessageActionScope
     Task {
+      defer { transcribingVoiceMessageIDs.remove(message.id) }
       do {
         let transcript = try await GalaxySSIPeerVoiceTranscriber.shared.transcribe(
           message: message,
           settings: settings
         )
-        guard store.updateVoiceTranscript(
-          transcript,
-          messageId: message.id,
-          contactId: contact.id
-        ) else {
-          transcribingVoiceMessageIDs.remove(message.id)
-          return
-        }
-        transcribingVoiceMessageIDs.remove(message.id)
+        guard store.profile.identityFingerprint == profile else { return }
+        _ = store.updateVoiceTranscript(transcript, messageId: message.id, contactId: message.contactId)
       } catch {
-        transcribingVoiceMessageIDs.remove(message.id)
+        guard scope == peerMessageActionScope, conversationVisible, scenePhase == .active else { return }
         peerVoiceTranscriptionError = t(
           "peer_voice_transcription_failed",
           error.localizedDescription.ifBlank("Could not transcribe this voice message")
@@ -1924,6 +1960,9 @@ struct MessageBubble: View {
   var isRetrying = false
   var onRetry: () -> Void = {}
   var onDelete: (() -> Void)? = nil
+  var onMore: (() -> Void)? = nil
+  var onCopy: (() -> Void)? = nil
+  var onTranscribe: (() -> Void)? = nil
 
   var body: some View {
     if message.isSystem {
@@ -1941,50 +1980,22 @@ struct MessageBubble: View {
         }
         if message.isMine { Spacer(minLength: 48) }
         VStack(alignment: message.isMine ? .trailing : .leading, spacing: 4) {
-          GalaxySSIRichContentView(
-            content: message.content,
-            richOutputJson: message.richOutputJson,
-            isOutgoing: message.isMine,
-            expansionStorageKey: "message:\(message.id.uuidString)",
-            onAction: { action in
-              if let onActionWithMessage = onActionWithMessage {
-                onActionWithMessage(message, action)
-              } else {
-                onAction(action)
-              }
-            },
-            onFormSubmit: onFormSubmit
-          )
-            .environment(\.agentReplyParagraphSpeechAction, onParagraphDoubleTap)
-            .environment(\.agentInlineRuntimeImages, AgentRuntimeArtifactUi.allowsInlineImages(for: message))
-            .environment(\.peerTextSelection, onDelete.map {
-              GalaxySSIPeerTextSelectionContext(maximumWidth: max(1, bubbleMaxWidth - 24), onDelete: $0)
-            })
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .foregroundColor(.galaxySSITextPrimary)
-            .frame(maxWidth: bubbleMaxWidth, alignment: .leading)
-            .background(messageBubbleColor)
-            .overlay(
-              RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(message.isMine ? Color.clear : Color.galaxySSISeparator, lineWidth: 0.5)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-          if isVoiceTranscriptionPending || !message.voiceTranscript.isBlank {
-            Text(
-              isVoiceTranscriptionPending
-                ? t("peer_voice_transcribing", "Transcribing...")
-                : message.voiceTranscript
-            )
-              .font(.system(size: 14))
-              .foregroundColor(.galaxySSITextSecondary)
-              .multilineTextAlignment(message.isMine ? .trailing : .leading)
-              .fixedSize(horizontal: false, vertical: true)
-              .frame(maxWidth: bubbleMaxWidth, alignment: message.isMine ? .trailing : .leading)
-              .accessibilityIdentifier("peer_voice_transcript_\(message.id.uuidString)")
+          messageContent
+          if isVoiceTranscriptionPending {
+            Text(t("peer_voice_transcribing", "Transcribing..."))
+              .font(.system(size: 14)).foregroundColor(.galaxySSITextSecondary)
+          } else if !message.voiceTranscript.isBlank {
+            if let onDelete {
+              GalaxySSIPeerSelectableTranscript(text: message.voiceTranscript, messageID: message.id, outgoing: message.isMine,
+                selection: .init(maximumWidth: bubbleMaxWidth, onDelete: onDelete, onMore: onMore))
+            } else {
+              Text(message.voiceTranscript).font(.system(size: 14)).foregroundColor(.galaxySSITextSecondary)
+                .textSelection(.enabled)
+            }
           }
           HStack(spacing: 4) {
             Text(message.createdAt, style: .time)
+              .contextMenu { messageContextActions }
             if message.isMine {
               Text(
                 GalaxySSIPeerDeliveryPresentation.title(
@@ -1996,11 +2007,9 @@ struct MessageBubble: View {
               if canRetryTextMessage {
                 Button(action: onRetry) {
                   if isRetrying {
-                    ProgressView()
-                      .controlSize(.mini)
+                    ProgressView().controlSize(.mini)
                   } else {
-                    Image(systemName: "arrow.clockwise")
-                      .font(.caption.weight(.semibold))
+                    Image(systemName: "arrow.clockwise").font(.caption.weight(.semibold))
                   }
                 }
                 .buttonStyle(.plain)
@@ -2014,11 +2023,7 @@ struct MessageBubble: View {
           .foregroundColor(.galaxySSITextSecondary)
         }
         if message.isMine {
-          GalaxySSIProfileAvatar(
-            data: myAvatarData,
-            size: 36,
-            fingerprint: myIdentityFingerprint
-          )
+          GalaxySSIProfileAvatar(data: myAvatarData, size: 36, fingerprint: myIdentityFingerprint)
             .accessibilityHidden(true)
         }
         if !message.isMine { Spacer(minLength: 48) }
@@ -2032,6 +2037,65 @@ struct MessageBubble: View {
       .onPreferenceChange(MessageBubbleContainerWidthKey.self) { width in
         guard width > 0 else { return }
         messageContainerWidth = width
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var messageContent: some View {
+    let blocks = AgentRichContentCodec.presentationBlocks(content: message.content, richOutputJson: message.richOutputJson)
+    if blocks.contains(where: AgentRichSelectableParagraphs.supports) {
+      richBubble
+    } else {
+      richBubble.contextMenu { messageContextActions }
+    }
+  }
+
+  private var richBubble: some View {
+    GalaxySSIRichContentView(
+      content: message.content,
+      richOutputJson: message.richOutputJson,
+      isOutgoing: message.isMine,
+      expansionStorageKey: "message:\(message.id.uuidString)",
+      onAction: { action in
+        if let onActionWithMessage = onActionWithMessage {
+          onActionWithMessage(message, action)
+        } else {
+          onAction(action)
+        }
+      },
+      onFormSubmit: onFormSubmit
+    )
+    .environment(\.agentReplyParagraphSpeechAction, onParagraphDoubleTap)
+    .environment(\.agentInlineRuntimeImages, AgentRuntimeArtifactUi.allowsInlineImages(for: message))
+    .environment(\.peerTextSelection, onDelete.map {
+      GalaxySSIPeerTextSelectionContext(maximumWidth: max(1, bubbleMaxWidth - 24), onDelete: $0, onMore: onMore)
+    })
+    .padding(.horizontal, 12)
+    .padding(.vertical, 9)
+    .foregroundColor(.galaxySSITextPrimary)
+    .frame(maxWidth: bubbleMaxWidth, alignment: .leading)
+    .background(messageBubbleColor)
+    .overlay(
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .stroke(message.isMine ? Color.clear : Color.galaxySSISeparator, lineWidth: 0.5)
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+
+  @ViewBuilder
+  private var messageContextActions: some View {
+    let actions = GalaxySSIPeerMessageActionPolicy.actions(for: message)
+    if actions.contains(.copy), let onCopy {
+      Button(action: onCopy) { Label(t("galaxyssi.common.copy", "Copy"), systemImage: "doc.on.doc") }
+    }
+    if actions.contains(.transcribe), let onTranscribe {
+      Button(action: onTranscribe) { Label(t("peer_voice_transcribe", "Transcribe"), systemImage: "waveform") }
+        .disabled(isVoiceTranscriptionPending)
+    }
+    if actions.contains(.delete), let onDelete {
+      Button(role: .destructive, action: onDelete) {
+        Label(t("galaxyssi.message.delete", "Delete Message"), systemImage: "trash")
       }
     }
   }

@@ -2,6 +2,23 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIPeerVoiceTranscriptionTests: XCTestCase {
+  func testPeerSelectionResolvesExactMessageAfterHistoryChanges() {
+    let original = ChatMessage(contactId: "peer", content: "original", isMine: false)
+    let inserted = ChatMessage(contactId: "peer", content: "newer", isMine: true)
+    let target = GalaxySSIPeerMessageActionTarget(scope: "profile:peer", contactID: "peer", messageID: original.id)
+    var history = [original, inserted]
+    func lookup(_ id: UUID, _ contact: String) -> ChatMessage? {
+      history.first { $0.id == id && $0.contactId == contact }
+    }
+    history.reverse()
+    XCTAssertEqual(target.resolve(scope: "profile:peer", contactID: "peer", lookup: lookup), original)
+    XCTAssertNil(target.resolve(scope: "other-profile:peer", contactID: "peer", lookup: lookup))
+    XCTAssertNil(target.resolve(scope: "profile:peer", contactID: "other-peer", lookup: lookup))
+    XCTAssertNil(target.resolve(scope: "profile:peer", contactID: "peer") { _, _ in inserted })
+    history.removeAll { $0.id == original.id }
+    XCTAssertNil(target.resolve(scope: "profile:peer", contactID: "peer", lookup: lookup))
+  }
+
   func testVoiceMessagesOfferTranscriptionAndDeleteOnly() {
     let message = peerVoiceMessage()
 

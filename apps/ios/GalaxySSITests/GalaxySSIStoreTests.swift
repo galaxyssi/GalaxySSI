@@ -2023,6 +2023,20 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertFalse(store.deleteMessage(original.id, contactId: "desktop-a"))
   }
 
+  func testPeerVoiceTranscriptUpdatesExactPersistedMessageOutsideVisibleHistory() {
+    let store = makeStore()
+    let original = store.appendIncoming("Voice message", from: "peer-a", remoteMessageId: "remote-voice")
+    store.messagesByContact["peer-a"] = []
+    XCTAssertTrue(store.messages(for: "peer-a").isEmpty)
+    XCTAssertFalse(store.updateVoiceTranscript("foreign", messageId: original.id, contactId: "peer-b"))
+    XCTAssertTrue(store.updateVoiceTranscript(" Local transcript ", messageId: original.id, contactId: "peer-a"))
+    XCTAssertEqual(store.persistedMessage(id: original.id, contactId: "peer-a")?.voiceTranscript, "Local transcript")
+    XCTAssertTrue(store.messages(for: "peer-a").isEmpty, "Transcription must not force the message into the visible page")
+    XCTAssertTrue(store.deleteMessage(original.id, contactId: "peer-a"))
+    XCTAssertFalse(store.updateVoiceTranscript("stale", messageId: original.id, contactId: "peer-a"))
+    XCTAssertNil(store.persistedMessage(id: original.id, contactId: "peer-a"))
+  }
+
   func testScreenAssistantSettingMigratesOffAndRoundTripsWithoutLosingTextScale() throws {
     let legacy = try JSONDecoder.galaxySSI.decode(AppDisplaySettings.self,
       from: Data(#"{"text_scale":"large"}"#.utf8))
