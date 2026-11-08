@@ -621,7 +621,8 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   func recallCollaborationOriginal(_ input: AgentMcpJSONObject,
-                                   scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+                                   scope: AgentCollaborationToolEvidenceScope, generation: Int64? = nil,
+                                   recordEvidenceCoverage: Bool = true) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
     if mode == "dependency" { return try recallDependencyOriginal(input, scope: scope) }
     if mode == "capabilities" { return try recallCapabilities(input, scope: scope) }
@@ -655,6 +656,20 @@ final class AgentTeamExecutionHistoryStore {
         expectedHash: input["sha256"]?.stringValue)
     }
     if mode == "problems" { return try recallCloudProblems(input, scope: scope) }
+    if mode == AgentCollaborationSourceAccess.mode {
+      return try access { database in
+        guard let team = try database.snapshots(runId: scope.runId).first,
+              team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
+              let member = team.members.first(where: { $0.memberId == scope.memberId &&
+                $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }),
+              try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+                key: "native-evidence-revoked", revision: 0) != true else {
+          throw AgentTeamHistoryDatabase.Failure.stale
+        }
+        return try AgentCollaborationSourceAccess.page(input, scope: scope,
+          dependencies: member.dispatchDependencyMemberIds ?? [], generation: generation, database: database)
+      }
+    }
     let hash = input.string("sha256")
     let idKey = mode == "workspace" ? "object_id" : "evidence_id"
     let id = input.string(idKey)
@@ -668,15 +683,11 @@ final class AgentTeamExecutionHistoryStore {
     }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
-    func page(_ bytes: Data) throws -> (content: String, end: Int64, total: Int64) {
-      let characters = String(decoding: bytes, as: UTF8.self)
-      let total = Int64(characters.count)
-      guard offset <= total else { throw AgentTeamHistoryDatabase.Failure.corrupt }
-      let content = String(characters.dropFirst(Int(offset)).prefix(2_000))
-      return (content, offset + Int64(content.count), total)
+    func page(_ bytes: Data) throws -> AgentCollaborationEvidenceContent.Page {
+      try AgentCollaborationEvidenceContent.page(bytes, offset: offset, evidence: mode == "evidence")
     }
     let (slice, sourceReference, coverage) = try access { database
-      -> ((content: String, end: Int64, total: Int64), AgentMcpJSONObject?, AgentMcpJSONObject?) in
+      -> (AgentCollaborationEvidenceContent.Page, AgentMcpJSONObject?, AgentMcpJSONObject?) in
       guard let team = try database.snapshots(runId: scope.runId).first,
             team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
             team.members.contains(where: { $0.memberId == scope.memberId &&
@@ -687,38 +698,32 @@ final class AgentTeamExecutionHistoryStore {
       }
       if mode == "workspace" {
         guard case .int(let revision)? = input["revision"], revision > 0,
-              let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
-                conversationId: scope.conversationId, key: "object:" + id, revision: revision),
-              record.reference.objectId == id, record.reference.revision == revision,
-              record.reference.sha256 == hash,
-              record.turnId != scope.turnId || (record.runId == scope.runId && record.authorId == scope.memberId)
+              let record = try database.readableCollaborationRevision(
+                .init(objectId: id, revision: revision, sha256: hash), scope: scope)
         else { throw AgentTeamHistoryDatabase.Failure.stale }
         return (try page(encoder.encode(record)), nil, nil)
       }
-      guard let record = try database.cloudEvidence(id: id, conversationId: scope.conversationId),
-            record.scope.conversationId == scope.conversationId,
-            record.scope.turnId != scope.turnId || record.scope == scope else {
+      guard let observation = try database.readableCollaborationEvidence(id: id, sha256: hash, scope: scope) else {
         throw AgentTeamHistoryDatabase.Failure.stale
       }
-      let data = try encoder.encode(record)
-      guard SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == hash else {
-        throw AgentTeamHistoryDatabase.Failure.corrupt
-      }
-      let slice = try page(data)
+      let record = observation.record
+      let slice = try page(observation.bytes)
+      let reference: AgentMcpJSONObject = [
+        "evidence_id": .string(id), "sha256": .string(hash), "origin": .string("ios_cloud_tool"),
+        "tool": .string(record.call.name), "status": .string(record.observedFailure ? "failed" : "succeeded")
+      ]
+      if !recordEvidenceCoverage { return (slice, reference, nil) }
       let key = Self.cloudReadCoverageKey(scope: scope, id: id, hash: hash)
       let previous = try database.researchRecord(AgentCollaborationReadCoverage.self,
         conversationId: scope.conversationId, key: key, revision: 0) ?? AgentCollaborationReadCoverage()
       var coverage = previous
-      coverage.include(start: offset, end: slice.end)
+      coverage.include(start: slice.ledgerStart, end: slice.ledgerEnd)
       if coverage != previous {
         try database.insertResearchRecord(coverage, conversationId: scope.conversationId,
           key: key, revision: 0, replaceCoverage: true)
       }
       let complete = coverage.contiguousEnd == slice.total
-      return (slice, [
-        "evidence_id": .string(id), "sha256": .string(hash), "origin": .string("ios_cloud_tool"),
-        "tool": .string(record.call.name), "status": .string(record.observedFailure ? "failed" : "succeeded")
-      ], [
+      return (slice, reference, [
         "complete": .bool(complete), "total_characters": .int(slice.total),
         "first_missing_offset": complete ? .null : .int(coverage.contiguousEnd),
         "content_utf8_sha256": .string(hash)
@@ -726,15 +731,18 @@ final class AgentTeamExecutionHistoryStore {
     }
     var result: AgentMcpJSONObject = [
       idKey: .string(id), "sha256": .string(hash), "content": .string(slice.content),
-      "next_offset": slice.end < slice.total ? .int(slice.end) : .null,
+      "next_offset": slice.end < slice.wireTotal ? .int(slice.end) : .null,
       "trust": .string("untrusted_group_evidence")
     ]
-    if let coverage { result["host_read_coverage"] = .object(coverage) }
+    if let coverage { result["host_read_coverage"] = .object(try slice.wireCoverage(coverage)) }
     if let sourceReference {
+      result["offset_unit"] = .string(AgentCollaborationEvidenceContent.offsetUnit)
       result["source_reference"] = .object(sourceReference)
       result["citation_guidance"] = .string(
         "Cite the original observation using source_reference.evidence_id and source_reference.sha256. " +
-        "galaxyssi_evidence_receipt records this read, not the original observation. Follow next_offset until null; " +
+        "galaxyssi_evidence_receipt records this read, not the original observation. Follow next_offset until null. " +
+        "For a file digest, concatenate content pages exactly without reformatting and hash their UTF-8 bytes. " +
+        "Compare host_read_coverage.content_utf8_sha256, not the JSON-string digest content_sha256 or the citation SHA-256; " +
         "reading every page does not verify the claims in the source."
       )
     }

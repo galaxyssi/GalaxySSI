@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 @testable import GalaxySSI
 
@@ -354,6 +355,13 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(full["first_missing_offset"], .null)
     let content = firstPage.string("content") + secondPage.string("content") + lastPage.string("content")
     XCTAssertTrue(content.contains("web_search"))
+    let fileDigest = SHA256.hash(data: Data(content.utf8)).map { String(format: "%02x", $0) }.joined()
+    XCTAssertEqual(full["content_utf8_sha256"], .string(fileDigest))
+    XCTAssertEqual(partial["content_utf8_sha256"], full["content_utf8_sha256"])
+    XCTAssertNotEqual(full["content_sha256"], full["content_utf8_sha256"])
+    XCTAssertEqual(full["content_sha256_encoding"], .string("galaxyssi_json_string_utf8_v1"))
+    XCTAssertEqual(full["content_digest_scope"], .string("complete_evidence_content"))
+    XCTAssertEqual(firstPage["offset_unit"], .string("utf16_code_units"))
     var invalidScope = scope
     invalidScope.memberId = "foreign-member"
     XCTAssertThrowsError(try reopened.recallCollaborationOriginal(input, scope: invalidScope))
@@ -404,6 +412,48 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(try publish(review).references, reviewPublication.references)
     let savedReview = try XCTUnwrap(reopened.committedResearchRevisions(scope: scope)?.first)
     XCTAssertEqual(savedReview.frozenCloudReads?.first?.evidenceId, source["evidence_id"]?.stringValue)
+  }
+
+  func testEvidenceUTF16PagesPreserveExistingCoverageAndExactBytes() throws {
+    let fragment = "\u{8BC1}\n\"quoted\"\\path\t\u{1F600}e\u{0301}"
+    let content = String(repeating: fragment, count: 340)
+    let bytes = Data(content.utf8)
+    func digest(_ value: String) -> AgentMcpJSONValue {
+      .string(SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined())
+    }
+    let first = try AgentCollaborationEvidenceContent.page(bytes, offset: 0, evidence: true)
+    XCTAssertEqual(first.ledgerEnd, 2_000)
+    XCTAssertEqual(first.end, Int64(first.content.utf16.count))
+    XCTAssertGreaterThan(first.end, first.ledgerEnd)
+    let legacy = Data(#"{"spans":[{"start":0,"end":2000}]}"#.utf8)
+    var coverage = try JSONDecoder().decode(AgentCollaborationReadCoverage.self, from: legacy)
+    let second = try AgentCollaborationEvidenceContent.page(bytes, offset: first.end, evidence: true)
+    XCTAssertEqual(try second.firstMissingOffset(coverage.contiguousEnd), .int(first.end))
+    XCTAssertEqual(second.wireTotal, Int64(content.utf16.count))
+    XCTAssertLessThan(coverage.contiguousEnd, second.total)
+    XCTAssertEqual(.string(second.rawDigest), digest(content))
+    XCTAssertEqual(.string(second.jsonStringDigest), digest(AgentMcpJSONCodec.stringify(.string(content))))
+    XCTAssertNotEqual(.string(second.rawDigest), digest(second.content))
+    XCTAssertEqual(coverage.spans, [.init(start: 0, end: 2_000)])
+    let emoji = try XCTUnwrap(content.firstIndex(of: "\u{1F600}"))
+    XCTAssertThrowsError(try AgentCollaborationEvidenceContent.page(bytes,
+      offset: Int64(emoji.utf16Offset(in: content) + 1), evidence: true))
+    var cursor = first.end
+    var joined = Data(first.content.utf8)
+    while cursor < first.wireTotal {
+      let page = try AgentCollaborationEvidenceContent.page(bytes, offset: cursor, evidence: true)
+      XCTAssertGreaterThan(page.end, cursor)
+      guard page.end > cursor else { return }
+      joined.append(contentsOf: page.content.utf8)
+      coverage.include(start: page.ledgerStart, end: page.ledgerEnd)
+      cursor = page.end
+    }
+    XCTAssertEqual(joined, bytes)
+    XCTAssertEqual(try first.firstMissingOffset(coverage.contiguousEnd), .null)
+    XCTAssertEqual(first.rawDigest, second.rawDigest)
+    XCTAssertEqual(coverage.contiguousEnd, Int64(content.count))
+    let workspace = try AgentCollaborationEvidenceContent.page(bytes, offset: 0, evidence: false)
+    XCTAssertEqual(workspace.end, workspace.ledgerEnd)
   }
 
   func testCommittedPredictionOutcomeRecoveryRequiresMatchingFrozenObservation() throws {
@@ -2111,6 +2161,98 @@ extension GalaxySSIStoreTests {
     input["member_id"] = .string("review")
     history.removeResearchObjects(conversationId: team.conversationId)
     XCTAssertThrowsError(try history.recallCollaborationOriginal(input, scope: scope))
+  }
+
+  func testSourceAccessReturnsOnlyDirectReadableSelectorsWithoutCoverage() throws {
+    let suite = "team-source-access-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: folder) }
+    let secrets = InMemorySecretStore()
+    let file = folder.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let database = try AgentTeamHistoryDatabase(fileURL: file,
+      storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    let team = durableTeamSnapshot("source-access")
+    XCTAssertTrue(history.upsert(team))
+    let member = try XCTUnwrap(team.members.first { !$0.status.isTerminal })
+    let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId, memberId: member.memberId, sourceId: member.sourceMessageId)
+    let observation = AgentCollaborationCloudToolEvidence(scope: scope, round: 1,
+      call: AssembledToolCall(callId: "observation", index: 0, name: "web_search", argumentsJson: "{}"),
+      output: "private tool result", succeeded: true, startedAtMillis: 10, finishedAtMillis: 12)
+    let receipt = try history.recordCloudEvidence(observation)
+    let evidenceID = receipt.string("evidence_id")
+    let digest = receipt.string("sha256")
+    func reference(_ index: Int64) -> AgentCollaborationResearchReference {
+      .init(objectId: String(format: "%064llx", index), revision: 1, sha256: String(format: "%064llx", index + 100))
+    }
+    func revision(_ ref: AgentCollaborationResearchReference, author: String,
+                  parents: [AgentCollaborationResearchReference] = []) -> AgentCollaborationResearchRevision {
+      .init(reference: ref, previousHash: nil, runId: scope.runId, turnId: scope.turnId, authorId: author,
+        sourceId: scope.sourceId, draft: .init(id: "item", objectId: nil, baseRevision: 0, kind: .evidence,
+          title: "Private source title", body: ["embedded": .object(AgentCollaborationSourceAccess.workspaceReference(reference(98)))],
+          parents: parents))
+    }
+    let parents = (1...21).map { reference(Int64($0)) }
+    var root = revision(reference(99), author: scope.memberId, parents: parents)
+    root.frozenCloudReads = [.init(evidenceId: evidenceID, sha256: digest, totalCharacters: 1)]
+    try database.transaction {
+      for record in [root, revision(parents[0], author: scope.memberId, parents: [reference(98)]),
+                     revision(parents[1], author: "other-member")] {
+        try database.insertResearchRecord(record, conversationId: scope.conversationId,
+          key: "object:" + record.reference.objectId, revision: record.reference.revision)
+      }
+    }
+    var input = AgentCollaborationSourceAccess.workspaceReference(root.reference)
+    input["mode"] = .string("source_access")
+    let first = try history.recallCollaborationOriginal(input, scope: scope, generation: 1)
+    let rows = try XCTUnwrap(first["references"]?.arrayValue)
+    XCTAssertEqual(rows.count, 20)
+    XCTAssertEqual(first["total_references"], .int(22))
+    XCTAssertEqual(first["availability_snapshot"], .bool(false))
+    XCTAssertEqual(rows.first?.objectValue?["status"], .string("available"))
+    XCTAssertEqual(rows.dropFirst().first?.objectValue?["status"], .string("missing_changed_or_out_of_scope"))
+    XCTAssertNil(rows.dropFirst().first?.objectValue?["read_original"])
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(first).contains("Private source title"))
+    input["cursor"] = try XCTUnwrap(first["next_cursor"])
+    XCTAssertThrowsError(try history.recallCollaborationOriginal(input, scope: scope, generation: 2))
+    let second = try history.recallCollaborationOriginal(input, scope: scope, generation: 1)
+    let evidence = try XCTUnwrap(second["references"]?.arrayValue?.last?.objectValue)
+    XCTAssertEqual(second["next_cursor"], .null)
+    XCTAssertEqual(evidence["source_field"], .string("host_observations"))
+    XCTAssertEqual(evidence["status"], .string("available"))
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(second).contains("private tool result"))
+    let original = try XCTUnwrap(evidence["read_original"]?.objectValue)
+    let coverageKey = "cloud-read-coverage:" + AgentMcpJSONCodec.sha256([
+      "run": .string(scope.runId), "group": .string(scope.conversationId), "turn": .string(scope.turnId),
+      "member": .string(scope.memberId), "source": .string(scope.sourceId),
+      "evidence": .string(evidenceID), "sha256": .string(digest)
+    ])
+    func coverage() throws -> AgentCollaborationReadCoverage? {
+      try database.researchRecord(AgentCollaborationReadCoverage.self, conversationId: scope.conversationId,
+        key: coverageKey, revision: 0)
+    }
+    XCTAssertNil(try coverage())
+    var replay = AgentDesktopCollaborationResponseReplay()
+    func read(_ record: Bool) throws -> AgentMcpJSONObject {
+      try history.recallCollaborationOriginal(original, scope: scope, recordEvidenceCoverage: record)
+    }
+    let deliveryPage = try XCTUnwrap(AgentDesktopCollaborationEvidenceDelivery.exchange(input: original,
+      confirmation: nil, binding: "active", expiresAt: 100, now: 1, replay: &replay, read: read))
+    XCTAssertNil(deliveryPage["host_read_coverage"])
+    XCTAssertNil(try coverage())
+    let delivery = try XCTUnwrap(deliveryPage["delivery"]?.objectValue)
+    XCTAssertNil(try AgentDesktopCollaborationEvidenceDelivery.exchange(input: original,
+      confirmation: delivery, binding: "wrong", expiresAt: 100, now: 2, replay: &replay, read: read))
+    XCTAssertNil(try coverage())
+    let confirmed = try AgentDesktopCollaborationEvidenceDelivery.exchange(input: original,
+      confirmation: delivery, binding: "active", expiresAt: 100, now: 3, replay: &replay, read: read)
+    XCTAssertEqual(confirmed?["status"], .string("confirmed"))
+    XCTAssertNotNil(try coverage())
+    history.removeResearchObjects(conversationId: scope.conversationId)
+    XCTAssertThrowsError(try history.recallCollaborationOriginal(input, scope: scope, generation: 1))
   }
 
   func testMailboxMigratesWithoutEvictingOldPendingMessages() throws {

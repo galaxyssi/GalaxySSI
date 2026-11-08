@@ -18,6 +18,7 @@ final class MessageCoordinator: ObservableObject {
   var contactReminderExpiryTask: Task<Void, Never>?
   lazy var contactReminderAlert = GalaxySSIContactReminderAlert()
   private var pendingCollaborationConversations: Set<String> = []
+  private var pendingCollaborationFollowups: Set<String> = []
   private lazy var managedBrowserContinuations = AgentManagedBrowserContinuationStore(secrets: store.secrets)
   private var liveManagedBrowserMembers: Set<String> = []
   private var managedBrowserRecoveryInFlight: Set<String> = []
@@ -2748,7 +2749,7 @@ final class MessageCoordinator: ObservableObject {
     guard link.paired, payload.string("client_route_id") == link.routes.clientRouteId,
           !GalaxySSITransportPrivacyPolicy.isLocalOnly(payload),
           payload.string("agent_id") == "codex", payload.string("contract") == contract,
-          publishing || phase == "read", payload["delivery"] == nil,
+          publishing || ["read", "confirm"].contains(phase),
           (1...128).contains(requestId.utf8.count),
           let expiry = AgentTeamReplyObservation.integer(payload["expires_at"]),
           expiry > now, expiry - now <= 60_000,
@@ -2758,6 +2759,7 @@ final class MessageCoordinator: ObservableObject {
           let bytes = try? JSONSerialization.data(withJSONObject: arguments, options: [.withoutEscapingSlashes]),
           bytes.count <= (publishing ? 131_072 : 4_096),
           let input = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: bytes),
+          payload["delivery"] == nil ? phase != "confirm" : (!publishing && phase == "confirm"),
           !publishing || publication.accepts(phase: phase, input: input),
           let identity = taskIdentityStore.identity(contactId: contact, sourceMessageId: source),
           identity.taskId == source, taskIdentityStore.matchesRegistered(payload: payload),
@@ -2781,19 +2783,25 @@ final class MessageCoordinator: ObservableObject {
           parent.phase == .executing || parent.phase == .waitingResponse
     else { return }
 
+    let delivery = (payload["delivery"] as? [String: String])?.mapValues(AgentMcpJSONValue.string)
+    guard phase != "confirm" || AgentDesktopCollaborationEvidenceDelivery.acceptsConfirmation(input, delivery: delivery)
+    else { return }
     let history = AgentTeamExecutionHistoryStore.shared
     let scope = AgentCollaborationToolEvidenceScope(runId: context.team.supervisorRunId,
       conversationId: identity.conversationId, turnId: identity.turnId, memberId: context.member.memberId, sourceId: source)
     guard desktopCollaborationResponseReplay.begin(desktopId: link.desktopId) else { return }
     defer { desktopCollaborationResponseReplay.end(desktopId: link.desktopId) }
     let key = AgentMcpJSONCodec.sha256(["desktop": .string(link.desktopId), "request": .string(requestId)])
-    let fingerprint = AgentMcpJSONCodec.sha256([
+    let assignment: AgentMcpJSONObject = [
       "profile": .string(store.profile.identityFingerprint), "pair": .string(link.desktopFingerprint),
       "route": .string(identity.clientRouteId), "contact": .string(contact), "run": .string(scope.runId),
       "group": .string(scope.conversationId), "turn": .string(scope.turnId), "member": .string(scope.memberId),
-      "source": .string(scope.sourceId), "generation": .int(generation), "expires_at": .int(expiry),
-      "contract": .string(contract), "phase": .string(phase), "arguments": .object(input)
-    ])
+      "source": .string(scope.sourceId), "generation": .int(generation),
+      "contract": .string(contract), "arguments": .object(input)
+    ]
+    let fingerprint = AgentMcpJSONCodec.sha256(assignment.merging([
+      "expires_at": .int(expiry), "phase": .string(phase), "delivery": delivery.map(AgentMcpJSONValue.object) ?? .null
+    ]) { current, _ in current })
     let cached: AgentMcpJSONObject?
     switch desktopCollaborationResponseReplay.lookup(key: key, fingerprint: fingerprint, now: now) {
     case .identityMismatch: return
@@ -2842,6 +2850,21 @@ final class MessageCoordinator: ObservableObject {
           result = page
         }
       }
+    }
+    if cached == nil, !publishing, result["success"] != .bool(true),
+       [AgentCollaborationSourceAccess.mode, "workspace"].contains(input.string("mode")),
+       var page = try? history.recallCollaborationOriginal(input, scope: scope, generation: generation) {
+      page["success"] = .bool(true)
+      page["status"] = .string("returned")
+      result = page
+    }
+    if cached == nil, !publishing, input["mode"] == .string("evidence"),
+       let page = try? AgentDesktopCollaborationEvidenceDelivery.exchange(input: input, confirmation: delivery,
+         binding: AgentMcpJSONCodec.sha256(assignment), expiresAt: expiry, now: now,
+         replay: &desktopCollaborationResponseReplay, read: { recordCoverage in
+           try history.recallCollaborationOriginal(input, scope: scope, recordEvidenceCoverage: recordCoverage)
+         }) {
+      result = page
     }
     if cached == nil {
       desktopCollaborationResponseReplay.remember(result, key: key, fingerprint: fingerprint,
@@ -4206,7 +4229,44 @@ final class MessageCoordinator: ObservableObject {
       configuredMode: store.agentSafetySettings.taskExecutionMode
     ).mode
     let collaborationPlan: AgentPlan?
-    if let session = groupSession,
+    let collaborationFollowup: String?
+    let background = groupSession.flatMap { session in
+      AgentTeamExecutionHistoryStore.shared.recoverable(conversationId: session.id)
+        .first { [.running, .waitingResponse, .interrupted].contains($0.state) }
+    }
+    if let session = groupSession, let roster = session.collaborationRoster, let background {
+      guard session.mergedIntoConversationId.isBlank, !session.privateMode, !session.trackingPaused,
+            !readOnlyAnalysis, taskExecutionMode == .autoComplete, !requestText.isBlank,
+            let context = AgentTeamPlanCompiler.followupContext(background, conversation: session.id),
+            let selected = AgentTeamPlanCompiler.followupRoster(roster, mentioned: groupMentions?.memberIds ?? []),
+            let first = selected.members.first(where: { $0.id == selected.coordinatorId }),
+            let plan = requestedAgentPlan(goal: requestText,
+              requestedMembers: [AgentRequestedMember(agentId: first.resourceId, displayName: first.name)],
+              targets: callableTargets, roster: selected),
+            selected.members.allSatisfy({ entry in
+              guard !entry.modelId.isBlank else { return true }
+              guard let target = store.contact(id: entry.resourceId), target.isCommunicable else { return false }
+              if target.deliveryMode.isGalaxySSILinkFamily {
+                return target.connectorAdapterName == "codex-app-server-or-cli" &&
+                  target.connectorInvocationProfile.models.contains(where: { $0.id == entry.modelId })
+              }
+              guard let model = target.cloudModels.first(where: { $0.id == entry.modelId }) else { return false }
+              return !(store.apiKey(for: model) ?? "").isEmpty
+            }) else {
+        lastError = GalaxySSILocalization.string("galaxyssi.collaboration.execution_unavailable",
+          fallback: "The group cannot run with its current members or session settings. Your draft has not been sent.",
+          language: store.languagePolicy.interfaceLanguage)
+        return false
+      }
+      guard pendingCollaborationFollowups.insert(session.id).inserted else {
+        lastError = GalaxySSILocalization.string("galaxyssi.collaboration.execution_busy",
+          fallback: "This collaboration group is still dispatching its previous request.",
+          language: store.languagePolicy.interfaceLanguage)
+        return false
+      }
+      collaborationPlan = plan
+      collaborationFollowup = context
+    } else if let session = groupSession,
        let roster = session.collaborationRoster {
       guard session.mergedIntoConversationId.isBlank, !session.privateMode, !session.trackingPaused,
             !readOnlyAnalysis, taskExecutionMode == .autoComplete,
@@ -4236,12 +4296,15 @@ final class MessageCoordinator: ObservableObject {
         return false
       }
       collaborationPlan = plan
+      collaborationFollowup = nil
     } else {
       collaborationPlan = nil
+      collaborationFollowup = nil
     }
     defer {
       if collaborationPlan != nil, let id = groupSession?.id {
-        pendingCollaborationConversations.remove(id)
+        if collaborationFollowup != nil { pendingCollaborationFollowups.remove(id) }
+        else { pendingCollaborationConversations.remove(id) }
       }
     }
     let richOutputJson = outgoingAttachmentRichOutput(
@@ -4262,7 +4325,8 @@ final class MessageCoordinator: ObservableObject {
       richOutputJson: richOutputJson,
       messageId: outgoingMessageId,
       requestKind: requestKind,
-      readOnlyAnalysis: readOnlyAnalysis
+      readOnlyAnalysis: readOnlyAnalysis,
+      conversationOverride: groupSession?.id
     )
     if let voiceAppAnchor, !readOnlyAnalysis {
       voiceAppContexts.bind(voiceAppAnchor, conversationID: outgoing.conversationId, turnID: outgoing.turnId)
@@ -4347,7 +4411,7 @@ final class MessageCoordinator: ObservableObject {
         guard try await publishRequestedAgentTeam(plan: collaborationPlan, requestedMembers: [],
           requestText: requestText, outgoing: outgoing, attachments: effectiveAttachments,
           voiceSessionId: voiceSessionId, executionMode: taskExecutionMode, targets: callableTargets,
-          stagedAttachments: stagedAttachments) == true
+          stagedAttachments: stagedAttachments, followupContext: collaborationFollowup) == true
         else { throw GalaxySSIError.invalidPayload("The collaboration team could not be dispatched") }
         return true
       } catch let budget as AgentCollaborationPromptBudget.Failure {
@@ -7913,7 +7977,8 @@ final class MessageCoordinator: ObservableObject {
     executionMode: AgentTaskExecutionMode,
     targets: [AgentCallableTarget],
     stagedAttachments: [AgentStagedAttachment] = [],
-    recovery: AgentManagedBrowserTeamDispatch? = nil
+    recovery: AgentManagedBrowserTeamDispatch? = nil,
+    followupContext: String? = nil
   ) async throws -> Bool? {
     guard let action = plan.actions.first else { return nil }
     let isCollaboration = action.parameters["agent_selection_source"] == "collaboration_roster"
@@ -8119,7 +8184,8 @@ final class MessageCoordinator: ObservableObject {
         guard let goal = originals.first, goal.body.utf8.elementsEqual(requestText.utf8) else {
           throw AgentTeamHistoryDatabase.Failure.stale
         }
-        let prompt = try AgentCollaborationPromptBudget.dispatch(assignment: assignment, resources: resources,
+        let prompt = try AgentCollaborationPromptBudget.dispatch(assignment: assignment,
+          resources: resources + (followupContext.map { "\n\n" + $0 } ?? ""),
           responseProtocol: agentTeamResearchProtocol(member: member), originals: originals,
           observations: availableObservations, canRecall: canRecall, desktop: target.kind == .agent,
           peerRecipients: peerRecipientIDs, peerRequests: peerRequestContext,
@@ -8355,7 +8421,6 @@ final class MessageCoordinator: ObservableObject {
     func validateScope() throws {
       try Task.checkCancellation()
       guard store.profile.identityFingerprint == profileIdentity,
-            store.activeAgentConversationId == conversationId,
             let session = store.agentSession(id: conversationId), session.id == conversationId,
             session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank,
             !session.privateMode, !session.trackingPaused else { throw CancellationError() }
@@ -14798,7 +14863,12 @@ final class MessageCoordinator: ObservableObject {
       .ifBlank(appPayload.string("source_message_id"))
       .ifBlank(appPayload.string("message_id"))
     let responseConversationId = appPayload.string("conversation_id")
-    let resolvedConversationId = store.agentSessionDestination(id: responseConversationId) ?? ""
+    let originalTurnConversation = store.chatHistoryDatabase.originalAgentTurnConversation(responseTurnId)
+    if let originalTurnConversation, !responseConversationId.isBlank, responseConversationId != originalTurnConversation {
+      if !messageId.isEmpty { deliveryStore.completeIncoming(messageId: messageId) }
+      return
+    }
+    let resolvedConversationId = originalTurnConversation ?? store.agentSessionDestination(id: responseConversationId) ?? ""
     let responseTaskId = appPayload.string("task_id")
     let nativeAgentResponse = AgentTaskIdentityPolicy.routesToMainAgent(
       superseded: false,
@@ -15314,7 +15384,9 @@ final class MessageCoordinator: ObservableObject {
       liveConnectorSequenceByKey[update.streamKey] = update.sequence
     }
     AgentLatencyTelemetry.shared.record(taskId: update.taskId, stage: .phoneResponseReceived, deferJournal: true)
-    let resolvedConversationId = store.agentSessionDestination(id: update.conversationId) ?? ""
+    let originalTurnConversation = store.chatHistoryDatabase.originalAgentTurnConversation(update.turnId)
+    guard originalTurnConversation == nil || originalTurnConversation == update.conversationId else { return }
+    let resolvedConversationId = originalTurnConversation ?? store.agentSessionDestination(id: update.conversationId) ?? ""
     let nativeAgentResponse = AgentTaskIdentityPolicy.routesToMainAgent(
       superseded: false,
       hasRuntime: !update.taskId.isEmpty && store.agentTask(id: update.taskId) != nil,

@@ -240,6 +240,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       let publishName = CloudModelStreamMutableConversation.collaborationPublishName
       var publishedMilestones = Set<String>()
       var evidenceResults: [(String, String)] = []
+      var visitedSourceAccessPages = Set<String>()
       let evidencePromptLedger = CloudEvidencePromptLedger(query: turns.last?.content ?? "")
       let progress = CloudWebToolLoopProgress()
       let research = CloudResearchRuntimeBudget(limits: .configured(contact.cloud_research_limits))
@@ -379,15 +380,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             prepared.appendResearchGuidance(research.guidance(stopped: "model_round_interrupted"))
             continue
           }
-          emittedSequence += 1
-          let now = elapsedMillis()
-          let fallback = CloudWebGrounding.evidenceFallback(results: evidenceResults) +
-            CloudImageAnnotationSession.artifactSuffix(requestId: requestId)
-          continuation.yield(.textDelta(.init(requestId: requestId, sequence: emittedSequence,
-            text: fallback, receivedAtElapsedMs: now)))
-          AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .sent)
-          continuation.yield(.completed(.init(requestId: requestId, finishReason: "evidence_only", completedAtElapsedMs: now)))
-          continuation.finish()
+          finishEvidenceOnly(evidenceResults, requestId: requestId, sequence: emittedSequence + 1,
+            ticket: ticket, continuation: continuation)
           return
         }
 
@@ -503,6 +497,23 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             continue
           }
           if bufferForCitationVerification {
+            let draft = CloudWebGrounding.stripInternalToolProtocol(rawRoundText)
+            if !draft.isBlank, let qualityReview = CloudResearchQualityStandard.repairIfNeeded(draft, evidence: evidenceResults),
+               !CloudWebGrounding.citationValidation(draft, results: evidenceResults).requiresRepair {
+              if previewShown {
+                continuation.yield(.citationPreview(.init(requestId: requestId, text: "", receivedAtElapsedMs: elapsedMillis())))
+              }
+              if progress.requestRepair("stream_research_quality") {
+                prepared.appendResearchQualityRepair(draft: draft, prompt: qualityReview)
+                progress.requestFinalization()
+                continue
+              }
+              finishEvidenceOnly(evidenceResults, requestId: requestId, sequence: emittedSequence + 1,
+                ticket: ticket, continuation: continuation)
+              return
+            }
+          }
+          if bufferForCitationVerification {
             let candidate = CloudWebGrounding.stripInternalToolProtocol(rawRoundText)
             let repairPrompt = CloudWebGrounding.citationRepairPrompt(candidate, results: evidenceResults)
             if !candidate.isBlank,
@@ -519,17 +530,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
               prepared.appendCitationRepairPrompt(draft: candidate, prompt: repairPrompt)
               continue
             }
-            let qualityReview = repairPrompt == nil && !candidate.isBlank
-              ? CloudResearchQualityStandard.repairIfNeeded(candidate, evidence: evidenceResults) : nil
-            if let qualityReview, progress.requestRepair("stream_research_quality") {
-              if previewShown {
-                continuation.yield(.citationPreview(.init(requestId: requestId, text: "", receivedAtElapsedMs: elapsedMillis())))
-              }
-              prepared.appendResearchQualityRepair(draft: candidate, prompt: qualityReview)
-              progress.requestFinalization()
-              continue
-            }
-            let visibleAnswer = !candidate.isBlank && repairPrompt == nil && qualityReview == nil
+            let visibleAnswer = !candidate.isBlank && repairPrompt == nil
               ? candidate
               : CloudWebGrounding.evidenceFallback(results: evidenceResults)
             if !visibleAnswer.isBlank {
@@ -637,7 +638,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         let preparedCalls = parsedCalls.compactMap { item -> AssembledToolCall? in
           let (call, arguments) = item
           if call.name == publishName { return call }
-          guard progress.cached(toolName: call.name, arguments: arguments) == nil else { return nil }
+          guard AgentCollaborationSourceAccess.matches(tool: call.name, input: arguments) ||
+                progress.cached(toolName: call.name, arguments: arguments) == nil else { return nil }
           let key = progress.semanticKey(toolName: call.name, arguments: arguments)
           return freshKeys.insert(key).inserted ? call : nil
         }
@@ -651,9 +653,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           preparedCalls,
           context: CloudConversationToolExecutionContext(
             requestId: requestId,
+            researchToolTimeoutMillis: research.limits.toolMillis,
             conversationId: conversationId,
             turnId: turnId,
-            researchToolTimeoutMillis: research.limits.toolMillis,
             images: images,
             readOnlyAnalysis: turns.last?.readOnlyAnalysis ?? false
           ),
@@ -728,6 +730,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         var newResearchEvidence = false
         let retrievalBatch = parsedCalls.contains { CloudResearchRuntimeBudget.isRetrievalTool($0.0.name) }
         var publicationResults: [String: String] = [:]
+        var sourceAccessResults: [String: String] = [:]
         for outcome in outcomes {
           guard let output = outcome.output,
                 let arguments = try? CloudModelStreamJSON.mcpObject(from: outcome.call.argumentsJson) else {
@@ -744,6 +747,13 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                progress.requestRepair("collaboration_assessment_preflight") { madeProgress = true }
             continue
           }
+          if AgentCollaborationSourceAccess.matches(tool: outcome.call.name, input: arguments) {
+            let key = progress.semanticKey(toolName: outcome.call.name, arguments: arguments)
+            sourceAccessResults[key] = output
+            if let page = try? CloudModelStreamJSON.mcpObject(from: output), page["status"] == .string("returned"),
+               visitedSourceAccessPages.insert(key).inserted { madeProgress = true }
+            continue
+          }
           if progress.record(toolName: outcome.call.name, arguments: arguments, output: output) {
             newResearchEvidence = research.observe(tool: outcome.call.name, output: output) || newResearchEvidence
             madeProgress = true
@@ -756,6 +766,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         let results = parsedCalls.compactMap { item -> (AssembledToolCall, String)? in
           let (call, arguments) = item
           if call.name == publishName, let output = publicationResults[call.callId] { return (call, output) }
+          if AgentCollaborationSourceAccess.matches(tool: call.name, input: arguments) {
+            let key = progress.semanticKey(toolName: call.name, arguments: arguments)
+            return sourceAccessResults[key].map { (call, $0) }
+          }
           guard let output = progress.cached(toolName: call.name, arguments: arguments) else { return nil }
           CloudImageAnnotationSession.selectResult(output, requestId: requestId)
           return (call, output)
@@ -771,6 +785,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           if call.name == publishName { return (call, output) }
           if let arguments = try? CloudModelStreamJSON.mcpObject(from: call.argumentsJson),
              CloudWebToolLoopProgress.isNonEvidenceRecall(toolName: call.name, arguments: arguments) {
+            return (call, output)
+          }
+          if let arguments = try? CloudModelStreamJSON.mcpObject(from: call.argumentsJson),
+             AgentCollaborationSourceAccess.matches(tool: call.name, input: arguments) {
             return (call, output)
           }
           return (call, projectionByOriginal[output] ?? evidencePromptLedger.project(output))
@@ -800,6 +818,17 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       continuation.yield(.failed(ModelStreamFailed(requestId: requestId, error: streamError)))
     }
     setActiveRound(nil, for: requestId)
+    continuation.finish()
+  }
+
+  private func finishEvidenceOnly(_ evidence: [(String, String)], requestId: String, sequence: Int64,
+    ticket: AgentDisclosureTicket, continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation) {
+    let now = elapsedMillis()
+    let fallback = CloudWebGrounding.evidenceFallback(results: evidence) +
+      CloudImageAnnotationSession.artifactSuffix(requestId: requestId)
+    continuation.yield(.textDelta(.init(requestId: requestId, sequence: sequence, text: fallback, receivedAtElapsedMs: now)))
+    AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .sent)
+    continuation.yield(.completed(.init(requestId: requestId, finishReason: "evidence_only", completedAtElapsedMs: now)))
     continuation.finish()
   }
 

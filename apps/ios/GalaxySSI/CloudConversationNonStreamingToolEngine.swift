@@ -166,9 +166,9 @@ struct CloudConversationNonStreamingToolEngine {
           call: call,
           context: CloudConversationToolExecutionContext(
             requestId: requestId,
+            researchToolTimeoutMillis: research.limits.toolMillis,
             conversationId: turns.last?.conversationId ?? "",
             turnId: turns.last?.turnId ?? requestId,
-            researchToolTimeoutMillis: research.limits.toolMillis,
             images: images
           )
         )

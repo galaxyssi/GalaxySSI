@@ -485,6 +485,7 @@
     A10000000000000000000785 /* CloudModelClientStreaming.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000785 /* CloudModelClientStreaming.swift */; };
     A10000000000000000000786 /* CloudModelClientStreamingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000786 /* CloudModelClientStreamingTests.swift */; };
     A10000000000000000000787 /* CloudConversationStreamEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000787 /* CloudConversationStreamEngine.swift */; };
+    A1000000000000000000E350 /* AgentCollaborationSourceAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000E350 /* AgentCollaborationSourceAccess.swift */; };
     E3699B000000000000000001 /* CloudResearchRuntimeBudget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3699B000000000000000002 /* CloudResearchRuntimeBudget.swift */; };
     E3699C000000000000000001 /* CloudResearchQualityStandard.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3699C000000000000000002 /* CloudResearchQualityStandard.swift */; };
     E3699C000000000000000003 /* research-quality.json in Resources */ = {isa = PBXBuildFile; fileRef = E3699C000000000000000004 /* research-quality.json */; };
@@ -996,6 +997,7 @@
     A10000000000000000009B3B /* AgentManagedBrowserContinuationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B3B /* AgentManagedBrowserContinuationModels.swift */; };
     A10000000000000000009B3C /* AgentManagedBrowserContinuationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B3C /* AgentManagedBrowserContinuationStore.swift */; };
     A10000000000000000009B3D /* AgentManagedBrowserToolExecution.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B3D /* AgentManagedBrowserToolExecution.swift */; };
+    A1000000000000000000E351 /* AgentCollaborationEvidenceContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000E351 /* AgentCollaborationEvidenceContent.swift */; };
     A10000000000000000009B3E /* GalaxySSIManagedBrowserHandoffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B3E /* GalaxySSIManagedBrowserHandoffView.swift */; };
     A10000000000000000009B34 /* AgentTeamRecoveryRetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B34 /* AgentTeamRecoveryRetry.swift */; };
     A10000000000000000000F41 /* AgentCollaborationNumericTrial.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000F41 /* AgentCollaborationNumericTrial.swift */; };
@@ -1703,6 +1705,7 @@
     A20000000000000000000785 /* CloudModelClientStreaming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelClientStreaming.swift; sourceTree = "<group>"; };
     A20000000000000000000786 /* CloudModelClientStreamingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelClientStreamingTests.swift; sourceTree = "<group>"; };
     A20000000000000000000787 /* CloudConversationStreamEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudConversationStreamEngine.swift; sourceTree = "<group>"; };
+    A2000000000000000000E350 /* AgentCollaborationSourceAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationSourceAccess.swift; sourceTree = "<group>"; };
     E3699B000000000000000002 /* CloudResearchRuntimeBudget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudResearchRuntimeBudget.swift; sourceTree = "<group>"; };
     E3699C000000000000000002 /* CloudResearchQualityStandard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudResearchQualityStandard.swift; sourceTree = "<group>"; };
     E3699C000000000000000004 /* research-quality.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "research-quality.json"; path = "../desktop/core/galaxyssi-link/backend/research_contract/research-quality.json"; sourceTree = SOURCE_ROOT; };
@@ -2196,6 +2199,7 @@
     A20000000000000000009B3B /* AgentManagedBrowserContinuationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentManagedBrowserContinuationModels.swift; sourceTree = "<group>"; };
     A20000000000000000009B3C /* AgentManagedBrowserContinuationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentManagedBrowserContinuationStore.swift; sourceTree = "<group>"; };
     A20000000000000000009B3D /* AgentManagedBrowserToolExecution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentManagedBrowserToolExecution.swift; sourceTree = "<group>"; };
+    A2000000000000000000E351 /* AgentCollaborationEvidenceContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationEvidenceContent.swift; sourceTree = "<group>"; };
     A20000000000000000009B3E /* GalaxySSIManagedBrowserHandoffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIManagedBrowserHandoffView.swift; sourceTree = "<group>"; };
     A20000000000000000009B34 /* AgentTeamRecoveryRetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamRecoveryRetry.swift; sourceTree = "<group>"; };
     A20000000000000000000F41 /* AgentCollaborationNumericTrial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationNumericTrial.swift; sourceTree = "<group>"; };
@@ -2511,6 +2515,7 @@
         A20000000000000000000783 /* URLSessionCloudModelStreamClient.swift */,
         A20000000000000000000785 /* CloudModelClientStreaming.swift */,
         A20000000000000000000787 /* CloudConversationStreamEngine.swift */,
+        A2000000000000000000E350 /* AgentCollaborationSourceAccess.swift */,
         E3699B000000000000000002 /* CloudResearchRuntimeBudget.swift */,
         E3699C000000000000000002 /* CloudResearchQualityStandard.swift */,
         E3699C000000000000000004 /* research-quality.json */,
@@ -2980,6 +2985,7 @@
         A20000000000000000009B3B /* AgentManagedBrowserContinuationModels.swift */,
         A20000000000000000009B3C /* AgentManagedBrowserContinuationStore.swift */,
         A20000000000000000009B3D /* AgentManagedBrowserToolExecution.swift */,
+        A2000000000000000000E351 /* AgentCollaborationEvidenceContent.swift */,
         A20000000000000000009B3E /* GalaxySSIManagedBrowserHandoffView.swift */,
         A20000000000000000009B34 /* AgentTeamRecoveryRetry.swift */,
         A20000000000000000000F41 /* AgentCollaborationNumericTrial.swift */,
@@ -4212,6 +4218,7 @@
         A10000000000000000000783 /* URLSessionCloudModelStreamClient.swift in Sources */,
         A10000000000000000000785 /* CloudModelClientStreaming.swift in Sources */,
         A10000000000000000000787 /* CloudConversationStreamEngine.swift in Sources */,
+        A1000000000000000000E350 /* AgentCollaborationSourceAccess.swift in Sources */,
         E3699B000000000000000001 /* CloudResearchRuntimeBudget.swift in Sources */,
         E3699C000000000000000001 /* CloudResearchQualityStandard.swift in Sources */,
         A1000000000000000000F550 /* InlineToolProtocolStreamGuard.swift in Sources */,
@@ -4290,6 +4297,7 @@
         A10000000000000000009B3B /* AgentManagedBrowserContinuationModels.swift in Sources */,
         A10000000000000000009B3C /* AgentManagedBrowserContinuationStore.swift in Sources */,
         A10000000000000000009B3D /* AgentManagedBrowserToolExecution.swift in Sources */,
+        A1000000000000000000E351 /* AgentCollaborationEvidenceContent.swift in Sources */,
         A10000000000000000009B3E /* GalaxySSIManagedBrowserHandoffView.swift in Sources */,
         A10000000000000000009B34 /* AgentTeamRecoveryRetry.swift in Sources */,
         A10000000000000000000F41 /* AgentCollaborationNumericTrial.swift in Sources */,

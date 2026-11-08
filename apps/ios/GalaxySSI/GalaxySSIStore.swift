@@ -686,11 +686,12 @@ final class GalaxySSIStore: ObservableObject {
   }
 
   func messages(for contactId: String) -> [ChatMessage] {
-    messagesByContact[contactId] ?? []
+    (messagesByContact[contactId] ?? []).filter(chatHistoryDatabase.admitsAgentTurn)
   }
 
   func persistedMessage(id: UUID, contactId: String) -> ChatMessage? {
-    guard let message = chatHistoryDatabase.message(id: id), message.contactId == contactId else { return nil }
+    guard let message = chatHistoryDatabase.message(id: id), message.contactId == contactId,
+          chatHistoryDatabase.admitsAgentTurn(message) else { return nil }
     return message
   }
 
@@ -1209,7 +1210,7 @@ final class GalaxySSIStore: ObservableObject {
     remoteMessageId: String = "",
     turnId: String = ""
   ) -> Bool {
-    let existing = runtimeMessageSnapshot(for: contactId)
+    let existing = runtimeMessageSnapshot(for: contactId).filter(chatHistoryDatabase.admitsAgentTurn)
     let normalizedRemoteMessageId = remoteMessageId.trimmingCharacters(in: .whitespacesAndNewlines)
     if !normalizedRemoteMessageId.isEmpty,
        (chatHistoryDatabase.containsIncoming(
@@ -1237,7 +1238,8 @@ final class GalaxySSIStore: ObservableObject {
     turnId: String = "",
     richOutputJson: String = ""
   ) -> ChatMessage {
-    let resolvedConversationId = conversationId.ifBlank(activeConversationId(for: contactId))
+    let owner = chatHistoryDatabase.originalAgentTurnConversation(turnId)
+    let resolvedConversationId = conversationId.ifBlank(owner ?? activeConversationId(for: contactId))
     let createdAt = Date()
     let message = ChatMessage(
       contactId: contactId,
@@ -1251,6 +1253,7 @@ final class GalaxySSIStore: ObservableObject {
       remoteMessageId: remoteMessageId,
       richOutputJson: richOutputJson
     )
+    guard chatHistoryDatabase.admitsAgentTurn(message) else { return message }
     messagesByContact[contactId, default: []].append(message)
     recordAgentConversationActivity(conversationId: resolvedConversationId, contactId: contactId, content: content, at: createdAt)
     save()
@@ -1269,7 +1272,8 @@ final class GalaxySSIStore: ObservableObject {
     var message = pending ?? ChatMessage(contactId: contactId, content: content, isMine: false)
     message.content = content
     message.remoteMessageId = remoteMessageId
-    message.conversationId = conversationId.ifBlank(message.conversationId.ifBlank(activeConversationId(for: contactId)))
+    message.conversationId = conversationId.ifBlank(message.conversationId.ifBlank(
+      chatHistoryDatabase.originalAgentTurnConversation(turnId) ?? activeConversationId(for: contactId)))
     message.turnId = turnId
     message.richOutputJson = richOutputJson
     message.deliveryStatus = .delivered
