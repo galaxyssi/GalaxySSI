@@ -285,3 +285,40 @@ Background navigation and privacy withdrawal clear feedback editors and history
 dialogs. Automatic voice-to-feedback writes, correction/retraction workflows,
 model pagination of feedback history, and the full visit/rehabilitation lifecycle
 remain future increments. No software test establishes clinical effectiveness.
+
+## Local visit-preparation preview
+
+The existing Personal Health concern detail opens a local visit-summary workflow.
+The Agent main-page layout is unchanged. Users choose measurements, measurement
+context, confirmed actions and feedback, question history, and optionally the
+already selected profile fields/background entries. Profile details are off by
+default; enabling them never expands the concern's approved profile scope. Each
+resulting item can be excluded again before sharing. Missing or unselected
+history is not represented as absence of disease, medications or allergies.
+
+The preview separates measurements and exact source revisions from self-reported
+context, user-confirmed actions and questions. It includes up to eight recent
+measurements and eight scoped questions, explicitly disclosing additional history.
+Original records remain accessible independently by record ID and revision; no
+original attachment is included in a text share. Incompatible measurements retain
+their comparison caveats. Stale questions and actions are not silently promoted
+to current advice, and user confirmation is not described as clinician review.
+
+Generation runs on a worker without a model or network call and creates no disk
+report. A final explicit confirmation opens Android's text share chooser with
+exactly the selected preview items. Internal IDs, paths and profile names are not
+added; free text may still identify someone, so the UI does not promise automatic
+anonymization. Sharing transfers plaintext to the selected app, outside GalaxySSI's
+subsequent control. Cancelling confirmation does not launch the chooser, and
+opening it is not recorded as successful delivery to a clinician.
+
+Source clocks, concern revision, privacy version and selected profile stamps are
+checked after generation and immediately before sharing. Changed data or permission
+requires a new preview. Previews expire after ten minutes and clear on background,
+recreation, memory pressure and observed source/privacy changes. Oversized text is
+rejected, not truncated. No new database or persisted plaintext snapshot is added.
+
+This increment provides a selected text summary, not a PDF report, symptom intake,
+hospital booking, medical record transmission or post-visit instruction review.
+Agent-triggered preparation, appointment records, reviewed prescriptions and
+rehabilitation follow-up remain separate work in the full lifecycle goal.
