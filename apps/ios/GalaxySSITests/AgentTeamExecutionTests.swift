@@ -1790,6 +1790,89 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(reads, 3)
   }
 
+  func testProcedureRecallFindsExactRetainedLessonWithoutExposingPrivateOrMismatchedSources() throws {
+    let suite = "procedure-recall-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    var team = durableTeamSnapshot("procedure-discovery")
+    team.goal = "Find the frozenmethodneedle"
+    team.members[0].dispatchCheckpoint = .accepted
+    let reader = team.members[0]
+    let other = team.members[1]
+    let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId, memberId: reader.memberId, sourceId: reader.sourceMessageId)
+    XCTAssertTrue(history.upsert(team))
+    let database = try AgentTeamHistoryDatabase(fileURL: file,
+      storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    func ref(_ id: String, digest: String = "f") -> AgentCollaborationResearchReference {
+      .init(objectId: String(repeating: id, count: 64), revision: 1, sha256: String(repeating: digest, count: 64))
+    }
+    func row(_ id: String, _ kind: AgentCollaborationResearchDraft.Kind, _ body: AgentMcpJSONObject)
+      -> AgentCollaborationResearchRevision {
+      .init(reference: ref(id), previousHash: nil, runId: "previous", turnId: "previous-turn", authorId: "previous-author",
+        sourceId: "previous-source", draft: .init(id: id, objectId: nil, baseRevision: 0, kind: kind,
+          title: "Directory fixture", body: [kind.rawValue: .object(body)], parents: []))
+    }
+    let method = String(repeating: "a", count: 220) + " frozenmethodneedle end"
+    var visible = row("a", .capabilityLesson, ["decision": .string("retain"), "procedure": .string(method),
+      "applies_when": .string("comparisonwindow"), "avoid_when": .string("contraindicationneedle"),
+      "transfer_test": .string("transfertestneedle")])
+    visible.frozenCloudReads = [.init(evidenceId: "evidence", sha256: "digest", totalCharacters: 10)]
+    var hidden = visible
+    hidden.reference = ref("b")
+    hidden.runId = scope.runId
+    hidden.turnId = scope.turnId
+    hidden.authorId = other.memberId
+    hidden.sourceId = other.sourceMessageId
+    func skill(_ id: String, _ lesson: AgentCollaborationResearchReference) -> AgentCollaborationResearchRevision {
+      var record = row(id, .procedureSkill, ["name": .string("Review"), "lesson": .object(AgentCollaborationProcedure.fields(lesson)),
+        "inputs": .array([.object(["name": .string("dataset"), "description": .string("inputdescriptionneedle")])])])
+      record.draft.parents = [lesson]
+      record.retainedProcedure = .init(lesson: lesson, innovation: ref("1"), plan: ref("2"), result: ref("3"),
+        rollback: ref("4"), domain: "domainneedle", inputs: [.init(name: "dataset", required: true)], method: method,
+        appliesWhen: "comparisonwindow", avoidWhen: "contraindicationneedle", transferTest: "transfertestneedle",
+        limitations: "Fixture only")
+      return record
+    }
+    let first = skill("c", visible.reference)
+    let second = skill("d", visible.reference)
+    let isolated = skill("e", hidden.reference)
+    let mismatched = skill("f", ref("a", digest: "0"))
+    for original in [visible, hidden, first, second, isolated, mismatched] {
+      try database.insertResearchRecord(original, conversationId: scope.conversationId,
+        key: "object:" + original.reference.objectId, revision: original.reference.revision)
+    }
+    func skills(_ query: String) throws -> [AgentMcpJSONObject] {
+      let output = try history.recallCollaborationOriginal(["mode": .string("capabilities"), "query": .string(query)], scope: scope)
+      return (output["capabilities"]?.arrayValue ?? []).compactMap(\.objectValue).filter { $0.string("kind") == "procedure_skill" }
+    }
+    for query in ["frozenmethodneedle", "comparisonwindow", "contraindicationneedle", "transfertestneedle"] {
+      XCTAssertEqual(try skills(query).map { $0.string("object_id") }, [first.reference.objectId, second.reference.objectId])
+    }
+    let found = try XCTUnwrap(skills("frozenmethodneedle").first)
+    XCTAssertTrue(found["excerpts"]?.objectValue?["procedure"]?.strictStringValue?.contains("frozenmethodneedle") == true)
+    let linked = try XCTUnwrap(found["linked_sources"]?.arrayValue?.first?.objectValue)
+    XCTAssertEqual(linked["source"], .object(AgentCollaborationProcedure.fields(visible.reference)))
+    XCTAssertEqual(linked["complete_read"], .bool(false))
+    XCTAssertEqual(found["grants_permissions"], .bool(false))
+    let byInput = try skills("inputdescriptionneedle domainneedle")
+    XCTAssertEqual(byInput.count, 4)
+    for entry in byInput.suffix(2) { XCTAssertEqual(entry["linked_sources"], .array([])) }
+    let pinned = try history.initialCollaborationCapabilities(scope: scope).compactMap(\.objectValue)
+    XCTAssertEqual(pinned.map { $0.string("object_id") }, [first.reference.objectId, second.reference.objectId])
+    XCTAssertTrue(pinned.allSatisfy { $0["excerpts"] == nil })
+    var reads = 0
+    var page = AgentCollaborationCapabilityPage(scope: scope) { _ in reads += 1; return visible }
+    _ = try page.procedureMetadata(first)
+    _ = try page.procedureMetadata(second)
+    XCTAssertEqual(reads, 1)
+  }
+
   func testCapabilityRecallFindsHostValidatedReleasesByExactSourceMetadata() throws {
     let suite = "capability-release-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

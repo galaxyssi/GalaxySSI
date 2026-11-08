@@ -1056,22 +1056,23 @@ final class AgentTeamExecutionHistoryStore {
       for row in rows.prefix(32) {
         scanned += 1
         guard let head = try page.read(row) else { continue }
-        if let procedure = head.retainedProcedure, head.draft.kind == .procedureSkill,
-           let body = head.draft.body["procedure_skill"]?.objectValue {
-          let text = ([head.draft.title, body.string("name"), procedure.domain, procedure.appliesWhen] +
-            (body["keywords"]?.arrayValue ?? []).compactMap(\.strictStringValue)).joined(separator: "\n")
-          func matches(_ term: String) -> Bool {
-            text.range(of: term, options: [.caseInsensitive, .diacriticInsensitive]) != nil
-          }
-          let score = pinInitial ? Set(initialTerms.filter(matches)).count : 0
-          if pinInitial ? score > 0 : terms.allSatisfy(matches) {
+        if head.draft.kind == .procedureSkill {
+          guard let metadata = try page.procedureMetadata(head) else { continue }
+          let matched = (pinInitial ? initialTerms : terms).filter(metadata.matches)
+          let score = Set(matched).count
+          if pinInitial ? score > 0 : matched.count == terms.count {
             var entry = AgentCollaborationProcedure.fields(head.reference)
             entry["kind"] = .string("procedure_skill")
             entry["state"] = .string("available_scoped_procedure")
+            entry["requires_scope_and_lineage_check"] = .bool(true)
+            entry["grants_permissions"] = .bool(false)
             if pinInitial {
               ranked.append((score, entry))
             } else {
               entry["title"] = .string(head.draft.title)
+              entry["matched_terms"] = .array(matched.map(AgentMcpJSONValue.string))
+              entry["excerpts"] = .object(metadata.excerpts(terms: matched))
+              entry["linked_sources"] = .array(metadata.linkedSource.map { [.object($0)] } ?? [])
               entries.append(.object(entry))
               if entries.count == 8 { break }
             }
@@ -1181,7 +1182,8 @@ final class AgentTeamExecutionHistoryStore {
       }
       let next = scanned < rows.count && scanned > 0 ? rows[scanned - 1].objectID : nil
       return ["capabilities": .array(entries), "next_cursor": next.map(AgentMcpJSONValue.string) ?? .null,
-        "grants_permissions": .bool(false), "trust": .string("directory_not_execution_authority")]
+        "grants_permissions": .bool(false), "trust": .string("directory_not_execution_authority"),
+        "guidance": .string("Procedure linked_sources identify exact excerpt origins, not a full read. Read the original and check current scope and lineage before reuse.")]
     }
   }
 
