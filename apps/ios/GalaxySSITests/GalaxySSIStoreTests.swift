@@ -1028,6 +1028,76 @@ final class GalaxySSIStoreTests: XCTestCase {
       body.attachmentDependencies)
   }
 
+  @MainActor
+  func testDurableDesktopPeerAttachmentMatchesDesktopScopeBeforeReleasingBody() throws {
+    let store = makeStore()
+    let local = String(repeating: "b", count: 64)
+    let link = try store.addServerLink(from: makePairingQRCode(), localFingerprint: local)
+    store.markServerPaired(desktopId: link.desktopId)
+    let contact = try XCTUnwrap(store.contacts.first { $0.isDesktopDeviceContact && $0.desktopId == link.desktopId })
+    let projection = MqttPeerChatProjection(store: store, localFingerprint: local)
+    let target = try XCTUnwrap(projection.destination(for: contact))
+    XCTAssertTrue(target.desktop)
+    let outgoing = store.appendOutgoing("", to: contact.id)
+    let source = outgoing.id.uuidString
+    let scope = try AgentAttachmentTransferScope(contactId: link.desktopId, desktopId: link.desktopId,
+      clientRouteId: target.routeId, conversationId: target.conversationId,
+      taskId: AgentPeerChatTransport.taskId(for: source), turnId: AgentPeerChatTransport.turnId(for: source), clientMessageId: source)
+    let fixture = try ChunkFixture()
+    let attachments = AgentOutboundAttachmentTransferStore(
+      rootURL: fixture.url.deletingLastPathComponent().appendingPathComponent("desktop-outgoing", isDirectory: true),
+      cipher: GalaxySSIAttachmentAtRestCipher(secrets: fixture.secrets))
+    let transfers = try attachments.prepare(scope: scope,
+      attachments: [.init(displayName: "fixture.bin", mimeType: "application/octet-stream", data: Data([1, 2, 3]))],
+      mediaProfile: AgentMediaNetworkPolicy.profile(for: .normal), preserveOriginalBytes: true)
+    let transfer = try XCTUnwrap(transfers.first)
+    let requests = try projection.outgoingRequests(for: outgoing.id, contactId: contact.id, attachments: transfers)
+    XCTAssertEqual(requests.count, 2)
+    let manifest = try XCTUnwrap(requests.first)
+    let body = try XCTUnwrap(requests.last)
+    let declaration = try manifest.applicationPayload()
+    XCTAssertEqual(declaration["contact_id"] as? String, link.desktopId)
+    XCTAssertEqual(declaration["client_message_id"] as? String, source)
+    XCTAssertEqual(declaration["conversation_id"] as? String, target.conversationId)
+    XCTAssertEqual(try body.applicationPayload()["type"] as? String, "peer_message")
+    XCTAssertEqual(body.attachmentDependencies, [transfer.transferId])
+
+    var foreign = transfer
+    foreign.scope.contactId = "other-desktop"
+    XCTAssertThrowsError(try projection.outgoingRequests(for: outgoing.id, contactId: contact.id, attachments: [foreign]))
+    let journal = try MqttSignalStateJournal(fileURL: fixture.url, secrets: fixture.secrets)
+    try journal.outbox.enqueueDeferred(body, now: Date())
+    func consume(contactID: String) throws {
+      let id = UUID().uuidString
+      let payload: [String: Any] = ["type": "input_attachment_receipt", "message_id": id, "status": "stored",
+        "transfer_id": transfer.transferId, "sha256": transfer.sha256, "client_route_id": scope.clientRouteId,
+        "conversation_id": scope.conversationId, "task_id": scope.taskId, "turn_id": scope.turnId,
+        "contact_id": contactID, "source_message_id": source]
+      let hash = MqttRouteProtocol.digest(Data(id.utf8))
+      _ = try journal.inbox.accept(identity: body.identity, messageID: id, payload: payload,
+        ciphertextDigest: hash, wireHash: hash, receiptRequired: true)
+      let item = try XCTUnwrap(journal.inbox.pending().first { $0.messageID == id })
+      try journal.consumeStoredAttachment(item, bodyID: body.messageID, transfer: transfer)
+    }
+    XCTAssertThrowsError(try consume(contactID: "other-desktop"))
+    let blocked = try XCTUnwrap(journal.outbox.entry(identity: body.identity, messageID: body.messageID))
+    XCTAssertEqual(blocked.message.blockedByAttachmentTransferIds, [transfer.transferId])
+    let initialProgress = try XCTUnwrap(GalaxySSIPeerAttachmentTransferUpdate(payload: [
+      "transfer_id": transfer.transferId, "source_message_id": source, "state": GalaxySSIPeerAttachmentTransferProgress.uploading
+    ]))
+    XCTAssertNotNil(store.updateMessageContent(outgoing.id, contactId: contact.id, content: outgoing.content,
+      richOutputJson: GalaxySSIPeerAttachmentTransferProgress.placeholder(initialProgress)))
+    try consume(contactID: link.desktopId)
+    try store.projectStoredPeerAttachment(transfer, sourceID: outgoing.id, contactID: contact.id)
+    let projected = try XCTUnwrap(store.persistedMessage(id: outgoing.id, contactId: contact.id))
+    XCTAssertEqual(projected.deliveryStatus, .queued)
+    XCTAssertEqual(AgentRichContentCodec.decode(projected.richOutputJson).first?.metadata["transfer_state"],
+      GalaxySSIPeerAttachmentTransferProgress.complete)
+    let released = try XCTUnwrap(journal.outbox.entry(identity: body.identity, messageID: body.messageID))
+    XCTAssertTrue(released.message.blockedByAttachmentTransferIds.isEmpty)
+    XCTAssertFalse(released.isPrepared)
+  }
+
   func testRenamesContactLocally() {
     let store = makeStore()
     let request = store.addFriendRequest(makeFriendRequest(galaxySSIId: "friend-alice", name: "Alice"))

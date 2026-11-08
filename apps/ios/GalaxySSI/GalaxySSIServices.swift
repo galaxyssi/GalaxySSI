@@ -14983,7 +14983,8 @@ final class MessageCoordinator: ObservableObject {
   ) async throws -> AgentDisclosureStatus {
     try Task.checkCancellation()
     if !usesLegacyMqtt {
-      guard journalMqttRuntime != nil, attachments.isEmpty, teamContext == nil, codexReplay == nil else {
+      guard journalMqttRuntime != nil, (attachments.isEmpty || contact.isDesktopDeviceContact),
+            teamContext == nil, codexReplay == nil else {
         throw GalaxySSIError.transportUnavailable
       }
     }
@@ -15327,6 +15328,12 @@ final class MessageCoordinator: ObservableObject {
       profile: mediaProfile
     )
     if !outboundAttachments.isEmpty {
+      if let runtime = journalMqttRuntime {
+        guard peerChat else { throw GalaxySSIError.transportUnavailable }
+        _ = try runtime.enqueueDirectPeerAttachments(messageId: outgoing.id, contactId: contact.id,
+          attachments: outboundAttachments)
+        return .queued
+      }
       do {
         guard !GalaxySSITransportPrivacyPolicy.isLocalOnly(payload) else {
           throw GalaxySSIError.invalidPayload("Local-only Agent state cannot be sent over GalaxySSI Link.")

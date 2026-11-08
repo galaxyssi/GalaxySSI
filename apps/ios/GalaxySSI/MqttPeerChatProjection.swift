@@ -62,7 +62,7 @@ struct MqttPeerChatProjection {
     guard let contact = store.contact(id: contactId), contact.id == contactId, let target = destination(for: contact),
           let message = store.persistedMessage(id: messageId, contactId: contactId), message.isMine, !message.isSystem,
           [.queued, .failed].contains(message.deliveryStatus),
-          attachments.isEmpty ? (!message.content.isBlank && message.richOutputJson.isBlank) : !target.desktop,
+          !attachments.isEmpty || (!message.content.isBlank && message.richOutputJson.isBlank),
           attachments.count <= 10, Set(attachments.map(\.transferId)).count == attachments.count
     else { throw MqttRouteError.invalidPayload }
     let source = message.id.uuidString
@@ -103,7 +103,7 @@ struct MqttPeerChatProjection {
   }
 
   func matches(_ transfer: AgentPreparedOutboundAttachment, target: Destination, source: String) -> Bool {
-    !target.desktop && transfer.scope.clientMessageId == source && transfer.scope.clientRouteId == target.routeId &&
+    transfer.scope.clientMessageId == source && transfer.scope.clientRouteId == target.routeId &&
       transfer.scope.contactId == target.peer.remoteSignalName && transfer.scope.desktopId == target.peer.remoteSignalName &&
       transfer.scope.conversationId == target.conversationId &&
       transfer.scope.taskId == AgentPeerChatTransport.taskId(for: source) &&

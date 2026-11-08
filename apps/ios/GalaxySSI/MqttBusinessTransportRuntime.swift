@@ -604,7 +604,7 @@ final class MqttBusinessTransportRuntime {
 
   private func processOutgoingAttachmentReceipt(_ item: MqttBusinessInbox.Pending, payload: [String: Any],
       projection: MqttPeerChatProjection, attachments: AgentOutboundAttachmentTransferStore) async throws {
-    guard let target = try projection.currentDestination(item.identity), !target.desktop,
+    guard let target = try projection.currentDestination(item.identity),
           payload.string("client_route_id") == target.routeId,
           payload.string("message_id") == item.messageID,
           ["stored", "missing"].contains(payload.string("status")) else { throw MqttRouteError.invalidPayload }
@@ -646,6 +646,7 @@ final class MqttBusinessTransportRuntime {
     }
     if payload.string("status") == "stored" {
       try routes.withIdentity(item.identity) {
+        try projection.store.projectStoredPeerAttachment(transfer, sourceID: sourceID, contactID: target.contactId)
         try journal.consumeStoredAttachment(item, bodyID: source, transfer: transfer)
       }
       return
