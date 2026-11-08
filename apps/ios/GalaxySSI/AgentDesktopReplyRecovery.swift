@@ -157,6 +157,72 @@ enum AgentDesktopCollaborationPublicationWire {
   }
 }
 
+enum AgentDesktopCollaborationTextArtifact {
+  static let format = "galaxyssi.text-artifact/1"
+  private static let maximumFileBytes = 131_072
+  private static let pageUnits = 2_000
+
+  struct Read {
+    let id: String
+    let revision: Int64
+    let offset: Int64
+
+    init?(_ input: AgentMcpJSONObject) {
+      guard input["mode"] == .string("workspace"), Set(input.keys) == ["mode", "object_id", "revision", "offset"],
+            let id = input["object_id"]?.strictStringValue, AgentCollaborationSourceAccess.validDigest(id),
+            case .int(let revision)? = input["revision"], revision > 0,
+            case .int(let offset)? = input["offset"], offset >= 0 else { return nil }
+      self.id = id
+      self.revision = revision
+      self.offset = offset
+    }
+  }
+
+  static func valid(_ draft: AgentCollaborationResearchDraft) -> Bool {
+    let body = draft.body
+    guard draft.kind == .artifact, body["format"] == .string(format), body["encoding"] == .string("utf-8"),
+          let name = body["name"]?.strictStringValue, portableName(name),
+          let content = body["content"]?.strictStringValue, !content.utf8.contains(0),
+          case .int(let bytes)? = body["size_bytes"], bytes == Int64(content.utf8.count),
+          bytes <= Int64(maximumFileBytes), let hash = body["sha256"]?.strictStringValue,
+          AgentCollaborationSourceAccess.validDigest(hash)
+    else { return false }
+    return MqttRouteProtocol.digest(Data(content.utf8)) == hash
+  }
+
+  private static func portableName(_ name: String) -> Bool {
+    guard (1...200).contains(name.unicodeScalars.count), !name.hasPrefix("."), !name.hasSuffix("."),
+          !name.hasSuffix(" "), !name.unicodeScalars.contains(where: { $0.value < 32 || "<>:\"/\\|?*".unicodeScalars.contains($0) })
+    else { return false }
+    let stem = name.prefix(while: { $0 != "." }).uppercased()
+    return !["CON", "PRN", "AUX", "NUL"].contains(stem) &&
+      !(1...9).contains { stem == "COM\($0)" || stem == "LPT\($0)" }
+  }
+
+  static func page(_ request: Read, record: AgentCollaborationResearchRevision) throws -> AgentMcpJSONObject {
+    let ref = record.reference
+    guard ref.objectId == request.id, ref.revision == request.revision, valid(record.draft) else {
+      throw AgentTeamHistoryDatabase.Failure.stale
+    }
+    // The Desktop materializer expects a flat object and UTF-16 offsets, not the internal Codable record.
+    let document = AgentMcpJSONCodec.stringify([
+      "object_id": .string(ref.objectId), "revision": .int(ref.revision), "sha256": .string(ref.sha256),
+      "kind": .string("artifact"), "body": .object(record.draft.body),
+      "evidence_state": .string("member_reported_not_verified")
+    ])
+    let units = Array(document.utf16)
+    guard units.count <= maximumFileBytes * 2, let start = Int(exactly: request.offset), start < units.count,
+          !(0xDC00...0xDFFF).contains(units[start])
+    else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    var end = min(units.count, start + pageUnits)
+    if end < units.count, (0xDC00...0xDFFF).contains(units[end]) { end -= 1 }
+    return ["success": .bool(true), "status": .string("returned"),
+      "content": .string(String(decoding: units[start..<end], as: UTF16.self)),
+      "total_characters": .int(Int64(units.count)),
+      "next_offset": end < units.count ? .int(Int64(end)) : .null]
+  }
+}
+
 struct AgentDesktopCollaborationResponseReplay {
   enum Lookup: Equatable {
     case missing, identityMismatch, response(AgentMcpJSONObject)

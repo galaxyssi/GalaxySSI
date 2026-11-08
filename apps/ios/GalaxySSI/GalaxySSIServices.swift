@@ -3161,12 +3161,14 @@ final class MessageCoordinator: ObservableObject {
     let fingerprint = AgentMcpJSONCodec.sha256(assignment.merging([
       "expires_at": .int(expiry), "phase": .string(phase), "delivery": delivery.map(AgentMcpJSONValue.object) ?? .null
     ]) { current, _ in current })
+    let textArtifactRead = !publishing && !testing && phase == "read"
+      ? AgentDesktopCollaborationTextArtifact.Read(input) : nil
     let cached: AgentMcpJSONObject?
     switch desktopCollaborationResponseReplay.lookup(key: key, fingerprint: fingerprint, now: now,
       revalidate: publishing && phase == "receipt") {
     case .identityMismatch: return
     case .missing: cached = nil
-    case .response(let response): cached = response
+    case .response(let response): cached = textArtifactRead == nil ? response : nil
     }
     var result: AgentMcpJSONObject = ["success": .bool(false), "status": .string("unavailable")]
     if cached == nil, !publishing, phase == "read", input["mode"] == .string(AgentCollaborationWorkflowCheck.mode),
@@ -3176,6 +3178,8 @@ final class MessageCoordinator: ObservableObject {
     }
     if let cached {
       result = cached
+    } else if let textArtifactRead {
+      if let page = try? history.readDesktopTextArtifact(textArtifactRead, scope: scope) { result = page }
     } else if let testRequest, let executionScope {
       result = handleSavedToolTest(testRequest, scope: executionScope, contact: contact, link: link)
     } else if !publishing, input["mode"] == .string(AgentCollaborationCandidateRecall.mode), input["view"] == nil,
