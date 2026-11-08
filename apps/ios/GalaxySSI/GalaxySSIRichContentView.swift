@@ -50,6 +50,7 @@ struct GalaxySSIRichContentView: View {
   var expansionStorageKey: String = ""
   var onAction: (AgentRichAction) -> Void = { _ in }
   var onFormSubmit: (AgentRichBlock, [String: String]) -> Void = { _, _ in }
+  var showsMissingAttachmentReference = true
 
   private var resolvedBlocks: [AgentRichBlock] {
     AgentRichContentCodec.presentationBlocks(content: content, richOutputJson: richOutputJson)
@@ -57,8 +58,13 @@ struct GalaxySSIRichContentView: View {
 
   var body: some View {
     let artifactRevision = coordinator.artifactRevision
+    let visibleContent = AgentMarkdownArtifactReferences.removingInternalLinks(content)
     let source = resolvedBlocks
     let blocks = source.map { coordinator.desktopArtifactStore.resolveBlock($0) }
+    let referencesOnly = visibleContent.isBlank && (!content.isBlank ||
+      (blocks.isEmpty && AgentMarkdownArtifactReferences.containsInternalScheme(richOutputJson)))
+    let isLargeOutput = !referencesOnly &&
+      max(visibleContent.utf16.count, richOutputJson.utf16.count) > AgentLargeOutputPolicy.chunkThresholdCharacters
     let speech = paragraphSpeechAction.map { _ in AgentReplySpeechPresentationPolicy.Prose(source) }
     let layout = AgentResponseSectionOrganizer.organize(
       blocks,
@@ -69,11 +75,13 @@ struct GalaxySSIRichContentView: View {
 
     Group {
       if isLargeOutput && !largeOutputExpanded {
-        largeOutputPreview
+        largeOutputPreview(visibleContent)
       } else {
         VStack(alignment: .leading, spacing: 8) {
           if blocks.isEmpty {
-            Text(content)
+            Text(referencesOnly && showsMissingAttachmentReference
+              ? t("rich_output_attachment_reference_unavailable", "The referenced attachment is unavailable.")
+              : visibleContent)
               .font(.body)
               .textSelection(.enabled)
           } else if layout.collapsible {
@@ -150,13 +158,9 @@ struct GalaxySSIRichContentView: View {
     ) { _ in }
   }
 
-  private var isLargeOutput: Bool {
-    max(content.utf16.count, richOutputJson.utf16.count) > AgentLargeOutputPolicy.chunkThresholdCharacters
-  }
-
-  private var largeOutputPreview: some View {
+  private func largeOutputPreview(_ visibleContent: String) -> some View {
     VStack(alignment: .leading, spacing: 8) {
-      Text(largeOutputPreviewText)
+      Text(largeOutputPreviewText(visibleContent))
         .font(.body)
         .foregroundColor(.galaxySSITextPrimary)
         .textSelection(.enabled)
@@ -189,8 +193,9 @@ struct GalaxySSIRichContentView: View {
     )
   }
 
-  private var largeOutputPreviewText: String {
-    let source = content.ifBlank(AgentRichContentCodec.fallbackText(richOutputJson))
+  private func largeOutputPreviewText(_ visibleContent: String) -> String {
+    let source = visibleContent.ifBlank(
+      AgentMarkdownArtifactReferences.removingInternalLinks(AgentRichContentCodec.fallbackText(richOutputJson)))
       .ifBlank(t("rich_output_load_failed", "Unable to display preview"))
     let preview = String(source.prefix(AgentLargeOutputPolicy.previewCharacters))
     return preview.count < source.count ? preview + "..." : preview

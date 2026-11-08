@@ -317,7 +317,8 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
       onAction: { action in
         onRichAction(message, action)
       },
-      onFormSubmit: onFormSubmit
+      onFormSubmit: onFormSubmit,
+      showsMissingAttachmentReference: message.isMine || message.deliveryStatus != .sent
     )
     .environment(\.agentRichHTMLPlaybackAllowed,
       [.delivered, .read, .local].contains(message.deliveryStatus))

@@ -5584,6 +5584,7 @@
 "rich_output_more_rows" = "还有 %d 行";
 "rich_output_loading" = "正在加载预览";
 "rich_output_load_failed" = "无法显示预览";
+"rich_output_attachment_reference_unavailable" = "引用的附件不可用。";
 "rich_output_actions" = "操作";
 "rich_output_input_required" = "需要输入";
 "rich_output_submit" = "提交";
