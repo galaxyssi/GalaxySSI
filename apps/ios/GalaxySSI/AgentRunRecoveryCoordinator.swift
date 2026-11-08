@@ -158,6 +158,7 @@ final class AgentRunRecoveryCoordinator {
   private let adapterResolver: AdapterResolver
   private let markInterrupted: (String, String) -> Void
   private let terminalDeliveries: () -> [AgentTerminalDelivery]
+  private let connectorReceipt: (String) throws -> AgentManagedResponseRecord?
 
   init(
     runStore: AgentRunControlStore,
@@ -168,7 +169,8 @@ final class AgentRunRecoveryCoordinator {
     markInterrupted: @escaping (String, String) -> Void = { _, _ in },
     terminalDeliveries: @escaping () -> [AgentTerminalDelivery] = {
       UserDefaultsAgentTerminalDeliveryStore().records()
-    }
+    },
+    connectorReceipt: @escaping (String) throws -> AgentManagedResponseRecord? = { _ in nil }
   ) {
     self.runStore = runStore
     self.workspaceStore = workspaceStore
@@ -177,6 +179,7 @@ final class AgentRunRecoveryCoordinator {
     self.adapterResolver = adapterResolver
     self.markInterrupted = markInterrupted
     self.terminalDeliveries = terminalDeliveries
+    self.connectorReceipt = connectorReceipt
   }
 
   func recover() async throws -> [AgentRunRecoveryResult] {
@@ -286,6 +289,7 @@ final class AgentRunRecoveryCoordinator {
       return try await recoverRemote(snapshot, decision: decision)
 
     case .failNonReplayable:
+      if let waiting = try preserveConnectorWait(snapshot) { return waiting }
       markInterrupted(snapshot.runId, decision.reason)
       try restoreWorkspace(
         snapshot: snapshot,
@@ -304,6 +308,57 @@ final class AgentRunRecoveryCoordinator {
         reason: decision.reason
       )
     }
+  }
+
+  private func preserveConnectorWait(_ snapshot: AgentRunControlSnapshot) throws -> AgentRunRecoveryResult? {
+    let event = snapshot.lastEvent
+    guard snapshot.state == .waitingForDevice, event.type == .waitingForDevice,
+          !(event.payload["action_id"]?.stringValue ?? "").isBlank,
+          let sourceText = event.payload["source_message_id"]?.stringValue, let source = Int64(sourceText), source > 0,
+          let receipt = try connectorReceipt(snapshot.runId),
+          receipt.ownerRunId == snapshot.runId, receipt.sourceMessageId == source,
+          receipt.agentId == snapshot.agentId, !receipt.contactId.isBlank,
+          receipt.conversationId == event.conversationId, !receipt.conversationId.isBlank,
+          receipt.turnId == (event.payload["connector_turn_id"]?.stringValue ?? event.messageId),
+          receipt.taskId == (event.payload["connector_task_id"]?.stringValue ?? snapshot.taskId),
+          !receipt.turnId.isBlank, !receipt.taskId.isBlank,
+          (event.payload["connector_contact_id"]?.stringValue ?? receipt.contactId) == receipt.contactId,
+          (event.payload["execution_generation"] == nil ? receipt.executionGeneration == 1 :
+            event.payload["execution_generation"]?.intValue == receipt.executionGeneration),
+          receipt.state == .pending ||
+            (receipt.state == .completed && receipt.response.map(receipt.correlates) == true) else { return nil }
+
+    func result(_ outcome: AgentRunRecoveryOutcome, _ reason: String) -> AgentRunRecoveryResult {
+      AgentRunRecoveryResult(runId: snapshot.runId, outcome: outcome,
+        lastRemoteEventSequence: snapshot.lastSequence, reason: reason)
+    }
+    let reason = "persisted_connector_response_wait"
+    guard let matched = workspaceFor(snapshot),
+          matched.workspaceId == snapshot.runId || matched.workspaceId == snapshot.taskId else {
+      return result(.waitingForRemote, reason)
+    }
+    for _ in 0..<Self.maxWriteAttempts {
+      guard let current = workspaceStore.find(matched.workspaceId),
+            current.taskId == snapshot.taskId, current.conversationId == event.conversationId,
+            (current.agentId.isEmpty || current.agentId == snapshot.agentId),
+            (current.deviceId.isEmpty || current.deviceId == snapshot.deviceId),
+            !current.cancellationRequested,
+            [.created, .queued, .running, .waitingResponse].contains(current.status),
+            runStore.recoverableRuns().contains(where: { $0.runId == snapshot.runId &&
+              $0.lastSequence == snapshot.lastSequence && $0.state == .waitingForDevice }) else {
+        return result(.alreadyCurrent, "connector_wait_scope_changed")
+      }
+      if current.status == .waitingResponse { return result(.waitingForRemote, reason) }
+      var waiting = current
+      waiting.status = .waitingResponse
+      do {
+        _ = try workspaceStore.upsert(waiting, expectedRevision: current.revision)
+        return result(.waitingForRemote, reason)
+      } catch is AgentWorkspaceRevisionConflictError {
+        continue
+      }
+    }
+    throw AgentRunRecoveryCoordinatorError(message: "Could not restore the persisted connector wait")
   }
 
   private func recoverRemote(
@@ -866,6 +921,7 @@ final class AgentStartupRecoveryCoordinator: ObservableObject {
                 let runStore = UserDefaultsAgentRunEventStore()
                 let workspaceStore = FileAgentWorkspaceStore()
                 let recordedStore = UserDefaultsAgentRecordedRunStore()
+                let connectorLedger = UserDefaultsAgentManagedResponseLedger()
                 let recovery = AgentRunRecoveryCoordinator(
                   runStore: runStore,
                   workspaceStore: workspaceStore,
@@ -879,7 +935,8 @@ final class AgentStartupRecoveryCoordinator: ObservableObject {
                       contacts: contacts
                     )
                   },
-                  adapterResolver: { _ in nil }
+                  adapterResolver: { _ in nil },
+                  connectorReceipt: { try connectorLedger.recoveryRecord(owner: $0) }
                 )
                 return (try await recovery.recover()).count
               }.value

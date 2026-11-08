@@ -120,6 +120,78 @@ final class AgentRunRecoveryCoordinatorTests: XCTestCase {
     XCTAssertNotEqual(failed.eventId, event.eventId)
   }
 
+  func testColdBootPreservesExactConnectorReceiptWithoutRegistrationOrPlanText() async throws {
+    let workspaces = InMemoryAgentWorkspaceStore(clock: { 1_000 })
+    var workspace = deliveryWorkspace()
+    workspace.status = .running
+    workspace.currentPlanSnapshot = ""
+    _ = try workspaces.upsert(workspace)
+    let events = RecoveryRunControlStore(event: connectorWaitingEvent())
+    let receipt = connectorWaitingReceipt()
+    let recovery = AgentRunRecoveryCoordinator(runStore: events, workspaceStore: workspaces,
+      recordedRun: { _ in nil }, registration: { _, _ in nil },
+      adapterResolver: { _ in XCTFail("Recovering a wait must not start an adapter"); return nil },
+      markInterrupted: { _, _ in XCTFail("The original reply is still admissible") },
+      terminalDeliveries: { [] }, connectorReceipt: { $0 == receipt.ownerRunId ? receipt : nil })
+    let first = try await recovery.recover()
+    XCTAssertEqual(first.single?.outcome, .waitingForRemote)
+    XCTAssertEqual(workspaces.find("turn-1")?.status, .waitingResponse)
+    let restored = workspaces.find("turn-1")
+    let repeated = try await recovery.recover()
+    XCTAssertEqual(repeated.single?.outcome, .waitingForRemote)
+    XCTAssertEqual(workspaces.find("turn-1"), restored)
+    XCTAssertTrue(events.appended.isEmpty)
+  }
+
+  func testConnectorWaitDoesNotOverridePausedOrCancelledWorkspace() async throws {
+    for status in [AgentWorkspaceStatus.paused, .cancelled] {
+      let workspaces = InMemoryAgentWorkspaceStore(clock: { 1_000 })
+      var workspace = deliveryWorkspace()
+      workspace.status = status
+      workspace.cancellationRequested = status == .cancelled
+      _ = try workspaces.upsert(workspace)
+      let events = RecoveryRunControlStore(event: connectorWaitingEvent())
+      let receipt = connectorWaitingReceipt()
+      let result = try await AgentRunRecoveryCoordinator(runStore: events, workspaceStore: workspaces,
+        recordedRun: { _ in nil }, registration: { _, _ in nil }, adapterResolver: { _ in nil },
+        terminalDeliveries: { [] }, connectorReceipt: { _ in receipt }).recover()
+      XCTAssertEqual(result.single?.outcome, .alreadyCurrent)
+      XCTAssertEqual(workspaces.find("turn-1")?.status, status)
+      XCTAssertTrue(events.appended.isEmpty)
+    }
+  }
+
+  func testForeignOrStaleConnectorReceiptDoesNotRestoreAWait() async throws {
+    var foreign = connectorWaitingReceipt()
+    foreign.conversationId = "another-conversation"
+    var stale = connectorWaitingReceipt()
+    stale.executionGeneration -= 1
+    for receipt in [foreign, stale] {
+      let workspaces = InMemoryAgentWorkspaceStore(clock: { 1_000 })
+      _ = try workspaces.upsert(deliveryWorkspace())
+      let events = RecoveryRunControlStore(event: connectorWaitingEvent())
+      let result = try await AgentRunRecoveryCoordinator(runStore: events, workspaceStore: workspaces,
+        recordedRun: { _ in nil }, registration: { _, _ in nil }, adapterResolver: { _ in nil },
+        terminalDeliveries: { [] }, connectorReceipt: { _ in receipt }).recover()
+      XCTAssertEqual(result.single?.outcome, .failedNonReplayable)
+      XCTAssertEqual(events.appended.single?.type, .runFailed)
+    }
+  }
+
+  private func connectorWaitingEvent() -> AgentRunControlEvent {
+    var event = runEvent(type: .waitingForDevice, sequence: 8)
+    event.payload = ["action_id": .string("original-action"), "source_message_id": .string("71"),
+      "connector_task_id": .string("remote-task"), "connector_turn_id": .string("turn-1"),
+      "connector_contact_id": .string("desktop-1:codex"), "execution_generation": .int(2)]
+    return event
+  }
+
+  private func connectorWaitingReceipt() -> AgentManagedResponseRecord {
+    AgentManagedResponseRecord(ownerRunId: "run-1", supervisorRunId: "parent-1", agentId: "codex",
+      deliveryMode: .respond, sourceMessageId: 71, contactId: "desktop-1:codex", conversationId: "conversation-1",
+      turnId: "turn-1", taskId: "remote-task", executionGeneration: 2)
+  }
+
   func testFailureArrivingDuringRemoteQueryDoesNotBecomeWaitingAgain() async throws {
     let workspaces = InMemoryAgentWorkspaceStore(clock: { 1_000 })
     _ = try workspaces.upsert(deliveryWorkspace())
