@@ -6,7 +6,7 @@ internal object HealthCarePlanTool {
     const val ID = "galaxyssi.health.plan.propose"
     private fun text(max: Int, description: String = "") = AgentNativeJsonSchema.string(minLength = 1, maxLength = max, description = description)
     private val source = AgentNativeJsonSchema.objectSchema(properties = mapOf(
-        "title" to text(300), "url" to text(1000, "HTTPS source URL actually read, not an invented citation."),
+        "title" to text(300), "url" to text(1000, "HTTPS source URL actually read. The same URL may support distinct quoted passages; do not duplicate the same receipt and quote."),
         "version" to text(80, "Source version/publication date, or explicitly unknown."),
         "applicability" to text(2000, "Population, limitations and why the source applies to this concern. This remains a model assessment."),
         "evidence_id" to text(36, "Exact native health_evidence evidence_id returned by galaxyssi.web.intelligence.fetch in this approved turn."),
@@ -22,7 +22,7 @@ internal object HealthCarePlanTool {
     ), required = setOf("kind", "description", "rationale", "source_index", "due_from", "due_until"), additionalProperties = false)
 
     fun definition(submit: (AgentNativeToolInvocationContext, AgentNativeJsonObject) -> HealthCarePlan) = AgentNativeToolDefinition(
-        descriptor = AgentNativeToolDescriptor(ID, "1.1.0", "Propose a health follow-up plan",
+        descriptor = AgentNativeToolDescriptor(ID, "1.1.1", "Propose a health follow-up plan",
             "Submit one final draft per approved health-discussion turn for user review in the Agent page. " +
                 "No action is confirmed or scheduled. Include uncertainties, evidence applicability and justified review windows. " +
                 "Do not prescribe medication changes, manufacture an optimal numerical target, or delay urgent care. " +

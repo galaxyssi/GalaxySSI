@@ -229,6 +229,21 @@ a short exact original-language supporting passage. Whitespace normalization is
 allowed; paraphrases, translations, omitted clauses and unrelated sources are not
 accepted as verbatim support. Compacted observations retain the source-to-receipt
 identity instead of silently losing the reference needed for plan submission.
+The executor-to-planner compaction path preserves that identity across repeated
+passes. Health reading windows use the remaining bounded observation budget for
+an exact contiguous excerpt, rather than the 500-character search-preview cap.
+Truncation is explicit and the existing total prompt budgets remain unchanged.
+Different passages or reading windows from the same URL may support different
+actions. Source uniqueness uses URL, receipt ID and quote, not URL alone; identical
+receipt/quote entries remain invalid. Each action retains its own supporting quote.
+
+The opt-in `HealthCareLiveResearchDeviceTest` exercises paired Desktop reasoning,
+phone HTTPS retrieval, native receipt-backed draft storage and a Chinese follow-up
+using synthetic data in isolated health databases. It reuses production planning
+prompts, parsing and compaction; it does not replace Activity consent, full runtime
+recovery or clinical acceptance. It changes no provider credentials or settings,
+does not confirm plans or schedule reminders, and bounds paid test execution only.
+Its local report must be pulled outside the repository and never uploaded.
 
 Plan persistence resolves references from the native store rather than trusting
 proof supplied by a model. Accepted actions retain their evidence IDs and quoted
