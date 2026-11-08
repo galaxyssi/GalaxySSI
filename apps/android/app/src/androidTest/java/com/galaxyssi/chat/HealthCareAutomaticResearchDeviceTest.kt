@@ -14,6 +14,7 @@ class HealthCareAutomaticResearchDeviceTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext.applicationContext
     private val markers get() = context.getSharedPreferences("health-runtime-probe", Context.MODE_PRIVATE)
+    private var observedTurn: String? = null
 
     @Test fun authorizedResearchUsesNormalBackgroundExecutionAndRecovery() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("health_automatic_research") == "true")
@@ -23,6 +24,7 @@ class HealthCareAutomaticResearchDeviceTest {
         AppStore.ensureInitialized(context)
         GalaxySSIMqttClient.connect(context)
         await(45_000, "Paired transport ready") { GalaxySSIMqttClient.isRequestReplyReady() }
+        if (phase == "followup") { followUp(); return }
         if (phase == "full" || phase == "start") start()
         val concern = checkNotNull(markers.getString("concern", null)) { "No isolated research to resume" }
         val turn = checkNotNull(markers.getString("turn", null))
@@ -43,12 +45,12 @@ class HealthCareAutomaticResearchDeviceTest {
         await(600_000, "Research completion through normal delivery") {
             checkHealthy(turn).state == HealthCareResearchState.COMPLETED
         }
-        assertAnswer(turn)
+        assertAnswer(turn, "6.3")
         val reviewTurn = confirmSyntheticContext(concern, turn)
         await(600_000, "Evidence research after measurement context confirmation") {
             checkHealthy(reviewTurn).state == HealthCareResearchState.COMPLETED
         }
-        assertAnswer(reviewTurn)
+        assertAnswer(reviewTurn, "6.3")
         SQLiteDatabase.openDatabase(context.getDatabasePath(HealthCareStore.DEFAULT_DB).absolutePath,
             null, SQLiteDatabase.OPEN_READONLY).use { database ->
             database.rawQuery("SELECT COUNT(*) FROM evidence_reads WHERE turn_id=?", arrayOf(reviewTurn)).use {
@@ -74,16 +76,17 @@ class HealthCareAutomaticResearchDeviceTest {
         println("HEALTH_AUTOMATIC production_scheduler=true original_conversation=true pending_only=true phase=$phase")
     }
 
-    private fun assertAnswer(turn: String) {
+    private fun assertAnswer(turn: String, vararg values: String) {
         val entries = AgentTranscriptStore(context).entriesForTurn(turn)
         assertTrue(entries.isNotEmpty())
         assertTrue(entries.all { it.conversationId == markers.getString("conversation", "") })
         val answer = entries.filter { it.role == AgentTranscriptRole.ASSISTANT }.joinToString("\n") { it.text }
-        assertTrue("No substantive answer returned to the original conversation", answer.length >= 80 && answer.contains("6.3"))
+        assertTrue("No substantive answer returned to the original conversation", answer.length >= 80)
+        values.forEach { assertTrue("The answer lost a required measurement: $it", answer.contains(it)) }
     }
 
-    private fun confirmSyntheticContext(concern: String, initialTurn: String): String {
-        markers.getString("review_turn", null)?.let { return it }
+    private fun confirmSyntheticContext(concern: String, initialTurn: String, marker: String = "review_turn"): String {
+        markers.getString(marker, null)?.let { return it }
         HealthCareStore(context).use { store ->
             val issue = store.concern(concern)!!
             // Match the context review UI; all measurements and answers in this namespace are synthetic.
@@ -99,8 +102,109 @@ class HealthCareAutomaticResearchDeviceTest {
             HealthCareStore(context).use { it.latestResearchJob(concern)?.turnId?.let { id -> id != initialTurn } == true }
         }
         val reviewTurn = HealthCareStore(context).use { it.latestResearchJob(concern)!!.turnId }
-        check(markers.edit().putString("review_turn", reviewTurn).commit())
+        check(markers.edit().putString(marker, reviewTurn).commit())
         return reviewTurn
+    }
+
+    private fun followUp() {
+        val concernId = checkNotNull(markers.getString("concern", null))
+        val originalReview = checkNotNull(markers.getString("review_turn", null))
+        val conversation = checkNotNull(markers.getString("conversation", null))
+        assertEquals(HealthCareResearchState.COMPLETED, checkHealthy(originalReview).state)
+        val originalGrant = HealthCareStore(context).use { it.plan(originalReview)!!.grant }
+        var authorizationId = markers.getString("followup_authorization", null)
+        if (authorizationId == null) {
+            val previous = HealthCareStore(context).use { it.researchAuthorization(concernId)!! }
+            assertFalse("The preceding acceptance must have revoked its synthetic consent", previous.active)
+            val preview = HealthCareResearchRuntime.preview(context, concernId)
+            assertEquals(conversation, preview.grant.conversationId)
+            assertEquals(originalGrant.targetId, preview.grant.targetId)
+            assertEquals(originalGrant.modelId, preview.grant.modelId)
+            HealthCareResearchRuntime.authorize(context, preview, previous.id)
+            authorizationId = HealthCareStore(context).use { it.researchAuthorization(concernId)!!.id }
+            check(markers.edit().putString("followup_authorization", authorizationId).commit())
+        }
+        val authorization = checkNotNull(authorizationId)
+        var seedTurn = markers.getString("followup_seed_turn", null)
+        if (seedTurn == null) {
+            await(60_000, "Renewed synthetic authorization scheduled") {
+                HealthCareStore(context).use { it.latestResearchJob(concernId)?.authorizationId == authorization }
+            }
+            seedTurn = HealthCareStore(context).use { it.latestResearchJob(concernId)!!.turnId }
+            check(markers.edit().putString("followup_seed_turn", seedTurn).commit())
+        }
+        val seed = checkNotNull(seedTurn)
+        if (!markers.contains("followup_record")) {
+            await(90_000, "Research is in flight before a new measurement arrives") {
+                val saved = SharedPreferencesAgentSessionStore(context, "task:$seed").load()
+                checkHealthy(seed)
+                saved?.lastActionResult?.metadata?.get("source_message_id")?.toLongOrNull()?.let { it > 0 } == true
+            }
+            // Persist the timestamp first so retrying this test cannot insert a duplicate reading.
+            if (!markers.contains("followup_at")) check(markers.edit().putLong("followup_at", System.currentTimeMillis() - 1).commit())
+            val at = markers.getLong("followup_at", 0)
+            val record = HealthRecordStore(context).use { records ->
+                val draft = HealthDraft(HealthMetric.GLUCOSE, mapOf("glucose" to "5.8"), "mmol/L", at, reference = "4-6")
+                when (val saved = records.save(draft)) {
+                    is HealthSaveResult.Saved -> saved.record
+                    is HealthSaveResult.Duplicate -> records.record(saved.id)!!
+                    else -> error("Synthetic follow-up was not saved")
+                }
+            }
+            check(markers.edit().putString("followup_record", record.id).commit())
+        }
+        val recordId = markers.getString("followup_record", "")!!
+        await(60_000, "Normal record notifications reassess the original concern") {
+            HealthCareStore(context).use { it.concern(concernId)?.assessment?.record?.id == recordId }
+        }
+        if (!markers.contains("followup_review_turn")) HealthCareStore(context).use { care ->
+            val issue = care.concern(concernId)!!
+            assertEquals(conversation, issue.conversationId)
+            assertNull("New measurements cannot inherit old collection context", issue.context)
+            assertEquals(HealthCareStage.VERIFY_CONTEXT, issue.stage)
+            val comparison = issue.assessment.comparison!!
+            assertEquals(HealthCareComparisonKind.NEW_RESULT, comparison.kind)
+            assertEquals("6.3", comparison.before.values["glucose"])
+            assertTrue(comparison.previousContext!!.screeningFpgApplicable)
+        }
+        var nextTurn = markers.getString("followup_turn", null)
+        if (nextTurn == null) {
+            await(60_000, "Standing authorization reacts to the new reading without a user message") {
+                HealthCareStore(context).use { it.latestResearchJob(concernId)?.let { job ->
+                    job.authorizationId == authorization && job.turnId != seed
+                } == true }
+            }
+            nextTurn = HealthCareStore(context).use { it.latestResearchJob(concernId)!!.turnId }
+            check(markers.edit().putString("followup_turn", nextTurn).commit())
+        }
+        val followup = checkNotNull(nextTurn)
+        await(600_000, "New reading reaches the original Agent conversation") {
+            checkHealthy(followup).state == HealthCareResearchState.COMPLETED
+        }
+        assertAnswer(followup, "6.3", "5.8")
+        assertFalse("Obsolete in-flight research cannot project its answer",
+            HealthCareResearchWork.allowProjection(context, conversation, seed))
+        val review = confirmSyntheticContext(concernId, followup, "followup_review_turn")
+        await(600_000, "Confirmed follow-up reaches a source-backed reviewable plan") {
+            checkHealthy(review).state == HealthCareResearchState.COMPLETED
+        }
+        assertAnswer(review, "6.3", "5.8")
+        HealthCareStore(context).use { care ->
+            val issue = care.concern(concernId)!!
+            assertEquals(conversation, issue.conversationId)
+            assertTrue(issue.open)
+            assertFalse(issue.stage in setOf(HealthCareStage.MAINTENANCE, HealthCareStage.CLOSED))
+            assertNull(issue.target); assertNull(issue.maintenance)
+            assertTrue(issue.actions.isEmpty()); assertNull(care.nextReminder())
+            val plan = checkNotNull(care.plan(review)) { "Follow-up research did not retain a pending proposal" }
+            assertEquals(HealthCarePlanState.PENDING, plan.state)
+            assertTrue(plan.sources.isNotEmpty())
+            assertTrue(plan.sources.all { it.evidence != null && it.quote.isNotBlank() })
+            assertEquals(setOf(seed, followup, review), care.researchJobs(concernId)
+                .filter { it.authorizationId == authorization }.map { it.turnId }.toSet())
+            care.revokeResearch(concernId, authorization, System.currentTimeMillis())
+        }
+        println("HEALTH_AUTOMATIC followup=true same_concern=true same_conversation=true no_automatic_closure=true")
     }
 
     private fun start() {
@@ -131,6 +235,7 @@ class HealthCareAutomaticResearchDeviceTest {
     }
 
     private fun checkHealthy(turn: String): HealthCareResearchJob {
+        observedTurn = turn
         val job = HealthCareStore(context).use { it.researchJob(turn)!! }
         check(!job.terminal || job.state == HealthCareResearchState.COMPLETED) {
             "Automatic research ended ${job.state}: ${AgentObservationRedaction.redact(job.detail).take(350)}"
@@ -173,7 +278,8 @@ class HealthCareAutomaticResearchDeviceTest {
     }
 
     private fun diagnose() {
-        val turn = markers.getString("review_turn", null) ?: markers.getString("turn", "").orEmpty()
+        val turn = observedTurn ?: markers.getString("followup_review_turn", null) ?: markers.getString("followup_turn", null)
+            ?: markers.getString("review_turn", null) ?: markers.getString("turn", "").orEmpty()
         if (turn.isEmpty()) return
         val supervisor = AgentTaskRuntime.supervisor(context)
         val workspace = supervisor.findWorkspace(turn)

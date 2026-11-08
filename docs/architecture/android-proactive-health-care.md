@@ -558,6 +558,20 @@ a pending plan, without adopting actions or scheduling reminders. Both turn IDs
 survive further test-process restarts. The `inspect` phase only diagnoses the
 existing isolated job and receipt admission; it does not submit a new request.
 
+The `followup` phase extends a completed `full` or `resume` run without replacing
+its synthetic archive. It renews synthetic consent for the same selected model,
+waits for a durable in-flight connector receipt, then saves a new reading through
+the normal record store. Record notifications, not a test-owned dispatch loop,
+must reassess the original concern and schedule a new turn in its original
+conversation. The obsolete turn must no longer project a response. Previous
+collection context remains attached to the old measurement; the new measurement
+requires its own confirmation. After that confirmation, normal research must
+retain source receipts and a pending proposal without adopting actions, targets,
+maintenance, closure or reminders. The test revokes its renewed consent on
+success. Durable phase markers permit inspection and resumption without inserting
+duplicate synthetic readings. Same-day synthetic readings do not establish
+clinical improvement, a long-term observation period or physical reboot coverage.
+
 The runner redirects databases, task files and non-pairing preferences into a
 dedicated acceptance namespace before the application and workers initialize.
 It asserts the care, transcript and WorkManager database locations before
