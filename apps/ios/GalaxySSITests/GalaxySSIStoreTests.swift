@@ -723,6 +723,40 @@ final class GalaxySSIStoreTests: XCTestCase {
   }
 
   @MainActor
+  func testDurableDesktopCancellationPinsOriginalTaskAndUsesStableControlIntent() throws {
+    let store = makeStore()
+    let original = try store.addServerLink(from: makePairingQRCode())
+    store.markServerPaired(desktopId: original.desktopId)
+    let link = try XCTUnwrap(store.serverLinks.first { $0.desktopId == original.desktopId })
+    let routes = link.routes
+    let binding = MqttPeerBinding(scope: "direct:device", sender: routes.localFingerprint, receiver: routes.remoteFingerprint,
+      secret: routes.linkSecret, sendTopic: routes.upTopic, sendTopics: routes.sendWindow, receiveTopics: routes.receiveWindow)
+    let target = MqttPeerChatProjection.Destination(contactId: "device", conversationId: "device-conversation",
+      peer: .init(binding: binding, remoteSignalName: link.desktopId), routeId: routes.clientRouteId, desktop: true, routes: routes)
+    let contact = try XCTUnwrap(store.contact(id: "\(link.desktopId):codex"))
+    let identities = AgentTaskIdentityStore(defaults: store.defaults, storageKeyPrefix: "mqtt-cancel-fixture")
+    let projection = MqttDesktopConnectorProjection(store: store, identities: identities, commitResponse: { _, _ in })
+    let command: [String: Any] = ["type": "agent_task_cancel", "task_id": "task", "client_route_id": routes.clientRouteId,
+      "conversation_id": "conversation", "turn_id": "turn", "contact_id": contact.id, "source_message_id": 42,
+      "agent_id": contact.connectorAgentId, "desktop_id": link.desktopId, "time": 1_000]
+    XCTAssertThrowsError(try projection.outgoingCancellation(command, target: target))
+    XCTAssertTrue(identities.register(contactId: contact.id, sourceMessageId: 42,
+      identity: .init(clientRouteId: routes.clientRouteId, conversationId: "conversation", taskId: "task", turnId: "turn")))
+    let request = try projection.outgoingCancellation(command, target: target)
+    XCTAssertEqual(request.traffic, .control)
+    XCTAssertEqual(request.contactID, target.contactId)
+    XCTAssertEqual(try request.applicationPayload().string("contact_id"), contact.id)
+    var replay = command
+    replay["source_message_id"] = "42"
+    XCTAssertEqual(try projection.outgoingCancellation(replay, target: target).messageID, request.messageID)
+    for field in ["task_id", "turn_id", "conversation_id", "desktop_id", "client_route_id", "agent_id", "source_message_id"] {
+      var changed = command
+      changed[field] = "foreign"
+      XCTAssertThrowsError(try projection.outgoingCancellation(changed, target: target), field)
+    }
+  }
+
+  @MainActor
   func testDesktopConnectorAttachmentPlanBindsTheActualAgentTranscriptAndTurn() throws {
     let store = makeStore()
     let link = try store.addServerLink(from: makePairingQRCode())
