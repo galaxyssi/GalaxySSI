@@ -241,11 +241,22 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let otherAction = try XCTUnwrap(reopened.load().localCare?.current["glucose"]?.adoptedActions?.last)
     try reopened.scheduleLocalCareFollowUp(concernID: concern.id, metric: .glucose, actionID: otherAction.id,
       replacing: nil, at: firstTime, now: now)
+    let scope = GalaxySSIHealthCareAgenda.Scope(concern: concern.id, metric: .glucose)
+    let firstPage = try reopened.localCareAgendaPage(filter: nil, scope: scope, limit: 1, now: now)
+    let nextPage = try XCTUnwrap(firstPage.next)
+    XCTAssertEqual(firstPage.items.map(\.action.id), [otherAction.id])
+    XCTAssertEqual(try reopened.localCareAgendaPage(filter: nil, scope: scope, after: nextPage, limit: 1, now: now)
+      .items.map(\.action.id), [action.id])
+    XCTAssertTrue(try reopened.localCareAgendaPage(filter: .recorded, now: now).items.isEmpty)
+    XCTAssertNotNil(try reopened.load().localCareAgenda)
     XCTAssertThrowsError(try reopened.recordLocalCareOutcome(concernID: concern.id, metric: .glucose,
       action: action, note: " ", now: now))
     try reopened.recordLocalCareOutcome(concernID: concern.id, metric: .glucose, action: action,
       note: "Discussed at appointment", now: now)
     let recorded = try XCTUnwrap(reopened.load().localCare?.current["glucose"])
+    XCTAssertThrowsError(try reopened.localCareAgendaPage(filter: nil, scope: scope, after: nextPage, now: now))
+    XCTAssertEqual(try reopened.localCareAgendaPage(filter: .recorded, now: now).items.first?.action.outcome?.note,
+      "Discussed at appointment")
     XCTAssertEqual(recorded.stage, .reassess)
     XCTAssertEqual(recorded.assessment, updated.assessment)
     XCTAssertEqual(recorded.adoptedActions?.first?.outcome?.note, "Discussed at appointment")
@@ -254,9 +265,18 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertNil(try reopened.localCareFollowUpTarget(token: secondReminder.id, now: secondTime))
     try reopened.reviewLocalCare(recorded, stage: .paused, reason: "Fixture pause", now: now)
     let paused = try XCTUnwrap(reopened.load().localCare?.current["glucose"])
+    XCTAssertEqual(try reopened.localCareAgendaPage(filter: .review, now: now).items.map(\.action.id), [otherAction.id])
     XCTAssertNil(try reopened.load().localCareFollowUps?[otherAction.id])
     try reopened.reviewLocalCare(paused, stage: .reassess, reason: "Fixture resume", now: now)
     XCTAssertNil(try reopened.load().localCareFollowUps?[otherAction.id])
+    try reopened.scheduleLocalCareFollowUp(concernID: concern.id, metric: .glucose, actionID: otherAction.id,
+      replacing: nil, at: firstTime, now: now)
+    let toCancel = try XCTUnwrap(reopened.load().localCareFollowUps?[otherAction.id])
+    try reopened.cancelLocalCareFollowUp(toCancel)
+    let uncancelledAction = try XCTUnwrap(reopened.localCareAgendaPage(filter: nil, scope: scope, now: now)
+      .items.first(where: { $0.action.id == otherAction.id }))
+    XCTAssertNil(uncancelledAction.reminder)
+    XCTAssertNil(uncancelledAction.action.outcome)
     try reopened.scheduleLocalCareFollowUp(concernID: concern.id, metric: .glucose, actionID: otherAction.id,
       replacing: nil, at: firstTime, now: now)
     let secondPending = try reopened.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Another draft",
@@ -279,6 +299,9 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     try reopened.resolveLocalCarePlan(revoked, selected: nil, now: now)
     XCTAssertEqual(try reopened.load().localCarePlans?[second.id.uuidString]?.state, .dismissed)
     XCTAssertEqual(try reopened.load().localCare?.current["glucose"]?.adoptedActions?.count, 2)
+    try reopened.setPrivacy(.localCare, enabled: false)
+    XCTAssertThrowsError(try reopened.localCareAgendaPage(filter: .recorded, now: now))
+    XCTAssertNil(try reopened.load().localCareAgenda)
   }
 
   @MainActor
@@ -785,6 +808,44 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertNil(reviewed.maintenanceReview)
     XCTAssertTrue(archive.localCareFollowUps?.isEmpty ?? true)
     XCTAssertTrue(try reopened.reconcileLocalCareResearch(now: nextAt.addingTimeInterval(1)).isEmpty)
+  }
+
+  func testHealthAgendaKeysetBoundsActionsAndRejectsStaleDayFilterAndGeneration() throws {
+    typealias Agenda = GalaxySSIHealthCareAgenda
+    let id = UUID()
+    let other = UUID()
+    let scope = Agenda.Scope(concern: id, metric: .glucose)
+    let dayEnd = Date(timeIntervalSince1970: 100_000)
+    let today = dayEnd.addingTimeInterval(-1)
+    let rows: [Agenda.Row] = (0..<210).map { n in
+      .init(key: .init(bucket: .planned, due: today, concern: n.isMultiple(of: 2) ? id : other,
+        action: "action-\(n)"), metric: n.isMultiple(of: 2) ? .glucose : .weight, revision: 1,
+        reminderID: nil, submittedFor: nil, canRecord: true)
+    }
+    let later = Agenda.Row(key: .init(bucket: .planned, due: dayEnd, concern: id, action: "later"),
+      metric: .glucose, revision: 1, reminderID: nil, submittedFor: nil, canRecord: true)
+    let index = Agenda.Projection(carePermission: nil, onlinePermission: nil, context: [:], rows: Array(rows.reversed()) + [later])
+    var cursor: Agenda.Cursor?
+    var seen = Set<String>()
+    var firstCursor: Agenda.Cursor?
+    for page in 0..<7 {
+      let fetched = try index.page(filter: .today, scope: nil, dayEnd: dayEnd, after: cursor, limit: 30)
+      XCTAssertEqual(fetched.count, page < 6 ? 31 : 30)
+      for row in fetched.prefix(30) { XCTAssertTrue(seen.insert(row.key.action).inserted) }
+      cursor = .init(generation: index.generation, filter: .today, scope: nil, dayEnd: dayEnd,
+        key: try XCTUnwrap(fetched.prefix(30).last).key)
+      if page == 0 { firstCursor = cursor }
+    }
+    XCTAssertEqual(seen.count, 210)
+    XCTAssertTrue(try index.page(filter: .today, scope: nil, dayEnd: dayEnd, after: cursor, limit: 30).isEmpty)
+    XCTAssertEqual(try index.page(filter: .later, scope: nil, dayEnd: dayEnd, after: nil, limit: 30), [later])
+    XCTAssertTrue(try index.page(filter: nil, scope: scope, dayEnd: dayEnd, after: nil, limit: 30)
+      .allSatisfy { $0.key.concern == id })
+    XCTAssertThrowsError(try index.page(filter: .later, scope: nil, dayEnd: dayEnd, after: firstCursor, limit: 30))
+    XCTAssertThrowsError(try index.page(filter: .today, scope: nil,
+      dayEnd: dayEnd.addingTimeInterval(86_400), after: firstCursor, limit: 30))
+    let updated = Agenda.Projection(carePermission: nil, onlinePermission: nil, context: [:], rows: rows)
+    XCTAssertThrowsError(try updated.page(filter: .today, scope: nil, dayEnd: dayEnd, after: firstCursor, limit: 30))
   }
 
   @MainActor
