@@ -8,6 +8,7 @@ import android.os.Looper
 import android.widget.CheckBox
 import android.widget.ScrollView
 import android.widget.Toast
+import org.json.JSONObject
 import java.util.concurrent.Executors
 
 /** Separate consent for future model calls; a local tracking switch never grants network access. */
@@ -44,6 +45,9 @@ internal class HealthCareResearchReview(private val activity: Activity, private 
         ui.add(content, ui.text(activity.getString(if (authorization?.active == true) R.string.health_research_on else R.string.health_research_off), 14f)
             .apply { tag = "health-research-authorization" }, 8)
         authorization?.scope?.let { scope -> ui.add(content, ui.text(destination(scope), 14f), 8) }
+        if (authorization?.active == true) ui.add(content, ui.text(activity.getString(
+            if (authorization.scope.feedbackHistoryShared) R.string.health_research_feedback_on else R.string.health_research_feedback_off), 14f)
+            .apply { tag = "health-research-feedback-scope" }, 8)
         job?.let {
             ui.add(content, ui.text(activity.getString(it.state.titleResource()), 15f, bold = true).apply { tag = "health-research-state" }, 12)
             if (it.detail.isNotBlank()) ui.add(content, ui.text(it.detail, 14f), 6)
@@ -90,11 +94,26 @@ internal class HealthCareResearchReview(private val activity: Activity, private 
         }
         ui.add(content, ui.text(activity.getString(preview.concern.metric.titleResource()) + " · " +
             preview.concern.assessment.value + " " + preview.concern.assessment.unit, 16f, bold = true), 12)
-        val raw = ui.text(preview.snapshot, 13f).apply { visibility = android.view.View.GONE }
+        val raw = ui.text(preview.snapshot, 13f).apply {
+            visibility = android.view.View.GONE
+            tag = "health-research-data-preview"
+        }
         ui.add(content, ui.profileRow(activity.getString(R.string.health_care_discussion_data)) {
             raw.visibility = if (raw.visibility == android.view.View.GONE) android.view.View.VISIBLE else android.view.View.GONE
         }, 8)
         ui.add(content, raw, 8)
+        val feedback = CheckBox(activity).apply {
+            text = activity.getString(R.string.health_research_feedback_consent)
+            tag = "health-research-feedback-history"
+            isChecked = false
+            setOnCheckedChangeListener { _, value ->
+                raw.text = JSONObject(preview.snapshot).apply {
+                    put("feedback_history", JSONObject().put("authorized", value).put("included", false)
+                        .put("read_tool", if (value) HealthCareFeedbackTool.ID else JSONObject.NULL))
+                }.toString(2)
+            }
+        }
+        ui.add(content, feedback, 12)
         val checked = CheckBox(activity).apply { text = activity.getString(R.string.health_research_acknowledge); tag = "health-research-consent" }
         ui.add(content, checked, 12)
         val next = AlertDialog.Builder(activity).setTitle(R.string.health_research_title)
@@ -106,9 +125,10 @@ internal class HealthCareResearchReview(private val activity: Activity, private 
             checked.setOnCheckedChangeListener { _, value -> isEnabled = value }
             setOnClickListener {
                 if (!checked.isChecked || busy) return@setOnClickListener
+                val shareFeedback = feedback.isChecked
                 next.dismiss()
                 work {
-                    HealthCareResearchRuntime.authorize(activity.applicationContext, preview, expectedId)
+                    HealthCareResearchRuntime.authorize(activity.applicationContext, preview, expectedId, shareFeedback)
                     val done: () -> Unit = { show(preview.concern.id) }
                     done
                 }

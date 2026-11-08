@@ -22,14 +22,17 @@ class HealthCareFeedbackToolTest {
         .put("input_version", issue.inputVersion).put("revision", issue.revision).put("items", JSONArray(rows))
         .put("page_start", JSONObject.NULL).put("next", JSONObject.NULL).put("done", true).put("health_improvement_verified", false)
 
-    @Test fun oldAndResearchGrantsDoNotGainHistoryAuthority() {
+    @Test fun historyToolRequiresExplicitAuthorityIncludingResearch() {
         val old = grant()
         assertFalse(HealthCareDiscussionGrant.from(old.json().apply { remove("feedback_history_shared") }).feedbackHistoryShared)
         assertFalse(HealthCareFeedbackTool.ID in HealthCareDiscussionPolicy.tools(old))
+        assertFalse(AgentConversationRecallTool.ID in HealthCareDiscussionPolicy.tools(old))
         val allowed = old.copy(feedbackHistoryShared = true)
         assertEquals(allowed, HealthCareDiscussionGrant.from(allowed.json()))
         assertTrue(HealthCareFeedbackTool.ID in HealthCareDiscussionPolicy.tools(allowed))
-        assertFalse(HealthCareFeedbackTool.ID in HealthCareDiscussionPolicy.tools(allowed.copy(researchAuthorizationId = UUID.randomUUID().toString())))
+        assertTrue(AgentConversationRecallTool.ID in HealthCareDiscussionPolicy.tools(allowed))
+        assertTrue(HealthCareFeedbackTool.ID in HealthCareDiscussionPolicy.tools(allowed.copy(researchAuthorizationId = UUID.randomUUID().toString())))
+        assertFalse(HealthCareFeedbackTool.ID in HealthCareDiscussionPolicy.tools(old.copy(researchAuthorizationId = UUID.randomUUID().toString())))
         assertFalse(JSONObject(HealthCareDiscussionPolicy.snapshot(issue)).getJSONObject("feedback_history").getBoolean("authorized"))
         assertTrue(JSONObject(HealthCareDiscussionPolicy.snapshot(issue, feedbackHistoryShared = true))
             .getJSONObject("feedback_history").getBoolean("authorized"))

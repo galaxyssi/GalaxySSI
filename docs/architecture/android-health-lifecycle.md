@@ -291,7 +291,7 @@ test establishes clinical effectiveness.
 The existing manual discussion approval now discloses paged access to this
 concern's execution feedback. A persisted per-turn flag authorizes the read-only
 phone tool `galaxyssi.health.feedback.read`; old grants default to false, and
-automatic research does not acquire this additional permission. The Agent main
+automatic research requires a separate explicit choice for this permission. The Agent main
 layout is unchanged. No feedback is included automatically in the first prompt
 beyond the existing latest action notes. The snapshot names the available tool.
 
@@ -310,6 +310,23 @@ separate facts; no entry proves clinical improvement. Legacy outcome text is not
 fabricated into feedback receipts. Observation compaction retains entire entries
 and advances only past delivered entries; an insufficient budget preserves the
 cursor and explicitly requires a larger budget, not repeated identical reads.
+
+The proactive research consent dialog offers a separate, initially unchecked
+history option. It does not replace the mandatory destination/standing-consent
+acknowledgement. The disclosed data preview and saved scope show the choice.
+New research turns inherit only the persisted standing scope, not a manual turn's
+permissions. Authorization matching includes the history flag. Replacing or
+narrowing consent cancels unfinished jobs durably; revoked, terminal and
+superseded turns cannot continue paging. New feedback requires a new revision
+and turn while retaining a still-valid standing authorization. Reads remain
+phone-local and read-only; online analysis is still required for remote models.
+This does not authorize clinical plan changes or expand selected profile data.
+Without history consent, generic conversation recall is unavailable and both
+planning and launch filter prior dialogue through its persisted turn grants.
+Unattributed summaries and broader-history turns are excluded; already-permitted
+turns and the fresh scoped health snapshot remain available. Existing transcripts
+are not deleted. This prevents a narrowed grant from reintroducing feedback
+through an old conversation summary instead of the paged tool.
 
 This adds model access to recorded follow-up evidence, not an independently
 verified clinical review, automatic treatment adjustment or background authority.

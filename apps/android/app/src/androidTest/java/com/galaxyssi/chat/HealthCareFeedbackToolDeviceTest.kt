@@ -35,6 +35,84 @@ class HealthCareFeedbackToolDeviceTest {
         AgentNativeToolInvocationContext(conversationId = conversation, turnId = turn),
         mapOf("input_version" to issue.inputVersion, "revision" to issue.revision) + extra, now)
 
+    private fun research(names: HealthOverviewDatabases, care: HealthCareStore, issue: HealthCareConcern,
+        shared: Boolean = true, previous: String? = null): Pair<HealthCareResearchAuthorization, HealthCareDiscussionGrant> {
+        val scope = grant(names, care, issue, shared)
+        val authorization = HealthCareResearchAuthorization(UUID.randomUUID().toString(), scope, "b".repeat(64))
+        care.authorizeResearch(authorization, previous)
+        val job = care.queueResearch(authorization.id, issue.id, System.currentTimeMillis())
+        val approved = scope.copy(turnId = job.turnId, revision = job.revision, researchAuthorizationId = authorization.id)
+        care.approveDiscussion(approved)
+        return authorization to approved
+    }
+
+    @Test fun researchHistoryConsentAndCursorSurviveDatabaseReopen(): Unit = fixture { names, care, initial ->
+        val expected = (1..35).map { save(care, initial.id, it).revision }.reversed()
+        val issue = care.concern(initial.id)!!
+        val (authorization, approval) = research(names, care, issue)
+        val first = read(names, issue, approval)
+        assertEquals(30, first.getJSONArray("items").length())
+        HealthCareStore(context, names.care).use { reopened ->
+            assertEquals(authorization, reopened.researchAuthorization(issue.id))
+            assertEquals(approval, reopened.discussionGrant(approval.turnId))
+            assertTrue(reopened.researchGrantCurrent(approval))
+        }
+        val second = read(names, issue, approval, mapOf("before_revision" to first.getInt("next")))
+        val revisions = listOf(first, second).flatMap { page -> val rows = page.getJSONArray("items")
+            (0 until rows.length()).map { rows.getJSONObject(it).getInt("revision") } }
+        assertEquals(expected, revisions); assertTrue(second.getBoolean("done"))
+        assertEquals(issue, care.concern(issue.id)); assertNull(care.nextDue())
+    }
+    @Test fun researchWithoutHistoryConsentCannotEscalateItsTurn(): Unit = fixture { names, care, issue ->
+        val (_, approval) = research(names, care, issue, shared = false)
+        assertThrows(HealthCareConflict::class.java) { read(names, issue, approval) }
+        assertThrows(HealthCareConflict::class.java) { care.approveDiscussion(approval.copy(feedbackHistoryShared = true)) }
+        assertFalse(care.researchGrantCurrent(approval.copy(feedbackHistoryShared = true)))
+    }
+    @Test fun narrowingResearchConsentCancelsPreparedTurnAndBlocksNextPage(): Unit = fixture { names, care, initial ->
+        repeat(31) { save(care, initial.id, it) }
+        val issue = care.concern(initial.id)!!
+        val (old, approval) = research(names, care, issue)
+        val page = read(names, issue, approval)
+        val (_, narrowed) = research(names, care, issue, shared = false, previous = old.id)
+        assertEquals(HealthCareResearchState.CANCELLED, care.researchJob(approval.turnId)!!.state)
+        assertTrue(care.researchJob(approval.turnId)!!.cancellationPending)
+        assertThrows(HealthCareConflict::class.java) { read(names, issue, approval, mapOf("before_revision" to page.getInt("next"))) }
+        assertThrows(HealthCareConflict::class.java) { read(names, issue, narrowed) }
+        assertFalse(care.researchAuthorization(issue.id)!!.scope.feedbackHistoryShared)
+    }
+    @Test fun revokedResearchHistoryCannotBeReadEvenWithPersistedTurnGrant(): Unit = fixture { names, care, initial ->
+        save(care, initial.id)
+        val issue = care.concern(initial.id)!!; val (authorization, approval) = research(names, care, issue)
+        read(names, issue, approval)
+        care.revokeResearch(issue.id, authorization.id, System.currentTimeMillis())
+        assertEquals(approval, care.discussionGrant(approval.turnId))
+        assertThrows(HealthCareConflict::class.java) { read(names, issue, approval) }
+        assertEquals(1, care.feedback(issue.id).items.size)
+    }
+    @Test fun freshFeedbackNeedsNewResearchTurnButNotNewStandingConsent(): Unit = fixture { names, care, initial ->
+        save(care, initial.id)
+        val issue = care.concern(initial.id)!!; val (authorization, approval) = research(names, care, issue)
+        read(names, issue, approval)
+        save(care, issue.id, 2)
+        val current = care.concern(issue.id)!!
+        assertThrows(HealthCareConflict::class.java) { read(names, current, approval) }
+        val job = care.queueResearch(authorization.id, issue.id, System.currentTimeMillis())
+        assertNotEquals(approval.turnId, job.turnId)
+        val next = approval.copy(turnId = job.turnId, revision = job.revision, approvedAt = System.currentTimeMillis())
+        care.approveDiscussion(next)
+        assertEquals(2, read(names, current, next).getJSONArray("items").length())
+        assertEquals(authorization, care.researchAuthorization(issue.id))
+    }
+    @Test fun terminalResearchJobCannotKeepReadingHistory(): Unit = fixture { names, care, issue ->
+        val (_, approval) = research(names, care, issue)
+        val job = care.researchJob(approval.turnId)!!
+        val running = care.updateResearchJob(job, HealthCareResearchState.DISPATCHED)
+        read(names, issue, approval)
+        care.updateResearchJob(running, HealthCareResearchState.COMPLETED)
+        assertThrows(HealthCareConflict::class.java) { read(names, issue, approval) }
+    }
+
     @Test fun allSeventyFiveEntriesPageWithoutLossDuplicationOrWrites(): Unit = fixture { names, care, initial ->
         val expected = (1..75).map { save(care, initial.id, it) }
         val issue = care.concern(initial.id)!!; val approval = grant(names, care, issue)

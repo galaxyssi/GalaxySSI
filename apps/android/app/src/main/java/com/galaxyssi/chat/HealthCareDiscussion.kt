@@ -72,7 +72,7 @@ internal object HealthCareDiscussion {
                 care.settings().version, privacy.version, destination, System.currentTimeMillis(), target.id, model, effort.wireValue,
                 research?.id.orEmpty(), concern.profileLink, questionsShared = research?.scope?.questionsShared ?: true,
                 userInputDigest = if (research == null) AgentNativeJsonCodec.sha256(question.trim()) else "",
-                feedbackHistoryShared = research == null && feedbackHistoryShared)
+                feedbackHistoryShared = research?.scope?.feedbackHistoryShared ?: feedbackHistoryShared)
             check(HealthCareDiscussionPolicy.questionScopeCurrent(grant, concern)) { context.getString(R.string.health_care_changed) }
             if (research != null) check(research.permits(grant) && care.researchGrantCurrent(grant)) {
                 context.getString(R.string.health_care_changed)
@@ -91,7 +91,8 @@ internal object HealthCareDiscussion {
             val snapshot = HealthCareDiscussionPolicy.snapshot(concern, followUp, profile,
                 if (grant.questionsShared) care.questions(concern, limit = 8) else null, grant.feedbackHistoryShared)
             val goal = HealthCareDiscussionPolicy.prompt(question, snapshot)
-            val history = AgentTranscriptStore(context).context(conversationId)
+            val history = HealthCareDiscussionPolicy.historyForGrant(AgentTranscriptStore(context).context(conversationId),
+                grant, care::discussionGrant)
             check(history.conversationId == conversationId && history.privateMode && history.trackingPaused) {
                 context.getString(R.string.health_care_discussion_permissions)
             }
@@ -208,12 +209,8 @@ internal object HealthCareDiscussion {
     fun toolRejection(context: Context, tool: AgentNativeToolDescriptor, invocation: AgentNativeToolInvocationContext): String? {
         if (!bound(context, invocation.conversationId)) return null
         return rejection(context, invocation.conversationId, invocation.turnId)
-            ?: if (tool.id !in HealthCareDiscussionPolicy.discussionTools) context.getString(R.string.health_care_discussion_scope)
-            else if (tool.id == HealthCareFeedbackTool.ID && !HealthCareStore(context).use {
+            ?: if (!HealthCareStore(context).use {
                 it.discussionGrant(invocation.turnId)?.let { grant -> tool.id in HealthCareDiscussionPolicy.tools(grant) } == true
-            }) context.getString(R.string.health_care_discussion_scope)
-            else if (tool.id in HealthCareQuestionTools.ids && !HealthCareStore(context).use {
-                it.discussionGrant(invocation.turnId)?.questionsShared == true
             }) context.getString(R.string.health_care_discussion_scope)
             else if (tool.id !in setOf(AgentToolDiscoveryTools.ID, AgentToolInspectionTools.DESCRIBE, AgentConversationRecallTool.ID,
                     HealthCarePlanTool.ID, HealthCareHistoryTool.ID, HealthCareFeedbackTool.ID) && tool.id !in HealthCareQuestionTools.ids &&
