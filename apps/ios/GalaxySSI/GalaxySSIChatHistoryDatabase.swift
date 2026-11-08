@@ -40,57 +40,37 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
   private let cipher: GalaxySSIAttachmentAtRestCipher
   private let lock = NSRecursiveLock()
   private var database: OpaquePointer?
-  private var rowCache = RowCache()
+  private let rowCache = RowCache()
   private var rowCachingEnabled = true
+  private var agentOwnerBackfillFinished = false
 
   struct RowCache {
     private struct Entry {
       let ciphertext: Data
       let message: ChatMessage
-      let cost: Int
     }
-    private let maximumRows: Int
-    private let maximumBytes: Int
-    private var entries: [String: Entry] = [:]
-    private var order: [String] = []
-    private var bytes = 0
+    private let cache: GalaxySSIRuntimeCache<String, Entry>
 
-    init(maximumRows: Int = 32, maximumBytes: Int = 512 * 1024) {
-      self.maximumRows = maximumRows
-      self.maximumBytes = maximumBytes
+    init(maximumRows: Int = 32, maximumBytes: Int = 512 * 1024,
+         now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
+      cache = GalaxySSIRuntimeCache(maxCount: maximumRows, maxCost: maximumBytes, now: now)
     }
 
-    mutating func read(id: String, ciphertext: Data,
-                       decode: () -> (message: ChatMessage, plaintextBytes: Int)?) -> ChatMessage? {
-      if let entry = entries[id], entry.ciphertext == ciphertext {
-        order.removeAll { $0 == id }
-        order.append(id)
+    func read(id: String, ciphertext: Data,
+              decode: () -> (message: ChatMessage, plaintextBytes: Int)?) -> ChatMessage? {
+      let revision = cache.revision
+      if let entry = cache.value(for: id), entry.ciphertext == ciphertext {
         return entry.message
       }
       remove(id)
       guard let decoded = decode() else { return nil }
-      let cost = ciphertext.count + decoded.plaintextBytes
-      guard maximumRows > 0, cost <= maximumBytes else { return decoded.message }
-      while let oldest = order.first, entries.count >= maximumRows || bytes > maximumBytes - cost {
-        remove(oldest)
-      }
-      entries[id] = Entry(ciphertext: ciphertext, message: decoded.message, cost: cost)
-      bytes += cost
-      order.append(id)
+      cache.insert(Entry(ciphertext: ciphertext, message: decoded.message), for: id,
+        cost: ciphertext.count + decoded.plaintextBytes, revision: revision)
       return decoded.message
     }
 
-    mutating func remove(_ id: String) {
-      guard let removed = entries.removeValue(forKey: id) else { return }
-      bytes -= removed.cost
-      order.removeAll { $0 == id }
-    }
-
-    mutating func clear() {
-      entries.removeAll()
-      order.removeAll()
-      bytes = 0
-    }
+    func remove(_ id: String) { cache.remove(id) }
+    func clear() { cache.clear() }
   }
 
   init(fileURL: URL, secrets: GalaxySSISecretStore) {
@@ -387,6 +367,12 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
   @discardableResult
   func upsert(_ message: ChatMessage) -> Bool {
     locked {
+      guard admitsAgentTurn(message) else { return false }
+      if Self.agentTurnScoped(message), let prior = self.message(id: message.id) {
+        guard prior.conversationId == message.conversationId,
+              !prior.isMine || prior.turnId.isBlank ||
+                Self.ownershipTurn(prior.turnId) == Self.ownershipTurn(message.turnId) else { return false }
+      }
       guard !message.contactId.isBlank,
             let deleted = try? isLocallyDeleted(contactId: message.contactId, messageId: message.id.uuidString,
               remoteMessageId: message.remoteMessageId, isMine: message.isMine), !deleted,
@@ -394,8 +380,8 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
             let statement = prepare("""
               INSERT INTO chat_messages
                 (message_id, contact_id, conversation_id, created_at, is_mine, is_system, remote_message_id, encrypted_payload,
-                 agent_turn_key, agent_unread_key)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 agent_turn_key, agent_unread_key, agent_owner_key)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT(message_id) DO UPDATE SET
                 contact_id = excluded.contact_id,
                 conversation_id = excluded.conversation_id,
@@ -405,7 +391,8 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
                 remote_message_id = excluded.remote_message_id,
                 encrypted_payload = excluded.encrypted_payload,
                 agent_turn_key = excluded.agent_turn_key,
-                agent_unread_key = excluded.agent_unread_key
+                agent_unread_key = excluded.agent_unread_key,
+                agent_owner_key = excluded.agent_owner_key
               """) else { return false }
       defer { sqlite3_finalize(statement) }
       bind(message.id.uuidString, at: 1, to: statement)
@@ -420,6 +407,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
       }
       if let key = turnTimingKey(message) { bind(key, at: 9, to: statement) }
       if let key = unreadReplyKey(message) { bind(key, at: 10, to: statement) }
+      if let key = ownershipIndex(message) { bind(key, at: 11, to: statement) }
       guard sqlite3_step(statement) == SQLITE_DONE else { return false }
       rowCache.remove(message.id.uuidString)
       return true
@@ -506,6 +494,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
         guard !saved.isMine, !saved.isSystem, saved.contactId == message.contactId else {
           throw MqttRouteError.invalidPayload
         }
+        if saved.id != message.id, !admitsAgentTurn(saved) { continue }
         if saved.id == pendingID, saved.remoteMessageId != message.remoteMessageId {
           guard saved.remoteMessageId.hasPrefix("pending-peer:") ||
             (allowAgentStreamReplacement && saved.remoteMessageId.hasPrefix("agent-stream-")) else { throw MqttRouteError.invalidPayload }
@@ -561,13 +550,13 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
       if newerCursor != nil {
         let ascending = Array(rows.prefix(safeSize))
         let next = hasMore ? ascending.last.map(GalaxySSIChatHistoryCursor.init) : nil
-        return GalaxySSIChatHistoryPage(messages: ascending, nextCursor: next, hasMore: hasMore)
+        return GalaxySSIChatHistoryPage(messages: ascending.filter(admitsAgentTurn), nextCursor: next, hasMore: hasMore)
       }
       let descending = Array(rows.prefix(safeSize))
       let retained = descending.reversed()
       let oldest = descending.last
       let next = hasMore ? oldest.map(GalaxySSIChatHistoryCursor.init) : nil
-      return GalaxySSIChatHistoryPage(messages: Array(retained), nextCursor: next, hasMore: hasMore)
+      return GalaxySSIChatHistoryPage(messages: retained.filter(admitsAgentTurn), nextCursor: next, hasMore: hasMore)
     }
   }
 
@@ -613,6 +602,96 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
     guard message.isMine, !message.isSystem, !message.conversationId.isBlank else { return "" }
     return try? cipher.chatTurnTimingIndex(conversationId: message.conversationId,
       turnId: AgentReplyWaitingIndicatorPolicy.turnKey(for: message))
+  }
+
+  private static func agentTurnScoped(_ message: ChatMessage) -> Bool {
+    message.contactId == "hermes" || message.conversationId.hasPrefix("ios-agent-")
+  }
+
+  private func ownershipIndex(_ message: ChatMessage) -> String? {
+    guard Self.agentTurnScoped(message), message.isMine, !message.isSystem, message.sourceConversationId.isBlank,
+          !message.conversationId.isBlank else { return "" }
+    return try? cipher.chatTurnOwnershipIndex(Self.ownershipTurn(message.turnId.ifBlank(message.id.uuidString)))
+  }
+
+  private static func ownershipTurn(_ turn: String) -> String {
+    UUID(uuidString: turn)?.uuidString ?? turn
+  }
+
+  private func backfillAgentTurnOwners() {
+    guard !agentOwnerBackfillFinished, let database,
+          (try? cipher.chatTurnOwnershipIndex("migration")) != nil else { return }
+    let ownsTransaction = sqlite3_get_autocommit(database) != 0
+    if ownsTransaction, !execute("BEGIN IMMEDIATE TRANSACTION") { return }
+    var complete = false
+    defer {
+      if ownsTransaction {
+        if complete, execute("COMMIT") { agentOwnerBackfillFinished = true }
+        else { _ = execute("ROLLBACK") }
+      }
+    }
+    // Legacy originals are indexed on demand. The sentinel leaves unrelated or unreadable rows untouched.
+    while let select = prepare("""
+      SELECT message_id,encrypted_payload FROM chat_messages
+      WHERE agent_owner_key IS NULL AND is_mine=1 AND is_system=0
+        AND (contact_id='hermes' OR conversation_id GLOB 'ios-agent-*') LIMIT 128
+      """) {
+      var batch: [(String, String)] = []
+      var step = sqlite3_step(select)
+      while step == SQLITE_ROW {
+        defer { step = sqlite3_step(select) }
+        guard let raw = sqlite3_column_text(select, 0) else { continue }
+        let id = String(cString: raw)
+        if let message = decode(select, id: id, payloadColumn: 1), let key = ownershipIndex(message) {
+          batch.append((id, key))
+        } else { batch.append((id, "")) }
+      }
+      sqlite3_finalize(select)
+      guard step == SQLITE_DONE else { return }
+      if batch.isEmpty { complete = true; return }
+      guard let update = prepare("UPDATE chat_messages SET agent_owner_key=? WHERE message_id=? AND agent_owner_key IS NULL") else { return }
+      var changed = true
+      for (id, key) in batch {
+        sqlite3_reset(update)
+        bind(key, at: 1, to: update)
+        bind(id, at: 2, to: update)
+        if sqlite3_step(update) != SQLITE_DONE { changed = false; break }
+      }
+      sqlite3_finalize(update)
+      if !changed { return }
+      if batch.count < 128 { complete = true; return }
+    }
+  }
+
+  func originalAgentTurnConversation(_ turn: String) -> String? {
+    guard !turn.isBlank else { return nil }
+    let turn = Self.ownershipTurn(turn)
+    return locked {
+      if let id = UUID(uuidString: turn), let original = message(id: id),
+         Self.agentTurnScoped(original), original.isMine, !original.isSystem, original.sourceConversationId.isBlank,
+         !original.conversationId.isBlank, Self.ownershipTurn(original.turnId.ifBlank(original.id.uuidString)) == turn {
+        return original.conversationId
+      }
+      backfillAgentTurnOwners()
+      guard let key = try? cipher.chatTurnOwnershipIndex(turn),
+            let lookup = prepare("""
+              SELECT message_id,encrypted_payload FROM chat_messages
+              WHERE is_mine=1 AND is_system=0 AND agent_owner_key=?
+              ORDER BY created_at,message_id LIMIT 1
+              """) else { return nil }
+      defer { sqlite3_finalize(lookup) }
+      bind(key, at: 1, to: lookup)
+      guard sqlite3_step(lookup) == SQLITE_ROW, let id = sqlite3_column_text(lookup, 0),
+            let original = decode(lookup, id: String(cString: id), payloadColumn: 1),
+            ownershipIndex(original) == key else { return nil }
+      return original.conversationId
+    }
+  }
+
+  func admitsAgentTurn(_ message: ChatMessage) -> Bool {
+    guard Self.agentTurnScoped(message), !message.isSystem, !message.turnId.isBlank,
+          let owner = originalAgentTurnConversation(message.turnId) else { return true }
+    return message.conversationId == owner || message.sourceConversationId == owner
   }
 
   private func unreadReplyKey(_ message: ChatMessage) -> String? {
@@ -774,7 +853,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
       query(
         sql: "SELECT message_id, encrypted_payload FROM chat_messages WHERE conversation_id = ? ORDER BY created_at ASC, message_id ASC",
         values: [.text(conversationId)]
-      )
+      ).filter(admitsAgentTurn)
     }
   }
 
@@ -810,7 +889,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
       query(
         sql: "SELECT message_id, encrypted_payload FROM chat_messages WHERE contact_id = ? ORDER BY created_at ASC, message_id ASC",
         values: [.text(contactId)]
-      )
+      ).filter(admitsAgentTurn)
     }
   }
 
@@ -819,12 +898,13 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
   }
 
   func latestMessage(conversationId: String) -> ChatMessage? {
-    locked {
-      query(
-        sql: "SELECT message_id, encrypted_payload FROM chat_messages WHERE conversation_id = ? ORDER BY created_at DESC, message_id DESC LIMIT 1",
-        values: [.text(conversationId)]
-      ).first
-    }
+    var cursor: GalaxySSIChatHistoryCursor?
+    repeat {
+      let next = page(contactId: nil, conversationId: conversationId, before: cursor)
+      if let last = next.messages.last { return last }
+      cursor = next.nextCursor
+    } while cursor != nil
+    return nil
   }
 
   func unreadCount(contactId: String, after date: Date) -> Int {
@@ -853,14 +933,10 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
       if (try? isLocallyDeleted(contactId: contactId, remoteMessageId: remoteMessageId, isMine: false)) == true {
         return true
       }
-      guard !remoteMessageId.isBlank,
-            let statement = prepare("SELECT 1 FROM chat_messages WHERE contact_id = ? AND remote_message_id = ? AND is_mine = 0 LIMIT 1") else {
-        return false
-      }
-      defer { sqlite3_finalize(statement) }
-      bind(contactId, at: 1, to: statement)
-      bind(remoteMessageId, at: 2, to: statement)
-      return sqlite3_step(statement) == SQLITE_ROW
+      guard !remoteMessageId.isBlank else { return false }
+      return query(sql: """
+        SELECT message_id,encrypted_payload FROM chat_messages WHERE contact_id=? AND remote_message_id=? AND is_mine=0
+        """, values: [.text(contactId), .text(remoteMessageId)]).contains(where: admitsAgentTurn)
     }
   }
 
@@ -1040,6 +1116,12 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
       _ = execute("ALTER TABLE chat_messages ADD COLUMN agent_unread_key TEXT")
     }
     _ = execute("CREATE INDEX IF NOT EXISTS chat_messages_agent_unread ON chat_messages(conversation_id, agent_unread_key) WHERE contact_id = 'hermes' AND is_mine = 0 AND is_system = 0")
+    if let column = prepare("SELECT agent_owner_key FROM chat_messages LIMIT 0") {
+      sqlite3_finalize(column)
+    } else {
+      _ = execute("ALTER TABLE chat_messages ADD COLUMN agent_owner_key TEXT")
+    }
+    _ = execute("CREATE INDEX IF NOT EXISTS chat_messages_agent_owner ON chat_messages(agent_owner_key,created_at,message_id) WHERE is_mine=1 AND is_system=0")
     _ = execute("CREATE INDEX IF NOT EXISTS chat_messages_contact_order ON chat_messages(contact_id, created_at DESC, message_id DESC)")
     _ = execute("CREATE INDEX IF NOT EXISTS chat_messages_conversation_order ON chat_messages(conversation_id, created_at ASC, message_id ASC)")
     _ = execute("CREATE INDEX IF NOT EXISTS chat_messages_remote_dedupe ON chat_messages(contact_id, remote_message_id, is_mine)")

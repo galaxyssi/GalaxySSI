@@ -205,7 +205,8 @@ enum AgentIOSWebIntelligenceNativeToolCatalog {
         "ranker": provider.rankerId,
         "cache": "ios_file_protected_encrypted",
         "cookies": "none"
-      ]
+      ],
+      availabilityProvider: AgentNativeToolAvailabilityProvider { _ in provider.availability(operation: operation) }
     )
   }
 

@@ -6059,6 +6059,8 @@
 "galaxyssi.managed_browser.title" = "浏览器控制";
 "galaxyssi.managed_browser.return" = "交回控制";
 "galaxyssi.managed_browser.failed" = "无法交回浏览器控制。";
+"galaxyssi.managed_browser.waiting" = "正在等待浏览器控制。";
+"galaxyssi.managed_browser.verification_required" = "需要重新观察外部状态才能继续此任务。";
 "galaxyssi.team.recovery.missing" = "原智能体团队不可用，正在等待，不会重新派发";
 "galaxyssi.team.recovery.failed" = "原智能体团队未能成功完成任务。";
 "galaxyssi.team.reply_commit_failed" = "无法保存智能体团队回复，该回复不会显示为普通消息。";
@@ -6178,6 +6180,7 @@
 "galaxyssi.collaboration.no_resources" = "没有可选的 Agent 或云端模型。";
 "galaxyssi.collaboration.save_failed" = "无法保存协作组。";
 "galaxyssi.collaboration.execution_unavailable" = "当前成员或会话设置不支持协作组执行。草稿未发送。";
+"galaxyssi.collaboration.member_binding_invalid" = "协作成员或其指定模型已变更。请检查群组设置后重试。";
 "galaxyssi.collaboration.execution_busy" = "协作组仍在分派上一条请求。";
 "galaxyssi.collaboration.history" = "搜索协作组历史";
 "galaxyssi.collaboration.history_search" = "搜索以往结果";

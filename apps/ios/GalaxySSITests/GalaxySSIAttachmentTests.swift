@@ -643,6 +643,16 @@ final class GalaxySSIAttachmentTests: XCTestCase {
       _ in XCTFail("Document must not open image review")
     }, onDocument: { documents.append($0) }, onFailure: { XCTFail("\($0)") })
     XCTAssertEqual(documents.first?.data, pdf)
+    documents.removeAll()
+    current = true
+    imageResults.removeAll()
+    await ComposerFileSelection.deliver([image, image, document], isCurrent: { current },
+      isDocumentCurrent: { true }, onImage: {
+        imageResults.append($0)
+        current = false
+      }, onDocument: { documents.append($0) }, onFailure: { XCTFail("\($0)") })
+    XCTAssertEqual(imageResults.count, 1, "A stale image must not reach the new composer")
+    XCTAssertEqual(documents.map(\.data), [pdf], "The original recipient still receives the document")
   }
 
   func testAgentAttachmentTransferProtocolMatchesAndroidRangesAndStableIdentity() throws {
