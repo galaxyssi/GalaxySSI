@@ -11,7 +11,7 @@ import android.widget.ScrollView
 import android.widget.Toast
 import java.util.concurrent.Executors
 
-/** The Agent landing page surfaces local concerns without putting health data in an unrelated chat transcript. */
+/** Displays local health context only inside its independently bound Agent conversation. */
 internal class HealthCareAgentSurface(private val activity: MainActivity, private val names: HealthOverviewDatabases = HealthOverviewDatabases()) {
     private val host = activity.findViewById<LinearLayout>(R.id.agentHealthCareSurface)
     private val ui = HealthCenterViews(activity)
@@ -67,10 +67,11 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
         if (!active || !agentPage) return
         val conversation = activity.agentTranscriptStore.activeConversation()
         if (conversation.id != visibleConversation) {
+            clear()
             visibleConversation = conversation.id
-            expanded = false; visibleConcern = ""; navigationGeneration++
-            planReview.clear(); actionReview.clear(); targetReview.clear(); historyReview.clear(); researchReview.clear(); answerReview.clear(); generation++
         }
+        val concernId = HealthCareAgentScope.concernId(conversation)
+        if (concernId == null) { clear(); dirty = false; return }
         if (loading) { dirty = true; return }
         loading = true; dirty = false; val token = generation
         worker.execute {
@@ -80,10 +81,8 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
                     HealthCareEngine.evaluate(context, names)
                     HealthPrivacyStore(context, names.privacy).use { privacy ->
                         if (!privacy.policy().metrics) Snapshot(emptyList()) else HealthCareStore(context, names.care).use { store ->
-                            val concerns = if (!store.settings().enabled) emptyList()
-                            else if (conversation.globalTopicKey.startsWith(HealthCareDiscussionPolicy.TOPIC_PREFIX))
-                                listOfNotNull(store.discussion(conversation.id)?.let(store::concern))
-                            else store.page(limit = 3, includePaused = false).items
+                            val concerns = if (store.settings().enabled && store.discussion(conversation.id) == concernId)
+                                listOfNotNull(store.concern(concernId)) else emptyList()
                             val issue = concerns.firstOrNull()
                             val profile = privacy.policy().profile
                             val reminders = if (profile && issue != null) store.reminders(issue.id) else emptyList()

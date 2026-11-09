@@ -15,7 +15,7 @@ internal object HealthCareDiscussion {
             val concern = care.concern(concernId) ?: throw HealthCareConflict()
             val transcripts = AgentTranscriptStore(context)
             if (concern.conversationId.isNotBlank() && care.discussion(concern.conversationId) == concernId) {
-                transcripts.conversation(concern.conversationId)?.takeIf { it.status == AgentConversationStatus.ACTIVE && it.privateMode && it.trackingPaused }
+                transcripts.conversation(concern.conversationId)?.takeIf { HealthCareAgentScope.concernId(it) == concernId }
                     ?.let { return@synchronized it.id }
             }
             val conversation = transcripts.createAgentConversation(context.getString(R.string.health_care_discussion_title,

@@ -51,19 +51,19 @@ class HealthCareUiDeviceTest {
     private fun clean(names: HealthOverviewDatabases) {
         listOf(names.care, names.records, names.privacy).forEach(context::deleteDatabase)
     }
-    private fun agentScenario(block: (ActivityScenario<MainActivity>) -> Unit) {
+    private fun agentScenario(names: HealthOverviewDatabases, concernId: String, block: (ActivityScenario<MainActivity>) -> Unit) {
         val transcripts = AgentTranscriptStore(context)
         val previous = transcripts.activeConversation().id
-        val temporary = transcripts.createAgentConversation("主动健康界面测试", privateMode = true, trackingPaused = true)
+        val temporaryId = HealthCareDiscussion.open(context, concernId, names)
         try {
-            transcripts.switchConversation(temporary.id)
+            transcripts.switchConversation(temporaryId)
             ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java)
-                .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", temporary.id)).use { scenario ->
-                await(scenario) { it.agentTranscriptStore.activeConversation().id == temporary.id &&
+                .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", temporaryId)).use { scenario ->
+                await(scenario) { it.agentTranscriptStore.activeConversation().id == temporaryId &&
                     !it.findViewById<View>(R.id.startupConnectingView).isShown }
                 block(scenario)
             }
-        } finally { transcripts.switchConversation(previous); transcripts.deleteConversation(temporary.id) }
+        } finally { transcripts.switchConversation(previous); transcripts.deleteConversation(temporaryId) }
     }
     private fun historyReview(activity: HealthCareActivity) = HealthCareActivity::class.java.getDeclaredMethod("getHistoryReview")
         .apply { isAccessible = true }.invoke(activity) as HealthCareHistoryReview
@@ -126,7 +126,7 @@ class HealthCareUiDeviceTest {
             }
             HealthCareEngine.evaluate(context, names)
             val issue = HealthCareStore(context, names.care).use { it.forMetric(HealthMetric.BLOOD_PRESSURE)!! }
-            agentScenario { scenario ->
+            agentScenario(names, issue.id) { scenario ->
                 scenario.onActivity { activity ->
                     activity.healthCareSurface?.destroy()
                     activity.healthCareSurface = HealthCareAgentSurface(activity, names).also {
@@ -231,7 +231,8 @@ class HealthCareUiDeviceTest {
         var worker: ExecutorService? = null
         try {
             seed(names)
-            agentScenario { scenario ->
+            val id = HealthCareStore(context, names.care).use { it.forMetric(HealthMetric.GLUCOSE)!!.id }
+            agentScenario(names, id) { scenario ->
                 scenario.onActivity { activity ->
                     activity.healthCareSurface?.destroy()
                     activity.healthCareSurface = HealthCareAgentSurface(activity, names).also {
