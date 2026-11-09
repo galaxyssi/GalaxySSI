@@ -3,6 +3,22 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testIOSQemuLaunchUsesReleasedGuestV1Identifiers() {
+    let abi = AgentIOSRuntimeGuestABI.self
+    XCTAssertEqual(abi.version, 1)
+    XCTAssertEqual(abi.channel, "org.signalasi.runtime")
+    XCTAssertEqual(abi.workspaceMountTag, "signalasi_workspaces")
+    XCTAssertEqual(abi.persistentMount, "/var/lib/signalasi")
+    XCTAssertEqual(abi.controlDirectory, ".signalasi-runtime")
+    XCTAssertEqual(abi.transportArguments(session: URL(fileURLWithPath: "/fixture/key"),
+      configuration: URL(fileURLWithPath: "/fixture/config")), [
+      "-device", "virtserialport,chardev=galaxyssi_api,name=org.signalasi.runtime",
+      "-device", "virtio-9p-device,fsdev=galaxyssi_workspaces,mount_tag=signalasi_workspaces",
+      "-fw_cfg", "name=opt/com.signalasi/runtime-session,file=/fixture/key",
+      "-fw_cfg", "name=opt/com.signalasi/runtime-config,file=/fixture/config"
+    ])
+  }
+
   func testAgentIOSOnDeviceRuntimeNativeToolCatalogAndExecutorMirrorsAndroidRuntimeTools() throws {
     final class FakeRuntimeProvider: AgentIOSOnDeviceRuntimeToolProviding {
       var implementationId = "fake.ios.runtime"

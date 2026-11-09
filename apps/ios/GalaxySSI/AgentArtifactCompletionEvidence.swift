@@ -440,7 +440,8 @@ enum AgentVerifiedArtifactSnapshot {
 
   static func readLinuxFile(path: String, project: URL) throws -> Data {
     let parts = path.split(separator: "/").map(String.init)
-    guard !parts.contains(".galaxyssi-runtime"), !parts.contains(".git") else {
+    guard !parts.contains(".galaxyssi-runtime"), !parts.contains(AgentIOSRuntimeGuestABI.controlDirectory),
+          !parts.contains(".git") else {
       throw AgentRuntimeProjectWorkspaceError.invalid("The Linux artifact path is reserved")
     }
     return try readRegularFile(path: path, root: project, limit: maximumBytes)
