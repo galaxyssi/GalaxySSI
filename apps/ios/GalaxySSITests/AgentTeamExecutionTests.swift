@@ -927,8 +927,11 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(wire.accepts(phase: "validate_assessment", input: ["mode": .string("validate_assessment")]))
     for phase in ["publish", "status", "receipt", "list"] {
       XCTAssertTrue(wire.permits(phase: phase, observer: true))
-      XCTAssertFalse(wire.permits(phase: phase, observer: false))
     }
+    XCTAssertTrue(wire.permits(phase: "status", observer: false))
+    XCTAssertTrue(wire.permits(phase: "publish", observer: false))
+    XCTAssertFalse(wire.permits(phase: "receipt", observer: false))
+    XCTAssertFalse(wire.permits(phase: "list", observer: false))
     XCTAssertTrue(wire.permits(phase: "validate_assessment", observer: false))
   }
 
@@ -1023,7 +1026,19 @@ extension GalaxySSIStoreTests {
     let database = try AgentTeamHistoryDatabase(fileURL: file,
       storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
     XCTAssertTrue(try database.researchObjectHeads(conversationId: scope.conversationId, after: "", limit: 1).isEmpty)
-    XCTAssertThrowsError(try history.publishCollaborationMilestone(["mode": .string("status")], scope: scope))
+    let query: AgentMcpJSONObject = ["mode": .string("status")]
+    let capability = try history.publishCollaborationMilestone(query, scope: scope)
+    XCTAssertEqual(capability["status"], .string("returned"))
+    XCTAssertEqual(capability["capability"]?.objectValue?["publish_allowed"], .bool(false))
+    XCTAssertEqual(capability["capability"]?.objectValue?["grants_authority"], .bool(false))
+    let unavailable = try history.publishCollaborationMilestone(["mode": .string("publish"),
+      "milestone_id": .string("forbidden"), "artifact": .string("{")], scope: scope)
+    XCTAssertEqual(unavailable["error_code"], .string("assignment_not_enrolled"))
+    XCTAssertEqual(unavailable["artifact_validated"], .bool(false))
+    XCTAssertEqual(unavailable["retryable"], .bool(false))
+    XCTAssertNil(unavailable["rejected_draft_preserved"])
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(query.merging(["member_id": .string("other")]) { a, _ in a },
+      scope: scope))
     var forged = input
     forged["member_id"] = .string("other")
     XCTAssertThrowsError(try history.publishCollaborationMilestone(forged, scope: scope))
@@ -1060,6 +1075,13 @@ extension GalaxySSIStoreTests {
     """
     let input: AgentMcpJSONObject = ["mode": .string("publish"), "milestone_id": .string("first"),
       "artifact": .string(artifact)]
+    let status = try history.publishCollaborationMilestone(["mode": .string("status")], scope: scope)
+    XCTAssertEqual(status["capability"]?.objectValue?["publish_allowed"], .bool(true))
+    XCTAssertEqual(status["assignment_completed"], .bool(false))
+    let denied = try history.publishCollaborationMilestone(input, scope: scope, desktopWire: true,
+      transportAllowsInterim: false)
+    XCTAssertEqual(denied["status"], .string("unavailable"))
+    XCTAssertEqual(try history.publishCollaborationMilestone(["mode": .string("list")], scope: scope)["milestones"], .array([]))
     let receipt = try history.publishCollaborationMilestone(input, scope: scope)
     XCTAssertEqual(receipt["success"], .bool(true))
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
@@ -1240,6 +1262,98 @@ extension GalaxySSIStoreTests {
       conversationId: team.conversationId, key: key, revision: 0))
   }
 
+  func testDesktopFileHandoffRecallsOnlyExactFrozenVersionForPairedDependency() throws {
+    typealias Handoff = AgentDesktopCollaborationFileHandoff
+    let suite = "file-handoff-\(UUID())", root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore(), file = root.appendingPathComponent("history.sqlite3")
+    func open() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    }
+    let history = open()
+    let pair = Handoff.Pair(desktopID: "desktop", clientRouteID: "route", contactID: "contact",
+      phoneFingerprint: "phone-key", desktopFingerprint: "desktop-key")
+    XCTAssertEqual(pair.storeID, "08d406beec042f5f4bafcdbf2b26f5911e4737ed89f9a358f3f1d7f9b22ca296")
+    let binding = Handoff.Binding(pair: pair, generation: 1)
+    var team = durableTeamSnapshot("file-handoff")
+    let producer = AgentTeamMemberSnapshot(agentId: pair.contactID, instanceId: "producer", sourceMessageId: "produce",
+      dispatchCheckpoint: .dispatching)
+    var peer = AgentTeamMemberSnapshot(agentId: pair.contactID, instanceId: "peer", sourceMessageId: "receive",
+      dispatchCheckpoint: .notStarted)
+    peer.dispatchDependencyMemberIds = [producer.memberId]
+    let other = AgentTeamMemberSnapshot(agentId: pair.contactID, instanceId: "other", sourceMessageId: "unrelated",
+      dispatchCheckpoint: .dispatching)
+    team.members = [team.members[0], producer, peer, other]
+    XCTAssertTrue(history.upsert(team))
+    func scope(_ member: AgentTeamMemberSnapshot) -> AgentCollaborationToolEvidenceScope {
+      .init(runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
+        memberId: member.memberId, sourceId: member.sourceMessageId)
+    }
+    let author = scope(producer), recipient = scope(peer)
+    let storeID = try XCTUnwrap(pair.storeID)
+    func publish(_ id: String, filename: String = "snapshot-\u{1F642}.bin", objectID: String? = nil) -> AgentMcpJSONObject {
+      let fileID = SHA256.hash(data: Data(id.utf8)).map { String(format: "%02x", $0) }.joined()
+      let body: AgentMcpJSONObject = ["format": .string(Handoff.format), "store_id": .string(storeID),
+        "file_id": .string(fileID), "name": .string(filename), "size_bytes": .int(2 * 1_024 * 1_024),
+        "sha256": .string(String(repeating: "b", count: 64)), "availability": .string("originating_desktop")]
+      var item: AgentMcpJSONObject = ["id": .string(fileID), "kind": .string("artifact"), "title": .string("Snapshot"),
+        "body": .object(body), "parents": .array([]), "resolves": .array([]), "observations": .array([])]
+      if let objectID { item["object_id"] = .string(objectID); item["base_revision"] = .int(1) }
+      let raw = AgentMcpJSONCodec.stringify(["format": .string("galaxyssi.research-artifact.v1"), "summary": .string("Snapshot"),
+        "workspace": .array([.object(item)])])
+      return ["mode": .string("publish"), "milestone_id": .string(id), "artifact": .string(raw)]
+    }
+    let first = publish("v1")
+    let wire = AgentDesktopCollaborationPublicationWire.self
+    let result = wire.result(try history.publishCollaborationMilestone(first, scope: author,
+      desktopWire: true, desktopFile: binding), phase: "publish")
+    let ref = try XCTUnwrap(result["revisions"]?.arrayValue?.first?.objectValue)
+    XCTAssertEqual(result["status"], .string("recorded"))
+    XCTAssertEqual(result["assignment_completed"], .bool(false))
+    let request: AgentMcpJSONObject = ["mode": .string("workspace"), "object_id": .string(ref.string("object_id")),
+      "revision": .int(1), "offset": .int(0)]
+    XCTAssertThrowsError(try history.recallDesktopFileHandoff(request, scope: recipient, reader: binding))
+    XCTAssertThrowsError(try history.recallDesktopFileHandoff(request, scope: scope(other), reader: binding))
+    XCTAssertTrue(history.advanceDispatchCheckpoint(runId: recipient.runId, conversationId: recipient.conversationId,
+      turnId: recipient.turnId, memberId: recipient.memberId, sourceMessageId: recipient.sourceId, to: .dispatching, now: 2))
+    let reopened = open()
+    let recalled = try reopened.recallDesktopFileHandoff(request, scope: recipient, reader: binding)
+    XCTAssertEqual(recalled["total_characters"], .int(Int64(recalled.string("content").utf16.count)))
+    XCTAssertEqual(recalled["next_offset"], .null)
+    let decoded = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(recalled.string("content").utf8))
+    XCTAssertEqual(decoded["object_id"], ref["object_id"])
+    XCTAssertEqual(decoded["sha256"], ref["sha256"])
+    XCTAssertEqual(decoded["body"]?.objectValue?["name"], .string("snapshot-\u{1F642}.bin"))
+    XCTAssertEqual(decoded["body"]?.objectValue?["size_bytes"], .int(2 * 1_024 * 1_024))
+    let second = publish("v2", objectID: ref.string("object_id"))
+    XCTAssertEqual(try reopened.publishCollaborationMilestone(second, scope: author, desktopWire: true,
+      desktopFile: binding)["status"], .string("published"))
+    var newer = request
+    newer["revision"] = .int(2)
+    XCTAssertThrowsError(try reopened.recallDesktopFileHandoff(newer, scope: recipient, reader: binding))
+    XCTAssertEqual(try reopened.recallDesktopFileHandoff(request, scope: recipient, reader: binding), recalled)
+    XCTAssertEqual(try reopened.publishCollaborationMilestone(first, scope: scope(other), desktopWire: true,
+      desktopFile: binding)["success"], .bool(false))
+    let receipt: AgentMcpJSONObject = ["mode": .string("receipt"), "milestone_id": .string("v1"),
+      "artifact_sha256": result["artifact_sha256"] ?? .null]
+    XCTAssertEqual(try reopened.publishCollaborationMilestone(receipt, scope: author, desktopWire: true,
+      desktopFile: binding)["status"], .string("recorded"))
+    let foreign = Handoff.Binding(pair: .init(desktopID: pair.desktopID, clientRouteID: pair.clientRouteID,
+      contactID: pair.contactID, phoneFingerprint: pair.phoneFingerprint, desktopFingerprint: "new-key"), generation: 1)
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(receipt, scope: author, desktopWire: true, desktopFile: foreign))
+    XCTAssertThrowsError(try reopened.recallDesktopFileHandoff(request, scope: recipient, reader: foreign))
+    var generic = request
+    generic["sha256"] = ref["sha256"]
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(generic, scope: author))
+    let database = try AgentTeamHistoryDatabase(fileURL: file,
+      storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    try database.transaction {
+      try database.insertResearchRecord(true, conversationId: recipient.conversationId, key: "native-evidence-revoked", revision: 0)
+    }
+    XCTAssertThrowsError(try reopened.recallDesktopFileHandoff(request, scope: recipient, reader: binding))
+  }
+
   func testDesktopPublicationRecoversExactFrozenArtifactsAndDistinguishesAbsence() throws {
     let suite = "desktop-publication-receipt-\(UUID())"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -1252,6 +1366,7 @@ extension GalaxySSIStoreTests {
     }
     let history = open()
     var team = durableTeamSnapshot("desktop-publication")
+    team.members[0].dispatchCheckpoint = .accepted
     team.members[1].dispatchCheckpoint = .dispatching
     XCTAssertTrue(history.upsert(team))
     let member = team.members[1]
@@ -1264,12 +1379,16 @@ extension GalaxySSIStoreTests {
     func lookup(_ id: String, _ digest: String) -> AgentMcpJSONObject {
       ["mode": .string("receipt"), "milestone_id": .string(id), "artifact_sha256": .string(digest)]
     }
-    for kind in ["text", "file"] {
-      let raw = """
-      {"format":"galaxyssi.research-artifact.v1","summary":"Snapshot \u{1F642}","workspace":[
-        {"id":"\(kind)","kind":"artifact","title":"Snapshot","body":{"format":"galaxyssi.\(kind)-artifact/1",
-          "name":"snapshot","content":"Frozen \u{1F642}"},"parents":[]}]}
-      """
+    let text = "\u{FEFF}def predict(x):\r\n    return x * 2\r\n" +
+      String(repeating: "# \u{4E2D}\u{6587} \u{1F52C} e\u{301}\r\n", count: 700)
+    for kind in ["text", "other"] {
+      let body: AgentMcpJSONObject = ["format": .string("galaxyssi.\(kind)-artifact/1"),
+        "name": .string("snapshot.py"), "content": .string(text), "encoding": .string("utf-8"),
+        "size_bytes": .int(Int64(text.utf8.count)), "sha256": .string(sha(text))]
+      let item: AgentMcpJSONObject = ["id": .string(kind), "kind": .string("artifact"), "title": .string("Snapshot"),
+        "body": .object(body), "parents": .array([])]
+      let raw = AgentMcpJSONCodec.stringify(["format": .string("galaxyssi.research-artifact.v1"),
+        "summary": .string("Snapshot"), "workspace": .array([.object(item)])])
       let request = lookup(kind, sha(raw))
       let absent = try history.publishCollaborationMilestone(request, scope: scope)
       XCTAssertEqual(absent["success"], .bool(true))
@@ -1292,6 +1411,69 @@ extension GalaxySSIStoreTests {
       var foreign = scope
       foreign.sourceId = "other-source"
       XCTAssertThrowsError(try reopened.publishCollaborationMilestone(request, scope: foreign))
+      typealias Read = AgentDesktopCollaborationTextArtifact.Read
+      let ref = try XCTUnwrap(submitted["revisions"]?.arrayValue?.first?.objectValue)
+      let query: AgentMcpJSONObject = ["mode": .string("workspace"), "object_id": ref["object_id"] ?? .null,
+        "revision": ref["revision"] ?? .null, "offset": .int(0)]
+      let firstRead = try XCTUnwrap(Read(query))
+      XCTAssertThrowsError(try reopened.readDesktopTextArtifact(firstRead, scope: foreign))
+      if kind != "text" {
+        XCTAssertThrowsError(try reopened.readDesktopTextArtifact(firstRead, scope: scope))
+        continue
+      }
+      var nextTeam = durableTeamSnapshot("text-reader")
+      nextTeam.taskId = "next-turn"
+      nextTeam.members[1].dispatchCheckpoint = .accepted
+      XCTAssertTrue(reopened.upsert(nextTeam))
+      let reader = AgentCollaborationToolEvidenceScope(runId: nextTeam.supervisorRunId,
+        conversationId: nextTeam.conversationId, turnId: nextTeam.taskId,
+        memberId: nextTeam.members[1].memberId, sourceId: nextTeam.members[1].sourceMessageId)
+      var sameTurnPeer = scope
+      sameTurnPeer.memberId = team.members[0].memberId
+      sameTurnPeer.sourceId = team.members[0].sourceMessageId
+      XCTAssertThrowsError(try reopened.readDesktopTextArtifact(firstRead, scope: sameTurnPeer))
+      var document = ""
+      var offset: Int64 = 0
+      var total: Int64?
+      var pages = 0
+      while pages < 64 {
+        var args = query
+        args["offset"] = .int(offset)
+        let page = try reopened.readDesktopTextArtifact(XCTUnwrap(Read(args)), scope: reader)
+        let part = try XCTUnwrap(page["content"]?.strictStringValue)
+        XCTAssertFalse(part.isEmpty)
+        XCTAssertLessThanOrEqual(part.utf16.count, 2_000)
+        document += part
+        offset += Int64(part.utf16.count)
+        pages += 1
+        let size = try XCTUnwrap(page["total_characters"]?.intValue)
+        XCTAssertEqual(size, total ?? size)
+        total = size
+        guard page["next_offset"] != .null else { break }
+        XCTAssertEqual(page["next_offset"], .int(offset))
+      }
+      XCTAssertGreaterThan(pages, 1)
+      XCTAssertEqual(Int64(document.utf16.count), total)
+      let decoded = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(document.utf8))
+      XCTAssertEqual(decoded["sha256"], ref["sha256"])
+      XCTAssertEqual(decoded["object_id"], ref["object_id"])
+      XCTAssertEqual(decoded["revision"], ref["revision"])
+      let materialized = try XCTUnwrap(decoded["body"]?.objectValue?["content"]?.strictStringValue)
+      XCTAssertEqual(Data(materialized.utf8), Data(text.utf8))
+      XCTAssertEqual(decoded["evidence_state"], .string("member_reported_not_verified"))
+      var outOfRange = query
+      outOfRange["offset"] = .int(try XCTUnwrap(total))
+      XCTAssertThrowsError(try reopened.readDesktopTextArtifact(XCTUnwrap(Read(outOfRange)), scope: reader))
+      var badBody = body
+      badBody["sha256"] = .string(String(repeating: "0", count: 64))
+      var badItem = item
+      badItem["body"] = .object(badBody)
+      let tampered = AgentMcpJSONCodec.stringify(["format": .string("galaxyssi.research-artifact.v1"),
+        "summary": .string("Snapshot"), "workspace": .array([.object(badItem)])])
+      let rejected = try reopened.publishCollaborationMilestone(["mode": .string("publish"),
+        "milestone_id": .string("tampered-text"), "artifact": .string(tampered)], scope: scope, desktopWire: true)
+      XCTAssertEqual(rejected["status"], .string("rejected"))
+      XCTAssertEqual(rejected["record_validation"]?.objectValue?["code"], .string("invalid_text_artifact"))
     }
     let database = try AgentTeamHistoryDatabase(fileURL: file,
       storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
@@ -1480,7 +1662,9 @@ extension GalaxySSIStoreTests {
     let file = root.appendingPathComponent("history.sqlite3")
     let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
-    let team = durableTeamSnapshot("audit")
+    var team = durableTeamSnapshot("audit")
+    team.goal = "Verify the synthetic model admission"
+    team.members[0].dispatchCheckpoint = .accepted
     XCTAssertTrue(history.upsert(team))
     let member = try XCTUnwrap(team.members.first)
     let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
@@ -1498,7 +1682,14 @@ extension GalaxySSIStoreTests {
     try reopened.settleCollaborationModelCall(admission, settlement: completed)
     XCTAssertEqual(try history.collaborationModelCall(admission).settlement, completed)
     let interrupted = AgentCollaborationModelAdmission(id: UUID(), scope: scope, round: 0,
-      provider: .openAICompatible, requestedModel: nil, startedAtMillis: 3, route: .compatibility)
+      provider: .openAICompatible, requestedModel: nil, startedAtMillis: 3, route: .compatibility, lane: .hostLivePlanning)
+    try reopened.requireGoalCoordinationAuthority(scope, resourceID: member.agentId)
+    XCTAssertThrowsError(try reopened.requireGoalCoordinationAuthority(scope, resourceID: "wrong-resource"))
+    let observer = team.members[1]
+    let observerScope = AgentCollaborationToolEvidenceScope(runId: scope.runId, conversationId: scope.conversationId,
+      turnId: scope.turnId, memberId: observer.memberId, sourceId: observer.sourceMessageId)
+    XCTAssertThrowsError(try reopened.admitCollaborationModelCall(.init(id: UUID(), scope: observerScope,
+      round: 0, provider: .openAICompatible, requestedModel: nil, startedAtMillis: 3, lane: .hostLivePlanning)))
     try reopened.admitCollaborationModelCall(interrupted)
     let firstPage = try history.collaborationModelAuditPage(conversationId: scope.conversationId, limit: 1)
     let cursor = try XCTUnwrap(firstPage.next)
@@ -1508,6 +1699,7 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(entries.first(where: { $0.admission.id == admission.id })?.settlement, completed)
     XCTAssertNil(entries.first(where: { $0.admission.id == interrupted.id })?.settlement)
     XCTAssertEqual(entries.first(where: { $0.admission.id == interrupted.id })?.admission.route, .compatibility)
+    XCTAssertEqual(entries.first(where: { $0.admission.id == interrupted.id })?.admission.lane, .hostLivePlanning)
     XCTAssertNil(secondPage.next)
     XCTAssertTrue(try history.collaborationModelAuditPage(conversationId: "foreign").entries.isEmpty)
     XCTAssertThrowsError(try reopened.settleCollaborationModelCall(admission, settlement: .init(
@@ -3950,22 +4142,80 @@ extension GalaxySSIStoreTests {
     laterTasksArrived.expectedFulfillmentCount = 2
     let last = Task { @MainActor in
       laterTasksArrived.fulfill()
-      await gate.wait(for: 2)
+      guard await gate.wait(for: 2) else { XCTFail("Final reservation was unexpectedly cancelled"); return }
       gate.finish(2, claimedID: "a-last")
     }
     let middle = Task { @MainActor in
       laterTasksArrived.fulfill()
-      await gate.wait(for: 1)
-      gate.finish(1, claimedID: Task.isCancelled ? nil : "m-cancelled")
+      if await gate.wait(for: 1) { gate.finish(1, claimedID: Task.isCancelled ? nil : "m-cancelled") }
     }
     middle.cancel()
     await fulfillment(of: [laterTasksArrived], timeout: 3)
     XCTAssertTrue(gate.claimedIDs.isEmpty)
-    await gate.wait(for: 0)
+    let first = await gate.wait(for: 0)
+    XCTAssertTrue(first)
     gate.finish(0, claimedID: "z-first")
     await last.value
     await middle.value
     XCTAssertEqual(gate.claimedIDs, ["z-first", "a-last"])
+  }
+
+  @MainActor
+  func testSharedPlanningLaneRemainsIndependentOfWorkersAndRevalidatesQueuedGoals() async throws {
+    let workers = AgentGlobalRunSlotLedger()
+    XCTAssertTrue(workers.acquire(ownerId: "worker", runtimeKey: "same-provider", maxParallelRuns: 1, nowMillis: 1))
+    XCTAssertFalse(workers.acquire(ownerId: "queued-worker", runtimeKey: "same-provider", maxParallelRuns: 1, nowMillis: 1))
+    let lane = AgentCollaborationCoordinationLane()
+    func scope(_ run: String) -> AgentCollaborationToolEvidenceScope {
+      .init(runId: run, conversationId: "conversation", turnId: run, memberId: "planner", sourceId: "source")
+    }
+    let first = try XCTUnwrap(lane.acquireIfAvailable(owner: scope("first"), resourceID: "same-provider"))
+    XCTAssertNil(lane.acquireIfAvailable(owner: scope("different-provider"), resourceID: "other"))
+    let queued = expectation(description: "Coordinator queued")
+    var valid = true
+    let stale = Task { @MainActor in
+      do {
+        try await lane.withLease(owner: scope("stale"), resourceID: "same-provider", validate: {
+          if !valid { throw CancellationError() }
+          queued.fulfill()
+        }, operation: { XCTFail("A stale coordinator must not start") })
+      } catch is CancellationError {} catch { XCTFail("Unexpected error: \(error)") }
+    }
+    await fulfillment(of: [queued], timeout: 3)
+    valid = false
+    lane.release(first)
+    await stale.value
+    XCTAssertTrue(lane.available)
+    XCTAssertEqual(workers.activeCount(runtimeKey: "same-provider"), 1)
+    XCTAssertEqual(AgentCollaborationAdmissionCapacity.wire["maximum_single_run"], .int(4))
+  }
+
+  @MainActor
+  func testCancellingQueuedCoordinatorDoesNotConsumeOrReleaseAnotherLease() async throws {
+    let lane = AgentCollaborationCoordinationLane()
+    func scope(_ id: String) -> AgentCollaborationToolEvidenceScope {
+      .init(runId: id, conversationId: id, turnId: id, memberId: "planner", sourceId: id)
+    }
+    let first = try XCTUnwrap(lane.acquireIfAvailable(owner: scope("first"), resourceID: "one"))
+    let queued = expectation(description: "Coordinator waiting")
+    let cancelled = Task { @MainActor in
+      do {
+        try await lane.withLease(owner: scope("cancelled"), resourceID: "two", validate: {
+          queued.fulfill()
+        }, operation: { XCTFail("Cancelled coordinator must not start") })
+      } catch is CancellationError {} catch { XCTFail("Unexpected error: \(error)") }
+    }
+    await fulfillment(of: [queued], timeout: 3)
+    cancelled.cancel()
+    await cancelled.value
+    XCTAssertEqual(lane.queuedCount, 0)
+    XCTAssertFalse(lane.available)
+    lane.release(first)
+    let next = try XCTUnwrap(lane.acquireIfAvailable(owner: scope("next"), resourceID: "two"))
+    lane.release(first)
+    XCTAssertFalse(lane.available)
+    lane.release(next)
+    XCTAssertTrue(lane.available)
   }
 
   func testResearchSubagentsAdmitReadyWorkInOrderWithoutWaitingForUnrelatedWorker() async throws {

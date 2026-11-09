@@ -3152,6 +3152,9 @@ final class MessageCoordinator: ObservableObject {
     let history = AgentTeamExecutionHistoryStore.shared
     let scope = AgentCollaborationToolEvidenceScope(runId: context.team.supervisorRunId,
       conversationId: identity.conversationId, turnId: identity.turnId, memberId: context.member.memberId, sourceId: source)
+    let fileHandoff = AgentDesktopCollaborationFileHandoff.Binding(pair: .init(desktopID: link.desktopId,
+      clientRouteID: identity.clientRouteId, contactID: contact, phoneFingerprint: store.profile.identityFingerprint,
+      desktopFingerprint: link.desktopFingerprint), generation: generation)
     let executionScope: AgentCollaborationSavedToolExecution.Scope? = testing ? .init(assignment: scope,
       profileFingerprint: store.profile.identityFingerprint, desktopID: link.desktopId,
       desktopFingerprint: link.desktopFingerprint, routeID: identity.clientRouteId, generation: generation) : nil
@@ -3173,12 +3176,15 @@ final class MessageCoordinator: ObservableObject {
     let fingerprint = AgentMcpJSONCodec.sha256(assignment.merging([
       "expires_at": .int(expiry), "phase": .string(phase), "delivery": delivery.map(AgentMcpJSONValue.object) ?? .null
     ]) { current, _ in current })
+    let textArtifactRead = !publishing && !testing && phase == "read"
+      ? AgentDesktopCollaborationTextArtifact.Read(input) : nil
     let cached: AgentMcpJSONObject?
     switch desktopCollaborationResponseReplay.lookup(key: key, fingerprint: fingerprint, now: now,
-      revalidate: publishing && phase == "receipt") {
+      revalidate: (publishing && ["receipt", "status", "publish"].contains(phase)) ||
+        (!publishing && input["mode"] == .string("workspace"))) {
     case .identityMismatch: return
     case .missing: cached = nil
-    case .response(let response): cached = response
+    case .response(let response): cached = textArtifactRead == nil ? response : nil
     }
     var result: AgentMcpJSONObject = ["success": .bool(false), "status": .string("unavailable")]
     if cached == nil, !publishing, phase == "read", input["mode"] == .string(AgentCollaborationWorkflowCheck.mode),
@@ -3188,6 +3194,8 @@ final class MessageCoordinator: ObservableObject {
     }
     if let cached {
       result = cached
+    } else if let textArtifactRead {
+      if let page = try? history.readDesktopTextArtifact(textArtifactRead, scope: scope) { result = page }
     } else if let testRequest, let executionScope {
       result = handleSavedToolTest(testRequest, scope: executionScope, contact: contact, link: link)
     } else if !publishing, input["mode"] == .string(AgentCollaborationCandidateRecall.mode), input["view"] == nil,
@@ -3196,10 +3204,16 @@ final class MessageCoordinator: ObservableObject {
       result = page
     } else if publishing {
       do {
-        result = try history.publishCollaborationMilestone(input, scope: scope, desktopWire: true)
+        let fileAuthority = !parent.blocked && !PhoneExecutionAuthority.isCancelled(taskId: parent.taskId) ? fileHandoff : nil
+        result = try history.publishCollaborationMilestone(input, scope: scope, desktopWire: true, desktopFile: fileAuthority,
+          transportAllowsInterim: context.owner.deliveryMode == .observe)
       } catch AgentTeamHistoryDatabase.Failure.corrupt {
         result["status"] = .string("invalid_artifact")
       } catch {}
+    } else if phase == "read", input["mode"] == .string("workspace"), !parent.blocked,
+              !PhoneExecutionAuthority.isCancelled(taskId: parent.taskId),
+              let page = try? history.recallDesktopFileHandoff(input, scope: scope, reader: fileHandoff) {
+      result = page
     } else if ["method_history", "workspace", "capabilities"].contains(input.string("mode")),
               var page = try? history.recallCollaborationOriginal(input, scope: scope) {
       page["success"] = .bool(true)
@@ -9479,11 +9493,13 @@ final class MessageCoordinator: ObservableObject {
             memberContact.selectedCloudModelId = model.modelId
           }
           let memberPrompt = try promptForDispatch()
-          try await withTransientAgentSlot(target: target, sourceMessageId: sourceMessageId) {
+          let audit = isCollaboration && member.deliveryMode == .respond ? AgentCollaborationToolEvidenceScope(
+            runId: spec.supervisorRunId, conversationId: outgoing.conversationId,
+            turnId: homeTurnId, memberId: member.memberId, sourceId: sourceMessageId) : nil
+          let usesCoordinationLane = audit != nil && cloudStreamEngine is CloudConversationStreamEngine &&
+            executionMode != .planOnly && !outgoing.readOnlyAnalysis
+          let execute: () async throws -> Void = { [self] in
             if member.deliveryMode == .respond {
-              let audit = isCollaboration ? AgentCollaborationToolEvidenceScope(
-                runId: spec.supervisorRunId, conversationId: outgoing.conversationId,
-                turnId: homeTurnId, memberId: member.memberId, sourceId: sourceMessageId) : nil
               let didDeliver = try await receiveRequestedCloudReply(
                 contact: memberContact,
                 requestText: memberPrompt,
@@ -9496,7 +9512,8 @@ final class MessageCoordinator: ObservableObject {
                     await self.handleGoalWorkRequest(arguments, scope: scope, outgoing: outgoing,
                       profileID: profileIdentity, targets: targetsById)
                   }
-                }
+                },
+                usesCoordinationLane: usesCoordinationLane
               )
               if didDeliver { persistSynchronousTeamPrimary(member: member, spec: spec, outgoing: outgoing) }
               primaryPublished = true
@@ -9515,6 +9532,13 @@ final class MessageCoordinator: ObservableObject {
               observations.append((member.memberId, result))
               persistTeamObservation(result, from: member, spec: spec, outgoing: outgoing)
             }
+          }
+          if let audit, usesCoordinationLane {
+            try AgentCollaborationCoordinationLane.validate(audit, resourceID: target.id, store: store, profileID: profileIdentity)
+            // The stream acquires the planning slot per provider round, not while waiting for tools or workers.
+            try await execute()
+          } else {
+            try await withTransientAgentSlot(target: target, sourceMessageId: sourceMessageId, operation: execute)
           }
           markDirectedRequestsDelivered()
           continue
@@ -9901,7 +9925,8 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     scopeToConversation: Bool = false,
     collaborationModelAudit: AgentCollaborationToolEvidenceScope? = nil,
-    goalWorkHandler: CloudConversationStreamEngine.GoalWorkHandler? = nil
+    goalWorkHandler: CloudConversationStreamEngine.GoalWorkHandler? = nil,
+    usesCoordinationLane: Bool = false
   ) async throws -> Bool {
     let images = try CloudImagePayloadFactory.prepare(
       attachments,
@@ -9947,7 +9972,8 @@ final class MessageCoordinator: ObservableObject {
       outgoing: outgoing,
       modelDetail: detail,
       displayContactId: outgoing.contactId,
-      collaborationModelAudit: collaborationModelAudit, goalWorkHandler: goalWorkHandler
+      collaborationModelAudit: collaborationModelAudit, goalWorkHandler: goalWorkHandler,
+      usesCoordinationLane: usesCoordinationLane
     )
   }
 
@@ -10166,7 +10192,10 @@ final class MessageCoordinator: ObservableObject {
       let candidate: String
       var startedInference = false
       do {
-        candidate = try await withTransientAgentSlot(target: target, sourceMessageId: scope.sourceId) {
+        candidate = try await AgentCollaborationCoordinationLane.shared.withLease(owner: scope, resourceID: target.id, validate: {
+          try requireLiveScope()
+          try AgentCollaborationCoordinationLane.validate(scope, resourceID: target.id, store: store, profileID: profileID)
+        }) {
           try requireLiveScope()
           if needsRecoveryClaim {
             guard let progress = try history.claimGoalCoordinatorRecovery(binding) else { throw CancellationError() }
@@ -10230,7 +10259,7 @@ final class MessageCoordinator: ObservableObject {
     var newExecution = false
     var status = "no_ready_work"
     while !Task.isCancelled, liveGoalWorkRoster(scope, profileID: profileID) == roster {
-      let capacity = 3 - activeGoalWorkSlots[key, default: 0]
+      let capacity = AgentCollaborationAdmissionCapacity.workersPerRun - activeGoalWorkSlots[key, default: 0]
       guard capacity > 0 else { status = "work_capacity_unavailable"; break }
       guard let ready = try? history.readyGoalWork(scope: scope, excluding: excluded.union(deferred), limit: capacity) else {
         status = "work_scope_unavailable"
@@ -10241,8 +10270,8 @@ final class MessageCoordinator: ObservableObject {
       await withTaskGroup(of: (String, String).self) { group in
         for (index, id) in ready.enumerated() {
           group.addTask { @MainActor in
-            await admission.wait(for: index)
-            guard self.liveGoalWorkRoster(scope, profileID: profileID) == roster else {
+            guard await admission.wait(for: index) else { return (id, "work_scope_unavailable") }
+            guard !Task.isCancelled, self.liveGoalWorkRoster(scope, profileID: profileID) == roster else {
               admission.finish(index, claimedID: nil)
               return (id, "work_scope_unavailable")
             }
@@ -10292,7 +10321,8 @@ final class MessageCoordinator: ObservableObject {
     guard let (work, prior) = try? history.goalWork(id, scope: scope) else { return unavailable("work_unavailable") }
     if let prior { return prior.receipt(now: AgentControlPlaneClock.nowMillis()) }
     let key = scope.ownershipDigest
-    guard activeGoalWorkSlots[key, default: 0] < 3 else { return unavailable("work_capacity_unavailable") }
+    guard activeGoalWorkSlots[key, default: 0] < AgentCollaborationAdmissionCapacity.workersPerRun
+    else { return unavailable("work_capacity_unavailable") }
     activeGoalWorkSlots[key, default: 0] += 1
     var transferredSlot = false
     defer { if !transferredSlot { releaseGoalWorkSlot(key) } }
@@ -11003,25 +11033,21 @@ final class MessageCoordinator: ObservableObject {
       guard target.kind == .model,
             route.resolve(contact: store.contact(id: route.contactId), apiKey: { store.apiKey(for: $0) }) != nil
       else { return }
-      guard let acquired = try? acquireAgentSlot(target: target, sourceMessageId: scope.sourceId + ":goal-recovery")
-      else {
-        if due != nil { scheduleGoalCoordinatorWake(at: AgentControlPlaneClock.nowMillis() + 5_000) }
-        return
+      if cloudStreamEngine is CloudConversationStreamEngine {
+        slot = nil
+      } else {
+        guard let acquired = try? acquireAgentSlot(target: target, sourceMessageId: scope.sourceId + ":goal-recovery")
+        else {
+          if due != nil { scheduleGoalCoordinatorWake(at: AgentControlPlaneClock.nowMillis() + 5_000) }
+          return
+        }
+        slot = acquired
       }
-      slot = acquired
     } else if let local = binding.local {
       let configured = primary.context["_galaxyssi_member_model_id"] ?? ""
       guard configured.isBlank || configured == local.id,
             LocalModelRuntimeCatalog.profiles().contains(local), LocalModelRuntimeSettings.isProfileEnabled(local),
             LocalModelInferenceRuntime.shared.ready(profile: local) else { return }
-      if due != nil {
-        guard let probe = try? acquireAgentSlot(target: target, sourceMessageId: scope.sourceId + ":goal-recovery")
-        else {
-          scheduleGoalCoordinatorWake(at: AgentControlPlaneClock.nowMillis() + 5_000)
-          return
-        }
-        UserDefaultsAgentGlobalRunSlotStore.shared.release(ownerId: probe)
-      }
       slot = nil
     } else { return }
     if let due { attemptedGoalCoordinatorRetries[recoveryKey] = due }
@@ -11078,7 +11104,7 @@ final class MessageCoordinator: ObservableObject {
             outgoing: outgoing, modelDetail: route.modelId, displayContactId: outgoing.contactId,
             collaborationModelAudit: scope, goalWorkHandler: { arguments in
               await self.handleGoalWorkRequest(arguments, scope: scope, outgoing: outgoing, profileID: profile, targets: targets)
-            })
+            }, usesCoordinationLane: true)
         } else { return }
         if delivered {
           if let current = self.store.agentTask(id: scope.turnId), current.phase == .executing, !current.blocked,
@@ -14530,6 +14556,7 @@ final class MessageCoordinator: ObservableObject {
     displayContactId: String,
     collaborationModelAudit: AgentCollaborationToolEvidenceScope? = nil,
     goalWorkHandler: CloudConversationStreamEngine.GoalWorkHandler? = nil,
+    usesCoordinationLane: Bool = false,
     dispatchLease: AgentCloudDispatchLease? = nil,
     researchRetrySource: ChatMessage? = nil,
     retainResearch: Bool = true
@@ -14597,7 +14624,8 @@ final class MessageCoordinator: ObservableObject {
     if let engine = cloudStreamEngine as? CloudConversationStreamEngine {
       events = engine.streamConversation(contact: contact, store: store, turns: scopedTurns, images: images,
         requestId: requestId, collaborationEvidence: nil, collaborationModelAudit: collaborationModelAudit,
-        goalWorkHandler: goalWorkHandler, goalContinuationHandler: goalScope.map { scope in
+        goalWorkHandler: goalWorkHandler, usesCoordinationLane: usesCoordinationLane,
+        goalContinuationHandler: goalScope.map { scope in
           { raw in
             guard !Task.isCancelled, let goalSource,
                   self.liveGoalWorkRoster(scope, profileID: goalProfile) == goalRoster,
