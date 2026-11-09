@@ -476,30 +476,62 @@ final class MqttBusinessTransportRuntime {
     revokingScopes.formIntersection(configuredDirectPeers.map { $0.binding.scope })
   }
 
-  private func evidenceDestination(_ binding: AgentDesktopReplyBinding) -> MqttPeerChatProjection.Destination? {
-    guard started, !stopped, !isDesktopRevoking(binding.desktopId), let projection = peerChatProjection else { return nil }
+  private func evidenceDestination(_ binding: AgentDesktopReplyBinding,
+      diagnose: (AgentDesktopEvidenceQueryTrace.Stage) -> Void = { _ in }) -> MqttPeerChatProjection.Destination? {
+    guard started, !stopped, let projection = peerChatProjection else { diagnose(.transportDisconnected); return nil }
+    guard !isDesktopRevoking(binding.desktopId) else { diagnose(.desktopUnpaired); return nil }
+    let links = projection.store.serverLinks.filter { $0.desktopId == binding.desktopId }
+    guard !links.isEmpty else { diagnose(.desktopUnavailable); return nil }
+    let paired = links.filter(\.paired)
+    guard !paired.isEmpty else { diagnose(.desktopUnpaired); return nil }
+    guard paired.count == 1, paired.first?.routes.clientRouteId == binding.identity.clientRouteId else {
+      diagnose(.staleRoute)
+      return nil
+    }
+    guard let contact = projection.store.contact(id: binding.contactId), contact.id == binding.contactId,
+          contact.isCommunicable, !contact.isDesktopDeviceContact, contact.desktopId == binding.desktopId,
+          contact.deliveryMode.isGalaxySSILinkFamily, contact.connectorAgentId == binding.agentId else {
+      diagnose(.contactChanged)
+      return nil
+    }
+    guard engine.hasSession(remoteName: binding.desktopId) else { diagnose(.signalUnavailable); return nil }
     let matches = projection.store.contacts.compactMap { projection.destination(for: $0) }.filter {
       $0.desktop && $0.peer.remoteSignalName == binding.desktopId && $0.routeId == binding.identity.clientRouteId
     }
     guard matches.count == 1, let target = matches.first,
-          let identity = try? MqttBusinessIdentity(target.peer.binding),
-          (try? routes.withIdentity(identity) { routes.readyForTopic(target.peer.binding.sendTopic) }) == true else { return nil }
+          let identity = try? MqttBusinessIdentity(target.peer.binding) else {
+      diagnose(.routeNotReady)
+      return nil
+    }
+    let topic = target.peer.binding.sendTopic
+    guard (try? routes.withIdentity(identity) { routes.readyForTopic(topic) }) == true else {
+      diagnose(.blockedRoute(routes.blockedReason(topic: topic)))
+      return nil
+    }
     return target
   }
 
-  func canQueryDesktopEvidence(_ binding: AgentDesktopReplyBinding) -> Bool {
-    evidenceDestination(binding) != nil
+  func canQueryDesktopEvidence(_ request: AgentDesktopToolEvidenceWire.Request) -> Bool {
+    let started = AgentDesktopEvidenceQueryTrace.now
+    return evidenceDestination(request.binding) { stage in
+      AgentDesktopEvidenceQueryTrace.record(stage, nonce: request.nonce, started: started)
+    } != nil
   }
 
   func queryDesktopEvidence(_ request: AgentDesktopToolEvidenceWire.Request,
                             payload: AgentMcpJSONObject,
                             timeoutNanoseconds: UInt64 = 8_000_000_000) async -> AgentDesktopEvidenceReply? {
-    guard !Task.isCancelled, let connector = desktopConnector else { return nil }
+    let traceStarted = AgentDesktopEvidenceQueryTrace.now
+    func trace(_ stage: AgentDesktopEvidenceQueryTrace.Stage) {
+      AgentDesktopEvidenceQueryTrace.record(stage, nonce: request.nonce, started: traceStarted)
+    }
+    guard !Task.isCancelled else { return nil }
+    guard let connector = desktopConnector else { trace(.queryUnavailable); return nil }
     do {
       try refreshDirectPeerBindings()
-      guard let target = evidenceDestination(request.binding),
-            let next = evidenceQueries.begin(request, payload: payload, transport: try MqttBusinessIdentity(target.peer.binding),
-              now: AgentDesktopEvidenceQueryTrace.now) else { return nil }
+      guard let target = evidenceDestination(request.binding, diagnose: trace) else { return nil }
+      guard let next = evidenceQueries.begin(request, payload: payload, transport: try MqttBusinessIdentity(target.peer.binding),
+        now: traceStarted) else { trace(.queryUnavailable); return nil }
       if case .retained(let reply) = next { return reply }
       guard case .waiting(let ticket) = next else { return nil }
       var retain = false
@@ -510,10 +542,12 @@ final class MqttBusinessTransportRuntime {
       let wire = try routes.withOutgoing(identity: outgoing.identity, topics: [outgoing.topic]) {
         try engine.makeRecoveryQueryWire(outgoing)
       }
+      trace(.publishStarted)
       let started = DispatchTime.now().uptimeNanoseconds
       guard await routes.publishTransientControl(topic: outgoing.topic, wire: wire, secret: target.peer.binding.secret).accepted,
             !stopped, !Task.isCancelled
-      else { return nil }
+      else { trace(.publishRejected); return nil }
+      trace(.publishAccepted)
       let spent = DispatchTime.now().uptimeNanoseconds - started
       let remaining = timeoutNanoseconds > spent ? timeoutNanoseconds - spent : 0
       let timer = Task { @MainActor [weak self] in
@@ -526,7 +560,8 @@ final class MqttBusinessTransportRuntime {
         return reply
       }
       retain = !stopped && !Task.isCancelled
-    } catch { onFailure(error) }
+      if retain { trace(.timedOut) }
+    } catch { trace(.publishRejected); onFailure(error) }
     return nil
   }
 
@@ -911,13 +946,25 @@ final class MqttBusinessTransportRuntime {
       return
     }
     if type == "agent_task_evidence" {
-      guard target.desktop else { throw MqttRouteError.identityChanged }
-      guard evidenceQueries.started(payload.string("request_id")) != nil else { return }
+      let nonce = payload.string("request_id")
+      let now = AgentDesktopEvidenceQueryTrace.now
+      let started = evidenceQueries.started(nonce)
+      func trace(_ stage: AgentDesktopEvidenceQueryTrace.Stage) {
+        AgentDesktopEvidenceQueryTrace.record(stage, nonce: nonce, started: started ?? now)
+      }
+      guard target.desktop else { trace(.routeMismatch); throw MqttRouteError.identityChanged }
+      guard started != nil else { trace(.noRequest); return }
       guard let response = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: item.payload) else {
+        trace(.invalidResponse)
         throw MqttRouteError.identityChanged
       }
-      if evidenceQueries.receive(response, transport: item.identity, desktop: target.peer.remoteSignalName,
-          now: AgentDesktopEvidenceQueryTrace.now) == .rejected { throw MqttRouteError.identityChanged }
+      switch evidenceQueries.receive(response, transport: item.identity, desktop: target.peer.remoteSignalName,
+        now: now, diagnose: trace) {
+      case .active: trace(response.string("status") == "unavailable" ? .unavailableResponse : .responseReceived)
+      case .late: trace(.responseLate)
+      case .rejected: throw MqttRouteError.identityChanged
+      case .unknown, .discarded, .duplicate: break
+      }
       return
     }
     if target.desktop, let desktopConnector, MqttDesktopConnectorProjection.handles(payload) {
