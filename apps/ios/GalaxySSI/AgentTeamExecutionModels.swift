@@ -156,12 +156,34 @@ struct AgentCollaborationModelAdmission: Codable, Equatable {
   var targetResourceID: String? = nil
   var singleHTTPTransport: Bool? = nil
   var requestSHA256: String? = nil
+  var trialTextControls: AgentCollaborationTrialTextControls? = nil
+}
+
+struct AgentCollaborationTrialTextControls: Codable, Equatable {
+  let maxOutputTokens: Int
+  let temperature: Double
+  let thinkingMode: String
+  let externalTools: Bool
+  let modelSummarization: Bool
+
+  var valid: Bool {
+    (1...4096).contains(maxOutputTokens) && temperature.isFinite && (0...2).contains(temperature) &&
+      thinkingMode == "disabled" && !externalTools && !modelSummarization
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case maxOutputTokens = "max_output_tokens"
+    case temperature
+    case thinkingMode = "thinking_mode"
+    case externalTools = "external_tools"
+    case modelSummarization = "model_summarization"
+  }
 }
 
 struct AgentCollaborationTrialPolicy: Codable, Equatable {
   enum Denial: String, LocalizedError {
     case invalidPolicy, alreadyStarted, policyChanged, closed, expired, clockReversed
-    case exhausted, wrongTarget, wrongModel, unmeteredTransport, replay
+    case exhausted, wrongTarget, wrongModel, unmeteredTransport, replay, changedTextControls
 
     var errorDescription: String? { "Collaboration trial admission denied: " + rawValue }
   }
@@ -171,13 +193,15 @@ struct AgentCollaborationTrialPolicy: Codable, Equatable {
   let protocolSHA256: String
   let maximumAdmissions: Int
   let admissionDeadlineMillis: Int64
+  var textControls: AgentCollaborationTrialTextControls? = nil
 
   func validate(createdAt now: Int64) throws {
     guard !targetResourceID.isBlank, targetResourceID.utf8.count <= 200,
           !requestedModel.isBlank, requestedModel.utf8.count <= 256,
           protocolSHA256.utf8.count == 64,
           protocolSHA256.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
-          (1...10_000).contains(maximumAdmissions), now > 0, admissionDeadlineMillis > now
+          (1...10_000).contains(maximumAdmissions), now > 0, admissionDeadlineMillis > now,
+          textControls?.valid != false
     else { throw Denial.invalidPolicy }
   }
 }
@@ -205,6 +229,9 @@ struct AgentCollaborationTrialState: Codable, Equatable {
   mutating func debit(_ admission: AgentCollaborationModelAdmission, now: Int64) throws {
     try check(target: admission.targetResourceID ?? "", now: now)
     guard admission.requestedModel == policy.requestedModel else { throw AgentCollaborationTrialPolicy.Denial.wrongModel }
+    guard admission.trialTextControls == policy.textControls else {
+      throw AgentCollaborationTrialPolicy.Denial.changedTextControls
+    }
     guard admission.singleHTTPTransport == true, let digest = admission.requestSHA256, digest.utf8.count == 64,
           digest.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) })
     else { throw AgentCollaborationTrialPolicy.Denial.unmeteredTransport }
