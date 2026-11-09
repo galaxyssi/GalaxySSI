@@ -3,8 +3,9 @@
     <string name="health_agent_why">关注原因：%1$s</string>
     <string name="health_agent_next">下一步：%1$s</string>
     <string name="health_agent_research_state">主动查证：%1$s</string>
-    <string name="health_agent_expand">展开健康操作</string>
-    <string name="health_agent_collapse">收起健康操作</string>
+    <string name="health_agent_expand">展开健康评估</string>
+    <string name="health_agent_collapse">收起健康评估</string>
+    <string name="health_agent_open_record">查看健康详情</string>
     <string name="health_agent_next_context">核对这次检测的条件和来源。</string>
     <string name="health_agent_next_evidence">核对适用依据并讨论下一步。</string>
     <string name="health_agent_next_plan">逐项查看建议后再确认。</string>

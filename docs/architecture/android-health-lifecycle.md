@@ -29,6 +29,12 @@ concern details. It reuses the linked active conversation, which remains availab
 in the conversation list even before its first message. Opening it does not
 submit a model request, authorize research, or share health records.
 
+Inside that discussion, the assessment starts as a compact, collapsed summary.
+Expanding it reveals the complete explanation and actions in a bounded scrolling
+area; the collapse control remains outside that scroll. Priority status remains
+visible in the summary. Refreshes preserve the user's current expansion choice,
+while leaving the conversation or backgrounding clears the expanded sensitive UI.
+
 ## Six connected views
 
 | View | Content and interaction |
