@@ -53,6 +53,9 @@
 "galaxyssi.health.research.share_questions" = "在自动研究中包含已复核的澄清记录";
 "galaxyssi.health.research.share_action_feedback" = "在自动研究中包含最新行动反馈";
 "galaxyssi.health.research.action_feedback_scope" = "此模型可接收本关切范围内符合条件的最新自报行动反馈，包括将来保存的反馈，但不会收到反馈历史。";
+"galaxyssi.health.research.share_feedback_history" = "允许自动研究读取行动反馈历史";
+"galaxyssi.health.research.feedback_history_scope" = "每次自动研究此关注项时，所选模型最多可读取 4 页符合授权范围的行动反馈，包括将来保存的反馈。";
+"galaxyssi.health.research.feedback_history_recent" = "首次请求也会包含符合授权范围的最新行动反馈。";
 "galaxyssi.health.research.share_question_pages" = "允许云端模型继续读取澄清记录";
 "galaxyssi.health.research.question_pages_scope" = "每次自动复核可包含当前关注项的第一页，并最多继续读取 4 页。已复核的答复变化后，需要重新授权。";
 "galaxyssi.health.research.questions_scope" = "每次自动复核最多包含此关注项澄清记录的第一页。已复核的答复变化后，需要重新授权。";

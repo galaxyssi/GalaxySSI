@@ -888,9 +888,12 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let source = GalaxySSIHealthCareEvidence.PublicSource.labResults
     let quote = "This fictional laboratory paragraph is a fixture for testing the extraction and exact passage matching."
     let html = Data("<html><body><article><h1>Fixture</h1><p>\(quote)</p></article></body></html>".utf8)
-    func prepare(_ job: GalaxySSIHealthCareResearch.Job? = nil, at date: Date) throws -> GalaxySSIHealthCareDiscussion.Approval {
-      try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Review the current concern",
+    func prepare(_ job: GalaxySSIHealthCareResearch.Job? = nil, at date: Date,
+                 standingHistory: Bool = false) throws -> GalaxySSIHealthCareDiscussion.Approval {
+      var approval = try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Review the current concern",
         destinationID: "provider", model: model, credential: "fixture-api-key", proposesPlan: job != nil, research: job, now: date)
+      approval.allowsStandingFeedbackPages = standingHistory
+      return approval
     }
     func dispatch(at date: Date) throws -> GalaxySSIHealthCareDiscussion.Approval {
       let queued = try XCTUnwrap(records.reconcileLocalCareResearch(now: date).first?.1)
@@ -915,7 +918,12 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
       return try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(json.utf8))
     }
     try records.authorizeLocalCareResearch(prepare(at: now), sources: [source], sharesActionFeedback: true, now: now)
+    XCTAssertNil(try records.load().localCareResearch?.authorizations[concern.id.uuidString]?.sharesFeedbackHistory)
+    let broadPreview = try prepare(at: now, standingHistory: true)
+    XCTAssertNil(broadPreview.feedbackCursor)
+    try records.authorizeLocalCareResearch(broadPreview, sources: [source], sharesActionFeedback: true, now: now)
     let initial = try dispatch(at: now)
+    XCTAssertNotNil(initial.feedbackCursor)
     try records.saveLocalCarePlan(initial, arguments: plan(initial), now: now)
     let proposal = try XCTUnwrap(records.load().localCarePlans?[initial.id.uuidString])
     try records.resolveLocalCarePlan(proposal, selected: [0], currentDestination: initial.destinationDigest, now: now)
@@ -923,12 +931,15 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let action = try XCTUnwrap(accepted.adoptedActions?.first)
 
     let renewedAt = now.addingTimeInterval(1)
-    try records.authorizeLocalCareResearch(prepare(at: renewedAt), sources: [source], sharesActionFeedback: true, now: renewedAt)
+    try records.authorizeLocalCareResearch(prepare(at: renewedAt, standingHistory: true), sources: [source],
+      sharesActionFeedback: true, now: renewedAt)
     let older = try dispatch(at: renewedAt)
+    let oldFeedbackCursor = try XCTUnwrap(older.feedbackCursor)
     try records.validateLocalCareDiscussionTurn(older, now: renewedAt)
     let feedbackAt = renewedAt.addingTimeInterval(1)
     try records.recordLocalCareFeedback(concernID: concern.id, metric: .glucose, action: action,
       expectedRevision: accepted.revision, kind: .barrier, note: "A private barrier", operation: UUID(), now: feedbackAt)
+    XCTAssertThrowsError(try records.readLocalCareDiscussionFeedback(older, cursor: oldFeedbackCursor, remaining: 1, now: feedbackAt))
     if older.proposesPlan {
       XCTAssertThrowsError(try records.saveLocalCarePlan(older, arguments: plan(older), now: feedbackAt))
     } else {
@@ -941,10 +952,29 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(next.researchHandoff?.payload["new_outcome_action_ids"], .array([]))
     XCTAssertEqual(next.researchHandoff?.payload["new_feedback_action_ids"]?.arrayValue?.count, 1)
     XCTAssertTrue(try next.providerPayload(now: feedbackAt).contains("A private barrier"))
+    let nextCursor = try XCTUnwrap(next.feedbackCursor)
+    let approvedPage = try records.readLocalCareDiscussionFeedback(next, cursor: nextCursor, remaining: 0, now: feedbackAt)
+    XCTAssertEqual(approvedPage.payload["items"]?.arrayValue?.first?.objectValue?["note"], .string("A private barrier"))
     let other = try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Review",
       destinationID: "other-provider", model: model, credential: "fixture-api-key", now: feedbackAt)
     XCTAssertFalse(other.payload.contains("A private barrier"))
-    try records.saveLocalCarePlan(next, arguments: plan(next), now: feedbackAt)
+    var broadPlan = try plan(next)
+    var broadActions = try XCTUnwrap(broadPlan["actions"]?.arrayValue)
+    var firstBroadAction = try XCTUnwrap(broadActions.first?.objectValue)
+    firstBroadAction["description"] = .string("A plan description derived from scoped feedback history")
+    broadActions[0] = .object(firstBroadAction)
+    broadPlan["actions"] = .array(broadActions)
+    try records.saveLocalCarePlan(next, arguments: broadPlan, now: feedbackAt)
+    XCTAssertThrowsError(try records.readLocalCareDiscussionFeedback(next, cursor: nextCursor, remaining: 0, now: feedbackAt))
+    try records.authorizeLocalCareResearch(prepare(at: feedbackAt, standingHistory: true), sources: [source],
+      sharesActionFeedback: true, now: feedbackAt)
+    let superseded = try dispatch(at: feedbackAt)
+    let supersededCursor = try XCTUnwrap(superseded.feedbackCursor)
+    try records.authorizeLocalCareResearch(prepare(at: feedbackAt), sources: [source], sharesActionFeedback: true, now: feedbackAt)
+    XCTAssertThrowsError(try records.readLocalCareDiscussionFeedback(superseded, cursor: supersededCursor, remaining: 0, now: feedbackAt))
+    let narrowed = try dispatch(at: feedbackAt)
+    XCTAssertNil(narrowed.feedbackCursor)
+    XCTAssertFalse(try narrowed.providerPayload(now: feedbackAt).contains("A plan description derived from scoped feedback history"))
     try records.revokeLocalCareResearch(concern.id)
 
     let reopened = GalaxySSIHealthRecords(owner: records.owner, secrets: secrets, isolatedFile: file)
