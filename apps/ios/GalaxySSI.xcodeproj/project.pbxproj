@@ -975,6 +975,9 @@
     A100000000000000000099C9 /* AgentGoalResultEvidence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000099C9 /* AgentGoalResultEvidence.swift */; };
     A10000000000000000000145 /* AgentSkillLifecycleModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000145 /* AgentSkillLifecycleModels.swift */; };
     A10000000000000000000699 /* AgentSkillRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000699 /* AgentSkillRuntime.swift */; };
+    D13247000000000000000001 /* AgentDoorAccessConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23247000000000000000001 /* AgentDoorAccessConfiguration.swift */; };
+    D13247000000000000000002 /* AgentDoorAccessClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23247000000000000000002 /* AgentDoorAccessClient.swift */; };
+    D13247000000000000000003 /* GalaxySSIDoorAccessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23247000000000000000003 /* GalaxySSIDoorAccessView.swift */; };
     A10000000000000000000146 /* AgentSkillExecutionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000146 /* AgentSkillExecutionModels.swift */; };
     A10000000000000000000147 /* AgentSkillPackageInstallerModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000147 /* AgentSkillPackageInstallerModels.swift */; };
     A10000000000000000000148 /* AgentLearningEngineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000148 /* AgentLearningEngineModels.swift */; };
@@ -1221,6 +1224,7 @@
     A10000000000000000000225 /* AgentSkillLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000225 /* AgentSkillLifecycleTests.swift */; };
     A10000000000000000000226 /* AgentSkillExecutionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000226 /* AgentSkillExecutionTests.swift */; };
     A10000000000000000000227 /* AgentSkillPackageInstallerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000227 /* AgentSkillPackageInstallerTests.swift */; };
+    D13247000000000000000004 /* AgentDoorAccessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23247000000000000000004 /* AgentDoorAccessTests.swift */; };
     A10000000000000000000228 /* AgentLearningEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000228 /* AgentLearningEngineTests.swift */; };
     A10000000000000000000229 /* AgentModelContextCompactorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000229 /* AgentModelContextCompactorTests.swift */; };
     A10000000000000000000230 /* AgentModelToolProtocolAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000230 /* AgentModelToolProtocolAdapterTests.swift */; };
@@ -2261,6 +2265,9 @@
     A200000000000000000099C9 /* AgentGoalResultEvidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentGoalResultEvidence.swift; sourceTree = "<group>"; };
     A20000000000000000000145 /* AgentSkillLifecycleModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillLifecycleModels.swift; sourceTree = "<group>"; };
     A20000000000000000000699 /* AgentSkillRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillRuntime.swift; sourceTree = "<group>"; };
+    D23247000000000000000001 /* AgentDoorAccessConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDoorAccessConfiguration.swift; sourceTree = "<group>"; };
+    D23247000000000000000002 /* AgentDoorAccessClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDoorAccessClient.swift; sourceTree = "<group>"; };
+    D23247000000000000000003 /* GalaxySSIDoorAccessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIDoorAccessView.swift; sourceTree = "<group>"; };
     A20000000000000000000146 /* AgentSkillExecutionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillExecutionModels.swift; sourceTree = "<group>"; };
     A20000000000000000000147 /* AgentSkillPackageInstallerModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillPackageInstallerModels.swift; sourceTree = "<group>"; };
     A20000000000000000000148 /* AgentLearningEngineModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLearningEngineModels.swift; sourceTree = "<group>"; };
@@ -2524,6 +2531,7 @@
     A20000000000000000000225 /* AgentSkillLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillLifecycleTests.swift; sourceTree = "<group>"; };
     A20000000000000000000226 /* AgentSkillExecutionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillExecutionTests.swift; sourceTree = "<group>"; };
     A20000000000000000000227 /* AgentSkillPackageInstallerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillPackageInstallerTests.swift; sourceTree = "<group>"; };
+    D23247000000000000000004 /* AgentDoorAccessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDoorAccessTests.swift; sourceTree = "<group>"; };
     A20000000000000000000228 /* AgentLearningEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLearningEngineTests.swift; sourceTree = "<group>"; };
     A20000000000000000000229 /* AgentModelContextCompactorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelContextCompactorTests.swift; sourceTree = "<group>"; };
     A20000000000000000000230 /* AgentModelToolProtocolAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelToolProtocolAdapterTests.swift; sourceTree = "<group>"; };
@@ -3071,6 +3079,9 @@
         A200000000000000000099C9 /* AgentGoalResultEvidence.swift */,
         A20000000000000000000145 /* AgentSkillLifecycleModels.swift */,
         A20000000000000000000699 /* AgentSkillRuntime.swift */,
+        D23247000000000000000001 /* AgentDoorAccessConfiguration.swift */,
+        D23247000000000000000002 /* AgentDoorAccessClient.swift */,
+        D23247000000000000000003 /* GalaxySSIDoorAccessView.swift */,
         A20000000000000000000146 /* AgentSkillExecutionModels.swift */,
         A20000000000000000000147 /* AgentSkillPackageInstallerModels.swift */,
         A20000000000000000000148 /* AgentLearningEngineModels.swift */,
@@ -3815,6 +3826,7 @@
         A20000000000000000000225 /* AgentSkillLifecycleTests.swift */,
         A20000000000000000000226 /* AgentSkillExecutionTests.swift */,
         A20000000000000000000227 /* AgentSkillPackageInstallerTests.swift */,
+        D23247000000000000000004 /* AgentDoorAccessTests.swift */,
         A20000000000000000000228 /* AgentLearningEngineTests.swift */,
         A20000000000000000000229 /* AgentModelContextCompactorTests.swift */,
         A20000000000000000000230 /* AgentModelToolProtocolAdapterTests.swift */,
@@ -4441,6 +4453,9 @@
         A100000000000000000099C9 /* AgentGoalResultEvidence.swift in Sources */,
         A10000000000000000000145 /* AgentSkillLifecycleModels.swift in Sources */,
         A10000000000000000000699 /* AgentSkillRuntime.swift in Sources */,
+        D13247000000000000000001 /* AgentDoorAccessConfiguration.swift in Sources */,
+        D13247000000000000000002 /* AgentDoorAccessClient.swift in Sources */,
+        D13247000000000000000003 /* GalaxySSIDoorAccessView.swift in Sources */,
         A10000000000000000000146 /* AgentSkillExecutionModels.swift in Sources */,
         A10000000000000000000147 /* AgentSkillPackageInstallerModels.swift in Sources */,
         A10000000000000000000148 /* AgentLearningEngineModels.swift in Sources */,
@@ -5243,6 +5258,7 @@
         A10000000000000000000225 /* AgentSkillLifecycleTests.swift in Sources */,
         A10000000000000000000226 /* AgentSkillExecutionTests.swift in Sources */,
         A10000000000000000000227 /* AgentSkillPackageInstallerTests.swift in Sources */,
+        D13247000000000000000004 /* AgentDoorAccessTests.swift in Sources */,
         A10000000000000000000228 /* AgentLearningEngineTests.swift in Sources */,
         A10000000000000000000229 /* AgentModelContextCompactorTests.swift in Sources */,
         A10000000000000000000230 /* AgentModelToolProtocolAdapterTests.swift in Sources */,

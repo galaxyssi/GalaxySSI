@@ -177,6 +177,7 @@ struct AgentHomeView: View {
   @State var recentTasksShortcutActive = false
   @State var recentTaskForDetails: AgentTaskRecord?
   @State var attachmentError = ""
+  @State var doorAccessLaunch: GalaxySSIDoorAccessView.Launch?
   @State var homeActionEditorSelection: GalaxySSIAgentRuntimeActionSelection?
   @State var composerFocusRequest = 0
   @State var agentRuntimeAuditRecords: [AgentNativeToolAuditRecord] = []
@@ -489,6 +490,9 @@ struct AgentHomeView: View {
       }
       .onChange(of: coordinator.pendingPhonePublicPageExport) { _ in
         presentPendingPhonePublicPageExport()
+      }
+      .sheet(item: $doorAccessLaunch) { launch in
+        GalaxySSIDoorAccessView(launch: launch)
       }
       .sheet(isPresented: $screenshotPickerPresented) {
         GalaxySSIScreenshotInputView { attachment in

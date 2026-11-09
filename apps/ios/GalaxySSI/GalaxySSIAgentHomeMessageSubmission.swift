@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 extension AgentHomeView {
   func sendAgentMessage(
@@ -17,6 +18,20 @@ extension AgentHomeView {
       composerAttachments: attachments,
       attachmentSnapshot: voiceAttachmentSnapshot
     )
+    if let configuration = AgentDoorAccessConfiguration.enabled(automatic: true),
+       let command = configuration.command(cleanDraft) {
+      guard outgoingAttachments.isEmpty, homeVisible, scenePhase == .active, UIApplication.shared.isProtectedDataAvailable,
+            screenAssistantRunID == nil, screenAssistantConversationID != store.activeAgentConversationId, doorAccessLaunch == nil,
+            !store.profile.identityFingerprint.isBlank, !store.activeAgentConversationId.isBlank else {
+        attachmentError = GalaxySSIDoorAccessView.text("local_only", "Open the door panel from an active conversation without attachments.",
+          language: interfaceLanguage)
+        return
+      }
+      doorAccessLaunch = .init(owner: store.profile.identityFingerprint, conversation: store.activeAgentConversationId,
+        configuration: configuration, command: command, automatic: true)
+      draft = ""; attachmentError = ""; actionTrayPresented = false
+      return
+    }
     guard !outgoingAttachments.contains(where: \.requiresInitialComposerImageReview) else {
       attachmentError = t("composer_attachment_review_required", "Review the selected images before sending.")
       return
