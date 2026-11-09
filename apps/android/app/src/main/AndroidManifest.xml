@@ -256,6 +256,7 @@
         <activity android:name=".HealthCareActionsActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".HealthCareVisitActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".HealthCareEncountersActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".HealthCareVisitFollowUpActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".HealthCareDocumentsActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
         <activity android:name=".HealthCareInstructionsActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
         <activity android:name=".HealthConnectRationaleActivity" android:exported="true">

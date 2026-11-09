@@ -20,6 +20,36 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
     private fun agendaRows() = HealthCareAgendaRows(db, ::concern, ::reminders)
     private fun feedbackRows() = HealthCareFeedbackRows(db, ::pack, ::unpack)
     private fun encounterRows() = HealthCareEncounterRows(db, ::pack, ::unpack)
+    private fun visitFollowUpRows() = HealthCareVisitFollowUpRows(db, ::pack, ::unpack)
+    fun visitFollowUp(encounterId: String) = visitFollowUpRows().get(encounterId)
+    fun visitFollowUpHistory(id: String, encounterId: String, before: Int = Int.MAX_VALUE, limit: Int = 30) =
+        visitFollowUpRows().page(id, encounterId, before, limit)
+    fun recordVisitFollowUp(id: String, expectedRevision: Int, encounterId: String, expectedEncounter: Int,
+        expectedFollowUp: Int?, input: HealthCareVisitFollowUpInput, operation: String, now: Long): HealthCareVisitFollowUpReceipt = transaction(true) {
+        require(listOf(id, encounterId, operation).all(HealthProfilePolicy::uuid) && now > 0)
+        visitFollowUpRows().receipt(operation)?.let {
+            if (it.expectedConcern != expectedRevision || it.expectedFollowUp != expectedFollowUp || it.value.concernId != id ||
+                it.value.encounterId != encounterId || it.encounterRevision != expectedEncounter || it.input != input) throw HealthCareConflict()
+            return@transaction it
+        }
+        val issue = concern(id) ?: throw HealthCareConflict()
+        val visit = encounter(encounterId) ?: throw HealthCareConflict()
+        val before = visitFollowUp(encounterId)
+        if (issue.revision != expectedRevision || visit.concernId != id || visit.revision != expectedEncounter || before?.revision != expectedFollowUp)
+            throw HealthCareConflict()
+        val receipt = HealthCareVisitFollowUpPolicy.apply(issue, visit, before, input, operation, now)
+        persist(issue.copy(revision = receipt.value.revision, updatedAt = receipt.value.updatedAt), "visit_followup_recorded")
+        visitFollowUpRows().write(receipt)
+        receipt
+    }
+    fun deleteVisitFollowUp(id: String, expectedRevision: Int, encounterId: String, expectedFollowUp: Int, now: Long) = transaction(true) {
+        val issue = concern(id) ?: throw HealthCareConflict()
+        val value = visitFollowUp(encounterId) ?: throw HealthCareConflict()
+        if (issue.revision != expectedRevision || value.concernId != id || value.revision != expectedFollowUp) throw HealthCareConflict()
+        require(now > 0)
+        persist(issue.copy(revision = Math.addExact(issue.revision, 1), updatedAt = maxOf(now, issue.updatedAt)), "visit_followup_deleted")
+        visitFollowUpRows().purge(id, encounterId)
+    }
     private fun instructionRows() = HealthCareInstructionRows(db, ::pack, ::unpack)
     private fun instructionProposals() = HealthCareInstructionProposalRows(db, ::pack, ::unpack)
     fun instructionProposal(id: String) = instructionProposals().get(id)
@@ -669,6 +699,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         persist(HealthCareInstructionActionPolicy.invalidate(issue) { it.encounterId == encounterId }
             .copy(revision = issue.revision + 1, updatedAt = maxOf(now, issue.updatedAt)), "encounter_deleted")
         encounterRows().delete(id, encounterId)
+        visitFollowUpRows().purge(id, encounterId)
         documentRows().purge(id, encounterId)
         instructionRows().purge(id, encounterId)
         instructionProposals().purge(id, encounterId)
@@ -785,6 +816,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         answerRows().delete(id)
         feedbackRows().delete(id)
         encounterRows().delete(id)
+        visitFollowUpRows().purge(id)
         documentRows().purge(id)
         instructionRows().purge(id)
         instructionProposals().purge(id)
@@ -809,7 +841,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         Unit
     }
     override fun close() = helper.close()
-    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 16) {
+    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 17) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE settings(id INTEGER PRIMARY KEY,version TEXT NOT NULL,payload BLOB NOT NULL)")
@@ -829,6 +861,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             HealthCareAgendaRows.create(db)
             HealthCareFeedbackRows.create(db)
             HealthCareEncounterRows.create(db)
+            HealthCareVisitFollowUpRows.create(db)
             HealthCareDocumentRows.create(db)
             HealthCareInstructionRows.create(db)
             HealthCareInstructionProposalRows.create(db)
@@ -839,7 +872,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             db.execSQL("CREATE TABLE discussion_grants(turn_id TEXT PRIMARY KEY,payload BLOB NOT NULL)")
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            check(oldVersion in 1..15 && newVersion == 16)
+            check(oldVersion in 1..16 && newVersion == 17)
             if (oldVersion < 2) discussions(db)
             if (oldVersion < 3) plans(db)
             if (oldVersion < 4) reminders(db)
@@ -859,6 +892,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             if (oldVersion < 13) HealthCareDocumentRows.create(db)
             if (oldVersion < 14) HealthCareInstructionRows.create(db)
             if (oldVersion < 16) HealthCareInstructionProposalRows.create(db)
+            if (oldVersion < 17) HealthCareVisitFollowUpRows.create(db)
         }
         private fun research(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE research_authorizations(concern_id TEXT PRIMARY KEY,id TEXT NOT NULL UNIQUE,payload BLOB NOT NULL)")
