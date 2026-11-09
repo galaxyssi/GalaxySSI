@@ -86,6 +86,11 @@ struct AgentCollaborationTypedRecordValidation: Error {
   }
 
   static func validate(_ draft: AgentCollaborationResearchDraft) throws {
+    if draft.body["format"] == .string(AgentDesktopCollaborationTextArtifact.format),
+       !AgentDesktopCollaborationTextArtifact.valid(draft) {
+      throw issue("invalid_text_artifact", path: "/body",
+        expected: "portable name and exact UTF-8 size and SHA-256", actual: "invalid text artifact", draft: draft)
+    }
     let kind = draft.kind.rawValue
     guard kinds.contains(kind) else { return }
     guard draft.body[kind]?.objectValue != nil else {

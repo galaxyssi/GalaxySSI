@@ -49,3 +49,21 @@ reservation requires inspection; a new study uses a fresh UUID.
 The fixture neither uses an existing conversation nor invokes a model. An
 observer's read establishes availability, not autonomous retrieval, model
 use, a fresh provider thread, or improved task quality.
+
+## Persisted conversation selection
+
+The fixture reads the iOS conversation database's explicit active-selection
+record before preparation, after the calibration and after removing only the
+fixture conversation. It checks both an existing selection and an unset one.
+The newest conversation is not a selection. These tests use isolated storage,
+not the user's application database.
+
+To run the optional physical-device case, select the verified device in Xcode
+and pass `GALAXYSSI_CALIBRATION_DEVICE_TEST=1` and
+`GALAXYSSI_CALIBRATION_DEVICE_MODEL=<exact hardware identifier>` in the test
+configuration (for example, `iPhone16,2`). The test rejects simulators, missing
+identifiers, wildcards, lists and mismatched models before creating a fixture.
+Verify the device destination separately when two devices share a model.
+The XCTest attachment records the model and the check performed. The test
+verdict is the XCTest result, not evidence of live provider or multi-window
+device behavior.

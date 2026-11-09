@@ -449,14 +449,14 @@ final class AgentTeamExecutionRuntime {
         childId: member.memberId,
         dependencies: dependencies,
         dependencyPolicy: member.memberId == normalizedDefinition.primaryMemberId ? .allowTerminal : .requireSuccess,
-        context: String(member.objective.ifBlank(request.goal).prefix(8_000)),
+        context: AgentTeamDispatchText.objective(member.objective.ifBlank(request.goal)),
         provenance: AgentSubagentProvenance(
           source: "agent-team",
           sourceId: normalizedDefinition.teamId,
           traceId: request.runId,
           metadata: [
             "delivery_mode": member.deliveryMode.rawValue,
-            "role": String(member.role.prefix(80)),
+            "role": member.role,
             "task_id": String(request.taskId.prefix(160))
           ]
         )
@@ -491,7 +491,7 @@ final class AgentTeamExecutionRuntime {
       )
       member.context.forEach { childRequest.context[$0.key] = .string(String($0.value.prefix(8_000))) }
       childRequest.context["team_id"] = .string(normalizedDefinition.teamId)
-      childRequest.context["team_role"] = .string(String(member.role.prefix(80)))
+      childRequest.context["team_role"] = .string(member.role)
       childRequest.context["team_visibility"] = .string(normalizedDefinition.visibilityMode.rawValue.lowercased())
       childRequest.context["team_instance_id"] = .string(member.memberId)
       let queuedMessages = mailbox.pendingMessages(
@@ -674,8 +674,8 @@ final class AgentTeamExecutionRuntime {
         agentId: agentId,
         deliveryMode: member.deliveryMode,
         requiredCapabilities: member.requiredCapabilities,
-        role: String(member.role.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80)),
-        objective: String(member.objective.trimmingCharacters(in: .whitespacesAndNewlines).prefix(8_000)),
+        role: AgentTeamDispatchText.role(member.role),
+        objective: AgentTeamDispatchText.objective(member.objective),
         dependsOnAgentIds: Set(member.dependsOnAgentIds.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }),
         context: member.context.reduce(into: [String: String]()) { $0[String($1.key.prefix(160))] = String($1.value.prefix(8_000)) },
         instanceId: memberId
