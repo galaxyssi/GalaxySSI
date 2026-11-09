@@ -2528,12 +2528,64 @@ final class AgentTeamExecutionHistoryStore {
     return enrollment?.scope == scope && enrollment?.owns(snapshot, member: member) == true
   }
 
+  enum MilestoneCapability: String, Sendable {
+    case available
+    case notEnrolled = "assignment_not_enrolled"
+    case finalized = "assignment_finalized"
+
+    var guidance: String {
+      switch self {
+      case .available: return "Use stable milestone IDs and exact versions; a receipt is not verification or task completion."
+      case .notEnrolled: return "This dispatch has no interim-publication contract. Return its required planning or final-response format. Do not retry publication or repair artifact JSON to obtain enrollment."
+      case .finalized: return "This assignment already committed its final publication. Use the original result; new publication requires a new host assignment."
+      }
+    }
+
+    var payload: AgentMcpJSONObject {
+      ["format": .string("galaxyssi.publication-capability.v1"), "publish_allowed": .bool(self == .available),
+       "reason_code": .string(rawValue), "retry_changes_availability": .bool(false), "guidance": .string(guidance),
+       "scope": .string("current_host_assignment"), "grants_authority": .bool(false)]
+    }
+
+    var unavailable: AgentMcpJSONObject {
+      ["success": .bool(false), "status": .string("unavailable"), "error_code": .string(rawValue),
+       "error": .string(guidance), "capability": .object(payload), "retryable": .bool(false),
+       "artifact_validated": .bool(false), "assignment_completed": .bool(false)]
+    }
+  }
+
+  func milestoneCapability(scope: AgentCollaborationToolEvidenceScope,
+                           transportAllowsInterim: Bool = true) throws -> MilestoneCapability {
+    try access { database in
+      guard let snapshot = try database.snapshots(runId: scope.runId).first,
+            snapshot.conversationId == scope.conversationId, snapshot.taskId == scope.turnId,
+            let member = snapshot.members.first(where: { $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId }),
+            member.deliveryMode != .ignore, snapshot.state == .running || snapshot.state == .succeeded,
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      if member.status == .succeeded {
+        let key = Self.researchPublicationKey(runId: scope.runId, memberId: scope.memberId, sourceId: scope.sourceId)
+        guard try database.researchRecord(AgentCollaborationResearchPublication.self,
+          conversationId: scope.conversationId, key: key, revision: 0) != nil
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        return .finalized
+      }
+      guard snapshot.state == .running, !member.status.isTerminal,
+            member.dispatchCheckpoint == .dispatching || member.dispatchCheckpoint == .accepted
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      return try transportAllowsInterim && Self.canPublishMilestone(snapshot, member: member, database: database)
+        ? .available : .notEnrolled
+    }
+  }
+
   func publishCollaborationMilestone(_ input: AgentMcpJSONObject,
                                      scope: AgentCollaborationToolEvidenceScope,
                                      recruitmentTemplates: [String: String] = [:],
                                      recruitmentRoster: AgentCollaborationRoster? = nil,
                                      desktopWire: Bool = false,
-                                     desktopFile: AgentDesktopCollaborationFileHandoff.Binding? = nil) throws -> AgentMcpJSONObject {
+                                     desktopFile: AgentDesktopCollaborationFileHandoff.Binding? = nil,
+                                     transportAllowsInterim: Bool = true) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
     let id = input.string("milestone_id")
     if mode == AgentCollaborationGoalAssessmentPolicy.establishContractMode {
@@ -2572,7 +2624,14 @@ final class AgentTeamExecutionHistoryStore {
       }
       return AgentCollaborationGoalAssessmentPolicy.preflight(raw, establishedContract: established)
     }
-    if ["status", "receipt", "list"].contains(mode) {
+    if mode == "status" {
+      guard Set(input.keys) == ["mode"] else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      let capability = try milestoneCapability(scope: scope, transportAllowsInterim: transportAllowsInterim)
+      return ["success": .bool(true), "status": .string("returned"), "capability": .object(capability.payload),
+        "assignment_completed": .bool(false)]
+    }
+    if ["receipt", "list"].contains(mode) {
+      guard transportAllowsInterim else { throw AgentTeamHistoryDatabase.Failure.stale }
       return try access { database in
         guard let snapshot = try database.snapshots(runId: scope.runId).first,
               snapshot.conversationId == scope.conversationId, snapshot.taskId == scope.turnId,
@@ -2581,9 +2640,6 @@ final class AgentTeamExecutionHistoryStore {
               try database.researchRecord(Bool.self, conversationId: scope.conversationId,
                 key: "native-evidence-revoked", revision: 0) != true
         else { throw AgentTeamHistoryDatabase.Failure.stale }
-        if mode == "status", Set(input.keys) == ["mode"] {
-          return ["success": .bool(true), "status": .string("available")]
-        }
         let base = Self.researchPublicationKey(runId: scope.runId, memberId: scope.memberId, sourceId: scope.sourceId)
         if mode == "list" {
           guard Set(input.keys).isSubset(of: ["mode", "cursor"]),
@@ -2646,8 +2702,10 @@ final class AgentTeamExecutionHistoryStore {
     }
     guard !id.isBlank, id.utf8.count <= 160,
           Set(input.keys) == ["mode", "milestone_id", "artifact"], input["mode"] == .string("publish"),
-          let raw = input["artifact"]?.strictStringValue, raw.utf8.count <= 131_072
+          let raw = input["artifact"]?.strictStringValue, !raw.isBlank, raw.utf8.count <= 131_072
     else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    let capability = try milestoneCapability(scope: scope, transportAllowsInterim: transportAllowsInterim)
+    guard capability == .available else { return capability.unavailable }
     let hash = Self.replyHash(raw)
     do {
       guard let envelope = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8)),

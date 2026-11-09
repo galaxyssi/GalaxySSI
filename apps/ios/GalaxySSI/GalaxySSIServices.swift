@@ -3178,7 +3178,8 @@ final class MessageCoordinator: ObservableObject {
     ]) { current, _ in current })
     let cached: AgentMcpJSONObject?
     switch desktopCollaborationResponseReplay.lookup(key: key, fingerprint: fingerprint, now: now,
-      revalidate: (publishing && (phase == "receipt" || phase == "publish")) || (!publishing && input["mode"] == .string("workspace"))) {
+      revalidate: (publishing && ["receipt", "status", "publish"].contains(phase)) ||
+        (!publishing && input["mode"] == .string("workspace"))) {
     case .identityMismatch: return
     case .missing: cached = nil
     case .response(let response): cached = response
@@ -3200,7 +3201,8 @@ final class MessageCoordinator: ObservableObject {
     } else if publishing {
       do {
         let fileAuthority = !parent.blocked && !PhoneExecutionAuthority.isCancelled(taskId: parent.taskId) ? fileHandoff : nil
-        result = try history.publishCollaborationMilestone(input, scope: scope, desktopWire: true, desktopFile: fileAuthority)
+        result = try history.publishCollaborationMilestone(input, scope: scope, desktopWire: true, desktopFile: fileAuthority,
+          transportAllowsInterim: context.owner.deliveryMode == .observe)
       } catch AgentTeamHistoryDatabase.Failure.corrupt {
         result["status"] = .string("invalid_artifact")
       } catch {}

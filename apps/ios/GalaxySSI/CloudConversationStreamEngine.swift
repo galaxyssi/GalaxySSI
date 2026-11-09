@@ -285,9 +285,13 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       if collaborationRecallScope != nil {
         prepared.installCollaborationRecall(originalsOnly: collaborationEvidence == nil)
       }
-      if collaborationRecallScope != nil {
-        prepared.installCollaborationPublication(assessmentOnly: collaborationEvidence == nil,
-          canRunGoalWork: collaborationEvidence == nil && goalWorkHandler != nil)
+      if let scope = collaborationEvidence {
+        let capability = await MainActor.run {
+          try? AgentTeamExecutionHistoryStore.shared.milestoneCapability(scope: scope)
+        }
+        prepared.installCollaborationPublication(capability: capability ?? .notEnrolled)
+      } else if collaborationModelAudit != nil {
+        prepared.installCollaborationPublication(assessmentOnly: true, canRunGoalWork: goalWorkHandler != nil)
       }
       if workInputPublisher != nil {
         guard collaborationRecallScope == nil, turns.last?.readOnlyAnalysis == true else { throw CancellationError() }
@@ -781,7 +785,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
               }
               return await MainActor.run {
                 let needsCoordinator = AgentCollaborationGoalAssessmentPolicy.requiresCoordinator(mode)
-                guard collaborationEvidence != nil || mode == "validate_assessment" || needsCoordinator else {
+                guard collaborationEvidence != nil || ["status", "publish", "validate_assessment"].contains(mode) || needsCoordinator else {
                   return nil
                 }
                 guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
@@ -795,7 +799,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                         task.phase == .executing || task.phase == .waitingResponse,
                         !PhoneExecutionAuthority.isCancelled(taskId: task.taskId) else { return nil }
                 }
-                return try? AgentTeamExecutionHistoryStore.shared.publishCollaborationMilestone(arguments, scope: scope)
+                return try? AgentTeamExecutionHistoryStore.shared.publishCollaborationMilestone(arguments, scope: scope,
+                  transportAllowsInterim: collaborationEvidence != nil)
               }
             }
           }

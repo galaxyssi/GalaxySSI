@@ -128,7 +128,8 @@ enum AgentDesktopCollaborationPublicationWire {
 
   static func permits(phase: String, observer: Bool) -> Bool {
     if AgentCollaborationGoalAssessmentPolicy.isCoordinatorMutation(phase) { return !observer }
-    return observer || phase == "validate_assessment"
+    // Responders may receive a diagnosis, but the history store cannot publish on their Desktop route.
+    return observer || ["status", "publish", "validate_assessment"].contains(phase)
   }
 
   static func artifactDecodingView(_ envelope: AgentMcpJSONObject) -> String? {
