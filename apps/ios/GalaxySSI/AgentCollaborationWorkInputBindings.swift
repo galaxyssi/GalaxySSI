@@ -9,7 +9,9 @@ enum AgentCollaborationWorkInputBindings {
     " Declare data-only edges at work creation with data_dependencies:[{work_id,requirement}]. Other edges require completion. " +
     "Use work_input with the producer work_id to list published versions, then with its exact token to inspect the data. " +
     "Use append_work with rebind_inputs:[{work_id,expected_revision,reason,inputs:[{dependency,uses_milestones:[token]}]}] " +
-    "to bind only declared data edges of unclaimed work. Read input_revision from work_inventory. Publication is not completion."
+    "to bind only declared data edges of unclaimed work. For an unclaimed independent VERIFY or CHALLENGE, " +
+    "rebind_reviews uses the same request shape and can pin a named review subject. Explicit completion-only edges still wait. " +
+    "Read input_revision from work_inventory. Publication is not completion or verification."
   static let producerInstructions =
     "If the assignment produces useful frozen data before it finishes, publish it with mode publish_work_input, a unique " +
     "milestone_id, and artifact containing a nonempty JSON object as a string. Publish only task data, not instructions, " +
@@ -71,6 +73,15 @@ enum AgentCollaborationWorkInputBindings {
   struct Requirement: Codable, Equatable {
     let work_id: String
     let requirement: String
+
+    static func reviewSubject(_ workID: String) -> Self {
+      .init(workID: workID, requirement: "Review the exact published version of this subject.")
+    }
+
+    private init(workID: String, requirement: String) {
+      work_id = workID
+      self.requirement = requirement
+    }
 
     init(from decoder: Decoder) throws {
       let object = try AgentMcpJSONObject(from: decoder)
@@ -156,14 +167,20 @@ enum AgentCollaborationWorkInputBindings {
   }
 
   struct BoundInput: Codable, Equatable {
+    enum Role: String, Codable { case reviewSubject = "review_subject" }
     let requirement: Requirement
     let versions: [Pin]
+    var role: Role? = nil
   }
 
   struct Revision: Codable, Equatable {
+    enum Kind: String, Codable { case independentReview = "independent_review" }
     let revision: Int64
     let reason: String
     let inputs: [BoundInput]
+    var kind: Kind? = nil
+    var previousRevision: Int64? = nil
+    var coordinator: AgentCollaborationToolEvidenceScope? = nil
   }
 
   static func validToken(_ text: String) -> Bool {

@@ -466,6 +466,19 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
       AgentTeamDispatchText.bounded(assignment, maximumCharacters: AgentTeamDispatchText.liveAssignmentBytes)
     }
 
+    var isVersionBoundReview: Bool {
+      independent_review == true && ["VERIFY", "CHALLENGE"].contains(stage ?? "") &&
+        workflowExecutionId == nil && blockerResolution == nil && recruitment == nil &&
+        learning == nil && procedure_use == nil
+    }
+
+    func reviewInputRequirement(_ dependency: String) -> InputBindings.Requirement? {
+      guard isVersionBoundReview, depends_on.contains(dependency), (review_targets ?? depends_on).contains(dependency)
+      else { return nil }
+      if let data_dependencies { return data_dependencies.first { $0.work_id == dependency } }
+      return .reviewSubject(dependency)
+    }
+
     func hasIndependentReviewAuthors(_ author: (String) -> String?,
       identity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId) -> Bool {
       if let review_targets {
@@ -639,6 +652,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var work: [Entry]
     var recruit: [RecruitmentRequest]? = nil
     var rebind_inputs: [InputBindings.Rebind]? = nil
+    var rebind_reviews: [InputBindings.Rebind]? = nil
   }
 
   private(set) var work: [Work] = []
@@ -653,15 +667,22 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var history = inputBindingHistory ?? [:]
     for (id, revision) in additions {
       guard let item = work.first(where: { $0.id == id }), item.workflowExecutionId == nil,
-            item.blockerResolution == nil, item.recruitment == nil,
-            let requirements = item.data_dependencies, !requirements.isEmpty else { return nil }
+            item.blockerResolution == nil, item.recruitment == nil else { return nil }
       let prior = history[id, default: []]
+      let pinned = InputBindings.current(prior)
       guard prior.count < InputBindings.maximumRevisions, revision.revision == Int64(prior.count + 1),
             !revision.reason.isBlank, !revision.inputs.isEmpty,
+            revision.kind != .independentReview || (revision.coordinator != nil &&
+              revision.previousRevision == Int64(prior.count)),
             Set(revision.inputs.map { $0.requirement.work_id }).count == revision.inputs.count,
             revision.inputs.allSatisfy({ input in
-              requirements.contains(input.requirement) && !input.versions.isEmpty &&
-                input.versions.allSatisfy { $0.workID == input.requirement.work_id }
+              guard !input.versions.isEmpty, input.versions.allSatisfy({ $0.workID == input.requirement.work_id })
+              else { return false }
+              if revision.kind == .independentReview {
+                return input.role == .reviewSubject && item.reviewInputRequirement(input.requirement.work_id) == input.requirement
+              }
+              return input.role == nil && pinned[input.requirement.work_id]?.role != .reviewSubject &&
+                item.data_dependencies?.contains(input.requirement) == true
             }) else { return nil }
       history[id] = prior + [revision]
     }
@@ -807,7 +828,9 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
 
   func ready(settled: [String: Settlement], active: Set<String>) -> [Work] {
     prioritizeReady(work.filter { item in
-      settled[item.id] == nil && !active.contains(item.id) && item.depends_on.allSatisfy { dependency in
+      let bindings = boundInputs(for: item.id)
+      return settled[item.id] == nil && !active.contains(item.id) && item.depends_on.allSatisfy { dependency in
+        if bindings[dependency] != nil { return true }
         guard let state = settled[dependency] else { return false }
         return item.dependency_policy == .terminal || state == .succeeded
       }
