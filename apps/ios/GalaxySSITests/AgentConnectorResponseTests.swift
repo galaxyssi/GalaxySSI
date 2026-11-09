@@ -286,6 +286,130 @@ extension GalaxySSIStoreTests {
     XCTAssertNotNil(ledger.complete(response))
   }
 
+  @MainActor
+  func testStoppedPilotReconcilesOnlyItsOriginalDesktopReceiptAfterReopen() throws {
+    let suite = "StoppedPilot." + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    func ledger() -> UserDefaultsAgentManagedResponseLedger {
+      .init(defaults: defaults, nowMillis: { 4_000 }, fileURL: root.appendingPathComponent("managed.sqlite3"), secrets: secrets)
+    }
+    func history() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: InMemoryAgentTeamExecutionStore(),
+        fileURL: root.appendingPathComponent("history.sqlite3"))
+    }
+    func receipts() -> AgentResultReceiptJournal {
+      .init(fileURL: root.appendingPathComponent("receipts.sqlite3"), secrets: secrets)
+    }
+    func digest(_ bytes: Data) -> String { SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined() }
+
+    var child = managedSQLiteRecord(73)
+    child.taskId = String(child.sourceMessageId)
+    child.deliveryMode = .respond
+    var unrelated = managedSQLiteRecord(74)
+    unrelated.supervisorRunId = "unrelated-run"
+    try ledger().register(child)
+    try ledger().register(unrelated)
+    let stopped = AgentTeamExecutionSnapshot(supervisorRunId: child.supervisorRunId, teamId: "pilot-team",
+      conversationId: child.conversationId, taskId: child.turnId, primaryAgentId: child.agentId,
+      goal: "Retained test trial", state: .cancelled,
+      members: [.init(agentId: child.agentId, deliveryMode: .respond, status: .cancelled,
+        sourceMessageId: String(child.sourceMessageId), dispatchCheckpoint: .accepted)],
+      createdAtMillis: 1_000, updatedAtMillis: 1_500)
+    XCTAssertTrue(history().upsert(stopped))
+    let conversationsURL = root.appendingPathComponent("conversations.sqlite3")
+    let conversations = AgentConversationDatabase(fileURL: conversationsURL, secrets: secrets)
+    let userSelection = AgentConversation(id: "user-selection", title: "Existing conversation", createdAt: 1, updatedAt: 1)
+    XCTAssertTrue(conversations.upsert(userSelection))
+    conversations.setActiveConversationId(userSelection.id)
+    XCTAssertEqual(conversations.activeConversationId, userSelection.id)
+    let originalURL = root.appendingPathComponent("original-report.json")
+    let original = try JSONSerialization.data(withJSONObject: ["run_id": stopped.supervisorRunId,
+      "conversation_id": stopped.conversationId, "durable_control": "STOP", "finished": true, "passed": false],
+      options: [.sortedKeys])
+    let originalHash = digest(original)
+    try original.write(to: originalURL, options: .withoutOverwriting)
+
+    let binding = try XCTUnwrap(AgentDesktopReplyBinding.managed(record: child, desktopId: "desktop", agentId: "codex",
+      identity: .init(clientRouteId: "route", conversationId: child.conversationId, taskId: child.taskId, turnId: child.turnId)))
+    let reopenedHistory = history()
+    let reopenedLedger = ledger()
+    let journal = receipts()
+    let engine = AgentDesktopResultRecovery(pages: .init(fileURL: root.appendingPathComponent("pages.sqlite3"), secrets: secrets),
+      receipts: journal)
+    let source = try Data(contentsOf: originalURL)
+    let report = try XCTUnwrap(JSONSerialization.jsonObject(with: source) as? [String: Any])
+    let saved = try XCTUnwrap(reopenedHistory.snapshot(supervisorRunId: child.supervisorRunId))
+    guard digest(source) == originalHash, report["finished"] as? Bool == true, report.string("durable_control") == "STOP",
+          report.string("run_id") == saved.supervisorRunId, report.string("conversation_id") == saved.conversationId,
+          saved == stopped, saved.state == .cancelled else {
+      XCTFail("Receipt reconciliation requires the original stopped pilot")
+      return
+    }
+    let before = reopenedLedger.pendingForSupervisor(saved.supervisorRunId).map(\.ownerRunId)
+    XCTAssertEqual(before, [child.ownerRunId])
+    var checkpoint = AgentDesktopReplyRecoveryRecord(binding: binding, createdAt: 1_000)
+    checkpoint.generation = child.executionGeneration
+    checkpoint.sequence = 3
+    checkpoint.status = "cancelled"
+    let request = try XCTUnwrap(engine.request(checkpoint, now: 2_000))
+    XCTAssertEqual(request.string("type"), "agent_task_result_page_request")
+    var body = binding.fields
+    body.merge(["type": "text", "content": "Desktop confirmed stop", "success": false, "task_status": "cancelled",
+      "execution_generation": checkpoint.generation, "status_sequence": checkpoint.sequence]) { _, new in new }
+    let result = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+    var page = binding.fields
+    page.merge(["type": "agent_task_result_page", "status": "ready", "request_id": request.string("request_id"),
+      "execution_generation": checkpoint.generation, "page_index": 0, "page_count": 1, "total_bytes": result.count,
+      "sha256": digest(result), "page_sha256": digest(result), "data_b64": result.base64EncodedString()]) { _, new in new }
+    var wrongPage = page
+    wrongPage["execution_generation"] = checkpoint.generation + 1
+    XCTAssertNil(engine.receive(wrongPage, record: checkpoint, now: 2_500))
+    XCTAssertEqual(reopenedLedger.pendingForSupervisor(saved.supervisorRunId).map(\.ownerRunId), before)
+    checkpoint.resultManifest = try XCTUnwrap(engine.receive(page, record: checkpoint, now: 2_500))
+    let payload = try XCTUnwrap(engine.assembled(checkpoint))
+    let response = try XCTUnwrap(AgentConnectorResponse.fromPayload(payload, nowMillis: 3_000))
+    let receipt = try XCTUnwrap(engine.receipt(checkpoint))
+    XCTAssertEqual(response.taskStatus, "cancelled")
+    var stillRunning = saved
+    stillRunning.state = .running
+    stillRunning.members[0].status = .running
+    XCTAssertNotNil(AgentSavedTeamReplyPolicy.apply(to: stillRunning, source: receipt.sourceMessageId,
+      conversation: receipt.conversationId, turn: receipt.turnId, task: receipt.taskId, contact: receipt.contactId,
+      content: response.content, success: false, now: 3_000))
+    XCTAssertNil(reopenedHistory.applyReply(supervisorRunId: saved.supervisorRunId, source: receipt.sourceMessageId,
+      conversation: receipt.conversationId, turn: receipt.turnId, task: receipt.taskId, contact: receipt.contactId,
+      content: response.content, success: false, now: 3_000))
+    let completed = try reopenedLedger.commitDesktopResult(response, receipt: receipt, binding: binding)
+    XCTAssertEqual(completed.desktopResultReceipt, receipt)
+    XCTAssertTrue(journal.insert(receipt))
+    let reopenedJournal = receipts()
+    XCTAssertEqual(reopenedJournal.recordedState(receipt), .pending)
+    var confirmation = receipt.payload
+    confirmation["type"] = "agent_task_result_receipt_confirmed"
+    confirmation["receipt_id"] = "foreign"
+    XCTAssertNil(AgentResultReceipt.confirmedPayload(confirmation, desktopId: binding.desktopId))
+    XCTAssertEqual(reopenedJournal.recordedState(receipt), .pending)
+    confirmation["receipt_id"] = receipt.id
+    let confirmed = try XCTUnwrap(AgentResultReceipt.confirmedPayload(confirmation, desktopId: binding.desktopId))
+    XCTAssertTrue(reopenedJournal.confirm(confirmed))
+    XCTAssertEqual(try ledger().commitDesktopResult(response, receipt: receipt, binding: binding), completed)
+
+    let pending = ledger().pendingForSupervisor(saved.supervisorRunId).map(\.ownerRunId)
+    XCTAssertTrue(pending.isEmpty)
+    XCTAssertEqual(try ledger().recoveryRecord(owner: child.ownerRunId), completed)
+    XCTAssertEqual(try ledger().recoveryRecord(owner: unrelated.ownerRunId), unrelated)
+    XCTAssertEqual(receipts().recordedState(receipt), .confirmed)
+    XCTAssertEqual(history().snapshot(supervisorRunId: saved.supervisorRunId), stopped)
+    XCTAssertEqual(try Data(contentsOf: originalURL), original)
+    let reopenedConversations = AgentConversationDatabase(fileURL: conversationsURL, secrets: secrets)
+    XCTAssertEqual(reopenedConversations.activeConversationId, userSelection.id)
+    XCTAssertEqual(reopenedConversations.read(userSelection.id), userSelection)
+  }
+
   private func managedSQLiteRecord(_ source: Int64) -> AgentManagedResponseRecord {
     AgentManagedResponseRecord(ownerRunId: "child-\(source)", supervisorRunId: "supervisor", agentId: "codex",
       deliveryMode: .observe, sourceMessageId: source, contactId: "codex", conversationId: "conversation",
