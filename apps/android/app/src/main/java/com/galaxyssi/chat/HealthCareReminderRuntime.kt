@@ -29,8 +29,10 @@ internal object HealthCareReminderRuntime {
                         val issue = care.concern(value.concernId) ?: return false
                         val currentPermission = privacy.policy()
                         val currentSettings = care.settings()
+                        val action = issue.actions.firstOrNull { it.id == value.actionId } ?: return false
                         val source = HealthCareEngine.inputVersion(currentSettings.version, currentPermission.version, records.metricVersion(issue.metric))
                         return HealthCareFollowUpPolicy.current(value, issue, currentSettings, currentPermission, source) &&
+                            HealthCareInstructionAccess.current(context, names, care, issue, action) &&
                             HealthCareProfileAccess.current(context, issue.profileLink, names)
                     }
                     val delivery = HealthCareReminderDelivery.reconcile(care, settings, now, zone, allowed, visible, ::valid,

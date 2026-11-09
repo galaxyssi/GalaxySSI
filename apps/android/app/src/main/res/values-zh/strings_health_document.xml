@@ -1,0 +1,22 @@
+<resources>
+    <string name="health_document_title">就诊原件</string>
+    <string name="health_document_notice">关联原件仅作为核对来源，不代表医嘱已经确认。</string>
+    <string name="health_document_add">关联原件</string>
+    <string name="health_document_import">导入原件</string>
+    <string name="health_document_empty">此就诊记录尚未关联原件。</string>
+    <string name="health_document_library_empty">暂无已保存的原件，请先导入。</string>
+    <string name="health_document_whole">整份文件</string>
+    <string name="health_document_page">第 %1$d / %2$d 页</string>
+    <string name="health_document_choose_page">预览并选择页码</string>
+    <string name="health_document_link_whole">关联整份文件</string>
+    <string name="health_document_link_page">关联此页</string>
+    <string name="health_document_confirm">关联此来源？</string>
+    <string name="health_document_confirm_notice">%1$s\n%2$s\n\n关联不代表确认诊断、处方或后续计划。</string>
+    <string name="health_document_link">关联</string>
+    <string name="health_document_remove">解除关联</string>
+    <string name="health_document_remove_notice">从此就诊记录解除关联？原文件仍保留在个人健康中。</string>
+    <string name="health_document_missing">原件已缺失或发生变化</string>
+    <string name="health_document_failed">未能校验或打开原件，请检查文件是否完整。加密 PDF 请先在原件库中打开。</string>
+    <string name="health_document_changed">就诊记录、原件或授权已变化，请重新加载后继续。</string>
+    <string name="health_document_preview">原件预览</string>
+</resources>

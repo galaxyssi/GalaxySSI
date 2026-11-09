@@ -250,6 +250,7 @@ class HealthCareResearchDeviceTest {
         context.openOrCreateDatabase(names.care, 0, null).use { db ->
             db.execSQL("DROP TABLE question_history"); db.execSQL("DROP TABLE questions")
             db.execSQL("DROP TABLE answer_drafts")
+            removeHealthEncounterTestTables(db)
             db.execSQL("DROP TABLE action_feedback"); db.execSQL("DROP TABLE action_agenda"); db.execSQL("DROP TABLE action_agenda_state")
             db.execSQL("DROP TABLE research_jobs"); db.execSQL("DROP TABLE research_authorizations"); db.version = 6
         }

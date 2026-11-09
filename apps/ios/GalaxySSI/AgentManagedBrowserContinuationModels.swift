@@ -269,6 +269,7 @@ struct AgentManagedBrowserTeamDispatch: Codable, Equatable {
   let executionMode: AgentTaskExecutionMode
   let goal: String
   let attachments: [Attachment]
+  var followupContext: String? = nil
 
   var key: String {
     AgentMcpJSONCodec.sha256(["profile": .string(profileID), "run": .string(runID)])

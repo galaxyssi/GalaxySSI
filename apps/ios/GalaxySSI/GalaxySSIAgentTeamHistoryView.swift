@@ -554,6 +554,18 @@ struct GalaxySSIAgentTeamDetailView: View {
             }
           }
           .id(browserRevision)
+          if snapshot.members.contains(where: { $0.dispatchPreparationFailure != nil }) {
+            Text(t("galaxyssi.team.recovery.context_not_dispatched", "Context exceeded the limit. This member's model was not called."))
+              .font(.footnote)
+              .foregroundColor(.secondary)
+            if canResumeRecovery, coordinator.canResumeTeamContextPreparation(runID: snapshot.supervisorRunId) {
+              Button {
+                coordinator.resumeTeamContextPreparation(runID: snapshot.supervisorRunId)
+              } label: {
+                Label(t("galaxyssi.team.recovery.context_retry", "Retry context preparation"), systemImage: "arrow.clockwise")
+              }
+            }
+          }
           if recoveryRetry.stalled {
             let removed = recoveryRetry.scopeMissing
             Text(removed

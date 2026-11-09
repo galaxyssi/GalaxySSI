@@ -1,0 +1,11 @@
+<resources>
+    <string name="health_instruction_action_provenance">用户转录的医嘱</string>
+    <string name="health_instruction_action_stale">来源已变化，待核对</string>
+    <string name="health_instruction_action_add">加入我的行动</string>
+    <string name="health_instruction_action_open">查看行动与提醒</string>
+    <string name="health_instruction_action_confirm">确认行动</string>
+    <string name="health_instruction_action_source">核对医嘱来源</string>
+    <string name="health_instruction_action_incomplete">请先核对名称和具体安排。用药还须核对剂量、单位、途径、频次及起止日期；缺失或含糊的信息需向医务人员确认。</string>
+    <string name="health_instruction_action_notice">这是你转录的医嘱，不代表医生审核或新的医疗建议。提醒只对应你选定的时间，不自动推算治疗周期。修改或删除医嘱后，旧版提醒将失效。</string>
+    <string name="health_instruction_action_check">我已与原件核对这些内容，含糊的日期或安排已确认。加入行动不会修改原医嘱。</string>
+</resources>

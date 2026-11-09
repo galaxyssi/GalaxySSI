@@ -96,13 +96,13 @@ class HealthCareFeedbackDeviceTest {
         val legacy = store.update(issue.id, issue.revision, "synthetic_legacy") { it.copy(actions = it.actions.map { action ->
             if (action.id == issue.actions.first().id) action.copy(state = HealthCareActionState.DONE, outcome = "Old completion note") else action }) }
         store.close()
-        context.openOrCreateDatabase(names.care, 0, null).use { it.execSQL("DROP TABLE action_feedback"); it.version = 10 }
+        context.openOrCreateDatabase(names.care, 0, null).use { removeHealthEncounterTestTables(it); it.execSQL("DROP TABLE action_feedback"); it.version = 10 }
         HealthCareStore(context, names.care).use {
             assertEquals(legacy, it.concern(issue.id)); assertTrue(it.feedback(issue.id).items.isEmpty())
             save(it, legacy, actionId = legacy.actions.last().id)
             assertEquals(1, it.feedback(issue.id).items.size)
         }
-        context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(11, it.version) }
+        context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(15, it.version) }
     }
     @Test fun deletionRemovesFeedbackAndOldOperationCannotReviveConcern(): Unit = fixture { _, store, issue ->
         val receipt = save(store, issue); store.delete(issue.id, receipt.revision)

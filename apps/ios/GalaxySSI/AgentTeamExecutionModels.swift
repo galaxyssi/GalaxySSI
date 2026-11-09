@@ -153,6 +153,90 @@ struct AgentCollaborationModelAdmission: Codable, Equatable {
   let startedAtMillis: Int64
   var route: Route? = nil
   var lane: Lane? = nil
+  var targetResourceID: String? = nil
+  var singleHTTPTransport: Bool? = nil
+  var requestSHA256: String? = nil
+  var trialTextControls: AgentCollaborationTrialTextControls? = nil
+}
+
+struct AgentCollaborationTrialTextControls: Codable, Equatable {
+  let maxOutputTokens: Int
+  let temperature: Double
+  let thinkingMode: String
+  let externalTools: Bool
+  let modelSummarization: Bool
+
+  var valid: Bool {
+    (1...4096).contains(maxOutputTokens) && temperature.isFinite && (0...2).contains(temperature) &&
+      thinkingMode == "disabled" && !externalTools && !modelSummarization
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case maxOutputTokens = "max_output_tokens"
+    case temperature
+    case thinkingMode = "thinking_mode"
+    case externalTools = "external_tools"
+    case modelSummarization = "model_summarization"
+  }
+}
+
+struct AgentCollaborationTrialPolicy: Codable, Equatable {
+  enum Denial: String, LocalizedError {
+    case invalidPolicy, alreadyStarted, policyChanged, closed, expired, clockReversed
+    case exhausted, wrongTarget, wrongModel, unmeteredTransport, replay, changedTextControls
+
+    var errorDescription: String? { "Collaboration trial admission denied: " + rawValue }
+  }
+
+  let targetResourceID: String
+  let requestedModel: String
+  let protocolSHA256: String
+  let maximumAdmissions: Int
+  let admissionDeadlineMillis: Int64
+  var textControls: AgentCollaborationTrialTextControls? = nil
+
+  func validate(createdAt now: Int64) throws {
+    guard !targetResourceID.isBlank, targetResourceID.utf8.count <= 200,
+          !requestedModel.isBlank, requestedModel.utf8.count <= 256,
+          protocolSHA256.utf8.count == 64,
+          protocolSHA256.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
+          (1...10_000).contains(maximumAdmissions), now > 0, admissionDeadlineMillis > now,
+          textControls?.valid != false
+    else { throw Denial.invalidPolicy }
+  }
+}
+
+struct AgentCollaborationTrialState: Codable, Equatable {
+  let policy: AgentCollaborationTrialPolicy
+  let createdAtMillis: Int64
+  var admitted = 0
+  var isClosed = false
+
+  var revision: Int64 { Int64(admitted) * 2 + (isClosed ? 1 : 0) }
+
+  static func key(runID: String) -> String {
+    "model-trial:" + AgentMcpJSONCodec.sha256(["run": .string(runID)])
+  }
+
+  func check(target: String, now: Int64) throws {
+    if isClosed { throw AgentCollaborationTrialPolicy.Denial.closed }
+    if now < createdAtMillis { throw AgentCollaborationTrialPolicy.Denial.clockReversed }
+    if now >= policy.admissionDeadlineMillis { throw AgentCollaborationTrialPolicy.Denial.expired }
+    if target != policy.targetResourceID { throw AgentCollaborationTrialPolicy.Denial.wrongTarget }
+    if admitted >= policy.maximumAdmissions { throw AgentCollaborationTrialPolicy.Denial.exhausted }
+  }
+
+  mutating func debit(_ admission: AgentCollaborationModelAdmission, now: Int64) throws {
+    try check(target: admission.targetResourceID ?? "", now: now)
+    guard admission.requestedModel == policy.requestedModel else { throw AgentCollaborationTrialPolicy.Denial.wrongModel }
+    guard admission.trialTextControls == policy.textControls else {
+      throw AgentCollaborationTrialPolicy.Denial.changedTextControls
+    }
+    guard admission.singleHTTPTransport == true, let digest = admission.requestSHA256, digest.utf8.count == 64,
+          digest.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) })
+    else { throw AgentCollaborationTrialPolicy.Denial.unmeteredTransport }
+    admitted += 1
+  }
 }
 
 struct AgentCollaborationModelSettlement: Codable, Equatable {
@@ -1477,6 +1561,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
   var dispatchCheckpoint: AgentTeamMemberDispatchCheckpoint?
   var dispatchDependencyMemberIds: [String]? = nil
   var dispatchResourceObservation: AgentMcpJSONObject? = nil
+  var dispatchPreparationFailure: AgentCollaborationPromptBudget.Failure? = nil
   var recruitmentTemplateID: UUID? = nil
   var dispatchAllowsSavedToolTest: Bool? = nil
   var displayName: String?
@@ -1534,6 +1619,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     case dispatchCheckpoint = "dispatch_checkpoint"
     case dispatchDependencyMemberIds = "dispatch_dependency_member_ids"
     case dispatchResourceObservation = "dispatch_resource_observation"
+    case dispatchPreparationFailure = "dispatch_preparation_failure"
     case recruitmentTemplateID = "recruitment_template_id"
     case dispatchAllowsSavedToolTest = "dispatch_allows_saved_tool_test"
     case displayName = "display_name"
@@ -1563,6 +1649,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     )
     dispatchDependencyMemberIds = try container.decodeIfPresent([String].self, forKey: .dispatchDependencyMemberIds)
     dispatchResourceObservation = try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .dispatchResourceObservation)
+    dispatchPreparationFailure = try container.decodeIfPresent(AgentCollaborationPromptBudget.Failure.self, forKey: .dispatchPreparationFailure)
     recruitmentTemplateID = try container.decodeIfPresent(UUID.self, forKey: .recruitmentTemplateID)
     dispatchAllowsSavedToolTest = try container.decodeIfPresent(Bool.self, forKey: .dispatchAllowsSavedToolTest)
   }

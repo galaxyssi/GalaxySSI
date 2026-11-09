@@ -598,6 +598,10 @@ final class AgentDesktopArtifactStore {
   }
 
   func localFile(for block: AgentRichBlock) -> URL? {
+    localFile(for: block, materializationRoot: nil)
+  }
+
+  func localFile(for block: AgentRichBlock, materializationRoot: URL?) -> URL? {
     let resolved = resolveBlock(block)
     guard resolved.metadata["artifact_reference"] != nil,
       let sourceURI = resolved.metadata["artifact_source_uri"],
@@ -609,7 +613,8 @@ final class AgentDesktopArtifactStore {
     guard let materialized = try? cipher.materializeTemporaryFile(
       from: file,
       purpose: artifactPurpose(record.artifactId),
-      displayName: record.name
+      displayName: record.name,
+      rootURL: materializationRoot
     ) else { return nil }
     if isImage(record) {
       do {

@@ -42,7 +42,8 @@ internal class HealthOcrEngine : Closeable {
         } finally { release(bitmap) }
     }
     fun pdf(store: HealthOriginalStore, original: HealthOriginal, firstPage: Int, cancelled: () -> Unit,
-        onCount: (Int) -> Unit, onPage: (HealthOcrPage) -> Unit, textSource: HealthPdfTextReader? = null) {
+        onCount: (Int) -> Unit, onPage: (HealthOcrPage) -> Unit, textSource: HealthPdfTextReader? = null,
+        lastPageExclusive: Int = Int.MAX_VALUE) {
         if (textSource?.canExtract == false) throw HealthImportFailure("pdf_permission")
         val descriptor = store.descriptor(original)
         val renderer = try { PdfRenderer(descriptor) } catch (failure: Exception) {
@@ -52,7 +53,7 @@ internal class HealthOcrEngine : Closeable {
         renderer.use { pdf ->
             onCount(pdf.pageCount)
             val text = textSource?.takeIf { it.pageCount == pdf.pageCount }
-            for (index in firstPage until pdf.pageCount) {
+            for (index in firstPage until minOf(pdf.pageCount, lastPageExclusive)) {
                 cancelled()
                 val extracted = text?.page(index)
                 if (extracted != null) {

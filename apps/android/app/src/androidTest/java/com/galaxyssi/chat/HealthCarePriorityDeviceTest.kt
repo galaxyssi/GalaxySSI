@@ -8,6 +8,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 internal fun restoreHealthCareSchemaFive(db: SQLiteDatabase) {
+    removeHealthEncounterTestTables(db)
     db.execSQL("DROP TABLE action_feedback")
     db.execSQL("DROP TABLE action_agenda")
     db.execSQL("DROP TABLE action_agenda_state")

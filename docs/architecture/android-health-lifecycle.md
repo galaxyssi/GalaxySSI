@@ -285,3 +285,204 @@ Background navigation and privacy withdrawal clear feedback editors and history
 dialogs. Automatic voice-to-feedback writes, correction/retraction workflows,
 model pagination of feedback history, and the full visit/rehabilitation lifecycle
 remain future increments. No software test establishes clinical effectiveness.
+
+## Local visit-preparation preview
+
+The existing Personal Health concern detail opens a local visit-summary workflow.
+The Agent main-page layout is unchanged. Users choose measurements, measurement
+context, confirmed actions and feedback, question history, and optionally the
+already selected profile fields/background entries. Profile details are off by
+default; enabling them never expands the concern's approved profile scope. Each
+resulting item can be excluded again before sharing. Missing or unselected
+history is not represented as absence of disease, medications or allergies.
+
+The preview separates measurements and exact source revisions from self-reported
+context, user-confirmed actions and questions. It includes up to eight recent
+measurements and eight scoped questions, explicitly disclosing additional history.
+Original records remain accessible independently by record ID and revision; no
+original attachment is included in a text share. Incompatible measurements retain
+their comparison caveats. Stale questions and actions are not silently promoted
+to current advice, and user confirmation is not described as clinician review.
+
+Generation runs on a worker without a model or network call and creates no disk
+report. A final explicit confirmation opens Android's text share chooser with
+exactly the selected preview items. Internal IDs, paths and profile names are not
+added; free text may still identify someone, so the UI does not promise automatic
+anonymization. Sharing transfers plaintext to the selected app, outside GalaxySSI's
+subsequent control. Cancelling confirmation does not launch the chooser, and
+opening it is not recorded as successful delivery to a clinician.
+
+Source clocks, concern revision, privacy version and selected profile stamps are
+checked after generation and immediately before sharing. Changed data or permission
+requires a new preview. Previews expire after ten minutes and clear on background,
+recreation, memory pressure and observed source/privacy changes. Oversized text is
+rejected, not truncated. No new database or persisted plaintext snapshot is added.
+
+This increment provides a selected text summary, not a PDF report, symptom intake,
+hospital booking, medical record transmission or post-visit instruction review.
+Agent-triggered preparation, appointment reminders, reviewed prescriptions and
+rehabilitation follow-up remain separate work in the full lifecycle goal.
+
+## Local encounter records
+
+The next increment introduces local encounter records bound to an existing self
+concern. Planned, user-recorded booking, attended and cancelled are separate
+states. A planned date alone does not imply a booking. Attendance requires an
+explicit non-future date. These records are always user reports, not hospital
+receipts, verified clinician findings, prescriptions or permission to change a
+plan. Correcting a record preserves its original source anchor and creation time.
+
+Schema 12 adds individually authenticated encrypted current records and immutable
+operation receipts. Only opaque IDs and concern revisions are indexed; facility,
+purpose, visit dates, time zone and notes stay encrypted. Updating the concern
+revision, current encounter and history is atomic. Replayed operation IDs return
+the same receipt; changed content, ownership or editor revisions fail closed.
+Recording attendance does not complete existing actions or mark a concern cured.
+
+Current lists and per-encounter history use revision-keyset pages of at most 30
+records. A mutable-list cursor also requires the original concern revision, so
+concurrent edits require a refresh rather than silently losing moved records.
+Deleting an encounter purges its current row and encrypted history; deleting the
+concern purges all its encounters. Old operation retries cannot revive them.
+
+The existing concern detail opens the native list, editor, detail and change
+history. Explicit deletion confirms the removal of this encounter and its history,
+not its measurements or confirmed actions. Editors use native date/time pickers
+and retain the recorded time zone. Nonexistent local times are rejected; ambiguous
+clock-change times require an explicit offset selection. Saving a user-recorded
+booking requires its planned time. Planned and actual times remain distinct.
+
+Repository snapshots bind privacy and settings versions, the concern revision and
+the measurement clock. Changed inputs require a fresh review. Local writes hold a
+short consent transaction so concurrent revocation cannot pass an obsolete check;
+no model or network work runs under that lock. Manual records remain available
+when proactive checking is off, as long as the relevant local permissions remain
+granted. Backgrounding, recreation, source changes, memory pressure and a ten-minute
+TTL clear the editor and loaded plaintext; resuming reloads from encrypted storage.
+Invalidated worker results never render into a newer screen, and current failures
+offer an explicit retry instead of looping.
+
+Appointment reminders, post-visit original import and reviewed clinical
+instructions remain separate increments. This implementation has no external
+booking or clinical execution tool. Device UI, storage migration and privacy
+regression acceptance must pass before it is considered ready for delivery.
+
+## Encounter source documents
+
+Visit detail now opens a local source list. Users select an existing retained
+original, link the whole file, or preview a PDF/image and explicitly choose a
+page. Native pinch/drag preview reuses the bounded original rasterizer. The
+existing import workflow remains available; returning from it reloads local
+sources, without automatically associating an imported document or interpreting
+it as a prescription. Private review-only imports cannot be selected.
+
+Schema 13 stores each association independently with authenticated encryption.
+The payload binds the concern, encounter, their expected revisions, original ID,
+SHA-256, byte size, MIME type, optional page/count and user confirmation time.
+Indexed source fingerprints use a keyed digest, not a public file hash. Recording
+the association and its concern event is atomic; duplicate sources and operation
+retries do not create duplicate links. Changed replay payloads and stale parents
+are rejected. Removing a link leaves the original file intact. Deleting the visit
+or concern purges its associations; stale callbacks cannot revive removed links.
+
+Preparation verifies the complete original through a bounded stream, without
+creating a plaintext file. Rendering, verification and library reads run outside
+the main thread and outside the short commit lock. A prepared confirmation expires
+after ten minutes and rechecks privacy, source metadata, parent revisions and
+measurement clocks before committing. Lists use at most 30 items per page; linked
+source continuations are tied to the concern revision. Backgrounding, memory
+pressure, source changes and expiry discard dialogs, loaded plaintext and preview
+bitmaps, including obsolete worker results.
+
+Missing or changed originals remain visible as unavailable associations that can
+be removed, never as verified clinical evidence. Preview failure is explicit;
+password-protected PDFs require the original-library reader rather than an
+invented page preview. Selecting a source is not clinician verification and does
+not create medication, appointment or rehabilitation reminders. Structured
+instruction extraction, field-by-field review, dependencies from original
+deletion to future instructions, scoped Agent tools and post-treatment follow-up
+remain subsequent parts of the full lifecycle. Device acceptance is required
+before delivering this increment.
+
+## Source-backed instruction review
+
+Linked encounter originals now provide a local page-reading entry. A PDF text
+layer is preferred; image-only pages use the existing on-device OCR engine. Only
+the selected page is decoded. Users select exact source lines to create an
+unreviewed instruction draft, then classify and transcribe its fields. The
+retained source includes original identity/hash, page, recognition method, line
+indices, available bounding boxes and blur warning. There is no invented numeric
+OCR confidence. Password-protected PDFs remain unsupported in this page workflow.
+
+Medication, test, follow-up, rehabilitation, lifestyle and other drafts have
+explicit field states: unreviewed, checked against the source, or not stated in
+the source. Editing checked text resets its review. Not-stated fields contain no
+guessed text. Review records user transcription, not a clinician signature or
+medical validation. Field review alone cannot create executable actions or
+reminders. The explicit action confirmation step below is separate.
+
+Schema 14 adds encrypted current drafts and immutable operation receipts with
+authenticated ownership indices. Draft and concern revisions commit atomically;
+retries cannot change their source or overwrite newer edits. Current drafts and
+review history use indexed keyset pages of at most 30 items. Source quotations
+and creation time survive later reviews. Deleting a draft purges its review
+history but not the original. A linked source cannot be unlinked while it has
+dependent drafts. Missing original bytes leave historical transcription visible,
+but block further field confirmation. Visit/concern deletion purges dependent
+drafts and review history.
+
+Reads, OCR and rendering run on a worker. Save rechecks the encounter, concern,
+privacy, measurement clock and original metadata/presence. Revocation, background,
+memory pressure and ten-minute expiry discard draft editors, selected source
+lines and preview bitmaps. No new plaintext file or network request is produced.
+
+Model-assisted structured drafting, authorized Agent review tools and
+treatment/rehabilitation follow-up remain subsequent
+increments. Manual line selection is not reported as autonomous clinical
+extraction. Software and device tests do not establish clinical effectiveness;
+the full lifecycle still requires its separate clinical and end-to-end gates.
+
+## Confirmed instruction actions
+
+The instruction detail can add a separately confirmed action to the existing
+care agenda. The confirmation shows the immutable quotation, page, reviewed
+fields and an unchecked acknowledgement. Cancel or backgrounding discards an
+unconfirmed dialog; authorization is rechecked when committing a confirmed
+action. An unreviewed draft cannot offer confirmation. Medication
+requires every required field to be explicitly transcribed and checked, including
+name, dose, unit, route, frequency, start/end dates and details. Other instructions
+require a checked name/details and explicit review of the remaining fields;
+not-stated dates remain unknown. Users must clarify ambiguous instructions with
+their clinician; the application does not validate prescriptions clinically.
+
+Schema 15 adds an optional typed instruction reference inside the existing
+encrypted action payload. Existing actions and schema-14 sources survive the
+upgrade. The reference binds instruction revision, encounter, source association
+and original hash/page. Confirmation verifies the complete encrypted original on
+a worker, then rechecks authorization, parent revisions and source presence in
+the short commit path. One deterministic action ID per instruction revision
+prevents repeated confirmation from creating duplicates or rearming a completed
+action. No reminder is created by confirmation itself.
+
+The existing reminder/feedback UI displays all transcribed fields and links back
+to the source. Its date/time picker schedules one user-selected reminder; it does
+not infer a recurring dose schedule from free text or rewrite clinical dates.
+Scheduling and delivery check the current instruction and original presence in
+addition to existing privacy, measurement and profile checks. The default store
+scheduling path rejects clinical actions without an explicit source-availability
+check. Generic model plan schemas and parsers cannot create clinical instruction
+actions. Scoped model-assisted clinical drafting remains separate work.
+
+Editing/deleting an instruction or deleting its encounter invalidates dependent
+action references and cancels old reminders in the same transaction. The old
+action remains in review/history rather than silently becoming the new medical
+instruction. A changed instruction requires a fresh confirmation. Missing
+original bytes block confirmation, scheduling and actual reminder delivery.
+Feedback continues to use the existing encrypted, idempotent receipts; completing
+an action never establishes recovery or clinical improvement.
+
+This does not yet deliver recurring prescription schedules, diagnosis-specific
+rehabilitation cycles, model-assisted extraction or full lifecycle acceptance.
+The existing 30-action concern budget is unchanged; exceeding it must fail
+without dropping history, and durable paged plan archival remains a separate
+architecture gap. No Agent main-page layout changes are introduced.

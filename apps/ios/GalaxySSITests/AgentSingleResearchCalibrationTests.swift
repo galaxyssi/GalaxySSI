@@ -274,7 +274,7 @@ final class AgentSingleResearchCalibrationTests: XCTestCase {
     let freshProviderThreadVerified: Bool
   }
 
-  private final class ContinuitySecrets: GalaxySSISecretStore {
+  final class ContinuitySecrets: GalaxySSISecretStore {
     private let prefix: String
     private var accounts: Set<String> = []
 
@@ -295,6 +295,10 @@ final class AgentSingleResearchCalibrationTests: XCTestCase {
     }
 
     func erase() { for account in accounts { delete(account: account) } }
+
+    var isErased: Bool {
+      accounts.allSatisfy { KeychainSecretStore.shared.string(account: prefix + $0) == nil }
+    }
   }
 
   private static func continuityStorageKey(_ root: URL) -> String {

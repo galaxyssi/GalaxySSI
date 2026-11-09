@@ -187,6 +187,7 @@ final class AgentTeamExecutionHistoryStore {
                   replacement.dispatchCheckpoint == member.dispatchCheckpoint,
                   replacement.dispatchDependencyMemberIds == member.dispatchDependencyMemberIds,
                   replacement.dispatchAllowsSavedToolTest == member.dispatchAllowsSavedToolTest,
+                  replacement.dispatchPreparationFailure == member.dispatchPreparationFailure,
                   replacement.dispatchResourceObservation == member.dispatchResourceObservation else {
               throw AgentTeamHistoryDatabase.Failure.stale
             }
@@ -233,6 +234,10 @@ final class AgentTeamExecutionHistoryStore {
         }
         snapshot.members[index].dispatchCheckpoint = checkpoint
         if checkpoint == .dispatching {
+          if snapshot.members[index].dispatchPreparationFailure != nil {
+            snapshot.members[index].dispatchPreparationFailure = nil
+            snapshot.members[index].errorMessage = ""
+          }
           snapshot.members[index].executionStartedAtMillis = now
           try AgentDesktopCollaborationFileHandoff.freezeGrants(team: snapshot, member: snapshot.members[index], database: database)
         }
@@ -243,6 +248,25 @@ final class AgentTeamExecutionHistoryStore {
       if advanced { notify(runId) }
       return advanced
     } catch { return false }
+  }
+
+  func recordDispatchPreparationFailure(_ failure: AgentCollaborationPromptBudget.Failure,
+      scope: AgentCollaborationToolEvidenceScope, now: Int64) throws {
+    let changed = try access { database -> Bool in
+      guard var snapshot = try database.snapshots(runId: scope.runId).first, snapshot.state == .running,
+            snapshot.conversationId == scope.conversationId, snapshot.taskId == scope.turnId,
+            let index = snapshot.members.firstIndex(where: {
+              $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId && $0.dispatchCheckpoint == .notStarted &&
+                !$0.status.isTerminal && $0.output.isEmpty && $0.replyContent == nil
+            }) else { throw AgentTeamHistoryDatabase.Failure.stale }
+      guard snapshot.members[index].dispatchPreparationFailure != failure else { return false }
+      snapshot.members[index].dispatchPreparationFailure = failure
+      snapshot.members[index].errorMessage = failure.localizedDescription
+      snapshot.updatedAtMillis = max(snapshot.updatedAtMillis, now)
+      try database.put(snapshot)
+      return true
+    }
+    if changed { notify(scope.runId) }
   }
 
   func recordDispatchResourceObservation(_ observation: AgentMcpJSONObject,
@@ -590,7 +614,44 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
-  func admitCollaborationModelCall(_ admission: AgentCollaborationModelAdmission) throws {
+  func configureCollaborationTrial(conversationID: String, runID: String, policy: AgentCollaborationTrialPolicy,
+      now: Int64 = AgentControlPlaneClock.nowMillis()) throws {
+    guard !conversationID.isBlank, !runID.isBlank, conversationID.utf8.count <= 200, runID.utf8.count <= 200
+    else { throw AgentCollaborationTrialPolicy.Denial.invalidPolicy }
+    let key = AgentCollaborationTrialState.key(runID: runID)
+    try access { database in
+      if let existing = try database.researchRecord(AgentCollaborationTrialState.self,
+        conversationId: conversationID, key: key) {
+        guard existing.policy == policy else { throw AgentCollaborationTrialPolicy.Denial.policyChanged }
+        return
+      }
+      // Enrollment is a host operation before a run is created, not a model tool.
+      guard try database.snapshots(runId: runID).isEmpty else { throw AgentCollaborationTrialPolicy.Denial.alreadyStarted }
+      try policy.validate(createdAt: now)
+      let state = AgentCollaborationTrialState(policy: policy, createdAtMillis: now)
+      try database.insertResearchRecord(state, conversationId: conversationID, key: key, revision: state.revision)
+    }
+  }
+
+  func collaborationTrial(conversationID: String, runID: String) throws -> AgentCollaborationTrialState? {
+    try access { database in
+      try database.researchRecord(AgentCollaborationTrialState.self,
+        conversationId: conversationID, key: AgentCollaborationTrialState.key(runID: runID))
+    }
+  }
+
+  func closeCollaborationTrial(conversationID: String, runID: String) throws {
+    let key = AgentCollaborationTrialState.key(runID: runID)
+    try access { database in
+      guard var state = try database.researchRecord(AgentCollaborationTrialState.self,
+        conversationId: conversationID, key: key), !state.isClosed else { return }
+      state.isClosed = true
+      try database.insertResearchRecord(state, conversationId: conversationID, key: key, revision: state.revision)
+    }
+  }
+
+  func admitCollaborationModelCall(_ admission: AgentCollaborationModelAdmission,
+      now: Int64 = AgentControlPlaneClock.nowMillis()) throws {
     let scope = admission.scope
     let key = "model-call:" + admission.id.uuidString.lowercased()
     try access { database in
@@ -600,10 +661,21 @@ final class AgentTeamExecutionHistoryStore {
               key: "native-evidence-revoked", revision: 0) != true,
             let team = try database.snapshots(runId: scope.runId).first,
             team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
-            team.members.contains(where: { $0.memberId == scope.memberId &&
+            let member = team.members.first(where: { $0.memberId == scope.memberId &&
               $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal })
       else { throw AgentTeamHistoryDatabase.Failure.stale }
       if admission.lane == .hostLivePlanning { _ = try Self.activeGoalCoordinator(scope, database: database) }
+      let trialKey = AgentCollaborationTrialState.key(runID: scope.runId)
+      if var trial = try database.researchRecord(AgentCollaborationTrialState.self,
+        conversationId: scope.conversationId, key: trialKey) {
+        guard admission.targetResourceID == member.agentId else { throw AgentCollaborationTrialPolicy.Denial.wrongTarget }
+        guard try database.researchRecord(AgentCollaborationModelAdmission.self,
+          conversationId: scope.conversationId, key: key, revision: 0) == nil
+        else { throw AgentCollaborationTrialPolicy.Denial.replay }
+        try trial.debit(admission, now: now)
+        try database.insertResearchRecord(trial, conversationId: scope.conversationId,
+          key: trialKey, revision: trial.revision)
+      }
       try database.insertResearchRecord(admission, conversationId: scope.conversationId, key: key, revision: 0)
     }
   }
@@ -1574,8 +1646,26 @@ final class AgentTeamExecutionHistoryStore {
           return try Self.desktopAcceptanceArchive(id: id, scope: scope, team: team, database: database).map { .object(reference($0)) }
         }
         let next = keys.count > 32 ? keys.prefix(32).last.map { String($0.dropFirst(prefix.count)) } : nil
+        let coverage = try team.members.compactMap { member -> AgentMcpJSONValue? in
+          guard member.deliveryMode == .observe,
+                let owner = try database.replyOwner(source: member.sourceMessageId, conversation: scope.conversationId,
+                  turn: scope.turnId, contact: member.agentId),
+                owner.supervisorRunId == scope.runId,
+                let generation = owner.desktopEvidenceGeneration(member: member, teamState: team.state)
+          else { return nil }
+          let key = AgentDesktopToolEvidenceWire.coverageKey(run: scope.runId, turn: scope.turnId,
+            member: member.memberId, source: member.sourceMessageId, generation: generation)
+          guard let progress = try database.researchRecord(AgentDesktopToolEvidenceWire.ImportCursor.self,
+            conversationId: scope.conversationId, key: key, revision: 0),
+                let skipped = progress.skippedOversized else { return nil }
+          return .object(["member_id": .string(member.memberId), "index_final": .bool(progress.archiveFinal),
+            "oversized_originals_skipped": .int(skipped),
+            "skipped_count_complete_for_indexed_range": .bool(progress.skippedCountComplete == true),
+            "maximum_original_bytes": .int(Int64(AgentDesktopToolEvidenceWire.maximumOriginalBytes))])
+        }
         return ["entries": .array(entries), "next_cursor": next.map(AgentMcpJSONValue.string) ?? .null,
           "archive_state": .string("local_snapshot_not_exhaustive"),
+          "provider_history_complete": .bool(false), "import_coverage": .array(coverage),
           "trust": .string("execution_observed_not_claim_verified")]
       }
       guard let archive = try Self.desktopAcceptanceArchive(id: id, scope: scope, team: team, database: database),
@@ -4036,6 +4126,39 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
+  func stageDesktopEvidenceIndex(_ response: AgentMcpJSONObject, desktopId: String,
+      request: AgentDesktopToolEvidenceWire.Request, after sequence: Int64, inlineBytes: Int) throws
+      -> AgentDesktopToolEvidenceWire.IndexPage {
+    guard let index = request.verifyIndex(response, authenticatedDesktopId: desktopId,
+      after: sequence, inlineBytes: inlineBytes) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    guard !index.entries.isEmpty || index.archiveFinal else { return index }
+    return try access { database in
+      _ = try Self.desktopEvidenceOwner(request, database: database)
+      let conversation = request.binding.identity.conversationId
+      let cursor = try database.researchRecord(AgentDesktopToolEvidenceWire.ImportCursor.self,
+        conversationId: conversation, key: request.cursorKey) ?? .init()
+      guard cursor.sequence == sequence, !cursor.archiveFinal else { throw AgentTeamHistoryDatabase.Failure.stale }
+      try database.insertResearchRecord(response, conversationId: conversation, key: request.pendingIndexKey,
+        revision: sequence)
+      return index
+    }
+  }
+
+  func stagedDesktopEvidenceIndex(_ request: AgentDesktopToolEvidenceWire.Request, after sequence: Int64,
+      inlineBytes: Int) throws -> AgentDesktopToolEvidenceWire.IndexPage? {
+    try access { database in
+      _ = try Self.desktopEvidenceOwner(request, database: database)
+      let conversation = request.binding.identity.conversationId
+      guard let response = try database.researchRecord(AgentMcpJSONObject.self, conversationId: conversation,
+        key: request.pendingIndexKey, revision: sequence) else { return nil }
+      guard let original = AgentDesktopToolEvidenceWire.Request(binding: request.binding, generation: request.generation,
+              nonce: response.string("request_id")),
+            let index = original.verifyIndex(response, authenticatedDesktopId: request.binding.desktopId,
+              after: sequence, inlineBytes: inlineBytes) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      return index
+    }
+  }
+
   func enqueueDesktopEvidenceJob(_ job: AgentDesktopToolEvidenceWire.ImportJob) throws {
     try access { database in
       let conversation = job.binding.identity.conversationId
@@ -4069,19 +4192,23 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   func advanceDesktopEvidenceCursor(_ request: AgentDesktopToolEvidenceWire.Request,
-                                    from previous: Int64, to next: Int64, final: Bool) throws {
-    guard previous >= 0, next >= previous, next <= 9_007_199_254_740_991,
-          next > previous || final else { throw AgentTeamHistoryDatabase.Failure.stale }
+                                    from previous: Int64, to next: Int64, final: Bool, skippedOversized: Int = 0) throws {
     try access { database in
       let conversation = request.binding.identity.conversationId
       let owner = try Self.desktopEvidenceOwner(request, database: database)
       guard !final || owner.member.status == .succeeded else { throw AgentTeamHistoryDatabase.Failure.stale }
       let current = try database.researchRecord(AgentDesktopToolEvidenceWire.ImportCursor.self,
         conversationId: conversation, key: request.cursorKey) ?? .init()
-      guard !current.archiveFinal, current.sequence == previous else { throw AgentTeamHistoryDatabase.Failure.stale }
+      guard current.sequence == previous,
+            let advanced = current.advancing(to: next, final: final, skipped: skippedOversized)
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
       // Reserve the odd revision for marking the same sequence final.
-      try database.insertResearchRecord(AgentDesktopToolEvidenceWire.ImportCursor(sequence: next, archiveFinal: final),
+      try database.insertResearchRecord(advanced,
         conversationId: conversation, key: request.cursorKey, revision: next * 2 + (final ? 1 : 0))
+      let key = AgentDesktopToolEvidenceWire.coverageKey(run: owner.team.supervisorRunId, turn: owner.team.taskId,
+        member: owner.member.memberId, source: owner.member.sourceMessageId, generation: request.generation)
+      try database.insertResearchRecord(advanced, conversationId: conversation, key: key, revision: 0, replaceCoverage: true)
+      try database.removeResearchRecord(conversationId: conversation, key: request.pendingIndexKey)
     }
   }
 
@@ -5581,6 +5708,72 @@ final class AgentTeamExecutionHistoryStore {
     try access { try Self.goalCoordinatorRetry(scope, database: $0)?.retryAt }
   }
 
+  func goalCoordinatorHandoffPending(_ scope: AgentCollaborationToolEvidenceScope) throws -> Bool {
+    try access { try Self.goalCoordinatorRetry(scope, database: $0)?.waitsForHandoff == true }
+  }
+
+  func goalCoordinatorHandoffReady(_ scope: AgentCollaborationToolEvidenceScope,
+      now: Int64 = AgentControlPlaneClock.nowMillis()) throws -> Bool {
+    try access { database in
+      guard try Self.goalCoordinatorRetry(scope, database: database)?.waitsForHandoff == true else { return false }
+      return try Self.recoveryHandoffOwner(scope, database: database, now: now) == .ready
+    }
+  }
+
+  func advanceGoalCoordinatorHandoff(_ scope: AgentCollaborationToolEvidenceScope,
+      now: Int64 = AgentControlPlaneClock.nowMillis()) throws -> Int64? {
+    try access { database in
+      guard let retry = try Self.goalCoordinatorRetry(scope, database: database), retry.waitsForHandoff == true
+      else { return nil }
+      if let due = retry.retryAt, now < due { return due }
+      if try Self.recoveryHandoffOwner(scope, database: database, now: now) == .running {
+        let next = AgentCollaborationCoordinatorRetry.handoff(now: now)
+        try Self.replaceGoalCoordinatorRetry(next, scope: scope, database: database)
+        return next.retryAt
+      }
+      // The host drain ran once. An unavailable successor must not suppress coordinator recovery.
+      try Self.replaceGoalCoordinatorRetry(.init(stalled: 0, retryAt: now), scope: scope, database: database)
+      return nil
+    }
+  }
+
+  private static func recoveryHandoffOwner(_ scope: AgentCollaborationToolEvidenceScope, database: AgentTeamHistoryDatabase,
+      now: Int64) throws -> AgentCollaborationHandoffDemand.Owner? {
+    let (team, graph, _) = try Self.milestoneWorkGraph(scope, database: database)
+    guard let graph else { return nil }
+    var runs: [String: AgentCollaborationGoalWorkRun] = [:]
+    for work in graph.work {
+      guard let saved = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
+        conversationId: scope.conversationId, key: Self.goalWorkKey(work.id, scope: scope), revision: 0) else { continue }
+      guard saved.owner == scope, saved.workID == work.id else { throw AgentTeamHistoryDatabase.Failure.stale }
+      runs[work.id] = saved
+    }
+    return try Self.goalHandoffOwner(graph, runs: runs, scope: scope, team: team, now: now, database: database)
+  }
+
+  private static func goalHandoffOwner(_ graph: AgentCollaborationLiveGraph, runs: [String: AgentCollaborationGoalWorkRun],
+      scope: AgentCollaborationToolEvidenceScope, team: AgentTeamExecutionSnapshot, now: Int64,
+      database: AgentTeamHistoryDatabase) throws -> AgentCollaborationHandoffDemand.Owner? {
+    let specialists = Set(team.members.filter { $0.deliveryMode == .observe }.map(\.memberId))
+    guard let owner = AgentCollaborationHandoffDemand.owner(graph: graph, runs: runs, specialists: specialists, now: now,
+      recorded: { work, tokens in
+        tokens.allSatisfy { (try? Self.inputMilestone(token: $0, producer: work, scope: scope, database: database)) != nil }
+      }) else { return nil }
+    let prefix = AgentCollaborationMilestoneCoordination.requestPrefix
+    var cursor = ""
+    for _ in 0..<4 {
+      let keys = try database.milestoneKeys(conversationId: scope.conversationId, prefix: prefix, after: cursor)
+      for key in keys {
+        if let request = try database.researchRecord(AgentCollaborationMilestoneCoordination.RequestIndex.self,
+          conversationId: scope.conversationId, key: key, revision: 0),
+          request.producer.runId == scope.runId, request.producer.turnId == scope.turnId { return nil }
+      }
+      guard keys.count == 33, let last = keys.last else { return owner }
+      cursor = last
+    }
+    return nil
+  }
+
   private static func goalAssessmentRejectionKey(_ scope: AgentCollaborationToolEvidenceScope) -> String {
     "goal-assessment-rejection:" + scope.ownershipDigest
   }
@@ -5661,6 +5854,17 @@ final class AgentTeamExecutionHistoryStore {
         if examples.count < 24, status == "unclaimed" || status == "failed" || status == "interrupted" {
           examples.append(.object(["work_id": .string(work.id), "status": .string(status)]))
         }
+      }
+      if scheduleRetry, interim == nil, let checkpoint, let graph = checkpoint.liveGraph,
+         let assessment, assessment.format == "galaxyssi.goal-assessment.v1", assessment.decision == .continue,
+         !assessment.summary.isBlank,
+         assessment.criteria == checkpoint.contract, assessment.work.isEmpty, assessment.blockers.isEmpty,
+         assessment.recruit?.isEmpty != false, assessment.interim_delivery == nil,
+         try database.researchRecord(AgentCollaborationCoordinatorRecovery.self,
+           conversationId: scope.conversationId, key: "goal-coordinator-recovery:" + scope.ownershipDigest, revision: 0) != nil,
+         try Self.goalHandoffOwner(graph, runs: runs, scope: scope, team: team, now: now, database: database) != nil {
+        try Self.replaceGoalCoordinatorRetry(.handoff(now: now), scope: scope, database: database)
+        return nil
       }
       var checked = Set<String>()
       var feedback: [AgentMcpJSONValue] = []
@@ -5978,7 +6182,7 @@ final class AgentTeamExecutionHistoryStore {
       guard saved == binding else { return nil }
       let retry = try Self.goalCoordinatorRetry(scope, database: database)
       if let retry {
-        guard let due = retry.retryAt, now >= due else { return nil }
+        guard retry.waitsForHandoff != true, let due = retry.retryAt, now >= due else { return nil }
       } else if binding.process == AgentCollaborationGoalWorkRun.processID { return nil }
       let checkpoint = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first
       if let checkpoint {
