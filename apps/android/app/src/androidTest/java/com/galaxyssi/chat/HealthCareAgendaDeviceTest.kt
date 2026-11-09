@@ -96,6 +96,7 @@ class HealthCareAgendaDeviceTest {
         val first = add(store, HealthMetric.GLUCOSE, 2); val second = add(store, HealthMetric.HBA1C, 2)
         store.close()
         context.openOrCreateDatabase(names.care, 0, null).use {
+            removeHealthEncounterTestTables(it)
             it.execSQL("DROP TABLE action_feedback"); it.execSQL("DROP TABLE action_agenda"); it.execSQL("DROP TABLE action_agenda_state"); it.version = 9
         }
         HealthCareStore(context, names.care).use {
@@ -108,7 +109,7 @@ class HealthCareAgendaDeviceTest {
             assertEquals(second.actions.map { a -> a.id }.toSet(), it.agenda(HealthCareAgendaFilter.TODAY, end).items.map { a -> a.action.id }.toSet())
             assertEquals(2, it.agenda(HealthCareAgendaFilter.REVIEW, end).items.size)
         }
-        context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(11, it.version) }
+        context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(12, it.version) }
     }
     @Test fun indexTamperingIsRejectedAndTransactionRollsBack(): Unit = fixture { names, store ->
         val issue = add(store); prepare(store)

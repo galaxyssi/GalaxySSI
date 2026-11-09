@@ -1,0 +1,27 @@
+<resources>
+    <string name="health_encounter_title">Visit records</string>
+    <string name="health_encounter_entry">Plans, recorded bookings and visit history</string>
+    <string name="health_encounter_notice">Your own record, not a hospital booking receipt or verified medical advice. Saving it does not change treatment or mark this concern resolved.</string>
+    <string name="health_encounter_add">Record a visit</string>
+    <string name="health_encounter_edit">Edit record</string>
+    <string name="health_encounter_purpose">Reason for visit</string>
+    <string name="health_encounter_facility">Hospital or clinic (optional)</string>
+    <string name="health_encounter_note">Notes (optional)</string>
+    <string name="health_encounter_state_planned">Planning a visit</string>
+    <string name="health_encounter_state_booked">Booking recorded by you</string>
+    <string name="health_encounter_state_attended">Visit attended, reported by you</string>
+    <string name="health_encounter_state_cancelled">Cancelled, reported by you</string>
+    <string name="health_encounter_planned">Planned time</string>
+    <string name="health_encounter_attended">Actual visit time</string>
+    <string name="health_encounter_recorded">Record updated</string>
+    <string name="health_encounter_clear_time">Clear time</string>
+    <string name="health_encounter_unspecified">Not recorded</string>
+    <string name="health_encounter_empty">No visit records for this concern.</string>
+    <string name="health_encounter_history">Change history</string>
+    <string name="health_encounter_delete">Delete visit record</string>
+    <string name="health_encounter_delete_notice">Delete this visit and its change history? Measurements, original files and confirmed actions will remain.</string>
+    <string name="health_encounter_invalid">Enter a reason for the visit. A recorded booking needs a planned time; attendance needs an actual time that is not in the future.</string>
+    <string name="health_encounter_invalid_time">This local time does not exist because the clock changes. Choose another time.</string>
+    <string name="health_encounter_choose_offset">This time occurs twice. Choose the UTC offset.</string>
+    <string name="health_encounter_changed">The record could not be loaded or saved with the current data and permissions. Refresh and review before retrying.</string>
+</resources>

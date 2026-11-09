@@ -5,6 +5,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.CancellationException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -14,6 +17,40 @@ class HealthPrivacyStoreDeviceTest {
     private fun fixture(test: (String, HealthPrivacyStore) -> Unit) {
         val name = "health-privacy-test-${UUID.randomUUID()}.db"
         try { HealthPrivacyStore(context, name).use { test(name, it) } } finally { context.deleteDatabase(name) }
+    }
+    @Test fun guardedLocalCommitRejectsStaleConsentWithoutInvokingTheWriter(): Unit = fixture { _, store ->
+        val before = store.policy()
+        store.change(HealthPrivacyOption.PROFILE_CONTEXT, false, before.version)
+        store.change(HealthPrivacyOption.PROFILE_CONTEXT, true, store.policy().version)
+        var invoked = false
+        assertThrows(HealthPrivacyConflict::class.java) { store.withCurrentPolicy(before) { invoked = true } }
+        assertFalse(invoked)
+        assertEquals("local receipt", store.withCurrentPolicy(store.policy()) { "local receipt" })
+    }
+    @Test fun consentRevocationWaitsForAnAlreadyAuthorizedShortCommitAcrossStoreInstances(): Unit = fixture { name, store ->
+        val before = store.policy()
+        val entered = CountDownLatch(1); val release = CountDownLatch(1); val revoking = CountDownLatch(1); val revoked = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val commit = executor.submit<String> { HealthPrivacyStore(context, name).use { it.withCurrentPolicy(before) {
+                entered.countDown(); check(release.await(10, TimeUnit.SECONDS)); "committed"
+            } } }
+            assertTrue(entered.await(10, TimeUnit.SECONDS))
+            val revoke = executor.submit { HealthPrivacyStore(context, name).use {
+                revoking.countDown(); it.change(HealthPrivacyOption.PROFILE_CONTEXT, false, before.version); revoked.countDown()
+            } }
+            assertTrue(revoking.await(10, TimeUnit.SECONDS))
+            assertFalse(revoked.await(200, TimeUnit.MILLISECONDS))
+            release.countDown()
+            assertEquals("committed", commit.get(10, TimeUnit.SECONDS)); revoke.get(10, TimeUnit.SECONDS)
+            assertFalse(store.policy().profile)
+            assertThrows(HealthPrivacyConflict::class.java) { store.withCurrentPolicy(before) { fail("Revoked writer invoked") } }
+        } finally { release.countDown(); executor.shutdownNow(); assertTrue(executor.awaitTermination(15, TimeUnit.SECONDS)) }
+    }
+    @Test fun failedGuardedCommitReleasesTheConsentLock(): Unit = fixture { _, store ->
+        val before = store.policy()
+        assertThrows(IOException::class.java) { store.withCurrentPolicy(before) { throw IOException("synthetic failure") } }
+        assertFalse(store.change(HealthPrivacyOption.PROFILE_CONTEXT, false, before.version).profile)
     }
     @Test fun firstOpenHasExplicitEncryptedPolicyAndReopenRetainsSettings(): Unit = fixture { name, store ->
         val initial = store.policy()
