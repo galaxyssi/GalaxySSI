@@ -4080,18 +4080,25 @@ final class MessageCoordinator: ObservableObject {
     }
     if isCurrent() { retrySavedPublication() }
     while isCurrent() {
-      let indexStarted = AgentDesktopEvidenceQueryTrace.now
-      guard let proposed = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: generation,
-              nonce: UUID().uuidString),
-            let payload = proposed.indexRequest(after: cursor, inlineBytes: inlineBytes),
-            let reply = await fetch(proposed, payload: payload),
-            isCurrent() else { return }
-      let request = reply.request
-      let checkedIndex = request.verifyIndex(reply.payload, authenticatedDesktopId: binding.desktopId,
-        after: cursor, inlineBytes: inlineBytes)
-      AgentDesktopEvidenceQueryTrace.record(checkedIndex == nil ? .indexRejected : .indexValidated,
-        nonce: request.nonce, started: indexStarted)
-      guard let index = checkedIndex else { return }
+      let request = scope
+      let index: AgentDesktopToolEvidenceWire.IndexPage
+      do {
+        if let saved = try history.stagedDesktopEvidenceIndex(request, after: cursor, inlineBytes: inlineBytes) {
+          index = saved
+        } else {
+          let indexStarted = AgentDesktopEvidenceQueryTrace.now
+          guard let proposed = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: generation,
+                  nonce: UUID().uuidString),
+                let payload = proposed.indexRequest(after: cursor, inlineBytes: inlineBytes),
+                let reply = await fetch(proposed, payload: payload), isCurrent() else { return }
+          let checked = try? history.stageDesktopEvidenceIndex(reply.payload, desktopId: binding.desktopId,
+            request: reply.request, after: cursor, inlineBytes: inlineBytes)
+          AgentDesktopEvidenceQueryTrace.record(checked == nil ? .indexRejected : .indexValidated,
+            nonce: reply.request.nonce, started: indexStarted)
+          guard let checked else { return }
+          index = checked
+        }
+      } catch { return }
       for descriptor in index.entries where descriptor.canImport {
         guard isCurrent() else { return }
         do {

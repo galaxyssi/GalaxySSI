@@ -417,6 +417,21 @@ extension GalaxySSIStoreTests {
     }
     let body = Data(AgentMcpJSONCodec.stringify(original).utf8)
     var response = page(for: body)
+    var index = response
+    index["mode"] = .string("index")
+    index["entries"] = .array([.object(response)])
+    index["next_sequence"] = .int(1)
+    index["has_more"] = .bool(false)
+    index["provider_history_complete"] = .bool(false)
+    index["coverage"] = .string("observed_completed_items_only")
+    index["projection"] = .string("external_execution_observations")
+    let legacy = try XCTUnwrap(request.verifyIndex(index, authenticatedDesktopId: "desktop", after: 0))
+    XCTAssertFalse(legacy.archiveFinal)
+    XCTAssertTrue(legacy.inlineOriginals.isEmpty)
+    index["archive_final"] = .string("true")
+    XCTAssertNil(request.verifyIndex(index, authenticatedDesktopId: "desktop", after: 0))
+    index["archive_final"] = .bool(true)
+    index["inline_pages"] = .array([.object(response)])
     let descriptor = try XCTUnwrap(AgentDesktopToolEvidenceWire.Descriptor(response))
     XCTAssertEqual(request.verifyPage(response, authenticatedDesktopId: "desktop", descriptor: descriptor, index: 0), body)
     var table = AgentDesktopEvidenceQueries<String>()
@@ -467,6 +482,14 @@ extension GalaxySSIStoreTests {
       request: request, descriptor: descriptor, index: 0))
     try history.observeDesktopRecallEvent(source: source, conversation: "group", turn: "turn", contact: "review",
       observation: .init(generation: 2, sequence: 1), terminal: false)
+    XCTAssertThrowsError(try history.stageDesktopEvidenceIndex(index, desktopId: "foreign", request: request,
+      after: 0, inlineBytes: body.count))
+    _ = try history.stageDesktopEvidenceIndex(index, desktopId: "desktop", request: request, after: 0, inlineBytes: body.count)
+    let indexReopen = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets, fileURL: file)
+    let recoveredIndex = try XCTUnwrap(indexReopen.stagedDesktopEvidenceIndex(retry, after: 0, inlineBytes: body.count))
+    XCTAssertTrue(recoveredIndex.archiveFinal)
+    XCTAssertEqual(recoveredIndex.inlineOriginals[descriptor.evidenceId], body)
+    XCTAssertNil(try indexReopen.stagedDesktopEvidenceIndex(retry, after: 1, inlineBytes: body.count))
     XCTAssertEqual(try history.stageDesktopEvidencePage(response, desktopId: "desktop",
       request: request, descriptor: descriptor, index: 0), body)
     let liveReceipt = try history.archiveDesktopToolEvidence(request: request, descriptor: descriptor, pages: [body])
@@ -479,6 +502,7 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(listing["import_coverage"], .array([]))
     XCTAssertThrowsError(try history.advanceDesktopEvidenceCursor(request, from: 0, to: 1, final: true))
     try history.advanceDesktopEvidenceCursor(request, from: 0, to: 1, final: false)
+    XCTAssertNil(try indexReopen.stagedDesktopEvidenceIndex(retry, after: 0, inlineBytes: body.count))
     let liveQuery: AgentMcpJSONObject = ["mode": .string("desktop_evidence"), "evidence_id": .string(liveReceipt.archiveId),
       "sha256": .string(liveReceipt.sha256)]
     let preview = try history.recallCollaborationOriginal(liveQuery, scope: liveReader, recordEvidenceCoverage: false)
@@ -617,16 +641,6 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(try reopened.hasArchivedDesktopEvidence(descriptor, request: newer))
     reopened.removeDesktopEvidenceJob(job)
     XCTAssertTrue(try history.desktopEvidenceJobs(after: "").isEmpty)
-    var index = response
-    index["mode"] = .string("index")
-    index["entries"] = .array([.object(response)])
-    index["next_sequence"] = .int(1)
-    index["has_more"] = .bool(false)
-    index["archive_final"] = .bool(true)
-    index["provider_history_complete"] = .bool(false)
-    index["coverage"] = .string("observed_completed_items_only")
-    index["projection"] = .string("external_execution_observations")
-    index["inline_pages"] = .array([.object(response)])
     let imported = try XCTUnwrap(request.verifyIndex(index, authenticatedDesktopId: "desktop",
       after: 0, inlineBytes: body.count))
     XCTAssertTrue(imported.archiveFinal)
