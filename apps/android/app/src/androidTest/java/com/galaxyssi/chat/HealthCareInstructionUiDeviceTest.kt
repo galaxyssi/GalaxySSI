@@ -31,7 +31,8 @@ class HealthCareInstructionUiDeviceTest {
     private fun editor(activity: HealthCareInstructionsActivity) = field(activity, "editor\$delegate").let { (it as Lazy<*>).value!! }
     private fun dialog(activity: HealthCareInstructionsActivity) = field(editor(activity), "dialog") as? AlertDialog
     private fun find(activity: HealthCareInstructionsActivity, tag: String) =
-        (views(activity.window.decorView) + dialog(activity)?.window?.decorView?.let(::views).orEmpty()).firstOrNull { it.tag == tag }
+        (views(activity.window.decorView) + dialog(activity)?.window?.decorView?.let(::views).orEmpty() +
+            (field(activity, "dialog") as? AlertDialog)?.window?.decorView?.let(::views).orEmpty()).firstOrNull { it.tag == tag }
     private fun await(scenario: ActivityScenario<HealthCareInstructionsActivity>, ready: (HealthCareInstructionsActivity) -> Boolean) {
         val end = SystemClock.elapsedRealtime() + 20000
         do { var done = false; scenario.onActivity { done = ready(it) }; if (done) return; SystemClock.sleep(50) }
@@ -179,5 +180,68 @@ class HealthCareInstructionUiDeviceTest {
             }
         }
         assertEquals(value, f.snapshot(value.id).selected)
+    }
+    @Test fun uncheckedDraftCannotOfferAnExecutableAction(): Unit = fixture { f, scenario ->
+        open(f, scenario)
+        scenario.onActivity { assertNull(find(it, "instruction-action-add")); assertNull(find(it, "instruction-action-open")) }
+    }
+    @Test fun confirmationRequiresReviewAndCancelDoesNotAddAnAction(): Unit = fixture { f, scenario ->
+        val value = reviewedHealthInstruction(f)
+        await(scenario) { find(it, "instruction-row-${value.id}") != null }
+        scenario.onActivity { find(it, "instruction-row-${value.id}")!!.performClick() }
+        await(scenario) { find(it, "instruction-action-add") != null }
+        scenario.onActivity {
+            find(it, "instruction-action-add")!!.performClick()
+            val d = field(it, "dialog") as AlertDialog
+            assertFalse(d.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled)
+            d.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
+        }
+        await(scenario) { (field(it, "dialog") as? AlertDialog)?.isShowing != true }
+        assertTrue(f.snapshot(value.id).visit.issue.actions.none { it.instruction != null })
+        scenario.onActivity {
+            find(it, "instruction-action-add")!!.performClick()
+            (find(it, "instruction-action-checked") as CheckBox).performClick()
+            val button = (field(it, "dialog") as AlertDialog).getButton(AlertDialog.BUTTON_POSITIVE)
+            assertTrue(button.isEnabled); button.performClick(); button.performClick()
+        }
+        await(scenario) { find(it, "instruction-action-open") != null && !(field(it, "busy") as Boolean) }
+        assertEquals(1, f.snapshot(value.id).visit.issue.actions.count { it.instruction != null })
+        HealthCareStore(context, f.documents.names.care).use { assertNull(it.reminder(HealthCareInstructionActionPolicy.actionId(value))) }
+    }
+    @Test fun backgroundClearsPendingActionConfirmationWithoutWriting(): Unit = fixture { f, scenario ->
+        val value = reviewedHealthInstruction(f)
+        await(scenario) { find(it, "instruction-row-${value.id}") != null }
+        scenario.onActivity { find(it, "instruction-row-${value.id}")!!.performClick() }
+        await(scenario) { find(it, "instruction-action-add") != null }
+        scenario.onActivity { find(it, "instruction-action-add")!!.performClick(); (find(it, "instruction-action-checked") as CheckBox).performClick() }
+        scenario.moveToState(Lifecycle.State.CREATED)
+        scenario.onActivity { assertNull(field(it, "dialog")); assertNull(field(it, "snapshot")) }
+        assertTrue(f.snapshot(value.id).visit.issue.actions.none { it.instruction != null })
+    }
+    @Test fun confirmedActionOpensExistingReminderWithFullTranscription(): Unit = fixture { f, scenario ->
+        val value = reviewedHealthInstruction(f, HealthCareInstructionKind.MEDICATION)
+        f.repository.confirmAction(f.snapshot(value.id), android.os.CancellationSignal())
+        await(scenario) { find(it, "instruction-row-${value.id}") != null }
+        scenario.onActivity { find(it, "instruction-row-${value.id}")!!.performClick() }
+        await(scenario) { find(it, "instruction-action-open") != null }
+        scenario.onActivity { find(it, "instruction-action-open")!!.performClick() }
+        fun actionDialog(activity: HealthCareInstructionsActivity) =
+            field((field(activity, "actions\$delegate") as Lazy<*>).value!!, "dialog") as? AlertDialog
+        await(scenario) { actionDialog(it)?.isShowing == true }
+        scenario.onActivity { activity ->
+            val all = views(actionDialog(activity)!!.window!!.decorView)
+            val text = all.filterIsInstance<TextView>().joinToString("\n") { it.text.toString() }
+            value.draft.required.forEach { assertTrue(text.contains(value.draft.fields.getValue(it).text)) }
+            assertNotNull(all.firstOrNull { it.tag == "health-care-followup-schedule" })
+        }
+        if (InstrumentationRegistry.getArguments().getString("health_instruction_screenshot") == "true") {
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            SystemClock.sleep(250)
+            InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()?.let { bitmap ->
+                try { File(context.getExternalFilesDir(null), "health-instruction-action-fixture.png").outputStream().use {
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+                } } finally { bitmap.recycle() }
+            }
+        }
     }
 }

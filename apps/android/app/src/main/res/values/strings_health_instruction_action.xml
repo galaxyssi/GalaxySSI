@@ -1,0 +1,11 @@
+<resources>
+    <string name="health_instruction_action_provenance">User-transcribed clinical instruction</string>
+    <string name="health_instruction_action_stale">Source changed; review required</string>
+    <string name="health_instruction_action_add">Add to my actions</string>
+    <string name="health_instruction_action_open">View action and reminder</string>
+    <string name="health_instruction_action_confirm">Confirm action</string>
+    <string name="health_instruction_action_source">Review instruction source</string>
+    <string name="health_instruction_action_incomplete">Review the name and details before adding an action. Medication also needs a checked dose, unit, route, frequency and start/end dates. Missing or unclear information must be clarified with your clinician.</string>
+    <string name="health_instruction_action_notice">This is your transcription of a clinical instruction, not clinician verification or a new recommendation. A reminder applies only to the time you select; it does not calculate a treatment schedule. Changing or removing this instruction invalidates its previous reminders.</string>
+    <string name="health_instruction_action_check">I checked these details against the original and clarified any uncertain dates or instructions. Adding this action does not change the clinical instruction.</string>
+</resources>

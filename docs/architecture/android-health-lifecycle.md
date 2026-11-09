@@ -418,8 +418,8 @@ Medication, test, follow-up, rehabilitation, lifestyle and other drafts have
 explicit field states: unreviewed, checked against the source, or not stated in
 the source. Editing checked text resets its review. Not-stated fields contain no
 guessed text. Review records user transcription, not a clinician signature or
-medical validation. This increment cannot create or change executable medication
-instructions, actions or reminders, even when all fields have been reviewed.
+medical validation. Field review alone cannot create executable actions or
+reminders. The explicit action confirmation step below is separate.
 
 Schema 14 adds encrypted current drafts and immutable operation receipts with
 authenticated ownership indices. Draft and concern revisions commit atomically;
@@ -436,8 +436,53 @@ privacy, measurement clock and original metadata/presence. Revocation, backgroun
 memory pressure and ten-minute expiry discard draft editors, selected source
 lines and preview bitmaps. No new plaintext file or network request is produced.
 
-Model-assisted structured drafting, authorized Agent review tools, source-checked
-plan/reminder mapping and treatment/rehabilitation follow-up remain subsequent
+Model-assisted structured drafting, authorized Agent review tools and
+treatment/rehabilitation follow-up remain subsequent
 increments. Manual line selection is not reported as autonomous clinical
 extraction. Software and device tests do not establish clinical effectiveness;
 the full lifecycle still requires its separate clinical and end-to-end gates.
+
+## Confirmed instruction actions
+
+The instruction detail can add a separately confirmed action to the existing
+care agenda. The confirmation shows the immutable quotation, page, reviewed
+fields and an unchecked acknowledgement. Cancel or backgrounding discards an
+unconfirmed dialog; authorization is rechecked when committing a confirmed
+action. An unreviewed draft cannot offer confirmation. Medication
+requires every required field to be explicitly transcribed and checked, including
+name, dose, unit, route, frequency, start/end dates and details. Other instructions
+require a checked name/details and explicit review of the remaining fields;
+not-stated dates remain unknown. Users must clarify ambiguous instructions with
+their clinician; the application does not validate prescriptions clinically.
+
+Schema 15 adds an optional typed instruction reference inside the existing
+encrypted action payload. Existing actions and schema-14 sources survive the
+upgrade. The reference binds instruction revision, encounter, source association
+and original hash/page. Confirmation verifies the complete encrypted original on
+a worker, then rechecks authorization, parent revisions and source presence in
+the short commit path. One deterministic action ID per instruction revision
+prevents repeated confirmation from creating duplicates or rearming a completed
+action. No reminder is created by confirmation itself.
+
+The existing reminder/feedback UI displays all transcribed fields and links back
+to the source. Its date/time picker schedules one user-selected reminder; it does
+not infer a recurring dose schedule from free text or rewrite clinical dates.
+Scheduling and delivery check the current instruction and original presence in
+addition to existing privacy, measurement and profile checks. The default store
+scheduling path rejects clinical actions without an explicit source-availability
+check. Generic model plan schemas and parsers cannot create clinical instruction
+actions. Scoped model-assisted clinical drafting remains separate work.
+
+Editing/deleting an instruction or deleting its encounter invalidates dependent
+action references and cancels old reminders in the same transaction. The old
+action remains in review/history rather than silently becoming the new medical
+instruction. A changed instruction requires a fresh confirmation. Missing
+original bytes block confirmation, scheduling and actual reminder delivery.
+Feedback continues to use the existing encrypted, idempotent receipts; completing
+an action never establishes recovery or clinical improvement.
+
+This does not yet deliver recurring prescription schedules, diagnosis-specific
+rehabilitation cycles, model-assisted extraction or full lifecycle acceptance.
+The existing 30-action concern budget is unchanged; exceeding it must fail
+without dropping history, and durable paged plan archival remains a separate
+architecture gap. No Agent main-page layout changes are introduced.

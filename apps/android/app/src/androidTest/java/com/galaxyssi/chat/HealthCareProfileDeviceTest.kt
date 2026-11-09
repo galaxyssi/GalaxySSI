@@ -50,8 +50,16 @@ class HealthCareProfileDeviceTest {
         val issue = select(profile, care, setOf(HealthProfileField.HEIGHT), setOf(selected.id))
         val capture = HealthCareProfileAccess.capture(context, issue.profileLink!!, names)
         val prompt = HealthCareDiscussionPolicy.snapshot(issue, profile = capture)
-        assertTrue(prompt.contains("170")); assertTrue(prompt.contains("selected-fixture-history"))
-        assertFalse(prompt.contains("190")); assertFalse(prompt.contains("never-share-fixture-name")); assertFalse(prompt.contains("unselected-fixture-allergy"))
+        val shared = JSONObject(prompt).getJSONObject("selected_profile")
+        val fields = shared.getJSONObject("fields")
+        assertEquals(setOf("HEIGHT"), fields.keys().asSequence().toSet())
+        assertEquals("170", fields.getJSONObject("HEIGHT").getJSONObject("value").getString("text"))
+        assertEquals("cm", fields.getJSONObject("HEIGHT").getJSONObject("value").getString("unit"))
+        assertFalse(shared.getBoolean("drafts_included"))
+        assertEquals(1, shared.getJSONArray("entries").length())
+        assertEquals(selected.id, shared.getJSONArray("entries").getJSONObject(0).getString("id"))
+        assertTrue(prompt.contains("selected-fixture-history"))
+        assertFalse(prompt.contains("never-share-fixture-name")); assertFalse(prompt.contains("unselected-fixture-allergy"))
         HealthCareStore(context, names.care).use { assertEquals(issue, it.concern(issue.id)) }
         context.openOrCreateDatabase(names.care, 0, null).use { db -> db.rawQuery("SELECT payload FROM concerns", null).use {
             assertTrue(it.moveToFirst()); assertFalse(it.getBlob(0).toString(Charsets.ISO_8859_1).contains(selected.id))

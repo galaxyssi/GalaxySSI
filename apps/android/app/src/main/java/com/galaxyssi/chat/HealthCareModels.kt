@@ -9,7 +9,7 @@ internal enum class HealthCareStage { VERIFY_CONTEXT, REVIEW_EVIDENCE, REVIEW_PL
 internal enum class HealthCareSignal { REPORT_LOW, REPORT_HIGH, GLUCOSE_CONTEXT, GUIDELINE_SCOPE, GUIDELINE_REVIEW, RISING_SERIES, FALLING_SERIES, RESULT_NOT_EXACT, SOURCE_REMOVED, BLOOD_PRESSURE_ALERT }
 internal enum class HealthCareTruth { UNKNOWN, YES, NO }
 internal enum class HealthCareSpecimen { UNKNOWN, LAB_PLASMA, HOME_CAPILLARY, INTERSTITIAL }
-internal enum class HealthCareActionKind { LIFESTYLE, CLINICIAN_DISCUSSION, RECHECK, CONTEXT }
+internal enum class HealthCareActionKind { LIFESTYLE, CLINICIAN_DISCUSSION, RECHECK, CONTEXT, CLINICAL_INSTRUCTION }
 internal enum class HealthCareActionState { PROPOSED, CONFIRMED, DONE, DECLINED }
 
 internal data class HealthCareRecordRef(val id: String, val revision: Int) {
@@ -126,7 +126,8 @@ internal data class HealthCareAssessment(val record: HealthCareRecordRef?, val m
 internal data class HealthCareAction(val id: String, val kind: HealthCareActionKind, val description: String,
     val rationale: String, val source: String, val state: HealthCareActionState = HealthCareActionState.PROPOSED,
     val dueFrom: Long? = null, val dueUntil: Long? = null, val confirmedAt: Long? = null, val outcome: String = "", val basis: String = "",
-    val evidenceId: String = "", val supportingQuote: String = "", val feedback: HealthCareFeedback? = null) {
+    val evidenceId: String = "", val supportingQuote: String = "", val feedback: HealthCareFeedback? = null,
+    val instruction: HealthCareInstructionActionRef? = null) {
     init {
         require(HealthProfilePolicy.uuid(id) && description.isNotBlank() && description.length <= 1000)
         require(rationale.isNotBlank() && rationale.length <= 2000 && source.isNotBlank() && source.length <= 2048)
@@ -136,6 +137,8 @@ internal data class HealthCareAction(val id: String, val kind: HealthCareActionK
         require(basis.isEmpty() || basis.matches(Regex("[0-9a-f]{64}")))
         require(evidenceId.isEmpty() || HealthProfilePolicy.uuid(evidenceId))
         require(supportingQuote.length <= 600)
+        require((kind == HealthCareActionKind.CLINICAL_INSTRUCTION) == (instruction != null))
+        require(instruction == null || evidenceId.isEmpty() && supportingQuote.isEmpty())
         require(feedback == null || state in setOf(HealthCareActionState.CONFIRMED, HealthCareActionState.DONE))
         require(feedback == null || (feedback.kind == HealthCareFeedbackKind.COMPLETED) == (state == HealthCareActionState.DONE))
         require(feedback?.kind != HealthCareFeedbackKind.COMPLETED || state == HealthCareActionState.DONE && outcome == feedback.note)
@@ -145,11 +148,13 @@ internal data class HealthCareAction(val id: String, val kind: HealthCareActionK
         .put("confirmed_at", confirmedAt ?: JSONObject.NULL).put("outcome", outcome).put("basis", basis)
         .apply { if (evidenceId.isNotEmpty()) { put("evidence_id", evidenceId); put("supporting_quote", supportingQuote) } }
         .apply { feedback?.let { put("feedback", it.json()) } }
+        .apply { instruction?.let { put("instruction", it.json()) } }
     companion object { fun from(j: JSONObject) = HealthCareAction(j.getString("id"), HealthCareActionKind.valueOf(j.getString("kind")),
         j.getString("description"), j.getString("rationale"), j.getString("source"), HealthCareActionState.valueOf(j.getString("state")),
         if (j.isNull("from")) null else j.getLong("from"), if (j.isNull("until")) null else j.getLong("until"),
         if (j.isNull("confirmed_at")) null else j.getLong("confirmed_at"), j.getString("outcome"), j.optString("basis", ""),
-        j.optString("evidence_id"), j.optString("supporting_quote"), j.optJSONObject("feedback")?.let(HealthCareFeedback::from)) }
+        j.optString("evidence_id"), j.optString("supporting_quote"), j.optJSONObject("feedback")?.let(HealthCareFeedback::from),
+        j.optJSONObject("instruction")?.let(HealthCareInstructionActionRef::from)) }
 }
 
 internal data class HealthCareConcern(val id: String, val metric: HealthMetric, val revision: Int, val createdAt: Long,
@@ -170,7 +175,7 @@ internal data class HealthCareConcern(val id: String, val metric: HealthMetric, 
     }
     val open get() = stage != HealthCareStage.CLOSED
     val nextDue get() = if (stage in setOf(HealthCareStage.PAUSED, HealthCareStage.CLOSED)) null else actions
-        .filter { it.state == HealthCareActionState.CONFIRMED }.mapNotNull { it.dueFrom }.minOrNull()
+        .filter { it.state == HealthCareActionState.CONFIRMED && it.instruction?.invalidated != true }.mapNotNull { it.dueFrom }.minOrNull()
     fun json() = JSONObject().put("schema", 1).put("id", id).put("metric", metric.name).put("revision", revision)
         .put("created_at", createdAt).put("updated_at", updatedAt).put("input_version", inputVersion).put("assessment", assessment.json())
         .put("stage", stage.name).put("context", context?.json() ?: JSONObject.NULL).put("target", target?.json() ?: JSONObject.NULL)

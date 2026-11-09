@@ -119,7 +119,8 @@ class HealthCareActionsActivity : Activity() {
         page.items.forEach { item ->
             val issue = item.concern; val action = item.action
             ui.add(content, ui.profileRow(action.description,
-                "${getString(issue.metric.titleResource())} · ${getString(action.feedback?.kind?.label() ?: action.state.titleResource())}\n${timing(item)}") {
+                "${getString(issue.metric.titleResource())} · ${getString(if (action.instruction?.invalidated == true)
+                    R.string.health_instruction_action_stale else action.feedback?.kind?.label() ?: action.state.titleResource())}\n${timing(item)}") {
                 review.show(issue.id, action.id)
             }.apply { tag = "health-agenda-action-${action.id}" }, 12)
             ui.add(content, ui.profileRow(getString(R.string.health_agenda_concern)) {
