@@ -66,6 +66,7 @@ final class MessageCoordinator: ObservableObject {
   let incomingAttachmentTransferStore: AgentIncomingAttachmentTransferStore
   var attachmentChunkControlsInFlight = Set<String>()
   private var desktopArtifactChunksInFlight = Set<String>()
+  private var legacyArtifactRecoveryTask: Task<Void, Never>?
   private var desktopArtifactRetryAfter: [String: Date] = [:]
   private let desktopArtifactQueue = DispatchQueue(label: "org.galaxyssi.ios.desktop-artifact-receive", qos: .utility)
   private lazy var desktopReplyRecovery = store.makeDesktopReplyRecovery()
@@ -1054,6 +1055,7 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     Task { @MainActor [weak self] in await self?.sweepDesktopReplyRecovery() }
+    startLegacyArtifactRecovery()
     let hasMoreIncoming = replayPendingIncoming()
     let hasMoreConnectorResponses = replayPendingConnectorResponses()
     resumePendingIncomingAttachmentDownloads()
@@ -1119,6 +1121,7 @@ final class MessageCoordinator: ObservableObject {
     journalMqttPoll?.cancel()
     if let runtime = journalMqttRuntime { Task { @MainActor in await runtime.stop() } }
     desktopReplyRecoveryTask?.cancel()
+    legacyArtifactRecoveryTask?.cancel()
     pairingDeliveryTask?.cancel()
     pairingConfirmationTimeoutTask?.cancel()
     transportReceiptDrainTask?.cancel()
@@ -18276,6 +18279,7 @@ final class MessageCoordinator: ObservableObject {
             stageAuthenticatedAttachmentControl(payload, link: link, messageId: messageId, maximumBytes: 512 * 1024) else { return }
       guard desktopArtifactChunksInFlight.count < 8, desktopArtifactChunksInFlight.insert(key).inserted else { return }
       let owner = store.profile.identityFingerprint
+      let recovery = legacyArtifactRecoveryBinding(payload, link: link)
       Task { @MainActor [weak self] in
         guard let self else { return }
         defer {
@@ -18285,7 +18289,7 @@ final class MessageCoordinator: ObservableObject {
           let artifactStore = self.desktopArtifactStore
           let result: AgentDesktopArtifactIngestResult = try await withCheckedThrowingContinuation { continuation in
             self.desktopArtifactQueue.async {
-              do { continuation.resume(returning: try artifactStore.ingest(payload)) }
+              do { continuation.resume(returning: try artifactStore.ingest(payload, recovery: recovery)) }
               catch { continuation.resume(throwing: error) }
             }
           }
@@ -18377,6 +18381,91 @@ final class MessageCoordinator: ObservableObject {
           payload.string("desktop_id").isEmpty || payload.string("desktop_id") == link.desktopId else { return false }
     return store.serverLinks.contains { $0.paired && $0.desktopId == link.desktopId &&
       $0.routes.clientRouteId == link.routes.clientRouteId && $0.routes.remoteFingerprint == link.routes.remoteFingerprint }
+  }
+
+  private func legacyArtifactPairing(_ link: ServerLink) -> String {
+    AgentMcpJSONCodec.sha256(["desktop": .string(link.desktopFingerprint),
+      "local": .string(link.routes.localFingerprint), "remote": .string(link.routes.remoteFingerprint),
+      "secret": .string(link.routes.linkSecret)])
+  }
+
+  private func legacyArtifactRecoveryBinding(_ payload: [String: Any], link: ServerLink)
+    -> AgentDesktopArtifactRecovery.Binding? {
+    guard usesLegacyMqtt, GalaxySSISignalEngine.isAvailable, !GalaxySSITransportPrivacyPolicy.isLocalOnly(payload) else { return nil }
+    let task = AgentTaskIdentity(clientRouteId: payload.string("client_route_id"), conversationId: payload.string("conversation_id"),
+      taskId: payload.string("task_id"), turnId: payload.string("turn_id"))
+    let contact = payload.string("contact_id"), source = payload.string("source_message_id")
+    let peerChat = payload["peer_chat"] as? Bool == true
+    guard task.isComplete, !contact.isBlank, !source.isBlank,
+          let binding = AgentDesktopArtifactRecovery.Binding(payload: payload, desktopID: link.desktopId,
+            routeID: link.routes.clientRouteId, owner: .legacy(profile: store.profile.identityFingerprint,
+              pairing: legacyArtifactPairing(link), task: task, contact: contact, source: source, peerChat: peerChat)),
+          let current = legacyArtifactRecoveryLink(binding), current.routes == link.routes,
+          current.desktopFingerprint == link.desktopFingerprint else { return nil }
+    return binding
+  }
+
+  private func legacyArtifactRecoveryLink(_ binding: AgentDesktopArtifactRecovery.Binding) -> ServerLink? {
+    guard usesLegacyMqtt, GalaxySSISignalEngine.isAvailable,
+          case .legacy(let profile, let pairing, let task, let contact, let source, let peerChat) = binding.owner,
+          profile == store.profile.identityFingerprint, task.taskId == binding.taskID, task.clientRouteId == binding.routeID
+    else { return nil }
+    let matches = store.serverLinks.filter { $0.paired && $0.desktopId == binding.desktopID &&
+      $0.routes.clientRouteId == binding.routeID && legacyArtifactPairing($0) == pairing }
+    guard matches.count == 1, let link = matches.first else { return nil }
+    if peerChat {
+      guard contact == link.desktopId, task.conversationId == AgentPeerChatTransport.conversationId(for: link),
+            task.taskId == source, UUID(uuidString: source) != nil else { return nil }
+    } else {
+      guard taskIdentityStore.identity(contactId: contact, sourceMessageId: source) == task,
+            let registered = store.contact(id: contact), registered.isCommunicable,
+            registered.desktopId == link.desktopId, registered.deliveryMode.isGalaxySSILinkFamily else { return nil }
+      if let session = store.agentSession(id: task.conversationId),
+         session.privateMode || session.trackingPaused || !session.mergedIntoConversationId.isBlank { return nil }
+    }
+    return link
+  }
+
+  private func startLegacyArtifactRecovery() {
+    guard usesLegacyMqtt, legacyArtifactRecoveryTask == nil else { return }
+    legacyArtifactRecoveryTask = Task { @MainActor [weak self] in
+      defer { self?.legacyArtifactRecoveryTask = nil }
+      while !Task.isCancelled {
+        guard await self?.pumpLegacyArtifactRecovery() == true else { return }
+        do { try await Task.sleep(nanoseconds: UInt64(AgentDesktopArtifactRecovery.scanMillis) * 1_000_000) }
+        catch { return }
+      }
+    }
+  }
+
+  private func pumpLegacyArtifactRecovery() async -> Bool {
+    guard usesLegacyMqtt, mqttClient.relationshipSubscriptionsReady, UIApplication.shared.applicationState == .active else {
+      return false
+    }
+    let now = AgentControlPlaneClock.nowMillis(), artifacts = desktopArtifactStore
+    let candidates: [AgentDesktopArtifactRecovery.Candidate] = await withCheckedContinuation { continuation in
+      desktopArtifactQueue.async {
+        continuation.resume(returning: artifacts.recoveryCandidates(journal: false, now: now))
+      }
+    }
+    var attempts = 0
+    for candidate in candidates {
+      guard !Task.isCancelled, UIApplication.shared.applicationState == .active, mqttClient.relationshipSubscriptionsReady,
+            attempts < AgentDesktopArtifactRecovery.maximumRequests else { break }
+      guard let candidateLink = legacyArtifactRecoveryLink(candidate.binding),
+            await mqttClient.recoveryRouteReady(topic: candidateLink.routes.controlTopic, link: candidateLink),
+            !Task.isCancelled else { continue }
+      let request: AgentDesktopArtifactRecovery.Request? = await withCheckedContinuation { continuation in
+        desktopArtifactQueue.async { continuation.resume(returning: try? artifacts.claimRecovery(candidate, now: now)) }
+      }
+      guard let request else { continue }
+      attempts += 1
+      guard !Task.isCancelled, UIApplication.shared.applicationState == .active,
+            let link = legacyArtifactRecoveryLink(request.binding),
+            let wire = try? linkWirePayload(request.payload(), link: link) else { continue }
+      _ = await mqttClient.publishRecoveryQuery(topic: link.routes.controlTopic, payload: wire.wireData, link: link)
+    }
+    return true
   }
 
   func journalBlobAgentScopeIsCurrent(_ manifest: [String: Any], desktopId: String) -> Bool {
