@@ -449,6 +449,68 @@ final class AgentDesktopArtifactHandoffTests: XCTestCase {
     XCTAssertEqual(try Data(contentsOf: XCTUnwrap(store.localFile(for: block))), bytes)
   }
 
+  func testMissingChunkRecoveryReopensEncryptedPacingAndPreservesOriginalBytes() throws {
+    typealias Recovery = AgentDesktopArtifactRecovery
+    let cipher = GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let root = temporaryDirectory("partial-artifact")
+    func open() -> AgentDesktopArtifactStore { .init(rootURL: root, cipher: cipher) }
+    let size = 256 * 1_024
+    var bytes = Data()
+    for index in 0..<10 { bytes.append(Data(repeating: UInt8(index), count: index == 9 ? 33 : size)) }
+    let digest = sha256(bytes), uri = "galaxyssi-artifact://task/outputs/result.bin"
+    let wireID = sha256(Data(uri.utf8))
+    func chunk(_ index: Int) -> [String: Any] {
+      var result = payload(artifactId: wireID, artifactURI: uri, fullDigest: digest, fullSize: bytes.count,
+        index: index, count: 10, chunk: bytes.subdata(in: index * size..<min((index + 1) * size, bytes.count)))
+      result["phone_owned"] = true
+      result["client_route_id"] = "route"
+      return result
+    }
+    let task = AgentTaskIdentity(clientRouteId: "route", conversationId: "conversation", taskId: "task", turnId: "turn")
+    let owner = Recovery.Owner.legacy(profile: "profile", pairing: "paired", task: task, contact: "agent",
+      source: "source", peerChat: false)
+    let binding = try XCTUnwrap(Recovery.Binding(payload: chunk(4), desktopID: "desktop", routeID: "route", owner: owner))
+    let store = open()
+    XCTAssertFalse(try store.ingest(chunk(4), recovery: binding, receivedAt: 100_000).completed)
+    let metadata = root.appendingPathComponent("incoming/\(wireID)/recovery.saenc")
+    XCTAssertTrue(cipher.isEncryptedFile(metadata))
+    XCTAssertTrue(open().recoveryCandidates(journal: false, now: 109_999).isEmpty)
+    XCTAssertTrue(open().recoveryCandidates(journal: true, now: 110_000).isEmpty)
+    let candidate = try XCTUnwrap(open().recoveryCandidates(journal: false, now: 110_000).first)
+    let different = try XCTUnwrap(Recovery.Binding(payload: chunk(4), desktopID: "other", routeID: "route", owner: owner))
+    XCTAssertNil(try open().claimRecovery(.init(localID: wireID, binding: different), now: 110_000))
+    let request = try XCTUnwrap(open().claimRecovery(candidate, now: 110_000))
+    XCTAssertEqual(request.missing, [0, 1, 2, 3, 5, 6, 7, 8])
+    let wire = request.payload(id: "nonce")
+    XCTAssertEqual(wire["artifact_id"] as? String, wireID)
+    XCTAssertEqual(wire["artifact_uri"] as? String, uri)
+    XCTAssertEqual(wire["sha256"] as? String, digest)
+    XCTAssertEqual(wire["task_id"] as? String, "task")
+    XCTAssertTrue(Recovery.acceptsTransientRequest(wire, desktop: "desktop", route: "route"))
+    XCTAssertFalse(Recovery.acceptsTransientRequest(wire, desktop: "desktop", route: "old-route"))
+    var malformed = wire
+    malformed["missing_chunks"] = [true]
+    XCTAssertFalse(Recovery.acceptsTransientRequest(malformed, desktop: "desktop", route: "route"))
+    malformed["missing_chunks"] = [1, 1]
+    XCTAssertFalse(Recovery.acceptsTransientRequest(malformed, desktop: "desktop", route: "route"))
+    XCTAssertFalse(try open().ingest(chunk(4), recovery: binding, receivedAt: 111_000).completed)
+    XCTAssertNil(try open().claimRecovery(candidate, now: 139_999))
+    XCTAssertNotNil(try open().claimRecovery(candidate, now: 140_000))
+    XCTAssertNil(try open().claimRecovery(candidate, now: 199_999))
+    for index in [0, 1, 2, 3, 5, 6, 7, 8] {
+      XCTAssertFalse(try open().ingest(chunk(index), recovery: binding, receivedAt: 141_000).completed)
+    }
+    XCTAssertEqual(try open().claimRecovery(candidate, now: 151_000)?.missing, [9])
+    XCTAssertTrue(try open().ingest(chunk(9), recovery: binding, receivedAt: 152_000).completed)
+    XCTAssertNil(try open().claimRecovery(candidate, now: 300_000))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: metadata.path))
+    let resolved = open().resolveBlock(AgentRichBlock(id: "recovered", type: .file, title: "result.bin",
+      uri: uri, mimeType: "application/octet-stream", metadata: ["sha256": digest]))
+    XCTAssertEqual(try Data(contentsOf: XCTUnwrap(open().localFile(for: resolved))), bytes)
+    XCTAssertTrue(try open().ingest(chunk(9), recovery: binding, receivedAt: 310_000).completed)
+    XCTAssertTrue(open().recoveryCandidates(journal: false, now: 330_000).isEmpty)
+  }
+
   @MainActor
   func testCompressedImageRequiresItsDeliveredIdentityAndIsNotTheOriginal() throws {
     let cipher = GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())

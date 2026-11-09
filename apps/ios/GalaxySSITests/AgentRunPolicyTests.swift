@@ -26,17 +26,117 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(AgentDesktopEvidenceQueryTrace.token(String(repeating: "x", count: 129)), "unavailable")
   }
 
-  func testDesktopEvidenceLateTraceIsBoundedScopedAndOneShot() {
-    var late = AgentDesktopEvidenceQueryTrace.LateQueries()
-    for index in 0...64 {
-      late.remember(String(index), desktop: "desktop", route: "route", started: 1_000, now: 9_000 + Int64(index))
+  func testDesktopEvidenceLateReplyIsExactScopedAndOneShot() throws {
+    typealias Queries = AgentDesktopEvidenceQueries<String>
+    let binding = try lateEvidenceBinding()
+    func request(_ nonce: String, generation: Int64 = 2) throws -> AgentDesktopToolEvidenceWire.Request {
+      try XCTUnwrap(.init(binding: binding, generation: generation, nonce: nonce))
     }
-    XCTAssertNil(late.consume("0", desktop: "desktop", route: "route", now: 10_000))
-    XCTAssertNil(late.consume("64", desktop: "other", route: "route", now: 10_000))
-    XCTAssertNil(late.consume("64", desktop: "desktop", route: "rotated", now: 10_000))
-    XCTAssertEqual(late.consume("64", desktop: "desktop", route: "route", now: 10_000), 1_000)
-    XCTAssertNil(late.consume("64", desktop: "desktop", route: "route", now: 10_001))
-    XCTAssertNil(late.consume("63", desktop: "desktop", route: "route", now: 69_063))
+    func start(_ query: AgentDesktopToolEvidenceWire.Request, after: Int64 = 1,
+        inline: Int = 8, transport: String = "paired-route", table: inout Queries) throws -> Queries.Begin {
+      let payload = try XCTUnwrap(query.indexRequest(after: after, inlineBytes: inline))
+      return try XCTUnwrap(table.begin(query, payload: payload, transport: transport, now: 100))
+    }
+    var table = Queries()
+    let original = try request("original")
+    guard case .waiting(let ticket) = try start(original, table: &table) else { return XCTFail("Expected first query") }
+    table.timeout(ticket, now: 101)
+    table.finish(ticket, retainAfterTimeout: true)
+    let response = lateEvidenceResponse(original)
+    XCTAssertEqual(table.receive(response, transport: "rotated-route", desktop: "desktop", now: 102), .rejected)
+    XCTAssertEqual(table.receive(response, transport: "paired-route", desktop: "other", now: 102), .rejected)
+    var foreign = response
+    foreign["execution_generation"] = .int(3)
+    XCTAssertEqual(table.receive(foreign, transport: "paired-route", desktop: "desktop", now: 102), .rejected)
+    XCTAssertEqual(table.receive(response, transport: "paired-route", desktop: "desktop", now: 102), .late)
+    XCTAssertEqual(table.receive(response, transport: "paired-route", desktop: "desktop", now: 103), .duplicate)
+    for (query, after, inline, transport) in [
+      (try request("generation", generation: 3), 1 as Int64, 8, "paired-route"),
+      (try request("cursor"), 2 as Int64, 8, "paired-route"),
+      (try request("inline"), 1 as Int64, 16, "paired-route"),
+      (try request("pair"), 1 as Int64, 8, "rotated-route")
+    ] {
+      guard case .waiting(let other) = try start(query, after: after, inline: inline, transport: transport, table: &table)
+      else { return XCTFail("Unmatched query reused an old response") }
+      table.finish(other, retainAfterTimeout: false)
+    }
+    guard case .retained(let retained) = try start(request("next"), table: &table)
+    else { return XCTFail("Expected the authenticated late response") }
+    XCTAssertEqual(retained.request.nonce, original.nonce)
+    XCTAssertEqual(retained.payload, response)
+    XCTAssertEqual(table.receive(response, transport: "paired-route", desktop: "desktop", now: 104), .unknown)
+  }
+
+  func testDesktopEvidenceLateReplyCanSatisfyRetryWithFreshWireNonce() async throws {
+    let binding = try lateEvidenceBinding()
+    var table = AgentDesktopEvidenceQueries<String>()
+    func query(_ nonce: String) throws -> AgentDesktopToolEvidenceWire.Request {
+      try XCTUnwrap(.init(binding: binding, generation: 2, nonce: nonce))
+    }
+    let first = try query("first"), next = try query("next"), independent = try query("independent")
+    guard case .waiting(let timedOut)? = table.begin(first, payload: try XCTUnwrap(first.indexRequest(after: 0)),
+      transport: "pair", now: 10) else { return XCTFail("Missing waiter") }
+    table.timeout(timedOut, now: 20)
+    table.finish(timedOut, retainAfterTimeout: true)
+    guard case .waiting(let retry)? = table.begin(next, payload: try XCTUnwrap(next.indexRequest(after: 0)),
+      transport: "pair", now: 30),
+      case .waiting(let other)? = table.begin(independent, payload: try XCTUnwrap(independent.indexRequest(after: 0)),
+        transport: "pair", now: 31) else { return XCTFail("Missing retry waiters") }
+    XCTAssertEqual(retry.request.nonce, "next")
+    XCTAssertEqual(table.receive(lateEvidenceResponse(first), transport: "pair", desktop: "desktop", now: 32), .late)
+    XCTAssertEqual(table.receive(lateEvidenceResponse(next), transport: "pair", desktop: "desktop", now: 33), .duplicate)
+    XCTAssertEqual(table.receive(lateEvidenceResponse(independent), transport: "pair", desktop: "desktop", now: 34), .active)
+    table.finish(retry, retainAfterTimeout: false)
+    table.finish(other, retainAfterTimeout: false)
+    var retryValues = retry.stream.makeAsyncIterator()
+    var independentValues = other.stream.makeAsyncIterator()
+    let recovered = await retryValues.next()
+    let separatelyOwned = await independentValues.next()
+    XCTAssertEqual(recovered?.request.nonce, "first")
+    XCTAssertEqual(separatelyOwned?.request.nonce, "independent")
+  }
+
+  func testDesktopEvidenceLateLimitsAndCancellation() throws {
+    let binding = try lateEvidenceBinding()
+    var table = AgentDesktopEvidenceQueries<String>(lateLimit: 1, byteLimit: 1_024, retention: 10)
+    func wait(_ nonce: String, after: Int64, now: Int64) throws -> AgentDesktopEvidenceQueries<String>.Ticket {
+      let query = try XCTUnwrap(AgentDesktopToolEvidenceWire.Request(binding: binding, generation: 2, nonce: nonce))
+      guard case .waiting(let ticket)? = table.begin(query, payload: try XCTUnwrap(query.indexRequest(after: after)),
+        transport: "pair", now: now) else { throw AgentTeamHistoryDatabase.Failure.stale }
+      return ticket
+    }
+    let older = try wait("older", after: 0, now: 1), newer = try wait("newer", after: 0, now: 2)
+    table.timeout(older, now: 3)
+    table.timeout(newer, now: 4)
+    XCTAssertEqual(table.receive(lateEvidenceResponse(older.request), transport: "pair", desktop: "desktop", now: 5), .unknown)
+    var oversized = lateEvidenceResponse(newer.request)
+    oversized["body"] = .string(String(repeating: "x", count: 2_000))
+    XCTAssertEqual(table.receive(oversized, transport: "pair", desktop: "desktop", now: 5), .discarded)
+    let expired = try wait("expired", after: 0, now: 6)
+    table.timeout(expired, now: 7)
+    XCTAssertEqual(table.receive(lateEvidenceResponse(expired.request), transport: "pair", desktop: "desktop", now: 17), .unknown)
+    let pending = try wait("pending", after: 0, now: 20)
+    table.timeout(pending, now: 21)
+    let cancelled = try wait("cancelled", after: 0, now: 22)
+    table.finish(cancelled, retainAfterTimeout: false)
+    XCTAssertEqual(table.receive(lateEvidenceResponse(pending.request), transport: "pair", desktop: "desktop", now: 23), .unknown)
+    XCTAssertEqual(table.receive(lateEvidenceResponse(cancelled.request), transport: "pair", desktop: "desktop", now: 23), .unknown)
+  }
+
+  private func lateEvidenceBinding() throws -> AgentDesktopReplyBinding {
+    let source = UUID().uuidString.lowercased()
+    let owner = AgentTeamReplyOwner(supervisorRunId: "run", memberId: "member", conversationId: "group",
+      turnId: "turn", sourceMessageId: source, contactId: "review", deliveryMode: .observe)
+    return try XCTUnwrap(AgentDesktopReplyBinding.teamObserver(owner: owner, desktopId: "desktop", agentId: "codex",
+      identity: AgentTaskIdentity(clientRouteId: "route", conversationId: "group", taskId: source, turnId: "turn")))
+  }
+
+  private func lateEvidenceResponse(_ request: AgentDesktopToolEvidenceWire.Request) -> AgentMcpJSONObject {
+    request.binding.fields.mapValues(AgentMcpJSONValue.string).merging([
+      "type": .string("agent_task_evidence"), "contract": .string(AgentDesktopToolEvidenceWire.contract),
+      "mode": .string("index"), "status": .string("ready"), "request_id": .string(request.nonce),
+      "execution_generation": .int(request.generation)
+    ]) { _, new in new }
   }
 
   func testDesktopReceiptRecoverySkipsCancelledOrMissingAgentSessions() {
@@ -306,6 +406,19 @@ extension GalaxySSIStoreTests {
     var response = page(for: body)
     let descriptor = try XCTUnwrap(AgentDesktopToolEvidenceWire.Descriptor(response))
     XCTAssertEqual(request.verifyPage(response, authenticatedDesktopId: "desktop", descriptor: descriptor, index: 0), body)
+    var table = AgentDesktopEvidenceQueries<String>()
+    guard case .waiting(let pending)? = table.begin(request, payload: try XCTUnwrap(request.pageRequest(descriptor, index: 0)),
+      transport: "paired", now: 1) else { return XCTFail("Expected a page waiter") }
+    table.timeout(pending, now: 2)
+    var wrongPage = response
+    wrongPage["page_index"] = .int(1)
+    XCTAssertEqual(table.receive(wrongPage, transport: "paired", desktop: "desktop", now: 3), .rejected)
+    XCTAssertEqual(table.receive(response, transport: "paired", desktop: "desktop", now: 3), .late)
+    let retry = try XCTUnwrap(AgentDesktopToolEvidenceWire.Request(binding: binding, generation: 2, nonce: "retry"))
+    guard case .retained(let recovered)? = table.begin(retry, payload: try XCTUnwrap(retry.pageRequest(descriptor, index: 0)),
+      transport: "paired", now: 4) else { return XCTFail("Expected cached page") }
+    XCTAssertEqual(recovered.request.verifyPage(recovered.payload, authenticatedDesktopId: "desktop",
+      descriptor: descriptor, index: 0), body)
     XCTAssertNil(request.verifyPage(response, authenticatedDesktopId: "other", descriptor: descriptor, index: 0))
     XCTAssertTrue(request.matchesTransportResponse(response, authenticatedDesktopId: "desktop", mode: "page"))
     XCTAssertFalse(request.matchesTransportResponse(response, authenticatedDesktopId: "desktop", mode: "index"))
@@ -379,6 +492,7 @@ extension GalaxySSIStoreTests {
     let entry = try XCTUnwrap(listed["entries"]?.arrayValue?.first?.objectValue)
     XCTAssertEqual(entry["evidence_id"], .string(receipt.archiveId))
     XCTAssertEqual(entry["tool"], .string("commandExecution"))
+    XCTAssertEqual(entry["recorded_tool"], .string("codex.commandExecution"))
     XCTAssertEqual(entry["status"], .string("returned"))
     var read: AgentMcpJSONObject = ["mode": .string("desktop_evidence"), "evidence_id": .string(receipt.archiveId),
       "sha256": .string(receipt.sha256)]
@@ -422,7 +536,7 @@ extension GalaxySSIStoreTests {
     let review = try XCTUnwrap(publishReview().references.first)
     let coordinator = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "group", turnId: "turn",
       memberId: "primary", sourceId: "coordinator")
-    let required: AgentMcpJSONValue = .array([.object(["origin": .string("desktop_codex_tool"), "tool": .string("commandExecution")])])
+    let required: AgentMcpJSONValue = .array([.object(["origin": .string("desktop_codex_tool"), "tool": .string("codex.commandExecution")])])
     var criterion: AgentMcpJSONObject = ["id": .string("record"), "requirement": .string("Record the returned output"),
       "verification": .string("documentary"), "status": .string("open"), "evidence": .array([]), "required_observations": required]
     var assessment: AgentMcpJSONObject = ["format": .string("galaxyssi.goal-assessment.v1"), "summary": .string("Record"),
