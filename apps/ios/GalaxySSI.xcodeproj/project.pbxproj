@@ -1058,6 +1058,7 @@
     A10000000000000000000F41 /* AgentCollaborationNumericTrial.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000F41 /* AgentCollaborationNumericTrial.swift */; };
     A10000000000000000000F42 /* AgentCollaborationSavedToolTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000F42 /* AgentCollaborationSavedToolTest.swift */; };
     A1000000000000000000F464 /* AgentCollaborationQualitativePrediction.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F464 /* AgentCollaborationQualitativePrediction.swift */; };
+    A1000000000000000000F5B1 /* AgentCollaborationProbeContinuation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F5B1 /* AgentCollaborationProbeContinuation.swift */; };
     A10000000000000000009888 /* AgentCollaborationReleasedToolRun.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009888 /* AgentCollaborationReleasedToolRun.swift */; };
     A10000000000000000000F43 /* AgentCollaborationSavedToolExecution.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000F43 /* AgentCollaborationSavedToolExecution.swift */; };
     A1000000000000000000E356 /* AgentCollaborationExperimentResultFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000E356 /* AgentCollaborationExperimentResultFeedback.swift */; };
@@ -2322,6 +2323,7 @@
     A20000000000000000000F41 /* AgentCollaborationNumericTrial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationNumericTrial.swift; sourceTree = "<group>"; };
     A20000000000000000000F42 /* AgentCollaborationSavedToolTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationSavedToolTest.swift; sourceTree = "<group>"; };
     A2000000000000000000F464 /* AgentCollaborationQualitativePrediction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationQualitativePrediction.swift; sourceTree = "<group>"; };
+    A2000000000000000000F5B1 /* AgentCollaborationProbeContinuation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationProbeContinuation.swift; sourceTree = "<group>"; };
     A20000000000000000009888 /* AgentCollaborationReleasedToolRun.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationReleasedToolRun.swift; sourceTree = "<group>"; };
     A20000000000000000000F43 /* AgentCollaborationSavedToolExecution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationSavedToolExecution.swift; sourceTree = "<group>"; };
     A2000000000000000000E356 /* AgentCollaborationExperimentResultFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationExperimentResultFeedback.swift; sourceTree = "<group>"; };
@@ -3125,6 +3127,7 @@
         A20000000000000000000F41 /* AgentCollaborationNumericTrial.swift */,
         A20000000000000000000F42 /* AgentCollaborationSavedToolTest.swift */,
         A2000000000000000000F464 /* AgentCollaborationQualitativePrediction.swift */,
+        A2000000000000000000F5B1 /* AgentCollaborationProbeContinuation.swift */,
         A20000000000000000009888 /* AgentCollaborationReleasedToolRun.swift */,
         A20000000000000000000F43 /* AgentCollaborationSavedToolExecution.swift */,
         A2000000000000000000E356 /* AgentCollaborationExperimentResultFeedback.swift */,
@@ -4499,6 +4502,7 @@
         A10000000000000000000F41 /* AgentCollaborationNumericTrial.swift in Sources */,
         A10000000000000000000F42 /* AgentCollaborationSavedToolTest.swift in Sources */,
         A1000000000000000000F464 /* AgentCollaborationQualitativePrediction.swift in Sources */,
+        A1000000000000000000F5B1 /* AgentCollaborationProbeContinuation.swift in Sources */,
         A10000000000000000009888 /* AgentCollaborationReleasedToolRun.swift in Sources */,
         A10000000000000000000F43 /* AgentCollaborationSavedToolExecution.swift in Sources */,
         A1000000000000000000E356 /* AgentCollaborationExperimentResultFeedback.swift in Sources */,

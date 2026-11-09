@@ -10047,8 +10047,13 @@ final class MessageCoordinator: ObservableObject {
       let history = AgentTeamExecutionHistoryStore.shared
       let templates = goalRecruitmentTemplates(scope, roster: roster, targets: targets)
       guard let admission = try? history.publishCollaborationMilestone(input, scope: scope,
-        recruitmentTemplates: templates, recruitmentRoster: roster),
-            admission["status"] == .string("work_admitted") else {
+        recruitmentTemplates: templates, recruitmentRoster: roster) else {
+        return ["success": .bool(false), "status": .string("work_admission_unavailable")]
+      }
+      if ["probe_needs_replan", "probe_already_admitted"].contains(admission.string("status")) {
+        return admission
+      }
+      guard admission["status"] == .string("work_admitted") else {
         return ["success": .bool(false), "status": .string("work_admission_unavailable")]
       }
       receipt = admission
