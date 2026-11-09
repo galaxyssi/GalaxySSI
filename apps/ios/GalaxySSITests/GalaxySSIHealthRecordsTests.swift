@@ -936,6 +936,72 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertNil(archive.localCarePlans?[older.id.uuidString])
     XCTAssertEqual(archive.localCarePlans?[next.id.uuidString]?.state, .pending)
     XCTAssertTrue(try reopened.reconcileLocalCareResearch(now: feedbackAt.addingTimeInterval(1)).isEmpty)
+
+    typealias FeedbackTool = GalaxySSIHealthCareFeedbackTool
+    for index in 1...30 {
+      let saved = try XCTUnwrap(reopened.load().localCare?.current["glucose"])
+      let scopedAction = try XCTUnwrap(saved.adoptedActions?.first)
+      try reopened.recordLocalCareFeedback(concernID: concern.id, metric: .glucose, action: scopedAction,
+        expectedRevision: saved.revision, kind: .partial, note: "Feedback fixture \(index)", operation: UUID(), now: feedbackAt)
+    }
+    func manual(_ allowsHistory: Bool, destination: String = "provider") throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try reopened.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Check reported execution",
+        destinationID: destination, model: model, credential: "fixture-api-key",
+        includesActionFeedback: false, feedbackHistoryAllowed: allowsHistory, now: feedbackAt)
+    }
+    let old = try manual(false)
+    XCTAssertNil(old.feedbackCursor)
+    try reopened.beginLocalCareDiscussionTurn(old, now: feedbackAt)
+    var forged = old
+    forged.feedbackHistoryAllowed = true
+    let forgedCursor = try XCTUnwrap(forged.feedbackCursor)
+    XCTAssertThrowsError(try reopened.readLocalCareDiscussionFeedback(forged, cursor: forgedCursor, remaining: 1, now: feedbackAt))
+    try reopened.finishLocalCareDiscussionTurn(old, answer: "No paging approved.", now: feedbackAt)
+    let allowed = try manual(true)
+    let first = try XCTUnwrap(allowed.feedbackCursor)
+    XCTAssertTrue(try allowed.providerPayload(now: feedbackAt).contains("approved_feedback_history"))
+    XCTAssertThrowsError(try reopened.readLocalCareDiscussionFeedback(allowed, cursor: first, remaining: 1, now: feedbackAt))
+    try reopened.beginLocalCareDiscussionTurn(allowed, now: feedbackAt)
+    var cursor: FeedbackTool.Cursor? = first
+    var output: [AgentMcpJSONObject] = []
+    for attempt in 1...FeedbackTool.maximumPages {
+      guard let start = cursor else { break }
+      let page = try reopened.readLocalCareDiscussionFeedback(allowed, cursor: start,
+        remaining: FeedbackTool.maximumPages - attempt, now: feedbackAt)
+      let rows = try XCTUnwrap(page.payload["items"]?.arrayValue)
+      XCTAssertLessThanOrEqual(rows.count, 30)
+      XCTAssertLessThanOrEqual(AgentMcpJSONCodec.stringify(page.payload).utf8.count, FeedbackTool.pageBudget)
+      output += rows.compactMap(\.objectValue)
+      cursor = page.cursor
+    }
+    XCTAssertEqual(output.count, 31)
+    XCTAssertEqual(output.first?["note"], .string("Feedback fixture 30"))
+    XCTAssertEqual(output.last?["note"], .string("A private barrier"))
+    XCTAssertEqual(output.last?["health_improvement_verified"], .bool(false))
+    try reopened.finishLocalCareDiscussionTurn(allowed, answer: "Summarized private feedback history.", now: feedbackAt)
+    XCTAssertThrowsError(try reopened.readLocalCareDiscussionFeedback(allowed, cursor: first, remaining: 1, now: feedbackAt))
+    XCTAssertFalse(try manual(false).payload.contains("Summarized private feedback history"))
+    let different = try manual(true, destination: "other-provider")
+    let differentCursor = try XCTUnwrap(different.feedbackCursor)
+    try reopened.beginLocalCareDiscussionTurn(different, now: feedbackAt)
+    let redacted = try reopened.readLocalCareDiscussionFeedback(different, cursor: differentCursor, remaining: 1, now: feedbackAt)
+    XCTAssertEqual(redacted.payload["items"]?.arrayValue?.first?.objectValue?["redacted"], .bool(true))
+    XCTAssertNotNil(redacted.cursor)
+    try reopened.setHealthOnlinePermission(false)
+    XCTAssertThrowsError(try reopened.readLocalCareDiscussionFeedback(different, cursor: differentCursor, remaining: 1, now: feedbackAt))
+  }
+
+  func testFeedbackToolCompactsOnlyWholeRowsAndRetainsUnadvancedCursor() {
+    typealias Tool = GalaxySSIHealthCareFeedbackTool
+    let cursor = Tool.Cursor(turn: UUID(), revision: 60, before: 51)
+    let row: AgentMcpJSONObject = ["revision": .int(50), "note": .string(String(repeating: "x", count: 600))]
+    let next = cursor.output(rows: [(50, row)], next: 50, remaining: 2, budget: 350)
+    XCTAssertEqual(next.payload["items"], .array([]))
+    XCTAssertEqual(next.payload["next"], .int(51))
+    XCTAssertNil(next.cursor)
+    let full = cursor.output(rows: [(50, row)], next: 50, remaining: 2)
+    XCTAssertEqual(full.payload["items"], .array([.object(row)]))
+    XCTAssertEqual(full.cursor?.before, 50)
   }
 
   @MainActor
@@ -1575,6 +1641,34 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
       "stop_reason": "tool_use", "content": [anthropicCall, anthropicCall]
     ])
     XCTAssertThrowsError(try Tool.call(parallel, style: .anthropic, proposesPlan: true))
+
+    let feedback = GalaxySSIHealthCareFeedbackTool.function
+    let cursor = GalaxySSIHealthCareFeedbackTool.Cursor(turn: UUID(), revision: 13, before: 9)
+    let feedbackArguments = AgentMcpJSONCodec.stringify(cursor.arguments)
+    let object = try JSONSerialization.jsonObject(with: Data(feedbackArguments.utf8))
+    let feedbackFixtures: [(GalaxySSICloudAPIStyle, [String: Any])] = [
+      (.openAICompatible, ["choices": [["finish_reason": "tool_calls", "message": ["tool_calls": [
+        ["id": "feedback-1", "type": "function", "function": ["name": feedback, "arguments": feedbackArguments]]
+      ]]]]]),
+      (.anthropic, ["stop_reason": "tool_use", "content": [
+        ["type": "tool_use", "id": "feedback-1", "name": feedback, "input": object]
+      ]]),
+      (.gemini, ["candidates": [["finishReason": "STOP", "content": ["parts": [
+        ["functionCall": ["name": feedback, "args": object]]
+      ]]]]])
+    ]
+    for (style, fixture) in feedbackFixtures {
+      let bytes = try JSONSerialization.data(withJSONObject: fixture)
+      XCTAssertThrowsError(try Tool.call(bytes, style: style, proposesPlan: false))
+      let allowed = try XCTUnwrap(Tool.call(bytes, style: style, proposesPlan: false, allowsFeedbackRead: true))
+      XCTAssertEqual(allowed.name, feedback)
+      XCTAssertEqual(allowed.arguments, cursor.arguments)
+      var body: [String: Any] = [:]
+      Tool.configure(&body, style: style, proposesPlan: true, historyAvailable: false, feedbackAvailable: true)
+      XCTAssertTrue(String(decoding: try JSONSerialization.data(withJSONObject: body), as: UTF8.self).contains(feedback))
+      XCTAssertNil(body["tool_choice"])
+      XCTAssertNil(body["toolConfig"])
+    }
   }
 
   @MainActor
