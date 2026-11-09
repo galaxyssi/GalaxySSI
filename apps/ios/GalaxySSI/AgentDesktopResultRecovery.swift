@@ -9,33 +9,8 @@ struct AgentDesktopEvidenceQueryTrace {
     case routeMismatch = "paired_route_mismatch", invalidResponse = "invalid_response"
     case indexValidated = "index_validated", indexRejected = "index_rejected"
     case pageStaged = "page_staged", pageNotStaged = "page_not_staged"
-  }
-
-  struct LateQueries {
-    private struct Entry {
-      let desktop: String
-      let route: String
-      let started: Int64
-      let expires: Int64
-    }
-    private var entries: [String: Entry] = [:]
-
-    mutating func remember(_ nonce: String, desktop: String, route: String, started: Int64, now: Int64) {
-      guard !nonce.isEmpty, !desktop.isEmpty, !route.isEmpty, started >= 0, now >= started,
-            now <= Int64.max - 60_000 else { return }
-      entries = entries.filter { $0.value.expires > now }
-      if entries.count >= 64, let oldest = entries.min(by: { $0.value.expires < $1.value.expires }) {
-        entries.removeValue(forKey: oldest.key)
-      }
-      entries[nonce] = Entry(desktop: desktop, route: route, started: started, expires: now + 60_000)
-    }
-
-    mutating func consume(_ nonce: String, desktop: String, route: String, now: Int64) -> Int64? {
-      guard let entry = entries[nonce], entry.desktop == desktop, entry.route == route,
-            now >= entry.started, now < entry.expires else { return nil }
-      entries.removeValue(forKey: nonce)
-      return entry.started
-    }
+    case sliceComplete = "slice_complete", sliceYielded = "slice_yielded", sliceDeferred = "slice_deferred"
+    case sliceWait = "slice_wait"
   }
 
   private static let logger = Logger(subsystem: "com.galaxyssi.chat.ios", category: "desktop-evidence")
@@ -53,10 +28,201 @@ struct AgentDesktopEvidenceQueryTrace {
   }
 }
 
+struct AgentDesktopEvidenceReply {
+  let request: AgentDesktopToolEvidenceWire.Request
+  let payload: AgentMcpJSONObject
+}
+
+// Both transports call this from their existing MainActor-owned request/receive paths.
+struct AgentDesktopEvidenceQueries<Transport: Equatable> {
+  struct Ticket {
+    let request: AgentDesktopToolEvidenceWire.Request
+    let payload: AgentMcpJSONObject
+    let stream: AsyncStream<AgentDesktopEvidenceReply>
+    fileprivate let lease: UUID
+  }
+
+  enum Begin { case waiting(Ticket), retained(AgentDesktopEvidenceReply) }
+  enum Receive: Equatable { case unknown, rejected, discarded, duplicate, active, late }
+
+  private struct Entry {
+    let request: AgentDesktopToolEvidenceWire.Request
+    let payload: AgentMcpJSONObject
+    let selector: Data
+    let transport: Transport
+    let lease: UUID
+    let started: Int64
+    var signal: AsyncStream<AgentDesktopEvidenceReply>.Continuation?
+    var expires: Int64?
+    var response: AgentMcpJSONObject?
+    var bytes = 0
+    var delivered = false
+    var successor: UUID?
+  }
+
+  private let lateLimit: Int
+  private let byteLimit: Int
+  private let retention: Int64
+  private var entries: [String: Entry] = [:]
+
+  init(lateLimit: Int = 128, byteLimit: Int = 2 * 1_024 * 1_024, retention: Int64 = 120_000) {
+    self.lateLimit = max(0, lateLimit)
+    self.byteLimit = max(0, byteLimit)
+    self.retention = max(0, retention)
+  }
+
+  func started(_ nonce: String) -> Int64? { entries[nonce]?.started }
+
+  mutating func begin(_ request: AgentDesktopToolEvidenceWire.Request, payload: AgentMcpJSONObject,
+      transport: Transport, now: Int64) -> Begin? {
+    prune(now)
+    guard payload["request_id"] == .string(request.nonce), entries[request.nonce] == nil,
+          ["index", "page"].contains(payload.string("mode")) else { return nil }
+    let selector = Data(AgentMcpJSONCodec.stringify(payload.filter { $0.key != "request_id" }).utf8)
+    let retained = entries.values.filter {
+      $0.expires != nil && $0.transport == transport && $0.selector == selector &&
+        $0.request.binding == request.binding && $0.request.generation == request.generation
+    }
+    if let cached = retained.first(where: { $0.response != nil }), let payload = cached.response {
+      entries.removeValue(forKey: cached.request.nonce)
+      return .retained(.init(request: cached.request, payload: payload))
+    }
+    guard entries.values.filter({ $0.expires == nil }).count < 2 else { return nil }
+    var signal: AsyncStream<AgentDesktopEvidenceReply>.Continuation?
+    let stream = AsyncStream<AgentDesktopEvidenceReply>(bufferingPolicy: .bufferingNewest(1)) { signal = $0 }
+    guard let signal else { return nil }
+    let lease = UUID()
+    let activeLeases = Set(entries.values.filter { $0.expires == nil }.map(\.lease))
+    // Desktop deduplicates transport messages by nonce, so a retry publishes a fresh nonce.
+    for previous in retained where previous.successor.map({ !activeLeases.contains($0) }) ?? true {
+      entries[previous.request.nonce]?.successor = lease
+    }
+    entries[request.nonce] = Entry(request: request, payload: payload, selector: selector, transport: transport,
+      lease: lease, started: now, signal: signal)
+    return .waiting(Ticket(request: request, payload: payload, stream: stream, lease: lease))
+  }
+
+  mutating func receive(_ response: AgentMcpJSONObject, transport: Transport, desktop: String, now: Int64) -> Receive {
+    prune(now)
+    let nonce = response.string("request_id")
+    guard var entry = entries[nonce] else { return .unknown }
+    let mode = entry.payload.string("mode"), status = response.string("status")
+    guard entry.transport == transport, ["ready", "unavailable"].contains(status),
+          entry.request.matchesTransportResponse(response, authenticatedDesktopId: desktop, mode: mode),
+          mode != "page" || status != "ready" ||
+            ["evidence_id", "sha256", "page_index"].allSatisfy({ response[$0] == entry.payload[$0] })
+    else { return .rejected }
+    guard !entry.delivered else { return .duplicate }
+    entry.delivered = true
+    let reply = AgentDesktopEvidenceReply(request: entry.request, payload: response)
+    if let signal = entry.signal {
+      entries[nonce] = entry
+      signal.yield(reply)
+      signal.finish()
+      return .active
+    }
+    let bytes = AgentMcpJSONCodec.stringify(response).utf8.count
+    guard bytes <= byteLimit else {
+      entries.removeValue(forKey: nonce)
+      return .discarded
+    }
+    if let successor = entry.successor,
+       var active = entries.values.first(where: { $0.lease == successor && !$0.delivered && $0.signal != nil }),
+       let signal = active.signal {
+      active.delivered = true
+      entries[active.request.nonce] = active
+      entries.removeValue(forKey: nonce)
+      signal.yield(reply)
+      signal.finish()
+      return .late
+    }
+    entry.response = response
+    entry.bytes = bytes
+    entries[nonce] = entry
+    bound()
+    return entries[nonce] == nil ? .discarded : .late
+  }
+
+  mutating func timeout(_ ticket: Ticket, now: Int64) {
+    let nonce = ticket.request.nonce
+    guard var entry = entries[nonce], entry.lease == ticket.lease, !entry.delivered,
+          let signal = entry.signal else { return }
+    entry.signal = nil
+    entry.expires = now.addingReportingOverflow(retention).overflow ? Int64.max : now + retention
+    entries[nonce] = entry
+    prune(now)
+    bound()
+    signal.finish()
+  }
+
+  mutating func finish(_ ticket: Ticket, retainAfterTimeout: Bool) {
+    let nonce = ticket.request.nonce
+    if let entry = entries[nonce], entry.lease == ticket.lease {
+      if retainAfterTimeout, entry.expires != nil { return }
+      entries.removeValue(forKey: nonce)
+      entry.signal?.finish()
+    }
+    if !retainAfterTimeout {
+      entries = entries.filter { $0.value.successor != ticket.lease }
+    }
+  }
+
+  mutating func removeAll() {
+    let saved = entries
+    entries.removeAll()
+    for entry in saved.values { entry.signal?.finish() }
+  }
+
+  private mutating func prune(_ now: Int64) {
+    entries = entries.filter { $0.value.expires.map { now < $0 } ?? true }
+  }
+
+  private mutating func bound() {
+    let late = entries.values.filter { $0.expires != nil }.sorted {
+      ($0.expires ?? 0, $0.request.nonce) < ($1.expires ?? 0, $1.request.nonce)
+    }
+    var count = late.count
+    var bytes = late.reduce(0) { $0 + $1.bytes }
+    for entry in late where count > lateLimit || bytes > byteLimit {
+      entries.removeValue(forKey: entry.request.nonce)
+      count -= 1
+      bytes -= entry.bytes
+    }
+  }
+}
+
+struct AgentDesktopEvidenceRecoverySlice {
+  private var remainingQueries = 4
+  private var exceededBudget = false
+
+  mutating func claimQuery() -> Bool {
+    guard remainingQueries > 0 else {
+      exceededBudget = true
+      return false
+    }
+    remainingQueries -= 1
+    return true
+  }
+
+  func outcome(archiveFinal: Bool, isCancelled: Bool) -> AgentDesktopEvidenceQueryTrace.Stage {
+    if archiveFinal { return .sliceComplete }
+    return exceededBudget && !isCancelled ? .sliceYielded : .sliceDeferred
+  }
+}
+
 enum AgentDesktopToolEvidenceWire {
   static let contract = "galaxyssi.desktop-tool-evidence/1"
   static let maximumPageBytes = 16 * 1_024
   static let maximumOriginalBytes = 8 * 1_024 * 1_024
+
+  enum RecordedEvent: String, CaseIterable {
+    case commandExecution, fileChange, mcpToolCall, dynamicToolCall, webSearch
+
+    var tool: String { "codex." + rawValue }
+
+    // File changes are archived, but the iOS acceptance gate requires returned tool output.
+    static let acceptanceTools = allCases.filter { $0 != .fileChange }.map(\.tool)
+  }
 
   struct ArchiveReceipt: Codable, Equatable {
     let archiveId: String
@@ -74,6 +240,7 @@ enum AgentDesktopToolEvidenceWire {
     let itemType: String
     let tool: String
     let returnedOutput: Bool
+    var recordedTool: String? { RecordedEvent(rawValue: itemType)?.tool }
 
     init?(receipt: ArchiveReceipt, binding: AgentDesktopReplyBinding, original: Data) {
       guard let root = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: original),
@@ -85,14 +252,14 @@ enum AgentDesktopToolEvidenceWire {
         AgentCollaborationCloudToolEvidence.reportsFailure(AgentMcpJSONCodec.stringify(item)) ||
         item["result"]?.objectValue?["isError"] == .bool(true)
       let hasOutput: Bool
-      switch itemType {
-      case "commandExecution":
+      switch RecordedEvent(rawValue: itemType) {
+      case .commandExecution:
         hasOutput = item["exitCode"] == .int(0) && !item.string("aggregatedOutput").isBlank
-      case "mcpToolCall":
+      case .mcpToolCall:
         hasOutput = item["result"]?.objectValue?.isEmpty == false
-      case "dynamicToolCall":
+      case .dynamicToolCall:
         hasOutput = item["success"] == .bool(true) && item["contentItems"]?.arrayValue?.isEmpty == false
-      case "webSearch":
+      case .webSearch:
         hasOutput = item["results"]?.arrayValue?.isEmpty == false
       default:
         hasOutput = false
@@ -109,6 +276,7 @@ enum AgentDesktopToolEvidenceWire {
     let evidenceId: String
     let sha256: String
     let totalBytes: Int
+    var hostReadCoverage: AgentMcpJSONObject? = nil
   }
 
   struct ImportCursor: Codable, Equatable {
@@ -151,7 +319,7 @@ enum AgentDesktopToolEvidenceWire {
             (1...9_007_199_254_740_991).contains(sequence),
             totalBytes > 0,
             pageCount == (totalBytes - 1) / AgentDesktopToolEvidenceWire.maximumPageBytes + 1,
-            ["commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall", "webSearch"].contains(itemType),
+            RecordedEvent(rawValue: itemType) != nil,
             object.string("trust") == "execution_observed_not_claim_verified",
             object.string("coverage") == "provider_payload_as_received" else { return nil }
     }

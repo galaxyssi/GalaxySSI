@@ -145,6 +145,96 @@ enum AgentDesktopImageFidelity {
   }
 }
 
+enum AgentDesktopArtifactRecovery {
+  static let type = "artifact_missing_chunks_request"
+  static let scanMillis: Int64 = 15_000
+  static let idleMillis: Int64 = 10_000
+  static let maximumRequests = 8
+
+  enum Owner: Codable, Equatable {
+    case legacy(profile: String, pairing: String, task: AgentTaskIdentity, contact: String, source: String, peerChat: Bool)
+    case journal(MqttBusinessIdentity)
+
+    var journal: Bool { if case .journal = self { return true }; return false }
+  }
+
+  struct Binding: Codable, Equatable {
+    let desktopID: String
+    let routeID: String
+    let owner: Owner
+    let wireID: String
+    let wireURI: String
+    let taskID: String
+    let sha256: String
+
+    init?(payload: [String: Any], desktopID: String, routeID: String, owner: Owner) {
+      guard payload["phone_owned"] as? Bool == true, !desktopID.isBlank, !routeID.isBlank,
+            payload.string("client_route_id") == routeID else { return nil }
+      self.desktopID = desktopID
+      self.routeID = routeID
+      self.owner = owner
+      wireID = payload.string("artifact_id")
+      wireURI = payload.string("artifact_uri")
+      taskID = payload.string("task_id")
+      sha256 = payload.string("sha256")
+      guard valid else { return nil }
+    }
+
+    var valid: Bool {
+      MqttRouteProtocol.hex(wireID, count: 64) && MqttRouteProtocol.hex(sha256, count: 64) &&
+        !taskID.isBlank && taskID.utf8.count <= 512 && wireURI.utf8.count <= 2_048 &&
+        AgentDesktopArtifactStore.isGalaxySSIArtifactURI(wireURI)
+    }
+  }
+
+  struct Candidate: Equatable {
+    let localID: String
+    let binding: Binding
+  }
+
+  struct Request {
+    let binding: Binding
+    let missing: [Int]
+
+    func payload(id: String = UUID().uuidString) -> [String: Any] {
+      ["type": AgentDesktopArtifactRecovery.type, "message_id": id, "request_id": id,
+       "desktop_id": binding.desktopID, "client_route_id": binding.routeID, "artifact_id": binding.wireID,
+       "artifact_uri": binding.wireURI, "task_id": binding.taskID, "sha256": binding.sha256,
+       "missing_chunks": missing]
+    }
+  }
+
+  struct State: Codable {
+    let binding: Binding
+    let localURI: String
+    var progressAt: Int64
+    var nextAt: Int64 = 0
+    var attempts: Int = 0
+
+    func isDue(now: Int64) -> Bool {
+      guard progressAt >= 0, progressAt <= now, now - progressAt >= AgentDesktopArtifactRecovery.idleMillis else {
+        return now >= 0 && progressAt > now && progressAt - now > 300_000
+      }
+      return nextAt <= now || nextAt - now > 300_000
+    }
+  }
+
+  static func delay(attempt: Int) -> Int64 { min(300_000, 30_000 * (1 << max(0, min(attempt, 5) - 1))) }
+
+  static func acceptsTransientRequest(_ payload: [String: Any], desktop: String, route: String?) -> Bool {
+    guard payload.string("type") == type, payload.string("desktop_id") == desktop,
+          route == payload.string("client_route_id"), !desktop.isBlank, route?.isBlank == false,
+          let values = payload["missing_chunks"] as? [Any], (1...8).contains(values.count),
+          MqttRouteProtocol.hex(payload.string("artifact_id"), count: 64),
+          MqttRouteProtocol.hex(payload.string("sha256"), count: 64), !payload.string("task_id").isBlank,
+          AgentDesktopArtifactStore.isGalaxySSIArtifactURI(payload.string("artifact_uri"))
+    else { return false }
+    let indices = values.compactMap { try? MqttRouteProtocol.integer(["index": $0], "index") }
+    return indices.count == values.count && Set(indices).count == indices.count &&
+      indices.allSatisfy { (0..<256).contains($0) }
+  }
+}
+
 final class AgentDesktopArtifactStore {
   static let defaultRootDirectoryName = "desktop-artifacts-v2"
   static let maximumMqttArtifactBytes: Int64 = 64 * 1_024 * 1_024
@@ -176,7 +266,8 @@ final class AgentDesktopArtifactStore {
     )
   }
 
-  func ingest(_ payload: [String: Any]) throws -> AgentDesktopArtifactIngestResult {
+  func ingest(_ payload: [String: Any], recovery: AgentDesktopArtifactRecovery.Binding? = nil,
+              receivedAt: Int64? = nil) throws -> AgentDesktopArtifactIngestResult {
     try locked {
       let typed = try AgentDesktopArtifactChunkPayload(payload)
       try AgentDesktopImageFidelity.validateVersion(name: typed.name, uri: typed.artifactURI, mime: typed.mimeType,
@@ -223,7 +314,8 @@ final class AgentDesktopArtifactStore {
 
       let bytes = typed.chunkData
       let chunkURL = incoming.appendingPathComponent("\(typed.chunkIndex).chunk", isDirectory: false)
-      if fileManager.fileExists(atPath: chunkURL.path) {
+      let newChunk = !fileManager.fileExists(atPath: chunkURL.path)
+      if !newChunk {
         let existing = try cipher.read(
           from: chunkURL,
           purpose: chunkPurpose(artifactId: typed.artifactId, index: typed.chunkIndex)
@@ -246,6 +338,10 @@ final class AgentDesktopArtifactStore {
         ) == Int64(expectedChunkSize(total: typed.sizeBytes, index: $0))
       }
       if !complete {
+        if let recovery, recovery.taskID == typed.taskId, recovery.sha256 == typed.sha256 {
+          rememberRecovery(recovery, localID: typed.artifactId, localURI: typed.artifactURI, directory: incoming, newChunk: newChunk,
+            now: receivedAt ?? nowMillis())
+        }
         return AgentDesktopArtifactIngestResult(
           completed: false,
           artifactId: typed.artifactId,
@@ -299,6 +395,72 @@ final class AgentDesktopArtifactStore {
   }
 
   var supportsStreamedBlobArtifacts: Bool { cipher is GalaxySSILocalAttachmentStore }
+
+  private func recoveryFile(_ directory: URL) -> URL { directory.appendingPathComponent("recovery.saenc") }
+
+  private func recoveryPurpose(_ localID: String) -> String { "desktop-artifact-recovery:" + localID }
+
+  private func readRecovery(_ directory: URL, id: String) throws -> AgentDesktopArtifactRecovery.State? {
+    let file = recoveryFile(directory), purpose = recoveryPurpose(id)
+    guard fileManager.fileExists(atPath: file.path) else { return nil }
+    guard let size = cipher.plaintextSize(of: file, purpose: purpose), (1...16_384).contains(size)
+    else { throw AgentDesktopArtifactStoreError.integrity("Invalid partial artifact recovery state") }
+    return try JSONDecoder().decode(AgentDesktopArtifactRecovery.State.self, from: cipher.read(from: file, purpose: purpose))
+  }
+
+  private func rememberRecovery(_ binding: AgentDesktopArtifactRecovery.Binding, localID: String, localURI: String, directory: URL,
+                                newChunk: Bool, now: Int64) {
+    guard now >= 0, binding.valid else { return }
+    do {
+      let saved = try readRecovery(directory, id: localID)
+      guard saved == nil || (newChunk && saved?.binding == binding && saved?.localURI == localURI) else { return }
+      let state = AgentDesktopArtifactRecovery.State(binding: binding, localURI: localURI, progressAt: now)
+      try cipher.write(JSONEncoder().encode(state), to: recoveryFile(directory), purpose: recoveryPurpose(localID))
+    } catch {
+      // Recovery metadata is optional; a valid chunk still follows the ordinary storage and receipt path.
+    }
+  }
+
+  func recoveryCandidates(journal: Bool, now: Int64) -> [AgentDesktopArtifactRecovery.Candidate] {
+    (try? locked {
+      let directories = try fileManager.contentsOfDirectory(at: incomingDirectory, includingPropertiesForKeys: nil)
+      return directories.compactMap { directory -> (Int64, AgentDesktopArtifactRecovery.Candidate)? in
+        let id = directory.lastPathComponent
+        guard MqttRouteProtocol.hex(id, count: 64), let state = try? readRecovery(directory, id: id),
+              state.binding.valid, state.binding.owner.journal == journal, state.isDue(now: now) else { return nil }
+        return (state.progressAt, .init(localID: id, binding: state.binding))
+      }.sorted { ($0.0, $0.1.localID) < ($1.0, $1.1.localID) }.map { $0.1 }
+    }) ?? []
+  }
+
+  func claimRecovery(_ candidate: AgentDesktopArtifactRecovery.Candidate, now: Int64) throws
+    -> AgentDesktopArtifactRecovery.Request? {
+    try locked {
+      let id = candidate.localID
+      guard MqttRouteProtocol.hex(id, count: 64), (0...(Int64.max - 300_000)).contains(now) else { return nil }
+      let directory = incomingDirectory.appendingPathComponent(id, isDirectory: true)
+      guard var state = try readRecovery(directory, id: id), state.binding == candidate.binding,
+            state.binding.valid, state.isDue(now: now) else { return nil }
+      let url = directory.appendingPathComponent("manifest.json")
+      guard let size = (try url.resourceValues(forKeys: [.fileSizeKey])).fileSize, (1...16_384).contains(size)
+      else { return nil }
+      let manifest = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(contentsOf: url))
+      guard manifest["artifact_id"] == .string(id), manifest["task_id"] == .string(state.binding.taskID),
+            manifest["artifact_uri"] == .string(state.localURI), manifest["sha256"] == .string(state.binding.sha256),
+            case .int(let bytes)? = manifest["size_bytes"],
+            (1...Self.maximumMqttArtifactBytes).contains(bytes), case .int(let count)? = manifest["chunk_count"],
+            (1...256).contains(count), (bytes + 262_143) / 262_144 == count else { return nil }
+      let missing = (0..<Int(count)).lazy.filter {
+        !self.fileManager.fileExists(atPath: directory.appendingPathComponent("\($0).chunk").path)
+      }.prefix(8)
+      guard !missing.isEmpty else { return nil }
+      state.attempts = min(max(0, state.attempts), 4) + 1
+      state.nextAt = now + AgentDesktopArtifactRecovery.delay(attempt: state.attempts)
+      if state.progressAt > now { state.progressAt = now }
+      try cipher.write(JSONEncoder().encode(state), to: recoveryFile(directory), purpose: recoveryPurpose(id))
+      return .init(binding: state.binding, missing: Array(missing))
+    }
+  }
 
   func stageBlobArtifact() throws -> GalaxySSILocalAttachmentStore.BlobStaging? {
     try (cipher as? GalaxySSILocalAttachmentStore)?.stageBlob(in: blobStagingDirectory)
