@@ -70,6 +70,7 @@ final class AgentRemotePilotProtocolTests: XCTestCase {
     let first = try XCTUnwrap(saved.slots.first)
     XCTAssertEqual(first.dispatches.map(\.node), [.draft, .review, .final])
     XCTAssertEqual(first.dispatches.map(\.person), ["analyst", "analyst", "analyst"])
+    XCTAssertEqual(first.dispatches.map(\.transportInstance), ["analyst", "analyst", "analyst"])
     XCTAssertEqual(Set(first.dispatches.map(\.sourceID)).count, 3)
     XCTAssertFalse(first.remoteCleanupConfirmed)
     XCTAssertThrowsError(try Pilot.Journal(directory: root, plan: plan, digest: digest, selection: selection,
@@ -82,6 +83,23 @@ final class AgentRemotePilotProtocolTests: XCTestCase {
     try await journal.confirmCleanup(index: 0, identity: identity)
     let second = try await journal.start(1)
     XCTAssertNotEqual(identity, second)
+    let teamSlot = plan.slots[1]
+    let teamGate = Pilot.Gate(plan: plan, slot: teamSlot, identity: second, index: 1, journal: journal, deadline: .max)
+    let teamHandle = try runtime.start(definition: plan.definition(for: teamSlot, identity: second),
+      request: second.request(goal: teamSlot.prompt), worker: ClosureAgentTeamMemberWorker { context in
+        let prepared = try await teamGate.admit(context, selection: selected)
+        return AgentSubagentOutput(content: "Team result for " + prepared.receipt.node.rawValue)
+      })
+    let teamResult = try await teamHandle.wait()
+    XCTAssertEqual(teamResult.state, .succeeded)
+    let teamReport = await journal.snapshot()
+    XCTAssertEqual(teamReport.slots[1].dispatches.map(\.transportInstance), ["analyst", "reviewer", "analyst"])
+    let binding = Pilot.AppBinding(profile: "profile", selectionConversation: "fixture-selection", selection: selected,
+      contact: selected.targetId, desktop: "desktop", desktopFingerprint: "fingerprint", clientRoute: "route", invocation: [:])
+    let scope = try Pilot.desktopCaptureScope(binding: binding, slot: teamReport.slots[1])
+    XCTAssertEqual(scope["format"], .string("galaxyssi.codex-trial-scope.v2"))
+    let expectedSources = teamReport.slots[1].dispatches.map { AgentMcpJSONValue.string($0.sourceID.uuidString) }
+    XCTAssertEqual(scope["assignments"]?.arrayValue?.compactMap { $0.objectValue?["source_message_id"] }, expectedSources)
   }
 
   #if DEBUG
@@ -137,6 +155,11 @@ final class AgentRemotePilotProtocolTests: XCTestCase {
         journal: journal, root: root, coordinator: coordinator, binding: binding)
       let report = await journal.snapshot()
       guard report.slots[index].remoteCleanupConfirmed else { throw Pilot.Failure.cleanup }
+      if succeeded {
+        let scope = try Pilot.desktopCaptureScope(binding: binding, slot: report.slots[index])
+        try JSONEncoder().encode(scope).write(to: root.appendingPathComponent(slot.id + ".desktop-scope.json"),
+          options: .withoutOverwriting)
+      }
       XCTAssertTrue(succeeded, "Remote slot failed; inspect its preserved report.")
     }
     #endif
@@ -172,6 +195,7 @@ final class AgentRemotePilotProtocolTests: XCTestCase {
         let prepared = try await gate.admit(context, selection: current.selection)
         let result = try await coordinator.sendRemotePilotMember(prompt: prepared.prompt, runID: identity.run,
           conversation: identity.group, turn: identity.turn, member: prepared.receipt.node.rawValue,
+          transportInstance: prepared.receipt.transportInstance,
           source: prepared.receipt.sourceID, contactID: binding.contact, desktopID: binding.desktop,
           fingerprint: binding.desktopFingerprint, routeID: binding.clientRoute, profile: binding.profile,
           selectionConversation: binding.selectionConversation, selection: binding.selection,
