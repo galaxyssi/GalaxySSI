@@ -492,6 +492,10 @@ struct CloudModelStreamMutableConversation {
          AgentCollaborationGoalAssessmentPolicy.workInventoryMode, AgentCollaborationGoalAssessmentPolicy.workInputMode,
          AgentCollaborationGoalAssessmentPolicy.assessmentRepairMode]
       : ["publish", "status", "receipt", "list", "validate_assessment"]
+    if assessmentOnly {
+      modes.append(AgentCollaborationGoalAssessmentPolicy.establishVerificationMode)
+      appendResearchGuidance(AgentCollaborationGoalAssessmentPolicy.verificationInstructions)
+    }
     if canRunGoalWork {
       modes += [AgentCollaborationGoalAssessmentPolicy.runWorkMode, AgentCollaborationGoalAssessmentPolicy.runReadyWorkMode]
     }

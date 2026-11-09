@@ -6057,6 +6057,96 @@ extension GalaxySSIStoreTests {
     }
   }
 
+  func testQualifiedVerificationRouteRequiresOpenUnclaimedCriteriaAndPersistsExactAmendment() throws {
+    typealias Policy = AgentCollaborationGoalAssessmentPolicy
+    let suite = "verification-route-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: folder) }
+    let secrets = InMemorySecretStore(), file = folder.appendingPathComponent("history.sqlite3")
+    func open() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    }
+    var team = durableTeamSnapshot("verification")
+    team.goal = "Evaluate only the supplied numeric cases"
+    team.members[0].dispatchCheckpoint = .accepted
+    team.members[1].dispatchCheckpoint = .accepted
+    XCTAssertTrue(open().upsert(team))
+    func scope(_ index: Int) -> AgentCollaborationToolEvidenceScope {
+      .init(runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
+        memberId: team.members[index].memberId, sourceId: team.members[index].sourceMessageId)
+    }
+    func checkpoint(revision: Int64? = nil) throws -> AgentCollaborationGoalCheckpoint {
+      try XCTUnwrap(open().goalCheckpoint(runId: team.supervisorRunId, conversationId: team.conversationId,
+        turnId: team.taskId, revision: revision))
+    }
+    let numeric: AgentMcpJSONObject = ["id": .string("cases"),
+      "requirement": .string(AgentCollaborationNumericTrial.requirement), "verification": .string("computational"),
+      "status": .string("open"), "evidence": .array([]), "required_observations": .array([.object([
+        "origin": .string("desktop_codex_tool"), "tool": .string("codex.commandExecution")
+      ])])]
+    let documentary: AgentMcpJSONObject = ["id": .string("summary"), "requirement": .string("Explain limitations"),
+      "verification": .string("documentary"), "status": .string("open"), "evidence": .array([])]
+    func artifact(_ first: AgentMcpJSONObject, _ second: AgentMcpJSONObject? = nil, decision: String = "continue") -> AgentMcpJSONValue {
+      .string(AgentMcpJSONCodec.stringify(["format": .string("galaxyssi.goal-assessment.v1"), "summary": .string("Bind the cases"),
+        "decision": .string(decision), "criteria": .array([.object(first), .object(second ?? documentary)]),
+        "work": .array([]), "blockers": .array([])]))
+    }
+    let registered = try open().publishCollaborationMilestone(["mode": .string(Policy.establishContractMode),
+      "artifact": artifact(numeric)], scope: scope(0))
+    XCTAssertEqual(registered["revision"], .int(1))
+    let oldHash = try XCTUnwrap(registered["criteria_sha256"]?.strictStringValue)
+    let before = try checkpoint()
+    var ready = numeric
+    ready["evidence_kind"] = .string("observed")
+    ready["validator"] = .object(["id": .string(AgentCollaborationNumericTrial.validatorId),
+      "variables": .array([.string("x")]), "cases": .array([.object([
+        "id": .string("case"), "input": .object(["x": .int(3)]), "expected": .int(3), "absolute_tolerance": .int(0)
+      ])])])
+    func request(_ value: AgentMcpJSONValue, expected: Int64 = 1) -> AgentMcpJSONObject {
+      ["mode": .string(Policy.establishVerificationMode), "expected_revision": .int(expected), "artifact": value]
+    }
+    let valid = request(artifact(ready))
+    XCTAssertThrowsError(try open().publishCollaborationMilestone(valid, scope: scope(1)))
+    XCTAssertEqual(try open().publishCollaborationMilestone(valid, scope: scope(0))["status"],
+      .string("verification_work_in_flight"))
+    team.members[1].status = .succeeded
+    team.updatedAtMillis += 1
+    XCTAssertTrue(open().upsert(team))
+    var invalidSecond = documentary
+    invalidSecond["requirement"] = .string("Omit limitations")
+    let invalid: [AgentMcpJSONValue] = [artifact(ready, invalidSecond), artifact(ready, decision: "achieved"),
+      artifact(ready.merging(["required_observations": .array([])]) { _, next in next }),
+      artifact(ready.merging(["evidence": .array([.string("claimed")])]) { _, next in next }),
+      artifact(ready.merging(["review": .null]) { _, next in next }),
+      artifact(ready.merging(["validator": .object(["id": .string("model_claimed_pass")])]) { _, next in next })]
+    for draft in invalid {
+      XCTAssertEqual(try open().publishCollaborationMilestone(request(draft), scope: scope(0))["status"],
+        .string("verification_route_rejected"))
+      XCTAssertEqual(try checkpoint(), before)
+    }
+    let bound = try open().publishCollaborationMilestone(valid, scope: scope(0))
+    XCTAssertEqual(bound["revision"], .int(2))
+    XCTAssertEqual(bound["status"], .string("verification_route_established"))
+    XCTAssertEqual(bound["goal_accepted"], .bool(false))
+    XCTAssertEqual(bound["work_dispatched"], .bool(false))
+    XCTAssertEqual(try checkpoint(revision: 1), before)
+    let current = try checkpoint()
+    XCTAssertEqual(current.contract.first?.validator, ready["validator"]?.objectValue)
+    XCTAssertEqual(current.contract.first?.required_observations, before.contract.first?.required_observations)
+    XCTAssertEqual(current.liveGraph, before.liveGraph)
+    XCTAssertThrowsError(try open().readPinnedCollaborationGoal(scope: scope(0), section: "criteria", expectedHash: oldHash))
+    XCTAssertEqual(try open().readPinnedCollaborationGoal(scope: scope(0), section: "criteria")["sha256"], bound["criteria_sha256"])
+    XCTAssertEqual(try open().publishCollaborationMilestone(valid, scope: scope(0))["replayed"], .bool(true))
+    XCTAssertEqual(try open().publishCollaborationMilestone(request(artifact(ready), expected: 2), scope: scope(0))["status"],
+      .string("verification_route_rejected"))
+    var advanced = current
+    advanced.revision = 3
+    advanced.completedWorkIds = ["completed-fixture"]
+    XCTAssertTrue(open().advanceGoalCheckpoint(advanced, expectedRevision: 2))
+    XCTAssertEqual(try checkpoint().contract, current.contract)
+  }
+
   func testNativeReleaseHistoryPagesOnlyVisibleExactVersionAndPreservesOriginalReceipts() throws {
     typealias History = AgentCollaborationNativeReleaseHistory
     let suite = "native-release-history-\(UUID().uuidString)"

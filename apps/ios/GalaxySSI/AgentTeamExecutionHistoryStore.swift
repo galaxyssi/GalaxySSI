@@ -2638,6 +2638,9 @@ final class AgentTeamExecutionHistoryStore {
     if mode == AgentCollaborationGoalAssessmentPolicy.establishContractMode {
       return try establishCollaborationGoalContract(input, scope: scope)
     }
+    if mode == AgentCollaborationGoalAssessmentPolicy.establishVerificationMode {
+      return try establishCollaborationVerification(input, scope: scope)
+    }
     if mode == AgentCollaborationGoalAssessmentPolicy.appendWorkMode {
       return try admitCollaborationWork(input, scope: scope, recruitmentTemplates: recruitmentTemplates, roster: recruitmentRoster)
     }
@@ -4690,6 +4693,71 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
+  private func establishCollaborationVerification(_ input: AgentMcpJSONObject,
+      scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+    typealias Policy = AgentCollaborationGoalAssessmentPolicy
+    guard Set(input.keys) == ["mode", "artifact", "expected_revision"],
+          case .int(let expected)? = input["expected_revision"], (1..<Int64.max).contains(expected),
+          let raw = input["artifact"]?.strictStringValue, !raw.isBlank, raw.utf8.count <= Policy.assessmentDraftLimit
+    else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    struct Receipt: Codable {
+      let digest: String
+      let reply: AgentMcpJSONObject
+    }
+    let digest = Self.replyHash(raw)
+    let key = "goal-verification-route:" + scope.ownershipDigest + ":" + String(expected)
+    return try access { database in
+      let team = try Self.activeGoalCoordinator(scope, database: database)
+      if let saved = try database.researchRecord(Receipt.self, conversationId: scope.conversationId, key: key, revision: 0) {
+        guard saved.digest == digest else { throw AgentTeamHistoryDatabase.Failure.stale }
+        var result = saved.reply
+        result["replayed"] = .bool(true)
+        return result
+      }
+      guard var next = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first,
+            next.revision == expected, next.conversationId == scope.conversationId, next.turnId == scope.turnId,
+            next.phase == .working else { throw AgentTeamHistoryDatabase.Failure.stale }
+      func rejected(_ status: String) -> AgentMcpJSONObject {
+        ["success": .bool(false), "status": .string(status), "revision": .int(expected),
+         "work_dispatched": .bool(false), "goal_accepted": .bool(false)]
+      }
+      let amended: [Policy.Criterion]
+      switch Policy.verificationAmendment(raw, preserving: next.contract) {
+      case .success(let criteria): amended = criteria
+      case .failure(let issue):
+        return rejected("verification_route_rejected").merging(["failure": issue.wire,
+          "field_path": .string(issue.path)]) { existing, _ in existing }
+      }
+      guard !team.members.contains(where: { member in
+        member.memberId != scope.memberId && member.deliveryMode != .ignore && !member.status.isTerminal &&
+          (member.dispatchCheckpoint == .dispatching || member.dispatchCheckpoint == .accepted)
+      }) else { return rejected("verification_work_in_flight") }
+      for work in next.liveGraph?.work ?? [] {
+        if let run = try database.researchRecord(AgentCollaborationGoalWorkRun.self, conversationId: scope.conversationId,
+          key: Self.goalWorkKey(work.id, scope: scope), revision: 0) {
+          guard run.owner == scope, run.workID == work.id else { throw AgentTeamHistoryDatabase.Failure.stale }
+          if run.state == .running { return rejected("verification_work_in_flight") }
+        }
+      }
+      let bound = zip(next.contract, amended).compactMap { before, after in
+        before.validator == nil && after.validator != nil ? AgentMcpJSONValue.string(after.id) : nil
+      }
+      next.contract = amended
+      next.revision += 1
+      next.completedWorkIds = []
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys]
+      let criteriaHash = MqttRouteProtocol.digest(try encoder.encode(amended))
+      let response: AgentMcpJSONObject = ["success": .bool(true), "status": .string("verification_route_established"),
+        "revision": .int(next.revision), "criteria_sha256": .string(criteriaHash), "criteria": .array(bound),
+        "replayed": .bool(false), "work_dispatched": .bool(false), "goal_accepted": .bool(false)]
+      try database.insertGoalCheckpoint(next)
+      try database.insertResearchRecord(Receipt(digest: digest, reply: response),
+        conversationId: scope.conversationId, key: key, revision: 0)
+      return response
+    }
+  }
+
   func goalCheckpoint(runId: String, conversationId: String, turnId: String,
                       revision: Int64? = nil) -> AgentCollaborationGoalCheckpoint? {
     try? access { database -> AgentCollaborationGoalCheckpoint? in
@@ -4770,8 +4838,11 @@ final class AgentTeamExecutionHistoryStore {
 
   private static func pinnedGoalCriteria(_ scope: AgentCollaborationToolEvidenceScope, database: AgentTeamHistoryDatabase)
     throws -> Data? {
-    guard let pinned = try database.goalCheckpoints(runId: scope.runId, revision: 1, newestOnly: true).first else { return nil }
-    guard pinned.conversationId == scope.conversationId, pinned.turnId == scope.turnId,
+    guard let original = try database.goalCheckpoints(runId: scope.runId, revision: 1, newestOnly: true).first
+    else { return nil }
+    guard original.conversationId == scope.conversationId, original.turnId == scope.turnId,
+          let pinned = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first,
+          pinned.conversationId == scope.conversationId, pinned.turnId == scope.turnId,
           !pinned.contract.isEmpty else { throw AgentTeamHistoryDatabase.Failure.stale }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
@@ -4799,11 +4870,12 @@ final class AgentTeamExecutionHistoryStore {
     let prior = try database.goalCheckpoints(runId: checkpoint.runId, newestOnly: checkpoint.completedWorkIds.isEmpty)
     guard (prior.first?.revision ?? 0) == expectedRevision,
           prior.first?.phase != .accepted,
+          prior.first.map({ $0.contract == checkpoint.contract }) ?? true,
           (prior.first?.liveGraph?.work ?? []).elementsEqual(
             (checkpoint.liveGraph?.work ?? []).prefix(prior.first?.liveGraph?.work.count ?? 0)),
           prior.allSatisfy({
             $0.conversationId == checkpoint.conversationId && $0.turnId == checkpoint.turnId &&
-              $0.contract == checkpoint.contract && $0.completedWorkIds.isDisjoint(with: checkpoint.completedWorkIds)
+              $0.completedWorkIds.isDisjoint(with: checkpoint.completedWorkIds)
           }) else { return false }
     let priorGraph = prior.first?.liveGraph ?? .init()
     guard let expectedBindings = priorGraph.appendingInputBindings(inputRevisions),

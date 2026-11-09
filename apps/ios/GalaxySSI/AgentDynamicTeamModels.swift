@@ -1082,7 +1082,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
   }
 
   static func isCoordinatorMutation(_ mode: String) -> Bool {
-    mode == establishContractMode || mode == appendWorkMode
+    mode == establishContractMode || mode == appendWorkMode || mode == establishVerificationMode
   }
 
   static func initialContract(_ raw: String) -> [Criterion]? {
