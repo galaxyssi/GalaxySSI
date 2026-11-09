@@ -282,6 +282,21 @@ enum AgentDesktopToolEvidenceWire {
   struct ImportCursor: Codable, Equatable {
     var sequence: Int64 = 0
     var archiveFinal = false
+    var skippedOversized: Int64? = nil
+    var skippedCountComplete: Bool? = nil
+
+    func advancing(to next: Int64, final: Bool, skipped: Int) -> Self? {
+      guard !archiveFinal, sequence >= 0, next >= sequence, next <= 9_007_199_254_740_991,
+            next > sequence || final, (0...20).contains(skipped), Int64(skipped) <= next - sequence,
+            (0...sequence).contains(skippedOversized ?? 0) else { return nil }
+      return .init(sequence: next, archiveFinal: final, skippedOversized: (skippedOversized ?? 0) + Int64(skipped),
+        skippedCountComplete: skippedCountComplete ?? (sequence == 0))
+    }
+  }
+
+  static func coverageKey(run: String, turn: String, member: String, source: String, generation: Int64) -> String {
+    "desktop-import-coverage:" + AgentMcpJSONCodec.sha256(["run": .string(run), "turn": .string(turn),
+      "member": .string(member), "source": .string(source), "generation": .int(generation)])
   }
 
   struct ImportJob: Codable {
@@ -331,6 +346,8 @@ enum AgentDesktopToolEvidenceWire {
     let hasMore: Bool
     let archiveFinal: Bool
     let inlineOriginals: [String: Data]
+
+    var skippedOversized: Int { entries.filter { !$0.canImport }.count }
   }
 
   struct Request {
