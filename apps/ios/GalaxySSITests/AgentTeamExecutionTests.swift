@@ -77,6 +77,108 @@ extension GalaxySSIStoreTests {
       bindings: [binding(revision: 1)]), scope: scope))
   }
 
+  func testCompletionWaitCorrectionPinsInputWithoutSkippingProtectedBarrier() throws {
+    let suite = "completion-correction-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    func open() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]),
+        fileURL: root.appendingPathComponent("history.sqlite3"))
+    }
+    let history = open()
+    var team = durableTeamSnapshot("completion-correction")
+    team.goal = "Review the reading after resource release"
+    team.members[0].dispatchCheckpoint = .accepted
+    XCTAssertTrue(history.upsert(team))
+    func scope(_ index: Int) -> AgentCollaborationToolEvidenceScope {
+      let member = team.members[index]
+      return .init(runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
+        memberId: member.memberId, sourceId: member.sourceMessageId)
+    }
+    let coordinator = scope(0), worker = scope(1)
+    XCTAssertTrue(history.advanceGoalCheckpoint(.init(runId: coordinator.runId, conversationId: coordinator.conversationId,
+      turnId: coordinator.turnId, revision: 1, phase: .working,
+      contract: [.init(id: "reading", requirement: "Review the reading", verification: .documentary, status: .open,
+        evidence_kind: nil, evidence: [])], completedWorkIds: []), expectedRevision: 0))
+    func append(_ id: String, _ revision: Int64, work: [AgentMcpJSONValue] = [], field: String? = nil,
+                requests: [AgentMcpJSONValue] = []) -> AgentMcpJSONObject {
+      var graph: AgentMcpJSONObject = ["format": .string("galaxyssi.work-expansion.v1"), "work": .array(work)]
+      if let field { graph[field] = .array(requests) }
+      return ["mode": .string("append_work"), "milestone_id": .string(id), "expected_revision": .int(revision),
+        "artifact": .string(AgentMcpJSONCodec.stringify(graph))]
+    }
+    func item(_ id: String, _ dependsOn: [String] = []) -> AgentMcpJSONObject {
+      ["id": .string(id), "member": .string(worker.memberId), "assignment": .string("Original assignment: " + id),
+       "stage": .string("VERIFY"), "depends_on": .array(dependsOn.map(AgentMcpJSONValue.string))]
+    }
+    var consumer = item("check", ["measure", "release"])
+    consumer["completion_barriers"] = .array([.object(["work_id": .string("release"), "reason": .string("Free the instrument")])])
+    var contradictory = consumer
+    contradictory["data_dependencies"] = .array([.object(["work_id": .string("release"), "requirement": .string("Release data")])])
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(append("invalid-seed", 1,
+      work: [.object(item("measure")), .object(item("release")), .object(contradictory)]), scope: coordinator))
+    _ = try history.publishCollaborationMilestone(append("seed", 1,
+      work: [.object(item("measure")), .object(item("release")), .object(consumer)]), scope: coordinator)
+    XCTAssertTrue(try history.isGoalWorkInputProducer("measure", scope: coordinator))
+    XCTAssertFalse(try history.isGoalWorkInputProducer("release", scope: coordinator))
+    let measure = try history.claimGoalWork(history.goalWork("measure", scope: coordinator).0, scope: coordinator, now: 2).run
+    let release = try history.claimGoalWork(history.goalWork("release", scope: coordinator).0, scope: coordinator, now: 2).run
+    let publication = try history.publishGoalWorkInput(measure, id: "original", payload: ["reading": .int(42)], now: 3)
+    let token = try XCTUnwrap(publication["token"])
+    let contractQuery: AgentMcpJSONObject = ["mode": .string("work_inventory"), "work_id": .string("check")]
+    let original = try history.publishCollaborationMilestone(contractQuery, scope: coordinator)
+    XCTAssertEqual(original["input_revision"], .int(0))
+    XCTAssertEqual(original["can_request_correction"], .bool(true))
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(contractQuery, scope: worker))
+    func request(_ producer: String, revision: Int64 = 0, correction: Bool = true,
+                 token exact: AgentMcpJSONValue? = nil) -> AgentMcpJSONValue {
+      var input: AgentMcpJSONObject = ["dependency": .string(producer), "uses_milestones": .array([exact ?? token])]
+      if correction {
+        input["requirement"] = .string("Read the frozen sample")
+        input["completion_not_required_because"] = .string("The original value is already frozen; no operation is skipped")
+      }
+      return .object(["work_id": .string("check"), "expected_revision": .int(revision), "reason": .string("Correct wait"),
+        "inputs": .array([.object(input)])])
+    }
+    let corrections = "revise_input_dependencies"
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(append("barrier", 2, field: corrections,
+      work: [.object(item("not-added"))], requests: [request("release")]), scope: coordinator))
+    XCTAssertThrowsError(try history.goalWork("not-added", scope: coordinator))
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(append("wrong-token", 2, field: corrections,
+      requests: [request("measure", token: .string(String(repeating: "f", count: 64)))]), scope: coordinator))
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(append("wrong-mode", 2, field: "rebind_inputs",
+      requests: [request("measure")]), scope: coordinator))
+    let revise = append("revise", 2, field: corrections, requests: [request("measure")])
+    XCTAssertEqual(try history.publishCollaborationMilestone(revise, scope: coordinator)["input_revisions"]?.objectValue?["check"], .int(1))
+    let reopened = open()
+    XCTAssertEqual(try reopened.publishCollaborationMilestone(revise, scope: coordinator)["replayed"], .bool(true))
+    let updated = try reopened.publishCollaborationMilestone(contractQuery, scope: coordinator)
+    XCTAssertEqual(updated["input_revision"], .int(1))
+    XCTAssertEqual(updated["work"]?.objectValue?["assignment"], original["work"]?.objectValue?["assignment"])
+    XCTAssertEqual(updated["work"]?.objectValue?["depends_on"], original["work"]?.objectValue?["depends_on"])
+    XCTAssertEqual(updated["completion_corrections"]?.arrayValue?.first?.objectValue?["assessment"],
+      .string("coordinator_assertion_not_verification"))
+    XCTAssertFalse(try reopened.readyGoalWork(scope: coordinator, excluding: [], limit: 3, now: 4).contains("check"))
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(append("stale", 3, field: "rebind_inputs",
+      requests: [request("measure", correction: false)]), scope: coordinator))
+    let secondPublication = try reopened.publishGoalWorkInput(measure, id: "new-reading", payload: ["reading": .int(43)], now: 4)
+    let secondToken = try XCTUnwrap(secondPublication["token"])
+    let rebind = append("rebind", 3, field: "rebind_inputs",
+      requests: [request("measure", revision: 1, correction: false, token: secondToken)])
+    XCTAssertEqual(try reopened.publishCollaborationMilestone(rebind, scope: coordinator)["input_revisions"]?.objectValue?["check"], .int(2))
+    _ = try reopened.finishGoalWork(release, output: "Released", interrupted: false, now: 4)
+    XCTAssertTrue(try reopened.readyGoalWork(scope: coordinator, excluding: [], limit: 3, now: 5).contains("check"))
+    let claim = try reopened.claimGoalWork(reopened.goalWork("check", scope: coordinator).0, scope: coordinator, now: 5)
+    XCTAssertEqual(claim.run.inputRevision, 2)
+    XCTAssertEqual(claim.dependencies.first?["versions"]?.arrayValue?.first?.objectValue?["token"], secondToken)
+    XCTAssertEqual(claim.dependencies.last?["output"], .string("Released"))
+    XCTAssertEqual(try reopened.goalWork("measure", scope: coordinator).1?.state, .running)
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(append("late", 4, field: "rebind_inputs",
+      requests: [request("measure", revision: 2, correction: false)]), scope: coordinator))
+  }
+
   func testScopedTeamHistoryRoutesExactReadsWithoutJoiningDefaultRecovery() throws {
     let suite = "scoped-team-history-\(UUID())"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -771,13 +873,29 @@ extension GalaxySSIStoreTests {
     let catalog = try reopened.recallCollaborationOriginal(rules, scope: scope)
     XCTAssertEqual(catalog["trust"], .string("host_schema_not_execution_authority"))
     XCTAssertTrue(catalog.string("content").contains("workflows"))
+    XCTAssertTrue(catalog.string("content").contains("coordination"))
     XCTAssertFalse(catalog.string("content").contains("self_research"))
+    let coordination: AgentMcpJSONObject = ["mode": .string("evolution_rules"), "topic": .string("coordination")]
+    let rulesPage = try reopened.recallCollaborationOriginal(coordination, scope: scope)
+    XCTAssertEqual(rulesPage["topic"], .string("coordination"))
+    XCTAssertEqual(rulesPage["next_offset"], .null)
+    let contract = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(rulesPage.string("content").utf8))
+    XCTAssertEqual(contract["grants_permissions"], .bool(false))
+    XCTAssertTrue(contract.string("contract").contains("review_targets"))
+    XCTAssertTrue(contract.string("contract").contains("template_member"))
+    XCTAssertTrue(contract.string("contract").contains(AgentCollaborationNumericTrial.requirement))
+    XCTAssertFalse(contract.string("contract").contains("rebind_inputs"))
+    var continuation = coordination
+    continuation["offset"] = .int(40)
+    let coordinationSuffix = try reopened.recallCollaborationOriginal(continuation, scope: scope)
+    XCTAssertEqual(coordinationSuffix.string("content"), String(rulesPage.string("content").dropFirst(40)))
     let suffix = try reopened.recallCollaborationOriginal(
       ["mode": .string("evolution_rules"), "topic": .string("catalog"), "offset": .int(10)], scope: scope)
     XCTAssertEqual(suffix.string("content"), String(catalog.string("content").dropFirst(10)))
     var foreignRulesScope = scope
     foreignRulesScope.sourceId = "foreign-source"
     XCTAssertThrowsError(try reopened.recallCollaborationOriginal(rules, scope: foreignRulesScope))
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(coordination, scope: foreignRulesScope))
     let unknown = try reopened.recallCollaborationOriginal(
       ["mode": .string("evolution_rules"), "topic": .string("unknown")], scope: scope)
     XCTAssertEqual(unknown["error"], .string("unknown_evolution_topic"))
@@ -3296,6 +3414,10 @@ extension GalaxySSIStoreTests {
     let baseline = saved(1, .workflowMethod, method("Baseline work"))
     let candidate = saved(2, .workflowMethod, method("Candidate work"))
     let dataset = saved(3, .artifact, ["content": .string("Dataset")])
+    var completeInput = saved(9, .artifact, [:])
+    completeInput.draft.body = ["count": .int(3), "mutable": .bool(false)]
+    var incompleteInput = saved(10, .artifact, [:])
+    incompleteInput.draft.body = ["count": .int(3)]
     let earlier = saved(4, .innovation, [:], parents: [baseline.reference])
     let later = saved(5, .innovation, [:], parents: [candidate.reference])
     var plan = saved(6, .experimentPlan, [:], parents: [earlier.reference, later.reference, dataset.reference])
@@ -3312,7 +3434,7 @@ extension GalaxySSIStoreTests {
     persistedPlan["workflowComparison"] = .object(["baseline": .object(Check.reference(baseline.reference)),
       "candidate": .object(Check.reference(candidate.reference)), "dataset": .object(Check.reference(dataset.reference))])
     try database.transaction {
-      for row in [baseline, candidate, dataset, earlier, later, result, lesson] {
+      for row in [baseline, candidate, dataset, earlier, later, result, lesson, completeInput, incompleteInput] {
         try database.insertResearchRecord(row, conversationId: scope.conversationId,
           key: "object:" + row.reference.objectId, revision: row.reference.revision)
       }
@@ -3385,6 +3507,7 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(reopened.snapshot(supervisorRunId: scope.runId)?.members[1].status, member.status)
     var consumer = durableTeamSnapshot("observed-route")
     consumer.taskId = "observed-route"
+    consumer.goal = "Review the original workflow input"
     consumer.members[0].dispatchCheckpoint = .accepted
     consumer.members[1].dispatchCheckpoint = .dispatching
     XCTAssertTrue(reopened.upsert(consumer))
@@ -3443,6 +3566,35 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(work.assignment, "Candidate work")
     XCTAssertEqual(work.workflowObservedBinding?["method_selection"]?.objectValue?["variant"], .string("candidate"))
     XCTAssertEqual(work.workflowObservedBinding?["input_observations"]?.objectValue?["data"]?.objectValue?["status"], .string("failed"))
+    func workspaceAdmission(_ name: String, ref: AgentCollaborationResearchReference, revision: Int64,
+                            duplicate: Bool = false) -> AgentMcpJSONObject {
+      let item: AgentMcpJSONObject = ["execution_id": .string(name), "selection_rule": ruleRef,
+        "inputs": .object(duplicate ? ["data": .object(completeInput.draft.body)] : [:]),
+        "workspace_inputs": .object(["data": .object(Check.reference(ref))]),
+        "roles": .object(["worker": .string(producer.memberId)])]
+      return ["mode": .string("append_work"), "expected_revision": .int(revision), "milestone_id": .string(name),
+        "artifact": .string(AgentMcpJSONCodec.stringify(["format": .string("galaxyssi.work-expansion.v1"),
+          "work": .array([.object(["workflow_instance": .object(item)])])]))]
+    }
+    var forged = completeInput.reference
+    forged.sha256 = String(repeating: "f", count: 64)
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(
+      workspaceAdmission("forged", ref: forged, revision: 2), scope: coordinator))
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(
+      workspaceAdmission("duplicate", ref: completeInput.reference, revision: 2, duplicate: true), scope: coordinator))
+    let pinnedRequest = workspaceAdmission("workspace-candidate", ref: completeInput.reference, revision: 2)
+    _ = try reopened.publishCollaborationMilestone(pinnedRequest, scope: coordinator)
+    _ = try reopened.publishCollaborationMilestone(
+      workspaceAdmission("workspace-baseline", ref: incompleteInput.reference, revision: 3), scope: coordinator)
+    let graph = try XCTUnwrap(reopened.goalCheckpoint(runId: coordinator.runId, conversationId: coordinator.conversationId,
+      turnId: coordinator.turnId)?.liveGraph)
+    let fromWorkspace = try XCTUnwrap(graph.work.first { $0.workflowExecutionId == "workspace-candidate" })
+    XCTAssertEqual(fromWorkspace.assignment, "Candidate work")
+    XCTAssertEqual(fromWorkspace.workflowObservedBinding?["input_workspace_refs"]?.objectValue?["data"],
+      .object(Check.reference(completeInput.reference)))
+    let fallback = try XCTUnwrap(graph.work.first { $0.workflowExecutionId == "workspace-baseline" })
+    XCTAssertEqual(fallback.assignment, "Baseline work")
+    XCTAssertEqual(fallback.workflowObservedBinding?["method_selection"]?.objectValue?["reason"], .string("insufficient_condition_data"))
     var changed = baseline
     changed.reference.revision = 2
     try database.transaction {
@@ -3454,6 +3606,11 @@ extension GalaxySSIStoreTests {
     let afterReopen = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
     XCTAssertEqual(try afterReopen.publishCollaborationMilestone(input, scope: coordinator)["replayed"], .bool(true))
+    XCTAssertEqual(try afterReopen.publishCollaborationMilestone(pinnedRequest, scope: coordinator)["replayed"], .bool(true))
+    XCTAssertThrowsError(try afterReopen.publishCollaborationMilestone(
+      workspaceAdmission("stale-rule", ref: completeInput.reference, revision: 4), scope: coordinator))
+    let pinnedClaim = try afterReopen.claimGoalWork(fromWorkspace, scope: coordinator)
+    XCTAssertEqual(pinnedClaim.dependencies.first?["binding"]?.objectValue, fromWorkspace.workflowObservedBinding)
     let claim = try afterReopen.claimGoalWork(work, scope: coordinator)
     XCTAssertTrue(claim.claimed)
     XCTAssertEqual(claim.dependencies.first?["binding"]?.objectValue, work.workflowObservedBinding)
@@ -3511,6 +3668,103 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(try validates(raw.replacingOccurrences(of: "\"assignment\":\"Draft\"",
       with: "\"assignment\":\"Draft\",\"tool_id\":\"override\"")))
     XCTAssertFalse(try validates(raw.replacingOccurrences(of: "\"role\":\"reviewer\"", with: "\"role\":\"author\"")))
+  }
+
+  func testMethodExperiencePinsVersionAndKeepsIndependentPeerHistoryScoped() throws {
+    typealias Usage = AgentCollaborationMethodExperience
+    let suite = "method-use-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    func open() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    }
+    let history = open()
+    var team = durableTeamSnapshot(suite)
+    team.goal = "Check the original workflow conditions"
+    team.members.append(.init(agentId: "independent", sourceMessageId: "independent-source"))
+    for index in team.members.indices { team.members[index].dispatchCheckpoint = .accepted }
+    XCTAssertTrue(history.upsert(team))
+    func scope(_ team: AgentTeamExecutionSnapshot, index: Int) -> AgentCollaborationToolEvidenceScope {
+      .init(runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
+        memberId: team.members[index].memberId, sourceId: team.members[index].sourceMessageId)
+    }
+    let owner = scope(team, index: 0)
+    let contract = """
+      {"format":"galaxyssi.goal-assessment.v1","summary":"Pin original","decision":"continue","work":[],"blockers":[],
+       "criteria":[{"id":"check","requirement":"Check conditions","verification":"documentary","status":"open","evidence":[]}]}
+      """
+    _ = try history.publishCollaborationMilestone(["mode": .string("establish_contract"), "artifact": .string(contract)], scope: owner)
+    let method = AgentCollaborationResearchReference(objectId: String(repeating: "a", count: 64),
+      revision: 1, sha256: String(repeating: "b", count: 64))
+    let methodBody = """
+      {"purpose":"Verify","domain":"Research","bottleneck":"Errors","change_rationale":"Check independently",
+       "applies_when":"Comparable","avoid_when":"Unsafe","risks":"Delay","expected_gain":"Accuracy","falsifier":"No gain",
+       "dimensions":["verification"],"roles":["worker"],"inputs":[],
+       "steps":[{"id":"run","role":"worker","stage":"EXPLORE","assignment":"Review the exact fixture"}]}
+      """
+    let body = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(methodBody.utf8))
+    let draft = AgentCollaborationResearchDraft(id: "method", objectId: nil, baseRevision: 0, kind: .workflowMethod,
+      title: "Original method", body: ["workflow_method": .object(body)], parents: [])
+    let database = try AgentTeamHistoryDatabase(fileURL: file, storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    func save(_ reference: AgentCollaborationResearchReference) throws {
+      let row = AgentCollaborationResearchRevision(reference: reference, previousHash: nil, runId: "older", turnId: "older-turn",
+        authorId: "author", sourceId: "older-source", draft: draft)
+      try database.insertResearchRecord(row, conversationId: team.conversationId, key: "object:" + reference.objectId, revision: reference.revision)
+    }
+    try save(method)
+    let selector = Usage.selector(method)
+    let target = AgentCollaborationGoalWorkRun.Target(kind: .cloud, resourceID: team.members[1].agentId, modelID: "selected-model")
+    for index in 0...1 {
+      let instance = AgentCollaborationWorkflowInstance(execution_id: "instance-\(index)", method: method,
+        inputs: [:], roles: ["worker": team.members[1].memberId])
+      XCTAssertTrue(history.appendSavedCollaborationWorkflow(instance, runId: owner.runId, conversationId: owner.conversationId,
+        turnId: owner.turnId, expectedRevision: Int64(index + 1), historicalAuthors: [:], settled: [:]))
+      let work = try XCTUnwrap(instance.compile(body)?.first)
+      let claim = try history.claimGoalWork(work, scope: owner, target: target, now: Int64(10 + index * 10))
+      XCTAssertEqual(claim.run.methodUse?.method, method)
+      _ = try history.finishGoalWork(claim.run, output: index == 0 ? nil : "Observed original output", interrupted: false,
+        now: Int64(11 + index * 10))
+      XCTAssertFalse(try open().claimGoalWork(work, scope: owner, target: target).claimed)
+    }
+    let page = try open().recallCollaborationOriginal(selector, scope: owner)
+    XCTAssertEqual(page["trust"], .string(Usage.trust))
+    let rows = try XCTUnwrap(page["records"]?.arrayValue)
+    XCTAssertEqual(Set(rows.compactMap { $0.objectValue?.string("status") }), ["failed", "succeeded"])
+    let finished = try XCTUnwrap(rows.first(where: { $0.objectValue?["status"] == .string("succeeded") })?.objectValue)
+    let originalQuery = try XCTUnwrap(finished["read"]?.objectValue)
+    let original = try open().recallCollaborationOriginal(originalQuery, scope: owner)
+    XCTAssertTrue(original.string("content").contains("selected-model"))
+    XCTAssertTrue(original.string("content").contains(team.goal))
+    XCTAssertTrue(original.string("content").contains(#""user_delivery":"not_observed""#))
+    XCTAssertEqual(original["quality_effect"], .null)
+    let progress = CloudWebToolLoopProgress()
+    let tool = CloudModelStreamMutableConversation.collaborationRecallName
+    XCTAssertTrue(progress.record(toolName: tool, arguments: selector, output: AgentMcpJSONCodec.stringify(page)))
+    var repeatSelector = selector
+    repeatSelector["cursor"] = .string("different-transport-call")
+    XCTAssertFalse(progress.record(toolName: tool, arguments: repeatSelector, output: AgentMcpJSONCodec.stringify(page)))
+    XCTAssertTrue(progress.record(toolName: tool, arguments: originalQuery, output: AgentMcpJSONCodec.stringify(original)))
+    XCTAssertFalse(progress.record(toolName: tool, arguments: originalQuery, output: AgentMcpJSONCodec.stringify(original)))
+    XCTAssertEqual(try open().recallCollaborationOriginal(selector, scope: scope(team, index: 2))["records"], .array([]))
+    XCTAssertThrowsError(try open().recallCollaborationOriginal(originalQuery, scope: scope(team, index: 2)))
+    var revised = method
+    revised.revision = 2
+    revised.sha256 = String(repeating: "c", count: 64)
+    try save(revised)
+    XCTAssertEqual(try open().recallCollaborationOriginal(Usage.selector(revised), scope: owner)["records"], .array([]))
+    var later = durableTeamSnapshot("later-method-run")
+    later.taskId = "later-method-turn"
+    XCTAssertTrue(history.upsert(later))
+    XCTAssertEqual(try open().recallCollaborationOriginal(selector, scope: scope(later, index: 0))["records"], .array(rows))
+    var foreign = durableTeamSnapshot("foreign-method-run")
+    foreign.conversationId = "foreign-conversation"
+    XCTAssertTrue(history.upsert(foreign))
+    XCTAssertThrowsError(try open().recallCollaborationOriginal(originalQuery, scope: scope(foreign, index: 0)))
+    history.removeResearchObjects(conversationId: team.conversationId)
+    XCTAssertThrowsError(try open().recallCollaborationOriginal(originalQuery, scope: scope(later, index: 0)))
   }
 
   func testSavedToolValidationPreflightCannotLookLikeRuntimeExecution() throws {

@@ -194,10 +194,11 @@ enum AgentIOSLocalModelWebToolRunner {
           policy.verificationInstructions + " " +
           "Work is dispatched by the host after your current model round returns. Use work_result and work_id to read a saved result. " +
           AgentCollaborationMilestoneCoordination.readInstructions + " " +
-          "Use work_inventory with no other fields to inspect readiness, review subjects and publication tokens. A waiting review is not active. " +
+          "Use work_inventory without work_id for readiness, review subjects and publication tokens. A waiting review is not active. " +
           AgentGoalWorkMilestoneRead.coordinatorInstructions + " " +
           "Use assessment_repair with draft_sha256 and offset to read a retained rejected draft; join pages in order. Do not execute rejected work. " +
           "Use check_goal_evidence with expected_revision and artifact to check exact reviewed evidence; this does not deliver the goal. " +
+          AgentCollaborationRuleTopics.coordinationInstructions + " " +
           policy.admissionInstructions + AgentCollaborationWorkInputBindings.coordinatorInstructions +
           AgentCollaborationProbeContinuation.admissionInstructions,
         location: .application, inputSchema: ["type": .string("object"), "required": .array([.string("mode")]),
@@ -270,6 +271,8 @@ enum AgentIOSLocalModelWebToolRunner {
     if !originalsOnly, var properties = scopedDescriptor.inputSchema["properties"]?.objectValue {
       properties["case_filter"] = .object(["type": .string("string"),
         "enum": .array(AgentCollaborationNumericFeedback.filters.map(AgentMcpJSONValue.string))])
+      properties["record_id"] = .object(["type": .string("string"),
+        "description": .string(AgentCollaborationMethodExperience.instructions)])
       scopedDescriptor.inputSchema["properties"] = .object(properties)
     }
     return AgentNativeToolExecutableDefinition(
