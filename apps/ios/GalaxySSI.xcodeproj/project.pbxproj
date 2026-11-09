@@ -19,6 +19,7 @@
     F12662000000000000000002 /* AgentRichSelectableParagraphs.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22662000000000000000002 /* AgentRichSelectableParagraphs.swift */; };
     F1CC32700000000000000001 /* GalaxySSIPeerTextSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CC32700000000000000002 /* GalaxySSIPeerTextSelectionView.swift */; };
     F1CC32700000000000000003 /* AgentDesktopReplyRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CC32700000000000000004 /* AgentDesktopReplyRecovery.swift */; };
+    A1000000000000000000F5B9 /* AgentDesktopCollaborationFileHandoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F5B9 /* AgentDesktopCollaborationFileHandoff.swift */; };
     F1CC32700000000000000005 /* AgentDesktopResultRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CC32700000000000000006 /* AgentDesktopResultRecovery.swift */; };
     F12662000000000000000003 /* AgentRichSelectableParagraphsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22662000000000000000003 /* AgentRichSelectableParagraphsTests.swift */; };
     F12665000000000000000001 /* CloudModelRequestRoutingPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22665000000000000000001 /* CloudModelRequestRoutingPolicy.swift */; };
@@ -1058,6 +1059,7 @@
     A10000000000000000000F41 /* AgentCollaborationNumericTrial.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000F41 /* AgentCollaborationNumericTrial.swift */; };
     A10000000000000000000F42 /* AgentCollaborationSavedToolTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000F42 /* AgentCollaborationSavedToolTest.swift */; };
     A1000000000000000000F464 /* AgentCollaborationQualitativePrediction.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F464 /* AgentCollaborationQualitativePrediction.swift */; };
+    A1000000000000000000F5B4 /* AgentCollaborationCoordinationLane.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F5B4 /* AgentCollaborationCoordinationLane.swift */; };
     A1000000000000000000F5B3 /* AgentCollaborationWorkInputBindings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F5B3 /* AgentCollaborationWorkInputBindings.swift */; };
     A1000000000000000000F5B1 /* AgentCollaborationProbeContinuation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F5B1 /* AgentCollaborationProbeContinuation.swift */; };
     A10000000000000000009888 /* AgentCollaborationReleasedToolRun.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009888 /* AgentCollaborationReleasedToolRun.swift */; };
@@ -1366,6 +1368,7 @@
     F22662000000000000000002 /* AgentRichSelectableParagraphs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRichSelectableParagraphs.swift; sourceTree = "<group>"; };
     F1CC32700000000000000002 /* GalaxySSIPeerTextSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPeerTextSelectionView.swift; sourceTree = "<group>"; };
     F1CC32700000000000000004 /* AgentDesktopReplyRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDesktopReplyRecovery.swift; sourceTree = "<group>"; };
+    A2000000000000000000F5B9 /* AgentDesktopCollaborationFileHandoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDesktopCollaborationFileHandoff.swift; sourceTree = "<group>"; };
     F1CC32700000000000000006 /* AgentDesktopResultRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDesktopResultRecovery.swift; sourceTree = "<group>"; };
     F22662000000000000000003 /* AgentRichSelectableParagraphsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRichSelectableParagraphsTests.swift; sourceTree = "<group>"; };
     F22665000000000000000001 /* CloudModelRequestRoutingPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelRequestRoutingPolicy.swift; sourceTree = "<group>"; };
@@ -2324,6 +2327,7 @@
     A20000000000000000000F41 /* AgentCollaborationNumericTrial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationNumericTrial.swift; sourceTree = "<group>"; };
     A20000000000000000000F42 /* AgentCollaborationSavedToolTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationSavedToolTest.swift; sourceTree = "<group>"; };
     A2000000000000000000F464 /* AgentCollaborationQualitativePrediction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationQualitativePrediction.swift; sourceTree = "<group>"; };
+    A2000000000000000000F5B4 /* AgentCollaborationCoordinationLane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationCoordinationLane.swift; sourceTree = "<group>"; };
     A2000000000000000000F5B3 /* AgentCollaborationWorkInputBindings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationWorkInputBindings.swift; sourceTree = "<group>"; };
     A2000000000000000000F5B1 /* AgentCollaborationProbeContinuation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationProbeContinuation.swift; sourceTree = "<group>"; };
     A20000000000000000009888 /* AgentCollaborationReleasedToolRun.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationReleasedToolRun.swift; sourceTree = "<group>"; };
@@ -3129,6 +3133,7 @@
         A20000000000000000000F41 /* AgentCollaborationNumericTrial.swift */,
         A20000000000000000000F42 /* AgentCollaborationSavedToolTest.swift */,
         A2000000000000000000F464 /* AgentCollaborationQualitativePrediction.swift */,
+        A2000000000000000000F5B4 /* AgentCollaborationCoordinationLane.swift */,
         A2000000000000000000F5B3 /* AgentCollaborationWorkInputBindings.swift */,
         A2000000000000000000F5B1 /* AgentCollaborationProbeContinuation.swift */,
         A20000000000000000009888 /* AgentCollaborationReleasedToolRun.swift */,
@@ -3252,6 +3257,7 @@
         F22662000000000000000002 /* AgentRichSelectableParagraphs.swift */,
         F1CC32700000000000000002 /* GalaxySSIPeerTextSelectionView.swift */,
         F1CC32700000000000000004 /* AgentDesktopReplyRecovery.swift */,
+        A2000000000000000000F5B9 /* AgentDesktopCollaborationFileHandoff.swift */,
         F1CC32700000000000000006 /* AgentDesktopResultRecovery.swift */,
         F22665000000000000000001 /* CloudModelRequestRoutingPolicy.swift */,
         A20000000000000000001860 /* GalaxySSIAgentHomeVoiceActions.swift */,
@@ -4505,6 +4511,7 @@
         A10000000000000000000F41 /* AgentCollaborationNumericTrial.swift in Sources */,
         A10000000000000000000F42 /* AgentCollaborationSavedToolTest.swift in Sources */,
         A1000000000000000000F464 /* AgentCollaborationQualitativePrediction.swift in Sources */,
+        A1000000000000000000F5B4 /* AgentCollaborationCoordinationLane.swift in Sources */,
         A1000000000000000000F5B3 /* AgentCollaborationWorkInputBindings.swift in Sources */,
         A1000000000000000000F5B1 /* AgentCollaborationProbeContinuation.swift in Sources */,
         A10000000000000000009888 /* AgentCollaborationReleasedToolRun.swift in Sources */,
@@ -4669,6 +4676,7 @@
         F12662000000000000000002 /* AgentRichSelectableParagraphs.swift in Sources */,
         F1CC32700000000000000001 /* GalaxySSIPeerTextSelectionView.swift in Sources */,
         F1CC32700000000000000003 /* AgentDesktopReplyRecovery.swift in Sources */,
+        A1000000000000000000F5B9 /* AgentDesktopCollaborationFileHandoff.swift in Sources */,
         F1CC32700000000000000005 /* AgentDesktopResultRecovery.swift in Sources */,
         F12665000000000000000001 /* CloudModelRequestRoutingPolicy.swift in Sources */,
         A10000000000000000001860 /* GalaxySSIAgentHomeVoiceActions.swift in Sources */,

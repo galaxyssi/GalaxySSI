@@ -495,25 +495,6 @@ struct AgentCollaborationGoalWorkRun: Codable {
   }
 }
 
-@MainActor
-final class AgentGoalWorkAdmissionOrder {
-  private var next = 0
-  private var waiters: [Int: CheckedContinuation<Void, Never>] = [:]
-  private(set) var claimedIDs: [String] = []
-
-  func wait(for index: Int) async {
-    guard index != next else { return }
-    await withCheckedContinuation { waiters[index] = $0 }
-  }
-
-  func finish(_ index: Int, claimedID: String?) {
-    precondition(index == next)
-    if let claimedID { claimedIDs.append(claimedID) }
-    next += 1
-    waiters.removeValue(forKey: next)?.resume()
-  }
-}
-
 struct AgentCollaborationLiveGraph: Codable, Equatable {
   typealias InputBindings = AgentCollaborationWorkInputBindings
   enum DependencyPolicy: String, Codable { case success, terminal }
@@ -545,6 +526,11 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var recruitment: Recruitment? = nil
     var blockerResolution: AgentCollaborationGoalAssessmentPolicy.Resolution? = nil
     var data_dependencies: [InputBindings.Requirement]? = nil
+
+    var dispatchAssignment: String {
+      // Admission already bounds the original work in UTF-8. Do not shorten valid long live assignments.
+      AgentTeamDispatchText.bounded(assignment, maximumCharacters: AgentTeamDispatchText.liveAssignmentBytes)
+    }
 
     func hasIndependentReviewAuthors(_ author: (String) -> String?,
       identity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId) -> Bool {
@@ -864,7 +850,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
               !additions.contains(where: { $0.id == repair.repair_of }) else { return nil }
       }
       guard !item.id.isBlank, item.id.utf8.count <= 160, !item.assignment.isBlank,
-            item.assignment.utf8.count <= 16_000, authorizedMembers.contains(item.member),
+            item.assignment.utf8.count <= AgentTeamDispatchText.liveAssignmentBytes, authorizedMembers.contains(item.member),
             byId[item.id] == nil, settled[item.id] == nil, historicalAuthors[item.id] == nil,
             Set(item.depends_on).count == item.depends_on.count,
             InputBindings.validRequirements(item.data_dependencies, dependencies: item.depends_on),
@@ -1154,7 +1140,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
   static let workInventoryMode = "work_inventory"
   static let workInputMode = "work_input"
   static let checkGoalEvidenceMode = "check_goal_evidence"
-  static let admissionInstructions = "List ready research work in the intended admission order. Waiting dependencies do not reserve capacity. Existing learning priorities reorder only their eligible learning positions. Admission order does not guarantee completion order. " + AgentCollaborationWorkRepair.guidance
+  static let admissionInstructions = "List ready research work in the intended admission order. Waiting dependencies do not reserve capacity. Existing learning priorities reorder only their eligible learning positions. Admission order does not guarantee completion order. Read admission_capacity in work_inventory: at most three workers per goal and one live planner shared across goals. A planning slot does not reserve a downstream provider or connector slot. " + AgentCollaborationWorkRepair.guidance
 
   static func requiresCoordinator(_ mode: String) -> Bool {
     isCoordinatorMutation(mode) || mode == checkGoalEvidenceMode || mode == workInventoryMode ||
@@ -1166,7 +1152,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
   }
 
   static func isCoordinatorMutation(_ mode: String) -> Bool {
-    mode == establishContractMode || mode == appendWorkMode
+    mode == establishContractMode || mode == appendWorkMode || mode == establishVerificationMode
   }
 
   static func initialContract(_ raw: String) -> [Criterion]? {
@@ -1573,6 +1559,25 @@ struct AgentDynamicTeamAssignment: Codable, Equatable {
     case requiredCapabilities = "required_capabilities"
     case objective
     case reasons
+  }
+}
+
+enum AgentTeamDispatchText {
+  static let roleCharacters = 80
+  static let objectiveCharacters = 8_000
+  static let liveAssignmentBytes = 16_000
+
+  static func bounded(_ value: String, maximumCharacters: Int) -> String {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return String(trimmed.prefix(maximumCharacters)).trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  static func role(_ value: String) -> String {
+    bounded(value, maximumCharacters: roleCharacters)
+  }
+
+  static func objective(_ value: String) -> String {
+    bounded(value, maximumCharacters: objectiveCharacters)
   }
 }
 

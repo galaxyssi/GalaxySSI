@@ -4,6 +4,8 @@ import Foundation
 extension AgentCollaborationGoalAssessmentPolicy {
   static let assessmentRepairMode = "assessment_repair"
   static let assessmentDraftLimit = 131_072
+  static let establishVerificationMode = "establish_verification"
+  static let verificationInstructions = "Use establish_verification with expected_revision and a continue assessment to bind a missing qualified validator. Preserve the full criteria list, requirements and source obligations; change only the validator on an open observed computational criterion with no evidence, delivery or review. This does not dispatch work or verify a result. Read the new criteria hash before preparing coverage."
 
   struct RejectedAssessment: Codable, Equatable {
     let bytes: Data
@@ -33,6 +35,62 @@ extension AgentCollaborationGoalAssessmentPolicy {
       .object(["path": .string(path), "code": .string(code), "expected": .string(expected),
         "actual": .string(actual), "detail": .string("")])
     }
+  }
+
+  static func verificationAmendment(_ raw: String, preserving contract: [Criterion])
+    -> Result<[Criterion], AssessmentIssue> {
+    func fail(_ path: String, _ code: String, _ expected: String, _ actual: String) -> Result<[Criterion], AssessmentIssue> {
+      .failure(.init(path: path, code: code, expected: expected, actual: actual))
+    }
+    let draft: Assessment
+    switch parseAssessment(raw, limit: assessmentDraftLimit) {
+    case .success(let parsed): draft = parsed
+    case .failure(let issue): return .failure(issue)
+    }
+    guard draft.decision == .continue else {
+      return fail("$.decision", "verification_requires_continue", "continue", draft.decision.rawValue)
+    }
+    guard draft.work.isEmpty, draft.blockers.isEmpty, draft.recruit?.isEmpty != false,
+          let object = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8)),
+          Set(object.keys).isSubset(of: ["format", "summary", "decision", "criteria", "work", "blockers", "recruit"]),
+          let rows = object["criteria"]?.arrayValue else {
+      return fail("$", "verification_binding_only", "no work, blockers, recruitment, or completion claims", "unexpected fields")
+    }
+    guard !contract.isEmpty, contract.count == draft.criteria.count else {
+      return fail("$.criteria", "verification_requires_pinned_criteria", "the full existing criterion list", "different criterion count")
+    }
+    var amended: [Criterion] = []
+    for (index, original) in contract.enumerated() {
+      let current = draft.criteria[index], root = "$.criteria[\(index)]"
+      guard Data(original.id.utf8) == Data(current.id.utf8) else {
+        return fail(root + ".id", "established_criterion_changed", "the same ordered criterion ID", "different criterion")
+      }
+      guard Data(original.requirement.utf8) == Data(current.requirement.utf8), original.verification == current.verification else {
+        return fail(root, "established_requirement_changed", "the same literal requirement and verification kind", "different requirement or kind")
+      }
+      guard original.required_observations == current.required_observations else {
+        return fail(root + ".required_observations", "established_sources_changed", "the same original source obligations", "different source obligations")
+      }
+      if current == original { amended.append(original); continue }
+      guard original.validator == nil, let validator = current.validator, original.verification == .computational else {
+        return fail(root + ".validator", "established_validator_changed", "only bind an absent qualified validator", "existing or unavailable binding")
+      }
+      let submitted = rows[index].objectValue ?? [:]
+      guard original.status == .open, current.status == .open,
+            original.evidence_kind == nil || original.evidence_kind == .observed, current.evidence_kind == .observed,
+            original.evidence.isEmpty, current.evidence.isEmpty, original.delivery == nil, original.review == nil,
+            submitted["delivery"] == nil, submitted["review"] == nil else {
+        return fail(root, "verification_requires_unclaimed_criterion", "open observed computation without evidence, delivery or review",
+          "criterion has a claim or is not open and observed")
+      }
+      var saved = original
+      saved.validator = validator
+      amended.append(saved)
+    }
+    guard amended != contract else {
+      return fail("$.criteria", "verification_binding_missing", "at least one previously unbound qualified validator", "no new binding")
+    }
+    return .success(amended)
   }
 
   static func parseAssessment(_ raw: String, limit: Int = 256_000) -> Result<Assessment, AssessmentIssue> {
