@@ -281,6 +281,7 @@ struct AgentCollaborationGoalCheckpoint: Codable, Equatable {
   var contract: [AgentCollaborationGoalAssessmentPolicy.Criterion]
   var completedWorkIds: Set<String>
   var liveGraph: AgentCollaborationLiveGraph? = nil
+  var bindsRecordedDesktopTools: Bool? = nil
 }
 
 struct AgentCollaborationAcceptedDelivery: Codable, Equatable {
@@ -358,6 +359,61 @@ struct AgentCollaborationCoordinatorRetry: Codable, Equatable {
   }
 }
 
+enum AgentCollaborationWorkRepair {
+  static let guidance = "For rejected or incomplete delivery, use a new work ID, repair_of set to a finished original work ID, and a concrete repair_reason. Execution ending is not goal acceptance. Preserve the original and do not repeat completed side effects. Use explicit dependencies to read original outputs; repair_of grants no access. Omit both fields for ordinary work."
+
+  struct Binding: Codable, Equatable {
+    let repair_of: String
+    let repair_reason: String
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+      lhs.repair_of.utf8.elementsEqual(rhs.repair_of.utf8) &&
+        lhs.repair_reason.utf8.elementsEqual(rhs.repair_reason.utf8)
+    }
+
+    var wire: AgentMcpJSONObject {
+      ["repair_of": .string(repair_of), "repair_reason": .string(repair_reason)]
+    }
+  }
+
+  struct Issue {
+    let workID: String
+    let field: String
+    let expected: String
+    let actual: String
+
+    var response: AgentMcpJSONObject {
+      ["success": .bool(false), "status": .string("work_rejected"), "work_dispatched": .bool(false),
+       "failure": .object(["code": .string("repair_contract_invalid"), "work_id": .string(workID),
+         "field": .string(field), "expected": .string(expected), "actual": .string(actual)]),
+       "guidance": .string(AgentCollaborationWorkRepair.guidance)]
+    }
+  }
+
+  static func shapeIssue(_ raw: String) -> Issue? {
+    guard let root = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8)),
+          let items = root["work"]?.arrayValue else { return nil }
+    for item in items {
+      guard let row = item.objectValue, row["repair_of"] != nil || row["repair_reason"] != nil else { continue }
+      let id = String(decoding: row.string("id").utf8.prefix(160), as: UTF8.self)
+      for (field, limit) in [("repair_of", 160), ("repair_reason", 2_000)] {
+        let value = row[field], text = value?.strictStringValue
+        if let text, !text.isBlank, text.utf8.count <= limit { continue }
+        let actual: String
+        if value == nil { actual = "missing" }
+        else if value == .null { actual = "null" }
+        else if text == nil { actual = "not a string" }
+        else { actual = text?.isBlank == true ? "blank string" : "too long" }
+        return .init(workID: id, field: field, expected: "nonblank string up to \(limit) UTF-8 bytes", actual: actual)
+      }
+      if row.string("repair_of") == row.string("id") {
+        return .init(workID: id, field: "repair_of", expected: "a distinct finished original work ID", actual: "self-reference")
+      }
+    }
+    return nil
+  }
+}
+
 struct AgentCollaborationGoalWorkRun: Codable {
   enum State: String, Codable { case running, succeeded, failed, interrupted }
   struct Target: Codable, Equatable {
@@ -400,6 +456,7 @@ struct AgentCollaborationGoalWorkRun: Codable {
   static let processID = UUID().uuidString
   static let leaseMillis: Int64 = 300_000
 
+  var repair: AgentCollaborationWorkRepair.Binding? = nil
   let workID: String
   let dispatchID: String
   let owner: AgentCollaborationToolEvidenceScope
@@ -431,6 +488,7 @@ struct AgentCollaborationGoalWorkRun: Codable {
       "started_at": .int(startedAt), "finished_at": finishedAt.map(AgentMcpJSONValue.int) ?? .null,
       "output": output.map(AgentMcpJSONValue.string) ?? .null, "output_sha256": outputHash.map(AgentMcpJSONValue.string) ?? .null,
       "output_truncated": .bool(truncated ?? false), "goal_accepted": .bool(false), "automatically_reexecuted": .bool(false)]
+    if let repair { result.merge(repair.wire) { current, _ in current } }
     if let templateMemberID { result["template_member_id"] = .string(templateMemberID) }
     if let inputRevision { result["input_revision"] = .int(inputRevision) }
     if let probeOrigin { result["probe_origin"] = .object(probeOrigin) }
@@ -450,6 +508,15 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     let depends_on: [String]
     let dependency_policy: DependencyPolicy?
     let independent_review: Bool?
+    var repair_of: String? = nil
+    var repair_reason: String? = nil
+
+    var repair: AgentCollaborationWorkRepair.Binding? {
+      guard let repair_of, let repair_reason, !repair_of.isBlank, !repair_reason.isBlank,
+            repair_of != id, repair_of.utf8.count <= 160, repair_reason.utf8.count <= 2_000 else { return nil }
+      return .init(repair_of: repair_of, repair_reason: repair_reason)
+    }
+
     var stage: String? = nil
     var procedure_use: AgentCollaborationProcedure.Use? = nil
     var learning: LearningBinding? = nil
@@ -708,7 +775,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
 
   func appending(_ raw: String, authorizedMembers: Set<String>,
                  historicalAuthors: [String: String], settled: [String: Settlement]) -> Self? {
-    guard raw.utf8.count <= 256_000,
+    guard raw.utf8.count <= 256_000, AgentCollaborationWorkRepair.shapeIssue(raw) == nil,
           let expansion = try? JSONDecoder().decode(Expansion.self, from: Data(raw.utf8)),
           expansion.format == "galaxyssi.work-expansion.v1", !expansion.work.isEmpty,
           expansion.work.allSatisfy({ $0.workflowExecutionId == nil && $0.probeBinding == nil &&
@@ -800,6 +867,10 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var byId = Dictionary(work.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     guard byId.count == work.count else { return nil }
     for item in additions {
+      if item.repair_of != nil || item.repair_reason != nil {
+        guard let repair = item.repair, byId[repair.repair_of] != nil || settled[repair.repair_of] != nil,
+              !additions.contains(where: { $0.id == repair.repair_of }) else { return nil }
+      }
       guard !item.id.isBlank, item.id.utf8.count <= 160, !item.assignment.isBlank,
             item.assignment.utf8.count <= AgentTeamDispatchText.liveAssignmentBytes, authorizedMembers.contains(item.member),
             byId[item.id] == nil, settled[item.id] == nil, historicalAuthors[item.id] == nil,
@@ -1077,6 +1148,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
           draft.blockers.allSatisfy({ !$0.id.isBlank && !$0.reason.isBlank && !$0.resume_when.isBlank &&
             (($0.kind != .resource && $0.kind != .permission) || Resolution($0) != nil) }),
           draft.criteria.count == contract.count, Set(draft.criteria.map(\.id)).count == draft.criteria.count,
+          newDesktopBindingIssue(draft.criteria, preserving: contract) == nil,
           contract.allSatisfy({ original in
             guard let current = draft.criteria.first(where: { $0.id == original.id }) else { return false }
             return current.requirement == original.requirement && current.verification == original.verification &&
@@ -1093,7 +1165,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
   static let workInventoryMode = "work_inventory"
   static let workInputMode = "work_input"
   static let checkGoalEvidenceMode = "check_goal_evidence"
-  static let admissionInstructions = "List ready research work in the intended admission order. Waiting dependencies do not reserve capacity. Existing learning priorities reorder only their eligible learning positions. Admission order does not guarantee completion order. Read admission_capacity in work_inventory: at most three workers per goal and one live planner shared across goals. A planning slot does not reserve a downstream provider or connector slot."
+  static let admissionInstructions = "List ready research work in the intended admission order. Waiting dependencies do not reserve capacity. Existing learning priorities reorder only their eligible learning positions. Admission order does not guarantee completion order. Read admission_capacity in work_inventory: at most three workers per goal and one live planner shared across goals. A planning slot does not reserve a downstream provider or connector slot. " + AgentCollaborationWorkRepair.guidance
 
   static func requiresCoordinator(_ mode: String) -> Bool {
     isCoordinatorMutation(mode) || mode == checkGoalEvidenceMode || mode == workInventoryMode ||
@@ -1105,7 +1177,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
   }
 
   static func isCoordinatorMutation(_ mode: String) -> Bool {
-    mode == establishContractMode || mode == appendWorkMode
+    mode == establishContractMode || mode == appendWorkMode || mode == establishVerificationMode
   }
 
   static func initialContract(_ raw: String) -> [Criterion]? {
@@ -1147,6 +1219,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
     guard case .success(let assessment) = parseAssessment(raw) else {
       return .needsAssessment
     }
+    guard newDesktopBindingIssue(assessment.criteria, preserving: contract) == nil else { return .needsAssessment }
     let criteria = Dictionary(uniqueKeysWithValues: assessment.criteria.map { ($0.id, $0) })
     guard contract.allSatisfy({ original in
       guard let current = criteria[original.id] else { return false }
@@ -1203,6 +1276,7 @@ enum AgentCollaborationDocumentaryAcceptance {
     var tool: String
     var status: String
     var kind: String
+    var recordedDesktopTool: String? = nil
   }
   struct Reference: Codable, Equatable {
     var objectId: String
@@ -1251,6 +1325,7 @@ enum AgentCollaborationDocumentaryAcceptance {
 
   static func evaluate(_ raw: String, preserving contract: [AgentCollaborationGoalAssessmentPolicy.Criterion],
                        conversationId: String, runId: String, turnId: String,
+                       bindsRecordedDesktopTools: Bool = false,
                        readRevision: (String, Int64?) throws -> Revision?,
                        observationIsSupporting: (String) throws -> Bool,
                        originalObservation: (String) throws -> OriginalObservation? = { _ in nil })
@@ -1311,10 +1386,13 @@ enum AgentCollaborationDocumentaryAcceptance {
         let observations = delivery.hostObservationIds.union(review.hostObservationIds)
         guard try observations.allSatisfy(observationIsSupporting) else { return .needsAssessment }
         if let required = criterion.required_observations, !required.isEmpty {
+          let pinned = Set(contract.first(where: { $0.id == criterion.id })?.required_observations ?? [])
           let originals = try review.hostObservationIds.compactMap(originalObservation)
           guard required.allSatisfy({ source in
-            source.isValid && originals.contains {
-              $0.origin == source.origin && $0.tool == source.tool &&
+            let recorded = source.origin == "desktop_codex_tool" &&
+              (bindsRecordedDesktopTools || !pinned.contains(source))
+            return source.isValid && originals.contains {
+              $0.origin == source.origin && (recorded ? $0.recordedDesktopTool : $0.tool) == source.tool &&
                 $0.status == "returned" && $0.kind == "tool_output_recorded"
             }
           }) else { return .needsAssessment }

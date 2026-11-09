@@ -880,7 +880,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                publishedMilestones.insert(receipt.string("milestone_id")).inserted { madeProgress = true }
             if AgentCollaborationGoalAssessmentPolicy.isCoordinatorMutation(arguments.string("mode")),
                let receipt = try? CloudModelStreamJSON.mcpObject(from: output),
-               ["contract_established", "work_admitted"].contains(receipt.string("status")),
+               ["contract_established", "work_admitted", "verification_route_established"].contains(receipt.string("status")),
                receipt["replayed"] == .bool(false) {
               madeProgress = true
             }
@@ -906,6 +906,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                visitedSourceAccessPages.insert("assessment:" + page.string("draft_sha256") + ":" + String(offset)).inserted {
               madeProgress = true
             }
+            if arguments["mode"] == .string(AgentCollaborationGoalAssessmentPolicy.appendWorkMode),
+               let rejected = try? CloudModelStreamJSON.mcpObject(from: output),
+               rejected["status"] == .string("work_rejected"),
+               progress.requestRepair("collaboration_work_lineage") { madeProgress = true }
             continue
           }
           if AgentCollaborationSourceAccess.matches(tool: outcome.call.name, input: arguments) {

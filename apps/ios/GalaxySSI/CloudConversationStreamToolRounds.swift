@@ -476,6 +476,7 @@ struct CloudModelStreamMutableConversation {
       " Use acceptance_record with an exact current object_id, revision and sha256 to read a saved criterion delivery or review from this run. " +
       "Use native_evidence with exact evidence_id and sha256 for a native observation. Read all pages before citing origin ios_native_tool, evidence_id and sha256. " +
       "Use desktop_evidence_list to discover same-run Desktop observations, and desktop_evidence to read exact byte pages. " +
+      "New Desktop source requirements use the recorded_tool event family, not the callable tool name. " +
       "Follow next_offset, decode data_b64, and cite origin desktop_codex_tool, evidence_id and sha256 after full coverage."
     appendCollaborationFunction(advertised, schema: schema)
   }
@@ -492,6 +493,10 @@ struct CloudModelStreamMutableConversation {
          AgentCollaborationGoalAssessmentPolicy.workInventoryMode, AgentCollaborationGoalAssessmentPolicy.workInputMode,
          AgentCollaborationGoalAssessmentPolicy.assessmentRepairMode]
       : ["publish", "status", "receipt", "list", "validate_assessment"]
+    if assessmentOnly {
+      modes.append(AgentCollaborationGoalAssessmentPolicy.establishVerificationMode)
+      appendResearchGuidance(AgentCollaborationGoalAssessmentPolicy.verificationInstructions)
+    }
     if canRunGoalWork {
       modes += [AgentCollaborationGoalAssessmentPolicy.runWorkMode, AgentCollaborationGoalAssessmentPolicy.runReadyWorkMode]
     }
@@ -556,7 +561,8 @@ struct CloudModelStreamMutableConversation {
   }
 
   static let goalAssessmentFinalInstruction = AgentCollaborationGoalAssessmentPolicy.admissionInstructions +
-    " Return only the galaxyssi.goal-assessment.v1 JSON object. Never claim achieved without exact reviewed criterion deliveries, goal_coverage, and final_delivery. Select final_delivery from a met criterion. Return a non-achieved assessment if evidence is missing. Do not send final deliverable prose; the host loads the reviewed text."
+    " Return only the galaxyssi.goal-assessment.v1 JSON object. Never claim achieved without exact reviewed criterion deliveries, goal_coverage, and final_delivery. Select final_delivery from a met criterion. Return a non-achieved assessment if evidence is missing. Do not send final deliverable prose; the host loads the reviewed text. Do not preclaim or await review of this assessment before submitting it. " +
+    AgentCollaborationPromptBudget.deliveryReviewGuidance
 
   mutating func requestForRound(roundId: String, finalRound: Bool = false, finalInstruction: String? = nil) throws -> ModelStreamRequest {
     if finalRound {

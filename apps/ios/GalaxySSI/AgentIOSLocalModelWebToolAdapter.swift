@@ -185,12 +185,13 @@ enum AgentIOSLocalModelWebToolRunner {
     func executable() throws -> AgentNativeToolExecutableDefinition {
       let readMode = AgentCollaborationMilestoneCoordination.readMode
       let policy = AgentCollaborationGoalAssessmentPolicy.self
-      let modes = [policy.establishContractMode, policy.appendWorkMode, policy.checkGoalEvidenceMode,
+      let modes = [policy.establishVerificationMode, policy.establishContractMode, policy.appendWorkMode, policy.checkGoalEvidenceMode,
         policy.workInventoryMode, policy.workInputMode, policy.assessmentRepairMode, "status", "validate_assessment", "work_result"]
       let descriptor = try AgentNativeToolDescriptor(id: AgentIOSLocalModelWebToolRunner.goalCoordinatorToolID,
         version: "1.0.0", title: "Collaboration goal", description:
           "Manage only this coordinator's original goal. Interim publication is not available on this dispatch; status checks the capability without mutation. Establish open criteria with establish_contract and artifact. " +
           "Use append_work with milestone_id, expected_revision and the work-expansion JSON in artifact. " +
+          policy.verificationInstructions + " " +
           "Work is dispatched by the host after your current model round returns. Use work_result and work_id to read a saved result. " +
           AgentCollaborationMilestoneCoordination.readInstructions + " " +
           "Use work_inventory with no other fields to inspect readiness, review subjects and publication tokens. A waiting review is not active. " +
