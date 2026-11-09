@@ -1204,6 +1204,7 @@ struct AgentCollaborationResearchRevision: Codable {
   var workflowComparison: AgentCollaborationWorkflowComparison? = nil
   var testedToolRelease: AgentMcpJSONObject? = nil
   var toolTestComparison: AgentMcpJSONObject? = nil
+  var desktopFile: AgentDesktopCollaborationFileHandoff.Binding? = nil
   var probeExecutorSourceID: String? = nil
   var probeMeasuredEvents: [String: Bool]? = nil
 

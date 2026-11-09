@@ -3152,6 +3152,9 @@ final class MessageCoordinator: ObservableObject {
     let history = AgentTeamExecutionHistoryStore.shared
     let scope = AgentCollaborationToolEvidenceScope(runId: context.team.supervisorRunId,
       conversationId: identity.conversationId, turnId: identity.turnId, memberId: context.member.memberId, sourceId: source)
+    let fileHandoff = AgentDesktopCollaborationFileHandoff.Binding(pair: .init(desktopID: link.desktopId,
+      clientRouteID: identity.clientRouteId, contactID: contact, phoneFingerprint: store.profile.identityFingerprint,
+      desktopFingerprint: link.desktopFingerprint), generation: generation)
     let executionScope: AgentCollaborationSavedToolExecution.Scope? = testing ? .init(assignment: scope,
       profileFingerprint: store.profile.identityFingerprint, desktopID: link.desktopId,
       desktopFingerprint: link.desktopFingerprint, routeID: identity.clientRouteId, generation: generation) : nil
@@ -3175,7 +3178,7 @@ final class MessageCoordinator: ObservableObject {
     ]) { current, _ in current })
     let cached: AgentMcpJSONObject?
     switch desktopCollaborationResponseReplay.lookup(key: key, fingerprint: fingerprint, now: now,
-      revalidate: publishing && phase == "receipt") {
+      revalidate: (publishing && (phase == "receipt" || phase == "publish")) || (!publishing && input["mode"] == .string("workspace"))) {
     case .identityMismatch: return
     case .missing: cached = nil
     case .response(let response): cached = response
@@ -3196,10 +3199,15 @@ final class MessageCoordinator: ObservableObject {
       result = page
     } else if publishing {
       do {
-        result = try history.publishCollaborationMilestone(input, scope: scope, desktopWire: true)
+        let fileAuthority = !parent.blocked && !PhoneExecutionAuthority.isCancelled(taskId: parent.taskId) ? fileHandoff : nil
+        result = try history.publishCollaborationMilestone(input, scope: scope, desktopWire: true, desktopFile: fileAuthority)
       } catch AgentTeamHistoryDatabase.Failure.corrupt {
         result["status"] = .string("invalid_artifact")
       } catch {}
+    } else if phase == "read", input["mode"] == .string("workspace"), !parent.blocked,
+              !PhoneExecutionAuthority.isCancelled(taskId: parent.taskId),
+              let page = try? history.recallDesktopFileHandoff(input, scope: scope, reader: fileHandoff) {
+      result = page
     } else if ["method_history", "workspace", "capabilities"].contains(input.string("mode")),
               var page = try? history.recallCollaborationOriginal(input, scope: scope) {
       page["success"] = .bool(true)

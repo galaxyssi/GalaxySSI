@@ -1138,6 +1138,98 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(linked.map { $0.draft.id }, ["note"])
   }
 
+  func testDesktopFileHandoffRecallsOnlyExactFrozenVersionForPairedDependency() throws {
+    typealias Handoff = AgentDesktopCollaborationFileHandoff
+    let suite = "file-handoff-\(UUID())", root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore(), file = root.appendingPathComponent("history.sqlite3")
+    func open() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    }
+    let history = open()
+    let pair = Handoff.Pair(desktopID: "desktop", clientRouteID: "route", contactID: "contact",
+      phoneFingerprint: "phone-key", desktopFingerprint: "desktop-key")
+    XCTAssertEqual(pair.storeID, "08d406beec042f5f4bafcdbf2b26f5911e4737ed89f9a358f3f1d7f9b22ca296")
+    let binding = Handoff.Binding(pair: pair, generation: 1)
+    var team = durableTeamSnapshot("file-handoff")
+    let producer = AgentTeamMemberSnapshot(agentId: pair.contactID, instanceId: "producer", sourceMessageId: "produce",
+      dispatchCheckpoint: .dispatching)
+    var peer = AgentTeamMemberSnapshot(agentId: pair.contactID, instanceId: "peer", sourceMessageId: "receive",
+      dispatchCheckpoint: .notStarted)
+    peer.dispatchDependencyMemberIds = [producer.memberId]
+    let other = AgentTeamMemberSnapshot(agentId: pair.contactID, instanceId: "other", sourceMessageId: "unrelated",
+      dispatchCheckpoint: .dispatching)
+    team.members = [team.members[0], producer, peer, other]
+    XCTAssertTrue(history.upsert(team))
+    func scope(_ member: AgentTeamMemberSnapshot) -> AgentCollaborationToolEvidenceScope {
+      .init(runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
+        memberId: member.memberId, sourceId: member.sourceMessageId)
+    }
+    let author = scope(producer), recipient = scope(peer)
+    let storeID = try XCTUnwrap(pair.storeID)
+    func publish(_ id: String, filename: String = "snapshot-\u{1F642}.bin", objectID: String? = nil) -> AgentMcpJSONObject {
+      let fileID = SHA256.hash(data: Data(id.utf8)).map { String(format: "%02x", $0) }.joined()
+      let body: AgentMcpJSONObject = ["format": .string(Handoff.format), "store_id": .string(storeID),
+        "file_id": .string(fileID), "name": .string(filename), "size_bytes": .int(2 * 1_024 * 1_024),
+        "sha256": .string(String(repeating: "b", count: 64)), "availability": .string("originating_desktop")]
+      var item: AgentMcpJSONObject = ["id": .string(fileID), "kind": .string("artifact"), "title": .string("Snapshot"),
+        "body": .object(body), "parents": .array([]), "resolves": .array([]), "observations": .array([])]
+      if let objectID { item["object_id"] = .string(objectID); item["base_revision"] = .int(1) }
+      let raw = AgentMcpJSONCodec.stringify(["format": .string("galaxyssi.research-artifact.v1"), "summary": .string("Snapshot"),
+        "workspace": .array([.object(item)])])
+      return ["mode": .string("publish"), "milestone_id": .string(id), "artifact": .string(raw)]
+    }
+    let first = publish("v1")
+    let wire = AgentDesktopCollaborationPublicationWire.self
+    let result = wire.result(try history.publishCollaborationMilestone(first, scope: author,
+      desktopWire: true, desktopFile: binding), phase: "publish")
+    let ref = try XCTUnwrap(result["revisions"]?.arrayValue?.first?.objectValue)
+    XCTAssertEqual(result["status"], .string("recorded"))
+    XCTAssertEqual(result["assignment_completed"], .bool(false))
+    let request: AgentMcpJSONObject = ["mode": .string("workspace"), "object_id": .string(ref.string("object_id")),
+      "revision": .int(1), "offset": .int(0)]
+    XCTAssertThrowsError(try history.recallDesktopFileHandoff(request, scope: recipient, reader: binding))
+    XCTAssertThrowsError(try history.recallDesktopFileHandoff(request, scope: scope(other), reader: binding))
+    XCTAssertTrue(history.advanceDispatchCheckpoint(runId: recipient.runId, conversationId: recipient.conversationId,
+      turnId: recipient.turnId, memberId: recipient.memberId, sourceMessageId: recipient.sourceId, to: .dispatching, now: 2))
+    let reopened = open()
+    let recalled = try reopened.recallDesktopFileHandoff(request, scope: recipient, reader: binding)
+    XCTAssertEqual(recalled["total_characters"], .int(Int64(recalled.string("content").utf16.count)))
+    XCTAssertEqual(recalled["next_offset"], .null)
+    let decoded = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(recalled.string("content").utf8))
+    XCTAssertEqual(decoded["object_id"], ref["object_id"])
+    XCTAssertEqual(decoded["sha256"], ref["sha256"])
+    XCTAssertEqual(decoded["body"]?.objectValue?["name"], .string("snapshot-\u{1F642}.bin"))
+    XCTAssertEqual(decoded["body"]?.objectValue?["size_bytes"], .int(2 * 1_024 * 1_024))
+    let second = publish("v2", objectID: ref.string("object_id"))
+    XCTAssertEqual(try reopened.publishCollaborationMilestone(second, scope: author, desktopWire: true,
+      desktopFile: binding)["status"], .string("published"))
+    var newer = request
+    newer["revision"] = .int(2)
+    XCTAssertThrowsError(try reopened.recallDesktopFileHandoff(newer, scope: recipient, reader: binding))
+    XCTAssertEqual(try reopened.recallDesktopFileHandoff(request, scope: recipient, reader: binding), recalled)
+    XCTAssertEqual(try reopened.publishCollaborationMilestone(first, scope: scope(other), desktopWire: true,
+      desktopFile: binding)["success"], .bool(false))
+    let receipt: AgentMcpJSONObject = ["mode": .string("receipt"), "milestone_id": .string("v1"),
+      "artifact_sha256": result["artifact_sha256"] ?? .null]
+    XCTAssertEqual(try reopened.publishCollaborationMilestone(receipt, scope: author, desktopWire: true,
+      desktopFile: binding)["status"], .string("recorded"))
+    let foreign = Handoff.Binding(pair: .init(desktopID: pair.desktopID, clientRouteID: pair.clientRouteID,
+      contactID: pair.contactID, phoneFingerprint: pair.phoneFingerprint, desktopFingerprint: "new-key"), generation: 1)
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(receipt, scope: author, desktopWire: true, desktopFile: foreign))
+    XCTAssertThrowsError(try reopened.recallDesktopFileHandoff(request, scope: recipient, reader: foreign))
+    var generic = request
+    generic["sha256"] = ref["sha256"]
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(generic, scope: author))
+    let database = try AgentTeamHistoryDatabase(fileURL: file,
+      storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    try database.transaction {
+      try database.insertResearchRecord(true, conversationId: recipient.conversationId, key: "native-evidence-revoked", revision: 0)
+    }
+    XCTAssertThrowsError(try reopened.recallDesktopFileHandoff(request, scope: recipient, reader: binding))
+  }
+
   func testDesktopPublicationRecoversExactFrozenArtifactsAndDistinguishesAbsence() throws {
     let suite = "desktop-publication-receipt-\(UUID())"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -1162,7 +1254,8 @@ extension GalaxySSIStoreTests {
     func lookup(_ id: String, _ digest: String) -> AgentMcpJSONObject {
       ["mode": .string("receipt"), "milestone_id": .string(id), "artifact_sha256": .string(digest)]
     }
-    for kind in ["text", "file"] {
+    do {
+      let kind = "text"
       let raw = """
       {"format":"galaxyssi.research-artifact.v1","summary":"Snapshot \u{1F642}","workspace":[
         {"id":"\(kind)","kind":"artifact","title":"Snapshot","body":{"format":"galaxyssi.\(kind)-artifact/1",
