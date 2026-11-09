@@ -141,6 +141,10 @@ enum AgentCollaborationRuleTopics {
     question, hypothesis claims, and environment scope. Omit explicit priors; the host uses the saved posterior.
     A prediction_outcome binds an exact forecast parent and one fully recalled original cloud tool observation
     from its executor. The host computes any posterior; declared probabilities are assumptions, not calibration.
+    To pre-register probe continuations, add continuations to a forecast choice before running the probe. Each branch
+    supplies id, rationale, when_events (registered event IDs to Boolean occurrence), an exact method reference, roles
+    bound to existing member IDs, declared inputs, and observed_inputs (input names to JSON pointers under report_pointer).
+    Declared and observed names must cover the saved method without overlap. Publish the exact outcome as a milestone.
     When numbers are unjustified, set prediction_mode to qualitative. Omit utility_unit, event utilities, and probabilities.
     Each choice supplies expectations for every event: expected, not_expected, or unknown. For competing explanations use
     hypothesis_test with question, assumptions, prediction_basis, misspecification_check, hypotheses (id, claim), event_ids,
@@ -190,6 +194,7 @@ enum AgentCollaborationRuleTopics {
     breaks_when). Cross-domain studies require distinct domains. Registration does not validate transfer.
     """),
     Topic(id: "tools", purpose: "Register a Python tool candidate and tests", prerequisites: ["foundation"], contract: """
+    \(AgentCollaborationTypedRecordValidation.toolGuidance)
     executable_tool requires Python source, name, purpose, applies_when, avoid_when, environment, dependencies, side_effects
     and an object input_schema using the existing Skill parameter contract. tool_test_plan binds the exact executable_tool parent
     and matching environment. Include purpose, coverage_gaps, oracle_basis and distinct cases with id, purpose, reason, input
@@ -231,10 +236,15 @@ enum AgentCollaborationRuleTopics {
     Each measurement must identify its actual variant's workflow_sha256 and the registered dataset_sha256.
     A workflow_selection_rule parents an independently retained workflow comparison lesson. Use purpose, domain, condition_basis,
     limitations, prospective_test, lesson, when_all and unless_any. Each condition has id, input, pointer, operator, value and rationale.
-    To admit a conditional workflow, use workflow_instance with selection_rule instead of method. Supply exact workspace
-    input references and authorized roles. Pointers are relative to each saved input's body. Unknown or excluded inputs select the
-    baseline, which still requires an applicability check; the host pins the choice and does not certify either method.
+    A conditional workflow_instance can also bind workspace_inputs: map input names to exact object_id, revision and sha256.
+    Pointers read the saved record body. Do not repeat a name across inputs, workspace_inputs and observed_inputs.
+    Workspace originals do not certify truth; an unknown condition can select the baseline without proving its applicability.
     \(AgentCollaborationWorkflowCheck.instructions)
+    To instantiate a workflow from original tool results, use workflow_instance with execution_id, exactly one of
+    method or selection_rule, inputs, roles and observed_inputs. Each observed input uses
+    {observation:{evidence_id,sha256},pointer,report_pointer?,milestone?}. For a current-round observation supply its
+    exact published milestone token from work_inventory. Do not repeat observed names in inputs. The host pins the
+    selected method and projected values at admission. Values are untrusted data, not proof of truth or freshness.
     """)
   ]
 
@@ -405,9 +415,10 @@ struct AgentCollaborationGoalWorkRun: Codable {
   var output: String? = nil
   var outputHash: String? = nil
   var truncated: Bool? = nil
-  var methodSelection: AgentCollaborationWorkflowInstance.Selection? = nil
   var desktopArchiveDigest: String? = nil
   var templateMemberID: String? = nil
+  var inputRevision: Int64? = nil
+  var probeOrigin: AgentMcpJSONObject? = nil
 
   func visibleState(now: Int64) -> State {
     guard state == .running, process != Self.processID || now >= startedAt + Self.leaseMillis
@@ -424,7 +435,8 @@ struct AgentCollaborationGoalWorkRun: Codable {
       "output": output.map(AgentMcpJSONValue.string) ?? .null, "output_sha256": outputHash.map(AgentMcpJSONValue.string) ?? .null,
       "output_truncated": .bool(truncated ?? false), "goal_accepted": .bool(false), "automatically_reexecuted": .bool(false)]
     if let templateMemberID { result["template_member_id"] = .string(templateMemberID) }
-    if let methodSelection { result["method_selection"] = .object(methodSelection.fields) }
+    if let inputRevision { result["input_revision"] = .int(inputRevision) }
+    if let probeOrigin { result["probe_origin"] = .object(probeOrigin) }
     return result
   }
 }
@@ -449,6 +461,7 @@ final class AgentGoalWorkAdmissionOrder {
 }
 
 struct AgentCollaborationLiveGraph: Codable, Equatable {
+  typealias InputBindings = AgentCollaborationWorkInputBindings
   enum DependencyPolicy: String, Codable { case success, terminal }
   enum Settlement: String, Codable { case succeeded, failed, cancelled, skipped }
 
@@ -464,8 +477,11 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var learning: LearningBinding? = nil
     var review_targets: [String]? = nil
     var workflowExecutionId: String? = nil
+    var probeBinding: AgentMcpJSONObject? = nil
+    var workflowObservedBinding: AgentMcpJSONObject? = nil
     var recruitment: Recruitment? = nil
     var blockerResolution: AgentCollaborationGoalAssessmentPolicy.Resolution? = nil
+    var data_dependencies: [InputBindings.Requirement]? = nil
 
     func hasIndependentReviewAuthors(_ author: (String) -> String?,
       identity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId) -> Bool {
@@ -599,28 +615,35 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     enum Entry: Decodable {
       case work(Work)
       case workflow(AgentCollaborationWorkflowInstance)
-      case conditionalWorkflow(AgentCollaborationWorkflowInstance.ConditionalRequest)
+      case probe(AgentCollaborationProbeContinuation.Request)
 
       init(from decoder: Decoder) throws {
         let object = try AgentMcpJSONObject(from: decoder)
-        if let raw = object["workflow_instance"] {
-          guard object.count == 1, let instance = raw.objectValue else {
+        if let raw = object["probe_continuation"] {
+          guard object.count == 1, let request = AgentCollaborationProbeContinuation.Request(raw) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+              debugDescription: "Invalid prospective probe continuation"))
+          }
+          self = .probe(request)
+        } else if let raw = object["workflow_instance"] {
+          guard object.count == 1, let instance = raw.objectValue,
+                Set(["execution_id", "inputs", "roles"]).isSubset(of: instance.keys),
+                Set(instance.keys).isSubset(of: ["execution_id", "method", "selection_rule", "inputs", "roles",
+                  "observed_inputs", "workspace_inputs"]),
+                (instance["method"] != nil) != (instance["selection_rule"] != nil) else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
               debugDescription: "Invalid workflow instance wrapper"))
           }
-          let bytes = Data(AgentMcpJSONCodec.stringify(instance).utf8)
-          let fields = Set(instance.keys)
-          if fields == ["execution_id", "method", "inputs", "roles"] {
-            self = .workflow(try JSONDecoder().decode(AgentCollaborationWorkflowInstance.self, from: bytes))
-          } else if fields == ["execution_id", "selection_rule", "inputs", "roles"] {
-            self = .conditionalWorkflow(try JSONDecoder().decode(AgentCollaborationWorkflowInstance.ConditionalRequest.self, from: bytes))
-          } else {
-            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
-              debugDescription: "Specify one exact method or selection rule"))
-          }
+          self = .workflow(try JSONDecoder().decode(AgentCollaborationWorkflowInstance.self,
+            from: Data(AgentMcpJSONCodec.stringify(instance).utf8)))
         } else {
           let item = try Work(from: decoder)
-          guard item.workflowExecutionId == nil, item.recruitment == nil, item.blockerResolution == nil,
+          guard object["data_dependencies"] == nil || object["data_dependencies"]?.arrayValue != nil else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+              debugDescription: "data_dependencies must be an array"))
+          }
+          guard item.workflowExecutionId == nil, item.probeBinding == nil, item.workflowObservedBinding == nil,
+                item.recruitment == nil, item.blockerResolution == nil,
                 !item.id.hasPrefix(AgentCollaborationGoalAssessmentPolicy.resolutionPrefix) else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
               debugDescription: "Workflow bindings must come from a saved method"))
@@ -631,8 +654,9 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     }
 
     let format: String
-    let work: [Entry]
+    var work: [Entry]
     var recruit: [RecruitmentRequest]? = nil
+    var rebind_inputs: [InputBindings.Rebind]? = nil
   }
 
   private(set) var work: [Work] = []
@@ -640,6 +664,32 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
   private(set) var learningPriorities: [String: Int64]? = nil
   private(set) var recruitments: [String: Recruitment]? = nil
   private(set) var procedureBindings: [String: AgentMcpJSONObject]? = nil
+  private(set) var inputBindingHistory: [String: [InputBindings.Revision]]? = nil
+
+  func appendingInputBindings(_ additions: [String: InputBindings.Revision]) -> Self? {
+    var next = self
+    var history = inputBindingHistory ?? [:]
+    for (id, revision) in additions {
+      guard let item = work.first(where: { $0.id == id }), item.workflowExecutionId == nil,
+            item.blockerResolution == nil, item.recruitment == nil,
+            let requirements = item.data_dependencies, !requirements.isEmpty else { return nil }
+      let prior = history[id, default: []]
+      guard prior.count < InputBindings.maximumRevisions, revision.revision == Int64(prior.count + 1),
+            !revision.reason.isBlank, !revision.inputs.isEmpty,
+            Set(revision.inputs.map { $0.requirement.work_id }).count == revision.inputs.count,
+            revision.inputs.allSatisfy({ input in
+              requirements.contains(input.requirement) && !input.versions.isEmpty &&
+                input.versions.allSatisfy { $0.workID == input.requirement.work_id }
+            }) else { return nil }
+      history[id] = prior + [revision]
+    }
+    next.inputBindingHistory = history.isEmpty ? nil : history
+    return next
+  }
+
+  func boundInputs(for workID: String) -> [String: InputBindings.BoundInput] {
+    InputBindings.current(inputBindingHistory?[workID] ?? [])
+  }
 
   func pinningProcedures(_ bindings: [String: AgentMcpJSONObject]) -> Self {
     var next = self
@@ -658,7 +708,8 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     guard raw.utf8.count <= 256_000,
           let expansion = try? JSONDecoder().decode(Expansion.self, from: Data(raw.utf8)),
           expansion.format == "galaxyssi.work-expansion.v1", !expansion.work.isEmpty,
-          expansion.work.allSatisfy({ $0.workflowExecutionId == nil && $0.recruitment == nil &&
+          expansion.work.allSatisfy({ $0.workflowExecutionId == nil && $0.probeBinding == nil &&
+            $0.workflowObservedBinding == nil && $0.recruitment == nil &&
             $0.blockerResolution == nil && !$0.id.hasPrefix(AgentCollaborationGoalAssessmentPolicy.resolutionPrefix) }) else { return nil }
     return appendingWork(expansion.work, authorizedMembers: authorizedMembers, historicalAuthors: historicalAuthors, settled: settled)
   }
@@ -681,7 +732,6 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
                  recruitmentTemplates: [String: String] = [:], recruitmentOwner: String = "",
                  recruitmentDirectory: String = "", authorIdentity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId,
                  resolveHistorical: (Recruitment, Bool) -> String? = { _, _ in nil },
-                 resolveConditional: (AgentCollaborationWorkflowInstance.ConditionalRequest) throws -> AgentCollaborationWorkflowInstance? = { _ in nil },
                  resolve: (AgentCollaborationWorkflowInstance) throws -> [Work]?) rethrows -> Self? {
     guard expansion.format == "galaxyssi.work-expansion.v1", !expansion.work.isEmpty else { return nil }
     var instances = workflowInstances ?? [:]
@@ -705,8 +755,9 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     guard directory.count <= AgentCollaborationRoster.maximumMembers else { return nil }
     var additions: [Work] = []
     for entry in expansion.work {
-      let instance: AgentCollaborationWorkflowInstance
       switch entry {
+      case .probe:
+        return nil
       case .work(var item):
         if item.member.hasPrefix("recruit:") {
           guard let binding = directory[item.member], recruitmentTemplates[binding.template] == binding.templateDigest
@@ -716,26 +767,16 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
           item.recruitment = binding
         }
         additions.append(item)
-        continue
-      case .workflow(let exact):
-        instance = exact
-      case .conditionalWorkflow(let request):
-        if let existing = instances[request.execution_id] {
-          guard existing.selection?.rule == request.selection_rule, existing.inputs == request.inputs,
-                existing.roles == request.roles else { return nil }
+      case .workflow(let instance):
+        if let existing = instances[instance.execution_id] {
+          guard existing == instance else { return nil }
           continue
         }
-        guard let selected = try resolveConditional(request) else { return nil }
-        instance = selected
+        guard let work = try resolve(instance), !work.isEmpty,
+              work.allSatisfy({ !$0.id.hasPrefix(AgentCollaborationGoalAssessmentPolicy.resolutionPrefix) }) else { return nil }
+        additions.append(contentsOf: work)
+        instances[instance.execution_id] = instance
       }
-      if let existing = instances[instance.execution_id] {
-        guard existing == instance else { return nil }
-        continue
-      }
-      guard let work = try resolve(instance), !work.isEmpty,
-            work.allSatisfy({ !$0.id.hasPrefix(AgentCollaborationGoalAssessmentPolicy.resolutionPrefix) }) else { return nil }
-      additions.append(contentsOf: work)
-      instances[instance.execution_id] = instance
     }
     if additions.isEmpty { return self }
     guard var next = appendingWork(additions, authorizedMembers: authorizedMembers,
@@ -760,6 +801,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
             item.assignment.utf8.count <= 16_000, authorizedMembers.contains(item.member),
             byId[item.id] == nil, settled[item.id] == nil, historicalAuthors[item.id] == nil,
             Set(item.depends_on).count == item.depends_on.count,
+            InputBindings.validRequirements(item.data_dependencies, dependencies: item.depends_on),
             !item.depends_on.contains(item.id) else { return nil }
       byId[item.id] = item
     }
@@ -812,58 +854,23 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
 }
 
 struct AgentCollaborationWorkflowInstance: Codable, Equatable {
-  struct ConditionalRequest: Decodable {
-    let execution_id: String
-    let selection_rule: AgentCollaborationResearchReference
-    let inputs: [String: AgentCollaborationResearchReference]
-    let roles: [String: String]
-  }
-
-  struct Selection: Codable, Equatable {
-    struct Outcome: Codable, Equatable {
-      let conditionID: String
-      let state: String
-      let unknownReason: String?
-      let actualType: String?
-
-      var fields: AgentMcpJSONObject {
-        ["condition_id": .string(conditionID), "state": .string(state),
-         "unknown_reason": unknownReason.map(AgentMcpJSONValue.string) ?? .null,
-         "actual_type": actualType.map(AgentMcpJSONValue.string) ?? .null]
-      }
-    }
-
-    let rule: AgentCollaborationResearchReference
-    let method: AgentCollaborationResearchReference
-    let variant: String
-    let reason: String
-    let inputsSHA256: String
-    let whenAll: [Outcome]
-    let unlessAny: [Outcome]
-
-    var fields: AgentMcpJSONObject {
-      ["rule": .object(AgentCollaborationSourceAccess.workspaceReference(rule)),
-       "method": .object(AgentCollaborationSourceAccess.workspaceReference(method)), "variant": .string(variant),
-       "reason": .string(reason), "inputs_sha256": .string(inputsSHA256), "quality_effect": .null,
-       "when_all": .array(whenAll.map { .object($0.fields) }), "unless_any": .array(unlessAny.map { .object($0.fields) }),
-       "baseline_applicability_verified": .bool(false), "causality_proven": .bool(false),
-       "input_evidence": .string("pinned_workspace_inputs_not_independently_verified"), "grants_permissions": .bool(false)]
-    }
-  }
-
   let execution_id: String
-  let method: AgentCollaborationResearchReference
+  let method: AgentCollaborationResearchReference?
   let inputs: [String: AgentCollaborationResearchReference]
   let roles: [String: String]
-  var selection: Selection? = nil
+  var probeOrigin: AgentCollaborationProbeContinuation.Origin? = nil
+  var selectionRule: AgentCollaborationResearchReference? = nil
+  var observedInputs: AgentMcpJSONObject? = nil
+  var inputValues: AgentMcpJSONObject? = nil
+  var workspaceInputs: [String: AgentCollaborationResearchReference]? = nil
 
-  func compile(_ body: AgentMcpJSONObject) -> [AgentCollaborationLiveGraph.Work]? {
+  func compile(_ body: AgentMcpJSONObject, inputNames: Set<String>? = nil) -> [AgentCollaborationLiveGraph.Work]? {
     guard !execution_id.isBlank, execution_id.utf8.count <= 160,
           AgentCollaborationWorkflowIntake.validates(body),
           let declaredRoles = body["roles"]?.arrayValue,
           Set(declaredRoles.compactMap(\.stringValue)) == Set(roles.keys),
           let declaredInputs = body["inputs"]?.arrayValue,
-          Set(declaredInputs.compactMap(\.stringValue)) == Set(inputs.keys),
+          Set(declaredInputs.compactMap(\.stringValue)) == (inputNames ?? Set(inputs.keys)),
           let steps = body["steps"]?.arrayValue else { return nil }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.withoutEscapingSlashes]
@@ -888,6 +895,50 @@ struct AgentCollaborationWorkflowInstance: Codable, Equatable {
     let members = Dictionary(uniqueKeysWithValues: compiled.map { ($0.id, $0.member) })
     guard compiled.allSatisfy({ $0.hasIndependentReviewAuthors({ members[$0] }) }) else { return nil }
     return compiled
+  }
+}
+
+extension AgentCollaborationWorkflowInstance {
+  private enum Key: String, CodingKey {
+    case execution_id, method, inputs, roles, probeOrigin
+    case selectionRule = "selection_rule", observedInputs = "observed_inputs"
+    case workspaceInputs = "workspace_inputs"
+  }
+
+  init(from decoder: Decoder) throws {
+    let fields = try decoder.container(keyedBy: Key.self)
+    execution_id = try fields.decode(String.self, forKey: .execution_id)
+    method = fields.contains(.method) ? try fields.decode(AgentCollaborationResearchReference.self, forKey: .method) : nil
+    selectionRule = fields.contains(.selectionRule)
+      ? try fields.decode(AgentCollaborationResearchReference.self, forKey: .selectionRule) : nil
+    observedInputs = fields.contains(.observedInputs) ? try fields.decode(AgentMcpJSONObject.self, forKey: .observedInputs) : nil
+    workspaceInputs = fields.contains(.workspaceInputs)
+      ? try fields.decode([String: AgentCollaborationResearchReference].self, forKey: .workspaceInputs) : nil
+    roles = try fields.decode([String: String].self, forKey: .roles)
+    probeOrigin = try fields.decodeIfPresent(AgentCollaborationProbeContinuation.Origin.self, forKey: .probeOrigin)
+    if selectionRule != nil || observedInputs != nil {
+      inputs = [:]
+      inputValues = try fields.decode(AgentMcpJSONObject.self, forKey: .inputs)
+    } else {
+      inputs = try fields.decode([String: AgentCollaborationResearchReference].self, forKey: .inputs)
+    }
+    guard (method != nil) != (selectionRule != nil),
+          workspaceInputs == nil || (selectionRule != nil && workspaceInputs?.isEmpty == false) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Select one method or rule"))
+    }
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var fields = encoder.container(keyedBy: Key.self)
+    try fields.encode(execution_id, forKey: .execution_id)
+    try fields.encodeIfPresent(method, forKey: .method)
+    try fields.encodeIfPresent(selectionRule, forKey: .selectionRule)
+    try fields.encodeIfPresent(observedInputs, forKey: .observedInputs)
+    try fields.encodeIfPresent(workspaceInputs, forKey: .workspaceInputs)
+    try fields.encode(roles, forKey: .roles)
+    try fields.encodeIfPresent(probeOrigin, forKey: .probeOrigin)
+    if let inputValues { try fields.encode(inputValues, forKey: .inputs) }
+    else { try fields.encode(inputs, forKey: .inputs) }
   }
 }
 
@@ -1041,11 +1092,13 @@ enum AgentCollaborationGoalAssessmentPolicy {
   static let runWorkMode = "run_work"
   static let runReadyWorkMode = "run_ready_work"
   static let workInventoryMode = "work_inventory"
+  static let workInputMode = "work_input"
   static let checkGoalEvidenceMode = "check_goal_evidence"
   static let admissionInstructions = "List ready research work in the intended admission order. Waiting dependencies do not reserve capacity. Existing learning priorities reorder only their eligible learning positions. Admission order does not guarantee completion order."
 
   static func requiresCoordinator(_ mode: String) -> Bool {
-    isCoordinatorMutation(mode) || mode == checkGoalEvidenceMode || mode == workInventoryMode || mode == assessmentRepairMode
+    isCoordinatorMutation(mode) || mode == checkGoalEvidenceMode || mode == workInventoryMode ||
+      mode == workInputMode || mode == assessmentRepairMode
   }
 
   static func dispatchesWork(_ mode: String) -> Bool {
