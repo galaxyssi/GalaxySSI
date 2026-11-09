@@ -3138,6 +3138,7 @@ final class MessageCoordinator: ObservableObject {
           let roster = session.collaborationRoster,
           AgentCollaborationMemberIdentity(nodeID: context.member.memberId)?.member(in: roster)?.resourceId == contact,
           let parent = store.agentTask(id: context.team.taskId),
+          !parent.blocked, !PhoneExecutionAuthority.isCancelled(taskId: parent.taskId),
           parent.phase == .executing || parent.phase == .waitingResponse
     else { return }
     if publishing, AgentCollaborationGoalAssessmentPolicy.isCoordinatorMutation(phase) {
@@ -10052,8 +10053,13 @@ final class MessageCoordinator: ObservableObject {
       let history = AgentTeamExecutionHistoryStore.shared
       let templates = goalRecruitmentTemplates(scope, roster: roster, targets: targets)
       guard let admission = try? history.publishCollaborationMilestone(input, scope: scope,
-        recruitmentTemplates: templates, recruitmentRoster: roster),
-            admission["status"] == .string("work_admitted") else {
+        recruitmentTemplates: templates, recruitmentRoster: roster) else {
+        return ["success": .bool(false), "status": .string("work_admission_unavailable")]
+      }
+      if ["probe_needs_replan", "probe_already_admitted"].contains(admission.string("status")) {
+        return admission
+      }
+      guard admission["status"] == .string("work_admitted") else {
         return ["success": .bool(false), "status": .string("work_admission_unavailable")]
       }
       receipt = admission

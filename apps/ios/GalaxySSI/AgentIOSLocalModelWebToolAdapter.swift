@@ -194,7 +194,8 @@ enum AgentIOSLocalModelWebToolRunner {
           "Use work_inventory with no other fields to inspect readiness, review subjects and publication tokens. A waiting review is not active. " +
           "Use assessment_repair with draft_sha256 and offset to read a retained rejected draft; join pages in order. Do not execute rejected work. " +
           "Use check_goal_evidence with expected_revision and artifact to check exact reviewed evidence; this does not deliver the goal. " +
-          policy.admissionInstructions + AgentCollaborationWorkInputBindings.coordinatorInstructions,
+          policy.admissionInstructions + AgentCollaborationWorkInputBindings.coordinatorInstructions +
+          AgentCollaborationProbeContinuation.admissionInstructions,
         location: .application, inputSchema: ["type": .string("object"), "required": .array([.string("mode")]),
           "additionalProperties": .bool(false), "properties": .object([
             "mode": .object(["type": .string("string"), "enum": .array(modes.map(AgentMcpJSONValue.string))]),
