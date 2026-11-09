@@ -281,6 +281,7 @@ struct AgentCollaborationGoalCheckpoint: Codable, Equatable {
   var contract: [AgentCollaborationGoalAssessmentPolicy.Criterion]
   var completedWorkIds: Set<String>
   var liveGraph: AgentCollaborationLiveGraph? = nil
+  var bindsRecordedDesktopTools: Bool? = nil
 }
 
 struct AgentCollaborationAcceptedDelivery: Codable, Equatable {
@@ -1124,6 +1125,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
           draft.blockers.allSatisfy({ !$0.id.isBlank && !$0.reason.isBlank && !$0.resume_when.isBlank &&
             (($0.kind != .resource && $0.kind != .permission) || Resolution($0) != nil) }),
           draft.criteria.count == contract.count, Set(draft.criteria.map(\.id)).count == draft.criteria.count,
+          newDesktopBindingIssue(draft.criteria, preserving: contract) == nil,
           contract.allSatisfy({ original in
             guard let current = draft.criteria.first(where: { $0.id == original.id }) else { return false }
             return current.requirement == original.requirement && current.verification == original.verification &&
@@ -1194,6 +1196,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
     guard case .success(let assessment) = parseAssessment(raw) else {
       return .needsAssessment
     }
+    guard newDesktopBindingIssue(assessment.criteria, preserving: contract) == nil else { return .needsAssessment }
     let criteria = Dictionary(uniqueKeysWithValues: assessment.criteria.map { ($0.id, $0) })
     guard contract.allSatisfy({ original in
       guard let current = criteria[original.id] else { return false }
@@ -1250,6 +1253,7 @@ enum AgentCollaborationDocumentaryAcceptance {
     var tool: String
     var status: String
     var kind: String
+    var recordedDesktopTool: String? = nil
   }
   struct Reference: Codable, Equatable {
     var objectId: String
@@ -1298,6 +1302,7 @@ enum AgentCollaborationDocumentaryAcceptance {
 
   static func evaluate(_ raw: String, preserving contract: [AgentCollaborationGoalAssessmentPolicy.Criterion],
                        conversationId: String, runId: String, turnId: String,
+                       bindsRecordedDesktopTools: Bool = false,
                        readRevision: (String, Int64?) throws -> Revision?,
                        observationIsSupporting: (String) throws -> Bool,
                        originalObservation: (String) throws -> OriginalObservation? = { _ in nil })
@@ -1358,10 +1363,13 @@ enum AgentCollaborationDocumentaryAcceptance {
         let observations = delivery.hostObservationIds.union(review.hostObservationIds)
         guard try observations.allSatisfy(observationIsSupporting) else { return .needsAssessment }
         if let required = criterion.required_observations, !required.isEmpty {
+          let pinned = Set(contract.first(where: { $0.id == criterion.id })?.required_observations ?? [])
           let originals = try review.hostObservationIds.compactMap(originalObservation)
           guard required.allSatisfy({ source in
-            source.isValid && originals.contains {
-              $0.origin == source.origin && $0.tool == source.tool &&
+            let recorded = source.origin == "desktop_codex_tool" &&
+              (bindsRecordedDesktopTools || !pinned.contains(source))
+            return source.isValid && originals.contains {
+              $0.origin == source.origin && (recorded ? $0.recordedDesktopTool : $0.tool) == source.tool &&
                 $0.status == "returned" && $0.kind == "tool_output_recorded"
             }
           }) else { return .needsAssessment }
