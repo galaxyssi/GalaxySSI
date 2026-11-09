@@ -4114,7 +4114,8 @@ final class MessageCoordinator: ObservableObject {
       if index.nextSequence > cursor || final {
         guard isCurrent() else { return }
         do {
-          try history.advanceDesktopEvidenceCursor(request, from: cursor, to: index.nextSequence, final: final)
+          try history.advanceDesktopEvidenceCursor(request, from: cursor, to: index.nextSequence, final: final,
+            skippedOversized: index.skippedOversized)
         } catch { return }
         if final { retrySavedPublication() }
       }

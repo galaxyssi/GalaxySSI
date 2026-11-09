@@ -373,6 +373,19 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(try reopened.desktopEvidenceJobs(after: "").map(\.key), [job.key])
   }
 
+  func testDesktopEvidenceLegacyCursorDoesNotClaimAnExactOversizeCount() throws {
+    typealias Cursor = AgentDesktopToolEvidenceWire.ImportCursor
+    let legacy = try JSONDecoder().decode(Cursor.self, from: Data(#"{"sequence":4,"archiveFinal":false}"#.utf8))
+    XCTAssertNil(legacy.skippedOversized)
+    let resumed = try XCTUnwrap(legacy.advancing(to: 6, final: false, skipped: 1))
+    XCTAssertEqual(resumed.skippedOversized, 1)
+    XCTAssertEqual(resumed.skippedCountComplete, false)
+    XCTAssertNil(resumed.advancing(to: 6, final: true, skipped: 1))
+    let finalized = try XCTUnwrap(resumed.advancing(to: 6, final: true, skipped: 0))
+    XCTAssertEqual(finalized.skippedOversized, 1)
+    XCTAssertEqual(finalized.skippedCountComplete, false)
+  }
+
   func testDesktopToolEvidenceRejectsForeignNonceGenerationAndInnerScope() throws {
     let source = UUID().uuidString.lowercased()
     let owner = AgentTeamReplyOwner(supervisorRunId: "run", memberId: "member",
@@ -462,6 +475,8 @@ extension GalaxySSIStoreTests {
     let listing = try history.recallCollaborationOriginal(["mode": .string("desktop_evidence_list")], scope: liveReader)
     XCTAssertEqual(listing["entries"]?.arrayValue?.first?.objectValue?["evidence_id"], .string(liveReceipt.archiveId))
     XCTAssertEqual(listing["archive_state"], .string("local_snapshot_not_exhaustive"))
+    XCTAssertEqual(listing["provider_history_complete"], .bool(false))
+    XCTAssertEqual(listing["import_coverage"], .array([]))
     XCTAssertThrowsError(try history.advanceDesktopEvidenceCursor(request, from: 0, to: 1, final: true))
     try history.advanceDesktopEvidenceCursor(request, from: 0, to: 1, final: false)
     let liveQuery: AgentMcpJSONObject = ["mode": .string("desktop_evidence"), "evidence_id": .string(liveReceipt.archiveId),
@@ -482,13 +497,48 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(receipt.sha256, descriptor.sha256)
     XCTAssertEqual(try history.archiveDesktopToolEvidence(request: request, descriptor: descriptor, pages: [body]), receipt)
     XCTAssertTrue(try history.hasArchivedDesktopEvidence(descriptor, request: request))
-    XCTAssertEqual(try history.desktopEvidenceCursor(request), .init(sequence: 1, archiveFinal: false))
+    XCTAssertEqual(try history.desktopEvidenceCursor(request),
+      .init(sequence: 1, archiveFinal: false, skippedOversized: 0, skippedCountComplete: true))
     XCTAssertThrowsError(try history.advanceDesktopEvidenceCursor(request, from: 0, to: 2, final: false))
-    try history.advanceDesktopEvidenceCursor(request, from: 1, to: 1, final: true)
+    let limit = AgentDesktopToolEvidenceWire.maximumOriginalBytes
+    let width = AgentDesktopToolEvidenceWire.maximumPageBytes
+    var oversized = response
+    oversized["evidence_id"] = .string(String(repeating: "b", count: 64))
+    oversized["sequence"] = .int(2)
+    oversized["total_bytes"] = .int(Int64(limit + 1))
+    oversized["page_count"] = .int(Int64(limit / width + 1))
+    var oversizedIndex = response
+    oversizedIndex["mode"] = .string("index")
+    oversizedIndex["entries"] = .array([.object(oversized)])
+    oversizedIndex["next_sequence"] = .int(2)
+    oversizedIndex["has_more"] = .bool(false)
+    oversizedIndex["archive_final"] = .bool(true)
+    oversizedIndex["provider_history_complete"] = .bool(false)
+    oversizedIndex["coverage"] = .string("observed_completed_items_only")
+    oversizedIndex["projection"] = .string("external_execution_observations")
+    let oversizedPage = try XCTUnwrap(request.verifyIndex(oversizedIndex, authenticatedDesktopId: "desktop", after: 1))
+    XCTAssertEqual(oversizedPage.skippedOversized, 1)
+    XCTAssertNil(request.pageRequest(try XCTUnwrap(oversizedPage.entries.first), index: 0))
+    try history.advanceDesktopEvidenceCursor(request, from: 1, to: 2, final: true,
+      skippedOversized: oversizedPage.skippedOversized)
+    XCTAssertThrowsError(try history.advanceDesktopEvidenceCursor(request, from: 1, to: 2, final: true,
+      skippedOversized: oversizedPage.skippedOversized))
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets, fileURL: file)
     let reader = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "group", turnId: "turn",
       memberId: "independent", sourceId: "independent-source")
     let listed = try reopened.recallCollaborationOriginal(["mode": .string("desktop_evidence_list")], scope: reader)
+    XCTAssertEqual(listed["entries"]?.arrayValue?.count, 1)
+    let coverage = try XCTUnwrap(listed["import_coverage"]?.arrayValue?.first?.objectValue)
+    XCTAssertEqual(coverage["member_id"], .string("member"))
+    XCTAssertEqual(coverage["index_final"], .bool(true))
+    XCTAssertEqual(coverage["oversized_originals_skipped"], .int(1))
+    XCTAssertEqual(coverage["skipped_count_complete_for_indexed_range"], .bool(true))
+    XCTAssertEqual(coverage["maximum_original_bytes"], .int(Int64(limit)))
+    XCTAssertEqual(listed["provider_history_complete"], .bool(false))
+    var foreignReader = reader
+    foreignReader.turnId = "foreign-turn"
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(["mode": .string("desktop_evidence_list")],
+      scope: foreignReader))
     let entry = try XCTUnwrap(listed["entries"]?.arrayValue?.first?.objectValue)
     XCTAssertEqual(entry["evidence_id"], .string(receipt.archiveId))
     XCTAssertEqual(entry["tool"], .string("commandExecution"))
@@ -559,8 +609,9 @@ extension GalaxySSIStoreTests {
     try history.enqueueDesktopEvidenceJob(job)
     XCTAssertEqual(try reopened.desktopEvidenceJobs(after: "").map(\.key), [job.key])
     XCTAssertTrue(try reopened.desktopEvidenceJobs(after: job.key).isEmpty)
-    XCTAssertEqual(try reopened.desktopEvidenceCursor(request), .init(sequence: 1, archiveFinal: true))
-    XCTAssertThrowsError(try reopened.advanceDesktopEvidenceCursor(request, from: 1, to: 2, final: false))
+    XCTAssertEqual(try reopened.desktopEvidenceCursor(request),
+      .init(sequence: 2, archiveFinal: true, skippedOversized: 1, skippedCountComplete: true))
+    XCTAssertThrowsError(try reopened.advanceDesktopEvidenceCursor(request, from: 2, to: 3, final: false))
     let newer = try XCTUnwrap(AgentDesktopToolEvidenceWire.Request(binding: binding, generation: 3, nonce: "new"))
     XCTAssertEqual(try reopened.desktopEvidenceCursor(newer), .init())
     XCTAssertFalse(try reopened.hasArchivedDesktopEvidence(descriptor, request: newer))

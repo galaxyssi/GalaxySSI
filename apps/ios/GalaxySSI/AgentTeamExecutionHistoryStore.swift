@@ -1574,8 +1574,26 @@ final class AgentTeamExecutionHistoryStore {
           return try Self.desktopAcceptanceArchive(id: id, scope: scope, team: team, database: database).map { .object(reference($0)) }
         }
         let next = keys.count > 32 ? keys.prefix(32).last.map { String($0.dropFirst(prefix.count)) } : nil
+        let coverage = try team.members.compactMap { member -> AgentMcpJSONValue? in
+          guard member.deliveryMode == .observe,
+                let owner = try database.replyOwner(source: member.sourceMessageId, conversation: scope.conversationId,
+                  turn: scope.turnId, contact: member.agentId),
+                owner.supervisorRunId == scope.runId,
+                let generation = owner.desktopEvidenceGeneration(member: member, teamState: team.state)
+          else { return nil }
+          let key = AgentDesktopToolEvidenceWire.coverageKey(run: scope.runId, turn: scope.turnId,
+            member: member.memberId, source: member.sourceMessageId, generation: generation)
+          guard let progress = try database.researchRecord(AgentDesktopToolEvidenceWire.ImportCursor.self,
+            conversationId: scope.conversationId, key: key, revision: 0),
+                let skipped = progress.skippedOversized else { return nil }
+          return .object(["member_id": .string(member.memberId), "index_final": .bool(progress.archiveFinal),
+            "oversized_originals_skipped": .int(skipped),
+            "skipped_count_complete_for_indexed_range": .bool(progress.skippedCountComplete == true),
+            "maximum_original_bytes": .int(Int64(AgentDesktopToolEvidenceWire.maximumOriginalBytes))])
+        }
         return ["entries": .array(entries), "next_cursor": next.map(AgentMcpJSONValue.string) ?? .null,
           "archive_state": .string("local_snapshot_not_exhaustive"),
+          "provider_history_complete": .bool(false), "import_coverage": .array(coverage),
           "trust": .string("execution_observed_not_claim_verified")]
       }
       guard let archive = try Self.desktopAcceptanceArchive(id: id, scope: scope, team: team, database: database),
@@ -4016,19 +4034,22 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   func advanceDesktopEvidenceCursor(_ request: AgentDesktopToolEvidenceWire.Request,
-                                    from previous: Int64, to next: Int64, final: Bool) throws {
-    guard previous >= 0, next >= previous, next <= 9_007_199_254_740_991,
-          next > previous || final else { throw AgentTeamHistoryDatabase.Failure.stale }
+                                    from previous: Int64, to next: Int64, final: Bool, skippedOversized: Int = 0) throws {
     try access { database in
       let conversation = request.binding.identity.conversationId
       let owner = try Self.desktopEvidenceOwner(request, database: database)
       guard !final || owner.member.status == .succeeded else { throw AgentTeamHistoryDatabase.Failure.stale }
       let current = try database.researchRecord(AgentDesktopToolEvidenceWire.ImportCursor.self,
         conversationId: conversation, key: request.cursorKey) ?? .init()
-      guard !current.archiveFinal, current.sequence == previous else { throw AgentTeamHistoryDatabase.Failure.stale }
+      guard current.sequence == previous,
+            let advanced = current.advancing(to: next, final: final, skipped: skippedOversized)
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
       // Reserve the odd revision for marking the same sequence final.
-      try database.insertResearchRecord(AgentDesktopToolEvidenceWire.ImportCursor(sequence: next, archiveFinal: final),
+      try database.insertResearchRecord(advanced,
         conversationId: conversation, key: request.cursorKey, revision: next * 2 + (final ? 1 : 0))
+      let key = AgentDesktopToolEvidenceWire.coverageKey(run: owner.team.supervisorRunId, turn: owner.team.taskId,
+        member: owner.member.memberId, source: owner.member.sourceMessageId, generation: request.generation)
+      try database.insertResearchRecord(advanced, conversationId: conversation, key: key, revision: 0, replaceCoverage: true)
     }
   }
 
