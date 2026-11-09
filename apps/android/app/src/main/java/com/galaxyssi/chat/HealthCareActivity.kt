@@ -145,6 +145,9 @@ class HealthCareActivity : Activity() {
         ui.add(content, ui.text("${value.assessment.value} ${value.assessment.unit}", 22f, bold = true), 8)
         ui.add(content, ui.text(getString(value.stage.titleResource()), 14f, muted = true), 6)
         HealthCarePriorityPresentation.add(this, content, value)
+        if (profile) ui.add(content, ui.profileRow(getString(R.string.health_visit_title), getString(R.string.health_visit_entry)) {
+            startActivity(Intent(this, HealthCareVisitActivity::class.java).putHealthNavigationFixture(names).putExtra("health_care_id", value.id))
+        }.apply { tag = "health-care-visit" }, 8)
         if (profile) ui.add(content, ui.profileRow(getString(R.string.health_question_title), getString(R.string.health_question_summary)) {
             questionReview.show(value.id)
         }.apply { tag = "health-care-questions" }, 8)
