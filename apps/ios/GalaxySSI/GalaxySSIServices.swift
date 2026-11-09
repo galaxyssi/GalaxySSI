@@ -3356,7 +3356,7 @@ final class MessageCoordinator: ObservableObject {
     guard isAuthorized(),
           (try? history.updateSavedToolExecution(.running(executionID: record.executionID), scope: scope))?.didStart == true else { return }
     let released = record.releaseTarget != nil
-    let mode = released ? "run" : "test"
+    let mode = record.executionMode
     func finish(_ result: AgentMcpJSONObject) {
       var payload = result
       payload["execution_mode"] = .string(mode)

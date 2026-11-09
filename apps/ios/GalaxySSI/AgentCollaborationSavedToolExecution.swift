@@ -45,6 +45,7 @@ enum AgentCollaborationSavedToolExecution {
           let targets: [ReleaseTarget] = [.release, .channel]
           guard let target = targets.first(where: { Set(input.keys) == base.union([$0.rawValue, "parameters"]) }),
                 let values = input["parameters"]?.objectValue,
+                (try? JSONEncoder().encode(values)) != nil,
                 AgentMcpJSONCodec.stringify(values).utf8.count <= 4_096 else { return nil }
           key = target.rawValue
           releaseTarget = target
@@ -105,8 +106,11 @@ enum AgentCollaborationSavedToolExecution {
     var releaseTarget: ReleaseTarget? = nil
     var parameters: AgentMcpJSONObject? = nil
 
+    var executionMode: String { releaseTarget == nil ? "test" : "run" }
+
     var response: AgentMcpJSONObject {
       ["success": .bool(true), "status": .string(state.rawValue), "execution_id": .string(executionID),
+        "execution_mode": .string(executionMode),
         "input_sha256": .string(inputHash), "updated_at": .int(updatedAt), "result": result.map(AgentMcpJSONValue.object) ?? .null,
         "retry_after_ms": state.active ? .int(2_000) : .null, "automatically_reexecuted": .bool(false),
         "reason": .string(state == .interrupted
@@ -134,10 +138,13 @@ enum AgentCollaborationSavedToolExecution {
     var shouldLaunch = false
     var shouldCancel = false
     var didStart = false
-    var busy = false
+    var busyExecutionMode: String? = nil
 
     var response: AgentMcpJSONObject {
-      if busy { return ["success": .bool(true), "status": .string("busy"), "retry_after_ms": .int(2_000)] }
+      if let busyExecutionMode {
+        return ["success": .bool(true), "status": .string("busy"),
+          "execution_mode": .string(busyExecutionMode), "retry_after_ms": .int(2_000)]
+      }
       return record?.response ?? ["success": .bool(true), "status": .string("not_recorded")]
     }
   }
@@ -165,7 +172,9 @@ enum AgentCollaborationSavedToolExecution {
           guard record.inputHash == request.inputHash else { throw AgentTeamHistoryDatabase.Failure.stale }
           return Outcome(record: record)
         }
-        guard allowAdmission else { return Outcome(record: nil, busy: true) }
+        guard allowAdmission else {
+          return Outcome(record: nil, busyExecutionMode: request.releaseTarget == nil ? "test" : "run")
+        }
         return Outcome(record: Record(scope: scope, executionID: request.executionID, inputHash: request.inputHash,
           plan: plan, timeoutMillis: timeoutMillis, ownerProcess: process, state: .queued, updatedAt: now,
           releaseTarget: request.releaseTarget, parameters: request.parameters), shouldLaunch: true)

@@ -2686,11 +2686,40 @@ extension GalaxySSIStoreTests {
         "sha256": .string(String(repeating: "d", count: 64)), "revision": .int(1)]),
       "parameters": .object(["value": .int(21)]), "timeout_ms": .int(2_000)]
     let requestedRun = try XCTUnwrap(Execution.Request(phase: "start", input: runInput))
+    let busyRun = try history.updateSavedToolExecution(.request(requestedRun), scope: scope(),
+      allowAdmission: false, process: "a", now: 1)
+    XCTAssertEqual(busyRun.response["execution_mode"], .string("run"))
+    XCTAssertFalse(busyRun.shouldLaunch)
     let runAdmission = try history.updateSavedToolExecution(.request(requestedRun), scope: scope(), process: "a", now: 1)
     XCTAssertTrue(runAdmission.shouldLaunch)
+    XCTAssertEqual(runAdmission.response["execution_mode"], .string("run"))
     XCTAssertEqual(runAdmission.record?.releaseTarget, .release)
     XCTAssertEqual(runAdmission.record?.parameters?["value"], .int(21))
     XCTAssertFalse(try history.updateSavedToolExecution(.request(requestedRun), scope: scope(), process: "a", now: 2).shouldLaunch)
+    XCTAssertEqual(try history.updateSavedToolExecution(.running(executionID: "run-tool"), scope: scope(), process: "a",
+      now: 2).response["execution_mode"], .string("run"))
+    let finishedRun: AgentMcpJSONObject = ["native_status": .string("succeeded"), "passed": .bool(true)]
+    _ = try history.updateSavedToolExecution(.finish(executionID: "run-tool", result: finishedRun), scope: scope(), process: "a", now: 3)
+    let restoredRun = try open().updateSavedToolExecution(.request(query("run-tool", "status")), scope: scope(), process: "b", now: 4)
+    XCTAssertEqual(restoredRun.response["status"], .string("finished"))
+    XCTAssertEqual(restoredRun.response["execution_mode"], .string("run"))
+    XCTAssertEqual(restoredRun.response["result"], .object(finishedRun))
+    let cancelFinishedRun = try open().updateSavedToolExecution(.request(query("run-tool", "cancel")), scope: scope(), process: "b", now: 5)
+    XCTAssertEqual(cancelFinishedRun.record, restoredRun.record)
+    XCTAssertFalse(cancelFinishedRun.shouldCancel)
+    var ambiguous = runInput
+    ambiguous["capability_channel"] = runInput["tool_release"]
+    XCTAssertNil(Execution.Request(phase: "start", input: ambiguous))
+    var channel = runInput
+    let selector = channel.removeValue(forKey: "tool_release")
+    channel["capability_channel"] = selector
+    XCTAssertEqual(Execution.Request(phase: "start", input: channel)?.releaseTarget, .channel)
+    for invalid in [Double.nan, Double.infinity, -Double.infinity] {
+      channel["parameters"] = .object(["nested": .array([.object(["value": .double(invalid)])])])
+      XCTAssertNil(Execution.Request(phase: "start", input: channel))
+    }
+    channel["parameters"] = .object(["nested": .array([.object(["value": .null, "other": .double(1.5)])])])
+    XCTAssertNotNil(Execution.Request(phase: "start", input: channel))
     runInput["parameters"] = .object(["value": .int(22)])
     XCTAssertThrowsError(try history.updateSavedToolExecution(.request(try XCTUnwrap(
       Execution.Request(phase: "start", input: runInput))), scope: scope(), process: "a", now: 2))
@@ -2706,6 +2735,7 @@ extension GalaxySSIStoreTests {
     let admitted = try history.updateSavedToolExecution(.request(original), scope: scope(), process: "a", now: 1)
     XCTAssertTrue(admitted.shouldLaunch)
     XCTAssertEqual(admitted.response["status"], .string("queued"))
+    XCTAssertEqual(admitted.response["execution_mode"], .string("test"))
     XCTAssertFalse(try history.updateSavedToolExecution(.request(original), scope: scope(), process: "a", now: 2).shouldLaunch)
     let different = try XCTUnwrap(start("tool", timeout: .int(3_000)))
     XCTAssertThrowsError(try history.updateSavedToolExecution(.request(different), scope: scope(), process: "a", now: 2))
