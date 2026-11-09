@@ -52,9 +52,10 @@ final class AgentSingleResearchCalibrationTests: XCTestCase {
           calibration.reasoningEffort.rawValue)
         XCTAssertEqual(context.request.context.string("_galaxyssi_research_stage"), AgentSingleResearchCalibration.stage)
         XCTAssertTrue(history.upsert(assignment))
-        XCTAssertThrowsError(try history.publishCollaborationMilestone(["mode": .string("status")], scope: scope))
+        XCTAssertEqual(try history.milestoneCapability(scope: scope), .notEnrolled)
         try history.enrollSingleResearchCalibration(calibration)
         let reopened = fixture.history()
+        XCTAssertEqual(try reopened.milestoneCapability(scope: scope), .available)
         let initial = try reopened.publishCollaborationMilestone(["mode": .string("list")], scope: scope)
         XCTAssertEqual(initial["milestones"]?.arrayValue, [])
         let receipt = try reopened.publishCollaborationMilestone([
@@ -87,6 +88,7 @@ final class AgentSingleResearchCalibrationTests: XCTestCase {
     try history.publishSavedResearchReply(final, scope: scope)
 
     let reopened = fixture.history()
+    XCTAssertEqual(try reopened.milestoneCapability(scope: scope), .finalized)
     let saved = try XCTUnwrap(reopened.committedResearchRevisions(scope: scope)?.first)
     let future = self.scope(run: "next-run", turn: "next-turn")
     XCTAssertTrue(reopened.upsert(activeSnapshot(future, stage: nil)))
@@ -98,7 +100,7 @@ final class AgentSingleResearchCalibrationTests: XCTestCase {
     let directory = try reopened.recallCollaborationOriginal(["mode": .string("capabilities")], scope: future)
     XCTAssertEqual(directory["capabilities"]?.arrayValue?.first?.objectValue?.string("state"), "unverified_candidate")
     XCTAssertEqual(directory["grants_permissions"], .bool(false))
-    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(["mode": .string("status")], scope: future))
+    XCTAssertEqual(try reopened.milestoneCapability(scope: future), .notEnrolled)
   }
 
   func testEnrollmentCannotAuthorizeChangedObjectiveMultipleMembersOrRevokedGroup() throws {

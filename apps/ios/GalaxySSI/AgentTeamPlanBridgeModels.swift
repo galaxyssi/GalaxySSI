@@ -346,7 +346,7 @@ enum AgentTeamPlanCompiler {
     var members = selected.compactMap { member -> AgentTeamMember? in
       guard let target = available[member.resourceId] else { return nil }
       let isCoordinator = member.id == coordinatorId
-      let role = String(member.role.ifBlank(Self.role(for: target, primary: isCoordinator)).prefix(80))
+      let role = AgentTeamDispatchText.role(member.role.ifBlank(Self.role(for: target, primary: isCoordinator)))
       var objective = isCoordinator
         ? "Synthesize the specialist results and state remaining assumptions and evidence gaps."
         : "Contribute independently within this role: \(role). State assumptions and verifiable acceptance criteria."
