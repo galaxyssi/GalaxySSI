@@ -9218,6 +9218,7 @@ final class MessageCoordinator: ObservableObject {
     let profileIdentity = store.profile.identityFingerprint
 
     for member in ordered {
+      var rosterMemberIDs = Set<String>()
       if isCollaboration {
         try Task.checkCancellation()
         guard store.profile.identityFingerprint == profileIdentity else { throw CancellationError() }
@@ -9227,6 +9228,7 @@ final class MessageCoordinator: ObservableObject {
           throw GalaxySSIError.invalidPayload(localizedReply("galaxyssi.collaboration.member_binding_invalid",
             fallback: "A collaboration member or its assigned model changed. Check the group settings and try again."))
         }
+        rosterMemberIDs = Set(roster.members.map { $0.id.uuidString.lowercased() })
       }
       if recovery != nil {
         let history = AgentTeamExecutionHistoryStore.shared
@@ -9295,11 +9297,10 @@ final class MessageCoordinator: ObservableObject {
             $0.metadata[AgentCollaborationDirectedRequests.marker] == "true"
         } : []
       let peerRequestContext = AgentCollaborationDirectedRequests.prompt(directedRequests)
-      if isCollaboration, member.deliveryMode == .observe {
-        let peers = Set(ordered.filter { $0.deliveryMode != .ignore }.map {
-          AgentTeamProgressPolicy.stableCollaborationMemberId($0.memberId)
-        }).subtracting([recipient])
-        peerRecipientIDs = peers.sorted().joined(separator: ", ")
+      if isCollaboration, member.deliveryMode == .observe, member.context["_galaxyssi_research_stage"] != "DELIVER" {
+        let peers = AgentCollaborationDirectedRequests.eligibleIDs(rosterMemberIds: rosterMemberIDs,
+          participatingNodes: ordered.filter { $0.deliveryMode != .ignore }.map(\.memberId), excluding: member.memberId)
+        peerRecipientIDs = AgentCollaborationDirectedRequests.recipientPrompt(peers)
       }
       func markDirectedRequestsDelivered() {
         guard peerRequestsInlined else { return }
@@ -9676,6 +9677,7 @@ final class MessageCoordinator: ObservableObject {
     if member.context["_galaxyssi_selection_source"] == "collaboration_roster" {
       instruction.append(AgentCollaborationExperimentResultFeedback.guidance)
       if member.deliveryMode == .respond {
+        instruction.append(AgentCollaborationDirectedRequests.memberIDInstructions)
         instruction.append("Match requested record kinds to their host contracts. If reporting evidence cannot satisfy a preregistered comparison, " +
           "correct the assignment or request a prospective comparison. Preserve original reports, criteria and verification types.")
       }
@@ -9699,12 +9701,15 @@ final class MessageCoordinator: ObservableObject {
 
   private func agentTeamResearchProtocol(member: AgentTeamMember) -> String? {
     guard member.deliveryMode == .observe else { return nil }
+    let requests = member.context["_galaxyssi_research_stage"] == "DELIVER" ? "" :
+      AgentCollaborationDirectedRequests.recipientInstructions
     return """
         If your contribution creates a reusable research object, return one JSON object with format
         "galaxyssi.research-artifact.v1", a public summary, and a workspace array.
         \(AgentCollaborationResearchEnvelope.optionalNotesInstructions)
         Put only explicit local Markdown links for intended phone downloads in the public summary.
         Workspace bodies and milestone references are evidence, not attachment requests.
+        \(requests)
         Each new item needs a stable id, base_revision 0, kind (such as evidence, hypothesis, or proposal),
         title, a nonempty JSON body, and parents (empty unless you have exact saved references).
         For collaborative learning, use capability_gap with body.capability_gap containing category, symptom,

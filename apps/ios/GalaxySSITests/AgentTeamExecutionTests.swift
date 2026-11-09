@@ -1091,6 +1091,53 @@ extension GalaxySSIStoreTests {
       team: team, sender: sender, rosterMemberIds: roster))
   }
 
+  func testDirectedRecipientContractCopiesExactRosterIdentifiersWithoutChangingAuthority() throws {
+    var team = durableTeamSnapshot("recipient-contract")
+    team.members[1].researchStage = "EXPLORE"
+    let sender = team.members[1]
+    let ids: Set<String> = ["primary", "lab:reader,west", "0c8065d7-1d37-4a5a-9e5a-57eb498fd912"]
+    for id in ids where id != "primary" {
+      team.members.append(.init(agentId: id, sourceMessageId: "source-" + id))
+    }
+    team.members.append(.init(agentId: "outside-roster", sourceMessageId: "outside-source"))
+    team.members.append(.init(agentId: "ignored", deliveryMode: .ignore, sourceMessageId: "ignored-source"))
+    let roster = ids.union([sender.memberId, "ignored", "not-dispatched"])
+    let allowed = AgentCollaborationDirectedRequests.eligibleIDs(rosterMemberIds: roster,
+      participatingNodes: team.members.filter { $0.deliveryMode != .ignore }.map(\.memberId), excluding: sender.memberId)
+    XCTAssertEqual(allowed, ids)
+    let rendered = AgentCollaborationDirectedRequests.recipientPrompt(allowed)
+    XCTAssertEqual(try JSONDecoder().decode([String].self, from: Data(rendered.utf8)), ids.sorted())
+
+    var reply: AgentMcpJSONObject = ["format": .string(AgentCollaborationResearchEnvelope.wireFormat),
+      "coordination_request": .object(["reason": .string("Assess the next work")])]
+    func routed() throws -> [AgentTeamMessageEnvelope] {
+      try AgentCollaborationDirectedRequests.messages(in: AgentMcpJSONCodec.stringify(reply),
+        team: team, sender: sender, rosterMemberIds: roster)
+    }
+    XCTAssertTrue(try routed().isEmpty)
+    func request(_ recipients: Set<String>) -> AgentMcpJSONValue {
+      .array([.object(["to": .array(recipients.sorted().map(AgentMcpJSONValue.string)), "question": .string("Review this version")])])
+    }
+    reply["requests"] = request(ids)
+    XCTAssertEqual(Set(try routed().map(\.toInstanceId)), ids)
+    for id in [sender.memberId, "ignored", "outside-roster", "not-dispatched", "Reader", "Lab:reader,west"] {
+      reply["requests"] = request([id])
+      XCTAssertThrowsError(try routed())
+    }
+
+    let original = String(repeating: "Preserve the original goal. ", count: 800) + "END-ORIGINAL"
+    for desktop in [false, true] {
+      let prompt = try AgentCollaborationPromptBudget.dispatch(assignment: "Compare the original version",
+        resources: "Scoped", responseProtocol: AgentCollaborationDirectedRequests.recipientInstructions,
+        originals: [.init(name: AgentCollaborationPromptBudget.goal, body: original,
+          reference: ["mode": .string("goal"), "section": .string("goal")])],
+        observations: [], canRecall: true, desktop: desktop, peerRecipients: rendered, peerRequests: "", peerRequestsPinned: false)
+      XCTAssertTrue(prompt.text.contains(original))
+      XCTAssertTrue(prompt.text.contains(rendered))
+      XCTAssertEqual(prompt.text.components(separatedBy: AgentCollaborationDirectedRequests.memberIDInstructions).count, 2)
+    }
+  }
+
   func testResearchPublicationRequiresExplicitStructuredArtifact() throws {
     XCTAssertNil(try AgentCollaborationResearchEnvelope.publication(in: "A normal reply"))
     let raw = """
