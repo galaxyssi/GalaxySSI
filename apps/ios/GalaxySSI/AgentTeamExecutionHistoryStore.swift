@@ -1593,7 +1593,8 @@ final class AgentTeamExecutionHistoryStore {
 
   func publishResearchObjects(_ drafts: [AgentCollaborationResearchDraft], runId: String,
                               conversationId: String, turnId: String, memberId: String,
-                              sourceId: String, milestone: (id: String, hash: String)? = nil,
+                              sourceId: String, scheduleMilestone: Bool = true,
+                              milestone: (id: String, hash: String)? = nil,
                               finalMilestones: [String] = [])
     throws -> AgentCollaborationResearchPublication {
     guard !drafts.isEmpty || !finalMilestones.isEmpty, drafts.count <= 32, !sourceId.isBlank,
@@ -1629,7 +1630,7 @@ final class AgentTeamExecutionHistoryStore {
       if let prior = try database.researchRecord(AgentCollaborationResearchPublication.self,
         conversationId: conversationId, key: publicationKey, revision: 0) {
         guard prior.requestHash == requestHash else { throw AgentTeamHistoryDatabase.Failure.stale }
-        if milestone != nil && member.deliveryMode == .observe {
+        if scheduleMilestone && milestone != nil && member.deliveryMode == .observe {
           indexed = try Self.indexLiveMilestone(prior, producer: producer, key: publicationKey, database: database)
         }
         return prior
@@ -2231,7 +2232,7 @@ final class AgentTeamExecutionHistoryStore {
         recordedAtMillis: milestone == nil ? nil : AgentControlPlaneClock.nowMillis(),
         numericTrials: numericTrials.isEmpty ? nil : numericTrials)
       try database.insertResearchRecord(receipt, conversationId: conversationId, key: publicationKey, revision: 0)
-      if milestone != nil && member.deliveryMode == .observe {
+      if scheduleMilestone && milestone != nil && member.deliveryMode == .observe {
         indexed = try Self.indexLiveMilestone(receipt, producer: producer, key: publicationKey, database: database)
       }
       return receipt
@@ -2974,7 +2975,8 @@ final class AgentTeamExecutionHistoryStore {
         throw AgentTeamHistoryDatabase.Failure.corrupt
       }
       let receipt = try publishResearchObjects(drafts, runId: scope.runId, conversationId: scope.conversationId,
-        turnId: scope.turnId, memberId: scope.memberId, sourceId: scope.sourceId, milestone: (id, hash))
+        turnId: scope.turnId, memberId: scope.memberId, sourceId: scope.sourceId,
+        scheduleMilestone: envelope["coordination"] != .object(["mode": .string("record_only")]), milestone: (id, hash))
       return Self.milestoneReceipt(receipt, id: id, status: "published")
     } catch let feedback as AgentCollaborationExperimentResultFeedback {
       return try retainRejectedMilestone(raw, id: id, hash: hash, scope: scope, reason: "rejected", problem: feedback.problem)

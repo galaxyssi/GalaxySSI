@@ -1107,6 +1107,12 @@ extension GalaxySSIStoreTests {
     let first = try XCTUnwrap(live.first { $0.milestoneID == "first" })
     XCTAssertEqual(first.descriptor["revisions"], receipt["references"])
     XCTAssertEqual(first.descriptor["artifact_sha256"], receipt["artifact_sha256"])
+    let recordOnly = artifact.replacingOccurrences(of: #""summary":"Interim","#,
+      with: #""summary":"Interim","coordination":{"mode":"record_only"},"#)
+      .replacingOccurrences(of: #""id":"note""#, with: #""id":"record-only""#)
+    XCTAssertEqual(try reopened.publishCollaborationMilestone(["mode": .string("publish"),
+      "milestone_id": .string("record-only"), "artifact": .string(recordOnly)], scope: scope)["status"], .string("published"))
+    XCTAssertEqual(try reopened.liveMilestonePage(scope: coordinator, after: XCTUnwrap(liveSecond.next)).entries, liveTail.entries)
     XCTAssertThrowsError(try reopened.liveMilestonePage(scope: scope))
     var foreignCoordinator = coordinator
     foreignCoordinator.turnId = "other-turn"
