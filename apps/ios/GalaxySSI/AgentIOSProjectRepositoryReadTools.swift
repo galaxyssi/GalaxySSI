@@ -697,7 +697,7 @@ fi
 print_value git_available true
 git() { command git -c safe.directory="$PWD" -c protocol.file.allow=always "$@"; }
 if ! git rev-parse --git-dir >/dev/null 2>&1; then
-  if find . -mindepth 1 -maxdepth 1 ! -name '.galaxyssi-runtime' -print -quit | grep -q .; then
+  if find . -mindepth 1 -maxdepth 1 ! -name '.galaxyssi-runtime' ! -name '.signalasi-runtime' -print -quit | grep -q .; then
     print_value state partial
   else
     print_value state empty
@@ -723,7 +723,7 @@ print_value diff_included "$include_diff"
 print_value log_included "$include_log"
 printf '__GALAXYSSI_STATUS__\n'
 if [ "$working_tree" = true ]; then
-  git status --porcelain=v1 --untracked-files=all -- . ':(exclude).galaxyssi-runtime'
+  git status --porcelain=v1 --untracked-files=all -- . ':(exclude).galaxyssi-runtime' ':(exclude).signalasi-runtime'
 fi
 mkdir -p .galaxyssi-runtime
 diff_output=".galaxyssi-runtime/project-observe-diff-$$.txt"
@@ -732,8 +732,8 @@ trap 'rm -f "$diff_output" "$log_output"' EXIT INT TERM
 printf '__GALAXYSSI_DIFF_METADATA__\n'
 if [ "$include_diff" = true ]; then
   {
-    git diff --no-ext-diff --no-color --cached -- . ':(exclude).galaxyssi-runtime'
-    git diff --no-ext-diff --no-color -- . ':(exclude).galaxyssi-runtime'
+    git diff --no-ext-diff --no-color --cached -- . ':(exclude).galaxyssi-runtime' ':(exclude).signalasi-runtime'
+    git diff --no-ext-diff --no-color -- . ':(exclude).galaxyssi-runtime' ':(exclude).signalasi-runtime'
   } >"$diff_output"
   diff_bytes="$(wc -c <"$diff_output" | tr -d ' ')"
   if [ "$diff_bytes" -gt "$diff_limit" ]; then diff_truncated=true; else diff_truncated=false; fi
@@ -775,7 +775,7 @@ fi
 print_value git_available true
 git() { command git -c safe.directory="$PWD" -c protocol.file.allow=always "$@"; }
 if ! git rev-parse --git-dir >/dev/null 2>&1; then
-  if find . -mindepth 1 -maxdepth 1 ! -name '.galaxyssi-runtime' -print -quit | grep -q .; then
+  if find . -mindepth 1 -maxdepth 1 ! -name '.galaxyssi-runtime' ! -name '.signalasi-runtime' -print -quit | grep -q .; then
     print_value state partial
   else
     print_value state empty
@@ -796,7 +796,7 @@ if [ -z "$branch" ]; then print_value detached_head true; else print_value detac
 if [ "${1-false}" = true ]; then
   print_value working_tree_included true
   printf '__GALAXYSSI_STATUS__\n'
-  git status --porcelain=v1 --untracked-files=all -- . ':(exclude).galaxyssi-runtime'
+  git status --porcelain=v1 --untracked-files=all -- . ':(exclude).galaxyssi-runtime' ':(exclude).signalasi-runtime'
 else
   print_value working_tree_included false
 fi
@@ -814,11 +814,11 @@ limit="${3-65536}"
 output=".galaxyssi-runtime/project-diff-$$.txt"
 trap 'rm -f "$output"' EXIT INT TERM
 if [ -n "$base" ]; then
-  git diff --no-ext-diff --no-color "$base...$head_ref" -- . ':(exclude).galaxyssi-runtime' >"$output"
+  git diff --no-ext-diff --no-color "$base...$head_ref" -- . ':(exclude).galaxyssi-runtime' ':(exclude).signalasi-runtime' >"$output"
 else
   {
-    git diff --no-ext-diff --no-color --cached -- . ':(exclude).galaxyssi-runtime'
-    git diff --no-ext-diff --no-color -- . ':(exclude).galaxyssi-runtime'
+    git diff --no-ext-diff --no-color --cached -- . ':(exclude).galaxyssi-runtime' ':(exclude).signalasi-runtime'
+    git diff --no-ext-diff --no-color -- . ':(exclude).galaxyssi-runtime' ':(exclude).signalasi-runtime'
   } >"$output"
 fi
 bytes="$(wc -c <"$output" | tr -d ' ')"
