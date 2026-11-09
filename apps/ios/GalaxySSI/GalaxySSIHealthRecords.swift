@@ -189,6 +189,7 @@ struct GalaxySSIHealthRecords {
     var localCareResearch: GalaxySSIHealthCareResearch.Ledger?
     var localCareQuestions: [String: GalaxySSIHealthCareQuestions.Ledger]?
     var localCareEncounters: GalaxySSIHealthEncounter.Ledger?
+    var localCareEncounterDocuments: [UUID: GalaxySSIHealthEncounterDocument.Link]?
     var localCareAgenda: Data?
 
     var keepsNewImportOriginals: Bool { retainImportOriginals ?? true }
@@ -690,7 +691,145 @@ struct GalaxySSIHealthRecords {
     care.publish(current)
     archive.localCare = care
     archive.localCareEncounters = encounters
+    archive.localCareEncounterDocuments = archive.localCareEncounterDocuments?.filter { $0.value.visit != entry.id }
     try persist(archive)
+  }
+
+  typealias VisitDocuments = GalaxySSIHealthEncounterDocument
+
+  private var visitOriginalStore: GalaxySSIHealthOriginalStore {
+    .init(owner: owner, secrets: secrets, fixtureDirectory: isolatedFile?.appendingPathExtension("visit-originals"),
+      restoreRecordsFile: isolatedFile)
+  }
+
+  private func visitDocumentContext(concern: UUID, metric: GalaxySSIHealthMetric, visit: UUID,
+      archive: Archive, now: Date) throws -> (GalaxySSIHealthCare.Concern, VisitDocuments.Scope) {
+    let (current, stamp) = try localCareEncounterScope(id: concern, metric: metric, archive: archive, now: now)
+    guard let entry = archive.localCareEncounters?.entries[visit], entry.concern == concern else { throw Failure.stale }
+    return (current, .init(stamp: stamp, visit: entry))
+  }
+
+  private func visitDocumentContext(_ expected: VisitDocuments.Scope, archive: Archive, now: Date)
+      throws -> (GalaxySSIHealthCare.Concern, VisitDocuments.Scope) {
+    try visitDocumentContext(concern: expected.stamp.concern, metric: expected.stamp.metric,
+      visit: expected.visit.id, archive: archive, now: now)
+  }
+
+  func visitDocumentPage(concern: UUID, metric: GalaxySSIHealthMetric, visit: UUID, before: Int? = nil,
+      expected: VisitDocuments.Scope? = nil, now: Date = Date()) throws -> VisitDocuments.Page {
+    let originals = visitOriginalStore
+    return try originals.withRestoreLease { lease in
+      try originals.reconcileRestores(lease: lease)
+      let archive = try load()
+      let (_, scope) = try visitDocumentContext(concern: concern, metric: metric, visit: visit, archive: archive, now: now)
+      guard before == nil || expected != nil, expected == nil || expected == scope else { throw Failure.stale }
+      let links = (archive.localCareEncounterDocuments ?? [:]).values
+        .filter { link in link.concern == concern && link.visit == visit && (before.map { link.revision < $0 } ?? true) }
+        .sorted { $0.revision > $1.revision }
+        .prefix(VisitDocuments.pageSize + 1)
+      let key = try key(create: false)
+      let items = try links.prefix(VisitDocuments.pageSize).map { link -> VisitDocuments.Item in
+        let item = try originals.visitOriginal(id: link.originalID, lease: lease)
+        return .init(link: link, original: item.flatMap { VisitDocuments.matches(link, original: $0, key: key) ? $0 : nil })
+      }
+      return .init(scope: scope, items: items,
+        next: links.count > VisitDocuments.pageSize ? items.last?.link.revision : nil)
+    }
+  }
+
+  func visitDocumentLibrary(_ expected: VisitDocuments.Scope, after: VisitDocuments.Original? = nil,
+      now: Date = Date()) throws -> VisitDocuments.LibraryPage {
+    let originals = visitOriginalStore
+    return try originals.withRestoreLease { lease in
+      try originals.reconcileRestores(lease: lease)
+      let (_, scope) = try visitDocumentContext(expected, archive: load(), now: now)
+      guard scope == expected else { throw Failure.stale }
+      let found = try originals.visitOriginals(after: after, limit: VisitDocuments.pageSize + 1, lease: lease)
+      let page = Array(found.prefix(VisitDocuments.pageSize))
+      return .init(originals: page, next: found.count > page.count ? page.last : nil)
+    }
+  }
+
+  func previewVisitDocument(_ original: VisitDocuments.Original, page: Int, expected: VisitDocuments.Scope,
+      link: VisitDocuments.Link? = nil, validUntil: Date? = nil, now: Date = Date()) throws -> VisitDocuments.Preview {
+    let expires = min(validUntil ?? .distantFuture, now.addingTimeInterval(VisitDocuments.previewLifetime))
+    guard now < expires else { throw Failure.stale }
+    let originals = visitOriginalStore
+    return try originals.withRestoreLease { lease in
+      try originals.reconcileRestores(lease: lease)
+      let archive = try load()
+      let (_, scope) = try visitDocumentContext(expected, archive: archive, now: now)
+      guard scope == expected, try originals.visitOriginal(id: original.id, lease: lease) == original else {
+        throw Failure.stale
+      }
+      if let link {
+        guard archive.localCareEncounterDocuments?[link.id] == link, link.visit == scope.visit.id,
+              link.concern == scope.stamp.concern, link.page == nil || link.page == page,
+              VisitDocuments.matches(link, original: original, key: try key(create: false)) else { throw Failure.stale }
+      }
+      let (image, count) = try VisitDocuments.render(originals.read(original, lease: lease), kind: original.kind, page: page)
+      guard link == nil || link?.pageCount == count else { throw Failure.stale }
+      return .init(scope: scope, original: original, page: page, count: count, image: image,
+        expires: expires, operation: UUID())
+    }
+  }
+
+  @discardableResult
+  func linkVisitDocument(_ preview: VisitDocuments.Preview, whole: Bool, now: Date = Date()) throws -> VisitDocuments.Link {
+    let originals = visitOriginalStore
+    let (result, inserted) = try originals.withRestoreLease { lease -> (VisitDocuments.Link, Bool) in
+      try originals.reconcileRestores(lease: lease)
+      var archive = try load()
+      let (concern, scope) = try visitDocumentContext(preview.scope, archive: archive, now: now)
+      guard now < preview.expires, scope.visit == preview.scope.visit, scope.stamp.matchesInputs(preview.scope.stamp),
+            try originals.visitOriginal(id: preview.original.id, lease: lease) == preview.original else { throw Failure.stale }
+      let (_, count) = try VisitDocuments.render(originals.read(preview.original, lease: lease),
+        kind: preview.original.kind, page: preview.page)
+      guard count == preview.count else { throw Failure.stale }
+      let fingerprint = VisitDocuments.fingerprint(preview.original, key: try key(create: false))
+      let page = whole ? nil : preview.page
+      var links = archive.localCareEncounterDocuments ?? [:]
+      if let existing = links[preview.operation] {
+        guard existing.concern == concern.id, existing.visit == scope.visit.id, existing.visitRevision == scope.visit.revision,
+              existing.expectedConcernRevision == preview.scope.stamp.revision, existing.originalID == preview.original.id,
+              existing.fingerprint == fingerprint, existing.page == page, existing.pageCount == count else { throw Failure.stale }
+        return (existing, false)
+      }
+      guard scope == preview.scope, concern.revision < Int.max - 1 else { throw Failure.stale }
+      if let existing = links.values.first(where: {
+        $0.visit == scope.visit.id && $0.visitRevision == scope.visit.revision &&
+          $0.originalID == preview.original.id && $0.fingerprint == fingerprint && $0.page == page && $0.pageCount == count
+      }) { return (existing, false) }
+      let link = VisitDocuments.Link(id: preview.operation, concern: concern.id, visit: scope.visit.id,
+        visitRevision: scope.visit.revision, expectedConcernRevision: concern.revision, revision: concern.revision + 1,
+        originalID: preview.original.id, fingerprint: fingerprint, page: page, pageCount: count)
+      links[link.id] = link
+      archive.localCareEncounterDocuments = links
+      try publishVisitDocumentChange(concern, archive: &archive, now: now, notify: false)
+      return (link, true)
+    }
+    if inserted { NotificationCenter.default.post(name: Self.recordsChanged, object: owner) }
+    return result
+  }
+
+  func unlinkVisitDocument(_ link: VisitDocuments.Link, expected: VisitDocuments.Scope, now: Date = Date()) throws {
+    var archive = try load()
+    let (concern, scope) = try visitDocumentContext(expected, archive: archive, now: now)
+    guard scope == expected, link.concern == concern.id, link.visit == scope.visit.id, concern.revision < Int.max - 1,
+          archive.localCareEncounterDocuments?[link.id] == link else { throw Failure.stale }
+    archive.localCareEncounterDocuments?.removeValue(forKey: link.id)
+    try publishVisitDocumentChange(concern, archive: &archive, now: now)
+  }
+
+  private func publishVisitDocumentChange(_ concern: GalaxySSIHealthCare.Concern, archive: inout Archive,
+      now: Date, notify: Bool = true) throws {
+    guard var care = archive.localCare else { throw Failure.stale }
+    var current = concern
+    current.revision += 1
+    current.updatedAt = max(now, current.updatedAt)
+    care.publish(current)
+    archive.localCare = care
+    try persist(archive, notify: notify)
   }
 
   func localCareVisitPreview(id: UUID, metric: GalaxySSIHealthMetric, sections: Set<GalaxySSIHealthCareVisit.Section>,
@@ -1929,6 +2068,7 @@ struct GalaxySSIHealthRecords {
     archive.localCareQuestions?.removeValue(forKey: concern.id.uuidString)
     archive.localCareFeedback?.removeValue(forKey: concern.id.uuidString)
     archive.localCareEncounters?.remove(concern: concern.id)
+    archive.localCareEncounterDocuments = archive.localCareEncounterDocuments?.filter { $0.value.concern != concern.id }
     archive.localCare = ledger
     try persist(archive)
   }

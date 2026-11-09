@@ -73,6 +73,72 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testVisitDocumentLinksKeepExactPagesAndHandleRemovedOriginals() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let file = root.appendingPathComponent("records")
+    let directory = file.appendingPathExtension("visit-originals")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = "visit-documents", secrets = HealthFixtureSecrets(), now = Date()
+    let records = GalaxySSIHealthRecords(owner: owner, secrets: secrets, isolatedFile: file)
+    let originals = GalaxySSIHealthOriginalStore(owner: owner, secrets: secrets, fixtureDirectory: directory,
+      restoreRecordsFile: file)
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData {
+      $0.beginPage()
+      $0.beginPage()
+    }
+    try originals.store(pdf, name: "private-visit-source.pdf")
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-600), value: 110,
+      unitOverride: "mg/dL", referenceInterval: "70 - 99"))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    let visit = UUID()
+    let stamp = try records.localCareEncounterPage(id: concern.id, metric: .glucose, now: now).stamp
+    try records.saveLocalCareEncounter(.init(purpose: "Visit fixture"), id: visit, operation: UUID(),
+      expected: stamp, expectedEntry: nil, now: now)
+    func linked() throws -> GalaxySSIHealthEncounterDocument.Page {
+      try records.visitDocumentPage(concern: concern.id, metric: .glucose, visit: visit, now: now)
+    }
+    let empty = try linked()
+    let original = try XCTUnwrap(records.visitDocumentLibrary(empty.scope, now: now).originals.first)
+    XCTAssertThrowsError(try records.previewVisitDocument(original, page: 3, expected: empty.scope, now: now))
+    let preview = try records.previewVisitDocument(original, page: 2, expected: empty.scope, now: now)
+    XCTAssertThrowsError(try records.linkVisitDocument(preview, whole: false, now: preview.expires))
+    let pageLink = try records.linkVisitDocument(preview, whole: false, now: now)
+    XCTAssertEqual(pageLink.page, 2)
+    XCTAssertEqual(pageLink.pageCount, 2)
+    XCTAssertEqual(pageLink.fingerprint.count, 32)
+    XCTAssertEqual(try records.linkVisitDocument(preview, whole: false, now: now), pageLink)
+    XCTAssertThrowsError(try records.linkVisitDocument(preview, whole: true, now: now))
+    let page = try linked()
+    XCTAssertEqual(page.scope.visit, empty.scope.visit)
+    XCTAssertEqual(page.items.map(\.link), [pageLink])
+    XCTAssertThrowsError(try records.previewVisitDocument(original, page: 1, expected: page.scope, link: pageLink, now: now))
+    try records.unlinkVisitDocument(pageLink, expected: page.scope, now: now)
+    XCTAssertEqual(try originals.read(original), pdf)
+
+    let newScope = try linked().scope
+    let oldApproval = try records.previewVisitDocument(original, page: 1, expected: newScope, now: now)
+    try records.setPrivacy(.localCare, enabled: false)
+    try records.setPrivacy(.localCare, enabled: true)
+    XCTAssertThrowsError(try records.linkVisitDocument(oldApproval, whole: true, now: now))
+    let wholePreview = try records.previewVisitDocument(original, page: 1, expected: linked().scope, now: now)
+    let wholeLink = try records.linkVisitDocument(wholePreview, whole: true, now: now)
+    XCTAssertNil(wholeLink.page)
+    let reopened = GalaxySSIHealthRecords(owner: owner, secrets: secrets, isolatedFile: file)
+    XCTAssertEqual(try reopened.load().localCareEncounterDocuments?[wholeLink.id], wholeLink)
+    let pending = try records.previewVisitDocument(original, page: 2, expected: linked().scope, now: now)
+    try originals.remove(originals.previewRemoval(original))
+    XCTAssertThrowsError(try records.linkVisitDocument(pending, whole: false, now: now))
+    let missing = try linked()
+    XCTAssertEqual(missing.items.map(\.link), [wholeLink])
+    XCTAssertNil(missing.items.first?.original)
+    try records.deleteLocalCareEncounter(missing.scope.visit, expected: missing.scope.stamp, now: now)
+    XCTAssertTrue(try reopened.load().localCareEncounterDocuments?.isEmpty ?? false)
+  }
+
+  @MainActor
   func testVisitLedgerPaginatesThirtyExactRevisions() throws {
     typealias Visit = GalaxySSIHealthEncounter
     let now = Date(), id = UUID()
