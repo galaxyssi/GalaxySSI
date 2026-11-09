@@ -9223,6 +9223,18 @@ final class MessageCoordinator: ObservableObject {
     guard let spec = AgentTeamDispatchSpecCodec.decode(action.parameters[agentTeamSpecParameter] ?? "") else {
       return nil
     }
+    if isCollaboration, let trial = try AgentTeamExecutionHistoryStore.shared.collaborationTrial(
+      conversationID: outgoing.conversationId, runID: spec.supervisorRunId) {
+      guard cloudStreamEngine is CloudConversationStreamEngine else {
+        throw AgentCollaborationTrialPolicy.Denial.unmeteredTransport
+      }
+      for member in spec.definition.members where member.deliveryMode != .ignore {
+        try trial.check(target: member.agentId, now: AgentControlPlaneClock.nowMillis())
+        guard targetsById[member.agentId]?.kind == .model,
+              store.contact(id: member.agentId)?.deliveryMode == .cloudAPI
+        else { throw AgentCollaborationTrialPolicy.Denial.unmeteredTransport }
+      }
+    }
     if isCollaboration, recoveringGoalCoordinatorRun == spec.supervisorRunId ||
         !liveManagedBrowserTeams.insert(spec.supervisorRunId).inserted {
       throw AgentManagedBrowserContinuationStore.Failure.busy
@@ -10529,6 +10541,13 @@ final class MessageCoordinator: ObservableObject {
           let id = input["work_id"]?.strictStringValue, !id.isBlank, id.utf8.count <= 160,
           let roster = liveRoster() else { return unavailable("work_scope_unavailable") }
     let history = AgentTeamExecutionHistoryStore.shared
+    do {
+      if try history.collaborationTrial(conversationID: scope.conversationId, runID: scope.runId) != nil {
+        return unavailable("host_trial_transport_unavailable")
+      }
+    } catch {
+      return unavailable("work_scope_unavailable")
+    }
     guard let (work, prior) = try? history.goalWork(id, scope: scope) else { return unavailable("work_unavailable") }
     if let prior { return prior.receipt(now: AgentControlPlaneClock.nowMillis()) }
     let key = scope.ownershipDigest

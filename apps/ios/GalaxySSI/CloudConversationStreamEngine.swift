@@ -271,6 +271,12 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     }
 
     do {
+      let trial = try collaborationModelAudit.flatMap {
+        try AgentTeamExecutionHistoryStore.shared.collaborationTrial(conversationID: $0.conversationId, runID: $0.runId)
+      }
+      if trial != nil, !(streamClient is URLSessionCloudModelStreamClient) {
+        throw AgentCollaborationTrialPolicy.Denial.unmeteredTransport
+      }
       let request = try await modelClient.prepareConversationStreamRequest(
         contact: contact,
         store: store,
@@ -319,7 +325,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         evidenceResults = await recovery.restore(into: &prepared, progress: progress, budget: research, ledger: evidencePromptLedger)
       }
       var round = 0
-      var useCompleteJSON = false
+      var useCompleteJSON = trial != nil
 
       while true {
         if !progress.finalizationRequested, let reason = research.stopReason {
@@ -339,8 +345,12 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         var previewShown = false
         let preparedRound = try prepared.requestForRound(roundId: roundId, finalRound: finalRound,
           finalInstruction: goalAssessmentOnly ? CloudModelStreamMutableConversation.goalAssessmentFinalInstruction : nil)
-        let roundRequest = useCompleteJSON
+        var roundRequest = useCompleteJSON
           ? try CloudConversationNonStreamingToolEngine.compatibilityRequest(preparedRound) : preparedRound
+        if trial != nil {
+          roundRequest.singleHTTPAdmissionSHA256 = try CloudTrialHTTPTransport.WireRequest(
+            URLSessionCloudModelStreamClient.urlRequest(for: roundRequest)).sha256
+        }
         let assembler = ToolCallDeltaAssembler()
         let inlineProtocolGuard = InlineToolProtocolStreamGuard()
         var roundCompleted = false
@@ -454,7 +464,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         let incomplete = roundFailure?.error ?? (!roundCompleted ? ModelStreamError(
           code: "STREAM_INTERRUPTED", message: "The provider stream ended before completion", retryable: true
         ) : nil)
-        if let incomplete, CloudResearchRuntimeBudget.canRecover(incomplete),
+        if trial == nil, let incomplete, CloudResearchRuntimeBudget.canRecover(incomplete),
            CloudResearchRuntimeBudget.hasCitableEvidence(evidenceResults) {
           publishPreview("", at: elapsedMillis())
           if research.requestInterruptedSynthesis(hasEvidence: true, finalizing: finalRound) {
@@ -469,7 +479,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
 
         if let failure = roundFailure {
           publishPreview("", at: elapsedMillis())
-          if let legacySender, !emittedText && currentRound == 0 && failure.error.code == "STREAM_UNSUPPORTED" {
+          if trial == nil, let legacySender, !emittedText && currentRound == 0 && failure.error.code == "STREAM_UNSUPPORTED" {
             try await withCloudCoordination(scope: coordinationScope, contact: contact, store: store,
               profileID: coordinationProfile) {
               let fallbackAudit = try await beginCollaborationAudit(scope: collaborationModelAudit, round: currentRound,
@@ -1027,20 +1037,34 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     contact: GalaxySSIContact, store: GalaxySSIStore, lane: AgentCollaborationModelAdmission.Lane? = nil)
       async throws -> AgentCollaborationModelAdmission? {
     guard let scope else { return nil }
+    let singleHTTP = request.singleHTTPAdmissionSHA256 != nil
+    let model: String?
+    if singleHTTP, request.provider == .gemini,
+       let url = URLComponents(string: request.endpoint), url.path.contains("/models/"),
+       let segment = url.path.split(separator: "/").last, segment.hasSuffix(":generateContent") {
+      model = String(segment.dropLast(":generateContent".count))
+    } else if route == .streaming || singleHTTP {
+      model = (try? CloudModelStreamJSON.object(from: request.bodyJson))?["model"] as? String
+    } else { model = nil }
     let candidate = AgentCollaborationModelAdmission(id: UUID(), scope: scope, round: round,
-      provider: request.provider,
-      requestedModel: route == .streaming ? (try? CloudModelStreamJSON.object(from: request.bodyJson))?["model"] as? String : nil,
-      startedAtMillis: AgentControlPlaneClock.nowMillis(), route: route, lane: lane)
+      provider: request.provider, requestedModel: model,
+      startedAtMillis: AgentControlPlaneClock.nowMillis(), route: route, lane: lane, targetResourceID: contact.id,
+      singleHTTPTransport: singleHTTP ? true : nil, requestSHA256: request.singleHTTPAdmissionSHA256)
     return try await MainActor.run {
+      let bindingError = GalaxySSIError.invalidPayload(GalaxySSILocalization.string("galaxyssi.collaboration.member_binding_invalid",
+        fallback: "A collaboration member or its assigned model changed. Check the group settings and try again.",
+        language: store.languagePolicy.interfaceLanguage))
       guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
             let roster = session.collaborationRoster, let member = scope.rosterMember(in: roster),
             member.resourceId == contact.id, (member.modelId.isBlank || member.modelId == contact.selectedCloudModel?.id),
             session.mergedIntoConversationId.isBlank,
-            !session.privateMode, !session.trackingPaused,
-            (try? AgentTeamExecutionHistoryStore.shared.admitCollaborationModelCall(candidate)) != nil else {
-        throw GalaxySSIError.invalidPayload(GalaxySSILocalization.string("galaxyssi.collaboration.member_binding_invalid",
-          fallback: "A collaboration member or its assigned model changed. Check the group settings and try again.",
-          language: store.languagePolicy.interfaceLanguage))
+            !session.privateMode, !session.trackingPaused else { throw bindingError }
+      do {
+        try AgentTeamExecutionHistoryStore.shared.admitCollaborationModelCall(candidate)
+      } catch let denial as AgentCollaborationTrialPolicy.Denial {
+        throw denial
+      } catch {
+        throw bindingError
       }
       return candidate
     }
@@ -1226,7 +1250,11 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
   }
 
   private static func streamError(from error: Error, partialResponse: Bool) -> ModelStreamError {
-    ModelStreamError(
+    if let denial = error as? AgentCollaborationTrialPolicy.Denial {
+      return ModelStreamError(code: "HOST_TRIAL_ADMISSION_DENIED", message: denial.localizedDescription,
+        retryable: false, partialResponse: partialResponse)
+    }
+    return ModelStreamError(
       code: "STREAM_FAILED",
       message: error.localizedDescription.ifBlank(String(describing: error)),
       retryable: CloudResearchRuntimeBudget.canRecover(error),

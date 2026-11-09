@@ -2408,6 +2408,63 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(try search("hidden_answer").isEmpty)
   }
 
+  func testOptInTrialSharesDurableAdmissionsAndNeverRefundsFailures() throws {
+    typealias Denial = AgentCollaborationTrialPolicy.Denial
+    let suite = "model-trial-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore(), file = root.appendingPathComponent("history.sqlite3")
+    func open() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    }
+    let history = open()
+    var team = durableTeamSnapshot("opt-in-trial")
+    team.members[1].agentId = team.members[0].agentId
+    let group = team.conversationId, run = team.supervisorRunId, resource = team.members[0].agentId
+    let policy = AgentCollaborationTrialPolicy(targetResourceID: resource, requestedModel: "fixture-model",
+      protocolSHA256: String(repeating: "a", count: 64), maximumAdmissions: 2, admissionDeadlineMillis: 100)
+    func attempt(_ index: Int = 0, model: String = "fixture-model", target: String? = nil, single: Bool? = true)
+        -> AgentCollaborationModelAdmission {
+      let member = team.members[index]
+      return .init(id: UUID(), scope: .init(runId: run, conversationId: group, turnId: team.taskId,
+        memberId: member.memberId, sourceId: member.sourceMessageId), round: 0, provider: .openAICompatible,
+        requestedModel: model, startedAtMillis: 20, targetResourceID: target ?? resource, singleHTTPTransport: single,
+        requestSHA256: String(repeating: "b", count: 64))
+    }
+    func check(_ admission: AgentCollaborationModelAdmission, at now: Int64 = 20, denied reason: Denial,
+        file: StaticString = #filePath, line: UInt = #line) {
+      XCTAssertThrowsError(try open().admitCollaborationModelCall(admission, now: now), file: file, line: line) {
+        XCTAssertEqual($0 as? Denial, reason, file: file, line: line)
+      }
+    }
+    try history.configureCollaborationTrial(conversationID: group, runID: run, policy: policy, now: 10)
+    XCTAssertTrue(history.upsert(team))
+    check(attempt(target: "foreign"), denied: .wrongTarget)
+    check(attempt(model: "changed"), denied: .wrongModel)
+    check(attempt(single: nil), denied: .unmeteredTransport)
+    check(attempt(), at: 9, denied: .clockReversed)
+    check(attempt(), at: 100, denied: .expired)
+    XCTAssertEqual(try history.collaborationTrial(conversationID: group, runID: run)?.admitted, 0)
+    let first = attempt()
+    try history.admitCollaborationModelCall(first, now: 20)
+    try history.settleCollaborationModelCall(first, settlement: .init(state: .cancelled, finishedAtMillis: 21,
+      reportedUsage: nil, usageComplete: false, costMicros: nil))
+    check(first, denied: .replay)
+    XCTAssertEqual(try open().collaborationTrial(conversationID: group, runID: run)?.admitted, 1)
+    try open().configureCollaborationTrial(conversationID: group, runID: run, policy: policy, now: 30)
+    let second = attempt(1)
+    try open().admitCollaborationModelCall(second, now: 30)
+    check(attempt(), denied: .exhausted)
+    XCTAssertEqual(try history.collaborationTrial(conversationID: group, runID: run)?.admitted, 2)
+    XCTAssertEqual(try history.collaborationModelAuditPage(conversationId: group).entries.count, 2)
+    XCTAssertTrue(try open().collaborationModelCall(second).admitted)
+    try open().closeCollaborationTrial(conversationID: group, runID: run)
+    try open().closeCollaborationTrial(conversationID: group, runID: run)
+    check(attempt(), denied: .closed)
+    XCTAssertNil(try open().collaborationTrial(conversationID: "foreign", runID: run))
+  }
+
   func testModelCallAuditPreservesUnsettledAdmissionAndImmutableTerminalReceipt() throws {
     let suite = "model-call-audit-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

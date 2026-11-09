@@ -549,6 +549,7 @@
     A10000000000000000000781 /* CloudModelStreamProviderAdapters.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000781 /* CloudModelStreamProviderAdapters.swift */; };
     A10000000000000000000782 /* CloudModelStreamProviderAdaptersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000782 /* CloudModelStreamProviderAdaptersTests.swift */; };
     A10000000000000000000783 /* URLSessionCloudModelStreamClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000783 /* URLSessionCloudModelStreamClient.swift */; };
+    D13381000000000000000001 /* CloudTrialHTTPTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23381000000000000000001 /* CloudTrialHTTPTransport.swift */; };
     A10000000000000000000784 /* URLSessionCloudModelStreamClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000784 /* URLSessionCloudModelStreamClientTests.swift */; };
     A10000000000000000000785 /* CloudModelClientStreaming.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000785 /* CloudModelClientStreaming.swift */; };
     A10000000000000000000786 /* CloudModelClientStreamingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000786 /* CloudModelClientStreamingTests.swift */; };
@@ -1866,6 +1867,7 @@
     A20000000000000000000781 /* CloudModelStreamProviderAdapters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelStreamProviderAdapters.swift; sourceTree = "<group>"; };
     A20000000000000000000782 /* CloudModelStreamProviderAdaptersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelStreamProviderAdaptersTests.swift; sourceTree = "<group>"; };
     A20000000000000000000783 /* URLSessionCloudModelStreamClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLSessionCloudModelStreamClient.swift; sourceTree = "<group>"; };
+    D23381000000000000000001 /* CloudTrialHTTPTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudTrialHTTPTransport.swift; sourceTree = "<group>"; };
     A20000000000000000000784 /* URLSessionCloudModelStreamClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLSessionCloudModelStreamClientTests.swift; sourceTree = "<group>"; };
     A20000000000000000000785 /* CloudModelClientStreaming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelClientStreaming.swift; sourceTree = "<group>"; };
     A20000000000000000000786 /* CloudModelClientStreamingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelClientStreamingTests.swift; sourceTree = "<group>"; };
@@ -2710,6 +2712,7 @@
         A20000000000000000000779 /* CloudModelStreaming.swift */,
         A20000000000000000000781 /* CloudModelStreamProviderAdapters.swift */,
         A20000000000000000000783 /* URLSessionCloudModelStreamClient.swift */,
+        D23381000000000000000001 /* CloudTrialHTTPTransport.swift */,
         A20000000000000000000785 /* CloudModelClientStreaming.swift */,
         A20000000000000000000787 /* CloudConversationStreamEngine.swift */,
         A2000000000000000000E350 /* AgentCollaborationSourceAccess.swift */,
@@ -4513,6 +4516,7 @@
         A10000000000000000000779 /* CloudModelStreaming.swift in Sources */,
         A10000000000000000000781 /* CloudModelStreamProviderAdapters.swift in Sources */,
         A10000000000000000000783 /* URLSessionCloudModelStreamClient.swift in Sources */,
+        D13381000000000000000001 /* CloudTrialHTTPTransport.swift in Sources */,
         A10000000000000000000785 /* CloudModelClientStreaming.swift in Sources */,
         A10000000000000000000787 /* CloudConversationStreamEngine.swift in Sources */,
         A1000000000000000000E350 /* AgentCollaborationSourceAccess.swift in Sources */,
