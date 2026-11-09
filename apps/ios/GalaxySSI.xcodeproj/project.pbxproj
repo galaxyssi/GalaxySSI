@@ -1197,6 +1197,7 @@
     A10000000000000000000674 /* AgentWorkspaceStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000674 /* AgentWorkspaceStoreTests.swift */; };
     A10000000000000000000676 /* AgentRunRecoveryCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000676 /* AgentRunRecoveryCoordinatorTests.swift */; };
     D34950000000000000000001 /* AgentCollaborationPilotIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D34950000000000000000002 /* AgentCollaborationPilotIdentityTests.swift */; };
+    D13393000000000000000001 /* AgentFrozenPilotArtifactTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23393000000000000000001 /* AgentFrozenPilotArtifactTests.swift */; };
     A10000000000000000000678 /* AgentPermissionRevocationCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000678 /* AgentPermissionRevocationCoordinatorTests.swift */; };
     A10000000000000000000680 /* AgentTaskSupervisorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000680 /* AgentTaskSupervisorTests.swift */; };
     D13280000000000000000001 /* AgentBusinessTimeoutCleanupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23280000000000000000001 /* AgentBusinessTimeoutCleanupTests.swift */; };
@@ -2512,6 +2513,7 @@
     A20000000000000000000674 /* AgentWorkspaceStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceStoreTests.swift; sourceTree = "<group>"; };
     A20000000000000000000676 /* AgentRunRecoveryCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunRecoveryCoordinatorTests.swift; sourceTree = "<group>"; };
     D34950000000000000000002 /* AgentCollaborationPilotIdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationPilotIdentityTests.swift; sourceTree = "<group>"; };
+    D23393000000000000000001 /* AgentFrozenPilotArtifactTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentFrozenPilotArtifactTests.swift; sourceTree = "<group>"; };
     A20000000000000000000678 /* AgentPermissionRevocationCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPermissionRevocationCoordinatorTests.swift; sourceTree = "<group>"; };
     A20000000000000000000680 /* AgentTaskSupervisorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskSupervisorTests.swift; sourceTree = "<group>"; };
     D23280000000000000000001 /* AgentBusinessTimeoutCleanupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBusinessTimeoutCleanupTests.swift; sourceTree = "<group>"; };
@@ -3740,6 +3742,7 @@
         A20000000000000000000674 /* AgentWorkspaceStoreTests.swift */,
         A20000000000000000000676 /* AgentRunRecoveryCoordinatorTests.swift */,
         D34950000000000000000002 /* AgentCollaborationPilotIdentityTests.swift */,
+        D23393000000000000000001 /* AgentFrozenPilotArtifactTests.swift */,
         A20000000000000000000678 /* AgentPermissionRevocationCoordinatorTests.swift */,
         A20000000000000000000680 /* AgentTaskSupervisorTests.swift */,
         D23280000000000000000001 /* AgentBusinessTimeoutCleanupTests.swift */,
@@ -5180,6 +5183,7 @@
         A10000000000000000000674 /* AgentWorkspaceStoreTests.swift in Sources */,
         A10000000000000000000676 /* AgentRunRecoveryCoordinatorTests.swift in Sources */,
         D34950000000000000000001 /* AgentCollaborationPilotIdentityTests.swift in Sources */,
+        D13393000000000000000001 /* AgentFrozenPilotArtifactTests.swift in Sources */,
         A10000000000000000000678 /* AgentPermissionRevocationCoordinatorTests.swift in Sources */,
         A10000000000000000000680 /* AgentTaskSupervisorTests.swift in Sources */,
         D13280000000000000000001 /* AgentBusinessTimeoutCleanupTests.swift in Sources */,
