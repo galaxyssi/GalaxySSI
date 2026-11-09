@@ -284,6 +284,24 @@ struct AgentCollaborationGoalCheckpoint: Codable, Equatable {
   var bindsRecordedDesktopTools: Bool? = nil
 }
 
+struct AgentCollaborationLiveMilestonePlan: Codable {
+  struct Batch: Codable, Equatable {
+    let id: String
+    let process: String
+    let startedAt: Int64
+    let tokens: [String]
+
+    func isActive(now: Int64) -> Bool {
+      process == AgentCollaborationGoalWorkRun.processID &&
+        now >= startedAt && now - startedAt < AgentCollaborationGoalWorkRun.leaseMillis
+    }
+  }
+
+  let owner: AgentCollaborationToolEvidenceScope
+  var graph = AgentCollaborationLiveGraph()
+  var batch: Batch?
+}
+
 struct AgentCollaborationAcceptedDelivery: Codable, Equatable {
   struct Source: Codable, Equatable {
     let profileID: String
@@ -473,6 +491,8 @@ struct AgentCollaborationGoalWorkRun: Codable {
   var templateMemberID: String? = nil
   var inputRevision: Int64? = nil
   var probeOrigin: AgentMcpJSONObject? = nil
+  var milestoneTokens: [String]? = nil
+  var milestonePlannerBatch: AgentCollaborationLiveMilestonePlan.Batch? = nil
 
   func visibleState(now: Int64) -> State {
     guard state == .running, process != Self.processID || now >= startedAt + Self.leaseMillis
@@ -526,6 +546,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var workflowObservedBinding: AgentMcpJSONObject? = nil
     var recruitment: Recruitment? = nil
     var blockerResolution: AgentCollaborationGoalAssessmentPolicy.Resolution? = nil
+    var uses_milestones: [String]? = nil
     var data_dependencies: [InputBindings.Requirement]? = nil
 
     var dispatchAssignment: String {
@@ -534,17 +555,24 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     }
 
     func hasIndependentReviewAuthors(_ author: (String) -> String?,
+      milestoneAuthors: [String: String] = [:],
       identity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId) -> Bool {
       if let review_targets {
         guard independent_review == true, !review_targets.isEmpty,
               Set(review_targets).count == review_targets.count,
               Set(review_targets).isSubset(of: Set(depends_on)) else { return false }
       }
+      let tokens = uses_milestones ?? []
+      guard tokens.count <= 16, Set(tokens).count == tokens.count,
+            tokens.allSatisfy({ milestoneAuthors[$0] != nil }) else { return false }
       guard independent_review == true else { return true }
       let targets = review_targets ?? depends_on
-      return !targets.isEmpty && targets.allSatisfy { target in
+      return (!targets.isEmpty || !tokens.isEmpty) && targets.allSatisfy { target in
         guard let origin = author(target), !origin.isBlank else { return false }
         return identity(origin) != identity(member)
+      } && tokens.allSatisfy { token in
+        guard let producer = milestoneAuthors[token] else { return false }
+        return identity(producer) != identity(recruitment?.template ?? member)
       }
     }
   }
@@ -779,7 +807,8 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
   func appending(_ expansion: WorkflowExpansion, authorizedMembers: Set<String>,
                  historicalAuthors: [String: String], settled: [String: Settlement],
                  recruitmentTemplates: [String: String] = [:], recruitmentOwner: String = "",
-                 recruitmentDirectory: String = "", authorIdentity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId,
+                 recruitmentDirectory: String = "", milestoneAuthors: [String: String] = [:],
+                 authorIdentity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId,
                  resolveHistorical: (Recruitment, Bool) -> String? = { _, _ in nil },
                  resolve: (AgentCollaborationWorkflowInstance) throws -> [Work]?) rethrows -> Self? {
     guard expansion.format == "galaxyssi.work-expansion.v1", !expansion.work.isEmpty else { return nil }
@@ -829,7 +858,8 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     }
     if additions.isEmpty { return self }
     guard var next = appendingWork(additions, authorizedMembers: authorizedMembers,
-      historicalAuthors: historicalAuthors, settled: settled, authorIdentity: authorIdentity) else { return nil }
+      historicalAuthors: historicalAuthors, settled: settled, milestoneAuthors: milestoneAuthors,
+      authorIdentity: authorIdentity) else { return nil }
     next.workflowInstances = instances.isEmpty ? nil : instances
     next.recruitments = directory.isEmpty ? nil : directory
     return next
@@ -840,8 +870,15 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     return appendingWork(additions, authorizedMembers: authorizedMembers, historicalAuthors: [:], settled: [:])
   }
 
+  func appendingMilestoneWork(_ additions: [Work], authorizedMembers: Set<String>,
+      milestoneAuthors: [String: String], authorIdentity: (String) -> String) -> Self? {
+    appendingWork(additions, authorizedMembers: authorizedMembers, historicalAuthors: [:], settled: [:],
+      milestoneAuthors: milestoneAuthors, authorIdentity: authorIdentity)
+  }
+
   private func appendingWork(_ additions: [Work], authorizedMembers: Set<String>,
                              historicalAuthors: [String: String], settled: [String: Settlement],
+                             milestoneAuthors: [String: String] = [:],
                              authorIdentity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId) -> Self? {
     var byId = Dictionary(work.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     guard byId.count == work.count else { return nil }
@@ -860,7 +897,8 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     }
     for item in additions {
       guard item.depends_on.allSatisfy({ byId[$0] != nil || settled[$0] != nil }),
-            item.hasIndependentReviewAuthors({ byId[$0]?.member ?? historicalAuthors[$0] }, identity: authorIdentity) else { return nil }
+            item.hasIndependentReviewAuthors({ byId[$0]?.member ?? historicalAuthors[$0] },
+              milestoneAuthors: milestoneAuthors, identity: authorIdentity) else { return nil }
     }
     var resolved = Set(settled.keys)
     var remaining = work + additions

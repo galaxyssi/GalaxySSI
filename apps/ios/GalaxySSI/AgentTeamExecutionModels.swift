@@ -1294,6 +1294,23 @@ struct AgentCollaborationResearchPublication: Codable {
   var recordNotices: [AgentMcpJSONObject]? = nil
 }
 
+struct AgentCollaborationLiveMilestone: Codable, Equatable {
+  let token: String
+  let producer: AgentCollaborationToolEvidenceScope
+  let milestoneID: String
+  let artifactSHA256: String
+  let recordedAt: Int64
+  let references: [AgentCollaborationResearchReference]
+
+  var descriptor: AgentMcpJSONObject {
+    ["token": .string(token), "producer_member_id": .string(producer.memberId),
+     "milestone_id": .string(milestoneID), "artifact_sha256": .string(artifactSHA256), "recorded_at": .int(recordedAt),
+     "revisions": .array(references.map {
+       .object(["object_id": .string($0.objectId), "revision": .int($0.revision), "sha256": .string($0.sha256)])
+     })]
+  }
+}
+
 struct AgentCollaborationPublicationRejection: Codable, Equatable {
   enum Reason: String, Codable {
     case malformedEnvelope = "malformed_envelope"
