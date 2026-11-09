@@ -4,6 +4,8 @@ import Foundation
 extension AgentCollaborationGoalAssessmentPolicy {
   static let assessmentRepairMode = "assessment_repair"
   static let assessmentDraftLimit = 131_072
+  static let establishVerificationMode = "establish_verification"
+  static let verificationInstructions = "Use establish_verification with expected_revision and a continue assessment to bind a missing qualified validator. Preserve the full criteria list, requirements and source obligations; change only the validator on an open observed computational criterion with no evidence, delivery or review. This does not dispatch work or verify a result. Read the new criteria hash before preparing coverage."
 
   struct RejectedAssessment: Codable, Equatable {
     let bytes: Data
@@ -33,6 +35,62 @@ extension AgentCollaborationGoalAssessmentPolicy {
       .object(["path": .string(path), "code": .string(code), "expected": .string(expected),
         "actual": .string(actual), "detail": .string("")])
     }
+  }
+
+  static func verificationAmendment(_ raw: String, preserving contract: [Criterion])
+    -> Result<[Criterion], AssessmentIssue> {
+    func fail(_ path: String, _ code: String, _ expected: String, _ actual: String) -> Result<[Criterion], AssessmentIssue> {
+      .failure(.init(path: path, code: code, expected: expected, actual: actual))
+    }
+    let draft: Assessment
+    switch parseAssessment(raw, limit: assessmentDraftLimit) {
+    case .success(let parsed): draft = parsed
+    case .failure(let issue): return .failure(issue)
+    }
+    guard draft.decision == .continue else {
+      return fail("$.decision", "verification_requires_continue", "continue", draft.decision.rawValue)
+    }
+    guard draft.work.isEmpty, draft.blockers.isEmpty, draft.recruit?.isEmpty != false,
+          let object = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8)),
+          Set(object.keys).isSubset(of: ["format", "summary", "decision", "criteria", "work", "blockers", "recruit"]),
+          let rows = object["criteria"]?.arrayValue else {
+      return fail("$", "verification_binding_only", "no work, blockers, recruitment, or completion claims", "unexpected fields")
+    }
+    guard !contract.isEmpty, contract.count == draft.criteria.count else {
+      return fail("$.criteria", "verification_requires_pinned_criteria", "the full existing criterion list", "different criterion count")
+    }
+    var amended: [Criterion] = []
+    for (index, original) in contract.enumerated() {
+      let current = draft.criteria[index], root = "$.criteria[\(index)]"
+      guard Data(original.id.utf8) == Data(current.id.utf8) else {
+        return fail(root + ".id", "established_criterion_changed", "the same ordered criterion ID", "different criterion")
+      }
+      guard Data(original.requirement.utf8) == Data(current.requirement.utf8), original.verification == current.verification else {
+        return fail(root, "established_requirement_changed", "the same literal requirement and verification kind", "different requirement or kind")
+      }
+      guard original.required_observations == current.required_observations else {
+        return fail(root + ".required_observations", "established_sources_changed", "the same original source obligations", "different source obligations")
+      }
+      if current == original { amended.append(original); continue }
+      guard original.validator == nil, let validator = current.validator, original.verification == .computational else {
+        return fail(root + ".validator", "established_validator_changed", "only bind an absent qualified validator", "existing or unavailable binding")
+      }
+      let submitted = rows[index].objectValue ?? [:]
+      guard original.status == .open, current.status == .open,
+            original.evidence_kind == nil || original.evidence_kind == .observed, current.evidence_kind == .observed,
+            original.evidence.isEmpty, current.evidence.isEmpty, original.delivery == nil, original.review == nil,
+            submitted["delivery"] == nil, submitted["review"] == nil else {
+        return fail(root, "verification_requires_unclaimed_criterion", "open observed computation without evidence, delivery or review",
+          "criterion has a claim or is not open and observed")
+      }
+      var saved = original
+      saved.validator = validator
+      amended.append(saved)
+    }
+    guard amended != contract else {
+      return fail("$.criteria", "verification_binding_missing", "at least one previously unbound qualified validator", "no new binding")
+    }
+    return .success(amended)
   }
 
   static func parseAssessment(_ raw: String, limit: Int = 256_000) -> Result<Assessment, AssessmentIssue> {
@@ -138,11 +196,31 @@ extension AgentCollaborationGoalAssessmentPolicy {
     return .success(draft)
   }
 
-  static func preflight(_ raw: String, establishedContract: Bool) -> AgentMcpJSONObject {
+  static func newDesktopBindingIssue(_ proposed: [Criterion], preserving contract: [Criterion]) -> AssessmentIssue? {
+    let allowed = AgentDesktopToolEvidenceWire.RecordedEvent.acceptanceTools
+    let saved = Dictionary(contract.map { ($0.id, Set($0.required_observations ?? [])) },
+      uniquingKeysWith: { first, _ in first })
+    for (index, criterion) in proposed.enumerated() {
+      for (sourceIndex, binding) in (criterion.required_observations ?? []).enumerated()
+      where binding.origin == "desktop_codex_tool" && saved[criterion.id]?.contains(binding) != true {
+        if !allowed.contains(binding.tool) {
+          return .init(path: "$.criteria[\(index)].required_observations[\(sourceIndex)].tool",
+            code: "unknown_recorded_tool", expected: "a recorded Desktop output family, not a callable tool name",
+            actual: String(decoding: binding.tool.utf8.prefix(160), as: UTF8.self), allowed: allowed)
+        }
+      }
+    }
+    return nil
+  }
+
+  static func preflight(_ raw: String, establishedContract: Bool,
+                        preserving contract: [Criterion]? = nil) -> AgentMcpJSONObject {
     let checked = parseAssessment(raw, limit: 131_072)
     let issue: AssessmentIssue?
     switch checked {
-    case .success: issue = nil
+    case .success(let assessment):
+      issue = (contract != nil || !establishedContract)
+        ? newDesktopBindingIssue(assessment.criteria, preserving: contract ?? []) : nil
     case .failure(let failure): issue = failure
     }
     let valid = issue == nil
@@ -154,7 +232,8 @@ extension AgentCollaborationGoalAssessmentPolicy {
       "json_valid": .bool(syntaxValid), "draft_sha256": .string(digest), "failure": issue?.wire ?? .null,
       "acceptance_contract_state": .string(establishedContract ? "established" : "not_established"),
       "validation_scope": .string("structure_only_not_admission_or_acceptance"),
-      "checked": .array(["assessment_fields", "qualified_validator_specification"].map(AgentMcpJSONValue.string)),
+      "checked": .array((["assessment_fields", "qualified_validator_specification"] +
+        (contract != nil || !establishedContract ? ["new_desktop_recorded_event_bindings"] : [])).map(AgentMcpJSONValue.string)),
       "not_checked": .array(["preserved_contract", "work_graph", "permissions", "evidence", "goal_acceptance"].map(AgentMcpJSONValue.string)),
       "committed": .bool(false), "goal_accepted": .bool(false), "assignment_completed": .bool(false),
       "next_action": .string(valid ? "Return the required assessment when ready; final admission and evidence checks still apply." :
@@ -169,15 +248,16 @@ extension AgentCollaborationGoalAssessmentPolicy {
   }
 
   static func repairFeedback(_ raw: String, contract: [Criterion], contractSubmission: Bool) -> AgentMcpJSONObject {
-    var result = preflight(raw, establishedContract: !contract.isEmpty)
+    var result = preflight(raw, establishedContract: !contract.isEmpty, preserving: contract)
     result["contract_state"] = .string(contract.isEmpty ? "initial_criteria_pending" : "established")
     result["established_criteria_count"] = .int(Int64(contract.count))
+    result["targeted_work_repair"] = .string(AgentCollaborationWorkRepair.guidance)
     result["next_action"] = .string(contract.isEmpty
       ? "No criteria have been established yet; an empty contract is not corruption. Repair the draft, define criteria from the pinned goal and establish them before dispatch. Rejected assignments must not run."
       : "Preserve every established requirement, validator and required source. Read the pinned criteria and repair the draft; rejected assignments must not run.")
     if case .success(let draft) = parseAssessment(raw, limit: assessmentDraftLimit) {
-      var issue: AssessmentIssue?
-      if !contract.isEmpty {
+      var issue = newDesktopBindingIssue(draft.criteria, preserving: contract)
+      if issue == nil, !contract.isEmpty {
         let byID = Dictionary(uniqueKeysWithValues: draft.criteria.enumerated().map { ($0.element.id, ($0.offset, $0.element)) })
         for original in contract {
           guard let (index, current) = byID[original.id] else {
@@ -224,6 +304,9 @@ extension AgentCollaborationGoalAssessmentPolicy {
         result["field_path"] = .string(issue.path)
         result["reason"] = .string(issue.code)
         if !issue.allowed.isEmpty { result["allowed_values"] = .array(issue.allowed.map(AgentMcpJSONValue.string)) }
+        if issue.code == "unknown_recorded_tool" {
+          result["next_action"] = .string("Use a supported recorded Desktop event family, not a callable name. No contract or work was admitted. Do not execute a command to discover its receipt name or rewrite an existing binding.")
+        }
       }
     }
     return result
