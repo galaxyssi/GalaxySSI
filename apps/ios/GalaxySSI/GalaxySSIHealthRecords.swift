@@ -626,7 +626,7 @@ struct GalaxySSIHealthRecords {
     archive.localCareFollowUps = archive.localCareFollowUps?.filter { $0.value.concernID != concern.id }
   }
 
-  private func localCareProfileIsCurrent(_ scope: GalaxySSIHealthCareProfileScope.Link?) -> Bool {
+  func localCareProfileIsCurrent(_ scope: GalaxySSIHealthCareProfileScope.Link?) -> Bool {
     guard let scope else { return true }
     return (try? loadProfile()).map(scope.isCurrent) == true
   }
@@ -687,6 +687,7 @@ struct GalaxySSIHealthRecords {
           encounters.entries[entry.id] == entry else { throw Failure.stale }
     encounters.remove(concern: concern.id, entry: entry.id)
     var current = concern
+    Self.invalidateInstructionActions(in: &current, archive: &archive) { $0.visit == entry.id }
     current.revision += 1
     current.updatedAt = max(now, current.updatedAt)
     care.publish(current)
@@ -876,7 +877,7 @@ struct GalaxySSIHealthRecords {
         var pending = action
         pending.outcome = nil
         return presentation.action(action, concern: concern,
-          stale: !careActionIsCurrent(pending, concern: concern, archive: archive, context: context))
+          stale: !careActionIsCurrent(pending, concern: concern, archive: archive, context: context, now: now))
       }
       if actions.count > 48 { limitations.append(presentation.t("more_actions", "Only the first 48 confirmed actions are included.")) }
     }
@@ -1272,7 +1273,8 @@ struct GalaxySSIHealthRecords {
     let selected = Dictionary(plans.filter { $0.proposal.state == .accepted }
       .map { ($0.proposal.id, $0.proposal.selected) }, uniquingKeysWith: { first, _ in first })
     return (concern.adoptedActions ?? []).compactMap { action in
-      guard selected[action.proposalID]?.contains(action.action.id) == true else { return nil }
+      guard action.instruction == nil, action.action.kind != .clinicalInstruction,
+            selected[action.proposalID]?.contains(action.action.id) == true else { return nil }
       var scoped = action
       if !includesFeedback || scoped.feedback?.isInScope(concern) == false { scoped.feedback = nil }
       return scoped
@@ -1285,7 +1287,8 @@ struct GalaxySSIHealthRecords {
     let currentBasis = try? GalaxySSIHealthCare.inputDigest(concern.assessment)
     let latest = (concern.adoptedActions ?? []).compactMap { action -> (GalaxySSIHealthCarePlan.AdoptedAction,
         GalaxySSIHealthCareFollowUp.Feedback, Bool)? in
-      guard let feedback = action.feedback, feedback.isInScope(concern), proposals.contains(action.proposalID),
+      guard action.instruction == nil, action.action.kind != .clinicalInstruction,
+            let feedback = action.feedback, feedback.isInScope(concern), proposals.contains(action.proposalID),
             let plan = archive.localCarePlans?[action.proposalID.uuidString], plan.state == .accepted,
             plan.selected.contains(action.action.id), plan.concernID == concern.id, plan.destinationDigest == destination,
             plan.onlinePermission == archive.healthOnlinePermission, archive.matchesLocalCarePermission(plan.carePermission),
@@ -1648,10 +1651,12 @@ struct GalaxySSIHealthRecords {
   }
 
   func scheduleLocalCareFollowUp(concernID: UUID, metric: GalaxySSIHealthMetric, actionID: String,
-                                 replacing token: UUID?, at requested: Date, now: Date = Date()) throws {
+                                 expectedRevision: Int? = nil, replacing token: UUID?, at requested: Date,
+                                 now: Date = Date()) throws {
     guard requested.timeIntervalSinceReferenceDate.isFinite, requested > now else { throw Failure.invalid }
     var archive = try load()
     guard archive.localCareFollowUps?[actionID]?.id == token,
+          expectedRevision == nil || archive.localCare?.current[metric.rawValue]?.revision == expectedRevision,
           Self.careFollowUpPreferences(archive) != nil,
           careFollowUpIsCurrent(concernID: concernID, metric: metric, actionID: actionID, archive: archive, now: now)
     else { throw Failure.stale }
@@ -1698,11 +1703,12 @@ struct GalaxySSIHealthRecords {
           expectedRevision == current.revision,
           let index = current.adoptedActions?.firstIndex(of: action), action.outcome == nil else { throw Failure.stale }
     guard careOutcomeIsCurrent(action, concern: current, archive: archive,
-      profileCurrent: localCareProfileIsCurrent(current.profileScope)),
-      let plan = archive.localCarePlans?[action.proposalID.uuidString] else { throw Failure.stale }
+      profileCurrent: localCareProfileIsCurrent(current.profileScope), now: now),
+      let basis = action.instruction?.assessment ?? archive.localCarePlans?[action.proposalID.uuidString]?.assessmentDigest
+    else { throw Failure.stale }
     let feedback = GalaxySSIHealthCareFollowUp.Feedback(id: operation, kind: kind, note: note, recordedAt: now,
       scope: GalaxySSIHealthCareQuestions.scope(current), profileEpoch: current.profileScopeEpoch,
-      planBasis: plan.assessmentDigest)
+      planBasis: basis)
     current.adoptedActions?[index].feedback = feedback
     if kind == .completed { current.adoptedActions?[index].outcome = .init(note: note, reportedAt: now) }
     if current.stage == .maintenance {
@@ -1789,12 +1795,12 @@ struct GalaxySSIHealthRecords {
   }
 
   func careFollowUpIsCurrent(concernID: UUID, metric: GalaxySSIHealthMetric, actionID: String,
-                                    archive: Archive, now: Date = Date()) -> Bool {
+                                    archive: Archive, now: Date = Date(), verifyOriginal: Bool = true) -> Bool {
     guard archive.localCareAllowed == true,
           let concern = archive.localCare?.current[metric.rawValue], concern.id == concernID,
           let adopted = concern.adoptedActions?.first(where: { $0.id == actionID }) else { return false }
     return careActionIsCurrent(adopted, concern: concern, archive: archive,
-      context: careAgendaContext(concern, archive: archive, now: now))
+      context: careAgendaContext(concern, archive: archive, now: now), now: now, verifyOriginal: verifyOriginal)
   }
 
   private func careAgendaContext(_ concern: GalaxySSIHealthCare.Concern, archive: Archive, now: Date)
@@ -1810,10 +1816,15 @@ struct GalaxySSIHealthRecords {
   }
 
   private func careActionIsCurrent(_ adopted: GalaxySSIHealthCarePlan.AdoptedAction,
-      concern: GalaxySSIHealthCare.Concern, archive: Archive, context: GalaxySSIHealthCareAgenda.Context) -> Bool {
+      concern: GalaxySSIHealthCare.Concern, archive: Archive, context: GalaxySSIHealthCareAgenda.Context,
+      now: Date, verifyOriginal: Bool = true) -> Bool {
     guard adopted.outcome == nil, concern.stage != .paused, concern.stage != .closed, concern.assessment.record != nil,
-          context.assessmentCurrent, context.profileCurrent,
-          let plan = archive.localCarePlans?[adopted.proposalID.uuidString], plan.concernID == concern.id,
+          context.assessmentCurrent, context.profileCurrent else { return false }
+    if adopted.action.kind == .clinicalInstruction || adopted.instruction != nil {
+      return instructionActionIsCurrent(adopted, concern: concern, archive: archive, now: now,
+        verifyOriginal: verifyOriginal)
+    }
+    guard let plan = archive.localCarePlans?[adopted.proposalID.uuidString], plan.concernID == concern.id,
           plan.state == .accepted, plan.selected.contains(adopted.action.id),
           concern.profileScopeEpoch == plan.profileScopeEpoch, concern.profileScope == plan.profileScope,
           concern.questionRevision == plan.questionRevision,
@@ -1825,9 +1836,12 @@ struct GalaxySSIHealthRecords {
   }
 
   private func careOutcomeIsCurrent(_ action: GalaxySSIHealthCarePlan.AdoptedAction, concern: GalaxySSIHealthCare.Concern,
-      archive: Archive, profileCurrent: Bool) -> Bool {
-    guard profileCurrent, action.outcome == nil, concern.stage != .closed,
-          let plan = archive.localCarePlans?[action.proposalID.uuidString], plan.concernID == concern.id,
+      archive: Archive, profileCurrent: Bool, now: Date) -> Bool {
+    guard profileCurrent, action.outcome == nil, concern.stage != .closed else { return false }
+    if action.action.kind == .clinicalInstruction || action.instruction != nil {
+      return instructionActionIsCurrent(action, concern: concern, archive: archive, now: now)
+    }
+    guard let plan = archive.localCarePlans?[action.proposalID.uuidString], plan.concernID == concern.id,
           plan.state == .accepted, plan.selected.contains(action.action.id),
           plan.profileScopeEpoch == concern.profileScopeEpoch, plan.profileScope == concern.profileScope,
           plan.questionRevision == concern.questionRevision else { return false }
@@ -1842,10 +1856,10 @@ struct GalaxySSIHealthRecords {
   }
 
   private func careAgendaRow(_ action: GalaxySSIHealthCarePlan.AdoptedAction, concern: GalaxySSIHealthCare.Concern,
-      archive: Archive, context: GalaxySSIHealthCareAgenda.Context)
+      archive: Archive, context: GalaxySSIHealthCareAgenda.Context, now: Date)
       -> (GalaxySSIHealthCareAgenda.Row, GalaxySSIHealthCareFollowUp.Reminder?) {
     typealias Agenda = GalaxySSIHealthCareAgenda
-    let current = careActionIsCurrent(action, concern: concern, archive: archive, context: context)
+    let current = careActionIsCurrent(action, concern: concern, archive: archive, context: context, now: now)
     let bucket: Agenda.Bucket = action.outcome != nil ? .recorded : (current ? .planned : .review)
     let reminder = archive.localCareFollowUps?[action.id].flatMap {
       current && $0.concernID == concern.id && $0.metric == concern.metric && $0.actionID == action.id ? $0 : nil
@@ -1854,15 +1868,15 @@ struct GalaxySSIHealthRecords {
       concern: concern.id, action: action.id)
     let row = Agenda.Row(key: key, metric: concern.metric, revision: concern.revision, reminderID: reminder?.id,
       submittedFor: reminder?.submittedFor, canRecord: careOutcomeIsCurrent(action, concern: concern, archive: archive,
-        profileCurrent: context.profileCurrent))
+        profileCurrent: context.profileCurrent, now: now))
     return (row, reminder)
   }
 
-  private func makeCareAgenda(_ archive: Archive, context: [String: GalaxySSIHealthCareAgenda.Context])
+  private func makeCareAgenda(_ archive: Archive, context: [String: GalaxySSIHealthCareAgenda.Context], now: Date)
       -> GalaxySSIHealthCareAgenda.Projection {
     let rows = context.flatMap { metric, state -> [GalaxySSIHealthCareAgenda.Row] in
       guard let concern = archive.localCare?.current[metric] else { return [] }
-      return (concern.adoptedActions ?? []).map { careAgendaRow($0, concern: concern, archive: archive, context: state).0 }
+      return (concern.adoptedActions ?? []).map { careAgendaRow($0, concern: concern, archive: archive, context: state, now: now).0 }
     }
     return .init(carePermission: archive.localCarePermission, onlinePermission: archive.healthOnlinePermission,
       context: context, rows: rows)
@@ -1883,7 +1897,7 @@ struct GalaxySSIHealthRecords {
        saved.carePermission == archive.localCarePermission, saved.onlinePermission == archive.healthOnlinePermission {
       index = saved
     } else {
-      index = makeCareAgenda(archive, context: context)
+      index = makeCareAgenda(archive, context: context, now: now)
     }
     let rows = try index.page(filter: filter, scope: scope, dayEnd: dayEnd, after: after, limit: limit)
     var actionsByMetric: [String: [String: GalaxySSIHealthCarePlan.AdoptedAction]] = [:]
@@ -1895,7 +1909,7 @@ struct GalaxySSIHealthRecords {
           uniquingKeysWith: { first, _ in first })
       }
       guard let action = actionsByMetric[row.metric.rawValue]?[row.key.action] else { throw Failure.stale }
-      let (checked, reminder) = careAgendaRow(action, concern: concern, archive: archive, context: state)
+      let (checked, reminder) = careAgendaRow(action, concern: concern, archive: archive, context: state, now: now)
       guard checked == row else { throw Failure.stale }
       return .init(scope: .init(concern: concern.id, metric: concern.metric), revision: concern.revision, action: action, reminder: reminder,
         plannedAt: row.key.due, bucket: row.key.bucket, canRecord: row.canRecord)
@@ -2984,12 +2998,15 @@ struct GalaxySSIHealthRecords {
       let enabled = Self.careFollowUpPreferences(archive) != nil
       archive.localCareFollowUps = reminders.filter {
         enabled && careFollowUpIsCurrent(concernID: $0.value.concernID, metric: $0.value.metric,
-          actionID: $0.key, archive: archive, now: now)
+          actionID: $0.key, archive: archive, now: now, verifyOriginal: false)
       }
     }
-    if archive.localCareAllowed == true {
-      let context = careAgendaContexts(archive, now: Date())
-      archive.localCareAgenda = context.isEmpty ? nil : try JSONEncoder().encode(makeCareAgenda(archive, context: context))
+    if archive.localCareAllowed == true, !(archive.localCare?.current.values.contains { concern in
+      concern.adoptedActions?.contains { $0.instruction != nil } == true
+    } ?? false) {
+      let now = Date()
+      let context = careAgendaContexts(archive, now: now)
+      archive.localCareAgenda = context.isEmpty ? nil : try JSONEncoder().encode(makeCareAgenda(archive, context: context, now: now))
     } else {
       archive.localCareAgenda = nil
     }

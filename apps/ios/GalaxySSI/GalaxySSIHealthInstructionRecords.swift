@@ -121,7 +121,9 @@ extension GalaxySSIHealthRecords {
         expectedConcern: expected.stamp.revision, source: source, draft: draft, now: now)
       if inserted {
         archive.localCareInstructions = ledger
-        try publishVisitDocumentChange(concern, archive: &archive, now: now, notify: false)
+        var current = concern
+        Self.invalidateInstructionActions(in: &current, archive: &archive) { $0.instruction == id }
+        try publishVisitDocumentChange(current, archive: &archive, now: now, notify: false)
       }
       return (receipt, inserted)
     }
@@ -134,10 +136,95 @@ extension GalaxySSIHealthRecords {
     var archive = try load()
     let (concern, scope) = try visitDocumentContext(history.scope, archive: archive, now: now)
     let entry = history.item.entry
-    guard scope == history.scope, concern.revision < Int.max - 1, entry.concern == concern.id, entry.visit == scope.visit.id,
+    guard scope == history.scope, concern.revision < Int.max - 1, entry.concern == concern.id,
+          entry.visit == scope.visit.id,
           var ledger = archive.localCareInstructions, ledger.current[entry.id] == entry else { throw Failure.stale }
     ledger.remove(concern: concern.id, visit: entry.visit, entry: entry.id)
     archive.localCareInstructions = ledger
-    try publishVisitDocumentChange(concern, archive: &archive, now: now)
+    var current = concern
+    Self.invalidateInstructionActions(in: &current, archive: &archive) { $0.instruction == entry.id }
+    try publishVisitDocumentChange(current, archive: &archive, now: now)
+  }
+
+  @discardableResult
+  func confirmVisitInstructionAction(_ history: Instructions.History, acknowledged: Bool,
+      now: Date = Date()) throws -> GalaxySSIHealthCarePlan.AdoptedAction {
+    guard acknowledged, now < history.expires, now.timeIntervalSince1970.isFinite, now.timeIntervalSince1970 > 0
+    else { throw Failure.invalid }
+    let originals = visitOriginalStore
+    let (action, inserted) = try originals.withRestoreLease { lease -> (GalaxySSIHealthCarePlan.AdoptedAction, Bool) in
+      try originals.reconcileRestores(lease: lease)
+      var archive = try load()
+      let (concern, scope) = try visitDocumentContext(history.scope, archive: archive, now: now)
+      let entry = history.item.entry
+      guard scope.visit == history.scope.visit, scope.stamp.matchesInputs(history.scope.stamp),
+            concern.stage != .paused, concern.stage != .closed, concern.assessment.record != nil,
+            localCareProfileIsCurrent(concern.profileScope),
+            archive.localCareInstructions?.current[entry.id] == entry, entry.concern == concern.id,
+            entry.visit == scope.visit.id, entry.draft.eligibleForAction,
+            let link = archive.localCareEncounterDocuments?[entry.source.linkID], entry.source.matches(link),
+            let sourceURL = URL(string: "galaxyssi-health-original:" + entry.source.originalID.uuidString)
+      else { throw Failure.stale }
+      let original = try verifiedVisitDocumentOriginal(link, scope: scope, archive: archive, originals: originals, lease: lease)
+      _ = try originals.read(original, lease: lease)
+      let basis = try GalaxySSIHealthCare.inputDigest(concern.assessment)
+      let reference = Instructions.ActionReference(instruction: entry.id, revision: entry.revision, visit: entry.visit,
+        link: link.id, original: original.id, fingerprint: entry.source.fingerprint, page: entry.source.page,
+        pageCount: entry.source.pageCount, permission: scope.stamp.permission, profileEpoch: concern.profileScopeEpoch,
+        assessment: basis)
+      var actions = concern.adoptedActions ?? []
+      if let saved = actions.first(where: { $0.proposalID == entry.id && $0.action.id == entry.revision }) {
+        guard saved.instruction == reference else { throw Failure.stale }
+        return (saved, false)
+      }
+      guard scope == history.scope, concern.revision < Int.max - 1 else { throw Failure.stale }
+      let action = GalaxySSIHealthCarePlan.AdoptedAction(proposalID: entry.id,
+        action: .init(id: entry.revision, kind: .clinicalInstruction, description: entry.draft.value(.name).text,
+          rationale: entry.draft.value(.details).text, sourceIndex: 0, dueFrom: nil, dueUntil: nil),
+        source: .init(title: original.name, url: sourceURL, version: String(entry.revision), applicability: ""),
+        confirmedAt: now, instruction: reference)
+      actions.append(action)
+      var current = concern
+      current.adoptedActions = actions
+      try publishVisitDocumentChange(current, archive: &archive, now: now, notify: false)
+      return (action, true)
+    }
+    if inserted { NotificationCenter.default.post(name: Self.recordsChanged, object: owner) }
+    return action
+  }
+
+  func instructionActionIsCurrent(_ action: GalaxySSIHealthCarePlan.AdoptedAction,
+      concern: GalaxySSIHealthCare.Concern, archive: Archive, now: Date, verifyOriginal: Bool = true) -> Bool {
+    guard let ref = action.instruction, action.action.kind == .clinicalInstruction,
+          concern.stage != .paused, concern.stage != .closed,
+          ref.instruction == action.proposalID, ref.revision == action.action.id,
+          archive.matchesLocalCarePermission(ref.permission), ref.profileEpoch == concern.profileScopeEpoch,
+          (try? GalaxySSIHealthCare.inputDigest(concern.assessment)) == ref.assessment,
+          let entry = archive.localCareInstructions?.current[ref.instruction], entry.concern == concern.id, ref.matches(entry),
+          archive.localCareEncounters?.entries[ref.visit]?.concern == concern.id,
+          let link = archive.localCareEncounterDocuments?[ref.link], link.concern == concern.id,
+          link.visit == ref.visit, entry.source.matches(link) else { return false }
+    // Archive writes can already hold the original-store lease. Delivery and review verify the file independently.
+    guard verifyOriginal else { return true }
+    let originals = visitOriginalStore
+    return (try? originals.withRestoreLease { lease in
+      let (_, scope) = try visitDocumentContext(concern: concern.id, metric: concern.metric, visit: ref.visit,
+        archive: archive, now: now)
+      let original = try verifiedVisitDocumentOriginal(link, scope: scope, archive: archive, originals: originals, lease: lease)
+      _ = try originals.read(original, lease: lease)
+      return true
+    }) == true
+  }
+
+  static func invalidateInstructionActions(in concern: inout GalaxySSIHealthCare.Concern, archive: inout Archive,
+      matching: (Instructions.ActionReference) -> Bool) {
+    guard var actions = concern.adoptedActions else { return }
+    for index in actions.indices {
+      guard var ref = actions[index].instruction, !ref.invalidated, matching(ref) else { continue }
+      ref.invalidated = true
+      actions[index].instruction = ref
+      archive.localCareFollowUps?.removeValue(forKey: actions[index].id)
+    }
+    concern.adoptedActions = actions
   }
 }
