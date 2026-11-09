@@ -336,6 +336,104 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(snapshot.members.first?.output, "original")
   }
 
+  func testCollaborationPanelKeepsRecoverySeparateFromThePublishedTranscript() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let suite = "team-panel-recovery-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    func openHistory() -> AgentTeamExecutionHistoryStore {
+      AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+        executionStore: SavedTeamRecoveryFixture([]), fileURL: root.appendingPathComponent("team.sqlite3"))
+    }
+
+    let store = makeStore()
+    let person = UUID().uuidString.lowercased()
+    var current = durableTeamSnapshot("panel-recovery")
+    let outgoing = store.appendOutgoing("Current assignment", to: "hermes",
+      turnId: current.taskId, conversationOverride: current.conversationId)
+    let source = UUID().uuidString
+    current.primaryInstanceId = person
+    current.createdAtMillis = 100
+    current.updatedAtMillis = 100
+    current.state = .waitingResponse
+    current.members = [
+      .init(agentId: current.primaryAgentId, deliveryMode: .respond, status: .queued, updatedAtMillis: 100,
+        instanceId: person, sourceMessageId: source, dispatchCheckpoint: .accepted, executionStartedAtMillis: 99),
+      .init(agentId: current.primaryAgentId, status: .failed, errorMessage: "Older failed attempt",
+        updatedAtMillis: 90, instanceId: person + ":revise")
+    ]
+
+    let history = openHistory()
+    for attempt in 1...22 {
+      var failed = durableTeamSnapshot("panel-failed-\(attempt)")
+      failed.taskId = "older-turn-\(attempt)"
+      failed.state = .failed
+      failed.createdAtMillis = Int64(attempt)
+      failed.updatedAtMillis = Int64(attempt)
+      failed.primaryInstanceId = person
+      failed.members[0].instanceId = person
+      failed.members[0].status = .failed
+      XCTAssertTrue(history.upsert(failed))
+    }
+    XCTAssertTrue(history.upsert(current))
+
+    func panel(_ history: AgentTeamExecutionHistoryStore) throws -> [AgentTeamMemberSnapshot] {
+      let snapshot = try XCTUnwrap(history.latestCollaborationRun(conversationId: current.conversationId))
+      XCTAssertEqual(snapshot.supervisorRunId, current.supervisorRunId)
+      return AgentTeamProgressPolicy.currentCollaborationMembers(snapshot)
+    }
+    func transcript() async throws -> [ChatMessage] {
+      let page = await store.chatHistoryDatabase.agentTranscriptWindow(conversationId: current.conversationId, limit: 30)
+      return try XCTUnwrap(page).messages
+    }
+
+    XCTAssertEqual(try panel(history).map(\.memberId), [person])
+    XCTAssertEqual(try panel(history).map(\.dispatchCheckpoint), [.accepted])
+    let waitingTranscript = try await transcript()
+    XCTAssertEqual(waitingTranscript.map(\.id), [outgoing.id])
+    current.state = .running
+    current.updatedAtMillis = 101
+    current.members[0].status = .running
+    current.members[0].updatedAtMillis = 101
+    XCTAssertTrue(history.upsert(current))
+    XCTAssertEqual(try panel(history).map(\.status), [.running])
+    let reconcilingTranscript = try await transcript()
+    XCTAssertEqual(reconcilingTranscript.map(\.id), [outgoing.id])
+
+    let owner = try XCTUnwrap(history.recoveryContext(source: source, conversation: current.conversationId,
+      turn: current.taskId, contact: current.primaryAgentId)?.owner)
+    let identity = AgentTaskIdentity(clientRouteId: "route", conversationId: current.conversationId,
+      taskId: source, turnId: current.taskId)
+    let binding = try XCTUnwrap(AgentDesktopReplyBinding.teamPrimary(owner: owner,
+      desktopId: "desktop", agentId: "codex", identity: identity, outgoing: outgoing))
+    let observation = AgentTeamReplyObservation(generation: 2, sequence: 10)
+    let answer = "Recovered original result"
+    func recover(_ history: AgentTeamExecutionHistoryStore) throws -> ChatMessage {
+      let message = try store.persistTransportIncoming(answer, from: binding.displayContactId,
+        remoteMessageId: "recovered-result", conversationId: identity.conversationId, turnId: identity.turnId,
+        richOutputJson: "", tracePrefix: "desktop_team_result")
+      XCTAssertTrue(try history.commitRecoveredPrimary(binding: binding, content: answer, rich: "",
+        success: true, observation: observation, now: 102))
+      return message
+    }
+
+    let reply = try recover(history)
+    let reopened = openHistory()
+    XCTAssertEqual(try recover(reopened).id, reply.id)
+    XCTAssertEqual(try panel(reopened).map(\.status), [.succeeded])
+    let replies = try await transcript().filter { !$0.isMine }
+    XCTAssertEqual(replies.map(\.id), [reply.id])
+    XCTAssertEqual(replies.map(\.content), [answer])
+    let completed = try XCTUnwrap(replies.first)
+    let start = Int64(outgoing.createdAt.timeIntervalSince1970 * 1_000)
+    XCTAssertEqual(AgentTranscriptExecutionProgress.resolve(owned: nil, cached: nil,
+      deliveredAt: AgentTranscriptExecutionProgress.finalDeliveryTime(completed), requestStartedAt: start)?.status, .completed)
+    let records = try reopened.readCollaborationResults(conversationId: current.conversationId, limit: 30)
+    XCTAssertEqual(records.filter { $0.state == .failed }.count, 22)
+    XCTAssertEqual(records.first { $0.supervisorRunId == current.supervisorRunId }?.members.last?.status, .failed)
+  }
+
   func testCollaborationReviewerIdentityCannotChangeWithResearchStage() {
     let rosterId = UUID().uuidString
     XCTAssertEqual(AgentTeamProgressPolicy.stableCollaborationMemberId(rosterId + ":revise"), rosterId.lowercased())
