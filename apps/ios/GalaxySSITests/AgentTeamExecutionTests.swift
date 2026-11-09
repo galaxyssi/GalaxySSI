@@ -32,6 +32,7 @@ extension GalaxySSIStoreTests {
         "stage": .string(review ? "VERIFY" : "EXECUTE"), "independent_review": .bool(review),
         "depends_on": .array(review ? [.string("produce"), .string("blind")] : [])]
       if review { row["review_targets"] = .array([.string("produce")]) }
+      if id == "review" { row["depends_on"] = .array([.string("produce"), .string("blind"), .string("fixture")]) }
       // Keep this supporting prerequisite completion-only under dependency correction as well.
       if review { row["completion_barriers"] = .array([.object([
         "work_id": .string("blind"), "reason": .string("Complete the independent probe before review")
@@ -50,24 +51,33 @@ extension GalaxySSIStoreTests {
          "work": .array(work), field: .array(rebind)]))]
     }
     let seed = expansion("seed", 1, work: [work("produce", producer.memberId), work("blind", reviewer.memberId),
+      work("fixture", reviewer.memberId),
       work("review", reviewer.memberId, review: true), work("completion", reviewer.memberId, review: true, completionOnly: true),
       work("typed-review", reviewer.memberId, review: true, typed: true)])
-    XCTAssertEqual(try history.publishCollaborationMilestone(seed, scope: scope)["admitted_work_count"], .int(5))
+    XCTAssertEqual(try history.publishCollaborationMilestone(seed, scope: scope)["admitted_work_count"], .int(6))
     XCTAssertTrue(try history.isGoalWorkInputProducer("produce", scope: scope))
     XCTAssertFalse(try history.isGoalWorkInputProducer("blind", scope: scope))
     let (produce, _) = try history.goalWork("produce", scope: scope)
     let (blind, _) = try history.goalWork("blind", scope: scope)
+    let (fixture, _) = try history.goalWork("fixture", scope: scope)
     let (original, _) = try history.goalWork("review", scope: scope)
     let producerRun = try history.claimGoalWork(produce, scope: scope, now: 2).run
     let blindRun = try history.claimGoalWork(blind, scope: scope, now: 2).run
+    let fixtureRun = try history.claimGoalWork(fixture, scope: scope, now: 2).run
     let receipt = try history.publishGoalWorkInput(producerRun, id: "first", payload: ["value": .int(1)], now: 3)
     let token = try XCTUnwrap(receipt["token"]?.strictStringValue)
     let blindReceipt = try history.publishGoalWorkInput(blindRun, id: "blind", payload: ["probe": .int(5)], now: 3)
     let blindToken = try XCTUnwrap(blindReceipt["token"]?.strictStringValue)
+    let fixtureReceipt = try history.publishGoalWorkInput(fixtureRun, id: "fixture", payload: ["test": .int(7)], now: 3)
+    let fixtureToken = try XCTUnwrap(fixtureReceipt["token"]?.strictStringValue)
     func binding(_ target: String = "review", dependency: String = "produce", token: String,
-                 revision: Int64 = 0) -> AgentMcpJSONValue {
-      .object(["work_id": .string(target), "expected_revision": .int(revision), "reason": .string("Review exact subject"),
-        "inputs": .array([.object(["dependency": .string(dependency), "uses_milestones": .array([.string(token)])])])])
+                 revision: Int64 = 0, supporting: String? = nil) -> AgentMcpJSONValue {
+      func input(_ dependency: String, _ token: String) -> AgentMcpJSONValue {
+        .object(["dependency": .string(dependency), "uses_milestones": .array([.string(token)])])
+      }
+      let inputs = [input(dependency, token)] + (supporting.map { [input("fixture", $0)] } ?? [])
+      return .object(["work_id": .string(target), "expected_revision": .int(revision), "reason": .string("Review exact subject"),
+        "inputs": .array(inputs)])
     }
     XCTAssertThrowsError(try history.publishCollaborationMilestone(expansion("wrong-dependency", 2,
       rebind: [binding(dependency: "blind", token: blindToken)]), scope: scope))
@@ -75,10 +85,13 @@ extension GalaxySSIStoreTests {
       rebind: [binding(token: blindToken)]), scope: scope))
     XCTAssertThrowsError(try history.publishCollaborationMilestone(expansion("completion-only", 2,
       rebind: [binding("completion", token: token)]), scope: scope))
-    let amend = expansion("bind", 2, rebind: [binding(token: token)])
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(expansion("wrong-fixture-token", 2,
+      rebind: [binding(token: token, supporting: blindToken)]), scope: scope))
+    let amend = expansion("bind", 2, rebind: [binding(token: token, supporting: fixtureToken)])
     XCTAssertEqual(try history.publishCollaborationMilestone(amend, scope: scope)["input_revisions"]?.objectValue?["review"], .int(1))
     XCTAssertFalse(try history.readyGoalWork(scope: scope, excluding: [], limit: 3, now: 4).contains("review"))
     _ = try history.publishGoalWorkInput(producerRun, id: "later", payload: ["value": .int(2)], now: 4)
+    _ = try history.publishGoalWorkInput(fixtureRun, id: "later", payload: ["test": .int(8)], now: 4)
     _ = try history.finishGoalWork(blindRun, output: "Independent probe complete", interrupted: false, now: 4)
     let reopened = open()
     XCTAssertEqual(try reopened.publishCollaborationMilestone(amend, scope: scope)["replayed"], .bool(true))
@@ -90,13 +103,18 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(claim.dependencies.first?["input_role"], .string("review_subject"))
     XCTAssertEqual(claim.dependencies.first?["review_scope"], .string("exact_versions_only_not_producer_completion"))
     XCTAssertEqual(claim.dependencies.first?["versions"]?.arrayValue?.first?.objectValue?["data"]?.objectValue?["value"], .int(1))
-    XCTAssertEqual(claim.dependencies.last?["output"], .string("Independent probe complete"))
+    XCTAssertEqual(claim.dependencies.dropFirst().first?["output"], .string("Independent probe complete"))
+    XCTAssertEqual(claim.dependencies.last?["input_role"], .string("prerequisite"))
+    XCTAssertEqual(claim.dependencies.last?["versions"]?.arrayValue?.first?.objectValue?["data"]?.objectValue?["test"], .int(7))
+    XCTAssertEqual(try reopened.goalWork("produce", scope: scope, now: 5).1?.state, .running)
+    XCTAssertEqual(try reopened.goalWork("fixture", scope: scope, now: 5).1?.state, .running)
     XCTAssertEqual(claim.run.inputRevision, 1)
     let checkpoint = try XCTUnwrap(reopened.goalCheckpoint(runId: scope.runId, conversationId: scope.conversationId, turnId: scope.turnId))
     let revision = try XCTUnwrap(checkpoint.liveGraph?.inputBindingHistory?["review"]?.first)
     XCTAssertEqual(revision.kind, .independentReview)
     XCTAssertEqual(revision.previousRevision, 0)
     XCTAssertEqual(revision.coordinator, scope)
+    XCTAssertEqual(revision.inputs.map(\.role), [.reviewSubject, .prerequisite])
     XCTAssertThrowsError(try reopened.publishCollaborationMilestone(expansion("claimed", 3,
       rebind: [binding(token: token, revision: 1)]), scope: scope))
     XCTAssertFalse(try open().claimGoalWork(selected, scope: scope, now: 5).claimed)
