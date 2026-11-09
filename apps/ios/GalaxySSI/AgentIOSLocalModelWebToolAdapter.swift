@@ -35,6 +35,7 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
   private let baseSystemPrompt: String
   private let taskID: String
   private let beforeInference: (() throws -> Void)?
+  private let inferenceCancellation: AgentModelToolLoopCancellationToken
   private let goalAssessmentOnly: Bool
   private let beforeDesktopEvidenceRecall: ((AgentMcpJSONObject) async -> Void)?
   private(set) var lastInference: LocalModelInferenceResult?
@@ -47,6 +48,7 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
     baseSystemPrompt: String,
     taskID: String,
     beforeInference: (() throws -> Void)? = nil,
+    inferenceCancellation: AgentModelToolLoopCancellationToken = .none,
     goalAssessmentOnly: Bool = false,
     currentCatalog: ((AgentModelRequest) throws -> [AgentNativeToolDescriptor])? = nil,
     beforeDesktopEvidenceRecall: ((AgentMcpJSONObject) async -> Void)? = nil
@@ -59,6 +61,7 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
     self.baseSystemPrompt = baseSystemPrompt
     self.taskID = taskID
     self.beforeInference = beforeInference
+    self.inferenceCancellation = inferenceCancellation
     self.goalAssessmentOnly = goalAssessmentOnly
     self.beforeDesktopEvidenceRecall = beforeDesktopEvidenceRecall
   }
@@ -130,7 +133,7 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
     if beforeInference != nil {
       let result = try await LocalModelInferenceRuntime.shared.generateAsync(profile: fallbackProfile,
         systemPrompt: systemPrompt, userPrompt: userPrompt, maximumTokens: goalAssessmentOnly ? 4_096 : 1_500,
-        temperature: 0.1, taskId: taskID)
+        temperature: 0.1, taskId: taskID, cancellation: inferenceCancellation)
       guard result.profileId == preferredProfileID else { throw AgentManagedBrowserContinuationStore.Failure.scopeChanged }
       lastInference = result
       return result
@@ -183,7 +186,7 @@ enum AgentIOSLocalModelWebToolRunner {
       let readMode = AgentCollaborationMilestoneCoordination.readMode
       let policy = AgentCollaborationGoalAssessmentPolicy.self
       let modes = [policy.establishContractMode, policy.appendWorkMode, policy.checkGoalEvidenceMode,
-        policy.workInventoryMode, policy.assessmentRepairMode, "validate_assessment", "work_result"]
+        policy.workInventoryMode, policy.workInputMode, policy.assessmentRepairMode, "validate_assessment", "work_result"]
       let descriptor = try AgentNativeToolDescriptor(id: AgentIOSLocalModelWebToolRunner.goalCoordinatorToolID,
         version: "1.0.0", title: "Collaboration goal", description:
           "Manage only this coordinator's original goal. Establish open criteria with establish_contract and artifact. " +
@@ -193,12 +196,14 @@ enum AgentIOSLocalModelWebToolRunner {
           "Use work_inventory with no other fields to inspect readiness, review subjects and publication tokens. A waiting review is not active. " +
           "Use assessment_repair with draft_sha256 and offset to read a retained rejected draft; join pages in order. Do not execute rejected work. " +
           "Use check_goal_evidence with expected_revision and artifact to check exact reviewed evidence; this does not deliver the goal. " +
-          policy.admissionInstructions,
+          policy.admissionInstructions + AgentCollaborationWorkInputBindings.coordinatorInstructions +
+          AgentCollaborationProbeContinuation.admissionInstructions,
         location: .application, inputSchema: ["type": .string("object"), "required": .array([.string("mode")]),
           "additionalProperties": .bool(false), "properties": .object([
             "mode": .object(["type": .string("string"), "enum": .array((modes + [readMode]).map(AgentMcpJSONValue.string))]),
             "milestone_id": .object(["type": .string("string")]), "artifact": .object(["type": .string("string")]),
             "draft_sha256": .object(["type": .string("string")]), "offset": .object(["type": .string("integer")]),
+            "token": .object(["type": .string("string")]),
             "expected_revision": .object(["type": .string("integer")]), "work_id": .object(["type": .string("string")])
           ].merging(["token": .object(["type": .string("string")]), "object_id": .object(["type": .string("string")]),
             "revision": .object(["type": .string("integer")]), "artifact_sha256": .object(["type": .string("string")])]) {
@@ -314,6 +319,7 @@ enum AgentIOSLocalModelWebToolRunner {
     managedInput: AgentManagedBrowserLoopInput? = nil,
     managedJournal: AgentModelLoopJournal? = nil,
     goalCoordinator: GoalCoordinator? = nil,
+    workInputPublisher: AgentCollaborationWorkInputBindings.Publisher? = nil,
     desktopEvidenceRefresh: CloudConversationStreamEngine.DesktopEvidenceRefresh? = nil
   ) async throws -> AgentIOSLocalModelWebToolCompletion {
     let owner = collaborationOwner ?? collaborationRecallScope
@@ -329,6 +335,12 @@ enum AgentIOSLocalModelWebToolRunner {
     let webRegistry = try webToolRegistry(registry, readOnlyAnalysis: readOnlyAnalysis,
       recallScope: collaborationRecallScope, database: collaborationConversationDatabase,
       originalsOnly: collaborationOriginalsOnly, coordinatorReadOnly: goalCoordinator != nil, useRegisteredContracts: registered)
+    if let workInputPublisher {
+      guard readOnlyAnalysis, goalCoordinator == nil, managedBrowser == nil, owner == nil,
+            webRegistry.descriptors().isEmpty else { throw CancellationError() }
+      try workInputPublisher.validate()
+      try webRegistry.registerExecutable(workInputPublisher.executable())
+    }
     if let goalCoordinator {
       guard !readOnlyAnalysis, managedBrowser == nil, owner == goalCoordinator.scope else { throw CancellationError() }
       try goalCoordinator.validate()
@@ -358,6 +370,7 @@ enum AgentIOSLocalModelWebToolRunner {
     guard !catalog.isEmpty else { throw AgentIOSLocalModelWebToolError.unavailable }
     let verifyOwner: (() throws -> Void)?
     if let goalCoordinator { verifyOwner = { try goalCoordinator.validate() } }
+    else if let workInputPublisher { verifyOwner = { try workInputPublisher.validate() } }
     else if let managedBrowser { verifyOwner = { try managedBrowser.validateCurrentOwner() } }
     else { verifyOwner = nil }
     let permissions = Set(catalog.flatMap(\.requiredPermissions).filter(\.required).map(\.id))
@@ -388,9 +401,9 @@ enum AgentIOSLocalModelWebToolRunner {
       grantedPermissions: permissions,
       grantedConsents: consents,
       recoveryInputIdentity: recoveryIdentity,
-      observationHistoryEnabled: true,
+      observationHistoryEnabled: workInputPublisher == nil,
       observationHistorySource: owner?.ownershipDigest ?? "",
-      cancellationToken: goalCoordinator?.cancellation ??
+      cancellationToken: goalCoordinator?.cancellation ?? workInputPublisher?.cancellation ??
         (managedBrowser == nil ? .none : AgentModelToolLoopCancellationToken { Task.isCancelled }),
       collaborationOwner: owner
     )
@@ -402,6 +415,7 @@ enum AgentIOSLocalModelWebToolRunner {
       catalog: catalog, fallbackProfile: profile, preferredProfileID: profile.id,
       hasAttachments: hasAttachments, baseSystemPrompt: baseSystemPrompt, taskID: taskID,
       beforeInference: verifyOwner,
+      inferenceCancellation: workInputPublisher?.cancellation ?? .none,
       goalAssessmentOnly: goalCoordinator != nil,
       currentCatalog: catalogSession.map { view in { try view.providerCatalog($0) } },
       beforeDesktopEvidenceRecall: collaborationRecallScope.flatMap { scope -> ((AgentMcpJSONObject) async -> Void)? in
@@ -412,7 +426,8 @@ enum AgentIOSLocalModelWebToolRunner {
     let outcome = await AgentModelToolLoop(
       modelAdapter: session,
       toolRegistry: webRegistry,
-      journal: managedJournal ?? (owner == nil ? EncryptedAgentModelLoopJournal() : InMemoryAgentModelLoopJournal()),
+      journal: managedJournal ?? (owner == nil && workInputPublisher == nil
+        ? EncryptedAgentModelLoopJournal() : InMemoryAgentModelLoopJournal()),
       nativeObservation: goalCoordinator?.recordObservation ?? nativeObservation,
       browserHandoff: managedBrowser
     ).run(request)
