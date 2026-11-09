@@ -52,6 +52,7 @@ private struct GalaxySSIHealthCareAgendaRows: View {
   @State private var editor: Editor?
   @State private var history: History?
   @State private var instructionSource: InstructionSource?
+  @State private var journalReview: Agenda.Item?
   @State private var cancelling: GalaxySSIHealthCareFollowUp.Reminder?
   @State private var failed = false
   @State private var disallowed = false
@@ -130,11 +131,18 @@ private struct GalaxySSIHealthCareAgendaRows: View {
       if $0.object as? String == records.owner { reset() }
     }
     .sheet(item: $editor) { edit in
-      NavigationView {
-        GalaxySSIHealthCareFollowUpEditor(records: records, concernID: edit.item.scope.concern, metric: edit.item.scope.metric,
-          action: edit.item.action, revision: edit.item.revision, operation: edit.id,
-          existing: edit.item.reminder, editingOutcome: edit.outcome)
-      }.navigationViewStyle(.stack)
+      if let action = edit.item.action {
+        NavigationView {
+          GalaxySSIHealthCareFollowUpEditor(records: records, concernID: edit.item.scope.concern, metric: edit.item.scope.metric,
+            action: action, revision: edit.item.revision, operation: edit.id,
+            existing: edit.item.reminder, editingOutcome: edit.outcome)
+        }.navigationViewStyle(.stack)
+      }
+    }
+    .sheet(item: $journalReview) { item in
+      if let visit = item.reminder?.journalReview?.visit {
+        GalaxySSIHealthVisitJournalView(records: records, concern: item.scope.concern, metric: item.scope.metric, visit: visit)
+      }
     }
     .sheet(item: $history) { selection in
       NavigationView {
@@ -160,9 +168,28 @@ private struct GalaxySSIHealthCareAgendaRows: View {
     scene == .active && UIApplication.shared.isProtectedDataAvailable && store.profile.identityFingerprint == records.owner
   }
 
-  private func row(_ item: Agenda.Item, remindersEnabled: Bool) -> some View {
-    let action = item.action
-    return VStack(alignment: .leading, spacing: 7) {
+  @ViewBuilder private func row(_ item: Agenda.Item, remindersEnabled: Bool) -> some View {
+    if let action = item.action {
+      actionRow(item, action: action, remindersEnabled: remindersEnabled)
+    } else if let reminder = item.reminder, reminder.journalReview != nil {
+      VStack(alignment: .leading, spacing: 7) {
+        Button(GalaxySSIHealthCareFollowUp.JournalReview.text("title", "Post-visit review", language)) {
+          journalReview = item
+        }.buttonStyle(.borderless)
+        Text(reminder.requestedAt, format: .dateTime).font(.caption).foregroundColor(.secondary)
+        if let scheduled = reminder.submittedFor, abs(scheduled.timeIntervalSince(reminder.requestedAt)) >= 60 {
+          Text(t("registered", "Registered notification time")).font(.caption).foregroundColor(.secondary)
+          Text(scheduled, format: .dateTime).font(.caption).foregroundColor(.secondary)
+        }
+        Button(t("cancel_reminder", "Cancel reminder"), role: .destructive) { cancelling = reminder }
+          .buttonStyle(.borderless)
+      }
+    }
+  }
+
+  private func actionRow(_ item: Agenda.Item, action: GalaxySSIHealthCarePlan.AdoptedAction,
+      remindersEnabled: Bool) -> some View {
+    VStack(alignment: .leading, spacing: 7) {
       Text(action.action.description).font(.body.weight(.semibold))
       if scope == nil {
         Text(item.scope.metric.title(language: language)).font(.caption).foregroundColor(.secondary)

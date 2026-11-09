@@ -48,8 +48,41 @@ enum GalaxySSIHealthCareFollowUp {
     let metric: GalaxySSIHealthMetric
     let requestedAt: Date
     var submittedFor: Date?
+    var journalReview: JournalReview? = nil
 
     var identifier: String { GalaxySSIHealthCareFollowUp.prefix + id.uuidString }
+  }
+
+  struct JournalReview: Codable, Equatable {
+    let visit: UUID
+    let journal: UUID
+    let visitRevision: Int
+    let goalDigest: String
+    let permission: UUID
+
+    var actionID: String { "visit-journal-review:" + visit.uuidString }
+
+    static func text(_ key: String, _ fallback: String, _ language: String) -> String {
+      GalaxySSILocalization.string("galaxyssi.health.visit_review." + key, fallback: fallback, language: language)
+    }
+  }
+
+  final class JournalVisibility: @unchecked Sendable {
+    static let shared = JournalVisibility()
+    private let lock = NSLock()
+    private var visible: [UUID: String] = [:]
+
+    func update(_ view: UUID, reminder: Reminder?) {
+      lock.lock()
+      defer { lock.unlock() }
+      visible[view] = reminder?.journalReview == nil ? nil : reminder?.identifier
+    }
+
+    func suppresses(_ identifier: String) -> Bool {
+      lock.lock()
+      defer { lock.unlock() }
+      return visible.values.contains(identifier)
+    }
   }
 
   struct Delivery: Equatable {
