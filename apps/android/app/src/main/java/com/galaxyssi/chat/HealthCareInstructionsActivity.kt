@@ -28,6 +28,7 @@ class HealthCareInstructionsActivity : Activity() {
     private var active = false
     private var busy = false
     private var dirty = false
+    private var openingAgent = false
     private var generation = 0
     private var signal = CancellationSignal()
     private var snapshot: HealthCareInstructionSnapshot? = null
@@ -46,7 +47,10 @@ class HealthCareInstructionsActivity : Activity() {
     private var dialog: AlertDialog? = null
     private var sourceDialog: HealthCareInstructionSourceDialog? = null
     private val expiry = Runnable { if (active) invalidate() }
-    private val observer = object : ContentObserver(main) { override fun onChange(selfChange: Boolean) { if (active) invalidate() } }
+    private val observer = object : ContentObserver(main) { override fun onChange(selfChange: Boolean) {
+        // Binding a first conversation writes this store; consent rechecks freshness after navigation.
+        if (active && !openingAgent) invalidate()
+    } }
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         concernId = intent.getStringExtra("health_care_id").orEmpty(); encounterId = intent.getStringExtra("health_encounter_id").orEmpty()
@@ -84,7 +88,7 @@ class HealthCareInstructionsActivity : Activity() {
         else finish()
     }
     private fun clear() {
-        generation++; signal.cancel(); signal = CancellationSignal(); snapshot = null; reading = null
+        generation++; openingAgent = false; signal.cancel(); signal = CancellationSignal(); snapshot = null; reading = null
         editor.clear(); actions.clear(); dialog?.dismiss(); dialog = null; sourceDialog?.dismiss(); sourceDialog = null
         main.removeCallbacks(expiry); body.removeAllViews(); selectedLines.clear(); lineStart = 0
     }
@@ -166,6 +170,32 @@ class HealthCareInstructionsActivity : Activity() {
             value.selected != null -> {
                 val entry = value.selected
                 details(content, entry)
+                if (entry.modelProposalId != null) ui.add(content, ui.text(getString(R.string.health_instruction_agent_origin), 13f, muted = true), 8)
+                if (value.available && value.proposal != null) {
+                    val proposal = value.proposal
+                    ui.add(content, ui.text(getString(R.string.health_instruction_agent_pending), 15f, bold = true), 16)
+                    ui.add(content, ui.command(R.string.health_instruction_agent_review) {
+                        if (busy) return@command
+                        val operation = UUID.randomUUID().toString()
+                        editor.show(entry.copy(draft = proposal.draft), proposal.fields) { draft ->
+                            work({ repository.update(value, draft, operation, proposalId = proposal.id) }) { load() }
+                        }
+                    }.apply { tag = "instruction-proposal-review" }, 8)
+                    ui.add(content, ui.profileRow(getString(R.string.health_instruction_agent_discard)) {
+                        if (!busy) work({ repository.dismiss(value) }) { load() }
+                    }.apply { tag = "instruction-proposal-discard" }, 8)
+                } else if (value.available && HealthCareInstructionProposal.eligible(entry) && names.fixture == null) {
+                    ui.add(content, ui.command(R.string.health_instruction_agent) {
+                        if (!busy) {
+                            openingAgent = true
+                            work({ repository.discuss(value) }) { conversation ->
+                            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                                .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", conversation)
+                                .putExtra(HealthCareInstructionTool.INTENT_KEY, entry.id))
+                            }
+                        }
+                    }.apply { tag = "instruction-agent" }, 16)
+                }
                 val mapped = value.visit.issue.actions.firstOrNull { it.id == HealthCareInstructionActionPolicy.actionId(entry) }
                 if (mapped != null) ui.add(content, ui.command(R.string.health_instruction_action_open) {
                     actions.show(value.visit.issue.id, mapped.id)
@@ -257,7 +287,7 @@ class HealthCareInstructionsActivity : Activity() {
         worker.execute {
             val result = runCatching(action)
             main.post {
-                busy = false
+                busy = false; openingAgent = false
                 if (!active || isFinishing || isDestroyed || dirty || token != generation) {
                     result.getOrNull()?.let(dispose)
                     if (active && !isFinishing && !isDestroyed) { dirty = false; load() }

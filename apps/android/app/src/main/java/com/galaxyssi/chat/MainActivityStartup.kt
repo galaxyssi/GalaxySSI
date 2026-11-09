@@ -399,6 +399,7 @@ internal fun MainActivity.scheduleAgentInitialHydration() {
                 initialAgentHydrationPending = false
                 initialAgentHydrationReady.countDown()
                 GalaxySSIAccessibilityService.retryPendingScreenAssistant()
+                healthCareDiscussion.consumeInstruction()
                 consumePendingAgentConnectorResponsesAsync()
                 // Optional dashboard reads must not delay transcript readiness or inbox recovery.
                 refreshGlobalInsightIndicator()

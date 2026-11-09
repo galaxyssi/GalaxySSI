@@ -199,6 +199,19 @@ class HealthCareEncounterUiDeviceTest {
         }
         await(scenario) { find(it, "encounter-next") != null }
     }
+    @Test fun delayedStoreNotificationKeepsTheNewlyOpenedVisitSelected(): Unit = fixture(1) { names, issue, scenario ->
+        val selected = entries(names, issue.id).single()
+        open(scenario, selected.id)
+        var generation = 0
+        scenario.onActivity { generation = field(it, "generation") as Int }
+        context.contentResolver.notifyChange(HealthCareStore.changes(context, names.care), null)
+        await(scenario) { (field(it, "generation") as Int) > generation && find(it, "encounter-edit") != null }
+        scenario.onActivity {
+            assertEquals(selected.id, field(it, "selectedId"))
+            assertNull(find(it, "encounter-add"))
+            assertEquals(selected, (field(it, "snapshot") as HealthCareEncounterSnapshot).selected)
+        }
+    }
     @Test fun failedInvalidatedLoadShowsRetryInsteadOfRemainingBlank(): Unit = fixture { names, issue, scenario ->
         val entered = CountDownLatch(1); val release = CountDownLatch(1)
         try {

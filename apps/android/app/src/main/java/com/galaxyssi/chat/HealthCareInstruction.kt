@@ -58,15 +58,22 @@ internal data class HealthCareInstructionSource(val documentId: String, val orig
 }
 
 internal data class HealthCareInstruction(val id: String, val concernId: String, val encounterId: String, val revision: Int,
-    val source: HealthCareInstructionSource, val draft: HealthCareInstructionDraft, val createdAt: Long, val updatedAt: Long) {
-    init { require(listOf(id, concernId, encounterId).all(HealthProfilePolicy::uuid) && revision > 1 && createdAt > 0 && updatedAt >= createdAt) }
+    val source: HealthCareInstructionSource, val draft: HealthCareInstructionDraft, val createdAt: Long, val updatedAt: Long,
+    val modelProposalId: String? = null) {
+    init {
+        require(listOf(id, concernId, encounterId).all(HealthProfilePolicy::uuid) && revision > 1 && createdAt > 0 && updatedAt >= createdAt)
+        require(modelProposalId == null || HealthProfilePolicy.uuid(modelProposalId))
+    }
     fun json() = JSONObject().put("id", id).put("concern", concernId).put("encounter", encounterId).put("revision", revision)
-        .put("source", source.json()).put("draft", draft.json()).put("created", createdAt).put("updated", updatedAt).put("provenance", "user_transcribed")
+        .put("source", source.json()).put("draft", draft.json()).put("created", createdAt).put("updated", updatedAt)
+        .put("provenance", if (modelProposalId == null) "user_transcribed" else "model_assisted_transcription")
+        .apply { modelProposalId?.let { put("model_proposal", it) } }
     companion object {
         fun from(j: JSONObject): HealthCareInstruction {
-            require(j.getString("provenance") == "user_transcribed")
+            val proposal = if (j.has("model_proposal")) j.getString("model_proposal") else null
+            require(j.getString("provenance") == if (proposal == null) "user_transcribed" else "model_assisted_transcription")
             return HealthCareInstruction(j.getString("id"), j.getString("concern"), j.getString("encounter"), j.getInt("revision"),
-                HealthCareInstructionSource.from(j.getJSONObject("source")), HealthCareInstructionDraft.from(j.getJSONObject("draft")), j.getLong("created"), j.getLong("updated"))
+                HealthCareInstructionSource.from(j.getJSONObject("source")), HealthCareInstructionDraft.from(j.getJSONObject("draft")), j.getLong("created"), j.getLong("updated"), proposal)
         }
     }
 }

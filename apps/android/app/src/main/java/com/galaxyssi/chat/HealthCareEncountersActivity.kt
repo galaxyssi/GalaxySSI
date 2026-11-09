@@ -76,7 +76,10 @@ class HealthCareEncountersActivity : Activity() {
         cursor = Int.MAX_VALUE; pageRevision = null; previous.clear()
         selectedId = null; history = false; historyCursor = Int.MAX_VALUE; historyPrevious.clear()
     }
-    private fun invalidate() { clear(); reset(); load() }
+    private fun invalidate() {
+        val selected = selectedId
+        clear(); reset(); selectedId = selected; load()
+    }
     private fun load() {
         if (!active) return
         if (busy) { dirty = true; return }

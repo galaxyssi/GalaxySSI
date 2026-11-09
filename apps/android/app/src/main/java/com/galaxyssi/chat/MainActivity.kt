@@ -1195,6 +1195,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             }
         handleDebugSendIntent(intent)
         handleDebugIncomingIntent(intent)
+        healthCareDiscussion.consumeInstruction()
     }
 
 
@@ -1319,6 +1320,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         super.onResume()
         healthCareSurface?.resume()
         val restoredRuntimePlaintext = restoreRuntimePlaintextAfterForeground()
+        healthCareDiscussion.resume()
         if (::conversationWindow.isInitialized) conversationWindow.resume()
         agentVoiceConversation?.onForeground(true)
         if (restoredRuntimePlaintext) {

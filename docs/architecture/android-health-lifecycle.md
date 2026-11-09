@@ -443,11 +443,9 @@ Missing or changed originals remain visible as unavailable associations that can
 be removed, never as verified clinical evidence. Preview failure is explicit;
 password-protected PDFs require the original-library reader rather than an
 invented page preview. Selecting a source is not clinician verification and does
-not create medication, appointment or rehabilitation reminders. Structured
-instruction extraction, field-by-field review, dependencies from original
-deletion to future instructions, scoped Agent tools and post-treatment follow-up
-remain subsequent parts of the full lifecycle. Device acceptance is required
-before delivering this increment.
+not create medication, appointment or rehabilitation reminders. The sections
+below describe source-backed drafts, field review, original dependencies and
+scoped Agent assistance. Full post-treatment follow-up remains subsequent work.
 
 ## Source-backed instruction review
 
@@ -481,10 +479,10 @@ privacy, measurement clock and original metadata/presence. Revocation, backgroun
 memory pressure and ten-minute expiry discard draft editors, selected source
 lines and preview bitmaps. No new plaintext file or network request is produced.
 
-Model-assisted structured drafting, authorized Agent review tools and
-treatment/rehabilitation follow-up remain subsequent
-increments. Manual line selection is not reported as autonomous clinical
-extraction. Software and device tests do not establish clinical effectiveness;
+Source selection remains explicit; the scoped Agent drafting increment below
+assists classification, not autonomous clinical extraction. Full
+treatment/rehabilitation follow-up remains subsequent work.
+Software and device tests do not establish clinical effectiveness;
 the full lifecycle still requires its separate clinical and end-to-end gates.
 
 ## Confirmed instruction actions
@@ -516,7 +514,7 @@ Scheduling and delivery check the current instruction and original presence in
 addition to existing privacy, measurement and profile checks. The default store
 scheduling path rejects clinical actions without an explicit source-availability
 check. Generic model plan schemas and parsers cannot create clinical instruction
-actions. Scoped model-assisted clinical drafting remains separate work.
+actions. Scoped model-assisted clinical drafting uses the separate proposal flow below.
 
 Editing/deleting an instruction or deleting its encounter invalidates dependent
 action references and cancels old reminders in the same transaction. The old
@@ -527,7 +525,52 @@ Feedback continues to use the existing encrypted, idempotent receipts; completin
 an action never establishes recovery or clinical improvement.
 
 This does not yet deliver recurring prescription schedules, diagnosis-specific
-rehabilitation cycles, model-assisted extraction or full lifecycle acceptance.
+rehabilitation cycles or full lifecycle acceptance.
 The existing 30-action concern budget is unchanged; exceeding it must fail
 without dropping history, and durable paged plan archival remains a separate
 architecture gap. No Agent main-page layout changes are introduced.
+
+## Selected-source Agent proposals
+
+An unreviewed instruction can open its existing private health discussion with
+an opaque instruction ID. MainActivity consumes that ID only in the foreground
+after conversation hydration, then uses the normal one-turn consent dialog and
+selected provider configuration. The disclosure shows the selected quote and
+provider/model. Cancel or backgrounding does not submit. Only the selected
+quote, page, recognition method and blurry flag enter the model snapshot; no
+profile, measurements, questions or earlier chat accompany this extraction turn.
+The source identity, revision and hash remain in the local persisted grant.
+
+The restricted tool `galaxyssi.health.instructions.propose` accepts a kind and
+exact, contiguous excerpts for every required field. Missing fields are explicit
+`NOT_FOUND` values, not reviewed omissions. `QUOTED` means text matched, not
+clinical confidence; blurry sources force `UNCERTAIN`. All fields remain
+`UNREVIEWED`. No model tool can confirm an instruction, prescribe, alter an
+existing reviewed field, create an action or schedule a reminder.
+
+Schema 16 adds an encrypted per-proposal table, authenticated owner/state indexes,
+one pending proposal per instruction and turn-level replay receipts. Proposals
+do not change the concern revision or original instruction, so a successful
+tool receipt does not revoke its own turn. Replaying a dismissed result cannot
+resurrect it. Review loads the existing editor with unchecked fields and source
+certainty labels. Saving records model-assisted provenance; a separate user
+confirmation still gates actions. Manual edits dismiss old pending proposals;
+stale source versions, removed originals and changed privacy block adoption.
+Deleting the owning instruction, encounter or concern also purges proposals.
+
+Selected-source turns are excluded from later ordinary history and recall.
+Unproven summaries/global context are omitted because they may incorporate
+older extraction turns outside the current history page. Authorized ordinary
+turns and scoped paged feedback remain available. Proposal/editor plaintext
+uses the existing background, memory-pressure and ten-minute cleanup paths.
+
+Acceptance uses synthetic documents in isolated databases. The opt-in real
+provider probe exercises production prompts, phone tools and encrypted writes,
+not the Activity consent UI. It is not clinical validation or full lifecycle
+acceptance. Multiple independent instructions require separate source selection;
+recurring dose interpretation and autonomous treatment changes are not provided.
+
+Visit refreshes retain the selected visit identifier while clearing plaintext and
+reloading the source. A delayed write notification cannot send a newly opened
+detail back to the list. Ownership and privacy are still rechecked on reload;
+missing or revoked records fail closed rather than retaining stale details.

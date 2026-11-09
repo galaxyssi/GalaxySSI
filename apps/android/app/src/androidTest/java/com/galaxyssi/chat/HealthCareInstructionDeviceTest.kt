@@ -17,6 +17,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 internal fun removeHealthInstructionTestTables(db: SQLiteDatabase) {
+    db.execSQL("DROP TABLE instruction_proposals")
     db.execSQL("DROP TABLE instruction_events"); db.execSQL("DROP TABLE clinical_instructions")
 }
 internal class HealthCareInstructionFixture(context: Context) : AutoCloseable {
@@ -159,7 +160,7 @@ class HealthCareInstructionDeviceTest {
         assertEquals(before, f.snapshot().visit.issue); assertTrue(f.snapshot().page.items.isEmpty())
         assertEquals(f.link, f.documents.snapshot().items.single().link)
         f.create()
-        context.openOrCreateDatabase(f.documents.names.care, 0, null).use { assertEquals(15, it.version) }
+        context.openOrCreateDatabase(f.documents.names.care, 0, null).use { assertEquals(16, it.version) }
     }
     @Test fun visitDeletionPurgesDraftsAndHistory(): Unit = fixture { f ->
         val value = f.create()

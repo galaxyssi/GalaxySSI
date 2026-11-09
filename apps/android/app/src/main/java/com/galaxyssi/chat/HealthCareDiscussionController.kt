@@ -9,10 +9,24 @@ internal class HealthCareDiscussionController(private val activity: MainActivity
     private var generation = 0
     private var busy = false
     private var dialog: AlertDialog? = null
-    fun clear() { generation++; busy = false; dialog?.dismiss(); dialog = null }
+    private var foreground = false
+    fun clear() { foreground = false; generation++; busy = false; dialog?.dismiss(); dialog = null
+        activity.intent?.removeExtra(HealthCareInstructionTool.INTENT_KEY) }
+    fun resume() { foreground = true; consumeInstruction() }
+    fun consumeInstruction() {
+        if (!foreground || activity.initialAgentHydrationPending || busy) return
+        val id = activity.intent?.getStringExtra(HealthCareInstructionTool.INTENT_KEY) ?: return
+        activity.intent.removeExtra(HealthCareInstructionTool.INTENT_KEY)
+        if (!HealthProfilePolicy.uuid(id)) return
+        val conversation = activity.agentTranscriptStore.activeConversation()
+        if (!conversation.globalTopicKey.startsWith(HealthCareDiscussionPolicy.TOPIC_PREFIX)) return
+        confirm(conversation, activity.getString(R.string.health_instruction_agent_question), emptyList(), id) { preview ->
+            activity.submitAgentGoal(goalOverride = preview.question, attachmentsOverride = emptyList(), healthCareSubmission = preview)
+        }
+    }
 
     fun confirm(conversation: AgentConversation, question: String, attachments: List<AgentInputAttachment>,
-        send: (HealthCareDiscussionPreview) -> Unit) {
+        instructionId: String? = null, send: (HealthCareDiscussionPreview) -> Unit) {
         if (busy) return
         if (attachments.isNotEmpty()) {
             Toast.makeText(activity, R.string.health_care_discussion_import, Toast.LENGTH_LONG).show(); return
@@ -21,7 +35,7 @@ internal class HealthCareDiscussionController(private val activity: MainActivity
         val token = ++generation
         activity.agentSubmissionExecutor.execute {
             val result = runCatching { HealthCareDiscussion.prepare(activity.applicationContext, conversation.id, question,
-                activity.mobileNativeAgent.snapshot().runtimeContext, feedbackHistoryShared = true) }
+                activity.mobileNativeAgent.snapshot().runtimeContext, feedbackHistoryShared = true, instructionId = instructionId) }
             activity.runOnUiThread {
                 if (token != generation || activity.isFinishing || activity.isDestroyed) return@runOnUiThread
                 busy = false
@@ -30,17 +44,19 @@ internal class HealthCareDiscussionController(private val activity: MainActivity
                     busy = true
                     val ui = HealthCenterViews(activity)
                     val body = ui.column().apply { setPadding(ui.dp(20), ui.dp(8), ui.dp(20), ui.dp(12)) }
-                    body.addView(ui.text(activity.getString(R.string.health_care_discussion_disclosure,
+                    body.addView(ui.text(activity.getString(if (preview.grant.instruction == null) R.string.health_care_discussion_disclosure
+                        else R.string.health_instruction_agent_disclosure,
                         preview.target.title, preview.grant.modelId.ifBlank { activity.getString(R.string.health_care_discussion_default_model) }), 15f))
                     if (preview.grant.questionsShared) ui.add(body, ui.text(activity.getString(R.string.health_questions_disclosure), 14f), 8)
                     if (preview.grant.feedbackHistoryShared) ui.add(body,
                         ui.text(activity.getString(R.string.health_feedback_history_disclosure), 14f), 8)
                     ui.add(body, ui.text(question, 16f, bold = true), 16)
-                    preview.grant.profileLink?.scope?.let {
+                    preview.grant.profileLink?.takeIf { preview.grant.instruction == null }?.scope?.let {
                         ui.add(body, ui.text(activity.getString(R.string.health_care_profile_summary, it.fields.size, it.entries.size), 14f), 8)
                     }
-                    ui.add(body, ui.text(activity.getString(preview.concern.metric.titleResource()) + " · " +
+                    if (preview.grant.instruction == null) ui.add(body, ui.text(activity.getString(preview.concern.metric.titleResource()) + " · " +
                         preview.concern.assessment.value + " " + preview.concern.assessment.unit, 17f, bold = true), 12)
+                    else ui.add(body, ui.text(org.json.JSONObject(preview.snapshot).getJSONObject("selected_instruction").getString("quote"), 15f), 12)
                     val raw = ui.text(preview.snapshot, 13f).apply { visibility = android.view.View.GONE }
                     ui.add(body, ui.profileRow(activity.getString(R.string.health_care_discussion_data)) {
                         raw.visibility = if (raw.visibility == android.view.View.GONE) android.view.View.VISIBLE else android.view.View.GONE
