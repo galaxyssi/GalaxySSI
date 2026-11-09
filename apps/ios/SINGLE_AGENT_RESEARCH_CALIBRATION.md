@@ -5,6 +5,46 @@ to enroll one exact research assignment in the production milestone store.
 The legacy `galaxyssi.single-agent-calibration.v1` format does not enroll.
 There is no new UI setting or remote request that can enroll an assignment.
 
+## Free-running delivery baseline
+
+`AgentSingleDeliveryCalibrationTests` covers Android #3470 separately. The
+test-only `galaxyssi.single-agent-calibration.v1` format uses one responding
+member and one dispatch, with no coordinator, research stage, dependency or
+milestone enrollment. It preserves the raw goal and checks the normalized
+member assignment against the production runtime and prompt builder before
+the synthetic worker can return. The encrypted execution store is reopened
+to check the exact result, then the isolated run is removed.
+
+Run the unit tests without environment variables. To opt into the physical
+device test, supply a synthetic JSON file readable by the XCTest host:
+
+```json
+{
+  "format": "galaxyssi.single-agent-calibration.v1",
+  "deviceModel": "iPhone16,2",
+  "targetID": "fixture:codex",
+  "modelID": "fixture-model",
+  "reasoningEffort": "high",
+  "memberID": "researcher",
+  "objective": "Inspect the synthetic fixture.\nPreserve its original conditions.",
+  "timeoutMillis": 15000,
+  "maximumDispatches": 1
+}
+```
+
+Set `GALAXYSSI_SINGLE_DELIVERY_PLAN` to the file path and
+`GALAXYSSI_SINGLE_DELIVERY_PLAN_SHA256` to its lowercase SHA-256. Set
+`GALAXYSSI_SINGLE_DELIVERY_DEVICE_MODEL`, `GALAXYSSI_SINGLE_DELIVERY_TARGET`,
+`GALAXYSSI_SINGLE_DELIVERY_MODEL` and `GALAXYSSI_SINGLE_DELIVERY_EFFORT` to the
+exact independently selected fixture values. Verify the intended Xcode
+device separately when several devices have the same hardware identifier.
+The attachment contains the synthetic result and its hash, not the goal.
+
+This test does not contact Desktop or a model provider. The verdict is
+delivery-only and cannot attest task acceptance, scientific correctness,
+delegation, equal compute, or capability gain. The fixture never reads or
+modifies the user's conversations or model settings.
+
 The fixture uses the production team runtime with one responding member, no
 dependencies, a frozen test model selection, and the original objective. It
 counts worker invocations, not provider-internal model requests. Its worker
