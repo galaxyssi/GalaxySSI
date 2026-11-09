@@ -206,6 +206,8 @@
     A10000000000000000009887 /* GalaxySSIHealthCareAgenda.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009887 /* GalaxySSIHealthCareAgenda.swift */; };
     A1000000000000000000F491 /* GalaxySSIHealthEncounter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F491 /* GalaxySSIHealthEncounter.swift */; };
     A1000000000000000000F492 /* GalaxySSIHealthEncounterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F492 /* GalaxySSIHealthEncounterView.swift */; };
+    A1000000000000000000F5A1 /* GalaxySSIHealthEncounterDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F5A1 /* GalaxySSIHealthEncounterDocument.swift */; };
+    A1000000000000000000F5A2 /* GalaxySSIHealthEncounterDocumentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F5A2 /* GalaxySSIHealthEncounterDocumentsView.swift */; };
     A1000000000000000000F493 /* GalaxySSIHealthEncounterEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F493 /* GalaxySSIHealthEncounterEditor.swift */; };
     A1000000000000000000F431 /* GalaxySSIHealthCareVisit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F431 /* GalaxySSIHealthCareVisit.swift */; };
     A1000000000000000000F432 /* GalaxySSIHealthCareVisitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F432 /* GalaxySSIHealthCareVisitView.swift */; };
@@ -1057,6 +1059,8 @@
     A10000000000000000000F42 /* AgentCollaborationSavedToolTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000F42 /* AgentCollaborationSavedToolTest.swift */; };
     A1000000000000000000F464 /* AgentCollaborationQualitativePrediction.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F464 /* AgentCollaborationQualitativePrediction.swift */; };
     A1000000000000000000F5B4 /* AgentCollaborationCoordinationLane.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F5B4 /* AgentCollaborationCoordinationLane.swift */; };
+    A1000000000000000000F5B3 /* AgentCollaborationWorkInputBindings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F5B3 /* AgentCollaborationWorkInputBindings.swift */; };
+    A1000000000000000000F5B1 /* AgentCollaborationProbeContinuation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F5B1 /* AgentCollaborationProbeContinuation.swift */; };
     A10000000000000000009888 /* AgentCollaborationReleasedToolRun.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009888 /* AgentCollaborationReleasedToolRun.swift */; };
     A10000000000000000000F43 /* AgentCollaborationSavedToolExecution.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000F43 /* AgentCollaborationSavedToolExecution.swift */; };
     A1000000000000000000E356 /* AgentCollaborationExperimentResultFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000E356 /* AgentCollaborationExperimentResultFeedback.swift */; };
@@ -1485,6 +1489,8 @@
     A20000000000000000009887 /* GalaxySSIHealthCareAgenda.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareAgenda.swift; sourceTree = "<group>"; };
     A2000000000000000000F491 /* GalaxySSIHealthEncounter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthEncounter.swift; sourceTree = "<group>"; };
     A2000000000000000000F492 /* GalaxySSIHealthEncounterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthEncounterView.swift; sourceTree = "<group>"; };
+    A2000000000000000000F5A1 /* GalaxySSIHealthEncounterDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthEncounterDocument.swift; sourceTree = "<group>"; };
+    A2000000000000000000F5A2 /* GalaxySSIHealthEncounterDocumentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthEncounterDocumentsView.swift; sourceTree = "<group>"; };
     A2000000000000000000F493 /* GalaxySSIHealthEncounterEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthEncounterEditor.swift; sourceTree = "<group>"; };
     A2000000000000000000F431 /* GalaxySSIHealthCareVisit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareVisit.swift; sourceTree = "<group>"; };
     A2000000000000000000F432 /* GalaxySSIHealthCareVisitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareVisitView.swift; sourceTree = "<group>"; };
@@ -2320,6 +2326,8 @@
     A20000000000000000000F42 /* AgentCollaborationSavedToolTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationSavedToolTest.swift; sourceTree = "<group>"; };
     A2000000000000000000F464 /* AgentCollaborationQualitativePrediction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationQualitativePrediction.swift; sourceTree = "<group>"; };
     A2000000000000000000F5B4 /* AgentCollaborationCoordinationLane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationCoordinationLane.swift; sourceTree = "<group>"; };
+    A2000000000000000000F5B3 /* AgentCollaborationWorkInputBindings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationWorkInputBindings.swift; sourceTree = "<group>"; };
+    A2000000000000000000F5B1 /* AgentCollaborationProbeContinuation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationProbeContinuation.swift; sourceTree = "<group>"; };
     A20000000000000000009888 /* AgentCollaborationReleasedToolRun.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationReleasedToolRun.swift; sourceTree = "<group>"; };
     A20000000000000000000F43 /* AgentCollaborationSavedToolExecution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationSavedToolExecution.swift; sourceTree = "<group>"; };
     A2000000000000000000E356 /* AgentCollaborationExperimentResultFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationExperimentResultFeedback.swift; sourceTree = "<group>"; };
@@ -3124,6 +3132,8 @@
         A20000000000000000000F42 /* AgentCollaborationSavedToolTest.swift */,
         A2000000000000000000F464 /* AgentCollaborationQualitativePrediction.swift */,
         A2000000000000000000F5B4 /* AgentCollaborationCoordinationLane.swift */,
+        A2000000000000000000F5B3 /* AgentCollaborationWorkInputBindings.swift */,
+        A2000000000000000000F5B1 /* AgentCollaborationProbeContinuation.swift */,
         A20000000000000000009888 /* AgentCollaborationReleasedToolRun.swift */,
         A20000000000000000000F43 /* AgentCollaborationSavedToolExecution.swift */,
         A2000000000000000000E356 /* AgentCollaborationExperimentResultFeedback.swift */,
@@ -3393,6 +3403,8 @@
         A20000000000000000009887 /* GalaxySSIHealthCareAgenda.swift */,
         A2000000000000000000F491 /* GalaxySSIHealthEncounter.swift */,
         A2000000000000000000F492 /* GalaxySSIHealthEncounterView.swift */,
+        A2000000000000000000F5A1 /* GalaxySSIHealthEncounterDocument.swift */,
+        A2000000000000000000F5A2 /* GalaxySSIHealthEncounterDocumentsView.swift */,
         A2000000000000000000F493 /* GalaxySSIHealthEncounterEditor.swift */,
         A2000000000000000000F431 /* GalaxySSIHealthCareVisit.swift */,
         A2000000000000000000F432 /* GalaxySSIHealthCareVisitView.swift */,
@@ -4497,6 +4509,8 @@
         A10000000000000000000F42 /* AgentCollaborationSavedToolTest.swift in Sources */,
         A1000000000000000000F464 /* AgentCollaborationQualitativePrediction.swift in Sources */,
         A1000000000000000000F5B4 /* AgentCollaborationCoordinationLane.swift in Sources */,
+        A1000000000000000000F5B3 /* AgentCollaborationWorkInputBindings.swift in Sources */,
+        A1000000000000000000F5B1 /* AgentCollaborationProbeContinuation.swift in Sources */,
         A10000000000000000009888 /* AgentCollaborationReleasedToolRun.swift in Sources */,
         A10000000000000000000F43 /* AgentCollaborationSavedToolExecution.swift in Sources */,
         A1000000000000000000E356 /* AgentCollaborationExperimentResultFeedback.swift in Sources */,
@@ -4807,6 +4821,8 @@
         A10000000000000000009887 /* GalaxySSIHealthCareAgenda.swift in Sources */,
         A1000000000000000000F491 /* GalaxySSIHealthEncounter.swift in Sources */,
         A1000000000000000000F492 /* GalaxySSIHealthEncounterView.swift in Sources */,
+        A1000000000000000000F5A1 /* GalaxySSIHealthEncounterDocument.swift in Sources */,
+        A1000000000000000000F5A2 /* GalaxySSIHealthEncounterDocumentsView.swift in Sources */,
         A1000000000000000000F493 /* GalaxySSIHealthEncounterEditor.swift in Sources */,
         A1000000000000000000F431 /* GalaxySSIHealthCareVisit.swift in Sources */,
         A1000000000000000000F432 /* GalaxySSIHealthCareVisitView.swift in Sources */,

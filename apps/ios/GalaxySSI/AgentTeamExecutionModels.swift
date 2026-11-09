@@ -1204,6 +1204,8 @@ struct AgentCollaborationResearchRevision: Codable {
   var workflowComparison: AgentCollaborationWorkflowComparison? = nil
   var testedToolRelease: AgentMcpJSONObject? = nil
   var toolTestComparison: AgentMcpJSONObject? = nil
+  var probeExecutorSourceID: String? = nil
+  var probeMeasuredEvents: [String: Bool]? = nil
 
   var storageBytesLimit: Int {
     if draft.kind == .toolTestComparison && toolTestComparison != nil { return 1_048_576 }
@@ -1231,6 +1233,7 @@ struct AgentCollaborationResearchPublication: Codable {
   var milestoneId: String? = nil
   var recordedAtMillis: Int64? = nil
   var numericTrials: [AgentMcpJSONObject]? = nil
+  var recordNotices: [AgentMcpJSONObject]? = nil
 }
 
 struct AgentCollaborationPublicationRejection: Codable, Equatable {

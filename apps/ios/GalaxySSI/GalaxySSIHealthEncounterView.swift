@@ -20,6 +20,7 @@ struct GalaxySSIHealthEncounterView: View {
   @State private var reloadID = UUID()
   @State private var loadedAt: Date?
   @State private var selectedEntryID: UUID?
+  @State private var showingDocuments = false
 
   private struct Editor: Identifiable {
     let id: UUID
@@ -41,6 +42,7 @@ struct GalaxySSIHealthEncounterView: View {
         if let page {
           if let entry = page.entry {
             Section { details(entry) }
+            Button { showingDocuments = true } label: { Label(t("documents", "Visit documents"), systemImage: "doc.on.doc") }
             Section(t("history", "Change history")) {
               ForEach(rows, id: \.revision) { version in
                 DisclosureGroup(revision(version)) { details(version) }
@@ -88,6 +90,9 @@ struct GalaxySSIHealthEncounterView: View {
     }
     .sheet(item: $editor) { edit in
       GalaxySSIHealthEncounterEditor(entry: edit.entry, language: language) { draft in save(draft, editor: edit) }
+    }
+    .sheet(isPresented: $showingDocuments) {
+      if let entryID { GalaxySSIHealthEncounterDocumentsView(records: records, concern: concern, metric: metric, visit: entryID) }
     }
     .confirmationDialog(t("delete_confirm", "Delete this visit and its change history?"),
                         isPresented: $deleting, titleVisibility: .visible) {

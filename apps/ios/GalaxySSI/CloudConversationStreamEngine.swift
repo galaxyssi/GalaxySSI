@@ -132,6 +132,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     collaborationModelAudit: AgentCollaborationToolEvidenceScope? = nil,
     goalWorkHandler: GoalWorkHandler? = nil,
     usesCoordinationLane: Bool = false,
+    workInputPublisher: GoalWorkHandler? = nil,
     goalContinuationHandler: GoalContinuationHandler? = nil,
     desktopEvidenceRefresh: DesktopEvidenceRefresh? = nil,
     researchRetrySource: ChatMessage? = nil,
@@ -150,6 +151,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           collaborationModelAudit: collaborationModelAudit ?? collaborationEvidence,
           goalWorkHandler: goalWorkHandler,
           usesCoordinationLane: usesCoordinationLane,
+          workInputPublisher: workInputPublisher,
           goalContinuationHandler: goalContinuationHandler,
           desktopEvidenceRefresh: desktopEvidenceRefresh,
           researchRetrySource: researchRetrySource,
@@ -193,6 +195,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     collaborationModelAudit: AgentCollaborationToolEvidenceScope?,
     goalWorkHandler: GoalWorkHandler?,
     usesCoordinationLane: Bool,
+    workInputPublisher: GoalWorkHandler?,
     goalContinuationHandler: GoalContinuationHandler?,
     desktopEvidenceRefresh: DesktopEvidenceRefresh?,
     researchRetrySource: ChatMessage?,
@@ -286,8 +289,13 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         prepared.installCollaborationPublication(assessmentOnly: collaborationEvidence == nil,
           canRunGoalWork: collaborationEvidence == nil && goalWorkHandler != nil)
       }
+      if workInputPublisher != nil {
+        guard collaborationRecallScope == nil, turns.last?.readOnlyAnalysis == true else { throw CancellationError() }
+        prepared.installWorkInputPublication()
+      }
       let publishName = CloudModelStreamMutableConversation.collaborationPublishName
       var publishedMilestones = Set<String>()
+      var visitedWorkInputResponses = Set<String>()
       var evidenceResults: [(String, String)] = []
       var visitedSourceAccessPages = Set<String>()
       let evidencePromptLedger = CloudEvidencePromptLedger(query: turns.last?.content ?? "")
@@ -720,6 +728,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         var freshKeys = Set<String>()
         let preparedCalls = parsedCalls.compactMap { item -> AssembledToolCall? in
           let (call, arguments) = item
+          if workInputPublisher != nil, call.name != publishName { return nil }
           if AgentCollaborationWorkflowCheck.isCall(call.name, arguments) {
             let key = progress.semanticKey(toolName: call.name, arguments: arguments)
             return freshKeys.insert(key).inserted ? call : nil
@@ -761,7 +770,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
               }
             }
           },
-          collaborationPublish: collaborationRecallScope.map { scope in
+          collaborationPublish: workInputPublisher.map { publisher in
+            { arguments in await publisher(arguments) }
+          } ?? collaborationRecallScope.map { scope in
             { arguments in
               let mode = arguments.string("mode")
               if AgentCollaborationGoalAssessmentPolicy.dispatchesWork(mode), let goalWorkHandler {
@@ -850,6 +861,14 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           }
           if outcome.call.name == publishName {
             publicationResults[outcome.call.callId] = output
+            if let receipt = try? CloudModelStreamJSON.mcpObject(from: output) {
+              if workInputPublisher != nil, receipt["status"] == .string("recorded"), receipt["replayed"] == .bool(false) {
+                madeProgress = true
+              }
+              if arguments["mode"] == .string(AgentCollaborationGoalAssessmentPolicy.workInputMode),
+                 receipt["success"] == .bool(true),
+                 visitedWorkInputResponses.insert(AgentMcpJSONCodec.sha256(receipt)).inserted { madeProgress = true }
+            }
             if let receipt = try? CloudModelStreamJSON.mcpObject(from: output), receipt["status"] == .string("published"),
                publishedMilestones.insert(receipt.string("milestone_id")).inserted { madeProgress = true }
             if AgentCollaborationGoalAssessmentPolicy.isCoordinatorMutation(arguments.string("mode")),

@@ -2,6 +2,41 @@ import XCTest
 @testable import GalaxySSI
 
 final class CloudConversationStreamEngineTests: XCTestCase {
+  @MainActor
+  func testWorkInputPublisherReceivesDataBeforeProducerCompletionAndExposesNoOtherTools() async throws {
+    typealias Inputs = AgentCollaborationWorkInputBindings
+    let fixture = try makeFixture()
+    var turns = fixture.turns
+    turns[0].readOnlyAnalysis = true
+    let arguments = AgentMcpJSONCodec.stringify(["mode": .string(Inputs.publishMode),
+      "milestone_id": .string("reading"), "artifact": .string(#"{"value":42}"#)])
+    let stream = RecordingModelStreamClient(eventBatches: [
+      [.toolCallDelta(.init(requestId: "r", sequence: 1, payload: .init(callId: "publish", index: 0,
+          nameDelta: CloudModelStreamMutableConversation.collaborationPublishName, argumentsDelta: arguments))),
+       .toolCallDelta(.init(requestId: "r", sequence: 2, payload: .init(callId: "other", index: 1,
+          nameDelta: "web_search", argumentsDelta: #"{"query":"unavailable tool"}"#))),
+       .completed(.init(requestId: "r", finishReason: "tool_calls", completedAtElapsedMs: 3))],
+      [.textDelta(.init(requestId: "r", sequence: 1, text: "Finished the producer.", receivedAtElapsedMs: 1)),
+       .completed(.init(requestId: "r", finishReason: "stop", completedAtElapsedMs: 2))]
+    ])
+    let executor = RecordingConversationToolExecutor(result: "must not run")
+    let engine = CloudConversationStreamEngine(streamClient: stream, toolExecutor: executor,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    var published: [AgentMcpJSONObject] = []
+    let events = try await collect(engine.streamConversation(contact: fixture.contact, store: fixture.store, turns: turns,
+      images: [], requestId: "work-input-publisher", collaborationEvidence: nil,
+      workInputPublisher: { input in
+        XCTAssertEqual(stream.requests.count, 1)
+        if let request = Inputs.PublishRequest(input) { published.append(request.payload) }
+        return ["status": .string("recorded"), "replayed": .bool(false), "token": .string("fixture-token")]
+      }, retainResearch: false))
+    XCTAssertEqual(published, [["value": .int(42)]])
+    XCTAssertTrue(executor.calls.isEmpty)
+    XCTAssertTrue(try XCTUnwrap(stream.requests.first).bodyJson.contains(Inputs.publishMode))
+    XCTAssertTrue(try XCTUnwrap(stream.requests.last).bodyJson.contains("fixture-token"))
+    XCTAssertNotNil(completed(events))
+  }
+
   func testFormatRepairBudgetDoesNotLimitToolProgressOrCitationRepair() {
     let progress = CloudWebToolLoopProgress()
     XCTAssertTrue(progress.requestFormatRepair("protocol"))
