@@ -1191,6 +1191,7 @@
     D34950000000000000000001 /* AgentCollaborationPilotIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D34950000000000000000002 /* AgentCollaborationPilotIdentityTests.swift */; };
     A10000000000000000000678 /* AgentPermissionRevocationCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000678 /* AgentPermissionRevocationCoordinatorTests.swift */; };
     A10000000000000000000680 /* AgentTaskSupervisorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000680 /* AgentTaskSupervisorTests.swift */; };
+    D13280000000000000000001 /* AgentBusinessTimeoutCleanupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23280000000000000000001 /* AgentBusinessTimeoutCleanupTests.swift */; };
     A10000000000000000000682 /* AgentActionNotificationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000682 /* AgentActionNotificationTests.swift */; };
     A10000000000000000000684 /* AgentPlanEditorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000684 /* AgentPlanEditorTests.swift */; };
     A10000000000000000000686 /* AgentToolCoordinationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000686 /* AgentToolCoordinationTests.swift */; };
@@ -2490,6 +2491,7 @@
     D34950000000000000000002 /* AgentCollaborationPilotIdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationPilotIdentityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000678 /* AgentPermissionRevocationCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPermissionRevocationCoordinatorTests.swift; sourceTree = "<group>"; };
     A20000000000000000000680 /* AgentTaskSupervisorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskSupervisorTests.swift; sourceTree = "<group>"; };
+    D23280000000000000000001 /* AgentBusinessTimeoutCleanupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBusinessTimeoutCleanupTests.swift; sourceTree = "<group>"; };
     A20000000000000000000682 /* AgentActionNotificationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActionNotificationTests.swift; sourceTree = "<group>"; };
     A20000000000000000000684 /* AgentPlanEditorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPlanEditorTests.swift; sourceTree = "<group>"; };
     A20000000000000000000686 /* AgentToolCoordinationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentToolCoordinationTests.swift; sourceTree = "<group>"; };
@@ -3702,6 +3704,7 @@
         D34950000000000000000002 /* AgentCollaborationPilotIdentityTests.swift */,
         A20000000000000000000678 /* AgentPermissionRevocationCoordinatorTests.swift */,
         A20000000000000000000680 /* AgentTaskSupervisorTests.swift */,
+        D23280000000000000000001 /* AgentBusinessTimeoutCleanupTests.swift */,
         A20000000000000000000682 /* AgentActionNotificationTests.swift */,
         A20000000000000000000684 /* AgentPlanEditorTests.swift */,
         A20000000000000000000686 /* AgentToolCoordinationTests.swift */,
@@ -5126,6 +5129,7 @@
         D34950000000000000000001 /* AgentCollaborationPilotIdentityTests.swift in Sources */,
         A10000000000000000000678 /* AgentPermissionRevocationCoordinatorTests.swift in Sources */,
         A10000000000000000000680 /* AgentTaskSupervisorTests.swift in Sources */,
+        D13280000000000000000001 /* AgentBusinessTimeoutCleanupTests.swift in Sources */,
         A10000000000000000000682 /* AgentActionNotificationTests.swift in Sources */,
         A10000000000000000000684 /* AgentPlanEditorTests.swift in Sources */,
         A10000000000000000000686 /* AgentToolCoordinationTests.swift in Sources */,
