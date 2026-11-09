@@ -1475,28 +1475,49 @@ struct GalaxySSIHealthRecords {
     let currentBasis = try GalaxySSIHealthCare.inputDigest(concern.assessment)
     let actions = Dictionary((concern.adoptedActions ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     let date = ISO8601DateFormatter()
+    var checkedInstructions: [String: Bool] = [:]
     let rows = try page.items.map { receipt -> (Int, AgentMcpJSONObject) in
       guard receipt.concernID == concern.id, receipt.revision <= concern.revision else { throw Failure.stale }
       let revision = AgentMcpJSONValue.int(Int64(receipt.revision))
       let action = actions[receipt.actionID]
       let planID = receipt.actionID.split(separator: ":", maxSplits: 1).first.map { String($0) } ?? ""
-      guard receipt.feedback.isInScope(concern), let plan = archive.localCarePlans?[planID],
-            plan.concernID == concern.id, plan.destinationDigest == approval.destinationDigest,
-            plan.onlinePermission == approval.onlinePermission, archive.matchesLocalCarePermission(plan.carePermission),
-            plan.profileScope == concern.profileScope, plan.profileScopeEpoch == concern.profileScopeEpoch else {
-        return (receipt.revision, ["revision": revision, "redacted": .bool(true),
-          "reason": .string("outside_current_sharing_scope")])
+      let redacted: AgentMcpJSONObject = ["revision": revision, "redacted": .bool(true),
+        "reason": .string("outside_current_sharing_scope")]
+      guard receipt.feedback.isInScope(concern) else { return (receipt.revision, redacted) }
+      let current: Bool
+      let instruction = action?.instruction
+      if let action, let instruction {
+        guard action.action.kind == .clinicalInstruction, instruction.profileEpoch == concern.profileScopeEpoch,
+              archive.matchesLocalCarePermission(instruction.permission),
+              instruction.assessment == receipt.feedback.planBasis else { return (receipt.revision, redacted) }
+        if let checked = checkedInstructions[action.id] {
+          current = checked
+        } else {
+          current = instructionActionIsCurrent(action, concern: concern, archive: archive, now: now)
+          checkedInstructions[action.id] = current
+        }
+      } else {
+        guard action?.action.kind != .clinicalInstruction, let plan = archive.localCarePlans?[planID],
+              plan.concernID == concern.id, plan.destinationDigest == approval.destinationDigest,
+              plan.onlinePermission == approval.onlinePermission, archive.matchesLocalCarePermission(plan.carePermission),
+              plan.profileScope == concern.profileScope, plan.profileScopeEpoch == concern.profileScopeEpoch
+        else { return (receipt.revision, redacted) }
+        current = plan.state == .accepted && plan.questionRevision == concern.questionRevision &&
+          plan.sourceContext == concern.context && currentBasis == receipt.feedback.planBasis
       }
-      let current = plan.state == .accepted && plan.questionRevision == concern.questionRevision &&
-        plan.sourceContext == concern.context && currentBasis == receipt.feedback.planBasis
-      return (receipt.revision, ["revision": revision,
+      var row: AgentMcpJSONObject = ["revision": revision,
         "action_id": .string(AgentModelLoopRecoveryIdentity.sha256(["discussion": approval.threadID.uuidString, "action": receipt.actionID])),
-        "action_title": .string(receipt.actionTitle), "action_in_current_plan": .bool(action != nil),
+        "action_title": .string(receipt.actionTitle), "action_in_current_plan": .bool(action != nil && instruction == nil),
         "current_action_state": action.map { .string($0.outcome == nil ? "confirmed" : "recorded") } ?? .null,
         "kind": .string(receipt.feedback.kind.rawValue), "note": .string(receipt.feedback.note),
         "recorded_at": .string(date.string(from: receipt.feedback.recordedAt)), "self_reported": .bool(true),
         "health_improvement_verified": .bool(false), "plan_basis_current": .bool(current),
-        "action_requires_review": .bool(action == nil || !current)])
+        "action_requires_review": .bool(action == nil || !current)]
+      if let instruction {
+        row["instruction_invalidated"] = .bool(instruction.invalidated)
+        row["instruction_source_verified"] = .bool(false)
+      }
+      return (receipt.revision, row)
     }
     try validateLocalCareDiscussionTurn(approval, now: now)
     return cursor.output(rows: rows, next: page.next, remaining: remaining)

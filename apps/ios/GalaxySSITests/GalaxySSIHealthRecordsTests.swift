@@ -229,6 +229,26 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
       expectedRevision: feedbackRevision, kind: .partial, note: "Discussed the instruction", operation: UUID())
     XCTAssertEqual(feedback.actionID, action.id)
     XCTAssertEqual(feedback.feedback.planBasis, action.instruction?.assessment)
+    try records.setHealthOnlinePermission(true)
+    _ = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    func readApprovedFeedback() throws -> (GalaxySSIHealthCareDiscussion.Approval, AgentMcpJSONObject) {
+      let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+        endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+      let approval = try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Review execution",
+        destinationID: "provider", model: model, credential: "fixture-api-key",
+        includesActionFeedback: false, feedbackHistoryAllowed: true)
+      try records.beginLocalCareDiscussionTurn(approval)
+      let cursor = try XCTUnwrap(approval.feedbackCursor)
+      let page = try records.readLocalCareDiscussionFeedback(approval, cursor: cursor, remaining: 0)
+      XCTAssertFalse(AgentMcpJSONCodec.stringify(page.payload).contains(original.name))
+      XCTAssertFalse(AgentMcpJSONCodec.stringify(page.payload).contains(original.id.uuidString))
+      return (approval, try XCTUnwrap(page.payload["items"]?.arrayValue?.first?.objectValue))
+    }
+    let (priorFeedback, liveFeedback) = try readApprovedFeedback()
+    XCTAssertEqual(liveFeedback["note"], .string("Discussed the instruction"))
+    XCTAssertEqual(liveFeedback["instruction_invalidated"], .bool(false))
+    XCTAssertEqual(liveFeedback["instruction_source_verified"], .bool(false))
+    XCTAssertEqual(liveFeedback["action_requires_review"], .bool(false))
     draft.edit(.name, text: "Edited name")
     XCTAssertEqual(draft.value(.name).review, .unreviewed)
     draft.review(.name, as: .transcribed)
@@ -238,6 +258,11 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertNil(afterEdit.localCareFollowUps?[action.id])
     XCTAssertEqual(afterEdit.localCare?.current["glucose"]?.adoptedActions?.first?.instruction?.invalidated, true)
     XCTAssertEqual(afterEdit.localCareFeedback?[concern.id.uuidString]?.last, feedback)
+    let priorCursor = try XCTUnwrap(priorFeedback.feedbackCursor)
+    XCTAssertThrowsError(try records.readLocalCareDiscussionFeedback(priorFeedback, cursor: priorCursor, remaining: 0))
+    let (_, invalidatedFeedback) = try readApprovedFeedback()
+    XCTAssertEqual(invalidatedFeedback["instruction_invalidated"], .bool(true))
+    XCTAssertEqual(invalidatedFeedback["action_requires_review"], .bool(true))
     XCTAssertThrowsError(try schedule(action))
     let current = try records.visitInstructionHistory(id: created.entry.id, expected: documents().scope)
     let replacement = try records.confirmVisitInstructionAction(current, acknowledged: true)
