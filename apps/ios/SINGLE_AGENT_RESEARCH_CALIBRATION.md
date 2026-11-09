@@ -100,12 +100,19 @@ in the test runtime, not a reason to discard the phase's report.
 
 Provide an XCTest-host-readable JSON file and its SHA-256 as
 `GALAXYSSI_ADAPTIVE_PILOT_PLAN` and `GALAXYSSI_ADAPTIVE_PILOT_PLAN_SHA256`.
+Set `GALAXYSSI_ADAPTIVE_PILOT_DEVICE_MODEL` to the exact authorized physical
+device hardware identifier (for example, `iPhone17,1`). The operator value,
+the hash-bound `device_model` field, and the connected hardware must agree
+before the fixture reserves or opens a workspace. Use the verified device
+destination when running XCTest: a model identifier alone does not identify
+one phone. Simulators and unbound v1 plans cannot run this opt-in fixture.
 Set `GALAXYSSI_ADAPTIVE_PILOT_TOKEN` to a fresh UUID for a new study. Example
 phase one:
 
 ```json
 {
-  "format": "galaxyssi.ios.adaptive-pilot-phase.v1",
+  "format": "galaxyssi.ios.adaptive-pilot-phase.v2",
+  "device_model": "iPhone17,1",
   "index": 1,
   "objective": "Inspect fixture one.",
   "roster": [
@@ -119,7 +126,8 @@ phase one:
 ```
 
 For the next phase, start a new XCTest process on the same installation and
-device with the same token and ordered roster. Use the next sequential index,
+device with the same token, exact hardware model and ordered roster. Changing
+devices requires a new frozen plan and token. Use the next sequential index,
 a newly frozen goal and replies, and the previous printed
 `GALAXYSSI_ADAPTIVE_PILOT_REPORT_SHA256`. Set `retainWorkspace` to false in the
 last phase. The study keeps one group and fresh run, turn, and source IDs for
