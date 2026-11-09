@@ -153,6 +153,63 @@ struct AgentCollaborationModelAdmission: Codable, Equatable {
   let startedAtMillis: Int64
   var route: Route? = nil
   var lane: Lane? = nil
+  var targetResourceID: String? = nil
+  var singleHTTPTransport: Bool? = nil
+  var requestSHA256: String? = nil
+}
+
+struct AgentCollaborationTrialPolicy: Codable, Equatable {
+  enum Denial: String, LocalizedError {
+    case invalidPolicy, alreadyStarted, policyChanged, closed, expired, clockReversed
+    case exhausted, wrongTarget, wrongModel, unmeteredTransport, replay
+
+    var errorDescription: String? { "Collaboration trial admission denied: " + rawValue }
+  }
+
+  let targetResourceID: String
+  let requestedModel: String
+  let protocolSHA256: String
+  let maximumAdmissions: Int
+  let admissionDeadlineMillis: Int64
+
+  func validate(createdAt now: Int64) throws {
+    guard !targetResourceID.isBlank, targetResourceID.utf8.count <= 200,
+          !requestedModel.isBlank, requestedModel.utf8.count <= 256,
+          protocolSHA256.utf8.count == 64,
+          protocolSHA256.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
+          (1...10_000).contains(maximumAdmissions), now > 0, admissionDeadlineMillis > now
+    else { throw Denial.invalidPolicy }
+  }
+}
+
+struct AgentCollaborationTrialState: Codable, Equatable {
+  let policy: AgentCollaborationTrialPolicy
+  let createdAtMillis: Int64
+  var admitted = 0
+  var isClosed = false
+
+  var revision: Int64 { Int64(admitted) * 2 + (isClosed ? 1 : 0) }
+
+  static func key(runID: String) -> String {
+    "model-trial:" + AgentMcpJSONCodec.sha256(["run": .string(runID)])
+  }
+
+  func check(target: String, now: Int64) throws {
+    if isClosed { throw AgentCollaborationTrialPolicy.Denial.closed }
+    if now < createdAtMillis { throw AgentCollaborationTrialPolicy.Denial.clockReversed }
+    if now >= policy.admissionDeadlineMillis { throw AgentCollaborationTrialPolicy.Denial.expired }
+    if target != policy.targetResourceID { throw AgentCollaborationTrialPolicy.Denial.wrongTarget }
+    if admitted >= policy.maximumAdmissions { throw AgentCollaborationTrialPolicy.Denial.exhausted }
+  }
+
+  mutating func debit(_ admission: AgentCollaborationModelAdmission, now: Int64) throws {
+    try check(target: admission.targetResourceID ?? "", now: now)
+    guard admission.requestedModel == policy.requestedModel else { throw AgentCollaborationTrialPolicy.Denial.wrongModel }
+    guard admission.singleHTTPTransport == true, let digest = admission.requestSHA256, digest.utf8.count == 64,
+          digest.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) })
+    else { throw AgentCollaborationTrialPolicy.Denial.unmeteredTransport }
+    admitted += 1
+  }
 }
 
 struct AgentCollaborationModelSettlement: Codable, Equatable {

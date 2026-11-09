@@ -590,7 +590,44 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
-  func admitCollaborationModelCall(_ admission: AgentCollaborationModelAdmission) throws {
+  func configureCollaborationTrial(conversationID: String, runID: String, policy: AgentCollaborationTrialPolicy,
+      now: Int64 = AgentControlPlaneClock.nowMillis()) throws {
+    guard !conversationID.isBlank, !runID.isBlank, conversationID.utf8.count <= 200, runID.utf8.count <= 200
+    else { throw AgentCollaborationTrialPolicy.Denial.invalidPolicy }
+    let key = AgentCollaborationTrialState.key(runID: runID)
+    try access { database in
+      if let existing = try database.researchRecord(AgentCollaborationTrialState.self,
+        conversationId: conversationID, key: key) {
+        guard existing.policy == policy else { throw AgentCollaborationTrialPolicy.Denial.policyChanged }
+        return
+      }
+      // Enrollment is a host operation before a run is created, not a model tool.
+      guard try database.snapshots(runId: runID).isEmpty else { throw AgentCollaborationTrialPolicy.Denial.alreadyStarted }
+      try policy.validate(createdAt: now)
+      let state = AgentCollaborationTrialState(policy: policy, createdAtMillis: now)
+      try database.insertResearchRecord(state, conversationId: conversationID, key: key, revision: state.revision)
+    }
+  }
+
+  func collaborationTrial(conversationID: String, runID: String) throws -> AgentCollaborationTrialState? {
+    try access { database in
+      try database.researchRecord(AgentCollaborationTrialState.self,
+        conversationId: conversationID, key: AgentCollaborationTrialState.key(runID: runID))
+    }
+  }
+
+  func closeCollaborationTrial(conversationID: String, runID: String) throws {
+    let key = AgentCollaborationTrialState.key(runID: runID)
+    try access { database in
+      guard var state = try database.researchRecord(AgentCollaborationTrialState.self,
+        conversationId: conversationID, key: key), !state.isClosed else { return }
+      state.isClosed = true
+      try database.insertResearchRecord(state, conversationId: conversationID, key: key, revision: state.revision)
+    }
+  }
+
+  func admitCollaborationModelCall(_ admission: AgentCollaborationModelAdmission,
+      now: Int64 = AgentControlPlaneClock.nowMillis()) throws {
     let scope = admission.scope
     let key = "model-call:" + admission.id.uuidString.lowercased()
     try access { database in
@@ -600,10 +637,21 @@ final class AgentTeamExecutionHistoryStore {
               key: "native-evidence-revoked", revision: 0) != true,
             let team = try database.snapshots(runId: scope.runId).first,
             team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
-            team.members.contains(where: { $0.memberId == scope.memberId &&
+            let member = team.members.first(where: { $0.memberId == scope.memberId &&
               $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal })
       else { throw AgentTeamHistoryDatabase.Failure.stale }
       if admission.lane == .hostLivePlanning { _ = try Self.activeGoalCoordinator(scope, database: database) }
+      let trialKey = AgentCollaborationTrialState.key(runID: scope.runId)
+      if var trial = try database.researchRecord(AgentCollaborationTrialState.self,
+        conversationId: scope.conversationId, key: trialKey) {
+        guard admission.targetResourceID == member.agentId else { throw AgentCollaborationTrialPolicy.Denial.wrongTarget }
+        guard try database.researchRecord(AgentCollaborationModelAdmission.self,
+          conversationId: scope.conversationId, key: key, revision: 0) == nil
+        else { throw AgentCollaborationTrialPolicy.Denial.replay }
+        try trial.debit(admission, now: now)
+        try database.insertResearchRecord(trial, conversationId: scope.conversationId,
+          key: trialKey, revision: trial.revision)
+      }
       try database.insertResearchRecord(admission, conversationId: scope.conversationId, key: key, revision: 0)
     }
   }
