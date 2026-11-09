@@ -414,6 +414,7 @@ struct AgentCollaborationGoalWorkRun: Codable {
   var truncated: Bool? = nil
   var desktopArchiveDigest: String? = nil
   var templateMemberID: String? = nil
+  var inputRevision: Int64? = nil
   var probeOrigin: AgentMcpJSONObject? = nil
 
   func visibleState(now: Int64) -> State {
@@ -431,6 +432,7 @@ struct AgentCollaborationGoalWorkRun: Codable {
       "output": output.map(AgentMcpJSONValue.string) ?? .null, "output_sha256": outputHash.map(AgentMcpJSONValue.string) ?? .null,
       "output_truncated": .bool(truncated ?? false), "goal_accepted": .bool(false), "automatically_reexecuted": .bool(false)]
     if let templateMemberID { result["template_member_id"] = .string(templateMemberID) }
+    if let inputRevision { result["input_revision"] = .int(inputRevision) }
     if let probeOrigin { result["probe_origin"] = .object(probeOrigin) }
     return result
   }
@@ -456,6 +458,7 @@ final class AgentGoalWorkAdmissionOrder {
 }
 
 struct AgentCollaborationLiveGraph: Codable, Equatable {
+  typealias InputBindings = AgentCollaborationWorkInputBindings
   enum DependencyPolicy: String, Codable { case success, terminal }
   enum Settlement: String, Codable { case succeeded, failed, cancelled, skipped }
 
@@ -475,6 +478,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var workflowObservedBinding: AgentMcpJSONObject? = nil
     var recruitment: Recruitment? = nil
     var blockerResolution: AgentCollaborationGoalAssessmentPolicy.Resolution? = nil
+    var data_dependencies: [InputBindings.Requirement]? = nil
 
     func hasIndependentReviewAuthors(_ author: (String) -> String?,
       identity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId) -> Bool {
@@ -630,6 +634,10 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
             from: Data(AgentMcpJSONCodec.stringify(instance).utf8)))
         } else {
           let item = try Work(from: decoder)
+          guard object["data_dependencies"] == nil || object["data_dependencies"]?.arrayValue != nil else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+              debugDescription: "data_dependencies must be an array"))
+          }
           guard item.workflowExecutionId == nil, item.probeBinding == nil, item.workflowObservedBinding == nil,
                 item.recruitment == nil, item.blockerResolution == nil,
                 !item.id.hasPrefix(AgentCollaborationGoalAssessmentPolicy.resolutionPrefix) else {
@@ -644,6 +652,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     let format: String
     var work: [Entry]
     var recruit: [RecruitmentRequest]? = nil
+    var rebind_inputs: [InputBindings.Rebind]? = nil
   }
 
   private(set) var work: [Work] = []
@@ -651,6 +660,32 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
   private(set) var learningPriorities: [String: Int64]? = nil
   private(set) var recruitments: [String: Recruitment]? = nil
   private(set) var procedureBindings: [String: AgentMcpJSONObject]? = nil
+  private(set) var inputBindingHistory: [String: [InputBindings.Revision]]? = nil
+
+  func appendingInputBindings(_ additions: [String: InputBindings.Revision]) -> Self? {
+    var next = self
+    var history = inputBindingHistory ?? [:]
+    for (id, revision) in additions {
+      guard let item = work.first(where: { $0.id == id }), item.workflowExecutionId == nil,
+            item.blockerResolution == nil, item.recruitment == nil,
+            let requirements = item.data_dependencies, !requirements.isEmpty else { return nil }
+      let prior = history[id, default: []]
+      guard prior.count < InputBindings.maximumRevisions, revision.revision == Int64(prior.count + 1),
+            !revision.reason.isBlank, !revision.inputs.isEmpty,
+            Set(revision.inputs.map { $0.requirement.work_id }).count == revision.inputs.count,
+            revision.inputs.allSatisfy({ input in
+              requirements.contains(input.requirement) && !input.versions.isEmpty &&
+                input.versions.allSatisfy { $0.workID == input.requirement.work_id }
+            }) else { return nil }
+      history[id] = prior + [revision]
+    }
+    next.inputBindingHistory = history.isEmpty ? nil : history
+    return next
+  }
+
+  func boundInputs(for workID: String) -> [String: InputBindings.BoundInput] {
+    InputBindings.current(inputBindingHistory?[workID] ?? [])
+  }
 
   func pinningProcedures(_ bindings: [String: AgentMcpJSONObject]) -> Self {
     var next = self
@@ -762,6 +797,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
             item.assignment.utf8.count <= 16_000, authorizedMembers.contains(item.member),
             byId[item.id] == nil, settled[item.id] == nil, historicalAuthors[item.id] == nil,
             Set(item.depends_on).count == item.depends_on.count,
+            InputBindings.validRequirements(item.data_dependencies, dependencies: item.depends_on),
             !item.depends_on.contains(item.id) else { return nil }
       byId[item.id] = item
     }
@@ -1046,11 +1082,13 @@ enum AgentCollaborationGoalAssessmentPolicy {
   static let runWorkMode = "run_work"
   static let runReadyWorkMode = "run_ready_work"
   static let workInventoryMode = "work_inventory"
+  static let workInputMode = "work_input"
   static let checkGoalEvidenceMode = "check_goal_evidence"
   static let admissionInstructions = "List ready research work in the intended admission order. Waiting dependencies do not reserve capacity. Existing learning priorities reorder only their eligible learning positions. Admission order does not guarantee completion order."
 
   static func requiresCoordinator(_ mode: String) -> Bool {
-    isCoordinatorMutation(mode) || mode == checkGoalEvidenceMode || mode == workInventoryMode || mode == assessmentRepairMode
+    isCoordinatorMutation(mode) || mode == checkGoalEvidenceMode || mode == workInventoryMode ||
+      mode == workInputMode || mode == assessmentRepairMode
   }
 
   static func dispatchesWork(_ mode: String) -> Bool {

@@ -4,6 +4,79 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testTypedGoalWorkBindsExactMilestoneWithoutReleasingCompletionEdges() throws {
+    let suite = "typed-input-\(UUID())", root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore(), file = root.appendingPathComponent("team.sqlite")
+    func open() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    }
+    let history = open()
+    var team = durableTeamSnapshot("typed-input")
+    team.goal = "Check the fixture"
+    team.members[0].dispatchCheckpoint = .accepted
+    XCTAssertTrue(history.upsert(team))
+    let coordinator = team.members[0], worker = team.members[1]
+    let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId, memberId: coordinator.memberId, sourceId: coordinator.sourceMessageId)
+    XCTAssertTrue(history.advanceGoalCheckpoint(.init(runId: scope.runId, conversationId: scope.conversationId,
+      turnId: scope.turnId, revision: 1, phase: .working,
+      contract: [.init(id: "check", requirement: "Check the fixture", verification: .documentary, status: .open,
+        evidence_kind: nil, evidence: [])], completedWorkIds: []), expectedRevision: 0))
+    func work(_ id: String, dependencies: [String] = [], typed: Bool = false) -> AgentMcpJSONValue {
+      var value: AgentMcpJSONObject = ["id": .string(id), "member": .string(worker.memberId), "assignment": .string(id),
+        "stage": .string("CHALLENGE"), "depends_on": .array(dependencies.map(AgentMcpJSONValue.string))]
+      if typed {
+        value["data_dependencies"] = .array([.object([
+          "work_id": .string("measure"), "requirement": .string("Frozen reading")
+        ])])
+      }
+      return .object(value)
+    }
+    func expansion(_ id: String, _ revision: Int64, work: [AgentMcpJSONValue],
+                   bindings: [AgentMcpJSONValue] = []) -> AgentMcpJSONObject {
+      ["mode": .string("append_work"), "milestone_id": .string(id), "expected_revision": .int(revision),
+       "artifact": .string(AgentMcpJSONCodec.stringify(["format": .string("galaxyssi.work-expansion.v1"),
+         "work": .array(work), "rebind_inputs": .array(bindings)]))]
+    }
+    let seeded = expansion("seed", 1, work: [work("measure"), work("release"),
+      work("challenge", dependencies: ["measure", "release"], typed: true)])
+    XCTAssertEqual(try history.publishCollaborationMilestone(seeded, scope: scope)["admitted_work_count"], .int(3))
+    let (measurement, _) = try history.goalWork("measure", scope: scope)
+    let (release, _) = try history.goalWork("release", scope: scope)
+    let producer = try history.claimGoalWork(measurement, scope: scope, now: 2).run
+    let completing = try history.claimGoalWork(release, scope: scope, now: 2).run
+    let version = try history.publishGoalWorkInput(producer, id: "first", payload: ["reading": .int(42)], now: 3)
+    let token = try XCTUnwrap(version["token"]?.strictStringValue)
+    XCTAssertEqual(try history.publishGoalWorkInput(producer, id: "first", payload: ["reading": .int(42)], now: 3)["replayed"],
+      .bool(true))
+    XCTAssertThrowsError(try history.publishGoalWorkInput(producer, id: "first", payload: ["reading": .int(43)], now: 3))
+    func binding(_ dependency: String = "measure", revision: Int64 = 0) -> AgentMcpJSONValue {
+      .object(["work_id": .string("challenge"), "expected_revision": .int(revision), "reason": .string("Exact input"),
+        "inputs": .array([.object(["dependency": .string(dependency), "uses_milestones": .array([.string(token)])])])])
+    }
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(expansion("bad", 2, work: [work("not-added")],
+      bindings: [binding("release")]), scope: scope))
+    XCTAssertThrowsError(try history.goalWork("not-added", scope: scope))
+    let bound = expansion("bind", 2, work: [], bindings: [binding()])
+    XCTAssertEqual(try history.publishCollaborationMilestone(bound, scope: scope)["input_revisions"]?.objectValue?["challenge"], .int(1))
+    XCTAssertFalse(try history.readyGoalWork(scope: scope, excluding: [], limit: 3, now: 4).contains("challenge"))
+    _ = try history.finishGoalWork(completing, output: "Released", interrupted: false, now: 4)
+    let reopened = open()
+    XCTAssertEqual(try reopened.publishCollaborationMilestone(bound, scope: scope)["replayed"], .bool(true))
+    XCTAssertTrue(try reopened.readyGoalWork(scope: scope, excluding: [], limit: 3, now: 5).contains("challenge"))
+    let (target, _) = try reopened.goalWork("challenge", scope: scope)
+    let claim = try reopened.claimGoalWork(target, scope: scope, now: 5)
+    XCTAssertTrue(claim.claimed)
+    XCTAssertEqual(claim.run.inputRevision, 1)
+    XCTAssertEqual(claim.dependencies.first?["versions"]?.arrayValue?.first?.objectValue?["data"]?.objectValue?["reading"], .int(42))
+    XCTAssertEqual(claim.dependencies.last?["output"], .string("Released"))
+    XCTAssertFalse(try open().claimGoalWork(target, scope: scope, now: 5).claimed)
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(expansion("late", 3, work: [],
+      bindings: [binding(revision: 1)]), scope: scope))
+  }
+
   func testScopedTeamHistoryRoutesExactReadsWithoutJoiningDefaultRecovery() throws {
     let suite = "scoped-team-history-\(UUID())"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
