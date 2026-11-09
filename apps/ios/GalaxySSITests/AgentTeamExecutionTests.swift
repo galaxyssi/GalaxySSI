@@ -5297,6 +5297,48 @@ extension GalaxySSIStoreTests {
       createdAtMillis: 1, updatedAtMillis: 1)
   }
 
+  func testStartupAndReopenedLiveWorkUseStableDispatchTextWithoutRewritingSources() async throws {
+    let role = String(repeating: "r", count: 79)
+    let objective = String(repeating: "a", count: 7_999)
+    let originalRole = "  " + role + " remainder\n"
+    let originalObjective = "  " + objective + " remainder\n"
+    let raw = AgentTeamMember(agentId: "provider", deliveryMode: .respond, requiredCapabilities: [],
+      role: originalRole, objective: originalObjective, dependsOnAgentIds: [], context: [:], instanceId: "opaque-member")
+    let goal = "  Preserve the original goal\n"
+    let run = AgentRunRequest(conversationId: "projection", messageId: "turn", taskId: "turn",
+      runId: UUID().uuidString, parentRunId: "", goal: goal, deliveryMode: .respond, requiredCapabilities: [],
+      context: [:], idempotencyKey: "projection", createdAtMillis: 1)
+    let definition = AgentTeamDefinition(teamId: "team", primaryAgentId: "provider", members: [raw],
+      visibilityMode: .background, collectiveCapabilities: [], primaryInstanceId: raw.memberId)
+    let runtime = AgentTeamExecutionRuntime(store: InMemoryAgentTeamExecutionStore(), mailbox: InMemoryAgentTeamMailbox())
+    defer { runtime.close() }
+    let handle = try runtime.start(definition: definition, request: run,
+      worker: ClosureAgentTeamMemberWorker { context in
+        XCTAssertEqual(context.member.role, role)
+        XCTAssertEqual(context.member.objective, objective)
+        XCTAssertEqual(context.member.memberId, raw.memberId)
+        XCTAssertEqual(context.request.context["team_role"], .string(role))
+        XCTAssertEqual(Data(context.request.goal.utf8), Data(goal.utf8))
+        return AgentSubagentOutput(content: "Completed")
+      })
+    let result = try await handle.wait()
+    XCTAssertEqual(result.finalOutput, "Completed")
+    XCTAssertEqual(definition.members.first?.role, originalRole)
+    XCTAssertEqual(definition.members.first?.objective, originalObjective)
+    XCTAssertEqual(AgentTeamDispatchText.role(role), role)
+    XCTAssertEqual(AgentTeamDispatchText.objective(objective), objective)
+
+    let fullAssignment = String(repeating: "s", count: 12_000) + " keep the final requirement"
+    let retained = " \n" + fullAssignment + "\n "
+    let work = AgentCollaborationLiveGraph.Work(id: "live-review", member: raw.memberId,
+      assignment: retained, depends_on: [], dependency_policy: nil, independent_review: nil)
+    let bytes = try JSONEncoder().encode(work)
+    let reopened = try JSONDecoder().decode(AgentCollaborationLiveGraph.Work.self, from: bytes)
+    XCTAssertEqual(Data(reopened.assignment.utf8), Data(retained.utf8))
+    XCTAssertEqual(reopened.dispatchAssignment, fullAssignment)
+    XCTAssertEqual(reopened.member, raw.memberId)
+  }
+
   func testOriginalTeamParentSettlementRejectsUserPauseMismatchAndReplacement() throws {
     let members = [
       AgentTeamMember(agentId: "lead", deliveryMode: .respond, requiredCapabilities: [], role: "lead",
@@ -5759,10 +5801,11 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(criteria["sha256"], saved["criteria_sha256"])
     XCTAssertEqual(reopened.goalCheckpoint(runId: team.supervisorRunId, conversationId: team.conversationId,
       turnId: team.taskId)?.contract.first?.requirement, "Measure the sample")
+    let originalAssignment = "  Measure the fixture\n"
     func work(_ requestID: String, id: String, member: String, expected: Int64,
               dependencies: [String] = [], terminal: Bool = false) -> AgentMcpJSONObject {
       let graph: AgentMcpJSONObject = ["format": .string("galaxyssi.work-expansion.v1"), "work": .array([.object([
-        "id": .string(id), "member": .string(member), "assignment": .string("Measure the fixture"),
+        "id": .string(id), "member": .string(member), "assignment": .string(originalAssignment),
         "depends_on": .array(dependencies.map(AgentMcpJSONValue.string)),
         "dependency_policy": .string(terminal ? "terminal" : "success")
       ])])]
@@ -5827,6 +5870,8 @@ extension GalaxySSIStoreTests {
     XCTAssertThrowsError(try open().readyGoalWork(scope: scope(1), excluding: [], limit: 3, now: 10))
     let measure = try XCTUnwrap(latest.liveGraph?.work.first)
     let verify = try XCTUnwrap(latest.liveGraph?.work.last)
+    XCTAssertEqual(Data(measure.assignment.utf8), Data(originalAssignment.utf8))
+    XCTAssertEqual(measure.dispatchAssignment, "Measure the fixture")
     XCTAssertThrowsError(try reopened.claimGoalWork(verify, scope: scope(0), now: 10))
     XCTAssertThrowsError(try reopened.claimGoalWork(measure, scope: scope(1), now: 10))
     let worker = AgentCollaborationGoalWorkRun.Target(kind: .cloud, resourceID: team.members[1].agentId, modelID: "selected-model")

@@ -461,6 +461,11 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var blockerResolution: AgentCollaborationGoalAssessmentPolicy.Resolution? = nil
     var data_dependencies: [InputBindings.Requirement]? = nil
 
+    var dispatchAssignment: String {
+      // Admission already bounds the original work in UTF-8. Do not shorten valid long live assignments.
+      AgentTeamDispatchText.bounded(assignment, maximumCharacters: AgentTeamDispatchText.liveAssignmentBytes)
+    }
+
     func hasIndependentReviewAuthors(_ author: (String) -> String?,
       identity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId) -> Bool {
       if let review_targets {
@@ -775,7 +780,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     guard byId.count == work.count else { return nil }
     for item in additions {
       guard !item.id.isBlank, item.id.utf8.count <= 160, !item.assignment.isBlank,
-            item.assignment.utf8.count <= 16_000, authorizedMembers.contains(item.member),
+            item.assignment.utf8.count <= AgentTeamDispatchText.liveAssignmentBytes, authorizedMembers.contains(item.member),
             byId[item.id] == nil, settled[item.id] == nil, historicalAuthors[item.id] == nil,
             Set(item.depends_on).count == item.depends_on.count,
             InputBindings.validRequirements(item.data_dependencies, dependencies: item.depends_on),
@@ -1484,6 +1489,25 @@ struct AgentDynamicTeamAssignment: Codable, Equatable {
     case requiredCapabilities = "required_capabilities"
     case objective
     case reasons
+  }
+}
+
+enum AgentTeamDispatchText {
+  static let roleCharacters = 80
+  static let objectiveCharacters = 8_000
+  static let liveAssignmentBytes = 16_000
+
+  static func bounded(_ value: String, maximumCharacters: Int) -> String {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return String(trimmed.prefix(maximumCharacters)).trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  static func role(_ value: String) -> String {
+    bounded(value, maximumCharacters: roleCharacters)
+  }
+
+  static func objective(_ value: String) -> String {
+    bounded(value, maximumCharacters: objectiveCharacters)
   }
 }
 
