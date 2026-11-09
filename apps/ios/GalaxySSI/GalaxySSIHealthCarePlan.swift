@@ -25,6 +25,9 @@ enum GalaxySSIHealthCarePlan {
     case clinicianDiscussion = "CLINICIAN_DISCUSSION"
     case recheck = "RECHECK"
     case context = "CONTEXT"
+    case clinicalInstruction = "CLINICAL_INSTRUCTION"
+
+    static var modelKinds: [Self] { allCases.filter { $0 != .clinicalInstruction } }
   }
   enum State: String, Codable { case pending, accepted, dismissed }
   struct Source: Codable, Equatable {
@@ -82,6 +85,7 @@ enum GalaxySSIHealthCarePlan {
     let confirmedAt: Date
     var outcome: GalaxySSIHealthCareFollowUp.Outcome?
     var feedback: GalaxySSIHealthCareFollowUp.Feedback?
+    var instruction: GalaxySSIHealthInstruction.ActionReference? = nil
     var id: String { "\(proposalID.uuidString):\(action.id)" }
   }
 
@@ -104,7 +108,7 @@ enum GalaxySSIHealthCarePlan {
         "version": string(80), "applicability": string(2_000, description: "Population, applicability and limitations."),
         "evidence_id": string(36, description: "Exact ID from native_sources; reuse only with a different passage."),
         "quote": string(600, description: "Short original-language passage copied from the supplied excerpt.")])),
-      "actions": array(object(["kind": ["type": "string", "enum": Kind.allCases.map(\.rawValue)],
+      "actions": array(object(["kind": ["type": "string", "enum": Kind.modelKinds.map(\.rawValue)],
         "description": string(1_000), "rationale": string(2_000, description: "Justify the step and any review window."),
         "source_index": ["type": "integer", "minimum": 0, "maximum": 7], "due_from": date, "due_until": date,
         "applicability": GalaxySSIHealthCareApplicability.schema]))
@@ -158,7 +162,7 @@ enum GalaxySSIHealthCarePlan {
     let actions = try rawActions.enumerated().map { index, row -> Action in
       guard let item = row.objectValue,
             Set(item.keys) == ["kind", "description", "rationale", "source_index", "due_from", "due_until", "applicability"],
-            let kind = item["kind"]?.strictStringValue.flatMap(Kind.init(rawValue:)),
+            let kind = item["kind"]?.strictStringValue.flatMap(Kind.init(rawValue:)), Kind.modelKinds.contains(kind),
             let review = item["applicability"]?.objectValue,
             case .int(let source)? = item["source_index"], source >= 0, source < Int64(sources.count)
       else { throw invalid }
