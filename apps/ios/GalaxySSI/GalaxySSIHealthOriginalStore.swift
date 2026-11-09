@@ -535,6 +535,9 @@ struct GalaxySSIHealthOriginalStore {
     } catch let error as CocoaError where Self.missingFile(error) { throw Failure.stale }
     let records = GalaxySSIHealthRecords(owner: owner, secrets: secrets, isolatedFile: restoreRecordsFile)
     let archive = try records.load()
+    guard archive.localCareInstructions?.uses(originalID: original.id) != true else {
+      throw GalaxySSIHealthInstruction.Failure.sourceInUse
+    }
     let current = archive.current
     let live = Set(current.map(\.id))
     let secondary = (archive.reportEvidence ?? []).filter {

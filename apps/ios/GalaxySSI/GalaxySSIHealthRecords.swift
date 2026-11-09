@@ -190,6 +190,7 @@ struct GalaxySSIHealthRecords {
     var localCareQuestions: [String: GalaxySSIHealthCareQuestions.Ledger]?
     var localCareEncounters: GalaxySSIHealthEncounter.Ledger?
     var localCareEncounterDocuments: [UUID: GalaxySSIHealthEncounterDocument.Link]?
+    var localCareInstructions: GalaxySSIHealthInstruction.Ledger?
     var localCareAgenda: Data?
 
     var keepsNewImportOriginals: Bool { retainImportOriginals ?? true }
@@ -692,24 +693,25 @@ struct GalaxySSIHealthRecords {
     archive.localCare = care
     archive.localCareEncounters = encounters
     archive.localCareEncounterDocuments = archive.localCareEncounterDocuments?.filter { $0.value.visit != entry.id }
+    archive.localCareInstructions?.remove(concern: concern.id, visit: entry.id)
     try persist(archive)
   }
 
   typealias VisitDocuments = GalaxySSIHealthEncounterDocument
 
-  private var visitOriginalStore: GalaxySSIHealthOriginalStore {
+  var visitOriginalStore: GalaxySSIHealthOriginalStore {
     .init(owner: owner, secrets: secrets, fixtureDirectory: isolatedFile?.appendingPathExtension("visit-originals"),
       restoreRecordsFile: isolatedFile)
   }
 
-  private func visitDocumentContext(concern: UUID, metric: GalaxySSIHealthMetric, visit: UUID,
+  func visitDocumentContext(concern: UUID, metric: GalaxySSIHealthMetric, visit: UUID,
       archive: Archive, now: Date) throws -> (GalaxySSIHealthCare.Concern, VisitDocuments.Scope) {
     let (current, stamp) = try localCareEncounterScope(id: concern, metric: metric, archive: archive, now: now)
     guard let entry = archive.localCareEncounters?.entries[visit], entry.concern == concern else { throw Failure.stale }
     return (current, .init(stamp: stamp, visit: entry))
   }
 
-  private func visitDocumentContext(_ expected: VisitDocuments.Scope, archive: Archive, now: Date)
+  func visitDocumentContext(_ expected: VisitDocuments.Scope, archive: Archive, now: Date)
       throws -> (GalaxySSIHealthCare.Concern, VisitDocuments.Scope) {
     try visitDocumentContext(concern: expected.stamp.concern, metric: expected.stamp.metric,
       visit: expected.visit.id, archive: archive, now: now)
@@ -817,11 +819,14 @@ struct GalaxySSIHealthRecords {
     let (concern, scope) = try visitDocumentContext(expected, archive: archive, now: now)
     guard scope == expected, link.concern == concern.id, link.visit == scope.visit.id, concern.revision < Int.max - 1,
           archive.localCareEncounterDocuments?[link.id] == link else { throw Failure.stale }
+    guard archive.localCareInstructions?.uses(linkID: link.id) != true else {
+      throw GalaxySSIHealthInstruction.Failure.sourceInUse
+    }
     archive.localCareEncounterDocuments?.removeValue(forKey: link.id)
     try publishVisitDocumentChange(concern, archive: &archive, now: now)
   }
 
-  private func publishVisitDocumentChange(_ concern: GalaxySSIHealthCare.Concern, archive: inout Archive,
+  func publishVisitDocumentChange(_ concern: GalaxySSIHealthCare.Concern, archive: inout Archive,
       now: Date, notify: Bool = true) throws {
     guard var care = archive.localCare else { throw Failure.stale }
     var current = concern
@@ -830,6 +835,15 @@ struct GalaxySSIHealthRecords {
     care.publish(current)
     archive.localCare = care
     try persist(archive, notify: notify)
+  }
+
+  func verifiedVisitDocumentOriginal(_ link: VisitDocuments.Link, scope: VisitDocuments.Scope,
+      archive: Archive, originals: GalaxySSIHealthOriginalStore, lease: GalaxySSIHealthOriginalStore.RestoreLease)
+      throws -> VisitDocuments.Original {
+    guard archive.localCareEncounterDocuments?[link.id] == link, link.concern == scope.stamp.concern, link.visit == scope.visit.id,
+          let original = try originals.visitOriginal(id: link.originalID, lease: lease),
+          VisitDocuments.matches(link, original: original, key: try key(create: false)) else { throw Failure.stale }
+    return original
   }
 
   func localCareVisitPreview(id: UUID, metric: GalaxySSIHealthMetric, sections: Set<GalaxySSIHealthCareVisit.Section>,
@@ -2069,6 +2083,7 @@ struct GalaxySSIHealthRecords {
     archive.localCareFeedback?.removeValue(forKey: concern.id.uuidString)
     archive.localCareEncounters?.remove(concern: concern.id)
     archive.localCareEncounterDocuments = archive.localCareEncounterDocuments?.filter { $0.value.concern != concern.id }
+    archive.localCareInstructions?.remove(concern: concern.id)
     archive.localCare = ledger
     try persist(archive)
   }

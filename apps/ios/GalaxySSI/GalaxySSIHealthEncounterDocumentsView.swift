@@ -22,6 +22,7 @@ struct GalaxySSIHealthEncounterDocumentsView: View {
   @State private var pendingUnlink: Documents.Link?
   @State private var confirm = false
   @State private var failed = false
+  @State private var sourceInUse = false
   @State private var reload = UUID()
 
   var body: some View {
@@ -47,6 +48,10 @@ struct GalaxySSIHealthEncounterDocumentsView: View {
       }
       .navigationTitle(library == nil ? t("documents", "Visit documents") : t("document_library", "Retained originals"))
       .navigationBarTitleDisplayMode(.inline)
+      .alert(GalaxySSIHealthInstruction.text("source_in_use", "Delete the instruction drafts before removing this source link.", language),
+        isPresented: $sourceInUse) {
+          Button(t("document_done", "Done"), role: .cancel) {}
+        }
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           if preview != nil { Button(t("document_back", "Back"), action: clearPreview) }
@@ -198,6 +203,7 @@ struct GalaxySSIHealthEncounterDocumentsView: View {
   private func unlink(_ item: Documents.Link) {
     guard canRead, let scope = page?.scope else { return }
     do { try records.unlinkVisitDocument(item, expected: scope); resetAndReload() }
+    catch GalaxySSIHealthInstruction.Failure.sourceInUse { sourceInUse = true }
     catch { fail() }
   }
 }

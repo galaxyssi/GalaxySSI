@@ -139,6 +139,85 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testVisitInstructionRetainsExactPDFQuotationAndRejectsEditsWithoutOriginal() async throws {
+    typealias Instructions = GalaxySSIHealthInstruction
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let file = root.appendingPathComponent("records"), directory = file.appendingPathExtension("visit-originals")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = "visit-instructions", secrets = HealthFixtureSecrets(), now = Date()
+    let records = GalaxySSIHealthRecords(owner: owner, secrets: secrets, isolatedFile: file)
+    let originals = GalaxySSIHealthOriginalStore(owner: owner, secrets: secrets, fixtureDirectory: directory,
+      restoreRecordsFile: file)
+    let quotation = "Synthetic follow-up instructions"
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 300, height: 200)).pdfData { context in
+      context.beginPage()
+      (quotation as NSString).draw(at: CGPoint(x: 12, y: 20), withAttributes: [.font: UIFont.systemFont(ofSize: 14)])
+    }
+    try originals.store(pdf, name: "synthetic-instruction.pdf")
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-60), value: 110,
+      unitOverride: "mg/dL", referenceInterval: "70 - 99"))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"]), visit = UUID()
+    let stamp = try records.localCareEncounterPage(id: concern.id, metric: .glucose).stamp
+    _ = try records.saveLocalCareEncounter(.init(purpose: "Synthetic visit"), id: visit, operation: UUID(),
+      expected: stamp, expectedEntry: nil)
+    func documents() throws -> GalaxySSIHealthEncounterDocument.Page {
+      try records.visitDocumentPage(concern: concern.id, metric: .glucose, visit: visit)
+    }
+    let documentScope = try documents().scope
+    let original = try XCTUnwrap(records.visitDocumentLibrary(documentScope).originals.first)
+    let removalBeforeDraft = try originals.previewRemoval(original)
+    let preview = try records.previewVisitDocument(original, page: 1, expected: documentScope)
+    let link = try records.linkVisitDocument(preview, whole: false)
+    let scope = try documents().scope
+    do {
+      _ = try await records.readVisitInstructionSource(link, page: 2, expected: scope)
+      XCTFail("A linked page cannot be replaced by another page")
+    } catch {}
+    let reading = try await records.readVisitInstructionSource(link, page: 1, expected: scope)
+    let region = try XCTUnwrap(reading.result.regions.first(where: { $0.text.contains(quotation) }))
+    let operation = UUID()
+    XCTAssertThrowsError(try records.createVisitInstruction(from: reading, selected: [region.id], operation: operation,
+      now: reading.expires))
+    let created = try records.createVisitInstruction(from: reading, selected: [region.id], operation: operation)
+    XCTAssertEqual(try records.createVisitInstruction(from: reading, selected: [region.id], operation: operation), created)
+    XCTAssertEqual(created.entry.source.quote, region.text)
+    XCTAssertEqual(created.entry.source.page, 1)
+    XCTAssertEqual(created.entry.source.recognition, .pdfText)
+    XCTAssertThrowsError(try originals.previewRemoval(original))
+    XCTAssertThrowsError(try originals.remove(removalBeforeDraft))
+    XCTAssertFalse(created.entry.draft.reviewed)
+    let data = try Data(contentsOf: file)
+    XCTAssertNil(data.range(of: Data(quotation.utf8)))
+    let reviewScope = try documents().scope
+    XCTAssertThrowsError(try records.unlinkVisitDocument(link, expected: reviewScope))
+    let history = try records.visitInstructionHistory(id: created.entry.id, expected: reviewScope)
+    var draft = Instructions.Draft()
+    draft.changeKind(.followUp)
+    for field in draft.kind.fields { draft.review(field, as: .notStated) }
+    draft.edit(.name, text: "Follow-up")
+    XCTAssertFalse(draft.reviewed)
+    draft.review(.name, as: .transcribed)
+    XCTAssertTrue(draft.reviewed)
+    let updated = try records.updateVisitInstruction(draft, history: history, operation: UUID())
+    XCTAssertEqual(updated.entry.source, created.entry.source)
+    draft.edit(.name, text: "Edited name")
+    XCTAssertEqual(draft.value(.name).review, .unreviewed)
+    try FileManager.default.removeItem(at: directory.appendingPathComponent(original.id.uuidString))
+    let fresh = GalaxySSIHealthRecords(owner: owner, secrets: secrets, isolatedFile: file)
+    let page = try fresh.visitInstructions(concern: concern.id, metric: .glucose, visit: visit)
+    XCTAssertFalse(try XCTUnwrap(page.items.first).originalAvailable)
+    let unavailable = try fresh.visitInstructionHistory(id: created.entry.id, expected: page.scope)
+    XCTAssertEqual(unavailable.receipts.map(\.entry), [updated.entry, created.entry])
+    XCTAssertThrowsError(try fresh.updateVisitInstruction(draft, history: unavailable, operation: UUID()))
+    try fresh.deleteVisitInstruction(unavailable)
+    try fresh.unlinkVisitDocument(link, expected: documents().scope)
+    XCTAssertTrue(try fresh.visitInstructions(concern: concern.id, metric: .glucose, visit: visit).items.isEmpty)
+  }
+
+  @MainActor
   func testVisitLedgerPaginatesThirtyExactRevisions() throws {
     typealias Visit = GalaxySSIHealthEncounter
     let now = Date(), id = UUID()
