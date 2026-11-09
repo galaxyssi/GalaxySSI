@@ -1263,6 +1263,7 @@
     A10000000000000000000272 /* AgentConnectorResponseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000272 /* AgentConnectorResponseTests.swift */; };
     B10000000000000000000274 /* AgentTeamExecutionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000274 /* AgentTeamExecutionTests.swift */; };
     B1000000000000000000E352 /* AgentSingleResearchCalibrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000E352 /* AgentSingleResearchCalibrationTests.swift */; };
+    D13477000000000000000001 /* AgentAdaptivePilotContinuityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23477000000000000000001 /* AgentAdaptivePilotContinuityTests.swift */; };
     B1000000000000000000E353 /* AgentInterimPilotArchiveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000E353 /* AgentInterimPilotArchiveTests.swift */; };
     A10000000000000000000277 /* AgentPhoneCapabilityCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000277 /* AgentPhoneCapabilityCatalogTests.swift */; };
     A10000000000000000000279 /* AgentIOSSystemNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000279 /* AgentIOSSystemNativeToolTests.swift */; };
@@ -2562,6 +2563,7 @@
     A20000000000000000000272 /* AgentConnectorResponseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorResponseTests.swift; sourceTree = "<group>"; };
     B20000000000000000000274 /* AgentTeamExecutionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamExecutionTests.swift; sourceTree = "<group>"; };
     B2000000000000000000E352 /* AgentSingleResearchCalibrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSingleResearchCalibrationTests.swift; sourceTree = "<group>"; };
+    D23477000000000000000001 /* AgentAdaptivePilotContinuityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAdaptivePilotContinuityTests.swift; sourceTree = "<group>"; };
     B2000000000000000000E353 /* AgentInterimPilotArchiveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInterimPilotArchiveTests.swift; sourceTree = "<group>"; };
     A20000000000000000000277 /* AgentPhoneCapabilityCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneCapabilityCatalogTests.swift; sourceTree = "<group>"; };
     A20000000000000000000279 /* AgentIOSSystemNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSystemNativeToolTests.swift; sourceTree = "<group>"; };
@@ -3884,6 +3886,7 @@
         A20000000000000000000272 /* AgentConnectorResponseTests.swift */,
         B20000000000000000000274 /* AgentTeamExecutionTests.swift */,
         B2000000000000000000E352 /* AgentSingleResearchCalibrationTests.swift */,
+        D23477000000000000000001 /* AgentAdaptivePilotContinuityTests.swift */,
         B2000000000000000000E353 /* AgentInterimPilotArchiveTests.swift */,
         A20000000000000000000277 /* AgentPhoneCapabilityCatalogTests.swift */,
         A20000000000000000000279 /* AgentIOSSystemNativeToolTests.swift */,
@@ -5317,6 +5320,7 @@
         A10000000000000000000272 /* AgentConnectorResponseTests.swift in Sources */,
         B10000000000000000000274 /* AgentTeamExecutionTests.swift in Sources */,
         B1000000000000000000E352 /* AgentSingleResearchCalibrationTests.swift in Sources */,
+        D13477000000000000000001 /* AgentAdaptivePilotContinuityTests.swift in Sources */,
         B1000000000000000000E353 /* AgentInterimPilotArchiveTests.swift in Sources */,
         A10000000000000000000277 /* AgentPhoneCapabilityCatalogTests.swift in Sources */,
         A10000000000000000000279 /* AgentIOSSystemNativeToolTests.swift in Sources */,
