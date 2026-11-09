@@ -476,41 +476,75 @@ struct CloudModelStreamMutableConversation {
       " Use acceptance_record with an exact current object_id, revision and sha256 to read a saved criterion delivery or review from this run. " +
       "Use native_evidence with exact evidence_id and sha256 for a native observation. Read all pages before citing origin ios_native_tool, evidence_id and sha256. " +
       "Use desktop_evidence_list to discover same-run Desktop observations, and desktop_evidence to read exact byte pages. " +
+      "New Desktop source requirements use the recorded_tool event family, not the callable tool name. " +
       "Follow next_offset, decode data_b64, and cite origin desktop_codex_tool, evidence_id and sha256 after full coverage."
     appendCollaborationFunction(advertised, schema: schema)
   }
 
-  mutating func installCollaborationPublication(assessmentOnly: Bool = false, canRunGoalWork: Bool = false) {
+  mutating func installCollaborationPublication(assessmentOnly: Bool = false, canRunGoalWork: Bool = false,
+      capability: AgentTeamExecutionHistoryStore.MilestoneCapability = .available) {
+    if !assessmentOnly, capability != .available {
+      appendResearchGuidance(capability.guidance)
+      return
+    }
     var modes = assessmentOnly
-      ? ["validate_assessment", AgentCollaborationGoalAssessmentPolicy.establishContractMode,
+      ? ["status", "validate_assessment", AgentCollaborationGoalAssessmentPolicy.establishContractMode,
          AgentCollaborationGoalAssessmentPolicy.appendWorkMode, AgentCollaborationGoalAssessmentPolicy.checkGoalEvidenceMode,
-         AgentCollaborationGoalAssessmentPolicy.workInventoryMode, AgentCollaborationGoalAssessmentPolicy.assessmentRepairMode]
+         AgentCollaborationGoalAssessmentPolicy.workInventoryMode, AgentCollaborationGoalAssessmentPolicy.workInputMode,
+         AgentCollaborationGoalAssessmentPolicy.assessmentRepairMode]
       : ["publish", "status", "receipt", "list", "validate_assessment"]
+    if assessmentOnly {
+      modes.append(AgentCollaborationGoalAssessmentPolicy.establishVerificationMode)
+      appendResearchGuidance(AgentCollaborationGoalAssessmentPolicy.verificationInstructions)
+    }
     if canRunGoalWork {
       modes += [AgentCollaborationGoalAssessmentPolicy.runWorkMode, AgentCollaborationGoalAssessmentPolicy.runReadyWorkMode]
     }
+    if assessmentOnly { modes.append(AgentCollaborationMilestoneCoordination.readMode) }
     var properties: [String: Any] = [
       "mode": ["type": "string", "enum": modes],
       "milestone_id": ["type": "string"], "artifact": ["type": "string"], "artifact_sha256": ["type": "string"],
       "cursor": ["type": "string"], "expected_revision": ["type": "integer"], "work_id": ["type": "string"]
     ]
     if assessmentOnly {
+      properties["token"] = ["type": "string"]
       properties["draft_sha256"] = ["type": "string"]
       properties["offset"] = ["type": "integer"]
+      properties["token"] = ["type": "string"]
+      properties["object_id"] = ["type": "string"]
+      properties["revision"] = ["type": "integer"]
     }
     var schema: [String: Any] = ["type": "object", "properties": properties,
       "required": ["mode"]]
     if request.provider != .gemini { schema["additionalProperties"] = false }
-    appendCollaborationFunction([
+    var function: [String: Any] = [
       "name": Self.collaborationPublishName,
       "description": assessmentOnly
-        ? "Use work_inventory with no other fields to inspect work readiness, review subjects and publication tokens without dispatching. A waiting review is not active. Use validate_assessment with artifact containing the exact goal-assessment JSON to check its structure. Check schema_valid and repair the reported field in this turn; validation alone does not submit or approve it. Read a rejected draft with assessment_repair, draft_sha256 and next_offset. Keep the same draft hash and join content pages. As coordinator, use establish_contract with a continue assessment, open criteria without evidence, and empty work and blockers. Use append_work with a unique milestone_id, expected_revision, and a galaxyssi.work-expansion.v1 JSON artifact. Retry identical requests after an uncertain response. Use check_goal_evidence with an achieved assessment in artifact and the exact expected_revision to verify saved criterion deliveries and independent reviews. Include goal_coverage with exact mapping/review references, parts, or a manifest to also check coverage of the pinned goal source. This does not accept the goal. " +
+        ? AgentTeamExecutionHistoryStore.MilestoneCapability.notEnrolled.guidance +
+          " Use status with no other fields to check this assignment without mutation. Use work_inventory with no other fields to inspect work readiness, review subjects and publication tokens without dispatching. A waiting review is not active. Use validate_assessment with artifact containing the exact goal-assessment JSON to check its structure. Check schema_valid and repair the reported field in this turn; validation alone does not submit or approve it. Read a rejected draft with assessment_repair, draft_sha256 and next_offset. Keep the same draft hash and join content pages. As coordinator, use establish_contract with a continue assessment, open criteria without evidence, and empty work and blockers. Use append_work with a unique milestone_id, expected_revision, and a galaxyssi.work-expansion.v1 JSON artifact. Retry identical requests after an uncertain response. Use check_goal_evidence with an achieved assessment in artifact and the exact expected_revision to verify saved criterion deliveries and independent reviews. Include goal_coverage with exact mapping/review references, parts, or a manifest to also check coverage of the pinned goal source. This does not accept the goal." +
+          AgentCollaborationWorkInputBindings.coordinatorInstructions +
           AgentCollaborationPeerEvidence.workInstructions +
-          (canRunGoalWork ? " An accepted batch starts ready assignments in dependency order. To recruit inside the current run, include recruit:[{id,template_member,role,scope,reason}] in the work expansion. Assign concrete work to member recruit:<id> in the same batch. Use only existing authorized specialists as templates; recruitment grants no new permissions and does not make the template an independent reviewer. Use run_ready_work with no other fields to resume unclaimed assignments. Use run_work with an admitted work_id to retrieve its saved output or run one ready assignment. Desktop work is plan-only. Claimed work is never automatically reexecuted. " + Self.goalAssessmentFinalInstruction : "")
-        : "Use status to check availability. Publish interim research with milestone_id and an artifact JSON string containing format, a nonblank summary, and a nonempty workspace. " +
-          AgentCollaborationResearchEnvelope.optionalNotesInstructions + " " + AgentCollaborationPeerEvidence.publishInstructions +
+          AgentCollaborationProbeContinuation.admissionInstructions +
+          (canRunGoalWork ? " " + AgentGoalWorkMilestoneRead.coordinatorInstructions + " An accepted batch starts ready assignments in dependency order. To recruit inside the current run, include recruit:[{id,template_member,role,scope,reason}] in the work expansion. Assign concrete work to member recruit:<id> in the same batch. Use only existing authorized specialists as templates; recruitment grants no new permissions and does not make the template an independent reviewer. Use run_ready_work with no other fields to resume unclaimed assignments. Use run_work with an admitted work_id to retrieve its saved output or run one ready assignment. Desktop work is plan-only. Claimed work is never automatically reexecuted. " + Self.goalAssessmentFinalInstruction : "")
+        : "Use status to check availability. Publish interim research with milestone_id and an artifact JSON string containing format, a nonblank summary, and a nonempty workspace or an explicit request citing saved milestones. " +
+          AgentCollaborationResearchEnvelope.optionalNotesInstructions + " " + AgentCollaborationMilestoneCoordination.instructions + " " + AgentCollaborationPeerEvidence.publishInstructions +
           " After an uncertain publication, use receipt with the same milestone_id and SHA-256 of the exact artifact UTF-8 bytes. Resend the saved artifact only after an explicit not_recorded response matching both fields; a failed lookup leaves the outcome uncertain. Use list with next_cursor to recover saved IDs, then cite them in milestones in your final artifact. Use validate_assessment with artifact to check goal-assessment structure without publishing. Receipts do not verify evidence or complete the assignment."
-    ], schema: schema)
+    ]
+    if assessmentOnly, let description = function["description"] as? String {
+      function["description"] = description + " " + AgentCollaborationMilestoneCoordination.readInstructions
+    }
+    appendCollaborationFunction(function, schema: schema)
+  }
+
+  mutating func installWorkInputPublication() {
+    typealias Inputs = AgentCollaborationWorkInputBindings
+    clearScopedWorkTools()
+    var schema: [String: Any] = ["type": "object", "required": ["mode", "milestone_id", "artifact"], "properties": [
+      "mode": ["type": "string", "enum": [Inputs.publishMode]],
+      "milestone_id": ["type": "string"], "artifact": ["type": "string"]
+    ]]
+    if request.provider != .gemini { schema["additionalProperties"] = false }
+    appendCollaborationFunction(["name": Self.collaborationPublishName, "description": Inputs.producerInstructions], schema: schema)
   }
 
   mutating func installPeerWorkRecall() throws {
@@ -522,14 +556,24 @@ struct CloudModelStreamMutableConversation {
       "description": AgentCollaborationPeerEvidence.readInstructions], schema: schema)
   }
 
-  mutating func installPeerWorkPublication() throws {
+  mutating func clearScopedWorkTools() {
+    for key in ["tools", "tool_choice", "tool_config", "toolConfig"] { body.removeValue(forKey: key) }
+  }
+
+  mutating func installPeerWorkPublication(allowWorkInputs: Bool = false) throws {
     let encoded = AgentMcpJSONCodec.stringify(AgentCollaborationPeerEvidence.publicationSchema)
     guard var schema = try JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? [String: Any]
     else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     if request.provider == .gemini { schema.removeValue(forKey: "additionalProperties") }
-    appendCollaborationFunction(["name": Self.collaborationPublishName,
-      "description": AgentCollaborationPeerEvidence.publishInstructions +
-        " Use publish with milestone_id and artifact, or receipt with the same ID and exact artifact_sha256."], schema: schema)
+    var description = AgentCollaborationPeerEvidence.publishInstructions +
+      " Use publish with milestone_id and artifact, or receipt with the same ID and exact artifact_sha256."
+    if allowWorkInputs, var properties = schema["properties"] as? [String: Any], var mode = properties["mode"] as? [String: Any] {
+      mode["enum"] = ["publish", "receipt", AgentCollaborationWorkInputBindings.publishMode]
+      properties["mode"] = mode
+      schema["properties"] = properties
+      description += " " + AgentCollaborationWorkInputBindings.producerInstructions
+    }
+    appendCollaborationFunction(["name": Self.collaborationPublishName, "description": description], schema: schema)
   }
 
   private mutating func appendCollaborationFunction(_ function: [String: Any], schema: [String: Any]) {
@@ -545,8 +589,22 @@ struct CloudModelStreamMutableConversation {
     body["tools"] = tools
   }
 
+  mutating func installGoalWorkMilestoneRead(preservingWorkInput: Bool = false) throws {
+    let encoded = AgentMcpJSONCodec.stringify(AgentGoalWorkMilestoneRead.schema)
+    guard var schema = try JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? [String: Any]
+    else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    if request.provider == .gemini { schema.removeValue(forKey: "additionalProperties") }
+    if !preservingWorkInput { body.removeValue(forKey: "tools") }
+    body.removeValue(forKey: "tool_choice")
+    body.removeValue(forKey: "tool_config")
+    body.removeValue(forKey: "toolConfig")
+    appendCollaborationFunction(["name": AgentGoalWorkMilestoneRead.toolID,
+      "description": AgentGoalWorkMilestoneRead.instructions], schema: schema)
+  }
+
   static let goalAssessmentFinalInstruction = AgentCollaborationGoalAssessmentPolicy.admissionInstructions +
-    " Return only the galaxyssi.goal-assessment.v1 JSON object. Never claim achieved without exact reviewed criterion deliveries, goal_coverage, and final_delivery. Select final_delivery from a met criterion. Return a non-achieved assessment if evidence is missing. Do not send final deliverable prose; the host loads the reviewed text."
+    " Return only the galaxyssi.goal-assessment.v1 JSON object. Never claim achieved without exact reviewed criterion deliveries, goal_coverage, and final_delivery. Select final_delivery from a met criterion. Return a non-achieved assessment if evidence is missing. Do not send final deliverable prose; the host loads the reviewed text. Do not preclaim or await review of this assessment before submitting it. " +
+    AgentCollaborationPromptBudget.deliveryReviewGuidance
 
   mutating func requestForRound(roundId: String, finalRound: Bool = false, finalInstruction: String? = nil) throws -> ModelStreamRequest {
     if finalRound {

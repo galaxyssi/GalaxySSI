@@ -52,9 +52,10 @@ final class AgentSingleResearchCalibrationTests: XCTestCase {
           calibration.reasoningEffort.rawValue)
         XCTAssertEqual(context.request.context.string("_galaxyssi_research_stage"), AgentSingleResearchCalibration.stage)
         XCTAssertTrue(history.upsert(assignment))
-        XCTAssertThrowsError(try history.publishCollaborationMilestone(["mode": .string("status")], scope: scope))
+        XCTAssertEqual(try history.milestoneCapability(scope: scope), .notEnrolled)
         try history.enrollSingleResearchCalibration(calibration)
         let reopened = fixture.history()
+        XCTAssertEqual(try reopened.milestoneCapability(scope: scope), .available)
         let initial = try reopened.publishCollaborationMilestone(["mode": .string("list")], scope: scope)
         XCTAssertEqual(initial["milestones"]?.arrayValue, [])
         let receipt = try reopened.publishCollaborationMilestone([
@@ -74,12 +75,23 @@ final class AgentSingleResearchCalibrationTests: XCTestCase {
     XCTAssertEqual(delivered.members.count, 1)
     XCTAssertEqual(delivered.finalOutput, final)
     let archive = await counter.milestones
-    let report = Self.deliveryReport(snapshot: delivered, dispatches: count, archive: archive)
+    var originals = InterimPilotArchive(conversation: scope.conversationId, run: scope.runId, turn: scope.turnId)
+    try originals.capture(assignment, database: fixture.database())
+    XCTAssertEqual(originals.entries.values.map(\.milestoneID), ["candidate"])
+    let report = Self.deliveryReport(snapshot: delivered, dispatches: count, archive: archive, originals: originals)
     XCTAssertTrue(Self.acceptsDeliveryOnly(report))
     XCTAssertEqual(archive.first?.objectValue?.string("milestone_id"), "candidate")
     var overclaim = report
     overclaim["scientific_capability_gain_proven"] = .bool(true)
     XCTAssertFalse(Self.acceptsDeliveryOnly(overclaim))
+    var incomplete = report
+    incomplete["milestone_archive_complete"] = .bool(false)
+    XCTAssertFalse(Self.acceptsDeliveryOnly(incomplete))
+    incomplete = report
+    var purportedRead = originals.report
+    purportedRead["peer_read_proven"] = .bool(true)
+    incomplete["interim_evidence"] = .object(purportedRead)
+    XCTAssertFalse(Self.acceptsDeliveryOnly(incomplete))
     let committed = try XCTUnwrap(history.applyReply(supervisorRunId: scope.runId, source: scope.sourceId,
       conversation: scope.conversationId, turn: scope.turnId, task: scope.sourceId,
       contact: calibration.targetID, content: final, success: true, now: 2))
@@ -87,6 +99,7 @@ final class AgentSingleResearchCalibrationTests: XCTestCase {
     try history.publishSavedResearchReply(final, scope: scope)
 
     let reopened = fixture.history()
+    XCTAssertEqual(try reopened.milestoneCapability(scope: scope), .finalized)
     let saved = try XCTUnwrap(reopened.committedResearchRevisions(scope: scope)?.first)
     let future = self.scope(run: "next-run", turn: "next-turn")
     XCTAssertTrue(reopened.upsert(activeSnapshot(future, stage: nil)))
@@ -98,7 +111,7 @@ final class AgentSingleResearchCalibrationTests: XCTestCase {
     let directory = try reopened.recallCollaborationOriginal(["mode": .string("capabilities")], scope: future)
     XCTAssertEqual(directory["capabilities"]?.arrayValue?.first?.objectValue?.string("state"), "unverified_candidate")
     XCTAssertEqual(directory["grants_permissions"], .bool(false))
-    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(["mode": .string("status")], scope: future))
+    XCTAssertEqual(try reopened.milestoneCapability(scope: future), .notEnrolled)
   }
 
   func testEnrollmentCannotAuthorizeChangedObjectiveMultipleMembersOrRevokedGroup() throws {
@@ -164,6 +177,11 @@ final class AgentSingleResearchCalibrationTests: XCTestCase {
         executionStore: InMemoryAgentTeamExecutionStore(), fileURL: root.appendingPathComponent("history.sqlite3"))
     }
 
+    func database() throws -> AgentTeamHistoryDatabase {
+      try AgentTeamHistoryDatabase(fileURL: root.appendingPathComponent("history.sqlite3"),
+        storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    }
+
     func cleanup() {
       defaults.removePersistentDomain(forName: suite)
       try? FileManager.default.removeItem(at: root)
@@ -181,18 +199,25 @@ final class AgentSingleResearchCalibrationTests: XCTestCase {
   }
 
   private static func deliveryReport(snapshot: AgentTeamExecutionSnapshot, dispatches: Int,
-                                     archive: [AgentMcpJSONValue]) -> AgentMcpJSONObject {
+                                     archive: [AgentMcpJSONValue], originals: InterimPilotArchive) -> AgentMcpJSONObject {
     ["execution_mode": .string("single_agent_research"), "test_scope": .string("execution_delivery_only"),
      "status": .string(snapshot.hasSuccessfulOutput ? "single_agent_returned_goal_unverified" : "interrupted_or_failed"),
      "phone_dispatches": .int(Int64(dispatches)), "goal_verified_by_external_evaluator": .bool(false),
-     "scientific_capability_gain_proven": .bool(false), "milestones": .array(archive)]
+     "scientific_capability_gain_proven": .bool(false), "milestones": .array(archive),
+     "milestone_archive_complete": .bool(originals.mayCleanUp), "interim_evidence": .object(originals.report)]
   }
 
   private static func acceptsDeliveryOnly(_ report: AgentMcpJSONObject) -> Bool {
-    report["execution_mode"] == .string("single_agent_research") &&
+    let archive = report["interim_evidence"]?.objectValue
+    return report["execution_mode"] == .string("single_agent_research") &&
       report["test_scope"] == .string("execution_delivery_only") &&
       report["status"] == .string("single_agent_returned_goal_unverified") &&
       report["phone_dispatches"] == .int(1) && report["milestones"]?.arrayValue != nil &&
+      report["milestone_archive_complete"] == .bool(true) &&
+      archive?["format"] == .string("galaxyssi.adaptive-pilot-milestones.v1") &&
+      archive?["capture_role"] == .string("test_observer_not_agent") &&
+      archive?["milestones"]?.arrayValue != nil && archive?["peer_read_proven"] == .bool(false) &&
+      archive?["scientific_acceptance_proven"] == .bool(false) &&
       report["goal_verified_by_external_evaluator"] == .bool(false) &&
       report["scientific_capability_gain_proven"] == .bool(false)
   }

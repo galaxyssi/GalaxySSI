@@ -131,7 +131,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     collaborationEvidence: AgentCollaborationToolEvidenceScope?,
     collaborationModelAudit: AgentCollaborationToolEvidenceScope? = nil,
     goalWorkHandler: GoalWorkHandler? = nil,
+    usesCoordinationLane: Bool = false,
+    workInputPublisher: GoalWorkHandler? = nil,
     goalContinuationHandler: GoalContinuationHandler? = nil,
+    milestoneRead: GoalWorkHandler? = nil,
     desktopEvidenceRefresh: DesktopEvidenceRefresh? = nil,
     researchRetrySource: ChatMessage? = nil,
     retainResearch: Bool = true,
@@ -150,7 +153,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           collaborationEvidence: collaborationEvidence,
           collaborationModelAudit: collaborationModelAudit ?? collaborationEvidence,
           goalWorkHandler: goalWorkHandler,
+          usesCoordinationLane: usesCoordinationLane,
+          workInputPublisher: workInputPublisher,
           goalContinuationHandler: goalContinuationHandler,
+          milestoneRead: milestoneRead,
           desktopEvidenceRefresh: desktopEvidenceRefresh,
           researchRetrySource: researchRetrySource,
           retainResearch: retainResearch,
@@ -194,7 +200,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     collaborationEvidence: AgentCollaborationToolEvidenceScope?,
     collaborationModelAudit: AgentCollaborationToolEvidenceScope?,
     goalWorkHandler: GoalWorkHandler?,
+    usesCoordinationLane: Bool,
+    workInputPublisher: GoalWorkHandler?,
     goalContinuationHandler: GoalContinuationHandler?,
+    milestoneRead: GoalWorkHandler?,
     desktopEvidenceRefresh: DesktopEvidenceRefresh?,
     researchRetrySource: ChatMessage?,
     retainResearch: Bool,
@@ -277,24 +286,41 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       )
       var prepared = try CloudModelStreamMutableConversation(request: request)
       let collaborationRecallScope = collaborationEvidence ?? collaborationModelAudit
-      if peerWorkRecall != nil || peerWorkPublish != nil {
-        guard collaborationRecallScope == nil, !retainResearch else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let isolatedWork = peerWorkRecall != nil || peerWorkPublish != nil || workInputPublisher != nil || milestoneRead != nil
+      if isolatedWork {
+        guard collaborationRecallScope == nil, !retainResearch, turns.last?.readOnlyAnalysis == true
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        prepared.clearScopedWorkTools()
+        if peerWorkPublish != nil { try prepared.installPeerWorkPublication(allowWorkInputs: workInputPublisher != nil) }
+        else if workInputPublisher != nil { prepared.installWorkInputPublication() }
         if peerWorkRecall != nil { try prepared.installPeerWorkRecall() }
-        if peerWorkPublish != nil { try prepared.installPeerWorkPublication() }
+        if milestoneRead != nil {
+          try prepared.installGoalWorkMilestoneRead(
+            preservingWorkInput: workInputPublisher != nil || peerWorkRecall != nil || peerWorkPublish != nil)
+        }
       }
       let goalAssessmentOnly = collaborationEvidence == nil && collaborationModelAudit != nil && goalWorkHandler != nil
+      let coordinationScope = goalAssessmentOnly && usesCoordinationLane ? collaborationModelAudit : nil
+      let coordinationProfile: String
+      if coordinationScope != nil { coordinationProfile = await MainActor.run { store.profile.identityFingerprint } }
+      else { coordinationProfile = "" }
       if collaborationRecallScope != nil {
         prepared.installCollaborationRecall(originalsOnly: collaborationEvidence == nil)
       }
-      if collaborationRecallScope != nil {
-        prepared.installCollaborationPublication(assessmentOnly: collaborationEvidence == nil,
-          canRunGoalWork: collaborationEvidence == nil && goalWorkHandler != nil)
+      if let scope = collaborationEvidence {
+        let capability = await MainActor.run {
+          try? AgentTeamExecutionHistoryStore.shared.milestoneCapability(scope: scope)
+        }
+        prepared.installCollaborationPublication(capability: capability ?? .notEnrolled)
+      } else if collaborationModelAudit != nil {
+        prepared.installCollaborationPublication(assessmentOnly: true, canRunGoalWork: goalWorkHandler != nil)
       }
       let publishName = CloudModelStreamMutableConversation.collaborationPublishName
       func isPeerRecall(_ name: String) -> Bool {
         peerWorkRecall != nil && name == CloudModelStreamMutableConversation.collaborationRecallName
       }
       var publishedMilestones = Set<String>()
+      var visitedWorkInputResponses = Set<String>()
       var evidenceResults: [(String, String)] = []
       var visitedSourceAccessPages = Set<String>()
       let evidencePromptLedger = CloudEvidencePromptLedger(query: turns.last?.content ?? "")
@@ -338,100 +364,103 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         var roundFailure: ModelStreamFailed?
         var observedUsage: ModelUsage?
         var reportedModel: String?
-        var audit = try await beginCollaborationAudit(scope: collaborationModelAudit, round: currentRound,
-          request: roundRequest, route: useCompleteJSON ? .compatibility : .streaming, contact: contact, store: store)
-        func finishAudit() {
-          guard let admission = audit else { return }
-          audit = nil
-          let state: AgentCollaborationModelSettlement.State = Task.isCancelled ? .cancelled :
-            (roundFailure != nil ? .failed : (roundCompleted ? .completed : .interrupted))
-          try? AgentTeamExecutionHistoryStore.shared.settleCollaborationModelCall(admission, settlement: .init(
-            state: state, finishedAtMillis: max(admission.startedAtMillis, AgentControlPlaneClock.nowMillis()),
-            reportedUsage: observedUsage, usageComplete: false, costMicros: nil, reportedModel: reportedModel))
-        }
-        defer { finishAudit() }
-        setActiveRound(roundId, for: requestId)
+        func receiveProviderRound() async throws {
+          let audit = try await beginCollaborationAudit(scope: collaborationModelAudit, round: currentRound,
+            request: roundRequest, route: useCompleteJSON ? .compatibility : .streaming, contact: contact, store: store,
+            lane: coordinationScope == nil ? nil : .hostLivePlanning)
+          defer {
+            setActiveRound(nil, for: requestId)
+            if let admission = audit {
+              let state: AgentCollaborationModelSettlement.State = Task.isCancelled ? .cancelled :
+                (roundFailure != nil ? .failed : (roundCompleted ? .completed : .interrupted))
+              try? AgentTeamExecutionHistoryStore.shared.settleCollaborationModelCall(admission, settlement: .init(
+                state: state, finishedAtMillis: max(admission.startedAtMillis, AgentControlPlaneClock.nowMillis()),
+                reportedUsage: observedUsage, usageComplete: false, costMicros: nil, reportedModel: reportedModel))
+            }
+          }
+          setActiveRound(roundId, for: requestId)
 
-        do {
-          for try await event in CloudResearchRoundDeadline.stream(streamClient.stream(roundRequest),
-            millis: research.limits.modelMillis) {
-            try Task.checkCancellation()
-            switch event {
-            case .connected(let value):
-              guard !connected else { continue }
-              connected = true
-              continuation.yield(
-                .connected(
-                  ModelStreamConnected(
-                    requestId: requestId,
-                    httpStatus: value.httpStatus,
-                    connectedAtElapsedMs: value.connectedAtElapsedMs
-                  )
-                )
-              )
-
-            case .textDelta(let value):
-              let visibleText = inlineProtocolGuard.append(value.text)
-              if !goalAssessmentOnly, let preview = citationPreview?.append(visibleText),
-                 publishPreview(preview, at: value.receivedAtElapsedMs) {
-                previewShown = true
-              }
-              if !goalAssessmentOnly && !visibleText.isEmpty && !bufferForCitationVerification {
-                emittedText = true
-                emittedSequence += 1
+          do {
+            for try await event in CloudResearchRoundDeadline.stream(streamClient.stream(roundRequest),
+              millis: research.limits.modelMillis) {
+              try Task.checkCancellation()
+              switch event {
+              case .connected(let value):
+                guard !connected else { continue }
+                connected = true
                 continuation.yield(
-                  .textDelta(
-                    ModelStreamTextDelta(
+                  .connected(
+                    ModelStreamConnected(
                       requestId: requestId,
-                      sequence: emittedSequence,
-                      text: visibleText,
-                      receivedAtElapsedMs: value.receivedAtElapsedMs
+                      httpStatus: value.httpStatus,
+                      connectedAtElapsedMs: value.connectedAtElapsedMs
                     )
                   )
                 )
-              }
 
-            case .citationPreview:
-              continue
+              case .textDelta(let value):
+                let visibleText = inlineProtocolGuard.append(value.text)
+                if !goalAssessmentOnly, let preview = citationPreview?.append(visibleText),
+                   publishPreview(preview, at: value.receivedAtElapsedMs) {
+                  previewShown = true
+                }
+                if !goalAssessmentOnly && !visibleText.isEmpty && !bufferForCitationVerification {
+                  emittedText = true
+                  emittedSequence += 1
+                  continuation.yield(
+                    .textDelta(
+                      ModelStreamTextDelta(
+                        requestId: requestId,
+                        sequence: emittedSequence,
+                        text: visibleText,
+                        receivedAtElapsedMs: value.receivedAtElapsedMs
+                      )
+                    )
+                  )
+                }
 
-            case .toolCallDelta(let value):
-              assembler.accept(value.payload)
-              emittedSequence += 1
-              continuation.yield(
-                .toolCallDelta(
-                  ModelStreamToolCallDelta(
-                    requestId: requestId,
-                    sequence: emittedSequence,
-                    payload: value.payload
+              case .citationPreview:
+                continue
+
+              case .toolCallDelta(let value):
+                assembler.accept(value.payload)
+                emittedSequence += 1
+                continuation.yield(
+                  .toolCallDelta(
+                    ModelStreamToolCallDelta(
+                      requestId: requestId,
+                      sequence: emittedSequence,
+                      payload: value.payload
+                    )
                   )
                 )
-              )
 
-            case .usage(let value):
-              if value.usage.inputTokens >= 0, value.usage.outputTokens >= 0,
-                 (0...value.usage.inputTokens).contains(value.usage.cachedInputTokens) {
-                observedUsage = value.usage
+              case .usage(let value):
+                if value.usage.inputTokens >= 0, value.usage.outputTokens >= 0,
+                   (0...value.usage.inputTokens).contains(value.usage.cachedInputTokens) {
+                  observedUsage = value.usage
+                }
+                continuation.yield(.usage(ModelStreamUsage(requestId: requestId, usage: value.usage)))
+
+              case .completed(let value):
+                roundCompleted = true
+                reportedModel = value.reportedModel
+                lastFinishReason = value.finishReason
+
+              case .failed(let value):
+                roundFailure = ModelStreamFailed(requestId: requestId, error: value.error)
               }
-              continuation.yield(.usage(ModelStreamUsage(requestId: requestId, usage: value.usage)))
-
-            case .completed(let value):
-              roundCompleted = true
-              reportedModel = value.reportedModel
-              lastFinishReason = value.finishReason
-
-            case .failed(let value):
-              roundFailure = ModelStreamFailed(requestId: requestId, error: value.error)
             }
+          } catch is CancellationError {
+            throw CancellationError()
+          } catch {
+            try Task.checkCancellation()
+            roundFailure = ModelStreamFailed(requestId: requestId, error: Self.streamError(from: error, partialResponse: emittedText))
           }
-        } catch is CancellationError {
-          throw CancellationError()
-        } catch {
           try Task.checkCancellation()
-          roundFailure = ModelStreamFailed(requestId: requestId, error: Self.streamError(from: error, partialResponse: emittedText))
         }
-        try Task.checkCancellation()
-        finishAudit()
-        setActiveRound(nil, for: requestId)
+        try await withCloudCoordination(scope: coordinationScope, contact: contact, store: store,
+          profileID: coordinationProfile) { try await receiveProviderRound() }
 
         if legacySender == nil, !useCompleteJSON, !emittedText, roundFailure?.error.code == "STREAM_UNSUPPORTED" {
           publishPreview("", at: elapsedMillis())
@@ -458,20 +487,24 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         if let failure = roundFailure {
           publishPreview("", at: elapsedMillis())
           if let legacySender, !emittedText && currentRound == 0 && failure.error.code == "STREAM_UNSUPPORTED" {
-            let fallbackAudit = try await beginCollaborationAudit(scope: collaborationModelAudit, round: currentRound,
-              request: roundRequest, route: .compatibility, contact: contact, store: store)
-            await emitLegacyConversation(
-              sender: legacySender,
-              contact: contact,
-              store: store,
-              turns: turns,
-              images: images,
-              requestId: requestId,
-              sequence: &emittedSequence,
-              ticket: ticket,
-              audit: fallbackAudit,
-              continuation: continuation
-            )
+            try await withCloudCoordination(scope: coordinationScope, contact: contact, store: store,
+              profileID: coordinationProfile) {
+              let fallbackAudit = try await beginCollaborationAudit(scope: collaborationModelAudit, round: currentRound,
+                request: roundRequest, route: .compatibility, contact: contact, store: store,
+                lane: coordinationScope == nil ? nil : .hostLivePlanning)
+              await emitLegacyConversation(
+                sender: legacySender,
+                contact: contact,
+                store: store,
+                turns: turns,
+                images: images,
+                requestId: requestId,
+                sequence: &emittedSequence,
+                ticket: ticket,
+                audit: fallbackAudit,
+                continuation: continuation
+              )
+            }
           } else {
             AgentDataDisclosureLedger.update(
               store: disclosureStore,
@@ -720,6 +753,11 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         var freshKeys = Set<String>()
         let preparedCalls = parsedCalls.compactMap { item -> AssembledToolCall? in
           let (call, arguments) = item
+          if isolatedWork {
+            guard isPeerRecall(call.name) ||
+                  (milestoneRead != nil && call.name == AgentGoalWorkMilestoneRead.toolID) ||
+                  (call.name == publishName && (peerWorkPublish != nil || workInputPublisher != nil)) else { return nil }
+          }
           if AgentCollaborationWorkflowCheck.isCall(call.name, arguments) {
             let key = progress.semanticKey(toolName: call.name, arguments: arguments)
             return freshKeys.insert(key).inserted ? call : nil
@@ -753,19 +791,26 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           recall = nil
         }
         let publish: ((AgentMcpJSONObject) async -> AgentMcpJSONObject?)?
-        if let peerWorkPublish {
-          publish = { await peerWorkPublish($0) }
+        if isolatedWork {
+          publish = { input in
+            if input["mode"] == .string(AgentCollaborationWorkInputBindings.publishMode) {
+              return await workInputPublisher?(input)
+            }
+            return await peerWorkPublish?(input)
+          }
         } else {
           publish = collaborationRecallScope.map { scope in
             { arguments in
-              let mode = arguments.string("mode")
+              let requestedMode = arguments.string("mode")
+              let mode = requestedMode == AgentCollaborationMilestoneCoordination.readMode
+                ? AgentCollaborationGoalAssessmentPolicy.workInventoryMode : requestedMode
               if AgentCollaborationGoalAssessmentPolicy.dispatchesWork(mode), let goalWorkHandler {
                 guard collaborationEvidence == nil, collaborationModelAudit == scope else { return nil }
                 return await goalWorkHandler(arguments)
               }
               return await MainActor.run {
                 let needsCoordinator = AgentCollaborationGoalAssessmentPolicy.requiresCoordinator(mode)
-                guard collaborationEvidence != nil || mode == "validate_assessment" || needsCoordinator else {
+                guard collaborationEvidence != nil || ["status", "publish", "validate_assessment"].contains(mode) || needsCoordinator else {
                   return nil
                 }
                 guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
@@ -779,7 +824,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                         task.phase == .executing || task.phase == .waitingResponse,
                         !PhoneExecutionAuthority.isCancelled(taskId: task.taskId) else { return nil }
                 }
-                return try? AgentTeamExecutionHistoryStore.shared.publishCollaborationMilestone(arguments, scope: scope)
+                return try? AgentTeamExecutionHistoryStore.shared.publishCollaborationMilestone(arguments, scope: scope,
+                  transportAllowsInterim: collaborationEvidence != nil)
               }
             }
           }
@@ -798,7 +844,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           onObservation: { call, output in
             await recovery?.record(call: call, output: output, store: store)
           },
-          collaborationRecall: recall,
+          milestoneRead: milestoneRead, collaborationRecall: recall,
           collaborationPublish: publish
         )
         if let scope = collaborationEvidence {
@@ -862,11 +908,19 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           }
           if outcome.call.name == publishName {
             publicationResults[outcome.call.callId] = output
+            if let receipt = try? CloudModelStreamJSON.mcpObject(from: output) {
+              if workInputPublisher != nil, receipt["status"] == .string("recorded"), receipt["replayed"] == .bool(false) {
+                madeProgress = true
+              }
+              if arguments["mode"] == .string(AgentCollaborationGoalAssessmentPolicy.workInputMode),
+                 receipt["success"] == .bool(true),
+                 visitedWorkInputResponses.insert(AgentMcpJSONCodec.sha256(receipt)).inserted { madeProgress = true }
+            }
             if let receipt = try? CloudModelStreamJSON.mcpObject(from: output), receipt["status"] == .string("published"),
                publishedMilestones.insert(receipt.string("milestone_id")).inserted { madeProgress = true }
             if AgentCollaborationGoalAssessmentPolicy.isCoordinatorMutation(arguments.string("mode")),
                let receipt = try? CloudModelStreamJSON.mcpObject(from: output),
-               ["contract_established", "work_admitted"].contains(receipt.string("status")),
+               ["contract_established", "work_admitted", "verification_route_established"].contains(receipt.string("status")),
                receipt["replayed"] == .bool(false) {
               madeProgress = true
             }
@@ -892,6 +946,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                visitedSourceAccessPages.insert("assessment:" + page.string("draft_sha256") + ":" + String(offset)).inserted {
               madeProgress = true
             }
+            if arguments["mode"] == .string(AgentCollaborationGoalAssessmentPolicy.appendWorkMode),
+               let rejected = try? CloudModelStreamJSON.mcpObject(from: output),
+               rejected["status"] == .string("work_rejected"),
+               progress.requestRepair("collaboration_work_lineage") { madeProgress = true }
             continue
           }
           if isPeerRecall(outcome.call.name) || AgentCollaborationSourceAccess.matches(tool: outcome.call.name, input: arguments) {
@@ -990,14 +1048,23 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     continuation.finish()
   }
 
+  private func withCloudCoordination(scope: AgentCollaborationToolEvidenceScope?, contact: GalaxySSIContact,
+      store: GalaxySSIStore, profileID: String, operation: () async throws -> Void) async throws {
+    guard let scope else { return try await operation() }
+    return try await AgentCollaborationCoordinationLane.shared.withLease(owner: scope, resourceID: contact.id, validate: {
+      try AgentCollaborationCoordinationLane.validate(scope, resourceID: contact.id, store: store, profileID: profileID)
+    }, operation: operation)
+  }
+
   private func beginCollaborationAudit(scope: AgentCollaborationToolEvidenceScope?, round: Int,
     request: ModelStreamRequest, route: AgentCollaborationModelAdmission.Route,
-    contact: GalaxySSIContact, store: GalaxySSIStore) async throws -> AgentCollaborationModelAdmission? {
+    contact: GalaxySSIContact, store: GalaxySSIStore, lane: AgentCollaborationModelAdmission.Lane? = nil)
+      async throws -> AgentCollaborationModelAdmission? {
     guard let scope else { return nil }
     let candidate = AgentCollaborationModelAdmission(id: UUID(), scope: scope, round: round,
       provider: request.provider,
       requestedModel: route == .streaming ? (try? CloudModelStreamJSON.object(from: request.bodyJson))?["model"] as? String : nil,
-      startedAtMillis: AgentControlPlaneClock.nowMillis(), route: route)
+      startedAtMillis: AgentControlPlaneClock.nowMillis(), route: route, lane: lane)
     return try await MainActor.run {
       guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
             let roster = session.collaborationRoster, let member = scope.rosterMember(in: roster),
@@ -1094,6 +1161,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     _ calls: [AssembledToolCall],
     context: CloudConversationToolExecutionContext,
     onObservation: ((AssembledToolCall, String) async -> Void)? = nil,
+    milestoneRead: GoalWorkHandler? = nil,
     collaborationRecall: ((AgentMcpJSONObject) async -> AgentMcpJSONObject?)? = nil,
     collaborationPublish: ((AgentMcpJSONObject) async -> AgentMcpJSONObject?)? = nil
   ) async -> [ToolExecutionOutcome] {
@@ -1109,7 +1177,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             let started = AgentControlPlaneClock.nowMillis()
             do {
               let output: String
-              if call.name == CloudModelStreamMutableConversation.collaborationRecallName {
+              if call.name == AgentGoalWorkMilestoneRead.toolID, let milestoneRead {
+                let args = try CloudModelStreamJSON.mcpObject(from: call.argumentsJson)
+                output = await AgentMcpJSONCodec.stringify(milestoneRead(args))
+              } else if call.name == CloudModelStreamMutableConversation.collaborationRecallName {
                 let args = try CloudModelStreamJSON.mcpObject(from: call.argumentsJson)
                 let recalled = await collaborationRecall?(args)
                 output = AgentMcpJSONCodec.stringify(recalled ?? ["status": .string("unavailable")])
@@ -1118,6 +1189,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                 let receipt = await collaborationPublish?(args)
                 output = AgentMcpJSONCodec.stringify(receipt ?? ["success": .bool(false), "status": .string("unavailable")])
               } else {
+                guard milestoneRead == nil else { throw AgentTeamHistoryDatabase.Failure.stale }
                 output = try toolExecutor.executeTool(call: call, context: context)
               }
               return ToolExecutionOutcome(
