@@ -46,19 +46,22 @@ class HealthCareAgentSurfaceUiDeviceTest {
         val names = HealthOverviewDatabases(UUID.randomUUID().toString())
         val transcripts = AgentTranscriptStore(context)
         val previous = transcripts.activeConversation().id
-        val temporary = transcripts.createAgentConversation("主动健康摘要测试", privateMode = true, trackingPaused = true)
+        var temporaryId = ""
         var worker: ExecutorService? = null
         try {
-            transcripts.switchConversation(temporary.id)
-            val plan = HealthCarePlanTestFixture.propose(context, names)
+            val plan = HealthCarePlanTestFixture.propose(context, names, conversation = { concernId ->
+                transcripts.createAgentConversation("主动健康摘要测试", globalTopicKey = HealthCareDiscussionPolicy.TOPIC_PREFIX + concernId,
+                    privateMode = true, trackingPaused = true).id.also { temporaryId = it }
+            })
+            transcripts.switchConversation(temporaryId)
             val consent = HealthCareResearchAuthorization(UUID.randomUUID().toString(), plan.grant, "b".repeat(64))
             var job = HealthCareStore(context, names.care).use {
                 it.authorizeResearch(consent, null)
                 it.queueResearch(consent.id, plan.grant.concernId, System.currentTimeMillis())
             }
             ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java)
-                .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", temporary.id)).use { scenario ->
-                await(scenario) { it.agentTranscriptStore.activeConversation().id == temporary.id }
+                .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", temporaryId)).use { scenario ->
+                await(scenario) { it.agentTranscriptStore.activeConversation().id == temporaryId }
                 scenario.onActivity { activity ->
                     activity.healthCareSurface?.destroy()
                     activity.healthCareSurface = HealthCareAgentSurface(activity, names).also {
@@ -125,7 +128,7 @@ class HealthCareAgentSurfaceUiDeviceTest {
             }
         } finally {
             worker?.awaitTermination(10, TimeUnit.SECONDS)
-            transcripts.switchConversation(previous); transcripts.deleteConversation(temporary.id)
+            transcripts.switchConversation(previous); if (temporaryId.isNotEmpty()) transcripts.deleteConversation(temporaryId)
             listOf(names.care, names.records, names.privacy, names.reminders).forEach(context::deleteDatabase)
         }
     }

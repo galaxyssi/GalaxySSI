@@ -13,8 +13,9 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 
 internal object HealthCareFollowUpTestFixture {
-    fun confirmed(context: android.content.Context, names: HealthOverviewDatabases): HealthCareConcern {
-        val plan = HealthCarePlanTestFixture.propose(context, names)
+    fun confirmed(context: android.content.Context, names: HealthOverviewDatabases,
+        conversation: (String) -> String = { UUID.randomUUID().toString() }): HealthCareConcern {
+        val plan = HealthCarePlanTestFixture.propose(context, names, conversation = conversation)
         return HealthCareStore(context, names.care).use { store ->
             store.resolvePlan(plan.id, plan.actions.map { it.id }.toSet(), plan.grant.revision,
                 HealthPrivacyStore(context, names.privacy).use { it.policy() }, plan.inputVersion, System.currentTimeMillis())
