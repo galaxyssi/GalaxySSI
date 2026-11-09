@@ -6957,6 +6957,8 @@
 "galaxyssi.health.journal_discussion.previous" = "与此模型的历史讨论";
 "galaxyssi.health.journal_discussion.notice" = "本次请求中，所选模型可以读取这本日志的所有条目，但不能读取其他健康记录，也不能更改治疗、计划或提醒。";
 "galaxyssi.health.journal_discussion.online" = "允许经批准的在线健康提问";
+"galaxyssi.health.journal_discussion.on_device" = "在这台 iPhone 上";
+"galaxyssi.health.journal_discussion.local_notice" = "所选模型可在本次请求中读取这本日志。日志数据仅保留在这台 iPhone 上，不授权读取其他健康记录或进行任何修改。";
 "galaxyssi.health.journal_discussion.send" = "批准并发送";
 "galaxyssi.health.journal_discussion.cancel" = "取消";
 "galaxyssi.health.journal_discussion.done" = "完成";

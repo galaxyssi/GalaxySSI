@@ -7,17 +7,29 @@ extension GalaxySSIHealthRecords {
 
   func prepareVisitJournalDiscussion(_ expected: VisitJournal.Page, question: String, contact: GalaxySSIContact,
       key: String, now: Date = Date()) throws -> JournalDiscussion.Approval {
-    let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard now < expected.expires, !question.isEmpty, question.utf8.count <= 2_048,
-          !contact.deleted, contact.deliveryMode == .cloudAPI, let model = contact.selectedCloudModel,
+    guard !contact.deleted, contact.deliveryMode == .cloudAPI, let model = contact.selectedCloudModel,
           let endpoint = GalaxySSIHealthCareDiscussion.endpoint(for: model),
           CloudModelCredentialPolicy.isStoredCredential(key) else { throw Failure.permission }
     let credential = SHA256.hash(data: Data(key.utf8))
-    let destination = GalaxySSIHealthCareDiscussion.destination(contactID: contact.id, model: model,
-      endpoint: endpoint, credential: credential)
+    return try prepareVisitJournalDiscussion(expected, question: question,
+      route: .cloud(contactID: contact.id, model: model, endpoint: endpoint, credential: credential), now: now)
+  }
+
+  func prepareVisitJournalDiscussion(_ expected: VisitJournal.Page, question: String, localProfile: LocalModelRuntimeProfile,
+      now: Date = Date()) throws -> JournalDiscussion.Approval {
+    guard LocalModelRuntimeCatalog.profiles().contains(localProfile),
+          LocalModelInferenceRuntime.shared.ready(profile: localProfile) else { throw Failure.permission }
+    return try prepareVisitJournalDiscussion(expected, question: question,
+      route: .local(localProfile, contextTokens: LocalModelRuntimeSettings.contextTokens()), now: now)
+  }
+
+  func prepareVisitJournalDiscussion(_ expected: VisitJournal.Page, question: String, route: JournalDiscussion.Route,
+      now: Date) throws -> JournalDiscussion.Approval {
+    let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard now < expected.expires, !question.isEmpty, question.utf8.count <= 2_048 else { throw Failure.permission }
     let archive = try load()
     let (_, scope) = try visitDocumentContext(expected.scope, archive: archive, now: now)
-    let (entry, binding) = try journalBinding(archive, scope: scope, destination: destination)
+    let (entry, binding) = try journalBinding(archive, scope: scope, route: route)
     guard expected.scope == scope, expected.entry == entry else { throw Failure.stale }
     let previous = (archive.localVisitJournalDiscussions?[scope.visit.id] ?? []).filter { $0.binding == binding }
     let latest = Array(previous.filter { $0.answer != nil }.suffix(4))
@@ -32,12 +44,9 @@ extension GalaxySSIHealthRecords {
       "previous": .array(latest.map { .object(["question": .string($0.question), "answer": .string($0.answer ?? "")]) })]
     let text = AgentMcpJSONCodec.stringify(payload)
     guard text.utf8.count <= GalaxySSIHealthCareDiscussion.maximumPayloadBytes else { throw Failure.invalid }
-    let transport = GalaxySSIHealthCareDiscussion.Approval(id: UUID(), owner: owner,
-      threadID: previous.last?.conversation ?? UUID(), priorTurnID: previous.last?.id, concernID: scope.stamp.concern,
-      metric: scope.stamp.metric, concernRevision: scope.stamp.revision, carePermission: scope.stamp.permission,
-      onlinePermission: binding.onlinePermission, destinationID: contact.id, destinationDigest: destination,
-      destination: .cloud(model: model, endpoint: endpoint, credential: credential), question: question, payload: text, reviewedAt: now)
-    return .init(binding: binding, summary: summary, previous: latest, transport: transport,
+    return .init(id: UUID(), owner: owner, conversation: previous.last?.conversation ?? UUID(), prior: previous.last?.id,
+      metric: scope.stamp.metric, route: route, question: question, payload: text, reviewedAt: now,
+      binding: binding, summary: summary, previous: latest,
       expires: min(expected.expires, now.addingTimeInterval(GalaxySSIHealthCareDiscussion.approvalLifetime)))
   }
 
@@ -48,9 +57,9 @@ extension GalaxySSIHealthRecords {
     let visit = review.binding.visit
     var turns = discussions[visit] ?? []
     let prior = turns.last { $0.binding == review.binding }
-    guard prior?.id == review.transport.priorTurnID, !turns.contains(where: { $0.id == review.id }) else { throw Failure.stale }
-    turns.append(.init(id: review.id, conversation: review.transport.threadID, binding: review.binding,
-      question: review.transport.question, answer: nil))
+    guard prior?.id == review.prior, !turns.contains(where: { $0.id == review.id }) else { throw Failure.stale }
+    turns.append(.init(id: review.id, conversation: review.conversation, binding: review.binding,
+      question: review.question, answer: nil))
     discussions[visit] = Array(turns.suffix(JournalDiscussion.maximumExchanges))
     archive.localVisitJournalDiscussions = discussions
     try persistVisitJournalDiscussion(archive)
@@ -89,29 +98,29 @@ extension GalaxySSIHealthRecords {
     return output
   }
 
-  private func journalBinding(_ archive: Archive, scope: VisitDocuments.Scope, destination: String)
+  private func journalBinding(_ archive: Archive, scope: VisitDocuments.Scope, route: JournalDiscussion.Route)
       throws -> (VisitJournal.Entry, JournalDiscussion.Binding) {
-    guard let online = archive.healthOnlinePermission, scope.visit.details.state == .attended,
+    let online = route.requiresOnline ? archive.healthOnlinePermission : nil
+    guard (!route.requiresOnline || online != nil), scope.visit.details.state == .attended,
           let entry = archive.localVisitJournals?.entries[scope.visit.id],
           entry.concern == scope.stamp.concern, entry.visit == scope.visit.id else { throw Failure.permission }
     return (entry, .init(concern: entry.concern, journal: entry.id, visit: entry.visit, revision: scope.stamp.revision,
       journalRevision: entry.revision, visitRevision: scope.visit.revision, localPermission: scope.stamp.permission,
-      onlinePermission: online, destination: destination))
+      onlinePermission: online, destination: route.digest))
   }
 
   private func validateJournalDiscussion(_ review: JournalDiscussion.Approval, archive: Archive, now: Date,
       active: Bool) throws -> VisitDocuments.Scope {
-    let transport = review.transport
-    guard transport.owner == owner, transport.isCurrent(at: now), now < review.expires,
-          transport.computedDestinationDigest == review.binding.destination else { throw Failure.permission }
-    let (_, scope) = try visitDocumentContext(concern: review.binding.concern, metric: transport.metric,
+    guard review.owner == owner, now >= review.reviewedAt, now < review.expires,
+          review.route.digest == review.binding.destination else { throw Failure.permission }
+    let (_, scope) = try visitDocumentContext(concern: review.binding.concern, metric: review.metric,
       visit: review.binding.visit, archive: archive, now: now)
-    let (_, current) = try journalBinding(archive, scope: scope, destination: transport.destinationDigest)
+    let (_, current) = try journalBinding(archive, scope: scope, route: review.route)
     guard current == review.binding else { throw Failure.stale }
     if active {
       guard let last = archive.localVisitJournalDiscussions?[current.visit]?.last,
-            last.id == review.id, last.conversation == transport.threadID, last.binding == current,
-            last.question == transport.question, last.answer == nil else { throw Failure.stale }
+            last.id == review.id, last.conversation == review.conversation, last.binding == current,
+            last.question == review.question, last.answer == nil else { throw Failure.stale }
     }
     return scope
   }

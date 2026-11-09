@@ -37,7 +37,7 @@ final class GalaxySSIHealthVisitJournalDiscussionTests: XCTestCase {
     XCTAssertThrowsError(try approve())
     try records.setHealthOnlinePermission(true)
     let review = try approve()
-    let request = try GalaxySSIHealthCareDiscussion.request(review.transport, key: "fixture-api-key", journalRead: true)
+    let request = try GalaxySSIHealthCareDiscussion.request(XCTUnwrap(review.cloudApproval), key: "fixture-api-key", journalRead: true)
     let body = String(decoding: try XCTUnwrap(request.httpBody), as: UTF8.self)
     XCTAssertTrue(body.contains(GalaxySSIHealthVisitJournalRead.providerName))
     XCTAssertFalse(body.contains("Not shared"))
@@ -98,6 +98,42 @@ final class GalaxySSIHealthVisitJournalDiscussionTests: XCTestCase {
     XCTAssertEqual(output, "Scoped fixture reply")
     XCTAssertEqual(sent, 2)
     XCTAssertEqual(try approve().previous.last?.answer, "Scoped fixture reply")
+    try records.setHealthOnlinePermission(false)
+    let profile = LocalModelRuntimeProfiles.GEMMA_3_4B_Q4
+    let local = try records.prepareVisitJournalDiscussion(page(), question: "What did I report?",
+      route: .local(profile, contextTokens: 8_192), now: now)
+    XCTAssertNil(local.cloudApproval)
+    XCTAssertNil(local.binding.onlinePermission)
+    XCTAssertTrue(local.previous.isEmpty)
+    var modelCalls = 0
+    let localReply = try await GalaxySSIHealthVisitJournalDiscussionTransport.runLocal(local, records: records,
+      current: { $0 == profile && $1 == 8_192 }, infer: { selected, _, prompt, _, _ in
+        XCTAssertEqual(selected, profile)
+        modelCalls += 1
+        if modelCalls == 1 {
+          XCTAssertFalse(prompt.contains("omitted_fields"))
+          return AgentMcpJSONCodec.stringify(["tool": .string(GalaxySSIHealthVisitJournalRead.toolID),
+            "arguments": .object(["revision": .int(Int64(local.binding.revision))])])
+        }
+        XCTAssertTrue(prompt.contains("omitted_fields"))
+        return #"{"answer":"Local fixture reply"}"#
+      })
+    XCTAssertEqual(modelCalls, 2)
+    XCTAssertEqual(localReply, "Local fixture reply")
+    let secondLocal = try records.prepareVisitJournalDiscussion(page(), question: "Next?",
+      route: .local(profile, contextTokens: 8_192), now: now)
+    XCTAssertEqual(secondLocal.previous.last?.answer, localReply)
+    let changedSettings = try records.prepareVisitJournalDiscussion(page(), question: "Next?",
+      route: .local(profile, contextTokens: 4_096), now: now)
+    XCTAssertTrue(changedSettings.previous.isEmpty)
+    do {
+      _ = try await GalaxySSIHealthVisitJournalDiscussionTransport.runLocal(secondLocal, records: records,
+        current: { _, _ in false }, infer: { _, _, _, _, _ in
+          XCTFail("An unavailable route must not receive Health content.")
+          return ""
+        })
+      XCTFail("The local route changed.")
+    } catch {}
     try records.deleteVisitJournal(page(), now: now)
     XCTAssertNil(try records.load().localVisitJournalDiscussions?[visit])
   }

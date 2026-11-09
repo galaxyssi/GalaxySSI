@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 enum GalaxySSIHealthVisitJournalRead {
@@ -28,7 +29,7 @@ enum GalaxySSIHealthVisitJournalRead {
     let journalRevision: Int
     let visitRevision: Int
     let localPermission: UUID
-    let onlinePermission: UUID
+    let onlinePermission: UUID?
     let destination: String
   }
 
@@ -41,12 +42,48 @@ enum GalaxySSIHealthVisitJournalRead {
   }
 
   struct Approval: Identifiable {
+    let id: UUID
+    let owner: String
+    let conversation: UUID
+    let prior: UUID?
+    let metric: GalaxySSIHealthMetric
+    let route: Route
+    let question: String
+    let payload: String
+    let reviewedAt: Date
     let binding: Binding
     let summary: AgentMcpJSONObject
     let previous: [Exchange]
-    let transport: GalaxySSIHealthCareDiscussion.Approval
     let expires: Date
-    var id: UUID { transport.id }
+
+    var cloudApproval: GalaxySSIHealthCareDiscussion.Approval? {
+      guard case .cloud(let contactID, let model, let endpoint, let credential) = route,
+            let online = binding.onlinePermission else { return nil }
+      return .init(id: id, owner: owner, threadID: conversation, priorTurnID: prior, concernID: binding.concern,
+        metric: metric, concernRevision: binding.revision, carePermission: binding.localPermission, onlinePermission: online,
+        destinationID: contactID, destinationDigest: binding.destination,
+        destination: .cloud(model: model, endpoint: endpoint, credential: credential),
+        question: question, payload: payload, reviewedAt: reviewedAt)
+    }
+  }
+
+  enum Route {
+    case cloud(contactID: String, model: CloudModelConfig, endpoint: URL, credential: SHA256.Digest)
+    case local(LocalModelRuntimeProfile, contextTokens: Int)
+
+    var digest: String {
+      switch self {
+      case .cloud(let contactID, let model, let endpoint, let credential):
+        return GalaxySSIHealthCareDiscussion.destination(contactID: contactID, model: model, endpoint: endpoint, credential: credential)
+      case .local(let profile, let tokens):
+        return AgentModelLoopRecoveryIdentity.sha256(["kind": "private_health_journal_local",
+          "profile": AgentModelLoopRecoveryIdentity.sha256(profile), "context_tokens": String(tokens)])
+      }
+    }
+    var requiresOnline: Bool {
+      if case .cloud = self { return true }
+      return false
+    }
   }
 
   struct Cursor {

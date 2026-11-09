@@ -21,6 +21,7 @@ struct GalaxySSIHealthVisitJournalDiscussionView: View {
   @State private var task: Task<Void, Never>?
   @State private var failed = false
   @State private var online = false
+  @State private var localProfiles: [LocalModelRuntimeProfile] = []
 
   private var canRead: Bool {
     scene == .active && UIApplication.shared.isProtectedDataAvailable && store.profile.identityFingerprint == records.owner
@@ -46,13 +47,18 @@ struct GalaxySSIHealthVisitJournalDiscussionView: View {
             Section {
               Picker(t("provider", "Provider and model"), selection: $selected) {
                 Text(t("select_provider", "Select a model")).tag("")
-                ForEach(contacts) { contact in
-                  Text(contact.name + " / " + (contact.selectedCloudModel?.modelId ?? "")).tag(contact.id)
+                ForEach(localProfiles) { profile in
+                  Text(t("on_device", "On this iPhone") + " / " + profile.displayName).tag("local:" + profile.id)
+                }
+                if online {
+                  ForEach(contacts) { contact in
+                    Text(contact.name + " / " + (contact.selectedCloudModel?.modelId ?? "")).tag("cloud:" + contact.id)
+                  }
                 }
               }
               TextField(t("question", "Ask about this journal"), text: $question)
               Button(t("review", "Review sharing"), action: prepare).disabled(selected.isEmpty || question.isBlank)
-            }.disabled(!online || task != nil || approval != nil)
+            }.disabled(task != nil || approval != nil)
             if let approval { sharing(approval) }
             if task != nil { ProgressView() }
             if !response.isEmpty { Text(response).textSelection(.enabled) }
@@ -67,11 +73,11 @@ struct GalaxySSIHealthVisitJournalDiscussionView: View {
       }
     }
     .navigationViewStyle(.stack)
-    .onAppear { refreshPermission() }
-    .onChange(of: scene) { if $0 != .active { clear() } else { refreshPermission() } }
+    .onAppear { refreshPermission(); refreshLocalProfiles() }
+    .onChange(of: scene) { if $0 != .active { clear() } else { refreshPermission(); refreshLocalProfiles() } }
     .onChange(of: store.profile.identityFingerprint) { _ in clear() }
     .onChange(of: store.contacts) { _ in
-      if let review = active ?? approval, route(review) == nil { clear() }
+      if let review = active ?? approval, review.route.requiresOnline, cloudRoute(review) == nil { clear() }
     }
     .onDisappear { clear() }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in clear() }
@@ -88,11 +94,16 @@ struct GalaxySSIHealthVisitJournalDiscussionView: View {
 
   private func sharing(_ review: Review) -> some View {
     Section(t("scope", "Shared this time")) {
-      Text(review.transport.location)
-      Text(review.transport.modelID)
+      if let cloud = review.cloudApproval {
+        Text(cloud.location)
+        Text(cloud.modelID)
+      } else if case .local(let profile, _) = review.route {
+        Text(t("on_device", "On this iPhone"))
+        Text(profile.displayName)
+      }
       Text(review.summary.string("goal"))
       Text(review.summary.string("visit_purpose"))
-      Text(review.transport.question)
+      Text(review.question)
       if !review.previous.isEmpty {
         DisclosureGroup(t("previous", "Previous exchanges with this model")) {
           ForEach(review.previous) { exchange in
@@ -101,39 +112,56 @@ struct GalaxySSIHealthVisitJournalDiscussionView: View {
           }
         }
       }
-      Text(t("notice", "The selected model may read all entries in this journal for this request. It cannot read other Health records or change treatment, plans, or reminders.")).font(.footnote)
+      if review.route.requiresOnline {
+        Text(t("notice", "The selected model may read all entries in this journal for this request. It cannot read other Health records or change treatment, plans, or reminders.")).font(.footnote)
+      } else {
+        Text(t("local_notice", "The selected model can read this journal for this request. Journal data stays on this iPhone. No other Health records or changes are authorized.")).font(.footnote)
+      }
       Button(t("send", "Approve and send")) { start(review) }.buttonStyle(.borderedProminent)
       Button(t("cancel", "Cancel")) { approval = nil }
     }
   }
 
   private func prepare() {
-    guard canRead, let contact = contacts.first(where: { $0.id == selected }),
-          let model = contact.selectedCloudModel, let key = store.apiKey(for: model) else { failed = true; return }
+    guard canRead else { failed = true; return }
     do {
-      approval = try records.prepareVisitJournalDiscussion(page, question: question, contact: contact, key: key)
+      if let profile = localProfiles.first(where: { "local:" + $0.id == selected }) {
+        approval = try records.prepareVisitJournalDiscussion(page, question: question, localProfile: profile)
+      } else if online, let contact = contacts.first(where: { "cloud:" + $0.id == selected }),
+                let model = contact.selectedCloudModel, let key = store.apiKey(for: model) {
+        approval = try records.prepareVisitJournalDiscussion(page, question: question, contact: contact, key: key)
+      } else { failed = true; return }
       failed = false
     } catch { failed = true }
   }
 
-  private func route(_ review: Review) -> (GalaxySSIContact, String)? {
-    guard canRead, let contact = contacts.first(where: { $0.id == review.transport.destinationID }),
-          let model = review.transport.model, model == contact.selectedCloudModel,
+  private func cloudRoute(_ review: Review) -> (GalaxySSIContact, String)? {
+    guard canRead, online, let cloud = review.cloudApproval, let contact = contacts.first(where: { $0.id == cloud.destinationID }),
+          let model = cloud.model, model == contact.selectedCloudModel,
           let key = store.apiKey(for: model), CloudModelCredentialPolicy.isStoredCredential(key),
-          SHA256.hash(data: Data(key.utf8)) == review.transport.credentialDigest else { return nil }
+          SHA256.hash(data: Data(key.utf8)) == cloud.credentialDigest else { return nil }
     return (contact, key)
   }
 
   private func start(_ review: Review) {
-    guard task == nil, approval?.id == review.id, route(review) != nil else { failed = true; return }
+    guard canRead, task == nil, approval?.id == review.id else { failed = true; return }
     active = review; approval = nil; question = ""; response = ""; failed = false
     task = Task {
       defer { if active?.id == review.id { task = nil; active = nil } }
       do {
-        let result = try await GalaxySSIHealthVisitJournalDiscussionTransport.run(review, records: records,
-          ledger: coordinator.healthDisclosureStore, currentRoute: {
-            active?.id == review.id ? route(review) : nil
-          })
+        let result: String
+        if review.route.requiresOnline {
+          result = try await GalaxySSIHealthVisitJournalDiscussionTransport.run(review, records: records,
+            ledger: coordinator.healthDisclosureStore, currentRoute: {
+              active?.id == review.id ? cloudRoute(review) : nil
+            })
+        } else {
+          result = try await GalaxySSIHealthVisitJournalDiscussionTransport.runLocal(review, records: records,
+            current: { profile, tokens in
+              canRead && active?.id == review.id &&
+                GalaxySSIHealthVisitJournalDiscussionTransport.localReady(profile, tokens: tokens)
+            })
+        }
         if active?.id == review.id, !Task.isCancelled { response = result }
       } catch {
         if active?.id == review.id, !Task.isCancelled { failed = true }
@@ -146,6 +174,11 @@ struct GalaxySSIHealthVisitJournalDiscussionView: View {
   }
   private func refreshPermission() {
     online = canRead && ((try? records.load().healthOnlinePermission) != nil)
+  }
+  private func refreshLocalProfiles() {
+    localProfiles = LocalModelRuntimeSettings.activeProfiles().filter {
+      LocalModelInferenceRuntime.shared.ready(profile: $0)
+    }
   }
   static func text(_ key: String, _ fallback: String, language: String) -> String {
     GalaxySSILocalization.string("galaxyssi.health.journal_discussion." + key, fallback: fallback, language: language)
