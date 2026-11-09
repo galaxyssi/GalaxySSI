@@ -24,6 +24,8 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(AgentDesktopEvidenceQueryTrace.token("nonce"), "78377b525757b494")
     XCTAssertEqual(AgentDesktopEvidenceQueryTrace.token(""), "unavailable")
     XCTAssertEqual(AgentDesktopEvidenceQueryTrace.token(String(repeating: "x", count: 129)), "unavailable")
+    XCTAssertEqual(AgentDesktopEvidenceQueryTrace.Stage.blockedRoute("no_local_subscription"), .routeNoSubscription)
+    XCTAssertEqual(AgentDesktopEvidenceQueryTrace.Stage.blockedRoute("remote-controlled-text"), .routeNotReady)
   }
 
   func testDesktopEvidenceLateReplyIsExactScopedAndOneShot() throws {
@@ -43,11 +45,23 @@ extension GalaxySSIStoreTests {
     table.timeout(ticket, now: 101)
     table.finish(ticket, retainAfterTimeout: true)
     let response = lateEvidenceResponse(original)
-    XCTAssertEqual(table.receive(response, transport: "rotated-route", desktop: "desktop", now: 102), .rejected)
-    XCTAssertEqual(table.receive(response, transport: "paired-route", desktop: "other", now: 102), .rejected)
+    var diagnostics: [AgentDesktopEvidenceQueryTrace.Stage] = []
+    func diagnose(_ stage: AgentDesktopEvidenceQueryTrace.Stage) { diagnostics.append(stage) }
+    XCTAssertEqual(table.receive(response, transport: "rotated-route", desktop: "desktop", now: 102, diagnose: diagnose), .rejected)
+    XCTAssertEqual(table.receive(response, transport: "paired-route", desktop: "other", now: 102, diagnose: diagnose), .rejected)
     var foreign = response
     foreign["execution_generation"] = .int(3)
-    XCTAssertEqual(table.receive(foreign, transport: "paired-route", desktop: "desktop", now: 102), .rejected)
+    XCTAssertEqual(table.receive(foreign, transport: "paired-route", desktop: "desktop", now: 102, diagnose: diagnose), .rejected)
+    let invalidFields: [(String, AgentDesktopEvidenceQueryTrace.Stage)] = [
+      ("mode", .modeMismatch), ("contract", .contractMismatch), ("status", .invalidStatus)
+    ]
+    for (field, reason) in invalidFields {
+      var malformed = response
+      malformed[field] = .string("unexpected")
+      XCTAssertEqual(table.receive(malformed, transport: "paired-route", desktop: "desktop", now: 102, diagnose: diagnose), .rejected)
+      XCTAssertEqual(diagnostics.last, reason)
+    }
+    XCTAssertEqual(Array(diagnostics.prefix(3)), [.routeMismatch, .routeMismatch, .scopeMismatch])
     XCTAssertEqual(table.receive(response, transport: "paired-route", desktop: "desktop", now: 102), .late)
     XCTAssertEqual(table.receive(response, transport: "paired-route", desktop: "desktop", now: 103), .duplicate)
     for (query, after, inline, transport) in [

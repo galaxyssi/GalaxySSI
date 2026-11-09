@@ -7,10 +7,31 @@ struct AgentDesktopEvidenceQueryTrace {
     case publishStarted = "publish_started", publishAccepted = "publish_accepted", publishRejected = "publish_rejected"
     case responseReceived = "response_received", responseLate = "response_late", timedOut = "timed_out"
     case routeMismatch = "paired_route_mismatch", invalidResponse = "invalid_response"
+    case desktopUnavailable = "desktop_unavailable", desktopUnpaired = "desktop_unpaired"
+    case staleRoute = "stale_route_identity", contactChanged = "contact_binding_changed"
+    case signalUnavailable = "signal_session_unavailable", routeNotReady = "peer_route_not_ready"
+    case routeMissingBinding = "route_missing_binding", routeInactive = "route_inactive_binding"
+    case routeNoSubscription = "route_no_local_subscription", routeNoAdvertisement = "route_no_local_advertisement"
+    case routeExpired = "route_expired_local_advertisement", routeUnconfirmed = "route_unconfirmed_local_epoch"
+    case routeBrokerChanged = "route_changed_broker_generation", routeNoCommonPath = "route_no_verified_common_route"
+    case transportDisconnected = "transport_disconnected", queryUnavailable = "query_unavailable"
+    case noRequest = "no_pending_request", scopeMismatch = "scope_mismatch", modeMismatch = "mode_mismatch"
+    case contractMismatch = "contract_mismatch", invalidStatus = "invalid_status", pageMismatch = "page_mismatch"
+    case duplicateResponse = "already_completed", unavailableResponse = "response_unavailable"
     case indexValidated = "index_validated", indexRejected = "index_rejected"
     case pageStaged = "page_staged", pageNotStaged = "page_not_staged"
     case sliceComplete = "slice_complete", sliceYielded = "slice_yielded", sliceDeferred = "slice_deferred"
     case sliceWait = "slice_wait"
+
+    static func blockedRoute(_ reason: String) -> Self {
+      Self(rawValue: "route_" + reason).flatMap { stage in
+        switch stage {
+        case .routeMissingBinding, .routeInactive, .routeNoSubscription, .routeNoAdvertisement,
+             .routeExpired, .routeUnconfirmed, .routeBrokerChanged, .routeNoCommonPath: return stage
+        default: return nil
+        }
+      } ?? .routeNotReady
+    }
   }
 
   private static let logger = Logger(subsystem: "com.galaxyssi.chat.ios", category: "desktop-evidence")
@@ -102,17 +123,22 @@ struct AgentDesktopEvidenceQueries<Transport: Equatable> {
     return .waiting(Ticket(request: request, payload: payload, stream: stream, lease: lease))
   }
 
-  mutating func receive(_ response: AgentMcpJSONObject, transport: Transport, desktop: String, now: Int64) -> Receive {
+  mutating func receive(_ response: AgentMcpJSONObject, transport: Transport, desktop: String, now: Int64,
+      diagnose: (AgentDesktopEvidenceQueryTrace.Stage) -> Void = { _ in }) -> Receive {
     prune(now)
     let nonce = response.string("request_id")
-    guard var entry = entries[nonce] else { return .unknown }
+    guard var entry = entries[nonce] else { diagnose(.noRequest); return .unknown }
     let mode = entry.payload.string("mode"), status = response.string("status")
-    guard entry.transport == transport, ["ready", "unavailable"].contains(status),
-          entry.request.matchesTransportResponse(response, authenticatedDesktopId: desktop, mode: mode),
-          mode != "page" || status != "ready" ||
-            ["evidence_id", "sha256", "page_index"].allSatisfy({ response[$0] == entry.payload[$0] })
-    else { return .rejected }
-    guard !entry.delivered else { return .duplicate }
+    if entry.transport != transport { diagnose(.routeMismatch); return .rejected }
+    if let rejection = entry.request.transportRejection(response, authenticatedDesktopId: desktop, mode: mode) {
+      diagnose(rejection)
+      return .rejected
+    }
+    guard ["ready", "unavailable"].contains(status) else { diagnose(.invalidStatus); return .rejected }
+    guard mode != "page" || status != "ready" ||
+      ["evidence_id", "sha256", "page_index"].allSatisfy({ response[$0] == entry.payload[$0] })
+    else { diagnose(.pageMismatch); return .rejected }
+    guard !entry.delivered else { diagnose(.duplicateResponse); return .duplicate }
     entry.delivered = true
     let reply = AgentDesktopEvidenceReply(request: entry.request, payload: response)
     if let signal = entry.signal {
@@ -424,12 +450,18 @@ enum AgentDesktopToolEvidenceWire {
     }
 
     func matchesTransportResponse(_ response: AgentMcpJSONObject, authenticatedDesktopId: String, mode: String) -> Bool {
-      ["index", "page"].contains(mode) && authenticatedDesktopId == binding.desktopId &&
-        response.string("type") == "agent_task_evidence" &&
-        response.string("contract") == AgentDesktopToolEvidenceWire.contract &&
-        response.string("mode") == mode &&
-        response.string("request_id") == nonce && response["execution_generation"] == .int(generation) &&
-        binding.fields.allSatisfy { response[$0.key] == .string($0.value) }
+      transportRejection(response, authenticatedDesktopId: authenticatedDesktopId, mode: mode) == nil
+    }
+
+    func transportRejection(_ response: AgentMcpJSONObject, authenticatedDesktopId: String, mode: String)
+        -> AgentDesktopEvidenceQueryTrace.Stage? {
+      guard authenticatedDesktopId == binding.desktopId else { return .routeMismatch }
+      guard response.string("type") == "agent_task_evidence",
+            response.string("contract") == AgentDesktopToolEvidenceWire.contract else { return .contractMismatch }
+      guard ["index", "page"].contains(mode), response.string("mode") == mode else { return .modeMismatch }
+      guard response.string("request_id") == nonce, response["execution_generation"] == .int(generation),
+            binding.fields.allSatisfy({ response[$0.key] == .string($0.value) }) else { return .scopeMismatch }
+      return nil
     }
 
     func verifyIndex(_ response: AgentMcpJSONObject, authenticatedDesktopId: String,

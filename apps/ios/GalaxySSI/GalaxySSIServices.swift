@@ -3939,9 +3939,10 @@ final class MessageCoordinator: ObservableObject {
             context.team.supervisorRunId == scope.runId,
             let binding = AgentDesktopReplyBinding.teamObserver(owner: context.owner, desktopId: contact.desktopId,
               agentId: contact.connectorAgentId, identity: identity),
-            currentTeamObserverRecovery(binding) != nil, runtime?.canQueryDesktopEvidence(binding) != false,
+            currentTeamObserverRecovery(binding) != nil,
             let generation = context.owner.desktopEvidenceGeneration(member: context.member, teamState: context.team.state),
             let request = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: generation, nonce: UUID().uuidString),
+            runtime?.canQueryDesktopEvidence(request) != false,
             (try? history.desktopEvidenceCursor(request))?.archiveFinal == false else { return nil }
       return .init(binding: binding, generation: generation, profileIdentity: profile)
     }
@@ -4013,13 +4014,13 @@ final class MessageCoordinator: ObservableObject {
       runtime: MqttBusinessTransportRuntime?, yieldedAt: Int64? = nil) -> Bool {
     let binding = job.binding
     guard store.profile.identityFingerprint == job.profileIdentity,
-          runtime?.canQueryDesktopEvidence(binding) != false,
           let context = currentTeamObserverRecovery(binding), context.member.status == .succeeded,
           context.owner.observedGeneration == job.generation,
           let session = store.agentSession(id: context.team.conversationId), session.id == context.team.conversationId,
           session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank,
           let scope = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: job.generation,
             nonce: UUID().uuidString),
+          runtime?.canQueryDesktopEvidence(scope) != false,
           desktopEvidenceImports.insert(job.key).inserted else { return false }
     let journalBacked = runtime != nil
     Task { @MainActor [weak self, weak runtime] in
@@ -4155,12 +4156,37 @@ final class MessageCoordinator: ObservableObject {
                                     payload: AgentMcpJSONObject,
                                     timeoutNanoseconds: UInt64 = 8_000_000_000) async -> AgentDesktopEvidenceReply? {
     let binding = request.binding
-    guard !Task.isCancelled, mqttClient.relationshipSubscriptionsReady,
-          let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == binding.desktopId &&
-            $0.routes.clientRouteId == binding.identity.clientRouteId }) else { return nil }
-    let transport = LegacyEvidenceTransport(profile: store.profile.identityFingerprint, link: link)
     let started = AgentDesktopEvidenceQueryTrace.now
-    guard let next = desktopEvidenceQueries.begin(request, payload: payload, transport: transport, now: started) else { return nil }
+    func trace(_ stage: AgentDesktopEvidenceQueryTrace.Stage) {
+      AgentDesktopEvidenceQueryTrace.record(stage, nonce: request.nonce, started: started)
+    }
+    guard !Task.isCancelled else { return nil }
+    let profile = store.profile.identityFingerprint
+    let links = store.serverLinks.filter { $0.desktopId == binding.desktopId }
+    guard !links.isEmpty else { trace(.desktopUnavailable); return nil }
+    let paired = links.filter(\.paired)
+    guard !paired.isEmpty else { trace(.desktopUnpaired); return nil }
+    let matching = paired.filter { $0.routes.clientRouteId == binding.identity.clientRouteId }
+    guard matching.count == 1, let link = matching.first else { trace(.staleRoute); return nil }
+    func contactMatches() -> Bool {
+      guard let contact = store.contact(id: binding.contactId) else { return false }
+      return contact.id == binding.contactId && contact.desktopId == binding.desktopId &&
+        contact.connectorAgentId == binding.agentId && contact.trustState == .verified &&
+        contact.deliveryMode.isGalaxySSILinkFamily
+    }
+    guard contactMatches() else { trace(.contactChanged); return nil }
+    guard GalaxySSISignalEngine.isAvailable, signalEngine.hasSession(remoteName: link.desktopId) else {
+      trace(.signalUnavailable)
+      return nil
+    }
+    guard mqttClient.isConnected else { trace(.transportDisconnected); return nil }
+    guard await mqttClient.recoveryRouteReady(topic: link.routes.upTopic, link: link), !Task.isCancelled,
+          store.profile.identityFingerprint == profile, contactMatches() else { trace(.routeNotReady); return nil }
+    let transport = LegacyEvidenceTransport(profile: profile, link: link)
+    guard let next = desktopEvidenceQueries.begin(request, payload: payload, transport: transport, now: started) else {
+      trace(.queryUnavailable)
+      return nil
+    }
     if case .retained(let reply) = next { return reply }
     guard case .waiting(let ticket) = next else { return nil }
     let nonce = ticket.request.nonce
@@ -4169,7 +4195,7 @@ final class MessageCoordinator: ObservableObject {
       desktopEvidenceQueries.finish(ticket, retainAfterTimeout: retain)
     }
     guard let object = try? JSONSerialization.jsonObject(with: Data(AgentMcpJSONCodec.stringify(ticket.payload).utf8)) as? [String: Any],
-          let wire = try? linkWirePayload(object, link: link) else { return nil }
+          let wire = try? linkWirePayload(object, link: link) else { trace(.publishRejected); return nil }
     AgentDesktopEvidenceQueryTrace.record(.publishStarted, nonce: nonce, started: started)
     let dispatchStarted = DispatchTime.now().uptimeNanoseconds
     guard await mqttClient.publishTransientControl(topic: link.routes.upTopic, payload: wire.wireData, link: link) == .published,
@@ -17539,24 +17565,27 @@ final class MessageCoordinator: ObservableObject {
     }
     if appPayload.string("type") == "agent_task_evidence" {
       let nonce = appPayload.string("request_id")
+      let now = AgentDesktopEvidenceQueryTrace.now
       let started = desktopEvidenceQueries.started(nonce)
+      func trace(_ stage: AgentDesktopEvidenceQueryTrace.Stage) {
+        AgentDesktopEvidenceQueryTrace.record(stage, nonce: nonce, started: started ?? now)
+      }
       guard object.string("scheme") == "signal", let link, link.paired,
             appPayload.string("client_route_id") == link.routes.clientRouteId else {
-        if let started { AgentDesktopEvidenceQueryTrace.record(.routeMismatch, nonce: nonce, started: started) }
+        trace(.routeMismatch)
         return
       }
-      guard let started else { return }
+      guard started != nil else { trace(.noRequest); return }
       guard let bytes = try? JSONSerialization.data(withJSONObject: appPayload),
             let response = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: bytes) else {
-        AgentDesktopEvidenceQueryTrace.record(.invalidResponse, nonce: nonce, started: started)
+        trace(.invalidResponse)
         return
       }
       let transport = LegacyEvidenceTransport(profile: store.profile.identityFingerprint, link: link)
-      switch desktopEvidenceQueries.receive(response, transport: transport, desktop: link.desktopId, now: AgentDesktopEvidenceQueryTrace.now) {
-      case .active: AgentDesktopEvidenceQueryTrace.record(.responseReceived, nonce: nonce, started: started)
-      case .late: AgentDesktopEvidenceQueryTrace.record(.responseLate, nonce: nonce, started: started)
-      case .rejected: AgentDesktopEvidenceQueryTrace.record(.invalidResponse, nonce: nonce, started: started)
-      case .unknown, .discarded, .duplicate: break
+      switch desktopEvidenceQueries.receive(response, transport: transport, desktop: link.desktopId, now: now, diagnose: trace) {
+      case .active: trace(response.string("status") == "unavailable" ? .unavailableResponse : .responseReceived)
+      case .late: trace(.responseLate)
+      case .unknown, .discarded, .duplicate, .rejected: break
       }
       return
     }
