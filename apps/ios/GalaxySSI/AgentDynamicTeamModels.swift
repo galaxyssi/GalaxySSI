@@ -454,8 +454,13 @@ struct AgentCollaborationCoordinatorRecovery: Codable, Equatable {
 struct AgentCollaborationCoordinatorRetry: Codable, Equatable {
   let stalled: Int
   let retryAt: Int64?
+  var waitsForHandoff: Bool? = nil
 
   static let verifiedWaiting = Self(stalled: 0, retryAt: nil)
+
+  static func handoff(now: Int64) -> Self {
+    .init(stalled: 0, retryAt: min(now, Int64.max - 30_000) + 30_000, waitsForHandoff: true)
+  }
 
   static func schedule(after attempts: Int, now: Int64) -> Self {
     let prior = min(5, max(0, attempts))

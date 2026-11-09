@@ -5302,6 +5302,72 @@ final class AgentTeamExecutionHistoryStore {
     try access { try Self.goalCoordinatorRetry(scope, database: $0)?.retryAt }
   }
 
+  func goalCoordinatorHandoffPending(_ scope: AgentCollaborationToolEvidenceScope) throws -> Bool {
+    try access { try Self.goalCoordinatorRetry(scope, database: $0)?.waitsForHandoff == true }
+  }
+
+  func goalCoordinatorHandoffReady(_ scope: AgentCollaborationToolEvidenceScope,
+      now: Int64 = AgentControlPlaneClock.nowMillis()) throws -> Bool {
+    try access { database in
+      guard try Self.goalCoordinatorRetry(scope, database: database)?.waitsForHandoff == true else { return false }
+      return try Self.recoveryHandoffOwner(scope, database: database, now: now) == .ready
+    }
+  }
+
+  func advanceGoalCoordinatorHandoff(_ scope: AgentCollaborationToolEvidenceScope,
+      now: Int64 = AgentControlPlaneClock.nowMillis()) throws -> Int64? {
+    try access { database in
+      guard let retry = try Self.goalCoordinatorRetry(scope, database: database), retry.waitsForHandoff == true
+      else { return nil }
+      if let due = retry.retryAt, now < due { return due }
+      if try Self.recoveryHandoffOwner(scope, database: database, now: now) == .running {
+        let next = AgentCollaborationCoordinatorRetry.handoff(now: now)
+        try Self.replaceGoalCoordinatorRetry(next, scope: scope, database: database)
+        return next.retryAt
+      }
+      // The host drain ran once. An unavailable successor must not suppress coordinator recovery.
+      try Self.replaceGoalCoordinatorRetry(.init(stalled: 0, retryAt: now), scope: scope, database: database)
+      return nil
+    }
+  }
+
+  private static func recoveryHandoffOwner(_ scope: AgentCollaborationToolEvidenceScope, database: AgentTeamHistoryDatabase,
+      now: Int64) throws -> AgentCollaborationHandoffDemand.Owner? {
+    let (team, graph, _) = try Self.milestoneWorkGraph(scope, database: database)
+    guard let graph else { return nil }
+    var runs: [String: AgentCollaborationGoalWorkRun] = [:]
+    for work in graph.work {
+      guard let saved = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
+        conversationId: scope.conversationId, key: Self.goalWorkKey(work.id, scope: scope), revision: 0) else { continue }
+      guard saved.owner == scope, saved.workID == work.id else { throw AgentTeamHistoryDatabase.Failure.stale }
+      runs[work.id] = saved
+    }
+    return try Self.goalHandoffOwner(graph, runs: runs, scope: scope, team: team, now: now, database: database)
+  }
+
+  private static func goalHandoffOwner(_ graph: AgentCollaborationLiveGraph, runs: [String: AgentCollaborationGoalWorkRun],
+      scope: AgentCollaborationToolEvidenceScope, team: AgentTeamExecutionSnapshot, now: Int64,
+      database: AgentTeamHistoryDatabase) throws -> AgentCollaborationHandoffDemand.Owner? {
+    let specialists = Set(team.members.filter { $0.deliveryMode == .observe }.map(\.memberId))
+    guard let owner = AgentCollaborationHandoffDemand.owner(graph: graph, runs: runs, specialists: specialists, now: now,
+      recorded: { work, tokens in
+        tokens.allSatisfy { (try? Self.inputMilestone(token: $0, producer: work, scope: scope, database: database)) != nil }
+      }) else { return nil }
+    let prefix = AgentCollaborationMilestoneCoordination.requestPrefix
+    var cursor = ""
+    for _ in 0..<4 {
+      let keys = try database.milestoneKeys(conversationId: scope.conversationId, prefix: prefix, after: cursor)
+      for key in keys {
+        if let request = try database.researchRecord(AgentCollaborationMilestoneCoordination.RequestIndex.self,
+          conversationId: scope.conversationId, key: key, revision: 0),
+          request.producer.runId == scope.runId, request.producer.turnId == scope.turnId { return nil }
+      }
+      guard keys.count == 33, let last = keys.last else { return owner }
+      cursor = last
+    }
+    return nil
+  }
+
   private static func goalAssessmentRejectionKey(_ scope: AgentCollaborationToolEvidenceScope) -> String {
     "goal-assessment-rejection:" + scope.ownershipDigest
   }
@@ -5382,6 +5448,17 @@ final class AgentTeamExecutionHistoryStore {
         if examples.count < 24, status == "unclaimed" || status == "failed" || status == "interrupted" {
           examples.append(.object(["work_id": .string(work.id), "status": .string(status)]))
         }
+      }
+      if scheduleRetry, interim == nil, let checkpoint, let graph = checkpoint.liveGraph,
+         let assessment, assessment.format == "galaxyssi.goal-assessment.v1", assessment.decision == .continue,
+         !assessment.summary.isBlank,
+         assessment.criteria == checkpoint.contract, assessment.work.isEmpty, assessment.blockers.isEmpty,
+         assessment.recruit?.isEmpty != false, assessment.interim_delivery == nil,
+         try database.researchRecord(AgentCollaborationCoordinatorRecovery.self,
+           conversationId: scope.conversationId, key: "goal-coordinator-recovery:" + scope.ownershipDigest, revision: 0) != nil,
+         try Self.goalHandoffOwner(graph, runs: runs, scope: scope, team: team, now: now, database: database) != nil {
+        try Self.replaceGoalCoordinatorRetry(.handoff(now: now), scope: scope, database: database)
+        return nil
       }
       var checked = Set<String>()
       var feedback: [AgentMcpJSONValue] = []
@@ -5699,7 +5776,7 @@ final class AgentTeamExecutionHistoryStore {
       guard saved == binding else { return nil }
       let retry = try Self.goalCoordinatorRetry(scope, database: database)
       if let retry {
-        guard let due = retry.retryAt, now >= due else { return nil }
+        guard retry.waitsForHandoff != true, let due = retry.retryAt, now >= due else { return nil }
       } else if binding.process == AgentCollaborationGoalWorkRun.processID { return nil }
       let checkpoint = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first
       if let checkpoint {
