@@ -906,6 +906,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                visitedSourceAccessPages.insert("assessment:" + page.string("draft_sha256") + ":" + String(offset)).inserted {
               madeProgress = true
             }
+            if arguments["mode"] == .string(AgentCollaborationGoalAssessmentPolicy.appendWorkMode),
+               let rejected = try? CloudModelStreamJSON.mcpObject(from: output),
+               rejected["status"] == .string("work_rejected"),
+               progress.requestRepair("collaboration_work_lineage") { madeProgress = true }
             continue
           }
           if AgentCollaborationSourceAccess.matches(tool: outcome.call.name, input: arguments) {

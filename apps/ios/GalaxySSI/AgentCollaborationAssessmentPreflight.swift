@@ -222,6 +222,7 @@ extension AgentCollaborationGoalAssessmentPolicy {
     var result = preflight(raw, establishedContract: !contract.isEmpty)
     result["contract_state"] = .string(contract.isEmpty ? "initial_criteria_pending" : "established")
     result["established_criteria_count"] = .int(Int64(contract.count))
+    result["targeted_work_repair"] = .string(AgentCollaborationWorkRepair.guidance)
     result["next_action"] = .string(contract.isEmpty
       ? "No criteria have been established yet; an empty contract is not corruption. Repair the draft, define criteria from the pinned goal and establish them before dispatch. Rejected assignments must not run."
       : "Preserve every established requirement, validator and required source. Read the pinned criteria and repair the draft; rejected assignments must not run.")
