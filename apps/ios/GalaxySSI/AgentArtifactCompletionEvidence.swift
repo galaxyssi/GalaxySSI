@@ -368,6 +368,11 @@ enum AgentVerifiedArtifactSnapshot {
     verifyBinary(data, extension: ext, format: "image_first_frame_decode")
   }
 
+  static func verifiesContainer(_ data: Data, extension ext: String) -> Bool {
+    guard let format = binaryFormat(for: ext) else { return false }
+    return verifyBinary(data, extension: ext, format: format)
+  }
+
   static func verifiesImage(at url: URL, extension ext: String) -> Bool {
     verifyImageSource(CGImageSourceCreateWithURL(url as CFURL, nil), extension: ext)
   }
