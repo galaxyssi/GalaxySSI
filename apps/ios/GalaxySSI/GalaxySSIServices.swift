@@ -10192,7 +10192,9 @@ final class MessageCoordinator: ObservableObject {
               "Use " + AgentGoalWorkMilestoneRead.toolID + " to inspect the exact listed versions as needed.")
             Return only galaxyssi.work-expansion.v1 JSON with a work array, empty when no useful work is ready.
             Each item requires id, member from the listed specialists, stage, assignment, depends_on (IDs in this batch),
-            independent_review, and uses_milestones (exact listed tokens). An author's other stage is not independent.
+            independent_review, uses_milestones (exact listed tokens), and review_milestones (the reviewed subset).
+            Other milestone inputs are supporting data and may come from the reviewer. Omit review_milestones to review
+            all listed tokens. An author's other stage is not independent.
             Goal: \(team?.goal ?? "")
             Specialists: \(AgentMcpJSONCodec.stringify(["members": .array(directory)]))
             Milestone tokens: \(AgentMcpJSONCodec.stringify(["tokens": .array(planned.batch.tokens.map(AgentMcpJSONValue.string))]))
@@ -10616,7 +10618,6 @@ final class MessageCoordinator: ObservableObject {
       route = .cloud(contact)
       identity = .init(kind: .cloud, resourceID: target.id, modelID: model.modelId)
     }
-    let hasMilestones = work.uses_milestones?.isEmpty == false
     // Acquire the existing resource slot before persisting a claim so a busy provider does not consume the work.
     let slot: String
     do {
@@ -10644,10 +10645,15 @@ final class MessageCoordinator: ObservableObject {
       AgentMcpJSONCodec.stringify(["member_id": .string($0.executionIdentity), "role": .string($0.role), "scope": .string($0.scope)])
     } ?? "none"
     let milestonePrompt: String
-    if !hasMilestones { milestonePrompt = "" }
-    else if case .desktop = route { milestonePrompt = "\n" + AgentGoalWorkMilestoneRead.desktopInstructions }
-    else { milestonePrompt = "\nUse \(AgentGoalWorkMilestoneRead.toolID) to read the exact interim inputs. " +
-      "Do not treat an interim result as the author's final output." }
+    if let tokens = claim.run.milestoneTokens,
+       let roles = AgentGoalWorkMilestoneRead.inputRoles(tokens, reviewTokens: claim.run.reviewMilestoneTokens) {
+      let reader: String
+      if case .desktop = route { reader = AgentGoalWorkMilestoneRead.desktopInstructions }
+      else { reader = "Use \(AgentGoalWorkMilestoneRead.toolID). " + AgentGoalWorkMilestoneRead.instructions }
+      let inputs = AgentMcpJSONCodec.stringify(["milestone_inputs": roles])
+      milestonePrompt = "\n\(reader)\nExact milestone roles: \(inputs)\n" +
+        "Do not treat an interim result as the author's final output or supporting data as the reviewed solution."
+    } else { milestonePrompt = "" }
     var prompt = """
       Complete this scoped collaboration assignment. Return the result and any uncertainty.
       \(AgentCollaborationPromptBudget.deliveryReviewGuidance)

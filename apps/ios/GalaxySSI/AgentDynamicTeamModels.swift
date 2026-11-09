@@ -580,6 +580,7 @@ struct AgentCollaborationGoalWorkRun: Codable {
   var probeOrigin: AgentMcpJSONObject? = nil
   var methodUse: AgentCollaborationMethodExperience.Binding? = nil
   var milestoneTokens: [String]? = nil
+  var reviewMilestoneTokens: [String]? = nil
   var milestonePlannerBatch: AgentCollaborationLiveMilestonePlan.Batch? = nil
 
   func visibleState(now: Int64) -> State {
@@ -635,6 +636,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var recruitment: Recruitment? = nil
     var blockerResolution: AgentCollaborationGoalAssessmentPolicy.Resolution? = nil
     var uses_milestones: [String]? = nil
+    var review_milestones: [String]? = nil
     var data_dependencies: [InputBindings.Requirement]? = nil
     var completion_barriers: [InputBindings.CompletionBarrier]? = nil
 
@@ -646,6 +648,10 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
 
     func hasCompletionBarrier(_ workID: String) -> Bool {
       completion_barriers?.contains { $0.work_id == workID } == true
+    }
+
+    var reviewMilestoneTokens: [String] {
+      independent_review == true ? (review_milestones ?? uses_milestones ?? []) : []
     }
 
     var dispatchAssignment: String {
@@ -671,19 +677,25 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
       milestoneAuthors: [String: String] = [:],
       identity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId) -> Bool {
       if let review_targets {
-        guard independent_review == true, !review_targets.isEmpty,
+        guard independent_review == true,
+              !review_targets.isEmpty || !reviewMilestoneTokens.isEmpty,
               Set(review_targets).count == review_targets.count,
               Set(review_targets).isSubset(of: Set(depends_on)) else { return false }
       }
       let tokens = uses_milestones ?? []
       guard tokens.count <= 16, Set(tokens).count == tokens.count,
             tokens.allSatisfy({ milestoneAuthors[$0] != nil }) else { return false }
+      if let review_milestones {
+        guard independent_review == true, Set(review_milestones).count == review_milestones.count,
+              Set(review_milestones).isSubset(of: Set(tokens)) else { return false }
+      }
       guard independent_review == true else { return true }
       let targets = review_targets ?? depends_on
-      return (!targets.isEmpty || !tokens.isEmpty) && targets.allSatisfy { target in
+      let subjects = reviewMilestoneTokens
+      return (!targets.isEmpty || !subjects.isEmpty) && targets.allSatisfy { target in
         guard let origin = author(target), !origin.isBlank else { return false }
         return identity(origin) != identity(member)
-      } && tokens.allSatisfy { token in
+      } && subjects.allSatisfy { token in
         guard let producer = milestoneAuthors[token] else { return false }
         return identity(producer) != identity(recruitment?.template ?? member)
       }
@@ -834,6 +846,10 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
           }) else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
               debugDescription: "Work dependency declarations must be arrays"))
+          }
+          guard object["review_milestones"] == nil || object["review_milestones"]?.arrayValue != nil else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+              debugDescription: "review_milestones must be an array"))
           }
           guard item.workflowExecutionId == nil, item.probeBinding == nil, item.workflowObservedBinding == nil,
                 item.recruitment == nil, item.blockerResolution == nil,
