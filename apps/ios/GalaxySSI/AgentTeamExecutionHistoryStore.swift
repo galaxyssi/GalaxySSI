@@ -696,6 +696,8 @@ final class AgentTeamExecutionHistoryStore {
       allowCoordinatorOffers: Bool) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
     guard evidenceRead == .local || mode == "evidence" else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    if mode == AgentCollaborationMethodExperience.mode, input["view"] == nil,
+       let experience = try recallMethodExperience(input, scope: scope) { return experience }
     if mode == AgentCollaborationCoordinatorUpdates.mode {
       guard allowCoordinatorOffers else { throw AgentTeamHistoryDatabase.Failure.stale }
       return try recallCoordinatorUpdates(input, scope: scope)
@@ -1143,6 +1145,7 @@ final class AgentTeamExecutionHistoryStore {
             entry["state"] = .string("available_scoped_procedure")
             entry["requires_scope_and_lineage_check"] = .bool(true)
             entry["grants_permissions"] = .bool(false)
+            entry["usage_recall"] = .object(AgentCollaborationMethodExperience.selector(head.reference))
             if pinInitial {
               ranked.append((score, entry))
             } else {
@@ -1215,6 +1218,7 @@ final class AgentTeamExecutionHistoryStore {
         }
         if head.draft.kind == .workflowMethod {
           entry["evaluation_recall"] = .object(AgentCollaborationMethodEvaluations.selector(head.reference))
+          entry["usage_recall"] = .object(AgentCollaborationMethodExperience.selector(head.reference))
         }
         if head.draft.kind == .toolTestComparison {
           var recall = AgentCollaborationCandidateRecall.reference(head.reference)
@@ -1296,6 +1300,70 @@ final class AgentTeamExecutionHistoryStore {
       result.append(.object(summary))
     }
     return ["status": .string(allCurrent ? "current_at_read" : "requires_revalidation"), "sides": .array(result)]
+  }
+
+  private func recallMethodExperience(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope)
+    throws -> AgentMcpJSONObject? {
+    typealias Experience = AgentCollaborationMethodExperience
+    return try access { database in
+      guard let team = try database.snapshots(runId: scope.runId).first,
+            team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
+            let reader = team.members.first(where: { $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId &&
+              $0.deliveryMode != .ignore && !$0.status.isTerminal }),
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId, key: "native-evidence-revoked", revision: 0) != true
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      func visible(_ row: Experience.Observation) -> Bool {
+        guard row.owner.conversationId == scope.conversationId else { return false }
+        if row.owner.turnId != scope.turnId { return true }
+        return row.owner.runId == scope.runId && (row.owner == scope || row.memberID == scope.memberId ||
+          (reader.dispatchDependencyMemberIds?.contains(row.memberID) == true && team.members.contains {
+            $0.memberId == row.memberID && $0.deliveryMode != .ignore && $0.status.isTerminal
+          }))
+      }
+      func original(_ id: String) throws -> Experience.Observation? {
+        guard let row = try database.researchRecord(Experience.Observation.self,
+          conversationId: scope.conversationId, key: Experience.key(id), revision: 0), row.id == id, visible(row) else { return nil }
+        return row
+      }
+      if let rawID = input["record_id"] {
+        guard Set(input.keys).isSubset(of: ["mode", "record_id", "offset"]),
+              let id = rawID.strictStringValue, AgentCollaborationSourceAccess.validDigest(id),
+              case .int(let offset) = input["offset"] ?? .int(0), offset >= 0,
+              let row = try original(id) else { throw AgentTeamHistoryDatabase.Failure.stale }
+        let bytes = try row.original()
+        let page = try AgentCollaborationEvidenceContent.page(bytes, offset: offset, evidence: true)
+        return ["success": .bool(true), "status": .string("returned"), "trust": .string(Experience.trust),
+          "record_id": .string(id), "sha256": .string(SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()),
+          "offset": .int(offset), "end_offset": .int(page.end), "content": .string(page.content),
+          "next_offset": page.end < page.wireTotal ? .int(page.end) : .null,
+          "offset_unit": .string(AgentCollaborationEvidenceContent.offsetUnit), "quality_effect": .null]
+      }
+      guard let method = AgentCollaborationMethodEvaluations.reference(from: input),
+            let saved = try database.readableCollaborationRevision(method, scope: scope),
+            [.workflowMethod, .procedureSkill].contains(saved.draft.kind) else { return nil }
+      guard Set(input.keys).isSubset(of: ["mode", "object_id", "revision", "sha256", "cursor"]),
+            case .string(let cursor) = input["cursor"] ?? .string("") else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      let prefix = Experience.prefix(method)
+      let binding = AgentMcpJSONCodec.sha256(["scope": .string(scope.ownershipDigest), "index": .string(prefix)])
+      var after = ""
+      if !cursor.isEmpty {
+        let parts = cursor.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 2, String(parts[0]) == binding, AgentCollaborationSourceAccess.validDigest(String(parts[1]))
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        after = prefix + parts[1]
+      }
+      let keys = try database.milestoneKeys(conversationId: scope.conversationId, prefix: prefix, after: after)
+      let scanned = Array(keys.prefix(8))
+      let records = try scanned.compactMap { key -> AgentMcpJSONValue? in
+        let id = String(key.dropFirst(prefix.count))
+        guard let row = try original(id), row.binding.method == method else { return nil }
+        return .object(row.summary)
+      }
+      let next = keys.count > scanned.count ? scanned.last.map { binding + "." + String($0.dropFirst(prefix.count)) } : nil
+      return ["success": .bool(true), "status": .string("returned"), "trust": .string(Experience.trust),
+        "method": .object(AgentCollaborationSourceAccess.workspaceReference(method)), "quality_effect": .null,
+        "records": .array(records), "next_cursor": next.map(AgentMcpJSONValue.string) ?? .null]
+    }
   }
 
   private func recallMethodEvaluations(_ input: AgentMcpJSONObject,
@@ -4473,11 +4541,30 @@ final class AgentTeamExecutionHistoryStore {
         guard work.hasIndependentReviewAuthors({ authors[$0] }, milestoneAuthors: milestoneAuthors,
           identity: team.reviewIdentity) else { throw AgentTeamHistoryDatabase.Failure.stale }
       }
-      let run = AgentCollaborationGoalWorkRun(repair: work.repair, workID: work.id, dispatchID: UUID().uuidString, owner: scope,
+      var run = AgentCollaborationGoalWorkRun(repair: work.repair, workID: work.id, dispatchID: UUID().uuidString, owner: scope,
         memberID: work.recruitment?.executionIdentity ?? work.member, process: AgentCollaborationGoalWorkRun.processID,
         startedAt: now, target: target, state: .running, templateMemberID: work.recruitment?.template,
         inputRevision: graph.inputBindingHistory?[work.id]?.last?.revision, probeOrigin: probeOrigin,
         milestoneTokens: tokens.isEmpty ? nil : tokens)
+      if let executionID = work.workflowExecutionId {
+        guard let workflow = graph.workflowInstances?[executionID] else { throw AgentTeamHistoryDatabase.Failure.stale }
+        let binding = work.workflowObservedBinding ?? work.probeBinding
+        let selection = binding?["method_selection"]?.objectValue
+        guard let method = workflow.method ?? AgentCollaborationExperimentPlanIntake.reference(selection?["method"])
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        let inputs = binding?["inputs"]?.objectValue ??
+          workflow.inputs.mapValues { .object(AgentCollaborationSourceAccess.workspaceReference($0)) }
+        var detail = binding ?? [:]
+        detail.removeValue(forKey: "inputs")
+        detail["execution_id"] = .string(executionID)
+        detail["roles"] = .object(workflow.roles.mapValues(AgentMcpJSONValue.string))
+        run.methodUse = .init(method: method, kind: "workflow_method", inputs: inputs,
+          assignment: work.assignment, goal: team.goal, stage: work.stage, detail: detail)
+      } else if let use = work.procedure_use {
+        guard let binding = graph.procedureBindings?[work.id] else { throw AgentTeamHistoryDatabase.Failure.stale }
+        run.methodUse = .init(method: use.procedure, kind: "procedure_skill", inputs: use.inputs,
+          assignment: work.assignment, goal: team.goal, stage: work.stage, detail: binding)
+      }
       try database.insertResearchRecord(run, conversationId: scope.conversationId, key: key, revision: 0)
       return (run, true, dependencies)
     }
@@ -4505,6 +4592,7 @@ final class AgentTeamExecutionHistoryStore {
         run.outputHash = SHA256.hash(data: Data(output.utf8)).map { String(format: "%02x", $0) }.joined()
         run.truncated = output.utf8.count > 24 * 1_024
       }
+    try AgentCollaborationMethodExperience.record(run, state: run.state, now: now, database: database)
       try database.removeResearchRecord(conversationId: run.owner.conversationId, key: key)
       try database.insertResearchRecord(run, conversationId: run.owner.conversationId, key: key, revision: 0)
       return run.receipt(now: now)
@@ -5505,7 +5593,12 @@ final class AgentTeamExecutionHistoryStore {
         let run = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
           conversationId: scope.conversationId, key: Self.goalWorkKey(work.id, scope: scope), revision: 0)
         guard run == nil || run?.owner == scope else { throw AgentTeamHistoryDatabase.Failure.stale }
-        if let run { runs[work.id] = run }
+        if let run {
+          runs[work.id] = run
+          if run.state == .running, run.visibleState(now: now) == .interrupted {
+            try AgentCollaborationMethodExperience.record(run, state: .interrupted, now: now, database: database)
+          }
+        }
         results.append(.object(["work_id": .string(work.id), "status": .string(run?.state.rawValue ?? "unclaimed"),
           "output_sha256": run?.outputHash.map(AgentMcpJSONValue.string) ?? .null]))
       }

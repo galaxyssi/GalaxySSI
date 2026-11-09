@@ -541,6 +541,7 @@ struct AgentCollaborationGoalWorkRun: Codable {
   var templateMemberID: String? = nil
   var inputRevision: Int64? = nil
   var probeOrigin: AgentMcpJSONObject? = nil
+  var methodUse: AgentCollaborationMethodExperience.Binding? = nil
   var milestoneTokens: [String]? = nil
   var milestonePlannerBatch: AgentCollaborationLiveMilestonePlan.Batch? = nil
 

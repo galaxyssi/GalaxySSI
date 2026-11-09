@@ -270,6 +270,8 @@ enum AgentIOSLocalModelWebToolRunner {
     if !originalsOnly, var properties = scopedDescriptor.inputSchema["properties"]?.objectValue {
       properties["case_filter"] = .object(["type": .string("string"),
         "enum": .array(AgentCollaborationNumericFeedback.filters.map(AgentMcpJSONValue.string))])
+      properties["record_id"] = .object(["type": .string("string"),
+        "description": .string(AgentCollaborationMethodExperience.instructions)])
       scopedDescriptor.inputSchema["properties"] = .object(properties)
     }
     return AgentNativeToolExecutableDefinition(

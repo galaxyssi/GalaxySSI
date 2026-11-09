@@ -147,6 +147,8 @@ final class CloudWebToolLoopProgress {
   private var ruleCoverage: [String: AgentCollaborationReadCoverage] = [:]
   private var readingCoverage: [String: AgentCollaborationReadCoverage] = [:]
   private var numericCaseCoverage: [String: AgentCollaborationReadCoverage] = [:]
+  private var methodExperienceIDs: Set<String> = []
+  private var methodExperienceCoverage: [String: (hash: String, coverage: AgentCollaborationReadCoverage)] = [:]
   private(set) var performedDeepResearch = false
   private(set) var finalizationRequested = false
 
@@ -200,6 +202,34 @@ final class CloudWebToolLoopProgress {
       numericCaseCoverage[key] = updated
       return updated != previous
     }
+    if AgentCollaborationCandidateRecall.isHistoryCall(toolName, arguments), let actual = decode(output),
+       actual["trust"] == .string(AgentCollaborationMethodExperience.trust) || arguments["record_id"] != nil {
+      guard actual["trust"] == .string(AgentCollaborationMethodExperience.trust),
+            actual["status"] == .string("returned"), actual["quality_effect"] == .null else { return false }
+      if let id = arguments["record_id"]?.strictStringValue {
+        let start = arguments["offset"]?.intValue ?? 0
+        guard start >= 0, actual["record_id"] == .string(id), actual["offset"] == .int(start),
+              let end = actual["end_offset"]?.intValue, end > start,
+              let content = actual["content"]?.strictStringValue, Int64(content.utf16.count) == end - start,
+              let hash = actual["sha256"]?.strictStringValue, AgentCollaborationSourceAccess.validDigest(hash),
+              methodExperienceCoverage[id]?.hash == nil || methodExperienceCoverage[id]?.hash == hash else { return false }
+        let previous = methodExperienceCoverage[id]?.coverage ?? .init()
+        var updated = previous
+        updated.include(start: start, end: end)
+        methodExperienceCoverage[id] = (hash, updated)
+        return updated != previous
+      }
+      guard let method = AgentCollaborationMethodEvaluations.reference(from: arguments),
+            actual["method"] == .object(AgentCollaborationSourceAccess.workspaceReference(method)),
+            let rows = actual["records"]?.arrayValue, rows.count <= 8 else { return false }
+      let ids = rows.compactMap { $0.objectValue?["record_id"]?.strictStringValue }
+      guard ids.count == rows.count, ids.allSatisfy(AgentCollaborationSourceAccess.validDigest) else { return false }
+      let prior = methodExperienceIDs.count
+      methodExperienceIDs.formUnion(ids)
+      return methodExperienceIDs.count > prior
+    }
+    if AgentCollaborationCandidateRecall.isHistoryCall(toolName, arguments),
+       arguments["record_id"] != nil || decode(output)?["status"] != .string("returned") { return false }
     if Self.isMethodEvaluationRecall(toolName: toolName, arguments: arguments) {
       typealias Evaluation = AgentCollaborationMethodEvaluations
       guard let method = Evaluation.reference(from: arguments),
@@ -456,6 +486,7 @@ struct CloudModelStreamMutableConversation {
     ]
     if !originalsOnly {
       properties["case_filter"] = ["type": "string", "enum": AgentCollaborationNumericFeedback.filters]
+      properties["record_id"] = ["type": "string", "description": AgentCollaborationMethodExperience.instructions]
     }
     let scoped = AgentCollaborationCandidateRecall.cloudProperties(properties, enabled: !originalsOnly)
     var schema: [String: Any] = ["type": "object", "properties": scoped, "required": ["mode"]]
