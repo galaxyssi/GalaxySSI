@@ -1226,6 +1226,7 @@
     A10000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift */; };
     D13281000000000000000001 /* AgentBusinessArtifactEvidence.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23281000000000000000001 /* AgentBusinessArtifactEvidence.swift */; };
     D13281000000000000000002 /* AgentBusinessArtifactEvidenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23281000000000000000002 /* AgentBusinessArtifactEvidenceTests.swift */; };
+    D13397000000000000000001 /* AgentArtifactFeedbackPilotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23397000000000000000001 /* AgentArtifactFeedbackPilotTests.swift */; };
     A10000000000000000000225 /* AgentSkillLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000225 /* AgentSkillLifecycleTests.swift */; };
     A10000000000000000000226 /* AgentSkillExecutionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000226 /* AgentSkillExecutionTests.swift */; };
     A10000000000000000000227 /* AgentSkillPackageInstallerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000227 /* AgentSkillPackageInstallerTests.swift */; };
@@ -2538,6 +2539,7 @@
     A20000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDesktopArtifactHandoffTests.swift; sourceTree = "<group>"; };
     D23281000000000000000001 /* AgentBusinessArtifactEvidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBusinessArtifactEvidence.swift; sourceTree = "<group>"; };
     D23281000000000000000002 /* AgentBusinessArtifactEvidenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBusinessArtifactEvidenceTests.swift; sourceTree = "<group>"; };
+    D23397000000000000000001 /* AgentArtifactFeedbackPilotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentArtifactFeedbackPilotTests.swift; sourceTree = "<group>"; };
     A20000000000000000000225 /* AgentSkillLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillLifecycleTests.swift; sourceTree = "<group>"; };
     A20000000000000000000226 /* AgentSkillExecutionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillExecutionTests.swift; sourceTree = "<group>"; };
     A20000000000000000000227 /* AgentSkillPackageInstallerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillPackageInstallerTests.swift; sourceTree = "<group>"; };
@@ -3838,6 +3840,7 @@
         A20000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift */,
         D23281000000000000000001 /* AgentBusinessArtifactEvidence.swift */,
         D23281000000000000000002 /* AgentBusinessArtifactEvidenceTests.swift */,
+        D23397000000000000000001 /* AgentArtifactFeedbackPilotTests.swift */,
         A20000000000000000000225 /* AgentSkillLifecycleTests.swift */,
         A20000000000000000000226 /* AgentSkillExecutionTests.swift */,
         A20000000000000000000227 /* AgentSkillPackageInstallerTests.swift */,
@@ -5275,6 +5278,7 @@
         A10000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift in Sources */,
         D13281000000000000000001 /* AgentBusinessArtifactEvidence.swift in Sources */,
         D13281000000000000000002 /* AgentBusinessArtifactEvidenceTests.swift in Sources */,
+        D13397000000000000000001 /* AgentArtifactFeedbackPilotTests.swift in Sources */,
         A10000000000000000000225 /* AgentSkillLifecycleTests.swift in Sources */,
         A10000000000000000000226 /* AgentSkillExecutionTests.swift in Sources */,
         A10000000000000000000227 /* AgentSkillPackageInstallerTests.swift in Sources */,
