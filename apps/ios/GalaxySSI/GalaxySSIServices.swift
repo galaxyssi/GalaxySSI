@@ -10483,7 +10483,7 @@ final class MessageCoordinator: ObservableObject {
       }
       _ = await drainReadyGoalWork(scope, roster: roster, outgoing: outgoing, profileID: profileID, targets: targets)
       try requireLiveScope()
-      guard let saved = reserveLiveGoalContinuation(after: candidate, scope: scope)
+      guard let saved = reserveLiveGoalContinuation(after: candidate, scope: scope, source: source)
       else { return try leaveWaiting("collaboration_goal_evidence_required") }
       feedback = "\n\nContinue from this host state. Read saved work with work_result, cite reviewed originals, and " +
         "never repeat a claimed assignment. If resource resolution has an available alternative, plan feasible work. " +
@@ -11207,13 +11207,52 @@ final class MessageCoordinator: ObservableObject {
     return scope
   }
 
-  private func reserveLiveGoalContinuation(after raw: String, scope: AgentCollaborationToolEvidenceScope) -> AgentMcpJSONObject? {
+  private func reserveLiveGoalContinuation(after raw: String, scope: AgentCollaborationToolEvidenceScope,
+      source: AgentCollaborationAcceptedDelivery.Source) -> AgentMcpJSONObject? {
     let history = AgentTeamExecutionHistoryStore.shared
-    let feedback = try? history.reserveGoalContinuation(after: raw, scope: scope, scheduleRetry: true)
+    let interim = tryInterimGoalDelivery(raw, scope: scope, source: source)
+    let feedback = try? history.reserveGoalContinuation(after: raw, scope: scope, scheduleRetry: true, interim: interim)
     if feedback == nil, let due = try? history.goalCoordinatorRetryAt(scope) {
       scheduleGoalCoordinatorWake(at: due)
     }
     return feedback
+  }
+
+  private func tryInterimGoalDelivery(_ raw: String, scope: AgentCollaborationToolEvidenceScope,
+      source: AgentCollaborationAcceptedDelivery.Source) -> AgentMcpJSONObject? {
+    typealias Interim = AgentCollaborationInterimDelivery
+    guard raw.utf8.count <= AgentCollaborationGoalAssessmentPolicy.assessmentDraftLimit,
+          let assessment = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8)),
+          assessment[Interim.field] != nil else { return nil }
+    func sourceIsCurrent() -> Bool {
+      guard !Task.isCancelled, let roster = liveGoalWorkRoster(scope, profileID: source.profileID),
+            AgentCollaborationAcceptedDelivery.Source.rosterDigest(roster) == source.rosterDigest,
+            let original = store.persistedMessage(id: source.messageID, contactId: source.contactID), original.isMine,
+            !original.readOnlyAnalysis, original.conversationId == scope.conversationId,
+            original.turnId.ifBlank(original.id.uuidString) == scope.turnId else { return false }
+      return true
+    }
+    do {
+      guard sourceIsCurrent() else { throw CancellationError() }
+      let outcome = try AgentTeamExecutionHistoryStore.shared.deliverReviewedInterim(raw, scope: scope, source: source) {
+        content, dedupe in
+        guard sourceIsCurrent() else { throw CancellationError() }
+        let message = ChatMessage(id: AgentTeamDispatchIds.nameBasedUUID(dedupe), contactId: source.contactID, content: content,
+          isMine: false, deliveryStatus: .delivered, deliveryTrace: [DeliveryTraceEvent(stage: "collaboration_interim_delivery")],
+          conversationId: scope.conversationId, turnId: scope.turnId, remoteMessageId: dedupe)
+        return try store.chatHistoryDatabase.persistTransportIncoming(message)
+      }
+      if let message = outcome.message,
+         !store.messages(for: source.contactID).contains(where: { $0.id == message.id }),
+         let visible = try? store.persistTransportIncoming(message.content, from: source.contactID,
+           remoteMessageId: message.remoteMessageId, conversationId: scope.conversationId, turnId: scope.turnId,
+           richOutputJson: "", tracePrefix: "collaboration_interim_delivery") {
+        onIncomingMessage?(visible)
+      }
+      return outcome.receipt
+    } catch {
+      return ["success": .bool(false), "status": .string("interim_delivery_unverified"), "goal_accepted": .bool(false)]
+    }
   }
 
   private func scheduleGoalCoordinatorWake(at due: Int64) {
@@ -14906,7 +14945,7 @@ final class MessageCoordinator: ObservableObject {
             }
             guard !Task.isCancelled, self.liveGoalWorkRoster(scope, profileID: goalProfile) == goalRoster,
                   originalGoalSourceExists(scope) else { return nil }
-            return self.reserveLiveGoalContinuation(after: raw, scope: scope)
+            return self.reserveLiveGoalContinuation(after: raw, scope: scope, source: goalSource)
           }
         }, desktopEvidenceRefresh: { [weak self] input, scope in await self?.refreshLiveDesktopEvidence(input, scope: scope) },
         researchRetrySource: researchRetrySource, retainResearch: retainResearch)

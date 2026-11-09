@@ -4665,6 +4665,114 @@ extension GalaxySSIStoreTests {
   }
 
   @MainActor
+  func testReviewedInterimDeliveryKeepsOverallDissentAndRecoversWithoutReinsertingContent() throws {
+    let suite = "interim-delivery-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    func open() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]),
+        fileURL: root.appendingPathComponent("team.sqlite3"))
+    }
+    let history = open()
+    var team = durableTeamSnapshot(suite)
+    team.taskId = suite + "-turn"
+    team.goal = "Present the reviewed text, then audit user acknowledgement"
+    team.members.append(.init(agentId: "author", sourceMessageId: "source-author"))
+    team.members.append(.init(agentId: "dissent", sourceMessageId: "source-dissent"))
+    for index in team.members.indices { team.members[index].dispatchCheckpoint = .accepted }
+    XCTAssertTrue(history.upsert(team))
+    func scope(_ index: Int) -> AgentCollaborationToolEvidenceScope {
+      .init(runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
+        memberId: team.members[index].memberId, sourceId: team.members[index].sourceMessageId)
+    }
+    let coordinator = scope(0)
+    let source = AgentCollaborationAcceptedDelivery.Source(profileID: "profile", messageID: UUID(),
+      contactID: "hermes", rosterDigest: "roster")
+    let criterion: AgentMcpJSONObject = ["id": .string("report"), "requirement": .string("Present and audit the report"),
+      "verification": .string("documentary"), "status": .string("open"), "evidence": .array([])]
+    var assessment: AgentMcpJSONObject = ["format": .string("galaxyssi.goal-assessment.v1"),
+      "decision": .string("continue"), "summary": .string("The audit is pending"),
+      "work": .array([]), "blockers": .array([]), "criteria": .array([.object(criterion)])]
+    _ = try history.publishCollaborationMilestone(["mode": .string("establish_contract"),
+      "artifact": .string(AgentMcpJSONCodec.stringify(assessment))], scope: coordinator)
+    func publish(_ draft: AgentCollaborationResearchDraft, author: Int, milestone: String) throws -> AgentCollaborationResearchReference {
+      let owner = scope(author)
+      return try XCTUnwrap(history.publishResearchObjects([draft], runId: owner.runId, conversationId: owner.conversationId,
+        turnId: owner.turnId, memberId: owner.memberId, sourceId: owner.sourceId,
+        milestone: (milestone, AgentMcpJSONCodec.sha256(["fixture": .string(milestone)]))).references.first)
+    }
+    let target = try publish(.init(id: "content", objectId: nil, baseRevision: 0, kind: .artifact, title: "Reviewed report",
+      body: ["content": .string("  Preserved interim content.  ")], parents: []), author: 2, milestone: "report")
+    let targetWire = AgentCollaborationSourceAccess.workspaceReference(target)
+    func review(_ author: Int, supportsContent: Bool, previous: AgentCollaborationResearchReference? = nil)
+      throws -> AgentCollaborationResearchReference {
+      try publish(.init(id: "review", objectId: previous?.objectId, baseRevision: previous?.revision ?? 0,
+        kind: .acceptanceReview, title: "Report review", body: ["acceptance_review": .object([
+          "criterion_id": .string("report"), "requirement": criterion["requirement"] ?? .null,
+          "target": .object(targetWire), "verdict": .string("not_tested"), "rationale": .string("Acknowledgement not observed"),
+          "unresolved": .array([.string("User acknowledgement")]), "content_readiness": .object([
+            "verdict": .string(supportsContent ? "supported" : "refuted"),
+            "rationale": .string("Independent content check"), "unresolved": .array([])
+          ])])], parents: [target]), author: author, milestone: previous == nil ? "first" : "resolved")
+    }
+    let reviewed = try review(1, supportsContent: true)
+    let dissent = try review(3, supportsContent: false)
+    var bound = criterion
+    bound["delivery"] = .object(targetWire)
+    bound["review"] = .object(AgentCollaborationSourceAccess.workspaceReference(reviewed))
+    assessment["criteria"] = .array([.object(bound)])
+    assessment["interim_delivery"] = .object(["criterion_id": .string("report"), "target": .object(targetWire)])
+    let raw = AgentMcpJSONCodec.stringify(assessment)
+    XCTAssertEqual(AgentCollaborationGoalAssessmentPolicy.preflight(raw, establishedContract: true)["schema_valid"], .bool(true))
+    var invalid = assessment
+    invalid["final_delivery"] = .object(targetWire)
+    XCTAssertEqual(AgentCollaborationGoalAssessmentPolicy.preflight(AgentMcpJSONCodec.stringify(invalid),
+      establishedContract: true)["schema_valid"], .bool(false))
+    let chat = GalaxySSIChatHistoryDatabase(fileURL: root.appendingPathComponent("chat.sqlite3"), secrets: secrets)
+    var persisted: ChatMessage?
+    var writes = 0
+    func store(_ content: String, _ dedupe: String) throws -> ChatMessage {
+      writes += 1
+      let saved = try chat.persistTransportIncoming(ChatMessage(id: AgentTeamDispatchIds.nameBasedUUID(dedupe),
+        contactId: source.contactID, content: content, isMine: false, deliveryStatus: .delivered,
+        conversationId: coordinator.conversationId, turnId: coordinator.turnId, remoteMessageId: dedupe))
+      persisted = saved
+      return saved
+    }
+    XCTAssertThrowsError(try history.deliverReviewedInterim(raw, scope: coordinator, source: source, now: 10, persist: store))
+    XCTAssertEqual(writes, 0)
+    _ = try review(3, supportsContent: true, previous: dissent)
+    XCTAssertThrowsError(try history.deliverReviewedInterim(raw, scope: coordinator, source: source, now: 11) { content, dedupe in
+      _ = try store(content, dedupe)
+      throw AgentTeamHistoryDatabase.Failure.unavailable
+    })
+    let original = try XCTUnwrap(persisted)
+    let delivered = try open().deliverReviewedInterim(raw, scope: coordinator, source: source, now: 12, persist: store)
+    XCTAssertEqual(original.id, delivered.message?.id)
+    XCTAssertEqual(original.content, "Preserved interim content.")
+    XCTAssertEqual(delivered.receipt["status"], .string("conversation_persisted"))
+    XCTAssertEqual(delivered.receipt["goal_accepted"], .bool(false))
+    XCTAssertEqual(delivered.receipt["user_read"], .string("not_observed"))
+    let evidence = try XCTUnwrap(delivered.receipt["observation"]?.objectValue)
+    let page = try open().recallCollaborationOriginal(["mode": .string("evidence"),
+      "evidence_id": evidence["evidence_id"] ?? .null, "sha256": evidence["sha256"] ?? .null], scope: scope(1))
+    XCTAssertEqual(page["source_reference"]?.objectValue?["tool"], .string(AgentCollaborationInterimDelivery.tool))
+    XCTAssertNotNil(chat.deleteMessage(id: original.id, contactId: source.contactID))
+    let replay = try open().deliverReviewedInterim(raw, scope: coordinator, source: source, now: 13, persist: store)
+    XCTAssertEqual(replay.receipt, delivered.receipt)
+    XCTAssertNil(replay.message)
+    XCTAssertNil(chat.message(id: original.id))
+    XCTAssertEqual(writes, 2)
+    XCTAssertNil(try open().acceptedGoalDelivery(scope: coordinator))
+    team.state = .waitingResponse
+    team.updatedAtMillis += 1
+    XCTAssertTrue(history.upsert(team))
+    XCTAssertThrowsError(try open().deliverReviewedInterim(raw, scope: coordinator, source: source, now: 14, persist: store))
+    XCTAssertEqual(writes, 2)
+  }
+
   func testGoalWorkAdmissionKeepsPlannerOrderWithReversedTasksAndCancelledCandidate() async {
     let gate = AgentGoalWorkAdmissionOrder()
     let laterTasksArrived = expectation(description: "Later candidates ask for admission first")
