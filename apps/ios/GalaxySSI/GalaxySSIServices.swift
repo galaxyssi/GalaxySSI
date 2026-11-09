@@ -77,10 +77,20 @@ final class MessageCoordinator: ObservableObject {
   private var teamObserverDiscoveryAt: Int64 = 0
   private lazy var teamRecoveryRetries = AgentTeamRecoveryRetryLedger(secrets: store.secrets)
   private lazy var desktopResultRecovery = AgentDesktopResultRecovery(ownerId: store.profile.identityFingerprint, secrets: store.secrets)
-  private var desktopEvidenceRequests: [String: (
-    desktop: String, route: String, started: Int64, signal: AsyncStream<AgentMcpJSONObject>.Continuation
-  )] = [:]
-  private var desktopEvidenceLateQueries = AgentDesktopEvidenceQueryTrace.LateQueries()
+  private struct LegacyEvidenceTransport: Equatable {
+    let profile: String
+    let fingerprint: String
+    let signalName: String
+    let routes: GalaxySSILinkRoutes
+
+    init(profile: String, link: ServerLink) {
+      self.profile = profile
+      fingerprint = link.desktopFingerprint
+      signalName = link.signalName
+      routes = link.routes
+    }
+  }
+  private var desktopEvidenceQueries = AgentDesktopEvidenceQueries<LegacyEvidenceTransport>()
   private var desktopEvidenceImports: Set<String> = []
   private var desktopEvidenceLiveOffset = 0
   private var desktopEvidenceJobCursor = ""
@@ -3882,7 +3892,7 @@ final class MessageCoordinator: ObservableObject {
             let now = DispatchTime.now().uptimeNanoseconds
             guard !Task.isCancelled, now < deadline, self.liveEvidenceReader(scope, profile: profile) != nil else { return nil }
             let timeout = min(8_000_000_000, deadline - now)
-            let response: AgentMcpJSONObject?
+            let response: AgentDesktopEvidenceReply?
             if let runtime { response = await runtime.queryDesktopEvidence(request, payload: payload, timeoutNanoseconds: timeout) }
             else { response = await self.queryDesktopEvidence(request, payload: payload, timeoutNanoseconds: timeout) }
             return self.liveEvidenceReader(scope, profile: profile) != nil ? response : nil
@@ -3973,8 +3983,8 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func importDesktopEvidence(_ binding: AgentDesktopReplyBinding, generation: Int64, profile: String,
-      query: ((AgentDesktopToolEvidenceWire.Request, AgentMcpJSONObject) async -> AgentMcpJSONObject?)? = nil) async {
-    func fetch(_ request: AgentDesktopToolEvidenceWire.Request, payload: AgentMcpJSONObject) async -> AgentMcpJSONObject? {
+      query: ((AgentDesktopToolEvidenceWire.Request, AgentMcpJSONObject) async -> AgentDesktopEvidenceReply?)? = nil) async {
+    func fetch(_ request: AgentDesktopToolEvidenceWire.Request, payload: AgentMcpJSONObject) async -> AgentDesktopEvidenceReply? {
       if let query { return await query(request, payload) }
       return await queryDesktopEvidence(request, payload: payload)
     }
@@ -3995,12 +4005,13 @@ final class MessageCoordinator: ObservableObject {
     let inlineBytes = AgentDesktopToolEvidenceWire.maximumPageBytes
     while isCurrent() {
       let indexStarted = AgentDesktopEvidenceQueryTrace.now
-      guard let request = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: generation,
+      guard let proposed = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: generation,
               nonce: UUID().uuidString),
-            let payload = request.indexRequest(after: cursor, inlineBytes: inlineBytes),
-            let response = await fetch(request, payload: payload),
+            let payload = proposed.indexRequest(after: cursor, inlineBytes: inlineBytes),
+            let reply = await fetch(proposed, payload: payload),
             isCurrent() else { return }
-      let checkedIndex = request.verifyIndex(response, authenticatedDesktopId: binding.desktopId,
+      let request = reply.request
+      let checkedIndex = request.verifyIndex(reply.payload, authenticatedDesktopId: binding.desktopId,
         after: cursor, inlineBytes: inlineBytes)
       AgentDesktopEvidenceQueryTrace.record(checkedIndex == nil ? .indexRejected : .indexValidated,
         nonce: request.nonce, started: indexStarted)
@@ -4027,12 +4038,12 @@ final class MessageCoordinator: ObservableObject {
             guard let pageRequest = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: generation,
                     nonce: UUID().uuidString),
                   let pagePayload = pageRequest.pageRequest(descriptor, index: number),
-                  let response = await fetch(pageRequest, payload: pagePayload),
+                  let reply = await fetch(pageRequest, payload: pagePayload),
                   isCurrent() else { return }
-            let checkedPage = try? history.stageDesktopEvidencePage(response, desktopId: binding.desktopId,
-              request: pageRequest, descriptor: descriptor, index: number)
+            let checkedPage = try? history.stageDesktopEvidencePage(reply.payload, desktopId: binding.desktopId,
+              request: reply.request, descriptor: descriptor, index: number)
             AgentDesktopEvidenceQueryTrace.record(checkedPage == nil ? .pageNotStaged : .pageStaged,
-              nonce: pageRequest.nonce, started: pageStarted)
+              nonce: reply.request.nonce, started: pageStarted)
             guard let page = checkedPage else { return }
             pages.append(page)
           }
@@ -4056,43 +4067,45 @@ final class MessageCoordinator: ObservableObject {
 
   private func queryDesktopEvidence(_ request: AgentDesktopToolEvidenceWire.Request,
                                     payload: AgentMcpJSONObject,
-                                    timeoutNanoseconds: UInt64 = 8_000_000_000) async -> AgentMcpJSONObject? {
+                                    timeoutNanoseconds: UInt64 = 8_000_000_000) async -> AgentDesktopEvidenceReply? {
     let binding = request.binding
     guard !Task.isCancelled, mqttClient.relationshipSubscriptionsReady,
           let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == binding.desktopId &&
-            $0.routes.clientRouteId == binding.identity.clientRouteId }),
-          let object = try? JSONSerialization.jsonObject(with: Data(AgentMcpJSONCodec.stringify(payload).utf8)) as? [String: Any],
-          let wire = try? linkWirePayload(object, link: link) else { return nil }
-    var signal: AsyncStream<AgentMcpJSONObject>.Continuation?
-    let incoming = AsyncStream<AgentMcpJSONObject>(bufferingPolicy: .bufferingNewest(1)) { signal = $0 }
-    guard let signal else { return nil }
+            $0.routes.clientRouteId == binding.identity.clientRouteId }) else { return nil }
+    let transport = LegacyEvidenceTransport(profile: store.profile.identityFingerprint, link: link)
     let started = AgentDesktopEvidenceQueryTrace.now
-    desktopEvidenceRequests[request.nonce] = (binding.desktopId, link.routes.clientRouteId, started, signal)
-    let timeout = Task { @MainActor [weak self] in
-      do { try await Task.sleep(nanoseconds: timeoutNanoseconds) } catch { return }
-      self?.desktopEvidenceLateQueries.remember(request.nonce, desktop: binding.desktopId,
-        route: link.routes.clientRouteId, started: started, now: AgentDesktopEvidenceQueryTrace.now)
-      signal.finish()
-    }
-    var accepted = false
-    var responses: AsyncStream<AgentMcpJSONObject> {
-      accepted = true
-      AgentDesktopEvidenceQueryTrace.record(.publishAccepted, nonce: request.nonce, started: started)
-      return incoming
-    }
-    AgentDesktopEvidenceQueryTrace.record(.publishStarted, nonce: request.nonce, started: started)
+    guard let next = desktopEvidenceQueries.begin(request, payload: payload, transport: transport, now: started) else { return nil }
+    if case .retained(let reply) = next { return reply }
+    guard case .waiting(let ticket) = next else { return nil }
+    let nonce = ticket.request.nonce
+    var retain = false
     defer {
-      timeout.cancel()
-      desktopEvidenceRequests.removeValue(forKey: request.nonce)
-      signal.finish()
-      if !accepted {
-        AgentDesktopEvidenceQueryTrace.record(.publishRejected, nonce: request.nonce, started: started)
-      }
+      desktopEvidenceQueries.finish(ticket, retainAfterTimeout: retain)
     }
-    guard await mqttClient.publishTransientControl(topic: link.routes.upTopic, payload: wire.wireData, link: link) == .published else { return nil }
-    for await response in responses { return response }
+    guard let object = try? JSONSerialization.jsonObject(with: Data(AgentMcpJSONCodec.stringify(ticket.payload).utf8)) as? [String: Any],
+          let wire = try? linkWirePayload(object, link: link) else { return nil }
+    AgentDesktopEvidenceQueryTrace.record(.publishStarted, nonce: nonce, started: started)
+    let dispatchStarted = DispatchTime.now().uptimeNanoseconds
+    guard await mqttClient.publishTransientControl(topic: link.routes.upTopic, payload: wire.wireData, link: link) == .published,
+          !Task.isCancelled else {
+      AgentDesktopEvidenceQueryTrace.record(.publishRejected, nonce: nonce, started: started)
+      return nil
+    }
+    AgentDesktopEvidenceQueryTrace.record(.publishAccepted, nonce: nonce, started: started)
+    let spent = DispatchTime.now().uptimeNanoseconds - dispatchStarted
+    let remaining = timeoutNanoseconds > spent ? timeoutNanoseconds - spent : 0
+    let timeout = Task { @MainActor [weak self] in
+      do { try await Task.sleep(nanoseconds: remaining) } catch { return }
+      self?.desktopEvidenceQueries.timeout(ticket, now: AgentDesktopEvidenceQueryTrace.now)
+    }
+    defer { timeout.cancel() }
+    for await reply in ticket.stream {
+      guard !Task.isCancelled else { return nil }
+      return reply
+    }
     if !Task.isCancelled {
-      AgentDesktopEvidenceQueryTrace.record(.timedOut, nonce: request.nonce, started: started)
+      retain = true
+      AgentDesktopEvidenceQueryTrace.record(.timedOut, nonce: nonce, started: started)
     }
     return nil
   }
@@ -17060,29 +17073,25 @@ final class MessageCoordinator: ObservableObject {
     }
     if appPayload.string("type") == "agent_task_evidence" {
       let nonce = appPayload.string("request_id")
-      let pending = desktopEvidenceRequests[nonce]
+      let started = desktopEvidenceQueries.started(nonce)
       guard object.string("scheme") == "signal", let link, link.paired,
             appPayload.string("client_route_id") == link.routes.clientRouteId else {
-        if let pending { AgentDesktopEvidenceQueryTrace.record(.routeMismatch, nonce: nonce, started: pending.started) }
+        if let started { AgentDesktopEvidenceQueryTrace.record(.routeMismatch, nonce: nonce, started: started) }
         return
       }
-      if let started = desktopEvidenceLateQueries.consume(nonce, desktop: link.desktopId,
-           route: link.routes.clientRouteId, now: AgentDesktopEvidenceQueryTrace.now) {
-        AgentDesktopEvidenceQueryTrace.record(.responseLate, nonce: nonce, started: started)
-        return
-      }
-      guard let pending else { return }
-      guard pending.desktop == link.desktopId, pending.route == link.routes.clientRouteId else {
-        AgentDesktopEvidenceQueryTrace.record(.routeMismatch, nonce: nonce, started: pending.started)
-        return
-      }
+      guard let started else { return }
       guard let bytes = try? JSONSerialization.data(withJSONObject: appPayload),
             let response = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: bytes) else {
-        AgentDesktopEvidenceQueryTrace.record(.invalidResponse, nonce: nonce, started: pending.started)
+        AgentDesktopEvidenceQueryTrace.record(.invalidResponse, nonce: nonce, started: started)
         return
       }
-      AgentDesktopEvidenceQueryTrace.record(.responseReceived, nonce: nonce, started: pending.started)
-      pending.signal.yield(response)
+      let transport = LegacyEvidenceTransport(profile: store.profile.identityFingerprint, link: link)
+      switch desktopEvidenceQueries.receive(response, transport: transport, desktop: link.desktopId, now: AgentDesktopEvidenceQueryTrace.now) {
+      case .active: AgentDesktopEvidenceQueryTrace.record(.responseReceived, nonce: nonce, started: started)
+      case .late: AgentDesktopEvidenceQueryTrace.record(.responseLate, nonce: nonce, started: started)
+      case .rejected: AgentDesktopEvidenceQueryTrace.record(.invalidResponse, nonce: nonce, started: started)
+      case .unknown, .discarded, .duplicate: break
+      }
       return
     }
     if appPayload.string("type") == AgentDesktopCollaborationArchiveRecall.requestType,
