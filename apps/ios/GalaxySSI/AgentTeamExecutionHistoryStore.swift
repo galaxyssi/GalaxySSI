@@ -4436,14 +4436,15 @@ final class AgentTeamExecutionHistoryStore {
         row["data_dependencies"] = .array(Self.goalWorkDataDependencies(item, history: history))
         if let barriers = item.completion_barriers { row["completion_barriers"] = .array(barriers.map { .object($0.fields) }) }
       }
+      if let tokens = item.uses_milestones, !tokens.isEmpty {
+        row["milestone_inputs"] = AgentGoalWorkMilestoneRead.inputRoles(tokens, reviewTokens: item.reviewMilestoneTokens)
+      }
       if item.isVersionBoundReview {
         row["review_input_dependencies"] = .array(item.depends_on.compactMap { id in
           guard item.reviewInputRequirement(id) != nil else { return nil }
-          return .object(["work_id": .string(id), "uses_milestones": .array((inputs[id]?.versions ?? []).map { .string($0.token) })])
+          return .object(["work_id": .string(id), "input_role": .string(item.reviewInputRole(id).rawValue),
+            "uses_milestones": .array((inputs[id]?.versions ?? []).map { .string($0.token) })])
         })
-      }
-      if let tokens = item.uses_milestones, !tokens.isEmpty {
-        row["milestone_inputs"] = AgentGoalWorkMilestoneRead.inputRoles(tokens, reviewTokens: item.reviewMilestoneTokens)
       }
       return row
     }, bytes: 6_000)
@@ -4526,10 +4527,8 @@ final class AgentTeamExecutionHistoryStore {
       let bound = graph.boundInputs(for: work.id)
       let reviewSubjects = Set(work.review_targets ?? (work.independent_review == true ? work.depends_on : []))
       let producers = Dictionary(graph.work.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-      if bound.values.contains(where: { $0.role == .reviewSubject }) {
-        guard work.isVersionBoundReview
-        else { throw AgentTeamHistoryDatabase.Failure.stale }
-      }
+      let hasReviewBinding = bound.values.contains { $0.role != nil }
+      guard !hasReviewBinding || work.isVersionBoundReview else { throw AgentTeamHistoryDatabase.Failure.stale }
       var probeOrigin: AgentMcpJSONObject?
       if var probe = work.probeBinding {
         let inputs = probe.removeValue(forKey: "inputs") ?? .object([:])
@@ -4543,7 +4542,7 @@ final class AgentTeamExecutionHistoryStore {
       for dependency in work.depends_on {
         if let input = bound[dependency] {
           guard let producer = producers[dependency], input.requirement.work_id == dependency,
-                input.role != .reviewSubject || reviewSubjects.contains(dependency),
+                input.role == nil || input.role == work.reviewInputRole(dependency),
                 !work.hasCompletionBarrier(dependency),
                 !reviewSubjects.contains(dependency) || team.reviewIdentity(producer.member) != team.reviewIdentity(work.member)
           else { throw AgentTeamHistoryDatabase.Failure.stale }
@@ -4576,7 +4575,7 @@ final class AgentTeamExecutionHistoryStore {
         milestoneAuthors[token] = entry.producer.memberId
         for reference in entry.references { _ = try Self.milestoneRevision(reference, entry: entry, database: database) }
       }
-      if !tokens.isEmpty || bound.values.contains(where: { $0.role == .reviewSubject }) {
+      if !tokens.isEmpty || hasReviewBinding {
         let authors = Dictionary(graph.work.map { ($0.id, $0.member) }, uniquingKeysWith: { first, _ in first })
         guard work.hasIndependentReviewAuthors({ authors[$0] }, milestoneAuthors: milestoneAuthors,
           identity: team.reviewIdentity) else { throw AgentTeamHistoryDatabase.Failure.stale }
@@ -4816,7 +4815,7 @@ final class AgentTeamExecutionHistoryStore {
       let inputs = try request.inputs.map { selection -> WorkInputs.BoundInput in
         guard let producer = byID[selection.dependency], target.depends_on.contains(producer.id),
               !target.hasCompletionBarrier(producer.id),
-              review || previouslyBound[producer.id]?.role != .reviewSubject,
+              review || previouslyBound[producer.id]?.role == nil,
               !reviewTargets.contains(producer.id) || team.reviewIdentity(producer.member) != team.reviewIdentity(target.member)
         else { throw AgentTeamHistoryDatabase.Failure.stale }
         let requirement: WorkInputs.Requirement
@@ -4837,7 +4836,7 @@ final class AgentTeamExecutionHistoryStore {
         let versions = try selection.uses_milestones.map {
           try inputMilestone(token: $0, producer: producer, scope: scope, database: database).pin
         }
-        return .init(requirement: requirement, versions: versions, role: review ? .reviewSubject : nil)
+        return .init(requirement: requirement, versions: versions, role: review ? target.reviewInputRole(producer.id) : nil)
       }
       var effective = previouslyBound
       for input in inputs { effective[input.requirement.work_id] = input }

@@ -665,12 +665,15 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
         learning == nil && procedure_use == nil
     }
 
+    func reviewInputRole(_ dependency: String) -> InputBindings.BoundInput.Role {
+      (review_targets ?? depends_on).contains(dependency) ? .reviewSubject : .prerequisite
+    }
+
     func reviewInputRequirement(_ dependency: String) -> InputBindings.Requirement? {
-      guard isVersionBoundReview, depends_on.contains(dependency), !hasCompletionBarrier(dependency),
-            (review_targets ?? depends_on).contains(dependency)
+      guard isVersionBoundReview, depends_on.contains(dependency), !hasCompletionBarrier(dependency)
       else { return nil }
       if let data_dependencies { return data_dependencies.first { $0.work_id == dependency } }
-      return .reviewSubject(dependency)
+      return reviewInputRole(dependency) == .reviewSubject ? .reviewSubject(dependency) : .reviewPrerequisite(dependency)
     }
 
     func hasIndependentReviewAuthors(_ author: (String) -> String?,
@@ -888,20 +891,21 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
       let known = InputBindings.requirements(item.data_dependencies, history: prior)
       let corrections = revision.completionCorrections ?? [:]
       let selectedIDs = Set(revision.inputs.map { $0.requirement.work_id })
+      let newRequirements = selectedIDs.subtracting(Set(known.keys))
       guard prior.count < InputBindings.maximumRevisions, revision.revision == Int64(prior.count + 1),
             !revision.reason.isBlank, !revision.inputs.isEmpty,
             revision.kind != .independentReview || (revision.coordinator != nil &&
               revision.previousRevision == Int64(prior.count) && corrections.isEmpty),
             selectedIDs.count == revision.inputs.count, Set(corrections.keys).isSubset(of: selectedIDs),
-            known.count + corrections.count <= 32,
+            known.count + newRequirements.count <= 32,
             revision.inputs.allSatisfy({ input in
               let dependency = input.requirement.work_id
               guard item.depends_on.contains(dependency), !item.hasCompletionBarrier(dependency),
                     !input.versions.isEmpty, input.versions.allSatisfy({ $0.workID == dependency }) else { return false }
               if revision.kind == .independentReview {
-                return input.role == .reviewSubject && item.reviewInputRequirement(dependency) == input.requirement
+                return input.role == item.reviewInputRole(dependency) && item.reviewInputRequirement(dependency) == input.requirement
               }
-              guard input.role == nil, pinned[dependency]?.role != .reviewSubject else { return false }
+              guard input.role == nil, pinned[dependency]?.role == nil else { return false }
               if let rationale = corrections[dependency] {
                 return item.allowsCompletionCorrection && known[dependency] == nil &&
                   !rationale.isBlank && rationale.utf16.count <= 2_000 &&

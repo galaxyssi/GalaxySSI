@@ -13,7 +13,8 @@ enum AgentCollaborationWorkInputBindings {
     "to bind data edges of unclaimed work. Read the full assignment and input_revision with work_inventory and work_id. " +
     "To correct an unclaimed, non-barrier completion wait, use revise_input_dependencies with the same request fields, " +
     "and add requirement and completion_not_required_because to each input. Keep all other waits and the assignment unchanged. " +
-    "For an unclaimed independent VERIFY or CHALLENGE, rebind_reviews uses the same request shape to pin a named review subject. " +
+    "For an unclaimed independent VERIFY or CHALLENGE, rebind_reviews pins exact versions for existing review subjects or " +
+    "supporting prerequisites. The reviewer may supply supporting data, but cannot author the subject. " +
     "Explicit completion-only edges and completion barriers still wait; a generic data rebind cannot replace a review binding. " +
     "Publication is not completion. A correction is a coordinator assertion, not evidence verification."
   static let producerInstructions =
@@ -80,6 +81,10 @@ enum AgentCollaborationWorkInputBindings {
 
     static func reviewSubject(_ workID: String) -> Self {
       .init(work_id: workID, requirement: "Review the exact published version of this subject.")
+    }
+
+    static func reviewPrerequisite(_ workID: String) -> Self {
+      .init(work_id: workID, requirement: "Use the exact published version as supporting data for the original review.")
     }
 
     init(work_id: String, requirement: String) {
@@ -200,7 +205,7 @@ enum AgentCollaborationWorkInputBindings {
   }
 
   struct BoundInput: Codable, Equatable {
-    enum Role: String, Codable { case reviewSubject = "review_subject" }
+    enum Role: String, Codable { case reviewSubject = "review_subject", prerequisite }
     let requirement: Requirement
     let versions: [Pin]
     var role: Role? = nil
