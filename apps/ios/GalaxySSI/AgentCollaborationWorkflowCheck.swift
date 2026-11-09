@@ -1,5 +1,59 @@
 import Foundation
 
+enum AgentCollaborationWorkflowProjection {
+  struct Selector {
+    let id: String
+    let digest: String
+    let reportPointer: String
+    let pointer: String
+    let milestone: String?
+
+    init?(_ value: AgentMcpJSONValue) {
+      guard let fields = value.objectValue,
+            Set(fields.keys).isSubset(of: ["observation", "pointer", "report_pointer", "milestone"]),
+            let original = fields["observation"]?.objectValue, Set(original.keys) == ["evidence_id", "sha256"],
+            let id = original["evidence_id"]?.strictStringValue, AgentCollaborationCandidateRecall.validDigest(id),
+            let hash = original["sha256"]?.strictStringValue, AgentCollaborationCandidateRecall.validDigest(hash),
+            case .string(let pointer)? = fields["pointer"], Self.valid(pointer),
+            case .string(let report) = fields["report_pointer"] ?? .string(""), Self.valid(report) else { return nil }
+      if let token = fields["milestone"] {
+        guard let value = token.strictStringValue, AgentCollaborationCandidateRecall.validDigest(value) else { return nil }
+        milestone = value
+      } else { milestone = nil }
+      self.id = id
+      digest = hash
+      reportPointer = report
+      self.pointer = pointer
+    }
+
+    private static func valid(_ pointer: String) -> Bool {
+      pointer.utf8.count <= 512 && (pointer.isEmpty || (pointer.hasPrefix("/") &&
+        pointer.range(of: "~(?![01])", options: .regularExpression) == nil))
+    }
+  }
+
+  static func select(_ output: AgentMcpJSONObject, selector: Selector) -> AgentMcpJSONValue? {
+    func at(_ root: AgentMcpJSONValue, _ pointer: String) -> AgentMcpJSONValue? {
+      var node = root
+      for segment in pointer.split(separator: "/", omittingEmptySubsequences: false).dropFirst() {
+        let key = segment.replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~")
+        if let field = node.objectValue?[key] { node = field }
+        else if let rows = node.arrayValue, let index = Int(key), String(index) == key, rows.indices.contains(index) {
+          node = rows[index]
+        } else { return nil }
+      }
+      return node
+    }
+    guard let report = at(.object(output), selector.reportPointer) else { return nil }
+    let root: AgentMcpJSONObject?
+    if let raw = report.strictStringValue {
+      root = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    } else { root = report.objectValue }
+    guard let root else { return nil }
+    return at(.object(root), selector.pointer)
+  }
+}
+
 enum AgentCollaborationWorkflowCheck {
   static let mode = "workflow_check"
   static let kind = "workflow_selection_rule"
