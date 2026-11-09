@@ -2,7 +2,7 @@ import CryptoKit
 import XCTest
 @testable import GalaxySSI
 
-private enum FrozenPilot {
+enum FrozenPilot {
   static let nodes = ["draft", "review", "final"]
   static let format = "galaxyssi.ios.remote-pilot-candidate.v1"
   enum Failure: Error { case source, dispatch, output, conflict, integrity }
@@ -61,6 +61,13 @@ private enum FrozenPilot {
     let effort: String
     let promptSHA256: String
     let returnedOutputSHA256: String
+    var androidSourceMessageID: Int64? = nil
+  }
+
+  struct ReportProvenance: Codable {
+    var origin = "completed_test_report"
+    let reportSHA256: String
+    var providerAttested = false
   }
 
   struct Output: Codable {
@@ -77,10 +84,18 @@ private enum FrozenPilot {
     let finalOutputSHA256: String
     let outputs: [Output]
     let dispatches: [Dispatch]
+    var reportRecovery: ReportProvenance? = nil
 
     func validate(expected: Binding) throws {
-      guard format == FrozenPilot.format, trust == "unverified_candidate", !grantsPermissions,
+      guard format == (reportRecovery == nil ? FrozenPilot.format : FrozenPilot.recoveredFormat),
+            trust == "unverified_candidate", !grantsPermissions,
             binding == expected else { throw Failure.source }
+      if let reportRecovery {
+        guard reportRecovery.origin == "completed_test_report", !reportRecovery.providerAttested,
+              isDigest(reportRecovery.reportSHA256), Set(dispatches.map(\.child)).count == nodes.count,
+              Set(dispatches.map(\.key)).count == nodes.count,
+              Set(dispatches.compactMap(\.androidSourceMessageID)).count == nodes.count else { throw Failure.dispatch }
+      }
       let source = expected.source
       guard outputs.map(\.node) == nodes, dispatches.map(\.node) == nodes,
             outputs.last?.text.utf8.elementsEqual(finalOutput.utf8) == true,
@@ -89,9 +104,16 @@ private enum FrozenPilot {
         guard !output.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               output.text.utf8.count <= 96_000, dispatch.returnedOutputSHA256 == digest(Data(output.text.utf8))
         else { throw Failure.output }
-        guard dispatch.identity == source.identity, dispatch.person == expected.person(for: dispatch.node),
-              dispatch.child == AgentTeamExecutionRuntime.stableChildRunId(supervisorRunId: source.identity.run,
-                instanceId: dispatch.node), dispatch.key == source.identity.run + ":" + dispatch.node,
+        let validIdentity: Bool
+        if reportRecovery != nil {
+          validIdentity = !dispatch.child.isBlank && !dispatch.key.isBlank &&
+            dispatch.androidSourceMessageID == androidSourceID(dispatch.key)
+        } else {
+          validIdentity = dispatch.androidSourceMessageID == nil &&
+            dispatch.child == AgentTeamExecutionRuntime.stableChildRunId(supervisorRunId: source.identity.run,
+              instanceId: dispatch.node) && dispatch.key == source.identity.run + ":" + dispatch.node
+        }
+        guard validIdentity, dispatch.identity == source.identity, dispatch.person == expected.person(for: dispatch.node),
               dispatch.target == source.target, dispatch.model == source.model, dispatch.effort == source.effort,
               isDigest(dispatch.promptSHA256) else { throw Failure.dispatch }
       }
@@ -112,6 +134,7 @@ private enum FrozenPilot {
     let source: Source
     let finalOutput: String
     let observerOutputs: [String]
+    var reportRecovery: ReportProvenance? = nil
   }
 
   static func capture(binding: Binding, snapshot: AgentTeamExecutionSnapshot, dispatches: [Dispatch]) throws -> Payload {
@@ -309,7 +332,7 @@ final class AgentFrozenPilotArtifactTests: XCTestCase {
     print("GALAXYSSI_FROZEN_ARTIFACT_SHA256=\(ref.sha256)")
     if let export = env["GALAXYSSI_FREEZE_EXPORT_DIRECTORY"] {
       let bytes = try Pilot.encode(Pilot.ProbeOriginal(source: saved.binding.source, finalOutput: saved.finalOutput,
-        observerOutputs: saved.outputs.dropLast().map(\.text)))
+        observerOutputs: saved.outputs.dropLast().map(\.text), reportRecovery: saved.reportRecovery))
       guard bytes.count <= 192_000 else { throw Pilot.Failure.output }
       let hash = Pilot.digest(bytes)
       try bytes.write(to: URL(fileURLWithPath: export, isDirectory: true).appendingPathComponent(hash + ".json"),

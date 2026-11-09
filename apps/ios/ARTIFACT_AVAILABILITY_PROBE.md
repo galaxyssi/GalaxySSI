@@ -1,5 +1,12 @@
 # Artifact availability probe
 
+The iOS plan also accepts `galaxyssi.artifact-transfer-probe.v2` with the same
+field names as its v1 format. Each case has one `withheld` slot with an empty
+`sourceID` and one or more `available` slots referencing distinct declared
+candidates. All slots in a case must contain byte-identical target material.
+The shared control never opens candidate storage. No target slot can reuse
+an acquisition identity or its task material.
+
 `AgentArtifactAvailabilityProbeTests` exercises the paired controls from
 Android #3394 in the production iOS team runtime. Each test dispatch has a
 fresh conversation, run, turn and task, and exactly one responding worker.
