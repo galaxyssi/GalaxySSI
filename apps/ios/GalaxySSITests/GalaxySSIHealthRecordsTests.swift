@@ -310,6 +310,95 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testInstructionProposalUsesOnlyExactSourceAndRequiresSeparateUserReview() async throws {
+    typealias Assist = GalaxySSIHealthInstructionProposal
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let file = root.appendingPathComponent("health")
+    let directory = file.appendingPathExtension("visit-originals")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let now = Date(), owner = "instruction-proposal-fixture", secrets = HealthFixtureSecrets()
+    func open() -> GalaxySSIHealthRecords { .init(owner: owner, secrets: secrets, isolatedFile: file) }
+    let records = open()
+    let originalStore = GalaxySSIHealthOriginalStore(owner: owner, secrets: secrets, fixtureDirectory: directory,
+      restoreRecordsFile: file)
+    let quote = "Follow up next Tuesday"
+    let bytes = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 300, height: 160)).pdfData { context in
+      context.beginPage()
+      (quote as NSString).draw(at: CGPoint(x: 12, y: 20), withAttributes: [.font: UIFont.systemFont(ofSize: 14)])
+    }
+    try originalStore.store(bytes, name: "Excluded Original Name.pdf")
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-300), value: 110,
+      notes: "Excluded measurement notes", unitOverride: "mg/dL", referenceInterval: "70 - 99"))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.setHealthOnlinePermission(true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"]), visit = UUID()
+    let stamp = try records.localCareEncounterPage(id: concern.id, metric: .glucose).stamp
+    _ = try records.saveLocalCareEncounter(.init(purpose: "Excluded Visit Name"), id: visit, operation: UUID(),
+      expected: stamp, expectedEntry: nil)
+    func scope() throws -> GalaxySSIHealthEncounterDocument.Scope {
+      try records.visitDocumentPage(concern: concern.id, metric: .glucose, visit: visit).scope
+    }
+    let initial = try scope()
+    let original = try XCTUnwrap(records.visitDocumentLibrary(initial).originals.first)
+    let preview = try records.previewVisitDocument(original, page: 1, expected: initial)
+    let link = try records.linkVisitDocument(preview, whole: false)
+    let reading = try await records.readVisitInstructionSource(link, page: 1, expected: scope())
+    let region = try XCTUnwrap(reading.result.regions.first(where: { $0.text.contains(quote) }))
+    let draft = try records.createVisitInstruction(from: reading, selected: [region.id], operation: UUID()).entry
+    let history = try records.visitInstructionHistory(id: draft.id, expected: scope())
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    func approve() throws -> Assist.Approval {
+      try records.prepareVisitInstructionProposal(history, contactID: "provider", model: model, key: "fixture-api-key")
+    }
+    let first = try approve(), concurrent = try approve()
+    let request = try Assist.request(first, key: "fixture-api-key")
+    let body = String(decoding: try XCTUnwrap(request.httpBody), as: UTF8.self)
+    XCTAssertTrue(body.contains(quote))
+    for forbidden in [original.name, original.id.uuidString, "Excluded Visit Name", "Excluded measurement notes", "saved_profile"] {
+      XCTAssertFalse(body.contains(forbidden))
+    }
+    XCTAssertThrowsError(try Assist.request(first, key: "different-api-key"))
+    var fields = Dictionary(uniqueKeysWithValues: GalaxySSIHealthInstruction.Kind.followUp.fields.map {
+      ($0.rawValue, AgentMcpJSONValue.object(["quote": .string(""), "certainty": .string("notFound")]))
+    })
+    fields["name"] = .object(["quote": .string("Follow up"), "certainty": .string("quoted")])
+    fields["start"] = .object(["quote": .string("next Tuesday"), "certainty": .string("uncertain")])
+    let arguments: AgentMcpJSONObject = ["kind": .string("followUp"), "fields": .object(fields)]
+    fields["start"] = .object(["quote": .string("next Monday"), "certainty": .string("quoted")])
+    XCTAssertThrowsError(try records.stageVisitInstructionProposal(["kind": .string("followUp"), "fields": .object(fields)],
+      approval: first, history: history))
+    let suggested = try records.stageVisitInstructionProposal(arguments, approval: first, history: history)
+    XCTAssertEqual(try open().pendingVisitInstructionProposal(history), suggested)
+    XCTAssertThrowsError(try records.stageVisitInstructionProposal(arguments, approval: concurrent, history: history))
+    XCTAssertEqual(try records.load().localCareInstructions?.current[draft.id], draft)
+    try records.dismissVisitInstructionProposal(suggested, history: history)
+    XCTAssertEqual(try records.stageVisitInstructionProposal(arguments, approval: first, history: history).state, .dismissed)
+    let permissionBound = try approve()
+    try records.setHealthOnlinePermission(false)
+    try records.setHealthOnlinePermission(true)
+    XCTAssertThrowsError(try records.stageVisitInstructionProposal(arguments, approval: permissionBound, history: history))
+    let final = try approve()
+    let pending = try records.stageVisitInstructionProposal(arguments, approval: final, history: history)
+    let applied = try records.applyVisitInstructionProposal(pending, history: history)
+    XCTAssertEqual(try open().applyVisitInstructionProposal(pending, history: history), applied)
+    XCTAssertEqual(applied.entry.modelProposalID, final.id)
+    XCTAssertEqual(applied.entry.draft.value(.name).text, "Follow up")
+    XCTAssertEqual(applied.entry.draft.value(.name).review, .unreviewed)
+    XCTAssertFalse(applied.entry.draft.eligibleForAction)
+    let archive = try records.load()
+    XCTAssertEqual(archive.localInstructionProposals?[final.id]?.state, .applied)
+    XCTAssertTrue(archive.localCare?.current["glucose"]?.adoptedActions?.isEmpty ?? true)
+    XCTAssertTrue(archive.localCareFollowUps?.isEmpty ?? true)
+    XCTAssertTrue(archive.localCareDiscussions?.isEmpty ?? true)
+    XCTAssertNil(try Data(contentsOf: file).range(of: Data(quote.utf8)))
+    try records.deleteVisitInstruction(records.visitInstructionHistory(id: draft.id, expected: scope()))
+    XCTAssertTrue(try records.load().localInstructionProposals?.isEmpty ?? false)
+  }
+
+  @MainActor
   func testVisitLedgerPaginatesThirtyExactRevisions() throws {
     typealias Visit = GalaxySSIHealthEncounter
     let now = Date(), id = UUID()

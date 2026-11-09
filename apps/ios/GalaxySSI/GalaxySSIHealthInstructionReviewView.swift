@@ -32,6 +32,7 @@ struct GalaxySSIHealthInstructionReviewView: View {
   @State private var deleting = false
   @State private var confirming = false
   @State private var actionConfirmation: ActionConfirmation?
+  @State private var showingProposal = false
   @State private var mutating = false
   @State private var failed = false
   @State private var reload = UUID()
@@ -64,6 +65,11 @@ struct GalaxySSIHealthInstructionReviewView: View {
       }
     }
     .navigationViewStyle(.stack)
+    .sheet(isPresented: $showingProposal, onDismiss: {
+      if canRead, let id = history?.item.id { load(); open(id) }
+    }) {
+      if let history { GalaxySSIHealthInstructionProposalView(records: records, history: history) }
+    }
     .sheet(item: $actionConfirmation) { confirmation in
       GalaxySSIHealthInstructionActionConfirmation(language: language) { acknowledged in
         guard acknowledged, canRead, actionConfirmation?.id == confirmation.id,
@@ -199,6 +205,10 @@ struct GalaxySSIHealthInstructionReviewView: View {
         if current.next != nil { Button(t("more", "Show more")) { open(entry.id, append: true) } }
       }
       Button(t("edit", "Review fields")) { editor = entry.draft }.disabled(!current.item.originalAvailable)
+      if entry.draft.canRequestProposal {
+        Button(t("assist_title", "Suggest fields from original")) { showingProposal = true }
+          .disabled(!current.item.originalAvailable)
+      }
       if entry.draft.eligibleForAction {
         Button(t("action_add", "Add to Health Actions")) { actionConfirmation = .init(history: current) }
           .disabled(!current.item.originalAvailable)
@@ -241,7 +251,8 @@ struct GalaxySSIHealthInstructionReviewView: View {
   private func clear() {
     clearRecognition()
     page = nil; rows = []; expires = nil; documents = nil; sourceRows = []; source = nil
-    history = nil; receipts = []; editor = nil; deleting = false; actionConfirmation = nil; failed = false
+    history = nil; receipts = []; editor = nil; deleting = false; actionConfirmation = nil
+    showingProposal = false; failed = false
   }
   private func reset() { clear(); reload = UUID() }
   private func fail() { clear(); failed = true }
