@@ -3260,6 +3260,10 @@ extension GalaxySSIStoreTests {
     let baseline = saved(1, .workflowMethod, method("Baseline work"))
     let candidate = saved(2, .workflowMethod, method("Candidate work"))
     let dataset = saved(3, .artifact, ["content": .string("Dataset")])
+    var completeInput = saved(9, .artifact, [:])
+    completeInput.draft.body = ["count": .int(3), "mutable": .bool(false)]
+    var incompleteInput = saved(10, .artifact, [:])
+    incompleteInput.draft.body = ["count": .int(3)]
     let earlier = saved(4, .innovation, [:], parents: [baseline.reference])
     let later = saved(5, .innovation, [:], parents: [candidate.reference])
     var plan = saved(6, .experimentPlan, [:], parents: [earlier.reference, later.reference, dataset.reference])
@@ -3276,7 +3280,7 @@ extension GalaxySSIStoreTests {
     persistedPlan["workflowComparison"] = .object(["baseline": .object(Check.reference(baseline.reference)),
       "candidate": .object(Check.reference(candidate.reference)), "dataset": .object(Check.reference(dataset.reference))])
     try database.transaction {
-      for row in [baseline, candidate, dataset, earlier, later, result, lesson] {
+      for row in [baseline, candidate, dataset, earlier, later, result, lesson, completeInput, incompleteInput] {
         try database.insertResearchRecord(row, conversationId: scope.conversationId,
           key: "object:" + row.reference.objectId, revision: row.reference.revision)
       }
@@ -3349,6 +3353,7 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(reopened.snapshot(supervisorRunId: scope.runId)?.members[1].status, member.status)
     var consumer = durableTeamSnapshot("observed-route")
     consumer.taskId = "observed-route"
+    consumer.goal = "Review the original workflow input"
     consumer.members[0].dispatchCheckpoint = .accepted
     consumer.members[1].dispatchCheckpoint = .dispatching
     XCTAssertTrue(reopened.upsert(consumer))
@@ -3407,6 +3412,35 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(work.assignment, "Candidate work")
     XCTAssertEqual(work.workflowObservedBinding?["method_selection"]?.objectValue?["variant"], .string("candidate"))
     XCTAssertEqual(work.workflowObservedBinding?["input_observations"]?.objectValue?["data"]?.objectValue?["status"], .string("failed"))
+    func workspaceAdmission(_ name: String, ref: AgentCollaborationResearchReference, revision: Int64,
+                            duplicate: Bool = false) -> AgentMcpJSONObject {
+      let item: AgentMcpJSONObject = ["execution_id": .string(name), "selection_rule": ruleRef,
+        "inputs": .object(duplicate ? ["data": .object(completeInput.draft.body)] : [:]),
+        "workspace_inputs": .object(["data": .object(Check.reference(ref))]),
+        "roles": .object(["worker": .string(producer.memberId)])]
+      return ["mode": .string("append_work"), "expected_revision": .int(revision), "milestone_id": .string(name),
+        "artifact": .string(AgentMcpJSONCodec.stringify(["format": .string("galaxyssi.work-expansion.v1"),
+          "work": .array([.object(["workflow_instance": .object(item)])])]))]
+    }
+    var forged = completeInput.reference
+    forged.sha256 = String(repeating: "f", count: 64)
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(
+      workspaceAdmission("forged", ref: forged, revision: 2), scope: coordinator))
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(
+      workspaceAdmission("duplicate", ref: completeInput.reference, revision: 2, duplicate: true), scope: coordinator))
+    let pinnedRequest = workspaceAdmission("workspace-candidate", ref: completeInput.reference, revision: 2)
+    _ = try reopened.publishCollaborationMilestone(pinnedRequest, scope: coordinator)
+    _ = try reopened.publishCollaborationMilestone(
+      workspaceAdmission("workspace-baseline", ref: incompleteInput.reference, revision: 3), scope: coordinator)
+    let graph = try XCTUnwrap(reopened.goalCheckpoint(runId: coordinator.runId, conversationId: coordinator.conversationId,
+      turnId: coordinator.turnId)?.liveGraph)
+    let fromWorkspace = try XCTUnwrap(graph.work.first { $0.workflowExecutionId == "workspace-candidate" })
+    XCTAssertEqual(fromWorkspace.assignment, "Candidate work")
+    XCTAssertEqual(fromWorkspace.workflowObservedBinding?["input_workspace_refs"]?.objectValue?["data"],
+      .object(Check.reference(completeInput.reference)))
+    let fallback = try XCTUnwrap(graph.work.first { $0.workflowExecutionId == "workspace-baseline" })
+    XCTAssertEqual(fallback.assignment, "Baseline work")
+    XCTAssertEqual(fallback.workflowObservedBinding?["method_selection"]?.objectValue?["reason"], .string("insufficient_condition_data"))
     var changed = baseline
     changed.reference.revision = 2
     try database.transaction {
@@ -3418,6 +3452,11 @@ extension GalaxySSIStoreTests {
     let afterReopen = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
     XCTAssertEqual(try afterReopen.publishCollaborationMilestone(input, scope: coordinator)["replayed"], .bool(true))
+    XCTAssertEqual(try afterReopen.publishCollaborationMilestone(pinnedRequest, scope: coordinator)["replayed"], .bool(true))
+    XCTAssertThrowsError(try afterReopen.publishCollaborationMilestone(
+      workspaceAdmission("stale-rule", ref: completeInput.reference, revision: 4), scope: coordinator))
+    let pinnedClaim = try afterReopen.claimGoalWork(fromWorkspace, scope: coordinator)
+    XCTAssertEqual(pinnedClaim.dependencies.first?["binding"]?.objectValue, fromWorkspace.workflowObservedBinding)
     let claim = try afterReopen.claimGoalWork(work, scope: coordinator)
     XCTAssertTrue(claim.claimed)
     XCTAssertEqual(claim.dependencies.first?["binding"]?.objectValue, work.workflowObservedBinding)

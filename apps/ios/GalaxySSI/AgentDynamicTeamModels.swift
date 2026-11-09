@@ -238,6 +238,9 @@ enum AgentCollaborationRuleTopics {
     Each measurement must identify its actual variant's workflow_sha256 and the registered dataset_sha256.
     A workflow_selection_rule parents an independently retained workflow comparison lesson. Use purpose, domain, condition_basis,
     limitations, prospective_test, lesson, when_all and unless_any. Each condition has id, input, pointer, operator, value and rationale.
+    A conditional workflow_instance can also bind workspace_inputs: map input names to exact object_id, revision and sha256.
+    Pointers read the saved record body. Do not repeat a name across inputs, workspace_inputs and observed_inputs.
+    Workspace originals do not certify truth; an unknown condition can select the baseline without proving its applicability.
     \(AgentCollaborationWorkflowCheck.instructions)
     To instantiate a workflow from original tool results, use workflow_instance with execution_id, exactly one of
     method or selection_rule, inputs, roles and observed_inputs. Each observed input uses
@@ -757,7 +760,8 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
         } else if let raw = object["workflow_instance"] {
           guard object.count == 1, let instance = raw.objectValue,
                 Set(["execution_id", "inputs", "roles"]).isSubset(of: instance.keys),
-                Set(instance.keys).isSubset(of: ["execution_id", "method", "selection_rule", "inputs", "roles", "observed_inputs"]),
+                Set(instance.keys).isSubset(of: ["execution_id", "method", "selection_rule", "inputs", "roles",
+                  "observed_inputs", "workspace_inputs"]),
                 (instance["method"] != nil) != (instance["selection_rule"] != nil) else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
               debugDescription: "Invalid workflow instance wrapper"))
@@ -1004,6 +1008,7 @@ struct AgentCollaborationWorkflowInstance: Codable, Equatable {
   var selectionRule: AgentCollaborationResearchReference? = nil
   var observedInputs: AgentMcpJSONObject? = nil
   var inputValues: AgentMcpJSONObject? = nil
+  var workspaceInputs: [String: AgentCollaborationResearchReference]? = nil
 
   func compile(_ body: AgentMcpJSONObject, inputNames: Set<String>? = nil) -> [AgentCollaborationLiveGraph.Work]? {
     guard !execution_id.isBlank, execution_id.utf8.count <= 160,
@@ -1043,6 +1048,7 @@ extension AgentCollaborationWorkflowInstance {
   private enum Key: String, CodingKey {
     case execution_id, method, inputs, roles, probeOrigin
     case selectionRule = "selection_rule", observedInputs = "observed_inputs"
+    case workspaceInputs = "workspace_inputs"
   }
 
   init(from decoder: Decoder) throws {
@@ -1052,6 +1058,8 @@ extension AgentCollaborationWorkflowInstance {
     selectionRule = fields.contains(.selectionRule)
       ? try fields.decode(AgentCollaborationResearchReference.self, forKey: .selectionRule) : nil
     observedInputs = fields.contains(.observedInputs) ? try fields.decode(AgentMcpJSONObject.self, forKey: .observedInputs) : nil
+    workspaceInputs = fields.contains(.workspaceInputs)
+      ? try fields.decode([String: AgentCollaborationResearchReference].self, forKey: .workspaceInputs) : nil
     roles = try fields.decode([String: String].self, forKey: .roles)
     probeOrigin = try fields.decodeIfPresent(AgentCollaborationProbeContinuation.Origin.self, forKey: .probeOrigin)
     if selectionRule != nil || observedInputs != nil {
@@ -1060,7 +1068,8 @@ extension AgentCollaborationWorkflowInstance {
     } else {
       inputs = try fields.decode([String: AgentCollaborationResearchReference].self, forKey: .inputs)
     }
-    guard (method != nil) != (selectionRule != nil) else {
+    guard (method != nil) != (selectionRule != nil),
+          workspaceInputs == nil || (selectionRule != nil && workspaceInputs?.isEmpty == false) else {
       throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Select one method or rule"))
     }
   }
@@ -1071,6 +1080,7 @@ extension AgentCollaborationWorkflowInstance {
     try fields.encodeIfPresent(method, forKey: .method)
     try fields.encodeIfPresent(selectionRule, forKey: .selectionRule)
     try fields.encodeIfPresent(observedInputs, forKey: .observedInputs)
+    try fields.encodeIfPresent(workspaceInputs, forKey: .workspaceInputs)
     try fields.encode(roles, forKey: .roles)
     try fields.encodeIfPresent(probeOrigin, forKey: .probeOrigin)
     if let inputValues { try fields.encode(inputValues, forKey: .inputs) }

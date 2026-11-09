@@ -1201,6 +1201,7 @@ final class AgentTeamExecutionHistoryStore {
           guard head.capabilitySelection != nil else { continue }
           state = "selected_scoped_version"
         case "capability_lesson": state = body.string("decision") == "retain" ? "retained_lesson" : "historical_lesson"
+        case "workflow_selection_rule": state = "evidence_linked_conditional_hypothesis"
         case "failure_experience": state = "observed_failure"
         case "tool_release": state = AgentCollaborationCapabilityPage.releaseState
         case "tool_test_comparison": state = "observed_paired_case_outcomes"
@@ -1219,6 +1220,10 @@ final class AgentTeamExecutionHistoryStore {
         if head.draft.kind == .workflowMethod {
           entry["evaluation_recall"] = .object(AgentCollaborationMethodEvaluations.selector(head.reference))
           entry["usage_recall"] = .object(AgentCollaborationMethodExperience.selector(head.reference))
+        }
+        if head.draft.kind == .workflowSelectionRule {
+          entry["grants_permissions"] = .bool(false)
+          entry["conditions_prospectively_validated"] = .bool(false)
         }
         if head.draft.kind == .toolTestComparison {
           var recall = AgentCollaborationCandidateRecall.reference(head.reference)
@@ -6097,11 +6102,21 @@ final class AgentTeamExecutionHistoryStore {
         turnId: snapshot.taskId, memberId: coordinator.memberId, sourceId: coordinator.sourceMessageId)
       var values = instance.inputValues ?? [:]
       let observed = instance.observedInputs ?? [:]
-      guard instance.inputs.isEmpty, values.count + observed.count <= 32,
+      let workspace = instance.workspaceInputs ?? [:]
+      guard instance.inputs.isEmpty, values.count + observed.count + workspace.count <= 32,
             Set(values.keys).isDisjoint(with: Set(observed.keys)),
+            Set(workspace.keys).isDisjoint(with: Set(values.keys)),
+            Set(workspace.keys).isDisjoint(with: Set(observed.keys)),
             values.keys.allSatisfy({ !$0.isBlank && $0.utf8.count <= 160 }),
             instance.observedInputs == nil || !observed.isEmpty else { return nil }
       var sources: AgentMcpJSONObject = [:]
+      for (name, reference) in workspace {
+        guard !name.isBlank, name.utf8.count <= 160,
+              let saved = try AgentCollaborationWorkflowCheck.current(reference, scope: scope, database: database),
+              saved.turnId != scope.turnId || assigned == [saved.authorId] else { return nil }
+        values[name] = .object(saved.draft.body)
+        authors.insert(snapshot.reviewIdentity(saved.authorId))
+      }
       for (name, selector) in observed {
         guard !name.isBlank, name.utf8.count <= 160,
               let selector = AgentCollaborationWorkflowProjection.Selector(selector),
@@ -6112,10 +6127,19 @@ final class AgentTeamExecutionHistoryStore {
       }
       guard !values.values.contains(.null) else { return nil }
       inputNames = Set(values.keys)
-      let evidence = sources.isEmpty ? "declared_unverified_not_a_tool_observation" :
-        observed.count == values.count ? "host_bound_original_tool_observations" : "mixed_declared_and_host_bound_observations"
+      let evidence: String
+      if !workspace.isEmpty {
+        evidence = workspace.count == values.count ? "pinned_workspace_inputs_not_independently_verified" :
+          "mixed_inputs_with_pinned_workspace_originals_not_independently_verified"
+      } else {
+        evidence = sources.isEmpty ? "declared_unverified_not_a_tool_observation" :
+          observed.count == values.count ? "host_bound_original_tool_observations" : "mixed_declared_and_host_bound_observations"
+      }
       var pinned: AgentMcpJSONObject = ["inputs": .object(values), "input_observations": .object(sources),
         "input_evidence": .string(evidence), "grants_permissions": .bool(false)]
+      if !workspace.isEmpty {
+        pinned["input_workspace_refs"] = .object(workspace.mapValues { .object(AgentCollaborationSourceAccess.workspaceReference($0)) })
+      }
       if let ref = instance.selectionRule {
         guard chosen == nil, let saved = try AgentCollaborationWorkflowCheck.current(ref, scope: scope, database: database),
               saved.draft.kind == .workflowSelectionRule else { return nil }
