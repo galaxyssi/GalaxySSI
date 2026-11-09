@@ -144,6 +144,7 @@ struct AgentCollaborationMemberIdentity: Equatable {
 
 struct AgentCollaborationModelAdmission: Codable, Equatable {
   enum Route: String, Codable { case streaming, compatibility }
+  enum Lane: String, Codable { case hostLivePlanning = "host_live_planning" }
   let id: UUID
   let scope: AgentCollaborationToolEvidenceScope
   let round: Int
@@ -151,6 +152,7 @@ struct AgentCollaborationModelAdmission: Codable, Equatable {
   let requestedModel: String?
   let startedAtMillis: Int64
   var route: Route? = nil
+  var lane: Lane? = nil
 }
 
 struct AgentCollaborationModelSettlement: Codable, Equatable {
@@ -1203,6 +1205,8 @@ struct AgentCollaborationResearchRevision: Codable {
   var testedToolRelease: AgentMcpJSONObject? = nil
   var toolTestComparison: AgentMcpJSONObject? = nil
   var desktopFile: AgentDesktopCollaborationFileHandoff.Binding? = nil
+  var probeExecutorSourceID: String? = nil
+  var probeMeasuredEvents: [String: Bool]? = nil
 
   var storageBytesLimit: Int {
     if draft.kind == .toolTestComparison && toolTestComparison != nil { return 1_048_576 }
@@ -1230,6 +1234,7 @@ struct AgentCollaborationResearchPublication: Codable {
   var milestoneId: String? = nil
   var recordedAtMillis: Int64? = nil
   var numericTrials: [AgentMcpJSONObject]? = nil
+  var recordNotices: [AgentMcpJSONObject]? = nil
 }
 
 struct AgentCollaborationPublicationRejection: Codable, Equatable {
