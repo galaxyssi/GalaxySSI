@@ -4,8 +4,11 @@ import SQLite3
 
 final class AgentTeamHistoryDatabase {
   enum Failure: Error { case unavailable, corrupt, stale }
-  private let namespace: String
-  private let cipher: GalaxySSIAttachmentAtRestCipher
+  private static let defaultNamespace = digest(AgentTeamExecutionHistoryStore.defaultStorageKey)
+  private var namespace: String
+  private var cipher: GalaxySSIAttachmentAtRestCipher
+  private let secrets: GalaxySSISecretStore
+  private let locationCipher: GalaxySSIAttachmentAtRestCipher
   private var database: OpaquePointer?
   private struct CachedSnapshot {
     let fingerprint: SHA256.Digest
@@ -14,8 +17,10 @@ final class AgentTeamHistoryDatabase {
   private let snapshotsCache = GalaxySSIRuntimeCache<String, CachedSnapshot>(maxCount: 32, maxCost: 2 * 1024 * 1024)
 
   init(fileURL: URL, storageKey: String, secrets: GalaxySSISecretStore) throws {
+    self.secrets = secrets
     namespace = Self.digest(storageKey)
     cipher = GalaxySSIAttachmentAtRestCipher(secrets: secrets, keyAccount: "agent.team.history.\(namespace).aes256.v1")
+    locationCipher = GalaxySSIAttachmentAtRestCipher(secrets: secrets, keyAccount: "agent.team.execution.locations.aes256.v1")
     try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true,
       attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
     var ready = false
@@ -37,6 +42,11 @@ final class AgentTeamHistoryDatabase {
     try execute("CREATE INDEX IF NOT EXISTS team_history_recent ON team_history(namespace,updated_at,run_key)")
     try execute("CREATE INDEX IF NOT EXISTS team_history_pending ON team_history(namespace,conversation_key,finished,updated_at)")
     try execute("CREATE INDEX IF NOT EXISTS team_history_recovery ON team_history(namespace,finished,run_key)")
+    try execute("""
+      CREATE TABLE IF NOT EXISTS team_execution_locations (
+        run_key TEXT PRIMARY KEY, owner_namespace TEXT NOT NULL, encrypted_payload BLOB NOT NULL)
+      """)
+    try execute("CREATE INDEX IF NOT EXISTS team_execution_location_owner ON team_execution_locations(owner_namespace,run_key)")
     try execute("""
       CREATE TABLE IF NOT EXISTS collaboration_goal_checkpoints (
         namespace TEXT NOT NULL, run_key TEXT NOT NULL, revision INTEGER NOT NULL,
@@ -70,6 +80,7 @@ final class AgentTeamHistoryDatabase {
         PRIMARY KEY(namespace,binding_key,run_key,member_key))
       """)
     try execute("CREATE TABLE IF NOT EXISTS team_reply_owner_backfill(namespace TEXT NOT NULL,conversation_key TEXT NOT NULL,PRIMARY KEY(namespace,conversation_key))")
+    try execute("CREATE INDEX IF NOT EXISTS team_reply_owner_locations ON team_reply_owners(binding_key,run_key,namespace)")
     ready = true
   }
 
@@ -286,6 +297,7 @@ final class AgentTeamHistoryDatabase {
 
   func put(_ snapshot: AgentTeamExecutionSnapshot) throws {
     let key = Self.digest(snapshot.supervisorRunId)
+    try registerExecutionLocation(snapshot, runKey: key)
     let encrypted = try cipher.encrypt(JSONEncoder().encode(snapshot), purpose: purpose(key))
     let statement = try prepare("""
       INSERT INTO team_history(namespace,run_key,updated_at,finished,conversation_key,encrypted_payload) VALUES(?,?,?,?,?,?)
@@ -347,6 +359,7 @@ final class AgentTeamHistoryDatabase {
   }
 
   func remove(runId: String? = nil, preserveOwners: Bool = false) throws {
+    try removeExecutionLocations(runKey: runId.map(Self.digest))
     let statement = try prepare("DELETE FROM team_history WHERE namespace=?" + (runId == nil ? "" : " AND run_key=?"))
     defer { sqlite3_finalize(statement) }
     bind(namespace, at: 1, to: statement)
@@ -493,11 +506,21 @@ final class AgentTeamHistoryDatabase {
     }
   }
 
-  func milestoneKeys(conversationId: String, prefix: String, after: String) throws -> [String] {
+  static let recordOnlyMilestonePrefix = "record-only:"
+
+  func milestoneKeys(conversationId: String, prefix: String, after: String,
+                     coordinationOnly: Bool = false) throws -> [String] {
     guard prefix.hasSuffix(":") else { throw Failure.corrupt }
+    let exclusion = coordinationOnly ? """
+      AND NOT EXISTS (
+        SELECT 1 FROM collaboration_research_records AS marker
+        WHERE marker.namespace=entry.namespace AND marker.group_key=entry.group_key
+          AND marker.record_key='\(Self.recordOnlyMilestonePrefix)' || entry.record_key AND marker.revision=0)
+      """ : ""
     let statement = try prepare("""
-      SELECT record_key FROM collaboration_research_records
+      SELECT record_key FROM collaboration_research_records AS entry
       WHERE namespace=? AND group_key=? AND record_key>? AND record_key<? AND revision=0
+      \(exclusion)
       ORDER BY record_key LIMIT 33
       """)
     defer { sqlite3_finalize(statement) }
@@ -727,6 +750,22 @@ final class AgentTeamHistoryDatabase {
   }
 
   func pruneFinished() throws {
+    if namespace != Self.defaultNamespace {
+      let pruned = try prepare("""
+        SELECT run_key FROM team_history WHERE namespace=? AND finished=1
+        ORDER BY updated_at DESC,run_key DESC LIMIT -1 OFFSET 200
+        """)
+      defer { sqlite3_finalize(pruned) }
+      bind(namespace, at: 1, to: pruned)
+      var keys: [String] = []
+      while true {
+        let status = sqlite3_step(pruned)
+        if status == SQLITE_DONE { break }
+        guard status == SQLITE_ROW, let key = sqlite3_column_text(pruned, 0) else { throw Failure.corrupt }
+        keys.append(String(cString: key))
+      }
+      for key in keys { try removeExecutionLocations(runKey: key) }
+    }
     let statement = try prepare("""
       DELETE FROM team_history WHERE namespace=? AND run_key IN
         (SELECT run_key FROM team_history WHERE namespace=? AND finished=1
@@ -736,6 +775,146 @@ final class AgentTeamHistoryDatabase {
     bind(namespace, at: 1, to: statement)
     bind(namespace, at: 2, to: statement)
     try finish(statement)
+  }
+
+  private struct ExecutionLocation: Codable, Equatable {
+    let run: String
+    let conversation: String
+    let task: String
+    let team: String
+    let namespace: String
+
+    init(_ snapshot: AgentTeamExecutionSnapshot, namespace: String) {
+      run = snapshot.supervisorRunId
+      conversation = snapshot.conversationId
+      task = snapshot.taskId
+      team = snapshot.teamId
+      self.namespace = namespace
+    }
+  }
+
+  private func executionLocation(runKey: String) throws -> ExecutionLocation? {
+    let statement = try prepare("SELECT owner_namespace,encrypted_payload FROM team_execution_locations WHERE run_key=?")
+    defer { sqlite3_finalize(statement) }
+    bind(runKey, at: 1, to: statement)
+    let status = sqlite3_step(statement)
+    if status == SQLITE_DONE { return nil }
+    guard status == SQLITE_ROW, let owner = sqlite3_column_text(statement, 0),
+          let blob = sqlite3_column_blob(statement, 1) else { throw Failure.corrupt }
+    let ownerNamespace = String(cString: owner)
+    let bytes = Data(bytes: blob, count: Int(sqlite3_column_bytes(statement, 1)))
+    let location = try JSONDecoder().decode(ExecutionLocation.self,
+      from: locationCipher.decrypt(bytes, purpose: "execution-location:\(runKey):\(ownerNamespace)"))
+    guard location.namespace == ownerNamespace, ownerNamespace != Self.defaultNamespace,
+          Self.digest(location.run) == runKey else { throw Failure.corrupt }
+    return location
+  }
+
+  func ownsLocalExecutionSlot(run: String) throws -> Bool {
+    guard let location = try executionLocation(runKey: Self.digest(run)) else { return true }
+    return location.namespace == namespace
+  }
+
+  private func registerExecutionLocation(_ snapshot: AgentTeamExecutionSnapshot, runKey: String) throws {
+    let target = ExecutionLocation(snapshot, namespace: namespace)
+    if let location = try executionLocation(runKey: runKey) {
+      guard target == location else { throw Failure.stale }
+      return
+    }
+    guard namespace != Self.defaultNamespace else { return }
+    let existing = try prepare("SELECT 1 FROM team_history WHERE namespace=? AND run_key=?")
+    defer { sqlite3_finalize(existing) }
+    bind(Self.defaultNamespace, at: 1, to: existing)
+    bind(runKey, at: 2, to: existing)
+    guard sqlite3_step(existing) == SQLITE_DONE else { throw Failure.stale }
+    let bytes = try locationCipher.encrypt(JSONEncoder().encode(target), purpose: "execution-location:\(runKey):\(namespace)")
+    let insert = try prepare("INSERT INTO team_execution_locations(run_key,owner_namespace,encrypted_payload) VALUES(?,?,?)")
+    defer { sqlite3_finalize(insert) }
+    bind(runKey, at: 1, to: insert)
+    bind(namespace, at: 2, to: insert)
+    _ = bytes.withUnsafeBytes { sqlite3_bind_blob(insert, 3, $0.baseAddress, Int32($0.count), Self.transient) }
+    try finish(insert)
+  }
+
+  private func removeExecutionLocations(runKey: String? = nil) throws {
+    guard namespace != Self.defaultNamespace else { return }
+    let statement = try prepare("SELECT run_key FROM team_execution_locations l WHERE owner_namespace=?" +
+      (runKey == nil ? "" : " AND run_key=?"))
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    if let runKey { bind(runKey, at: 2, to: statement) }
+    var owned: [String] = []
+    while true {
+      let status = sqlite3_step(statement)
+      if status == SQLITE_DONE { break }
+      guard status == SQLITE_ROW, let key = sqlite3_column_text(statement, 0) else { throw Failure.corrupt }
+      owned.append(String(cString: key))
+    }
+    for key in owned {
+      guard try executionLocation(runKey: key)?.namespace == namespace else { throw Failure.corrupt }
+      let deletion = try prepare("DELETE FROM team_execution_locations WHERE owner_namespace=? AND run_key=?")
+      defer { sqlite3_finalize(deletion) }
+      bind(namespace, at: 1, to: deletion)
+      bind(key, at: 2, to: deletion)
+      try finish(deletion)
+    }
+  }
+
+  func withExecutionLocation<T>(run: String, conversation: String, turn: String,
+      _ operation: (AgentTeamExecutionSnapshot?) throws -> T) throws -> T {
+    guard let location = try executionLocation(runKey: Self.digest(run)) else {
+      return try operation(nil)
+    }
+    guard location.run == run, location.conversation == conversation, location.task == turn,
+          namespace == Self.defaultNamespace || namespace == location.namespace else { throw Failure.stale }
+    return try withNamespace(location.namespace) {
+      guard let snapshot = try snapshots(runId: run).first, ExecutionLocation(snapshot, namespace: namespace) == location
+      else { throw Failure.stale }
+      return try operation(snapshot)
+    }
+  }
+
+  private func withNamespace<T>(_ target: String, _ operation: () throws -> T) rethrows -> T {
+    guard namespace != target else { return try operation() }
+    let previousNamespace = namespace, previousCipher = cipher
+    namespace = target
+    cipher = GalaxySSIAttachmentAtRestCipher(secrets: secrets, keyAccount: "agent.team.history.\(namespace).aes256.v1")
+    snapshotsCache.clear()
+    defer { namespace = previousNamespace; cipher = previousCipher; snapshotsCache.clear() }
+    return try operation()
+  }
+
+  func defaultResearchRevoked(conversation: String) throws -> Bool {
+    try withNamespace(Self.defaultNamespace) {
+      try researchRecord(Bool.self, conversationId: conversation, key: "native-evidence-revoked", revision: 0) == true
+    }
+  }
+
+  func withExecutionSource<T>(source: String, conversation: String, turn: String, contact: String,
+      _ operation: (AgentTeamExecutionSnapshot?) throws -> T) throws -> T {
+    guard namespace == Self.defaultNamespace else { return try operation(nil) }
+    let binding = try replyKey(source: source, conversation: conversation, turn: turn, contact: contact)
+    let statement = try prepare("""
+      SELECT DISTINCT o.run_key,o.namespace FROM team_reply_owners o
+      JOIN team_execution_locations l ON l.run_key=o.run_key
+      WHERE o.binding_key=? AND o.namespace<>? LIMIT 2
+      """)
+    defer { sqlite3_finalize(statement) }
+    bind(binding, at: 1, to: statement)
+    bind(namespace, at: 2, to: statement)
+    let status = sqlite3_step(statement)
+    if status == SQLITE_DONE { return try operation(nil) }
+    guard status == SQLITE_ROW, let run = sqlite3_column_text(statement, 0), let owner = sqlite3_column_text(statement, 1)
+    else { throw Failure.corrupt }
+    let runKey = String(cString: run), ownerNamespace = String(cString: owner)
+    guard sqlite3_step(statement) == SQLITE_DONE,
+          let location = try executionLocation(runKey: runKey), location.namespace == ownerNamespace,
+          try replyOwner(source: source, conversation: conversation, turn: turn, contact: contact) == nil
+    else { throw Failure.stale }
+    return try withExecutionLocation(run: location.run, conversation: conversation, turn: turn) { snapshot in
+      guard let snapshot else { throw Failure.stale }
+      return try operation(snapshot)
+    }
   }
 
   private func prepare(_ sql: String) throws -> OpaquePointer {
