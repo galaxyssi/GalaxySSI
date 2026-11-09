@@ -208,6 +208,7 @@ enum AgentCollaborationRuleTopics {
     An authorized Desktop member can use collaboration_run_tool with the exact release or capability channel,
     new parameters and a stable execution ID. The phone checks the current lineage and tested Python identity
     before running. Use status with the same ID to recover the original result; discovery never authorizes execution.
+    \(AgentCollaborationExecutableAcceptance.guidance)
     """),
     Topic(id: "retention", purpose: "Preserve measured capability cases across versions", prerequisites: ["foundation"], contract: """
     Publish capability_suite with scope, limitations and the exact independently retained lesson as a parent.
@@ -850,6 +851,13 @@ enum AgentCollaborationGoalAssessmentPolicy {
 
     var validatorSchemaIssue: AgentCollaborationNumericTrial.ValidatorIssue? {
       guard let validator else { return nil }
+      if validator["id"] == .string(AgentCollaborationExecutableAcceptance.id) {
+        guard verification == .computational, requirement == AgentCollaborationExecutableAcceptance.requirement else {
+          return .init(path: "", expected: "executable validator on the exact finite-case requirement",
+            actual: "validator is not bound to the supported requirement")
+        }
+        return AgentCollaborationExecutableAcceptance.issue(validator)
+      }
       guard verification == .computational, requirement == AgentCollaborationNumericTrial.requirement else {
         return .init(path: "", expected: "numeric validator on the exact computational verification requirement",
           actual: "validator is not bound to the supported requirement")
@@ -1136,7 +1144,9 @@ enum AgentCollaborationDocumentaryAcceptance {
                        conversationId: String, runId: String, turnId: String,
                        readRevision: (String, Int64?) throws -> Revision?,
                        observationIsSupporting: (String) throws -> Bool,
-                       originalObservation: (String) throws -> OriginalObservation? = { _ in nil })
+                       originalObservation: (String) throws -> OriginalObservation? = { _ in nil },
+                       verifyExecutable: (AgentMcpJSONObject, AgentCollaborationResearchReference, Revision, Revision) throws -> Bool =
+                         { _, _, _, _ in false })
     -> AgentCollaborationGoalAssessmentPolicy.Outcome {
     typealias Policy = AgentCollaborationGoalAssessmentPolicy
     guard !conversationId.isBlank, !runId.isBlank, !turnId.isBlank,
@@ -1176,9 +1186,14 @@ enum AgentCollaborationDocumentaryAcceptance {
         case .computational:
           guard let pinned = contract.first(where: { $0.id == criterion.id }), pinned.hasValidValidatorBinding,
                 let validator = pinned.validator, criterion.validator == validator,
-                let computation = delivery.body["computation"]?.objectValue,
-                AgentCollaborationNumericTrial.passes(spec: validator, computation: computation)
+                let computation = delivery.body["computation"]?.objectValue
           else { return .needsAssessment }
+          if validator["id"] == .string(AgentCollaborationExecutableAcceptance.id) {
+            guard let release = AgentCollaborationExecutableAcceptance.releaseReference(computation),
+                  try verifyExecutable(validator, release, delivery, review) else { return .needsAssessment }
+          } else if !AgentCollaborationNumericTrial.passes(spec: validator, computation: computation) {
+            return .needsAssessment
+          }
         case .physical:
           return .needsAssessment
         }

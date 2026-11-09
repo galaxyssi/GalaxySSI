@@ -2763,8 +2763,12 @@ extension GalaxySSIStoreTests {
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
-    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: InMemorySecretStore(),
-      executionStore: SavedTeamRecoveryFixture([]), fileURL: root.appendingPathComponent("history.sqlite"))
+    let secrets = InMemorySecretStore()
+    func open() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]),
+        fileURL: root.appendingPathComponent("history.sqlite"))
+    }
+    let history = open()
     func scope(_ team: AgentTeamExecutionSnapshot) -> AgentCollaborationToolEvidenceScope {
       .init(runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
         memberId: team.members[0].memberId, sourceId: team.members[0].sourceMessageId)
@@ -2804,14 +2808,45 @@ extension GalaxySSIStoreTests {
     let reference = try publish(.init(id: "plan", objectId: nil, baseRevision: 0, kind: .toolTestPlan,
       title: "Saved plan", body: ["tool_test_plan": .object(plan)], parents: [tool]), run: "author-plan")
     var running = durableTeamSnapshot("execute-plan")
+    running.goal = AgentCollaborationExecutableAcceptance.requirement
+    running.primaryAgentId = "case-coordinator"
+    running.primaryInstanceId = "case-coordinator"
+    running.members[0].deliveryMode = .observe
     running.members[0].dispatchCheckpoint = .dispatching
     running.members[0].dispatchAllowsSavedToolTest = true
     running.members[1].dispatchCheckpoint = .dispatching
     running.members[1].dispatchDependencyMemberIds = [running.members[0].memberId]
     running.members.append(AgentTeamMemberSnapshot(agentId: "unread-review", deliveryMode: .observe,
       sourceMessageId: "unread-review-source"))
+    running.members.append(.init(agentId: "case-reviewer", sourceMessageId: "case-review-source", dispatchCheckpoint: .accepted))
+    running.members.append(.init(agentId: "case-coordinator", deliveryMode: .respond,
+      sourceMessageId: "case-coordinator-source", dispatchCheckpoint: .accepted))
+    running.members.append(.init(agentId: "case-dissenter", sourceMessageId: "case-dissent-source", dispatchCheckpoint: .accepted))
     XCTAssertTrue(history.upsert(running))
     let reader = scope(running)
+    func currentScope(_ memberID: String) throws -> AgentCollaborationToolEvidenceScope {
+      let member = try XCTUnwrap(running.members.first { $0.memberId == memberID })
+      return .init(runId: reader.runId, conversationId: reader.conversationId, turnId: reader.turnId,
+        memberId: member.memberId, sourceId: member.sourceMessageId)
+    }
+    let coordinator = try currentScope("case-coordinator")
+    let caseReviewer = try currentScope("case-reviewer")
+    var validator = plan
+    validator.removeValue(forKey: "executable_tool")
+    validator["id"] = .string(AgentCollaborationExecutableAcceptance.id)
+    let criterion: AgentMcpJSONObject = ["id": .string("finite-suite"),
+      "requirement": .string(AgentCollaborationExecutableAcceptance.requirement), "verification": .string("computational"),
+      "status": .string("open"), "evidence": .array([]), "validator": .object(validator)]
+    func assessment(_ decision: String, criterion: AgentMcpJSONObject) -> String {
+      var value: AgentMcpJSONObject = ["format": .string("galaxyssi.goal-assessment.v1"),
+        "summary": .string("Verify the finite suite only"), "decision": .string(decision),
+        "work": .array([]), "blockers": .array([]), "criteria": .array([.object(criterion)])]
+      value["final_delivery"] = criterion["delivery"]
+      return AgentMcpJSONCodec.stringify(value)
+    }
+    XCTAssertEqual(try history.publishCollaborationMilestone(["mode": .string("establish_contract"),
+      "artifact": .string(assessment("continue", criterion: criterion))], scope: coordinator)["status"],
+      .string("contract_established"))
     let prepared = try history.prepareSavedToolTest(reference, timeoutMillis: 1_000, scope: reader)
     XCTAssertEqual(prepared.runtimeInput["network_enabled"], .bool(false))
     XCTAssertEqual(prepared.runtimeInput["language"], .string("python"))
@@ -2884,8 +2919,10 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(history.upsert(running))
     try readOriginal(reviewScope, evidence: citation, mode: "evidence")
     try readOriginal(reviewScope, evidence: replayCitation, mode: "evidence")
+    try readOriginal(caseReviewer, evidence: citation, mode: "native_evidence")
     running.members[1].status = .succeeded
     running.members[2].status = .succeeded
+    running.members[3].status = .succeeded
     XCTAssertTrue(history.upsert(running))
     func release(_ evidence: AgentMcpJSONObject, as owner: AgentCollaborationToolEvidenceScope)
         throws -> AgentCollaborationResearchPublication {
@@ -2909,6 +2946,57 @@ extension GalaxySSIStoreTests {
     forged["sha256"] = .string(String(repeating: "a", count: 64))
     XCTAssertThrowsError(try release(forged, as: reviewScope))
     let released = try XCTUnwrap(release(citation, as: reviewScope).references.first)
+    func publishCase(_ draft: AgentCollaborationResearchDraft, owner: AgentCollaborationToolEvidenceScope) throws
+      -> AgentCollaborationResearchReference {
+      try XCTUnwrap(history.publishResearchObjects([draft], runId: owner.runId, conversationId: owner.conversationId,
+        turnId: owner.turnId, memberId: owner.memberId, sourceId: owner.sourceId).references.first)
+    }
+    let delivery = try publishCase(.init(id: "finite-delivery", objectId: nil, baseRevision: 0, kind: .artifact,
+      title: "Actual output on registered cases", body: ["content": .string("Passed the finite fixture suite"),
+        "computation": .object(["validator_id": .string(AgentCollaborationExecutableAcceptance.id),
+          "tool_release": .object(AgentCollaborationCandidateRecall.reference(released))])],
+      parents: [], observations: [citation]), owner: reader)
+    func caseReview(_ id: String, evidence: [AgentMcpJSONObject], verdict: String = "supported") -> AgentCollaborationResearchDraft {
+      .init(id: id, objectId: nil, baseRevision: 0, kind: .acceptanceReview, title: "Independent case review",
+        body: ["acceptance_review": .object(["criterion_id": .string("finite-suite"),
+          "requirement": criterion["requirement"] ?? .null, "target": .object(AgentCollaborationCandidateRecall.reference(delivery)),
+          "verdict": .string(verdict), "rationale": .string("The saved execution is limited to the pinned suite"),
+          "unresolved": verdict == "supported" ? .array([]) : .array([.string("Check the reference")])])],
+        parents: [delivery], observations: evidence)
+    }
+    let reviewed = try history.publishResearchObjects([caseReview("no-observation", evidence: []),
+      caseReview("with-observation", evidence: [citation])], runId: caseReviewer.runId,
+      conversationId: caseReviewer.conversationId, turnId: caseReviewer.turnId,
+      memberId: caseReviewer.memberId, sourceId: caseReviewer.sourceId).references
+    let withoutEvidence = try XCTUnwrap(reviewed.first)
+    let qualifiedReview = try XCTUnwrap(reviewed.last)
+    var met = criterion
+    met["status"] = .string("met")
+    met["evidence_kind"] = .string("observed")
+    met["evidence"] = .array([.string(citation.string("evidence_id"))])
+    met["delivery"] = .object(AgentCollaborationCandidateRecall.reference(delivery))
+    func check(_ row: AgentMcpJSONObject) throws -> AgentMcpJSONObject {
+      try open().publishCollaborationMilestone(["mode": .string("check_goal_evidence"), "expected_revision": .int(1),
+        "artifact": .string(assessment("achieved", criterion: row))], scope: coordinator)
+    }
+    met["review"] = .object(AgentCollaborationCandidateRecall.reference(withoutEvidence))
+    XCTAssertEqual(try check(met)["status"], .string("criterion_evidence_unverified"))
+    met["review"] = .object(AgentCollaborationCandidateRecall.reference(qualifiedReview))
+    let checked = try check(met)
+    XCTAssertEqual(checked["status"], .string("criterion_evidence_verified"))
+    XCTAssertEqual(checked["goal_accepted"], .bool(false))
+    XCTAssertThrowsError(try history.prepareFinalGoalDelivery(assessment("achieved", criterion: met), scope: coordinator))
+    var changedCases = validator
+    changedCases["oracle_basis"] = .string("Different oracle")
+    met["validator"] = .object(changedCases)
+    XCTAssertEqual(try check(met)["status"], .string("criterion_evidence_unverified"))
+    met["validator"] = .object(validator)
+    let dissenter = try currentScope("case-dissenter")
+    running.members[5].status = .succeeded
+    running.updatedAtMillis += 1
+    XCTAssertTrue(history.upsert(running))
+    _ = try publishCase(caseReview("case-dissent", evidence: [], verdict: "refuted"), owner: dissenter)
+    XCTAssertEqual(try check(met)["status"], .string("criterion_evidence_unverified"))
     var future = durableTeamSnapshot("use-reviewed-tool")
     future.taskId = "future-turn"
     future.members[0].dispatchCheckpoint = .accepted

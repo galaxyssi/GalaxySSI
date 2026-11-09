@@ -2074,6 +2074,16 @@ final class AgentTeamExecutionHistoryStore {
           frozenReads = try Self.validateCapabilityLesson(draft, scope: .init(runId: runId,
             conversationId: conversationId, turnId: turnId, memberId: memberId, sourceId: sourceId),
             changedIds: Set(drafts.compactMap(\.objectId)), database: database)
+        } else if [.artifact, .proposal, .decision].contains(draft.kind),
+                  let computation = draft.body["computation"]?.objectValue,
+                  computation["validator_id"] == .string(AgentCollaborationExecutableAcceptance.id) {
+          let citations = try Self.acceptanceCitations(references)
+          guard AgentCollaborationExecutableAcceptance.releaseReference(computation) != nil,
+                citations.cloud.isEmpty, citations.desktop.isEmpty, citations.native.count == 1
+          else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+          let scope = AgentCollaborationToolEvidenceScope(runId: runId, conversationId: conversationId,
+            turnId: turnId, memberId: memberId, sourceId: sourceId)
+          frozenNativeReads = try Self.freezeNativeAcceptanceReads(citations.native, scope: scope, team: snapshot, database: database)
         } else if !references.isEmpty {
           throw AgentTeamHistoryDatabase.Failure.corrupt
         }
@@ -2210,6 +2220,15 @@ final class AgentTeamExecutionHistoryStore {
       for revision in revisions {
         try database.insertResearchRecord(revision, conversationId: conversationId,
           key: "object:" + revision.reference.objectId, revision: revision.reference.revision)
+        if revision.draft.kind == .acceptanceReview,
+           let check = revision.draft.body["acceptance_review"]?.objectValue,
+           check["requirement"] == .string(AgentCollaborationExecutableAcceptance.requirement),
+           let target = AgentCollaborationSavedToolTest.reference(check["target"]) {
+          let key = Self.executableReviewPrefix(target, criterion: check.string("criterion_id")) + revision.reference.objectId
+          if try database.researchRecord(String.self, conversationId: conversationId, key: key, revision: 0) == nil {
+            try database.insertResearchRecord(revision.reference.objectId, conversationId: conversationId, key: key, revision: 0)
+          }
+        }
         if revision.draft.kind == .acceptanceReview,
            let target = AgentCollaborationGoalCoverage.reviewTarget(revision.draft.body, parents: revision.draft.parents) {
           let key = AgentCollaborationGoalCoverage.reviewIndexPrefix(target) + revision.reference.objectId
@@ -2721,7 +2740,10 @@ final class AgentTeamExecutionHistoryStore {
           return revision
         }
         if let citations = revision.draft.observations, !citations.isEmpty {
-          if revision.draft.kind == .acceptanceReview {
+          let computation = revision.draft.body["computation"]?.objectValue
+          if revision.draft.kind == .acceptanceReview || revision.draft.kind == .toolRelease ||
+             (computation.flatMap(AgentCollaborationExecutableAcceptance.releaseReference) != nil &&
+               [.artifact, .proposal, .decision].contains(revision.draft.kind)) {
             let split = try Self.acceptanceCitations(citations)
             func matches(_ reads: [AgentCollaborationFrozenCloudRead]?, _ expected: [AgentMcpJSONObject]) -> Bool {
               let reads = reads ?? []
@@ -3504,6 +3526,98 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
+  private static func executableReviewPrefix(_ target: AgentCollaborationResearchReference, criterion: String) -> String {
+    "executable-case-review:" + AgentMcpJSONCodec.sha256(["target": .object(AgentCollaborationSourceAccess.workspaceReference(target)),
+      "criterion": .string(criterion)]) + ":"
+  }
+
+  private static func hasExecutableCaseDissent(delivery: AgentCollaborationDocumentaryAcceptance.Revision,
+      review: AgentCollaborationDocumentaryAcceptance.Revision, team: AgentTeamExecutionSnapshot,
+      database: AgentTeamHistoryDatabase) throws -> Bool {
+    let ref = AgentCollaborationResearchReference(objectId: delivery.reference.objectId, revision: delivery.reference.revision,
+      sha256: delivery.reference.sha256)
+    guard let criterion = review.body["acceptance_review"]?.objectValue?["criterion_id"]?.strictStringValue
+    else { return true }
+    let prefix = executableReviewPrefix(ref, criterion: criterion)
+    var cursor = ""
+    while true {
+      let keys = try database.milestoneKeys(conversationId: team.conversationId, prefix: prefix, after: cursor)
+      for key in keys {
+        let id = String(key.dropFirst(prefix.count))
+        guard let indexed = try database.researchRecord(String.self, conversationId: team.conversationId, key: key, revision: 0),
+              indexed == id, let row = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                conversationId: team.conversationId, key: "object:" + id) else { return true }
+        guard isScopedAcceptanceRecord(row, team: team, kinds: [.acceptanceReview]),
+              team.reviewIdentity(row.authorId) != delivery.authorId,
+              let check = row.draft.body["acceptance_review"]?.objectValue,
+              check["requirement"] == .string(AgentCollaborationExecutableAcceptance.requirement),
+              check["criterion_id"] == .string(criterion),
+              AgentCollaborationSavedToolTest.reference(check["target"]) == ref else { continue }
+        if check["verdict"] != .string("supported") || check["unresolved"] != .array([]) { return true }
+      }
+      guard keys.count == 33, let next = keys.last else { return false }
+      cursor = next
+    }
+  }
+
+  private static func verifyExecutableGoalCase(spec: AgentMcpJSONObject, releaseRef: AgentCollaborationResearchReference,
+      delivery: AgentCollaborationDocumentaryAcceptance.Revision, review: AgentCollaborationDocumentaryAcceptance.Revision,
+      scope: AgentCollaborationToolEvidenceScope, team: AgentTeamExecutionSnapshot, database: AgentTeamHistoryDatabase) throws -> Bool {
+    func exact(_ ref: AgentCollaborationResearchReference, current: Bool) throws -> AgentCollaborationResearchRevision? {
+      guard AgentCollaborationSourceAccess.validDigest(ref.objectId), AgentCollaborationSourceAccess.validDigest(ref.sha256),
+            ref.revision > 0, let row = try database.researchRecord(AgentCollaborationResearchRevision.self,
+              conversationId: scope.conversationId, key: "object:" + ref.objectId, revision: current ? nil : ref.revision),
+            row.reference == ref else { return nil }
+      return row
+    }
+    func frozen(_ value: AgentCollaborationDocumentaryAcceptance.Revision, id: String, hash: String) throws -> Bool {
+      let ref = AgentCollaborationResearchReference(objectId: value.reference.objectId, revision: value.reference.revision,
+        sha256: value.reference.sha256)
+      guard value.hostObservationIds.contains(id), let row = try exact(ref, current: true) else { return false }
+      return row.frozenNativeReads?.contains { $0.evidenceId == id && $0.sha256 == hash &&
+        $0.totalCharacters > 0 && $0.hostReadCoverage != nil } == true
+    }
+    guard let release = try exact(releaseRef, current: true),
+          isScopedAcceptanceRecord(release, team: team, kinds: [.toolRelease]),
+          let releaseReview = AgentCollaborationSavedToolRelease.Review(release.draft),
+          let plan = try exact(releaseReview.plan, current: true),
+          AgentCollaborationExecutableAcceptance.matches(spec: spec, plan: plan),
+          let toolRef = AgentCollaborationCandidateRecall.linkedTool(plan), let tool = try exact(toolRef, current: true),
+          tool.draft.kind == .executableTool else { return false }
+    let id = releaseReview.observation.string("evidence_id"), hash = releaseReview.observation.string("sha256")
+    guard try frozen(delivery, id: id, hash: hash), try frozen(review, id: id, hash: hash),
+          let original = try nativeAcceptanceOriginal(id: id, scope: scope, team: team, database: database),
+          nativeObservationSupportsAcceptance(original) else { return false }
+    let releaseScope = AgentCollaborationToolEvidenceScope(runId: scope.runId, conversationId: scope.conversationId,
+      turnId: scope.turnId, memberId: release.authorId, sourceId: release.sourceId)
+    let reads = try freezeNativeAcceptanceReads([releaseReview.observation], scope: releaseScope, team: team, database: database)
+    guard release.frozenNativeReads == reads,
+          let rebuilt = AgentCollaborationSavedToolRelease.receipt(review: releaseReview, plan: plan, tool: tool,
+            original: original, reviewerIdentity: team.reviewIdentity(release.authorId),
+            authorIdentity: team.reviewIdentity(tool.authorId)), release.testedToolRelease == rebuilt
+    else { return false }
+
+    var visited = Set<AgentCollaborationResearchReference>()
+    var pending = [tool]
+    let reviewers = Set([team.reviewIdentity(release.authorId), review.authorId])
+    while let row = pending.popLast() {
+      guard visited.insert(row.reference).inserted else { continue }
+      guard visited.count <= 128, !row.authorId.isBlank, !reviewers.contains(team.reviewIdentity(row.authorId))
+      else { return false }
+      for reference in row.draft.parents {
+        guard let parent = try exact(reference, current: false) else { return false }
+        pending.append(parent)
+      }
+      if row.reference.revision > 1 {
+        guard let hash = row.previousHash,
+              let prior = try exact(.init(objectId: row.reference.objectId,
+                revision: row.reference.revision - 1, sha256: hash), current: false) else { return false }
+        pending.append(prior)
+      }
+    }
+    return try hasExecutableCaseDissent(delivery: delivery, review: review, team: team, database: database) == false
+  }
+
   private static func evaluateGoalEvidence(_ raw: String, scope: AgentCollaborationToolEvidenceScope,
     checkpoint: AgentCollaborationGoalCheckpoint, team: AgentTeamExecutionSnapshot,
     database: AgentTeamHistoryDatabase) throws -> AgentMcpJSONObject {
@@ -3565,7 +3679,11 @@ final class AgentTeamExecutionHistoryStore {
           return Gate.Revision(reference: ref(saved.reference), conversationId: scope.conversationId,
             runId: saved.runId, turnId: saved.turnId, authorId: team.reviewIdentity(saved.authorId), kind: saved.draft.kind.rawValue,
             body: saved.draft.body, parents: saved.draft.parents.map(ref), hostObservationIds: observed)
-        }, observationIsSupporting: { originals[$0] != nil }, originalObservation: { originals[$0] })
+        }, observationIsSupporting: { originals[$0] != nil }, originalObservation: { originals[$0] },
+        verifyExecutable: { spec, release, delivery, review in
+          try verifyExecutableGoalCase(spec: spec, releaseRef: release, delivery: delivery, review: review,
+            scope: scope, team: team, database: database)
+        })
       let verified = outcome == .achieved
       let criteria = try encoder.encode(checkpoint.contract)
       var response: AgentMcpJSONObject = ["success": .bool(verified),
