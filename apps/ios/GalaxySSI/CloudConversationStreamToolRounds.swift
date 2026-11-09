@@ -495,6 +495,7 @@ struct CloudModelStreamMutableConversation {
     if canRunGoalWork {
       modes += [AgentCollaborationGoalAssessmentPolicy.runWorkMode, AgentCollaborationGoalAssessmentPolicy.runReadyWorkMode]
     }
+    if assessmentOnly { modes.append(AgentCollaborationMilestoneCoordination.readMode) }
     var properties: [String: Any] = [
       "mode": ["type": "string", "enum": modes],
       "milestone_id": ["type": "string"], "artifact": ["type": "string"], "artifact_sha256": ["type": "string"],
@@ -504,11 +505,14 @@ struct CloudModelStreamMutableConversation {
       properties["token"] = ["type": "string"]
       properties["draft_sha256"] = ["type": "string"]
       properties["offset"] = ["type": "integer"]
+      properties["token"] = ["type": "string"]
+      properties["object_id"] = ["type": "string"]
+      properties["revision"] = ["type": "integer"]
     }
     var schema: [String: Any] = ["type": "object", "properties": properties,
       "required": ["mode"]]
     if request.provider != .gemini { schema["additionalProperties"] = false }
-    appendCollaborationFunction([
+    var function: [String: Any] = [
       "name": Self.collaborationPublishName,
       "description": assessmentOnly
         ? AgentTeamExecutionHistoryStore.MilestoneCapability.notEnrolled.guidance +
@@ -516,10 +520,14 @@ struct CloudModelStreamMutableConversation {
           AgentCollaborationWorkInputBindings.coordinatorInstructions +
           AgentCollaborationProbeContinuation.admissionInstructions +
           (canRunGoalWork ? " An accepted batch starts ready assignments in dependency order. To recruit inside the current run, include recruit:[{id,template_member,role,scope,reason}] in the work expansion. Assign concrete work to member recruit:<id> in the same batch. Use only existing authorized specialists as templates; recruitment grants no new permissions and does not make the template an independent reviewer. Use run_ready_work with no other fields to resume unclaimed assignments. Use run_work with an admitted work_id to retrieve its saved output or run one ready assignment. Desktop work is plan-only. Claimed work is never automatically reexecuted. " + Self.goalAssessmentFinalInstruction : "")
-        : "Use status to check availability. Publish interim research with milestone_id and an artifact JSON string containing format, a nonblank summary, and a nonempty workspace. " +
-          AgentCollaborationResearchEnvelope.optionalNotesInstructions +
+        : "Use status to check availability. Publish interim research with milestone_id and an artifact JSON string containing format, a nonblank summary, and a nonempty workspace or an explicit request citing saved milestones. " +
+          AgentCollaborationResearchEnvelope.optionalNotesInstructions + " " + AgentCollaborationMilestoneCoordination.instructions +
           " After an uncertain publication, use receipt with the same milestone_id and SHA-256 of the exact artifact UTF-8 bytes. Resend the saved artifact only after an explicit not_recorded response matching both fields; a failed lookup leaves the outcome uncertain. Use list with next_cursor to recover saved IDs, then cite them in milestones in your final artifact. Use validate_assessment with artifact to check goal-assessment structure without publishing. Receipts do not verify evidence or complete the assignment."
-    ], schema: schema)
+    ]
+    if assessmentOnly, let description = function["description"] as? String {
+      function["description"] = description + " " + AgentCollaborationMilestoneCoordination.readInstructions
+    }
+    appendCollaborationFunction(function, schema: schema)
   }
 
   mutating func installWorkInputPublication() {

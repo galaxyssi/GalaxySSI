@@ -1647,12 +1647,15 @@ final class AgentTeamExecutionHistoryStore {
                               conversationId: String, turnId: String, memberId: String,
                               sourceId: String, milestone: (id: String, hash: String)? = nil,
                               finalMilestones: [String] = [],
+                              coordination: AgentCollaborationMilestoneCoordination? = nil,
                               desktopFile: AgentDesktopCollaborationFileHandoff.Binding? = nil)
     throws -> AgentCollaborationResearchPublication {
     guard !drafts.isEmpty || !finalMilestones.isEmpty, drafts.count <= 32, !sourceId.isBlank,
           finalMilestones.count <= 32, Set(finalMilestones).count == finalMilestones.count,
           finalMilestones.allSatisfy({ !$0.isBlank && $0.utf8.count <= 160 }),
-          milestone == nil || finalMilestones.isEmpty else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+          coordination == nil || milestone != nil,
+          milestone == nil || finalMilestones.isEmpty || coordination?.mode == .request
+    else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     func digest<T: Encodable>(_ value: T) throws -> String {
@@ -1687,11 +1690,21 @@ final class AgentTeamExecutionHistoryStore {
       }
       var revisions: [AgentCollaborationResearchRevision] = []
       var linked: [AgentCollaborationResearchReference] = []
+      var seen = Set<AgentCollaborationResearchReference>()
       for id in finalMilestones {
         guard let prior = try database.researchRecord(AgentCollaborationResearchPublication.self,
-          conversationId: conversationId, key: Self.milestoneKey(baseKey, id: id), revision: 0)
+          conversationId: conversationId, key: Self.milestoneKey(baseKey, id: id), revision: 0),
+          prior.milestoneId == id, !prior.references.isEmpty
         else { throw AgentTeamHistoryDatabase.Failure.stale }
-        for reference in prior.references where !linked.contains(reference) { linked.append(reference) }
+        for reference in prior.references where seen.insert(reference).inserted {
+          guard let original = try database.researchRecord(AgentCollaborationResearchRevision.self,
+            conversationId: conversationId, key: "object:" + reference.objectId, revision: reference.revision),
+            original.reference == reference, original.runId == runId, original.turnId == turnId,
+            original.authorId == memberId, original.sourceId == sourceId
+          else { throw AgentTeamHistoryDatabase.Failure.stale }
+          linked.append(reference)
+          if milestone != nil, linked.count > 128 { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        }
       }
       var objectIds = Set<String>()
       let transferBatchUpdates = Set(drafts.compactMap(\.objectId).filter { !$0.isBlank })
@@ -2341,9 +2354,20 @@ final class AgentTeamExecutionHistoryStore {
       let receipt = AgentCollaborationResearchPublication(requestHash: requestHash,
         references: linked + revisions.map(\.reference), milestoneId: milestone?.id,
         recordedAtMillis: milestone == nil ? nil : AgentControlPlaneClock.nowMillis(),
-        numericTrials: numericTrials.isEmpty ? nil : numericTrials,
+        numericTrials: numericTrials.isEmpty ? nil : numericTrials, coordination: coordination,
         recordNotices: notices.isEmpty ? nil : notices)
       try database.insertResearchRecord(receipt, conversationId: conversationId, key: publicationKey, revision: 0)
+      if coordination?.mode == .recordOnly {
+        try database.insertResearchRecord(true, conversationId: conversationId,
+          key: AgentTeamHistoryDatabase.recordOnlyMilestonePrefix + publicationKey, revision: 0)
+      } else if coordination?.mode == .request {
+        let producer = AgentCollaborationToolEvidenceScope(runId: runId, conversationId: conversationId,
+          turnId: turnId, memberId: memberId, sourceId: sourceId)
+        let token = AgentCollaborationMilestoneCoordination.token(key: publicationKey, hash: requestHash)
+        try database.insertResearchRecord(AgentCollaborationMilestoneCoordination.RequestIndex(
+          publicationKey: publicationKey, artifactHash: requestHash, producer: producer),
+          conversationId: conversationId, key: AgentCollaborationMilestoneCoordination.requestPrefix + token, revision: 0)
+      }
       return receipt
     }
   }
@@ -2608,6 +2632,9 @@ final class AgentTeamExecutionHistoryStore {
                                      transportAllowsInterim: Bool = true) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
     let id = input.string("milestone_id")
+    if mode == AgentCollaborationMilestoneCoordination.readMode {
+      return try readCoordinationMilestone(input, scope: scope)
+    }
     if mode == AgentCollaborationGoalAssessmentPolicy.establishContractMode {
       return try establishCollaborationGoalContract(input, scope: scope)
     }
@@ -2678,8 +2705,10 @@ final class AgentTeamExecutionHistoryStore {
               conversationId: scope.conversationId, key: key, revision: 0),
               let id = saved.milestoneId, let recorded = saved.recordedAtMillis, Self.milestoneKey(base, id: id) == key
             else { throw AgentTeamHistoryDatabase.Failure.corrupt }
-            return .object(["milestone_id": .string(id), "raw_sha256": .string(saved.requestHash),
-              "recorded_at": .int(recorded), "revision_count": .int(Int64(saved.references.count))])
+            var row: AgentMcpJSONObject = ["milestone_id": .string(id), "raw_sha256": .string(saved.requestHash),
+              "recorded_at": .int(recorded), "revision_count": .int(Int64(saved.references.count))]
+            if let coordination = saved.coordination { row["coordination_mode"] = .string(coordination.mode.rawValue) }
+            return .object(row)
           }
           return ["success": .bool(true), "status": .string("returned"), "milestones": .array(rows),
             "next_cursor": keys.count > 32 ? .string(keys[31]) : .null,
@@ -2731,18 +2760,25 @@ final class AgentTeamExecutionHistoryStore {
       guard let envelope = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8)),
             !envelope.string("summary").isBlank
       else { throw AgentTeamHistoryDatabase.Failure.corrupt }
-      let drafts: [AgentCollaborationResearchDraft]
+      let coordination = try envelope["coordination"].map(AgentCollaborationMilestoneCoordination.init)
+      let decoded: AgentCollaborationResearchEnvelope
       do {
         let view = desktopWire ? AgentDesktopCollaborationPublicationWire.artifactDecodingView(envelope) ?? raw : raw
-        guard let decoded = try AgentCollaborationResearchEnvelope.publication(in: view) else {
+        guard let bytes = AgentCollaborationResearchEnvelope.replyJSON(in: view) else {
           throw AgentTeamHistoryDatabase.Failure.corrupt
         }
-        drafts = decoded
+        decoded = try JSONDecoder().decode(AgentCollaborationResearchEnvelope.self, from: bytes)
       } catch is DecodingError {
         throw AgentTeamHistoryDatabase.Failure.corrupt
       }
+      let drafts = decoded.workspace ?? []
+      let linked = decoded.milestones ?? []
+      guard decoded.format == AgentCollaborationResearchEnvelope.wireFormat, !drafts.isEmpty || !linked.isEmpty,
+            envelope["milestones"] == nil || (coordination?.mode == .request && decoded.milestones != nil)
+      else { throw AgentTeamHistoryDatabase.Failure.corrupt }
       let receipt = try publishResearchObjects(drafts, runId: scope.runId, conversationId: scope.conversationId,
         turnId: scope.turnId, memberId: scope.memberId, sourceId: scope.sourceId, milestone: (id, hash),
+        finalMilestones: linked, coordination: coordination,
         desktopFile: desktopWire ? desktopFile : nil)
       return Self.milestoneReceipt(receipt, id: id, status: "published", scope: scope)
     } catch let feedback as AgentCollaborationExperimentResultFeedback {
@@ -2816,12 +2852,66 @@ final class AgentTeamExecutionHistoryStore {
         .object(["object_id": .string($0.objectId), "revision": .int($0.revision), "sha256": .string($0.sha256)])
       })]
     if let numeric = receipt.numericTrials { output["numeric_trials"] = .array(numeric.map(AgentMcpJSONValue.object)) }
-    let base = researchPublicationKey(runId: scope.runId, memberId: scope.memberId, sourceId: scope.sourceId)
-    output["milestone_token"] = .string(AgentMcpJSONCodec.sha256([
-      "publication": .string(milestoneKey(base, id: id)), "artifact_sha256": .string(receipt.requestHash)
-    ]))
+    if let coordination = receipt.coordination { output["coordination"] = .object(coordination.payload()) }
+    if receipt.coordination?.mode != .recordOnly {
+      let base = researchPublicationKey(runId: scope.runId, memberId: scope.memberId, sourceId: scope.sourceId)
+      output["milestone_token"] = .string(workflowMilestoneToken(key: milestoneKey(base, id: id), hash: receipt.requestHash))
+    }
     if let notices = receipt.recordNotices { output["record_notices"] = .array(notices.map(AgentMcpJSONValue.object)) }
     return output
+  }
+
+  private func readCoordinationMilestone(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope)
+    throws -> AgentMcpJSONObject {
+    typealias Coordination = AgentCollaborationMilestoneCoordination
+    let summary = Set(input.keys) == ["mode", "token"]
+    guard let token = input["token"]?.strictStringValue, AgentCollaborationSourceAccess.validDigest(token),
+          summary || Set(input.keys) == ["mode", "token", "object_id", "revision", "artifact_sha256", "offset"]
+    else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    return try access { database in
+      let team = try Self.activeGoalCoordinator(scope, database: database)
+      guard let index = try database.researchRecord(Coordination.RequestIndex.self, conversationId: scope.conversationId,
+              key: Coordination.requestPrefix + token, revision: 0),
+            index.producer.runId == scope.runId, index.producer.turnId == scope.turnId,
+            index.producer.conversationId == scope.conversationId, index.producer.memberId != scope.memberId,
+            team.members.contains(where: { $0.memberId == index.producer.memberId &&
+              $0.sourceMessageId == index.producer.sourceId && $0.deliveryMode != .ignore }),
+            let receipt = try database.researchRecord(AgentCollaborationResearchPublication.self,
+              conversationId: scope.conversationId, key: index.publicationKey, revision: 0),
+            let id = receipt.milestoneId, let coordination = receipt.coordination, coordination.mode == .request,
+            receipt.requestHash == index.artifactHash, !receipt.references.isEmpty,
+            index.publicationKey == Self.milestoneKey(Self.researchPublicationKey(runId: scope.runId,
+              memberId: index.producer.memberId, sourceId: index.producer.sourceId), id: id),
+            Coordination.token(key: index.publicationKey, hash: receipt.requestHash) == token
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      if summary {
+        var response = Self.milestoneReceipt(receipt, id: id, status: "returned", scope: index.producer)
+        response.removeValue(forKey: "milestone_id")
+        response.removeValue(forKey: "numeric_trials")
+        response["trust"] = .string("member_request_not_verified_or_complete")
+        return response
+      }
+      guard let object = input["object_id"]?.strictStringValue, let hash = input["artifact_sha256"]?.strictStringValue,
+            case .int(let revision)? = input["revision"], case .int(let rawOffset)? = input["offset"],
+            let offset = Int(exactly: rawOffset), offset >= 0 else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      let ref = AgentCollaborationResearchReference(objectId: object, revision: revision, sha256: hash)
+      guard receipt.references.contains(ref),
+            let original = try database.researchRecord(AgentCollaborationResearchRevision.self,
+              conversationId: scope.conversationId, key: "object:" + object, revision: revision),
+            original.reference == ref, original.runId == scope.runId, original.turnId == scope.turnId,
+            original.authorId == index.producer.memberId, original.sourceId == index.producer.sourceId
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys]
+      let bytes = try encoder.encode(original)
+      guard offset < bytes.count else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      let end = min(offset + 4_096, bytes.count)
+      return ["success": .bool(true), "status": .string("returned"), "object_id": .string(object),
+        "revision": .int(revision), "sha256": .string(hash), "offset": .int(rawOffset),
+        "next_offset": end < bytes.count ? .int(Int64(end)) : .null,
+        "data_b64": .string(bytes.subdata(in: offset..<end).base64EncodedString()),
+        "trust": .string("original_member_record_not_verified")]
+    }
   }
 
   func publishSavedResearchReply(_ raw: String, scope: AgentCollaborationToolEvidenceScope) throws {
@@ -3589,16 +3679,30 @@ final class AgentTeamExecutionHistoryStore {
     let members = team.members.filter { $0.deliveryMode != .ignore && $0.memberId != scope.memberId }
     let memberRows = try members.prefix(16).map { member -> AgentMcpJSONObject in
       let base = researchPublicationKey(runId: scope.runId, memberId: member.memberId, sourceId: member.sourceMessageId)
-      let keys = try database.milestoneKeys(conversationId: scope.conversationId, prefix: milestonePrefix(base), after: "")
-      let tokens: [AgentMcpJSONValue] = try keys.prefix(4).map { key in
+      let keys = try database.milestoneKeys(conversationId: scope.conversationId, prefix: milestonePrefix(base), after: "",
+        coordinationOnly: true)
+      let candidates: [AgentMcpJSONObject] = try keys.prefix(4).map { key in
         guard let receipt = try database.researchRecord(AgentCollaborationResearchPublication.self,
           conversationId: scope.conversationId, key: key, revision: 0),
-          let id = receipt.milestoneId, milestoneKey(base, id: id) == key, let recorded = receipt.recordedAtMillis
+          let id = receipt.milestoneId, milestoneKey(base, id: id) == key, let recorded = receipt.recordedAtMillis,
+          receipt.coordination?.mode != .recordOnly
         else { throw AgentTeamHistoryDatabase.Failure.stale }
         let token = Self.workflowMilestoneToken(key: key, hash: receipt.requestHash)
-        return .object(["token": .string(token), "artifact_sha256": .string(receipt.requestHash),
-          "recorded_at": .int(recorded), "revision_count": .int(Int64(receipt.references.count))])
+        var row: AgentMcpJSONObject = ["token": .string(token), "artifact_sha256": .string(receipt.requestHash),
+          "recorded_at": .int(recorded), "revision_count": .int(Int64(receipt.references.count))]
+        if let coordination = receipt.coordination {
+          guard let request = try database.researchRecord(AgentCollaborationMilestoneCoordination.RequestIndex.self,
+            conversationId: scope.conversationId, key: AgentCollaborationMilestoneCoordination.requestPrefix + token, revision: 0),
+                request.publicationKey == key, request.artifactHash == receipt.requestHash,
+                request.producer == .init(runId: scope.runId, conversationId: scope.conversationId,
+                  turnId: scope.turnId, memberId: member.memberId, sourceId: member.sourceMessageId)
+          else { throw AgentTeamHistoryDatabase.Failure.stale }
+          row["coordination"] = .object(coordination.payload(preview: true))
+          row["exact_read_available"] = .bool(true)
+        }
+        return row
       }
+      let tokens = bounded(candidates, bytes: 2_400)
       let observed = member.status == .pending && member.dispatchCheckpoint == nil ? "unobserved" : member.status.rawValue.lowercased()
       return ["member_id": .string(member.memberId), "status": .string(observed),
         "dispatch_state": member.dispatchCheckpoint.map { .string($0.rawValue) } ?? .null,
@@ -4932,12 +5036,14 @@ final class AgentTeamExecutionHistoryStore {
             snapshot.members.contains(where: { $0.memberId == author && $0.sourceMessageId == source && $0.deliveryMode != .ignore })
       else { return nil }
       let base = researchPublicationKey(runId: run, memberId: author, sourceId: source)
-      let keys = try database.milestoneKeys(conversationId: scope.conversationId, prefix: milestonePrefix(base), after: "")
+      let keys = try database.milestoneKeys(conversationId: scope.conversationId, prefix: milestonePrefix(base), after: "",
+        coordinationOnly: true)
       var granted = false
       for key in keys.prefix(4) {
         guard let receipt = try database.researchRecord(AgentCollaborationResearchPublication.self,
           conversationId: scope.conversationId, key: key, revision: 0),
           let id = receipt.milestoneId, milestoneKey(base, id: id) == key,
+          receipt.coordination?.mode != .recordOnly,
           workflowMilestoneToken(key: key, hash: receipt.requestHash) == token else { continue }
         for ref in receipt.references {
           guard let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
@@ -5055,13 +5161,14 @@ final class AgentTeamExecutionHistoryStore {
   private static func hasProbeMilestone(_ token: String, outcome: AgentCollaborationResearchReference,
       original: AgentCollaborationToolEvidenceScope, database: AgentTeamHistoryDatabase) throws -> Bool {
     let base = researchPublicationKey(runId: original.runId, memberId: original.memberId, sourceId: original.sourceId)
-    let keys = try database.milestoneKeys(conversationId: original.conversationId, prefix: milestonePrefix(base), after: "")
+    let keys = try database.milestoneKeys(conversationId: original.conversationId, prefix: milestonePrefix(base), after: "",
+      coordinationOnly: true)
     for key in keys {
       guard let receipt = try database.researchRecord(AgentCollaborationResearchPublication.self,
         conversationId: original.conversationId, key: key, revision: 0),
         let id = receipt.milestoneId, milestoneKey(base, id: id) == key, receipt.recordedAtMillis != nil,
-        receipt.references.contains(outcome) else { continue }
-      if token == AgentMcpJSONCodec.sha256(["publication": .string(key), "artifact_sha256": .string(receipt.requestHash)]) {
+        receipt.coordination?.mode != .recordOnly, receipt.references.contains(outcome) else { continue }
+      if token == workflowMilestoneToken(key: key, hash: receipt.requestHash) {
         return true
       }
     }

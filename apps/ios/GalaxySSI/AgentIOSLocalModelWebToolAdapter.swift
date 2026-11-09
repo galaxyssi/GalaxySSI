@@ -183,6 +183,7 @@ enum AgentIOSLocalModelWebToolRunner {
     }
 
     func executable() throws -> AgentNativeToolExecutableDefinition {
+      let readMode = AgentCollaborationMilestoneCoordination.readMode
       let policy = AgentCollaborationGoalAssessmentPolicy.self
       let modes = [policy.establishContractMode, policy.appendWorkMode, policy.checkGoalEvidenceMode,
         policy.workInventoryMode, policy.workInputMode, policy.assessmentRepairMode, "status", "validate_assessment", "work_result"]
@@ -191,6 +192,7 @@ enum AgentIOSLocalModelWebToolRunner {
           "Manage only this coordinator's original goal. Interim publication is not available on this dispatch; status checks the capability without mutation. Establish open criteria with establish_contract and artifact. " +
           "Use append_work with milestone_id, expected_revision and the work-expansion JSON in artifact. " +
           "Work is dispatched by the host after your current model round returns. Use work_result and work_id to read a saved result. " +
+          AgentCollaborationMilestoneCoordination.readInstructions + " " +
           "Use work_inventory with no other fields to inspect readiness, review subjects and publication tokens. A waiting review is not active. " +
           "Use assessment_repair with draft_sha256 and offset to read a retained rejected draft; join pages in order. Do not execute rejected work. " +
           "Use check_goal_evidence with expected_revision and artifact to check exact reviewed evidence; this does not deliver the goal. " +
@@ -198,12 +200,15 @@ enum AgentIOSLocalModelWebToolRunner {
           AgentCollaborationProbeContinuation.admissionInstructions,
         location: .application, inputSchema: ["type": .string("object"), "required": .array([.string("mode")]),
           "additionalProperties": .bool(false), "properties": .object([
-            "mode": .object(["type": .string("string"), "enum": .array(modes.map(AgentMcpJSONValue.string))]),
+            "mode": .object(["type": .string("string"), "enum": .array((modes + [readMode]).map(AgentMcpJSONValue.string))]),
             "milestone_id": .object(["type": .string("string")]), "artifact": .object(["type": .string("string")]),
             "draft_sha256": .object(["type": .string("string")]), "offset": .object(["type": .string("integer")]),
             "token": .object(["type": .string("string")]),
             "expected_revision": .object(["type": .string("integer")]), "work_id": .object(["type": .string("string")])
-          ])], risk: .low, idempotency: .idempotent, effect: .mutation)
+          ].merging(["token": .object(["type": .string("string")]), "object_id": .object(["type": .string("string")]),
+            "revision": .object(["type": .string("integer")]), "artifact_sha256": .object(["type": .string("string")])]) {
+              current, _ in current
+          })], risk: .low, idempotency: .idempotent, effect: .mutation)
       return AgentNativeToolExecutableDefinition(
         definition: .init(descriptor: descriptor, executorId: AgentIOSLocalModelWebToolRunner.goalCoordinatorToolID)
       ) { invocation in
@@ -216,7 +221,7 @@ enum AgentIOSLocalModelWebToolRunner {
           return .success(output: saved?.receipt(now: AgentControlPlaneClock.nowMillis()) ??
             ["status": .string("unclaimed"), "work_id": .string(id)])
         }
-        guard modes.contains(mode), mode != "work_result",
+        guard modes.contains(mode) || mode == readMode, mode != "work_result",
               let result = try? history.publishCollaborationMilestone(invocation.input, scope: scope,
                 recruitmentTemplates: recruitmentTemplates, recruitmentRoster: roster, transportAllowsInterim: false)
         else { return .failure(code: "collaboration_goal_unavailable", message: "The scoped goal request was not accepted") }
