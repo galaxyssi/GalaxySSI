@@ -1856,7 +1856,7 @@ struct GalaxySSIHealthRecords {
       calendar: Calendar, now: Date) throws -> GalaxySSIHealthCareFollowUp.DeliveryPlan {
     let archive = try load()
     let reminders = (archive.localCareFollowUps ?? [:]).values.filter {
-      careFollowUpIsCurrent(concernID: $0.concernID, metric: $0.metric, actionID: $0.actionID, archive: archive, now: now)
+      careReminderIsCurrent($0, archive: archive, now: now)
     }
     return GalaxySSIHealthCareFollowUp.deliveryPlan(reminders: reminders, preferences: Self.careFollowUpPreferences(archive),
       permitted: permitted, pending: pending, delivered: delivered, calendar: calendar, now: now)
@@ -1871,8 +1871,7 @@ struct GalaxySSIHealthRecords {
           delivery.due >= reminder.requestedAt.addingTimeInterval(-1),
           let preferences = Self.careFollowUpPreferences(archive),
           preferences.nextAllowed(delivery.due, calendar: calendar) == delivery.due,
-          careFollowUpIsCurrent(concernID: reminder.concernID, metric: reminder.metric,
-            actionID: reminder.actionID, archive: archive, now: now) else { throw Failure.stale }
+          careReminderIsCurrent(reminder, archive: archive, now: now) else { throw Failure.stale }
     guard reminder.submittedFor != delivery.due else { return }
     reminder.submittedFor = delivery.due
     archive.localCareFollowUps?[reminder.actionID] = reminder
@@ -1884,8 +1883,10 @@ struct GalaxySSIHealthRecords {
     guard Self.careFollowUpPreferences(archive) != nil,
           let reminder = archive.localCareFollowUps?.values.first(where: { $0.id == token }),
           reminder.submittedFor.map({ $0 <= now.addingTimeInterval(2) }) == true,
-          careFollowUpIsCurrent(concernID: reminder.concernID, metric: reminder.metric, actionID: reminder.actionID,
-            archive: archive, now: now) else { return nil }
+          careReminderIsCurrent(reminder, archive: archive, now: now) else { return nil }
+    if let visit = reminder.journalReview?.visit,
+       (try? visitDocumentContext(concern: reminder.concernID, metric: reminder.metric, visit: visit,
+         archive: archive, now: now)) == nil { return nil }
     return reminder
   }
 
@@ -1893,6 +1894,13 @@ struct GalaxySSIHealthRecords {
     guard archive.reviewReminderState?.enabled == true,
           let preferences = archive.reviewReminderState?.notificationPreferences, preferences.enabled else { return nil }
     return preferences
+  }
+
+  private func careReminderIsCurrent(_ reminder: GalaxySSIHealthCareFollowUp.Reminder, archive: Archive,
+      now: Date, verifyOriginal: Bool = true) -> Bool {
+    if reminder.journalReview != nil { return visitReviewIsCurrent(reminder, archive: archive) }
+    return careFollowUpIsCurrent(concernID: reminder.concernID, metric: reminder.metric, actionID: reminder.actionID,
+      archive: archive, now: now, verifyOriginal: verifyOriginal)
   }
 
   func careFollowUpIsCurrent(concernID: UUID, metric: GalaxySSIHealthMetric, actionID: String,
@@ -1975,9 +1983,18 @@ struct GalaxySSIHealthRecords {
 
   private func makeCareAgenda(_ archive: Archive, context: [String: GalaxySSIHealthCareAgenda.Context], now: Date)
       -> GalaxySSIHealthCareAgenda.Projection {
-    let rows = context.flatMap { metric, state -> [GalaxySSIHealthCareAgenda.Row] in
+    var rows = context.flatMap { metric, state -> [GalaxySSIHealthCareAgenda.Row] in
       guard let concern = archive.localCare?.current[metric] else { return [] }
       return (concern.adoptedActions ?? []).map { careAgendaRow($0, concern: concern, archive: archive, context: state, now: now).0 }
+    }
+    if Self.careFollowUpPreferences(archive) != nil {
+      for reminder in (archive.localCareFollowUps ?? [:]).values {
+        guard let source = reminder.journalReview, visitReviewIsCurrent(reminder, archive: archive),
+              let concern = archive.localCare?.current[reminder.metric.rawValue] else { continue }
+        rows.append(.init(key: .init(bucket: .planned, due: reminder.requestedAt,
+          concern: concern.id, action: reminder.actionID), metric: concern.metric, revision: concern.revision,
+          reminderID: reminder.id, submittedFor: reminder.submittedFor, canRecord: false, journalVisit: source.visit))
+      }
     }
     return .init(carePermission: archive.localCarePermission, onlinePermission: archive.healthOnlinePermission,
       context: context, rows: rows)
@@ -2003,8 +2020,16 @@ struct GalaxySSIHealthRecords {
     let rows = try index.page(filter: filter, scope: scope, dayEnd: dayEnd, after: after, limit: limit)
     var actionsByMetric: [String: [String: GalaxySSIHealthCarePlan.AdoptedAction]] = [:]
     let checkedItems = try rows.map { row -> Agenda.Item in
-      guard let concern = archive.localCare?.current[row.metric.rawValue], concern.id == row.key.concern,
-            let state = context[row.metric.rawValue] else { throw Failure.stale }
+      guard let concern = archive.localCare?.current[row.metric.rawValue], concern.id == row.key.concern
+      else { throw Failure.stale }
+      if let visit = row.journalVisit {
+        guard let reminder = archive.localCareFollowUps?[row.key.action], reminder.id == row.reminderID,
+              reminder.journalReview?.visit == visit, visitReviewIsCurrent(reminder, archive: archive)
+        else { throw Failure.stale }
+        return .init(scope: .init(concern: concern.id, metric: concern.metric), revision: concern.revision,
+          action: nil, reminder: reminder, plannedAt: row.key.due, bucket: row.key.bucket, canRecord: false)
+      }
+      guard let state = context[row.metric.rawValue] else { throw Failure.stale }
       if actionsByMetric[row.metric.rawValue] == nil {
         actionsByMetric[row.metric.rawValue] = Dictionary((concern.adoptedActions ?? []).map { ($0.id, $0) },
           uniquingKeysWith: { first, _ in first })
@@ -3100,8 +3125,8 @@ struct GalaxySSIHealthRecords {
       let now = Date()
       let enabled = Self.careFollowUpPreferences(archive) != nil
       archive.localCareFollowUps = reminders.filter {
-        enabled && careFollowUpIsCurrent(concernID: $0.value.concernID, metric: $0.value.metric,
-          actionID: $0.key, archive: archive, now: now, verifyOriginal: false)
+        enabled && $0.key == $0.value.actionID && careReminderIsCurrent($0.value, archive: archive, now: now,
+          verifyOriginal: false)
       }
     }
     if archive.localCareAllowed == true, !(archive.localCare?.current.values.contains { concern in
@@ -3109,7 +3134,8 @@ struct GalaxySSIHealthRecords {
     } ?? false) {
       let now = Date()
       let context = careAgendaContexts(archive, now: now)
-      archive.localCareAgenda = context.isEmpty ? nil : try JSONEncoder().encode(makeCareAgenda(archive, context: context, now: now))
+      let agenda = makeCareAgenda(archive, context: context, now: now)
+      archive.localCareAgenda = agenda.rows.isEmpty ? nil : try JSONEncoder().encode(agenda)
     } else {
       archive.localCareAgenda = nil
     }

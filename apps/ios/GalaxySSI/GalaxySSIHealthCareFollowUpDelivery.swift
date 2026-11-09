@@ -13,8 +13,10 @@ struct GalaxySSIHealthCareFollowUpLifecycle: ViewModifier {
 
   private struct Destination: Identifiable {
     let id: UUID
+    let concern: UUID
     let owner: String
     let metric: GalaxySSIHealthMetric
+    let visit: UUID?
   }
 
   func body(content: Content) -> some View {
@@ -61,21 +63,30 @@ struct GalaxySSIHealthCareFollowUpLifecycle: ViewModifier {
         generation = UUID()
       }
       .sheet(item: $destination) { route in
-        NavigationView {
-          List {
-            GalaxySSIHealthCareFollowUpsSection(records: .init(owner: route.owner, secrets: store.secrets),
-              concernID: route.id, metric: route.metric)
-          }
-          .navigationTitle(route.metric.title(language: language))
-          .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-              Button(GalaxySSILocalization.string("galaxyssi.common.close", fallback: "Close", language: language)) {
-                destination = nil
-              }
-            }
-          }
-        }.navigationViewStyle(.stack)
+        if let visit = route.visit {
+          GalaxySSIHealthVisitJournalView(records: .init(owner: route.owner, secrets: store.secrets),
+            concern: route.concern, metric: route.metric, visit: visit)
+        } else {
+          followUps(route)
+        }
       }
+  }
+
+  private func followUps(_ route: Destination) -> some View {
+    NavigationView {
+      List {
+        GalaxySSIHealthCareFollowUpsSection(records: .init(owner: route.owner, secrets: store.secrets),
+          concernID: route.concern, metric: route.metric)
+      }
+      .navigationTitle(route.metric.title(language: language))
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button(GalaxySSILocalization.string("galaxyssi.common.close", fallback: "Close", language: language)) {
+            destination = nil
+          }
+        }
+      }
+    }.navigationViewStyle(.stack)
   }
 
   private func reconcile() async {
@@ -142,6 +153,7 @@ struct GalaxySSIHealthCareFollowUpLifecycle: ViewModifier {
     defaults.removeObject(forKey: key)
     guard permitted, let token = UUID(uuidString: raw),
           let reminder = try? records.localCareFollowUpTarget(token: token, now: now) else { return }
-    destination = .init(id: reminder.concernID, owner: records.owner, metric: reminder.metric)
+    destination = .init(id: reminder.id, concern: reminder.concernID, owner: records.owner, metric: reminder.metric,
+      visit: reminder.journalReview?.visit)
   }
 }
