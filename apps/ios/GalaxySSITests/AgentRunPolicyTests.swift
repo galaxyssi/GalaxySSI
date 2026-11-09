@@ -296,6 +296,83 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(try open().observations.count, 1)
   }
 
+  func testSavedResultOnlyDefersForMissingEvidenceFromItsPendingDesktopImport() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let suite = "desktop-result-readiness-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    func openHistory() -> AgentTeamExecutionHistoryStore {
+      AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets, fileURL: root.appendingPathComponent("team.sqlite"))
+    }
+    let source = UUID().uuidString.lowercased()
+    let scope = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "group", turnId: "turn",
+      memberId: "reviewer", sourceId: source)
+    let owner = AgentTeamReplyOwner(supervisorRunId: scope.runId, memberId: scope.memberId,
+      conversationId: scope.conversationId, turnId: scope.turnId, sourceMessageId: source,
+      contactId: "review", deliveryMode: .observe)
+    let identity = AgentTaskIdentity(clientRouteId: "route", conversationId: scope.conversationId,
+      taskId: source, turnId: scope.turnId)
+    let binding = try XCTUnwrap(AgentDesktopReplyBinding.teamObserver(owner: owner,
+      desktopId: "desktop", agentId: "codex", identity: identity))
+    let request = try XCTUnwrap(AgentDesktopToolEvidenceWire.Request(binding: binding, generation: 2, nonce: "fixture"))
+    let job = AgentDesktopToolEvidenceWire.ImportJob(binding: binding, generation: 2, profileIdentity: "profile")
+    let snapshot = AgentTeamExecutionSnapshot(supervisorRunId: scope.runId, teamId: "team",
+      conversationId: scope.conversationId, taskId: scope.turnId, primaryAgentId: "primary", state: .running,
+      members: [
+        .init(agentId: owner.contactId, status: .pending, instanceId: scope.memberId, sourceMessageId: source,
+          dispatchCheckpoint: .accepted),
+        .init(agentId: "primary", deliveryMode: .respond, sourceMessageId: "primary-source")
+      ], createdAtMillis: 1, updatedAtMillis: 1)
+    let original = binding.fields.mapValues(AgentMcpJSONValue.string).merging([
+      "contract": .string(AgentDesktopToolEvidenceWire.contract), "execution_generation": .int(2),
+      "trust": .string("execution_observed_not_claim_verified"), "coverage": .string("provider_payload_as_received"),
+      "observation": .object(["provider": .string("codex"), "thread_id": .string("provider-thread"),
+        "turn_id": .string("provider-turn"), "item": .object(["type": .string("commandExecution"),
+          "exitCode": .int(0), "aggregatedOutput": .string("original output")])])
+    ]) { _, new in new }
+    let bytes = Data(AgentMcpJSONCodec.stringify(original).utf8)
+    let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+    let descriptor = try XCTUnwrap(AgentDesktopToolEvidenceWire.Descriptor([
+      "evidence_id": .string(String(repeating: "a", count: 64)), "sha256": .string(hash),
+      "sequence": .int(1), "total_bytes": .int(Int64(bytes.count)), "page_count": .int(1),
+      "item_type": .string("commandExecution"), "trust": .string("execution_observed_not_claim_verified"),
+      "coverage": .string("provider_payload_as_received")
+    ]))
+    let archiveId = request.archiveId(descriptor)
+    let citation: AgentMcpJSONObject = ["evidence_id": .string(archiveId), "sha256": .string(hash),
+      "origin": .string("desktop_codex_tool")]
+    func artifact(_ content: AgentMcpJSONValue) -> String {
+      AgentMcpJSONCodec.stringify(["format": .string(AgentCollaborationResearchEnvelope.wireFormat),
+        "workspace": .array([.object(["id": .string("candidate"), "base_revision": .int(0), "kind": .string("artifact"),
+          "title": .string("Saved result"), "parents": .array([]), "body": .object(["detail": content])])])])
+    }
+    let raw = artifact(.array([.object(citation), .object(citation)]))
+    XCTAssertEqual(AgentTeamExecutionHistoryStore.desktopResultEvidence(raw), [archiveId: hash])
+    XCTAssertEqual(AgentTeamExecutionHistoryStore.desktopResultEvidence(artifact(.string(raw))), [:])
+    var malformed = citation
+    malformed["sha256"] = .string("invalid")
+    XCTAssertNil(AgentTeamExecutionHistoryStore.desktopResultEvidence(artifact(.object(malformed))))
+
+    let history = openHistory()
+    XCTAssertTrue(history.upsert(snapshot))
+    try history.enqueueDesktopEvidenceJob(job)
+    XCTAssertFalse(try history.isSavedResearchReplyWaitingForDesktopEvidence(raw, scope: scope, job: job))
+    XCTAssertEqual(try history.consumeOwnedReply(source: source, conversation: scope.conversationId, turn: scope.turnId,
+      task: source, contact: owner.contactId, content: raw, richOutputJson: "", terminal: true, success: true,
+      now: 2, observation: .init(generation: 2, sequence: 1)), .observerCommitted)
+    let reopened = openHistory()
+    let foreignProfile = AgentDesktopToolEvidenceWire.ImportJob(binding: binding, generation: 2, profileIdentity: "other")
+    XCTAssertFalse(try reopened.isSavedResearchReplyWaitingForDesktopEvidence(raw, scope: scope, job: foreignProfile))
+    XCTAssertTrue(try reopened.isSavedResearchReplyWaitingForDesktopEvidence(raw, scope: scope, job: job))
+    XCTAssertEqual(try reopened.recoveryContext(source: source, conversation: scope.conversationId, turn: scope.turnId,
+      contact: owner.contactId)?.member.replyContent, raw)
+    _ = try reopened.archiveDesktopToolEvidence(request: request, descriptor: descriptor, pages: [bytes])
+    XCTAssertFalse(try reopened.isSavedResearchReplyWaitingForDesktopEvidence(raw, scope: scope, job: job))
+    XCTAssertFalse(try reopened.desktopEvidenceCursor(request).archiveFinal)
+    XCTAssertEqual(try reopened.desktopEvidenceJobs(after: "").map(\.key), [job.key])
+  }
+
   func testDesktopToolEvidenceRejectsForeignNonceGenerationAndInnerScope() throws {
     let source = UUID().uuidString.lowercased()
     let owner = AgentTeamReplyOwner(supervisorRunId: "run", memberId: "member",
@@ -415,6 +492,7 @@ extension GalaxySSIStoreTests {
     let entry = try XCTUnwrap(listed["entries"]?.arrayValue?.first?.objectValue)
     XCTAssertEqual(entry["evidence_id"], .string(receipt.archiveId))
     XCTAssertEqual(entry["tool"], .string("commandExecution"))
+    XCTAssertEqual(entry["recorded_tool"], .string("codex.commandExecution"))
     XCTAssertEqual(entry["status"], .string("returned"))
     var read: AgentMcpJSONObject = ["mode": .string("desktop_evidence"), "evidence_id": .string(receipt.archiveId),
       "sha256": .string(receipt.sha256)]
@@ -458,7 +536,7 @@ extension GalaxySSIStoreTests {
     let review = try XCTUnwrap(publishReview().references.first)
     let coordinator = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "group", turnId: "turn",
       memberId: "primary", sourceId: "coordinator")
-    let required: AgentMcpJSONValue = .array([.object(["origin": .string("desktop_codex_tool"), "tool": .string("commandExecution")])])
+    let required: AgentMcpJSONValue = .array([.object(["origin": .string("desktop_codex_tool"), "tool": .string("codex.commandExecution")])])
     var criterion: AgentMcpJSONObject = ["id": .string("record"), "requirement": .string("Record the returned output"),
       "verification": .string("documentary"), "status": .string("open"), "evidence": .array([]), "required_observations": required]
     var assessment: AgentMcpJSONObject = ["format": .string("galaxyssi.goal-assessment.v1"), "summary": .string("Record"),

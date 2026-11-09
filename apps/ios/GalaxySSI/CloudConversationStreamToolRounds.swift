@@ -476,6 +476,7 @@ struct CloudModelStreamMutableConversation {
       " Use acceptance_record with an exact current object_id, revision and sha256 to read a saved criterion delivery or review from this run. " +
       "Use native_evidence with exact evidence_id and sha256 for a native observation. Read all pages before citing origin ios_native_tool, evidence_id and sha256. " +
       "Use desktop_evidence_list to discover same-run Desktop observations, and desktop_evidence to read exact byte pages. " +
+      "New Desktop source requirements use the recorded_tool event family, not the callable tool name. " +
       "Follow next_offset, decode data_b64, and cite origin desktop_codex_tool, evidence_id and sha256 after full coverage."
     appendCollaborationFunction(advertised, schema: schema)
   }
@@ -492,9 +493,14 @@ struct CloudModelStreamMutableConversation {
          AgentCollaborationGoalAssessmentPolicy.workInventoryMode, AgentCollaborationGoalAssessmentPolicy.workInputMode,
          AgentCollaborationGoalAssessmentPolicy.assessmentRepairMode]
       : ["publish", "status", "receipt", "list", "validate_assessment"]
+    if assessmentOnly {
+      modes.append(AgentCollaborationGoalAssessmentPolicy.establishVerificationMode)
+      appendResearchGuidance(AgentCollaborationGoalAssessmentPolicy.verificationInstructions)
+    }
     if canRunGoalWork {
       modes += [AgentCollaborationGoalAssessmentPolicy.runWorkMode, AgentCollaborationGoalAssessmentPolicy.runReadyWorkMode]
     }
+    if assessmentOnly { modes.append(AgentCollaborationMilestoneCoordination.readMode) }
     var properties: [String: Any] = [
       "mode": ["type": "string", "enum": modes],
       "milestone_id": ["type": "string"], "artifact": ["type": "string"], "artifact_sha256": ["type": "string"],
@@ -504,11 +510,14 @@ struct CloudModelStreamMutableConversation {
       properties["token"] = ["type": "string"]
       properties["draft_sha256"] = ["type": "string"]
       properties["offset"] = ["type": "integer"]
+      properties["token"] = ["type": "string"]
+      properties["object_id"] = ["type": "string"]
+      properties["revision"] = ["type": "integer"]
     }
     var schema: [String: Any] = ["type": "object", "properties": properties,
       "required": ["mode"]]
     if request.provider != .gemini { schema["additionalProperties"] = false }
-    appendCollaborationFunction([
+    var function: [String: Any] = [
       "name": Self.collaborationPublishName,
       "description": assessmentOnly
         ? AgentTeamExecutionHistoryStore.MilestoneCapability.notEnrolled.guidance +
@@ -516,10 +525,14 @@ struct CloudModelStreamMutableConversation {
           AgentCollaborationWorkInputBindings.coordinatorInstructions +
           AgentCollaborationProbeContinuation.admissionInstructions +
           (canRunGoalWork ? " An accepted batch starts ready assignments in dependency order. To recruit inside the current run, include recruit:[{id,template_member,role,scope,reason}] in the work expansion. Assign concrete work to member recruit:<id> in the same batch. Use only existing authorized specialists as templates; recruitment grants no new permissions and does not make the template an independent reviewer. Use run_ready_work with no other fields to resume unclaimed assignments. Use run_work with an admitted work_id to retrieve its saved output or run one ready assignment. Desktop work is plan-only. Claimed work is never automatically reexecuted. " + Self.goalAssessmentFinalInstruction : "")
-        : "Use status to check availability. Publish interim research with milestone_id and an artifact JSON string containing format, a nonblank summary, and a nonempty workspace. " +
-          AgentCollaborationResearchEnvelope.optionalNotesInstructions +
+        : "Use status to check availability. Publish interim research with milestone_id and an artifact JSON string containing format, a nonblank summary, and a nonempty workspace or an explicit request citing saved milestones. " +
+          AgentCollaborationResearchEnvelope.optionalNotesInstructions + " " + AgentCollaborationMilestoneCoordination.instructions +
           " After an uncertain publication, use receipt with the same milestone_id and SHA-256 of the exact artifact UTF-8 bytes. Resend the saved artifact only after an explicit not_recorded response matching both fields; a failed lookup leaves the outcome uncertain. Use list with next_cursor to recover saved IDs, then cite them in milestones in your final artifact. Use validate_assessment with artifact to check goal-assessment structure without publishing. Receipts do not verify evidence or complete the assignment."
-    ], schema: schema)
+    ]
+    if assessmentOnly, let description = function["description"] as? String {
+      function["description"] = description + " " + AgentCollaborationMilestoneCoordination.readInstructions
+    }
+    appendCollaborationFunction(function, schema: schema)
   }
 
   mutating func installWorkInputPublication() {
@@ -548,7 +561,8 @@ struct CloudModelStreamMutableConversation {
   }
 
   static let goalAssessmentFinalInstruction = AgentCollaborationGoalAssessmentPolicy.admissionInstructions +
-    " Return only the galaxyssi.goal-assessment.v1 JSON object. Never claim achieved without exact reviewed criterion deliveries, goal_coverage, and final_delivery. Select final_delivery from a met criterion. Return a non-achieved assessment if evidence is missing. Do not send final deliverable prose; the host loads the reviewed text."
+    " Return only the galaxyssi.goal-assessment.v1 JSON object. Never claim achieved without exact reviewed criterion deliveries, goal_coverage, and final_delivery. Select final_delivery from a met criterion. Return a non-achieved assessment if evidence is missing. Do not send final deliverable prose; the host loads the reviewed text. Do not preclaim or await review of this assessment before submitting it. " +
+    AgentCollaborationPromptBudget.deliveryReviewGuidance
 
   mutating func requestForRound(roundId: String, finalRound: Bool = false, finalInstruction: String? = nil) throws -> ModelStreamRequest {
     if finalRound {

@@ -408,24 +408,36 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     return await publishTransientControl(topic: topic, payload: payload, link: link)
   }
 
+  func recoveryRouteReady(topic: String, link: ServerLink) async -> Bool {
+    await withCheckedContinuation { continuation in
+      queue.async {
+        continuation.resume(returning: self.transientControlGate(topic: topic, link: link)
+          .map(self.authorizes) ?? false)
+      }
+    }
+  }
+
+  private func transientControlGate(topic: String, link: ServerLink) -> MqttPathPublication? {
+    let receiveTopics = link.routes.receiveWindow
+    let current: () -> Bool = { [weak self] in
+      self?.serverLinks.contains { $0.paired && $0.desktopId == link.desktopId &&
+        $0.desktopFingerprint == link.desktopFingerprint && $0.routes == link.routes &&
+        $0.routes.receiveWindow == receiveTopics && $0.routes.sendWindow.contains(topic) } == true
+    }
+    guard link.paired, current(), hasLiveTransport() else { return nil }
+    return MqttPathPublication(topic: topic, payload: Data(), generation: connectionGeneration,
+      receiveTopics: receiveTopics, secretFingerprint: MqttRouteProtocol.digest(Data(link.routes.linkSecret.utf8)),
+      configurationID: configurationID, authorized: current)
+  }
+
   func publishTransientControl(topic: String, payload: Data, link: ServerLink) async -> MqttPublishResult {
     await withCheckedContinuation { continuation in
       queue.async {
         self.checkTransportOnDemand()
-        let receiveTopics = link.routes.receiveWindow
-        let current: () -> Bool = { [weak self] in
-          self?.serverLinks.contains { $0.paired && $0.desktopId == link.desktopId &&
-            $0.desktopFingerprint == link.desktopFingerprint &&
-              $0.routes == link.routes &&
-            $0.routes.receiveWindow == receiveTopics && $0.routes.sendWindow.contains(topic) } == true
-        }
-        guard link.paired, current(), self.hasLiveTransport() else {
+        guard var gate = self.transientControlGate(topic: topic, link: link) else {
           continuation.resume(returning: .failed)
           return
         }
-        var gate = MqttPathPublication(topic: topic, payload: Data(), generation: self.connectionGeneration,
-          receiveTopics: receiveTopics, secretFingerprint: MqttRouteProtocol.digest(Data(link.routes.linkSecret.utf8)),
-          configurationID: self.configurationID, authorized: current)
         if payload.count <= GalaxySSIMqttWireChunking.defaultDirectLimitBytes {
           guard let sealed = try? GalaxySSILinkProtocol.sealWirePacket(payload, secret: link.routes.linkSecret),
                 let bytes = try? MqttDeliveryDispatch.packetBytes(topic: topic, payloadBytes: sealed.count) else {
