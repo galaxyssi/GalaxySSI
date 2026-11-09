@@ -51,6 +51,7 @@ private struct GalaxySSIHealthCareAgendaRows: View {
   @State private var cursors: [Agenda.Cursor] = []
   @State private var editor: Editor?
   @State private var history: History?
+  @State private var instructionSource: InstructionSource?
   @State private var cancelling: GalaxySSIHealthCareFollowUp.Reminder?
   @State private var failed = false
   @State private var disallowed = false
@@ -65,6 +66,12 @@ private struct GalaxySSIHealthCareAgendaRows: View {
     let id = UUID()
     let scope: Agenda.Scope
     let actionID: String?
+  }
+
+  private struct InstructionSource: Identifiable {
+    var id: UUID { reference.instruction }
+    let scope: Agenda.Scope
+    let reference: GalaxySSIHealthInstruction.ActionReference
   }
 
   var body: some View {
@@ -119,6 +126,9 @@ private struct GalaxySSIHealthCareAgendaRows: View {
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.profileInputsChanged)) {
       if $0.object as? String == records.owner { reset() }
     }
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthOriginalStore.indexChanged)) {
+      if $0.object as? String == records.owner { reset() }
+    }
     .sheet(item: $editor) { edit in
       NavigationView {
         GalaxySSIHealthCareFollowUpEditor(records: records, concernID: edit.item.scope.concern, metric: edit.item.scope.metric,
@@ -130,6 +140,10 @@ private struct GalaxySSIHealthCareAgendaRows: View {
       NavigationView {
         GalaxySSIHealthCareFeedbackHistory(records: records, scope: selection.scope, actionID: selection.actionID)
       }.navigationViewStyle(.stack)
+    }
+    .sheet(item: $instructionSource) { source in
+      GalaxySSIHealthInstructionReviewView(records: records, concern: source.scope.concern, metric: source.scope.metric,
+        visit: source.reference.visit, actionSource: source.reference)
     }
     .confirmationDialog(t("cancel_reminder", "Cancel reminder"),
       isPresented: Binding(get: { cancelling != nil }, set: { if !$0 { cancelling = nil } }), titleVisibility: .visible) {
@@ -157,6 +171,19 @@ private struct GalaxySSIHealthCareAgendaRows: View {
         Text(action.source.title).font(.caption).foregroundColor(.secondary)
         Text(proof.quote).font(.caption).textSelection(.enabled)
         Text(proof.retrievedAt, format: .dateTime).font(.caption).foregroundColor(.secondary)
+      }
+      if let ref = action.instruction {
+        Text(action.action.rationale)
+        Text(instruction("action_notice", "This action uses your transcription, not clinician verification. No medication schedule is created."))
+          .font(.caption).foregroundColor(.secondary)
+        Text(ref.pageLabel(language: language)).font(.caption).foregroundColor(.secondary)
+        if ref.invalidated {
+          Text(instruction("action_stale", "Instruction changed or was deleted.")).font(.caption).foregroundColor(.secondary)
+        } else if item.bucket != .review {
+          Button(instruction("action_source", "Open source review")) {
+            instructionSource = .init(scope: item.scope, reference: ref)
+          }.buttonStyle(.borderless)
+        }
       }
       if let feedback = action.feedback {
         Text(GalaxySSIHealthCareFollowUpText.label(feedback.kind, language: language))
@@ -223,7 +250,8 @@ private struct GalaxySSIHealthCareAgendaRows: View {
   private func reset() { clear(); reload() }
 
   private func clear() {
-    page = nil; cursors = []; editor = nil; history = nil; cancelling = nil; failed = false; disallowed = false
+    page = nil; cursors = []; editor = nil; history = nil; instructionSource = nil
+    cancelling = nil; failed = false; disallowed = false
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
@@ -232,6 +260,10 @@ private struct GalaxySSIHealthCareAgendaRows: View {
 
   private func agenda(_ key: String, _ fallback: String) -> String {
     GalaxySSILocalization.string("galaxyssi.health.agenda." + key, fallback: fallback, language: language)
+  }
+
+  private func instruction(_ key: String, _ fallback: String) -> String {
+    GalaxySSIHealthInstruction.text(key, fallback, language)
   }
 }
 
@@ -307,6 +339,7 @@ private struct GalaxySSIHealthCareFollowUpEditor: View {
           expectedRevision: revision, kind: feedbackKind, note: note, operation: operation)
       } else {
         try records.scheduleLocalCareFollowUp(concernID: concernID, metric: metric, actionID: action.id,
+          expectedRevision: revision,
           replacing: existing?.id, at: time)
       }
       dismiss()

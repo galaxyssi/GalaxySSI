@@ -38,6 +38,12 @@ enum GalaxySSIHealthInstruction {
       kind.fields.allSatisfy { field in fields[field].map { $0.review != .unreviewed } ?? false }
     }
 
+    var eligibleForAction: Bool {
+      reviewed && (kind == .medication ? kind.fields : [.name, .details]).allSatisfy {
+        value($0).review == .transcribed && !value($0).text.isEmpty
+      }
+    }
+
     func value(_ field: Field) -> Value { fields[field] ?? .init() }
 
     mutating func changeKind(_ next: Kind) {
@@ -76,6 +82,32 @@ enum GalaxySSIHealthInstruction {
   }
 
   enum Recognition: String, Codable { case pdfText, onDeviceOCR }
+
+  struct ActionReference: Codable, Equatable {
+    let instruction: UUID
+    let revision: Int
+    let visit: UUID
+    let link: UUID
+    let original: UUID
+    let fingerprint: Data
+    let page: Int
+    let pageCount: Int
+    let permission: UUID
+    let profileEpoch: UUID?
+    let assessment: String
+    var invalidated = false
+
+    func pageLabel(language: String) -> String {
+      String(format: GalaxySSIHealthInstruction.text("action_source_page", "Revision %lld · page %lld of %lld", language),
+        Int64(revision), Int64(page), Int64(pageCount))
+    }
+
+    func matches(_ entry: Entry) -> Bool {
+      !invalidated && entry.id == instruction && entry.revision == revision && entry.visit == visit &&
+        entry.source.linkID == link && entry.source.originalID == original && entry.source.fingerprint == fingerprint &&
+        entry.source.page == page && entry.source.pageCount == pageCount && entry.draft.eligibleForAction
+    }
+  }
 
   struct Box: Codable, Equatable {
     let left: Int

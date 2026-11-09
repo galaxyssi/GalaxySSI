@@ -13,6 +13,7 @@ struct GalaxySSIHealthInstructionReviewView: View {
   let concern: UUID
   let metric: GalaxySSIHealthMetric
   let visit: UUID
+  var actionSource: Review.ActionReference? = nil
 
   @State private var page: Review.Page?
   @State private var rows: [Review.Item] = []
@@ -30,6 +31,7 @@ struct GalaxySSIHealthInstructionReviewView: View {
   @State private var editor: Review.Draft?
   @State private var deleting = false
   @State private var confirming = false
+  @State private var confirmingAction = false
   @State private var mutating = false
   @State private var failed = false
   @State private var reload = UUID()
@@ -57,7 +59,12 @@ struct GalaxySSIHealthInstructionReviewView: View {
       }
     }
     .navigationViewStyle(.stack)
-    .task(id: reload) { if canRead { load() } }
+    .task(id: reload) {
+      if canRead {
+        load()
+        if let actionSource, page != nil { open(actionSource.instruction) }
+      }
+    }
     .task(id: expiry) {
       guard let deadline = expiry else { return }
       let seconds = min(Review.readingLifetime, max(0, deadline.timeIntervalSinceNow))
@@ -178,10 +185,23 @@ struct GalaxySSIHealthInstructionReviewView: View {
         if current.next != nil { Button(t("more", "Show more")) { open(entry.id, append: true) } }
       }
       Button(t("edit", "Review fields")) { editor = entry.draft }.disabled(!current.item.originalAvailable)
+      if entry.draft.eligibleForAction {
+        Button(t("action_add", "Add to Health Actions")) { confirmingAction = true }
+          .disabled(!current.item.originalAvailable)
+      }
       Button(t("delete", "Delete draft"), role: .destructive) { deleting = true }
     }
     .confirmationDialog(t("delete_confirm", "Delete this draft and its review history?"), isPresented: $deleting,
       titleVisibility: .visible) { Button(t("delete", "Delete draft"), role: .destructive) { remove(current) } }
+    .alert(t("action_add", "Add to Health Actions"), isPresented: $confirmingAction) {
+      Button(t("action_ack", "Confirm transcription")) {
+        guard canRead else { return }
+        mutate { try records.confirmVisitInstructionAction(current, acknowledged: true); return nil }
+      }
+      Button(t("cancel", "Cancel"), role: .cancel) {}
+    } message: {
+      Text(t("action_notice", "This action uses your transcription, not clinician verification. No medication schedule is created."))
+    }
   }
 
   @ViewBuilder private func fields(_ draft: Review.Draft) -> some View {
@@ -216,7 +236,7 @@ struct GalaxySSIHealthInstructionReviewView: View {
   private func clear() {
     clearRecognition()
     page = nil; rows = []; expires = nil; documents = nil; sourceRows = []; source = nil
-    history = nil; receipts = []; editor = nil; deleting = false; failed = false
+    history = nil; receipts = []; editor = nil; deleting = false; confirmingAction = false; failed = false
   }
   private func reset() { clear(); reload = UUID() }
   private func fail() { clear(); failed = true }
@@ -263,6 +283,10 @@ struct GalaxySSIHealthInstructionReviewView: View {
     do {
       let next = try records.visitInstructionHistory(id: id, expected: scope, before: append ? history?.next : nil,
         validUntil: append ? history?.expires : expires)
+      if let actionSource, (!actionSource.matches(next.item.entry) || !next.item.originalAvailable) {
+        fail()
+        return
+      }
       history = next; receipts = (append ? receipts : []) + next.receipts
     } catch { fail() }
   }

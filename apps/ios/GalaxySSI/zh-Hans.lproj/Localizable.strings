@@ -6985,6 +6985,13 @@
 "galaxyssi.health.instruction.delete_confirm" = "删除这份草稿及其复核历史？";
 "galaxyssi.health.instruction.page" = "第 %lld 页，共 %lld 页";
 "galaxyssi.health.instruction.reviewed" = "用户已复核";
+"galaxyssi.health.instruction.action_add" = "添加到健康行动";
+"galaxyssi.health.instruction.action_ack" = "确认转录内容";
+"galaxyssi.health.instruction.cancel" = "取消";
+"galaxyssi.health.instruction.action_notice" = "此行动依据你的转录，并未经临床人员核实。不会自动创建用药计划。";
+"galaxyssi.health.instruction.action_source_page" = "第 %lld 版 · 第 %lld 页（共 %lld 页）";
+"galaxyssi.health.instruction.action_stale" = "原指示已修改或删除。";
+"galaxyssi.health.instruction.action_source" = "打开原文复核";
 "galaxyssi.health.instruction.pending" = "待复核";
 "galaxyssi.health.instruction.quotation" = "原文摘录";
 "galaxyssi.health.instruction.pdf_text" = "PDF 文本层";
