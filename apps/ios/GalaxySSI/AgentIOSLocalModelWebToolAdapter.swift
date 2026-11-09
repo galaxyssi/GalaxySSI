@@ -198,6 +198,7 @@ enum AgentIOSLocalModelWebToolRunner {
           AgentGoalWorkMilestoneRead.coordinatorInstructions + " " +
           "Use assessment_repair with draft_sha256 and offset to read a retained rejected draft; join pages in order. Do not execute rejected work. " +
           "Use check_goal_evidence with expected_revision and artifact to check exact reviewed evidence; this does not deliver the goal. " +
+          AgentCollaborationRuleTopics.coordinationInstructions + " " +
           policy.admissionInstructions + AgentCollaborationWorkInputBindings.coordinatorInstructions +
           AgentCollaborationProbeContinuation.admissionInstructions,
         location: .application, inputSchema: ["type": .string("object"), "required": .array([.string("mode")]),
