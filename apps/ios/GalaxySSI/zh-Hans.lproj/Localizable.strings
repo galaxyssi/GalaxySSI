@@ -6989,6 +6989,7 @@
 "galaxyssi.health.instruction.reviewed" = "用户已复核";
 "galaxyssi.health.instruction.action_add" = "添加到健康行动";
 "galaxyssi.health.instruction.action_ack" = "确认转录内容";
+"galaxyssi.health.instruction.action_acknowledge_source" = "我已对照原件核对转录内容";
 "galaxyssi.health.instruction.cancel" = "取消";
 "galaxyssi.health.instruction.action_notice" = "此行动依据你的转录，并未经临床人员核实。不会自动创建用药计划。";
 "galaxyssi.health.instruction.action_source_page" = "第 %lld 版 · 第 %lld 页（共 %lld 页）";

@@ -6,6 +6,22 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  func testInstructionActionAcknowledgementStartsUncheckedAndSubmitsOnlyOnce() {
+    var confirmation = GalaxySSIHealthInstruction.ActionAcknowledgement()
+    XCTAssertFalse(confirmation.canConfirm)
+    XCTAssertFalse(confirmation.consume())
+    confirmation.checked = true
+    XCTAssertTrue(confirmation.canConfirm)
+    confirmation.checked = false
+    XCTAssertFalse(confirmation.consume())
+    confirmation.checked = true
+    XCTAssertTrue(confirmation.consume())
+    XCTAssertFalse(confirmation.canConfirm)
+    XCTAssertFalse(confirmation.consume())
+    confirmation = .init()
+    XCTAssertFalse(confirmation.canConfirm)
+  }
+
   func testVisitWallClockRejectsMissingTimeAndRequiresExplicitOverlapOffset() throws {
     let zone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
     let parser = ISO8601DateFormatter()

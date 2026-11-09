@@ -31,10 +31,15 @@ struct GalaxySSIHealthInstructionReviewView: View {
   @State private var editor: Review.Draft?
   @State private var deleting = false
   @State private var confirming = false
-  @State private var confirmingAction = false
+  @State private var actionConfirmation: ActionConfirmation?
   @State private var mutating = false
   @State private var failed = false
   @State private var reload = UUID()
+
+  private struct ActionConfirmation: Identifiable {
+    let id = UUID()
+    let history: Review.History
+  }
 
   var body: some View {
     NavigationView {
@@ -59,6 +64,15 @@ struct GalaxySSIHealthInstructionReviewView: View {
       }
     }
     .navigationViewStyle(.stack)
+    .sheet(item: $actionConfirmation) { confirmation in
+      GalaxySSIHealthInstructionActionConfirmation(language: language) { acknowledged in
+        guard acknowledged, canRead, actionConfirmation?.id == confirmation.id,
+              history?.item.entry == confirmation.history.item.entry else { return }
+        actionConfirmation = nil
+        mutate { try records.confirmVisitInstructionAction(confirmation.history, acknowledged: acknowledged); return nil }
+      }
+      .id(confirmation.id)
+    }
     .task(id: reload) {
       if canRead {
         load()
@@ -186,22 +200,13 @@ struct GalaxySSIHealthInstructionReviewView: View {
       }
       Button(t("edit", "Review fields")) { editor = entry.draft }.disabled(!current.item.originalAvailable)
       if entry.draft.eligibleForAction {
-        Button(t("action_add", "Add to Health Actions")) { confirmingAction = true }
+        Button(t("action_add", "Add to Health Actions")) { actionConfirmation = .init(history: current) }
           .disabled(!current.item.originalAvailable)
       }
       Button(t("delete", "Delete draft"), role: .destructive) { deleting = true }
     }
     .confirmationDialog(t("delete_confirm", "Delete this draft and its review history?"), isPresented: $deleting,
       titleVisibility: .visible) { Button(t("delete", "Delete draft"), role: .destructive) { remove(current) } }
-    .alert(t("action_add", "Add to Health Actions"), isPresented: $confirmingAction) {
-      Button(t("action_ack", "Confirm transcription")) {
-        guard canRead else { return }
-        mutate { try records.confirmVisitInstructionAction(current, acknowledged: true); return nil }
-      }
-      Button(t("cancel", "Cancel"), role: .cancel) {}
-    } message: {
-      Text(t("action_notice", "This action uses your transcription, not clinician verification. No medication schedule is created."))
-    }
   }
 
   @ViewBuilder private func fields(_ draft: Review.Draft) -> some View {
@@ -236,7 +241,7 @@ struct GalaxySSIHealthInstructionReviewView: View {
   private func clear() {
     clearRecognition()
     page = nil; rows = []; expires = nil; documents = nil; sourceRows = []; source = nil
-    history = nil; receipts = []; editor = nil; deleting = false; confirmingAction = false; failed = false
+    history = nil; receipts = []; editor = nil; deleting = false; actionConfirmation = nil; failed = false
   }
   private func reset() { clear(); reload = UUID() }
   private func fail() { clear(); failed = true }
@@ -310,5 +315,43 @@ struct GalaxySSIHealthInstructionReviewView: View {
       clear(); load()
       if let id { open(id) }
     } catch { fail() }
+  }
+}
+
+@MainActor
+private struct GalaxySSIHealthInstructionActionConfirmation: View {
+  @Environment(\.dismiss) private var dismiss
+  @Environment(\.scenePhase) private var scene
+  @State private var acknowledgement = GalaxySSIHealthInstruction.ActionAcknowledgement()
+  let language: String
+  let confirm: (Bool) -> Void
+
+  var body: some View {
+    NavigationView {
+      Form {
+        Text(t("action_notice", "This action uses your transcription, not clinician verification. No medication schedule is created."))
+          .foregroundColor(.secondary)
+        Toggle(t("action_acknowledge_source", "I reviewed the transcription against the original"),
+          isOn: $acknowledgement.checked)
+      }
+      .navigationTitle(t("action_add", "Add to Health Actions"))
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) { Button(t("cancel", "Cancel")) { dismiss() } }
+        ToolbarItem(placement: .confirmationAction) {
+          Button(t("action_ack", "Confirm transcription")) {
+            guard scene == .active, acknowledgement.consume() else { return }
+            confirm(true)
+          }
+          .disabled(scene != .active || !acknowledgement.canConfirm)
+        }
+      }
+    }
+    .navigationViewStyle(.stack)
+    .onChange(of: scene) { if $0 != .active { acknowledgement = .init(); dismiss() } }
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    GalaxySSIHealthInstruction.text(key, fallback, language)
   }
 }

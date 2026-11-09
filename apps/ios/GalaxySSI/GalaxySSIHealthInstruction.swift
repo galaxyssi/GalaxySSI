@@ -83,6 +83,19 @@ enum GalaxySSIHealthInstruction {
 
   enum Recognition: String, Codable { case pdfText, onDeviceOCR }
 
+  struct ActionAcknowledgement {
+    var checked = false
+    private var submitted = false
+
+    var canConfirm: Bool { checked && !submitted }
+
+    mutating func consume() -> Bool {
+      guard canConfirm else { return false }
+      submitted = true
+      return true
+    }
+  }
+
   struct ActionReference: Codable, Equatable {
     let instruction: UUID
     let revision: Int
