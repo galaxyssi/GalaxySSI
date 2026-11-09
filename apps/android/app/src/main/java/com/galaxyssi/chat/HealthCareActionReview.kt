@@ -66,6 +66,13 @@ internal class HealthCareActionReview(private val activity: Activity, private va
         val content = ui.column().apply { setPadding(ui.dp(20), ui.dp(8), ui.dp(20), ui.dp(16)) }
         content.addView(ui.text(value.action.description, 18f, bold = true))
         ui.add(content, ui.text(value.action.rationale, 14f), 8)
+        value.action.visitReview?.let { ref ->
+            ui.add(content, ui.text(activity.getString(R.string.health_visit_review_notice), 14f, muted = true), 8)
+            ui.add(content, ui.profileRow(activity.getString(R.string.health_visit_followup_title)) {
+                activity.startActivity(Intent(activity, HealthCareVisitFollowUpActivity::class.java).putHealthNavigationFixture(names)
+                    .putExtra("health_care_id", value.issue.id).putExtra("health_encounter_id", ref.encounter))
+            }.apply { tag = "health-visit-review-source" }, 8)
+        }
         value.action.instruction?.let { ref ->
             ui.add(content, ui.text(activity.getString(R.string.health_instruction_action_notice), 14f, muted = true), 8)
             ui.add(content, ui.text(activity.getString(R.string.health_revision, ref.revision) + " · " +

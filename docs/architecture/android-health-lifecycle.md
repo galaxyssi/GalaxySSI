@@ -582,9 +582,10 @@ retains a goal, subjective physical feelings, daily function, sleep, barriers an
 review notes separately from action completion and laboratory assessments.
 Review can record continuation, a proposed adjustment or a proposed maintenance
 discussion. The latter two remain pending review; they do not change the concern
-stage, treatment, targets or existing reminders. Pause/resume and archive/reopen
+stage, treatment, targets or treatment reminders. Pause/resume and archive/reopen
 are journal states only. Archiving requires an explicit acknowledgement that it
-does not establish recovery or stop treatment/reminders.
+does not establish recovery or stop treatment. It cancels only the journal's own
+user-confirmed review reminder.
 
 Schema 17 adds encrypted current journals and immutable operation receipts, with
 indexed 30-entry keyset history. Parent concern revisions and journal writes
@@ -641,6 +642,36 @@ constitute clinical validation. The opt-in paired-provider probe reads an
 isolated ten-entry synthetic journal through the production phone tool and
 observation pipeline, checks complete paging and verifies no plan or reminder
 was created. It does not exercise the Activity sharing dialog or establish
-clinical accuracy. Full consent-to-provider UI acceptance, review reminder
-integration, diagnosis-specific review and longitudinal lifecycle acceptance
+clinical accuracy. Full consent-to-provider UI acceptance, diagnosis-specific
+review and longitudinal lifecycle acceptance
 remain separate outstanding work.
+
+## User-confirmed journal review reminders
+
+The journal can schedule a local review only after the user selects a date and
+time and confirms it. This is not a clinical test interval, prescription or an
+automatic recurring schedule. Starting a journal or adding a check-in does not
+schedule anything. The existing Agent main page remains unchanged.
+
+A `VISIT_REVIEW` action and its encrypted reminder commit in one transaction,
+using the existing action agenda, notification policy and recovery scheduler.
+The reference binds the journal, attended visit revision and a digest of the
+goal. Ordinary check-ins preserve the reminder; changes to the goal or visit,
+pause, archive or deletion invalidate it. Resume and reopen never revive the old
+notification. A new explicit confirmation is needed. Stale snapshots and reminder
+tokens cannot overwrite a newer choice. Rescheduling uses one action slot per
+journal; encrypted concern revisions retain prior action history.
+
+Action descriptions and system notifications contain generic review wording,
+not journal entries or the goal. The reminder opens its exact journal. An
+unlocked, resumed journal suppresses its own system notice while preserving the
+due state in the UI; other journals and database scopes are unaffected. The
+visibility registry contains opaque identifiers only and is cleared on pause,
+background, memory pressure and destruction. Lock-screen notifications remain
+private. Quiet hours, notification permission, pause settings, source validation
+and persisted delivered state follow the shared reminder path.
+
+The model's plan tool cannot create this restricted action type. An existing
+scoped journal read grant does not authorize reminder writes or disclose journal
+text through ordinary plan context. Review completion is an action record, not
+proof of recovery or a change to treatment.

@@ -38,7 +38,8 @@ internal data class HealthCarePlan(val grant: HealthCareDiscussionGrant, val inp
         require(sources.map { Triple(it.url, it.evidenceId, it.quote) }.distinct().size == sources.size &&
             actions.map { it.id }.distinct().size == actions.size)
         require(actions.all { it.state == HealthCareActionState.PROPOSED && it.confirmedAt == null && it.outcome.isEmpty() })
-        require(actions.none { it.instruction != null || it.kind == HealthCareActionKind.CLINICAL_INSTRUCTION })
+        require(actions.none { it.instruction != null || it.visitReview != null ||
+            it.kind in setOf(HealthCareActionKind.CLINICAL_INSTRUCTION, HealthCareActionKind.VISIT_REVIEW) })
         require(selected.all { id -> actions.any { it.id == id } })
         require(applicability.keys.all { id -> actions.any { it.id == id } })
         applicability.forEach { (id, review) -> HealthCareApplicabilityPolicy.validate(review, actions.single { it.id == id }, sources) }

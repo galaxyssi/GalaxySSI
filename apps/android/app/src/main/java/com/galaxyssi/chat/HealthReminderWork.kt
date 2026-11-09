@@ -133,9 +133,10 @@ internal object HealthReminderWork {
             .getOrNull()
         val careNext = HealthCareReminderRuntime.reconcile(context, settings, now, zone, systemAllowed,
             activeSourceNotices(alerts, CARE_TAG).keys, post = { reminder ->
-                val intent = Intent(context, HealthCareActivity::class.java).putExtra("health_care_id", reminder.concernId)
-                    .setData(android.net.Uri.parse("galaxyssi://health/care/${reminder.concernId}/${reminder.actionId}"))
-                postSourceNotice(context, alerts, CARE_TAG + reminder.actionId, intent, R.string.health_care_followup_notice, settings)
+                val intent = HealthCareReminderRuntime.openIntent(context, reminder)
+                postSourceNotice(context, alerts, CARE_TAG + reminder.actionId, intent,
+                    if (intent.hasExtra("health_encounter_id")) R.string.health_visit_review_notice_private
+                    else R.string.health_care_followup_notice, settings)
             }, cancel = { alerts.cancel(CARE_TAG + it, ID) })
         val next = listOfNotNull(nextDaily, nextSnooze, dailyDelivery, sleepWake, sleepDelivery, nextSleepDay, reportNext, syncNext, careNext).minOrNull()
         if (next == null) scheduler.cancel(alarm(context))

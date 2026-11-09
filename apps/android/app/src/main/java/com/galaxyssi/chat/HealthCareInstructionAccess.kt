@@ -11,5 +11,6 @@ internal object HealthCareInstructionAccess {
     }
     fun current(context: Context, names: HealthOverviewDatabases, store: HealthCareStore,
         issue: HealthCareConcern, action: HealthCareAction): Boolean = store.instructionCurrent(issue, action) &&
+        store.visitReviewCurrent(issue, action) &&
         (action.instruction?.let { available(context, names, it) } ?: true)
 }

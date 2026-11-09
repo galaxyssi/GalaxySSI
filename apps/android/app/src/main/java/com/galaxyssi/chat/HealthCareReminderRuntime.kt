@@ -1,9 +1,20 @@
 package com.galaxyssi.chat
 
 import android.content.Context
+import android.content.Intent
 import java.time.ZoneId
 
 internal object HealthCareReminderRuntime {
+    fun openIntent(context: Context, reminder: HealthCareReminder, names: HealthOverviewDatabases = HealthOverviewDatabases()): Intent {
+        val ref = HealthCareStore(context, names.care).use { care ->
+            care.concern(reminder.concernId)?.actions?.firstOrNull { it.id == reminder.actionId }?.visitReview
+        }
+        return Intent(context, if (ref == null) HealthCareActivity::class.java else HealthCareVisitFollowUpActivity::class.java)
+            .putHealthNavigationFixture(names).putExtra("health_care_id", reminder.concernId).apply {
+                ref?.let { putExtra("health_encounter_id", it.encounter) }
+                data = android.net.Uri.parse("galaxyssi://health/care/${reminder.concernId}/${reminder.actionId}")
+            }
+    }
     fun reconcile(context: Context, settings: HealthReminderSettings, now: Long, zone: ZoneId, allowed: Boolean,
         visible: Set<String>, post: (HealthCareReminder) -> Boolean, cancel: (String) -> Unit,
         names: HealthOverviewDatabases = HealthOverviewDatabases()): Long? {
@@ -36,7 +47,9 @@ internal object HealthCareReminderRuntime {
                             HealthCareProfileAccess.current(context, issue.profileLink, names)
                     }
                     val delivery = HealthCareReminderDelivery.reconcile(care, settings, now, zone, allowed, visible, ::valid,
-                        post = { value -> valid(value) && post(value) }, cancel = cancel)
+                        post = { value -> valid(value) && post(value) }, cancel = cancel,
+                        foreground = { value -> care.concern(value.concernId)?.actions?.firstOrNull { it.id == value.actionId }
+                            ?.visitReview?.let { HealthCareVisitReviewVisibility.contains(names.care, it.encounter) } == true })
                     // Reopen due reviews even without notification permission; this does not post or authorize an alert.
                     listOfNotNull(delivery, care.nextMaintenanceReview()?.takeIf { enabled }?.coerceAtLeast(now + 1000)).minOrNull()
                 }

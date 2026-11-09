@@ -1,6 +1,6 @@
 <resources>
     <string name="health_visit_followup_title">诊后随访</string>
-    <string name="health_visit_followup_notice">这里保存你的自述记录，不是临床评估；不会改变治疗、确认康复或安排提醒。每次向 Agent 分享本随访记录，都需要你确认本次范围。</string>
+    <string name="health_visit_followup_notice">这里保存你的自述记录，不是临床评估。保存记录不会改变治疗、确认康复或自动安排提醒；回顾提醒需要另行确认。每次向 Agent 分享本随访记录，都需要你确认本次范围。</string>
     <string name="health_visit_followup_active">持续跟进</string>
     <string name="health_visit_followup_review_needed">待复评</string>
     <string name="health_visit_followup_paused">已暂停</string>
@@ -24,7 +24,7 @@
     <string name="health_visit_followup_reason">复评意见或原因</string>
     <string name="health_visit_followup_needs_review">这次变化需要复评或讨论</string>
     <string name="health_visit_followup_review_notice">保存前请核对当前就诊记录。拟调整或转入维护不代表已经改变治疗或确认维护计划。</string>
-    <string name="health_visit_followup_archive_notice">我只是结束本轮记录，不表示已经康复，也不停止治疗或既有提醒。</string>
+    <string name="health_visit_followup_archive_notice">我只是结束本轮记录并取消其回顾提醒，不表示已经康复，也不停止治疗或其他提醒。</string>
     <string name="health_visit_followup_invalid">请填写相应的跟进目标、感受或原因；复评时还需选择下一步。</string>
     <string name="health_visit_followup_save">保存记录</string>
     <string name="health_visit_followup_attended_required">请先在就诊记录中确认已经就诊，计划预约不等于已完成就诊。</string>
@@ -32,5 +32,5 @@
     <string name="health_visit_followup_history">随访历史</string>
     <string name="health_visit_followup_empty">尚无随访记录，缺少记录不代表已经好转。</string>
     <string name="health_visit_followup_delete">删除本轮随访记录</string>
-    <string name="health_visit_followup_delete_notice">删除本轮随访及其历史？就诊记录、原件、医嘱、行动和提醒均会保留。</string>
+    <string name="health_visit_followup_delete_notice">删除本轮随访及其历史，并取消对应回顾提醒？就诊记录、原件、医嘱和其他提醒会保留。回顾行动仍保留在历史中，但不会再发出通知。</string>
 </resources>

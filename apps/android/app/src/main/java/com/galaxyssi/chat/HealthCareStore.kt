@@ -38,7 +38,8 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         if (issue.revision != expectedRevision || visit.concernId != id || visit.revision != expectedEncounter || before?.revision != expectedFollowUp)
             throw HealthCareConflict()
         val receipt = HealthCareVisitFollowUpPolicy.apply(issue, visit, before, input, operation, now)
-        persist(issue.copy(revision = receipt.value.revision, updatedAt = receipt.value.updatedAt), "visit_followup_recorded")
+        val next = HealthCareVisitReviewPolicy.invalidate(issue) { it.encounter == encounterId && !it.matches(receipt.value, visit) }
+        persist(next.copy(revision = receipt.value.revision, updatedAt = receipt.value.updatedAt), "visit_followup_recorded")
         visitFollowUpRows().write(receipt)
         receipt
     }
@@ -47,7 +48,8 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         val value = visitFollowUp(encounterId) ?: throw HealthCareConflict()
         if (issue.revision != expectedRevision || value.concernId != id || value.revision != expectedFollowUp) throw HealthCareConflict()
         require(now > 0)
-        persist(issue.copy(revision = Math.addExact(issue.revision, 1), updatedAt = maxOf(now, issue.updatedAt)), "visit_followup_deleted")
+        persist(HealthCareVisitReviewPolicy.invalidate(issue) { it.journal == value.id }
+            .copy(revision = Math.addExact(issue.revision, 1), updatedAt = maxOf(now, issue.updatedAt)), "visit_followup_deleted")
         visitFollowUpRows().purge(id, encounterId)
     }
     private fun instructionRows() = HealthCareInstructionRows(db, ::pack, ::unpack)
@@ -191,7 +193,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         }
         reminders(value.id).filter { reminder ->
             val action = value.actions.firstOrNull { it.id == reminder.actionId }
-            action == null || action.state != HealthCareActionState.CONFIRMED ||
+            action == null || action.state != HealthCareActionState.CONFIRMED || action.sourceInvalidated ||
                 value.stage in setOf(HealthCareStage.PAUSED, HealthCareStage.CLOSED) ||
                 reminder.anchor != HealthCareFollowUpPolicy.anchor(value, action)
         }.forEach { writeReminder(it.copy(state = HealthCareReminderState.CANCELLED, updatedAt = value.updatedAt), false) }
@@ -613,7 +615,8 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         val issue = concern(concernId) ?: throw HealthCareConflict()
         if (issue.revision != expectedRevision || reminder(actionId)?.token != expectedToken) throw HealthCareConflict()
         val action = issue.actions.firstOrNull { it.id == actionId } ?: throw HealthCareConflict()
-        if (!instructionCurrent(issue, action) || action.instruction?.let { !instructionAvailable(it) } == true) throw HealthCareConflict()
+        if (!instructionCurrent(issue, action) || !visitReviewCurrent(issue, action) ||
+            action.instruction?.let { !instructionAvailable(it) } == true) throw HealthCareConflict()
         HealthCareFollowUpPolicy.schedule(issue, action, settings(), privacy, sourceVersion, at, now).also { writeReminder(it) }
     }
     fun cancelReminder(actionId: String, expectedToken: String, now: Long) = transaction(true) {
@@ -688,7 +691,8 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             (before != null && before.concernId != id)) throw HealthCareConflict()
         val value = HealthCareEncounterPolicy.apply(issue, before, encounterId, details, now)
         val receipt = HealthCareEncounterReceipt(operationId, expectedRevision, expectedEncounterRevision, value)
-        persist(issue.copy(revision = value.revision, updatedAt = value.updatedAt), "encounter_recorded")
+        persist(HealthCareVisitReviewPolicy.invalidate(issue) { it.encounter == encounterId }
+            .copy(revision = value.revision, updatedAt = value.updatedAt), "encounter_recorded")
         encounterRows().write(receipt)
         receipt
     }
@@ -697,7 +701,8 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         val issue = concern(id) ?: throw HealthCareConflict()
         val before = encounterRows().get(encounterId) ?: throw HealthCareConflict()
         if (issue.revision != expectedRevision || before.concernId != id || before.revision != expectedEncounterRevision) throw HealthCareConflict()
-        persist(HealthCareInstructionActionPolicy.invalidate(issue) { it.encounterId == encounterId }
+        persist(HealthCareVisitReviewPolicy.invalidate(
+            HealthCareInstructionActionPolicy.invalidate(issue) { it.encounterId == encounterId }) { it.encounter == encounterId }
             .copy(revision = issue.revision + 1, updatedAt = maxOf(now, issue.updatedAt)), "encounter_deleted")
         encounterRows().delete(id, encounterId)
         visitFollowUpRows().purge(id, encounterId)
@@ -787,6 +792,28 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             encounter(ref.encounterId)?.concernId == issue.id && link.concernId == issue.id && link.encounterId == ref.encounterId &&
             link.source.copy(page = ref.original.page, pageCount = ref.original.pageCount) == ref.original &&
             (link.source.page == null || link.source == ref.original) && HealthCareInstructionActionPolicy.eligible(value)
+    }
+    fun visitReviewCurrent(issue: HealthCareConcern, action: HealthCareAction): Boolean {
+        val ref = action.visitReview ?: return true
+        val value = visitFollowUp(ref.encounter) ?: return false
+        val visit = encounter(ref.encounter) ?: return false
+        return action in issue.actions && value.concernId == issue.id && visit.concernId == issue.id && ref.matches(value, visit)
+    }
+    fun scheduleVisitReview(id: String, expectedRevision: Int, scope: HealthCareVisitFollowUpScope, expectedToken: String?,
+        privacy: HealthPrivacyPolicy, sourceVersion: String, at: Long, title: String, now: Long): HealthCareReminder = transaction(true) {
+        val issue = concern(id) ?: throw HealthCareConflict()
+        val value = HealthCareVisitFollowUpTool.selected(this, id, scope)
+        val visit = encounter(scope.encounter) ?: throw HealthCareConflict()
+        if (issue.revision != expectedRevision || reminder(HealthCareVisitReviewPolicy.actionId(value.id))?.token != expectedToken)
+            throw HealthCareConflict()
+        val action = HealthCareVisitReviewPolicy.confirm(issue, value, visit, title,
+            app.getString(R.string.health_visit_review_notice), now)
+        val next = issue.copy(actions = issue.actions.filterNot { it.id == action.id } + action,
+            revision = Math.addExact(issue.revision, 1), updatedAt = maxOf(now, issue.updatedAt))
+        val scheduled = HealthCareFollowUpPolicy.schedule(next, action, settings(), privacy, sourceVersion, at, now)
+        persist(next, "visit_review_scheduled")
+        writeReminder(scheduled)
+        scheduled
     }
     fun confirmInstructionAction(id: String, expectedRevision: Int, instructionId: String, expectedInstruction: Int,
         now: Long): HealthCareAction = transaction(true) {

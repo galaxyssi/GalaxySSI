@@ -23,7 +23,7 @@ internal object HealthCareAgenda {
         val bucket = when {
             action.state in setOf(HealthCareActionState.DONE, HealthCareActionState.DECLINED) -> 2
             action.state != HealthCareActionState.CONFIRMED ||
-                action.instruction?.invalidated == true ||
+                action.sourceInvalidated ||
                 issue.stage in setOf(HealthCareStage.PAUSED, HealthCareStage.CLOSED) ||
                 action.basis != HealthCareFollowUpPolicy.basis(issue) -> 1
             else -> 0

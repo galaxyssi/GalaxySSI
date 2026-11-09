@@ -1,0 +1,10 @@
+<resources>
+    <string name="health_visit_review_schedule">Schedule a review reminder</string>
+    <string name="health_visit_review_action">Review post-visit follow-up</string>
+    <string name="health_visit_review_provenance">User-confirmed journal review</string>
+    <string name="health_visit_review_confirm">Remind me to review this follow-up at %1$s?</string>
+    <string name="health_visit_review_notice">This is your chosen time to review the journal, not a clinical test or treatment interval. Check-ins do not cancel the reminder. Pausing, ending or deleting the journal, changing its goal or revising the visit requires a new confirmation. Existing treatment reminders are not changed.</string>
+    <string name="health_visit_review_manage">Manage review reminder and feedback</string>
+    <string name="health_visit_review_unavailable">Review the updated visit and journal before scheduling another reminder.</string>
+    <string name="health_visit_review_notice_private">A follow-up review is ready. Open Personal Health.</string>
+</resources>

@@ -42,7 +42,7 @@ internal object HealthCareFollowUpPolicy {
         settings.enabled && privacy.metrics && privacy.profile && issue.assessment.record != null &&
             issue.stage !in setOf(HealthCareStage.PAUSED, HealthCareStage.CLOSED) &&
             issue.inputVersion == sourceVersion && action in issue.actions && action.state == HealthCareActionState.CONFIRMED &&
-            action.basis == basis(issue) && action.instruction?.invalidated != true
+            action.basis == basis(issue) && !action.sourceInvalidated
 
     fun current(reminder: HealthCareReminder, issue: HealthCareConcern, settings: HealthCareSettings,
         privacy: HealthPrivacyPolicy, sourceVersion: String): Boolean {
@@ -75,12 +75,13 @@ internal object HealthCareFollowUpPolicy {
 internal object HealthCareReminderDelivery {
     fun reconcile(store: HealthCareStore, settings: HealthReminderSettings, now: Long, zone: ZoneId,
         systemAllowed: Boolean, visible: Set<String>, valid: (HealthCareReminder) -> Boolean,
-        post: (HealthCareReminder) -> Boolean, cancel: (String) -> Unit): Long? {
+        post: (HealthCareReminder) -> Boolean, cancel: (String) -> Unit,
+        foreground: (HealthCareReminder) -> Boolean = { false }): Long? {
         visible.forEach { id ->
             val value = store.reminder(id)
             if (value == null || value.state == HealthCareReminderState.CANCELLED || !valid(value) ||
                 !settings.notifications || !systemAllowed || value.dueAt > now ||
-                HealthReminderPolicy.deliveryDeferredUntil(settings, now, zone) != null) cancel(id)
+                HealthReminderPolicy.deliveryDeferredUntil(settings, now, zone) != null || foreground(value)) cancel(id)
         }
         if (!settings.notifications || !systemAllowed) return null
         val deferred = HealthReminderPolicy.deliveryDeferredUntil(settings, now, zone)
@@ -88,7 +89,7 @@ internal object HealthCareReminderDelivery {
         var failed = false
         store.dueReminders(now).forEach { value ->
             if (!valid(value)) store.cancelReminder(value.actionId, value.token, now)
-            else if (post(value)) {
+            else if (foreground(value) || post(value)) {
                 try { store.markReminderDelivered(value.actionId, value.token, now) }
                 catch (_: HealthCareConflict) { cancel(value.actionId) }
             }
