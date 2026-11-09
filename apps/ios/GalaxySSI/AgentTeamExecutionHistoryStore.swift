@@ -2755,7 +2755,8 @@ final class AgentTeamExecutionHistoryStore {
         return .init(id: id, member: work.member, assignment: work.assignment,
           depends_on: work.depends_on.compactMap { names[$0] }, dependency_policy: work.dependency_policy,
           independent_review: work.independent_review, stage: work.stage,
-          review_targets: work.review_targets?.compactMap { names[$0] }, uses_milestones: tokens)
+          review_targets: work.review_targets?.compactMap { names[$0] }, uses_milestones: tokens,
+          review_milestones: work.review_milestones)
       }
       guard let graph = plan.graph.appendingMilestoneWork(additions, authorizedMembers: specialists,
         milestoneAuthors: authors, authorIdentity: team.reviewIdentity) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
@@ -2860,7 +2861,8 @@ final class AgentTeamExecutionHistoryStore {
       if desktopWire {
         return try Self.readDesktopMilestonePayload(input, claim: saved, tokens: tokens, team: team, database: database)
       }
-      return try Self.readMilestonePayload(input, tokens: tokens, scope: scope, team: team, database: database)
+      return try Self.readMilestonePayload(input, tokens: tokens, scope: scope, team: team, database: database,
+        reviewTokens: saved.reviewMilestoneTokens)
     }
   }
 
@@ -2871,7 +2873,8 @@ final class AgentTeamExecutionHistoryStore {
       try tokens.map { try liveMilestone(token: $0, coordinator: scope, team: team, database: database) }
     }
     func read(_ selector: AgentMcpJSONObject) throws -> AgentMcpJSONObject {
-      try readMilestonePayload(selector, tokens: tokens, scope: scope, team: team, database: database)
+      try readMilestonePayload(selector, tokens: tokens, scope: scope, team: team, database: database,
+        reviewTokens: claim.reviewMilestoneTokens)
     }
     func recordID(_ selector: AgentMcpJSONObject) -> String {
       AgentMcpJSONCodec.sha256(["dispatch": .string(claim.dispatchID), "selector": .object(selector)])
@@ -2886,7 +2889,9 @@ final class AgentTeamExecutionHistoryStore {
       } else { index = 0 }
       let token = tokens[index]
       let entry = try liveMilestone(token: token, coordinator: scope, team: team, database: database)
-      return ["status": .string("returned"), "milestone": .object(entry.descriptor),
+      var descriptor = entry.descriptor
+      descriptor["input_role"] = AgentGoalWorkMilestoneRead.inputRole(token, reviewTokens: claim.reviewMilestoneTokens)
+      return ["status": .string("returned"), "milestone": .object(descriptor),
         "entries": .array(entry.references.map { .object(AgentCollaborationSourceAccess.workspaceReference($0)) }),
         "next_cursor": index + 1 < tokens.count ? .string(token) : .null]
     }
@@ -2927,16 +2932,23 @@ final class AgentTeamExecutionHistoryStore {
 
   private static func readMilestonePayload(_ input: AgentMcpJSONObject, tokens: [String],
       scope: AgentCollaborationToolEvidenceScope, team: AgentTeamExecutionSnapshot,
-      database: AgentTeamHistoryDatabase) throws -> AgentMcpJSONObject {
+      database: AgentTeamHistoryDatabase, reviewTokens: [String]? = nil) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
     if mode == "list", Set(input.keys) == ["mode"] {
-      return ["status": .string("returned"), "tokens": .array(tokens.map(AgentMcpJSONValue.string)),
+      var result: AgentMcpJSONObject = ["status": .string("returned"), "tokens": .array(tokens.map(AgentMcpJSONValue.string)),
         "trust": .string("untrusted_group_evidence")]
+      result["inputs"] = AgentGoalWorkMilestoneRead.inputRoles(tokens, reviewTokens: reviewTokens)
+      return result
     }
     let token = input.string("token")
     guard tokens.contains(token) else { throw AgentTeamHistoryDatabase.Failure.stale }
     let entry = try Self.liveMilestone(token: token, coordinator: scope, team: team, database: database)
-    if mode == "references", Set(input.keys) == ["mode", "token"] { return entry.descriptor }
+    let inputRole = AgentGoalWorkMilestoneRead.inputRole(token, reviewTokens: reviewTokens)
+    if mode == "references", Set(input.keys) == ["mode", "token"] {
+      var descriptor = entry.descriptor
+      descriptor["input_role"] = inputRole
+      return descriptor
+    }
     let width = AgentGoalWorkMilestoneRead.pageBytes
     let hash = input.string("sha256")
     let id = input.string(mode == "workspace" ? "object_id" : "evidence_id")
@@ -2949,8 +2961,10 @@ final class AgentTeamExecutionHistoryStore {
     func page(_ bytes: Data, reference: AgentMcpJSONObject) throws -> AgentMcpJSONObject {
       guard start < bytes.count else { throw AgentTeamHistoryDatabase.Failure.corrupt }
       let end = start + min(width, bytes.count - start)
-      return AgentGoalWorkMilestoneRead.response(bytes: bytes.subdata(in: start..<end), offset: start,
+      var result = AgentGoalWorkMilestoneRead.response(bytes: bytes.subdata(in: start..<end), offset: start,
         total: bytes.count, reference: reference)
+      result["input_role"] = inputRole
+      return result
     }
     if mode == "workspace" {
       guard Set(input.keys).isSubset(of: ["mode", "token", "object_id", "revision", "sha256", "offset"]),
@@ -2985,8 +2999,10 @@ final class AgentTeamExecutionHistoryStore {
       else { throw AgentTeamHistoryDatabase.Failure.stale }
       let bytes = try Self.desktopAcceptancePage(archive, index: start / width,
         conversation: scope.conversationId, database: database)
-      return AgentGoalWorkMilestoneRead.response(bytes: bytes, offset: start, total: archive.receipt.totalBytes,
+      var result = AgentGoalWorkMilestoneRead.response(bytes: bytes, offset: start, total: archive.receipt.totalBytes,
         reference: selected)
+      result["input_role"] = inputRole
+      return result
     }
     if mode == "native_evidence" {
       guard let original = try Self.nativeAcceptanceOriginal(id: id, scope: scope, team: team, database: database)
@@ -4345,6 +4361,9 @@ final class AgentTeamExecutionHistoryStore {
             "uses_milestones": .array((inputs[input.work_id]?.versions ?? []).map { .string($0.token) })])
         })
       }
+      if let tokens = item.uses_milestones, !tokens.isEmpty {
+        row["milestone_inputs"] = AgentGoalWorkMilestoneRead.inputRoles(tokens, reviewTokens: item.reviewMilestoneTokens)
+      }
       return row
     }, bytes: 6_000)
     let members = team.members.filter { $0.deliveryMode != .ignore && $0.memberId != scope.memberId }
@@ -4477,7 +4496,8 @@ final class AgentTeamExecutionHistoryStore {
         memberID: work.recruitment?.executionIdentity ?? work.member, process: AgentCollaborationGoalWorkRun.processID,
         startedAt: now, target: target, state: .running, templateMemberID: work.recruitment?.template,
         inputRevision: graph.inputBindingHistory?[work.id]?.last?.revision, probeOrigin: probeOrigin,
-        milestoneTokens: tokens.isEmpty ? nil : tokens)
+        milestoneTokens: tokens.isEmpty ? nil : tokens,
+        reviewMilestoneTokens: tokens.isEmpty ? nil : work.reviewMilestoneTokens)
       try database.insertResearchRecord(run, conversationId: scope.conversationId, key: key, revision: 0)
       return (run, true, dependencies)
     }

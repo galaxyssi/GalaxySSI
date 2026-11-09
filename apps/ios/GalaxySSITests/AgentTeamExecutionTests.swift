@@ -1169,6 +1169,8 @@ extension GalaxySSIStoreTests {
     team.members[1].dispatchCheckpoint = .accepted
     team.members[1].status = .running
     team.members.append(.init(agentId: "independent", sourceMessageId: "peer-source"))
+    team.members[2].dispatchCheckpoint = .accepted
+    team.members[2].status = .running
     func scope(_ member: AgentTeamMemberSnapshot) -> AgentCollaborationToolEvidenceScope {
       .init(runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
         memberId: member.memberId, sourceId: member.sourceMessageId)
@@ -1177,14 +1179,15 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(history.upsert(team))
     let coordinator = scope(team.members[0]), producer = scope(team.members[1])
     let assessment = #"{"format":"galaxyssi.goal-assessment.v1","summary":"Review","decision":"continue","work":[],"blockers":[],"criteria":[{"id":"one","requirement":"Check","verification":"documentary","status":"open","evidence":[]}]}"#
-    func publish(_ label: String, revision: Int64, object: String? = nil) throws -> AgentMcpJSONObject {
+    func publish(_ label: String, revision: Int64, object: String? = nil,
+                 publisher: AgentCollaborationToolEvidenceScope? = nil) throws -> AgentMcpJSONObject {
       var draft: AgentMcpJSONObject = ["id": .string("note"), "base_revision": .int(revision), "kind": .string("artifact"),
         "title": .string("Interim"), "body": .object(["content": .string(label)]), "parents": .array([])]
       if let object { draft["object_id"] = .string(object) }
       let raw = AgentMcpJSONCodec.stringify(["format": .string(AgentCollaborationResearchEnvelope.wireFormat),
         "summary": .string(label), "workspace": .array([.object(draft)])])
       let receipt = try history.publishCollaborationMilestone(["mode": .string("publish"),
-        "milestone_id": .string(label), "artifact": .string(raw)], scope: producer)
+        "milestone_id": .string(label), "artifact": .string(raw)], scope: publisher ?? producer)
       return try XCTUnwrap(receipt["references"]?.arrayValue?.first?.objectValue)
     }
     let committed = expectation(description: "Published milestone emits a commit wake")
@@ -1203,17 +1206,21 @@ extension GalaxySSIStoreTests {
     let original = try publish("original-content", revision: 0)
     XCTAssertEqual(try publish("original-content", revision: 0), original)
     wait(for: [committed], timeout: 1)
+    let reviewer = scope(team.members[2])
+    let support = try publish("review-fixture", revision: 0, publisher: reviewer)
     let staged = try XCTUnwrap(open().reserveLiveMilestonePlanning(scope: coordinator, now: 5))
-    let token = try XCTUnwrap(staged.entries.first?.token)
-    XCTAssertEqual(staged.batch.tokens, [token])
+    let token = try XCTUnwrap(staged.entries.first(where: { $0.producer == producer })?.token)
+    let supportToken = try XCTUnwrap(staged.entries.first(where: { $0.producer == reviewer })?.token)
+    XCTAssertEqual(Set(staged.batch.tokens), Set([token, supportToken]))
     XCTAssertNil(try history.reserveLiveMilestonePlanning(scope: coordinator, now: 6))
     XCTAssertThrowsError(try history.reserveLiveMilestonePlanning(scope: producer, now: 6))
     XCTAssertEqual(try history.readLiveMilestonePlanning(["mode": .string("list")], batch: staged.batch,
-      scope: coordinator, now: 6)["tokens"], .array([.string(token)]))
+      scope: coordinator, now: 6)["tokens"], .array(staged.batch.tokens.map(AgentMcpJSONValue.string)))
     let updated = try publish("newer-content", revision: 1, object: original.string("object_id"))
     let work: AgentMcpJSONObject = ["id": .string("early-review"), "member": .string("independent"),
       "assignment": .string("Review the published revision"), "depends_on": .array([]),
-      "independent_review": .bool(true), "uses_milestones": .array([.string(token)])]
+      "independent_review": .bool(true), "uses_milestones": .array([.string(token), .string(supportToken)]),
+      "review_milestones": .array([.string(token)])]
     let expansion = AgentMcpJSONCodec.stringify(["format": .string("galaxyssi.work-expansion.v1"),
       "work": .array([.object(work)])])
     let desktop = AgentCollaborationGoalWorkRun.Target(kind: .desktop, resourceID: team.primaryAgentId, modelID: "codex")
@@ -1224,7 +1231,9 @@ extension GalaxySSIStoreTests {
       routeID: "route", contactID: team.primaryAgentId, agentID: "codex")
     try history.bindDesktopGoalWork(binding, now: 6)
     XCTAssertEqual(try open().goalWork(planner.workID, scope: coordinator, now: 6).1?.dispatchID, planner.dispatchID)
-    let deskList = try open().readGoalWorkMilestone(["mode": .string("workspace")], claim: planner, now: 6, desktopWire: true)
+    let firstDeskPage = try open().readGoalWorkMilestone(["mode": .string("workspace")], claim: planner, now: 6, desktopWire: true)
+    let deskList = staged.batch.tokens.first == token ? firstDeskPage : try open().readGoalWorkMilestone(
+      ["mode": .string("workspace"), "cursor": .string(supportToken)], claim: planner, now: 6, desktopWire: true)
     XCTAssertEqual(deskList["entries"], .array([.object(original)]))
     var desktopRead = original
     desktopRead["mode"] = .string("workspace")
@@ -1252,15 +1261,27 @@ extension GalaxySSIStoreTests {
     history.releaseLiveMilestonePlanning(next.batch, scope: coordinator)
     let (saved, _) = try history.goalWork(workID, scope: coordinator)
     let claim = try history.claimGoalWork(saved, scope: coordinator, now: 10).run
-    XCTAssertEqual(claim.milestoneTokens, [token])
+    XCTAssertEqual(claim.milestoneTokens, [token, supportToken])
+    XCTAssertEqual(claim.reviewMilestoneTokens, [token])
     XCTAssertEqual(history.snapshot(supervisorRunId: team.supervisorRunId)?.members[1].status, .running)
     let reopened = open()
     let listed = try reopened.readGoalWorkMilestone(["mode": .string("list")], claim: claim, now: 11)
-    XCTAssertEqual(listed["tokens"], .array([.string(token)]))
+    XCTAssertEqual(listed["tokens"], .array([.string(token), .string(supportToken)]))
+    XCTAssertEqual(listed["inputs"], .array([
+      .object(["token": .string(token), "input_role": .string("review_subject")]),
+      .object(["token": .string(supportToken), "input_role": .string("prerequisite")])
+    ]))
+    var supportRead = support
+    supportRead["mode"] = .string("workspace")
+    supportRead["token"] = .string(supportToken)
+    let supportPage = try reopened.readGoalWorkMilestone(supportRead, claim: claim, now: 11)
+    XCTAssertEqual(supportPage["input_role"], .string("prerequisite"))
+    XCTAssertNotNil(supportPage["data_b64"])
     var read = original
     read["mode"] = .string("workspace")
     read["token"] = .string(token)
     let page = try reopened.readGoalWorkMilestone(read, claim: claim, now: 11)
+    XCTAssertEqual(page["input_role"], .string("review_subject"))
     let bytes = try XCTUnwrap(Data(base64Encoded: page.string("data_b64")))
     let record = try JSONDecoder().decode(AgentCollaborationResearchRevision.self, from: bytes)
     XCTAssertEqual(record.draft.body["content"], .string("original-content"))
@@ -1305,6 +1326,21 @@ extension GalaxySSIStoreTests {
       depends_on: ["prerequisite"], dependency_policy: .success, independent_review: true, uses_milestones: [token])
     XCTAssertFalse(review.hasIndependentReviewAuthors({ _ in nil }, milestoneAuthors: [token: author]))
     XCTAssertTrue(review.hasIndependentReviewAuthors({ _ in author }, milestoneAuthors: [token: author]))
+    let support = String(repeating: "b", count: 64)
+    let origins = [token: author, support: peer + ":revise"]
+    review = .init(id: "review", member: peer, assignment: "Review a frozen version with my own fixture",
+      depends_on: [], dependency_policy: nil, independent_review: true, uses_milestones: [token, support])
+    XCTAssertFalse(review.hasIndependentReviewAuthors({ _ in nil }, milestoneAuthors: origins))
+    review.review_milestones = [token]
+    XCTAssertTrue(review.hasIndependentReviewAuthors({ _ in nil }, milestoneAuthors: origins))
+    XCTAssertFalse(review.hasIndependentReviewAuthors({ _ in nil }, milestoneAuthors: [token: author]))
+    for invalid in [[support], [token, token], [], [String(repeating: "c", count: 64)]] {
+      review.review_milestones = invalid
+      XCTAssertFalse(review.hasIndependentReviewAuthors({ _ in nil }, milestoneAuthors: origins))
+    }
+    let ordinary = AgentCollaborationLiveGraph.Work(id: "execute", member: peer, assignment: "Use fixture",
+      depends_on: [], dependency_policy: nil, independent_review: false, uses_milestones: [support], review_milestones: [])
+    XCTAssertFalse(ordinary.hasIndependentReviewAuthors({ _ in nil }, milestoneAuthors: origins))
   }
 
   func testDesktopEvidenceAdmissionRejectsCallableAliasesWithoutChangingLegacyBindings() throws {

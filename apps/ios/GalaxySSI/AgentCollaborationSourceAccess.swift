@@ -6,6 +6,7 @@ enum AgentGoalWorkMilestoneRead {
   static let instructions = "Read only the milestones granted to this assignment. Use list to see tokens, references " +
     "with a token for exact versions, workspace with token/object_id/revision/sha256, or evidence, native_evidence " +
     "and desktop_evidence with token/evidence_id/sha256. Follow byte next_offset until null and join decoded data_b64. " +
+    "An input_role of prerequisite is supporting data, not a review subject. " +
     "A reference is not proof of delivery, truth, or independent review. No other member output is granted."
   static let schema: AgentMcpJSONObject = [
     "type": .string("object"), "required": .array([.string("mode")]), "additionalProperties": .bool(false),
@@ -22,9 +23,23 @@ enum AgentGoalWorkMilestoneRead {
   static let desktopInstructions = "Use collaboration_recall mode=workspace to list granted versions. Follow next_cursor. " +
     "Read only an exact object_id/revision/sha256 from that directory. For recorded observations use mode=archive " +
     "with the listed record_id. Follow byte next_offset until null and join decoded data_b64. " +
+    "An input_role of prerequisite is supporting data, not a review subject. " +
     "A reference is not proof of delivery, truth, or independent review."
   static let coordinatorInstructions = "Use uses_milestones:[exact host token] for an interim version; this does not " +
-    "wait for, complete, or expose the author's other work. Use depends_on when the whole work result is required."
+    "wait for, complete, or expose the author's other work. Use depends_on when the whole work result is required. " +
+    "For independent_review, review_milestones is the subset of uses_milestones being reviewed; omit it to review all. " +
+    "The other tokens are supporting prerequisites and can come from the reviewer."
+
+  static func inputRole(_ token: String, reviewTokens: [String]?) -> AgentMcpJSONValue? {
+    reviewTokens.map { .string($0.contains(token) ? "review_subject" : "prerequisite") }
+  }
+
+  static func inputRoles(_ tokens: [String], reviewTokens: [String]?) -> AgentMcpJSONValue? {
+    guard let reviewTokens else { return nil }
+    return .array(tokens.map { token in
+      .object(["token": .string(token), "input_role": .string(reviewTokens.contains(token) ? "review_subject" : "prerequisite")])
+    })
+  }
 
   static func response(bytes: Data, offset: Int, total: Int, reference: AgentMcpJSONObject) -> AgentMcpJSONObject {
     ["status": .string("returned"), "data_b64": .string(bytes.base64EncodedString()),
