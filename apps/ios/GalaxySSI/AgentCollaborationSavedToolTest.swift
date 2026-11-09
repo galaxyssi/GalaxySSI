@@ -1,6 +1,68 @@
 import CryptoKit
 import Foundation
 
+enum AgentCollaborationExecutableAcceptance {
+  static let id = "executable_tool_cases.v1"
+  static let requirement = "Verify a saved executable tool on all preserved test cases in the declared environment; this does not establish general correctness, reference truth or physical validity."
+  private static let metadata = ["environment", "purpose", "oracle_basis", "coverage_gaps"]
+  static let guidance = """
+    For finite executable tool acceptance use verification=computational, evidence_kind=observed and the exact requirement:
+    "\(requirement)"
+    Pin validator {id:"\(id)",environment,purpose,oracle_basis,coverage_gaps,cases:[{id,purpose,reason,input,expected}]}.
+    Keep target and regression cases, and copy the contract into the registered tool_test_plan. Test with the existing iOS runtime.
+    An independent reviewer reads the complete original test observation and publishes tool_release. Save delivery computation
+    {validator_id:"\(id)",tool_release:{object_id,revision,sha256}}; both delivery and acceptance_review cite the original observation.
+    The host rechecks the exact execution without running the tool again. This does not qualify Desktop shell prose, a prior
+    goal's receipt, reference truth, generalization, or a physical experiment.
+    """
+
+  static func issue(_ spec: AgentMcpJSONObject) -> AgentCollaborationNumericTrial.ValidatorIssue? {
+    typealias Issue = AgentCollaborationNumericTrial.ValidatorIssue
+    guard spec["id"] == .string(id), Set(spec.keys) == Set(metadata + ["id", "cases"]) else {
+      return Issue(path: "", expected: "exact executable test contract fields", actual: "missing or extra field")
+    }
+    for name in metadata {
+      guard let value = spec[name]?.strictStringValue, !value.isBlank, value.utf8.count <= 8_192 else {
+        return Issue(path: "." + name, expected: "nonblank text within 8192 bytes", actual: "invalid text")
+      }
+    }
+    guard let cases = spec["cases"]?.arrayValue, (2...32).contains(cases.count) else {
+      return Issue(path: ".cases", expected: "2 to 32 registered cases", actual: "invalid case count")
+    }
+    var ids = Set<String>(), purposes = Set<String>()
+    for (index, raw) in cases.enumerated() {
+      guard let row = raw.objectValue, Set(row.keys) == ["id", "purpose", "reason", "input", "expected"],
+            let id = row["id"]?.strictStringValue, !id.isBlank, id.utf8.count <= 160, ids.insert(id).inserted,
+            let reason = row["reason"]?.strictStringValue, !reason.isBlank, reason.utf8.count <= 8_192,
+            let purpose = row["purpose"]?.strictStringValue, ["target", "edge", "regression"].contains(purpose),
+            row["input"]?.objectValue != nil, row["expected"] != nil else {
+        return Issue(path: ".cases[\(index)]", expected: "unique id, target/edge/regression purpose, reason, JSON object input and expected JSON",
+          actual: "invalid preserved case")
+      }
+      purposes.insert(purpose)
+    }
+    guard purposes.isSuperset(of: ["target", "regression"]) else {
+      return Issue(path: ".cases", expected: "target and regression cases", actual: "missing required case purpose")
+    }
+    return nil
+  }
+
+  static func matches(spec: AgentMcpJSONObject, plan: AgentCollaborationResearchRevision) -> Bool {
+    guard issue(spec) == nil, plan.draft.kind == .toolTestPlan,
+          let saved = plan.draft.body["tool_test_plan"]?.objectValue else { return false }
+    return (metadata + ["cases"]).allSatisfy { name in
+      guard let left = spec[name], let right = saved[name] else { return false }
+      return AgentCollaborationSavedToolTest.difference(left, right, at: "") == nil
+    }
+  }
+
+  static func releaseReference(_ computation: AgentMcpJSONObject) -> AgentCollaborationResearchReference? {
+    guard computation["validator_id"] == .string(id), Set(computation.keys) == ["validator_id", "tool_release"]
+    else { return nil }
+    return AgentCollaborationSavedToolTest.reference(computation["tool_release"])
+  }
+}
+
 enum AgentCollaborationSavedToolRelease {
   struct Review {
     let plan: AgentCollaborationResearchReference
@@ -336,7 +398,7 @@ enum AgentCollaborationSavedToolTest {
     SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
   }
 
-  private static func difference(_ a: AgentMcpJSONValue, _ b: AgentMcpJSONValue, at path: String) -> String? {
+  fileprivate static func difference(_ a: AgentMcpJSONValue, _ b: AgentMcpJSONValue, at path: String) -> String? {
     switch (a, b) {
     case (.int(let n), .double(let d)), (.double(let d), .int(let n)):
       return Int64(exactly: d) == n ? nil : path
