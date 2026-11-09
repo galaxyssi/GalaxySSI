@@ -2869,6 +2869,70 @@ final class AgentTeamExecutionHistoryStore {
     return output
   }
 
+  static func desktopResultEvidence(_ raw: String) -> [String: String]? {
+    guard let data = AgentCollaborationResearchEnvelope.replyJSON(in: raw),
+          let envelope = try? JSONDecoder().decode(AgentCollaborationResearchEnvelope.self, from: data),
+          envelope.format == AgentCollaborationResearchEnvelope.wireFormat else { return nil }
+    var required: [String: String] = [:]
+    for draft in envelope.workspace ?? [] {
+      guard (try? AgentCollaborationTypedRecordValidation.validate(draft)) != nil else { return nil }
+      let observations = draft.observations ?? []
+      guard (try? acceptanceCitations(observations)) != nil else { return nil }
+      var pending = [.object(draft.body)] + observations.map(AgentMcpJSONValue.object)
+      while let value = pending.popLast() {
+        switch value {
+        case .object(let object):
+          if object["evidence_id"] != nil {
+            let id = object.string("evidence_id"), hash = object.string("sha256")
+            guard AgentCollaborationSourceAccess.validDigest(id),
+                  AgentCollaborationSourceAccess.validDigest(hash) else { return nil }
+            if object["origin"] == .string("desktop_codex_tool") {
+              guard required[id] == nil || required[id] == hash else { return nil }
+              required[id] = hash
+            }
+          }
+          pending.append(contentsOf: object.values)
+        case .array(let values): pending.append(contentsOf: values)
+        default: break
+        }
+      }
+    }
+    return required
+  }
+
+  func isSavedResearchReplyWaitingForDesktopEvidence(_ raw: String, scope: AgentCollaborationToolEvidenceScope,
+      job: AgentDesktopToolEvidenceWire.ImportJob) throws -> Bool {
+    guard let required = Self.desktopResultEvidence(raw), !required.isEmpty,
+          job.binding.teamSource?.memberId == scope.memberId,
+          job.binding.teamSource?.supervisorRunId == scope.runId,
+          job.binding.identity.conversationId == scope.conversationId, job.binding.identity.turnId == scope.turnId,
+          job.binding.sourceIdentity == scope.sourceId,
+          let request = AgentDesktopToolEvidenceWire.Request(binding: job.binding, generation: job.generation,
+            nonce: "result-readiness") else { return false }
+    return try access { database in
+      guard try Self.savedResearchReply(scope, database: database).map(Self.replyHash) == Self.replyHash(raw),
+            try database.researchRecord(AgentDesktopToolEvidenceWire.ImportJob.self,
+              conversationId: scope.conversationId, key: job.key, revision: 0) != nil,
+            try database.researchRecord(AgentDesktopToolEvidenceWire.ImportCursor.self,
+              conversationId: scope.conversationId, key: request.cursorKey)?.archiveFinal != true
+      else { return false }
+      let team = try Self.desktopEvidenceOwner(request, database: database).team
+      let prefix = Self.desktopAcceptancePrefix(runID: scope.runId, turnID: scope.turnId)
+      var missing = false
+      for (id, hash) in required {
+        if let saved = try database.researchRecord(AgentDesktopToolEvidenceWire.AcceptanceArchive.self,
+          conversationId: scope.conversationId, key: prefix + id, revision: 0) {
+          guard saved.receipt.sha256 == hash,
+                try Self.desktopAcceptanceArchive(id: id, scope: scope, team: team, database: database) != nil
+          else { return false }
+        } else {
+          missing = true
+        }
+      }
+      return missing
+    }
+  }
+
   private func readCoordinationMilestone(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope)
     throws -> AgentMcpJSONObject {
     typealias Coordination = AgentCollaborationMilestoneCoordination
