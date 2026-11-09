@@ -1593,12 +1593,16 @@ final class AgentTeamExecutionHistoryStore {
   func publishResearchObjects(_ drafts: [AgentCollaborationResearchDraft], runId: String,
                               conversationId: String, turnId: String, memberId: String,
                               sourceId: String, milestone: (id: String, hash: String)? = nil,
-                              finalMilestones: [String] = [])
+                              finalMilestones: [String] = [],
+                              peerRequests: [AgentCollaborationPeerEvidence.Request] = [],
+                              peerWork: (claim: AgentCollaborationGoalWorkRun, rosterIDs: Set<String>,
+                                now: Int64, finalHash: String?)? = nil)
     throws -> AgentCollaborationResearchPublication {
     guard !drafts.isEmpty || !finalMilestones.isEmpty, drafts.count <= 32, !sourceId.isBlank,
           finalMilestones.count <= 32, Set(finalMilestones).count == finalMilestones.count,
           finalMilestones.allSatisfy({ !$0.isBlank && $0.utf8.count <= 160 }),
-          milestone == nil || finalMilestones.isEmpty else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+          milestone == nil || finalMilestones.isEmpty,
+          peerRequests.isEmpty || milestone != nil else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     func digest<T: Encodable>(_ value: T) throws -> String {
@@ -1615,12 +1619,29 @@ final class AgentTeamExecutionHistoryStore {
     return try access { database in
       guard let snapshot = try database.snapshots(runId: runId).first,
             snapshot.conversationId == conversationId, snapshot.taskId == turnId,
-            let member = snapshot.members.first(where: { $0.memberId == memberId && $0.sourceMessageId == sourceId }),
             snapshot.state != .cancelled,
-            milestone == nil ? member.status == .succeeded : (try Self.canPublishMilestone(snapshot, member: member, database: database)),
             try database.researchRecord(Bool.self, conversationId: conversationId,
               key: "native-evidence-revoked", revision: 0) != true else {
         throw AgentTeamHistoryDatabase.Failure.stale
+      }
+      let member: AgentTeamMemberSnapshot
+      let grantContext: PeerWorkAuthority?
+      if let peerWork {
+        let claim = peerWork.claim
+        guard claim.owner.runId == runId, claim.owner.conversationId == conversationId,
+              claim.owner.turnId == turnId, claim.memberID == memberId, claim.dispatchID == sourceId,
+              (milestone == nil) == (peerWork.finalHash != nil),
+              let savedMember = snapshot.members.first(where: { $0.memberId == memberId && $0.deliveryMode == .observe })
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        grantContext = try Self.peerWorkAuthority(claim, rosterIDs: peerWork.rosterIDs,
+          now: peerWork.now, finalHash: peerWork.finalHash, database: database)
+        member = savedMember
+      } else {
+        guard let saved = snapshot.members.first(where: { $0.memberId == memberId && $0.sourceMessageId == sourceId }),
+              milestone == nil ? saved.status == .succeeded : (try Self.canPublishMilestone(snapshot, member: saved, database: database))
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        grantContext = nil
+        member = saved
       }
       if let prior = try database.researchRecord(AgentCollaborationResearchPublication.self,
         conversationId: conversationId, key: publicationKey, revision: 0) {
@@ -2075,7 +2096,19 @@ final class AgentTeamExecutionHistoryStore {
             conversationId: conversationId, turnId: turnId, memberId: memberId, sourceId: sourceId),
             changedIds: Set(drafts.compactMap(\.objectId)), database: database)
         } else if !references.isEmpty {
-          throw AgentTeamHistoryDatabase.Failure.corrupt
+          guard let grantContext, AgentCollaborationPeerEvidence.reportKinds.contains(draft.kind)
+          else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+          let citations = try Self.acceptanceCitations(references)
+          for (mode, rows) in [("evidence", citations.cloud), ("native_evidence", citations.native),
+                               ("desktop_evidence", citations.desktop)] {
+            for citation in rows {
+              var selector = citation
+              selector["mode"] = .string(mode)
+              guard try AgentCollaborationPeerEvidence.grantedObservation(selector, scope: grantContext.scope,
+                binding: grantContext.binding, allowed: grantContext.allowed, database: database) != nil
+              else { throw AgentTeamHistoryDatabase.Failure.stale }
+            }
+          }
         }
         let existingId = draft.objectId.flatMap { $0.isBlank ? nil : $0 }
         let objectId = existingId ?? AgentMcpJSONCodec.sha256([
@@ -2086,6 +2119,7 @@ final class AgentTeamExecutionHistoryStore {
           conversationId: conversationId, key: "object:" + objectId)
         if let head {
           guard existingId != nil, head.authorId == memberId, head.draft.kind == draft.kind,
+                peerWork == nil || head.sourceId == sourceId,
                 head.reference.revision == draft.baseRevision else { throw AgentTeamHistoryDatabase.Failure.stale }
           if let target = AgentCollaborationGoalCoverage.reviewTarget(head.draft.body, parents: head.draft.parents) {
             guard AgentCollaborationGoalCoverage.reviewTarget(draft.body, parents: draft.parents) == target
@@ -2130,7 +2164,14 @@ final class AgentTeamExecutionHistoryStore {
                   stable(memberId) != stable(existing.authorId), stable(memberId) != stable(snapshot.primaryMemberId)
             else { throw AgentTeamHistoryDatabase.Failure.stale }
           }
-          if existing.turnId == turnId && existing.authorId != memberId {
+          if let grantContext, existing.turnId == turnId, existing.sourceId != sourceId,
+             AgentCollaborationPeerEvidence.reportKinds.contains(draft.kind), draft.parents.contains(parent),
+             draft.resolves?.isEmpty != false,
+             try AgentCollaborationPeerEvidence.grantedWorkspace(parent, scope: grantContext.scope,
+               binding: grantContext.binding, allowed: grantContext.allowed, database: database) != nil {
+            continue
+          }
+          if existing.turnId == turnId && (existing.authorId != memberId || (peerWork != nil && existing.sourceId != sourceId)) {
             // Both comparison parents already passed exact dispatch-dependency validation above.
             if toolTestComparison != nil { continue }
             let review = draft.kind == .acceptanceReview && draft.parents == [parent] && draft.resolves?.isEmpty != false
@@ -2224,6 +2265,22 @@ final class AgentTeamExecutionHistoryStore {
         recordedAtMillis: milestone == nil ? nil : AgentControlPlaneClock.nowMillis(),
         numericTrials: numericTrials.isEmpty ? nil : numericTrials)
       try database.insertResearchRecord(receipt, conversationId: conversationId, key: publicationKey, revision: 0)
+      if !peerRequests.isEmpty, let milestone {
+        let producer = AgentCollaborationToolEvidenceScope(runId: runId, conversationId: conversationId,
+          turnId: turnId, memberId: memberId, sourceId: sourceId)
+        let person = AgentTeamProgressPolicy.stableCollaborationMemberId(memberId)
+        let participants = Set(snapshot.members.filter { $0.deliveryMode != .ignore }.map {
+          AgentTeamProgressPolicy.stableCollaborationMemberId($0.memberId)
+        })
+        guard member.deliveryMode == .observe, AgentCollaborationPeerEvidence.person(person) != nil,
+              peerRequests.allSatisfy({ $0.recipient != person && participants.contains($0.recipient) })
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        for (recipient, requests) in Dictionary(grouping: peerRequests, by: \.recipient) {
+          try AgentCollaborationPeerEvidence.append(.init(producer: producer, personID: person,
+            milestoneID: milestone.id, artifactSHA256: milestone.hash, references: receipt.references, requests: requests),
+            recipient: recipient, database: database)
+        }
+      }
       return receipt
     }
   }
@@ -2533,7 +2590,8 @@ final class AgentTeamExecutionHistoryStore {
         throw AgentTeamHistoryDatabase.Failure.corrupt
       }
       let receipt = try publishResearchObjects(drafts, runId: scope.runId, conversationId: scope.conversationId,
-        turnId: scope.turnId, memberId: scope.memberId, sourceId: scope.sourceId, milestone: (id, hash))
+        turnId: scope.turnId, memberId: scope.memberId, sourceId: scope.sourceId, milestone: (id, hash),
+        peerRequests: AgentCollaborationPeerEvidence.requests(envelope))
       return Self.milestoneReceipt(receipt, id: id, status: "published")
     } catch let feedback as AgentCollaborationExperimentResultFeedback {
       return try retainRejectedMilestone(raw, id: id, hash: hash, scope: scope, reason: "rejected", problem: feedback.problem)
@@ -3225,6 +3283,216 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
+  private struct PeerWorkAuthority {
+    let scope: AgentCollaborationToolEvidenceScope
+    let team: AgentTeamExecutionSnapshot
+    let recipient: String
+    let allowed: Set<String>
+    let binding: String
+  }
+
+  private static func peerWorkAuthority(_ claim: AgentCollaborationGoalWorkRun, rosterIDs: Set<String>,
+      now: Int64, finalHash: String? = nil, database: AgentTeamHistoryDatabase) throws -> PeerWorkAuthority {
+    let scope = claim.owner
+    let team = try activeGoalCoordinator(scope, database: database)
+    guard let checkpoint = try database.goalCheckpoints(runId: scope.runId, newestOnly: true).first,
+            checkpoint.phase == .working, checkpoint.conversationId == scope.conversationId, checkpoint.turnId == scope.turnId,
+            let work = checkpoint.liveGraph?.work.first(where: { $0.id == claim.workID }),
+            let saved = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
+              conversationId: scope.conversationId, key: Self.goalWorkKey(work.id, scope: scope), revision: 0),
+            saved.owner == scope, saved.dispatchID == claim.dispatchID, saved.memberID == claim.memberID,
+            saved.target == claim.target,
+            finalHash.map({ saved.state == .succeeded && saved.outputHash == $0 }) ?? (saved.visibleState(now: now) == .running),
+            work.recruitment == nil, saved.memberID == work.member,
+            let recipient = AgentCollaborationPeerEvidence.person(AgentTeamProgressPolicy.stableCollaborationMemberId(work.member)),
+            rosterIDs.contains(recipient),
+            let allowed = AgentCollaborationPeerEvidence.allowed(work.peer_updates_from, worker: recipient,
+              independent: work.independent_review == true, roster: rosterIDs)
+    else { throw AgentTeamHistoryDatabase.Failure.stale }
+    let binding = AgentMcpJSONCodec.sha256(["scope": .string(scope.ownershipDigest), "dispatch": .string(saved.dispatchID),
+      "member": .string(saved.memberID), "peers": .array(allowed.sorted().map(AgentMcpJSONValue.string))])
+    return .init(scope: scope, team: team, recipient: recipient, allowed: allowed, binding: binding)
+  }
+
+  func publishPeerWorkMilestone(_ input: AgentMcpJSONObject, claim: AgentCollaborationGoalWorkRun,
+      rosterIDs: Set<String>, now: Int64 = AgentControlPlaneClock.nowMillis(), desktopWire: Bool = false) throws -> AgentMcpJSONObject {
+    let id = input.string("milestone_id"), scope = claim.owner
+    guard !id.isBlank, id.utf8.count <= 160, !desktopWire || claim.target?.kind == .desktop
+    else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    if input["mode"] == .string("receipt") {
+      let hash = input.string("artifact_sha256")
+      guard Set(input.keys) == ["mode", "milestone_id", "artifact_sha256"],
+            AgentCollaborationSourceAccess.validDigest(hash) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      return try access { database in
+        _ = try Self.peerWorkAuthority(claim, rosterIDs: rosterIDs, now: now, database: database)
+        let base = Self.researchPublicationKey(runId: scope.runId, memberId: claim.memberID, sourceId: claim.dispatchID)
+        guard let receipt = try database.researchRecord(AgentCollaborationResearchPublication.self,
+          conversationId: scope.conversationId, key: Self.milestoneKey(base, id: id), revision: 0) else {
+          return ["status": .string("not_recorded"), "milestone_id": .string(id), "artifact_sha256": .string(hash)]
+        }
+        guard receipt.requestHash == hash else { throw AgentTeamHistoryDatabase.Failure.stale }
+        return Self.milestoneReceipt(receipt, id: id, status: "recorded")
+      }
+    }
+    guard input["mode"] == .string("publish"), Set(input.keys) == ["mode", "milestone_id", "artifact"],
+          let raw = input["artifact"]?.strictStringValue, raw.utf8.count <= 131_072,
+          let envelope = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8)),
+          !envelope.string("summary").isBlank, envelope["coordination"] == .object(["mode": .string("record_only")])
+    else {
+      throw AgentTeamHistoryDatabase.Failure.corrupt
+    }
+    let view = desktopWire ? AgentDesktopCollaborationPublicationWire.artifactDecodingView(envelope) ?? raw : raw
+    guard let drafts = try AgentCollaborationResearchEnvelope.publication(in: view)
+    else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    let requests = try AgentCollaborationPeerEvidence.requests(envelope)
+    guard !requests.isEmpty, requests.allSatisfy({ rosterIDs.contains($0.recipient) })
+    else { throw AgentTeamHistoryDatabase.Failure.stale }
+    let hash = Self.replyHash(raw)
+    let receipt = try publishResearchObjects(drafts, runId: scope.runId, conversationId: scope.conversationId,
+      turnId: scope.turnId, memberId: claim.memberID, sourceId: claim.dispatchID, milestone: (id, hash),
+      peerRequests: requests, peerWork: (claim, rosterIDs, now, nil))
+    return Self.milestoneReceipt(receipt, id: id, status: "published")
+  }
+
+  @discardableResult
+  func finalizePeerWorkResearch(_ claim: AgentCollaborationGoalWorkRun, rosterIDs: Set<String>,
+      now: Int64 = AgentControlPlaneClock.nowMillis()) throws -> AgentMcpJSONObject? {
+    let scope = claim.owner
+    let key = Self.goalWorkKey(claim.workID, scope: scope)
+    let (saved, raw) = try access { database -> (AgentCollaborationGoalWorkRun, String?) in
+      guard let saved = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
+        conversationId: scope.conversationId, key: key, revision: 0), saved.owner == scope,
+        saved.dispatchID == claim.dispatchID, saved.state == .succeeded, let hash = saved.outputHash
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      _ = try Self.peerWorkAuthority(claim, rosterIDs: rosterIDs, now: now, finalHash: hash, database: database)
+      let bytes = try database.researchRecord(Data.self, conversationId: scope.conversationId,
+        key: Self.peerWorkOriginalKey(key), revision: 0)
+      guard let bytes, let raw = String(data: bytes, encoding: .utf8), Self.replyHash(raw) == hash else { return (saved, nil) }
+      return (saved, raw)
+    }
+    if let prior = saved.peerPublication { return prior }
+    guard let raw, let hash = saved.outputHash else { return nil }
+    let result: AgentMcpJSONObject
+    do {
+      guard let view = AgentCollaborationResearchEnvelope.replyJSON(in: raw) else { return nil }
+      let envelope = try JSONDecoder().decode(AgentCollaborationResearchEnvelope.self, from: view)
+      guard envelope.format == AgentCollaborationResearchEnvelope.wireFormat else { return nil }
+      let drafts = envelope.workspace ?? [], milestones = envelope.milestones ?? []
+      guard !drafts.isEmpty || !milestones.isEmpty else { return nil }
+      let receipt = try publishResearchObjects(drafts, runId: scope.runId, conversationId: scope.conversationId,
+        turnId: scope.turnId, memberId: claim.memberID, sourceId: claim.dispatchID, finalMilestones: milestones,
+        peerWork: (claim, rosterIDs, now, hash))
+      result = ["status": .string("published"), "goal_accepted": .bool(false),
+        "reference_count": .int(Int64(receipt.references.count)),
+        "references": .array(receipt.references.prefix(128).map { .object(AgentCollaborationSourceAccess.workspaceReference($0)) })]
+    } catch AgentTeamHistoryDatabase.Failure.unavailable { throw AgentTeamHistoryDatabase.Failure.unavailable }
+    catch {
+      result = ["status": .string("rejected"), "goal_accepted": .bool(false), "original_preserved": .bool(true)]
+    }
+    return try access { database in
+      _ = try Self.peerWorkAuthority(claim, rosterIDs: rosterIDs, now: now, finalHash: hash, database: database)
+      guard var latest = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
+        conversationId: scope.conversationId, key: key, revision: 0) else { throw AgentTeamHistoryDatabase.Failure.stale }
+      if let prior = latest.peerPublication { return prior }
+      latest.peerPublication = result
+      try database.removeResearchRecord(conversationId: scope.conversationId, key: key)
+      try database.insertResearchRecord(latest, conversationId: scope.conversationId, key: key, revision: 0)
+      return result
+    }
+  }
+
+  func readPeerWorkEvidence(_ input: AgentMcpJSONObject, claim: AgentCollaborationGoalWorkRun,
+                            rosterIDs: Set<String>, now: Int64 = AgentControlPlaneClock.nowMillis(),
+                            desktopWire: Bool = false) throws -> AgentMcpJSONObject {
+    try access { database in
+      let authority = try Self.peerWorkAuthority(claim, rosterIDs: rosterIDs, now: now, database: database)
+      guard !authority.allowed.isEmpty, !desktopWire || claim.target?.kind == .desktop
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let scope = authority.scope, team = authority.team, recipient = authority.recipient
+      let allowed = authority.allowed, binding = authority.binding
+      let mode = input.string("mode")
+      if mode == AgentCollaborationPeerEvidence.mode {
+        return try AgentCollaborationPeerEvidence.page(input, scope: scope, recipient: recipient,
+          binding: binding, allowed: allowed, database: database)
+      }
+      let width = AgentDesktopToolEvidenceWire.maximumPageBytes
+      guard case .int(let offset) = input["offset"] ?? .int(0), let start = Int(exactly: offset),
+            start >= 0, start % width == 0
+      else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys]
+      func page(_ bytes: Data, total: Int, reference: AgentMcpJSONObject) -> AgentMcpJSONObject {
+        let end = start + bytes.count
+        return ["success": .bool(true), "status": .string("returned"), "data_b64": .string(bytes.base64EncodedString()),
+          "offset": .int(offset), "total_bytes": .int(Int64(total)), "next_offset": end < total ? .int(Int64(end)) : .null,
+          "source_reference": .object(reference), "trust": .string("untrusted_group_evidence")]
+      }
+      func slice(_ bytes: Data, reference: AgentMcpJSONObject) throws -> AgentMcpJSONObject {
+        guard start < bytes.count else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        let end = start + min(width, bytes.count - start)
+        return page(bytes.subdata(in: start..<end), total: bytes.count, reference: reference)
+      }
+      if mode == "workspace" {
+        let id = input.string("object_id"), hash = input.string("sha256")
+        guard AgentCollaborationSourceAccess.validDigest(id), AgentCollaborationSourceAccess.validDigest(hash),
+              Set(input.keys).isSubset(of: ["mode", "object_id", "revision", "sha256", "offset"]),
+              case .int(let revision)? = input["revision"], revision > 0 else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        let reference = AgentCollaborationResearchReference(objectId: id, revision: revision, sha256: hash)
+        guard let record = try AgentCollaborationPeerEvidence.grantedWorkspace(reference, scope: scope,
+          binding: binding, allowed: allowed, database: database) else { throw AgentTeamHistoryDatabase.Failure.stale }
+        var result = try slice(encoder.encode(record), reference: AgentCollaborationSourceAccess.workspaceReference(reference))
+        if start == 0 {
+          let producer = AgentCollaborationToolEvidenceScope(runId: record.runId, conversationId: scope.conversationId,
+            turnId: record.turnId, memberId: record.authorId, sourceId: record.sourceId)
+          result["observations"] = .array(AgentCollaborationPeerEvidence.observations(record, producer: producer).map { observation in
+            if desktopWire {
+              return .object(["mode": .string("archive"),
+                "record_id": .string(AgentMcpJSONCodec.sha256(observation.selector)),
+                "evidence_id": .string(observation.id), "sha256": .string(observation.hash)])
+            }
+            return .object(observation.selector)
+          })
+        }
+        return result
+      }
+      let grant: AgentCollaborationPeerEvidence.Observation
+      if desktopWire {
+        guard mode == "archive", Set(input.keys).isSubset(of: ["mode", "record_id", "offset"]),
+              let archive = try AgentCollaborationPeerEvidence.grantedArchive(input.string("record_id"), scope: scope,
+                binding: binding, allowed: allowed, database: database)
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        grant = archive
+      } else {
+        let id = input.string("evidence_id"), hash = input.string("sha256")
+        let selector: AgentMcpJSONObject = ["mode": .string(mode), "evidence_id": .string(id), "sha256": .string(hash)]
+        guard ["evidence", "native_evidence", "desktop_evidence"].contains(mode),
+              AgentCollaborationSourceAccess.validDigest(id), AgentCollaborationSourceAccess.validDigest(hash),
+              Set(input.keys).isSubset(of: ["mode", "evidence_id", "sha256", "offset"]),
+              let saved = try AgentCollaborationPeerEvidence.grantedObservation(selector, scope: scope,
+                binding: binding, allowed: allowed, database: database) else { throw AgentTeamHistoryDatabase.Failure.stale }
+        grant = saved
+      }
+      let id = grant.id, hash = grant.hash, selector = grant.selector
+      if grant.origin == "desktop_evidence" {
+        guard let archive = try Self.desktopAcceptanceArchive(id: id, scope: scope, team: team, database: database),
+              archive.receipt.sha256 == hash, start < archive.receipt.totalBytes else { throw AgentTeamHistoryDatabase.Failure.stale }
+        let bytes = try Self.desktopAcceptancePage(archive, index: start / width, conversation: scope.conversationId, database: database)
+        return page(bytes, total: archive.receipt.totalBytes, reference: selector)
+      }
+      if grant.origin == "native_evidence" {
+        guard let original = try Self.nativeAcceptanceOriginal(id: id, scope: scope, team: team, database: database)
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        let bytes = try encoder.encode(original)
+        guard SHA256.hash(data: bytes).map({ String(format: "%02x", $0) }).joined() == hash
+        else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        return try slice(bytes, reference: selector)
+      }
+      guard let original = try database.readableCollaborationEvidence(id: id, sha256: hash, scope: grant.producer)
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      return try slice(original.bytes, reference: selector)
+    }
+  }
+
   private static func goalWorkRecruitmentSlot(_ work: AgentCollaborationLiveGraph.Work, projected: Set<String>) -> String? {
     if projected.contains(work.member) { return "directory:" + AgentTeamProgressPolicy.stableCollaborationMemberId(work.member) }
     return work.recruitment?.identity
@@ -3399,11 +3667,17 @@ final class AgentTeamExecutionHistoryStore {
         run.output = String(decoding: output.utf8.prefix(24 * 1_024), as: UTF8.self)
         run.outputHash = SHA256.hash(data: Data(output.utf8)).map { String(format: "%02x", $0) }.joined()
         run.truncated = output.utf8.count > 24 * 1_024
+        if output.utf8.count <= 131_072, output.contains(AgentCollaborationResearchEnvelope.wireFormat) {
+          try database.insertResearchRecord(Data(output.utf8), conversationId: run.owner.conversationId,
+            key: peerWorkOriginalKey(key), revision: 0)
+        }
       }
       try database.removeResearchRecord(conversationId: run.owner.conversationId, key: key)
       try database.insertResearchRecord(run, conversationId: run.owner.conversationId, key: key, revision: 0)
       return run.receipt(now: now)
   }
+
+  private static func peerWorkOriginalKey(_ key: String) -> String { "peer-original:" + key }
 
   private func admitCollaborationWork(_ input: AgentMcpJSONObject,
     scope: AgentCollaborationToolEvidenceScope, recruitmentTemplates: [String: String],
@@ -4197,10 +4471,17 @@ final class AgentTeamExecutionHistoryStore {
     let recruits = checkpoint.liveGraph?.recruitments ?? [:]
     let additions = updated.dropFirst(existing.count)
     let authors = Dictionary(updated.map { ($0.id, $0.member) }, uniquingKeysWith: { first, _ in first })
+    let rosterIDs = Set(snapshot.members.filter { $0.deliveryMode != .ignore }.map {
+      AgentTeamProgressPolicy.stableCollaborationMemberId($0.memberId)
+    })
     guard priorWorkflows.allSatisfy({ workflows[$0.key] == $0.value }),
           previousRecruits.allSatisfy({ recruits[$0.key] == $0.value }),
           authors.count == updated.count,
           additions.allSatisfy({ item in
+            guard item.peer_updates_from?.isEmpty != false || item.recruitment == nil,
+                  AgentCollaborationPeerEvidence.allowed(item.peer_updates_from,
+                    worker: snapshot.reviewIdentity(item.member), independent: item.independent_review == true,
+                    roster: rosterIDs) != nil else { return false }
             if item.id.hasPrefix(AgentCollaborationGoalAssessmentPolicy.resolutionPrefix) || item.blockerResolution != nil {
               guard item.blockerResolution?.workID == item.id, item.workflowExecutionId == nil,
                     item.recruitment == nil, item.depends_on.isEmpty else { return false }

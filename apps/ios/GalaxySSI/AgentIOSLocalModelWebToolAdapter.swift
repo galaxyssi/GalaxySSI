@@ -73,7 +73,7 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
         basePrompt: baseSystemPrompt,
         goalAssessmentOnly: goalAssessmentOnly
       ),
-      userPrompt: AgentIOSLocalModelWebToolProtocol.turnPrompt(request.messages)
+      userPrompt: AgentIOSLocalModelWebToolProtocol.turnPrompt(request.messages), cancellation: request.cancellationToken
     )
     try beforeInference?()
     var response = try AgentIOSLocalModelWebToolProtocol.decode(inference.text, inference: inference)
@@ -100,7 +100,8 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
           userPrompt: AgentIOSWebEvidenceVerification.repairPrompt(
             validation: validation,
             encodedToolResults: evidence
-          ) + "\n\nDraft to rewrite:\n" + String(response.assistantText.prefix(12_000))
+          ) + "\n\nDraft to rewrite:\n" + String(response.assistantText.prefix(12_000)),
+          cancellation: request.cancellationToken
         )
         let repaired = try AgentIOSLocalModelWebToolProtocol.decode(repair.text, inference: repair)
         let repairedValidation = AgentIOSWebEvidenceVerification.validateAnswer(
@@ -126,11 +127,12 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
     return response
   }
 
-  private func infer(systemPrompt: String, userPrompt: String) async throws -> LocalModelInferenceResult {
+  private func infer(systemPrompt: String, userPrompt: String,
+                     cancellation: AgentModelToolLoopCancellationToken) async throws -> LocalModelInferenceResult {
     if beforeInference != nil {
       let result = try await LocalModelInferenceRuntime.shared.generateAsync(profile: fallbackProfile,
         systemPrompt: systemPrompt, userPrompt: userPrompt, maximumTokens: goalAssessmentOnly ? 4_096 : 1_500,
-        temperature: 0.1, taskId: taskID)
+        temperature: 0.1, taskId: taskID, cancellation: cancellation)
       guard result.profileId == preferredProfileID else { throw AgentManagedBrowserContinuationStore.Failure.scopeChanged }
       lastInference = result
       return result
@@ -187,6 +189,7 @@ enum AgentIOSLocalModelWebToolRunner {
         version: "1.0.0", title: "Collaboration goal", description:
           "Manage only this coordinator's original goal. Establish open criteria with establish_contract and artifact. " +
           "Use append_work with milestone_id, expected_revision and the work-expansion JSON in artifact. " +
+          AgentCollaborationPeerEvidence.workInstructions + " " +
           "Work is dispatched by the host after your current model round returns. Use work_result and work_id to read a saved result. " +
           "Use work_inventory with no other fields to inspect readiness, review subjects and publication tokens. A waiting review is not active. " +
           "Use assessment_repair with draft_sha256 and offset to read a retained rejected draft; join pages in order. Do not execute rejected work. " +
@@ -420,6 +423,51 @@ enum AgentIOSLocalModelWebToolRunner {
     }
     return AgentIOSLocalModelWebToolCompletion(text: outcome.assistantText, inference: session.lastInference,
       researchDisclosure: .restored(outcome.messages))
+  }
+
+  static func runPeerWork(prompt: String, profile: LocalModelRuntimeProfile, systemPrompt: String,
+      claim: AgentCollaborationGoalWorkRun, cancellation: AgentModelToolLoopCancellationToken,
+      validate: @escaping () throws -> Void, read: ((AgentMcpJSONObject) throws -> AgentMcpJSONObject)?,
+      publish: @escaping (AgentMcpJSONObject) throws -> AgentMcpJSONObject) async throws -> String {
+    try validate()
+    let registry = try AgentNativeToolRegistry()
+    if let read {
+      let descriptor = try AgentNativeToolDescriptor(id: collaborationRecallId, version: "1.2.0",
+        title: "Read addressed collaboration evidence", description: AgentCollaborationPeerEvidence.readInstructions,
+        location: .application, inputSchema: AgentCollaborationPeerEvidence.schema, risk: .low, effect: .readOnly)
+      try registry.registerExecutable(.init(definition: .init(descriptor: descriptor, executorId: collaborationRecallId)) { call in
+        try call.checkpoint()
+        try validate()
+        return .success(output: try read(call.input))
+      })
+    }
+    let publishID = "galaxyssi.phone.collaboration.publish"
+    let publication = try AgentNativeToolDescriptor(id: publishID, version: "1.0.0",
+      title: "Publish addressed collaboration evidence", description: AgentCollaborationPeerEvidence.publishInstructions,
+      location: .application, inputSchema: AgentCollaborationPeerEvidence.publicationSchema, risk: .low,
+      idempotency: .idempotent, effect: .mutation)
+    try registry.registerExecutable(.init(definition: .init(descriptor: publication, executorId: publishID)) { call in
+      try call.checkpoint()
+      try validate()
+      return .success(output: try publish(call.input))
+    })
+    let owner = claim.owner
+    let request = AgentModelToolLoopRequest(sessionId: owner.conversationId, conversationId: owner.conversationId,
+      turnId: owner.turnId, taskId: claim.dispatchID, workspaceId: owner.conversationId,
+      loopId: claim.dispatchID, messages: [.system(systemPrompt), .user(prompt)],
+      budget: .init(maxRounds: 8, maxToolCalls: 32, maxDurationMillis: AgentCollaborationGoalWorkRun.leaseMillis,
+        maxRepeatedCallSignatures: 3),
+      callerId: "galaxyssi.local_peer_work", cancellationToken: cancellation)
+    let adapter = AgentIOSLocalModelWebToolSession(catalog: registry.descriptors(), fallbackProfile: profile,
+      preferredProfileID: profile.id, hasAttachments: false, baseSystemPrompt: systemPrompt,
+      taskID: claim.dispatchID, beforeInference: validate)
+    let outcome = await AgentModelToolLoop(modelAdapter: adapter, toolRegistry: registry,
+      journal: InMemoryAgentModelLoopJournal()).run(request)
+    try validate()
+    guard outcome.status == .completed, !outcome.assistantText.isBlank else {
+      throw AgentIOSLocalModelWebToolError.incomplete(outcome.error?.message ?? "The peer assignment did not complete")
+    }
+    return outcome.assistantText
   }
 
   static func prepareManagedInput(prompt: String, systemPrompt: String, hasAttachments: Bool,

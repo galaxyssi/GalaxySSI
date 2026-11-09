@@ -404,6 +404,7 @@ struct AgentCollaborationGoalWorkRun: Codable {
   var truncated: Bool? = nil
   var desktopArchiveDigest: String? = nil
   var templateMemberID: String? = nil
+  var peerPublication: AgentMcpJSONObject? = nil
 
   func visibleState(now: Int64) -> State {
     guard state == .running, process != Self.processID || now >= startedAt + Self.leaseMillis
@@ -420,6 +421,7 @@ struct AgentCollaborationGoalWorkRun: Codable {
       "output": output.map(AgentMcpJSONValue.string) ?? .null, "output_sha256": outputHash.map(AgentMcpJSONValue.string) ?? .null,
       "output_truncated": .bool(truncated ?? false), "goal_accepted": .bool(false), "automatically_reexecuted": .bool(false)]
     if let templateMemberID { result["template_member_id"] = .string(templateMemberID) }
+    if let peerPublication { result["peer_publication"] = .object(peerPublication) }
     return result
   }
 }
@@ -461,6 +463,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var workflowExecutionId: String? = nil
     var recruitment: Recruitment? = nil
     var blockerResolution: AgentCollaborationGoalAssessmentPolicy.Resolution? = nil
+    var peer_updates_from: [String]? = nil
 
     func hasIndependentReviewAuthors(_ author: (String) -> String?,
       identity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId) -> Bool {
@@ -735,6 +738,10 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
             item.assignment.utf8.count <= 16_000, authorizedMembers.contains(item.member),
             byId[item.id] == nil, settled[item.id] == nil, historicalAuthors[item.id] == nil,
             Set(item.depends_on).count == item.depends_on.count,
+            item.peer_updates_from?.isEmpty != false || item.recruitment == nil,
+            AgentCollaborationPeerEvidence.allowed(item.peer_updates_from,
+              worker: authorIdentity(item.recruitment?.template ?? item.member), independent: item.independent_review == true,
+              roster: Set(authorizedMembers.map(authorIdentity))) != nil,
             !item.depends_on.contains(item.id) else { return nil }
       byId[item.id] = item
     }
