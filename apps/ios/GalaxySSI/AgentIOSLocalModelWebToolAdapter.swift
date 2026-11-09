@@ -195,6 +195,7 @@ enum AgentIOSLocalModelWebToolRunner {
           "Work is dispatched by the host after your current model round returns. Use work_result and work_id to read a saved result. " +
           AgentCollaborationMilestoneCoordination.readInstructions + " " +
           "Use work_inventory without work_id for readiness, review subjects and publication tokens. A waiting review is not active. " +
+          AgentGoalWorkMilestoneRead.coordinatorInstructions + " " +
           "Use assessment_repair with draft_sha256 and offset to read a retained rejected draft; join pages in order. Do not execute rejected work. " +
           "Use check_goal_evidence with expected_revision and artifact to check exact reviewed evidence; this does not deliver the goal. " +
           policy.admissionInstructions + AgentCollaborationWorkInputBindings.coordinatorInstructions +
@@ -300,6 +301,25 @@ enum AgentIOSLocalModelWebToolRunner {
     return scope.rosterMember(in: roster)?.resourceId == "local-llm"
   }
 
+  struct GoalWorkMilestone {
+    let cancellation: AgentModelToolLoopCancellationToken
+    let validate: () throws -> Void
+    let read: (AgentMcpJSONObject) throws -> AgentMcpJSONObject
+
+    func executable() throws -> AgentNativeToolExecutableDefinition {
+      let descriptor = try AgentNativeToolDescriptor(id: AgentGoalWorkMilestoneRead.toolID, version: "1.0.0",
+        title: "Read assigned milestone", description: AgentGoalWorkMilestoneRead.instructions,
+        location: .application, inputSchema: AgentGoalWorkMilestoneRead.schema,
+        risk: .low, idempotency: .idempotent, effect: .readOnly)
+      return AgentNativeToolExecutableDefinition(definition: .init(descriptor: descriptor,
+        executorId: AgentGoalWorkMilestoneRead.toolID)) { invocation in
+        try invocation.checkpoint()
+        try validate()
+        return .success(output: try read(invocation.input))
+      }
+    }
+  }
+
   static func run(
     prompt: String,
     profile: LocalModelRuntimeProfile,
@@ -320,6 +340,7 @@ enum AgentIOSLocalModelWebToolRunner {
     managedInput: AgentManagedBrowserLoopInput? = nil,
     managedJournal: AgentModelLoopJournal? = nil,
     goalCoordinator: GoalCoordinator? = nil,
+    goalWorkMilestone: GoalWorkMilestone? = nil,
     workInputPublisher: AgentCollaborationWorkInputBindings.Publisher? = nil,
     desktopEvidenceRefresh: CloudConversationStreamEngine.DesktopEvidenceRefresh? = nil
   ) async throws -> AgentIOSLocalModelWebToolCompletion {
@@ -333,14 +354,23 @@ enum AgentIOSLocalModelWebToolRunner {
     }
     let catalogBinding = managedInput?.effectiveCatalogBinding ?? .availableSnapshot
     let registered = catalogBinding == .registeredContracts
-    let webRegistry = try webToolRegistry(registry, readOnlyAnalysis: readOnlyAnalysis,
-      recallScope: collaborationRecallScope, database: collaborationConversationDatabase,
-      originalsOnly: collaborationOriginalsOnly, coordinatorReadOnly: goalCoordinator != nil, useRegisteredContracts: registered)
-    if let workInputPublisher {
-      guard readOnlyAnalysis, goalCoordinator == nil, managedBrowser == nil, owner == nil,
-            webRegistry.descriptors().isEmpty else { throw CancellationError() }
-      try workInputPublisher.validate()
-      try webRegistry.registerExecutable(workInputPublisher.executable())
+    let webRegistry: AgentNativeToolRegistry
+    if goalWorkMilestone != nil || workInputPublisher != nil {
+      guard readOnlyAnalysis, owner == nil, goalCoordinator == nil, managedBrowser == nil, managedInput == nil,
+            managedJournal == nil, collaborationRecallScope == nil else { throw CancellationError() }
+      webRegistry = try AgentNativeToolRegistry()
+      if let goalWorkMilestone {
+        try goalWorkMilestone.validate()
+        try webRegistry.registerExecutable(goalWorkMilestone.executable())
+      }
+      if let workInputPublisher {
+        try workInputPublisher.validate()
+        try webRegistry.registerExecutable(workInputPublisher.executable())
+      }
+    } else {
+      webRegistry = try webToolRegistry(registry, readOnlyAnalysis: readOnlyAnalysis,
+        recallScope: collaborationRecallScope, database: collaborationConversationDatabase,
+        originalsOnly: collaborationOriginalsOnly, coordinatorReadOnly: goalCoordinator != nil, useRegisteredContracts: registered)
     }
     if let goalCoordinator {
       guard !readOnlyAnalysis, managedBrowser == nil, owner == goalCoordinator.scope else { throw CancellationError() }
@@ -370,8 +400,13 @@ enum AgentIOSLocalModelWebToolRunner {
     let catalog = registered ? webRegistry.registeredContracts() : webRegistry.descriptors()
     guard !catalog.isEmpty else { throw AgentIOSLocalModelWebToolError.unavailable }
     let verifyOwner: (() throws -> Void)?
-    if let goalCoordinator { verifyOwner = { try goalCoordinator.validate() } }
-    else if let workInputPublisher { verifyOwner = { try workInputPublisher.validate() } }
+    if goalWorkMilestone != nil || workInputPublisher != nil {
+      verifyOwner = {
+        try goalWorkMilestone?.validate()
+        try workInputPublisher?.validate()
+      }
+    }
+    else if let goalCoordinator { verifyOwner = { try goalCoordinator.validate() } }
     else if let managedBrowser { verifyOwner = { try managedBrowser.validateCurrentOwner() } }
     else { verifyOwner = nil }
     let permissions = Set(catalog.flatMap(\.requiredPermissions).filter(\.required).map(\.id))
@@ -402,9 +437,9 @@ enum AgentIOSLocalModelWebToolRunner {
       grantedPermissions: permissions,
       grantedConsents: consents,
       recoveryInputIdentity: recoveryIdentity,
-      observationHistoryEnabled: workInputPublisher == nil,
+      observationHistoryEnabled: workInputPublisher == nil && goalWorkMilestone == nil,
       observationHistorySource: owner?.ownershipDigest ?? "",
-      cancellationToken: goalCoordinator?.cancellation ?? workInputPublisher?.cancellation ??
+      cancellationToken: goalWorkMilestone?.cancellation ?? workInputPublisher?.cancellation ?? goalCoordinator?.cancellation ??
         (managedBrowser == nil ? .none : AgentModelToolLoopCancellationToken { Task.isCancelled }),
       collaborationOwner: owner
     )
@@ -416,7 +451,7 @@ enum AgentIOSLocalModelWebToolRunner {
       catalog: catalog, fallbackProfile: profile, preferredProfileID: profile.id,
       hasAttachments: hasAttachments, baseSystemPrompt: baseSystemPrompt, taskID: taskID,
       beforeInference: verifyOwner,
-      inferenceCancellation: workInputPublisher?.cancellation ?? .none,
+      inferenceCancellation: goalWorkMilestone?.cancellation ?? workInputPublisher?.cancellation ?? .none,
       goalAssessmentOnly: goalCoordinator != nil,
       currentCatalog: catalogSession.map { view in { try view.providerCatalog($0) } },
       beforeDesktopEvidenceRecall: collaborationRecallScope.flatMap { scope -> ((AgentMcpJSONObject) async -> Void)? in
@@ -427,7 +462,7 @@ enum AgentIOSLocalModelWebToolRunner {
     let outcome = await AgentModelToolLoop(
       modelAdapter: session,
       toolRegistry: webRegistry,
-      journal: managedJournal ?? (owner == nil && workInputPublisher == nil
+      journal: managedJournal ?? (owner == nil && goalWorkMilestone == nil && workInputPublisher == nil
         ? EncryptedAgentModelLoopJournal() : InMemoryAgentModelLoopJournal()),
       nativeObservation: goalCoordinator?.recordObservation ?? nativeObservation,
       browserHandoff: managedBrowser

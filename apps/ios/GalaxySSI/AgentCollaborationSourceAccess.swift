@@ -1,6 +1,48 @@
 import CryptoKit
 import Foundation
 
+enum AgentGoalWorkMilestoneRead {
+  static let toolID = "collaboration_milestone_read"
+  static let instructions = "Read only the milestones granted to this assignment. Use list to see tokens, references " +
+    "with a token for exact versions, workspace with token/object_id/revision/sha256, or evidence, native_evidence " +
+    "and desktop_evidence with token/evidence_id/sha256. Follow byte next_offset until null and join decoded data_b64. " +
+    "A reference is not proof of delivery, truth, or independent review. No other member output is granted."
+  static let schema: AgentMcpJSONObject = [
+    "type": .string("object"), "required": .array([.string("mode")]), "additionalProperties": .bool(false),
+    "properties": .object([
+      "mode": .object(["type": .string("string"), "enum": .array(
+        ["list", "references", "workspace", "evidence", "native_evidence", "desktop_evidence"].map(AgentMcpJSONValue.string))]),
+      "token": .object(["type": .string("string")]), "object_id": .object(["type": .string("string")]),
+      "revision": .object(["type": .string("integer")]), "evidence_id": .object(["type": .string("string")]),
+      "sha256": .object(["type": .string("string")]), "offset": .object(["type": .string("integer")])
+    ])
+  ]
+
+  static let pageBytes = AgentDesktopToolEvidenceWire.maximumPageBytes
+  static let desktopInstructions = "Use collaboration_recall mode=workspace to list granted versions. Follow next_cursor. " +
+    "Read only an exact object_id/revision/sha256 from that directory. For recorded observations use mode=archive " +
+    "with the listed record_id. Follow byte next_offset until null and join decoded data_b64. " +
+    "A reference is not proof of delivery, truth, or independent review."
+  static let coordinatorInstructions = "Use uses_milestones:[exact host token] for an interim version; this does not " +
+    "wait for, complete, or expose the author's other work. Use depends_on when the whole work result is required."
+
+  static func response(bytes: Data, offset: Int, total: Int, reference: AgentMcpJSONObject) -> AgentMcpJSONObject {
+    ["status": .string("returned"), "data_b64": .string(bytes.base64EncodedString()),
+     "offset": .int(Int64(offset)), "total_bytes": .int(Int64(total)),
+     "next_offset": offset + bytes.count < total ? .int(Int64(offset + bytes.count)) : .null,
+     "source_reference": .object(reference), "trust": .string("untrusted_group_evidence")]
+  }
+
+  static func observationSelectors(_ record: AgentCollaborationResearchRevision, token: String) -> [AgentMcpJSONObject] {
+    func selector(_ mode: String, id: String, hash: String) -> AgentMcpJSONObject {
+      ["mode": .string(mode), "token": .string(token), "evidence_id": .string(id), "sha256": .string(hash)]
+    }
+    return (record.frozenCloudReads ?? []).map { selector("evidence", id: $0.evidenceId, hash: $0.sha256) } +
+      (record.frozenNativeReads ?? []).map { selector("native_evidence", id: $0.evidenceId, hash: $0.sha256) } +
+      (record.frozenDesktopReads ?? []).map { selector("desktop_evidence", id: $0.evidenceId, hash: $0.sha256) }
+  }
+}
+
 enum AgentCollaborationSourceAccess {
   static let mode = "source_access"
   static let pageSize = 20
