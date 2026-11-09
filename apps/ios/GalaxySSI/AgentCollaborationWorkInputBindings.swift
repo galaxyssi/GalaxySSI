@@ -13,6 +13,8 @@ enum AgentCollaborationWorkInputBindings {
     "to bind data edges of unclaimed work. Read the full assignment and input_revision with work_inventory and work_id. " +
     "To correct an unclaimed, non-barrier completion wait, use revise_input_dependencies with the same request fields, " +
     "and add requirement and completion_not_required_because to each input. Keep all other waits and the assignment unchanged. " +
+    "For an unclaimed independent VERIFY or CHALLENGE, rebind_reviews uses the same request shape to pin a named review subject. " +
+    "Explicit completion-only edges and completion barriers still wait; a generic data rebind cannot replace a review binding. " +
     "Publication is not completion. A correction is a coordinator assertion, not evidence verification."
   static let producerInstructions =
     "If the assignment produces useful frozen data before it finishes, publish it with mode publish_work_input, a unique " +
@@ -75,6 +77,10 @@ enum AgentCollaborationWorkInputBindings {
   struct Requirement: Codable, Equatable {
     let work_id: String
     let requirement: String
+
+    static func reviewSubject(_ workID: String) -> Self {
+      .init(work_id: workID, requirement: "Review the exact published version of this subject.")
+    }
 
     init(work_id: String, requirement: String) {
       self.work_id = work_id
@@ -194,14 +200,20 @@ enum AgentCollaborationWorkInputBindings {
   }
 
   struct BoundInput: Codable, Equatable {
+    enum Role: String, Codable { case reviewSubject = "review_subject" }
     let requirement: Requirement
     let versions: [Pin]
+    var role: Role? = nil
   }
 
   struct Revision: Codable, Equatable {
+    enum Kind: String, Codable { case independentReview = "independent_review" }
     let revision: Int64
     let reason: String
     let inputs: [BoundInput]
+    var kind: Kind? = nil
+    var previousRevision: Int64? = nil
+    var coordinator: AgentCollaborationToolEvidenceScope? = nil
     var completionCorrections: [String: String]? = nil
   }
 
