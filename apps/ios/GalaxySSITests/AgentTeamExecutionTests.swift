@@ -2354,10 +2354,29 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(referenced.omitted.contains(Budget.goal))
     XCTAssertTrue(referenced.text.contains("exact-goal"))
     XCTAssertTrue(referenced.text.contains("Complete response protocol"))
+    XCTAssertTrue(referenced.text.contains(Budget.deliveryReviewGuidance))
+    XCTAssertLessThanOrEqual(referenced.text.utf16.count, Budget.maximumCharacters)
     XCTAssertFalse(referenced.text.contains(String(repeating: "G", count: 64)))
     XCTAssertThrowsError(try dispatch(recall: false)) { error in
       XCTAssertTrue(error.localizedDescription.contains("model_dispatched=false"))
     }
+  }
+
+  func testCollaborationDeliveryReadinessGuidanceSurvivesAllMemberRoutesAndFinalAssessment() throws {
+    typealias Budget = AgentCollaborationPromptBudget
+    let guidance = Budget.deliveryReviewGuidance
+    XCTAssertTrue(guidance.contains("not future receipt"))
+    XCTAssertTrue(guidance.contains("recipient acknowledgement"))
+    XCTAssertTrue(guidance.contains("preserve that blocker"))
+    for (recall, desktop) in [(false, false), (true, false), (true, true)] {
+      let prompt = try Budget.dispatch(assignment: "Review the saved work", resources: "Current resources",
+        responseProtocol: nil, originals: [], observations: [], canRecall: recall, desktop: desktop,
+        peerRecipients: "", peerRequests: "", peerRequestsPinned: false)
+      XCTAssertTrue(prompt.text.contains(guidance))
+    }
+    let final = CloudModelStreamMutableConversation.goalAssessmentFinalInstruction
+    XCTAssertTrue(final.contains(guidance))
+    XCTAssertTrue(final.contains("Do not preclaim or await review of this assessment"))
   }
 
   func testCapabilityPageReusesExactReadsOnlyWithinOneAuthorizedPage() throws {
