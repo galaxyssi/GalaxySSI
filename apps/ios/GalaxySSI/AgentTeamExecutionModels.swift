@@ -1229,6 +1229,7 @@ struct AgentCollaborationResearchPublication: Codable {
   var milestoneId: String? = nil
   var recordedAtMillis: Int64? = nil
   var numericTrials: [AgentMcpJSONObject]? = nil
+  var recordNotices: [AgentMcpJSONObject]? = nil
 }
 
 struct AgentCollaborationLiveMilestone: Codable, Equatable {

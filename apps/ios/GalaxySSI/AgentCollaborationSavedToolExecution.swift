@@ -106,13 +106,32 @@ enum AgentCollaborationSavedToolExecution {
     var parameters: AgentMcpJSONObject? = nil
 
     var response: AgentMcpJSONObject {
-      ["success": .bool(true), "status": .string(state.rawValue), "execution_id": .string(executionID),
+      var response: AgentMcpJSONObject = ["success": .bool(true), "status": .string(state.rawValue), "execution_id": .string(executionID),
         "input_sha256": .string(inputHash), "updated_at": .int(updatedAt), "result": result.map(AgentMcpJSONValue.object) ?? .null,
         "retry_after_ms": state.active ? .int(2_000) : .null, "automatically_reexecuted": .bool(false),
         "reason": .string(state == .interrupted
           ? "Execution ended without a confirmed result. Recover original evidence before choosing another execution ID."
           : "")]
+      if let problem = result?["record_validation"] { response["record_validation"] = problem }
+      return response
     }
+  }
+
+  static func validationObservation(_ problem: AgentMcpJSONObject, record: Record,
+      now: Int64) -> AgentCollaborationNativeToolObservation {
+    let scope = record.scope.assignment
+    let input: AgentMcpJSONObject = ["mode": .string("preflight"), "execution_id": .string(record.executionID),
+      "target": .object(AgentCollaborationCandidateRecall.reference(record.plan))]
+    let output: AgentMcpJSONObject = ["record_validation": .object(problem), "runtime_invoked": .bool(false)]
+    let key = record.scope.key(record.executionID) + ":preflight"
+    let result = AgentNativeToolResult(status: .rejected, output: output, message: "Saved record validation rejected the request.",
+      error: .init(code: problem.string("code"), message: "Saved record validation failed.", details: problem),
+      receipt: .init(invocationId: key, startedAtEpochMillis: now, finishedAtEpochMillis: now, durationMillis: 0,
+        status: .rejected, inputSha256: AgentMcpJSONCodec.sha256(input), outputSha256: AgentMcpJSONCodec.sha256(output)),
+      provenance: .init(toolId: "galaxyssi.collaboration.saved_tool_preflight", toolVersion: "1", location: .application,
+        executorId: "ios.saved_tool_preflight", contractVersion: "1"))
+    return .init(runId: scope.runId, conversationId: scope.conversationId, turnId: scope.turnId,
+      memberId: scope.memberId, sourceId: scope.sourceId, input: input, result: result, evaluation: output)
   }
 
   enum Operation {
