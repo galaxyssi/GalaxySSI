@@ -125,9 +125,10 @@ enum GalaxySSIHealthCareDiscussion {
     var includesActionFeedback = false
     var actionFeedbackContextIncluded = false
     var feedbackHistoryAllowed = false
+    var allowsStandingFeedbackPages = false
 
     var feedbackCursor: GalaxySSIHealthCareFeedbackTool.Cursor? {
-      guard feedbackHistoryAllowed, research == nil, model != nil else { return nil }
+      guard feedbackHistoryAllowed, model != nil, !asksQuestions else { return nil }
       return .init(turn: id, revision: concernRevision)
     }
 
@@ -226,7 +227,7 @@ enum GalaxySSIHealthCareDiscussion {
     // A new turn does not inherit consent to disclose a previous history-derived answer.
     let recent = thread.turns.lazy.filter {
       $0.destination == destination && $0.answer != nil && $0.historyIncluded != true &&
-        $0.questionContextIncluded != true && $0.actionFeedbackContextIncluded != true
+        $0.questionContextIncluded != true && $0.actionFeedbackContextIncluded != true && $0.feedbackHistoryAllowed != true
     }.suffix(3)
     let previous = recent.compactMap { turn in
       turn.answer.map {

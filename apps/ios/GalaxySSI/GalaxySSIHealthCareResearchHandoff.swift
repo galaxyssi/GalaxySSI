@@ -21,7 +21,7 @@ enum GalaxySSIHealthCareResearchHandoff {
     let latestFeedback: [String: UUID]?
 
     init(_ concern: GalaxySSIHealthCare.Concern, history: String, observedAt: Date,
-         actions: [GalaxySSIHealthCarePlan.AdoptedAction]) throws {
+         actions: [GalaxySSIHealthCarePlan.AdoptedAction], clinicalFeedback: [String: UUID] = [:]) throws {
       measurement = concern.assessment.record
       self.history = history
       let encoder = JSONEncoder()
@@ -37,7 +37,7 @@ enum GalaxySSIHealthCareResearchHandoff {
         if let outcome = action.outcome { outcomeDigests[action.id] = try digest(outcome) }
       }
       outcomes = outcomeDigests
-      var latest: [String: UUID] = [:]
+      var latest = clinicalFeedback
       for action in actions {
         if let feedback = action.feedback, feedback.isInScope(concern) { latest[action.id] = feedback.id }
       }
@@ -57,7 +57,8 @@ enum GalaxySSIHealthCareResearchHandoff {
         authorization.thread == current.thread && authorization.destination == current.destination &&
         authorization.localPermission == current.localPermission && authorization.onlinePermission == current.onlinePermission &&
         authorization.profileScopeEpoch == current.profileScopeEpoch && authorization.sources == current.sources &&
-        (authorization.sharesActionFeedback == true) == (current.sharesActionFeedback == true)
+        (authorization.sharesActionFeedback == true) == (current.sharesActionFeedback == true) &&
+        (authorization.sharesFeedbackHistory == true) == (current.sharesFeedbackHistory == true)
     }
   }
 
