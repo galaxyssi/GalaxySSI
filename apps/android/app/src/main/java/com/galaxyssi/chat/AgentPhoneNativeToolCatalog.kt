@@ -137,6 +137,7 @@ object AgentPhoneNativeToolCatalog {
             add(HealthCareHistoryTool.ID)
             add(HealthCareFeedbackTool.ID)
             add(HealthCareInstructionTool.ID)
+            add(HealthCareVisitFollowUpTool.ID)
             addAll(HealthCareQuestionTools.ids)
             addAll(AgentSystemEvidenceNativeTools.toolIds)
             addAll(AgentPhoneUiNativeTools.toolIds)
@@ -214,7 +215,8 @@ object AgentPhoneNativeToolCatalog {
         ).registerAll(
             HealthCareFeedbackTool.definitions(context.applicationContext)
         ).registerAll(
-            HealthCareInstructionTool.definitions(context.applicationContext)
+            HealthCareInstructionTool.definitions(context.applicationContext) +
+            HealthCareVisitFollowUpTool.definitions(context.applicationContext)
         ).registerAll(
             HealthCareQuestionTools.definitions(context.applicationContext)
         ).registerAll(

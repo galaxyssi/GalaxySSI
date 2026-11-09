@@ -354,6 +354,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
     }
     fun approveDiscussion(grant: HealthCareDiscussionGrant) = transaction {
         val current = concern(grant.concernId) ?: throw HealthCareConflict()
+        grant.visitFollowUp?.let { HealthCareVisitFollowUpTool.selected(this, current.id, it) }
         if (discussion(grant.conversationId) != current.id || current.revision != grant.revision || current.profileLink != grant.profileLink ||
             !HealthCareDiscussionPolicy.questionScopeCurrent(grant, current) ||
             !settings().enabled || settings().version != grant.settingsVersion || !researchGrantCurrent(grant)) throw HealthCareConflict()

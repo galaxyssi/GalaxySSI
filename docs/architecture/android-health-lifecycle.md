@@ -604,10 +604,43 @@ duplicate, and verifies an explicit resume returns to review. It also supports
 covering an application upgrade between phases and cleans up only its fixture
 databases after recovery.
 
-This increment stores self-reported post-visit evidence, not an autonomous
-rehabilitation plan. New journal content is not added to existing model grants or
-standing research consent. Dedicated consent and scoped Agent retrieval, review
-reminder integration, diagnosis-specific clinical review and full longitudinal
-acceptance still need implementation and verification. Recording notes is not an
-emergency assessment or a clinical outcome, and no observed change proves an
-effect caused by the application.
+This stores self-reported post-visit evidence, not an autonomous rehabilitation
+plan. Recording notes is not an emergency assessment or a clinical outcome, and
+no observed change proves an effect caused by the application.
+
+## Scoped Agent follow-up discussion
+
+The journal's discussion entry opens the existing Agent page without changing
+its layout. A separate per-turn preview identifies the model destination and
+discloses the selected visit purpose, journal goal, state and paged entries.
+Confirmation is required before dispatch. It does not add journal content to
+ordinary discussion grants or standing research consent. Original files,
+instructions, unrelated visits and profile values are not included.
+
+`galaxyssi.health.visit_followup.read` is a phone-local, read-only tool for all
+reasoning providers. A persisted grant binds conversation, turn, concern,
+journal and encounter revisions, privacy, settings and destination. Reads check
+these bindings before and after retrieval. Pages have at most eight entries and
+a 24,000-character row budget. Observation compaction preserves whole entries
+and advances only past delivered entries. An oversized entry supplies its exact
+revision and nonempty fields for 256-character chunk reads; the caller resumes
+older history only after reading those fields. Neither path permits arbitrary
+person, journal or visit selectors. Deletion, new check-ins, source changes,
+permission withdrawal and expiry invalidate old reads rather than mixing pages.
+
+Follow-up questions reuse the selected journal but require a fresh sharing
+preview. Only earlier turns with the same journal scope, destination and privacy
+binding can enter that discussion's history. New journal revisions do not reuse
+older journal prose. Ordinary health discussion and conversation recall exclude
+these scoped turns; summaries without per-turn provenance are omitted.
+
+The Agent may read the approved journal and public sources, but cannot use this
+grant to write plans, change treatment, mark recovery, schedule reminders or
+launch other models. Software tests of storage, scoped tools and UI do not
+constitute clinical validation. The opt-in paired-provider probe reads an
+isolated ten-entry synthetic journal through the production phone tool and
+observation pipeline, checks complete paging and verifies no plan or reminder
+was created. It does not exercise the Activity sharing dialog or establish
+clinical accuracy. Full consent-to-provider UI acceptance, review reminder
+integration, diagnosis-specific review and longitudinal lifecycle acceptance
+remain separate outstanding work.

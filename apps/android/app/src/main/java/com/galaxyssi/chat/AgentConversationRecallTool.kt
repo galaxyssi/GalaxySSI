@@ -27,7 +27,10 @@ internal object AgentConversationRecallTool {
             val transcript = AgentTranscriptStore(context)
             val conversation = call.context.conversationId
             fun permitted(turn: String): Boolean = !HealthCareDiscussion.bound(context, conversation) ||
-                HealthCareStore(context).use { it.discussionGrant(turn)?.instruction == null }
+                HealthCareStore(context).use {
+                    val grant = it.discussionGrant(turn)
+                    grant?.instruction == null && grant?.visitFollowUp == null
+                }
             val boundary = database.historyBoundary(conversation, call.context.turnId)
                 ?: return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
                     "conversation_unavailable", "The current conversation turn is not bound to source records.")

@@ -19,7 +19,43 @@ class HealthCareLiveResearchDeviceTest {
     private val historyReads = mutableListOf<String>()
     private val feedbackNotes = mutableListOf<String>()
     private val deliveredFeedback = mutableSetOf<String>()
+    private val journalReads = mutableSetOf<Int>()
     private val reportFile get() = File(context.filesDir, "health-care-live-research.json")
+
+    @Test fun pairedModelReadsOnlyApprovedVisitJournal(): Unit = runBlocking {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("health_live_visit_followup") == "true")
+        val contacts = AppStore.contacts(context)
+        val contact = (0 until contacts.length()).map { contacts.getJSONObject(it) }.firstOrNull {
+            !it.optBoolean("deleted") && AppStore.agentIdForContact(context, it.optString("id")) == "codex" &&
+                !AppStore.isDesktopDeviceContact(context, it.optString("id")) &&
+                GalaxySSILinkProtocol.serverLink(context, it.optString("desktop_id"))?.paired == true
+        } ?: error("No paired Codex contact; preserve pairing and credentials")
+        GalaxySSIMqttClient.connect(context)
+        withTimeout(30_000) { while (!GalaxySSIMqttClient.isRequestReplyReady()) delay(100) }
+        try { HealthCareVisitFollowUpFixture(context).use { f ->
+            HealthPrivacyStore(context, f.names.privacy).use { if (!it.policy().online) it.change(HealthPrivacyOption.ONLINE_ANALYSIS, true, it.policy().version) }
+            HealthCareEngine.evaluate(context, f.names)
+            f.start()
+            repeat(9) { n -> f.record(HealthCareVisitFollowUpInput(HealthCareVisitFollowUpKind.CHECK_IN,
+                barriers = if (n == 0) "合成记录：交通安排困难，无法按原计划参加活动" else "",
+                note = if (n == 8) "合成记录：已查好公交路线，尚未实际参加活动" else "合成日常记录 ${n + 1}")) }
+            val snapshot = f.snapshot(); val issue = snapshot.visit.issue
+            HealthCareStore(context, f.names.care).use { store ->
+                val selected = AgentModelSelectionSettings.configurationForTarget(context, issue.conversationId, contact.getString("id"))
+                val grant = HealthCareDiscussionGrant(issue.conversationId, UUID.randomUUID().toString(), issue.id, issue.revision,
+                    store.settings().version, snapshot.visit.privacy.version, HealthCareDiscussion.desktopDestination(context, contact.getString("id")),
+                    System.currentTimeMillis(), contact.getString("id"), selected?.modelId.orEmpty(), selected?.reasoningEffort?.wireValue.orEmpty(),
+                    profileLink = issue.profileLink, visitFollowUp = HealthCareVisitFollowUpScope.of(snapshot.followUp!!, snapshot.visit.selected!!))
+                store.approveDiscussion(grant)
+                val answer = runTurn(store, issue, grant, contact,
+                    "这是隔离的合成测试，不是我的健康资料。请完整阅读这份随访记录的所有分页，比较较早的困难与最近的进展，给出两个下一步沟通要点。不要改计划、安排提醒或声称已经康复。", emptyList(), f.names)
+                assertTrue(answer.isNotBlank()); assertEquals(10, journalReads.size)
+                assertTrue("The response did not discuss the saved practical barrier", answer.contains("交通") || answer.contains("公交"))
+                assertEquals(issue, store.concern(issue.id)); assertTrue(store.reminders(issue.id).isEmpty()); assertNull(store.plan(grant.turnId))
+                println("HEALTH_LIVE visit_followup=true all_ten_entries_read=true no_plan_or_reminder=true real_provider=true")
+            }
+        } } finally { reportFile.writeText(report.toString(2)) }
+    }
 
     @Test fun pairedModelOrganizesOnlySelectedSourceIntoUnreviewedProposal(): Unit = runBlocking {
         assumeTrue(InstrumentationRegistry.getArguments().getString("health_live_instruction") == "true")
@@ -245,14 +281,21 @@ class HealthCareLiveResearchDeviceTest {
             HealthCareInstructionTool.selected(context, store, grant.concernId, grant.instruction, names)
             store.proposeInstruction(grant, input, System.currentTimeMillis())
         })
+        if (grant.visitFollowUp != null) registry.register(HealthCareVisitFollowUpTool.definition { invocation, input ->
+            HealthCareVisitFollowUpTool.read(context, names, invocation, input).also { output ->
+                output.optJSONArray("items")?.let { items -> repeat(items.length()) { journalReads += items.getJSONObject(it).getInt("revision") } }
+            }
+        })
         val screen = ScreenContext("Synthetic health acceptance", pageTitle = "Synthetic health concern")
         val goal = HealthCareDiscussionPolicy.prompt(question, if (grant.instruction != null)
             HealthCareInstructionTool.snapshot(store.instruction(grant.instruction.id)!!)
+            else if (grant.visitFollowUp != null) HealthCareVisitFollowUpTool.snapshot(
+                HealthCareVisitFollowUpTool.selected(store, concern.id, grant.visitFollowUp), store.encounter(grant.visitFollowUp.encounter)!!, concern.revision)
             else HealthCareDiscussionPolicy.snapshot(concern, feedbackHistoryShared = grant.feedbackHistoryShared))
         val runtime = AgentRuntimeContextBuilder.build(sessionId = grant.conversationId, goal = goal, screen = screen,
             permissionMode = PermissionMode.AUTO_LOW_RISK, highRiskGuard = true, memoryCapture = false,
             callableTargets = emptyList(), memories = emptyList(), nativeTools = registry.availableCatalog().descriptors.filter {
-                grant.instruction == null || it.id in HealthCareDiscussionPolicy.tools(grant)
+                grant.instruction == null && grant.visitFollowUp == null || it.id in HealthCareDiscussionPolicy.tools(grant)
             })
         val observations = mutableListOf<AgentAction>()
         val seed = AgentRequest(goal, screen, emptyList(), memories = emptyList(), runtimeContext = runtime,
@@ -285,7 +328,7 @@ class HealthCareLiveResearchDeviceTest {
                 actions.forEach { action ->
                     require(action.kind == AgentActionKind.CALL_NATIVE_TOOL) { "Only scoped phone tools allowed" }
                     val id = action.parameters.getValue("tool_id")
-                    require(grant.instruction == null || id in HealthCareDiscussionPolicy.tools(grant))
+                    require(grant.instruction == null && grant.visitFollowUp == null || id in HealthCareDiscussionPolicy.tools(grant))
                     require(registry.lookup(id) != null)
                     val input = jsonObject(JSONObject(action.parameters.getValue("input_json")))
                     val result = registry.invoke(id, input, AgentNativeToolInvocationContext(

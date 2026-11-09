@@ -1,0 +1,5 @@
+<resources>
+    <string name="health_visit_followup_agent">Discuss this follow-up with Agent</string>
+    <string name="health_visit_followup_agent_question">Review my saved post-visit follow-up goal and entries, summarize meaningful changes and barriers, and discuss practical next steps and questions for my clinician. Do not change treatment or schedule reminders.</string>
+    <string name="health_visit_followup_agent_disclosure">Share only this visit purpose, follow-up goal, state and journal entries with %1$s (%2$s) for this request. The Agent can read earlier entries in pages and research public sources. Earlier discussion of this same journal may be included only when its version, model destination and privacy scope still match. Original files, clinical instructions, other visits, profile details and unrelated conversations are not shared. This does not authorize background research, treatment changes or reminders.</string>
+</resources>

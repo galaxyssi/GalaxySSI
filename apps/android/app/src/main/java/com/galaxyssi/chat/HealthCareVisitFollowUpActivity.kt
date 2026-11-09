@@ -25,13 +25,17 @@ class HealthCareVisitFollowUpActivity : Activity() {
     private var active = false
     private var busy = false
     private var dirty = false
+    private var openingAgent = false
     private var generation = 0
     private var snapshot: HealthCareVisitFollowUpSnapshot? = null
     private var dialog: AlertDialog? = null
     private var cursor = Int.MAX_VALUE
     private val previous = mutableListOf<Int>()
     private val expiry = Runnable { if (active) invalidate() }
-    private val observer = object : ContentObserver(main) { override fun onChange(selfChange: Boolean) { if (active) invalidate() } }
+    private val observer = object : ContentObserver(main) { override fun onChange(selfChange: Boolean) {
+        // Conversation binding updates this store. The sharing preview revalidates all source revisions.
+        if (active && !openingAgent) invalidate()
+    } }
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         concernId = intent.getStringExtra("health_care_id").orEmpty(); encounterId = intent.getStringExtra("health_encounter_id").orEmpty()
@@ -57,7 +61,7 @@ class HealthCareVisitFollowUpActivity : Activity() {
     }
     private fun reset() { cursor = Int.MAX_VALUE; previous.clear() }
     private fun clear() {
-        generation++; snapshot = null; editor.clear(); dialog?.dismiss(); dialog = null
+        generation++; openingAgent = false; snapshot = null; editor.clear(); dialog?.dismiss(); dialog = null
         main.removeCallbacks(expiry); body.removeAllViews()
     }
     private fun invalidate() { clear(); reset(); load() }
@@ -102,6 +106,17 @@ class HealthCareVisitFollowUpActivity : Activity() {
             }
             if (current.state in setOf(HealthCareVisitFollowUpState.ACTIVE, HealthCareVisitFollowUpState.REVIEW)) command(HealthCareVisitFollowUpKind.PAUSE)
             if (current.state != HealthCareVisitFollowUpState.ARCHIVED) command(HealthCareVisitFollowUpKind.ARCHIVE)
+            if (attended && names.fixture == null) ui.add(content, ui.profileRow(getString(R.string.health_visit_followup_agent)) {
+                if (!busy) {
+                    val scope = HealthCareVisitFollowUpScope.of(current, value.visit.selected)
+                    openingAgent = true
+                    work({ repository.discuss(value) }) { conversation ->
+                        startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                            .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", conversation)
+                            .putExtra(HealthCareVisitFollowUpTool.INTENT_KEY, scope.json().toString()))
+                    }
+                }
+            }.apply { tag = "visit-followup-agent" }, 12)
         }
         ui.add(content, ui.profileRow(getString(R.string.health_instruction_title)) {
             startActivity(Intent(this, HealthCareInstructionsActivity::class.java).putHealthNavigationFixture(names)
@@ -146,7 +161,7 @@ class HealthCareVisitFollowUpActivity : Activity() {
         worker.execute {
             val result = runCatching(action)
             main.post {
-                busy = false
+                busy = false; openingAgent = false
                 if (!active || isFinishing || isDestroyed) return@post
                 if (dirty || token != generation) { dirty = false; load(); return@post }
                 result.fold(done) { error ->

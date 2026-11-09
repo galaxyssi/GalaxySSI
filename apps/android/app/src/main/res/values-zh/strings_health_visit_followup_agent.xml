@@ -1,0 +1,5 @@
+<resources>
+    <string name="health_visit_followup_agent">与 Agent 讨论这次随访</string>
+    <string name="health_visit_followup_agent_question">请先阅读我已保存的诊后随访目标和记录，整理有意义的变化、实际困难，以及下一步可行的行动和需要与医生沟通的问题。不要修改治疗或安排提醒。</string>
+    <string name="health_visit_followup_agent_disclosure">仅在本次请求中向 %1$s（%2$s）分享这次就诊目的、随访目标、状态和记录。Agent 可分页读取较早的随访记录，并查阅公开资料。只有记录版本、模型接收方和隐私范围仍一致时，才会带上本随访之前的讨论；不分享原始文件、医嘱、其他就诊、档案详情或无关会话。本次授权不包含后台研究、修改治疗或安排提醒。</string>
+</resources>
