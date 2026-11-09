@@ -4,6 +4,95 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testRecordedGoalHandoffTransfersAcrossChainAndRecoversOnDownstreamFailure() throws {
+    let suite = "goal-handoff-\(UUID())", root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore(), file = root.appendingPathComponent("team.sqlite")
+    func open() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    }
+    let history = open()
+    var team = durableTeamSnapshot("goal-handoff")
+    team.goal = "Review the handoff"
+    team.members[0].dispatchCheckpoint = .accepted
+    XCTAssertTrue(history.upsert(team))
+    let coordinator = team.members[0], worker = team.members[1]
+    let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId, memberId: coordinator.memberId, sourceId: coordinator.sourceMessageId)
+    let raw = #"{"format":"galaxyssi.goal-assessment.v1","summary":"Continue the handoff","decision":"continue","work":[],"blockers":[],"criteria":[{"id":"check","requirement":"Review the handoff","verification":"documentary","status":"open","evidence":[]}]}"#
+    let assessment = try AgentCollaborationGoalAssessmentPolicy.parseAssessment(raw,
+      limit: AgentCollaborationGoalAssessmentPolicy.assessmentDraftLimit).get()
+    XCTAssertTrue(history.advanceGoalCheckpoint(.init(runId: scope.runId, conversationId: scope.conversationId,
+      turnId: scope.turnId, revision: 1, phase: .working, contract: assessment.criteria, completedWorkIds: []),
+      expectedRevision: 0))
+    func work(_ id: String, dependsOn: String? = nil) -> AgentMcpJSONValue {
+      var row: AgentMcpJSONObject = ["id": .string(id), "member": .string(worker.memberId), "assignment": .string(id),
+        "stage": .string("EXECUTE"), "depends_on": .array(dependsOn.map { [.string($0)] } ?? [])]
+      if let dependsOn {
+        row["data_dependencies"] = .array([.object(["work_id": .string(dependsOn), "requirement": .string("Fixture data")])])
+      }
+      return .object(row)
+    }
+    let expansion = AgentMcpJSONCodec.stringify(["format": .string("galaxyssi.work-expansion.v1"),
+      "work": .array([work("a"), work("b", dependsOn: "a"), work("c", dependsOn: "b")])])
+    XCTAssertEqual(try history.publishCollaborationMilestone(["mode": .string("append_work"), "milestone_id": .string("chain"),
+      "expected_revision": .int(1), "artifact": .string(expansion)], scope: scope)["admitted_work_count"], .int(3))
+    var contact = GalaxySSIContact.hermes()
+    contact.id = coordinator.agentId
+    contact.deliveryMode = .cloudAPI
+    contact.cloudProvider = "Custom"
+    contact.selectedCloudModelId = "fixture-model"
+    contact.cloudModels = [.init(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "fixture-model",
+      endpoint: "https://example.invalid/v1/chat/completions", apiStyle: .openAICompatible,
+      keychainAccount: "fixture-key", updatedAt: Date(timeIntervalSince1970: 1))]
+    let message = ChatMessage(contactId: "hermes", content: "Original request", isMine: true,
+      conversationId: scope.conversationId, turnId: scope.turnId)
+    let source = AgentCollaborationAcceptedDelivery.Source(profileID: "profile", messageID: message.id,
+      contactID: message.contactId, rosterDigest: "roster")
+    let route = try XCTUnwrap(AgentManualCloudBinding(contact: contact, hadAttachments: false))
+    let recovery = AgentCollaborationCoordinatorRecovery(owner: scope, source: source, route: route,
+      originalPrompt: "Original request", process: AgentCollaborationGoalWorkRun.processID,
+      cloudSourceDigest: AgentCollaborationCoordinatorRecovery.messageDigest(message))
+    try history.saveGoalCoordinatorRecovery(recovery)
+    func settle(_ id: String, now: Int64) throws -> AgentCollaborationGoalWorkRun {
+      let saved = try history.goalWork(id, scope: scope, now: now).0
+      let claim = try history.claimGoalWork(saved, scope: scope, now: now).run
+      let version = try history.publishGoalWorkInput(claim, id: "fixture", payload: ["result": .string(id)], now: now)
+      let token = try XCTUnwrap(version["token"]?.strictStringValue)
+      let output = AgentMcpJSONCodec.stringify(["format": .string(AgentCollaborationHandoffDemand.format),
+        "summary": .string(id), "input_tokens": .array([.string(token)])])
+      _ = try history.finishGoalWork(claim, output: output, interrupted: false, now: now)
+      return try XCTUnwrap(history.goalWork(id, scope: scope, now: now).1)
+    }
+    let a = try settle("a", now: 2), b = try settle("b", now: 3)
+    let graph = try XCTUnwrap(history.goalCheckpoint(runId: scope.runId, conversationId: scope.conversationId,
+      turnId: scope.turnId)?.liveGraph)
+    XCTAssertEqual(AgentCollaborationHandoffDemand.owner(graph: graph, runs: ["a": a, "b": b],
+      specialists: [worker.memberId], now: 10, recorded: { _, _ in true }), .ready)
+    XCTAssertNil(AgentCollaborationHandoffDemand.owner(graph: graph, runs: ["a": a, "b": b],
+      specialists: [worker.memberId], now: 10, recorded: { item, _ in item.id != "a" }))
+    var truncated = a
+    truncated.truncated = true
+    XCTAssertNil(AgentCollaborationHandoffDemand.owner(graph: graph, runs: ["a": truncated, "b": b],
+      specialists: [worker.memberId], now: 10, recorded: { _, _ in true }))
+    XCTAssertNil(try history.reserveGoalContinuation(after: raw, scope: scope, scheduleRetry: true, now: 10))
+    let reopened = open()
+    XCTAssertTrue(try reopened.goalCoordinatorHandoffPending(scope))
+    XCTAssertTrue(try reopened.goalCoordinatorHandoffReady(scope, now: 30_010))
+    XCTAssertEqual(try reopened.goalCoordinatorRetryAt(scope), 30_010)
+    XCTAssertNil(try reopened.claimGoalCoordinatorRecovery(recovery, now: 30_010))
+    XCTAssertEqual(try reopened.readyGoalWork(scope: scope, excluding: [], limit: 2, now: 30_010), ["c"])
+    let successor = try reopened.goalWork("c", scope: scope, now: 30_010).0
+    let c = try reopened.claimGoalWork(successor, scope: scope, now: 30_010).run
+    XCTAssertFalse(try reopened.goalCoordinatorHandoffReady(scope, now: 30_010))
+    XCTAssertEqual(try reopened.advanceGoalCoordinatorHandoff(scope, now: 30_010), 60_010)
+    _ = try reopened.finishGoalWork(c, output: nil, interrupted: false, now: 30_011)
+    XCTAssertNil(try open().advanceGoalCoordinatorHandoff(scope, now: 60_010))
+    XCTAssertFalse(try open().goalCoordinatorHandoffPending(scope))
+    XCTAssertNotNil(try open().claimGoalCoordinatorRecovery(recovery, now: 60_010))
+  }
+
   func testVersionBoundReviewPinsSubjectWithoutChangingIndependentProbeOrClaim() throws {
     let suite = "version-bound-review-\(UUID())"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

@@ -10664,7 +10664,10 @@ final class MessageCoordinator: ObservableObject {
       Assignment: \(work.dispatchAssignment)
       Dependency results: \(dependencies)\(milestonePrompt)
       """
-    if exposesInputs { prompt += "\n" + AgentCollaborationWorkInputBindings.producerInstructions }
+    if exposesInputs {
+      prompt += "\n" + AgentCollaborationWorkInputBindings.producerInstructions +
+        "\n" + AgentCollaborationHandoffDemand.instructions
+    }
     if case .desktop(let contact, let link, let invocation) = route {
       let sent = await publishDesktopGoalWork(claim.run, contact: contact, link: link, invocation: invocation,
         profileID: profileID, text: prompt)
@@ -11331,6 +11334,32 @@ final class MessageCoordinator: ObservableObject {
     } else if resumedGoalCoordinatorRuns.contains(recoveryKey) { return }
     let targets = Dictionary(uniqueKeysWithValues: AgentCallableTargetCatalog.build(
       contacts: store.visibleContacts, apiKey: { store.apiKey(for: $0) }).map { ($0.id, $0) })
+    if (try? history.goalCoordinatorHandoffPending(scope)) == true {
+      recoveringGoalCoordinatorRun = scope.runId
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        var resumeCoordinator = false
+        defer {
+          self.recoveringGoalCoordinatorRun = nil
+          if resumeCoordinator { self.recoverAcceptedGoalDeliveries() }
+        }
+        guard !Task.isCancelled, UIApplication.shared.applicationState == .active,
+              self.liveGoalWorkRoster(scope, profileID: profile) == roster,
+              self.store.agentTask(id: scope.turnId) == parent else { return }
+        do {
+          if try history.goalCoordinatorHandoffReady(scope) {
+            _ = await self.drainReadyGoalWork(scope, roster: roster, outgoing: outgoing, profileID: profile, targets: targets)
+          }
+          guard !Task.isCancelled, UIApplication.shared.applicationState == .active,
+                self.liveGoalWorkRoster(scope, profileID: profile) == roster else { return }
+          if let next = try history.advanceGoalCoordinatorHandoff(scope) { self.scheduleGoalCoordinatorWake(at: next) }
+          else { resumeCoordinator = true }
+        } catch {
+          self.scheduleGoalCoordinatorWake(at: AgentControlPlaneClock.nowMillis() + 5_000)
+        }
+      }
+      return
+    }
     guard let target = targets[primary.agentId], target.status == .available else { return }
     let slot: String?
     if let route = binding.route {
