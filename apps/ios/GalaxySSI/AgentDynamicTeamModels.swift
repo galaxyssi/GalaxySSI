@@ -460,6 +460,17 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var recruitment: Recruitment? = nil
     var blockerResolution: AgentCollaborationGoalAssessmentPolicy.Resolution? = nil
     var data_dependencies: [InputBindings.Requirement]? = nil
+    var completion_barriers: [InputBindings.CompletionBarrier]? = nil
+
+    var allowsCompletionCorrection: Bool {
+      workflowExecutionId == nil && blockerResolution == nil && recruitment == nil &&
+        procedure_use == nil && learning == nil &&
+        ["EXECUTE", "EXPLORE", "CHALLENGE", "VERIFY", "REVISE"].contains(stage ?? "")
+    }
+
+    func hasCompletionBarrier(_ workID: String) -> Bool {
+      completion_barriers?.contains { $0.work_id == workID } == true
+    }
 
     func hasIndependentReviewAuthors(_ author: (String) -> String?,
       identity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId) -> Bool {
@@ -615,9 +626,11 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
             from: Data(AgentMcpJSONCodec.stringify(instance).utf8)))
         } else {
           let item = try Work(from: decoder)
-          guard object["data_dependencies"] == nil || object["data_dependencies"]?.arrayValue != nil else {
+          guard ["data_dependencies", "completion_barriers"].allSatisfy({
+            object[$0] == nil || object[$0]?.arrayValue != nil
+          }) else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
-              debugDescription: "data_dependencies must be an array"))
+              debugDescription: "Work dependency declarations must be arrays"))
           }
           guard item.workflowExecutionId == nil, item.probeBinding == nil, item.workflowObservedBinding == nil,
                 item.recruitment == nil, item.blockerResolution == nil,
@@ -634,6 +647,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var work: [Entry]
     var recruit: [RecruitmentRequest]? = nil
     var rebind_inputs: [InputBindings.Rebind]? = nil
+    var revise_input_dependencies: [InputBindings.Rebind]? = nil
   }
 
   private(set) var work: [Work] = []
@@ -648,15 +662,25 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var history = inputBindingHistory ?? [:]
     for (id, revision) in additions {
       guard let item = work.first(where: { $0.id == id }), item.workflowExecutionId == nil,
-            item.blockerResolution == nil, item.recruitment == nil,
-            let requirements = item.data_dependencies, !requirements.isEmpty else { return nil }
+            item.blockerResolution == nil, item.recruitment == nil else { return nil }
       let prior = history[id, default: []]
+      let known = InputBindings.requirements(item.data_dependencies, history: prior)
+      let corrections = revision.completionCorrections ?? [:]
+      let selectedIDs = Set(revision.inputs.map { $0.requirement.work_id })
       guard prior.count < InputBindings.maximumRevisions, revision.revision == Int64(prior.count + 1),
             !revision.reason.isBlank, !revision.inputs.isEmpty,
-            Set(revision.inputs.map { $0.requirement.work_id }).count == revision.inputs.count,
+            selectedIDs.count == revision.inputs.count, Set(corrections.keys).isSubset(of: selectedIDs),
+            known.count + corrections.count <= 32,
             revision.inputs.allSatisfy({ input in
-              requirements.contains(input.requirement) && !input.versions.isEmpty &&
-                input.versions.allSatisfy { $0.workID == input.requirement.work_id }
+              let dependency = input.requirement.work_id
+              guard item.depends_on.contains(dependency), !item.hasCompletionBarrier(dependency),
+                    !input.versions.isEmpty, input.versions.allSatisfy({ $0.workID == dependency }) else { return false }
+              if let rationale = corrections[dependency] {
+                return item.allowsCompletionCorrection && known[dependency] == nil &&
+                  !rationale.isBlank && rationale.utf16.count <= 2_000 &&
+                  !input.requirement.requirement.isBlank && input.requirement.requirement.utf16.count <= 2_000
+              }
+              return known[dependency] == input.requirement
             }) else { return nil }
       history[id] = prior + [revision]
     }
@@ -779,6 +803,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
             byId[item.id] == nil, settled[item.id] == nil, historicalAuthors[item.id] == nil,
             Set(item.depends_on).count == item.depends_on.count,
             InputBindings.validRequirements(item.data_dependencies, dependencies: item.depends_on),
+            InputBindings.validBarriers(item.completion_barriers, dependencies: item.depends_on, data: item.data_dependencies),
             !item.depends_on.contains(item.id) else { return nil }
       byId[item.id] = item
     }
