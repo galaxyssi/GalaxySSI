@@ -3125,13 +3125,16 @@ final class MessageCoordinator: ObservableObject {
           let session = store.agentSession(id: identity.conversationId), session.id == identity.conversationId,
           session.mergedIntoConversationId.isBlank, !session.privateMode, !session.trackingPaused,
           let roster = session.collaborationRoster,
-          AgentCollaborationMemberIdentity(nodeID: context.member.memberId)?.member(in: roster)?.resourceId == contact,
+          let person = AgentCollaborationMemberIdentity(nodeID: context.member.memberId)?.member(in: roster),
+          person.resourceId == contact,
           let parent = store.agentTask(id: context.team.taskId),
           parent.phase == .executing || parent.phase == .waitingResponse
     else { return }
-    if publishing, AgentCollaborationGoalAssessmentPolicy.isCoordinatorMutation(phase) {
-      guard roster.coordinatorId == personId, !parent.blocked,
-            !PhoneExecutionAuthority.isCancelled(taskId: parent.taskId) else { return }
+    let coordinatorUpdates = !publishing && input["mode"] == .string(AgentCollaborationCoordinatorUpdates.mode)
+    let canReadCoordinatorOffers = roster.coordinatorId == person.id && !parent.blocked &&
+      !PhoneExecutionAuthority.isCancelled(taskId: parent.taskId)
+    if (publishing && AgentCollaborationGoalAssessmentPolicy.isCoordinatorMutation(phase)) || coordinatorUpdates {
+      guard canReadCoordinatorOffers, !coordinatorUpdates || phase == "read" else { return }
     }
 
     let delivery = (payload["delivery"] as? [String: String])?.mapValues(AgentMcpJSONValue.string)
@@ -3188,8 +3191,8 @@ final class MessageCoordinator: ObservableObject {
       } catch AgentTeamHistoryDatabase.Failure.corrupt {
         result["status"] = .string("invalid_artifact")
       } catch {}
-    } else if ["method_history", "workspace", "capabilities"].contains(input.string("mode")),
-              var page = try? history.recallCollaborationOriginal(input, scope: scope) {
+    } else if ["method_history", "workspace", "capabilities", AgentCollaborationCoordinatorUpdates.mode].contains(input.string("mode")),
+              var page = try? history.recallCollaborationOriginal(input, scope: scope, allowCoordinatorOffers: canReadCoordinatorOffers) {
       page["success"] = .bool(true)
       page["status"] = .string("returned")
       result = page
@@ -3233,7 +3236,8 @@ final class MessageCoordinator: ObservableObject {
        let page = try? AgentDesktopCollaborationEvidenceDelivery.exchange(input: input, confirmation: delivery,
          binding: AgentMcpJSONCodec.sha256(assignment), expiresAt: expiry, now: now,
          replay: &desktopCollaborationResponseReplay, read: { recordCoverage in
-           try history.recallCollaborationOriginal(input, scope: scope, recordEvidenceCoverage: recordCoverage)
+           try history.recallCollaborationOriginal(input, scope: scope, recordEvidenceCoverage: recordCoverage,
+             allowCoordinatorOffers: canReadCoordinatorOffers)
          }) {
       result = page
     }
