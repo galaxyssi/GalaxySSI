@@ -399,6 +399,87 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testPostVisitJournalReopensExactEncryptedPagesWithoutChangingClinicalState() throws {
+    typealias Journal = GalaxySSIHealthVisitJournal
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let file = root.appendingPathComponent("health")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let now = Date(), owner = "visit-journal-fixture", secrets = HealthFixtureSecrets()
+    func open() -> GalaxySSIHealthRecords { .init(owner: owner, secrets: secrets, isolatedFile: file) }
+    let records = open()
+    try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-600), value: 110,
+      unitOverride: "mg/dL", referenceInterval: "70 - 99"))
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"]), visit = UUID()
+    func encounter() throws -> GalaxySSIHealthEncounter.Page {
+      try open().localCareEncounterPage(id: concern.id, metric: .glucose, entryID: visit, now: now)
+    }
+    func page(before: Int? = nil, expected: Journal.Page? = nil) throws -> Journal.Page {
+      try open().visitJournal(concern: concern.id, metric: .glucose, visit: visit, before: before, expected: expected, now: now)
+    }
+    let initial = try records.localCareEncounterPage(id: concern.id, metric: .glucose, now: now)
+    _ = try records.saveLocalCareEncounter(.init(purpose: "Synthetic visit"), id: visit, operation: UUID(),
+      expected: initial.stamp, expectedEntry: nil, now: now)
+    let planned = try page()
+    let goal = "Synthetic private goal for the journal"
+    let start = Journal.Input(kind: .start, goal: goal)
+    XCTAssertThrowsError(try records.saveVisitJournal(start, operation: UUID(), expected: planned, now: now))
+    let prior = try encounter()
+    let attended = GalaxySSIHealthEncounter.Draft(purpose: "Synthetic visit", state: .attended, attendedAt: now)
+    let saved = try records.saveLocalCareEncounter(attended, id: visit, operation: UUID(), expected: prior.stamp,
+      expectedEntry: prior.entry?.revision, now: now)
+    let before = try page(), operation = UUID()
+    let first = try records.saveVisitJournal(start, operation: operation, expected: before, now: now)
+    XCTAssertEqual(first.entry.visitRevision, saved.entry.revision)
+    XCTAssertEqual(first.source, concern.assessment.record)
+    XCTAssertEqual(try open().saveVisitJournal(start, operation: operation, expected: before, now: now), first)
+    XCTAssertThrowsError(try records.saveVisitJournal(.init(kind: .start, goal: "Different goal"),
+      operation: operation, expected: before, now: now))
+    XCTAssertThrowsError(try records.saveVisitJournal(start, operation: UUID(), expected: before, now: now))
+    XCTAssertNil(try Data(contentsOf: file).range(of: Data(goal.utf8)))
+
+    func record(_ input: Journal.Input) throws -> Journal.Receipt {
+      try open().saveVisitJournal(input, operation: UUID(), expected: page(), now: now)
+    }
+    for number in 1...33 {
+      _ = try record(.init(kind: .checkIn, sleep: "Entry \(number)", needsReview: number == 33))
+    }
+    let recent = try page()
+    XCTAssertEqual(recent.entry?.state, .review)
+    XCTAssertEqual(recent.rows.count, 30)
+    let cursor = try XCTUnwrap(recent.next)
+    XCTAssertThrowsError(try page(before: cursor))
+    XCTAssertEqual(try page(before: cursor, expected: recent).rows.map(\.id).last, operation)
+    XCTAssertEqual(try page(before: cursor, expected: recent).rows.count, 4)
+    XCTAssertEqual(try record(.init(kind: .pause, note: "Pause review")).entry.state, .paused)
+    XCTAssertThrowsError(try page(before: cursor, expected: recent))
+    XCTAssertThrowsError(try record(.init(kind: .checkIn, note: "Not allowed while paused")))
+    XCTAssertEqual(try record(.init(kind: .resume, note: "Resume for review")).entry.state, .review)
+    XCTAssertEqual(try record(.init(kind: .review, note: "Discuss later", decision: .discussMaintenance)).entry.state, .review)
+    XCTAssertEqual(try record(.init(kind: .review, note: "Keep the goal", decision: .keep)).entry.state, .active)
+    XCTAssertEqual(try record(.init(kind: .archive, note: "Archive")).entry.state, .archived)
+    XCTAssertEqual(try record(.init(kind: .reopen, note: "Reopen for review")).entry.state, .review)
+    let unchanged = try XCTUnwrap(open().load().localCare?.current["glucose"])
+    XCTAssertEqual(unchanged.stage, concern.stage)
+    XCTAssertEqual(unchanged.assessment, concern.assessment)
+    XCTAssertEqual(unchanged.adoptedActions, concern.adoptedActions)
+    let live = try page()
+    XCTAssertThrowsError(try records.deleteVisitJournal(live, now: live.expires))
+    try records.setPrivacy(.localCare, enabled: false)
+    XCTAssertThrowsError(try page())
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    XCTAssertThrowsError(try records.saveVisitJournal(.init(kind: .review, note: "Old permission", decision: .keep),
+      operation: UUID(), expected: live, now: now))
+    let final = try encounter()
+    try records.deleteLocalCareEncounter(try XCTUnwrap(final.entry), expected: final.stamp, now: now)
+    XCTAssertThrowsError(try page())
+    XCTAssertTrue(try records.load().localVisitJournals?.receipts.isEmpty ?? false)
+  }
+
+  @MainActor
   func testVisitLedgerPaginatesThirtyExactRevisions() throws {
     typealias Visit = GalaxySSIHealthEncounter
     let now = Date(), id = UUID()
