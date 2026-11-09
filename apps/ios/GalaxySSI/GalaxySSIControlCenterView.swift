@@ -230,6 +230,15 @@ struct GalaxySSIControlCenterView: View {
         ) {
           GalaxySSIDesktopControlView()
         }
+        GalaxySSIControlCenterNavigationRow(
+          title: t("galaxyssi.glasses_wifi_qr.title", "Glasses Wi-Fi QR"),
+          subtitle: t("galaxyssi.glasses_wifi_qr.subtitle", "Set up Wi-Fi on offline AR glasses"),
+          systemImage: "qrcode",
+          tint: .galaxySSIAccent,
+          badge: ""
+        ) {
+          GalaxySSIGlassesWifiQRView()
+        }
       }
     }
   }
