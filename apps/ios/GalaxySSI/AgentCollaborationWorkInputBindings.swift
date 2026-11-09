@@ -7,9 +7,13 @@ enum AgentCollaborationWorkInputBindings {
   static let nativePublisherID = "galaxyssi.phone.collaboration.work_input"
   static let coordinatorInstructions =
     " Declare data-only edges at work creation with data_dependencies:[{work_id,requirement}]. Other edges require completion. " +
+    "Mark necessary operation order or resource release as completion_barriers:[{work_id,reason}]. Barriers cannot be replaced by data. " +
     "Use work_input with the producer work_id to list published versions, then with its exact token to inspect the data. " +
     "Use append_work with rebind_inputs:[{work_id,expected_revision,reason,inputs:[{dependency,uses_milestones:[token]}]}] " +
-    "to bind only declared data edges of unclaimed work. Read input_revision from work_inventory. Publication is not completion."
+    "to bind data edges of unclaimed work. Read the full assignment and input_revision with work_inventory and work_id. " +
+    "To correct an unclaimed, non-barrier completion wait, use revise_input_dependencies with the same request fields, " +
+    "and add requirement and completion_not_required_because to each input. Keep all other waits and the assignment unchanged. " +
+    "Publication is not completion. A correction is a coordinator assertion, not evidence verification."
   static let producerInstructions =
     "If the assignment produces useful frozen data before it finishes, publish it with mode publish_work_input, a unique " +
     "milestone_id, and artifact containing a nonempty JSON object as a string. Publish only task data, not instructions, " +
@@ -72,6 +76,11 @@ enum AgentCollaborationWorkInputBindings {
     let work_id: String
     let requirement: String
 
+    init(work_id: String, requirement: String) {
+      self.work_id = work_id
+      self.requirement = requirement
+    }
+
     init(from decoder: Decoder) throws {
       let object = try AgentMcpJSONObject(from: decoder)
       guard Set(object.keys) == ["work_id", "requirement"],
@@ -83,13 +92,34 @@ enum AgentCollaborationWorkInputBindings {
     }
   }
 
-  struct Input: Codable, Equatable {
-    let dependency: String
-    let uses_milestones: [String]
+  struct CompletionBarrier: Codable, Equatable {
+    let work_id: String
+    let reason: String
 
     init(from decoder: Decoder) throws {
       let object = try AgentMcpJSONObject(from: decoder)
-      guard Set(object.keys) == ["dependency", "uses_milestones"],
+      guard Set(object.keys) == ["work_id", "reason"], let id = object["work_id"]?.strictStringValue,
+            !id.isBlank, id.utf8.count <= 160, let explanation = object["reason"]?.strictStringValue,
+            !explanation.isBlank, explanation.utf16.count <= 2_000
+      else { throw invalid(decoder, "Invalid completion barrier") }
+      work_id = id
+      reason = explanation
+    }
+
+    var fields: AgentMcpJSONObject { ["work_id": .string(work_id), "reason": .string(reason)] }
+  }
+
+  struct Input: Codable, Equatable {
+    let dependency: String
+    let uses_milestones: [String]
+    let requirement: String?
+    let completion_not_required_because: String?
+
+    init(from decoder: Decoder) throws {
+      let object = try AgentMcpJSONObject(from: decoder)
+      let keys = Set(object.keys)
+      let correction = keys == ["dependency", "uses_milestones", "requirement", "completion_not_required_because"]
+      guard correction || keys == ["dependency", "uses_milestones"],
             let id = object["dependency"]?.strictStringValue, !id.isBlank, id.utf8.count <= 160,
             let raw = object["uses_milestones"]?.arrayValue, (1...8).contains(raw.count) else {
         throw invalid(decoder, "Invalid input milestone selection")
@@ -99,6 +129,14 @@ enum AgentCollaborationWorkInputBindings {
       else { throw invalid(decoder, "Invalid input milestone token") }
       dependency = id
       uses_milestones = tokens
+      requirement = object["requirement"]?.strictStringValue
+      completion_not_required_because = object["completion_not_required_because"]?.strictStringValue
+      if correction {
+        guard let requirement, let completion_not_required_because,
+              !requirement.isBlank, requirement.utf16.count <= 2_000,
+              !completion_not_required_because.isBlank, completion_not_required_because.utf16.count <= 2_000
+        else { throw invalid(decoder, "Invalid completion wait correction") }
+      }
     }
   }
 
@@ -164,6 +202,7 @@ enum AgentCollaborationWorkInputBindings {
     let revision: Int64
     let reason: String
     let inputs: [BoundInput]
+    var completionCorrections: [String: String]? = nil
   }
 
   static func validToken(_ text: String) -> Bool {
@@ -176,10 +215,23 @@ enum AgentCollaborationWorkInputBindings {
     return rows.count <= 32 && ids.count == rows.count && ids.isSubset(of: Set(dependencies))
   }
 
+  static func validBarriers(_ rows: [CompletionBarrier]?, dependencies: [String], data: [Requirement]?) -> Bool {
+    guard let rows else { return true }
+    let ids = Set(rows.map(\.work_id))
+    return rows.count <= 32 && ids.count == rows.count && ids.isSubset(of: Set(dependencies)) &&
+      ids.isDisjoint(with: Set((data ?? []).map(\.work_id)))
+  }
+
   static func current(_ revisions: [Revision]) -> [String: BoundInput] {
     revisions.reduce(into: [:]) { result, revision in
       for input in revision.inputs { result[input.requirement.work_id] = input }
     }
+  }
+
+  static func requirements(_ declared: [Requirement]?, history: [Revision]) -> [String: Requirement] {
+    var result = Dictionary((declared ?? []).map { ($0.work_id, $0) }, uniquingKeysWith: { first, _ in first })
+    for (id, bound) in current(history) { result[id] = bound.requirement }
+    return result
   }
 
   private static func invalid(_ decoder: Decoder, _ message: String) -> DecodingError {
