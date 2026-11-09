@@ -404,6 +404,7 @@ struct AgentCollaborationGoalWorkRun: Codable {
   var truncated: Bool? = nil
   var desktopArchiveDigest: String? = nil
   var templateMemberID: String? = nil
+  var methodUse: AgentCollaborationMethodExperience.Binding? = nil
 
   func visibleState(now: Int64) -> State {
     guard state == .running, process != Self.processID || now >= startedAt + Self.leaseMillis
