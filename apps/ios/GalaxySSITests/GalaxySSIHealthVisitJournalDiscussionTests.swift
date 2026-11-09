@@ -134,6 +134,44 @@ final class GalaxySSIHealthVisitJournalDiscussionTests: XCTestCase {
         })
       XCTFail("The local route changed.")
     } catch {}
+    let pairedRoute = GalaxySSIHealthDesktopResearch.Route(connector: .init(contactId: "codex", desktopId: "desktop",
+      clientRouteId: "paired-route", modelId: "fixture-desktop-model", reasoningEffort: .automatic),
+      desktopFingerprint: "desktop-fingerprint")
+    XCTAssertThrowsError(try records.prepareVisitJournalDiscussion(page(), question: "Desktop?",
+      route: .paired(pairedRoute), now: now))
+    try records.setHealthOnlinePermission(true)
+    let paired = try records.prepareVisitJournalDiscussion(page(), question: "Desktop?",
+      route: .paired(pairedRoute), now: now)
+    XCTAssertTrue(paired.previous.isEmpty)
+    let one = try GalaxySSIHealthDesktopResearch.Binding(journal: paired, round: UUID(), sender: "phone", createdAtMillis: 1)
+    let two = try GalaxySSIHealthDesktopResearch.Binding(journal: paired, round: UUID(), sender: "phone", createdAtMillis: 2)
+    XCTAssertEqual(one.identity.conversationId, two.identity.conversationId)
+    XCTAssertEqual(one.identity.turnId, paired.id.uuidString)
+    XCTAssertNotEqual(one.identity.taskId, two.identity.taskId)
+    XCTAssertNotEqual(one.source, two.source)
+    let wire = try one.request(sender: "phone", prompt: "Synthetic prompt", language: "en")
+    XCTAssertEqual(wire["connector_task_mode"] as? String, AgentPairedPhonePlannerRoute.connectorMode)
+    XCTAssertEqual(wire["_galaxyssi_long_term_write_allowed"] as? String, "false")
+    var desktopCalls = 0
+    do {
+      _ = try await GalaxySSIHealthVisitJournalDiscussionTransport.runPaired(paired, records: records,
+        current: { true }, exchange: { prompt, valid in
+          XCTAssertTrue(valid())
+          desktopCalls += 1
+          if desktopCalls == 1 {
+            XCTAssertFalse(prompt.contains("omitted_fields"))
+            return AgentMcpJSONCodec.stringify(["tool": .string(GalaxySSIHealthVisitJournalRead.toolID),
+              "arguments": .object(["revision": .int(Int64(paired.binding.revision))])])
+          }
+          XCTAssertTrue(prompt.contains("omitted_fields"))
+          try records.setHealthOnlinePermission(false)
+          XCTAssertFalse(valid())
+          return #"{"answer":"Withdrawn Desktop reply"}"#
+        })
+      XCTFail("A reply after withdrawal must not be saved.")
+    } catch {}
+    XCTAssertEqual(desktopCalls, 2)
+    XCTAssertNil(try records.load().localVisitJournalDiscussions?[visit]?.last?.answer)
     try records.deleteVisitJournal(page(), now: now)
     XCTAssertNil(try records.load().localVisitJournalDiscussions?[visit])
   }

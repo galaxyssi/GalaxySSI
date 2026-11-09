@@ -33,6 +33,16 @@ struct GalaxySSIHealthVisitJournalDiscussionView: View {
         !coordinator.healthDisclosureStore.blockedDestinationIds().contains($0.id)
     }
   }
+  private var pairedRoutes: [GalaxySSIHealthDesktopResearch.Route] {
+    store.contacts.flatMap { contact in
+      guard coordinator.privateHealthDesktopRoute(contactID: contact.id) != nil else {
+        return [GalaxySSIHealthDesktopResearch.Route]()
+      }
+      return contact.connectorInvocationProfile.models.compactMap {
+        coordinator.privateHealthDesktopRoute(contactID: contact.id, modelID: $0.id)
+      }
+    }
+  }
 
   var body: some View {
     NavigationView {
@@ -53,6 +63,9 @@ struct GalaxySSIHealthVisitJournalDiscussionView: View {
                 if online {
                   ForEach(contacts) { contact in
                     Text(contact.name + " / " + (contact.selectedCloudModel?.modelId ?? "")).tag("cloud:" + contact.id)
+                  }
+                  ForEach(pairedRoutes, id: \.digest) { route in
+                    Text(desktopName(route) + " / " + route.connector.modelId).tag("paired:" + route.digest)
                   }
                 }
               }
@@ -77,7 +90,13 @@ struct GalaxySSIHealthVisitJournalDiscussionView: View {
     .onChange(of: scene) { if $0 != .active { clear() } else { refreshPermission(); refreshLocalProfiles() } }
     .onChange(of: store.profile.identityFingerprint) { _ in clear() }
     .onChange(of: store.contacts) { _ in
-      if let review = active ?? approval, review.route.requiresOnline, cloudRoute(review) == nil { clear() }
+      if let review = active ?? approval {
+        switch review.route {
+        case .cloud: if cloudRoute(review) == nil { clear() }
+        case .paired(let route): if !coordinator.isPrivateHealthDesktopRouteAvailable(route) { clear() }
+        case .local: break
+        }
+      }
     }
     .onDisappear { clear() }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in clear() }
@@ -100,6 +119,9 @@ struct GalaxySSIHealthVisitJournalDiscussionView: View {
       } else if case .local(let profile, _) = review.route {
         Text(t("on_device", "On this iPhone"))
         Text(profile.displayName)
+      } else if case .paired(let route) = review.route {
+        Text(desktopName(route))
+        Text(route.connector.modelId)
       }
       Text(review.summary.string("goal"))
       Text(review.summary.string("visit_purpose"))
@@ -113,6 +135,9 @@ struct GalaxySSIHealthVisitJournalDiscussionView: View {
         }
       }
       if review.route.requiresOnline {
+        if case .paired = review.route {
+          Text(t("paired_notice", "This paired Desktop and its selected model will receive the summary and any pages requested for this turn.")).font(.footnote)
+        }
         Text(t("notice", "The selected model may read all entries in this journal for this request. It cannot read other Health records or change treatment, plans, or reminders.")).font(.footnote)
       } else {
         Text(t("local_notice", "The selected model can read this journal for this request. Journal data stays on this iPhone. No other Health records or changes are authorized.")).font(.footnote)
@@ -127,6 +152,8 @@ struct GalaxySSIHealthVisitJournalDiscussionView: View {
     do {
       if let profile = localProfiles.first(where: { "local:" + $0.id == selected }) {
         approval = try records.prepareVisitJournalDiscussion(page, question: question, localProfile: profile)
+      } else if online, let route = pairedRoutes.first(where: { "paired:" + $0.digest == selected }) {
+        approval = try records.prepareVisitJournalDiscussion(page, question: question, route: .paired(route), now: Date())
       } else if online, let contact = contacts.first(where: { "cloud:" + $0.id == selected }),
                 let model = contact.selectedCloudModel, let key = store.apiKey(for: model) {
         approval = try records.prepareVisitJournalDiscussion(page, question: question, contact: contact, key: key)
@@ -150,12 +177,16 @@ struct GalaxySSIHealthVisitJournalDiscussionView: View {
       defer { if active?.id == review.id { task = nil; active = nil } }
       do {
         let result: String
-        if review.route.requiresOnline {
+        switch review.route {
+        case .cloud:
           result = try await GalaxySSIHealthVisitJournalDiscussionTransport.run(review, records: records,
             ledger: coordinator.healthDisclosureStore, currentRoute: {
               active?.id == review.id ? cloudRoute(review) : nil
             })
-        } else {
+        case .paired:
+          result = try await GalaxySSIHealthVisitJournalDiscussionTransport.runPaired(review, records: records,
+            coordinator: coordinator, language: language, current: { canRead && online && active?.id == review.id })
+        case .local:
           result = try await GalaxySSIHealthVisitJournalDiscussionTransport.runLocal(review, records: records,
             current: { profile, tokens in
               canRead && active?.id == review.id &&
@@ -179,6 +210,12 @@ struct GalaxySSIHealthVisitJournalDiscussionView: View {
     localProfiles = LocalModelRuntimeSettings.activeProfiles().filter {
       LocalModelInferenceRuntime.shared.ready(profile: $0)
     }
+  }
+  private func desktopName(_ route: GalaxySSIHealthDesktopResearch.Route) -> String {
+    if let contact = store.contact(id: route.connector.contactId), !contact.desktopName.isBlank {
+      return contact.desktopName
+    }
+    return route.connector.desktopId
   }
   static func text(_ key: String, _ fallback: String, language: String) -> String {
     GalaxySSILocalization.string("galaxyssi.health.journal_discussion." + key, fallback: fallback, language: language)

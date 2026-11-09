@@ -70,6 +70,7 @@ enum GalaxySSIHealthVisitJournalRead {
   enum Route {
     case cloud(contactID: String, model: CloudModelConfig, endpoint: URL, credential: SHA256.Digest)
     case local(LocalModelRuntimeProfile, contextTokens: Int)
+    case paired(GalaxySSIHealthDesktopResearch.Route)
 
     var digest: String {
       switch self {
@@ -78,11 +79,12 @@ enum GalaxySSIHealthVisitJournalRead {
       case .local(let profile, let tokens):
         return AgentModelLoopRecoveryIdentity.sha256(["kind": "private_health_journal_local",
           "profile": AgentModelLoopRecoveryIdentity.sha256(profile), "context_tokens": String(tokens)])
+      case .paired(let route): return route.digest
       }
     }
     var requiresOnline: Bool {
-      if case .cloud = self { return true }
-      return false
+      if case .local = self { return false }
+      return true
     }
   }
 
