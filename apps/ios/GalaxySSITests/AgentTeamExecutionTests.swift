@@ -504,13 +504,29 @@ extension GalaxySSIStoreTests {
     let catalog = try reopened.recallCollaborationOriginal(rules, scope: scope)
     XCTAssertEqual(catalog["trust"], .string("host_schema_not_execution_authority"))
     XCTAssertTrue(catalog.string("content").contains("workflows"))
+    XCTAssertTrue(catalog.string("content").contains("coordination"))
     XCTAssertFalse(catalog.string("content").contains("self_research"))
+    let coordination: AgentMcpJSONObject = ["mode": .string("evolution_rules"), "topic": .string("coordination")]
+    let rulesPage = try reopened.recallCollaborationOriginal(coordination, scope: scope)
+    XCTAssertEqual(rulesPage["topic"], .string("coordination"))
+    XCTAssertEqual(rulesPage["next_offset"], .null)
+    let contract = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(rulesPage.string("content").utf8))
+    XCTAssertEqual(contract["grants_permissions"], .bool(false))
+    XCTAssertTrue(contract.string("contract").contains("review_targets"))
+    XCTAssertTrue(contract.string("contract").contains("template_member"))
+    XCTAssertTrue(contract.string("contract").contains(AgentCollaborationNumericTrial.requirement))
+    XCTAssertFalse(contract.string("contract").contains("rebind_inputs"))
+    var continuation = coordination
+    continuation["offset"] = .int(40)
+    let coordinationSuffix = try reopened.recallCollaborationOriginal(continuation, scope: scope)
+    XCTAssertEqual(coordinationSuffix.string("content"), String(rulesPage.string("content").dropFirst(40)))
     let suffix = try reopened.recallCollaborationOriginal(
       ["mode": .string("evolution_rules"), "topic": .string("catalog"), "offset": .int(10)], scope: scope)
     XCTAssertEqual(suffix.string("content"), String(catalog.string("content").dropFirst(10)))
     var foreignRulesScope = scope
     foreignRulesScope.sourceId = "foreign-source"
     XCTAssertThrowsError(try reopened.recallCollaborationOriginal(rules, scope: foreignRulesScope))
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(coordination, scope: foreignRulesScope))
     let unknown = try reopened.recallCollaborationOriginal(
       ["mode": .string("evolution_rules"), "topic": .string("unknown")], scope: scope)
     XCTAssertEqual(unknown["error"], .string("unknown_evolution_topic"))

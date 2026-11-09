@@ -102,6 +102,13 @@ enum AgentCollaborationInlineOriginals {
 }
 
 enum AgentCollaborationRuleTopics {
+  static let coordinationInstructions = """
+    Before using advanced work, review, recruitment or validator fields, call the scoped recall tool with
+    mode=evolution_rules, topic=coordination, offset=0. Keep the same topic and follow next_offset until null.
+    Do not guess fields. Preserve pinned criteria, authorized roles, existing work IDs and completed side effects.
+    Keep independent reviews separate from the authors they review. Publication alone is not verification or completion.
+    """
+
   private struct Topic {
     let id: String
     let purpose: String
@@ -219,6 +226,33 @@ enum AgentCollaborationRuleTopics {
     Use operation initialize or promote with implementation, lesson, suite and reason. Promotion extends the active suite.
     To roll back, cite target_revision from the same channel. Rollback preserves the latest bank and may require revalidation.
     A selection grants no permissions and does not rerun or undo work.
+    """),
+    Topic(id: "coordination", purpose: "Plan work dependencies, independent review, recruitment and goal verification", prerequisites: [], contract: """
+    As coordinator, use establish_contract with an artifact of format galaxyssi.goal-assessment.v1, decision continue,
+    open criteria with no evidence, and empty work and blockers. Preserve every pinned requirement, verification type,
+    validator and required observation in later assessments. Unsupported verification remains open; do not relabel it.
+    Use work_inventory to inspect saved work, readiness, review subjects and publication tokens without dispatch.
+    Use append_work with a unique milestone_id, exact expected_revision and an artifact of format galaxyssi.work-expansion.v1.
+    Retry the identical request after an uncertain response. Each ordinary work entry has id, member, assignment and
+    depends_on (an array of work IDs, empty when there are none). Use exact authorized member IDs and stable new work IDs.
+    dependency_policy defaults to success. Use terminal to diagnose failed or cancelled dependencies, not to treat missing
+    evidence as success. A publication or a plan is not a completed dependency. Do not clone existing work or repeat side effects.
+    An independent review sets independent_review to true and may name review_targets, a nonempty subset of depends_on.
+    If review_targets is omitted, every dependency is a target. Each target must have a known author distinct from the
+    reviewer's identity. Extra supporting dependencies do not replace the reviewed targets.
+    Keep competing candidates and failed outcomes distinct. A vote, ranking or proposal does not replace original evidence.
+    Reuse compatible members before recruiting. Optional recruit entries contain id, template_member, role, scope and reason.
+    Assign concrete work to member recruit:<id> in the same batch. Use only authorized specialist templates. A recruited
+    identity does not grant new permissions or make its template independent.
+    For saved procedures or workflows, read topics procedures or workflows before using their exact records. An exact
+    workflow work entry contains workflow_instance with execution_id, method, inputs and roles. Use an exact method
+    reference, map each declared input to its exact workspace reference and map each role to an authorized member ID.
+    For finite numeric-case verification, use verification=computational, validator.id=numeric_model_cases.v1, and the
+    exact requirement "\(AgentCollaborationNumericTrial.requirement)".
+    Read topic foundation for the validator and computation fields. Preserve the same cases, expected values and tolerances;
+    the host replays the saved model, not a declared score. This does not establish oracle truth or generalization.
+    Read the pinned goal and original evidence before check_goal_evidence. Use exact current delivery and independent
+    review references, and preserve goal coverage. Checking evidence does not accept the goal or grant permissions.
     """),
     Topic(id: "workflows", purpose: "Register workflow roles, steps and review conditions", prerequisites: ["foundation"], contract: """
     workflow_method includes purpose, domain, bottleneck, change_rationale, applies_when, avoid_when, risks, expected_gain,
