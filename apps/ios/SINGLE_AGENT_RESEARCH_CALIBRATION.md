@@ -50,6 +50,49 @@ The fixture neither uses an existing conversation nor invokes a model. An
 observer's read establishes availability, not autonomous retrieval, model
 use, a fresh provider thread, or improved task quality.
 
+### Adaptive team phases
+
+`AgentAdaptivePilotContinuityTests.testOptInAdaptivePilotPhase` runs a frozen
+phase through the iOS team execution runtime and encrypted research history.
+Use only synthetic inputs. The test never calls a model, contacts Desktop, or
+reads the user's workspace. A missing fixture reply is a real failed worker
+in the test runtime, not a reason to discard the phase's report.
+
+Provide an XCTest-host-readable JSON file and its SHA-256 as
+`GALAXYSSI_ADAPTIVE_PILOT_PLAN` and `GALAXYSSI_ADAPTIVE_PILOT_PLAN_SHA256`.
+Set `GALAXYSSI_ADAPTIVE_PILOT_TOKEN` to a fresh UUID for a new study. Example
+phase one:
+
+```json
+{
+  "format": "galaxyssi.ios.adaptive-pilot-phase.v1",
+  "index": 1,
+  "objective": "Inspect fixture one.",
+  "roster": [
+    {"member": "lead", "target": "fixture:lead", "model": "fixture-model", "effort": "high"},
+    {"member": "review", "target": "fixture:review", "model": "fixture-model", "effort": "low"}
+  ],
+  "replies": {"review": "Synthetic observation."},
+  "retainWorkspace": true,
+  "previousReportSHA256": ""
+}
+```
+
+For the next phase, start a new XCTest process on the same installation and
+device with the same token and ordered roster. Use the next sequential index,
+a newly frozen goal and replies, and the previous printed
+`GALAXYSSI_ADAPTIVE_PILOT_REPORT_SHA256`. Set `retainWorkspace` to false in the
+last phase. The study keeps one group and fresh run, turn, and source IDs for
+each phase. An interrupted reservation is not reusable.
+
+Observer archives and execution reports remain under
+`Application Support/XCTest-AdaptivePilot/<token>`; they are fixture
+artifacts, not agent context. Each archive stores the exact canonical research
+revision bytes with verified production hashes. The last phase removes only
+its test SQLite workspace and Keychain entries before writing its report.
+The tests do not prove autonomous retrieval, learning, fresh provider
+threads, or improved task quality.
+
 ## Persisted conversation selection
 
 The fixture reads the iOS conversation database's explicit active-selection
