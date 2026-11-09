@@ -144,8 +144,16 @@ enum GalaxySSIHealthCareVisit {
     func action(_ entry: GalaxySSIHealthCarePlan.AdoptedAction, concern: GalaxySSIHealthCare.Concern,
                 stale: Bool) -> Item {
       var lines = [entry.outcome == nil ? t("confirmed", "Confirmed") : t("recorded", "Outcome recorded"),
-                   t("action_notice", "A user-reviewed action, not a clinician instruction."),
+                   entry.instruction == nil ? t("action_notice", "A user-reviewed action, not a clinician instruction.") :
+                     GalaxySSIHealthInstruction.text("action_notice",
+                       "This action uses your transcription, not clinician verification. No medication schedule is created.", language),
                    line(t("source", "Source"), entry.source.title)]
+      if let instruction = entry.instruction {
+        lines.append(instruction.pageLabel(language: language))
+        if instruction.invalidated {
+          lines.append(GalaxySSIHealthInstruction.text("action_stale", "Instruction changed or was deleted.", language))
+        }
+      }
       if stale { lines.append(t("stale_action", "The basis for this action has changed.")) }
       if let start = entry.action.dueFrom, let end = entry.action.dueUntil {
         lines.append(line(t("review_window", "Review window"), date(start) + " – " + date(end)))

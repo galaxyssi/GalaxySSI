@@ -516,6 +516,7 @@ struct GalaxySSIHealthOriginalsView: View {
     removalNotice = nil
     do { removal = try store.previewRemoval(item) }
     catch GalaxySSIHealthOriginalStore.Failure.stale { removalChanged() }
+    catch GalaxySSIHealthInstruction.Failure.sourceInUse { removalSourceInUse() }
     catch { error = true }
   }
 
@@ -530,7 +531,13 @@ struct GalaxySSIHealthOriginalsView: View {
         removalNotice = t("removal_done", "Original removed. Measurements were kept.")
       }
     } catch GalaxySSIHealthOriginalStore.Failure.stale { removalChanged() }
+    catch GalaxySSIHealthInstruction.Failure.sourceInUse { removalSourceInUse() }
     catch { error = true }
+  }
+
+  private func removalSourceInUse() {
+    reload()
+    removalNotice = t("removal_instruction_source", "An instruction draft still uses this original.")
   }
 
   private func removalChanged() {

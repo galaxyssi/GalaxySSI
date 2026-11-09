@@ -105,7 +105,7 @@ extension AgentCollaborationGoalAssessmentPolicy {
     guard let json = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) else {
       return fail("$", "invalid_json", "one complete JSON object", "unparseable input", syntax: false)
     }
-    guard json is [String: Any] else {
+    guard let object = json as? [String: Any] else {
       return fail("$", "invalid_type", "assessment object", json is [Any] ? "array" : "JSON scalar")
     }
     func path(_ keys: [CodingKey]) -> String {
@@ -161,6 +161,14 @@ extension AgentCollaborationGoalAssessmentPolicy {
       return fail("$.format", "unexpected_format", format, String(draft.format.prefix(160)), allowed: [format])
     }
     guard !draft.summary.isBlank else { return fail("$.summary", "expected_nonblank_text", "nonblank string", "blank") }
+    if object.keys.contains(AgentCollaborationInterimDelivery.field) {
+      let wire = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data)
+      guard draft.decision == .continue, !object.keys.contains("final_delivery"),
+            AgentCollaborationInterimDelivery.request(wire?[AgentCollaborationInterimDelivery.field]) != nil else {
+        return fail("$.interim_delivery", "invalid_interim_delivery",
+          "exact criterion_id and target on continue without final_delivery", "invalid request")
+      }
+    }
     guard !draft.criteria.isEmpty else { return fail("$.criteria", "expected_nonempty_criteria", "at least one criterion", "0 items") }
     var ids = Set<String>()
     for (index, criterion) in draft.criteria.enumerated() {

@@ -147,6 +147,8 @@ final class CloudWebToolLoopProgress {
   private var ruleCoverage: [String: AgentCollaborationReadCoverage] = [:]
   private var readingCoverage: [String: AgentCollaborationReadCoverage] = [:]
   private var numericCaseCoverage: [String: AgentCollaborationReadCoverage] = [:]
+  private var methodExperienceIDs: Set<String> = []
+  private var methodExperienceCoverage: [String: (hash: String, coverage: AgentCollaborationReadCoverage)] = [:]
   private(set) var performedDeepResearch = false
   private(set) var finalizationRequested = false
 
@@ -200,6 +202,34 @@ final class CloudWebToolLoopProgress {
       numericCaseCoverage[key] = updated
       return updated != previous
     }
+    if AgentCollaborationCandidateRecall.isHistoryCall(toolName, arguments), let actual = decode(output),
+       actual["trust"] == .string(AgentCollaborationMethodExperience.trust) || arguments["record_id"] != nil {
+      guard actual["trust"] == .string(AgentCollaborationMethodExperience.trust),
+            actual["status"] == .string("returned"), actual["quality_effect"] == .null else { return false }
+      if let id = arguments["record_id"]?.strictStringValue {
+        let start = arguments["offset"]?.intValue ?? 0
+        guard start >= 0, actual["record_id"] == .string(id), actual["offset"] == .int(start),
+              let end = actual["end_offset"]?.intValue, end > start,
+              let content = actual["content"]?.strictStringValue, Int64(content.utf16.count) == end - start,
+              let hash = actual["sha256"]?.strictStringValue, AgentCollaborationSourceAccess.validDigest(hash),
+              methodExperienceCoverage[id]?.hash == nil || methodExperienceCoverage[id]?.hash == hash else { return false }
+        let previous = methodExperienceCoverage[id]?.coverage ?? .init()
+        var updated = previous
+        updated.include(start: start, end: end)
+        methodExperienceCoverage[id] = (hash, updated)
+        return updated != previous
+      }
+      guard let method = AgentCollaborationMethodEvaluations.reference(from: arguments),
+            actual["method"] == .object(AgentCollaborationSourceAccess.workspaceReference(method)),
+            let rows = actual["records"]?.arrayValue, rows.count <= 8 else { return false }
+      let ids = rows.compactMap { $0.objectValue?["record_id"]?.strictStringValue }
+      guard ids.count == rows.count, ids.allSatisfy(AgentCollaborationSourceAccess.validDigest) else { return false }
+      let prior = methodExperienceIDs.count
+      methodExperienceIDs.formUnion(ids)
+      return methodExperienceIDs.count > prior
+    }
+    if AgentCollaborationCandidateRecall.isHistoryCall(toolName, arguments),
+       arguments["record_id"] != nil || decode(output)?["status"] != .string("returned") { return false }
     if Self.isMethodEvaluationRecall(toolName: toolName, arguments: arguments) {
       typealias Evaluation = AgentCollaborationMethodEvaluations
       guard let method = Evaluation.reference(from: arguments),
@@ -442,7 +472,7 @@ struct CloudModelStreamMutableConversation {
     let modes = (originalsOnly ? ["goal", "dependency", "acceptance_record", "native_evidence"] :
       ["workspace", "evidence", "native_evidence", "goal", "dependency", "acceptance_record", "problems", "capabilities", "evolution_rules", "method_history"]) +
       ["desktop_evidence_list", "desktop_evidence"] +
-      (originalsOnly ? [] : [AgentCollaborationNumericFeedback.mode])
+      (originalsOnly ? [] : [AgentCollaborationNumericFeedback.mode, AgentCollaborationCoordinatorUpdates.mode])
     var properties: [String: Any] = [
       "mode": ["type": "string", "enum": originalsOnly ? modes : modes + [AgentCollaborationSourceAccess.mode]],
       "member_id": ["type": "string"],
@@ -456,6 +486,7 @@ struct CloudModelStreamMutableConversation {
     ]
     if !originalsOnly {
       properties["case_filter"] = ["type": "string", "enum": AgentCollaborationNumericFeedback.filters]
+      properties["record_id"] = ["type": "string", "description": AgentCollaborationMethodExperience.instructions]
     }
     let scoped = AgentCollaborationCandidateRecall.cloudProperties(properties, enabled: !originalsOnly)
     var schema: [String: Any] = ["type": "object", "properties": scoped, "required": ["mode"]]
@@ -470,7 +501,8 @@ struct CloudModelStreamMutableConversation {
     var advertised = function
     if !originalsOnly, let description = advertised["description"] as? String {
       advertised["description"] = description + " Use method_history with exact tool release object_id, revision and sha256 for native outcomes, not quality measures. " +
-        AgentCollaborationSourceAccess.instructions + " " + AgentCollaborationNumericFeedback.instructions
+        AgentCollaborationSourceAccess.instructions + " " + AgentCollaborationNumericFeedback.instructions + " " +
+        AgentCollaborationCoordinatorUpdates.instructions
     }
     advertised["description"] = (advertised["description"] as? String ?? "") +
       " Use acceptance_record with an exact current object_id, revision and sha256 to read a saved criterion delivery or review from this run. " +
@@ -521,7 +553,8 @@ struct CloudModelStreamMutableConversation {
       "name": Self.collaborationPublishName,
       "description": assessmentOnly
         ? AgentTeamExecutionHistoryStore.MilestoneCapability.notEnrolled.guidance +
-          " Use status with no other fields to check this assignment without mutation. Use work_inventory with no other fields to inspect work readiness, review subjects and publication tokens without dispatching. A waiting review is not active. Use validate_assessment with artifact containing the exact goal-assessment JSON to check its structure. Check schema_valid and repair the reported field in this turn; validation alone does not submit or approve it. Read a rejected draft with assessment_repair, draft_sha256 and next_offset. Keep the same draft hash and join content pages. As coordinator, use establish_contract with a continue assessment, open criteria without evidence, and empty work and blockers. Use append_work with a unique milestone_id, expected_revision, and a galaxyssi.work-expansion.v1 JSON artifact. Retry identical requests after an uncertain response. Use check_goal_evidence with an achieved assessment in artifact and the exact expected_revision to verify saved criterion deliveries and independent reviews. Include goal_coverage with exact mapping/review references, parts, or a manifest to also check coverage of the pinned goal source. This does not accept the goal." +
+          " Use status with no other fields to check this assignment without mutation. Use work_inventory without work_id to inspect work readiness, review subjects and publication tokens without dispatching. A waiting review is not active. Use validate_assessment with artifact containing the exact goal-assessment JSON to check its structure. Check schema_valid and repair the reported field in this turn; validation alone does not submit or approve it. Read a rejected draft with assessment_repair, draft_sha256 and next_offset. Keep the same draft hash and join content pages. As coordinator, use establish_contract with a continue assessment, open criteria without evidence, and empty work and blockers. Use append_work with a unique milestone_id, expected_revision, and a galaxyssi.work-expansion.v1 JSON artifact. Retry identical requests after an uncertain response. Use check_goal_evidence with an achieved assessment in artifact and the exact expected_revision to verify saved criterion deliveries and independent reviews. Include goal_coverage with exact mapping/review references, parts, or a manifest to also check coverage of the pinned goal source. This does not accept the goal." +
+          " " + AgentCollaborationRuleTopics.coordinationInstructions +
           AgentCollaborationWorkInputBindings.coordinatorInstructions +
           AgentCollaborationPeerEvidence.workInstructions +
           AgentCollaborationProbeContinuation.admissionInstructions +
@@ -604,7 +637,7 @@ struct CloudModelStreamMutableConversation {
 
   static let goalAssessmentFinalInstruction = AgentCollaborationGoalAssessmentPolicy.admissionInstructions +
     " Return only the galaxyssi.goal-assessment.v1 JSON object. Never claim achieved without exact reviewed criterion deliveries, goal_coverage, and final_delivery. Select final_delivery from a met criterion. Return a non-achieved assessment if evidence is missing. Do not send final deliverable prose; the host loads the reviewed text. Do not preclaim or await review of this assessment before submitting it. " +
-    AgentCollaborationPromptBudget.deliveryReviewGuidance
+    AgentCollaborationPromptBudget.deliveryReviewGuidance + " " + AgentCollaborationInterimDelivery.instructions
 
   mutating func requestForRound(roundId: String, finalRound: Bool = false, finalInstruction: String? = nil) throws -> ModelStreamRequest {
     if finalRound {

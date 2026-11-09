@@ -45,6 +45,9 @@ struct GalaxySSIHealthCareFollowUpLifecycle: ViewModifier {
       .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.profileInputsChanged)) {
         if $0.object as? String == store.profile.identityFingerprint { generation = UUID() }
       }
+      .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthOriginalStore.indexChanged)) {
+        if $0.object as? String == store.profile.identityFingerprint { generation = UUID() }
+      }
       .task(id: generation) { await reconcile() }
       .task(id: maintenanceDeadline) {
         guard scene == .active, let maintenanceDeadline else { return }

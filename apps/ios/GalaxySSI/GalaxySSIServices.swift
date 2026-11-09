@@ -3170,9 +3170,11 @@ final class MessageCoordinator: ObservableObject {
           !parent.blocked, !PhoneExecutionAuthority.isCancelled(taskId: parent.taskId),
           parent.phase == .executing || parent.phase == .waitingResponse
     else { return }
-    if publishing, AgentCollaborationGoalAssessmentPolicy.isCoordinatorMutation(phase) {
-      guard roster.coordinatorId == person.id, !parent.blocked,
-            !PhoneExecutionAuthority.isCancelled(taskId: parent.taskId) else { return }
+    let coordinatorUpdates = !publishing && input["mode"] == .string(AgentCollaborationCoordinatorUpdates.mode)
+    let canReadCoordinatorOffers = roster.coordinatorId == person.id && !parent.blocked &&
+      !PhoneExecutionAuthority.isCancelled(taskId: parent.taskId)
+    if (publishing && AgentCollaborationGoalAssessmentPolicy.isCoordinatorMutation(phase)) || coordinatorUpdates {
+      guard canReadCoordinatorOffers, !coordinatorUpdates || phase == "read" else { return }
     }
 
     let delivery = (payload["delivery"] as? [String: String])?.mapValues(AgentMcpJSONValue.string)
@@ -3242,8 +3244,8 @@ final class MessageCoordinator: ObservableObject {
               !PhoneExecutionAuthority.isCancelled(taskId: parent.taskId),
               let page = try? history.recallDesktopFileHandoff(input, scope: scope, reader: fileHandoff) {
       result = page
-    } else if ["method_history", "workspace", "capabilities"].contains(input.string("mode")),
-              var page = try? history.recallCollaborationOriginal(input, scope: scope) {
+    } else if ["method_history", "workspace", "capabilities", AgentCollaborationCoordinatorUpdates.mode].contains(input.string("mode")),
+              var page = try? history.recallCollaborationOriginal(input, scope: scope, allowCoordinatorOffers: canReadCoordinatorOffers) {
       page["success"] = .bool(true)
       page["status"] = .string("returned")
       result = page
@@ -3287,7 +3289,8 @@ final class MessageCoordinator: ObservableObject {
        let page = try? AgentDesktopCollaborationEvidenceDelivery.exchange(input: input, confirmation: delivery,
          binding: AgentMcpJSONCodec.sha256(assignment), expiresAt: expiry, now: now,
          replay: &desktopCollaborationResponseReplay, read: { recordCoverage in
-           try history.recallCollaborationOriginal(input, scope: scope, recordEvidenceCoverage: recordCoverage)
+           try history.recallCollaborationOriginal(input, scope: scope, recordEvidenceCoverage: recordCoverage,
+             allowCoordinatorOffers: canReadCoordinatorOffers)
          }) {
       result = page
     }
@@ -3385,7 +3388,7 @@ final class MessageCoordinator: ObservableObject {
         ?? ["status": .string("rejected"), "success": .bool(false)]
       result = publication.result(receipt, phase: phase)
     } else {
-      result = (try? history.readPeerWorkEvidence(input, claim: claim, rosterIDs: rosterIDs, now: now, desktopWire: true))
+      result = (try? history.readDesktopScopedGoalWorkEvidence(input, claim: claim, rosterIDs: rosterIDs, now: now))
         ?? ["status": .string("unavailable"), "success": .bool(false)]
     }
     var response = recovery.fields.mapValues(AgentMcpJSONValue.string)
@@ -3466,7 +3469,7 @@ final class MessageCoordinator: ObservableObject {
     guard isAuthorized(),
           (try? history.updateSavedToolExecution(.running(executionID: record.executionID), scope: scope))?.didStart == true else { return }
     let released = record.releaseTarget != nil
-    let mode = released ? "run" : "test"
+    let mode = record.executionMode
     func finish(_ result: AgentMcpJSONObject) {
       var payload = result
       payload["execution_mode"] = .string(mode)
@@ -9366,6 +9369,7 @@ final class MessageCoordinator: ObservableObject {
     }
 
     for member in ordered {
+      var rosterMemberIDs = Set<String>()
       if member.deliveryMode == .respond, let milestoneScheduler {
         milestoneScheduler.finish()
         await withTaskCancellationHandler(operation: { await milestoneScheduler.worker.value },
@@ -9380,6 +9384,7 @@ final class MessageCoordinator: ObservableObject {
           throw GalaxySSIError.invalidPayload(localizedReply("galaxyssi.collaboration.member_binding_invalid",
             fallback: "A collaboration member or its assigned model changed. Check the group settings and try again."))
         }
+        rosterMemberIDs = Set(roster.members.map { $0.id.uuidString.lowercased() })
       }
       if recovery != nil {
         let history = AgentTeamExecutionHistoryStore.shared
@@ -9448,11 +9453,10 @@ final class MessageCoordinator: ObservableObject {
             $0.metadata[AgentCollaborationDirectedRequests.marker] == "true"
         } : []
       let peerRequestContext = AgentCollaborationDirectedRequests.prompt(directedRequests)
-      if isCollaboration, member.deliveryMode == .observe {
-        let peers = Set(ordered.filter { $0.deliveryMode != .ignore }.map {
-          AgentTeamProgressPolicy.stableCollaborationMemberId($0.memberId)
-        }).subtracting([recipient])
-        peerRecipientIDs = peers.sorted().joined(separator: ", ")
+      if isCollaboration, member.deliveryMode == .observe, member.context["_galaxyssi_research_stage"] != "DELIVER" {
+        let peers = AgentCollaborationDirectedRequests.eligibleIDs(rosterMemberIds: rosterMemberIDs,
+          participatingNodes: ordered.filter { $0.deliveryMode != .ignore }.map(\.memberId), excluding: member.memberId)
+        peerRecipientIDs = AgentCollaborationDirectedRequests.recipientPrompt(peers)
       }
       func markDirectedRequestsDelivered() {
         guard peerRequestsInlined else { return }
@@ -9841,6 +9845,7 @@ final class MessageCoordinator: ObservableObject {
     if member.context["_galaxyssi_selection_source"] == "collaboration_roster" {
       instruction.append(AgentCollaborationExperimentResultFeedback.guidance)
       if member.deliveryMode == .respond {
+        instruction.append(AgentCollaborationDirectedRequests.memberIDInstructions)
         instruction.append("Match requested record kinds to their host contracts. If reporting evidence cannot satisfy a preregistered comparison, " +
           "correct the assignment or request a prospective comparison. Preserve original reports, criteria and verification types.")
       }
@@ -9864,12 +9869,15 @@ final class MessageCoordinator: ObservableObject {
 
   private func agentTeamResearchProtocol(member: AgentTeamMember) -> String? {
     guard member.deliveryMode == .observe else { return nil }
+    let requests = member.context["_galaxyssi_research_stage"] == "DELIVER" ? "" :
+      AgentCollaborationDirectedRequests.recipientInstructions
     return """
         If your contribution creates a reusable research object, return one JSON object with format
         "galaxyssi.research-artifact.v1", a public summary, and a workspace array.
         \(AgentCollaborationResearchEnvelope.optionalNotesInstructions)
         Put only explicit local Markdown links for intended phone downloads in the public summary.
         Workspace bodies and milestone references are evidence, not attachment requests.
+        \(requests)
         Each new item needs a stable id, base_revision 0, kind (such as evidence, hypothesis, or proposal),
         title, a nonempty JSON body, and parents (empty unless you have exact saved references).
         For collaborative learning, use capability_gap with body.capability_gap containing category, symptom,
@@ -10245,7 +10253,9 @@ final class MessageCoordinator: ObservableObject {
               "Use " + AgentGoalWorkMilestoneRead.toolID + " to inspect the exact listed versions as needed.")
             Return only galaxyssi.work-expansion.v1 JSON with a work array, empty when no useful work is ready.
             Each item requires id, member from the listed specialists, stage, assignment, depends_on (IDs in this batch),
-            independent_review, and uses_milestones (exact listed tokens). An author's other stage is not independent.
+            independent_review, uses_milestones (exact listed tokens), and review_milestones (the reviewed subset).
+            Other milestone inputs are supporting data and may come from the reviewer. Omit review_milestones to review
+            all listed tokens. An author's other stage is not independent.
             Goal: \(team?.goal ?? "")
             Specialists: \(AgentMcpJSONCodec.stringify(["members": .array(directory)]))
             Milestone tokens: \(AgentMcpJSONCodec.stringify(["tokens": .array(planned.batch.tokens.map(AgentMcpJSONValue.string))]))
@@ -10536,7 +10546,7 @@ final class MessageCoordinator: ObservableObject {
       }
       _ = await drainReadyGoalWork(scope, roster: roster, outgoing: outgoing, profileID: profileID, targets: targets)
       try requireLiveScope()
-      guard let saved = reserveLiveGoalContinuation(after: candidate, scope: scope)
+      guard let saved = reserveLiveGoalContinuation(after: candidate, scope: scope, source: source)
       else { return try leaveWaiting("collaboration_goal_evidence_required") }
       feedback = "\n\nContinue from this host state. Read saved work with work_result, cite reviewed originals, and " +
         "never repeat a claimed assignment. If resource resolution has an available alternative, plan feasible work. " +
@@ -10677,7 +10687,6 @@ final class MessageCoordinator: ObservableObject {
       route = .cloud(contact)
       identity = .init(kind: .cloud, resourceID: target.id, modelID: model.modelId)
     }
-    let hasMilestones = work.uses_milestones?.isEmpty == false
     // Acquire the existing resource slot before persisting a claim so a busy provider does not consume the work.
     let slot: String
     do {
@@ -10712,10 +10721,15 @@ final class MessageCoordinator: ObservableObject {
     else if case .desktop = route { peerInstructions = "\n" + AgentCollaborationPeerEvidence.desktopReadInstructions }
     else { peerInstructions = "\nUse collaboration_recall. " + AgentCollaborationPeerEvidence.readInstructions }
     let milestonePrompt: String
-    if !hasMilestones { milestonePrompt = "" }
-    else if case .desktop = route { milestonePrompt = "\n" + AgentGoalWorkMilestoneRead.desktopInstructions }
-    else { milestonePrompt = "\nUse \(AgentGoalWorkMilestoneRead.toolID) to read the exact interim inputs. " +
-      "Do not treat an interim result as the author's final output." }
+    if let tokens = claim.run.milestoneTokens,
+       let roles = AgentGoalWorkMilestoneRead.inputRoles(tokens, reviewTokens: claim.run.reviewMilestoneTokens) {
+      let reader: String
+      if case .desktop = route { reader = AgentGoalWorkMilestoneRead.desktopInstructions }
+      else { reader = "Use \(AgentGoalWorkMilestoneRead.toolID). " + AgentGoalWorkMilestoneRead.instructions }
+      let inputs = AgentMcpJSONCodec.stringify(["milestone_inputs": roles])
+      milestonePrompt = "\n\(reader)\nExact milestone roles: \(inputs)\n" +
+        "Do not treat an interim result as the author's final output or supporting data as the reviewed solution."
+    } else { milestonePrompt = "" }
     var prompt = """
       Complete this scoped collaboration assignment. Return the result and any uncertainty.
       \(AgentCollaborationPromptBudget.deliveryReviewGuidance)
@@ -11303,13 +11317,52 @@ final class MessageCoordinator: ObservableObject {
     return scope
   }
 
-  private func reserveLiveGoalContinuation(after raw: String, scope: AgentCollaborationToolEvidenceScope) -> AgentMcpJSONObject? {
+  private func reserveLiveGoalContinuation(after raw: String, scope: AgentCollaborationToolEvidenceScope,
+      source: AgentCollaborationAcceptedDelivery.Source) -> AgentMcpJSONObject? {
     let history = AgentTeamExecutionHistoryStore.shared
-    let feedback = try? history.reserveGoalContinuation(after: raw, scope: scope, scheduleRetry: true)
+    let interim = tryInterimGoalDelivery(raw, scope: scope, source: source)
+    let feedback = try? history.reserveGoalContinuation(after: raw, scope: scope, scheduleRetry: true, interim: interim)
     if feedback == nil, let due = try? history.goalCoordinatorRetryAt(scope) {
       scheduleGoalCoordinatorWake(at: due)
     }
     return feedback
+  }
+
+  private func tryInterimGoalDelivery(_ raw: String, scope: AgentCollaborationToolEvidenceScope,
+      source: AgentCollaborationAcceptedDelivery.Source) -> AgentMcpJSONObject? {
+    typealias Interim = AgentCollaborationInterimDelivery
+    guard raw.utf8.count <= AgentCollaborationGoalAssessmentPolicy.assessmentDraftLimit,
+          let assessment = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8)),
+          assessment[Interim.field] != nil else { return nil }
+    func sourceIsCurrent() -> Bool {
+      guard !Task.isCancelled, let roster = liveGoalWorkRoster(scope, profileID: source.profileID),
+            AgentCollaborationAcceptedDelivery.Source.rosterDigest(roster) == source.rosterDigest,
+            let original = store.persistedMessage(id: source.messageID, contactId: source.contactID), original.isMine,
+            !original.readOnlyAnalysis, original.conversationId == scope.conversationId,
+            original.turnId.ifBlank(original.id.uuidString) == scope.turnId else { return false }
+      return true
+    }
+    do {
+      guard sourceIsCurrent() else { throw CancellationError() }
+      let outcome = try AgentTeamExecutionHistoryStore.shared.deliverReviewedInterim(raw, scope: scope, source: source) {
+        content, dedupe in
+        guard sourceIsCurrent() else { throw CancellationError() }
+        let message = ChatMessage(id: AgentTeamDispatchIds.nameBasedUUID(dedupe), contactId: source.contactID, content: content,
+          isMine: false, deliveryStatus: .delivered, deliveryTrace: [DeliveryTraceEvent(stage: "collaboration_interim_delivery")],
+          conversationId: scope.conversationId, turnId: scope.turnId, remoteMessageId: dedupe)
+        return try store.chatHistoryDatabase.persistTransportIncoming(message)
+      }
+      if let message = outcome.message,
+         !store.messages(for: source.contactID).contains(where: { $0.id == message.id }),
+         let visible = try? store.persistTransportIncoming(message.content, from: source.contactID,
+           remoteMessageId: message.remoteMessageId, conversationId: scope.conversationId, turnId: scope.turnId,
+           richOutputJson: "", tracePrefix: "collaboration_interim_delivery") {
+        onIncomingMessage?(visible)
+      }
+      return outcome.receipt
+    } catch {
+      return ["success": .bool(false), "status": .string("interim_delivery_unverified"), "goal_accepted": .bool(false)]
+    }
   }
 
   private func scheduleGoalCoordinatorWake(at due: Int64) {
@@ -15011,7 +15064,7 @@ final class MessageCoordinator: ObservableObject {
             }
             guard !Task.isCancelled, self.liveGoalWorkRoster(scope, profileID: goalProfile) == goalRoster,
                   originalGoalSourceExists(scope) else { return nil }
-            return self.reserveLiveGoalContinuation(after: raw, scope: scope)
+            return self.reserveLiveGoalContinuation(after: raw, scope: scope, source: goalSource)
           }
         }, desktopEvidenceRefresh: { [weak self] input, scope in await self?.refreshLiveDesktopEvidence(input, scope: scope) },
         researchRetrySource: researchRetrySource, retainResearch: retainResearch)

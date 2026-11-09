@@ -1,5 +1,82 @@
 import Foundation
 
+enum AgentCollaborationMethodExperience {
+  static let mode = "method_history"
+  static let trust = "host_observed_method_use_not_measured_effectiveness"
+  static let instructions = "Use method_history with exact method identity and no view for execution experience. Read a returned record_id with offset for original conditions. History is not proof of quality or current applicability."
+
+  struct Binding: Codable, Equatable {
+    let method: AgentCollaborationResearchReference
+    let kind: String
+    let inputs: AgentMcpJSONObject
+    let assignment: String
+    let goal: String
+    let stage: String?
+    let detail: AgentMcpJSONObject
+  }
+
+  struct Observation: Codable, Equatable {
+    let owner: AgentCollaborationToolEvidenceScope
+    let memberID: String
+    let workID: String
+    let dispatchID: String
+    let binding: Binding
+    let selectedTarget: AgentCollaborationGoalWorkRun.Target?
+    let state: AgentCollaborationGoalWorkRun.State
+    let startedAt: Int64
+    let finishedAt: Int64
+    let outputHash: String?
+    let outputTruncated: Bool
+    let desktopArchiveDigest: String?
+
+    var id: String {
+      AgentMcpJSONCodec.sha256(["owner": .string(owner.ownershipDigest), "dispatch": .string(dispatchID),
+        "status": .string(state.rawValue)])
+    }
+
+    var summary: AgentMcpJSONObject {
+      ["record_id": .string(id), "status": .string(state.rawValue), "work_id": .string(workID),
+       "dispatch_id": .string(dispatchID), "started_at": .int(startedAt), "finished_at": .int(finishedAt),
+       "read": .object(["mode": .string(AgentCollaborationMethodExperience.mode), "record_id": .string(id), "offset": .int(0)])]
+    }
+
+    func original() throws -> Data {
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys]
+      let payload = try JSONDecoder().decode(AgentMcpJSONObject.self, from: encoder.encode(self))
+      return Data(AgentMcpJSONCodec.stringify(payload.merging(["record_id": .string(id), "quality_effect": .null,
+        "causal_contribution": .null, "user_delivery": .string("not_observed")]) { _, new in new }).utf8)
+    }
+  }
+
+  static func selector(_ ref: AgentCollaborationResearchReference) -> AgentMcpJSONObject {
+    AgentCollaborationSourceAccess.workspaceReference(ref).merging(["mode": .string(mode)]) { _, new in new }
+  }
+
+  static func prefix(_ ref: AgentCollaborationResearchReference) -> String {
+    "method-use-index:" + AgentMcpJSONCodec.sha256(AgentCollaborationSourceAccess.workspaceReference(ref)) + ":"
+  }
+
+  static func key(_ id: String) -> String { "method-use:" + id }
+
+  static func record(_ run: AgentCollaborationGoalWorkRun, state: AgentCollaborationGoalWorkRun.State,
+                     now: Int64, database: AgentTeamHistoryDatabase) throws {
+    guard let binding = run.methodUse, state != .running else { return }
+    let value = Observation(owner: run.owner, memberID: run.memberID, workID: run.workID, dispatchID: run.dispatchID,
+      binding: binding, selectedTarget: run.target, state: state, startedAt: run.startedAt,
+      finishedAt: max(run.startedAt, run.finishedAt ?? now), outputHash: run.outputHash,
+      outputTruncated: run.truncated ?? false, desktopArchiveDigest: run.desktopArchiveDigest)
+    let key = Self.key(value.id), group = run.owner.conversationId
+    if let prior = try database.researchRecord(Observation.self, conversationId: group, key: key, revision: 0) {
+      guard prior.owner == value.owner, prior.dispatchID == value.dispatchID, prior.binding == value.binding
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      return
+    }
+    try database.insertResearchRecord(value, conversationId: group, key: key, revision: 0)
+    try database.insertResearchRecord(value.id, conversationId: group, key: prefix(binding.method) + value.id, revision: 0)
+  }
+}
+
 struct AgentCollaborationWorkflowComparison: Codable, Equatable {
   let baseline: AgentCollaborationResearchReference
   let candidate: AgentCollaborationResearchReference
