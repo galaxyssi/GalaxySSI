@@ -601,6 +601,7 @@ final class AgentTeamExecutionHistoryStore {
             team.members.contains(where: { $0.memberId == scope.memberId &&
               $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal })
       else { throw AgentTeamHistoryDatabase.Failure.stale }
+      if admission.lane == .hostLivePlanning { _ = try Self.activeGoalCoordinator(scope, database: database) }
       try database.insertResearchRecord(admission, conversationId: scope.conversationId, key: key, revision: 0)
     }
   }
@@ -3237,6 +3238,16 @@ final class AgentTeamExecutionHistoryStore {
     return team
   }
 
+  func requireGoalCoordinationAuthority(_ scope: AgentCollaborationToolEvidenceScope, resourceID: String) throws {
+    try access { database in
+      let team = try Self.activeGoalCoordinator(scope, database: database)
+      guard team.members.contains(where: { $0.memberId == scope.memberId &&
+        $0.sourceMessageId == scope.sourceId && $0.agentId == resourceID }) else {
+        throw AgentTeamHistoryDatabase.Failure.stale
+      }
+    }
+  }
+
   private static func goalWorkKey(_ workID: String, scope: AgentCollaborationToolEvidenceScope) -> String {
     "goal-work:" + AgentMcpJSONCodec.sha256(["run": .string(scope.runId), "turn": .string(scope.turnId), "work": .string(workID)])
   }
@@ -3330,7 +3341,7 @@ final class AgentTeamExecutionHistoryStore {
         unclaimed.insert(id)
         return nil
       }
-      let width = min(max(limit, 1), 3)
+      let width = min(max(limit, 1), AgentCollaborationAdmissionCapacity.workersPerRun)
       var ready: [AgentCollaborationLiveGraph.Work] = []
       var busyRecruits = Set<String>()
       for item in graph.work {
@@ -3464,6 +3475,7 @@ final class AgentTeamExecutionHistoryStore {
     }
     let visibleMembers = bounded(memberRows, bytes: 3_000)
     return ["success": .bool(true), "status": .string("work_inventory"), "revision": .int(revision),
+      "admission_capacity": .object(AgentCollaborationAdmissionCapacity.wire),
       "items": .array(workRows), "total": .int(Int64(work.count)), "omitted": .int(Int64(work.count - workRows.count)),
       "members": .array(visibleMembers), "members_omitted": .int(Int64(members.count - visibleMembers.count)),
       "grants_access": .bool(false),

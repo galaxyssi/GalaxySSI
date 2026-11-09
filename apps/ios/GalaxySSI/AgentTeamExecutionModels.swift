@@ -144,6 +144,7 @@ struct AgentCollaborationMemberIdentity: Equatable {
 
 struct AgentCollaborationModelAdmission: Codable, Equatable {
   enum Route: String, Codable { case streaming, compatibility }
+  enum Lane: String, Codable { case hostLivePlanning = "host_live_planning" }
   let id: UUID
   let scope: AgentCollaborationToolEvidenceScope
   let round: Int
@@ -151,6 +152,7 @@ struct AgentCollaborationModelAdmission: Codable, Equatable {
   let requestedModel: String?
   let startedAtMillis: Int64
   var route: Route? = nil
+  var lane: Lane? = nil
 }
 
 struct AgentCollaborationModelSettlement: Codable, Equatable {
