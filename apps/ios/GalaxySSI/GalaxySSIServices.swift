@@ -4638,7 +4638,7 @@ final class MessageCoordinator: ObservableObject {
     for var task in store.agentTasks(forSession: binding.identity.conversationId, limit: 500)
       where (task.taskId == binding.identity.taskId || task.taskId == binding.identity.turnId) &&
         task.planContext == nil && task.pendingAction == nil && task.pendingActions.isEmpty &&
-        [AgentPhase.waitingResponse, .executing, .verifying].contains(task.phase), !task.blocked {
+        [AgentPhase.waitingResponse, .executing, .verifying].contains(task.phase) && !task.blocked {
       task.phase = AgentRemoteTaskStatusPolicy.phase(record.status)
       task.result = content
       task.verification = "Recovered authenticated Desktop result"
