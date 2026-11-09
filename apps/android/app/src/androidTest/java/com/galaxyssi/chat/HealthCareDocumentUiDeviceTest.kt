@@ -3,6 +3,8 @@ package com.galaxyssi.chat
 import android.app.AlertDialog
 import android.app.KeyguardManager
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.os.SystemClock
 import android.view.View
@@ -36,15 +38,17 @@ class HealthCareDocumentUiDeviceTest {
     private fun fixture(test: (HealthCareDocumentFixture, HealthOriginal, ActivityScenario<HealthCareDocumentsActivity>) -> Unit) {
         assumeFalse("Native source review needs an unlocked display", context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         HealthCareDocumentFixture(context).use { f ->
-            val original = f.pdf(); var worker: ExecutorService? = null
+            val original = f.pdf(); val workers = mutableListOf<ExecutorService>()
             try {
                 ActivityScenario.launch<HealthCareDocumentsActivity>(Intent(context, HealthCareDocumentsActivity::class.java)
                     .putHealthNavigationFixture(f.names).putExtra("health_care_id", f.issue.id).putExtra("health_encounter_id", f.visit.id)).use { scenario ->
-                    scenario.onActivity { worker = field(it, "worker") as ExecutorService }
+                    scenario.onActivity { workers += field(it, "worker") as ExecutorService }
                     await(scenario) { find(it, "document-add") != null }
-                    test(f, original, scenario)
+                    try { test(f, original, scenario) } finally {
+                        scenario.onActivity { (field(it, "worker") as ExecutorService).let { worker -> if (worker !in workers) workers += worker } }
+                    }
                 }
-            } finally { worker?.let { assertTrue(it.awaitTermination(15, TimeUnit.SECONDS)) } }
+            } finally { workers.forEach { assertTrue(it.awaitTermination(15, TimeUnit.SECONDS)) } }
         }
     }
     private fun choose(scenario: ActivityScenario<HealthCareDocumentsActivity>, original: HealthOriginal) {
@@ -120,6 +124,28 @@ class HealthCareDocumentUiDeviceTest {
         scenario.onActivity {
             find(it, "document-row-${saved.id}")!!.performClick()
             assertNull(find(it, "document-preview")); assertNotNull(find(it, "document-remove"))
+        }
+    }
+    @Test fun landscapeRecreationClearsPreviewAndNarrowWindowKeepsTheSourceListReadable(): Unit = fixture { f, original, scenario ->
+        scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
+        await(scenario) { it.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT && find(it, "document-add") != null }
+        choose(scenario, original)
+        scenario.onActivity { find(it, "document-preview")!!.performClick() }
+        await(scenario) { find(it, "document-raster") != null }
+        lateinit var raster: Bitmap
+        scenario.onActivity { raster = field(it, "bitmap") as Bitmap; it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
+        await(scenario) { it.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE && find(it, "document-add") != null }
+        scenario.onActivity { assertNull(dialog(it)); assertTrue(raster.isRecycled) }
+        assertTrue(f.snapshot().items.isEmpty())
+        scenario.onActivity { it.window.setLayout((320 * it.resources.displayMetrics.density).toInt(), (480 * it.resources.displayMetrics.density).toInt()) }
+        SystemClock.sleep(250)
+        scenario.onActivity { activity ->
+            views(activity.window.decorView).filterIsInstance<TextView>().filter { it.isShown }.forEach { view ->
+                val layout = view.layout ?: return@forEach
+                val width = view.width - view.totalPaddingLeft - view.totalPaddingRight
+                assertTrue(width > 0)
+                for (line in 0 until layout.lineCount) assertTrue(layout.getLineWidth(line) <= width + 2)
+            }
         }
     }
 }

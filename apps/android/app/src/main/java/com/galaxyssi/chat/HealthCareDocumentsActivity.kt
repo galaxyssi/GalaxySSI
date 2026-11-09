@@ -172,6 +172,15 @@ class HealthCareDocumentsActivity : Activity() {
             content.addView(controls)
             if (allowLink) ui.add(content, ui.command(R.string.health_document_link_page) { prepare(value, original, page) }
                 .apply { tag = "document-link-page" }, 8)
+            if (!allowLink) value.items.firstOrNull { item -> item.link.source.matches(original) &&
+                (item.link.source.page == null || item.link.source.page == page) }?.let { item ->
+                ui.add(content, ui.command(R.string.health_instruction_extract) {
+                    closeDialog()
+                    startActivity(Intent(this, HealthCareInstructionsActivity::class.java).putHealthNavigationFixture(names)
+                        .putExtra("health_care_id", concernId).putExtra("health_encounter_id", encounterId)
+                        .putExtra("health_document_id", item.link.id).putExtra("health_document_page", page))
+                }.apply { tag = "document-instructions" }, 8)
+            }
             dialogContent = content
             dialog = AlertDialog.Builder(this).setTitle(getString(R.string.health_document_page, page, raster.pageCount))
                 .setView(content).setNegativeButton(R.string.common_cancel, null).show().also { it.setOnDismissListener { closeDialog() } }
@@ -203,7 +212,7 @@ class HealthCareDocumentsActivity : Activity() {
                     clear(); reset()
                     val content = healthProfileContent(body)
                     val blocked = error is HealthAccessBlocked || error is HealthPrivacyConflict
-                    val message = if (blocked) R.string.health_overview_permission else if (error is HealthCareConflict)
+                    val message = if (error is HealthCareSourceInUse) R.string.health_instruction_source_in_use else if (blocked) R.string.health_overview_permission else if (error is HealthCareConflict)
                         R.string.health_document_changed else R.string.health_document_failed
                     content.addView(ui.text(getString(message), 15f))
                     ui.add(content, if (blocked) ui.profileRow(getString(R.string.health_privacy_title)) {

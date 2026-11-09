@@ -107,11 +107,11 @@ class HealthCareDocumentDeviceTest {
     @Test fun schemaTwelveMigrationPreservesVisitsAndStartsWithNoInventedSources(): Unit = fixture { names, store, visit ->
         val issue = store.concern(visit.concernId)!!
         store.close()
-        context.openOrCreateDatabase(names.care, 0, null).use { it.execSQL("DROP TABLE encounter_documents"); it.version = 12 }
+        context.openOrCreateDatabase(names.care, 0, null).use { removeHealthInstructionTestTables(it); it.execSQL("DROP TABLE encounter_documents"); it.version = 12 }
         HealthCareStore(context, names.care).use {
             assertEquals(visit, it.encounter(visit.id)); assertEquals(issue, it.concern(issue.id))
             assertTrue(it.encounterDocuments(issue.id, visit.id).items.isEmpty()); save(it, visit)
         }
-        context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(13, it.version) }
+        context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(14, it.version) }
     }
 }
