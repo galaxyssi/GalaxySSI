@@ -3288,7 +3288,7 @@ private final class GalaxySSIVideoArtifactPlayer: ObservableObject {
   }
 }
 
-private struct GalaxySSIArtifactDocument: FileDocument {
+struct GalaxySSIArtifactDocument: FileDocument {
   static var readableContentTypes: [UTType] { [.data] }
   static var writableContentTypes: [UTType] { [.data, .zip] }
 
@@ -3303,6 +3303,10 @@ private struct GalaxySSIArtifactDocument: FileDocument {
   }
 
   func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+    exportFileWrapper()
+  }
+
+  func exportFileWrapper() -> FileWrapper {
     FileWrapper(regularFileWithContents: data)
   }
 }

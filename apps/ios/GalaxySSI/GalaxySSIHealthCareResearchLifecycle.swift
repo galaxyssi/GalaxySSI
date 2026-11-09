@@ -211,7 +211,7 @@ struct GalaxySSIHealthCareResearchLifecycle: ViewModifier {
       try records.validateLocalCareDiscussionTurn(approval)
       var bytes = try await GalaxySSIHealthSummaryTransport.responseBytes(request, limit: 65_536)
       status = .sent
-      if approval.questionCursor != nil {
+      if approval.questionCursor != nil || approval.feedbackCursor != nil {
         bytes = try await GalaxySSIHealthScopedReadTransport.finish(approval, records: records, initial: bytes,
           request: request, style: model.apiStyle, ledger: ledger, currentDestination: {
             route(authorization, owner: records.owner)?.0

@@ -36,17 +36,12 @@ final class MqttBusinessTransportRuntime {
   private var incomingAttachments: AgentIncomingAttachmentTransferStore?
   private var outgoingAttachments: AgentOutboundAttachmentTransferStore?
   private var desktopArtifacts: AgentDesktopArtifactStore?
+  private var lastArtifactRecoveryScan: Int64?
   private var desktopConnector: MqttDesktopConnectorProjection?
   private var receiveDesktopRevocation: (@MainActor (MqttPeerChatProjection.Destination) throws -> Void)?
   private var revokingScopes: Set<String> = []
   private var receiveDesktopBlobControl: (@MainActor ([String: Any], MqttPeerChatProjection.Destination, MqttBusinessIdentity) async throws -> Void)?
-  private struct EvidenceWaiter {
-    let identity: MqttBusinessIdentity
-    let request: AgentDesktopToolEvidenceWire.Request
-    let mode: String
-    let signal: AsyncStream<AgentMcpJSONObject>.Continuation
-  }
-  private var evidenceWaiters: [String: EvidenceWaiter] = [:]
+  private var evidenceQueries = AgentDesktopEvidenceQueries<MqttBusinessIdentity>()
   private final class LogicalReceiptWire { var payload: [String: Any]? }
   private enum DesktopPeerArtifactPending: Error { case awaitingChunks }
   private let attachmentQueue = DispatchQueue(label: "galaxyssi.mqtt.peer-attachments", qos: .utility)
@@ -438,6 +433,7 @@ final class MqttBusinessTransportRuntime {
     projected.failures.forEach { onFailure($0.error) }
     guard !stopped else { return }
     try await drainInbound()
+    if !stopped { await pumpDesktopArtifactRecovery() }
     if !stopped { await pumpDesktopRecoveryQueries() }
     if !stopped { pumpDesktopResultReceipts() }
     if !stopped { desktopConnector?.resumeEvidenceJobs?(self) }
@@ -497,35 +493,39 @@ final class MqttBusinessTransportRuntime {
 
   func queryDesktopEvidence(_ request: AgentDesktopToolEvidenceWire.Request,
                             payload: AgentMcpJSONObject,
-                            timeoutNanoseconds: UInt64 = 8_000_000_000) async -> AgentMcpJSONObject? {
-    guard !Task.isCancelled, evidenceWaiters.count < 2, evidenceWaiters[request.nonce] == nil,
-          let connector = desktopConnector else { return nil }
+                            timeoutNanoseconds: UInt64 = 8_000_000_000) async -> AgentDesktopEvidenceReply? {
+    guard !Task.isCancelled, let connector = desktopConnector else { return nil }
     do {
       try refreshDirectPeerBindings()
       guard let target = evidenceDestination(request.binding),
-            let object = try JSONSerialization.jsonObject(with: Data(AgentMcpJSONCodec.stringify(payload).utf8)) as? [String: Any]
+            let next = evidenceQueries.begin(request, payload: payload, transport: try MqttBusinessIdentity(target.peer.binding),
+              now: AgentDesktopEvidenceQueryTrace.now) else { return nil }
+      if case .retained(let reply) = next { return reply }
+      guard case .waiting(let ticket) = next else { return nil }
+      var retain = false
+      defer { evidenceQueries.finish(ticket, retainAfterTimeout: retain) }
+      guard let object = try JSONSerialization.jsonObject(with: Data(AgentMcpJSONCodec.stringify(ticket.payload).utf8)) as? [String: Any]
       else { return nil }
-      let outgoing = try connector.evidenceQueryRequest(request, payload: object, target: target)
-      var signal: AsyncStream<AgentMcpJSONObject>.Continuation?
-      let stream = AsyncStream<AgentMcpJSONObject>(bufferingPolicy: .bufferingNewest(1)) { signal = $0 }
-      guard let signal else { return nil }
-      evidenceWaiters[request.nonce] = EvidenceWaiter(identity: outgoing.identity, request: request,
-        mode: object.string("mode"), signal: signal)
-      let timer = Task {
-        do { try await Task.sleep(nanoseconds: timeoutNanoseconds) } catch { return }
-        signal.finish()
-      }
-      defer {
-        timer.cancel()
-        evidenceWaiters.removeValue(forKey: request.nonce)
-        signal.finish()
-      }
+      let outgoing = try connector.evidenceQueryRequest(ticket.request, payload: object, target: target)
       let wire = try routes.withOutgoing(identity: outgoing.identity, topics: [outgoing.topic]) {
         try engine.makeRecoveryQueryWire(outgoing)
       }
-      guard await routes.publishTransientControl(topic: outgoing.topic, wire: wire, secret: target.peer.binding.secret).accepted
+      let started = DispatchTime.now().uptimeNanoseconds
+      guard await routes.publishTransientControl(topic: outgoing.topic, wire: wire, secret: target.peer.binding.secret).accepted,
+            !stopped, !Task.isCancelled
       else { return nil }
-      for await result in stream where !stopped && !Task.isCancelled { return result }
+      let spent = DispatchTime.now().uptimeNanoseconds - started
+      let remaining = timeoutNanoseconds > spent ? timeoutNanoseconds - spent : 0
+      let timer = Task { @MainActor [weak self] in
+        do { try await Task.sleep(nanoseconds: remaining) } catch { return }
+        self?.evidenceQueries.timeout(ticket, now: AgentDesktopEvidenceQueryTrace.now)
+      }
+      defer { timer.cancel() }
+      for await reply in ticket.stream {
+        guard !stopped, !Task.isCancelled else { return nil }
+        return reply
+      }
+      retain = !stopped && !Task.isCancelled
     } catch { onFailure(error) }
     return nil
   }
@@ -591,8 +591,7 @@ final class MqttBusinessTransportRuntime {
   func stop() async {
     guard !stopped else { return }
     stopped = true
-    evidenceWaiters.values.forEach { $0.signal.finish() }
-    evidenceWaiters.removeAll()
+    evidenceQueries.removeAll()
     let worker = ingressTask
     worker?.cancel()
     ingressTask = nil
@@ -913,13 +912,12 @@ final class MqttBusinessTransportRuntime {
     }
     if type == "agent_task_evidence" {
       guard target.desktop else { throw MqttRouteError.identityChanged }
-      guard let pending = evidenceWaiters[payload.string("request_id")] else { return }
-      guard pending.identity == item.identity,
-            let response = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: item.payload),
-            pending.request.matchesTransportResponse(response, authenticatedDesktopId: target.peer.remoteSignalName,
-              mode: pending.mode) else { throw MqttRouteError.identityChanged }
-      pending.signal.yield(response)
-      pending.signal.finish()
+      guard evidenceQueries.started(payload.string("request_id")) != nil else { return }
+      guard let response = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: item.payload) else {
+        throw MqttRouteError.identityChanged
+      }
+      if evidenceQueries.receive(response, transport: item.identity, desktop: target.peer.remoteSignalName,
+          now: AgentDesktopEvidenceQueryTrace.now) == .rejected { throw MqttRouteError.identityChanged }
       return
     }
     if target.desktop, let desktopConnector, MqttDesktopConnectorProjection.handles(payload) {
@@ -1008,8 +1006,10 @@ final class MqttBusinessTransportRuntime {
     let source = try projection.desktopPeerSource(payload, target: target)
     guard payload.string("task_id") == source else { throw MqttRouteError.identityChanged }
     let artifact = try MqttDesktopPeerArtifact(payload, source: source, identity: item.identity)
+    let recovery = AgentDesktopArtifactRecovery.Binding(payload: payload, desktopID: target.peer.remoteSignalName,
+      routeID: target.routeId, owner: .journal(item.identity))
     let result = try await onAttachmentQueue {
-      try desktopArtifacts.ingest(artifact.storagePayload(payload))
+      try desktopArtifacts.ingest(artifact.storagePayload(payload), recovery: recovery)
     }
     try Task.checkCancellation()
     guard !stopped else { throw CancellationError() }
@@ -1024,6 +1024,43 @@ final class MqttBusinessTransportRuntime {
       topic: target.peer.binding.sendTopic, clientRouteID: target.routeId, traffic: .control, contactID: target.contactId)
     do { _ = try enqueue([request]) }
     catch MqttChunkStorageError.alreadyDelivered { }
+  }
+
+  private func pumpDesktopArtifactRecovery() async {
+    guard let desktopArtifacts, let projection = peerChatProjection, !Task.isCancelled,
+          projection.currentDestinations().contains(where: { $0.desktop && routes.readyForTopic($0.peer.binding.sendTopic) })
+    else { return }
+    let tick = monotonic()
+    guard lastArtifactRecoveryScan.map({ tick < $0 || tick - $0 >= AgentDesktopArtifactRecovery.scanMillis }) ?? true
+    else { return }
+    lastArtifactRecoveryScan = tick
+    let now = AgentControlPlaneClock.nowMillis()
+    let candidates = try? await onAttachmentQueue { desktopArtifacts.recoveryCandidates(journal: true, now: now) }
+    func destination(_ binding: AgentDesktopArtifactRecovery.Binding) -> MqttPeerChatProjection.Destination? {
+      guard case .journal(let identity) = binding.owner, !revokingScopes.contains(identity.scope),
+            let target = try? projection.currentDestination(identity), target.desktop,
+            target.peer.remoteSignalName == binding.desktopID, target.routeId == binding.routeID,
+            routes.readyForTopic(target.peer.binding.sendTopic) else { return nil }
+      return target
+    }
+    var attempts = 0
+    for candidate in candidates ?? [] {
+      guard !stopped, !Task.isCancelled, attempts < AgentDesktopArtifactRecovery.maximumRequests else { break }
+      guard destination(candidate.binding) != nil, case .journal(let identity) = candidate.binding.owner,
+            let request = try? await onAttachmentQueue({ try desktopArtifacts.claimRecovery(candidate, now: now) })
+      else { continue }
+      attempts += 1
+      guard !stopped, !Task.isCancelled, let target = destination(request.binding) else { continue }
+      do {
+        let outgoing = try MqttSignalSendRequest(identity: identity, payload: request.payload(),
+          remoteName: target.peer.remoteSignalName, topic: target.peer.binding.sendTopic,
+          clientRouteID: target.routeId, traffic: .control, contactID: target.contactId)
+        let wire = try routes.withOutgoing(identity: identity, topics: [outgoing.topic]) {
+          try engine.makeRecoveryQueryWire(outgoing)
+        }
+        _ = await routes.publishTransientControl(topic: outgoing.topic, wire: wire, secret: target.peer.binding.secret)
+      } catch { onFailure(error) }
+    }
   }
 
   private func onAttachmentQueue<T>(_ work: @escaping () throws -> T) async throws -> T {
