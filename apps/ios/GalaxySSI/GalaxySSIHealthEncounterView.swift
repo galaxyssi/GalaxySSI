@@ -22,6 +22,8 @@ struct GalaxySSIHealthEncounterView: View {
   @State private var selectedEntryID: UUID?
   @State private var showingDocuments = false
   @State private var showingInstructions = false
+  @State private var showingJournal = false
+  @State private var journalAvailable = false
 
   private struct Editor: Identifiable {
     let id: UUID
@@ -46,6 +48,11 @@ struct GalaxySSIHealthEncounterView: View {
             Button { showingDocuments = true } label: { Label(t("documents", "Visit documents"), systemImage: "doc.on.doc") }
             Button { showingInstructions = true } label: {
               Label(GalaxySSIHealthInstruction.text("title", "Instruction drafts", language), systemImage: "list.bullet.rectangle")
+            }
+            if journalAvailable {
+              Button { showingJournal = true } label: {
+                Label(GalaxySSIHealthVisitJournal.text("title", "Post-visit journal", language), systemImage: "book.closed")
+              }
             }
             Section(t("history", "Change history")) {
               ForEach(rows, id: \.revision) { version in
@@ -100,6 +107,9 @@ struct GalaxySSIHealthEncounterView: View {
     }
     .sheet(isPresented: $showingInstructions) {
       if let entryID { GalaxySSIHealthInstructionReviewView(records: records, concern: concern, metric: metric, visit: entryID) }
+    }
+    .sheet(isPresented: $showingJournal) {
+      if let entryID { GalaxySSIHealthVisitJournalView(records: records, concern: concern, metric: metric, visit: entryID) }
     }
     .confirmationDialog(t("delete_confirm", "Delete this visit and its change history?"),
                         isPresented: $deleting, titleVisibility: .visible) {
@@ -170,7 +180,7 @@ struct GalaxySSIHealthEncounterView: View {
   private func t(_ key: String, _ fallback: String) -> String { Encounter.text(key, fallback, language) }
 
   private func clear(failed: Bool = false) {
-    page = nil; rows = []; editor = nil; deleting = false; loadedAt = nil; self.failed = failed
+    page = nil; rows = []; editor = nil; deleting = false; loadedAt = nil; journalAvailable = false; self.failed = failed
   }
 
   private func requestLoad() {
@@ -186,6 +196,9 @@ struct GalaxySSIHealthEncounterView: View {
         before: append ? page?.next : nil, expected: append ? page?.stamp : nil)
       rows = append ? rows + value.rows : value.rows
       page = value
+      journalAvailable = value.entry.map {
+        $0.details.state == .attended || records.hasVisitJournal($0.id, stamp: value.stamp)
+      } ?? false
       if !append { loadedAt = Date() }
       failed = false
     } catch { clear(failed: true) }
