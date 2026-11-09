@@ -118,6 +118,7 @@ enum AgentCollaborationRuleTopics {
     \(AgentCollaborationTypedRecordValidation.guidance)
     For acceptance_review, cite exactly one current delivery in parents. In body.acceptance_review include criterion_id,
     requirement, target (the exact parent), verdict (supported, refuted, or not_tested), rationale and unresolved.
+    \(AgentCollaborationInterimDelivery.reviewInstructions)
     The reviewer must be independent of the delivery author; cite completely read original observations in observations.
     Frozen host read coverage identifies the original reader, not your own coverage. Reading another member's receipt
     does not satisfy your independent-read requirement.
@@ -295,6 +296,54 @@ struct AgentCollaborationAcceptedDelivery: Codable, Equatable {
   let reference: AgentCollaborationResearchReference
   let content: String
   var source: Source? = nil
+}
+
+enum AgentCollaborationInterimDelivery {
+  static let field = "interim_delivery"
+  static let receiptField = "interim_delivery_receipt"
+  static let tool = "galaxyssi.collaboration.conversation_delivery"
+  static let instructions = "On continue, interim_delivery:{criterion_id,target:{object_id,revision,sha256}} may present an exact independently reviewed artifact. Preserve all criteria, delivery and review references, and unmet conditions. A host interim_delivery_receipt confirms local persistence only, not reading, acknowledgement or final acceptance."
+  static let reviewInstructions = "An acceptance_review may include content_readiness:{verdict,rationale,unresolved} for interim presentation only. Preserve the overall verdict and unresolved postconditions."
+
+  struct Request: Codable {
+    let criterion_id: String
+    let target: AgentCollaborationDocumentaryAcceptance.Reference
+  }
+
+  struct Intent: Codable, Equatable {
+    let owner: AgentCollaborationToolEvidenceScope
+    let source: AgentCollaborationAcceptedDelivery.Source
+    let target: AgentCollaborationResearchReference
+    let criterionID: String
+    let contentSHA256: String
+    let createdAt: Int64
+  }
+
+  static func request(_ value: AgentMcpJSONValue?) -> Request? {
+    guard let row = value?.objectValue, Set(row.keys) == ["criterion_id", "target"],
+          let id = row["criterion_id"]?.strictStringValue, !id.isBlank, id.utf8.count <= 160,
+          AgentCollaborationSavedToolTest.reference(row["target"]) != nil else { return nil }
+    return try? JSONDecoder().decode(Request.self, from: Data(AgentMcpJSONCodec.stringify(row).utf8))
+  }
+
+  static func validReadiness(_ value: AgentMcpJSONValue, overall: String) -> Bool {
+    guard let row = value.objectValue, Set(row.keys) == ["verdict", "rationale", "unresolved"],
+          let verdict = row["verdict"]?.strictStringValue, ["supported", "refuted", "not_tested"].contains(verdict),
+          let reason = row["rationale"]?.strictStringValue, !reason.isBlank,
+          let unresolved = row["unresolved"]?.arrayValue,
+          unresolved.allSatisfy({ $0.strictStringValue?.isBlank == false }),
+          verdict != "supported" || unresolved.isEmpty,
+          overall != "supported" || verdict == "supported" else { return false }
+    return true
+  }
+
+  static func supportsContent(_ review: AgentMcpJSONObject) -> Bool {
+    let verdict = review.string("verdict")
+    if let explicit = review["content_readiness"] {
+      return validReadiness(explicit, overall: verdict) && explicit.objectValue?["verdict"] == .string("supported")
+    }
+    return verdict == "supported" && review["unresolved"] == .array([])
+  }
 }
 
 struct AgentCollaborationCoordinatorRecovery: Codable, Equatable {
@@ -952,6 +1001,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
     var work: [Work]
     var blockers: [Blocker]
     var recruit: [Work]?
+    var interim_delivery: AgentCollaborationInterimDelivery.Request? = nil
   }
 
   static func blockerAssessment(_ raw: String, preserving contract: [Criterion]) -> Assessment? {
@@ -994,7 +1044,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
   static func initialContract(_ raw: String) -> [Criterion]? {
     guard case .success(let draft) = parseAssessment(raw, limit: assessmentDraftLimit),
           draft.format == "galaxyssi.goal-assessment.v1", !draft.summary.isBlank,
-          draft.decision == .continue, draft.work.isEmpty, draft.blockers.isEmpty, draft.recruit?.isEmpty != false,
+          draft.decision == .continue, draft.interim_delivery == nil, draft.work.isEmpty, draft.blockers.isEmpty, draft.recruit?.isEmpty != false,
           (1...64).contains(draft.criteria.count),
           Set(draft.criteria.map(\.id)).count == draft.criteria.count,
           draft.criteria.allSatisfy({ criterion in
@@ -1126,7 +1176,9 @@ enum AgentCollaborationDocumentaryAcceptance {
           review.target.revision > 0, parents.contains(review.target),
           ["supported", "refuted", "not_tested"].contains(review.verdict),
           review.unresolved.allSatisfy({ !$0.isBlank }),
-          review.verdict != "supported" || review.unresolved.isEmpty else { return false }
+          review.verdict != "supported" || review.unresolved.isEmpty,
+          raw["content_readiness"].map({ AgentCollaborationInterimDelivery.validReadiness($0, overall: review.verdict) }) ?? true
+    else { return false }
     return [review.target.objectId, review.target.sha256].allSatisfy { value in
       value.utf8.count == 64 && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
     }
