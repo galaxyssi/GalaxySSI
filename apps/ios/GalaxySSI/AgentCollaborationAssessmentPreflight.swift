@@ -188,11 +188,31 @@ extension AgentCollaborationGoalAssessmentPolicy {
     return .success(draft)
   }
 
-  static func preflight(_ raw: String, establishedContract: Bool) -> AgentMcpJSONObject {
+  static func newDesktopBindingIssue(_ proposed: [Criterion], preserving contract: [Criterion]) -> AssessmentIssue? {
+    let allowed = AgentDesktopToolEvidenceWire.RecordedEvent.acceptanceTools
+    let saved = Dictionary(contract.map { ($0.id, Set($0.required_observations ?? [])) },
+      uniquingKeysWith: { first, _ in first })
+    for (index, criterion) in proposed.enumerated() {
+      for (sourceIndex, binding) in (criterion.required_observations ?? []).enumerated()
+      where binding.origin == "desktop_codex_tool" && saved[criterion.id]?.contains(binding) != true {
+        if !allowed.contains(binding.tool) {
+          return .init(path: "$.criteria[\(index)].required_observations[\(sourceIndex)].tool",
+            code: "unknown_recorded_tool", expected: "a recorded Desktop output family, not a callable tool name",
+            actual: String(decoding: binding.tool.utf8.prefix(160), as: UTF8.self), allowed: allowed)
+        }
+      }
+    }
+    return nil
+  }
+
+  static func preflight(_ raw: String, establishedContract: Bool,
+                        preserving contract: [Criterion]? = nil) -> AgentMcpJSONObject {
     let checked = parseAssessment(raw, limit: 131_072)
     let issue: AssessmentIssue?
     switch checked {
-    case .success: issue = nil
+    case .success(let assessment):
+      issue = (contract != nil || !establishedContract)
+        ? newDesktopBindingIssue(assessment.criteria, preserving: contract ?? []) : nil
     case .failure(let failure): issue = failure
     }
     let valid = issue == nil
@@ -204,7 +224,8 @@ extension AgentCollaborationGoalAssessmentPolicy {
       "json_valid": .bool(syntaxValid), "draft_sha256": .string(digest), "failure": issue?.wire ?? .null,
       "acceptance_contract_state": .string(establishedContract ? "established" : "not_established"),
       "validation_scope": .string("structure_only_not_admission_or_acceptance"),
-      "checked": .array(["assessment_fields", "qualified_validator_specification"].map(AgentMcpJSONValue.string)),
+      "checked": .array((["assessment_fields", "qualified_validator_specification"] +
+        (contract != nil || !establishedContract ? ["new_desktop_recorded_event_bindings"] : [])).map(AgentMcpJSONValue.string)),
       "not_checked": .array(["preserved_contract", "work_graph", "permissions", "evidence", "goal_acceptance"].map(AgentMcpJSONValue.string)),
       "committed": .bool(false), "goal_accepted": .bool(false), "assignment_completed": .bool(false),
       "next_action": .string(valid ? "Return the required assessment when ready; final admission and evidence checks still apply." :
@@ -219,15 +240,16 @@ extension AgentCollaborationGoalAssessmentPolicy {
   }
 
   static func repairFeedback(_ raw: String, contract: [Criterion], contractSubmission: Bool) -> AgentMcpJSONObject {
-    var result = preflight(raw, establishedContract: !contract.isEmpty)
+    var result = preflight(raw, establishedContract: !contract.isEmpty, preserving: contract)
     result["contract_state"] = .string(contract.isEmpty ? "initial_criteria_pending" : "established")
     result["established_criteria_count"] = .int(Int64(contract.count))
+    result["targeted_work_repair"] = .string(AgentCollaborationWorkRepair.guidance)
     result["next_action"] = .string(contract.isEmpty
       ? "No criteria have been established yet; an empty contract is not corruption. Repair the draft, define criteria from the pinned goal and establish them before dispatch. Rejected assignments must not run."
       : "Preserve every established requirement, validator and required source. Read the pinned criteria and repair the draft; rejected assignments must not run.")
     if case .success(let draft) = parseAssessment(raw, limit: assessmentDraftLimit) {
-      var issue: AssessmentIssue?
-      if !contract.isEmpty {
+      var issue = newDesktopBindingIssue(draft.criteria, preserving: contract)
+      if issue == nil, !contract.isEmpty {
         let byID = Dictionary(uniqueKeysWithValues: draft.criteria.enumerated().map { ($0.element.id, ($0.offset, $0.element)) })
         for original in contract {
           guard let (index, current) = byID[original.id] else {
@@ -274,6 +296,9 @@ extension AgentCollaborationGoalAssessmentPolicy {
         result["field_path"] = .string(issue.path)
         result["reason"] = .string(issue.code)
         if !issue.allowed.isEmpty { result["allowed_values"] = .array(issue.allowed.map(AgentMcpJSONValue.string)) }
+        if issue.code == "unknown_recorded_tool" {
+          result["next_action"] = .string("Use a supported recorded Desktop event family, not a callable name. No contract or work was admitted. Do not execute a command to discover its receipt name or rewrite an existing binding.")
+        }
       }
     }
     return result
