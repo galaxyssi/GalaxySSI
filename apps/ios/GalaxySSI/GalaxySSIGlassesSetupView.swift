@@ -5,6 +5,7 @@ import UIKit
 @MainActor
 struct GalaxySSIGlassesSetupView: View {
   typealias Wire = GalaxySSIGlassesSetupProtocol
+  typealias Cloud = GalaxySSIGlassesCloudConfiguration
   private enum Stage: Equatable { case idle, connecting, comparison(String), confirming, ready, sending, saved }
   private struct ModelChoice: Identifiable {
     let contact: GalaxySSIContact
@@ -18,6 +19,10 @@ struct GalaxySSIGlassesSetupView: View {
   @State private var host = ""
   @State private var port = ""
   @State private var modelID = ""
+  @State private var draft = Cloud.Draft()
+  @State private var prepared: Cloud.Candidate?
+  @State private var testedFingerprint: String?
+  @State private var probeFailed = false
   @State private var stage = Stage.idle
   @State private var failed = false
   @State private var connection: GalaxySSIGlassesSetupConnection?
@@ -32,13 +37,20 @@ struct GalaxySSIGlassesSetupView: View {
       }.map { ModelChoice(contact: contact, model: $0) }
     }
   }
-  private var selected: ModelChoice? { choices.first { $0.id == modelID } }
+  private var candidate: Cloud.Candidate? {
+    if modelID == "custom" { return draft.candidate }
+    guard let selected = choices.first(where: { "saved:" + $0.id == modelID }),
+          let key = store.apiKey(for: selected.model) else { return nil }
+    return Cloud.Candidate(agentName: selected.contact.name, model: selected.model, key: key)
+  }
   private var active: Bool { scene == .active && UIApplication.shared.isProtectedDataAvailable }
 
   var body: some View {
     Form {
       switch stage {
-      case .idle: connectSection
+      case .idle:
+        modelSection
+        connectSection
       case .connecting, .confirming, .sending: ProgressView()
       case .comparison(let code):
         Section(t("verification", "Verify pairing code")) {
@@ -47,10 +59,10 @@ struct GalaxySSIGlassesSetupView: View {
           Button(t("match", "The codes match"), action: confirm)
           Button(t("mismatch", "The codes differ"), role: .cancel) { reset() }
         }
-      case .ready: modelSection
+      case .ready: transferSection
       case .saved:
         Label(t("saved", "The glasses saved the cloud model."), systemImage: "checkmark.circle")
-        Button(t("another", "Configure another device")) { reset() }
+        Button(t("another", "Configure another device")) { reset(clearDraft: true) }
       }
       if stage != .idle && stage != .saved { Button(t("cancel", "Cancel"), role: .cancel) { reset() } }
       if failed { Text(t("failed", "Setup could not be confirmed. Check Wi-Fi and start a new setup on the glasses.")) }
@@ -58,13 +70,17 @@ struct GalaxySSIGlassesSetupView: View {
     .navigationTitle(t("title", "Configure AR glasses"))
     .navigationBarTitleDisplayMode(.inline)
     .navigationBarHidden(false)
-    .onDisappear { reset() }
+    .onDisappear { reset(clearDraft: true) }
     .onChange(of: scene) { value in
-      if value == .background || (value == .inactive && stage != .connecting) { reset() }
+      if value == .background || (value == .inactive && stage != .connecting) { reset(clearDraft: true) }
     }
-    .onChange(of: store.profile.identityFingerprint) { _ in reset() }
+    .onChange(of: store.profile.identityFingerprint) { _ in reset(clearDraft: true) }
+    .onChange(of: candidate?.fingerprint) { next in
+      if testedFingerprint != next { testedFingerprint = nil }
+      probeFailed = false
+    }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) {
-      _ in reset()
+      _ in reset(clearDraft: true)
     }
   }
 
@@ -76,31 +92,86 @@ struct GalaxySSIGlassesSetupView: View {
       Button(t("connect", "Connect")) {
         guard let endpoint = GalaxySSIGlassesSetupConnection.manualEndpoint(host: host, port: port) else { return }
         connect(endpoint)
-      }.disabled(!active || GalaxySSIGlassesSetupConnection.manualEndpoint(host: host, port: port) == nil)
+      }.disabled(!active || job != nil || candidate == nil ||
+        GalaxySSIGlassesSetupConnection.manualEndpoint(host: host, port: port) == nil)
     }
   }
 
   private var modelSection: some View {
     Section(t("model", "Cloud Agent and model")) {
-      if choices.isEmpty {
-        Text(t("no_model", "No saved cloud model can be transferred.")).foregroundColor(.secondary)
-      }
       Picker(t("model", "Cloud Agent and model"), selection: $modelID) {
         Text(t("select", "Select a saved model")).tag("")
-        ForEach(choices) { option in Text(option.contact.name + " / " + option.model.modelId).tag(option.id) }
+        ForEach(choices) { option in Text(option.contact.name + " / " + option.model.modelId).tag("saved:" + option.id) }
+        Text(t("custom", "New transfer-only configuration")).tag("custom")
       }
-      if let selected {
-        Text(selected.model.endpoint).font(.footnote)
-        Text(t("share", "Transfer this model's API key to the confirmed glasses. The phone configuration is unchanged."))
-          .font(.footnote)
+      if modelID == "custom" {
+        TextField(t("agent_name", "Agent name"), text: $draft.agentName)
+        Picker(t("api_style", "API format"), selection: $draft.style) {
+          Text("OpenAI-compatible").tag(GalaxySSICloudAPIStyle.openAICompatible)
+          Text("Anthropic").tag(GalaxySSICloudAPIStyle.anthropic)
+          Text("Gemini").tag(GalaxySSICloudAPIStyle.gemini)
+        }
+        TextField(t("endpoint", "Full HTTPS API endpoint"), text: $draft.endpoint)
+          .keyboardType(.URL).autocorrectionDisabled().textInputAutocapitalization(.never)
+        TextField(t("model_id", "Model ID"), text: $draft.modelID)
+          .autocorrectionDisabled().textInputAutocapitalization(.never)
+        SecureField(t("api_key", "API key"), text: $draft.key).textInputAutocapitalization(.never)
       }
-      Button(t("transfer", "Transfer configuration"), action: transfer).disabled(selected == nil || !active)
+      if let candidate {
+        if modelID != "custom" { Text(candidate.model.endpoint).font(.footnote) }
+        if testedFingerprint == candidate.fingerprint {
+          Label(t("tested", "Phone connection test passed"), systemImage: "checkmark.circle")
+        }
+      } else if !modelID.isEmpty {
+        Text(t("invalid_model", "Check the endpoint, model ID, and API key.")).foregroundColor(.secondary)
+      }
+      if probeFailed { Text(t("probe_failed", "The phone could not verify the model connection.")) }
+      if job != nil { ProgressView() }
+      Button(t("probe", "Test connection"), action: testConnection).disabled(candidate == nil || !active)
+    }.disabled(job != nil)
+  }
+
+  private var transferSection: some View {
+    Section(t("preview", "Transfer preview")) {
+      if let prepared {
+        Text(prepared.agentName.isBlank ? prepared.model.provider : prepared.agentName)
+        Text(prepared.model.modelId)
+        Text(prepared.model.endpoint).font(.footnote)
+        if testedFingerprint == prepared.fingerprint {
+          Label(t("tested", "Phone connection test passed"), systemImage: "checkmark.circle")
+        } else {
+          Text(t("not_tested", "Phone connection not tested")).foregroundColor(.secondary)
+        }
+      }
+      Text(t("share", "Transfer this model's API key to the confirmed glasses. The phone configuration is unchanged."))
+        .font(.footnote)
+      Button(t("transfer", "Transfer configuration"), action: transfer).disabled(prepared == nil || !active)
+    }
+  }
+
+  private func testConnection() {
+    guard active, stage == .idle, job == nil, let candidate else { return }
+    let id = generation
+    probeFailed = false
+    testedFingerprint = nil
+    job = Task {
+      defer { if generation == id { job = nil } }
+      do {
+        try await Cloud.probe(candidate)
+        guard active, generation == id, !Task.isCancelled,
+              self.candidate?.fingerprint == candidate.fingerprint else { return }
+        testedFingerprint = candidate.fingerprint
+      } catch {
+        if active, generation == id, !Task.isCancelled,
+           self.candidate?.fingerprint == candidate.fingerprint { probeFailed = true }
+      }
     }
   }
 
   private func connect(_ endpoint: NWEndpoint) {
-    guard active, stage == .idle, job == nil else { return }
+    guard active, stage == .idle, job == nil, let candidate else { return }
     do {
+      prepared = candidate
       connection = try GalaxySSIGlassesSetupConnection(endpoint: endpoint)
       stage = .connecting
       perform(seconds: 20) { client in
@@ -117,12 +188,15 @@ struct GalaxySSIGlassesSetupView: View {
   }
 
   private func transfer() {
-    guard active, stage == .ready, let selected, let key = store.apiKey(for: selected.model) else { return }
-    do {
-      let profile = try Wire.Profile(agentName: selected.contact.name, model: selected.model, key: key)
-      stage = .sending
-      perform(seconds: 30) { client in try await client.transfer(profile); return .saved }
-    } catch { reset(); failed = true }
+    guard active, stage == .ready, let prepared, candidate?.fingerprint == prepared.fingerprint else {
+      reset(); failed = true; return
+    }
+    stage = .sending
+    perform(seconds: 30) { client in
+      guard active, candidate?.fingerprint == prepared.fingerprint else { throw Wire.Failure.invalid }
+      try await client.transfer(prepared.profile)
+      return .saved
+    }
   }
 
   private func perform(seconds: UInt64, operation: @escaping (GalaxySSIGlassesSetupConnection) async throws -> Stage) {
@@ -139,7 +213,9 @@ struct GalaxySSIGlassesSetupView: View {
         switch next {
         case .comparison: expire(seconds: 55, id: id)
         case .ready: expire(seconds: 240, id: id)
-        case .saved: connection.close(); self.connection = nil; modelID = ""
+        case .saved:
+          connection.close(); self.connection = nil
+          prepared = nil; modelID = ""; draft = .init(); testedFingerprint = nil; probeFailed = false
         default: break
         }
       } catch {
@@ -156,11 +232,12 @@ struct GalaxySSIGlassesSetupView: View {
     }
   }
 
-  private func reset() {
+  private func reset(clearDraft: Bool = false) {
     generation = UUID()
     job?.cancel(); job = nil; watchdog?.cancel(); watchdog = nil
     connection?.close(); connection = nil
-    modelID = ""; stage = .idle; failed = false
+    prepared = nil; stage = .idle; failed = false
+    if clearDraft { modelID = ""; draft = .init(); testedFingerprint = nil; probeFailed = false }
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

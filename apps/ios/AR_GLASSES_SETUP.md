@@ -1,11 +1,17 @@
 # AR glasses provisioning from iPhone
 
-Open My Agent, Connected devices, Configure AR glasses. Start phone setup
-on the glasses and enter the IPv4 address and port displayed by the
-glasses. Both devices must be on the same Wi-Fi. Confirm the certificate-
-bound six-digit code on both devices, then explicitly choose and transfer
-an existing Cloud Agent model. The key is read only for the transfer and
-never displayed or written to a new file on the phone.
+Open My Agent, Connected devices, Configure AR glasses. Select a saved
+Cloud Agent model or enter a temporary HTTPS provider configuration.
+An optional connection test sends only a synthetic prompt to the selected
+endpoint. It tests the phone's connection, not the glasses.
+
+Start phone setup on the glasses and enter their displayed IPv4 address
+and port. Both devices must be on the same Wi-Fi. Confirm the certificate-
+bound six-digit code on both devices, then review and transfer the same
+configuration. Edits or credential changes invalidate an earlier test or
+prepared transfer. Temporary credentials are cleared on exit, account
+change, backgrounding, and successful transfer, and are never added to
+the phone's saved model list.
 
 Manual IP is the current glasses protocol's fallback and works without
 Bonjour service registration. The current glasses advertisement,

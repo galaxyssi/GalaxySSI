@@ -387,6 +387,7 @@
     D13237000000000000000001 /* GalaxySSIGlassesSetupProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23237000000000000000001 /* GalaxySSIGlassesSetupProtocol.swift */; };
     D13237000000000000000002 /* GalaxySSIGlassesSetupConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23237000000000000000002 /* GalaxySSIGlassesSetupConnection.swift */; };
     D13237000000000000000003 /* GalaxySSIGlassesSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23237000000000000000003 /* GalaxySSIGlassesSetupView.swift */; };
+    D13244000000000000000001 /* GalaxySSIGlassesCloudConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23244000000000000000001 /* GalaxySSIGlassesCloudConfiguration.swift */; };
     A10000000000000000001110 /* GalaxySSIVoiceAssistantSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001110 /* GalaxySSIVoiceAssistantSettingsView.swift */; };
     A10000000000000000001360 /* GalaxySSIVoiceProviderPagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001360 /* GalaxySSIVoiceProviderPagesView.swift */; };
     A10000000000000000000888 /* GalaxySSIAndroidParityUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000888 /* GalaxySSIAndroidParityUI.swift */; };
@@ -481,6 +482,7 @@
     A10000000000000000000890 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = A41000000000000000000890 /* Localizable.strings */; };
     A10000000000000000000006 /* GalaxySSILinkProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* GalaxySSILinkProtocolTests.swift */; };
     D13237000000000000000004 /* GalaxySSIGlassesSetupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23237000000000000000004 /* GalaxySSIGlassesSetupTests.swift */; };
+    D13244000000000000000002 /* GalaxySSIGlassesCloudConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23244000000000000000002 /* GalaxySSIGlassesCloudConfigurationTests.swift */; };
     A10000000000000000000007 /* GalaxySSIStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* GalaxySSIStoreTests.swift */; };
     A10000000000000000000892 /* LanguagePolicySettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000892 /* LanguagePolicySettingsTests.swift */; };
     A10000000000000000000008 /* GalaxySSILinkReliability.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* GalaxySSILinkReliability.swift */; };
@@ -1693,6 +1695,7 @@
     D23237000000000000000001 /* GalaxySSIGlassesSetupProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIGlassesSetupProtocol.swift; sourceTree = "<group>"; };
     D23237000000000000000002 /* GalaxySSIGlassesSetupConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIGlassesSetupConnection.swift; sourceTree = "<group>"; };
     D23237000000000000000003 /* GalaxySSIGlassesSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIGlassesSetupView.swift; sourceTree = "<group>"; };
+    D23244000000000000000001 /* GalaxySSIGlassesCloudConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIGlassesCloudConfiguration.swift; sourceTree = "<group>"; };
     A20000000000000000001110 /* GalaxySSIVoiceAssistantSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIVoiceAssistantSettingsView.swift; sourceTree = "<group>"; };
     A20000000000000000001360 /* GalaxySSIVoiceProviderPagesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIVoiceProviderPagesView.swift; sourceTree = "<group>"; };
     A20000000000000000000888 /* GalaxySSIAndroidParityUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAndroidParityUI.swift; sourceTree = "<group>"; };
@@ -1787,6 +1790,7 @@
     A20000000000000000000890 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
     A20000000000000000000006 /* GalaxySSILinkProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSILinkProtocolTests.swift; sourceTree = "<group>"; };
     D23237000000000000000004 /* GalaxySSIGlassesSetupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIGlassesSetupTests.swift; sourceTree = "<group>"; };
+    D23244000000000000000002 /* GalaxySSIGlassesCloudConfigurationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIGlassesCloudConfigurationTests.swift; sourceTree = "<group>"; };
     A20000000000000000000007 /* GalaxySSIStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIStoreTests.swift; sourceTree = "<group>"; };
     A20000000000000000000892 /* LanguagePolicySettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguagePolicySettingsTests.swift; sourceTree = "<group>"; };
     A20000000000000000000008 /* GalaxySSI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GalaxySSI.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -3631,6 +3635,7 @@
         D23237000000000000000001 /* GalaxySSIGlassesSetupProtocol.swift */,
         D23237000000000000000002 /* GalaxySSIGlassesSetupConnection.swift */,
         D23237000000000000000003 /* GalaxySSIGlassesSetupView.swift */,
+        D23244000000000000000001 /* GalaxySSIGlassesCloudConfiguration.swift */,
         A20000000000000000001110 /* GalaxySSIVoiceAssistantSettingsView.swift */,
         A20000000000000000001360 /* GalaxySSIVoiceProviderPagesView.swift */,
         A20000000000000000000A00 /* GalaxySSIRichContentView.swift */,
@@ -3691,6 +3696,7 @@
         F32540000000000000000004 /* GalaxySSIPairingDeliveryTests.swift */,
         A20000000000000000000006 /* GalaxySSILinkProtocolTests.swift */,
         D23237000000000000000004 /* GalaxySSIGlassesSetupTests.swift */,
+        D23244000000000000000002 /* GalaxySSIGlassesCloudConfigurationTests.swift */,
         A20000000000000000000011 /* GalaxySSILinkReliabilityTests.swift */,
         A20000000000000000002707 /* AgentEvalOpsTests.swift */,
         A20000000000000000002710 /* AgentMemoryTrustAndLabRuntimeTests.swift */,
@@ -5072,6 +5078,7 @@
         D13237000000000000000001 /* GalaxySSIGlassesSetupProtocol.swift in Sources */,
         D13237000000000000000002 /* GalaxySSIGlassesSetupConnection.swift in Sources */,
         D13237000000000000000003 /* GalaxySSIGlassesSetupView.swift in Sources */,
+        D13244000000000000000001 /* GalaxySSIGlassesCloudConfiguration.swift in Sources */,
         A10000000000000000001110 /* GalaxySSIVoiceAssistantSettingsView.swift in Sources */,
         A10000000000000000001360 /* GalaxySSIVoiceProviderPagesView.swift in Sources */,
         A10000000000000000000A00 /* GalaxySSIRichContentView.swift in Sources */,
@@ -5132,6 +5139,7 @@
         F32540000000000000000003 /* GalaxySSIPairingDeliveryTests.swift in Sources */,
         A10000000000000000000006 /* GalaxySSILinkProtocolTests.swift in Sources */,
         D13237000000000000000004 /* GalaxySSIGlassesSetupTests.swift in Sources */,
+        D13244000000000000000002 /* GalaxySSIGlassesCloudConfigurationTests.swift in Sources */,
         A10000000000000000000009 /* GalaxySSILinkReliabilityTests.swift in Sources */,
         A10000000000000000002707 /* AgentEvalOpsTests.swift in Sources */,
         A10000000000000000002710 /* AgentMemoryTrustAndLabRuntimeTests.swift in Sources */,
