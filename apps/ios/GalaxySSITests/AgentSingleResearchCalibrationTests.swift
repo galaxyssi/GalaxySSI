@@ -1,3 +1,4 @@
+import Darwin
 import XCTest
 @testable import GalaxySSI
 
@@ -22,10 +23,73 @@ final class AgentSingleResearchCalibrationTests: XCTestCase {
   }
 
   func testSingleResearchAssignmentPublishesAndRecallsAnUnverifiedMethodAfterReopen() async throws {
+    try await runCalibration(persistSelection: true)
+  }
+
+  func testCalibrationDoesNotCreateASelectionFromTheNewestConversation() async throws {
+    try await runCalibration(persistSelection: false)
+  }
+
+  func testCalibrationDeviceBindingRejectsMissingAmbiguousAndMismatchedModels() throws {
+    let actual = "iPhone16,2"
+    XCTAssertNoThrow(try Self.requirePilotDevice(actual: actual, expected: actual))
+    XCTAssertThrowsError(try Self.requirePilotDevice(actual: actual, expected: nil))
+    XCTAssertThrowsError(try Self.requirePilotDevice(actual: actual, expected: "iPhone17,2"))
+    for invalid in ["", " ", "*", "iPhone16,2,iPhone17,2", "iPhone16,2\n", " iPhone16,2", "iPhone16,2;iPhone17,2"] {
+      XCTAssertThrowsError(try Self.requirePilotDevice(actual: invalid, expected: invalid))
+    }
+  }
+
+  func testDeviceBoundCalibrationPreservesPersistedSelection() async throws {
+    let environment = ProcessInfo.processInfo.environment
+    guard environment["GALAXYSSI_CALIBRATION_DEVICE_TEST"] == "1" else {
+      throw XCTSkip("Device-bound calibration is opt-in")
+    }
+    #if targetEnvironment(simulator)
+    XCTFail("Device-bound calibration requires a physical iOS device")
+    #else
+    var hardware = utsname()
+    guard uname(&hardware) == 0 else { throw PilotDeviceError.unavailable }
+    let model = withUnsafeBytes(of: hardware.machine) {
+      String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self)
+    }
+    try Self.requirePilotDevice(actual: model, expected: environment["GALAXYSSI_CALIBRATION_DEVICE_MODEL"])
+    try await runCalibration(persistSelection: true)
+    try await runCalibration(persistSelection: false)
+    let attachment = XCTAttachment(string: "device_model=\(model)\nselection_check=persisted_conversation_selection")
+    attachment.name = "Calibration device and check"
+    attachment.lifetime = .keepAlways
+    add(attachment)
+    #endif
+  }
+
+  private enum PilotDeviceError: Error { case unavailable, invalid, mismatch }
+
+  private static func requirePilotDevice(actual: String, expected: String?) throws {
+    // A hardware identifier contains one comma; it is not a list of models.
+    guard let expected,
+          expected.utf8.count <= 128,
+          expected.range(of: #"\Ai(?:Phone|Pad|Pod)[0-9]+,[0-9]+\z"#, options: .regularExpression) != nil
+    else { throw PilotDeviceError.invalid }
+    guard actual == expected else { throw PilotDeviceError.mismatch }
+  }
+
+  private func runCalibration(persistSelection: Bool) async throws {
     let fixture = try makeFixture()
     defer { fixture.cleanup() }
     let history = fixture.history()
     let scope = scope(run: "original-run", turn: "original-turn")
+    let conversationFile = fixture.root.appendingPathComponent("conversations.sqlite3")
+    let conversations = AgentConversationDatabase(fileURL: conversationFile, secrets: fixture.secrets)
+    let existing = AgentConversation(id: "existing-conversation", title: "Existing conversation", createdAt: 1, updatedAt: 1)
+    XCTAssertTrue(conversations.upsert(existing))
+    if persistSelection { conversations.setActiveConversationId(existing.id) }
+    let priorSelection = conversations.activeConversationId
+    XCTAssertEqual(priorSelection, persistSelection ? existing.id : "")
+    let pilot = AgentConversation(id: scope.conversationId, title: "Isolated calibration", createdAt: 2, updatedAt: 2)
+    XCTAssertTrue(conversations.upsert(pilot))
+    XCTAssertEqual(conversations.readAll().max { $0.updatedAt < $1.updatedAt }?.id, pilot.id)
+    XCTAssertEqual(conversations.activeConversationId, priorSelection)
     let calibration = try XCTUnwrap(AgentSingleResearchCalibration(format: AgentSingleResearchCalibration.format,
       scope: scope, selection: selection, objective: objective, maximumDispatches: 1))
     let final = #"{"format":"galaxyssi.research-artifact.v1","summary":"Synthetic delivery only","milestones":["candidate"]}"#
@@ -99,6 +163,14 @@ final class AgentSingleResearchCalibrationTests: XCTestCase {
     XCTAssertEqual(directory["capabilities"]?.arrayValue?.first?.objectValue?.string("state"), "unverified_candidate")
     XCTAssertEqual(directory["grants_permissions"], .bool(false))
     XCTAssertThrowsError(try reopened.publishCollaborationMilestone(["mode": .string("status")], scope: future))
+
+    let persisted = AgentConversationDatabase(fileURL: conversationFile, secrets: fixture.secrets)
+    XCTAssertEqual(persisted.activeConversationId, priorSelection)
+    XCTAssertEqual(persisted.read(pilot.id), pilot)
+    XCTAssertEqual(persisted.delete(pilot.id), pilot)
+    XCTAssertTrue(persisted.confirmsAbsent(pilot.id))
+    XCTAssertEqual(persisted.read(existing.id), existing)
+    XCTAssertEqual(persisted.activeConversationId, priorSelection)
   }
 
   func testEnrollmentCannotAuthorizeChangedObjectiveMultipleMembersOrRevokedGroup() throws {
