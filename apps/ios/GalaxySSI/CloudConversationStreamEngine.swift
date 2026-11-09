@@ -1120,7 +1120,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           scope.rosterMember(in: roster)?.resourceId == resourceID,
           session.mergedIntoConversationId.isBlank,
           !session.privateMode, !session.trackingPaused else { return nil }
-    return try? history.recallCollaborationOriginal(input, scope: scope)
+    return try? history.recallCollaborationOriginal(input, scope: scope,
+      allowCoordinatorOffers: allowsResearch && scope.rosterMember(in: roster)?.id == roster.coordinatorId)
   }
 
   private func executeToolCalls(

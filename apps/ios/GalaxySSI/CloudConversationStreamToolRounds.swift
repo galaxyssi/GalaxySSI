@@ -442,7 +442,7 @@ struct CloudModelStreamMutableConversation {
     let modes = (originalsOnly ? ["goal", "dependency", "acceptance_record", "native_evidence"] :
       ["workspace", "evidence", "native_evidence", "goal", "dependency", "acceptance_record", "problems", "capabilities", "evolution_rules", "method_history"]) +
       ["desktop_evidence_list", "desktop_evidence"] +
-      (originalsOnly ? [] : [AgentCollaborationNumericFeedback.mode])
+      (originalsOnly ? [] : [AgentCollaborationNumericFeedback.mode, AgentCollaborationCoordinatorUpdates.mode])
     var properties: [String: Any] = [
       "mode": ["type": "string", "enum": originalsOnly ? modes : modes + [AgentCollaborationSourceAccess.mode]],
       "member_id": ["type": "string"],
@@ -470,7 +470,8 @@ struct CloudModelStreamMutableConversation {
     var advertised = function
     if !originalsOnly, let description = advertised["description"] as? String {
       advertised["description"] = description + " Use method_history with exact tool release object_id, revision and sha256 for native outcomes, not quality measures. " +
-        AgentCollaborationSourceAccess.instructions + " " + AgentCollaborationNumericFeedback.instructions
+        AgentCollaborationSourceAccess.instructions + " " + AgentCollaborationNumericFeedback.instructions + " " +
+        AgentCollaborationCoordinatorUpdates.instructions
     }
     advertised["description"] = (advertised["description"] as? String ?? "") +
       " Use acceptance_record with an exact current object_id, revision and sha256 to read a saved criterion delivery or review from this run. " +
