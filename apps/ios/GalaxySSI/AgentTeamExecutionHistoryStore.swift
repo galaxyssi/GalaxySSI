@@ -2496,6 +2496,26 @@ final class AgentTeamExecutionHistoryStore {
     milestonePrefix(baseKey) + AgentMcpJSONCodec.sha256(["id": .string(id)])
   }
 
+  func readDesktopTextArtifact(_ request: AgentDesktopCollaborationTextArtifact.Read,
+                               scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+    try access { database in
+      guard let team = try database.snapshots(runId: scope.runId).first, team.state == .running,
+            team.conversationId == scope.conversationId, team.taskId == scope.turnId,
+            team.members.contains(where: { $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId &&
+              $0.deliveryMode != .ignore && !$0.status.isTerminal &&
+              ($0.dispatchCheckpoint == .dispatching || $0.dispatchCheckpoint == .accepted) }),
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true,
+            let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
+              conversationId: scope.conversationId, key: "object:" + request.id, revision: request.revision),
+            record.reference.objectId == request.id, record.reference.revision == request.revision,
+            try database.readableCollaborationRevision(record.reference, scope: scope) != nil,
+            record.turnId != scope.turnId || record.sourceId == scope.sourceId
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      return try AgentDesktopCollaborationTextArtifact.page(request, record: record)
+    }
+  }
+
   func enrollSingleResearchCalibration(_ enrollment: AgentSingleResearchCalibration) throws {
     let scope = enrollment.scope
     try access { database in

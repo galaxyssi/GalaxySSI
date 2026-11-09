@@ -1264,6 +1264,7 @@ extension GalaxySSIStoreTests {
     }
     let history = open()
     var team = durableTeamSnapshot("desktop-publication")
+    team.members[0].dispatchCheckpoint = .accepted
     team.members[1].dispatchCheckpoint = .dispatching
     XCTAssertTrue(history.upsert(team))
     let member = team.members[1]
@@ -1276,13 +1277,16 @@ extension GalaxySSIStoreTests {
     func lookup(_ id: String, _ digest: String) -> AgentMcpJSONObject {
       ["mode": .string("receipt"), "milestone_id": .string(id), "artifact_sha256": .string(digest)]
     }
-    do {
-      let kind = "text"
-      let raw = """
-      {"format":"galaxyssi.research-artifact.v1","summary":"Snapshot \u{1F642}","workspace":[
-        {"id":"\(kind)","kind":"artifact","title":"Snapshot","body":{"format":"galaxyssi.\(kind)-artifact/1",
-          "name":"snapshot","content":"Frozen \u{1F642}"},"parents":[]}]}
-      """
+    let text = "\u{FEFF}def predict(x):\r\n    return x * 2\r\n" +
+      String(repeating: "# \u{4E2D}\u{6587} \u{1F52C} e\u{301}\r\n", count: 700)
+    for kind in ["text", "other"] {
+      let body: AgentMcpJSONObject = ["format": .string("galaxyssi.\(kind)-artifact/1"),
+        "name": .string("snapshot.py"), "content": .string(text), "encoding": .string("utf-8"),
+        "size_bytes": .int(Int64(text.utf8.count)), "sha256": .string(sha(text))]
+      let item: AgentMcpJSONObject = ["id": .string(kind), "kind": .string("artifact"), "title": .string("Snapshot"),
+        "body": .object(body), "parents": .array([])]
+      let raw = AgentMcpJSONCodec.stringify(["format": .string("galaxyssi.research-artifact.v1"),
+        "summary": .string("Snapshot"), "workspace": .array([.object(item)])])
       let request = lookup(kind, sha(raw))
       let absent = try history.publishCollaborationMilestone(request, scope: scope)
       XCTAssertEqual(absent["success"], .bool(true))
@@ -1305,6 +1309,69 @@ extension GalaxySSIStoreTests {
       var foreign = scope
       foreign.sourceId = "other-source"
       XCTAssertThrowsError(try reopened.publishCollaborationMilestone(request, scope: foreign))
+      typealias Read = AgentDesktopCollaborationTextArtifact.Read
+      let ref = try XCTUnwrap(submitted["revisions"]?.arrayValue?.first?.objectValue)
+      let query: AgentMcpJSONObject = ["mode": .string("workspace"), "object_id": ref["object_id"] ?? .null,
+        "revision": ref["revision"] ?? .null, "offset": .int(0)]
+      let firstRead = try XCTUnwrap(Read(query))
+      XCTAssertThrowsError(try reopened.readDesktopTextArtifact(firstRead, scope: foreign))
+      if kind != "text" {
+        XCTAssertThrowsError(try reopened.readDesktopTextArtifact(firstRead, scope: scope))
+        continue
+      }
+      var nextTeam = durableTeamSnapshot("text-reader")
+      nextTeam.taskId = "next-turn"
+      nextTeam.members[1].dispatchCheckpoint = .accepted
+      XCTAssertTrue(reopened.upsert(nextTeam))
+      let reader = AgentCollaborationToolEvidenceScope(runId: nextTeam.supervisorRunId,
+        conversationId: nextTeam.conversationId, turnId: nextTeam.taskId,
+        memberId: nextTeam.members[1].memberId, sourceId: nextTeam.members[1].sourceMessageId)
+      var sameTurnPeer = scope
+      sameTurnPeer.memberId = team.members[0].memberId
+      sameTurnPeer.sourceId = team.members[0].sourceMessageId
+      XCTAssertThrowsError(try reopened.readDesktopTextArtifact(firstRead, scope: sameTurnPeer))
+      var document = ""
+      var offset: Int64 = 0
+      var total: Int64?
+      var pages = 0
+      while pages < 64 {
+        var args = query
+        args["offset"] = .int(offset)
+        let page = try reopened.readDesktopTextArtifact(XCTUnwrap(Read(args)), scope: reader)
+        let part = try XCTUnwrap(page["content"]?.strictStringValue)
+        XCTAssertFalse(part.isEmpty)
+        XCTAssertLessThanOrEqual(part.utf16.count, 2_000)
+        document += part
+        offset += Int64(part.utf16.count)
+        pages += 1
+        let size = try XCTUnwrap(page["total_characters"]?.intValue)
+        XCTAssertEqual(size, total ?? size)
+        total = size
+        guard page["next_offset"] != .null else { break }
+        XCTAssertEqual(page["next_offset"], .int(offset))
+      }
+      XCTAssertGreaterThan(pages, 1)
+      XCTAssertEqual(Int64(document.utf16.count), total)
+      let decoded = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(document.utf8))
+      XCTAssertEqual(decoded["sha256"], ref["sha256"])
+      XCTAssertEqual(decoded["object_id"], ref["object_id"])
+      XCTAssertEqual(decoded["revision"], ref["revision"])
+      let materialized = try XCTUnwrap(decoded["body"]?.objectValue?["content"]?.strictStringValue)
+      XCTAssertEqual(Data(materialized.utf8), Data(text.utf8))
+      XCTAssertEqual(decoded["evidence_state"], .string("member_reported_not_verified"))
+      var outOfRange = query
+      outOfRange["offset"] = .int(try XCTUnwrap(total))
+      XCTAssertThrowsError(try reopened.readDesktopTextArtifact(XCTUnwrap(Read(outOfRange)), scope: reader))
+      var badBody = body
+      badBody["sha256"] = .string(String(repeating: "0", count: 64))
+      var badItem = item
+      badItem["body"] = .object(badBody)
+      let tampered = AgentMcpJSONCodec.stringify(["format": .string("galaxyssi.research-artifact.v1"),
+        "summary": .string("Snapshot"), "workspace": .array([.object(badItem)])])
+      let rejected = try reopened.publishCollaborationMilestone(["mode": .string("publish"),
+        "milestone_id": .string("tampered-text"), "artifact": .string(tampered)], scope: scope, desktopWire: true)
+      XCTAssertEqual(rejected["status"], .string("rejected"))
+      XCTAssertEqual(rejected["record_validation"]?.objectValue?["code"], .string("invalid_text_artifact"))
     }
     let database = try AgentTeamHistoryDatabase(fileURL: file,
       storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
