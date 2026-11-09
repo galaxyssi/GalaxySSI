@@ -3103,7 +3103,58 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(referenced.text.contains(String(repeating: "G", count: 64)))
     XCTAssertThrowsError(try dispatch(recall: false)) { error in
       XCTAssertTrue(error.localizedDescription.contains("model_dispatched=false"))
+      let failure = error as? Budget.Failure
+      XCTAssertEqual(failure?.diagnostic["model_dispatched"], .bool(false))
+      XCTAssertEqual(failure?.requiredSections[Budget.goal], largeGoal.length)
+      XCTAssertFalse(error.localizedDescription.contains(String(repeating: "G", count: 64)))
     }
+  }
+
+  func testPreDispatchContextOverflowPersistsWithoutReplacingOriginalAssignment() throws {
+    typealias Budget = AgentCollaborationPromptBudget
+    let suite = "context-overflow-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore(), file = root.appendingPathComponent("history.sqlite3")
+    func open() -> AgentTeamExecutionHistoryStore {
+      .init(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    }
+    let history = open()
+    var team = durableTeamSnapshot("context-overflow")
+    team.goal = "Original goal must be preserved"
+    team.members[0].dispatchCheckpoint = .notStarted
+    XCTAssertTrue(history.upsert(team))
+    let member = try XCTUnwrap(team.members.first)
+    let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId, memberId: member.memberId, sourceId: member.sourceMessageId)
+    let section = Budget.Section(name: "Assignment", body: String(repeating: "x", count: 300))
+    let failure: Budget.Failure
+    do {
+      _ = try Budget.assemble(required: [section], optional: [], maximum: 40)
+      return XCTFail("Required section cannot fit")
+    } catch let expected as Budget.Failure { failure = expected }
+    try history.recordDispatchPreparationFailure(failure, scope: scope, now: 10)
+    let reopened = open()
+    let saved = try XCTUnwrap(reopened.snapshot(supervisorRunId: scope.runId))
+    XCTAssertEqual(saved.goal, team.goal)
+    XCTAssertEqual(saved.members.first?.dispatchPreparationFailure, failure)
+    XCTAssertEqual(saved.members.first?.dispatchCheckpoint, .notStarted)
+    XCTAssertEqual(saved.members.first?.output, "")
+    XCTAssertEqual(saved.members.dropFirst(), team.members.dropFirst())
+    var foreign = scope
+    foreign.sourceId = "foreign-source"
+    XCTAssertThrowsError(try reopened.recordDispatchPreparationFailure(failure, scope: foreign, now: 11))
+    var replaced = saved
+    replaced.goal = "Different task"
+    replaced.updatedAtMillis = saved.updatedAtMillis + 1
+    XCTAssertFalse(reopened.upsert(replaced))
+    XCTAssertTrue(reopened.advanceDispatchCheckpoint(runId: scope.runId, conversationId: scope.conversationId,
+      turnId: scope.turnId, memberId: scope.memberId, sourceMessageId: scope.sourceId, to: .dispatching, now: 12))
+    let dispatched = try XCTUnwrap(reopened.snapshot(supervisorRunId: scope.runId))
+    XCTAssertEqual(dispatched.goal, team.goal)
+    XCTAssertNil(dispatched.members.first?.dispatchPreparationFailure)
+    XCTAssertThrowsError(try reopened.recordDispatchPreparationFailure(failure, scope: scope, now: 13))
   }
 
   func testCollaborationDeliveryReadinessGuidanceSurvivesAllMemberRoutesAndFinalAssessment() throws {

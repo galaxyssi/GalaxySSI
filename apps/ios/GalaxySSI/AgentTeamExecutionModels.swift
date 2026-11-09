@@ -1534,6 +1534,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
   var dispatchCheckpoint: AgentTeamMemberDispatchCheckpoint?
   var dispatchDependencyMemberIds: [String]? = nil
   var dispatchResourceObservation: AgentMcpJSONObject? = nil
+  var dispatchPreparationFailure: AgentCollaborationPromptBudget.Failure? = nil
   var recruitmentTemplateID: UUID? = nil
   var dispatchAllowsSavedToolTest: Bool? = nil
   var displayName: String?
@@ -1591,6 +1592,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     case dispatchCheckpoint = "dispatch_checkpoint"
     case dispatchDependencyMemberIds = "dispatch_dependency_member_ids"
     case dispatchResourceObservation = "dispatch_resource_observation"
+    case dispatchPreparationFailure = "dispatch_preparation_failure"
     case recruitmentTemplateID = "recruitment_template_id"
     case dispatchAllowsSavedToolTest = "dispatch_allows_saved_tool_test"
     case displayName = "display_name"
@@ -1620,6 +1622,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     )
     dispatchDependencyMemberIds = try container.decodeIfPresent([String].self, forKey: .dispatchDependencyMemberIds)
     dispatchResourceObservation = try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .dispatchResourceObservation)
+    dispatchPreparationFailure = try container.decodeIfPresent(AgentCollaborationPromptBudget.Failure.self, forKey: .dispatchPreparationFailure)
     recruitmentTemplateID = try container.decodeIfPresent(UUID.self, forKey: .recruitmentTemplateID)
     dispatchAllowsSavedToolTest = try container.decodeIfPresent(Bool.self, forKey: .dispatchAllowsSavedToolTest)
   }

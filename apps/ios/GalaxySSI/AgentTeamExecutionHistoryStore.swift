@@ -187,6 +187,7 @@ final class AgentTeamExecutionHistoryStore {
                   replacement.dispatchCheckpoint == member.dispatchCheckpoint,
                   replacement.dispatchDependencyMemberIds == member.dispatchDependencyMemberIds,
                   replacement.dispatchAllowsSavedToolTest == member.dispatchAllowsSavedToolTest,
+                  replacement.dispatchPreparationFailure == member.dispatchPreparationFailure,
                   replacement.dispatchResourceObservation == member.dispatchResourceObservation else {
               throw AgentTeamHistoryDatabase.Failure.stale
             }
@@ -233,6 +234,10 @@ final class AgentTeamExecutionHistoryStore {
         }
         snapshot.members[index].dispatchCheckpoint = checkpoint
         if checkpoint == .dispatching {
+          if snapshot.members[index].dispatchPreparationFailure != nil {
+            snapshot.members[index].dispatchPreparationFailure = nil
+            snapshot.members[index].errorMessage = ""
+          }
           snapshot.members[index].executionStartedAtMillis = now
           try AgentDesktopCollaborationFileHandoff.freezeGrants(team: snapshot, member: snapshot.members[index], database: database)
         }
@@ -243,6 +248,25 @@ final class AgentTeamExecutionHistoryStore {
       if advanced { notify(runId) }
       return advanced
     } catch { return false }
+  }
+
+  func recordDispatchPreparationFailure(_ failure: AgentCollaborationPromptBudget.Failure,
+      scope: AgentCollaborationToolEvidenceScope, now: Int64) throws {
+    let changed = try access { database -> Bool in
+      guard var snapshot = try database.snapshots(runId: scope.runId).first, snapshot.state == .running,
+            snapshot.conversationId == scope.conversationId, snapshot.taskId == scope.turnId,
+            let index = snapshot.members.firstIndex(where: {
+              $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId && $0.dispatchCheckpoint == .notStarted &&
+                !$0.status.isTerminal && $0.output.isEmpty && $0.replyContent == nil
+            }) else { throw AgentTeamHistoryDatabase.Failure.stale }
+      guard snapshot.members[index].dispatchPreparationFailure != failure else { return false }
+      snapshot.members[index].dispatchPreparationFailure = failure
+      snapshot.members[index].errorMessage = failure.localizedDescription
+      snapshot.updatedAtMillis = max(snapshot.updatedAtMillis, now)
+      try database.put(snapshot)
+      return true
+    }
+    if changed { notify(scope.runId) }
   }
 
   func recordDispatchResourceObservation(_ observation: AgentMcpJSONObject,

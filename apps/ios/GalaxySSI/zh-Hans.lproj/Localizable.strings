@@ -6467,6 +6467,8 @@
 "galaxyssi.team.recovery.scope_removed" = "原协作组已不可用。";
 "galaxyssi.team.recovery.stalled" = "团队结果恢复连续失败，已暂停自动重试。";
 "galaxyssi.team.recovery.resume" = "继续恢复结果";
+"galaxyssi.team.recovery.context_not_dispatched" = "上下文超出限制，尚未调用该成员的模型。";
+"galaxyssi.team.recovery.context_retry" = "重试准备上下文";
 "galaxyssi.managed_browser.open" = "接管浏览器";
 "galaxyssi.managed_browser.title" = "浏览器控制";
 "galaxyssi.managed_browser.return" = "交回控制";

@@ -3038,6 +3038,26 @@ final class MessageCoordinator: ObservableObject {
     return true
   }
 
+  func resumeTeamContextPreparation(runID: String) {
+    recoverManagedBrowserTeams(runID: runID, explicitContextRetry: true)
+  }
+
+  func canResumeTeamContextPreparation(runID: String) -> Bool {
+    let profile = store.profile.identityFingerprint
+    guard let team = AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: runID),
+          team.members.contains(where: { $0.dispatchPreparationFailure != nil }),
+          team.state == .running || team.state == .interrupted,
+          !liveManagedBrowserTeams.contains(runID), !managedBrowserTeamRecoveryInFlight.contains(runID)
+    else { return false }
+    let phase = store.agentTask(id: team.taskId)?.phase
+    guard phase != .paused, phase != .blocked, phase != .cancelled, phase != .failed else { return false }
+    return managedBrowserContinuations.pendingTeamDispatches(profileID: profile).contains { input in
+      guard input.runID == runID,
+            let outgoing = store.persistedMessage(id: input.outgoingID, contactId: input.contactID) else { return false }
+      return input.matches(team, outgoing: outgoing, profileID: profile)
+    }
+  }
+
   private func teamRecoveryScopeMissing(_ saved: AgentTeamExecutionSnapshot) -> Bool {
     guard UIApplication.shared.isProtectedDataAvailable else { return false }
     let parent = store.agentTask(id: saved.taskId)
@@ -9309,6 +9329,21 @@ final class MessageCoordinator: ObservableObject {
     var observerFailures: [String] = []
     var observations: [(String, String)] = []
     let profileIdentity = store.profile.identityFingerprint
+    func freezeTeamDispatch() throws {
+      guard frozenDispatch == nil else { return }
+      guard attachments.count == stagedAttachments.count else {
+        throw AgentManagedBrowserContinuationStore.Failure.unavailable
+      }
+      let references = zip(attachments, stagedAttachments).map {
+        AgentManagedBrowserTeamDispatch.Attachment(id: $0.0.id, staged: $0.1)
+      }
+      let dispatch = AgentManagedBrowserTeamDispatch(profileID: profileIdentity, runID: spec.supervisorRunId,
+        teamID: savedTeam.teamId, generation: savedTeam.createdAtMillis, conversationID: outgoing.conversationId,
+        turnID: homeTurnId, outgoingID: outgoing.id, contactID: outgoing.contactId, plan: plan,
+        executionMode: executionMode, goal: requestText, attachments: references, followupContext: followupContext)
+      try managedBrowserContinuations.prepareTeamDispatch(dispatch)
+      frozenDispatch = dispatch
+    }
     let milestoneScheduler: (worker: Task<Void, Never>, finish: () -> Void)?
     if isCollaboration, executionMode != .planOnly, !outgoing.readOnlyAnalysis,
        let primary = savedTeam.members.first(where: { $0.memberId == savedTeam.primaryMemberId }) {
@@ -9447,12 +9482,19 @@ final class MessageCoordinator: ObservableObject {
         guard let goal = originals.first, goal.body.utf8.elementsEqual(requestText.utf8) else {
           throw AgentTeamHistoryDatabase.Failure.stale
         }
-        let prompt = try AgentCollaborationPromptBudget.dispatch(assignment: assignment,
-          resources: resources + (followupContext.map { "\n\n" + $0 } ?? ""),
-          responseProtocol: agentTeamResearchProtocol(member: member), originals: originals,
-          observations: availableObservations, canRecall: canRecall, desktop: target.kind == .agent,
-          peerRecipients: peerRecipientIDs, peerRequests: peerRequestContext,
-          peerRequestsPinned: sections["context:peer_requests"] != nil)
+        let prompt: AgentCollaborationPromptBudget.Result
+        do {
+          prompt = try AgentCollaborationPromptBudget.dispatch(assignment: assignment,
+            resources: resources + (followupContext.map { "\n\n" + $0 } ?? ""),
+            responseProtocol: agentTeamResearchProtocol(member: member), originals: originals,
+            observations: availableObservations, canRecall: canRecall, desktop: target.kind == .agent,
+            peerRecipients: peerRecipientIDs, peerRequests: peerRequestContext,
+            peerRequestsPinned: sections["context:peer_requests"] != nil)
+        } catch let failure as AgentCollaborationPromptBudget.Failure {
+          try history.recordDispatchPreparationFailure(failure, scope: scope, now: AgentControlPlaneClock.nowMillis())
+          try? freezeTeamDispatch()
+          throw failure
+        }
         guard history.advanceDispatchCheckpoint(runId: spec.supervisorRunId, conversationId: outgoing.conversationId,
           turnId: homeTurnId, memberId: member.memberId, sourceMessageId: sourceMessageId,
           to: .dispatching, now: AgentControlPlaneClock.nowMillis()) else {
@@ -9494,20 +9536,7 @@ final class MessageCoordinator: ObservableObject {
             continue
           }
           if let recallScope, executionMode != .planOnly, !outgoing.readOnlyAnalysis {
-            if frozenDispatch == nil {
-              guard attachments.count == stagedAttachments.count else {
-                throw AgentManagedBrowserContinuationStore.Failure.unavailable
-              }
-              let references = zip(attachments, stagedAttachments).map {
-                AgentManagedBrowserTeamDispatch.Attachment(id: $0.0.id, staged: $0.1)
-              }
-              let dispatch = AgentManagedBrowserTeamDispatch(profileID: profileIdentity, runID: spec.supervisorRunId,
-                teamID: savedTeam.teamId, generation: savedTeam.createdAtMillis, conversationID: outgoing.conversationId,
-                turnID: homeTurnId, outgoingID: outgoing.id, contactID: outgoing.contactId, plan: plan,
-                executionMode: executionMode, goal: requestText, attachments: references)
-              try managedBrowserContinuations.prepareTeamDispatch(dispatch)
-              frozenDispatch = dispatch
-            }
+            try freezeTeamDispatch()
             let result = try await runManagedBrowserMember(profile: profile, owner: recallScope,
               requestText: memberPrompt, outgoing: outgoing, attachments: attachments)
             if member.deliveryMode == .respond { primaryPublished = true }
@@ -11093,7 +11122,7 @@ final class MessageCoordinator: ObservableObject {
     recoverManagedBrowserTeams()
   }
 
-  private func recoverManagedBrowserTeams(runID: String? = nil) {
+  private func recoverManagedBrowserTeams(runID: String? = nil, explicitContextRetry: Bool = false) {
     let profile = store.profile.identityFingerprint
     for input in managedBrowserContinuations.pendingTeamDispatches(profileID: profile)
       where (runID == nil || runID == input.runID) && !liveManagedBrowserTeams.contains(input.runID) &&
@@ -11117,6 +11146,8 @@ final class MessageCoordinator: ObservableObject {
         continue
       }
       guard team.state == .running || team.state == .interrupted else { continue }
+      let contextBlocked = team.members.contains { $0.dispatchPreparationFailure != nil }
+      guard contextBlocked == explicitContextRetry else { continue }
       if team.state == .interrupted && team.members.contains(where: {
         $0.status == .interrupted && $0.dispatchCheckpoint != .notStarted
       }) { continue }
@@ -11138,7 +11169,8 @@ final class MessageCoordinator: ObservableObject {
         let targets = AgentCallableTargetCatalog.build(contacts: self.store.visibleContacts, apiKey: { self.store.apiKey(for: $0) })
         _ = try? await self.publishRequestedAgentTeam(plan: input.plan, requestedMembers: [], requestText: input.goal,
           outgoing: outgoing, attachments: attachments, voiceSessionId: "", executionMode: input.executionMode,
-          targets: targets, stagedAttachments: input.attachments.map(\.staged), recovery: input)
+          targets: targets, stagedAttachments: input.attachments.map(\.staged), recovery: input,
+          followupContext: input.followupContext)
       }
     }
   }

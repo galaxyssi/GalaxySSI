@@ -26,14 +26,23 @@ enum AgentCollaborationPromptBudget {
     let omitted: Set<String>
   }
 
-  struct Failure: LocalizedError {
+  struct Failure: LocalizedError, Codable, Equatable {
     let requiredCharacters: Int
     let referenceCharacters: Int
     let maximumCharacters: Int
+    let requiredSections: [String: Int]
+
+    var diagnostic: AgentMcpJSONObject {
+      ["code": .string("host_dispatch_context_overflow"), "model_dispatched": .bool(false),
+       "required_characters": .int(Int64(requiredCharacters)), "reference_characters": .int(Int64(referenceCharacters)),
+       "maximum_characters": .int(Int64(maximumCharacters)),
+       "sections": .object(requiredSections.mapValues { .int(Int64($0)) })]
+    }
 
     var errorDescription: String? {
       "Collaboration context exceeds its character budget (model_dispatched=false, required=\(requiredCharacters), " +
-        "references=\(referenceCharacters), maximum=\(maximumCharacters)). Restore a fitting original before resuming."
+        "references=\(referenceCharacters), maximum=\(maximumCharacters)). No model answer exists to repair. " +
+        "Restore a fitting original or enable scoped recall before resuming."
     }
   }
 
@@ -114,7 +123,7 @@ enum AgentCollaborationPromptBudget {
       }
       guard size + references.utf16.count <= capacity else {
         throw Failure(requiredCharacters: requiredLength, referenceCharacters: references.utf16.count,
-          maximumCharacters: maximum)
+          maximumCharacters: maximum, requiredSections: Dictionary(uniqueKeysWithValues: required.map { ($0.name, $0.length) }))
       }
     }
     let included = Set(required.map(\.name) + admitted.map { optional[$0].name })
