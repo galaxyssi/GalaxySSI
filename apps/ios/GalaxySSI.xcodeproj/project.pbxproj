@@ -1279,6 +1279,7 @@
     D13477000000000000000001 /* AgentAdaptivePilotContinuityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23477000000000000000001 /* AgentAdaptivePilotContinuityTests.swift */; };
     D13470000000000000000001 /* AgentSingleDeliveryCalibrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23470000000000000000001 /* AgentSingleDeliveryCalibrationTests.swift */; };
     B1000000000000000000E353 /* AgentInterimPilotArchiveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000E353 /* AgentInterimPilotArchiveTests.swift */; };
+    D13394000000000000000001 /* AgentArtifactAvailabilityProbeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23394000000000000000001 /* AgentArtifactAvailabilityProbeTests.swift */; };
     A10000000000000000000277 /* AgentPhoneCapabilityCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000277 /* AgentPhoneCapabilityCatalogTests.swift */; };
     A10000000000000000000279 /* AgentIOSSystemNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000279 /* AgentIOSSystemNativeToolTests.swift */; };
     A10000000000000000000281 /* AgentIOSHardwareNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000281 /* AgentIOSHardwareNativeToolTests.swift */; };
@@ -2593,6 +2594,7 @@
     D23477000000000000000001 /* AgentAdaptivePilotContinuityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAdaptivePilotContinuityTests.swift; sourceTree = "<group>"; };
     D23470000000000000000001 /* AgentSingleDeliveryCalibrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSingleDeliveryCalibrationTests.swift; sourceTree = "<group>"; };
     B2000000000000000000E353 /* AgentInterimPilotArchiveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInterimPilotArchiveTests.swift; sourceTree = "<group>"; };
+    D23394000000000000000001 /* AgentArtifactAvailabilityProbeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentArtifactAvailabilityProbeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000277 /* AgentPhoneCapabilityCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneCapabilityCatalogTests.swift; sourceTree = "<group>"; };
     A20000000000000000000279 /* AgentIOSSystemNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSystemNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000281 /* AgentIOSHardwareNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHardwareNativeToolTests.swift; sourceTree = "<group>"; };
@@ -3930,6 +3932,7 @@
         D23477000000000000000001 /* AgentAdaptivePilotContinuityTests.swift */,
         D23470000000000000000001 /* AgentSingleDeliveryCalibrationTests.swift */,
         B2000000000000000000E353 /* AgentInterimPilotArchiveTests.swift */,
+        D23394000000000000000001 /* AgentArtifactAvailabilityProbeTests.swift */,
         A20000000000000000000277 /* AgentPhoneCapabilityCatalogTests.swift */,
         A20000000000000000000279 /* AgentIOSSystemNativeToolTests.swift */,
         A20000000000000000000281 /* AgentIOSHardwareNativeToolTests.swift */,
@@ -5378,6 +5381,7 @@
         D13477000000000000000001 /* AgentAdaptivePilotContinuityTests.swift in Sources */,
         D13470000000000000000001 /* AgentSingleDeliveryCalibrationTests.swift in Sources */,
         B1000000000000000000E353 /* AgentInterimPilotArchiveTests.swift in Sources */,
+        D13394000000000000000001 /* AgentArtifactAvailabilityProbeTests.swift in Sources */,
         A10000000000000000000277 /* AgentPhoneCapabilityCatalogTests.swift in Sources */,
         A10000000000000000000279 /* AgentIOSSystemNativeToolTests.swift in Sources */,
         A10000000000000000000281 /* AgentIOSHardwareNativeToolTests.swift in Sources */,
