@@ -34,3 +34,23 @@ Do not use real task data or commit exported files. The artifact is
 unverified and grants no permissions. This fixture does not call Desktop
 or a model and does not prove learning, transfer, independent acceptance,
 or equal provider cost.
+
+## Recovering a completed Android pilot report
+
+`AgentPilotReportRecoveryTests.testOptInRecoverCompletedAndroidPilotReport`
+reconstructs candidates locally without dispatching model work. Supply the
+original `galaxyssi.remote-collaboration-pilot.v1` plan and completed
+`galaxyssi.remote-pilot-report.v1` report:
+
+- `GALAXYSSI_PILOT_REPORT_RECOVERY=1`
+- `GALAXYSSI_PILOT_REPORT_PROTOCOL` and `GALAXYSSI_PILOT_REPORT_PROTOCOL_SHA256`
+- `GALAXYSSI_PILOT_REPORT_INPUT` and `GALAXYSSI_PILOT_REPORT_SHA256`
+- `GALAXYSSI_PILOT_REPORT_MAX_DISPATCHES` (the original phone-side allowance)
+
+Only a successful, untruncated report with exact assignments, matching
+dispatch attribution and confirmed STOP with no pending remote owners is
+eligible. The test attaches candidate locators and a recovery receipt. Use
+the existing reference-file export workflow to bind a recovered candidate
+into an iOS probe. Conflicting artifacts are never overwritten. Provenance
+is `completed_test_report`, not a runtime capture or provider attestation.
+Keep private inputs, receipts and exported candidate text outside Git.
