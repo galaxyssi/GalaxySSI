@@ -133,16 +133,49 @@ enum AgentCollaborationWorkflowCheck {
     return try page(report(rule, reference: ref, values: values), offset: offset)
   }
 
-  static func report(_ rule: Rule, reference ref: AgentCollaborationResearchReference,
-                     values: AgentMcpJSONObject) -> AgentMcpJSONObject {
+  static func select(_ request: AgentCollaborationWorkflowInstance.ConditionalRequest,
+      scope: AgentCollaborationToolEvidenceScope, database: AgentTeamHistoryDatabase) throws -> AgentCollaborationWorkflowInstance? {
+    guard let saved = try current(request.selection_rule, scope: scope, database: database),
+          saved.draft.kind == .workflowSelectionRule else { return nil }
+    let rule = try rule(saved.draft, scope: scope, database: database)
+    guard Set(request.inputs.keys) == rule.inputNames else { return nil }
+    var values: AgentMcpJSONObject = [:]
+    for (name, reference) in request.inputs {
+      guard let input = try current(reference, scope: scope, database: database) else { return nil }
+      values[name] = .object(input.draft.body)
+    }
+    let decision = evaluate(rule, values: values)
+    let method = decision.candidate ? rule.comparison.candidate : rule.comparison.baseline
+    return .init(execution_id: request.execution_id, method: method, inputs: request.inputs, roles: request.roles,
+      selection: .init(rule: request.selection_rule, method: method, variant: decision.candidate ? "candidate" : "baseline",
+        reason: decision.reason, inputsSHA256: AgentMcpJSONCodec.sha256(values),
+        whenAll: decision.positive.map(persistedOutcome), unlessAny: decision.negative.map(persistedOutcome)))
+  }
+
+  private static func persistedOutcome(_ item: AgentCollaborationWorkflowConditions.Observation)
+    -> AgentCollaborationWorkflowInstance.Selection.Outcome {
+    .init(conditionID: item.condition.id, state: item.state, unknownReason: item.unknown, actualType: item.actualType)
+  }
+
+  private typealias Observation = AgentCollaborationWorkflowConditions.Observation
+
+  private static func evaluate(_ rule: Rule, values: AgentMcpJSONObject)
+    -> (positive: [Observation], negative: [Observation], unknown: [Observation], blockers: [Observation],
+        candidate: Bool, reason: String) {
     let positive = rule.whenAll.map { $0.evaluate(values) }, negative = rule.unlessAny.map { $0.evaluate(values) }
     let unknown = (positive + negative).filter { $0.state == "unknown" }
     let excluded = negative.filter { $0.state == "matched" }
     let blockers = positive.filter { $0.state == "not_matched" } + excluded
     let candidate = unknown.isEmpty && blockers.isEmpty
-    let mayChange = !unknown.isEmpty && blockers.isEmpty
     let reason = !excluded.isEmpty ? "countercondition_matched" : !unknown.isEmpty ? "insufficient_condition_data" :
       candidate ? "applicability_matched" : "outside_applicability"
+    return (positive, negative, unknown, blockers, candidate, reason)
+  }
+
+  static func report(_ rule: Rule, reference ref: AgentCollaborationResearchReference,
+                     values: AgentMcpJSONObject) -> AgentMcpJSONObject {
+    let (positive, negative, unknown, blockers, candidate, reason) = evaluate(rule, values: values)
+    let mayChange = !unknown.isEmpty && blockers.isEmpty
     let identity = reference(ref)
     let baseline = reference(rule.comparison.baseline), alternative = reference(rule.comparison.candidate)
     return [

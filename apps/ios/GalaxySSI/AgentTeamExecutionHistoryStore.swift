@@ -1124,6 +1124,7 @@ final class AgentTeamExecutionHistoryStore {
           guard head.capabilitySelection != nil else { continue }
           state = "selected_scoped_version"
         case "capability_lesson": state = body.string("decision") == "retain" ? "retained_lesson" : "historical_lesson"
+        case "workflow_selection_rule": state = "evidence_linked_conditional_hypothesis"
         case "failure_experience": state = "observed_failure"
         case "tool_release": state = AgentCollaborationCapabilityPage.releaseState
         case "tool_test_comparison": state = "observed_paired_case_outcomes"
@@ -1141,6 +1142,10 @@ final class AgentTeamExecutionHistoryStore {
         }
         if head.draft.kind == .workflowMethod {
           entry["evaluation_recall"] = .object(AgentCollaborationMethodEvaluations.selector(head.reference))
+        }
+        if head.draft.kind == .workflowSelectionRule {
+          entry["grants_permissions"] = .bool(false)
+          entry["conditions_prospectively_validated"] = .bool(false)
         }
         if head.draft.kind == .toolTestComparison {
           var recall = AgentCollaborationCandidateRecall.reference(head.reference)
@@ -3370,9 +3375,10 @@ final class AgentTeamExecutionHistoryStore {
         guard AgentMcpJSONCodec.stringify(["dependencies": .array(dependencies.map(AgentMcpJSONValue.object))]).utf8.count
                 <= 64 * 1_024 else { throw AgentTeamHistoryDatabase.Failure.corrupt }
       }
+      let selection = work.workflowExecutionId.flatMap { checkpoint.liveGraph?.workflowInstances?[$0]?.selection }
       let run = AgentCollaborationGoalWorkRun(workID: work.id, dispatchID: UUID().uuidString, owner: scope,
         memberID: work.recruitment?.executionIdentity ?? work.member, process: AgentCollaborationGoalWorkRun.processID,
-        startedAt: now, target: target, state: .running, templateMemberID: work.recruitment?.template)
+        startedAt: now, target: target, state: .running, methodSelection: selection, templateMemberID: work.recruitment?.template)
       try database.insertResearchRecord(run, conversationId: scope.conversationId, key: key, revision: 0)
       return (run, true, dependencies)
     }
@@ -3456,6 +3462,7 @@ final class AgentTeamExecutionHistoryStore {
           else { return nil }
           return saved.memberId
         },
+        resolveConditional: { try AgentCollaborationWorkflowCheck.select($0, scope: scope, database: database) },
         resolve: { try Self.resolveWorkflow($0, snapshot: team, database: database) }),
         updated.work.count > graph.work.count else { throw AgentTeamHistoryDatabase.Failure.corrupt }
       checkpoint.liveGraph = updated
@@ -3467,6 +3474,9 @@ final class AgentTeamExecutionHistoryStore {
         "request_sha256": .string(fingerprint), "milestone_id": .string(id),
         "revision": .int(checkpoint.revision), "admitted_work_count": .int(Int64(updated.work.count - graph.work.count)),
         "replayed": .bool(false), "work_dispatched": .bool(false)]
+      let selections = (updated.workflowInstances ?? [:]).filter { graph.workflowInstances?[$0.key] == nil }
+        .compactMapValues { $0.selection.map { AgentMcpJSONValue.object($0.fields) } }
+      if !selections.isEmpty { receipt["method_selections"] = .object(selections) }
       let aliases = Set(expansion.work.compactMap { entry -> String? in
         if case .work(let work) = entry, work.member.hasPrefix("recruit:") { return work.member }; return nil
       })
@@ -4295,6 +4305,11 @@ final class AgentTeamExecutionHistoryStore {
     database: AgentTeamHistoryDatabase) throws -> [AgentCollaborationLiveGraph.Work]? {
     let assigned = Set(instance.roles.values)
     guard assigned.isSubset(of: Set(snapshot.members.filter { $0.deliveryMode != .ignore }.map(\.memberId))) else { return nil }
+    if let selection = instance.selection {
+      guard let scope = workflowCoordinatorScope(snapshot),
+            try AgentCollaborationWorkflowCheck.select(.init(execution_id: instance.execution_id, selection_rule: selection.rule,
+              inputs: instance.inputs, roles: instance.roles), scope: scope, database: database) == instance else { return nil }
+    }
     func current(_ ref: AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision? {
       guard let saved = try database.researchRecord(AgentCollaborationResearchRevision.self,
         conversationId: snapshot.conversationId, key: "object:" + ref.objectId), saved.reference == ref else { return nil }
@@ -4309,6 +4324,15 @@ final class AgentTeamExecutionHistoryStore {
         (saved.runId == snapshot.supervisorRunId && assigned == [saved.authorId]) else { return nil }
     }
     return instance.compile(body)
+  }
+
+  private static func workflowCoordinatorScope(_ snapshot: AgentTeamExecutionSnapshot) -> AgentCollaborationToolEvidenceScope? {
+    guard snapshot.state == .running,
+          let primary = snapshot.members.first(where: { $0.memberId == snapshot.primaryMemberId &&
+            $0.deliveryMode == .respond && !$0.status.isTerminal &&
+            ($0.dispatchCheckpoint == .accepted || $0.dispatchCheckpoint == .dispatching) }) else { return nil }
+    return .init(runId: snapshot.supervisorRunId, conversationId: snapshot.conversationId, turnId: snapshot.taskId,
+      memberId: primary.memberId, sourceId: primary.sourceMessageId)
   }
 
   private static func validatedLearningPriorities(_ work: [AgentCollaborationLiveGraph.Work], existingCount: Int,
@@ -4358,7 +4382,15 @@ final class AgentTeamExecutionHistoryStore {
           checkpoint.revision == expectedRevision, expectedRevision < Int64.max else { return false }
     let graph = checkpoint.liveGraph ?? .init()
     guard let updated = try? graph.appending(expansion, authorizedMembers: authorizedMembers,
-      historicalAuthors: historicalAuthors, settled: settled, resolve: { instance in
+      historicalAuthors: historicalAuthors, settled: settled, resolveConditional: { request in
+        try access { database in
+          guard let snapshot = try database.snapshots(runId: runId).first,
+                snapshot.conversationId == conversationId, snapshot.taskId == turnId,
+                let scope = Self.workflowCoordinatorScope(snapshot) else { return nil }
+          _ = try Self.activeGoalCoordinator(scope, database: database)
+          return try AgentCollaborationWorkflowCheck.select(request, scope: scope, database: database)
+        }
+      }, resolve: { instance in
         try access { database in
           guard let snapshot = try database.snapshots(runId: runId).first,
                 snapshot.conversationId == conversationId, snapshot.taskId == turnId, !snapshot.state.isTerminal
