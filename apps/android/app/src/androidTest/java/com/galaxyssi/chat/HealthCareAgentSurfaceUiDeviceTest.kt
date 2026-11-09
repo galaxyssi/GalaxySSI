@@ -76,9 +76,9 @@ class HealthCareAgentSurfaceUiDeviceTest {
                 state(R.string.health_research_queued)
                 await(scenario) { !it.findViewById<View>(R.id.startupConnectingView).isShown }
                 scenario.onActivity {
-                    assertTrue(find(it, "agent-health-care-why")!!.isShown)
+                    assertFalse(find(it, "agent-health-care-why")!!.isShown)
                     assertTrue((find(it, "agent-health-care-next") as TextView).text.toString().contains(it.getString(R.string.health_agent_next_plan)))
-                    assertTrue(find(it, "agent-health-care-discuss")!!.isShown)
+                    assertFalse(find(it, "agent-health-care-discuss")!!.isShown)
                     assertFalse(find(it, "agent-health-care-plan")!!.isShown)
                     assertTrue(it.findViewById<View>(R.id.agentOutputViewport).height > 0)
                 }
@@ -86,6 +86,8 @@ class HealthCareAgentSurfaceUiDeviceTest {
                 scenario.onActivity { find(it, "agent-health-care-expand")!!.performClick() }
                 await(scenario) { find(it, "agent-health-care-plan")!!.isShown }
                 scenario.onActivity {
+                    assertTrue(find(it, "agent-health-care-why")!!.isShown)
+                    assertTrue(find(it, "agent-health-care-discuss")!!.isShown)
                     val panel = find(it, "agent-health-care-scroll") as ScrollView
                     val cap = (300 * it.resources.displayMetrics.density + .5f).toInt()
                     assertTrue(panel.height in 1..cap)
