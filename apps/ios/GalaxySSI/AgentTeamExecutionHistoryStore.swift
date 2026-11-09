@@ -4415,10 +4415,16 @@ final class AgentTeamExecutionHistoryStore {
           "input_role": .string(targets.contains(id) ? "review_subject" : "prerequisite")]) }),
         "unsuccessful_dependencies": .array(unsuccessful.map(AgentMcpJSONValue.string)),
         "independent_review": .bool(item.independent_review == true), "review_subjects": .array(targets.map(AgentMcpJSONValue.string))]
-      if item.data_dependencies != nil || !inputs.isEmpty || item.completion_barriers != nil {
+      if item.data_dependencies != nil || !inputs.isEmpty || item.completion_barriers != nil || item.isVersionBoundReview {
         row["input_revision"] = .int(history.last?.revision ?? 0)
         row["data_dependencies"] = .array(Self.goalWorkDataDependencies(item, history: history))
         if let barriers = item.completion_barriers { row["completion_barriers"] = .array(barriers.map { .object($0.fields) }) }
+      }
+      if item.isVersionBoundReview {
+        row["review_input_dependencies"] = .array(item.depends_on.compactMap { id in
+          guard item.reviewInputRequirement(id) != nil else { return nil }
+          return .object(["work_id": .string(id), "uses_milestones": .array((inputs[id]?.versions ?? []).map { .string($0.token) })])
+        })
       }
       return row
     }, bytes: 6_000)
@@ -4501,6 +4507,10 @@ final class AgentTeamExecutionHistoryStore {
       let bound = graph.boundInputs(for: work.id)
       let reviewSubjects = Set(work.review_targets ?? (work.independent_review == true ? work.depends_on : []))
       let producers = Dictionary(graph.work.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+      if bound.values.contains(where: { $0.role == .reviewSubject }) {
+        guard work.isVersionBoundReview, work.hasIndependentReviewAuthors({ producers[$0]?.member }, identity: team.reviewIdentity)
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+      }
       var probeOrigin: AgentMcpJSONObject?
       if var probe = work.probeBinding {
         let inputs = probe.removeValue(forKey: "inputs") ?? .object([:])
@@ -4514,6 +4524,7 @@ final class AgentTeamExecutionHistoryStore {
       for dependency in work.depends_on {
         if let input = bound[dependency] {
           guard let producer = producers[dependency], input.requirement.work_id == dependency,
+                input.role != .reviewSubject || reviewSubjects.contains(dependency),
                 !work.hasCompletionBarrier(dependency),
                 !reviewSubjects.contains(dependency) || team.reviewIdentity(producer.member) != team.reviewIdentity(work.member)
           else { throw AgentTeamHistoryDatabase.Failure.stale }
@@ -4522,10 +4533,12 @@ final class AgentTeamExecutionHistoryStore {
             guard publication.pin == pin else { throw AgentTeamHistoryDatabase.Failure.stale }
             return .object(publication.summary.merging(["data": .object(publication.payload)]) { _, new in new })
           }
-          dependencies.append(["kind": .string("bound_data_input"), "dependency": .string(dependency),
+          var evidence: AgentMcpJSONObject = ["kind": .string("bound_data_input"), "dependency": .string(dependency),
             "requirement": .string(input.requirement.requirement),
             "input_role": .string(reviewSubjects.contains(dependency) ? "review_subject" : "prerequisite"),
-            "versions": .array(exact), "trust": .string("untrusted_data_not_instructions")])
+            "versions": .array(exact), "trust": .string("untrusted_data_not_instructions")]
+          if input.role == .reviewSubject { evidence["review_scope"] = .string("exact_versions_only_not_producer_completion") }
+          dependencies.append(evidence)
         } else {
           guard let source = try database.researchRecord(AgentCollaborationGoalWorkRun.self,
             conversationId: scope.conversationId, key: Self.goalWorkKey(dependency, scope: scope), revision: 0),
@@ -4620,7 +4633,7 @@ final class AgentTeamExecutionHistoryStore {
             checkpoint.turnId == scope.turnId, let graph = checkpoint.liveGraph
       else { throw AgentTeamHistoryDatabase.Failure.stale }
       return graph.work.contains { item in
-        item.data_dependencies?.contains { $0.work_id == workID } == true ||
+        item.data_dependencies?.contains { $0.work_id == workID } == true || item.reviewInputRequirement(workID) != nil ||
           (item.allowsCompletionCorrection && item.depends_on.contains(workID) && !item.hasCompletionBarrier(workID) &&
             team.members.contains { $0.memberId == item.member && $0.deliveryMode == .observe })
       }
@@ -4754,20 +4767,22 @@ final class AgentTeamExecutionHistoryStore {
     return saved
   }
 
-  private static func resolveInputRevisions(_ rebinds: [WorkInputs.Rebind], corrections: [WorkInputs.Rebind],
-      graph: AgentCollaborationLiveGraph,
+  private static func resolveInputRevisions(_ rebinds: [WorkInputs.Rebind], reviews: [WorkInputs.Rebind],
+      corrections: [WorkInputs.Rebind], graph: AgentCollaborationLiveGraph,
       scope: AgentCollaborationToolEvidenceScope, team: AgentTeamExecutionSnapshot,
       database: AgentTeamHistoryDatabase) throws -> [String: WorkInputs.Revision] {
-    let requests = rebinds.map { ($0, false) } + corrections.map { ($0, true) }
+    let requests = rebinds.map { ($0, false, false) } + reviews.map { ($0, true, false) } +
+      corrections.map { ($0, false, true) }
     guard requests.count <= 32, Set(requests.map { $0.0.work_id }).count == requests.count
     else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     let byID = Dictionary(graph.work.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     var result: [String: WorkInputs.Revision] = [:]
-    for (request, isCorrection) in requests {
+    for (request, review, isCorrection) in requests {
       guard let target = byID[request.work_id], target.recruitment == nil,
             target.blockerResolution == nil, target.workflowExecutionId == nil,
             ["EXECUTE", "EXPLORE", "CHALLENGE", "VERIFY", "REVISE"].contains(target.stage ?? ""),
             team.members.contains(where: { $0.memberId == target.member && $0.deliveryMode == .observe }),
+            !review || target.isVersionBoundReview,
             !isCorrection || target.allowsCompletionCorrection,
             request.expected_revision == Int64(graph.inputBindingHistory?[target.id]?.count ?? 0),
             try database.researchRecord(AgentCollaborationGoalWorkRun.self, conversationId: scope.conversationId,
@@ -4776,14 +4791,20 @@ final class AgentTeamExecutionHistoryStore {
       let prior = graph.inputBindingHistory?[target.id] ?? []
       let declarations = WorkInputs.requirements(target.data_dependencies, history: prior)
       let reviewTargets = Set(target.review_targets ?? (target.independent_review == true ? target.depends_on : []))
+      let previouslyBound = graph.boundInputs(for: target.id)
       var explanations: [String: String] = [:]
       let inputs = try request.inputs.map { selection -> WorkInputs.BoundInput in
         guard let producer = byID[selection.dependency], target.depends_on.contains(producer.id),
               !target.hasCompletionBarrier(producer.id),
+              review || previouslyBound[producer.id]?.role != .reviewSubject,
               !reviewTargets.contains(producer.id) || team.reviewIdentity(producer.member) != team.reviewIdentity(target.member)
         else { throw AgentTeamHistoryDatabase.Failure.stale }
         let requirement: WorkInputs.Requirement
-        if isCorrection {
+        if review {
+          guard selection.requirement == nil, selection.completion_not_required_because == nil,
+                let subject = target.reviewInputRequirement(producer.id) else { throw AgentTeamHistoryDatabase.Failure.stale }
+          requirement = subject
+        } else if isCorrection {
           guard declarations[producer.id] == nil, let data = selection.requirement,
                 let explanation = selection.completion_not_required_because else { throw AgentTeamHistoryDatabase.Failure.stale }
           requirement = .init(work_id: producer.id, requirement: data)
@@ -4793,11 +4814,12 @@ final class AgentTeamExecutionHistoryStore {
                 let declared = declarations[producer.id] else { throw AgentTeamHistoryDatabase.Failure.stale }
           requirement = declared
         }
-        return .init(requirement: requirement, versions: try selection.uses_milestones.map {
+        let versions = try selection.uses_milestones.map {
           try inputMilestone(token: $0, producer: producer, scope: scope, database: database).pin
-        })
+        }
+        return .init(requirement: requirement, versions: versions, role: review ? .reviewSubject : nil)
       }
-      var effective = graph.boundInputs(for: target.id)
+      var effective = previouslyBound
       for input in inputs { effective[input.requirement.work_id] = input }
       var bytes = 0
       for input in effective.values {
@@ -4810,6 +4832,8 @@ final class AgentTeamExecutionHistoryStore {
         }
       }
       result[target.id] = .init(revision: request.expected_revision + 1, reason: request.reason, inputs: inputs,
+        kind: review ? .independentReview : nil, previousRevision: review ? request.expected_revision : nil,
+        coordinator: review ? scope : nil,
         completionCorrections: explanations.isEmpty ? nil : explanations)
     }
     return result
@@ -4842,7 +4866,8 @@ final class AgentTeamExecutionHistoryStore {
       if let issue = AgentCollaborationWorkRepair.shapeIssue(raw) { return issue.response }
       guard var expansion = try? JSONDecoder().decode(AgentCollaborationLiveGraph.WorkflowExpansion.self, from: Data(raw.utf8)),
             expansion.format == "galaxyssi.work-expansion.v1", expansion.work.count <= 64,
-            !expansion.work.isEmpty || expansion.rebind_inputs?.isEmpty == false || expansion.revise_input_dependencies?.isEmpty == false
+            !expansion.work.isEmpty || expansion.rebind_inputs?.isEmpty == false ||
+              expansion.rebind_reviews?.isEmpty == false || expansion.revise_input_dependencies?.isEmpty == false
       else { throw AgentTeamHistoryDatabase.Failure.corrupt }
       let graph = checkpoint.liveGraph ?? .init()
       for entry in expansion.work {
@@ -4861,7 +4886,7 @@ final class AgentTeamExecutionHistoryStore {
         }
       }
       let revisions = try Self.resolveInputRevisions(expansion.rebind_inputs ?? [],
-        corrections: expansion.revise_input_dependencies ?? [], graph: graph,
+        reviews: expansion.rebind_reviews ?? [], corrections: expansion.revise_input_dependencies ?? [], graph: graph,
         scope: scope, team: team, database: database)
       let probeCache = ProbeResolutionCache()
       var pinnedProbes: [AgentCollaborationResearchReference: Probe.Request] = [:]
