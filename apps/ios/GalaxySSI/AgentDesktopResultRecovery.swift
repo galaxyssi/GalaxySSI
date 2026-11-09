@@ -373,6 +373,7 @@ enum AgentDesktopToolEvidenceWire {
     }
 
     var cursorKey: String { "desktop-evidence-cursor:" + AgentMcpJSONCodec.sha256(archiveScope) }
+    var pendingIndexKey: String { "desktop-evidence-index:" + AgentMcpJSONCodec.sha256(archiveScope) }
 
     init?(binding: AgentDesktopReplyBinding, generation: Int64, nonce: String) {
       guard binding.isValid, binding.teamSource != nil, binding.agentId == "codex",
@@ -439,9 +440,14 @@ enum AgentDesktopToolEvidenceWire {
             response.string("coverage") == "observed_completed_items_only",
             response.string("projection") == "external_execution_observations",
             case .bool(let hasMore)? = response["has_more"],
-            case .bool(let archiveFinal)? = response["archive_final"],
             case .int(let nextSequence)? = response["next_sequence"],
             let raw = response["entries"]?.arrayValue, raw.count <= 20 else { return nil }
+      let archiveFinal: Bool
+      switch response["archive_final"] {
+      case nil: archiveFinal = false
+      case .bool(let value)?: archiveFinal = value
+      default: return nil
+      }
       var entries: [Descriptor] = []
       var byId: [String: Descriptor] = [:]
       var cursor = sequence

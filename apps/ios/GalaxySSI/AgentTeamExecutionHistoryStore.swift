@@ -4073,6 +4073,39 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
+  func stageDesktopEvidenceIndex(_ response: AgentMcpJSONObject, desktopId: String,
+      request: AgentDesktopToolEvidenceWire.Request, after sequence: Int64, inlineBytes: Int) throws
+      -> AgentDesktopToolEvidenceWire.IndexPage {
+    guard let index = request.verifyIndex(response, authenticatedDesktopId: desktopId,
+      after: sequence, inlineBytes: inlineBytes) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    guard !index.entries.isEmpty || index.archiveFinal else { return index }
+    return try access { database in
+      _ = try Self.desktopEvidenceOwner(request, database: database)
+      let conversation = request.binding.identity.conversationId
+      let cursor = try database.researchRecord(AgentDesktopToolEvidenceWire.ImportCursor.self,
+        conversationId: conversation, key: request.cursorKey) ?? .init()
+      guard cursor.sequence == sequence, !cursor.archiveFinal else { throw AgentTeamHistoryDatabase.Failure.stale }
+      try database.insertResearchRecord(response, conversationId: conversation, key: request.pendingIndexKey,
+        revision: sequence)
+      return index
+    }
+  }
+
+  func stagedDesktopEvidenceIndex(_ request: AgentDesktopToolEvidenceWire.Request, after sequence: Int64,
+      inlineBytes: Int) throws -> AgentDesktopToolEvidenceWire.IndexPage? {
+    try access { database in
+      _ = try Self.desktopEvidenceOwner(request, database: database)
+      let conversation = request.binding.identity.conversationId
+      guard let response = try database.researchRecord(AgentMcpJSONObject.self, conversationId: conversation,
+        key: request.pendingIndexKey, revision: sequence) else { return nil }
+      guard let original = AgentDesktopToolEvidenceWire.Request(binding: request.binding, generation: request.generation,
+              nonce: response.string("request_id")),
+            let index = original.verifyIndex(response, authenticatedDesktopId: request.binding.desktopId,
+              after: sequence, inlineBytes: inlineBytes) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      return index
+    }
+  }
+
   func enqueueDesktopEvidenceJob(_ job: AgentDesktopToolEvidenceWire.ImportJob) throws {
     try access { database in
       let conversation = job.binding.identity.conversationId
@@ -4122,6 +4155,7 @@ final class AgentTeamExecutionHistoryStore {
       let key = AgentDesktopToolEvidenceWire.coverageKey(run: owner.team.supervisorRunId, turn: owner.team.taskId,
         member: owner.member.memberId, source: owner.member.sourceMessageId, generation: request.generation)
       try database.insertResearchRecord(advanced, conversationId: conversation, key: key, revision: 0, replaceCoverage: true)
+      try database.removeResearchRecord(conversationId: conversation, key: request.pendingIndexKey)
     }
   }
 
