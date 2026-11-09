@@ -182,23 +182,64 @@ enum AgentDesktopCollaborationEvidenceDelivery {
   }
 }
 
+enum AgentCollaborationCoordinatorUpdates {
+  static let mode = "team_updates"
+  static let instructions = "An active coordinator can use team_updates with optional cursor to discover late published versions. Keep next_cursor, including at the empty tail. Offered versions are not completed or verified work."
+
+  struct Entry: Codable {
+    let producer: AgentCollaborationToolEvidenceScope
+    let publicationKey: String
+  }
+
+  static func prefix(_ scope: AgentCollaborationToolEvidenceScope) -> String {
+    "coordinator-update:" + AgentMcpJSONCodec.sha256(["run": .string(scope.runId), "turn": .string(scope.turnId)]) + ":"
+  }
+
+  static func key(_ prefix: String, _ sequence: Int64) -> String {
+    prefix + String(format: "%020lld", sequence)
+  }
+
+  static func cursorKey(_ cursor: String, scope: AgentCollaborationToolEvidenceScope) -> String {
+    "coordinator-cursor:" + scope.ownershipDigest + ":" + cursor
+  }
+
+  static func grantKey(_ kind: String, id: String, hash: String, revision: Int64 = 0,
+                       scope: AgentCollaborationToolEvidenceScope) -> String {
+    "coordinator-grant:" + AgentMcpJSONCodec.sha256(["reader": .string(scope.ownershipDigest), "kind": .string(kind),
+      "id": .string(id), "sha256": .string(hash), "revision": .int(revision)])
+  }
+
+  static func record(_ entry: Entry, database: AgentTeamHistoryDatabase) throws {
+    let scope = entry.producer
+    let prefix = Self.prefix(scope)
+    let counter = prefix + "sequence"
+    let prior = try database.researchRecord(Int64.self, conversationId: scope.conversationId, key: counter, revision: 1) ?? 0
+    guard prior >= 0, prior < Int64.max else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    try database.insertResearchRecord(entry, conversationId: scope.conversationId, key: key(prefix, prior + 1), revision: 0)
+    try database.removeResearchRecord(conversationId: scope.conversationId, key: counter)
+    try database.insertResearchRecord(prior + 1, conversationId: scope.conversationId, key: counter, revision: 1)
+  }
+}
+
 extension AgentTeamHistoryDatabase {
   func readableCollaborationRevision(_ reference: AgentCollaborationResearchReference,
-                                     scope: AgentCollaborationToolEvidenceScope) throws -> AgentCollaborationResearchRevision? {
+                                     scope: AgentCollaborationToolEvidenceScope, offered: Bool = false) throws -> AgentCollaborationResearchRevision? {
     guard AgentCollaborationSourceAccess.validDigest(reference.objectId),
           AgentCollaborationSourceAccess.validDigest(reference.sha256), reference.revision > 0,
           let record = try researchRecord(AgentCollaborationResearchRevision.self, conversationId: scope.conversationId,
             key: "object:" + reference.objectId, revision: reference.revision), record.reference == reference,
-          record.turnId != scope.turnId || (record.runId == scope.runId && record.authorId == scope.memberId) else { return nil }
+          record.turnId != scope.turnId || (record.runId == scope.runId && (record.authorId == scope.memberId || offered))
+    else { return nil }
     return record
   }
 
-  func readableCollaborationEvidence(id: String, sha256: String, scope: AgentCollaborationToolEvidenceScope)
+  func readableCollaborationEvidence(id: String, sha256: String, scope: AgentCollaborationToolEvidenceScope, offered: Bool = false)
     throws -> (record: AgentCollaborationCloudToolEvidence, bytes: Data)? {
     guard AgentCollaborationSourceAccess.validDigest(id), AgentCollaborationSourceAccess.validDigest(sha256),
           let record = try cloudEvidence(id: id, conversationId: scope.conversationId),
           record.scope.conversationId == scope.conversationId,
-          record.scope.turnId != scope.turnId || record.scope == scope else { return nil }
+          record.scope.turnId != scope.turnId || record.scope == scope || (offered && record.scope.runId == scope.runId)
+    else { return nil }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     let bytes = try encoder.encode(record)
