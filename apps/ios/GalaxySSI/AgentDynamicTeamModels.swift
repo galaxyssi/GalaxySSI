@@ -190,6 +190,7 @@ enum AgentCollaborationRuleTopics {
     breaks_when). Cross-domain studies require distinct domains. Registration does not validate transfer.
     """),
     Topic(id: "tools", purpose: "Register a Python tool candidate and tests", prerequisites: ["foundation"], contract: """
+    \(AgentCollaborationTypedRecordValidation.toolGuidance)
     executable_tool requires Python source, name, purpose, applies_when, avoid_when, environment, dependencies, side_effects
     and an object input_schema using the existing Skill parameter contract. tool_test_plan binds the exact executable_tool parent
     and matching environment. Include purpose, coverage_gaps, oracle_basis and distinct cases with id, purpose, reason, input

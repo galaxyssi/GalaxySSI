@@ -3368,21 +3368,30 @@ final class MessageCoordinator: ObservableObject {
     }
     let prepared: (runtimeInput: AgentMcpJSONObject, evidenceInput: AgentMcpJSONObject, originalSource: String,
       evaluate: (AgentNativeToolResult) -> AgentMcpJSONObject)
-    if let target = record.releaseTarget {
-      guard let parameters = record.parameters,
-            let run = try? history.prepareSavedToolRun(target, reference: record.plan, parameters: parameters,
-              timeoutMillis: record.timeoutMillis, scope: scope.assignment) else {
-        finish(["native_status": .string("rejected"), "passed": .null, "reason": .string("release_or_lineage_unavailable")])
-        return
+    do {
+      if let target = record.releaseTarget {
+        guard let parameters = record.parameters else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        let run = try history.prepareSavedToolRun(target, reference: record.plan, parameters: parameters,
+          timeoutMillis: record.timeoutMillis, scope: scope.assignment)
+        prepared = (run.runtimeInput, run.evidenceInput, run.originalSource, run.evaluate)
+      } else {
+        let test = try history.prepareSavedToolTest(record.plan, timeoutMillis: record.timeoutMillis,
+          scope: scope.assignment)
+        prepared = (test.runtimeInput, test.evidenceInput, test.originalSource, test.evaluate)
       }
-      prepared = (run.runtimeInput, run.evidenceInput, run.originalSource, run.evaluate)
-    } else {
-      guard let test = try? history.prepareSavedToolTest(record.plan, timeoutMillis: record.timeoutMillis,
-        scope: scope.assignment) else {
-        finish(["native_status": .string("unavailable"), "passed": .null])
-        return
-      }
-      prepared = (test.runtimeInput, test.evidenceInput, test.originalSource, test.evaluate)
+    } catch let error as AgentCollaborationTypedRecordValidation {
+      guard isAuthorized() else { return }
+      let observation = AgentCollaborationSavedToolExecution.validationObservation(error.problem, record: record,
+        now: AgentControlPlaneClock.nowMillis())
+      let evidence = try? history.recordNativeObservation(observation)
+      finish(["native_status": .string("rejected"), "passed": .null, "runtime_invoked": .bool(false),
+        "record_validation": .object(error.problem),
+        "galaxyssi_evidence_receipt": evidence.map(AgentMcpJSONValue.object) ?? .null])
+      return
+    } catch {
+      finish(["native_status": .string(released ? "rejected" : "unavailable"), "passed": .null,
+        "reason": released ? .string("release_or_lineage_unavailable") : .null])
+      return
     }
     let toolId = AgentIOSOnDeviceRuntimeNativeToolCatalog.execute
     guard AgentCollaborationSavedToolExecution.permitsDirectRuntime(source: prepared.originalSource, key: key) else {
