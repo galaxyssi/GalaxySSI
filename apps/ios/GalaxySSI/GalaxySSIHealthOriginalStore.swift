@@ -468,6 +468,30 @@ struct GalaxySSIHealthOriginalStore {
     return index
   }
 
+  func visitOriginals(after cursor: Original?, limit: Int, lease: RestoreLease) throws -> [Original] {
+    let index = try ensureIndex(lease: lease)
+    let removed = index.removals.pending.union(index.removals.metadata.map(\.id))
+    let candidates = index.originals.values.filter { item in
+      !removed.contains(item.id) && (cursor.map {
+        (item.importedAt, item.id.uuidString) < ($0.importedAt, $0.id.uuidString)
+      } ?? true)
+    }.sorted { ($0.importedAt, $0.id.uuidString) > ($1.importedAt, $1.id.uuidString) }
+    var result: [Original] = []
+    for candidate in candidates {
+      if let available = try visitOriginal(id: candidate.id, lease: lease) { result.append(available) }
+      if result.count == limit { break }
+    }
+    return result
+  }
+
+  func visitOriginal(id: UUID, lease: RestoreLease) throws -> Original? {
+    let index = try ensureIndex(lease: lease)
+    guard let item = index.originals[id], !index.removals.pending.contains(id),
+          !index.removals.metadata.contains(where: { $0.id == id }) else { return nil }
+    let key = try key(create: false)
+    return (try? withFile(id, { try readHeader($0, id: id, key: key) })) == item ? item : nil
+  }
+
   func read(_ original: Original) throws -> Data {
     try withRestoreLease { lease in
       try reconcileRestores(lease: lease)
