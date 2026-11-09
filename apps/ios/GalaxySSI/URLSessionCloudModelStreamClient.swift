@@ -96,6 +96,29 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
       let adapter = ModelStreamProviderAdapters.create(provider: request.provider)
       timing.mark("reader_started")
       timing.mark("request_write_start")
+      if let sha256 = request.singleHTTPAdmissionSHA256 {
+        guard request.transport == .completeJSON else { throw CloudTrialHTTPTransport.Failure.invalidRequest }
+        let response = try await CloudTrialHTTPTransport.send(urlRequest, expectedSHA256: sha256, connectMillis: request.connectTimeoutMs,
+          readMillis: request.readTimeoutMs)
+        try throwIfCancelled(request.requestId)
+        timing.mark("request_write_end")
+        timing.mark("response_headers")
+        continuation.yield(.connected(.init(requestId: request.requestId, httpStatus: response.status,
+          connectedAtElapsedMs: elapsedMillis())))
+        guard (200...299).contains(response.status), !response.body.isEmpty else {
+          yieldFailed(requestId: request.requestId, error: .init(code: "HOST_TRIAL_HTTP_RESPONSE",
+            message: "Single-request trial received HTTP \(response.status). No follow-up was sent.",
+            httpStatus: response.status, retryable: false), continuation: continuation)
+          return
+        }
+        guard let json = String(data: response.body, encoding: .utf8) else {
+          throw CloudTrialHTTPTransport.Failure.invalidResponse
+        }
+        timing.mark("first_frame")
+        _ = emitParsedFrame(requestId: request.requestId, frame: adapter.parseCompleteJSON(data: json),
+          state: state, timing: timing, continuation: continuation)
+        return
+      }
       let (bytes, response) = try await session.bytes(for: urlRequest,
         delegate: privateContinuation ? NoPrivateContinuationRedirects() : nil)
       timing.mark("request_write_end")
@@ -204,9 +227,9 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
       yieldFailed(
         requestId: request.requestId,
         error: ModelStreamError(
-          code: cancelledBy == nil ? "NETWORK_ERROR" : "CANCELLED",
+          code: cancelledBy == nil ? (request.singleHTTPAdmissionSHA256 != nil ? "HOST_TRIAL_TRANSPORT_FAILED" : "NETWORK_ERROR") : "CANCELLED",
           message: cancelledBy?.rawValue ?? error.localizedDescription.ifBlank("Network stream failed"),
-          retryable: cancelledBy == nil,
+          retryable: cancelledBy == nil && request.singleHTTPAdmissionSHA256 == nil,
           partialResponse: state.emittedPayload
         ),
         continuation: continuation
@@ -310,7 +333,7 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
     continuation.yield(.failed(ModelStreamFailed(requestId: requestId, error: error)))
   }
 
-  private static func urlRequest(for request: ModelStreamRequest) throws -> URLRequest {
+  static func urlRequest(for request: ModelStreamRequest) throws -> URLRequest {
     guard let url = URL(string: request.endpoint) else {
       throw GalaxySSIError.invalidPayload("Cloud stream endpoint is not a URL.")
     }

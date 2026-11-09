@@ -2,6 +2,31 @@ import XCTest
 @testable import GalaxySSI
 
 final class CloudModelClientStreamingTests: XCTestCase {
+  func testCloudPublicationAdvertisesOnlyModesForTheHostAssignment() throws {
+    let styles: [GalaxySSICloudAPIStyle] = [.openAICompatible, .anthropic, .gemini]
+    for style in styles {
+      let request = try CloudModelClient().conversationStreamingRequest(model: model(apiStyle: style),
+        apiKey: "fixture", turns: [ChatMessage(contactId: "contact", content: "Original goal", isMine: true)],
+        systemPrompt: "system", requestId: "capability")
+      var research = try CloudModelStreamMutableConversation(request: request)
+      research.installCollaborationPublication(capability: .available)
+      let eligible = try research.requestForRound(roundId: "eligible").bodyJson
+      XCTAssertTrue(eligible.contains("\"collaboration_publish\""))
+      XCTAssertTrue(eligible.contains("\"publish\""))
+      var ineligible = try CloudModelStreamMutableConversation(request: request)
+      ineligible.installCollaborationPublication(capability: .notEnrolled)
+      let hidden = try ineligible.requestForRound(roundId: "ineligible").bodyJson
+      XCTAssertFalse(hidden.contains("\"collaboration_publish\""))
+      XCTAssertTrue(hidden.contains("no interim-publication contract"))
+      var assessment = try CloudModelStreamMutableConversation(request: request)
+      assessment.installCollaborationPublication(assessmentOnly: true, canRunGoalWork: true)
+      let coordinator = try assessment.requestForRound(roundId: "coordinator").bodyJson
+      XCTAssertTrue(coordinator.contains("\"work_inventory\""))
+      XCTAssertTrue(coordinator.contains("\"status\""))
+      XCTAssertFalse(coordinator.contains("\"publish\""))
+    }
+  }
+
   func testCoordinatorAttachmentRecoveryPinsOriginalMessageAndTransportBytes() throws {
     let data = Data([1, 2, 3, 4])
     let attachment = GalaxySSIDraftAttachment(id: "photo", displayName: "photo.png", mimeType: "image/png",

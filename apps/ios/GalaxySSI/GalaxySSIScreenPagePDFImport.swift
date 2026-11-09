@@ -1,4 +1,6 @@
+import CoreTransferable
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct GalaxySSIScreenPagePDFImporter: View {
@@ -15,49 +17,60 @@ struct GalaxySSIScreenPagePDFImporter: View {
 
 struct GalaxySSIScreenAnalysisLinkPicker: View {
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.scenePhase) private var scene
   @State private var value = ""
   @State private var pdfTask: Task<Void, Never>?
   @State private var pdfStatus = ""
+  @State private var pasteFailure: GalaxySSIWeChatLinkPaste.Failure?
+  @State private var visible = false
   var t: (String, String) -> String
   var weChatOnly: Bool
   var onAdd: (String) -> Void
   @State private var weChatBrowserPresented = false
 
   private var link: String? {
-    Self.validatedLink(value, weChatOnly: weChatOnly)
+    guard pasteFailure == nil else { return nil }
+    if weChatOnly { return try? GalaxySSIWeChatLinkPaste.resolve([value]).get() }
+    return Self.validatedLink(value, weChatOnly: false)
   }
 
-  static func validatedLink(_ value: String, weChatOnly: Bool) -> String? {
+  nonisolated static func validatedLink(_ value: String, weChatOnly: Bool) -> String? {
     let input = value.trimmingCharacters(in: .whitespacesAndNewlines)
     guard input.utf8.count <= 4_096, !input.contains(where: { $0.isWhitespace }),
+          !input.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
           let parts = URLComponents(string: input), parts.scheme?.lowercased() == "https",
           parts.host?.isEmpty == false, parts.user == nil, parts.password == nil,
           parts.url != nil else { return nil }
     if weChatOnly {
       guard parts.host?.lowercased() == "mp.weixin.qq.com",
             parts.port == nil || parts.port == 443,
-            parts.path == "/s" || (parts.path.hasPrefix("/s/") && parts.path.count > 3)
+            (parts.path == "/s" && parts.percentEncodedQuery?.isEmpty == false) ||
+              (parts.path.hasPrefix("/s/") && parts.path.count > 3)
       else { return nil }
     }
     return input
   }
 
   var body: some View {
+    let link = self.link
     NavigationView {
       Form {
-        TextField("https://", text: $value)
+        TextField("https://", text: Binding(get: { value }, set: {
+          value = $0
+          pasteFailure = nil
+        }))
           .keyboardType(.URL)
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled()
           .accessibilityIdentifier("ios.screen-assistant.link-input")
-        if GalaxySSIWeChatBrowserSession.articleURL(value) != nil {
+        if let link, GalaxySSIWeChatBrowserSession.articleURL(link) != nil {
           Button {
             weChatBrowserPresented = true
           } label: {
             Label(t("galaxyssi.screen_page.wechat_browser", "WeChat Article Browser"), systemImage: "safari")
           }
         }
-        if let article = AgentIOSWeChatArticlePDF.articleURL(value) {
+        if let link, let article = AgentIOSWeChatArticlePDF.articleURL(link) {
           Button {
             saveArticle(article)
           } label: {
@@ -69,11 +82,28 @@ struct GalaxySSIScreenAnalysisLinkPicker: View {
         }
         if weChatOnly {
           if #available(iOS 16.0, *) {
-            PasteButton(payloadType: String.self) { values in
-              if let first = values.first { value = first }
+            PasteButton(payloadType: GalaxySSIWeChatPastePayload.self) { values in
+              acceptPaste(values.map(\.text))
             }
+            .disabled(pdfTask != nil)
+            .accessibilityIdentifier("ios.screen-assistant.wechat-paste")
+          } else {
+            Button {
+              let pasteboard = UIPasteboard.general
+              acceptPaste((pasteboard.strings ?? []) + (pasteboard.urls ?? []).map(\.absoluteString))
+            } label: {
+              Label(t("galaxyssi.screen_page.wechat_paste", "Paste article link"), systemImage: "doc.on.clipboard")
+            }
+            .disabled(pdfTask != nil)
+            .accessibilityIdentifier("ios.screen-assistant.wechat-paste")
           }
-          if !value.isEmpty, link == nil {
+          if let pasteFailure {
+            Text(pasteFailure == .ambiguous
+              ? t("galaxyssi.screen_page.wechat_paste_multiple", "The clipboard contains more than one WeChat article link.")
+              : t("galaxyssi.screen_page.wechat_paste_invalid", "No valid WeChat article link was found on the clipboard."))
+              .foregroundColor(.secondary)
+              .accessibilityIdentifier("ios.screen-assistant.wechat-paste-error")
+          } else if !value.isEmpty, link == nil {
             Text(t("galaxyssi.screen_page.wechat_invalid", "Enter a valid WeChat public article link."))
               .foregroundColor(.secondary)
           }
@@ -88,7 +118,7 @@ struct GalaxySSIScreenAnalysisLinkPicker: View {
         }
         ToolbarItem(placement: .confirmationAction) {
           Button(t("galaxyssi.common.add", "Add")) {
-            if let link { onAdd(link); dismiss() }
+            if visible, scene == .active, let link = self.link { onAdd(link); dismiss() }
           }
           .disabled(link == nil)
         }
@@ -96,15 +126,29 @@ struct GalaxySSIScreenAnalysisLinkPicker: View {
     }
     .navigationViewStyle(.stack)
     .sheet(isPresented: $weChatBrowserPresented) {
-      if let article = GalaxySSIWeChatBrowserSession.articleURL(value) {
+      if let link, let article = GalaxySSIWeChatBrowserSession.articleURL(link) {
         GalaxySSIWeChatArticleBrowser(url: article, t: t)
       }
     }
-    .onDisappear { pdfTask?.cancel() }
+    .onAppear { visible = true }
+    .onDisappear { visible = false; pdfTask?.cancel() }
+  }
+
+  private func acceptPaste(_ values: [String]) {
+    guard visible, scene == .active, weChatOnly, !weChatBrowserPresented, pdfTask == nil else { return }
+    switch GalaxySSIWeChatLinkPaste.resolve(values) {
+    case .success(let url):
+      value = url
+      pasteFailure = nil
+      pdfStatus = ""
+    case .failure(let failure):
+      pasteFailure = failure
+    }
   }
 
   private func saveArticle(_ url: URL) {
-    guard pdfTask == nil else { return }
+    guard visible, scene == .active, pdfTask == nil, let link,
+          AgentIOSWeChatArticlePDF.articleURL(link) == url else { return }
     pdfStatus = ""
     let missingImage = t("galaxyssi.screen_page.wechat_pdf_image", "[Image unavailable]")
     let worker = Task.detached(priority: .userInitiated) {
@@ -128,6 +172,46 @@ struct GalaxySSIScreenAnalysisLinkPicker: View {
           "Could not save this article. Open it in WeChat and check whether verification is required.")
       }
     }
+  }
+}
+
+@available(iOS 16.0, *)
+private struct GalaxySSIWeChatPastePayload: Transferable {
+  let text: String
+
+  static var transferRepresentation: some TransferRepresentation {
+    ProxyRepresentation(importing: { (text: String) in Self(text: text) })
+    ProxyRepresentation(importing: { (url: URL) in Self(text: url.absoluteString) })
+  }
+}
+
+enum GalaxySSIWeChatLinkPaste {
+  enum Failure: Error, Equatable { case invalid, ambiguous }
+
+  static func resolve(_ values: [String]) -> Result<String, Failure> {
+    guard (1...16).contains(values.count), values.allSatisfy({ $0.utf8.count <= 16_384 })
+    else { return .failure(.invalid) }
+    var candidate: String?
+    for value in values {
+      guard !value.unicodeScalars.contains(where: {
+        CharacterSet.controlCharacters.contains($0) && $0.value != 9 && $0.value != 10 && $0.value != 13
+      }) else { return .failure(.invalid) }
+      let links: [String]
+      if let link = GalaxySSIScreenAnalysisLinkPicker.validatedLink(value, weChatOnly: true) {
+        links = [link]
+      } else if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) {
+        links = detector.matches(in: value, range: NSRange(value.startIndex..<value.endIndex, in: value)).compactMap {
+          guard let range = Range($0.range, in: value) else { return nil }
+          return GalaxySSIScreenAnalysisLinkPicker.validatedLink(String(value[range]), weChatOnly: true)
+        }
+      } else { links = [] }
+      for link in links {
+        if let candidate, candidate != link { return .failure(.ambiguous) }
+        candidate = link
+      }
+    }
+    guard let candidate else { return .failure(.invalid) }
+    return .success(candidate)
   }
 }
 
@@ -213,7 +297,8 @@ extension AgentHomeView {
 
   func addScreenAnalysisLink(_ link: String) {
     guard !screenAssistantStopping, !screenLinkConversationID.isEmpty,
-          screenLinkConversationID == store.activeAgentConversationId else { return }
+          scenePhase == .active, screenLinkConversationID == store.activeAgentConversationId,
+          let link = GalaxySSIScreenAnalysisLinkPicker.validatedLink(link, weChatOnly: screenLinkWeChatOnly) else { return }
     openScreenAnalysisSource()
     if draft.isBlank { draft = t("galaxyssi.screen_page.link_prompt", "Analyze this page.") }
     draft += "\n" + link
