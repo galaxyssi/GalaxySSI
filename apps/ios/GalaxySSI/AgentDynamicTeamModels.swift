@@ -118,6 +118,7 @@ enum AgentCollaborationRuleTopics {
     \(AgentCollaborationTypedRecordValidation.guidance)
     For acceptance_review, cite exactly one current delivery in parents. In body.acceptance_review include criterion_id,
     requirement, target (the exact parent), verdict (supported, refuted, or not_tested), rationale and unresolved.
+    \(AgentCollaborationInterimDelivery.reviewInstructions)
     The reviewer must be independent of the delivery author; cite completely read original observations in observations.
     Frozen host read coverage identifies the original reader, not your own coverage. Reading another member's receipt
     does not satisfy your independent-read requirement.
@@ -213,6 +214,7 @@ enum AgentCollaborationRuleTopics {
     An authorized Desktop member can use collaboration_run_tool with the exact release or capability channel,
     new parameters and a stable execution ID. The phone checks the current lineage and tested Python identity
     before running. Use status with the same ID to recover the original result; discovery never authorizes execution.
+    \(AgentCollaborationExecutableAcceptance.guidance)
     """),
     Topic(id: "retention", purpose: "Preserve measured capability cases across versions", prerequisites: ["foundation"], contract: """
     Publish capability_suite with scope, limitations and the exact independently retained lesson as a parent.
@@ -281,6 +283,25 @@ struct AgentCollaborationGoalCheckpoint: Codable, Equatable {
   var contract: [AgentCollaborationGoalAssessmentPolicy.Criterion]
   var completedWorkIds: Set<String>
   var liveGraph: AgentCollaborationLiveGraph? = nil
+  var bindsRecordedDesktopTools: Bool? = nil
+}
+
+struct AgentCollaborationLiveMilestonePlan: Codable {
+  struct Batch: Codable, Equatable {
+    let id: String
+    let process: String
+    let startedAt: Int64
+    let tokens: [String]
+
+    func isActive(now: Int64) -> Bool {
+      process == AgentCollaborationGoalWorkRun.processID &&
+        now >= startedAt && now - startedAt < AgentCollaborationGoalWorkRun.leaseMillis
+    }
+  }
+
+  let owner: AgentCollaborationToolEvidenceScope
+  var graph = AgentCollaborationLiveGraph()
+  var batch: Batch?
 }
 
 struct AgentCollaborationAcceptedDelivery: Codable, Equatable {
@@ -305,6 +326,54 @@ struct AgentCollaborationAcceptedDelivery: Codable, Equatable {
   let reference: AgentCollaborationResearchReference
   let content: String
   var source: Source? = nil
+}
+
+enum AgentCollaborationInterimDelivery {
+  static let field = "interim_delivery"
+  static let receiptField = "interim_delivery_receipt"
+  static let tool = "galaxyssi.collaboration.conversation_delivery"
+  static let instructions = "On continue, interim_delivery:{criterion_id,target:{object_id,revision,sha256}} may present an exact independently reviewed artifact. Preserve all criteria, delivery and review references, and unmet conditions. A host interim_delivery_receipt confirms local persistence only, not reading, acknowledgement or final acceptance."
+  static let reviewInstructions = "An acceptance_review may include content_readiness:{verdict,rationale,unresolved} for interim presentation only. Preserve the overall verdict and unresolved postconditions."
+
+  struct Request: Codable {
+    let criterion_id: String
+    let target: AgentCollaborationDocumentaryAcceptance.Reference
+  }
+
+  struct Intent: Codable, Equatable {
+    let owner: AgentCollaborationToolEvidenceScope
+    let source: AgentCollaborationAcceptedDelivery.Source
+    let target: AgentCollaborationResearchReference
+    let criterionID: String
+    let contentSHA256: String
+    let createdAt: Int64
+  }
+
+  static func request(_ value: AgentMcpJSONValue?) -> Request? {
+    guard let row = value?.objectValue, Set(row.keys) == ["criterion_id", "target"],
+          let id = row["criterion_id"]?.strictStringValue, !id.isBlank, id.utf8.count <= 160,
+          AgentCollaborationSavedToolTest.reference(row["target"]) != nil else { return nil }
+    return try? JSONDecoder().decode(Request.self, from: Data(AgentMcpJSONCodec.stringify(row).utf8))
+  }
+
+  static func validReadiness(_ value: AgentMcpJSONValue, overall: String) -> Bool {
+    guard let row = value.objectValue, Set(row.keys) == ["verdict", "rationale", "unresolved"],
+          let verdict = row["verdict"]?.strictStringValue, ["supported", "refuted", "not_tested"].contains(verdict),
+          let reason = row["rationale"]?.strictStringValue, !reason.isBlank,
+          let unresolved = row["unresolved"]?.arrayValue,
+          unresolved.allSatisfy({ $0.strictStringValue?.isBlank == false }),
+          verdict != "supported" || unresolved.isEmpty,
+          overall != "supported" || verdict == "supported" else { return false }
+    return true
+  }
+
+  static func supportsContent(_ review: AgentMcpJSONObject) -> Bool {
+    let verdict = review.string("verdict")
+    if let explicit = review["content_readiness"] {
+      return validReadiness(explicit, overall: verdict) && explicit.objectValue?["verdict"] == .string("supported")
+    }
+    return verdict == "supported" && review["unresolved"] == .array([])
+  }
 }
 
 struct AgentCollaborationCoordinatorRecovery: Codable, Equatable {
@@ -358,6 +427,61 @@ struct AgentCollaborationCoordinatorRetry: Codable, Equatable {
   }
 }
 
+enum AgentCollaborationWorkRepair {
+  static let guidance = "For rejected or incomplete delivery, use a new work ID, repair_of set to a finished original work ID, and a concrete repair_reason. Execution ending is not goal acceptance. Preserve the original and do not repeat completed side effects. Use explicit dependencies to read original outputs; repair_of grants no access. Omit both fields for ordinary work."
+
+  struct Binding: Codable, Equatable {
+    let repair_of: String
+    let repair_reason: String
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+      lhs.repair_of.utf8.elementsEqual(rhs.repair_of.utf8) &&
+        lhs.repair_reason.utf8.elementsEqual(rhs.repair_reason.utf8)
+    }
+
+    var wire: AgentMcpJSONObject {
+      ["repair_of": .string(repair_of), "repair_reason": .string(repair_reason)]
+    }
+  }
+
+  struct Issue {
+    let workID: String
+    let field: String
+    let expected: String
+    let actual: String
+
+    var response: AgentMcpJSONObject {
+      ["success": .bool(false), "status": .string("work_rejected"), "work_dispatched": .bool(false),
+       "failure": .object(["code": .string("repair_contract_invalid"), "work_id": .string(workID),
+         "field": .string(field), "expected": .string(expected), "actual": .string(actual)]),
+       "guidance": .string(AgentCollaborationWorkRepair.guidance)]
+    }
+  }
+
+  static func shapeIssue(_ raw: String) -> Issue? {
+    guard let root = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8)),
+          let items = root["work"]?.arrayValue else { return nil }
+    for item in items {
+      guard let row = item.objectValue, row["repair_of"] != nil || row["repair_reason"] != nil else { continue }
+      let id = String(decoding: row.string("id").utf8.prefix(160), as: UTF8.self)
+      for (field, limit) in [("repair_of", 160), ("repair_reason", 2_000)] {
+        let value = row[field], text = value?.strictStringValue
+        if let text, !text.isBlank, text.utf8.count <= limit { continue }
+        let actual: String
+        if value == nil { actual = "missing" }
+        else if value == .null { actual = "null" }
+        else if text == nil { actual = "not a string" }
+        else { actual = text?.isBlank == true ? "blank string" : "too long" }
+        return .init(workID: id, field: field, expected: "nonblank string up to \(limit) UTF-8 bytes", actual: actual)
+      }
+      if row.string("repair_of") == row.string("id") {
+        return .init(workID: id, field: "repair_of", expected: "a distinct finished original work ID", actual: "self-reference")
+      }
+    }
+    return nil
+  }
+}
+
 struct AgentCollaborationGoalWorkRun: Codable {
   enum State: String, Codable { case running, succeeded, failed, interrupted }
   struct Target: Codable, Equatable {
@@ -400,6 +524,7 @@ struct AgentCollaborationGoalWorkRun: Codable {
   static let processID = UUID().uuidString
   static let leaseMillis: Int64 = 300_000
 
+  var repair: AgentCollaborationWorkRepair.Binding? = nil
   let workID: String
   let dispatchID: String
   let owner: AgentCollaborationToolEvidenceScope
@@ -417,6 +542,8 @@ struct AgentCollaborationGoalWorkRun: Codable {
   var inputRevision: Int64? = nil
   var probeOrigin: AgentMcpJSONObject? = nil
   var methodUse: AgentCollaborationMethodExperience.Binding? = nil
+  var milestoneTokens: [String]? = nil
+  var milestonePlannerBatch: AgentCollaborationLiveMilestonePlan.Batch? = nil
 
   func visibleState(now: Int64) -> State {
     guard state == .running, process != Self.processID || now >= startedAt + Self.leaseMillis
@@ -432,29 +559,11 @@ struct AgentCollaborationGoalWorkRun: Codable {
       "started_at": .int(startedAt), "finished_at": finishedAt.map(AgentMcpJSONValue.int) ?? .null,
       "output": output.map(AgentMcpJSONValue.string) ?? .null, "output_sha256": outputHash.map(AgentMcpJSONValue.string) ?? .null,
       "output_truncated": .bool(truncated ?? false), "goal_accepted": .bool(false), "automatically_reexecuted": .bool(false)]
+    if let repair { result.merge(repair.wire) { current, _ in current } }
     if let templateMemberID { result["template_member_id"] = .string(templateMemberID) }
     if let inputRevision { result["input_revision"] = .int(inputRevision) }
     if let probeOrigin { result["probe_origin"] = .object(probeOrigin) }
     return result
-  }
-}
-
-@MainActor
-final class AgentGoalWorkAdmissionOrder {
-  private var next = 0
-  private var waiters: [Int: CheckedContinuation<Void, Never>] = [:]
-  private(set) var claimedIDs: [String] = []
-
-  func wait(for index: Int) async {
-    guard index != next else { return }
-    await withCheckedContinuation { waiters[index] = $0 }
-  }
-
-  func finish(_ index: Int, claimedID: String?) {
-    precondition(index == next)
-    if let claimedID { claimedIDs.append(claimedID) }
-    next += 1
-    waiters.removeValue(forKey: next)?.resume()
   }
 }
 
@@ -470,6 +579,15 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     let depends_on: [String]
     let dependency_policy: DependencyPolicy?
     let independent_review: Bool?
+    var repair_of: String? = nil
+    var repair_reason: String? = nil
+
+    var repair: AgentCollaborationWorkRepair.Binding? {
+      guard let repair_of, let repair_reason, !repair_of.isBlank, !repair_reason.isBlank,
+            repair_of != id, repair_of.utf8.count <= 160, repair_reason.utf8.count <= 2_000 else { return nil }
+      return .init(repair_of: repair_of, repair_reason: repair_reason)
+    }
+
     var stage: String? = nil
     var procedure_use: AgentCollaborationProcedure.Use? = nil
     var learning: LearningBinding? = nil
@@ -479,20 +597,33 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var workflowObservedBinding: AgentMcpJSONObject? = nil
     var recruitment: Recruitment? = nil
     var blockerResolution: AgentCollaborationGoalAssessmentPolicy.Resolution? = nil
+    var uses_milestones: [String]? = nil
     var data_dependencies: [InputBindings.Requirement]? = nil
 
+    var dispatchAssignment: String {
+      // Admission already bounds the original work in UTF-8. Do not shorten valid long live assignments.
+      AgentTeamDispatchText.bounded(assignment, maximumCharacters: AgentTeamDispatchText.liveAssignmentBytes)
+    }
+
     func hasIndependentReviewAuthors(_ author: (String) -> String?,
+      milestoneAuthors: [String: String] = [:],
       identity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId) -> Bool {
       if let review_targets {
         guard independent_review == true, !review_targets.isEmpty,
               Set(review_targets).count == review_targets.count,
               Set(review_targets).isSubset(of: Set(depends_on)) else { return false }
       }
+      let tokens = uses_milestones ?? []
+      guard tokens.count <= 16, Set(tokens).count == tokens.count,
+            tokens.allSatisfy({ milestoneAuthors[$0] != nil }) else { return false }
       guard independent_review == true else { return true }
       let targets = review_targets ?? depends_on
-      return !targets.isEmpty && targets.allSatisfy { target in
+      return (!targets.isEmpty || !tokens.isEmpty) && targets.allSatisfy { target in
         guard let origin = author(target), !origin.isBlank else { return false }
         return identity(origin) != identity(member)
+      } && tokens.allSatisfy { token in
+        guard let producer = milestoneAuthors[token] else { return false }
+        return identity(producer) != identity(recruitment?.template ?? member)
       }
     }
   }
@@ -702,7 +833,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
 
   func appending(_ raw: String, authorizedMembers: Set<String>,
                  historicalAuthors: [String: String], settled: [String: Settlement]) -> Self? {
-    guard raw.utf8.count <= 256_000,
+    guard raw.utf8.count <= 256_000, AgentCollaborationWorkRepair.shapeIssue(raw) == nil,
           let expansion = try? JSONDecoder().decode(Expansion.self, from: Data(raw.utf8)),
           expansion.format == "galaxyssi.work-expansion.v1", !expansion.work.isEmpty,
           expansion.work.allSatisfy({ $0.workflowExecutionId == nil && $0.probeBinding == nil &&
@@ -727,7 +858,8 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
   func appending(_ expansion: WorkflowExpansion, authorizedMembers: Set<String>,
                  historicalAuthors: [String: String], settled: [String: Settlement],
                  recruitmentTemplates: [String: String] = [:], recruitmentOwner: String = "",
-                 recruitmentDirectory: String = "", authorIdentity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId,
+                 recruitmentDirectory: String = "", milestoneAuthors: [String: String] = [:],
+                 authorIdentity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId,
                  resolveHistorical: (Recruitment, Bool) -> String? = { _, _ in nil },
                  resolve: (AgentCollaborationWorkflowInstance) throws -> [Work]?) rethrows -> Self? {
     guard expansion.format == "galaxyssi.work-expansion.v1", !expansion.work.isEmpty else { return nil }
@@ -777,7 +909,8 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     }
     if additions.isEmpty { return self }
     guard var next = appendingWork(additions, authorizedMembers: authorizedMembers,
-      historicalAuthors: historicalAuthors, settled: settled, authorIdentity: authorIdentity) else { return nil }
+      historicalAuthors: historicalAuthors, settled: settled, milestoneAuthors: milestoneAuthors,
+      authorIdentity: authorIdentity) else { return nil }
     next.workflowInstances = instances.isEmpty ? nil : instances
     next.recruitments = directory.isEmpty ? nil : directory
     return next
@@ -788,14 +921,25 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     return appendingWork(additions, authorizedMembers: authorizedMembers, historicalAuthors: [:], settled: [:])
   }
 
+  func appendingMilestoneWork(_ additions: [Work], authorizedMembers: Set<String>,
+      milestoneAuthors: [String: String], authorIdentity: (String) -> String) -> Self? {
+    appendingWork(additions, authorizedMembers: authorizedMembers, historicalAuthors: [:], settled: [:],
+      milestoneAuthors: milestoneAuthors, authorIdentity: authorIdentity)
+  }
+
   private func appendingWork(_ additions: [Work], authorizedMembers: Set<String>,
                              historicalAuthors: [String: String], settled: [String: Settlement],
+                             milestoneAuthors: [String: String] = [:],
                              authorIdentity: (String) -> String = AgentTeamProgressPolicy.stableCollaborationMemberId) -> Self? {
     var byId = Dictionary(work.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     guard byId.count == work.count else { return nil }
     for item in additions {
+      if item.repair_of != nil || item.repair_reason != nil {
+        guard let repair = item.repair, byId[repair.repair_of] != nil || settled[repair.repair_of] != nil,
+              !additions.contains(where: { $0.id == repair.repair_of }) else { return nil }
+      }
       guard !item.id.isBlank, item.id.utf8.count <= 160, !item.assignment.isBlank,
-            item.assignment.utf8.count <= 16_000, authorizedMembers.contains(item.member),
+            item.assignment.utf8.count <= AgentTeamDispatchText.liveAssignmentBytes, authorizedMembers.contains(item.member),
             byId[item.id] == nil, settled[item.id] == nil, historicalAuthors[item.id] == nil,
             Set(item.depends_on).count == item.depends_on.count,
             InputBindings.validRequirements(item.data_dependencies, dependencies: item.depends_on),
@@ -804,7 +948,8 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     }
     for item in additions {
       guard item.depends_on.allSatisfy({ byId[$0] != nil || settled[$0] != nil }),
-            item.hasIndependentReviewAuthors({ byId[$0]?.member ?? historicalAuthors[$0] }, identity: authorIdentity) else { return nil }
+            item.hasIndependentReviewAuthors({ byId[$0]?.member ?? historicalAuthors[$0] },
+              milestoneAuthors: milestoneAuthors, identity: authorIdentity) else { return nil }
     }
     var resolved = Set(settled.keys)
     var remaining = work + additions
@@ -957,6 +1102,13 @@ enum AgentCollaborationGoalAssessmentPolicy {
 
     var validatorSchemaIssue: AgentCollaborationNumericTrial.ValidatorIssue? {
       guard let validator else { return nil }
+      if validator["id"] == .string(AgentCollaborationExecutableAcceptance.id) {
+        guard verification == .computational, requirement == AgentCollaborationExecutableAcceptance.requirement else {
+          return .init(path: "", expected: "executable validator on the exact finite-case requirement",
+            actual: "validator is not bound to the supported requirement")
+        }
+        return AgentCollaborationExecutableAcceptance.issue(validator)
+      }
       guard verification == .computational, requirement == AgentCollaborationNumericTrial.requirement else {
         return .init(path: "", expected: "numeric validator on the exact computational verification requirement",
           actual: "validator is not bound to the supported requirement")
@@ -1059,6 +1211,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
     var work: [Work]
     var blockers: [Blocker]
     var recruit: [Work]?
+    var interim_delivery: AgentCollaborationInterimDelivery.Request? = nil
   }
 
   static func blockerAssessment(_ raw: String, preserving contract: [Criterion]) -> Assessment? {
@@ -1069,6 +1222,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
           draft.blockers.allSatisfy({ !$0.id.isBlank && !$0.reason.isBlank && !$0.resume_when.isBlank &&
             (($0.kind != .resource && $0.kind != .permission) || Resolution($0) != nil) }),
           draft.criteria.count == contract.count, Set(draft.criteria.map(\.id)).count == draft.criteria.count,
+          newDesktopBindingIssue(draft.criteria, preserving: contract) == nil,
           contract.allSatisfy({ original in
             guard let current = draft.criteria.first(where: { $0.id == original.id }) else { return false }
             return current.requirement == original.requirement && current.verification == original.verification &&
@@ -1085,7 +1239,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
   static let workInventoryMode = "work_inventory"
   static let workInputMode = "work_input"
   static let checkGoalEvidenceMode = "check_goal_evidence"
-  static let admissionInstructions = "List ready research work in the intended admission order. Waiting dependencies do not reserve capacity. Existing learning priorities reorder only their eligible learning positions. Admission order does not guarantee completion order."
+  static let admissionInstructions = "List ready research work in the intended admission order. Waiting dependencies do not reserve capacity. Existing learning priorities reorder only their eligible learning positions. Admission order does not guarantee completion order. Read admission_capacity in work_inventory: at most three workers per goal and one live planner shared across goals. A planning slot does not reserve a downstream provider or connector slot. " + AgentCollaborationWorkRepair.guidance
 
   static func requiresCoordinator(_ mode: String) -> Bool {
     isCoordinatorMutation(mode) || mode == checkGoalEvidenceMode || mode == workInventoryMode ||
@@ -1097,13 +1251,13 @@ enum AgentCollaborationGoalAssessmentPolicy {
   }
 
   static func isCoordinatorMutation(_ mode: String) -> Bool {
-    mode == establishContractMode || mode == appendWorkMode
+    mode == establishContractMode || mode == appendWorkMode || mode == establishVerificationMode
   }
 
   static func initialContract(_ raw: String) -> [Criterion]? {
     guard case .success(let draft) = parseAssessment(raw, limit: assessmentDraftLimit),
           draft.format == "galaxyssi.goal-assessment.v1", !draft.summary.isBlank,
-          draft.decision == .continue, draft.work.isEmpty, draft.blockers.isEmpty, draft.recruit?.isEmpty != false,
+          draft.decision == .continue, draft.interim_delivery == nil, draft.work.isEmpty, draft.blockers.isEmpty, draft.recruit?.isEmpty != false,
           (1...64).contains(draft.criteria.count),
           Set(draft.criteria.map(\.id)).count == draft.criteria.count,
           draft.criteria.allSatisfy({ criterion in
@@ -1139,6 +1293,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
     guard case .success(let assessment) = parseAssessment(raw) else {
       return .needsAssessment
     }
+    guard newDesktopBindingIssue(assessment.criteria, preserving: contract) == nil else { return .needsAssessment }
     let criteria = Dictionary(uniqueKeysWithValues: assessment.criteria.map { ($0.id, $0) })
     guard contract.allSatisfy({ original in
       guard let current = criteria[original.id] else { return false }
@@ -1195,6 +1350,7 @@ enum AgentCollaborationDocumentaryAcceptance {
     var tool: String
     var status: String
     var kind: String
+    var recordedDesktopTool: String? = nil
   }
   struct Reference: Codable, Equatable {
     var objectId: String
@@ -1235,7 +1391,9 @@ enum AgentCollaborationDocumentaryAcceptance {
           review.target.revision > 0, parents.contains(review.target),
           ["supported", "refuted", "not_tested"].contains(review.verdict),
           review.unresolved.allSatisfy({ !$0.isBlank }),
-          review.verdict != "supported" || review.unresolved.isEmpty else { return false }
+          review.verdict != "supported" || review.unresolved.isEmpty,
+          raw["content_readiness"].map({ AgentCollaborationInterimDelivery.validReadiness($0, overall: review.verdict) }) ?? true
+    else { return false }
     return [review.target.objectId, review.target.sha256].allSatisfy { value in
       value.utf8.count == 64 && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
     }
@@ -1243,9 +1401,12 @@ enum AgentCollaborationDocumentaryAcceptance {
 
   static func evaluate(_ raw: String, preserving contract: [AgentCollaborationGoalAssessmentPolicy.Criterion],
                        conversationId: String, runId: String, turnId: String,
+                       bindsRecordedDesktopTools: Bool = false,
                        readRevision: (String, Int64?) throws -> Revision?,
                        observationIsSupporting: (String) throws -> Bool,
-                       originalObservation: (String) throws -> OriginalObservation? = { _ in nil })
+                       originalObservation: (String) throws -> OriginalObservation? = { _ in nil },
+                       verifyExecutable: (AgentMcpJSONObject, AgentCollaborationResearchReference, Revision, Revision) throws -> Bool =
+                         { _, _, _, _ in false })
     -> AgentCollaborationGoalAssessmentPolicy.Outcome {
     typealias Policy = AgentCollaborationGoalAssessmentPolicy
     guard !conversationId.isBlank, !runId.isBlank, !turnId.isBlank,
@@ -1285,9 +1446,14 @@ enum AgentCollaborationDocumentaryAcceptance {
         case .computational:
           guard let pinned = contract.first(where: { $0.id == criterion.id }), pinned.hasValidValidatorBinding,
                 let validator = pinned.validator, criterion.validator == validator,
-                let computation = delivery.body["computation"]?.objectValue,
-                AgentCollaborationNumericTrial.passes(spec: validator, computation: computation)
+                let computation = delivery.body["computation"]?.objectValue
           else { return .needsAssessment }
+          if validator["id"] == .string(AgentCollaborationExecutableAcceptance.id) {
+            guard let release = AgentCollaborationExecutableAcceptance.releaseReference(computation),
+                  try verifyExecutable(validator, release, delivery, review) else { return .needsAssessment }
+          } else if !AgentCollaborationNumericTrial.passes(spec: validator, computation: computation) {
+            return .needsAssessment
+          }
         case .physical:
           return .needsAssessment
         }
@@ -1303,10 +1469,13 @@ enum AgentCollaborationDocumentaryAcceptance {
         let observations = delivery.hostObservationIds.union(review.hostObservationIds)
         guard try observations.allSatisfy(observationIsSupporting) else { return .needsAssessment }
         if let required = criterion.required_observations, !required.isEmpty {
+          let pinned = Set(contract.first(where: { $0.id == criterion.id })?.required_observations ?? [])
           let originals = try review.hostObservationIds.compactMap(originalObservation)
           guard required.allSatisfy({ source in
-            source.isValid && originals.contains {
-              $0.origin == source.origin && $0.tool == source.tool &&
+            let recorded = source.origin == "desktop_codex_tool" &&
+              (bindsRecordedDesktopTools || !pinned.contains(source))
+            return source.isValid && originals.contains {
+              $0.origin == source.origin && (recorded ? $0.recordedDesktopTool : $0.tool) == source.tool &&
                 $0.status == "returned" && $0.kind == "tool_output_recorded"
             }
           }) else { return .needsAssessment }
@@ -1504,6 +1673,25 @@ struct AgentDynamicTeamAssignment: Codable, Equatable {
     case requiredCapabilities = "required_capabilities"
     case objective
     case reasons
+  }
+}
+
+enum AgentTeamDispatchText {
+  static let roleCharacters = 80
+  static let objectiveCharacters = 8_000
+  static let liveAssignmentBytes = 16_000
+
+  static func bounded(_ value: String, maximumCharacters: Int) -> String {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return String(trimmed.prefix(maximumCharacters)).trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  static func role(_ value: String) -> String {
+    bounded(value, maximumCharacters: roleCharacters)
+  }
+
+  static func objective(_ value: String) -> String {
+    bounded(value, maximumCharacters: objectiveCharacters)
   }
 }
 

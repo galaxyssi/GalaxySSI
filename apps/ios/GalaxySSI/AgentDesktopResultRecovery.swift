@@ -215,6 +215,15 @@ enum AgentDesktopToolEvidenceWire {
   static let maximumPageBytes = 16 * 1_024
   static let maximumOriginalBytes = 8 * 1_024 * 1_024
 
+  enum RecordedEvent: String, CaseIterable {
+    case commandExecution, fileChange, mcpToolCall, dynamicToolCall, webSearch
+
+    var tool: String { "codex." + rawValue }
+
+    // File changes are archived, but the iOS acceptance gate requires returned tool output.
+    static let acceptanceTools = allCases.filter { $0 != .fileChange }.map(\.tool)
+  }
+
   struct ArchiveReceipt: Codable, Equatable {
     let archiveId: String
     let desktopId: String
@@ -231,6 +240,7 @@ enum AgentDesktopToolEvidenceWire {
     let itemType: String
     let tool: String
     let returnedOutput: Bool
+    var recordedTool: String? { RecordedEvent(rawValue: itemType)?.tool }
 
     init?(receipt: ArchiveReceipt, binding: AgentDesktopReplyBinding, original: Data) {
       guard let root = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: original),
@@ -242,14 +252,14 @@ enum AgentDesktopToolEvidenceWire {
         AgentCollaborationCloudToolEvidence.reportsFailure(AgentMcpJSONCodec.stringify(item)) ||
         item["result"]?.objectValue?["isError"] == .bool(true)
       let hasOutput: Bool
-      switch itemType {
-      case "commandExecution":
+      switch RecordedEvent(rawValue: itemType) {
+      case .commandExecution:
         hasOutput = item["exitCode"] == .int(0) && !item.string("aggregatedOutput").isBlank
-      case "mcpToolCall":
+      case .mcpToolCall:
         hasOutput = item["result"]?.objectValue?.isEmpty == false
-      case "dynamicToolCall":
+      case .dynamicToolCall:
         hasOutput = item["success"] == .bool(true) && item["contentItems"]?.arrayValue?.isEmpty == false
-      case "webSearch":
+      case .webSearch:
         hasOutput = item["results"]?.arrayValue?.isEmpty == false
       default:
         hasOutput = false
@@ -309,7 +319,7 @@ enum AgentDesktopToolEvidenceWire {
             (1...9_007_199_254_740_991).contains(sequence),
             totalBytes > 0,
             pageCount == (totalBytes - 1) / AgentDesktopToolEvidenceWire.maximumPageBytes + 1,
-            ["commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall", "webSearch"].contains(itemType),
+            RecordedEvent(rawValue: itemType) != nil,
             object.string("trust") == "execution_observed_not_claim_verified",
             object.string("coverage") == "provider_payload_as_received" else { return nil }
     }
