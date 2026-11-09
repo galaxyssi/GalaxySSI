@@ -1286,6 +1286,7 @@ struct AgentCollaborationResearchPublication: Codable {
   var recordedAtMillis: Int64? = nil
   var numericTrials: [AgentMcpJSONObject]? = nil
   var coordination: AgentCollaborationMilestoneCoordination? = nil
+  var recordNotices: [AgentMcpJSONObject]? = nil
 }
 
 struct AgentCollaborationPublicationRejection: Codable, Equatable {
