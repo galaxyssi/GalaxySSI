@@ -20,6 +20,10 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
     private fun agendaRows() = HealthCareAgendaRows(db, ::concern, ::reminders)
     private fun feedbackRows() = HealthCareFeedbackRows(db, ::pack, ::unpack)
     private fun encounterRows() = HealthCareEncounterRows(db, ::pack, ::unpack)
+    private fun documentRows() = HealthCareDocumentRows(db, ::pack, ::unpack) { AgentMemoryIndexKey.token("$name|care-document|self|$it") }
+    fun encounterDocuments(id: String, encounterId: String, before: Int = Int.MAX_VALUE, limit: Int = 30) =
+        documentRows().page(id, encounterId, before, limit)
+    fun encounterDocument(id: String) = documentRows().get(id)
     fun encounter(id: String) = encounterRows().get(id)
     fun encounters(id: String, beforeRevision: Int = Int.MAX_VALUE, limit: Int = 30, expectedRevision: Int? = null): HealthCareEncounterPage = transaction {
         val issue = concern(id) ?: throw HealthCareConflict()
@@ -633,7 +637,34 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         if (issue.revision != expectedRevision || before.concernId != id || before.revision != expectedEncounterRevision) throw HealthCareConflict()
         persist(issue.copy(revision = issue.revision + 1, updatedAt = maxOf(now, issue.updatedAt)), "encounter_deleted")
         encounterRows().delete(id, encounterId)
+        documentRows().purge(id, encounterId)
         Unit
+    }
+    fun linkEncounterDocument(id: String, expectedRevision: Int, encounterId: String, expectedEncounterRevision: Int,
+        source: HealthCareDocumentRef, operationId: String, now: Long): HealthCareDocumentLink = transaction(true) {
+        require(listOf(id, encounterId, operationId).all(HealthProfilePolicy::uuid) && now > 0)
+        documentRows().get(operationId)?.let {
+            if (it.concernId != id || it.encounterId != encounterId || it.expectedConcern != expectedRevision ||
+                it.expectedEncounter != expectedEncounterRevision || it.source != source) throw HealthCareConflict()
+            return@transaction it
+        }
+        val issue = concern(id) ?: throw HealthCareConflict()
+        val visit = encounterRows().get(encounterId) ?: throw HealthCareConflict()
+        if (issue.revision != expectedRevision || visit.concernId != id || visit.revision != expectedEncounterRevision) throw HealthCareConflict()
+        documentRows().matching(encounterId, source)?.let { return@transaction it }
+        val link = HealthCareDocumentLink(operationId, id, encounterId, issue.revision + 1, issue.revision, visit.revision,
+            source, maxOf(now, issue.updatedAt))
+        persist(issue.copy(revision = link.revision, updatedAt = link.createdAt), "encounter_document_linked")
+        documentRows().write(link)
+        link
+    }
+    fun unlinkEncounterDocument(id: String, expectedRevision: Int, linkId: String, expectedLinkRevision: Int, now: Long) = transaction(true) {
+        require(now > 0 && expectedRevision in 1 until Int.MAX_VALUE)
+        val issue = concern(id) ?: throw HealthCareConflict()
+        val link = documentRows().get(linkId) ?: throw HealthCareConflict()
+        if (issue.revision != expectedRevision || link.concernId != id || link.revision != expectedLinkRevision) throw HealthCareConflict()
+        persist(issue.copy(revision = issue.revision + 1, updatedAt = maxOf(now, issue.updatedAt)), "encounter_document_unlinked")
+        documentRows().remove(linkId)
     }
     fun delete(id: String, expectedRevision: Int) = transaction(true) {
         val value = concern(id) ?: throw HealthCareConflict()
@@ -647,6 +678,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         answerRows().delete(id)
         feedbackRows().delete(id)
         encounterRows().delete(id)
+        documentRows().purge(id)
         // Keep only encrypted routing tombstones so a late result cannot revive deleted health data.
         var after = ""
         while (true) {
@@ -668,7 +700,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         Unit
     }
     override fun close() = helper.close()
-    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 12) {
+    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 13) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE settings(id INTEGER PRIMARY KEY,version TEXT NOT NULL,payload BLOB NOT NULL)")
@@ -688,6 +720,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             HealthCareAgendaRows.create(db)
             HealthCareFeedbackRows.create(db)
             HealthCareEncounterRows.create(db)
+            HealthCareDocumentRows.create(db)
         }
         private fun discussions(db: SQLiteDatabase) {
             // Bindings survive concern deletion so an old sensitive conversation cannot become an ordinary chat.
@@ -695,7 +728,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             db.execSQL("CREATE TABLE discussion_grants(turn_id TEXT PRIMARY KEY,payload BLOB NOT NULL)")
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            check(oldVersion in 1..11 && newVersion == 12)
+            check(oldVersion in 1..12 && newVersion == 13)
             if (oldVersion < 2) discussions(db)
             if (oldVersion < 3) plans(db)
             if (oldVersion < 4) reminders(db)
@@ -711,7 +744,8 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             if (oldVersion < 9) HealthCareAnswerRows.create(db)
             if (oldVersion < 10) HealthCareAgendaRows.create(db)
             if (oldVersion < 11) HealthCareFeedbackRows.create(db)
-            HealthCareEncounterRows.create(db)
+            if (oldVersion < 12) HealthCareEncounterRows.create(db)
+            HealthCareDocumentRows.create(db)
         }
         private fun research(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE research_authorizations(concern_id TEXT PRIMARY KEY,id TEXT NOT NULL UNIQUE,payload BLOB NOT NULL)")

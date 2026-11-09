@@ -366,3 +366,40 @@ Appointment reminders, post-visit original import and reviewed clinical
 instructions remain separate increments. This implementation has no external
 booking or clinical execution tool. Device UI, storage migration and privacy
 regression acceptance must pass before it is considered ready for delivery.
+
+## Encounter source documents
+
+Visit detail now opens a local source list. Users select an existing retained
+original, link the whole file, or preview a PDF/image and explicitly choose a
+page. Native pinch/drag preview reuses the bounded original rasterizer. The
+existing import workflow remains available; returning from it reloads local
+sources, without automatically associating an imported document or interpreting
+it as a prescription. Private review-only imports cannot be selected.
+
+Schema 13 stores each association independently with authenticated encryption.
+The payload binds the concern, encounter, their expected revisions, original ID,
+SHA-256, byte size, MIME type, optional page/count and user confirmation time.
+Indexed source fingerprints use a keyed digest, not a public file hash. Recording
+the association and its concern event is atomic; duplicate sources and operation
+retries do not create duplicate links. Changed replay payloads and stale parents
+are rejected. Removing a link leaves the original file intact. Deleting the visit
+or concern purges its associations; stale callbacks cannot revive removed links.
+
+Preparation verifies the complete original through a bounded stream, without
+creating a plaintext file. Rendering, verification and library reads run outside
+the main thread and outside the short commit lock. A prepared confirmation expires
+after ten minutes and rechecks privacy, source metadata, parent revisions and
+measurement clocks before committing. Lists use at most 30 items per page; linked
+source continuations are tied to the concern revision. Backgrounding, memory
+pressure, source changes and expiry discard dialogs, loaded plaintext and preview
+bitmaps, including obsolete worker results.
+
+Missing or changed originals remain visible as unavailable associations that can
+be removed, never as verified clinical evidence. Preview failure is explicit;
+password-protected PDFs require the original-library reader rather than an
+invented page preview. Selecting a source is not clinician verification and does
+not create medication, appointment or rehabilitation reminders. Structured
+instruction extraction, field-by-field review, dependencies from original
+deletion to future instructions, scoped Agent tools and post-treatment follow-up
+remain subsequent parts of the full lifecycle. Device acceptance is required
+before delivering this increment.

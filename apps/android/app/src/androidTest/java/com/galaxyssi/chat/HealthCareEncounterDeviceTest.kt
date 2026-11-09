@@ -8,6 +8,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 internal fun removeHealthEncounterTestTables(db: SQLiteDatabase) {
+    db.execSQL("DROP TABLE encounter_documents")
     db.execSQL("DROP TABLE encounter_events")
     db.execSQL("DROP TABLE encounters")
 }
@@ -130,6 +131,6 @@ class HealthCareEncounterDeviceTest {
             assertEquals(before, it.concern(issue.id)); assertEquals(listOf(feedback), it.feedback(issue.id).items)
             assertTrue(it.encounters(issue.id).items.isEmpty()); save(it, before)
         }
-        context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(12, it.version) }
+        context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(13, it.version) }
     }
 }
