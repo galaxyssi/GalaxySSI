@@ -105,8 +105,8 @@ extension GalaxySSIHealthRecords {
       expected: history.scope, source: history.item.entry.source, draft: draft, now: now)
   }
 
-  private func saveVisitInstruction(id: UUID, operation: UUID, expectedEntry: Int?, expected: VisitDocuments.Scope,
-      source: Instructions.Source, draft: Instructions.Draft, now: Date) throws -> Instructions.Receipt {
+  func saveVisitInstruction(id: UUID, operation: UUID, expectedEntry: Int?, expected: VisitDocuments.Scope,
+      source: Instructions.Source, draft: Instructions.Draft, now: Date, modelProposalID: UUID? = nil) throws -> Instructions.Receipt {
     let originals = visitOriginalStore
     let (receipt, inserted) = try originals.withRestoreLease { lease -> (Instructions.Receipt, Bool) in
       try originals.reconcileRestores(lease: lease)
@@ -117,10 +117,28 @@ extension GalaxySSIHealthRecords {
       let original = try verifiedVisitDocumentOriginal(link, scope: scope, archive: archive, originals: originals, lease: lease)
       _ = try originals.read(original, lease: lease)
       var ledger = archive.localCareInstructions ?? .init()
+      if let modelProposalID {
+        guard let proposal = archive.localInstructionProposals?[modelProposalID],
+              archive.healthOnlinePermission == proposal.binding.onlinePermission,
+              let entry = ledger.current[id], proposal.draft == draft else { throw Failure.stale }
+        if proposal.state == .applied {
+          guard ledger.receipts[operation]?.entry.modelProposalID == modelProposalID else { throw Failure.stale }
+        } else {
+          guard proposal.state == .pending, entry.draft.canRequestProposal,
+                try proposal.binding == instructionProposalBinding(entry, scope: scope, archive: archive)
+          else { throw Failure.stale }
+        }
+      }
       let (receipt, inserted) = try ledger.save(id: id, operation: operation, scope: scope, expectedEntry: expectedEntry,
-        expectedConcern: expected.stamp.revision, source: source, draft: draft, now: now)
+        expectedConcern: expected.stamp.revision, source: source, draft: draft, now: now, modelProposalID: modelProposalID)
       if inserted {
         archive.localCareInstructions = ledger
+        let pending = (archive.localInstructionProposals ?? [:]).values.filter {
+          $0.binding.instruction == id && $0.state == .pending
+        }
+        for proposal in pending {
+          archive.localInstructionProposals?[proposal.id]?.state = proposal.id == modelProposalID ? .applied : .dismissed
+        }
         var current = concern
         Self.invalidateInstructionActions(in: &current, archive: &archive) { $0.instruction == id }
         try publishVisitDocumentChange(current, archive: &archive, now: now, notify: false)
@@ -141,6 +159,7 @@ extension GalaxySSIHealthRecords {
           var ledger = archive.localCareInstructions, ledger.current[entry.id] == entry else { throw Failure.stale }
     ledger.remove(concern: concern.id, visit: entry.visit, entry: entry.id)
     archive.localCareInstructions = ledger
+    archive.localInstructionProposals = archive.localInstructionProposals?.filter { $0.value.binding.instruction != entry.id }
     var current = concern
     Self.invalidateInstructionActions(in: &current, archive: &archive) { $0.instruction == entry.id }
     try publishVisitDocumentChange(current, archive: &archive, now: now)

@@ -220,6 +220,9 @@
     A10000000000000000009870 /* GalaxySSIHealthCareSeries.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009870 /* GalaxySSIHealthCareSeries.swift */; };
     A10000000000000000009874 /* GalaxySSIHealthCareHistoryTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009874 /* GalaxySSIHealthCareHistoryTool.swift */; };
     A1000000000000000000FB08 /* GalaxySSIHealthCareFeedbackTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000FB08 /* GalaxySSIHealthCareFeedbackTool.swift */; };
+    A1000000000000000000FB10 /* GalaxySSIHealthInstructionProposal.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000FB10 /* GalaxySSIHealthInstructionProposal.swift */; };
+    A1000000000000000000FB11 /* GalaxySSIHealthInstructionProposalRecords.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000FB11 /* GalaxySSIHealthInstructionProposalRecords.swift */; };
+    A1000000000000000000FB12 /* GalaxySSIHealthInstructionProposalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000FB12 /* GalaxySSIHealthInstructionProposalView.swift */; };
     A1000000000000000000FB0B /* GalaxySSIHealthVisitJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000FB0B /* GalaxySSIHealthVisitJournal.swift */; };
     A1000000000000000000FB0C /* GalaxySSIHealthVisitJournalRecords.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000FB0C /* GalaxySSIHealthVisitJournalRecords.swift */; };
     A1000000000000000000FB0D /* GalaxySSIHealthVisitJournalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000FB0D /* GalaxySSIHealthVisitJournalView.swift */; };
@@ -1514,6 +1517,9 @@
     A20000000000000000009870 /* GalaxySSIHealthCareSeries.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareSeries.swift; sourceTree = "<group>"; };
     A20000000000000000009874 /* GalaxySSIHealthCareHistoryTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareHistoryTool.swift; sourceTree = "<group>"; };
     A2000000000000000000FB08 /* GalaxySSIHealthCareFeedbackTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareFeedbackTool.swift; sourceTree = "<group>"; };
+    A2000000000000000000FB10 /* GalaxySSIHealthInstructionProposal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthInstructionProposal.swift; sourceTree = "<group>"; };
+    A2000000000000000000FB11 /* GalaxySSIHealthInstructionProposalRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthInstructionProposalRecords.swift; sourceTree = "<group>"; };
+    A2000000000000000000FB12 /* GalaxySSIHealthInstructionProposalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthInstructionProposalView.swift; sourceTree = "<group>"; };
     A2000000000000000000FB0B /* GalaxySSIHealthVisitJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthVisitJournal.swift; sourceTree = "<group>"; };
     A2000000000000000000FB0C /* GalaxySSIHealthVisitJournalRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthVisitJournalRecords.swift; sourceTree = "<group>"; };
     A2000000000000000000FB0D /* GalaxySSIHealthVisitJournalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthVisitJournalView.swift; sourceTree = "<group>"; };
@@ -3439,6 +3445,9 @@
         A20000000000000000009870 /* GalaxySSIHealthCareSeries.swift */,
         A20000000000000000009874 /* GalaxySSIHealthCareHistoryTool.swift */,
         A2000000000000000000FB08 /* GalaxySSIHealthCareFeedbackTool.swift */,
+        A2000000000000000000FB10 /* GalaxySSIHealthInstructionProposal.swift */,
+        A2000000000000000000FB11 /* GalaxySSIHealthInstructionProposalRecords.swift */,
+        A2000000000000000000FB12 /* GalaxySSIHealthInstructionProposalView.swift */,
         A2000000000000000000FB0B /* GalaxySSIHealthVisitJournal.swift */,
         A2000000000000000000FB0C /* GalaxySSIHealthVisitJournalRecords.swift */,
         A2000000000000000000FB0D /* GalaxySSIHealthVisitJournalView.swift */,
@@ -4868,6 +4877,9 @@
         A10000000000000000009870 /* GalaxySSIHealthCareSeries.swift in Sources */,
         A10000000000000000009874 /* GalaxySSIHealthCareHistoryTool.swift in Sources */,
         A1000000000000000000FB08 /* GalaxySSIHealthCareFeedbackTool.swift in Sources */,
+        A1000000000000000000FB10 /* GalaxySSIHealthInstructionProposal.swift in Sources */,
+        A1000000000000000000FB11 /* GalaxySSIHealthInstructionProposalRecords.swift in Sources */,
+        A1000000000000000000FB12 /* GalaxySSIHealthInstructionProposalView.swift in Sources */,
         A1000000000000000000FB0B /* GalaxySSIHealthVisitJournal.swift in Sources */,
         A1000000000000000000FB0C /* GalaxySSIHealthVisitJournalRecords.swift in Sources */,
         A1000000000000000000FB0D /* GalaxySSIHealthVisitJournalView.swift in Sources */,

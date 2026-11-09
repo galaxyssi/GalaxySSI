@@ -38,6 +38,8 @@ enum GalaxySSIHealthInstruction {
       kind.fields.allSatisfy { field in fields[field].map { $0.review != .unreviewed } ?? false }
     }
 
+    var canRequestProposal: Bool { fields.values.allSatisfy { $0.review == .unreviewed } }
+
     var eligibleForAction: Bool {
       reviewed && (kind == .medication ? kind.fields : [.name, .details]).allSatisfy {
         value($0).review == .transcribed && !value($0).text.isEmpty
@@ -193,6 +195,7 @@ enum GalaxySSIHealthInstruction {
     let draft: Draft
     let createdAt: Date
     let updatedAt: Date
+    var modelProposalID: UUID? = nil
   }
 
   struct Receipt: Codable, Equatable, Identifiable {
@@ -207,12 +210,13 @@ enum GalaxySSIHealthInstruction {
     private(set) var receipts: [UUID: Receipt] = [:]
 
     mutating func save(id: UUID, operation: UUID, scope: GalaxySSIHealthEncounterDocument.Scope, expectedEntry: Int?,
-        expectedConcern: Int, source: Source, draft: Draft, now: Date) throws -> (Receipt, Bool) {
+        expectedConcern: Int, source: Source, draft: Draft, now: Date, modelProposalID: UUID? = nil) throws -> (Receipt, Bool) {
       let draft = try draft.validated()
       let concern = scope.stamp.concern, visit = scope.visit.id
       if let saved = receipts[operation] {
         guard saved.entry.id == id, saved.entry.concern == concern, saved.entry.visit == visit,
               saved.expectedConcern == expectedConcern, saved.expectedEntry == expectedEntry,
+              modelProposalID == nil || saved.entry.modelProposalID == modelProposalID,
               saved.entry.source == source, saved.entry.draft == draft else { throw GalaxySSIHealthRecords.Failure.stale }
         return (saved, false)
       }
@@ -222,7 +226,8 @@ enum GalaxySSIHealthInstruction {
       else { throw GalaxySSIHealthRecords.Failure.stale }
       let updated = max(now, previous?.updatedAt ?? now)
       let entry = Entry(id: id, concern: concern, visit: visit, revision: expectedConcern + 1, source: source,
-        draft: draft, createdAt: previous?.createdAt ?? now, updatedAt: updated)
+        draft: draft, createdAt: previous?.createdAt ?? now, updatedAt: updated,
+        modelProposalID: modelProposalID ?? previous?.modelProposalID)
       let receipt = Receipt(id: operation, expectedConcern: expectedConcern, expectedEntry: expectedEntry, entry: entry)
       current[id] = entry
       receipts[operation] = receipt
