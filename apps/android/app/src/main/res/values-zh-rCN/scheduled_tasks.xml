@@ -7,6 +7,7 @@
     <string name="schedule_resume">继续</string>
     <string name="schedule_delete">删除</string>
     <string name="schedule_paused">已暂停</string>
+    <string name="schedule_legacy_review">已暂停：旧版任务缺少可靠的创建记录。请核对任务和时间后再恢复，已有回答保留。</string>
     <string name="schedule_next">下次：%1$s</string>
     <string name="schedule_empty">暂无定时任务</string>
     <string name="schedule_prompt">做什么</string>
