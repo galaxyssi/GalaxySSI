@@ -149,6 +149,10 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
       completionHandler(quiet ? [.list] : [])
       return
     }
+    if GalaxySSIHealthCareFollowUp.JournalVisibility.shared.suppresses(notification.request.identifier) {
+      completionHandler([])
+      return
+    }
     if notification.request.identifier.hasPrefix(GalaxySSIHealthRecordingReminders.prefix) ||
       notification.request.identifier.hasPrefix(GalaxySSIHealthCareFollowUp.prefix) ||
       GalaxySSIHealthReviewDelivery.token(notification.request.identifier) != nil {

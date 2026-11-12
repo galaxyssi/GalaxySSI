@@ -12,7 +12,9 @@ internal object ConversationScheduledTasks {
         }
 
     fun save(context: Context, conversationId: String, command: ConversationScheduleCommand,
-        existingId: String? = null, creationId: String? = null): AgentProactiveTask = synchronized(AgentProactiveTaskScheduler) {
+        existingId: String? = null, creationId: String? = null,
+        origin: String = ConversationScheduleProvenance.EDITOR): AgentProactiveTask = synchronized(AgentProactiveTaskScheduler) {
+        require(origin in setOf(ConversationScheduleProvenance.EDITOR, ConversationScheduleProvenance.MODEL_TOOL))
         require(command.operation == ConversationScheduleOperation.SAVE && command.prompt.isNotBlank())
         if (creationId != null) {
             require(existingId == null && command.createNew)
@@ -34,16 +36,20 @@ internal object ConversationScheduledTasks {
             action = (existing?.action ?: AgentProactiveAction(AgentProactiveActionKind.AGENT,
                 targetId = "conversation", conversationId = conversationId, deliveryMode = "notify")).copy(
                 prompt = command.prompt,
-                scheduleText = command.scheduleText.ifBlank { existing?.action?.scheduleText.orEmpty() }),
+                scheduleText = command.scheduleText.ifBlank { existing?.action?.scheduleText.orEmpty() },
+                scheduleOrigin = origin),
             enabled = true, consecutiveFailures = 0, revision = (existing?.revision ?: 0) + 1)
         AgentProactiveTaskScheduler.save(context, task, runImmediately = true)
     }
 
-    fun setEnabled(context: Context, taskId: String, enabled: Boolean): AgentProactiveTask? = synchronized(AgentProactiveTaskScheduler) {
+    fun setEnabled(context: Context, taskId: String, enabled: Boolean,
+        origin: String = ConversationScheduleProvenance.EDITOR): AgentProactiveTask? = synchronized(AgentProactiveTaskScheduler) {
+        require(origin in setOf(ConversationScheduleProvenance.EDITOR, ConversationScheduleProvenance.MODEL_TOOL))
         val store = AgentProactiveTaskStore(context)
         val task = store.task(taskId)?.takeIf { it.action.conversationId.isNotBlank() } ?: return@synchronized null
         if (!enabled) AgentProactiveTaskNotifier.cancel(context, taskId)
         val saved = AgentProactiveTaskScheduler.save(context, task.copy(enabled = enabled,
+            action = if (enabled) task.action.copy(scheduleOrigin = origin) else task.action,
             consecutiveFailures = 0, revision = task.revision + 1))
         if (!enabled) store.recoverableRuns().filter { it.taskId == taskId }.forEach {
             if (!it.status.terminal) AgentProactiveTaskExecutor.cancel(context, it.runId)
@@ -63,6 +69,7 @@ internal object ConversationScheduledTasks {
             (previous.status == AgentProactiveRunStatus.FAILED) != failed
 
     fun deliver(context: Context, task: AgentProactiveTask, run: AgentProactiveRun): Boolean = synchronized(AgentProactiveTaskScheduler) {
+        ConversationScheduleProvenance.reconcile(context, task)
         val conversationId = task.action.conversationId
         if (conversationId.isBlank()) return@synchronized true
         if (run.deliveryRecorded) return@synchronized false

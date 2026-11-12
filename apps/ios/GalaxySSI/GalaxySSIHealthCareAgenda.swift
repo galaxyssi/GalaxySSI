@@ -2,7 +2,7 @@ import Foundation
 
 enum GalaxySSIHealthCareAgenda {
   static let pageSize = 30
-  static let version = 1
+  static let version = 2
 
   enum Filter: String, CaseIterable { case today, later, review, recorded }
   enum Bucket: Int, Codable { case planned, review, recorded }
@@ -37,6 +37,7 @@ enum GalaxySSIHealthCareAgenda {
     let reminderID: UUID?
     let submittedFor: Date?
     let canRecord: Bool
+    var journalVisit: UUID? = nil
 
     func matches(_ filter: Filter, dayEnd: Date) -> Bool {
       switch filter {
@@ -132,13 +133,13 @@ enum GalaxySSIHealthCareAgenda {
   struct Item: Identifiable {
     let scope: Scope
     let revision: Int
-    let action: GalaxySSIHealthCarePlan.AdoptedAction
+    let action: GalaxySSIHealthCarePlan.AdoptedAction?
     let reminder: GalaxySSIHealthCareFollowUp.Reminder?
     let plannedAt: Date?
     let bucket: Bucket
     let canRecord: Bool
 
-    var id: String { "\(scope.concern.uuidString):\(action.id)" }
+    var id: String { "\(scope.concern.uuidString):\(action?.id ?? reminder?.actionID ?? "")" }
   }
 
   struct Page {

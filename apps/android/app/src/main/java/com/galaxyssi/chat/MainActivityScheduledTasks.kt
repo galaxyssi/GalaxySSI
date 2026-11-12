@@ -28,6 +28,7 @@ internal fun MainActivity.showScheduledTasksPage() {
     }
     navigationContentExecutor.execute {
         val tasks = ConversationScheduledTasks.tasks(applicationContext)
+            .map { ConversationScheduleProvenance.reconcile(applicationContext, it) }
         runOnUiThread {
             if (isDestroyed || featureContent.tag !== marker) return@runOnUiThread
             if (tasks.isEmpty()) featureContent.addView(TextView(this).apply {
@@ -81,7 +82,7 @@ private fun MainActivity.showScheduledTaskMenu(anchor: View, task: AgentProactiv
         setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> showScheduledTaskEditor(task)
-                2 -> navigationContentExecutor.execute {
+                2 -> if (ConversationScheduleProvenance.requiresReview(task)) showScheduledTaskEditor(task) else navigationContentExecutor.execute {
                     ConversationScheduledTasks.setEnabled(applicationContext, task.taskId, !task.enabled)
                     runOnUiThread { showScheduledTasksPage() }
                 }

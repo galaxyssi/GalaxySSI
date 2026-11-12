@@ -2,6 +2,129 @@ import XCTest
 @testable import GalaxySSI
 
 final class CloudConversationStreamEngineTests: XCTestCase {
+  @MainActor
+  func testWorkInputPublisherReceivesDataBeforeProducerCompletionAndExposesNoOtherTools() async throws {
+    typealias Inputs = AgentCollaborationWorkInputBindings
+    let fixture = try makeFixture()
+    var turns = fixture.turns
+    turns[0].readOnlyAnalysis = true
+    let arguments = AgentMcpJSONCodec.stringify(["mode": .string(Inputs.publishMode),
+      "milestone_id": .string("reading"), "artifact": .string(#"{"value":42}"#)])
+    let stream = RecordingModelStreamClient(eventBatches: [
+      [.toolCallDelta(.init(requestId: "r", sequence: 1, payload: .init(callId: "publish", index: 0,
+          nameDelta: CloudModelStreamMutableConversation.collaborationPublishName, argumentsDelta: arguments))),
+       .toolCallDelta(.init(requestId: "r", sequence: 2, payload: .init(callId: "other", index: 1,
+          nameDelta: "web_search", argumentsDelta: #"{"query":"unavailable tool"}"#))),
+       .completed(.init(requestId: "r", finishReason: "tool_calls", completedAtElapsedMs: 3))],
+      [.textDelta(.init(requestId: "r", sequence: 1, text: "Finished the producer.", receivedAtElapsedMs: 1)),
+       .completed(.init(requestId: "r", finishReason: "stop", completedAtElapsedMs: 2))]
+    ])
+    let executor = RecordingConversationToolExecutor(result: "must not run")
+    let engine = CloudConversationStreamEngine(streamClient: stream, toolExecutor: executor,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    var published: [AgentMcpJSONObject] = []
+    let events = try await collect(engine.streamConversation(contact: fixture.contact, store: fixture.store, turns: turns,
+      images: [], requestId: "work-input-publisher", collaborationEvidence: nil,
+      workInputPublisher: { input in
+        XCTAssertEqual(stream.requests.count, 1)
+        if let request = Inputs.PublishRequest(input) { published.append(request.payload) }
+        return ["status": .string("recorded"), "replayed": .bool(false), "token": .string("fixture-token")]
+      }, retainResearch: false))
+    XCTAssertEqual(published, [["value": .int(42)]])
+    XCTAssertTrue(executor.calls.isEmpty)
+    XCTAssertTrue(try XCTUnwrap(stream.requests.first).bodyJson.contains(Inputs.publishMode))
+    XCTAssertTrue(try XCTUnwrap(stream.requests.last).bodyJson.contains("fixture-token"))
+    XCTAssertNotNil(completed(events))
+  }
+
+  @MainActor
+  func testMilestoneConsumerCanPublishWorkInputWithoutExposingGeneralTools() async throws {
+    let fixture = try makeFixture()
+    var turns = fixture.turns
+    turns[0].readOnlyAnalysis = true
+    let reader = AgentGoalWorkMilestoneRead.toolID
+    let publisher = CloudModelStreamMutableConversation.collaborationPublishName
+    let input = AgentMcpJSONCodec.stringify(["mode": .string(AgentCollaborationWorkInputBindings.publishMode),
+      "milestone_id": .string("check"), "artifact": .string(#"{"value":42}"#)])
+    let stream = RecordingModelStreamClient(eventBatches: [
+      [.toolCallDelta(.init(requestId: "r", sequence: 1, payload: .init(callId: "read", index: 0,
+          nameDelta: reader, argumentsDelta: #"{"mode":"list"}"#))),
+       .toolCallDelta(.init(requestId: "r", sequence: 2, payload: .init(callId: "publish", index: 1,
+          nameDelta: publisher, argumentsDelta: input))),
+       .toolCallDelta(.init(requestId: "r", sequence: 3, payload: .init(callId: "other", index: 2,
+          nameDelta: "web_search", argumentsDelta: #"{"query":"not granted"}"#))),
+       .completed(.init(requestId: "r", finishReason: "tool_calls", completedAtElapsedMs: 4))],
+      [.textDelta(.init(requestId: "r", sequence: 1, text: "Checked the original.", receivedAtElapsedMs: 1)),
+       .completed(.init(requestId: "r", finishReason: "stop", completedAtElapsedMs: 2))]
+    ])
+    let executor = RecordingConversationToolExecutor(result: "must not run")
+    let engine = CloudConversationStreamEngine(streamClient: stream, toolExecutor: executor,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    let events = try await collect(engine.streamConversation(contact: fixture.contact, store: fixture.store, turns: turns,
+      images: [], requestId: "isolated-milestone-worker", collaborationEvidence: nil,
+      workInputPublisher: { _ in ["status": .string("recorded"), "replayed": .bool(false), "token": .string("published-fixture")] },
+      milestoneRead: { _ in ["status": .string("returned"), "token": .string("original-fixture")] }, retainResearch: false))
+    let first = try XCTUnwrap(stream.requests.first).bodyJson
+    XCTAssertTrue(first.contains(reader))
+    XCTAssertTrue(first.contains(publisher))
+    XCTAssertFalse(first.contains("web_search"))
+    let last = try XCTUnwrap(stream.requests.last).bodyJson
+    XCTAssertTrue(last.contains("original-fixture"))
+    XCTAssertTrue(last.contains("published-fixture"))
+    XCTAssertTrue(executor.calls.isEmpty)
+    XCTAssertNotNil(completed(events))
+  }
+
+  @MainActor
+  func testScopedWorkerRoutesPeerAndTypedPublicationsWithoutGeneralTools() async throws {
+    let fixture = try makeFixture()
+    var turns = fixture.turns
+    turns[0].readOnlyAnalysis = true
+    let publication = CloudModelStreamMutableConversation.collaborationPublishName
+    let recall = CloudModelStreamMutableConversation.collaborationRecallName
+    func call(_ id: String, _ index: Int, _ name: String, _ input: String) -> ModelStreamEvent {
+      .toolCallDelta(.init(requestId: "r", sequence: Int64(index + 1),
+        payload: .init(callId: id, index: index, nameDelta: name, argumentsDelta: input)))
+    }
+    let stream = RecordingModelStreamClient(eventBatches: [
+      [call("peer-read", 0, recall, #"{"mode":"peer_updates"}"#),
+       call("peer-publish", 1, publication, #"{"mode":"publish","milestone_id":"peer","artifact":"{}"}"#),
+       call("data-publish", 2, publication, #"{"mode":"publish_work_input","milestone_id":"data","artifact":"{}"}"#),
+       call("milestone-read", 3, AgentGoalWorkMilestoneRead.toolID, #"{"mode":"list"}"#),
+       call("search", 4, "web_search", #"{"query":"must not run"}"#),
+       .completed(.init(requestId: "r", finishReason: "tool_calls", completedAtElapsedMs: 6))],
+      [.textDelta(.init(requestId: "r", sequence: 1, text: "Checked the supplied evidence.", receivedAtElapsedMs: 1)),
+       .completed(.init(requestId: "r", finishReason: "stop", completedAtElapsedMs: 2))]
+    ])
+    let executor = RecordingConversationToolExecutor(result: "must not run")
+    let engine = CloudConversationStreamEngine(streamClient: stream, toolExecutor: executor,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    let events = try await collect(engine.streamConversation(contact: fixture.contact, store: fixture.store,
+      turns: turns, images: [], requestId: "scoped-peer-inputs", collaborationEvidence: nil,
+      workInputPublisher: { input in
+        XCTAssertEqual(input.string("mode"), "publish_work_input")
+        return ["status": .string("recorded"), "token": .string("typed-fixture")]
+      }, milestoneRead: { input in
+        XCTAssertEqual(input.string("mode"), "list")
+        return ["status": .string("returned"), "token": .string("milestone-fixture")]
+      }, retainResearch: false, peerWorkRecall: { input in
+        XCTAssertEqual(input.string("mode"), "peer_updates")
+        return ["status": .string("returned"), "token": .string("read-fixture")]
+      }, peerWorkPublish: { input in
+        XCTAssertEqual(input.string("mode"), "publish")
+        return ["status": .string("published"), "token": .string("peer-fixture")]
+      }))
+    let first = try XCTUnwrap(stream.requests.first).bodyJson
+    XCTAssertTrue(first.contains("peer_updates"))
+    XCTAssertTrue(first.contains("publish_work_input"))
+    XCTAssertTrue(first.contains(AgentGoalWorkMilestoneRead.toolID))
+    XCTAssertFalse(first.contains("web_search"))
+    let final = try XCTUnwrap(stream.requests.last).bodyJson
+    for token in ["typed-fixture", "read-fixture", "peer-fixture", "milestone-fixture"] { XCTAssertTrue(final.contains(token)) }
+    XCTAssertTrue(executor.calls.isEmpty)
+    XCTAssertNotNil(completed(events))
+  }
+
   func testFormatRepairBudgetDoesNotLimitToolProgressOrCitationRepair() {
     let progress = CloudWebToolLoopProgress()
     XCTAssertTrue(progress.requestFormatRepair("protocol"))

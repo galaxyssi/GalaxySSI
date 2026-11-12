@@ -56,6 +56,31 @@ enum GalaxySSIHealthDesktopResearch {
     let identity: AgentTaskIdentity
     let createdAtMillis: Int64
 
+    init(journal review: GalaxySSIHealthVisitJournalRead.Approval, round: UUID,
+         sender: String, createdAtMillis: Int64) throws {
+      guard case .paired(let route) = review.route, route.digest == review.binding.destination,
+            review.binding.onlinePermission != nil, !sender.isBlank, createdAtMillis > 0 else {
+        throw GalaxySSIHealthRecords.Failure.permission
+      }
+      self.route = route
+      concern = review.binding.concern
+      authorization = review.id
+      job = round
+      revision = review.binding.revision
+      trigger = "explicit_visit_journal"
+      self.createdAtMillis = createdAtMillis
+      let digest = AgentModelLoopRecoveryIdentity.sha256(["kind": "private_health_journal", "sender": sender,
+        "route": route.digest, "conversation": review.conversation.uuidString, "turn": review.id.uuidString,
+        "round": round.uuidString])
+      source = max(1, Int64(digest.prefix(13), radix: 16) ?? 0)
+      owner = GalaxySSIHealthDesktopResearch.ownerPrefix + digest
+      let conversation = GalaxySSIHealthDesktopResearch.conversationPrefix + review.conversation.uuidString
+      let turn = review.id.uuidString
+      let task = AgentTaskIdentityPolicy.taskId(ownerId: sender, contactId: route.connector.contactId,
+        sourceMessageId: source, conversationId: conversation, turnId: turn)
+      identity = .init(clientRouteId: route.connector.clientRouteId, conversationId: conversation, taskId: task, turnId: turn)
+    }
+
     init(route: Route, authorization: GalaxySSIHealthCareResearch.Authorization,
          job: GalaxySSIHealthCareResearch.Job, sender: String, createdAtMillis: Int64) throws {
       guard authorization.pairedDesktop == route, authorization.destination == route.digest,
