@@ -31,6 +31,7 @@ struct GalaxySSIHealthVisitJournalView: View {
   @State private var saving = false
   @State private var failed = false
   @State private var invalid = false
+  @State private var discussing = false
 
   var body: some View {
     NavigationView {
@@ -53,6 +54,9 @@ struct GalaxySSIHealthVisitJournalView: View {
       }
     }
     .navigationViewStyle(.stack)
+    .sheet(isPresented: $discussing) {
+      if let page { GalaxySSIHealthVisitJournalDiscussionView(records: records, page: page) }
+    }
     .task { load() }
     .task(id: page?.expires) {
       guard let expires = page?.expires else { return }
@@ -96,6 +100,14 @@ struct GalaxySSIHealthVisitJournalView: View {
           }
         }
         if page.entry != nil {
+          if page.scope.visit.details.state == .attended {
+            Button {
+              discussing = true
+            } label: {
+              Label(GalaxySSIHealthVisitJournalDiscussionView.text("title", "Discuss post-visit journal",
+                language: language), systemImage: "bubble.left.and.bubble.right")
+            }
+          }
           Section(t("history", "Journal history")) {
             ForEach(rows) { receipt in
               DisclosureGroup {

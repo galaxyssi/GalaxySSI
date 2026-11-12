@@ -258,7 +258,7 @@ enum GalaxySSIHealthCareDiscussion {
     throw GalaxySSIHealthRecords.Failure.invalid
   }
 
-  static func request(_ approval: Approval, key: String) throws -> URLRequest {
+  static func request(_ approval: Approval, key: String, journalRead: Bool = false) throws -> URLRequest {
     guard case .cloud(let model, let endpoint, let credential) = approval.destination,
           self.endpoint(for: model) == endpoint,
           CloudModelCredentialPolicy.isStoredCredential(key),
@@ -334,6 +334,7 @@ enum GalaxySSIHealthCareDiscussion {
         confirmed target, or RISK_REVIEW only with no target. Never infer clinical stability or close tracking.
         """
     }
+    if journalRead { instruction = GalaxySSIHealthVisitJournalRead.instructions }
     let structuredTokens: Int? = approval.asksQuestions ? 4_096 : (approval.proposesPlan || approval.allowsAnswerDraft ? 2_048 : nil)
     let user = ["role": "user", "content": payload]
     var body: [String: Any]
@@ -358,7 +359,10 @@ enum GalaxySSIHealthCareDiscussion {
       if host == "api.deepseek.com" { options["thinking"] = ["type": "disabled"] }
       body = options
     }
-    if approval.asksQuestions || approval.history != nil || approval.questionCursor != nil || approval.feedbackCursor != nil {
+    if journalRead {
+      GalaxySSIHealthCareHistoryTool.configure(&body, style: model.apiStyle,
+        proposesPlan: false, historyAvailable: false, journalAvailable: true)
+    } else if approval.asksQuestions || approval.history != nil || approval.questionCursor != nil || approval.feedbackCursor != nil {
       GalaxySSIHealthCareHistoryTool.configure(&body, style: model.apiStyle,
         proposesPlan: approval.proposesPlan, historyAvailable: approval.history?.recent.cursor != nil,
         allowsMaintenance: approval.history != nil, questionsAvailable: approval.questionCursor != nil,

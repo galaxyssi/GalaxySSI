@@ -20,6 +20,7 @@ final class MessageCoordinator: ObservableObject {
   lazy var contactReminderAlert = GalaxySSIContactReminderAlert()
   private var pendingCollaborationConversations: Set<String> = []
   private var pendingCollaborationFollowups: Set<String> = []
+  private var privateHealthJournalRounds: [String: (binding: GalaxySSIHealthDesktopResearch.Binding, valid: () -> Bool)] = [:]
   private lazy var managedBrowserContinuations = AgentManagedBrowserContinuationStore(secrets: store.secrets)
   private var liveManagedBrowserMembers: Set<String> = []
   private var managedBrowserRecoveryInFlight: Set<String> = []
@@ -12332,6 +12333,13 @@ final class MessageCoordinator: ObservableObject {
           let contact = store.contact(id: contactID),
           let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == contact.desktopId &&
             $0.routes.clientRouteId == identity.clientRouteId }) else { return nil }
+    if let round = privateHealthJournalRounds[identity.taskId] {
+      let binding = round.binding
+      guard binding.identity == identity, binding.source == source, binding.route.connector.contactId == contactID,
+            binding.route.accepts(contact: contact, link: link), round.valid(),
+            !healthDisclosureStore.blockedDestinationIds().contains(contactID) else { return nil }
+      return binding
+    }
     let records = GalaxySSIHealthRecords(owner: store.profile.identityFingerprint, secrets: store.secrets)
     guard let binding = records.currentLocalCareDesktopResearch(identity, contact: contactID, source: source),
           binding.route.accepts(contact: contact, link: link),
@@ -12370,6 +12378,43 @@ final class MessageCoordinator: ObservableObject {
     guard binding.matches(response, link: link, contact: contact), response.success,
           response.taskStatus == "completed", !response.content.isBlank else { throw MqttRouteError.invalidPayload }
     return response
+  }
+
+  func exchangePrivateHealthJournal(_ review: GalaxySSIHealthVisitJournalRead.Approval, prompt: String,
+      language: String, valid: @escaping () -> Bool) async throws -> String {
+    try Task.checkCancellation()
+    guard valid(), case .paired(let route) = review.route, isPrivateHealthDesktopRouteAvailable(route),
+          privateHealthJournalRounds.count < 4 else { throw GalaxySSIHealthRecords.Failure.permission }
+    let now = AgentControlPlaneClock.nowMillis()
+    let binding = try GalaxySSIHealthDesktopResearch.Binding(journal: review, round: UUID(),
+      sender: store.profile.galaxySSIId, createdAtMillis: now)
+    let task = binding.identity.taskId
+    guard privateHealthJournalRounds[task] == nil else { throw GalaxySSIHealthRecords.Failure.stale }
+    privateHealthJournalRounds[task] = (binding, valid)
+    var queued = false
+    var completed = false
+    defer {
+      privateHealthJournalRounds.removeValue(forKey: task)
+      if queued, !completed, isPrivateHealthDesktopRouteConfigured(route) {
+        let cancel = GalaxySSIHealthDesktopResearch.Cancellation(binding: binding,
+          createdAtMillis: AgentControlPlaneClock.nowMillis())
+        try? journalMqttRuntime?.enqueueDesktopConnectorCancellation(cancel.payload, desktopId: route.connector.desktopId)
+      }
+    }
+    try queuePrivateHealthDesktopResearch(binding, prompt: prompt, language: language)
+    queued = true
+    let deadline = min(review.expires, Date().addingTimeInterval(180))
+    while Date() < deadline {
+      try Task.checkCancellation()
+      guard valid(), isPrivateHealthDesktopRouteAvailable(route) else { throw GalaxySSIHealthRecords.Failure.permission }
+      if let response = try privateHealthDesktopReply(binding) {
+        markPrivateHealthDesktopReplyApplied(binding)
+        completed = true
+        return response.content
+      }
+      try await Task.sleep(nanoseconds: 500_000_000)
+    }
+    throw GalaxySSIHealthRecords.Failure.stale
   }
 
   func markPrivateHealthDesktopReplyApplied(_ binding: GalaxySSIHealthDesktopResearch.Binding) {

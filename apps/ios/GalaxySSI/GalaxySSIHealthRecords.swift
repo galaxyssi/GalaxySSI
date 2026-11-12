@@ -194,6 +194,7 @@ struct GalaxySSIHealthRecords {
     var localCareInstructions: GalaxySSIHealthInstruction.Ledger?
     var localInstructionProposals: [UUID: GalaxySSIHealthInstructionProposal.Proposal]?
     var localVisitJournals: GalaxySSIHealthVisitJournal.Ledger?
+    var localVisitJournalDiscussions: [UUID: [GalaxySSIHealthVisitJournalRead.Exchange]]?
     var localCareAgenda: Data?
 
     var keepsNewImportOriginals: Bool { retainImportOriginals ?? true }
@@ -700,6 +701,7 @@ struct GalaxySSIHealthRecords {
     archive.localCareInstructions?.remove(concern: concern.id, visit: entry.id)
     archive.localInstructionProposals = archive.localInstructionProposals?.filter { $0.value.binding.visit != entry.id }
     archive.localVisitJournals?.remove(concern: concern.id, visit: entry.id)
+    archive.localVisitJournalDiscussions?.removeValue(forKey: entry.id)
     try persist(archive)
   }
 
@@ -844,6 +846,8 @@ struct GalaxySSIHealthRecords {
   }
 
   func persistInstructionProposals(_ archive: Archive) throws { try persist(archive, notify: false) }
+
+  func persistVisitJournalDiscussion(_ archive: Archive) throws { try persist(archive, notify: false) }
 
   func verifiedVisitDocumentOriginal(_ link: VisitDocuments.Link, scope: VisitDocuments.Scope,
       archive: Archive, originals: GalaxySSIHealthOriginalStore, lease: GalaxySSIHealthOriginalStore.RestoreLease)
@@ -2349,6 +2353,9 @@ struct GalaxySSIHealthRecords {
     archive.localCareInstructions?.remove(concern: concern.id)
     archive.localInstructionProposals = archive.localInstructionProposals?.filter { $0.value.binding.concern != concern.id }
     archive.localVisitJournals?.remove(concern: concern.id)
+    archive.localVisitJournalDiscussions = archive.localVisitJournalDiscussions?.filter {
+      !$0.value.contains { $0.binding.concern == concern.id }
+    }
     archive.localCare = ledger
     try persist(archive)
   }

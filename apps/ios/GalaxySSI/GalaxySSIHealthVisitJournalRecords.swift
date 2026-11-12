@@ -99,6 +99,7 @@ extension GalaxySSIHealthRecords {
           entry.concern == concern.id else { throw Failure.stale }
     ledger.remove(concern: concern.id, visit: scope.visit.id)
     archive.localVisitJournals = ledger
+    archive.localVisitJournalDiscussions?.removeValue(forKey: scope.visit.id)
     try publishVisitDocumentChange(concern, archive: &archive, now: now)
   }
 }
