@@ -699,6 +699,9 @@ final class MessageCoordinator: ObservableObject {
   }
 
   func start() {
+    #if DEBUG
+    Self.activeRemotePilotCoordinator = self
+    #endif
     if usesLegacyMqtt {
       restorePendingPairingClaim()
       restoreContactReminders()
@@ -9901,7 +9904,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func waitForCollaborationObserver(runId: String, memberId: String,
-                                            sourceMessageId: String) async throws -> String {
+      sourceMessageId: String, timeoutNanoseconds: UInt64 = 120_000_000_000) async throws -> String {
     var signal: AsyncStream<Void>.Continuation?
     let updates = AsyncStream<Void>(bufferingPolicy: .bufferingNewest(1)) { signal = $0 }
     guard let signal else { throw CancellationError() }
@@ -9911,7 +9914,7 @@ final class MessageCoordinator: ObservableObject {
       if notification.object as? String == runId { signal.yield(()) }
     }
     let timeout = Task {
-      do { try await Task.sleep(nanoseconds: 120_000_000_000) }
+      do { try await Task.sleep(nanoseconds: timeoutNanoseconds) }
       catch { return }
       signal.finish()
     }
@@ -10113,6 +10116,136 @@ final class MessageCoordinator: ObservableObject {
       throw error
     }
   }
+
+  #if DEBUG
+  private(set) static weak var activeRemotePilotCoordinator: MessageCoordinator?
+
+  func canSendRemotePilot(to link: ServerLink) -> Bool {
+    usesLegacyMqtt && mqttClient.relationshipSubscriptionsReady && link.paired
+  }
+
+  func sendRemotePilotMember(prompt: String, runID: String, conversation: String, turn: String,
+      member: String, source: UUID, contactID: String, desktopID: String, fingerprint: String, routeID: String,
+      profile: String, selectionConversation: String, selection: AgentModelSelection,
+      invocation: [String: String], deadline: UInt64) async throws -> String {
+    let current = DispatchTime.now().uptimeNanoseconds
+    let sourceID = source.uuidString
+    let history = AgentTeamExecutionHistoryStore.shared
+    guard ProcessInfo.processInfo.environment["GALAXYSSI_REMOTE_PILOT_RUN"] == "1", !Task.isCancelled,
+          current < deadline, !prompt.isBlank, prompt.utf8.count <= 60_000,
+          selection.mode == .manual, selection.targetId == contactID,
+          AgentModelSelectionSettings.hasStoredSelection(for: selectionConversation, defaults: store.defaults),
+          AgentModelSelectionSettings.selection(for: selectionConversation, defaults: store.defaults) == selection,
+          invocation["model_id"] == selection.modelId, invocation["reasoning_effort"] == selection.reasoningEffort.rawValue,
+          store.profile.identityFingerprint == profile, conversation.hasPrefix("pilot-"),
+          let contact = store.contact(id: contactID), contact.connectorAgentId == "codex",
+          contact.desktopId == desktopID, contact.trustState == .verified, contact.deliveryMode.isGalaxySSILinkFamily,
+          let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == desktopID &&
+            $0.desktopFingerprint == fingerprint && $0.routes.clientRouteId == routeID }), canSendRemotePilot(to: link),
+          let scope = try history.recoveryContext(source: sourceID, conversation: conversation, turn: turn, contact: contactID),
+          scope.team.supervisorRunId == runID, scope.member.memberId == member,
+          scope.owner.deliveryMode == .observe, scope.member.dispatchCheckpoint == .notStarted
+    else { throw GalaxySSIError.transportUnavailable }
+    let now = AgentControlPlaneClock.nowMillis()
+    let expires = now + Int64(min((deadline - current) / 1_000_000, 900_000))
+    let identity = AgentTaskIdentity(clientRouteId: routeID, conversationId: conversation, taskId: sourceID, turnId: turn)
+    guard let binding = AgentDesktopReplyBinding.teamObserver(owner: scope.owner, desktopId: desktopID,
+      agentId: "codex", identity: identity), expires > now else { throw GalaxySSIError.transportUnavailable }
+    let ticket = AgentDataDisclosureLedger.beginDesktopRequest(store: disclosureStore, contactId: contactID,
+      desktopId: desktopID, providerId: contact.galaxySSIId, title: contact.displayName, text: prompt,
+      attachments: [], conversationId: conversation, taskId: sourceID, turnId: turn)
+    guard ticket.allowed else { throw AgentDataDisclosureBlockedError(destination: contact.displayName) }
+    let target = AgentCallableTargetCatalog.build(contacts: store.visibleContacts, apiKey: { store.apiKey(for: $0) })
+      .first { $0.id == contactID && $0.status == .available }
+    var status = AgentDisclosureStatus.failed
+    defer { AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: status) }
+    guard let target else { throw GalaxySSIError.transportUnavailable }
+    let slot = try acquireAgentSlot(target: target, sourceMessageId: sourceID)
+    var tracked = false
+    defer { if !tracked { UserDefaultsAgentGlobalRunSlotStore.shared.release(ownerId: slot) } }
+    guard taskIdentityStore.register(contactId: contactID, sourceMessageId: sourceID, identity: identity),
+          history.advanceDispatchCheckpoint(runId: runID, conversationId: conversation, turnId: turn,
+            memberId: member, sourceMessageId: sourceID, to: .dispatching, now: now),
+          desktopReplyRecoveryOwner == profile, desktopReplyRecovery.track(binding, now: now) else {
+      throw GalaxySSIError.transportUnavailable
+    }
+    UserDefaultsAgentGlobalRunSlotStore.shared.bindSourceMessage(ownerId: slot, sourceMessageId: sourceID)
+    tracked = true
+    var payload: [String: Any] = binding.fields
+    payload["type"] = "text"
+    payload["message_id"] = sourceID
+    payload["client_message_id"] = sourceID
+    payload["desktop_id"] = desktopID
+    payload["sender"] = store.profile.galaxySSIId
+    payload["content"] = prompt
+    payload["time"] = now
+    payload["execution_mode"] = AgentTaskExecutionMode.planOnly.rawValue
+    payload["_galaxyssi_task_execution_mode"] = AgentTaskExecutionMode.planOnly.rawValue
+    payload["_galaxyssi_long_term_write_allowed"] = "false"
+    payload["_galaxyssi_conversation_has_attachments"] = "false"
+    payload["agent_invocation"] = invocation
+    payload["agent_team_message"] = true
+    payload["team_id"] = scope.team.teamId
+    payload["agent_instance_id"] = member
+    payload["delivery_mode"] = AgentDeliveryMode.observe.rawValue
+    payload["run_id"] = AgentTeamExecutionRuntime.stableChildRunId(supervisorRunId: runID, instanceId: member)
+    let wire = try linkWirePayload(payload, link: link)
+    guard await mqttClient.publishDesktopInputOnce(topic: link.routes.upTopic, payload: wire.wireData, expiresAt: expires)
+    else { throw GalaxySSIError.transportUnavailable }
+    status = .sent
+    _ = history.advanceDispatchCheckpoint(runId: runID, conversationId: conversation, turnId: turn,
+      memberId: member, sourceMessageId: sourceID, to: .accepted, now: AgentControlPlaneClock.nowMillis())
+    let remainingFrom = DispatchTime.now().uptimeNanoseconds
+    guard remainingFrom < deadline else { throw GalaxySSIError.transportUnavailable }
+    return try await waitForCollaborationObserver(runId: runID, memberId: member, sourceMessageId: sourceID,
+      timeoutNanoseconds: deadline - remainingFrom)
+  }
+
+  func settleRemotePilotOwners(runID: String, conversation: String, turn: String, sources: [UUID],
+      contactID: String, desktopID: String, fingerprint: String, routeID: String, profile: String) async -> Bool {
+    let sourceIDs = Set(sources.map(\.uuidString))
+    guard ProcessInfo.processInfo.environment["GALAXYSSI_REMOTE_PILOT_RUN"] == "1",
+          store.profile.identityFingerprint == profile, conversation.hasPrefix("pilot-") else { return false }
+    let deadline = DispatchTime.now().uptimeNanoseconds + 90_000_000_000
+    let history = AgentTeamExecutionHistoryStore.shared
+    var cancellationSent = Set<String>()
+    while !Task.isCancelled, DispatchTime.now().uptimeNanoseconds < deadline, store.profile.identityFingerprint == profile {
+      guard let contact = store.contact(id: contactID), contact.trustState == .verified, contact.desktopId == desktopID,
+            contact.connectorAgentId == "codex", contact.deliveryMode.isGalaxySSILinkFamily,
+            let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == desktopID &&
+              $0.desktopFingerprint == fingerprint && $0.routes.clientRouteId == routeID }),
+            let team = history.snapshot(supervisorRunId: runID), team.conversationId == conversation, team.taskId == turn else {
+        return false
+      }
+      let owners = team.members.filter { sourceIDs.contains($0.sourceMessageId) && $0.agentId == contactID }
+      guard owners.count == sourceIDs.count else { return false }
+      let pending = desktopReplyRecovery.pending.filter {
+        $0.binding.teamSource?.supervisorRunId == runID && $0.binding.identity.conversationId == conversation
+      }
+      if owners.allSatisfy({ $0.status.isTerminal || $0.dispatchCheckpoint == .notStarted }), pending.isEmpty {
+        return true
+      }
+      for record in pending where !cancellationSent.contains(record.binding.sourceIdentity) {
+        let binding = record.binding
+        guard sourceIDs.contains(binding.sourceIdentity), binding.desktopId == desktopID, binding.contactId == contactID,
+              binding.identity.clientRouteId == routeID, binding.identity.turnId == turn,
+              owners.contains(where: { $0.sourceMessageId == binding.sourceIdentity && !$0.status.isTerminal }) else { continue }
+        var payload: [String: Any] = binding.fields
+        payload["type"] = "agent_task_cancel"
+        payload["desktop_id"] = desktopID
+        payload["time"] = AgentControlPlaneClock.nowMillis()
+        if let wire = try? linkWirePayload(payload, link: link),
+           await mqttClient.publishDesktopInputOnce(topic: link.routes.upTopic, payload: wire.wireData,
+             expiresAt: AgentControlPlaneClock.nowMillis() + 2_000) {
+          cancellationSent.insert(binding.sourceIdentity)
+        }
+      }
+      await sweepDesktopReplyRecovery()
+      do { try await Task.sleep(nanoseconds: 500_000_000) } catch { return false }
+    }
+    return false
+  }
+  #endif
 
   @discardableResult
   private func receiveRequestedCloudReply(
