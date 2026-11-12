@@ -257,7 +257,8 @@ internal class MqttPeerRoutes(
             val binding = peer.binding
             val authorized = authorizedPaths(peer)
             if (authorized.isEmpty()) return false
-            transport.policy.plan(scope, "route-readiness", MqttMultipathPolicy.Traffic.MESSAGE, 1, binding.receiveTopics, now())
+            transport.policy.plan(scope, "route-readiness", MqttMultipathPolicy.Traffic.MESSAGE, 1, binding.receiveTopics, now(),
+                includeCongested = true)
                 .any { authorized[it.brokerId] == it.generation }.also { if (it) peer.blockedSince = Long.MIN_VALUE }
         }
     }
@@ -401,36 +402,44 @@ internal class MqttPeerRoutes(
             frame.receiptAfterStore(messageId, wireHash)
         }
         val authenticatedIdentity = identity.toList()
+        val publication = MqttReceiptPublication(now) { attempted ->
+            sendStoredReceipt(scope, frame, messageId, wireHash, authenticatedIdentity, attempted)
+        }
         receiptRetry.offer(scope, messageId, frame.attempt.attemptId,
-            { sendStoredReceipt(scope, frame, messageId, wireHash, authenticatedIdentity) }, now())
+            publication::send, now())
     }
 
     private fun sendStoredReceipt(scope: String, frame: MqttDeliveryEnvelope.Frame, messageId: String, wireHash: String,
-                                   identity: List<String>): Boolean {
-        val peer = synchronized(lock) { peers[scope] } ?: return true
-        if (!ready(scope)) return false
+                                   identity: List<String>, attempted: Set<String>): MqttReceiptPublication.Attempt? {
+        val peer = synchronized(lock) { peers[scope] } ?: return null
+        if (!ready(scope)) return null
+        var selected = ""
         val binding: Binding
         val payload: ByteArray
         val publication: MqttPoolTransport.Publication
         peer.lock.withLock {
             binding = peer.binding
             if (!peer.active || !binding.enabled || binding.identity != identity || authorizedPaths(peer).isEmpty() ||
-                frame.message.sender != binding.receiver || frame.message.receiver != binding.sender) return false
+                frame.message.sender != binding.receiver || frame.message.receiver != binding.sender) return null
+            val paths = authorizedPaths(peer).filterKeys { it !in attempted }
+            if (paths.isEmpty()) return null
             val receipt = frame.receiptAfterStore(messageId, wireHash)
             payload = seal(receipt.toString(), binding.secret).toByteArray(Charsets.UTF_8)
             val digest = MqttRouteAdvertisement.sha256(payload.toString(Charsets.UTF_8))
             publication = MqttPoolTransport.Publication(scope, digest, digest, MqttMultipathPolicy.Traffic.RECEIPT,
-                binding.receiveTopics, preferredBroker = frame.attempt.brokerId, authorizedPaths = authorizedPaths(peer),
+                binding.receiveTopics, preferredBroker = frame.attempt.brokerId, authorizedPaths = paths,
                 onPath = { broker, generation ->
                     peer.lock.withLock {
                         check(peer.binding == binding && authorizedPaths(peer)[broker] == generation) {
                             "Stored receipt route changed before publication"
                         }
                     }
+                    selected = broker
                 })
         }
-        transport.publish(binding.sendTopic, org.eclipse.paho.client.mqttv3.MqttMessage(payload).apply { qos = 1 }, publication = publication)
-        return true
+        val token = transport.publish(binding.sendTopic, org.eclipse.paho.client.mqttv3.MqttMessage(payload).apply { qos = 1 }, publication = publication)
+        return MqttReceiptPublication.Attempt(selected, { token.isComplete || token.exception != null },
+            { token.isComplete && token.exception == null })
     }
 
     fun chunkBinding(topic: String): Binding? {
@@ -476,30 +485,40 @@ internal class MqttPeerRoutes(
         val state = MqttChunkReceipts.parseState(payload)
         val complete = (0 until state.query.count).all { state.bitmap[it / 8].toInt() and (1 shl (it % 8)) != 0 }
         val frozen = payload.toString()
+        val publication = MqttReceiptPublication(now) { attempted -> sendChunkState(scope, frozen, identity, broker, attempted) }
         val peer = synchronized(lock) { peers[scope] } ?: return
         val send = peer.lock.withLock {
             if (!peer.active || !peer.binding.enabled || peer.binding.identity != identity) return
             chunkFeedback.offer(scope, state.query.transfer, state.query.request, state.revision,
-                { sendChunkState(scope, frozen, identity, broker) }, now(), urgent || complete)
+                publication::send, now(), urgent || complete)
         }
         send?.invoke()
     }
 
-    private fun sendChunkState(scope: String, frozen: String, identity: List<String>, broker: String): Boolean {
-        val peer = synchronized(lock) { peers[scope] } ?: return true
-        if (!ready(scope)) return false
+    private fun sendChunkState(scope: String, frozen: String, identity: List<String>, broker: String,
+                               attempted: Set<String>): MqttReceiptPublication.Attempt? {
+        val peer = synchronized(lock) { peers[scope] } ?: return null
+        if (!ready(scope)) return null
+        var selected = ""
         val binding: Binding
         val encoded: ByteArray
         val descriptor: MqttPoolTransport.Publication
         peer.lock.withLock {
             binding = peer.binding
-            if (!peer.active || !binding.enabled || binding.identity != identity) return true
+            if (!peer.active || !binding.enabled || binding.identity != identity) return null
+            val paths = authorizedPaths(peer).filterKeys { it !in attempted }
+            if (paths.isEmpty()) return null
             encoded = seal(frozen, binding.secret).toByteArray(Charsets.UTF_8)
             val digest = MqttRouteAdvertisement.sha256(encoded.toString(Charsets.UTF_8))
             descriptor = MqttPoolTransport.Publication(scope, digest, digest, MqttMultipathPolicy.Traffic.RECEIPT,
-                binding.receiveTopics, preferredBroker = broker, authorizedPaths = authorizedPaths(peer))
+                binding.receiveTopics, preferredBroker = broker, authorizedPaths = paths,
+                onPath = { path, generation -> peer.lock.withLock {
+                    check(peer.binding == binding && authorizedPaths(peer)[path] == generation)
+                    selected = path
+                } })
         }
-        transport.publish(binding.sendTopic, org.eclipse.paho.client.mqttv3.MqttMessage(encoded).apply { qos = 1 }, publication = descriptor)
-        return true
+        val token = transport.publish(binding.sendTopic, org.eclipse.paho.client.mqttv3.MqttMessage(encoded).apply { qos = 1 }, publication = descriptor)
+        return MqttReceiptPublication.Attempt(selected, { token.isComplete || token.exception != null },
+            { token.isComplete && token.exception == null })
     }
 }

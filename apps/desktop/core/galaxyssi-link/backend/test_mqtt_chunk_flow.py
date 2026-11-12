@@ -7,6 +7,29 @@ from mqtt_multipath_policy import MultipathPolicy, PeerRoute, Traffic
 
 
 class ChunkFlowTest(unittest.TestCase):
+    def test_cold_path_pipelines_buckets_and_slow_receipt_keeps_window(self):
+        flow = ChunkThroughput()
+        for index in range(2):
+            self.assertTrue(flow.can_send("peer", "emqx", 87419))
+            flow.track("peer", ChunkAttempt("t", "r", index, True), "emqx", 1, 87419, 0)
+        self.assertFalse(flow.can_send("peer", "emqx", 87419))
+        flow.confirmed("peer", "t", "r", [0], {"emqx": 1}, 15)
+        self.assertTrue(flow.can_send("peer", "emqx", 2 * 87419))
+        self.assertFalse(flow.can_send("peer", "emqx", 524288))
+
+    def test_timeout_backs_off_and_reset_restores_cold_window(self):
+        flow = ChunkThroughput()
+        flow.track("peer", ChunkAttempt("old", "r", 0, True), "emqx", 1, 87419, 0)
+        flow.expire(30.001)
+        flow.track("peer", ChunkAttempt("new", "r", 0, True), "emqx", 1, 87419, 30.002)
+        self.assertFalse(flow.can_send("peer", "emqx", 87419))
+        flow.forget("peer")
+        flow.track("peer", ChunkAttempt("next", "r", 0, True), "emqx", 1, 87419, 30.003)
+        self.assertTrue(flow.can_send("peer", "emqx", 87419))
+        flow.reset()
+        self.assertFalse(flow.flights)
+        self.assertFalse(flow.windows)
+
     def test_sparse_samples_keep_bootstrap_rate_and_batch_counts_bytes_once(self):
         flow = ChunkThroughput()
         for number in range(3):
@@ -82,6 +105,31 @@ class ChunkFlowTest(unittest.TestCase):
         self.assertNotEqual(first, following)
         self.assertEqual(0, policy.diagnostics()["inflight_packets"])
         self.assertEqual(524288, policy.chunks.pending_bytes(first))
+
+    def test_text_final_and_receipts_avoid_unconfirmed_image_backlog(self):
+        policy = self.policy()
+        for traffic in (Traffic.MESSAGE, Traffic.FINAL, Traffic.RECEIPT):
+            with self.subTest(traffic=traffic):
+                policy.chunks.reset()
+                preferred = policy.plan("peer", "chat", traffic, 1403, {"inbox"}, now=1)[0].broker_id
+                policy.track_chunk("peer", ChunkAttempt("image", "request", 0, True), preferred, 1, 87419, 1)
+                result = policy.plan("peer", "chat", traffic, 1403, {"inbox"}, now=2, ingress=preferred)
+                self.assertNotEqual(preferred, result[0].broker_id)
+                self.assertEqual(set(BROKER_IDS), {item.broker_id for item in result})
+                self.assertEqual(preferred, result[-1].broker_id)
+                # A publication ACK is not a stored-chunk receipt. Keep this
+                # cost until verified delivery or observation expiry.
+                self.assertEqual(0, policy.diagnostics()["inflight_packets"])
+                policy.confirm_chunk_state("peer", "image", "request", [0], 3)
+                restored = policy.plan("peer", "chat", traffic, 1403, {"inbox"}, now=4, ingress=preferred)
+                self.assertEqual(preferred, restored[0].broker_id)
+
+    def test_backlog_preference_never_bypasses_single_authorized_path(self):
+        policy = self.policy()
+        policy.track_chunk("peer", ChunkAttempt("image", "request", 0, True), "emqx", 1, 87419, 1)
+        result = policy.plan("peer", "chat", Traffic.MESSAGE, 1403, {"inbox"}, now=2,
+                             authorized_paths=(("emqx", 1),))
+        self.assertEqual(["emqx"], [item.broker_id for item in result])
 
     def test_metric_retention_and_pair_revocation(self):
         flow = ChunkThroughput()

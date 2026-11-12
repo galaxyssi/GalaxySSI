@@ -291,7 +291,14 @@ class MqttPoolClient:
             with self._lock:
                 self._publications.pop(attempt_id, None)
             self.policy.discard_attempt(attempt_id)
-        info.rc = mqtt.MQTT_ERR_NO_CONN if not plans else mqtt.MQTT_ERR_QUEUE_SIZE
+        congested = not plans and not publication.bootstrap and bool(self.policy.plan(
+            publication.peer, publication.message_id, publication.traffic, size,
+            set(publication.receive_topics), now=now, ingress=publication.preferred_broker,
+            attempted=publication.attempted_brokers, authorized_paths=publication.authorized_paths,
+            include_congested=True))
+        if congested:
+            info.reason_code = "path_capacity_deferred"
+        info.rc = mqtt.MQTT_ERR_QUEUE_SIZE if plans or congested else mqtt.MQTT_ERR_NO_CONN
         return info
 
     def publish_transient_control(self, topic, payload, *, publication):

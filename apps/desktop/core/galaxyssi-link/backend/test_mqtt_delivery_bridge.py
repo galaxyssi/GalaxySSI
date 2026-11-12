@@ -109,6 +109,28 @@ class DeliveryBridgeTest(TestCase):
         self.phone._tick()
         self.assertEqual(1, len(self.phone._pool.sent))
 
+    def test_pending_receipt_puback_uses_another_authenticated_path(self):
+        self.send_phone()
+        self.desktop._pool.auto_ack = False
+        self.deliver_desktop(self.phone._pool.sent[0])
+        self.assertEqual(1, len(self.desktop._pool.sent))
+        self.assertEqual(1, len(self.desktop.peer_routes._receipt_retry.pending))
+        self.offset += 0.5
+        self.desktop.peer_routes.maintenance()
+        self.assertEqual(1, len(self.desktop._pool.sent))
+        self.offset += 0.6
+        self.desktop.peer_routes.maintenance()
+        self.assertEqual(2, len(self.desktop._pool.sent))
+        first, second = self.desktop._pool.sent
+        self.assertNotEqual(first[0], second[0])
+        self.desktop._pool.ack(first[4])
+        self.offset += 1
+        self.desktop.peer_routes.maintenance()
+        self.assertFalse(self.desktop.peer_routes._receipt_retry.pending)
+        self.assertEqual(2, len(self.desktop._pool.sent))
+        self.assertEqual((True, True), self.receipt_phone(second))
+        self.base.handle.assert_called_once()
+
     def test_three_different_outer_copies_share_one_signal_decrypt_and_business_dispatch(self):
         self.send_phone(Traffic.CONTROL)
         self.assertEqual(3, len(self.phone._pool.sent))

@@ -14,6 +14,7 @@ from mqtt_chunk_receipts import OutgoingChunks, Query, PROBE, STATE
 from mqtt_delivery_envelope import receipt_binding, content_hash
 from mqtt_durable_chunks import DurableChunkAssembler
 from mqtt_wire_chunking import encode_wire_payload
+from mqtt_pool_client import PublishInfo
 
 
 class ChunkExchangeTest(unittest.TestCase):
@@ -130,7 +131,8 @@ class ChunkExchangeTest(unittest.TestCase):
             routes.publish_chunk_state("phone-pair", state,
                 authenticated_identity=self.base.phone_binding.identity, broker_id=packet[0], urgent=True)
             self.assertEqual(1, publish.call_count)
-            publish.return_value = SimpleNamespace(rc=0)
+            publish.return_value = PublishInfo(1, broker_id=packet[0])
+            publish.return_value._done.set()
             for send in routes._chunk_feedback.drain(0.501):
                 send()
             self.assertEqual(2, publish.call_count)

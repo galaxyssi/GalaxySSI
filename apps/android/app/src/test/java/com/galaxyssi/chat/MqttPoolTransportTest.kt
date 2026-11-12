@@ -74,6 +74,22 @@ class MqttPoolTransportTest {
         assertEquals(1, rig.clients.values.flatten().sumOf { it.sent.size })
     }
 
+    @Test fun congestedReadyPathsReportBackpressureNotDisconnected() {
+        rig.earlyAck = false
+        rig.start()
+        val brokers = setOf("emqx", "hivemq", "mosquitto")
+        rig.transport.policy.acceptVerifiedResume("peer", MqttMultipathPolicy.PeerRoute(
+            1, brokers, MqttBrokerCatalog.PACKET_BYTES, true, 300_000), rig.clock.get())
+        val paths = rig.transport.readyPathGenerations(setOf("inbox")).filterKeys { it == "emqx" }
+        repeat(8) { rig.publish("emqx") }
+        val descriptor = rig.descriptor("emqx", bootstrap = false).copy(
+            traffic = MqttMultipathPolicy.Traffic.MESSAGE, authorizedPaths = paths)
+        assertThrows(MqttPoolTransport.BackpressureException::class.java) {
+            rig.transport.publish("outbox", MqttMessage(byteArrayOf(1)).apply { qos = 1 }, publication = descriptor)
+        }
+        assertTrue(rig.transport.isConnected)
+    }
+
     @Test fun failingOnePathDoesNotFailOtherPendingTokensOrAggregateConnection() {
         rig.earlyAck = false
         rig.start()

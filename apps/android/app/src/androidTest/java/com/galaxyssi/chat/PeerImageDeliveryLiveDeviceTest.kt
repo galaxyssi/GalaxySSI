@@ -85,13 +85,22 @@ class PeerImageDeliveryLiveDeviceTest {
                 target.id, clientMessageId = textId).accepted)
             var completed = false
             var textElapsed = 0L
+            var imageElapsed = 0L
             while (SystemClock.elapsedRealtime() - started < 180_000) {
                 instrumentation.runOnMainSync {
                     completed = activity.messages[target.id]?.firstOrNull { it.id == messageId }
                         ?.attachments?.singleOrNull()?.transferState == PeerAttachmentTransferProgress.STATE_COMPLETE
                 }
-                if (textElapsed == 0L && !GalaxySSILinkDeliveryStore.hasPendingClientSourceMessageId(context, textId))
+                if (completed && imageElapsed == 0L) {
+                    imageElapsed = SystemClock.elapsedRealtime() - started
+                    Log.i("ImageDeliveryLive", JSONObject().put("phase", "image_verified")
+                        .put("message_id", messageId).put("elapsed_ms", imageElapsed).toString())
+                }
+                if (textElapsed == 0L && !GalaxySSILinkDeliveryStore.hasPendingClientSourceMessageId(context, textId)) {
                     textElapsed = SystemClock.elapsedRealtime() - started
+                    Log.i("ImageDeliveryLive", JSONObject().put("phase", "text_verified")
+                        .put("message_id", textId).put("elapsed_ms", textElapsed).toString())
+                }
                 if (completed && textElapsed > 0L && !GalaxySSILinkDeliveryStore.hasPendingClientSourceMessageId(context, messageId)) break
                 SystemClock.sleep(250)
             }
@@ -100,6 +109,7 @@ class PeerImageDeliveryLiveDeviceTest {
             assertTrue("Concurrent text was not delivered", textElapsed > 0L)
             val report = JSONObject().put("message_id", messageId).put("text_id", textId).put("filename", filename)
                 .put("sha256", hash).put("size_bytes", size).put("text_elapsed_ms", textElapsed)
+                .put("image_elapsed_ms", imageElapsed)
                 .put("elapsed_ms", SystemClock.elapsedRealtime() - started)
             Log.i("ImageDeliveryLive", report.toString())
         } finally {

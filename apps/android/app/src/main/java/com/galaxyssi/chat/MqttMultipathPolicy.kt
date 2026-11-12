@@ -131,13 +131,15 @@ internal class MqttMultipathPolicy(
         return values.map { it.second }
     }
 
+    private fun pathBacklog(broker: String): Long = maxOf(chunks.pendingBytes(broker),
+        attempts.values.filter { it.brokerId == broker && it.slotHeld }.sumOf { it.wireBytes.toLong() })
+
     private fun score(peer: String, broker: String, now: Long, traffic: Traffic, wireBytes: Int): Double {
         val values = samples(peer, broker, now)
         val latency = if (values.isEmpty()) MqttBrokerCatalog.UNMEASURED_PATH_RTT_MS.toDouble() else values.average()
-        val load = attempts.values.filter { it.brokerId == broker && it.slotHeld }.sumOf { it.wireBytes.toLong() }
-        if (traffic == Traffic.CHUNK)
-            return latency + (wireBytes + maxOf(load, chunks.pendingBytes(broker))) * 1000.0 / chunks.rate(peer, broker)
-        return latency * (1 + load.toDouble() / MqttBrokerCatalog.PEER_INFLIGHT_BYTES)
+        // PUBACK frees a local slot, not the broker-to-peer byte stream.
+        val queued = pathBacklog(broker) + if (traffic == Traffic.CHUNK) wireBytes else 0
+        return latency + queued * 1000.0 / chunks.rate(peer, broker)
     }
 
     private fun tie(peer: String, messageId: String, broker: String): String {
@@ -157,30 +159,33 @@ internal class MqttMultipathPolicy(
         // A slow path must leave a physical slot for every other ready path.
         val others = paths.count { (id, path) -> id != broker && path.connected && path.topics.isNotEmpty() }
         val limit = MqttBrokerCatalog.INFLIGHT_PACKETS - if (priority && others == 0) 0 else MqttBrokerCatalog.CONTROL_RESERVE
-        return attempts.values.count { it.slotHeld && it.brokerId == broker } < (limit - others).coerceAtLeast(1)
+        // Even a small global budget must let control traffic use its reserved fair share.
+        val fairShare = if (priority) (MqttBrokerCatalog.INFLIGHT_PACKETS + others) / (others + 1) else 1
+        return attempts.values.count { it.slotHeld && it.brokerId == broker } < (limit - others).coerceAtLeast(fairShare)
     }
 
     @Synchronized fun plan(
         peer: String, messageId: String, traffic: Traffic, wireBytes: Int, receiveTopics: Set<String>,
         now: Long, ingress: String? = null, attempted: Set<String> = emptySet(),
-        authorizedPaths: Map<String, Long>? = null
+        authorizedPaths: Map<String, Long>? = null, includeCongested: Boolean = false
     ): List<Dispatch> {
         chunks.expire(now)
         if (messageId.isBlank() || wireBytes !in 1..MqttBrokerCatalog.PACKET_BYTES) return emptyList()
         val route = routes[peer] ?: return emptyList()
         if (route.expiresAt <= now || wireBytes > route.packetBytes ||
             (traffic == Traffic.CHUNK && !route.chunkAcks)) return emptyList()
-        val common = (readyBrokers(receiveTopics) intersect route.receiveBrokers)
+        val eligible = (readyBrokers(receiveTopics) intersect route.receiveBrokers)
             .filter { wireBytes <= paths.getValue(it).packetBytes &&
-                pathHeadroom(it, traffic) &&
-                (traffic != Traffic.CHUNK || chunks.canSend(peer, it, wireBytes)) &&
                 (authorizedPaths == null || authorizedPaths[it] == paths.getValue(it).generation) }
+        val common = eligible.filter { includeCongested || (pathHeadroom(it, traffic) &&
+            (traffic != Traffic.CHUNK || chunks.canSend(peer, it, wireBytes))) }
         val unused = common.filterNot(attempted::contains)
         val candidates = (unused.ifEmpty { common }).sortedWith(
             compareBy<String> { score(peer, it, now, traffic, wireBytes) }.thenBy { tie(peer, messageId, it) }
         ).toMutableList()
         if (candidates.isEmpty()) return emptyList()
-        if (traffic == Traffic.RECEIPT && ingress in candidates) {
+        if (traffic == Traffic.RECEIPT && ingress in candidates &&
+            pathBacklog(requireNotNull(ingress)) <= pathBacklog(candidates.first())) {
             candidates.remove(ingress)
             candidates.add(0, requireNotNull(ingress))
         }
