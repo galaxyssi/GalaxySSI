@@ -125,7 +125,8 @@ data class AgentProactiveAction(
     val grantedPermissions: Set<String> = emptySet(),
     val grantedConsents: Set<String> = emptySet(),
     val conversationId: String = "",
-    val scheduleText: String = ""
+    val scheduleText: String = "",
+    val scheduleOrigin: String = ""
 ) {
     init {
         require(prompt.length <= 65_536) { "Proactive prompt is too long" }
@@ -508,6 +509,7 @@ class AgentProactiveTaskStore(context: Context) {
         .put("granted_consents", JSONArray(value.grantedConsents.toList()))
         .put("conversation_id", value.conversationId)
         .put("schedule_text", value.scheduleText)
+        .put("schedule_origin", value.scheduleOrigin)
 
     private fun decodeAction(json: JSONObject) = AgentProactiveAction(
         kind = enumValue(json.optString("kind"), AgentProactiveActionKind.AGENT),
@@ -529,7 +531,8 @@ class AgentProactiveTaskStore(context: Context) {
         grantedPermissions = json.optJSONArray("granted_permissions").toStringSet(),
         grantedConsents = json.optJSONArray("granted_consents").toStringSet(),
         conversationId = json.optString("conversation_id"),
-        scheduleText = json.optString("schedule_text")
+        scheduleText = json.optString("schedule_text"),
+        scheduleOrigin = json.optString("schedule_origin")
     )
 
     private fun encodePolicy(value: AgentProactivePolicy): JSONObject = JSONObject()
@@ -669,6 +672,8 @@ object AgentProactiveTaskScheduler {
     fun restoreAll(context: Context, conversationOnly: Boolean = false) {
         val store = AgentProactiveTaskStore(context)
         val now = System.currentTimeMillis()
+        store.tasks().filter { it.action.conversationId.isNotBlank() && it.action.scheduleOrigin.isBlank() }
+            .forEach { ConversationScheduleProvenance.reconcile(context, it) }
         store.tasks().filter { it.enabled && (!conversationOnly || it.action.conversationId.isNotBlank()) }.forEach { task ->
             val next = if (task.nextRunAtMillis > 0L) task.nextRunAtMillis else initialNextRun(task, now)
             val updated = task.copy(nextRunAtMillis = next, updatedAtMillis = now)
@@ -691,7 +696,8 @@ object AgentProactiveTaskScheduler {
         cause: JSONObject = JSONObject().put("type", "manual")
     ): AgentProactiveRun {
         val store = AgentProactiveTaskStore(context)
-        val task = requireNotNull(store.task(taskId)?.takeIf { it.enabled }) {
+        val task = requireNotNull(store.task(taskId)?.let { ConversationScheduleProvenance.reconcile(context, it) }
+            ?.takeIf { it.enabled }) {
             "Proactive task is missing or disabled"
         }
         return enqueue(context, store, task, System.currentTimeMillis(), cause)
@@ -730,7 +736,8 @@ object AgentProactiveTaskScheduler {
     @Synchronized
     fun handleAlarm(context: Context, taskId: String) {
         val store = AgentProactiveTaskStore(context)
-        val task = store.task(taskId)?.takeIf { it.enabled } ?: return
+        val task = store.task(taskId)?.let { ConversationScheduleProvenance.reconcile(context, it) }
+            ?.takeIf { it.enabled } ?: return
         val now = System.currentTimeMillis()
         if (task.nextRunAtMillis <= 0L || now < task.nextRunAtMillis) return
         if (shouldDisable(task, now)) {
@@ -947,7 +954,10 @@ object AgentProactiveTaskScheduler {
 
     internal fun resumeRun(context: Context, runId: String) {
         if (runId.isBlank()) return
-        val run = AgentProactiveTaskStore(context).run(runId)?.takeIf { !it.status.terminal } ?: return
+        val store = AgentProactiveTaskStore(context)
+        val run = store.run(runId)?.takeIf { !it.status.terminal } ?: return
+        val task = store.task(run.taskId) ?: return
+        if (!ConversationScheduleProvenance.reconcile(context, task).enabled) return
         startRunService(context, run.runId)
     }
 
@@ -1055,12 +1065,14 @@ object AgentProactiveTaskExecutor {
         if (runId in activeTeamRuns) return
         val store = AgentProactiveTaskStore(context)
         val run = store.run(runId)?.takeIf { !it.status.terminal } ?: return
-        val task = store.task(run.taskId)?.takeIf { it.enabled } ?: run {
+        val task = store.task(run.taskId)?.let { ConversationScheduleProvenance.reconcile(context, it) }
+            ?.takeIf { it.enabled } ?: run {
+            val latest = store.run(runId)?.takeIf { !it.status.terminal } ?: return
             store.upsertRun(
-                run.copy(
+                latest.copy(
                     status = AgentProactiveRunStatus.CANCELLED,
                     completedAtMillis = System.currentTimeMillis(),
-                    errorCode = "task_disabled"
+                    errorCode = "task_disabled", deliveryRecorded = true
                 )
             )
             return
