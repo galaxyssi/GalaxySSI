@@ -75,6 +75,7 @@ class MqttPublishGuardTest {
         assertEquals(MqttPublishResult.PUBLISHED, result)
         assertTrue(result.accepted)
         assertFalse(MqttPublishResult.FAILED.accepted)
+        assertFalse(MqttPublishResult.BACKPRESSURE.accepted)
     }
 
     @Test

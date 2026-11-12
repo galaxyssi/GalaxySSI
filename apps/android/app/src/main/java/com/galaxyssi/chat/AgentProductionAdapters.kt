@@ -107,6 +107,7 @@ interface AgentProviderHealthLedger {
     )
     fun snapshot(registration: AgentRegistration): AgentProviderHealthSnapshot
     fun snapshots(): List<AgentProviderHealthSnapshot>
+    fun observeAvailability(registration: AgentRegistration, nowMillis: Long) {}
     fun clear()
 }
 
@@ -132,17 +133,15 @@ private class InMemoryAgentProviderHealthPersistence : AgentProviderHealthPersis
 
 private class EncryptedAgentProviderHealthPersistence(context: Context) : AgentProviderHealthPersistence {
     private val database = AgentEncryptedDatabase(context, DATABASE)
-    @Volatile private var cachedValues: Map<String, AgentProviderHealthSnapshot>? = null
 
     @Synchronized
     override fun load(): Map<String, AgentProviderHealthSnapshot> {
-        cachedValues?.let { return it }
         val array = runCatching { JSONArray(database.readString(KEY_STATES, "[]")) }.getOrDefault(JSONArray())
         return buildMap {
             for (index in 0 until array.length()) {
                 array.optJSONObject(index)?.toProviderHealthSnapshot()?.let { put(it.scopeId, it) }
             }
-        }.also { cachedValues = it }
+        }
     }
 
     @Synchronized
@@ -152,13 +151,11 @@ private class EncryptedAgentProviderHealthPersistence(context: Context) : AgentP
             .take(MAX_SCOPES)
         retained.forEach { array.put(it.toJson()) }
         database.writeString(KEY_STATES, array.toString())
-        cachedValues = retained.associateBy(AgentProviderHealthSnapshot::scopeId)
     }
 
     @Synchronized
     override fun clear() {
         database.clear()
-        cachedValues = emptyMap()
     }
 
     companion object {
@@ -171,6 +168,25 @@ private class EncryptedAgentProviderHealthPersistence(context: Context) : AgentP
 open class PersistentAgentProviderHealthLedger internal constructor(
     private val persistence: AgentProviderHealthPersistence
 ) : AgentProviderHealthLedger {
+    override fun observeAvailability(registration: AgentRegistration, nowMillis: Long) = synchronized(PROCESS_LOCK) {
+        if (registration.status !in setOf(AgentEndpointStatus.ONLINE, AgentEndpointStatus.IDLE, AgentEndpointStatus.BUSY))
+            return@synchronized
+        val values = persistence.load().toMutableMap()
+        val scope = registration.runtimeHealthScope()
+        val current = values[scope] ?: return@synchronized
+        val observedAt = registration.lastHeartbeatMillis
+        if (observedAt <= current.lastFailureAtMillis || observedAt > nowMillis + 60_000L ||
+            current.circuitState(nowMillis) != AgentProviderCircuitState.OPEN || current.probeLeaseUntilMillis > nowMillis)
+            return@synchronized
+        val recoverable = current.lastFailureKind in setOf(AgentProviderFailureKind.TRANSPORT_CRASH,
+            AgentProviderFailureKind.UNAVAILABLE) ||
+            (current.lastFailureKind == AgentProviderFailureKind.EXECUTION && current.lastOperation == "start_run")
+        if (!recoverable) return@synchronized
+        // A fresh ready report permits one request, not an automatic replay or a claim of execution success.
+        values[scope] = current.copy(circuitOpenUntilMillis = nowMillis.coerceAtLeast(1L))
+        persistence.save(values.values)
+    }
+
     override fun acquire(
         registration: AgentRegistration,
         operation: String,

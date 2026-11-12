@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_local_outbox_full">The phone sending queue is full. This request was not sent. Try again after pending deliveries finish.</string>
+</resources>

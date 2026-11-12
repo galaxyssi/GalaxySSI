@@ -837,7 +837,7 @@ internal fun MainActivity.sendPeerAttachments(contact: Contact, uris: List<Uri>,
             attachments = attachments
         )
         runOnUiThread {
-            if (result == MqttPublishResult.FAILED) {
+            if (!result.accepted) {
                 markPeerAttachmentTransferFailed(message.id, contact.id)
             }
             updateMessageStatus(
@@ -846,7 +846,7 @@ internal fun MainActivity.sendPeerAttachments(contact: Contact, uris: List<Uri>,
                 getString(when (result) {
                     MqttPublishResult.PUBLISHED -> R.string.delivery_status_sent
                     MqttPublishResult.QUEUED -> R.string.delivery_status_queued
-                    MqttPublishResult.FAILED -> R.string.delivery_status_failed
+                    MqttPublishResult.FAILED, MqttPublishResult.BACKPRESSURE -> R.string.delivery_status_failed
                 })
             )
         }

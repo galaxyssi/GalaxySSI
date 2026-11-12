@@ -60,16 +60,16 @@ internal class AndroidAppControlPlatform(context: Context) : AgentAppControlPlat
         val state = when (result) {
             MqttPublishResult.PUBLISHED -> "published"
             MqttPublishResult.QUEUED -> "queued"
-            MqttPublishResult.FAILED -> "failed"
+            MqttPublishResult.FAILED, MqttPublishResult.BACKPRESSURE -> "failed"
         }
         val label = when (result) {
             MqttPublishResult.PUBLISHED -> R.string.delivery_status_sent
             MqttPublishResult.QUEUED -> R.string.delivery_status_queued
-            MqttPublishResult.FAILED -> R.string.delivery_status_failed
+            MqttPublishResult.FAILED, MqttPublishResult.BACKPRESSURE -> R.string.delivery_status_failed
         }
         ChatHistoryStore.markOutgoingDelivery(app, contactId, id, state, "app_control", app.getString(label))
         AppVoiceControlBridge.refreshContact(contactId)
         return mapOf("contact_id" to contactId, "message_id" to id, "state" to state,
-            "dispatch_accepted" to (result != MqttPublishResult.FAILED), "delivery_verified" to false)
+            "dispatch_accepted" to result.accepted, "delivery_verified" to false)
     }
 }

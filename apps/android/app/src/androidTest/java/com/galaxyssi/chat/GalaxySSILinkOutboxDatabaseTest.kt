@@ -15,6 +15,49 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class GalaxySSILinkOutboxDatabaseTest {
+    @Test fun capabilityBacklogCompactsWithoutTouchingMessagesAttachmentsOrOtherPairs() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "mqtt_capabilities_${System.nanoTime()}.db"
+        val now = System.currentTimeMillis()
+        fun declaration(index: Int, route: String = "a") = item(index, now).put("receipt_binding", route)
+            .put("payload_type", "artifact_blob_capability").put("client_source_message_id", 0)
+        try {
+            GalaxySSILinkOutboxDatabase(context, name).use { db ->
+                repeat(64) { db.insert(declaration(it)) }
+                db.insert(declaration(64, "b"))
+                db.insert(declaration(65).put("client_source_message_id", 123))
+                db.insert(declaration(66).put("attachment_transfer_id", "f".repeat(64)))
+                db.insert(declaration(67).put("attempts", 1))
+                db.insert(declaration(68).put("blocked_by_attachment_transfers", JSONArray().put("f".repeat(64))))
+                db.insert(declaration(69).put("receipt_binding", ""))
+                db.insert(item(70, now).put("payload_type", "text").put("receipt_binding", "a"))
+                assertFalse(db.canEnqueue("a", false))
+                assertTrue(db.canEnqueue("a", true, "artifact_blob_capability"))
+                assertFalse(db.canEnqueue("a", true, "text"))
+            }
+            GalaxySSILinkOutboxDatabase(context, name).use { db ->
+                fun snapshot(): Map<String, String> {
+                    val rows = db.readAll()
+                    return (0 until rows.length()).associate { index ->
+                        val row = rows.getJSONObject(index)
+                        row.getString("message_id") to row.toString()
+                    }
+                }
+                val original = snapshot().filterKeys { it.removePrefix("message-").toInt() in 63..70 }
+                val redundant = db.redundantUnsentCapabilities()
+                assertEquals(63, redundant.size)
+                redundant.forEach(db::delete)
+                assertEquals(8, db.count())
+                val remaining = snapshot()
+                original.forEach { (id, value) -> assertEquals(value, remaining[id]) }
+                assertTrue(db.canEnqueue("a", false))
+                assertTrue(db.redundantUnsentCapabilities().isEmpty())
+                db.insert(declaration(71))
+                assertEquals(listOf("message-63"), db.redundantUnsentCapabilities())
+            }
+        } finally { context.deleteDatabase(name) }
+    }
+
     @Test fun legacyUncorrelatedBacklogIsHeldWithoutDeletingRealMessagesOrAttachments() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val name = "mqtt_hold_${System.nanoTime()}.db"

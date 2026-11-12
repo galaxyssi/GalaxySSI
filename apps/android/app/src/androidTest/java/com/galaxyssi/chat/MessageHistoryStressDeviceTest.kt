@@ -245,7 +245,7 @@ class MessageHistoryStressDeviceTest {
                     queued += 1
                     context.getString(R.string.delivery_status_queued)
                 }
-                MqttPublishResult.FAILED -> {
+                MqttPublishResult.FAILED, MqttPublishResult.BACKPRESSURE -> {
                     failed += 1
                     context.getString(R.string.delivery_status_failed)
                 }
